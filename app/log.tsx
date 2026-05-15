@@ -17,18 +17,9 @@ import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
+import { uuid, exifDateToISO } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'food-new' | 'symptom' | 'simple' | 'complete';
-
-function exifDateToISO(exifDate: string): string | null {
-  const [datePart, timePart] = exifDate.split(' ');
-  if (!datePart || !timePart) return null;
-  try {
-    return new Date(`${datePart.replace(/:/g, '-')}T${timePart}`).toISOString();
-  } catch {
-    return null;
-  }
-}
 
 interface CachedFood {
   id: string;
@@ -65,13 +56,6 @@ const SEVERITY_CONFIG = [
   { value: 4, label: '' },
   { value: 5, label: 'Severe' },
 ];
-
-function uuid(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -414,7 +398,7 @@ export default function LogModal() {
         {attachmentUri && (
           <View style={styles.attachmentBanner}>
             <Image source={{ uri: attachmentUri }} style={styles.bannerThumb} resizeMode="cover" />
-            <Text style={styles.bannerText}>Photo attached — pick an event type</Text>
+            <Text style={styles.bannerText}>{petName}'s photo is attached — which event is this for?</Text>
           </View>
         )}
         <ScrollView contentContainerStyle={styles.typeGrid} showsVerticalScrollIndicator={false}>

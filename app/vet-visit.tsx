@@ -14,25 +14,9 @@ import { getDb } from '../lib/db';
 import { uploadPhoto } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { syncPendingVetVisits } from '../lib/sync';
+import { uuid, exifDateToISO } from '../lib/utils';
 
 type Step = 'photo' | 'details' | 'complete';
-
-function uuid(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
-
-function exifDateToISO(exifDate: string): string | null {
-  const [datePart, timePart] = exifDate.split(' ');
-  if (!datePart || !timePart) return null;
-  try {
-    return new Date(`${datePart.replace(/:/g, '-')}T${timePart}`).toISOString();
-  } catch {
-    return null;
-  }
-}
 
 function isoToDateOnly(iso: string): string {
   return iso.split('T')[0];

@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.2 | Last Updated: May 2026
+**Version:** 1.3 | Last Updated: May 2026
 
 ---
 
@@ -21,9 +21,9 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 
 | Document | Read When |
 |---|---|
-| `technical-spec.md` | Every session. Stack, architecture decisions, MVP acceptance criteria, build sequence. |
-| `schema.sql` | Any session touching data, queries, or new tables. Reference queries are documented here. |
-| `design-principles.md` | Any session touching UI, copy, interaction, or notifications. Seven principles govern every screen. |
+| `docs/nyx-technical-spec-v1_0.md` | Every session. Stack, architecture decisions, MVP acceptance criteria, build sequence. |
+| `docs/nyx-schema-v1_0.sql` | Any session touching data, queries, or new tables. Reference queries are documented here. |
+| `docs/nyx-design-principles-v1_0.md` | Any session touching UI, copy, interaction, or notifications. Seven principles govern every screen. |
 | `research.md` | When making product decisions about scope, features, or user behavior. Market and persona data lives here. |
 | `competitive-landscape.md` | When evaluating feature positioning or vet-facing strategy. |
 
@@ -81,6 +81,9 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Any query that would break when a second pet is added to the account
 - Direct `supabase.auth.getUser()` calls in components — always go through the auth store
 - Storing attachment URLs in the event row — attachments have their own table with a foreign key to `event_id`
+- Bundling a schema migration with UI code in the same PR — schema changes get their own PR so they can be reviewed, applied, and verified independently
+- Duplicating utility functions (`uuid`, `exifDateToISO`) across screens — shared pure functions belong in `lib/utils.ts`
+- Writing new quick-log UI directly in screen files — quick-log components belong in `components/log/` per the project structure in `nyx-technical-spec-v1_0.md`
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
 ---
@@ -359,3 +362,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.0 | May 2026 | Initial file. Created before first Claude Code session. Based on product brief, technical spec, design principles, schema, research, and competitive landscape. |
 | v1.1 | May 2026 | Active session check-in protocol. Persona conflict escalation format. Mid-session CLAUDE.md updates. Acceptance criteria explicit pass/fail by QA. Anti-pattern and edge case lists made appendable. Three-tier documentation update protocol. Missing doc handling. Code conventions section. Open questions table with resolution tracking. Freemium gate question added. |
 | v1.2 | May 2026 | Async/non-interactive session handling. Environment and secrets management section. Git workflow with PR format requirements. Testing conventions added to Code Conventions. Provisional decision protocol for stalled blocking questions. Build sequence updated with ✓ markers and current phase (Step 4a). Acceptance criteria pointer added to build sequence. Persona conflict protocol surfaced as its own section. Anti-pattern lists seeded with additional items (auth store pattern, modal-on-modal, attachment storage). |
+| v1.3 | May 2026 | Fixed doc filename references in the Read These table to match actual filenames in /docs/. Appended four engineering anti-patterns from Step 4a session: schema+UI bundling, utility duplication, quick-log components in wrong location. Appended two QA edge cases: EXIF fallback, failed upload retry. |
