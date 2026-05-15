@@ -53,6 +53,13 @@ const SEVERITY_CONFIG = [
   { value: 5, label: 'Severe' },
 ];
 
+function uuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -121,7 +128,7 @@ export default function LogModal() {
 
   async function handleNewFoodSave() {
     if (!newBrand.trim() || !newProduct.trim()) return;
-    const foodId = crypto.randomUUID();
+    const foodId = uuid();
     const db = getDb();
     const now = new Date().toISOString();
     await db.runAsync(
@@ -153,7 +160,7 @@ export default function LogModal() {
     if (!activePet) return;
     if (selectedType === 'meal' && !selectedFoodId) return;
     const db = getDb();
-    const eventId = crypto.randomUUID();
+    const eventId = uuid();
     const now = new Date().toISOString();
     await db.runAsync(
       `INSERT INTO events
@@ -163,7 +170,7 @@ export default function LogModal() {
        severity ?? null, notes.trim() || null, now, now]
     );
     if (selectedType === 'meal' && selectedFoodId) {
-      const mealId = crypto.randomUUID();
+      const mealId = uuid();
       await db.runAsync(
         `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, synced)
          VALUES (?, ?, ?, ?, 'unknown', ?, 0)`,
