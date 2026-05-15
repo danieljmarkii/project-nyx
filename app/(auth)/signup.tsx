@@ -21,7 +21,7 @@ export default function SignupScreen() {
       Alert.alert('Sign up failed', error.message);
     } else {
       // user_profiles row is created by Supabase trigger on auth.users insert
-      router.replace('/(tabs)');
+      router.replace('/onboarding/pet');
     }
   }
 
