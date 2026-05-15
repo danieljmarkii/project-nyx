@@ -166,6 +166,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Vet report share token accessed after 30-day expiry
 - User deletes a pet — cascade behavior across all child tables
 - Two devices logged in as the same user submit conflicting events simultaneously
+- Photo EXIF timestamp is absent or malformed — `occurred_at` must fall back to `new Date()`, never throw
+- Photo upload fails mid-sync while offline — local SQLite record with `synced = 0` must be retried on reconnect, not silently dropped
 - *(Append new edge cases here as they are discovered in the codebase)*
 
 ---

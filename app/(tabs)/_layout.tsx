@@ -373,7 +373,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: theme.space2,
-    paddingVertical: 10,
+    paddingVertical: theme.space1,
   },
   recentText: {
     fontSize: 15,
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space2,
     paddingHorizontal: theme.space2,
-    paddingVertical: 12,
+    paddingVertical: theme.space1,
   },
   menuActionIcon: {
     fontSize: 18,
