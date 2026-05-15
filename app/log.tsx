@@ -198,8 +198,9 @@ export default function LogModal() {
       quantity: selectedFoodId ? 'unknown' : null,
     });
     setStep('complete');
-    syncPendingEvents().catch(console.error);
-    syncPendingMeals().catch(console.error);
+    syncPendingEvents()
+      .then(() => syncPendingMeals())
+      .catch(console.error);
   }
 
   function handleBack() {
