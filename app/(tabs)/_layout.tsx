@@ -11,7 +11,6 @@ function QuickLogButton() {
       accessibilityLabel="Log event"
     >
       <View style={styles.fabInner}>
-        {/* Replace with an icon library once added */}
         <View style={styles.plusH} />
         <View style={styles.plusV} />
       </View>
@@ -26,7 +25,6 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { borderTopColor: theme.colorBorder },
         tabBarActiveTintColor: theme.colorNeutralDark,
         tabBarInactiveTintColor: theme.colorTextSecondary,
       }}
@@ -38,9 +36,6 @@ export default function TabsLayout() {
   );
 }
 
-// Persistent FAB rendered outside the tab bar — accessed from any tab
-// This is the + button described in the spec. Currently inline; extract
-// to a global overlay if layout demands it.
 const styles = StyleSheet.create({
   fab: {
     position: 'absolute', bottom: 72, right: theme.space3,
