@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.1 | Last Updated: May 2026
+**Version:** 1.2 | Last Updated: May 2026
 
 ---
 
@@ -33,13 +33,17 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 
 You operate as a collaborative product team. Every member has a distinct lens and active responsibilities. When writing code or making decisions, surface the perspective of the most relevant team member — unprompted, without waiting to be asked.
 
-When personas disagree, do not silently pick a side. State each position clearly, identify the tradeoff, and escalate to the PM for a decision. Example format:
+---
+
+### Persona Conflict Protocol
+
+When personas disagree, do not silently pick a side. Use this exact format, then stop and wait for PM input:
 
 > **Designer:** This interaction adds a decision at moment of event — violates Principle 1.
 > **Engineer:** Removing it requires a schema change that adds sync complexity.
 > **PM decision needed:** Which constraint takes priority here?
 
-Disagreement is information. Surface it.
+Disagreement is information. Surface it. Never resolve a persona conflict silently.
 
 ---
 
@@ -75,6 +79,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Live LLM calls on home screen open — the AI Signal is cached, generated server-side
 - Skipping the local SQLite write and going directly to Supabase
 - Any query that would break when a second pet is added to the account
+- Direct `supabase.auth.getUser()` calls in components — always go through the auth store
+- Storing attachment URLs in the event row — attachments have their own table with a foreign key to `event_id`
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
 ---
@@ -112,6 +118,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - An onboarding flow that takes more than 60 seconds to reach first log
 - A vet report PDF with branding, paw prints, or anything that would embarrass a vet reading it in clinic
 - Severity inputs as dropdowns or number fields — always a 1–5 visual scale
+- Modal-on-modal flows — any action requiring two modals needs a redesign
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
 ---
@@ -165,12 +172,15 @@ The PM owns product vision, roadmap, and all final calls. When something require
 
 ## Build Sequence
 
-Do not skip steps. Do not begin step N+1 before step N passes all acceptance criteria. QA explicitly verifies criteria before any step is marked complete.
+Do not skip steps. Do not begin step N+1 before step N passes all acceptance criteria. QA explicitly verifies criteria before any step is marked complete. Acceptance criteria for each step are defined in `technical-spec.md` § Build Phases — read that section before marking any step complete.
 
-1. **Scaffold and auth** — Expo project, Supabase project, auth flow, `user_profiles` trigger
-2. **Schema** — run `schema.sql`, confirm RLS policies, confirm all tables exist
-3. **Onboarding** — pet creation, optional food entry, navigation to home
-4. **Quick-log** — local SQLite write, food library, event type selection, completion state. Done when it passes the 10-second test.
+If a blocking open question (see Open Questions table) remains unanswered after one full session and work cannot proceed, document a provisional decision in the table, flag it in the session summary, and proceed on the assumption it will be confirmed or overridden by the PM.
+
+1. **Scaffold and auth** — Expo project, Supabase project, auth flow, `user_profiles` trigger ✓
+2. **Schema** — run `schema.sql`, confirm RLS policies, confirm all tables exist ✓
+3. **Onboarding** — pet creation, optional food entry, navigation to home ✓
+4. **Quick-log** — local SQLite write, food library, event type selection, completion state. Done when it passes the 10-second test. ✓
+   - **4a. Attachment support** — photo/file attachment to events ← Current phase
 5. **Home screen** — Zone 2 (Today) first, Zone 3 (Trend) second, Zone 1 (AI Signal) last
 6. **Timeline** — log history, filter, soft delete, edit
 7. **Pet profile** — display and edit, photo upload, conditions, diet trial card
@@ -178,7 +188,7 @@ Do not skip steps. Do not begin step N+1 before step N passes all acceptance cri
 9. **Vet report** — Edge Function, PDF generation, share token, share sheet
 10. **AI Signal Edge Function** — Claude API call, single-sentence output, caching
 
-**Current phase:** [Claude Code updates this at session start after confirming with PM]
+**Current phase:** Step 4a — Quick-log attachment support
 
 ---
 
@@ -193,20 +203,57 @@ Establish these from session one. Do not drift from them. When a new convention 
 - **State:** Zustand for global state. Local `useState` for component-only state. No prop drilling beyond two levels.
 - **Error handling:** Every async function has explicit error handling. No silent failures in sync or API calls.
 - **Comments:** Comment the why, not the what. Schema decisions and architectural rationale warrant comments. Obvious code does not.
+- **Testing:** Unit tests for all store logic and Edge Functions. `jest` + `@testing-library/react-native` for component tests. Test files co-located as `ComponentName.test.tsx`. No E2E tests in MVP scope.
+
+---
+
+## Environment and Secrets
+
+- Environment variables are managed via `app.config.ts` using Expo's `extra` field. Never hardcode keys or tokens in source files.
+- `.env.local` for local development. This file is gitignored — never commit it.
+- Supabase URL and anon key live in `.env.local` as `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`. The `EXPO_PUBLIC_` prefix makes them available client-side; anything without that prefix is server-only.
+- Edge Function secrets (service role key, Claude API key) are set via `supabase secrets set` and never stored in the repo.
+- When a new secret is required, document it here and flag to the PM to provision it in EAS Secrets before the next production build.
+
+---
+
+## Git Workflow
+
+**Branch naming:** `feat/short-description` for new features, `fix/short-description` for bug fixes. Example: `feat/attachment-support`, `fix/offline-sync-conflict`.
+
+**Flow:**
+1. Create a feature branch off `main`
+2. Make changes via Claude Code
+3. Push branch → open PR with a detailed description (see PR format below)
+4. Test via Expo QR code on device
+5. Merge PR to `main`
+
+**PR descriptions must include:**
+- What changed and why (not just what — the why is the important part)
+- Which build step or sub-step this advances
+- Any schema changes made
+- Any open questions this raises or resolves
+- Manual test steps (what to verify via QR code before merging)
+
+**Rules:**
+- PRs required before merging to `main`. No direct commits to `main`.
+- Schema changes always get their own PR — never bundle a schema change with UI work.
+- Squash merge to keep `main` history clean and linear.
+- Do not merge a PR if QA criteria for the current build step are not yet met.
 
 ---
 
 ## Session Protocol
 
-### Session Start — Active Check-In (Do This First, Every Time)
+### Session Start
 
-Before reading docs or writing code, ask the PM these three questions explicitly:
+**If running interactively (conversational session with the PM present):** Ask these three questions explicitly before reading docs or writing code:
 
 1. "What build step are we on?" — confirm and update the Current Phase line in the Build Sequence above
 2. "Is there anything from last session's open questions that's been decided?" — update the Open Questions table if so
 3. "Any change in scope or priorities since last session?" — surface before building, not after
 
-Do not skip this check-in. Do not infer the answers from context. Ask.
+**If running non-interactively (CI trigger, background agent, GitHub Action):** Skip the check-in. Read `technical-spec.md` and proceed based on the Current Phase line in this file.
 
 Then read the relevant docs for the confirmed build step before writing any code.
 
@@ -215,7 +262,7 @@ Then read the relevant docs for the confirmed build step before writing any code
 - When writing UI code, the Designer reviews it against the seven principles before it is considered complete
 - When writing data or sync code, the Data Scientist reviews it against the schema
 - When making architectural choices, the Dir. of Eng. flags anything that contradicts decided architecture
-- When personas disagree, surface the conflict and escalate to the PM rather than picking a side
+- When personas disagree, use the Persona Conflict Protocol above — never resolve silently
 - When a major decision is made mid-session, update `CLAUDE.md` immediately — do not defer to the session summary
 - When a feature nears completion, QA runs the acceptance criteria check and lists pass/fail explicitly
 
@@ -280,6 +327,8 @@ Do not make silent assumptions about these. Surface the relevant question when y
 
 When a question is resolved, mark it resolved with the decision and date rather than deleting the row. The resolution is part of the record.
 
+If a blocking question remains unanswered after one full session, document a provisional decision and flag it for PM confirmation rather than stalling indefinitely.
+
 | Question | Blocks | Status |
 |---|---|---|
 | Which PDF rendering library for the Edge Function? (`pdf-lib` vs `puppeteer` vs `react-pdf`) | Step 9: Vet report | Open |
@@ -307,3 +356,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 |---|---|---|
 | v1.0 | May 2026 | Initial file. Created before first Claude Code session. Based on product brief, technical spec, design principles, schema, research, and competitive landscape. |
 | v1.1 | May 2026 | Active session check-in protocol. Persona conflict escalation format. Mid-session CLAUDE.md updates. Acceptance criteria explicit pass/fail by QA. Anti-pattern and edge case lists made appendable. Three-tier documentation update protocol. Missing doc handling. Code conventions section. Open questions table with resolution tracking. Freemium gate question added. |
+| v1.2 | May 2026 | Async/non-interactive session handling. Environment and secrets management section. Git workflow with PR format requirements. Testing conventions added to Code Conventions. Provisional decision protocol for stalled blocking questions. Build sequence updated with ✓ markers and current phase (Step 4a). Acceptance criteria pointer added to build sequence. Persona conflict protocol surfaced as its own section. Anti-pattern lists seeded with additional items (auth store pattern, modal-on-modal, attachment storage). |
