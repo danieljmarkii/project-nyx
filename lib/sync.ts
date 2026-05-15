@@ -1,6 +1,45 @@
 import { supabase } from './supabase';
 import { getDb } from './db';
 
+export async function syncPendingMeals(): Promise<void> {
+  const db = getDb();
+
+  const unsyncedMeals = await db.getAllAsync<{
+    id: string;
+    event_id: string;
+    pet_id: string;
+    food_item_id: string | null;
+    quantity: string;
+    is_full_portion: number | null;
+    notes: string | null;
+    created_at: string;
+  }>('SELECT * FROM meals WHERE synced = 0 LIMIT 100');
+
+  if (unsyncedMeals.length === 0) return;
+
+  const { error } = await supabase.from('meals').upsert(
+    unsyncedMeals.map((m) => ({
+      id: m.id,
+      event_id: m.event_id,
+      pet_id: m.pet_id,
+      food_item_id: m.food_item_id,
+      quantity: m.quantity,
+      is_full_portion: m.is_full_portion === null ? null : Boolean(m.is_full_portion),
+      notes: m.notes,
+      created_at: m.created_at,
+    })),
+    { onConflict: 'id' }
+  );
+
+  if (error) {
+    console.error('[sync] meals upsert failed:', error.message);
+    return;
+  }
+
+  const ids = unsyncedMeals.map((m) => `'${m.id}'`).join(',');
+  await db.execAsync(`UPDATE meals SET synced = 1 WHERE id IN (${ids})`);
+}
+
 // Flush unsynced local events to Supabase.
 // Called on app foreground and reconnect. Last-write-wins on updated_at.
 export async function syncPendingEvents(): Promise<void> {

@@ -1,5 +1,5 @@
 import { Tabs, router } from 'expo-router';
-import { TouchableOpacity, StyleSheet, View } from 'react-native';
+import { TouchableOpacity, StyleSheet, View, Platform } from 'react-native';
 import { theme } from '../../constants/theme';
 import { usePet } from '../../hooks/usePet';
 
@@ -22,15 +22,21 @@ export default function TabsLayout() {
   usePet();
 
   return (
-    <Tabs>
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="history" options={{ title: 'History' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Pet' }} />
-    </Tabs>
+    <View style={styles.root}>
+      <Tabs>
+        <Tabs.Screen name="index" options={{ title: 'Home' }} />
+        <Tabs.Screen name="history" options={{ title: 'History' }} />
+        <Tabs.Screen name="profile" options={{ title: 'Pet' }} />
+      </Tabs>
+      <QuickLogButton />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   fab: {
     position: 'absolute', bottom: 72, right: theme.space3,
     width: 56, height: 56, borderRadius: 28,
