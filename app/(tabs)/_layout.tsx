@@ -22,13 +22,7 @@ export default function TabsLayout() {
   usePet();
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: theme.colorNeutralDark,
-        tabBarInactiveTintColor: theme.colorTextSecondary,
-      }}
-    >
+    <Tabs>
       <Tabs.Screen name="index" options={{ title: 'Home' }} />
       <Tabs.Screen name="history" options={{ title: 'History' }} />
       <Tabs.Screen name="profile" options={{ title: 'Pet' }} />
