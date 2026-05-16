@@ -3,6 +3,11 @@ import { getDb } from './db';
 import { uploadPhoto } from './storage';
 
 export async function syncPendingMeals(): Promise<void> {
+  // Ensure the JWT is fresh before writing. getSession() triggers a refresh
+  // if the access token has expired, and returns null if the session is gone.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
   const db = getDb();
 
   const unsyncedMeals = await db.getAllAsync<{
@@ -23,6 +28,8 @@ export async function syncPendingMeals(): Promise<void> {
   // guarantees the FK constraint won't reject the meal upsert.
   const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
   if (foodIds.length > 0) {
+    const userId = session.user.id;
+
     const placeholders = foodIds.map(() => '?').join(',');
     const localFoods = await db.getAllAsync<{
       id: string; brand: string; product_name: string; format: string;
@@ -45,6 +52,7 @@ export async function syncPendingMeals(): Promise<void> {
           is_novel_protein: Boolean(f.is_novel_protein),
           is_grain_free: Boolean(f.is_grain_free),
           is_prescription: Boolean(f.is_prescription),
+          created_by_user_id: userId,
         })),
         { onConflict: 'id', ignoreDuplicates: true }
       );
@@ -69,7 +77,11 @@ export async function syncPendingMeals(): Promise<void> {
   );
 
   if (error) {
-    console.error('[sync] meals upsert failed:', error.message);
+    console.error('[sync] meals upsert failed:', error.message,
+      '| code:', (error as any).code,
+      '| details:', (error as any).details,
+      '| hint:', (error as any).hint,
+    );
     return;
   }
 
@@ -80,6 +92,11 @@ export async function syncPendingMeals(): Promise<void> {
 // Flush unsynced local events to Supabase.
 // Called on app foreground and reconnect. Last-write-wins on updated_at.
 export async function syncPendingEvents(): Promise<void> {
+  // Ensure the JWT is fresh before writing. getSession() triggers a refresh
+  // if the access token has expired, and returns null if the session is gone.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
   const db = getDb();
 
   const unsyncedEvents = await db.getAllAsync<{
