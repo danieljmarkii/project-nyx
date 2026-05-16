@@ -239,15 +239,15 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 2. **Schema** — run `schema.sql`, confirm RLS policies, confirm all tables exist ✓
 3. **Onboarding** — pet creation, optional food entry, navigation to home ✓
 4. **Quick-log** — local SQLite write, food library, event type selection, completion state. Done when it passes the 10-second test. ✓
-   - **4a. Attachment support** — photo/file attachment to events ← Current phase
-5. **Home screen** — Zone 2 (Today) first, Zone 3 (Trend) second, Zone 1 (AI Signal) last
+   - **4a. Attachment support** — photo/file attachment to events ✓
+5. **Home screen** — Zone 2 (Today) first, Zone 3 (Trend) second, Zone 1 (AI Signal) last ← Current phase
 6. **Timeline** — log history, filter, soft delete, edit
 7. **Pet profile** — display and edit, photo upload, conditions, diet trial card
 8. **Offline sync** — SQLite queue, flush on reconnect, last-write-wins conflict resolution
 9. **Vet report** — Edge Function, PDF generation, share token, share sheet
 10. **AI Signal Edge Function** — Claude API call, single-sentence output, caching
 
-**Current phase:** Step 4a — Quick-log attachment support
+**Current phase:** Step 5 — Home screen
 
 ---
 
@@ -396,6 +396,7 @@ If a blocking question remains unanswered after one full session, document a pro
 | Minimum Expo SDK version? Document immediately after scaffold. | Step 1: Scaffold | Open |
 | Push notification provider for nudge system? | Post-MVP | Open |
 | Freemium gate: which specific features sit behind a future paywall? | Post-MVP | Open |
+| `vet_visits` is a separate table, deviating from the single event timeline (Option A). Timeline screen (Step 6) will need to surface vet visits separately or via UNION. | Step 6: Timeline | Open — Dir. of Eng. provisional: keep separate table, handle at timeline layer. Needs PM confirmation. |
 
 ---
 
