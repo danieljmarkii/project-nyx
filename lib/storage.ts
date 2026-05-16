@@ -8,14 +8,8 @@ export async function uploadPhoto(
   localUri: string,
   mimeType: string = 'image/jpeg',
 ): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession();
-  console.log('[uploadPhoto] bucket:', bucket, 'path:', storagePath);
-  console.log('[uploadPhoto] session user:', session?.user?.id ?? 'NO SESSION');
-  console.log('[uploadPhoto] token present:', !!session?.access_token);
-
   const response = await fetch(localUri);
   const blob = await response.blob();
-  console.log('[uploadPhoto] blob size:', blob.size, 'type:', blob.type);
 
   const { error } = await supabase.storage
     .from(bucket)
