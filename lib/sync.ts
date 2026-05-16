@@ -23,12 +23,6 @@ export async function syncPendingMeals(): Promise<void> {
 
   if (unsyncedMeals.length === 0) return;
 
-  console.log('[sync] meals queue:', unsyncedMeals.length,
-    '| auth uid:', session.user.id,
-    '| pet_ids:', [...new Set(unsyncedMeals.map(m => m.pet_id))],
-    '| event_ids:', unsyncedMeals.map(m => m.event_id),
-  );
-
   // Ensure every referenced food item exists in Supabase before syncing meals.
   // The local best-effort insert at food-creation time may have failed — this
   // guarantees the FK constraint won't reject the meal upsert.

@@ -1,63 +1,37 @@
-import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../constants/theme';
-import { useSignal } from '../../hooks/useSignal';
 import { usePetStore } from '../../store/petStore';
+
+const EXAMPLE_INSIGHTS = [
+  "Vomiting dropped 60% in the two weeks after switching proteins — the diet trial appears to be working.",
+  "Itching tends to peak 3–6 hours after meals containing chicken. No reaction to salmon-based foods.",
+];
 
 export function SignalZone() {
   const { activePet } = usePetStore();
-  const { signalText, isBuilding, isLoading } = useSignal();
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(0.4)).current;
-
-  // Pulse the skeleton while loading
-  useEffect(() => {
-    if (!isLoading) return;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isLoading, pulseAnim]);
-
-  // Fade in when signal arrives
-  useEffect(() => {
-    if (isLoading || (signalText === null && isBuilding)) return;
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: theme.durationMedium,
-      useNativeDriver: true,
-    }).start();
-  }, [isLoading, signalText, isBuilding, fadeAnim]);
-
   const petName = activePet?.name ?? 'your pet';
-
-  if (isLoading) {
-    return (
-      <View style={styles.zone}>
-        <Animated.View style={[styles.skeleton, { opacity: pulseAnim }]} />
-        <Animated.View style={[styles.skeletonShort, { opacity: pulseAnim }]} />
-      </View>
-    );
-  }
-
-  const displayText = signalText
-    ?? `We're getting to know ${petName}. Keep logging and patterns start appearing in about a week.`;
-  const isRealSignal = !isBuilding && signalText !== null;
 
   return (
     <View style={styles.zone}>
-      <Animated.Text
-        style={[
-          isRealSignal ? styles.signalText : styles.buildingText,
-          { opacity: fadeAnim },
-        ]}
-      >
-        {displayText}
-      </Animated.Text>
+      <View style={styles.header}>
+        <Text style={styles.label}>AI Insights</Text>
+        <View style={styles.pill}>
+          <Text style={styles.pillText}>Coming soon</Text>
+        </View>
+      </View>
+
+      <Text style={styles.intro}>
+        Once {petName} has a few weeks of logs, insights like these will appear here.
+      </Text>
+
+      <View style={styles.examples}>
+        {EXAMPLE_INSIGHTS.map((text, i) => (
+          <View key={i} style={styles.exampleRow}>
+            <Text style={styles.exampleLabel}>Example</Text>
+            <Text style={styles.exampleText}>{text}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -67,34 +41,58 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusMedium,
     padding: theme.space3,
-    minHeight: 80,
-    justifyContent: 'center',
   },
-  // Real insight — slightly larger, primary color, display weight
-  signalText: {
-    fontSize: 19,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.space2,
+  },
+  label: {
+    fontSize: 11,
     fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextPrimary,
-    lineHeight: 28,
-  },
-  // Building state — softer, secondary color, same font
-  buildingText: {
-    fontSize: 15,
-    fontWeight: theme.fontWeightRegular,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
-  skeleton: {
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: theme.colorChartEmpty,
-    marginBottom: theme.space1,
-    width: '90%',
+  pill: {
+    backgroundColor: theme.colorNeutralLight,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
-  skeletonShort: {
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: theme.colorChartEmpty,
-    width: '60%',
+  pillText: {
+    fontSize: 11,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorTextSecondary,
+  },
+  intro: {
+    fontSize: 13,
+    color: theme.colorTextSecondary,
+    lineHeight: 19,
+    marginBottom: theme.space2,
+  },
+  examples: {
+    gap: theme.space2,
+  },
+  exampleRow: {
+    backgroundColor: theme.colorNeutralLight,
+    borderRadius: theme.radiusSmall,
+    padding: theme.space2,
+    gap: 4,
+  },
+  exampleLabel: {
+    fontSize: 10,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorTextSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    opacity: 0.7,
+  },
+  exampleText: {
+    fontSize: 14,
+    color: theme.colorTextPrimary,
+    lineHeight: 20,
+    opacity: 0.45,
   },
 });
