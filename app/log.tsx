@@ -140,9 +140,14 @@ export default function LogModal() {
 
   async function loadFoods() {
     const db = getDb();
+    // GROUP BY brand+product_name deduplicates entries that were created locally
+    // and then also synced down from the global food_items table.
     const rows = await db.getAllAsync<CachedFood>(
-      `SELECT id, brand, product_name, format FROM food_items_cache
-       ORDER BY last_used_at DESC NULLS LAST, brand ASC LIMIT 30`
+      `SELECT id, brand, product_name, format
+       FROM food_items_cache
+       GROUP BY LOWER(brand), LOWER(product_name)
+       ORDER BY MAX(COALESCE(last_used_at, '')) DESC, brand ASC
+       LIMIT 30`
     );
     setFoods(rows);
   }

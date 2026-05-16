@@ -46,13 +46,20 @@ export function FAB() {
   }, [open, openMenu, closeMenu]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !activePet) return;
     const db = getDb();
+    // Join meals so we only surface foods this pet has actually eaten,
+    // not every food in the global cache.
     const foods = db.getAllSync<RecentFood>(
-      'SELECT id, brand, product_name FROM food_items_cache ORDER BY last_used_at DESC LIMIT 3',
+      `SELECT f.id, f.brand, f.product_name
+       FROM food_items_cache f
+       INNER JOIN meals m ON m.food_item_id = f.id AND m.pet_id = ?
+       ORDER BY f.last_used_at DESC
+       LIMIT 3`,
+      [activePet.id],
     );
     setRecentFoods(foods);
-  }, [open]);
+  }, [open, activePet]);
 
   async function handleQuickMeal(food: RecentFood) {
     if (logging || !activePet) return;
@@ -97,6 +104,9 @@ export function FAB() {
     }
   }
 
+  // TODO: quick symptom log should offer a photo step after logging
+  // (e.g. navigate to a photo-capture screen with the event_id pre-filled
+  // so the attachment can be linked). Currently logs silently with no photo path.
   async function handleQuickSymptom(type: 'vomit' | 'diarrhea') {
     if (logging || !activePet) return;
     setLogging(type);
