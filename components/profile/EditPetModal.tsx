@@ -6,6 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
+import { SectionLabel } from '../ui/SectionLabel';
+import { FilterChip } from '../ui/FilterChip';
 import { supabase } from '../../lib/supabase';
 import { usePetStore, Pet } from '../../store/petStore';
 
@@ -201,7 +203,7 @@ export function EditPetModal({ visible, onClose }: Props) {
           <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
 
             {/* Name */}
-            <Text style={styles.label}>Name</Text>
+            <SectionLabel label="Name" style={styles.fieldLabel} />
             <TextInput
               style={styles.input}
               value={name}
@@ -212,23 +214,22 @@ export function EditPetModal({ visible, onClose }: Props) {
             />
 
             {/* Species */}
-            <Text style={styles.label}>Species</Text>
+            <SectionLabel label="Species" style={styles.fieldLabel} />
             <View style={styles.chipRow}>
               {SPECIES_OPTIONS.map((opt) => (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, species === opt.value && styles.chipActive]}
-                  onPress={() => handleSpeciesChange(opt.value)}
-                >
-                  <Text style={[styles.chipText, species === opt.value && styles.chipTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
+                <View key={opt.value} style={styles.chipWrap}>
+                  <FilterChip
+                    label={opt.label}
+                    active={species === opt.value}
+                    onPress={() => handleSpeciesChange(opt.value)}
+                    variant="filled"
+                  />
+                </View>
               ))}
             </View>
 
             {/* Breed */}
-            <Text style={styles.label}>Breed</Text>
+            <SectionLabel label="Breed" style={styles.fieldLabel} />
             {hasBreedList && !isOtherBreed ? (
               <>
                 <TouchableOpacity
@@ -292,23 +293,22 @@ export function EditPetModal({ visible, onClose }: Props) {
             )}
 
             {/* Sex */}
-            <Text style={styles.label}>Sex</Text>
+            <SectionLabel label="Sex" style={styles.fieldLabel} />
             <View style={styles.chipRow}>
               {SEX_OPTIONS.map((opt) => (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.chip, sex === opt.value && styles.chipActive]}
-                  onPress={() => setSex(opt.value)}
-                >
-                  <Text style={[styles.chipText, sex === opt.value && styles.chipTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
+                <View key={opt.value} style={styles.chipWrap}>
+                  <FilterChip
+                    label={opt.label}
+                    active={sex === opt.value}
+                    onPress={() => setSex(opt.value)}
+                    variant="filled"
+                  />
+                </View>
               ))}
             </View>
 
             {/* Date of birth */}
-            <Text style={styles.label}>Date of birth</Text>
+            <SectionLabel label="Date of birth" style={styles.fieldLabel} />
             <TouchableOpacity
               style={styles.fieldBtn}
               onPress={() => setShowDatePicker(!showDatePicker)}
@@ -340,7 +340,7 @@ export function EditPetModal({ visible, onClose }: Props) {
             )}
 
             {/* Weight */}
-            <Text style={styles.label}>Weight (lbs)</Text>
+            <SectionLabel label="Weight (lbs)" style={styles.fieldLabel} />
             <TextInput
               style={styles.input}
               value={weightStr}
@@ -394,14 +394,9 @@ const styles = StyleSheet.create({
     paddingBottom: theme.space6,
     gap: theme.space1,
   },
-  label: {
-    fontSize: 12,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 4,
+  fieldLabel: {
     marginTop: theme.space2,
+    marginBottom: 4,
   },
   input: {
     borderWidth: 1,
@@ -417,26 +412,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: theme.space1,
   },
-  chip: {
+  chipWrap: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    backgroundColor: theme.colorNeutralLight,
-    alignItems: 'center',
-  },
-  chipActive: {
-    backgroundColor: theme.colorNeutralDark,
-    borderColor: theme.colorNeutralDark,
-  },
-  chipText: {
-    fontSize: 14,
-    color: theme.colorTextSecondary,
-  },
-  chipTextActive: {
-    color: '#fff',
-    fontWeight: theme.fontWeightMedium,
   },
   fieldBtn: {
     flexDirection: 'row',

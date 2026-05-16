@@ -8,6 +8,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
+import { SectionLabel } from '../components/ui/SectionLabel';
+import { FilterChip } from '../components/ui/FilterChip';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
@@ -552,7 +554,7 @@ export default function LogModal() {
                 </>
               )}
             </TouchableOpacity>
-            <Text style={styles.fieldLabel}>Brand</Text>
+            <SectionLabel label="Brand" style={styles.fieldLabelSpacing} />
             <TextInput
               style={styles.textInput}
               placeholder="e.g. Royal Canin"
@@ -562,7 +564,7 @@ export default function LogModal() {
               autoCapitalize="words"
               returnKeyType="next"
             />
-            <Text style={styles.fieldLabel}>Product name</Text>
+            <SectionLabel label="Product name" style={styles.fieldLabelSpacing} />
             <TextInput
               style={styles.textInput}
               placeholder="e.g. Gastrointestinal Adult"
@@ -572,18 +574,17 @@ export default function LogModal() {
               autoCapitalize="words"
               returnKeyType="done"
             />
-            <Text style={styles.fieldLabel}>Format</Text>
+            <SectionLabel label="Format" style={styles.fieldLabelSpacing} />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.formatRow}>
               {FOOD_FORMATS.map((f) => (
-                <TouchableOpacity
-                  key={f.value}
-                  style={[styles.formatChip, newFormat === f.value && styles.formatChipSelected]}
-                  onPress={() => setNewFormat(f.value)}
-                >
-                  <Text style={[styles.formatChipText, newFormat === f.value && styles.formatChipTextSelected]}>
-                    {f.label}
-                  </Text>
-                </TouchableOpacity>
+                <View key={f.value} style={{ marginRight: theme.space1 }}>
+                  <FilterChip
+                    label={f.label}
+                    active={newFormat === f.value}
+                    onPress={() => setNewFormat(f.value)}
+                    variant="filled"
+                  />
+                </View>
               ))}
             </ScrollView>
             <TouchableOpacity
@@ -901,12 +902,7 @@ const styles = StyleSheet.create({
     padding: theme.space3,
     gap: theme.space2,
   },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+  fieldLabelSpacing: {
     marginBottom: -theme.space1,
   },
   textInput: {
@@ -919,27 +915,7 @@ const styles = StyleSheet.create({
     height: 48,
   },
   formatRow: {
-    flexDirection: 'row',
     marginBottom: theme.space2,
-  },
-  formatChip: {
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space1,
-    borderRadius: theme.radiusLarge,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    marginRight: theme.space1,
-  },
-  formatChipSelected: {
-    backgroundColor: theme.colorNeutralDark,
-    borderColor: theme.colorNeutralDark,
-  },
-  formatChipText: {
-    fontSize: 14,
-    color: theme.colorTextPrimary,
-  },
-  formatChipTextSelected: {
-    color: '#fff',
   },
 
   // ── Severity ──

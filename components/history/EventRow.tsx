@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   emojiColSymptom: {
-    backgroundColor: '#FBF0EF',
+    backgroundColor: theme.colorEventSymptomLight,
   },
   emoji: {
     fontSize: 16,
