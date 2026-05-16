@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -28,26 +28,43 @@ const STATUS_OPTIONS: { value: ConditionStatus; label: string; description: stri
 interface Props {
   visible: boolean;
   petId: string;
+  existingCondition?: Condition;
   onClose: () => void;
   onAdded: (condition: Condition) => void;
+  onUpdated?: (condition: Condition) => void;
 }
 
-export function AddConditionModal({ visible, petId, onClose, onAdded }: Props) {
+export function AddConditionModal({
+  visible, petId, existingCondition, onClose, onAdded, onUpdated,
+}: Props) {
+  const isEditing = existingCondition != null;
+
   const [conditionName, setConditionName] = useState('');
   const [status, setStatus] = useState<ConditionStatus>('active');
   const [diagnosedAt, setDiagnosedAt] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  function reset() {
-    setConditionName('');
-    setStatus('active');
-    setDiagnosedAt(null);
-    setShowDatePicker(false);
-  }
+  useEffect(() => {
+    if (visible) {
+      if (existingCondition) {
+        setConditionName(existingCondition.condition_name);
+        setStatus(
+          existingCondition.status === 'resolved' ? 'active' : existingCondition.status,
+        );
+        setDiagnosedAt(
+          existingCondition.diagnosed_at ? new Date(existingCondition.diagnosed_at) : null,
+        );
+      } else {
+        setConditionName('');
+        setStatus('active');
+        setDiagnosedAt(null);
+      }
+      setShowDatePicker(false);
+    }
+  }, [visible, existingCondition]);
 
   function handleClose() {
-    reset();
     onClose();
   }
 
@@ -57,22 +74,32 @@ export function AddConditionModal({ visible, petId, onClose, onAdded }: Props) {
     setSaving(true);
     try {
       const payload = {
-        pet_id: petId,
         condition_name: trimmed,
         status,
         diagnosed_at: diagnosedAt ? diagnosedAt.toISOString().split('T')[0] : null,
       };
 
-      const { data, error } = await supabase
-        .from('conditions')
-        .insert(payload)
-        .select()
-        .single();
+      if (isEditing && existingCondition) {
+        const { data, error } = await supabase
+          .from('conditions')
+          .update(payload)
+          .eq('id', existingCondition.id)
+          .select()
+          .single();
 
-      if (error || !data) throw error ?? new Error('No data returned');
+        if (error || !data) throw error ?? new Error('No data returned');
+        onUpdated?.(data as Condition);
+      } else {
+        const { data, error } = await supabase
+          .from('conditions')
+          .insert({ pet_id: petId, ...payload })
+          .select()
+          .single();
 
-      onAdded(data as Condition);
-      reset();
+        if (error || !data) throw error ?? new Error('No data returned');
+        onAdded(data as Condition);
+      }
+
       onClose();
     } catch (e) {
       console.error('[AddConditionModal] save failed:', e);
@@ -91,11 +118,13 @@ export function AddConditionModal({ visible, petId, onClose, onAdded }: Props) {
           <TouchableOpacity onPress={handleClose} hitSlop={8}>
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add condition</Text>
+          <Text style={styles.headerTitle}>{isEditing ? 'Edit condition' : 'Add condition'}</Text>
           <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
             {saving
               ? <ActivityIndicator size="small" color={theme.colorAccent} />
-              : <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Add</Text>
+              : <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
+                  {isEditing ? 'Save' : 'Add'}
+                </Text>
             }
           </TouchableOpacity>
         </View>
@@ -112,7 +141,7 @@ export function AddConditionModal({ visible, petId, onClose, onAdded }: Props) {
               placeholderTextColor={theme.colorTextSecondary}
               autoCapitalize="sentences"
               returnKeyType="done"
-              autoFocus
+              autoFocus={!isEditing}
             />
 
             <Text style={styles.label}>Status</Text>
@@ -155,7 +184,7 @@ export function AddConditionModal({ visible, petId, onClose, onAdded }: Props) {
               <DateTimePicker
                 value={diagnosedAt ?? new Date()}
                 mode="date"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                display="spinner"
                 maximumDate={new Date()}
                 onChange={(_e: unknown, date?: Date) => {
                   if (Platform.OS === 'android') setShowDatePicker(false);

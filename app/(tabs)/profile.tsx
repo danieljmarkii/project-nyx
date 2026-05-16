@@ -36,7 +36,7 @@ function calculateAge(dob: string | null): string {
   const totalMonths =
     (now.getFullYear() - birth.getFullYear()) * 12 +
     (now.getMonth() - birth.getMonth());
-  if (totalMonths < 1) return 'Less than 1 month';
+  if (totalMonths < 1) return 'Under 1mo';
   if (totalMonths < 12) return `${totalMonths}mo`;
   const years = Math.floor(totalMonths / 12);
   const months = totalMonths % 12;
@@ -49,14 +49,13 @@ function formatSex(sex: string): string {
   return '—';
 }
 
-function formatWeight(kg: number | null): string {
+function formatWeightLbs(kg: number | null): string {
   if (kg == null) return '—';
-  return `${kg} kg`;
+  return `${Math.round(kg * 2.20462 * 10) / 10} lbs`;
 }
 
 function statusLabel(status: string): string {
-  if (status === 'monitoring') return 'Monitoring';
-  return 'Active';
+  return status === 'monitoring' ? 'Monitoring' : 'Active';
 }
 
 export default function ProfileScreen() {
@@ -64,7 +63,8 @@ export default function ProfileScreen() {
   const { user } = useAuthStore();
 
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [addConditionVisible, setAddConditionVisible] = useState(false);
+  const [conditionModalVisible, setConditionModalVisible] = useState(false);
+  const [editingCondition, setEditingCondition] = useState<Condition | undefined>(undefined);
 
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [conditionsLoading, setConditionsLoading] = useState(true);
@@ -190,10 +190,20 @@ export default function ProfileScreen() {
       updatePet({ photo_path: storagePath });
     } catch (e) {
       console.error('[Profile] photo upload failed:', e);
-      Alert.alert('Upload failed', 'Could not save photo. Try again.');
+      Alert.alert('Upload failed', 'Could not save photo. Make sure the nyx-pet-photos storage bucket exists and has upload policies.');
     } finally {
       setPhotoUploading(false);
     }
+  }
+
+  function openAddCondition() {
+    setEditingCondition(undefined);
+    setConditionModalVisible(true);
+  }
+
+  function openEditCondition(condition: Condition) {
+    setEditingCondition(condition);
+    setConditionModalVisible(true);
   }
 
   async function handleResolveCondition(id: string) {
@@ -214,7 +224,7 @@ export default function ProfileScreen() {
   function confirmResolveCondition(condition: Condition) {
     Alert.alert(
       'Mark as resolved',
-      `Mark "${condition.condition_name}" as resolved? You can still see this in the vet report history.`,
+      `Mark "${condition.condition_name}" as resolved? It will still appear in vet reports for the relevant date range.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Mark resolved', onPress: () => handleResolveCondition(condition.id) },
@@ -276,7 +286,7 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── Pet header ── */}
+        {/* ── Pet header — centered, large photo ── */}
         <View style={styles.headerCard}>
           <TouchableOpacity
             onPress={handlePickPhoto}
@@ -293,25 +303,25 @@ export default function ProfileScreen() {
             )}
             {photoUploading && (
               <View style={styles.photoOverlay}>
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#fff" size="large" />
               </View>
             )}
-            <View style={styles.cameraChip}>
-              <Text style={styles.cameraChipText}>Photo</Text>
-            </View>
           </TouchableOpacity>
 
-          <View style={styles.headerInfo}>
-            <Text style={styles.petName}>{activePet.name}</Text>
-            {subtitle ? <Text style={styles.petSubtitle}>{subtitle}</Text> : null}
-          </View>
+          <TouchableOpacity onPress={handlePickPhoto} disabled={photoUploading} hitSlop={8}>
+            <Text style={styles.photoLabel}>
+              {photoUri ? 'Change photo' : 'Add photo'}
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.petName}>{activePet.name}</Text>
+          {subtitle ? <Text style={styles.petSubtitle}>{subtitle}</Text> : null}
 
           <TouchableOpacity
             style={styles.editBtn}
             onPress={() => setEditModalVisible(true)}
-            hitSlop={8}
           >
-            <Text style={styles.editBtnText}>Edit</Text>
+            <Text style={styles.editBtnText}>Edit profile</Text>
           </TouchableOpacity>
         </View>
 
@@ -329,7 +339,7 @@ export default function ProfileScreen() {
           <View style={styles.infoChipDivider} />
           <View style={styles.infoChip}>
             <Text style={styles.infoChipLabel}>Weight</Text>
-            <Text style={styles.infoChipValue}>{formatWeight(activePet.weight_kg)}</Text>
+            <Text style={styles.infoChipValue}>{formatWeightLbs(activePet.weight_kg)}</Text>
           </View>
         </View>
 
@@ -337,7 +347,7 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Conditions</Text>
-            <TouchableOpacity onPress={() => setAddConditionVisible(true)} hitSlop={8}>
+            <TouchableOpacity onPress={openAddCondition} hitSlop={8}>
               <Text style={styles.sectionAction}>+ Add</Text>
             </TouchableOpacity>
           </View>
@@ -357,7 +367,8 @@ export default function ProfileScreen() {
                   <Text style={styles.conditionName}>{condition.condition_name}</Text>
                   {condition.diagnosed_at && (
                     <Text style={styles.conditionDate}>
-                      Diagnosed {new Date(condition.diagnosed_at).toLocaleDateString([], {
+                      Diagnosed{' '}
+                      {new Date(condition.diagnosed_at).toLocaleDateString([], {
                         year: 'numeric', month: 'short',
                       })}
                     </Text>
@@ -375,13 +386,15 @@ export default function ProfileScreen() {
                       {statusLabel(condition.status)}
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => confirmResolveCondition(condition)}
-                    hitSlop={8}
-                    style={styles.resolveBtn}
-                  >
-                    <Text style={styles.resolveBtnText}>Resolve</Text>
-                  </TouchableOpacity>
+                  <View style={styles.conditionActions}>
+                    <TouchableOpacity onPress={() => openEditCondition(condition)} hitSlop={8}>
+                      <Text style={styles.conditionActionText}>Edit</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.conditionActionDivider}>·</Text>
+                    <TouchableOpacity onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
+                      <Text style={styles.conditionActionText}>Resolve</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             ))
@@ -440,10 +453,14 @@ export default function ProfileScreen() {
       />
 
       <AddConditionModal
-        visible={addConditionVisible}
+        visible={conditionModalVisible}
         petId={activePet.id}
-        onClose={() => setAddConditionVisible(false)}
+        existingCondition={editingCondition}
+        onClose={() => { setConditionModalVisible(false); setEditingCondition(undefined); }}
         onAdded={(c) => setConditions((prev) => [c, ...prev])}
+        onUpdated={(c) =>
+          setConditions((prev) => prev.map((x) => (x.id === c.id ? c : x)))
+        }
       />
     </SafeAreaView>
   );
@@ -459,76 +476,69 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
 
-  // Header card
+  // Header — centered layout, large photo
   headerCard: {
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusMedium,
-    padding: theme.space3,
-    flexDirection: 'row',
+    paddingVertical: theme.space4,
+    paddingHorizontal: theme.space3,
     alignItems: 'center',
-    gap: theme.space2,
+    gap: theme.space1,
     borderWidth: 1,
     borderColor: theme.colorBorder,
   },
   photoWrapper: {
     position: 'relative',
+    marginBottom: 4,
   },
   photo: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
   },
   photoPlaceholder: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: theme.colorNeutralDark,
     alignItems: 'center',
     justifyContent: 'center',
   },
   photoInitials: {
-    fontSize: 24,
+    fontSize: 40,
     fontWeight: theme.fontWeightMedium,
     color: '#fff',
   },
   photoOverlay: {
     position: 'absolute',
-    inset: 0,
-    borderRadius: 36,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 60,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cameraChip: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: theme.colorAccent,
-    borderRadius: 8,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-  },
-  cameraChipText: {
-    fontSize: 9,
+  photoLabel: {
+    fontSize: 13,
+    color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
-    color: '#fff',
-  },
-  headerInfo: {
-    flex: 1,
-    gap: 3,
   },
   petName: {
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
+    marginTop: 4,
   },
   petSubtitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: theme.colorTextSecondary,
   },
   editBtn: {
+    marginTop: theme.space1,
     paddingHorizontal: theme.space2,
-    paddingVertical: theme.space1,
+    paddingVertical: 8,
     borderRadius: theme.radiusSmall,
     borderWidth: 1,
     borderColor: theme.colorBorder,
@@ -603,7 +613,7 @@ const styles = StyleSheet.create({
 
   // Empty conditions
   emptyConditions: {
-    paddingVertical: theme.space2,
+    paddingVertical: theme.space1,
   },
   emptyConditionsText: {
     fontSize: 14,
@@ -614,9 +624,9 @@ const styles = StyleSheet.create({
   // Condition rows
   conditionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: theme.space2,
-    paddingVertical: theme.space1,
+    paddingTop: theme.space2,
     borderTopWidth: 1,
     borderTopColor: theme.colorBorder,
   },
@@ -635,7 +645,7 @@ const styles = StyleSheet.create({
   },
   conditionRight: {
     alignItems: 'flex-end',
-    gap: 4,
+    gap: 6,
   },
   statusChip: {
     backgroundColor: `${theme.colorEventSymptom}22`,
@@ -654,13 +664,19 @@ const styles = StyleSheet.create({
   statusChipTextMonitoring: {
     color: theme.colorAccent,
   },
-  resolveBtn: {
-    paddingVertical: 2,
+  conditionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  resolveBtnText: {
+  conditionActionText: {
     fontSize: 12,
     color: theme.colorTextSecondary,
     textDecorationLine: 'underline',
+  },
+  conditionActionDivider: {
+    fontSize: 12,
+    color: theme.colorBorder,
   },
 
   // Diet trial card
