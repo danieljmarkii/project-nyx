@@ -21,7 +21,9 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT = join(__dirname, 'opff-coverage-results.csv');
-const API = 'https://world.openpetfoodfacts.org/api/v2/search';
+// v1 cgi search supports freeform `search_terms`. The v2 /api/v2/search
+// endpoint expects structured tag filters and silently ignores text queries.
+const API = 'https://world.openpetfoodfacts.org/cgi/search.pl';
 const UA = 'nyx-mvp-coverage-spike/0.1 (research; contact: pm@projectnyx.app)';
 
 // Segment weights matter for the final go/no-go.
@@ -154,14 +156,16 @@ function hasAafcoOrMultilang(product) {
 async function searchOne(query) {
   const params = new URLSearchParams({
     search_terms: query,
+    search_simple: '1',
+    action: 'process',
+    json: '1',
+    page_size: '5',
     fields: [
       'code','product_name','brands','categories_tags','countries_tags',
       'ingredients_text','ingredients_text_en','ingredients_text_fr',
       'ingredients_text_de','ingredients_text_es','ingredients_text_it','ingredients_text_nl',
       'generic_name','last_modified_t','completeness'
     ].join(','),
-    page_size: '5',
-    json: '1',
   });
   const url = `${API}?${params.toString()}`;
   const res = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } });
@@ -204,6 +208,8 @@ async function main() {
   console.log(`Querying OPFF for ${SKUS.length} grocery-weighted SKUs…\n`);
   const rows = [['query','segment','score','match_brand','match_name','code','notes']];
   const bySegment = {};
+  const seenCodes = new Set();
+  const matchedCodes = [];
 
   for (const [query, segment] of SKUS) {
     bySegment[segment] ??= { total: 0, pass: 0, scores: [] };
@@ -225,6 +231,7 @@ async function main() {
           best.code || '',
           bestScored.notes.join('|'),
         ];
+        if (best.code) { seenCodes.add(best.code); matchedCodes.push(best.code); }
       }
       bySegment[segment].scores.push(bestScored.score);
       if (bestScored.score >= 3) bySegment[segment].pass++;
@@ -243,6 +250,21 @@ async function main() {
     .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n');
   writeFileSync(OUT, csv);
+
+  // Sanity check: if >75% of matches collapsed onto the same product code,
+  // the API is ignoring our query and returning a default sort. Refuse to
+  // emit a misleading summary in that case.
+  if (matchedCodes.length >= 10) {
+    const counts = {};
+    for (const c of matchedCodes) counts[c] = (counts[c] || 0) + 1;
+    const topCount = Math.max(...Object.values(counts));
+    if (topCount / matchedCodes.length > 0.75) {
+      console.error('\n!! ABORT: API appears to be ignoring search_terms.');
+      console.error(`   ${topCount}/${matchedCodes.length} queries returned the same product code.`);
+      console.error('   Summary suppressed — results would be misleading.');
+      process.exit(2);
+    }
+  }
 
   // Summary
   console.log('\n──────── SEGMENT SUMMARY ────────');
