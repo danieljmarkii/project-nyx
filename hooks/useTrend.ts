@@ -18,6 +18,13 @@ export interface TrendData {
   trialTargetDays: number;
   trialCompliantDays: number;
   hasEnoughData: boolean; // true when >= 3 days have any events
+  // Direction data for symptom mode
+  dominantSymptomType: string | null;
+  thisWeekSymptomCount: number;
+  lastWeekSymptomCount: number;
+  // Direction data for feeding mode
+  thisWeekMealDays: number;
+  lastWeekMealDays: number;
 }
 
 const SYMPTOM_TYPES = new Set(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'lethargy']);
@@ -47,6 +54,39 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
         );
 
         const buckets = buildBuckets(rawEvents);
+
+        // Week-over-week direction data
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+
+        const symptomTotals: Record<string, number> = {};
+        for (const e of rawEvents) {
+          if (SYMPTOM_TYPES.has(e.event_type)) {
+            symptomTotals[e.event_type] = (symptomTotals[e.event_type] ?? 0) + 1;
+          }
+        }
+        const dominantSymptomType = Object.keys(symptomTotals).length > 0
+          ? Object.entries(symptomTotals).sort((a, b) => b[1] - a[1])[0][0]
+          : null;
+
+        const thisWeekSymptomCount = rawEvents.filter(
+          e => e.event_type === dominantSymptomType && e.occurred_at >= sevenDaysAgoISO,
+        ).length;
+        const lastWeekSymptomCount = rawEvents.filter(
+          e => e.event_type === dominantSymptomType && e.occurred_at < sevenDaysAgoISO,
+        ).length;
+
+        const thisWeekMealDays = new Set(
+          rawEvents
+            .filter(e => e.event_type === 'meal' && e.occurred_at >= sevenDaysAgoISO)
+            .map(e => e.occurred_at.split('T')[0]),
+        ).size;
+        const lastWeekMealDays = new Set(
+          rawEvents
+            .filter(e => e.event_type === 'meal' && e.occurred_at < sevenDaysAgoISO)
+            .map(e => e.occurred_at.split('T')[0]),
+        ).size;
 
         // Check for active diet trial from Supabase (best-effort; falls back if offline)
         let trialDaysElapsed = 0;
@@ -98,6 +138,11 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
             trialTargetDays,
             trialCompliantDays,
             hasEnoughData: daysWithAnyEvent >= 3,
+            dominantSymptomType,
+            thisWeekSymptomCount,
+            lastWeekSymptomCount,
+            thisWeekMealDays,
+            lastWeekMealDays,
           });
         }
       } finally {
