@@ -8,6 +8,8 @@ import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { usePetStore } from '../../store/petStore';
 import { theme } from '../../constants/theme';
+import { FilterChip } from '../../components/ui/FilterChip';
+import { SectionLabel } from '../../components/ui/SectionLabel';
 
 type Species = 'dog' | 'cat' | 'other';
 
@@ -63,7 +65,7 @@ export default function OnboardingPetScreen() {
           This is all we need to get started. Everything else can be added later.
         </Text>
 
-        <Text style={styles.label}>Name</Text>
+        <SectionLabel label="Name" style={styles.fieldLabel} />
         <TextInput
           style={styles.input}
           placeholder="e.g. Luna"
@@ -74,18 +76,17 @@ export default function OnboardingPetScreen() {
           returnKeyType="done"
         />
 
-        <Text style={styles.label}>Species</Text>
-        <View style={styles.speciesRow}>
+        <SectionLabel label="Species" style={styles.fieldLabel} />
+        <View style={styles.chipRow}>
           {SPECIES_OPTIONS.map((opt) => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[styles.speciesBtn, species === opt.value && styles.speciesBtnActive]}
-              onPress={() => setSpecies(opt.value)}
-            >
-              <Text style={[styles.speciesBtnText, species === opt.value && styles.speciesBtnTextActive]}>
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
+            <View key={opt.value} style={styles.chipWrap}>
+              <FilterChip
+                label={opt.label}
+                active={species === opt.value}
+                onPress={() => setSpecies(opt.value)}
+                variant="filled"
+              />
+            </View>
           ))}
         </View>
 
@@ -93,6 +94,7 @@ export default function OnboardingPetScreen() {
           style={[styles.button, !canContinue && styles.buttonDisabled]}
           onPress={handleContinue}
           disabled={!canContinue || loading}
+          activeOpacity={0.85}
         >
           {loading
             ? <ActivityIndicator color="#fff" />
@@ -105,43 +107,64 @@ export default function OnboardingPetScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colorNeutralLight },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: theme.space3 },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colorNeutralLight,
+  },
+  scroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: theme.space3,
+  },
   title: {
-    fontSize: 28, fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark, marginBottom: theme.space1,
+    fontSize: theme.text2XL,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
+    marginBottom: theme.space1,
+    letterSpacing: theme.trackingTight,
   },
   subtitle: {
-    fontSize: 15, color: theme.colorTextSecondary,
-    lineHeight: 22, marginBottom: theme.space4,
+    fontSize: theme.textMD,
+    color: theme.colorTextSecondary,
+    lineHeight: 22,
+    marginBottom: theme.space4,
   },
-  label: {
-    fontSize: 13, fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary, textTransform: 'uppercase',
-    letterSpacing: 0.6, marginBottom: theme.space1,
+  fieldLabel: {
+    marginBottom: theme.space1,
   },
   input: {
-    borderWidth: 1, borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall, padding: theme.space2,
-    fontSize: 16, color: theme.colorTextPrimary,
-    backgroundColor: theme.colorSurface, marginBottom: theme.space3,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    paddingHorizontal: theme.space2,
+    paddingVertical: 13,
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+    backgroundColor: theme.colorSurface,
+    marginBottom: theme.space3,
   },
-  speciesRow: { flexDirection: 'row', gap: theme.space1, marginBottom: theme.space4 },
-  speciesBtn: {
-    flex: 1, paddingVertical: theme.space2,
-    borderRadius: theme.radiusSmall, borderWidth: 1,
-    borderColor: theme.colorBorder, backgroundColor: theme.colorSurface,
-    alignItems: 'center',
+  chipRow: {
+    flexDirection: 'row',
+    gap: theme.space1,
+    marginBottom: theme.space4,
   },
-  speciesBtnActive: {
-    backgroundColor: theme.colorNeutralDark, borderColor: theme.colorNeutralDark,
+  chipWrap: {
+    flex: 1,
   },
-  speciesBtnText: { fontSize: 15, color: theme.colorTextSecondary },
-  speciesBtnTextActive: { color: '#fff', fontWeight: theme.fontWeightMedium },
   button: {
-    backgroundColor: theme.colorNeutralDark, borderRadius: theme.radiusSmall,
-    padding: theme.space2, alignItems: 'center',
+    backgroundColor: theme.colorNeutralDark,
+    borderRadius: theme.radiusMedium,
+    paddingVertical: theme.space2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
   },
-  buttonDisabled: { opacity: 0.4 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: theme.fontWeightMedium },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+  },
 });

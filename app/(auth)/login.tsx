@@ -30,7 +30,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>Nyx</Text>
+        <Text style={styles.wordmark}>Nyx</Text>
         <Text style={styles.subtitle}>Health tracking for the pets you love.</Text>
 
         <TextInput
@@ -53,14 +53,14 @@ export default function LoginScreen() {
           autoComplete="current-password"
         />
 
-        <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+        <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
           {loading
             ? <ActivityIndicator color="#fff" />
             : <Text style={styles.buttonText}>Sign in</Text>
           }
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
+        <TouchableOpacity onPress={() => router.push('/(auth)/signup')} hitSlop={8}>
           <Text style={styles.link}>Don't have an account? Sign up</Text>
         </TouchableOpacity>
       </View>
@@ -69,27 +69,57 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colorNeutralLight },
-  inner: {
-    flex: 1, justifyContent: 'center', paddingHorizontal: theme.space3,
+  container: {
+    flex: 1,
+    backgroundColor: theme.colorNeutralLight,
   },
-  title: {
-    fontSize: 40, fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark, marginBottom: theme.space1,
+  inner: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: theme.space3,
+  },
+  wordmark: {
+    fontSize: 40,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
+    marginBottom: theme.space1,
+    letterSpacing: theme.trackingTight,
   },
   subtitle: {
-    fontSize: 16, color: theme.colorTextSecondary, marginBottom: theme.space4,
+    fontSize: theme.textMD,
+    color: theme.colorTextSecondary,
+    lineHeight: 22,
+    marginBottom: theme.space4,
   },
   input: {
-    borderWidth: 1, borderColor: theme.colorBorder, borderRadius: theme.radiusSmall,
-    padding: theme.space2, fontSize: 16, color: theme.colorTextPrimary,
-    backgroundColor: theme.colorSurface, marginBottom: theme.space2,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    paddingHorizontal: theme.space2,
+    paddingVertical: 13,
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+    backgroundColor: theme.colorSurface,
+    marginBottom: theme.space2,
   },
   button: {
-    backgroundColor: theme.colorNeutralDark, borderRadius: theme.radiusSmall,
-    padding: theme.space2, alignItems: 'center', marginTop: theme.space1,
+    backgroundColor: theme.colorNeutralDark,
+    borderRadius: theme.radiusMedium,
+    paddingVertical: theme.space2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: theme.space1,
     marginBottom: theme.space3,
+    minHeight: 50,
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: theme.fontWeightMedium },
-  link: { color: theme.colorTextSecondary, textAlign: 'center', fontSize: 14 },
+  buttonText: {
+    color: '#fff',
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+  },
+  link: {
+    color: theme.colorTextSecondary,
+    textAlign: 'center',
+    fontSize: theme.textSM,
+  },
 });
