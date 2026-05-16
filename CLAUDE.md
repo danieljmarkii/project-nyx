@@ -244,12 +244,12 @@ If a blocking open question (see Open Questions table) remains unanswered after 
    - **4a. Attachment support** — photo/file attachment to events ✓
 5. **Home screen** — Zone 2 (Today) ✓, Zone 3 (Trend) ✓, Zone 1 (AI Signal) deferred to Step 10 (requires Edge Function)
 6. **Timeline** — log history, filter, soft delete, edit ✓
-7. **Pet profile** — display and edit, photo upload, conditions, diet trial card ← Current phase
-8. **Offline sync** — SQLite queue, flush on reconnect, last-write-wins conflict resolution
-9. **Vet report** — Edge Function, PDF generation, share token, share sheet
+7. **Pet profile** — display and edit, photo upload, conditions, diet trial card ✓
+8. **Offline sync** — SQLite queue, flush on reconnect, last-write-wins conflict resolution ✓
+9. **Vet report** — Edge Function, PDF generation, share token, share sheet ← Current phase
 10. **AI Signal Edge Function** — Claude API call, single-sentence output, caching
 
-**Current phase:** Step 7 — Pet profile
+**Current phase:** Step 9 — Vet report
 
 ---
 
@@ -456,3 +456,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.6 | May 2026 | Step 6 ✓. Current phase updated to Step 7. Anti-pattern added: setting height directly on FlatList is unreliable in flex column layouts — wrap in a View with the height constraint instead. |
 | v1.7 | May 2026 | Step 7 in progress. Built pet profile screen (display, edit, conditions, diet trial card, photo). Known bug: pet photo upload blocked by Supabase Storage RLS on SQL-created bucket (owner=null). Anti-pattern added: create buckets via dashboard UI not raw SQL. Open question added for RLS resolution path. |
 | v1.8 | May 2026 | Design system session. Built full component library (Card, SectionLabel, PrimaryButton, FilterChip, Badge, Divider), expanded theme tokens (type scale, weights, letter-spacing, semantic colors, shadow tokens), and applied the system across every screen. Custom text-only tab bar (fixes clipping). Today zone redesigned as timestamped event strip. Trend zone now shows direction (dominant symptom, this-week vs last-week delta). FAB redesigned: symptom buttons warm-tinted and prominent, Vet appointment removed, Loose stool renamed. Emoji consistency pass across all event types. Stool/diarrhea consolidated at UI level (schema migration deferred). Two new open questions: stool schema migration, font decision. |
+| v1.9 | May 2026 | Steps 7 ✓ and 8 ✓ marked complete. Step 8 additions: expo-network installed, syncStore (Zustand) added, getSyncStatus() db helper, useSync updated with addNetworkStateListener for reconnect detection, SyncBanner component (appears only >24h stale). LWW for multi-device deferred post-MVP with code comment. Current phase advanced to Step 9 (Vet report). |

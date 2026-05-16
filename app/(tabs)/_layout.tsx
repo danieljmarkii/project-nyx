@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { usePet } from '../../hooks/usePet';
 import { FAB } from '../../components/log/FAB';
+import { SyncBanner } from '../../components/ui';
 import { theme } from '../../constants/theme';
 
 // Custom tab bar gives full control over layout — the default Expo Tabs
@@ -62,6 +63,7 @@ export default function TabsLayout() {
 
   return (
     <View style={styles.root}>
+      <SyncBanner />
       <Tabs
         tabBar={(props) => <NyxTabBar {...(props as unknown as TabBarProps)} />}
         screenOptions={{ headerShown: false }}
