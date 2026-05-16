@@ -10,8 +10,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, getMealForEvent, getEventAttachment } from '../lib/db';
-import { syncPendingEvents, syncPendingMeals, syncPendingAttachments } from '../lib/sync';
+import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
+import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
 import { uuid } from '../lib/utils';
 
@@ -155,9 +156,9 @@ export default function EditEventModal() {
              VALUES (?, ?, ?, ?, ?, 'image/jpeg', 0, ?)`,
             [attId, id, petResult.pet_id, newAttachmentUri, storagePath, now],
           );
+          // Fire-and-forget: if upload fails offline, the synced=0 row is retried by background sync
           uploadPhoto('nyx-event-attachments', storagePath, newAttachmentUri)
             .then(async () => {
-              const { supabase } = await import('../lib/supabase');
               await supabase.from('event_attachments').upsert(
                 { id: attId, event_id: id, pet_id: petResult.pet_id, storage_path: storagePath, mime_type: 'image/jpeg' },
                 { onConflict: 'id' },
@@ -177,7 +178,8 @@ export default function EditEventModal() {
         food_product_name: currentFoodProduct,
       });
 
-      syncPendingEvents().then(() => syncPendingMeals()).then(() => syncPendingAttachments()).catch(console.error);
+      // Attachments are handled above with their own direct upload + retry-on-reconnect pattern
+      syncPendingEvents().then(() => syncPendingMeals()).catch(console.error);
       router.back();
     } catch (e) {
       console.error('[edit-event] save failed:', e);
