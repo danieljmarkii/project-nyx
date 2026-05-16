@@ -203,8 +203,27 @@ export default function HistoryScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+
+      {/* Title + date presets in one compact row */}
+      <View style={styles.headerRow}>
         <Text style={styles.title}>History</Text>
+        <View style={styles.datePresets}>
+          {DATE_PRESETS.map((p) => {
+            const isActive = datePreset === p.key;
+            return (
+              <TouchableOpacity
+                key={p.key ?? 'all'}
+                style={[styles.preset, isActive && styles.presetActive]}
+                onPress={() => handleDatePreset(p.key)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
+                  {p.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {/* Type filter chips — fixed height prevents flex stretch */}
@@ -230,25 +249,6 @@ export default function HistoryScreen() {
         }}
         style={styles.chipRowContainer}
       />
-
-      {/* Date preset pills */}
-      <View style={styles.presetRow}>
-        {DATE_PRESETS.map((p) => {
-          const isActive = datePreset === p.key;
-          return (
-            <TouchableOpacity
-              key={p.key ?? 'all'}
-              style={[styles.preset, isActive && styles.presetActive]}
-              onPress={() => handleDatePreset(p.key)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
-                {p.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
 
       {/* Event list — flex: 1 so it fills remaining space regardless of event count */}
       <View style={styles.listContainer}>
@@ -308,35 +308,61 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorNeutralLight,
   },
-  header: {
+  // Title + date presets share one row — no separate border between them and the chip row
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: theme.space3,
-    paddingTop: 12,
-    paddingBottom: 4,
+    paddingTop: 10,
+    paddingBottom: 6,
     backgroundColor: theme.colorSurface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
   },
+  datePresets: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  preset: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radiusLarge,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  presetActive: {
+    borderColor: theme.colorAccent,
+    backgroundColor: '#EEF5F7',
+  },
+  presetText: {
+    fontSize: 12,
+    color: theme.colorTextSecondary,
+  },
+  presetTextActive: {
+    fontSize: 12,
+    color: theme.colorAccent,
+    fontWeight: theme.fontWeightMedium,
+  },
   // Explicit height stops horizontal FlatList from stretching in a flex column
   chipRowContainer: {
-    height: 40,
+    height: 38,
     backgroundColor: theme.colorSurface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
   },
   chipRow: {
     paddingHorizontal: theme.space2,
-    paddingVertical: 6,
+    paddingVertical: 5,
     gap: 6,
     alignItems: 'center',
   },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     borderRadius: theme.radiusLarge,
     borderWidth: 1,
     borderColor: theme.colorBorder,
@@ -347,41 +373,12 @@ const styles = StyleSheet.create({
     borderColor: theme.colorNeutralDark,
   },
   chipText: {
-    fontSize: 13,
+    fontSize: 12,
     color: theme.colorTextSecondary,
     fontWeight: theme.fontWeightMedium,
   },
   chipTextActive: {
     color: '#fff',
-  },
-  presetRow: {
-    flexDirection: 'row',
-    paddingHorizontal: theme.space3,
-    paddingVertical: 6,
-    gap: 8,
-    backgroundColor: theme.colorSurface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  preset: {
-    paddingHorizontal: 12,
-    paddingVertical: 3,
-    borderRadius: theme.radiusLarge,
-    borderWidth: 1,
-    borderColor: 'transparent',
-    backgroundColor: theme.colorNeutralLight,
-  },
-  presetActive: {
-    borderColor: theme.colorAccent,
-    backgroundColor: '#EEF5F7',
-  },
-  presetText: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-  },
-  presetTextActive: {
-    color: theme.colorAccent,
-    fontWeight: theme.fontWeightMedium,
   },
   listContainer: {
     flex: 1,
