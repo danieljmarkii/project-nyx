@@ -325,6 +325,35 @@ Then read the relevant docs for the confirmed build step before writing any code
 - When a major decision is made mid-session, update `CLAUDE.md` immediately — do not defer to the session summary
 - When a feature nears completion, QA runs the acceptance criteria check and lists pass/fail explicitly
 
+### Dev Handoff — After Every Push
+
+After every `git push`, output the exact terminal commands the PM needs to run to get the latest code into Expo Go. Format each command as a code block followed by one plain-English sentence explaining why it is being run. Do not skip commands or assume the PM remembers the sequence from a previous session.
+
+**Standard handoff sequence (use this every time, adapting as needed):**
+
+```bash
+git pull origin <branch-name>
+```
+Pulls the latest committed code from GitHub into your local Codespace so your running app matches what was just built.
+
+```bash
+./node_modules/@expo/ngrok-bin-linux-x64/ngrok authtoken <your-token>
+```
+Authenticates the bundled ngrok binary that Expo uses to create a tunnel — required once per Codespace session because the token is not persisted across container restarts.
+
+```bash
+npx expo start --tunnel
+```
+Starts the Metro bundler and opens a public ngrok tunnel so Expo Go on your phone can reach the dev server from outside the Codespace network.
+
+Then press **`r`** in the Expo terminal to reload the app on your device after a pull.
+
+**When a Supabase migration is included in the push**, add:
+> Run `supabase/migrations/<filename>.sql` in the Supabase SQL Editor (dashboard → SQL Editor → New query → paste → Run). This applies the schema change to the live database — migrations are not run automatically.
+
+**When an Edge Function is included**, add:
+> Run `supabase functions deploy <function-name>` in the Codespace terminal to deploy the updated function to Supabase.
+
 ### Session End — Automatic Summary
 
 Produce this summary automatically at the end of every session without being asked. If the session ends abruptly, produce a partial summary covering what was completed.
