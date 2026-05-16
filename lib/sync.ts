@@ -18,6 +18,42 @@ export async function syncPendingMeals(): Promise<void> {
 
   if (unsyncedMeals.length === 0) return;
 
+  // Ensure every referenced food item exists in Supabase before syncing meals.
+  // The local best-effort insert at food-creation time may have failed — this
+  // guarantees the FK constraint won't reject the meal upsert.
+  const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
+  if (foodIds.length > 0) {
+    const placeholders = foodIds.map(() => '?').join(',');
+    const localFoods = await db.getAllAsync<{
+      id: string; brand: string; product_name: string; format: string;
+      primary_protein: string | null; is_novel_protein: number;
+      is_grain_free: number; is_prescription: number;
+    }>(
+      `SELECT id, brand, product_name, format, primary_protein,
+              is_novel_protein, is_grain_free, is_prescription
+       FROM food_items_cache WHERE id IN (${placeholders})`,
+      foodIds
+    );
+    if (localFoods.length > 0) {
+      const { error: foodError } = await supabase.from('food_items').upsert(
+        localFoods.map((f) => ({
+          id: f.id,
+          brand: f.brand,
+          product_name: f.product_name,
+          format: f.format,
+          primary_protein: f.primary_protein,
+          is_novel_protein: Boolean(f.is_novel_protein),
+          is_grain_free: Boolean(f.is_grain_free),
+          is_prescription: Boolean(f.is_prescription),
+        })),
+        { onConflict: 'id', ignoreDuplicates: true }
+      );
+      if (foodError) {
+        console.warn('[sync] food_items pre-sync failed:', foodError.message);
+      }
+    }
+  }
+
   const { error } = await supabase.from('meals').upsert(
     unsyncedMeals.map((m) => ({
       id: m.id,
