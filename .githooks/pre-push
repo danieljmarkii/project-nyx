@@ -1,0 +1,14 @@
+#!/bin/bash
+# Runs TypeScript type check before every push.
+# Install once with: git config core.hooksPath .githooks
+
+echo "Running TypeScript check..."
+npx tsc --noEmit
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "Push blocked: TypeScript errors found above. Fix them before pushing."
+  exit 1
+fi
+
+echo "TypeScript check passed."
