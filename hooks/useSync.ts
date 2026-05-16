@@ -13,20 +13,21 @@ export function useSync() {
   useEffect(() => {
     if (!session) return;
 
-    // Sync on mount
-    syncPendingEvents();
-    syncPendingMeals();
-    syncPendingAttachments();
-    syncPendingVetVisits();
-    refreshFoodCache();
+    // Events must complete before meals — meals FK references events.id.
+    // Attachments, vet visits, and food cache are independent and run in parallel.
+    async function runSync() {
+      await syncPendingEvents();
+      await syncPendingMeals();
+      syncPendingAttachments();
+      syncPendingVetVisits();
+      refreshFoodCache();
+    }
+
+    runSync();
 
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {
-        syncPendingEvents();
-        syncPendingMeals();
-        syncPendingAttachments();
-        syncPendingVetVisits();
-        refreshFoodCache();
+        runSync();
       }
       appState.current = nextState;
     });
