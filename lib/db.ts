@@ -212,6 +212,15 @@ export async function getEventAttachment(eventId: string): Promise<{
   );
 }
 
+export async function getSyncStatus(): Promise<{ pendingCount: number; oldestPendingAt: string | null }> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ count: number; oldest: string | null }>(
+    `SELECT COUNT(*) as count, MIN(updated_at) as oldest
+     FROM events WHERE synced = 0 AND deleted_at IS NULL`,
+  );
+  return { pendingCount: row?.count ?? 0, oldestPendingAt: row?.oldest ?? null };
+}
+
 export async function getMealForEvent(eventId: string): Promise<{
   food_item_id: string | null;
   food_brand: string | null;

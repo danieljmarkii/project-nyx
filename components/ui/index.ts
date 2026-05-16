@@ -4,3 +4,4 @@ export { PrimaryButton } from './PrimaryButton';
 export { FilterChip } from './FilterChip';
 export { Badge } from './Badge';
 export { Divider } from './Divider';
+export { SyncBanner } from './SyncBanner';
