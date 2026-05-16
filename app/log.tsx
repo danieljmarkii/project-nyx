@@ -8,6 +8,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
+import { SectionLabel } from '../components/ui/SectionLabel';
+import { FilterChip } from '../components/ui/FilterChip';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
@@ -19,7 +21,7 @@ import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
 import { uuid, exifDateToISO } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'food-new' | 'symptom' | 'simple' | 'complete';
+type Step = 'type' | 'food' | 'food-new' | 'symptom' | 'simple' | 'stool-type' | 'complete';
 
 interface CachedFood {
   id: string;
@@ -30,12 +32,12 @@ interface CachedFood {
 
 const TYPE_ICONS: Record<EventTypeKey, string> = {
   meal: '🍽',
-  vomit: '⚡',
-  diarrhea: '⚡',
-  stool_normal: '✓',
-  lethargy: '◑',
-  itch: '✦',
-  other: '+',
+  vomit: '🤢',
+  diarrhea: '💩',
+  stool_normal: '💩',
+  lethargy: '😴',
+  itch: '🐾',
+  other: '➕',
 };
 
 const FOOD_FORMATS = [
@@ -156,6 +158,7 @@ export default function LogModal() {
     setSelectedType(type);
     const config = EVENT_TYPES[type];
     if (config.hasFood) setStep('food');
+    else if (type === 'stool_normal') setStep('stool-type');
     else setStep('simple');
   }
 
@@ -330,7 +333,7 @@ export default function LogModal() {
 
   function handleBack() {
     if (step === 'type') { router.back(); return; }
-    if (step === 'food' || step === 'symptom' || step === 'simple') {
+    if (step === 'food' || step === 'symptom' || step === 'simple' || step === 'stool-type') {
       setSelectedType(null);
       setSeverity(null);
       setStep('type');
@@ -420,7 +423,10 @@ export default function LogModal() {
           </View>
         )}
         <ScrollView contentContainerStyle={styles.typeGrid} showsVerticalScrollIndicator={false}>
-          {(Object.entries(EVENT_TYPES) as [EventTypeKey, typeof EVENT_TYPES[EventTypeKey]][]).map(([key, config]) => (
+          {(Object.entries(EVENT_TYPES) as [EventTypeKey, typeof EVENT_TYPES[EventTypeKey]][])
+            // diarrhea is accessible via the stool-type sub-step; hide it from the top-level grid
+            .filter(([key]) => key !== 'diarrhea')
+            .map(([key, config]) => (
             <TouchableOpacity
               key={key}
               style={styles.typeCard}
@@ -428,7 +434,7 @@ export default function LogModal() {
               activeOpacity={0.7}
             >
               <Text style={styles.typeIcon}>{TYPE_ICONS[key]}</Text>
-              <Text style={styles.typeLabel}>{config.label}</Text>
+              <Text style={styles.typeLabel}>{key === 'stool_normal' ? 'Stool' : config.label}</Text>
             </TouchableOpacity>
           ))}
           {!attachmentUri && (
@@ -552,7 +558,7 @@ export default function LogModal() {
                 </>
               )}
             </TouchableOpacity>
-            <Text style={styles.fieldLabel}>Brand</Text>
+            <SectionLabel label="Brand" style={styles.fieldLabelSpacing} />
             <TextInput
               style={styles.textInput}
               placeholder="e.g. Royal Canin"
@@ -562,7 +568,7 @@ export default function LogModal() {
               autoCapitalize="words"
               returnKeyType="next"
             />
-            <Text style={styles.fieldLabel}>Product name</Text>
+            <SectionLabel label="Product name" style={styles.fieldLabelSpacing} />
             <TextInput
               style={styles.textInput}
               placeholder="e.g. Gastrointestinal Adult"
@@ -572,18 +578,17 @@ export default function LogModal() {
               autoCapitalize="words"
               returnKeyType="done"
             />
-            <Text style={styles.fieldLabel}>Format</Text>
+            <SectionLabel label="Format" style={styles.fieldLabelSpacing} />
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.formatRow}>
               {FOOD_FORMATS.map((f) => (
-                <TouchableOpacity
-                  key={f.value}
-                  style={[styles.formatChip, newFormat === f.value && styles.formatChipSelected]}
-                  onPress={() => setNewFormat(f.value)}
-                >
-                  <Text style={[styles.formatChipText, newFormat === f.value && styles.formatChipTextSelected]}>
-                    {f.label}
-                  </Text>
-                </TouchableOpacity>
+                <View key={f.value} style={{ marginRight: theme.space1 }}>
+                  <FilterChip
+                    label={f.label}
+                    active={newFormat === f.value}
+                    onPress={() => setNewFormat(f.value)}
+                    variant="filled"
+                  />
+                </View>
               ))}
             </ScrollView>
             <TouchableOpacity
@@ -595,6 +600,42 @@ export default function LogModal() {
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Stool sub-type (normal vs loose) ───────────────────────────────────────
+
+  if (step === 'stool-type') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
+            <Text style={styles.backBtnText}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>What kind of stool?</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.stoolChoiceContainer}>
+          <TouchableOpacity
+            style={styles.stoolChoiceBtn}
+            onPress={() => { setSelectedType('stool_normal'); setStep('simple'); }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.stoolChoiceEmoji}>💩</Text>
+            <Text style={styles.stoolChoiceLabel}>Normal</Text>
+            <Text style={styles.stoolChoiceHint}>Formed, typical</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.stoolChoiceBtn, styles.stoolChoiceBtnLoose]}
+            onPress={() => { setSelectedType('diarrhea'); setStep('simple'); }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.stoolChoiceEmoji}>💩</Text>
+            <Text style={styles.stoolChoiceLabel}>Loose</Text>
+            <Text style={styles.stoolChoiceHint}>Soft, runny, or diarrhea</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
@@ -901,12 +942,7 @@ const styles = StyleSheet.create({
     padding: theme.space3,
     gap: theme.space2,
   },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
+  fieldLabelSpacing: {
     marginBottom: -theme.space1,
   },
   textInput: {
@@ -919,27 +955,7 @@ const styles = StyleSheet.create({
     height: 48,
   },
   formatRow: {
-    flexDirection: 'row',
     marginBottom: theme.space2,
-  },
-  formatChip: {
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space1,
-    borderRadius: theme.radiusLarge,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    marginRight: theme.space1,
-  },
-  formatChipSelected: {
-    backgroundColor: theme.colorNeutralDark,
-    borderColor: theme.colorNeutralDark,
-  },
-  formatChipText: {
-    fontSize: 14,
-    color: theme.colorTextPrimary,
-  },
-  formatChipTextSelected: {
-    color: '#fff',
   },
 
   // ── Severity ──
@@ -1082,6 +1098,42 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: theme.radiusSmall,
+  },
+
+  // ── Stool choice ──
+  stoolChoiceContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    padding: theme.space2,
+    gap: theme.space2,
+    alignItems: 'stretch',
+  },
+  stoolChoiceBtn: {
+    flex: 1,
+    borderRadius: theme.radiusMedium,
+    backgroundColor: theme.colorNeutralLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.space1,
+    paddingVertical: theme.space4,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+  },
+  stoolChoiceBtnLoose: {
+    backgroundColor: theme.colorEventSymptomLight,
+    borderColor: theme.colorEventSymptomLight,
+  },
+  stoolChoiceEmoji: {
+    fontSize: 36,
+  },
+  stoolChoiceLabel: {
+    fontSize: theme.textLG,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+  },
+  stoolChoiceHint: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
 
   // ── Completion ──

@@ -234,7 +234,7 @@ export function FAB() {
 
             <View style={styles.divider} />
 
-            {/* Quick GI symptom taps */}
+            {/* Quick GI symptom taps — prominent, warm-tinted */}
             <View style={styles.symptomRow}>
               <TouchableOpacity
                 style={styles.symptomBtn}
@@ -243,8 +243,11 @@ export function FAB() {
                 disabled={logging !== null}
               >
                 {logging === 'vomit'
-                  ? <ActivityIndicator size="small" color={theme.colorTextSecondary} />
-                  : <Text style={styles.symptomBtnText}>Vomit</Text>
+                  ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
+                  : <>
+                      <Text style={styles.symptomBtnEmoji}>🤢</Text>
+                      <Text style={styles.symptomBtnText}>Vomit</Text>
+                    </>
                 }
               </TouchableOpacity>
               <TouchableOpacity
@@ -254,8 +257,11 @@ export function FAB() {
                 disabled={logging !== null}
               >
                 {logging === 'diarrhea'
-                  ? <ActivityIndicator size="small" color={theme.colorTextSecondary} />
-                  : <Text style={styles.symptomBtnText}>Diarrhea</Text>
+                  ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
+                  : <>
+                      <Text style={styles.symptomBtnEmoji}>💩</Text>
+                      <Text style={styles.symptomBtnText}>Loose stool</Text>
+                    </>
                 }
               </TouchableOpacity>
             </View>
@@ -270,20 +276,11 @@ export function FAB() {
 
             <TouchableOpacity
               style={styles.menuAction}
-              onPress={() => { closeMenu(); router.push('/vet-visit'); }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.menuActionIcon}>🏥</Text>
-              <Text style={styles.menuActionLabel}>Vet appointment</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuAction}
               onPress={() => { closeMenu(); router.push('/log'); }}
               activeOpacity={0.7}
             >
-              <Text style={styles.menuActionIcon}>✚</Text>
-              <Text style={styles.menuActionLabel}>Log event</Text>
+              <Text style={styles.menuActionIcon}>➕</Text>
+              <Text style={styles.menuActionLabel}>More events</Text>
             </TouchableOpacity>
           </Animated.View>
         )}
@@ -380,18 +377,21 @@ const styles = StyleSheet.create({
   },
   symptomBtn: {
     flex: 1,
-    paddingVertical: theme.space1,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
+    paddingVertical: 10,
+    borderRadius: theme.radiusMedium,
+    backgroundColor: theme.colorEventSymptomLight,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 36,
+    gap: 4,
+    minHeight: 52,
+  },
+  symptomBtnEmoji: {
+    fontSize: 18,
   },
   symptomBtnText: {
-    fontSize: 13,
-    color: theme.colorTextPrimary,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: 12,
+    color: theme.colorEventSymptom,
+    fontWeight: theme.weightMedium,
   },
 
   menuAction: {

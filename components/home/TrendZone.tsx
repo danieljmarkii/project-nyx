@@ -1,7 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../constants/theme';
+import { Card } from '../ui/Card';
+import { SectionLabel } from '../ui/SectionLabel';
 import { useTrend, TrendData } from '../../hooks/useTrend';
 import { usePetStore } from '../../store/petStore';
+import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 
 const MAX_BAR_HEIGHT = 72;
 
@@ -11,8 +14,8 @@ export function TrendZone() {
   const petName = activePet?.name ?? 'your pet';
 
   return (
-    <View style={styles.zone}>
-      <Text style={styles.label}>Trend</Text>
+    <Card>
+      <SectionLabel label="Trend" style={styles.label} />
       {isLoading || data === null ? (
         <LoadingState />
       ) : !data.hasEnoughData ? (
@@ -24,7 +27,7 @@ export function TrendZone() {
       ) : (
         <FeedingChart data={data} petName={petName} />
       )}
-    </View>
+    </Card>
   );
 }
 
@@ -50,12 +53,32 @@ function SymptomChart({ data }: { data: TrendData }) {
   const today = data.buckets[data.buckets.length - 1];
   const fourteenDaysAgo = data.buckets[0];
 
-  const totalSymptoms = data.buckets.reduce((sum, b) => sum + b.symptomCount, 0);
-  const chartLabel = `${totalSymptoms} symptom event${totalSymptoms !== 1 ? 's' : ''} over 14 days`;
+  const { dominantSymptomType, thisWeekSymptomCount, lastWeekSymptomCount } = data;
+  const symptomLabel = dominantSymptomType && dominantSymptomType in EVENT_TYPES
+    ? EVENT_TYPES[dominantSymptomType as EventTypeKey].label
+    : 'Symptom';
+
+  const delta = thisWeekSymptomCount - lastWeekSymptomCount;
+  const directionLine = (() => {
+    if (thisWeekSymptomCount === 0 && lastWeekSymptomCount === 0) {
+      return 'None this week or last';
+    }
+    if (delta < 0) return `↓ from ${lastWeekSymptomCount} last week — improving`;
+    if (delta > 0) return `↑ from ${lastWeekSymptomCount} last week`;
+    return `Same as last week (${lastWeekSymptomCount})`;
+  })();
 
   return (
     <View>
-      <Text style={styles.chartSubLabel}>{chartLabel}</Text>
+      <View style={styles.chartHeadRow}>
+        <Text style={styles.chartHeadType}>{symptomLabel}</Text>
+        <Text style={styles.chartHeadCount}>
+          {thisWeekSymptomCount} this week
+        </Text>
+      </View>
+      <Text style={[styles.chartSubLabel, delta < 0 && styles.chartSubLabelImproving]}>
+        {directionLine}
+      </Text>
       <View style={styles.barsContainer}>
         {data.buckets.map((bucket, i) => {
           const barH = bucket.symptomCount > 0
@@ -79,22 +102,36 @@ function SymptomChart({ data }: { data: TrendData }) {
       </View>
       <View style={styles.axisRow}>
         <Text style={styles.axisLabel}>{formatShortDate(fourteenDaysAgo.date)}</Text>
-        <Text style={styles.axisLabel}>{formatShortDate(today.date)}</Text>
+        <Text style={styles.axisLabel}>Today</Text>
       </View>
     </View>
   );
 }
 
-// 14-day meal consistency dot chart (filled = meal logged, empty = no meal)
+// 7-day meal consistency dot chart (filled = meal logged, empty = no meal)
 function FeedingChart({ data, petName }: { data: TrendData; petName: string }) {
-  // Show last 7 days for feeding (spec: "feeding consistency over the last 7 days")
   const last7 = data.buckets.slice(-7);
-  const consistentDays = last7.filter(b => b.mealCount > 0).length;
+  const { thisWeekMealDays, lastWeekMealDays } = data;
+
+  const directionLine = (() => {
+    if (thisWeekMealDays === 7) return `Every day this week`;
+    const delta = thisWeekMealDays - lastWeekMealDays;
+    if (lastWeekMealDays === 0) return `${thisWeekMealDays} of 7 days logged`;
+    if (delta > 0) return `↑ from ${lastWeekMealDays} days last week`;
+    if (delta < 0) return `↓ from ${lastWeekMealDays} days last week`;
+    return `Same as last week`;
+  })();
 
   return (
     <View>
-      <Text style={styles.chartSubLabel}>
-        {consistentDays} of 7 days with meals logged
+      <View style={styles.chartHeadRow}>
+        <Text style={styles.chartHeadType}>Meals</Text>
+        <Text style={styles.chartHeadCount}>
+          {thisWeekMealDays} of 7 days
+        </Text>
+      </View>
+      <Text style={[styles.chartSubLabel, thisWeekMealDays === 7 && styles.chartSubLabelImproving]}>
+        {directionLine}
       </Text>
       <View style={styles.dotsRow}>
         {last7.map((bucket, i) => (
@@ -147,26 +184,35 @@ function formatShortDate(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
-  zone: {
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space3,
-  },
   label: {
-    fontSize: 11,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
     marginBottom: theme.space2,
+  },
+  chartHeadRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  chartHeadType: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+  },
+  chartHeadCount: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
   chartSubLabel: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginBottom: theme.space2,
   },
+  chartSubLabelImproving: {
+    color: theme.colorAccent,
+  },
   emptyText: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
     lineHeight: 22,
   },
@@ -197,7 +243,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   axisLabel: {
-    fontSize: 11,
+    fontSize: theme.textXS,
     color: theme.colorTextSecondary,
   },
 
@@ -224,17 +270,18 @@ const styles = StyleSheet.create({
   // Diet trial compliance
   progressTrack: {
     flexDirection: 'row',
-    height: 8,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: theme.colorChartEmpty,
     overflow: 'hidden',
     marginBottom: theme.space1,
   },
   progressFill: {
     backgroundColor: theme.colorAccent,
+    borderRadius: 3,
   },
   complianceNote: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
 

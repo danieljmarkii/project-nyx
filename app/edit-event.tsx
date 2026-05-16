@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
+import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, getMealForEvent, getEventAttachment } from '../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
@@ -213,7 +214,7 @@ export default function EditEventModal() {
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
 
           {/* Time */}
-          <Text style={styles.fieldLabel}>Time</Text>
+          <SectionLabel label="Time" style={{ marginBottom: 4 }} />
           <TouchableOpacity
             style={styles.timeRow}
             onPress={() => setShowTimePicker(!showTimePicker)}
@@ -240,7 +241,7 @@ export default function EditEventModal() {
           )}
 
           {/* Photo */}
-          <Text style={[styles.fieldLabel, { marginTop: theme.space3 }]}>Photo</Text>
+          <SectionLabel label="Photo" style={{ marginTop: theme.space3, marginBottom: 4 }} />
           {displayAttachmentUri ? (
             <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
               <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
@@ -259,7 +260,7 @@ export default function EditEventModal() {
           {/* Food (meal events only) */}
           {config.hasFood ? (
             <>
-              <Text style={[styles.fieldLabel, { marginTop: theme.space3 }]}>Food</Text>
+              <SectionLabel label="Food" style={{ marginTop: theme.space3, marginBottom: 4 }} />
               <TouchableOpacity
                 style={styles.foodRow}
                 onPress={() => setShowFoodPicker(!showFoodPicker)}
@@ -315,7 +316,7 @@ export default function EditEventModal() {
           ) : null}
 
           {/* Notes */}
-          <Text style={[styles.fieldLabel, { marginTop: theme.space3 }]}>Notes</Text>
+          <SectionLabel label="Notes" style={{ marginTop: theme.space3, marginBottom: 4 }} />
           <TextInput
             style={styles.notesInput}
             placeholder="Add a note (optional)"
@@ -399,14 +400,6 @@ const styles = StyleSheet.create({
     padding: theme.space3,
     paddingBottom: theme.space6,
     gap: theme.space1,
-  },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 4,
   },
   timeRow: {
     flexDirection: 'row',

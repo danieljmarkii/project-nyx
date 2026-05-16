@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.7 | Last Updated: May 2026
+**Version:** 1.8 | Last Updated: May 2026
 
 ---
 
@@ -428,6 +428,8 @@ If a blocking question remains unanswered after one full session, document a pro
 | Push notification provider for nudge system? | Post-MVP | Open |
 | Freemium gate: which specific features sit behind a future paywall? | Post-MVP | Open |
 | Pet photo upload RLS: `nyx-pet-photos` bucket was created via SQL (owner=null), causing uploads to fail with 42501 even with correct policies. Workaround: re-create bucket via dashboard UI, or implement upload via Edge Function with service role key. | Step 7: Pet profile | Open — needs resolution before photo upload ships |
+| Stool schema consolidation: `stool_normal` and `diarrhea` are currently stored as separate `event_type` values. UI-level consolidation is done (single "Stool" entry point with Normal/Loose sub-step). Full migration to `event_type='stool'` with a `stool_consistency` sub-field requires a dedicated schema migration PR. | Step 8+ | Deferred by PM — tackle before Step 9 |
+| Font decision: `fontBody` and `fontDisplay` slots exist in `theme.ts` but still resolve to `'System'`. Recommend Inter (body) + a humanist sans for display. Needs PM typeface decision before wiring up `expo-google-fonts`. | Post-Step 7 | Open |
 
 ---
 
@@ -453,3 +455,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.5 | May 2026 | Updated build sequence: 4a ✓, Step 5 Zones 2 & 3 ✓ (Zone 1 deferred to Step 10), current phase updated to Step 6. Session note: CLAUDE.md was not being updated between sessions — build sequence was stale at 4a despite Steps 4a and 5 (partial) being complete. |
 | v1.6 | May 2026 | Step 6 ✓. Current phase updated to Step 7. Anti-pattern added: setting height directly on FlatList is unreliable in flex column layouts — wrap in a View with the height constraint instead. |
 | v1.7 | May 2026 | Step 7 in progress. Built pet profile screen (display, edit, conditions, diet trial card, photo). Known bug: pet photo upload blocked by Supabase Storage RLS on SQL-created bucket (owner=null). Anti-pattern added: create buckets via dashboard UI not raw SQL. Open question added for RLS resolution path. |
+| v1.8 | May 2026 | Design system session. Built full component library (Card, SectionLabel, PrimaryButton, FilterChip, Badge, Divider), expanded theme tokens (type scale, weights, letter-spacing, semantic colors, shadow tokens), and applied the system across every screen. Custom text-only tab bar (fixes clipping). Today zone redesigned as timestamped event strip. Trend zone now shows direction (dominant symptom, this-week vs last-week delta). FAB redesigned: symptom buttons warm-tinted and prominent, Vet appointment removed, Loose stool renamed. Emoji consistency pass across all event types. Stool/diarrhea consolidated at UI level (schema migration deferred). Two new open questions: stool schema migration, font decision. |

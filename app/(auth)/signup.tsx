@@ -54,14 +54,14 @@ export default function SignupScreen() {
           autoComplete="new-password"
         />
 
-        <TouchableOpacity style={styles.button} onPress={handleSignup} disabled={loading}>
+        <TouchableOpacity style={styles.button} onPress={handleSignup} disabled={loading} activeOpacity={0.85}>
           {loading
             ? <ActivityIndicator color="#fff" />
             : <Text style={styles.buttonText}>Create account</Text>
           }
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
           <Text style={styles.link}>Already have an account? Sign in</Text>
         </TouchableOpacity>
       </View>
@@ -70,25 +70,56 @@ export default function SignupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colorNeutralLight },
-  inner: { flex: 1, justifyContent: 'center', paddingHorizontal: theme.space3 },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colorNeutralLight,
+  },
+  inner: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: theme.space3,
+  },
   title: {
-    fontSize: 32, fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark, marginBottom: theme.space1,
+    fontSize: theme.text2XL,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
+    marginBottom: theme.space1,
+    letterSpacing: theme.trackingTight,
   },
   subtitle: {
-    fontSize: 16, color: theme.colorTextSecondary, marginBottom: theme.space4,
+    fontSize: theme.textMD,
+    color: theme.colorTextSecondary,
+    marginBottom: theme.space4,
   },
   input: {
-    borderWidth: 1, borderColor: theme.colorBorder, borderRadius: theme.radiusSmall,
-    padding: theme.space2, fontSize: 16, color: theme.colorTextPrimary,
-    backgroundColor: theme.colorSurface, marginBottom: theme.space2,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    paddingHorizontal: theme.space2,
+    paddingVertical: 13,
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+    backgroundColor: theme.colorSurface,
+    marginBottom: theme.space2,
   },
   button: {
-    backgroundColor: theme.colorNeutralDark, borderRadius: theme.radiusSmall,
-    padding: theme.space2, alignItems: 'center', marginTop: theme.space1,
+    backgroundColor: theme.colorNeutralDark,
+    borderRadius: theme.radiusMedium,
+    paddingVertical: theme.space2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: theme.space1,
     marginBottom: theme.space3,
+    minHeight: 50,
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: theme.fontWeightMedium },
-  link: { color: theme.colorTextSecondary, textAlign: 'center', fontSize: 14 },
+  buttonText: {
+    color: '#fff',
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+  },
+  link: {
+    color: theme.colorTextSecondary,
+    textAlign: 'center',
+    fontSize: theme.textSM,
+  },
 });

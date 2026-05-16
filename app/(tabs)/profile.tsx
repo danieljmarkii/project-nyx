@@ -6,6 +6,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, getPublicUrl } from '../../lib/storage';
 import { usePetStore } from '../../store/petStore';
@@ -286,8 +289,8 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* ── Pet header — centered, large photo ── */}
-        <View style={styles.headerCard}>
+        {/* ── Pet header ── */}
+        <Card style={styles.headerCard}>
           <TouchableOpacity
             onPress={handlePickPhoto}
             style={styles.photoWrapper}
@@ -320,13 +323,14 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={styles.editBtn}
             onPress={() => setEditModalVisible(true)}
+            activeOpacity={0.7}
           >
             <Text style={styles.editBtnText}>Edit profile</Text>
           </TouchableOpacity>
-        </View>
+        </Card>
 
         {/* ── Info chips ── */}
-        <View style={styles.infoRow}>
+        <Card noPadding style={styles.infoRow}>
           <View style={styles.infoChip}>
             <Text style={styles.infoChipLabel}>Age</Text>
             <Text style={styles.infoChipValue}>{calculateAge(activePet.date_of_birth)}</Text>
@@ -341,10 +345,10 @@ export default function ProfileScreen() {
             <Text style={styles.infoChipLabel}>Weight</Text>
             <Text style={styles.infoChipValue}>{formatWeightLbs(activePet.weight_kg)}</Text>
           </View>
-        </View>
+        </Card>
 
         {/* ── Conditions ── */}
-        <View style={styles.section}>
+        <Card style={styles.sectionGap}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Conditions</Text>
             <TouchableOpacity onPress={openAddCondition} hitSlop={8}>
@@ -355,55 +359,49 @@ export default function ProfileScreen() {
           {conditionsLoading ? (
             <ActivityIndicator style={styles.sectionLoader} color={theme.colorTextSecondary} />
           ) : conditions.length === 0 ? (
-            <View style={styles.emptyConditions}>
-              <Text style={styles.emptyConditionsText}>
-                No known conditions. Tap + Add to record one.
-              </Text>
-            </View>
+            <Text style={styles.emptyConditionsText}>
+              No known conditions. Tap + Add to record one.
+            </Text>
           ) : (
             conditions.map((condition) => (
               <View key={condition.id} style={styles.conditionRow}>
-                <View style={styles.conditionInfo}>
-                  <Text style={styles.conditionName}>{condition.condition_name}</Text>
-                  {condition.diagnosed_at && (
-                    <Text style={styles.conditionDate}>
-                      Diagnosed{' '}
-                      {new Date(condition.diagnosed_at).toLocaleDateString([], {
-                        year: 'numeric', month: 'short',
-                      })}
-                    </Text>
-                  )}
-                </View>
-                <View style={styles.conditionRight}>
-                  <View style={[
-                    styles.statusChip,
-                    condition.status === 'monitoring' && styles.statusChipMonitoring,
-                  ]}>
-                    <Text style={[
-                      styles.statusChipText,
-                      condition.status === 'monitoring' && styles.statusChipTextMonitoring,
-                    ]}>
-                      {statusLabel(condition.status)}
-                    </Text>
+                <Divider style={styles.conditionDivider} />
+                <View style={styles.conditionInner}>
+                  <View style={styles.conditionInfo}>
+                    <Text style={styles.conditionName}>{condition.condition_name}</Text>
+                    {condition.diagnosed_at && (
+                      <Text style={styles.conditionDate}>
+                        Diagnosed{' '}
+                        {new Date(condition.diagnosed_at).toLocaleDateString([], {
+                          year: 'numeric', month: 'short',
+                        })}
+                      </Text>
+                    )}
                   </View>
-                  <View style={styles.conditionActions}>
-                    <TouchableOpacity onPress={() => openEditCondition(condition)} hitSlop={8}>
-                      <Text style={styles.conditionActionText}>Edit</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.conditionActionDivider}>·</Text>
-                    <TouchableOpacity onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
-                      <Text style={styles.conditionActionText}>Resolve</Text>
-                    </TouchableOpacity>
+                  <View style={styles.conditionRight}>
+                    <Badge
+                      label={statusLabel(condition.status)}
+                      variant={condition.status === 'monitoring' ? 'accent' : 'symptom'}
+                    />
+                    <View style={styles.conditionActions}>
+                      <TouchableOpacity onPress={() => openEditCondition(condition)} hitSlop={8}>
+                        <Text style={styles.conditionActionText}>Edit</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.conditionActionDivider}>·</Text>
+                      <TouchableOpacity onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
+                        <Text style={styles.conditionActionText}>Resolve</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </View>
               </View>
             ))
           )}
-        </View>
+        </Card>
 
         {/* ── Diet trial card ── */}
         {!trialLoading && dietTrial && (
-          <View style={styles.trialCard}>
+          <Card style={styles.sectionGap}>
             <Text style={styles.trialLabel}>Diet trial</Text>
             {dietTrial.food_items && (
               <Text style={styles.trialFood}>
@@ -427,22 +425,24 @@ export default function ProfileScreen() {
             {dietTrial.vet_name && (
               <Text style={styles.trialVet}>Vet: {dietTrial.vet_name}</Text>
             )}
-          </View>
+          </Card>
         )}
 
         {/* ── Account ── */}
-        <View style={styles.section}>
+        <Card style={styles.sectionGap}>
           <Text style={styles.sectionTitle}>Account</Text>
+          <Divider style={styles.accountDivider} />
           <TouchableOpacity style={styles.accountRow} onPress={handleSignOut}>
             <Text style={styles.accountRowText}>Sign out</Text>
           </TouchableOpacity>
+          <Divider style={styles.accountDivider} />
           <TouchableOpacity style={styles.accountRow} onPress={handleWipeData} disabled={wiping}>
             {wiping
               ? <ActivityIndicator color="#C0392B" />
               : <Text style={styles.destructiveText}>Wipe my data</Text>
             }
           </TouchableOpacity>
-        </View>
+        </Card>
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -476,63 +476,55 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
 
-  // Header — centered layout, large photo
+  // ── Header card ──
   headerCard: {
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
-    paddingVertical: theme.space4,
-    paddingHorizontal: theme.space3,
     alignItems: 'center',
     gap: theme.space1,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
+    paddingVertical: theme.space4,
   },
   photoWrapper: {
     position: 'relative',
     marginBottom: 4,
   },
   photo: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
   },
   photoPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
     backgroundColor: theme.colorNeutralDark,
     alignItems: 'center',
     justifyContent: 'center',
   },
   photoInitials: {
-    fontSize: 40,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: 38,
+    fontWeight: theme.weightMedium,
     color: '#fff',
   },
   photoOverlay: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 60,
+    top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 56,
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   photoLabel: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorAccent,
-    fontWeight: theme.fontWeightMedium,
+    fontWeight: theme.weightMedium,
   },
   petName: {
-    fontSize: 26,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: theme.text2XL,
+    fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
     marginTop: 4,
   },
   petSubtitle: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
   },
   editBtn: {
@@ -544,18 +536,14 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
   },
   editBtnText: {
-    fontSize: 14,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    fontWeight: theme.fontWeightMedium,
+    fontWeight: theme.weightMedium,
   },
 
-  // Info chips
+  // ── Info row ──
   infoRow: {
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
     flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
     overflow: 'hidden',
   },
   infoChip: {
@@ -570,25 +558,20 @@ const styles = StyleSheet.create({
     marginVertical: theme.space1,
   },
   infoChipLabel: {
-    fontSize: 11,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: theme.trackingWide,
   },
   infoChipValue: {
-    fontSize: 15,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
   },
 
-  // Sections
-  section: {
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space3,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
+  // ── Section layout (gap for inner rows) ──
+  sectionGap: {
     gap: theme.space2,
   },
   sectionHeader: {
@@ -597,72 +580,53 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
   },
   sectionAction: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorAccent,
-    fontWeight: theme.fontWeightMedium,
+    fontWeight: theme.weightMedium,
   },
   sectionLoader: {
     alignSelf: 'center',
     paddingVertical: theme.space2,
   },
 
-  // Empty conditions
-  emptyConditions: {
-    paddingVertical: theme.space1,
-  },
+  // ── Conditions ──
   emptyConditionsText: {
-    fontSize: 14,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: 20,
   },
-
-  // Condition rows
   conditionRow: {
+    gap: theme.space2,
+  },
+  conditionDivider: {
+    marginBottom: 0,
+  },
+  conditionInner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: theme.space2,
-    paddingTop: theme.space2,
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
   },
   conditionInfo: {
     flex: 1,
     gap: 2,
   },
   conditionName: {
-    fontSize: 15,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
   },
   conditionDate: {
-    fontSize: 12,
+    fontSize: theme.textXS,
     color: theme.colorTextSecondary,
   },
   conditionRight: {
     alignItems: 'flex-end',
     gap: 6,
-  },
-  statusChip: {
-    backgroundColor: `${theme.colorEventSymptom}22`,
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  statusChipMonitoring: {
-    backgroundColor: `${theme.colorAccent}1A`,
-  },
-  statusChipText: {
-    fontSize: 11,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorEventSymptom,
-  },
-  statusChipTextMonitoring: {
-    color: theme.colorAccent,
   },
   conditionActions: {
     flexDirection: 'row',
@@ -670,87 +634,76 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   conditionActionText: {
-    fontSize: 12,
+    fontSize: theme.textXS,
     color: theme.colorTextSecondary,
     textDecorationLine: 'underline',
   },
   conditionActionDivider: {
-    fontSize: 12,
+    fontSize: theme.textXS,
     color: theme.colorBorder,
   },
 
-  // Diet trial card
-  trialCard: {
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space3,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    gap: theme.space1,
-  },
+  // ── Diet trial ──
   trialLabel: {
-    fontSize: 11,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: theme.trackingWidest,
   },
   trialFood: {
-    fontSize: 16,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: theme.textLG,
+    fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
   },
   trialDays: {
-    fontSize: 14,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
   progressTrack: {
-    height: 6,
+    height: 5,
     borderRadius: 3,
     backgroundColor: theme.colorChartEmpty,
     overflow: 'hidden',
-    marginTop: 4,
   },
   progressBar: {
-    height: 6,
+    height: 5,
     borderRadius: 3,
     backgroundColor: theme.colorAccent,
   },
   trialCompliance: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
   trialVet: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-    marginTop: 2,
   },
 
-  // Account
+  // ── Account ──
+  accountDivider: {
+    marginVertical: 0,
+  },
   accountRow: {
-    paddingVertical: theme.space1,
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
+    paddingVertical: 6,
   },
   accountRowText: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    paddingTop: 4,
   },
   destructiveText: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: '#C0392B',
-    paddingTop: 4,
   },
 
-  // Empty / bottom
+  // ── Empty / bottom ──
   emptyState: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyStateText: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
   },
   bottomPad: {
