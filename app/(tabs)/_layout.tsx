@@ -9,9 +9,9 @@ export default function TabsLayout() {
   return (
     <View style={styles.root}>
       <Tabs>
-        <Tabs.Screen name="index" options={{ title: 'Home' }} />
-        <Tabs.Screen name="history" options={{ title: 'History' }} />
-        <Tabs.Screen name="profile" options={{ title: 'Pet' }} />
+        <Tabs.Screen name="index" options={{ title: 'Home', headerShown: false }} />
+        <Tabs.Screen name="history" options={{ title: 'History', headerShown: false }} />
+        <Tabs.Screen name="profile" options={{ title: 'Pet', headerShown: false }} />
       </Tabs>
       <FAB />
     </View>

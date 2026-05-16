@@ -194,6 +194,24 @@ export async function updateMealFood(eventId: string, foodItemId: string): Promi
   );
 }
 
+export async function getEventAttachment(eventId: string): Promise<{
+  id: string;
+  local_uri: string;
+  storage_path: string;
+  mime_type: string;
+} | null> {
+  const db = getDb();
+  return db.getFirstAsync<{
+    id: string;
+    local_uri: string;
+    storage_path: string;
+    mime_type: string;
+  }>(
+    'SELECT id, local_uri, storage_path, mime_type FROM event_attachments WHERE event_id = ? ORDER BY sort_order ASC LIMIT 1',
+    [eventId],
+  );
+}
+
 export async function getMealForEvent(eventId: string): Promise<{
   food_item_id: string | null;
   food_brand: string | null;

@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, FlatList, Alert,
+  ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb } from '../lib/db';
-import { updateEvent, updateMealFood, getMealForEvent } from '../lib/db';
-import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
+import { getDb, updateEvent, updateMealFood, getMealForEvent, getEventAttachment } from '../lib/db';
+import { syncPendingEvents, syncPendingMeals, syncPendingAttachments } from '../lib/sync';
+import { uploadPhoto } from '../lib/storage';
 import { useEventStore } from '../store/eventStore';
+import { uuid } from '../lib/utils';
 
 interface CachedFood {
   id: string;
@@ -20,25 +22,16 @@ interface CachedFood {
   format: string;
 }
 
-const SEVERITY_CONFIG = [
-  { value: 1, label: 'Mild' },
-  { value: 2, label: '' },
-  { value: 3, label: '' },
-  { value: 4, label: '' },
-  { value: 5, label: 'Severe' },
-];
-
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 export default function EditEventModal() {
-  const { id, type, occurredAt: occurredAtParam, severity: severityParam, notes: notesParam } =
+  const { id, type, occurredAt: occurredAtParam, notes: notesParam } =
     useLocalSearchParams<{
       id: string;
       type: string;
       occurredAt: string;
-      severity?: string;
       notes?: string;
     }>();
 
@@ -51,10 +44,11 @@ export default function EditEventModal() {
     occurredAtParam ? new Date(occurredAtParam) : new Date(),
   );
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [severity, setSeverity] = useState<number | null>(
-    severityParam ? parseInt(severityParam, 10) : null,
-  );
   const [notes, setNotes] = useState(notesParam ?? '');
+
+  // Photo attachment
+  const [existingAttachmentUri, setExistingAttachmentUri] = useState<string | null>(null);
+  const [newAttachmentUri, setNewAttachmentUri] = useState<string | null>(null);
 
   // Meal food state
   const [currentFoodId, setCurrentFoodId] = useState<string | null>(null);
@@ -62,16 +56,25 @@ export default function EditEventModal() {
   const [currentFoodProduct, setCurrentFoodProduct] = useState<string | null>(null);
   const [showFoodPicker, setShowFoodPicker] = useState(false);
   const [foods, setFoods] = useState<CachedFood[]>([]);
+
   const [saving, setSaving] = useState(false);
 
+  // Load existing meal food and photo attachment on mount
   useEffect(() => {
-    if (!config.hasFood || !id) return;
-    getMealForEvent(id).then((meal) => {
-      if (meal) {
-        setCurrentFoodId(meal.food_item_id);
-        setCurrentFoodBrand(meal.food_brand);
-        setCurrentFoodProduct(meal.food_product_name);
-      }
+    if (!id) return;
+
+    if (config.hasFood) {
+      getMealForEvent(id).then((meal) => {
+        if (meal) {
+          setCurrentFoodId(meal.food_item_id);
+          setCurrentFoodBrand(meal.food_brand);
+          setCurrentFoodProduct(meal.food_product_name);
+        }
+      }).catch(console.error);
+    }
+
+    getEventAttachment(id).then((att) => {
+      if (att) setExistingAttachmentUri(att.local_uri);
     }).catch(console.error);
   }, [id]);
 
@@ -92,27 +95,89 @@ export default function EditEventModal() {
     setFoods(rows);
   }
 
+  async function handlePickPhoto() {
+    Alert.alert('Attach photo', 'Choose a source', [
+      {
+        text: 'Take photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') { Alert.alert('Camera access needed'); return; }
+          launchPhotoPicker('camera');
+        },
+      },
+      { text: 'Choose from library', onPress: () => launchPhotoPicker('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  async function launchPhotoPicker(source: 'camera' | 'library') {
+    const opts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+      exif: false,
+    };
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync(opts)
+      : await ImagePicker.launchImageLibraryAsync(opts);
+    if (!result.canceled && result.assets[0]) {
+      setNewAttachmentUri(result.assets[0].uri);
+    }
+  }
+
   async function handleSave() {
     if (!id) return;
     setSaving(true);
     try {
       await updateEvent(id, {
         occurred_at: occurredAt.toISOString(),
-        severity: config.hasSeverity ? severity : null,
+        severity: null,
         notes: notes.trim() || null,
       });
+
       if (config.hasFood && currentFoodId) {
         await updateMealFood(id, currentFoodId);
       }
+
+      // Persist new photo attachment if one was selected
+      if (newAttachmentUri) {
+        const db = getDb();
+        const petResult = await db.getFirstAsync<{ pet_id: string }>(
+          'SELECT pet_id FROM events WHERE id = ?', [id],
+        );
+        if (petResult) {
+          const attId = uuid();
+          const storagePath = `${petResult.pet_id}/${id}/${attId}.jpg`;
+          const now = new Date().toISOString();
+          await db.runAsync(
+            `INSERT OR REPLACE INTO event_attachments
+               (id, event_id, pet_id, local_uri, storage_path, mime_type, synced, created_at)
+             VALUES (?, ?, ?, ?, ?, 'image/jpeg', 0, ?)`,
+            [attId, id, petResult.pet_id, newAttachmentUri, storagePath, now],
+          );
+          uploadPhoto('nyx-event-attachments', storagePath, newAttachmentUri)
+            .then(async () => {
+              const { supabase } = await import('../lib/supabase');
+              await supabase.from('event_attachments').upsert(
+                { id: attId, event_id: id, pet_id: petResult.pet_id, storage_path: storagePath, mime_type: 'image/jpeg' },
+                { onConflict: 'id' },
+              );
+              await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+            })
+            .catch(console.error);
+        }
+      }
+
       patchInToday(id, {
         occurred_at: occurredAt.toISOString(),
-        severity: config.hasSeverity ? severity : null,
+        severity: null,
         notes: notes.trim() || null,
         food_item_id: currentFoodId,
         food_brand: currentFoodBrand,
         food_product_name: currentFoodProduct,
       });
-      syncPendingEvents().then(() => syncPendingMeals()).catch(console.error);
+
+      syncPendingEvents().then(() => syncPendingMeals()).then(() => syncPendingAttachments()).catch(console.error);
       router.back();
     } catch (e) {
       console.error('[edit-event] save failed:', e);
@@ -121,6 +186,8 @@ export default function EditEventModal() {
       setSaving(false);
     }
   }
+
+  const displayAttachmentUri = newAttachmentUri ?? existingAttachmentUri;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -169,37 +236,22 @@ export default function EditEventModal() {
             />
           )}
 
-          {/* Severity */}
-          {config.hasSeverity ? (
-            <>
-              <Text style={[styles.fieldLabel, { marginTop: theme.space3 }]}>Severity</Text>
-              <View style={styles.severityRow}>
-                {SEVERITY_CONFIG.map(({ value, label }) => {
-                  const isSelected = severity === value;
-                  const fillOpacity = 0.15 + (value - 1) * 0.175;
-                  return (
-                    <TouchableOpacity
-                      key={value}
-                      style={styles.severityItem}
-                      onPress={() => setSeverity(value)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={[
-                        styles.severityCircle,
-                        { backgroundColor: isSelected ? theme.colorNeutralDark : `rgba(26,26,26,${fillOpacity})` },
-                        isSelected && styles.severityCircleSelected,
-                      ]}>
-                        <Text style={[styles.severityNum, isSelected && styles.severityNumSelected]}>
-                          {value}
-                        </Text>
-                      </View>
-                      <Text style={styles.severityLabel}>{label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+          {/* Photo */}
+          <Text style={[styles.fieldLabel, { marginTop: theme.space3 }]}>Photo</Text>
+          {displayAttachmentUri ? (
+            <TouchableOpacity style={styles.photoAttachedRow} onPress={handlePickPhoto} activeOpacity={0.8}>
+              <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
+              <View style={styles.photoAttachedMeta}>
+                <Text style={styles.photoAttachedText}>Photo attached</Text>
+                <Text style={styles.photoChangeText}>Tap to replace</Text>
               </View>
-            </>
-          ) : null}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.7}>
+              <Text style={styles.photoRowIcon}>📷</Text>
+              <Text style={styles.photoRowText}>Attach a photo</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Food (meal events only) */}
           {config.hasFood ? (
@@ -341,39 +393,50 @@ const styles = StyleSheet.create({
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
   },
-  severityRow: {
+  photoRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: theme.space1,
-  },
-  severityItem: {
     alignItems: 'center',
-    gap: 6,
-  },
-  severityCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: theme.space1,
+    paddingVertical: theme.space2,
+    paddingHorizontal: theme.space2,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorNeutralLight,
   },
-  severityCircleSelected: {
-    borderColor: theme.colorNeutralDark,
-  },
-  severityNum: {
-    fontSize: 18,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
-  },
-  severityNumSelected: {
-    color: '#fff',
-  },
-  severityLabel: {
-    fontSize: 11,
+  photoRowIcon: { fontSize: 16 },
+  photoRowText: {
+    fontSize: 15,
     color: theme.colorTextSecondary,
-    height: 16,
+  },
+  photoAttachedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    paddingVertical: theme.space2,
+    paddingHorizontal: theme.space2,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorNeutralLight,
+  },
+  photoThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: theme.radiusSmall,
+  },
+  photoAttachedMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  photoAttachedText: {
+    fontSize: 15,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorTextPrimary,
+  },
+  photoChangeText: {
+    fontSize: 13,
+    color: theme.colorTextSecondary,
   },
   foodRow: {
     flexDirection: 'row',

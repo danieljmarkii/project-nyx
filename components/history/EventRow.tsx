@@ -23,22 +23,14 @@ function formatOccurredAt(iso: string): string {
   });
 }
 
-function SeverityDots({ severity }: { severity: number }) {
-  return (
-    <View style={dotStyles.row}>
-      {[1, 2, 3, 4, 5].map((v) => (
-        <View
-          key={v}
-          style={[dotStyles.dot, v <= severity ? dotStyles.dotFilled : dotStyles.dotEmpty]}
-        />
-      ))}
-    </View>
-  );
-}
-
 export function EventRow({ event, isExpanded, onToggle, onEdit, onDelete }: Props) {
   const config = EVENT_TYPES[event.event_type as EventTypeKey] ?? FALLBACK_CONFIG;
   const isSymptom = config.hasSeverity;
+
+  // brand · product_name — matches how people refer to food ("Fancy Feast · Chunky Chicken")
+  const foodLabel = event.food_brand && event.food_product_name
+    ? `${event.food_brand} · ${event.food_product_name}`
+    : event.food_product_name ?? event.food_brand ?? null;
 
   return (
     <TouchableOpacity
@@ -55,27 +47,12 @@ export function EventRow({ event, isExpanded, onToggle, onEdit, onDelete }: Prop
           <Text style={styles.time}>{formatOccurredAt(event.occurred_at)}</Text>
         </View>
 
-        {event.food_product_name ? (
-          <Text style={styles.foodName} numberOfLines={1}>
-            {event.food_product_name}
-            {event.food_brand ? ` · ${event.food_brand}` : ''}
-          </Text>
-        ) : null}
-
-        {event.severity !== null && !isExpanded ? (
-          <View style={styles.dotsCollapsed}>
-            <SeverityDots severity={event.severity} />
-          </View>
+        {foodLabel ? (
+          <Text style={styles.foodName} numberOfLines={1}>{foodLabel}</Text>
         ) : null}
 
         {isExpanded ? (
           <View style={styles.expandedContent}>
-            {event.severity !== null ? (
-              <View style={styles.expandedRow}>
-                <Text style={styles.expandedMeta}>Severity</Text>
-                <SeverityDots severity={event.severity} />
-              </View>
-            ) : null}
             {event.notes ? (
               <Text style={styles.notes}>{event.notes}</Text>
             ) : null}
@@ -84,7 +61,7 @@ export function EventRow({ event, isExpanded, onToggle, onEdit, onDelete }: Prop
                 <Text style={styles.editBtnText}>Edit</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={onDelete} hitSlop={8} style={styles.deleteBtn}>
-                <Text style={styles.deleteBtnText}>Delete</Text>
+                <Text style={styles.deleteBtnText}>Remove</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -93,25 +70,6 @@ export function EventRow({ event, isExpanded, onToggle, onEdit, onDelete }: Prop
     </TouchableOpacity>
   );
 }
-
-const dotStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    gap: 4,
-    alignItems: 'center',
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dotFilled: {
-    backgroundColor: theme.colorEventSymptom,
-  },
-  dotEmpty: {
-    backgroundColor: theme.colorChartEmpty,
-  },
-});
 
 const styles = StyleSheet.create({
   row: {
@@ -164,22 +122,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: theme.colorTextSecondary,
   },
-  dotsCollapsed: {
-    marginTop: 2,
-  },
   expandedContent: {
     marginTop: theme.space1,
     gap: theme.space1,
-  },
-  expandedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-  },
-  expandedMeta: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    width: 56,
   },
   notes: {
     fontSize: 14,

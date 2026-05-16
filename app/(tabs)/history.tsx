@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
 } from 'react-native';
@@ -70,13 +70,17 @@ export default function HistoryScreen() {
   const [datePreset, setDatePreset] = useState<DatePreset>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Ref-based guard prevents concurrent loads even when the callback is stale
+  const loadingRef = useRef(false);
+
   const loadEvents = useCallback(async (
     currentOffset: number,
     type: EventTypeKey | null,
     preset: DatePreset,
     replace: boolean,
   ) => {
-    if (!activePet || loading) return;
+    if (!activePet || loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const rows = await getTimeline(
@@ -93,11 +97,12 @@ export default function HistoryScreen() {
     } catch (e) {
       console.error('[history] load failed:', e);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }, [activePet]);
 
-  // Reload fresh on every focus (catches edits/deletes from other screens)
+  // Reload fresh on every focus so edits/deletes from the edit modal are reflected
   useFocusEffect(
     useCallback(() => {
       setOffset(0);
@@ -124,7 +129,7 @@ export default function HistoryScreen() {
   }
 
   function handleLoadMore() {
-    if (!hasMore || loading) return;
+    if (!hasMore || loadingRef.current) return;
     loadEvents(offset, typeFilter, datePreset, false);
   }
 
@@ -139,7 +144,6 @@ export default function HistoryScreen() {
         id: event.id,
         type: event.event_type,
         occurredAt: event.occurred_at,
-        severity: event.severity !== null ? String(event.severity) : '',
         notes: event.notes ?? '',
       },
     });
@@ -147,15 +151,14 @@ export default function HistoryScreen() {
 
   function handleDelete(event: NyxEvent) {
     Alert.alert(
-      'Delete this log?',
-      'The event will be removed from your history. This cannot be undone.',
+      'Remove this log?',
+      `This will remove the ${EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event'} from history.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
-            // Optimistic remove
             setEvents((prev: NyxEvent[]) => prev.filter((e: NyxEvent) => e.id !== event.id));
             setExpandedId(null);
             removeFromToday(event.id);
@@ -164,7 +167,6 @@ export default function HistoryScreen() {
               syncPendingEvents().catch(console.error);
             } catch (e) {
               console.error('[history] soft delete failed:', e);
-              // Re-insert on failure so the list stays correct
               setEvents((prev: NyxEvent[]) => {
                 const idx = prev.findIndex(
                   (e: NyxEvent) => new Date(e.occurred_at) < new Date(event.occurred_at),
@@ -188,7 +190,7 @@ export default function HistoryScreen() {
         <Text style={styles.title}>History</Text>
       </View>
 
-      {/* Type filter chips */}
+      {/* Type filter chips — fixed height prevents flex stretch */}
       <FlatList<typeof TYPE_FILTERS[0]>
         horizontal
         data={TYPE_FILTERS}
@@ -231,53 +233,55 @@ export default function HistoryScreen() {
         })}
       </View>
 
-      {/* Event list */}
-      <FlatList<NyxEvent>
-        data={events}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <EventRow
-            event={item}
-            isExpanded={expandedId === item.id}
-            onToggle={() => handleToggle(item.id)}
-            onEdit={() => handleEdit(item)}
-            onDelete={() => handleDelete(item)}
-          />
-        )}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.3}
-        ListEmptyComponent={
-          isEmpty ? (
-            <View style={styles.emptyState}>
-              {typeFilter || datePreset ? (
-                <>
-                  <Text style={styles.emptyTitle}>No events found</Text>
-                  <Text style={styles.emptyBody}>
-                    Try removing a filter to see more history.
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.emptyTitle}>Nothing logged yet</Text>
-                  <Text style={styles.emptyBody}>
-                    {activePet
-                      ? `Tap + anywhere to log ${activePet.name}'s first event.`
-                      : 'Tap + anywhere to start logging.'}
-                  </Text>
-                </>
-              )}
-            </View>
-          ) : null
-        }
-        ListFooterComponent={
-          hasMore && events.length > 0 ? (
-            <TouchableOpacity style={styles.loadMore} onPress={handleLoadMore} activeOpacity={0.7}>
-              <Text style={styles.loadMoreText}>Load more</Text>
-            </TouchableOpacity>
-          ) : null
-        }
-        contentContainerStyle={events.length === 0 ? styles.listEmpty : undefined}
-      />
+      {/* Event list — flex: 1 so it fills remaining space regardless of event count */}
+      <View style={styles.listContainer}>
+        <FlatList<NyxEvent>
+          data={events}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <EventRow
+              event={item}
+              isExpanded={expandedId === item.id}
+              onToggle={() => handleToggle(item.id)}
+              onEdit={() => handleEdit(item)}
+              onDelete={() => handleDelete(item)}
+            />
+          )}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListEmptyComponent={
+            isEmpty ? (
+              <View style={styles.emptyState}>
+                {typeFilter || datePreset ? (
+                  <>
+                    <Text style={styles.emptyTitle}>No events found</Text>
+                    <Text style={styles.emptyBody}>
+                      Try removing a filter to see more history.
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.emptyTitle}>Nothing logged yet</Text>
+                    <Text style={styles.emptyBody}>
+                      {activePet
+                        ? `Tap + anywhere to log ${activePet.name}'s first event.`
+                        : 'Tap + anywhere to start logging.'}
+                    </Text>
+                  </>
+                )}
+              </View>
+            ) : null
+          }
+          ListFooterComponent={
+            hasMore && events.length > 0 ? (
+              <TouchableOpacity style={styles.loadMore} onPress={handleLoadMore} activeOpacity={0.7}>
+                <Text style={styles.loadMoreText}>Load more</Text>
+              </TouchableOpacity>
+            ) : null
+          }
+          contentContainerStyle={events.length === 0 ? styles.listEmpty : undefined}
+        />
+      </View>
     </SafeAreaView>
   );
 }
@@ -300,7 +304,9 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
   },
+  // Explicit height stops horizontal FlatList from stretching in a flex column
   chipRowContainer: {
+    height: 52,
     backgroundColor: theme.colorSurface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
@@ -309,6 +315,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space2,
     paddingVertical: 10,
     gap: 8,
+    alignItems: 'center',
   },
   chip: {
     paddingHorizontal: theme.space2,
@@ -358,6 +365,9 @@ const styles = StyleSheet.create({
   presetTextActive: {
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
+  },
+  listContainer: {
+    flex: 1,
   },
   emptyState: {
     paddingHorizontal: theme.space4,
