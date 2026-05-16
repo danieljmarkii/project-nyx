@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { theme } from '../../constants/theme';
+import { FilterChip } from '../../components/ui/FilterChip';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { EventRow } from '../../components/history/EventRow';
 import { usePetStore } from '../../store/petStore';
@@ -210,21 +211,15 @@ export default function HistoryScreen() {
         <View style={styles.headerRow}>
           <Text style={styles.title}>History</Text>
           <View style={styles.datePresets}>
-            {DATE_PRESETS.map((p) => {
-              const isActive = datePreset === p.key;
-              return (
-                <TouchableOpacity
-                  key={p.key ?? 'all'}
-                  style={[styles.preset, isActive && styles.presetActive]}
-                  onPress={() => handleDatePreset(p.key)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
-                    {p.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+            {DATE_PRESETS.map((p) => (
+              <FilterChip
+                key={p.key ?? 'all'}
+                label={p.label}
+                active={datePreset === p.key}
+                onPress={() => handleDatePreset(p.key)}
+                variant="default"
+              />
+            ))}
           </View>
         </View>
 
@@ -236,20 +231,14 @@ export default function HistoryScreen() {
             keyExtractor={(item) => item.key ?? 'all'}
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipRow}
-            renderItem={({ item }) => {
-              const isActive = typeFilter === item.key;
-              return (
-                <TouchableOpacity
-                  style={[styles.chip, isActive && styles.chipActive]}
-                  onPress={() => handleTypeFilter(item.key)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }}
+            renderItem={({ item }) => (
+              <FilterChip
+                label={item.label}
+                active={typeFilter === item.key}
+                onPress={() => handleTypeFilter(item.key)}
+                variant="filled"
+              />
+            )}
           />
         </View>
       </View>
@@ -335,56 +324,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
-  preset: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: theme.radiusLarge,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  presetActive: {
-    borderColor: theme.colorAccent,
-    backgroundColor: '#EEF5F7',
-  },
-  presetText: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-  },
-  presetTextActive: {
-    fontSize: 13,
-    color: theme.colorAccent,
-    fontWeight: theme.fontWeightMedium,
-  },
   // View wrapper enforces height; setting height directly on FlatList is unreliable
   chipWrapper: {
-    height: 42,
+    height: 44,
   },
   chipRow: {
     paddingHorizontal: theme.space2,
     paddingBottom: 8,
     gap: 6,
     alignItems: 'center',
-    height: 42,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: theme.radiusLarge,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    backgroundColor: theme.colorSurface,
-  },
-  chipActive: {
-    backgroundColor: theme.colorNeutralDark,
-    borderColor: theme.colorNeutralDark,
-  },
-  chipText: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    fontWeight: theme.fontWeightMedium,
-  },
-  chipTextActive: {
-    color: '#fff',
+    height: 44,
   },
   listContainer: {
     flex: 1,

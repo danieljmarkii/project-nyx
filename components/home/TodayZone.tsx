@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
+import { Card } from '../ui/Card';
+import { SectionLabel } from '../ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
@@ -44,8 +46,8 @@ export function TodayZone() {
   const isEmpty = eventsToday.length === 0;
 
   return (
-    <View style={styles.zone}>
-      <Text style={styles.label}>Today</Text>
+    <Card>
+      <SectionLabel label="Today" style={styles.label} />
 
       {isEmpty ? (
         <TouchableOpacity
@@ -104,22 +106,12 @@ export function TodayZone() {
           )}
         </TouchableOpacity>
       )}
-    </View>
+    </Card>
   );
 }
 
 const styles = StyleSheet.create({
-  zone: {
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space3,
-  },
   label: {
-    fontSize: 11,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
     marginBottom: theme.space1,
   },
   nudgeRow: {
@@ -129,13 +121,13 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space1,
   },
   nudge: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
     lineHeight: 22,
     flex: 1,
   },
   nudgeArrow: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
     marginLeft: theme.space2,
   },
@@ -155,25 +147,25 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   chipMeal: {
-    backgroundColor: `${theme.colorAccent}18`,
+    backgroundColor: theme.colorEventMealLight,
   },
   chipSymptom: {
-    backgroundColor: `${theme.colorEventSymptom}18`,
+    backgroundColor: theme.colorEventSymptomLight,
   },
   chipNormal: {
-    backgroundColor: `${theme.colorAccent}12`,
+    backgroundColor: theme.colorAccentLight,
   },
   chipEmoji: {
     fontSize: 15,
     lineHeight: 20,
   },
   chipLabel: {
-    fontSize: 13,
-    fontWeight: theme.fontWeightMedium,
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
   },
   chipLabelMeal: {
-    color: theme.colorAccent,
+    color: theme.colorEventMeal,
   },
   chipLabelSymptom: {
     color: theme.colorEventSymptom,

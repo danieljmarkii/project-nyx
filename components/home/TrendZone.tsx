@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../constants/theme';
+import { Card } from '../ui/Card';
+import { SectionLabel } from '../ui/SectionLabel';
 import { useTrend, TrendData } from '../../hooks/useTrend';
 import { usePetStore } from '../../store/petStore';
 
@@ -11,8 +13,8 @@ export function TrendZone() {
   const petName = activePet?.name ?? 'your pet';
 
   return (
-    <View style={styles.zone}>
-      <Text style={styles.label}>Trend</Text>
+    <Card>
+      <SectionLabel label="Trend" style={styles.label} />
       {isLoading || data === null ? (
         <LoadingState />
       ) : !data.hasEnoughData ? (
@@ -24,7 +26,7 @@ export function TrendZone() {
       ) : (
         <FeedingChart data={data} petName={petName} />
       )}
-    </View>
+    </Card>
   );
 }
 
@@ -87,7 +89,6 @@ function SymptomChart({ data }: { data: TrendData }) {
 
 // 14-day meal consistency dot chart (filled = meal logged, empty = no meal)
 function FeedingChart({ data, petName }: { data: TrendData; petName: string }) {
-  // Show last 7 days for feeding (spec: "feeding consistency over the last 7 days")
   const last7 = data.buckets.slice(-7);
   const consistentDays = last7.filter(b => b.mealCount > 0).length;
 
@@ -147,26 +148,16 @@ function formatShortDate(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
-  zone: {
-    backgroundColor: theme.colorSurface,
-    borderRadius: theme.radiusMedium,
-    padding: theme.space3,
-  },
   label: {
-    fontSize: 11,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
     marginBottom: theme.space2,
   },
   chartSubLabel: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginBottom: theme.space2,
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
     lineHeight: 22,
   },
@@ -197,7 +188,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   axisLabel: {
-    fontSize: 11,
+    fontSize: theme.textXS,
     color: theme.colorTextSecondary,
   },
 
@@ -224,17 +215,18 @@ const styles = StyleSheet.create({
   // Diet trial compliance
   progressTrack: {
     flexDirection: 'row',
-    height: 8,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: theme.colorChartEmpty,
     overflow: 'hidden',
     marginBottom: theme.space1,
   },
   progressFill: {
     backgroundColor: theme.colorAccent,
+    borderRadius: 3,
   },
   complianceNote: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
 
