@@ -15,6 +15,7 @@ interface PetState {
   activePet: Pet | null;
   isOnboarded: boolean;
   setActivePet: (pet: Pet | null) => void;
+  updatePet: (updates: Partial<Pet>) => void;
   setOnboarded: (onboarded: boolean) => void;
 }
 
@@ -22,5 +23,9 @@ export const usePetStore = create<PetState>((set) => ({
   activePet: null,
   isOnboarded: false,
   setActivePet: (activePet) => set({ activePet }),
+  updatePet: (updates) =>
+    set((state) => ({
+      activePet: state.activePet ? { ...state.activePet, ...updates } : null,
+    })),
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
 }));
