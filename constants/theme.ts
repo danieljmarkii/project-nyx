@@ -14,6 +14,10 @@ export const theme = {
   colorTextSecondary: '#6B6B6B',
   colorBorder: '#E8E8E6',
 
+  // Semantic colors for event types and trend charts
+  colorEventSymptom: '#C97A6F',  // warm red — vomit, diarrhea, itch, lethargy
+  colorChartEmpty: '#E8E8E6',    // unfilled bar / dot in trend chart
+
   // Spacing — 8pt grid
   space1: 8,
   space2: 16,
