@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
+  ScrollView, KeyboardAvoidingView, Platform, Image, Alert, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -59,6 +59,7 @@ export default function EditEventModal() {
   const [foods, setFoods] = useState<CachedFood[]>([]);
 
   const [saving, setSaving] = useState(false);
+  const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
 
   // Load existing meal food and photo attachment on mount
   useEffect(() => {
@@ -241,11 +242,11 @@ export default function EditEventModal() {
           {/* Photo */}
           <Text style={[styles.fieldLabel, { marginTop: theme.space3 }]}>Photo</Text>
           {displayAttachmentUri ? (
-            <TouchableOpacity style={styles.photoAttachedRow} onPress={handlePickPhoto} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.photoAttachedRow} onPress={() => setPhotoViewerVisible(true)} activeOpacity={0.8}>
               <Image source={{ uri: displayAttachmentUri }} style={styles.photoThumb} resizeMode="cover" />
               <View style={styles.photoAttachedMeta}>
                 <Text style={styles.photoAttachedText}>Photo attached</Text>
-                <Text style={styles.photoChangeText}>Tap to replace</Text>
+                <Text style={styles.photoChangeText}>Tap to view</Text>
               </View>
             </TouchableOpacity>
           ) : (
@@ -327,6 +328,38 @@ export default function EditEventModal() {
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Fullscreen photo viewer */}
+      <Modal
+        visible={photoViewerVisible}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setPhotoViewerVisible(false)}
+      >
+        <View style={styles.photoViewer}>
+          <Image
+            source={{ uri: displayAttachmentUri ?? '' }}
+            style={styles.photoViewerImage}
+            resizeMode="contain"
+          />
+          <View style={styles.photoViewerActions}>
+            <TouchableOpacity
+              style={styles.photoViewerClose}
+              onPress={() => setPhotoViewerVisible(false)}
+              hitSlop={12}
+            >
+              <Text style={styles.photoViewerCloseText}>✕  Close</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.photoViewerReplace}
+              onPress={() => { setPhotoViewerVisible(false); handlePickPhoto(); }}
+              hitSlop={12}
+            >
+              <Text style={styles.photoViewerReplaceText}>Replace photo</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -522,5 +555,44 @@ const styles = StyleSheet.create({
     minHeight: 80,
     maxHeight: 160,
     textAlignVertical: 'top',
+  },
+  photoViewer: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoViewerImage: {
+    width: '100%',
+    flex: 1,
+  },
+  photoViewerActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: theme.space3,
+    paddingVertical: theme.space3,
+    paddingBottom: 40,
+  },
+  photoViewerClose: {
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+  },
+  photoViewerCloseText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: theme.fontWeightMedium,
+  },
+  photoViewerReplace: {
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: theme.radiusSmall,
+  },
+  photoViewerReplaceText: {
+    fontSize: 15,
+    color: '#fff',
+    fontWeight: theme.fontWeightMedium,
   },
 });

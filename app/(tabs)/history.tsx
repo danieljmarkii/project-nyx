@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
 } from 'react-native';
@@ -60,7 +60,7 @@ function rowToEvent(row: TimelineRow): NyxEvent {
 
 export default function HistoryScreen() {
   const { activePet } = usePetStore();
-  const { removeFromToday } = useEventStore();
+  const { removeFromToday, todayEvents } = useEventStore();
 
   const [events, setEvents] = useState<NyxEvent[]>([]);
   const [offset, setOffset] = useState(0);
@@ -111,6 +111,23 @@ export default function HistoryScreen() {
       loadEvents(0, typeFilter, datePreset, true);
     }, [activePet, typeFilter, datePreset]),
   );
+
+  // Real-time: prepend new events logged via FAB while this tab is visible
+  const latestTodayId = todayEvents[0]?.id;
+  useEffect(() => {
+    if (!latestTodayId) return;
+    setEvents((prev: NyxEvent[]) => {
+      if (prev.some((e: NyxEvent) => e.id === latestTodayId)) return prev;
+      const newEvent = todayEvents[0];
+      if (!newEvent) return prev;
+      if (typeFilter && newEvent.event_type !== typeFilter) return prev;
+      if (datePreset) {
+        const cutoff = dateAfterForPreset(datePreset);
+        if (cutoff && newEvent.occurred_at < cutoff) return prev;
+      }
+      return [newEvent, ...prev];
+    });
+  }, [latestTodayId]);
 
   function handleTypeFilter(key: EventTypeKey | null) {
     setTypeFilter(key);
@@ -293,33 +310,33 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: theme.space3,
-    paddingTop: theme.space2,
-    paddingBottom: theme.space1,
+    paddingTop: 12,
+    paddingBottom: 4,
     backgroundColor: theme.colorSurface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
   },
   title: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
   },
   // Explicit height stops horizontal FlatList from stretching in a flex column
   chipRowContainer: {
-    height: 52,
+    height: 40,
     backgroundColor: theme.colorSurface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
   },
   chipRow: {
     paddingHorizontal: theme.space2,
-    paddingVertical: 10,
-    gap: 8,
+    paddingVertical: 6,
+    gap: 6,
     alignItems: 'center',
   },
   chip: {
-    paddingHorizontal: theme.space2,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: theme.radiusLarge,
     borderWidth: 1,
     borderColor: theme.colorBorder,
@@ -340,15 +357,15 @@ const styles = StyleSheet.create({
   presetRow: {
     flexDirection: 'row',
     paddingHorizontal: theme.space3,
-    paddingVertical: 10,
+    paddingVertical: 6,
     gap: 8,
     backgroundColor: theme.colorSurface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
   },
   preset: {
-    paddingHorizontal: theme.space2,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 3,
     borderRadius: theme.radiusLarge,
     borderWidth: 1,
     borderColor: 'transparent',
