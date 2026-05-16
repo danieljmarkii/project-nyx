@@ -1,19 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Animated, KeyboardAvoidingView, Platform, FlatList,
+  ScrollView, Animated, KeyboardAvoidingView, Platform, FlatList, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
+import { useAttachmentStore } from '../store/attachmentStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
+import { uploadPhoto } from '../lib/storage';
+import { uuid, exifDateToISO } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'food-new' | 'symptom' | 'simple' | 'complete';
 
@@ -53,13 +57,6 @@ const SEVERITY_CONFIG = [
   { value: 5, label: 'Severe' },
 ];
 
-function uuid(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-}
-
 function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -68,9 +65,15 @@ export default function LogModal() {
   const { activePet } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
+  const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
+  const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
 
   const [step, setStep] = useState<Step>('type');
   const [selectedType, setSelectedType] = useState<EventTypeKey | null>(null);
+
+  // Photo attachment
+  const [attachmentUri, setAttachmentUri] = useState<string | null>(null);
+  const [attachmentTakenAt, setAttachmentTakenAt] = useState<string | null>(null);
 
   // Food state
   const [foods, setFoods] = useState<CachedFood[]>([]);
@@ -82,6 +85,7 @@ export default function LogModal() {
   const [newBrand, setNewBrand] = useState('');
   const [newProduct, setNewProduct] = useState('');
   const [newFormat, setNewFormat] = useState('dry_kibble');
+  const [newFoodPhotoUri, setNewFoodPhotoUri] = useState<string | null>(null);
 
   // Symptom state
   const [severity, setSeverity] = useState<number | null>(null);
@@ -94,6 +98,31 @@ export default function LogModal() {
   // Completion animation
   const checkScale = useRef(new Animated.Value(0.5)).current;
   const checkOpacity = useRef(new Animated.Value(0)).current;
+
+  // Consume pending attachment from the FAB photo flow
+  useEffect(() => {
+    if (pendingAttachment) {
+      setAttachmentUri(pendingAttachment.localUri);
+      setAttachmentTakenAt(pendingAttachment.takenAt);
+      if (pendingAttachment.takenAt) {
+        setOccurredAt(new Date(pendingAttachment.takenAt));
+      }
+      setPendingAttachment(null);
+    }
+  }, []);
+
+  // Skip type selection when a type is pre-selected via route param (e.g. FAB "New meal")
+  useEffect(() => {
+    if (!typeParam) return;
+    if (typeParam === 'meal') {
+      setSelectedType('meal');
+      setStep('food');
+    } else if (typeParam in EVENT_TYPES) {
+      const t = typeParam as EventTypeKey;
+      setSelectedType(t);
+      setStep(EVENT_TYPES[t].hasSeverity ? 'symptom' : 'simple');
+    }
+  }, [typeParam]);
 
   useEffect(() => {
     if (step === 'food') loadFoods();
@@ -111,9 +140,14 @@ export default function LogModal() {
 
   async function loadFoods() {
     const db = getDb();
+    // GROUP BY brand+product_name deduplicates entries that were created locally
+    // and then also synced down from the global food_items table.
     const rows = await db.getAllAsync<CachedFood>(
-      `SELECT id, brand, product_name, format FROM food_items_cache
-       ORDER BY last_used_at DESC NULLS LAST, brand ASC LIMIT 30`
+      `SELECT id, brand, product_name, format
+       FROM food_items_cache
+       GROUP BY LOWER(brand), LOWER(product_name)
+       ORDER BY MAX(COALESCE(last_used_at, '')) DESC, brand ASC
+       LIMIT 30`
     );
     setFoods(rows);
   }
@@ -126,14 +160,76 @@ export default function LogModal() {
     else setStep('simple');
   }
 
+  async function handlePickPhoto() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Photo access needed', 'Allow photo access in Settings.');
+      return;
+    }
+    Alert.alert('Attach photo', 'Choose a source', [
+      {
+        text: 'Take photo', onPress: async () => {
+          const { status: cs } = await ImagePicker.requestCameraPermissionsAsync();
+          if (cs !== 'granted') { Alert.alert('Camera access needed'); return; }
+          launchPhotoPicker('camera');
+        },
+      },
+      { text: 'Choose from library', onPress: () => launchPhotoPicker('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  async function launchPhotoPicker(source: 'camera' | 'library') {
+    const opts: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+      exif: true,
+    };
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync(opts)
+      : await ImagePicker.launchImageLibraryAsync(opts);
+
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    setAttachmentUri(asset.uri);
+
+    const exifRaw = (asset.exif as Record<string, unknown> | undefined);
+    const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
+    if (typeof dateRaw === 'string') {
+      const iso = exifDateToISO(dateRaw);
+      if (iso) {
+        setAttachmentTakenAt(iso);
+        setOccurredAt(new Date(iso));
+      }
+    }
+  }
+
+  async function handlePickFoodLabelPhoto() {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Camera access needed', 'Allow camera access in Settings to scan a label.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.9,
+      exif: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setNewFoodPhotoUri(result.assets[0].uri);
+    }
+  }
+
   async function handleNewFoodSave() {
     if (!newBrand.trim() || !newProduct.trim()) return;
     const foodId = uuid();
     const db = getDb();
     const now = new Date().toISOString();
     await db.runAsync(
-      `INSERT OR REPLACE INTO food_items_cache (id, brand, product_name, format, cached_at) VALUES (?, ?, ?, ?, ?)`,
-      [foodId, newBrand.trim(), newProduct.trim(), newFormat, now]
+      `INSERT OR REPLACE INTO food_items_cache (id, brand, product_name, format, photo_path, cached_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      [foodId, newBrand.trim(), newProduct.trim(), newFormat, newFoodPhotoUri ?? null, now]
     );
     // Best-effort remote insert — food_items is a global shared catalog
     supabase.from('food_items').insert({
@@ -145,12 +241,20 @@ export default function LogModal() {
     }).then(({ error }) => {
       if (error) console.warn('[food] remote insert failed:', error.message);
     });
+    // Upload food label photo if taken
+    if (newFoodPhotoUri) {
+      const storagePath = `${foodId}/label.jpg`;
+      uploadPhoto('nyx-food-photos', storagePath, newFoodPhotoUri)
+        .then(() => supabase.from('food_items').update({ photo_path: storagePath }).eq('id', foodId))
+        .catch(console.error);
+    }
     setSelectedFoodId(foodId);
     setSelectedFoodBrand(newBrand.trim());
     setSelectedFoodProduct(newProduct.trim());
     setNewBrand('');
     setNewProduct('');
     setNewFormat('dry_kibble');
+    setNewFoodPhotoUri(null);
     // Return to food screen with new item selected
     await loadFoods();
     setStep('food');
@@ -197,6 +301,28 @@ export default function LogModal() {
       food_product_name: selectedFoodProduct,
       quantity: selectedFoodId ? 'unknown' : null,
     });
+
+    // Save and upload photo attachment if present
+    if (attachmentUri) {
+      const attId = uuid();
+      const storagePath = `${activePet.id}/${eventId}/${attId}.jpg`;
+      await db.runAsync(
+        `INSERT INTO event_attachments
+           (id, event_id, pet_id, local_uri, storage_path, mime_type, taken_at, synced, created_at)
+         VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
+        [attId, eventId, activePet.id, attachmentUri, storagePath, attachmentTakenAt ?? null, now]
+      );
+      uploadPhoto('nyx-event-attachments', storagePath, attachmentUri)
+        .then(async () => {
+          await supabase.from('event_attachments').upsert({
+            id: attId, event_id: eventId, pet_id: activePet.id,
+            storage_path: storagePath, mime_type: 'image/jpeg', taken_at: attachmentTakenAt,
+          }, { onConflict: 'id' });
+          await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+        })
+        .catch(console.error);
+    }
+
     setStep('complete');
     syncPendingEvents()
       .then(() => syncPendingMeals())
@@ -230,6 +356,23 @@ export default function LogModal() {
   }
 
   // ── Shared sub-components ───────────────────────────────────────────────────
+
+  function PhotoAttachRow() {
+    if (attachmentUri) {
+      return (
+        <TouchableOpacity style={styles.photoAttachedRow} onPress={handlePickPhoto} activeOpacity={0.8}>
+          <Image source={{ uri: attachmentUri }} style={styles.photoThumb} resizeMode="cover" />
+          <Text style={styles.photoAttachedText}>Photo attached · tap to replace</Text>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.8}>
+        <Text style={styles.photoRowIcon}>📷</Text>
+        <Text style={styles.photoRowText}>Attach photo</Text>
+      </TouchableOpacity>
+    );
+  }
 
   function TimeRow() {
     return (
@@ -271,6 +414,12 @@ export default function LogModal() {
             <Text style={styles.closeBtnText}>✕</Text>
           </TouchableOpacity>
         </View>
+        {attachmentUri && (
+          <View style={styles.attachmentBanner}>
+            <Image source={{ uri: attachmentUri }} style={styles.bannerThumb} resizeMode="cover" />
+            <Text style={styles.bannerText}>{petName}'s photo is attached — which event is this for?</Text>
+          </View>
+        )}
         <ScrollView contentContainerStyle={styles.typeGrid} showsVerticalScrollIndicator={false}>
           {(Object.entries(EVENT_TYPES) as [EventTypeKey, typeof EVENT_TYPES[EventTypeKey]][]).map(([key, config]) => (
             <TouchableOpacity
@@ -283,6 +432,16 @@ export default function LogModal() {
               <Text style={styles.typeLabel}>{config.label}</Text>
             </TouchableOpacity>
           ))}
+          {!attachmentUri && (
+            <TouchableOpacity
+              style={[styles.typeCard, styles.typeCardPhoto]}
+              onPress={handlePickPhoto}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.typeIcon}>📷</Text>
+              <Text style={styles.typeLabel}>Attach photo</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </SafeAreaView>
     );
@@ -338,6 +497,7 @@ export default function LogModal() {
             }
           />
           <View style={styles.bottomPanel}>
+            <PhotoAttachRow />
             <NotesInput />
             <TimeRow />
             {showTimePicker && (
@@ -380,6 +540,19 @@ export default function LogModal() {
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
+            <TouchableOpacity style={styles.scanLabelBtn} onPress={handlePickFoodLabelPhoto} activeOpacity={0.8}>
+              {newFoodPhotoUri ? (
+                <>
+                  <Image source={{ uri: newFoodPhotoUri }} style={styles.scanLabelThumb} resizeMode="cover" />
+                  <Text style={styles.scanLabelText}>Label photo attached · tap to retake</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.scanLabelIcon}>📷</Text>
+                  <Text style={styles.scanLabelText}>Scan food label (optional)</Text>
+                </>
+              )}
+            </TouchableOpacity>
             <Text style={styles.fieldLabel}>Brand</Text>
             <TextInput
               style={styles.textInput}
@@ -443,6 +616,7 @@ export default function LogModal() {
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.symptomScroll} keyboardShouldPersistTaps="handled">
+            <PhotoAttachRow />
             <Text style={styles.severityHeading}>How severe?</Text>
             <View style={styles.severityRow}>
               {SEVERITY_CONFIG.map(({ value, label }) => {
@@ -514,6 +688,7 @@ export default function LogModal() {
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
+            <PhotoAttachRow />
             <NotesInput />
             <TimeRow />
             {showTimePicker && (
@@ -828,6 +1003,86 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.colorBorder,
     padding: theme.space2,
+  },
+
+  // ── Photo attachment ──
+  photoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    paddingVertical: theme.space1,
+  },
+  photoRowIcon: { fontSize: 16 },
+  photoRowText: {
+    fontSize: 14,
+    color: theme.colorTextSecondary,
+  },
+  photoAttachedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    paddingVertical: theme.space1,
+  },
+  photoThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: theme.radiusSmall,
+  },
+  photoAttachedText: {
+    fontSize: 13,
+    color: theme.colorTextSecondary,
+    flex: 1,
+  },
+  // Attachment banner shown at top of type-selection when photo pre-attached
+  attachmentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    paddingHorizontal: theme.space3,
+    paddingVertical: theme.space2,
+    backgroundColor: theme.colorNeutralLight,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colorBorder,
+  },
+  bannerThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radiusSmall,
+  },
+  bannerText: {
+    fontSize: 14,
+    color: theme.colorTextSecondary,
+    flex: 1,
+    lineHeight: 20,
+  },
+  // Photo card in the type grid
+  typeCardPhoto: {
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderStyle: 'dashed',
+    backgroundColor: theme.colorSurface,
+  },
+  // Food label scan
+  scanLabelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    padding: theme.space2,
+    marginBottom: theme.space1,
+  },
+  scanLabelIcon: { fontSize: 18 },
+  scanLabelText: {
+    fontSize: 14,
+    color: theme.colorTextSecondary,
+    flex: 1,
+  },
+  scanLabelThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radiusSmall,
   },
 
   // ── Completion ──

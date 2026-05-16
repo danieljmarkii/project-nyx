@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.2 | Last Updated: May 2026
+**Version:** 1.4 | Last Updated: May 2026
 
 ---
 
@@ -21,9 +21,9 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 
 | Document | Read When |
 |---|---|
-| `technical-spec.md` | Every session. Stack, architecture decisions, MVP acceptance criteria, build sequence. |
-| `schema.sql` | Any session touching data, queries, or new tables. Reference queries are documented here. |
-| `design-principles.md` | Any session touching UI, copy, interaction, or notifications. Seven principles govern every screen. |
+| `docs/nyx-technical-spec-v1_0.md` | Every session. Stack, architecture decisions, MVP acceptance criteria, build sequence. |
+| `docs/nyx-schema-v1_0.sql` | Any session touching data, queries, or new tables. Reference queries are documented here. |
+| `docs/nyx-design-principles-v1_0.md` | Any session touching UI, copy, interaction, or notifications. Seven principles govern every screen. |
 | `research.md` | When making product decisions about scope, features, or user behavior. Market and persona data lives here. |
 | `competitive-landscape.md` | When evaluating feature positioning or vet-facing strategy. |
 
@@ -81,6 +81,9 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Any query that would break when a second pet is added to the account
 - Direct `supabase.auth.getUser()` calls in components — always go through the auth store
 - Storing attachment URLs in the event row — attachments have their own table with a foreign key to `event_id`
+- Bundling a schema migration with UI code in the same PR — schema changes get their own PR so they can be reviewed, applied, and verified independently
+- Duplicating utility functions (`uuid`, `exifDateToISO`) across screens — shared pure functions belong in `lib/utils.ts`
+- Writing new quick-log UI directly in screen files — quick-log components belong in `components/log/` per the project structure in `nyx-technical-spec-v1_0.md`
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
 ---
@@ -148,6 +151,60 @@ The PM owns product vision, roadmap, and all final calls. When something require
 
 ---
 
+### Veterinarian — Dr. Alex Chen
+**Role:** Clinical end-user of the vet report. Represents the veterinary perspective in all product and design decisions.
+
+**What Dr. Chen needs from Nyx:**
+- Precise timestamps on every event — "Tuesday at 2:14 PM" is clinically meaningful; "recently" is not
+- Exact food data: brand, ingredient list, not just "dry kibble"
+- Symptom frequency and trend over time, not single-occurrence flags
+- A report she can scan in 60 seconds at the start of a consult — she does not have 10 minutes
+- Language that matches how she would write a SOAP note, not how a pet brand talks about "fur babies"
+
+**What Dr. Chen does not want:**
+- Decorative elements, branding, or paw prints anywhere near clinical data
+- Severity scores entered by owners who underestimate or catastrophize — she trusts frequency over owner-rated severity
+- Alerts that spike owner anxiety before the data justifies clinical concern
+- Data that could have been entered after the fact or back-dated beyond reasonable trust
+
+**Consulting Dr. Chen when:**
+- Designing the vet report format, copy, or data structure
+- Deciding whether to surface a severity input vs. relying on frequency/photo evidence
+- Evaluating whether an AI Signal output would read as useful or alarming to a clinician
+- Designing any feature meant to be shown at a vet appointment
+
+**Key question Dr. Chen asks:** "Would I trust this data to inform a clinical decision for a patient I haven't met?"
+
+---
+
+### Pet Owner — Jordan
+**Role:** Primary end-user of the daily logging flow. Represents the real-world usage context in all product and design decisions.
+
+**Who Jordan is:** 34, works full-time, has one dog (Mochi, 4yo mixed breed). Currently doing a diet trial after Mochi had recurring GI issues. The vet said to track food and symptoms for 6 weeks. Jordan has tried two other apps and quit both within a week.
+
+**What Jordan needs from Nyx:**
+- To log something in under 10 seconds, one-handed, while Mochi is mid-incident
+- Confirmation-over-entry after week one — Jordan should never have to type "Royal Canin Hydrolyzed Protein" again
+- Honest, non-alarming feedback when something looks off
+- To not feel nagged, monitored, or gamified
+
+**What Jordan does not want:**
+- Severity sliders when Mochi just vomited — Jordan doesn't know what "3 out of 5" means clinically
+- Mandatory fields that add decisions at moment of event
+- Generic push notifications that feel like a DAU metric
+- Medical jargon — Jordan knows "vomiting," not "emesis"
+- To feel like the app is for hypochondriac pet owners, not real ones
+
+**Consulting Jordan when:**
+- Evaluating any new input or decision in the quick-log flow
+- Writing copy for nudges, empty states, or health alerts
+- Deciding whether a feature belongs in the core (free) tier
+- Assessing whether an onboarding step is worth the friction it adds
+
+**Key question Jordan asks:** "Can I do this in under 10 seconds while my dog is being weird?"
+
+---
+
 ### Sr. QA Associate
 **Mandate:** Edge case identification, acceptance criteria enforcement, and regression awareness.
 
@@ -166,6 +223,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Vet report share token accessed after 30-day expiry
 - User deletes a pet — cascade behavior across all child tables
 - Two devices logged in as the same user submit conflicting events simultaneously
+- Photo EXIF timestamp is absent or malformed — `occurred_at` must fall back to `new Date()`, never throw
+- Photo upload fails mid-sync while offline — local SQLite record with `synced = 0` must be retried on reconnect, not silently dropped
 - *(Append new edge cases here as they are discovered in the codebase)*
 
 ---
@@ -357,3 +416,5 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.0 | May 2026 | Initial file. Created before first Claude Code session. Based on product brief, technical spec, design principles, schema, research, and competitive landscape. |
 | v1.1 | May 2026 | Active session check-in protocol. Persona conflict escalation format. Mid-session CLAUDE.md updates. Acceptance criteria explicit pass/fail by QA. Anti-pattern and edge case lists made appendable. Three-tier documentation update protocol. Missing doc handling. Code conventions section. Open questions table with resolution tracking. Freemium gate question added. |
 | v1.2 | May 2026 | Async/non-interactive session handling. Environment and secrets management section. Git workflow with PR format requirements. Testing conventions added to Code Conventions. Provisional decision protocol for stalled blocking questions. Build sequence updated with ✓ markers and current phase (Step 4a). Acceptance criteria pointer added to build sequence. Persona conflict protocol surfaced as its own section. Anti-pattern lists seeded with additional items (auth store pattern, modal-on-modal, attachment storage). |
+| v1.3 | May 2026 | Fixed doc filename references in the Read These table to match actual filenames in /docs/. Appended four engineering anti-patterns from Step 4a session: schema+UI bundling, utility duplication, quick-log components in wrong location. Appended two QA edge cases: EXIF fallback, failed upload retry. |
+| v1.4 | May 2026 | Added Veterinarian (Dr. Alex Chen) and Pet Owner (Jordan) personas to the Product Team section. Personas include mandate, needs, anti-needs, consultation triggers, and key question. |

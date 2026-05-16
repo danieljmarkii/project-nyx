@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { syncPendingEvents, syncPendingMeals, refreshFoodCache } from '../lib/sync';
+import {
+  syncPendingEvents, syncPendingMeals, refreshFoodCache,
+  syncPendingVetVisits, syncPendingAttachments,
+} from '../lib/sync';
 import { useAuthStore } from '../store/authStore';
 
 export function useSync() {
@@ -13,12 +16,16 @@ export function useSync() {
     // Sync on mount
     syncPendingEvents();
     syncPendingMeals();
+    syncPendingAttachments();
+    syncPendingVetVisits();
     refreshFoodCache();
 
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {
         syncPendingEvents();
         syncPendingMeals();
+        syncPendingAttachments();
+        syncPendingVetVisits();
         refreshFoodCache();
       }
       appState.current = nextState;

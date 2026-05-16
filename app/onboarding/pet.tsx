@@ -30,27 +30,26 @@ export default function OnboardingPetScreen() {
   async function handleContinue() {
     if (!canContinue || !user) return;
     setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('pets')
+        .insert({ user_id: user.id, name: name.trim(), species })
+        .select()
+        .single();
 
-    const { data, error } = await supabase
-      .from('pets')
-      .insert({
-        user_id: user.id,
-        name: name.trim(),
-        species,
-      })
-      .select()
-      .single();
+      if (error || !data) {
+        Alert.alert('Something went wrong', error?.message ?? 'Please try again.');
+        return;
+      }
 
-    setLoading(false);
-
-    if (error || !data) {
-      Alert.alert('Something went wrong', error?.message ?? 'Please try again.');
-      return;
+      setActivePet(data);
+      setOnboarded(true);
+      router.push('/onboarding/food');
+    } catch {
+      Alert.alert('Something went wrong', 'Please check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
-
-    setActivePet(data);
-    setOnboarded(true);
-    router.push('/onboarding/food');
   }
 
   return (
@@ -71,7 +70,6 @@ export default function OnboardingPetScreen() {
           placeholderTextColor={theme.colorTextSecondary}
           value={name}
           onChangeText={setName}
-          autoFocus
           autoCapitalize="words"
           returnKeyType="done"
         />
