@@ -357,7 +357,7 @@ export default function LogModal() {
 
   // ── Shared sub-components ───────────────────────────────────────────────────
 
-  function PhotoAttachRow() {
+  function renderPhotoAttachRow() {
     if (attachmentUri) {
       return (
         <TouchableOpacity style={styles.photoAttachedRow} onPress={handlePickPhoto} activeOpacity={0.8}>
@@ -374,7 +374,7 @@ export default function LogModal() {
     );
   }
 
-  function TimeRow() {
+  function renderTimeRow() {
     return (
       <View style={styles.timeRow}>
         <Text style={styles.timeLabel}>
@@ -389,7 +389,7 @@ export default function LogModal() {
     );
   }
 
-  function NotesInput() {
+  function renderNotesInput() {
     return (
       <TextInput
         style={styles.notesInput}
@@ -497,9 +497,9 @@ export default function LogModal() {
             }
           />
           <View style={styles.bottomPanel}>
-            <PhotoAttachRow />
-            <NotesInput />
-            <TimeRow />
+            {renderPhotoAttachRow()}
+            {renderNotesInput()}
+            {renderTimeRow()}
             {showTimePicker && (
               <DateTimePicker
                 value={occurredAt}
@@ -616,7 +616,7 @@ export default function LogModal() {
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.symptomScroll} keyboardShouldPersistTaps="handled">
-            <PhotoAttachRow />
+            {renderPhotoAttachRow()}
             <Text style={styles.severityHeading}>How severe?</Text>
             <View style={styles.severityRow}>
               {SEVERITY_CONFIG.map(({ value, label }) => {
@@ -644,8 +644,8 @@ export default function LogModal() {
               })}
             </View>
             <View style={styles.divider} />
-            <NotesInput />
-            <TimeRow />
+            {renderNotesInput()}
+            {renderTimeRow()}
             {showTimePicker && (
               <DateTimePicker
                 value={occurredAt}
@@ -688,9 +688,9 @@ export default function LogModal() {
         </View>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
-            <PhotoAttachRow />
-            <NotesInput />
-            <TimeRow />
+            {renderPhotoAttachRow()}
+            {renderNotesInput()}
+            {renderTimeRow()}
             {showTimePicker && (
               <DateTimePicker
                 value={occurredAt}
