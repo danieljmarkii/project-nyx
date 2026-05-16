@@ -120,7 +120,7 @@ export default function LogModal() {
     } else if (typeParam in EVENT_TYPES) {
       const t = typeParam as EventTypeKey;
       setSelectedType(t);
-      setStep(EVENT_TYPES[t].hasSeverity ? 'symptom' : 'simple');
+      setStep(EVENT_TYPES[t].hasFood ? 'food' : 'simple');
     }
   }, [typeParam]);
 
@@ -156,7 +156,6 @@ export default function LogModal() {
     setSelectedType(type);
     const config = EVENT_TYPES[type];
     if (config.hasFood) setStep('food');
-    else if (config.hasSeverity) setStep('symptom');
     else setStep('simple');
   }
 

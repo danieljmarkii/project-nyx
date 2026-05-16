@@ -23,6 +23,8 @@ interface EventState {
   todayEvents: NyxEvent[];
   setTodayEvents: (events: NyxEvent[]) => void;
   prependEvent: (event: NyxEvent) => void;
+  removeFromToday: (eventId: string) => void;
+  patchInToday: (eventId: string, patch: Partial<NyxEvent>) => void;
 }
 
 export const useEventStore = create<EventState>((set) => ({
@@ -30,4 +32,14 @@ export const useEventStore = create<EventState>((set) => ({
   setTodayEvents: (todayEvents) => set({ todayEvents }),
   prependEvent: (event) =>
     set((state) => ({ todayEvents: [event, ...state.todayEvents] })),
+  removeFromToday: (eventId) =>
+    set((state) => ({
+      todayEvents: state.todayEvents.filter((e) => e.id !== eventId),
+    })),
+  patchInToday: (eventId, patch) =>
+    set((state) => ({
+      todayEvents: state.todayEvents.map((e) =>
+        e.id === eventId ? { ...e, ...patch } : e,
+      ),
+    })),
 }));
