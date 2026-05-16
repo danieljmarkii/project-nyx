@@ -5,25 +5,26 @@ import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
+import { NyxEvent } from '../../store/eventStore';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
 
 const SYMPTOM_TYPES: ReadonlySet<EventTypeKey> = new Set([
   'vomit', 'diarrhea', 'lethargy', 'itch',
 ]);
+const FALLBACK = { label: 'Event', emoji: '·' };
+const MAX_SHOWN = 3;
 
-const DISPLAYED_TYPES: EventTypeKey[] = [
-  'meal', 'vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch',
-];
+function formatEventTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
 
 export function TodayZone() {
   const { activePet } = usePetStore();
   const { todayEvents } = useEvents();
   const petName = activePet?.name ?? 'your pet';
 
-  // Filter to events that actually occurred today in local time.
-  // prependEvent adds to the store without date-checking, so backdated
-  // events can appear in todayEvents — we guard against that here.
+  // Guard against backdated events that prependEvent may have added
   const localTodayStart = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -35,14 +36,8 @@ export function TodayZone() {
     [todayEvents, localTodayStart],
   );
 
-  const counts: Partial<Record<EventTypeKey | 'other', number>> = {};
-  for (const event of eventsToday) {
-    const key = event.event_type as EventTypeKey | 'other';
-    counts[key] = (counts[key] ?? 0) + 1;
-  }
-
-  const chips = DISPLAYED_TYPES.filter(type => (counts[type] ?? 0) > 0);
-  const otherCount = counts['other'] ?? 0;
+  const shown = eventsToday.slice(0, MAX_SHOWN);
+  const remaining = eventsToday.length - MAX_SHOWN;
   const isEmpty = eventsToday.length === 0;
 
   return (
@@ -63,50 +58,55 @@ export function TodayZone() {
       ) : (
         <TouchableOpacity
           onPress={() => router.push('/(tabs)/history')}
-          activeOpacity={0.85}
-          style={styles.chipsRow}
+          activeOpacity={0.92}
         >
-          {chips.map(type => {
-            const def = EVENT_TYPES[type];
-            const count = counts[type] ?? 0;
-            const isSymptom = SYMPTOM_TYPES.has(type);
-            const isMeal = type === 'meal';
+          <View style={styles.strip}>
+            {shown.map((event, i) => (
+              <EventStripRow
+                key={event.id}
+                event={event}
+                showBorder={i > 0}
+              />
+            ))}
+          </View>
 
-            return (
-              <View
-                key={type}
-                style={[
-                  styles.chip,
-                  isMeal && styles.chipMeal,
-                  isSymptom && styles.chipSymptom,
-                  type === 'stool_normal' && styles.chipNormal,
-                ]}
-              >
-                {isMeal && <Text style={styles.chipEmoji}>{def.emoji}</Text>}
-                <Text
-                  style={[
-                    styles.chipLabel,
-                    isMeal && styles.chipLabelMeal,
-                    isSymptom && styles.chipLabelSymptom,
-                    type === 'stool_normal' && styles.chipLabelNormal,
-                  ]}
-                >
-                  {def.label}{count > 1 ? ` ×${count}` : ''}
-                </Text>
-              </View>
-            );
-          })}
-
-          {otherCount > 0 && (
-            <View style={styles.chip}>
-              <Text style={styles.chipLabel}>
-                Other{otherCount > 1 ? ` ×${otherCount}` : ''}
-              </Text>
-            </View>
+          {remaining > 0 && (
+            <Text style={styles.moreLink}>
+              {remaining} more event{remaining !== 1 ? 's' : ''} today →
+            </Text>
           )}
         </TouchableOpacity>
       )}
     </Card>
+  );
+}
+
+function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boolean }) {
+  const config = EVENT_TYPES[event.event_type as EventTypeKey] ?? FALLBACK;
+  const isSymptom = SYMPTOM_TYPES.has(event.event_type as EventTypeKey);
+  const isMeal = event.event_type === 'meal';
+
+  return (
+    <View style={[styles.eventRow, showBorder && styles.eventRowBorder]}>
+      <View style={[
+        styles.iconCircle,
+        isMeal && styles.iconMeal,
+        isSymptom && styles.iconSymptom,
+      ]}>
+        <Text style={styles.iconEmoji}>{config.emoji}</Text>
+      </View>
+
+      <View style={styles.eventMeta}>
+        <Text style={styles.eventLabel}>{config.label}</Text>
+        {isMeal && event.food_product_name ? (
+          <Text style={styles.eventSub} numberOfLines={1}>
+            {event.food_product_name}
+          </Text>
+        ) : null}
+      </View>
+
+      <Text style={styles.eventTime}>{formatEventTime(event.occurred_at)}</Text>
+    </View>
   );
 }
 
@@ -131,46 +131,63 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     marginLeft: theme.space2,
   },
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.space1,
-    paddingTop: theme.space1,
+
+  // Event strip
+  strip: {
+    marginTop: 4,
   },
-  chip: {
+  eventRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colorNeutralLight,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space1,
-    paddingVertical: 6,
-    gap: 4,
+    paddingVertical: 10,
+    gap: 10,
   },
-  chipMeal: {
+  eventRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+  },
+  iconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colorNeutralLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconMeal: {
     backgroundColor: theme.colorEventMealLight,
   },
-  chipSymptom: {
+  iconSymptom: {
     backgroundColor: theme.colorEventSymptomLight,
   },
-  chipNormal: {
-    backgroundColor: theme.colorAccentLight,
-  },
-  chipEmoji: {
+  iconEmoji: {
     fontSize: 15,
     lineHeight: 20,
   },
-  chipLabel: {
-    fontSize: theme.textSM,
+  eventMeta: {
+    flex: 1,
+    gap: 1,
+  },
+  eventLabel: {
+    fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
   },
-  chipLabelMeal: {
-    color: theme.colorEventMeal,
+  eventSub: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
-  chipLabelSymptom: {
-    color: theme.colorEventSymptom,
+  eventTime: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
-  chipLabelNormal: {
+  moreLink: {
+    fontSize: theme.textSM,
     color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+    marginTop: 2,
   },
 });
