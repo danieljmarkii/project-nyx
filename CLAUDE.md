@@ -239,15 +239,15 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 2. **Schema** — run `schema.sql`, confirm RLS policies, confirm all tables exist ✓
 3. **Onboarding** — pet creation, optional food entry, navigation to home ✓
 4. **Quick-log** — local SQLite write, food library, event type selection, completion state. Done when it passes the 10-second test. ✓
-   - **4a. Attachment support** — photo/file attachment to events ← Current phase
-5. **Home screen** — Zone 2 (Today) first, Zone 3 (Trend) second, Zone 1 (AI Signal) last
-6. **Timeline** — log history, filter, soft delete, edit
+   - **4a. Attachment support** — photo/file attachment to events ✓
+5. **Home screen** — Zone 2 (Today) ✓, Zone 3 (Trend) ✓, Zone 1 (AI Signal) deferred to Step 10 (requires Edge Function)
+6. **Timeline** — log history, filter, soft delete, edit ← Current phase
 7. **Pet profile** — display and edit, photo upload, conditions, diet trial card
 8. **Offline sync** — SQLite queue, flush on reconnect, last-write-wins conflict resolution
 9. **Vet report** — Edge Function, PDF generation, share token, share sheet
 10. **AI Signal Edge Function** — Claude API call, single-sentence output, caching
 
-**Current phase:** Step 4a — Quick-log attachment support
+**Current phase:** Step 6 — Timeline
 
 ---
 
@@ -447,3 +447,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.2 | May 2026 | Async/non-interactive session handling. Environment and secrets management section. Git workflow with PR format requirements. Testing conventions added to Code Conventions. Provisional decision protocol for stalled blocking questions. Build sequence updated with ✓ markers and current phase (Step 4a). Acceptance criteria pointer added to build sequence. Persona conflict protocol surfaced as its own section. Anti-pattern lists seeded with additional items (auth store pattern, modal-on-modal, attachment storage). |
 | v1.3 | May 2026 | Fixed doc filename references in the Read These table to match actual filenames in /docs/. Appended four engineering anti-patterns from Step 4a session: schema+UI bundling, utility duplication, quick-log components in wrong location. Appended two QA edge cases: EXIF fallback, failed upload retry. |
 | v1.4 | May 2026 | Added Veterinarian (Dr. Alex Chen) and Pet Owner (Jordan) personas to the Product Team section. Personas include mandate, needs, anti-needs, consultation triggers, and key question. |
+| v1.5 | May 2026 | Updated build sequence: 4a ✓, Step 5 Zones 2 & 3 ✓ (Zone 1 deferred to Step 10), current phase updated to Step 6. Session note: CLAUDE.md was not being updated between sessions — build sequence was stale at 4a despite Steps 4a and 5 (partial) being complete. |

@@ -45,6 +45,7 @@ export default function RootLayout() {
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="log" options={{ presentation: 'modal' }} />
         <Stack.Screen name="vet-visit" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
         <Stack.Screen name="report" />
       </Stack>
     </>

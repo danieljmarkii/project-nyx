@@ -111,3 +111,104 @@ export async function initDb(): Promise<void> {
     // Column already exists — safe to ignore
   }
 }
+
+export interface TimelineRow {
+  id: string;
+  pet_id: string;
+  event_type: string;
+  occurred_at: string;
+  severity: number | null;
+  notes: string | null;
+  source: string;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  food_item_id: string | null;
+  quantity: string | null;
+  food_brand: string | null;
+  food_product_name: string | null;
+}
+
+export async function getTimeline(
+  petId: string,
+  limit: number,
+  offset: number,
+  typeFilter: string | null,
+  dateAfter: string | null,
+): Promise<TimelineRow[]> {
+  const db = getDb();
+  const params: (string | number)[] = [petId];
+  let typeClause = '';
+  let dateClause = '';
+  if (typeFilter) {
+    typeClause = 'AND e.event_type = ?';
+    params.push(typeFilter);
+  }
+  if (dateAfter) {
+    dateClause = 'AND e.occurred_at >= ?';
+    params.push(dateAfter);
+  }
+  params.push(limit, offset);
+  return db.getAllAsync<TimelineRow>(
+    `SELECT e.id, e.pet_id, e.event_type, e.occurred_at, e.severity, e.notes,
+            e.source, e.deleted_at, e.created_at, e.updated_at,
+            m.food_item_id, m.quantity,
+            f.brand AS food_brand, f.product_name AS food_product_name
+     FROM events e
+     LEFT JOIN meals m ON m.event_id = e.id
+     LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE e.pet_id = ? AND e.deleted_at IS NULL
+     ${typeClause} ${dateClause}
+     ORDER BY e.occurred_at DESC
+     LIMIT ? OFFSET ?`,
+    params,
+  );
+}
+
+export async function softDeleteEvent(eventId: string): Promise<void> {
+  const db = getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    'UPDATE events SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?',
+    [now, now, eventId],
+  );
+}
+
+export async function updateEvent(
+  eventId: string,
+  fields: { occurred_at: string; severity: number | null; notes: string | null },
+): Promise<void> {
+  const db = getDb();
+  const now = new Date().toISOString();
+  await db.runAsync(
+    'UPDATE events SET occurred_at = ?, severity = ?, notes = ?, updated_at = ?, synced = 0 WHERE id = ?',
+    [fields.occurred_at, fields.severity ?? null, fields.notes, now, eventId],
+  );
+}
+
+export async function updateMealFood(eventId: string, foodItemId: string): Promise<void> {
+  const db = getDb();
+  await db.runAsync(
+    'UPDATE meals SET food_item_id = ?, synced = 0 WHERE event_id = ?',
+    [foodItemId, eventId],
+  );
+}
+
+export async function getMealForEvent(eventId: string): Promise<{
+  food_item_id: string | null;
+  food_brand: string | null;
+  food_product_name: string | null;
+} | null> {
+  const db = getDb();
+  return db.getFirstAsync<{
+    food_item_id: string | null;
+    food_brand: string | null;
+    food_product_name: string | null;
+  }>(
+    `SELECT m.food_item_id, f.brand AS food_brand, f.product_name AS food_product_name
+     FROM meals m
+     LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE m.event_id = ?`,
+    [eventId],
+  );
+}
