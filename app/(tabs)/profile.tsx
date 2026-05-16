@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
@@ -431,6 +432,10 @@ export default function ProfileScreen() {
         {/* ── Account ── */}
         <Card style={styles.sectionGap}>
           <Text style={styles.sectionTitle}>Account</Text>
+          <Divider style={styles.accountDivider} />
+          <TouchableOpacity style={styles.accountRow} onPress={() => router.push('/report')}>
+            <Text style={styles.accountRowText}>Generate vet report</Text>
+          </TouchableOpacity>
           <Divider style={styles.accountDivider} />
           <TouchableOpacity style={styles.accountRow} onPress={handleSignOut}>
             <Text style={styles.accountRowText}>Sign out</Text>

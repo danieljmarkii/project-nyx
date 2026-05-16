@@ -2,13 +2,13 @@ import { supabase } from './supabase';
 
 interface ReportParams {
   petId: string;
-  dateRangeStart: string; // ISO date string
-  dateRangeEnd: string;
+  dateRangeStart: string; // YYYY-MM-DD
+  dateRangeEnd: string;   // YYYY-MM-DD
 }
 
 interface ReportResult {
   shareToken: string;
-  shareUrl: string;
+  shareUrl: string;   // Signed Supabase Storage URL valid for 30 days
   storagePath: string;
 }
 
@@ -18,10 +18,11 @@ export async function generateVetReport(params: ReportParams): Promise<ReportRes
   });
 
   if (error) throw new Error(`Report generation failed: ${error.message}`);
+  if (!data?.share_url) throw new Error('Invalid response from report function');
 
   return {
     shareToken: data.share_token,
-    shareUrl: `https://nyx.app/report/${data.share_token}`,
+    shareUrl: data.share_url,
     storagePath: data.storage_path,
   };
 }
