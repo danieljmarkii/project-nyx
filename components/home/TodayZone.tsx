@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -5,25 +6,42 @@ import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
 
-// Event types we surface in the Today summary chips (excludes 'other')
-const DISPLAYED_TYPES: EventTypeKey[] = ['meal', 'vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch'];
+const SYMPTOM_TYPES: ReadonlySet<EventTypeKey> = new Set([
+  'vomit', 'diarrhea', 'lethargy', 'itch',
+]);
+
+const DISPLAYED_TYPES: EventTypeKey[] = [
+  'meal', 'vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch',
+];
 
 export function TodayZone() {
   const { activePet } = usePetStore();
   const { todayEvents } = useEvents();
   const petName = activePet?.name ?? 'your pet';
 
-  // Group events by type and count them
+  // Filter to events that actually occurred today in local time.
+  // prependEvent adds to the store without date-checking, so backdated
+  // events can appear in todayEvents — we guard against that here.
+  const localTodayStart = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const eventsToday = useMemo(
+    () => todayEvents.filter(e => new Date(e.occurred_at) >= localTodayStart),
+    [todayEvents, localTodayStart],
+  );
+
   const counts: Partial<Record<EventTypeKey | 'other', number>> = {};
-  for (const event of todayEvents) {
+  for (const event of eventsToday) {
     const key = event.event_type as EventTypeKey | 'other';
     counts[key] = (counts[key] ?? 0) + 1;
   }
 
   const chips = DISPLAYED_TYPES.filter(type => (counts[type] ?? 0) > 0);
   const otherCount = counts['other'] ?? 0;
-
-  const isEmpty = todayEvents.length === 0;
+  const isEmpty = eventsToday.length === 0;
 
   return (
     <View style={styles.zone}>
@@ -41,24 +59,50 @@ export function TodayZone() {
           <Text style={styles.nudgeArrow}>→</Text>
         </TouchableOpacity>
       ) : (
-        <View style={styles.chipsRow}>
+        <TouchableOpacity
+          onPress={() => router.push('/(tabs)/history')}
+          activeOpacity={0.85}
+          style={styles.chipsRow}
+        >
           {chips.map(type => {
             const def = EVENT_TYPES[type];
             const count = counts[type] ?? 0;
+            const isSymptom = SYMPTOM_TYPES.has(type);
+            const isMeal = type === 'meal';
+
             return (
-              <View key={type} style={styles.chip}>
-                <Text style={styles.chipEmoji}>{def.emoji}</Text>
-                {count > 1 && <Text style={styles.chipCount}>×{count}</Text>}
+              <View
+                key={type}
+                style={[
+                  styles.chip,
+                  isMeal && styles.chipMeal,
+                  isSymptom && styles.chipSymptom,
+                  type === 'stool_normal' && styles.chipNormal,
+                ]}
+              >
+                {isMeal && <Text style={styles.chipEmoji}>{def.emoji}</Text>}
+                <Text
+                  style={[
+                    styles.chipLabel,
+                    isMeal && styles.chipLabelMeal,
+                    isSymptom && styles.chipLabelSymptom,
+                    type === 'stool_normal' && styles.chipLabelNormal,
+                  ]}
+                >
+                  {def.label}{count > 1 ? ` ×${count}` : ''}
+                </Text>
               </View>
             );
           })}
+
           {otherCount > 0 && (
             <View style={styles.chip}>
-              <Text style={styles.chipEmoji}>{EVENT_TYPES.other.emoji}</Text>
-              {otherCount > 1 && <Text style={styles.chipCount}>×{otherCount}</Text>}
+              <Text style={styles.chipLabel}>
+                Other{otherCount > 1 ? ` ×${otherCount}` : ''}
+              </Text>
             </View>
           )}
-        </View>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -110,13 +154,31 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     gap: 4,
   },
-  chipEmoji: {
-    fontSize: 18,
-    lineHeight: 22,
+  chipMeal: {
+    backgroundColor: `${theme.colorAccent}18`,
   },
-  chipCount: {
+  chipSymptom: {
+    backgroundColor: `${theme.colorEventSymptom}18`,
+  },
+  chipNormal: {
+    backgroundColor: `${theme.colorAccent}12`,
+  },
+  chipEmoji: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
+  chipLabel: {
     fontSize: 13,
     fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextSecondary,
+    color: theme.colorTextPrimary,
+  },
+  chipLabelMeal: {
+    color: theme.colorAccent,
+  },
+  chipLabelSymptom: {
+    color: theme.colorEventSymptom,
+  },
+  chipLabelNormal: {
+    color: theme.colorAccent,
   },
 });

@@ -23,6 +23,9 @@ export async function syncPendingMeals(): Promise<void> {
   // guarantees the FK constraint won't reject the meal upsert.
   const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
   if (foodIds.length > 0) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user.id ?? null;
+
     const placeholders = foodIds.map(() => '?').join(',');
     const localFoods = await db.getAllAsync<{
       id: string; brand: string; product_name: string; format: string;
@@ -45,6 +48,7 @@ export async function syncPendingMeals(): Promise<void> {
           is_novel_protein: Boolean(f.is_novel_protein),
           is_grain_free: Boolean(f.is_grain_free),
           is_prescription: Boolean(f.is_prescription),
+          created_by_user_id: userId,
         })),
         { onConflict: 'id', ignoreDuplicates: true }
       );
