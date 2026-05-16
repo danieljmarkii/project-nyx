@@ -51,7 +51,7 @@ export function FAB() {
     // Join meals so we only surface foods this pet has actually eaten,
     // not every food in the global cache.
     const foods = db.getAllSync<RecentFood>(
-      `SELECT f.id, f.brand, f.product_name
+      `SELECT DISTINCT f.id, f.brand, f.product_name
        FROM food_items_cache f
        INNER JOIN meals m ON m.food_item_id = f.id AND m.pet_id = ?
        ORDER BY f.last_used_at DESC

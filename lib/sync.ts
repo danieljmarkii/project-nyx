@@ -73,7 +73,11 @@ export async function syncPendingMeals(): Promise<void> {
   );
 
   if (error) {
-    console.error('[sync] meals upsert failed:', error.message);
+    console.error('[sync] meals upsert failed:', error.message,
+      '| code:', (error as any).code,
+      '| details:', (error as any).details,
+      '| hint:', (error as any).hint,
+    );
     return;
   }
 
