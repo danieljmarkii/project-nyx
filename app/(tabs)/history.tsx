@@ -204,51 +204,55 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={styles.container}>
 
-      {/* Title + date presets in one compact row */}
-      <View style={styles.headerRow}>
-        <Text style={styles.title}>History</Text>
-        <View style={styles.datePresets}>
-          {DATE_PRESETS.map((p) => {
-            const isActive = datePreset === p.key;
-            return (
-              <TouchableOpacity
-                key={p.key ?? 'all'}
-                style={[styles.preset, isActive && styles.presetActive]}
-                onPress={() => handleDatePreset(p.key)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
-                  {p.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Unified filter section — one surface, one border at the bottom */}
+      <View style={styles.filterSection}>
+        {/* Title + date presets */}
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>History</Text>
+          <View style={styles.datePresets}>
+            {DATE_PRESETS.map((p) => {
+              const isActive = datePreset === p.key;
+              return (
+                <TouchableOpacity
+                  key={p.key ?? 'all'}
+                  style={[styles.preset, isActive && styles.presetActive]}
+                  onPress={() => handleDatePreset(p.key)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.presetText, isActive && styles.presetTextActive]}>
+                    {p.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Type filter chips — View wrapper gives reliable height; FlatList alone does not */}
+        <View style={styles.chipWrapper}>
+          <FlatList<typeof TYPE_FILTERS[0]>
+            horizontal
+            data={TYPE_FILTERS}
+            keyExtractor={(item) => item.key ?? 'all'}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+            renderItem={({ item }) => {
+              const isActive = typeFilter === item.key;
+              return (
+                <TouchableOpacity
+                  style={[styles.chip, isActive && styles.chipActive]}
+                  onPress={() => handleTypeFilter(item.key)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
         </View>
       </View>
-
-      {/* Type filter chips — fixed height prevents flex stretch */}
-      <FlatList<typeof TYPE_FILTERS[0]>
-        horizontal
-        data={TYPE_FILTERS}
-        keyExtractor={(item) => item.key ?? 'all'}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipRow}
-        renderItem={({ item }) => {
-          const isActive = typeFilter === item.key;
-          return (
-            <TouchableOpacity
-              style={[styles.chip, isActive && styles.chipActive]}
-              onPress={() => handleTypeFilter(item.key)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
-        style={styles.chipRowContainer}
-      />
 
       {/* Event list — flex: 1 so it fills remaining space regardless of event count */}
       <View style={styles.listContainer}>
@@ -308,7 +312,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorNeutralLight,
   },
-  // Title + date presets share one row — no separate border between them and the chip row
+  // Single white surface for title + chips, border only at the bottom
+  filterSection: {
+    backgroundColor: theme.colorSurface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colorBorder,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -316,7 +325,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space3,
     paddingTop: 10,
     paddingBottom: 6,
-    backgroundColor: theme.colorSurface,
   },
   title: {
     fontSize: 20,
@@ -347,18 +355,16 @@ const styles = StyleSheet.create({
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
   },
-  // Explicit height stops horizontal FlatList from stretching in a flex column
-  chipRowContainer: {
-    height: 38,
-    backgroundColor: theme.colorSurface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
+  // View wrapper enforces height; setting height directly on FlatList is unreliable
+  chipWrapper: {
+    height: 36,
   },
   chipRow: {
     paddingHorizontal: theme.space2,
-    paddingVertical: 5,
+    paddingBottom: 6,
     gap: 6,
     alignItems: 'center',
+    height: 36,
   },
   chip: {
     paddingHorizontal: 10,
