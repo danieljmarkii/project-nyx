@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.8 | Last Updated: May 2026
+**Version:** 1.10 | Last Updated: May 2026
 
 ---
 
@@ -25,6 +25,7 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 | `docs/nyx-schema-v1_0.sql` | Any session touching data, queries, or new tables. Reference queries are documented here. |
 | `docs/nyx-design-principles-v1_0.md` | Any session touching UI, copy, interaction, or notifications. Seven principles govern every screen. |
 | `research.md` | When making product decisions about scope, features, or user behavior. Market and persona data lives here. |
+| `docs/food-library-redesign-requirements.md` | Any session touching food entry, the meal log flow, the food library/picker, or AI-driven extraction of food data. Output of the May 2026 photo-library research session. |
 | `competitive-landscape.md` | When evaluating feature positioning or vet-facing strategy. |
 
 ---
@@ -124,6 +125,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - A vet report PDF with branding, paw prints, or anything that would embarrass a vet reading it in clinic
 - Severity inputs as dropdowns or number fields — always a 1–5 visual scale
 - Modal-on-modal flows — any action requiring two modals needs a redesign
+- Interactive elements without explicit `hitSlop` where visual size is below 44pt — fails the 3am-stumbling test. iOS HIG minimum is 44pt; Material Design minimum is 48dp. Visual size can stay small, but the tap zone must expand via `hitSlop`.
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
 ---
@@ -227,6 +229,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Two devices logged in as the same user submit conflicting events simultaneously
 - Photo EXIF timestamp is absent or malformed — `occurred_at` must fall back to `new Date()`, never throw
 - Photo upload fails mid-sync while offline — local SQLite record with `synced = 0` must be retried on reconnect, not silently dropped
+- User logs at 3am, half-asleep, one-handed in the dark — every primary action (FAB items, time adjusters, log/save buttons, picker thumbnails) must be reachable with a sloppy tap. Hit zone ≥44pt; use `hitSlop` where visual sizing must stay smaller. QA verifies on every new interactive surface.
 - *(Append new edge cases here as they are discovered in the codebase)*
 
 ---
@@ -249,7 +252,9 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 9. **Vet report** — Edge Function, PDF generation, share token, share sheet ← Current phase
 10. **AI Signal Edge Function** — Claude API call, single-sentence output, caching
 
-**Current phase:** Step 9 — Vet report
+**Parallel track — Food library redesign** (requirements complete; ready to build). Photo-first food entry with async AI extraction. Replaces the current text-form food add in `app/log.tsx`. Requirements live in `docs/food-library-redesign-requirements.md` — read that file before starting any food-related work. Build order is detailed there; treat it as a separate, schema-bounded track that can run alongside Step 9.
+
+**Current phase:** Step 9 — Vet report (food library redesign queued as parallel track; pick up after vet report unless PM redirects)
 
 ---
 
@@ -430,6 +435,9 @@ If a blocking question remains unanswered after one full session, document a pro
 | Pet photo upload RLS: `nyx-pet-photos` bucket was created via SQL (owner=null), causing uploads to fail with 42501 even with correct policies. Workaround: re-create bucket via dashboard UI, or implement upload via Edge Function with service role key. | Step 7: Pet profile | Open — needs resolution before photo upload ships |
 | Stool schema consolidation: `stool_normal` and `diarrhea` are currently stored as separate `event_type` values. UI-level consolidation is done (single "Stool" entry point with Normal/Loose sub-step). Full migration to `event_type='stool'` with a `stool_consistency` sub-field requires a dedicated schema migration PR. | Step 8+ | Deferred by PM — tackle before Step 9 |
 | Font decision: `fontBody` and `fontDisplay` slots exist in `theme.ts` but still resolve to `'System'`. Recommend Inter (body) + a humanist sans for display. Needs PM typeface decision before wiring up `expo-google-fonts`. | Post-Step 7 | Open |
+| Food library redesign — which Claude vision model for `extract-food-from-photo` Edge Function? Sonnet 4.6 vs Haiku 4.5. Trade-off is per-call cost vs ingredient-extraction accuracy. | Food library Edge Function | Open |
+| Food library redesign — where does image compression run? Client (`expo-image-manipulator`) is preferred; Edge Function defensive resize is the fallback. Decide before upload code ships. | Food library upload flow | Open |
+| `nyx-food-photos` Supabase Storage bucket — same SQL-vs-dashboard RLS landmine as `nyx-pet-photos`. Must be created via dashboard UI, not migration SQL. | Food library Edge Function & upload | Open — PM action item |
 
 ---
 
@@ -457,3 +465,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.7 | May 2026 | Step 7 in progress. Built pet profile screen (display, edit, conditions, diet trial card, photo). Known bug: pet photo upload blocked by Supabase Storage RLS on SQL-created bucket (owner=null). Anti-pattern added: create buckets via dashboard UI not raw SQL. Open question added for RLS resolution path. |
 | v1.8 | May 2026 | Design system session. Built full component library (Card, SectionLabel, PrimaryButton, FilterChip, Badge, Divider), expanded theme tokens (type scale, weights, letter-spacing, semantic colors, shadow tokens), and applied the system across every screen. Custom text-only tab bar (fixes clipping). Today zone redesigned as timestamped event strip. Trend zone now shows direction (dominant symptom, this-week vs last-week delta). FAB redesigned: symptom buttons warm-tinted and prominent, Vet appointment removed, Loose stool renamed. Emoji consistency pass across all event types. Stool/diarrhea consolidated at UI level (schema migration deferred). Two new open questions: stool schema migration, font decision. |
 | v1.9 | May 2026 | Steps 7 ✓ and 8 ✓ marked complete. Step 8 additions: expo-network installed, syncStore (Zustand) added, getSyncStatus() db helper, useSync updated with addNetworkStateListener for reconnect detection, SyncBanner component (appears only >24h stale). LWW for multi-device deferred post-MVP with code comment. Current phase advanced to Step 9 (Vet report). |
+| v1.10 | May 2026 | Food library redesign — research/requirements session. Decided on photo-first food entry with async Claude vision extraction; rejected OPFF and Chewy import paths (OPFF coverage diagnostic surfaced API and quality issues; Chewy ruled out on ToS). New requirements doc at `docs/food-library-redesign-requirements.md`. Added Read-These entry pointing to it. New anti-pattern: interactive elements without explicit `hitSlop` below 44pt. New QA edge case: the 3am-stumbling test. Three new open questions: vision model choice, image compression location, `nyx-food-photos` bucket creation. Build sequence updated to queue the food library redesign as a parallel track to Step 9. |
