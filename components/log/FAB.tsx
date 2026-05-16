@@ -213,6 +213,14 @@ export function FAB() {
                 </TouchableOpacity>
               ))
             )}
+            <TouchableOpacity
+              style={styles.menuAction}
+              onPress={() => { closeMenu(); router.push('/log?type=meal'); }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.menuActionIcon}>✚</Text>
+              <Text style={[styles.menuActionLabel, styles.newMealLabel]}>New meal</Text>
+            </TouchableOpacity>
 
             <View style={styles.divider} />
 
@@ -396,5 +404,8 @@ const styles = StyleSheet.create({
   },
   spinner: {
     marginLeft: theme.space1,
+  },
+  newMealLabel: {
+    color: theme.colorTextSecondary,
   },
 });

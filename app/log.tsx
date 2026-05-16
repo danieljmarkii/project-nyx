@@ -4,7 +4,7 @@ import {
   ScrollView, Animated, KeyboardAvoidingView, Platform, FlatList, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
@@ -66,6 +66,7 @@ export default function LogModal() {
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
+  const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
 
   const [step, setStep] = useState<Step>('type');
   const [selectedType, setSelectedType] = useState<EventTypeKey | null>(null);
@@ -109,6 +110,19 @@ export default function LogModal() {
       setPendingAttachment(null);
     }
   }, []);
+
+  // Skip type selection when a type is pre-selected via route param (e.g. FAB "New meal")
+  useEffect(() => {
+    if (!typeParam) return;
+    if (typeParam === 'meal') {
+      setSelectedType('meal');
+      setStep('food');
+    } else if (typeParam in EVENT_TYPES) {
+      const t = typeParam as EventTypeKey;
+      setSelectedType(t);
+      setStep(EVENT_TYPES[t].hasSeverity ? 'symptom' : 'simple');
+    }
+  }, [typeParam]);
 
   useEffect(() => {
     if (step === 'food') loadFoods();
