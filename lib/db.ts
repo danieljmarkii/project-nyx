@@ -212,6 +212,48 @@ export async function getEventAttachment(eventId: string): Promise<{
   );
 }
 
+export interface PickerFood {
+  id: string;
+  brand: string;
+  product_name: string;
+  format: string;
+  photo_path: string | null;
+}
+
+// Last N distinct foods logged for this pet within `daysBack` days, most-recent first.
+export async function getRecentFoods(
+  petId: string,
+  daysBack: number,
+  limit: number,
+): Promise<PickerFood[]> {
+  const db = getDb();
+  const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+  return db.getAllAsync<PickerFood>(
+    `SELECT f.id, f.brand, f.product_name, f.format, f.photo_path
+     FROM meals m
+     JOIN events e ON e.id = m.event_id
+     JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE m.pet_id = ?
+       AND e.deleted_at IS NULL
+       AND e.occurred_at >= ?
+     GROUP BY f.id
+     ORDER BY MAX(e.occurred_at) DESC
+     LIMIT ?`,
+    [petId, cutoff, limit],
+  );
+}
+
+// Full catalog, deduplicated by brand+product_name, alpha by brand.
+export async function getLibraryFoods(): Promise<PickerFood[]> {
+  const db = getDb();
+  return db.getAllAsync<PickerFood>(
+    `SELECT id, brand, product_name, format, photo_path
+     FROM food_items_cache
+     GROUP BY LOWER(brand), LOWER(product_name)
+     ORDER BY brand COLLATE NOCASE ASC, product_name COLLATE NOCASE ASC`,
+  );
+}
+
 export async function getSyncStatus(): Promise<{ pendingCount: number; oldestPendingAt: string | null }> {
   const db = getDb();
   const row = await db.getFirstAsync<{ count: number; oldest: string | null }>(

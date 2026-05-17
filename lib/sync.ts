@@ -216,18 +216,21 @@ export async function refreshFoodCache(): Promise<void> {
 
   const { data, error } = await supabase
     .from('food_items')
-    .select('id, brand, product_name, format, primary_protein, is_novel_protein, is_grain_free, is_prescription');
+    .select('id, brand, product_name, format, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths');
 
   if (error || !data) return;
 
   const now = new Date().toISOString();
   for (const item of data) {
+    const photoPath = Array.isArray(item.photo_paths) && item.photo_paths.length > 0
+      ? item.photo_paths[0]
+      : null;
     await db.runAsync(
       `INSERT OR REPLACE INTO food_items_cache
-        (id, brand, product_name, format, primary_protein, is_novel_protein, is_grain_free, is_prescription, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, brand, product_name, format, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [item.id, item.brand, item.product_name, item.format, item.primary_protein ?? null,
-       item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, now]
+       item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, now]
     );
   }
 }
