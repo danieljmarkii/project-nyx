@@ -66,6 +66,20 @@ export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
+      <View style={styles.zone}>
+        <TouchableOpacity
+          style={styles.addCta}
+          onPress={onAddNew}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.addCtaIcon}>📷</Text>
+          <View style={styles.addCtaText}>
+            <Text style={styles.addCtaTitle}>Snap a new food</Text>
+            <Text style={styles.addCtaHint}>Or choose from your photos</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
       {recent.length > 0 && (
         <View style={styles.zone}>
           <SectionLabel label="Recent" />
@@ -104,7 +118,7 @@ export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
         {filteredLibrary.length === 0 ? (
           <Text style={styles.empty}>
             {library.length === 0
-              ? 'No foods yet. Add one below.'
+              ? 'No foods yet. Snap one above.'
               : 'No matches.'}
           </Text>
         ) : (
@@ -125,21 +139,6 @@ export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
             ))}
           </View>
         )}
-      </View>
-
-      <View style={styles.zone}>
-        <SectionLabel label="Add new" />
-        <TouchableOpacity
-          style={styles.addCta}
-          onPress={onAddNew}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.addCtaIcon}>📷</Text>
-          <View style={styles.addCtaText}>
-            <Text style={styles.addCtaTitle}>Snap the package</Text>
-            <Text style={styles.addCtaHint}>Or choose from your photos</Text>
-          </View>
-        </TouchableOpacity>
       </View>
     </ScrollView>
   );
