@@ -290,6 +290,19 @@ export async function getSyncStatus(): Promise<{ pendingCount: number; oldestPen
   return { pendingCount: row?.count ?? 0, oldestPendingAt: row?.oldest ?? null };
 }
 
+// Diagnostic-only helper. Used by the Profile tab's Debug card to confirm how
+// many event rows actually made it into local SQLite for the active pet —
+// the load-bearing answer when troubleshooting "my second device shows empty
+// history" reports.
+export async function getLocalEventCount(petId: string): Promise<number> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM events WHERE pet_id = ? AND deleted_at IS NULL',
+    [petId],
+  );
+  return row?.count ?? 0;
+}
+
 export async function getMealForEvent(eventId: string): Promise<{
   food_item_id: string | null;
   food_brand: string | null;
