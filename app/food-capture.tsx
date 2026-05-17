@@ -93,35 +93,70 @@ export default function FoodCaptureScreen() {
   const checkScale = useRef(new Animated.Value(0.5)).current;
   const checkOpacity = useRef(new Animated.Value(0)).current;
 
+  // Submission guard — prevents double-tap on "Looks right" / "Save" from
+  // writing two events for the same meal.
+  const submitting = useRef(false);
+
   useEffect(() => {
     if (step !== 'complete') return;
     Animated.parallel([
       Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
       Animated.timing(checkOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
     ]).start();
-    const t = setTimeout(() => router.replace('/(tabs)'), 900);
+    // dismissAll() unwinds both the food-capture modal and the underlying
+    // meal-log picker so the user lands on Home, not on a stale picker.
+    const t = setTimeout(() => router.dismissAll(), 900);
     return () => clearTimeout(t);
   }, [step]);
 
-  async function launchCamera(slot: 'front' | 'ingredients' | 'barcode'): Promise<CapturedPhoto | null> {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
+  // Asks the user where the photo comes from — camera or library. Returning
+  // null means the user cancelled at any point in the chain.
+  async function pickPhoto(slot: 'front' | 'ingredients' | 'barcode'): Promise<CapturedPhoto | null> {
+    const source = await new Promise<'camera' | 'library' | null>((resolve) => {
       Alert.alert(
-        'Camera access needed',
-        'Allow camera access in Settings, or add this food manually.',
+        'Add photo',
+        undefined,
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Enter manually', onPress: () => setStep('edit') },
+          { text: 'Take photo', onPress: () => resolve('camera') },
+          { text: 'Choose from library', onPress: () => resolve('library') },
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
         ],
+        { cancelable: true, onDismiss: () => resolve(null) },
       );
-      return null;
+    });
+    if (!source) return null;
+
+    if (source === 'camera') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Camera access needed',
+          'Allow camera access in Settings, choose from your library, or add this food manually.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Enter manually', onPress: () => setStep('edit') },
+          ],
+        );
+        return null;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Photo access needed', 'Allow photo access in Settings to choose a photo.');
+        return null;
+      }
     }
-    const result = await ImagePicker.launchCameraAsync({
+
+    const opts: ImagePicker.ImagePickerOptions = {
       mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.9,
       exif: true,
-    });
+    };
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync(opts)
+      : await ImagePicker.launchImageLibraryAsync(opts);
+
     if (result.canceled || !result.assets[0]) return null;
     const asset = result.assets[0];
 
@@ -140,24 +175,34 @@ export default function FoodCaptureScreen() {
   }
 
   async function handleSnapFront() {
-    const photo = await launchCamera('front');
+    const photo = await pickPhoto('front');
     if (!photo) return;
     setFrontPhoto(photo);
     setStep('after-front');
   }
 
   async function handleSnapIngredients() {
-    const photo = await launchCamera('ingredients');
+    const photo = await pickPhoto('ingredients');
     if (!photo) return;
     setIngredientsPhoto(photo);
     setStep('after-ingredients');
   }
 
   async function handleSnapBarcode() {
-    const photo = await launchCamera('barcode');
+    const photo = await pickPhoto('barcode');
     if (!photo) return;
     setBarcodePhoto(photo);
     await runUploadAndExtract(frontPhoto!, ingredientsPhoto, photo);
+  }
+
+  // Tile-tap from the PhotoChecklist — sets the chosen slot's photo without
+  // changing step. Lets the user fill slots out of order or replace a shot.
+  async function handleSlotTap(slot: 'front' | 'ingredients' | 'barcode') {
+    const photo = await pickPhoto(slot);
+    if (!photo) return;
+    if (slot === 'front')            setFrontPhoto(photo);
+    else if (slot === 'ingredients') setIngredientsPhoto(photo);
+    else                             setBarcodePhoto(photo);
   }
 
   async function handleSkipToConfirm(opts: { skipIngredients?: boolean; skipBarcode?: boolean } = {}) {
@@ -241,6 +286,17 @@ export default function FoodCaptureScreen() {
   // meal's occurred_at — falls back to new Date() per the existing pattern.
   async function commitFood(brand: string, product: string, format: string) {
     if (!brand.trim() || !product.trim()) return;
+    if (submitting.current) return; // guard against double-tap
+    submitting.current = true;
+    try {
+      await commitFoodInner(brand, product, format);
+    } catch (err) {
+      console.error('[food-capture] commit failed:', err);
+      submitting.current = false; // allow retry
+    }
+  }
+
+  async function commitFoodInner(brand: string, product: string, format: string) {
     const db = getDb();
     const now = new Date().toISOString();
     const frontStoragePath = frontPhoto?.storagePath ?? null;
@@ -336,14 +392,14 @@ export default function FoodCaptureScreen() {
       <SafeAreaView style={styles.container}>
         <Header title="Add a food" onClose={() => router.back()} />
         <ScrollView contentContainerStyle={styles.introScroll}>
-          <Text style={styles.introHeading}>Snap the front of the package</Text>
+          <Text style={styles.introHeading}>Add the front of the package</Text>
           <Text style={styles.introBody}>
-            One photo is enough to start. The label and barcode are optional
-            but make the entry more useful later.
+            Take a photo or pick one from your library. The label and barcode
+            are optional but make the entry more useful later.
           </Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={handleSnapFront} activeOpacity={0.85}>
             <Text style={styles.primaryBtnIcon}>📷</Text>
-            <Text style={styles.primaryBtnText}>Open camera</Text>
+            <Text style={styles.primaryBtnText}>Add front photo</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} hitSlop={8}>
             <Text style={styles.linkBtnText}>Enter manually</Text>
@@ -363,15 +419,16 @@ export default function FoodCaptureScreen() {
             front={frontPhoto}
             ingredients={ingredientsPhoto}
             barcode={barcodePhoto}
+            onSlotTap={handleSlotTap}
           />
-          <Text style={styles.introHeading}>Snap the ingredients label</Text>
+          <Text style={styles.introHeading}>Add the ingredients label</Text>
           <Text style={styles.introBody}>
             Optional, but lets us extract the full ingredients list. You can
             skip and add it later.
           </Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={handleSnapIngredients} activeOpacity={0.85}>
             <Text style={styles.primaryBtnIcon}>📷</Text>
-            <Text style={styles.primaryBtnText}>Snap ingredients</Text>
+            <Text style={styles.primaryBtnText}>Add ingredients photo</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.secondaryBtn}
@@ -396,15 +453,16 @@ export default function FoodCaptureScreen() {
             front={frontPhoto}
             ingredients={ingredientsPhoto}
             barcode={barcodePhoto}
+            onSlotTap={handleSlotTap}
           />
-          <Text style={styles.introHeading}>Snap the barcode</Text>
+          <Text style={styles.introHeading}>Add the barcode</Text>
           <Text style={styles.introBody}>
-            Center the barcode in frame. Optional — helps the AI confirm the
-            exact product later.
+            A clear shot of the barcode helps the AI confirm the exact
+            product. Optional — skip if you don't have one handy.
           </Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={handleSnapBarcode} activeOpacity={0.85}>
             <Text style={styles.primaryBtnIcon}>📷</Text>
-            <Text style={styles.primaryBtnText}>Snap barcode</Text>
+            <Text style={styles.primaryBtnText}>Add barcode photo</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.secondaryBtn}
@@ -478,7 +536,9 @@ export default function FoodCaptureScreen() {
       <SafeAreaView style={styles.container}>
         <Header
           title="Edit food"
-          onBack={frontPhoto ? () => setStep('confirm') : () => router.back()}
+          // Only return to Confirm if there's valid AI-extracted data to show
+          // — when extraction failed, that screen would be empty.
+          onBack={frontPhoto && !extractionFailed ? () => setStep('confirm') : () => router.back()}
         />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
@@ -563,36 +623,49 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
   );
 }
 
-// Visual progress through the three encouraged shots. Captured shots show a
-// thumbnail; missing shots show a dashed placeholder.
+// Visual progress through the three encouraged shots. Each tile is itself
+// tappable — empty slots open the photo source picker, filled slots offer
+// to replace. Lets the user fill out of order.
 function PhotoChecklist({
-  front, ingredients, barcode,
+  front, ingredients, barcode, onSlotTap,
 }: {
   front: CapturedPhoto | null;
   ingredients: CapturedPhoto | null;
   barcode: CapturedPhoto | null;
+  onSlotTap: (slot: 'front' | 'ingredients' | 'barcode') => void;
 }) {
   return (
     <View style={styles.checklistRow}>
-      <ChecklistTile photo={front} label="Front" />
-      <ChecklistTile photo={ingredients} label="Label" optional />
-      <ChecklistTile photo={barcode} label="Barcode" optional />
+      <ChecklistTile photo={front}        label="Front"   onPress={() => onSlotTap('front')} />
+      <ChecklistTile photo={ingredients}  label="Label"   onPress={() => onSlotTap('ingredients')} />
+      <ChecklistTile photo={barcode}      label="Barcode" onPress={() => onSlotTap('barcode')} />
     </View>
   );
 }
 
-function ChecklistTile({ photo, label, optional }: { photo: CapturedPhoto | null; label: string; optional?: boolean }) {
+function ChecklistTile({
+  photo, label, onPress,
+}: {
+  photo: CapturedPhoto | null;
+  label: string;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.checklistTile}>
+    <TouchableOpacity
+      style={styles.checklistTile}
+      onPress={onPress}
+      activeOpacity={0.7}
+      hitSlop={8}
+    >
       {photo ? (
         <Image source={{ uri: photo.localUri }} style={styles.checklistThumb} resizeMode="cover" />
       ) : (
         <View style={[styles.checklistThumb, styles.checklistThumbEmpty]}>
-          <Text style={styles.checklistEmptyIcon}>{optional ? '+' : '!'}</Text>
+          <Text style={styles.checklistEmptyIcon}>+</Text>
         </View>
       )}
       <Text style={styles.checklistLabel}>{label}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 
