@@ -15,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
@@ -25,7 +26,7 @@ import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
-import { uuid, exifDateToISO } from '../lib/utils';
+import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 
 type CaptureStep =
   | 'intro'
@@ -102,6 +103,14 @@ export default function FoodCaptureScreen() {
   const [extractedFormat, setExtractedFormat] = useState<string>('dry_kibble');
   const [extractionFailed, setExtractionFailed] = useState(false);
 
+  // Meal-time override on the confirm screen. Initialised lazily on entry to
+  // the confirm step — see runUploadAndExtract. Provenance is 'exif' when the
+  // front photo had DateTimeOriginal, 'now' otherwise, and flips to 'manual'
+  // the moment the user opens the time editor.
+  const [mealOccurredAt, setMealOccurredAt] = useState<Date>(() => new Date());
+  const [mealOccurredAtSource, setMealOccurredAtSource] = useState<'exif' | 'now' | 'manual'>('now');
+  const [showMealTimePicker, setShowMealTimePicker] = useState(false);
+
   const checkScale = useRef(new Animated.Value(0.5)).current;
   const checkOpacity = useRef(new Animated.Value(0)).current;
 
@@ -174,7 +183,11 @@ export default function FoodCaptureScreen() {
 
     const exifRaw = asset.exif as Record<string, unknown> | undefined;
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
-    const exifIso = typeof dateRaw === 'string' ? exifDateToISO(dateRaw) : null;
+    // trustedPastExifIso drops future-dated EXIF (wrong camera clock) so we
+    // never seed a meal time past `now`.
+    const exifIso = typeof dateRaw === 'string'
+      ? trustedPastExifIso(exifDateToISO(dateRaw))
+      : null;
 
     const slotIndex = slot === 'front' ? 0 : slot === 'ingredients' ? 1 : 2;
     return {
@@ -240,6 +253,17 @@ export default function FoodCaptureScreen() {
     setExtracting(true);
     setExtractionFailed(false);
 
+    // Seed the meal time up-front from the front photo's EXIF (if any) so the
+    // manual-edit fallback path inherits the right provenance even when AI
+    // extraction fails and the user never sees the confirm screen.
+    if (front.exifIso) {
+      setMealOccurredAt(new Date(front.exifIso));
+      setMealOccurredAtSource('exif');
+    } else {
+      setMealOccurredAt(new Date());
+      setMealOccurredAtSource('now');
+    }
+
     const photos = [front, ingredients, barcode].filter((p): p is CapturedPhoto => p !== null);
     const storagePaths = photos.map((p) => p.storagePath);
 
@@ -286,6 +310,14 @@ export default function FoodCaptureScreen() {
       setExtractedBrand(ex.brand ?? '');
       setExtractedProduct(ex.product_name ?? '');
       setExtractedFormat(mapAiFormat(ex.format));
+      // Seed meal time from EXIF if available; otherwise fall back to now.
+      if (front.exifIso) {
+        setMealOccurredAt(new Date(front.exifIso));
+        setMealOccurredAtSource('exif');
+      } else {
+        setMealOccurredAt(new Date());
+        setMealOccurredAtSource('now');
+      }
       setStep('confirm');
     } catch (err) {
       console.error('[food-capture] upload/extract error:', err);
@@ -341,12 +373,16 @@ export default function FoodCaptureScreen() {
 
     if (cameFromMealLog && activePet) {
       const eventId = uuid();
-      const occurredAt = frontPhoto?.exifIso ?? new Date().toISOString();
+      // mealOccurredAt is seeded from EXIF (or now) on confirm-screen entry,
+      // and may have been overridden by the user via the date-time picker —
+      // in which case mealOccurredAtSource will have flipped to 'manual'.
+      const occurredAt = mealOccurredAt.toISOString();
+      const occurredAtSource = mealOccurredAtSource;
       await db.runAsync(
         `INSERT INTO events
-           (id, pet_id, event_type, occurred_at, severity, notes, source, created_at, updated_at, synced)
-         VALUES (?, ?, 'meal', ?, NULL, NULL, 'manual', ?, ?, 0)`,
-        [eventId, activePet.id, occurredAt, now, now],
+           (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced)
+         VALUES (?, ?, 'meal', ?, NULL, NULL, 'manual', ?, ?, ?, 0)`,
+        [eventId, activePet.id, occurredAt, occurredAtSource, now, now],
       );
       const mealId = uuid();
       await db.runAsync(
@@ -507,6 +543,40 @@ export default function FoodCaptureScreen() {
             </View>
           )}
           <Text style={styles.confirmCaption}>Is this right?</Text>
+          <TouchableOpacity
+            style={styles.mealTimeRow}
+            onPress={() => setShowMealTimePicker((v) => !v)}
+            activeOpacity={0.7}
+            hitSlop={12}
+          >
+            <Text style={styles.mealTimeText}>
+              {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {mealOccurredAtSource === 'exif' ? (
+                <Text style={styles.mealTimeAttribution}>
+                  {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
+                </Text>
+              ) : null}
+            </Text>
+            <Text style={styles.mealTimeChange}>Change</Text>
+          </TouchableOpacity>
+          {showMealTimePicker && (
+            <DateTimePicker
+              value={mealOccurredAt}
+              mode="datetime"
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              maximumDate={new Date()}
+              onChange={(_e, date) => {
+                if (Platform.OS === 'android') setShowMealTimePicker(false);
+                if (!date) return;
+                // Provenance flips only on an actual value change so a peek-tap
+                // doesn't silently drop the EXIF attribution.
+                if (mealOccurredAtSource === 'exif' && date.getTime() !== mealOccurredAt.getTime()) {
+                  setMealOccurredAtSource('manual');
+                }
+                setMealOccurredAt(date);
+              }}
+            />
+          )}
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={() => commitFood(extractedBrand, extractedProduct, extractedFormat)}
@@ -852,6 +922,32 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     textAlign: 'center',
     paddingVertical: theme.space1,
+  },
+  mealTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: theme.space2,
+    paddingHorizontal: theme.space2,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorNeutralLight,
+    minHeight: 44,
+  },
+  mealTimeText: {
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+    flex: 1,
+  },
+  mealTimeAttribution: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+  },
+  mealTimeChange: {
+    fontSize: theme.textSM,
+    color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
   },
 
   formScroll: {

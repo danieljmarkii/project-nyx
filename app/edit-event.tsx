@@ -10,12 +10,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, getMealForEvent, getEventAttachment } from '../lib/db';
+import { getDb, updateEvent, updateMealFood, getMealForEvent, getEventAttachment, getEventSource } from '../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
-import { uuid } from '../lib/utils';
+import { uuid, formatExifAttribution } from '../lib/utils';
 
 interface CachedFood {
   id: string;
@@ -47,6 +47,9 @@ export default function EditEventModal() {
   );
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [notes, setNotes] = useState(notesParam ?? '');
+  // Provenance of the saved `occurred_at`. Loaded from the local DB on mount;
+  // flips to 'manual' the moment the user taps the time row.
+  const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
 
   // Photo attachment
   const [existingAttachmentUri, setExistingAttachmentUri] = useState<string | null>(null);
@@ -79,6 +82,8 @@ export default function EditEventModal() {
     getEventAttachment(id).then((att) => {
       if (att) setExistingAttachmentUri(att.local_uri);
     }).catch(console.error);
+
+    getEventSource(id).then(setOccurredAtSource).catch(console.error);
   }, [id]);
 
   useEffect(() => {
@@ -136,6 +141,7 @@ export default function EditEventModal() {
         occurred_at: occurredAt.toISOString(),
         severity: null,
         notes: notes.trim() || null,
+        occurred_at_source: occurredAtSource,
       });
 
       if (config.hasFood && currentFoodId) {
@@ -224,6 +230,11 @@ export default function EditEventModal() {
               {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
               {'  '}
               {formatTime(occurredAt)}
+              {occurredAtSource === 'exif' && (
+                <Text style={styles.exifAttribution}>
+                  {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
+                </Text>
+              )}
             </Text>
             <Text style={styles.changeLabel}>Change</Text>
           </TouchableOpacity>
@@ -235,7 +246,13 @@ export default function EditEventModal() {
               maximumDate={new Date()}
               onChange={(_e: unknown, date?: Date) => {
                 if (Platform.OS === 'android') setShowTimePicker(false);
-                if (date) setOccurredAt(date);
+                if (!date) return;
+                // Provenance flips only on an actual value change so a
+                // peek-tap doesn't silently drop the EXIF attribution.
+                if (occurredAtSource === 'exif' && date.getTime() !== occurredAt.getTime()) {
+                  setOccurredAtSource('manual');
+                }
+                setOccurredAt(date);
               }}
             />
           )}
@@ -420,6 +437,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
+  },
+  exifAttribution: {
+    fontSize: 13,
+    color: theme.colorTextTertiary,
   },
   photoRow: {
     flexDirection: 'row',

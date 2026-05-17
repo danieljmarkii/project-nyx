@@ -18,7 +18,7 @@ import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
-import { uuid, exifDateToISO } from '../lib/utils';
+import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
 
@@ -69,6 +69,11 @@ export default function LogModal() {
   // Shared
   const [notes, setNotes] = useState('');
   const [occurredAt, setOccurredAt] = useState(() => new Date());
+  // Provenance of `occurredAt`. Flips to 'exif' when a photo with
+  // DateTimeOriginal is attached; flips to 'manual' the moment the user
+  // touches the time picker. Default is 'manual' — clock value is `new Date()`
+  // but the user has implicitly accepted that as their chosen time.
+  const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Completion animation
@@ -80,8 +85,10 @@ export default function LogModal() {
     if (pendingAttachment) {
       setAttachmentUri(pendingAttachment.localUri);
       setAttachmentTakenAt(pendingAttachment.takenAt);
-      if (pendingAttachment.takenAt) {
-        setOccurredAt(new Date(pendingAttachment.takenAt));
+      const trustedIso = trustedPastExifIso(pendingAttachment.takenAt);
+      if (trustedIso) {
+        setOccurredAt(new Date(trustedIso));
+        setOccurredAtSource('exif');
       }
       setPendingAttachment(null);
     }
@@ -155,10 +162,11 @@ export default function LogModal() {
     const exifRaw = (asset.exif as Record<string, unknown> | undefined);
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
     if (typeof dateRaw === 'string') {
-      const iso = exifDateToISO(dateRaw);
+      const iso = trustedPastExifIso(exifDateToISO(dateRaw));
       if (iso) {
         setAttachmentTakenAt(iso);
         setOccurredAt(new Date(iso));
+        setOccurredAtSource('exif');
       }
     }
   }
@@ -191,10 +199,10 @@ export default function LogModal() {
     const now = new Date().toISOString();
     await db.runAsync(
       `INSERT INTO events
-         (id, pet_id, event_type, occurred_at, severity, notes, source, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, 0)`,
+         (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, 0)`,
       [eventId, activePet.id, selectedType!, occurredAt.toISOString(),
-       severity ?? null, notes.trim() || null, now, now]
+       severity ?? null, notes.trim() || null, occurredAtSource, now, now]
     );
     if (selectedType === 'meal' && foodId) {
       const mealId = uuid();
@@ -296,6 +304,16 @@ export default function LogModal() {
     );
   }
 
+  // Provenance flips only on an actual value change, so tapping the row to
+  // peek at the picker doesn't silently drop the EXIF attribution.
+  function handleTimePickerChange(date?: Date) {
+    if (!date) return;
+    if (occurredAtSource === 'exif' && date.getTime() !== occurredAt.getTime()) {
+      setOccurredAtSource('manual');
+    }
+    setOccurredAt(date);
+  }
+
   function renderTimeRow() {
     return (
       <View style={styles.timeRow}>
@@ -303,8 +321,13 @@ export default function LogModal() {
           {occurredAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
           {' · '}
           {formatTime(occurredAt)}
+          {occurredAtSource === 'exif' && (
+            <Text style={styles.exifAttribution}>
+              {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
+            </Text>
+          )}
         </Text>
-        <TouchableOpacity onPress={() => setShowTimePicker(!showTimePicker)} hitSlop={8}>
+        <TouchableOpacity onPress={() => setShowTimePicker(!showTimePicker)} hitSlop={12}>
           <Text style={styles.changeTimeBtn}>Change</Text>
         </TouchableOpacity>
       </View>
@@ -490,7 +513,7 @@ export default function LogModal() {
                 maximumDate={new Date()}
                 onChange={(_e, date) => {
                   if (Platform.OS === 'android') setShowTimePicker(false);
-                  if (date) setOccurredAt(date);
+                  handleTimePickerChange(date);
                 }}
               />
             )}
@@ -535,7 +558,7 @@ export default function LogModal() {
                 maximumDate={new Date()}
                 onChange={(_e, date) => {
                   if (Platform.OS === 'android') setShowTimePicker(false);
-                  if (date) setOccurredAt(date);
+                  handleTimePickerChange(date);
                 }}
               />
             )}
@@ -648,6 +671,10 @@ const styles = StyleSheet.create({
   changeTimeBtn: {
     fontSize: 14,
     color: theme.colorAccent,
+  },
+  exifAttribution: {
+    fontSize: 13,
+    color: theme.colorTextTertiary,
   },
 
   // ── Confirm button ──

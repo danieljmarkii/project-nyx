@@ -110,6 +110,18 @@ export async function initDb(): Promise<void> {
   } catch {
     // Column already exists — safe to ignore
   }
+
+  // occurred_at_source records the provenance of an event's timestamp:
+  // 'manual' (user chose), 'exif' (from photo metadata), 'now' (auto-set when
+  // we couldn't read EXIF). Surfaced in the UI as a subtle attribution. Mirrors
+  // migration 007 on the server.
+  try {
+    await database.execAsync(
+      `ALTER TABLE events ADD COLUMN occurred_at_source TEXT NOT NULL DEFAULT 'manual'`,
+    );
+  } catch {
+    // Column already exists — safe to ignore
+  }
 }
 
 export interface TimelineRow {
@@ -176,14 +188,29 @@ export async function softDeleteEvent(eventId: string): Promise<void> {
 
 export async function updateEvent(
   eventId: string,
-  fields: { occurred_at: string; severity: number | null; notes: string | null },
+  fields: {
+    occurred_at: string;
+    severity: number | null;
+    notes: string | null;
+    occurred_at_source?: 'manual' | 'exif' | 'now';
+  },
 ): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
   await db.runAsync(
-    'UPDATE events SET occurred_at = ?, severity = ?, notes = ?, updated_at = ?, synced = 0 WHERE id = ?',
-    [fields.occurred_at, fields.severity ?? null, fields.notes, now, eventId],
+    'UPDATE events SET occurred_at = ?, severity = ?, notes = ?, occurred_at_source = ?, updated_at = ?, synced = 0 WHERE id = ?',
+    [fields.occurred_at, fields.severity ?? null, fields.notes, fields.occurred_at_source ?? 'manual', now, eventId],
   );
+}
+
+export async function getEventSource(eventId: string): Promise<'manual' | 'exif' | 'now'> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ occurred_at_source: string }>(
+    'SELECT occurred_at_source FROM events WHERE id = ?',
+    [eventId],
+  );
+  const s = row?.occurred_at_source;
+  return s === 'exif' || s === 'now' ? s : 'manual';
 }
 
 export async function updateMealFood(eventId: string, foodItemId: string): Promise<void> {
