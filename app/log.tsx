@@ -69,6 +69,11 @@ export default function LogModal() {
   // Shared
   const [notes, setNotes] = useState('');
   const [occurredAt, setOccurredAt] = useState(() => new Date());
+  // Provenance of `occurredAt`. Flips to 'exif' when a photo with
+  // DateTimeOriginal is attached; flips to 'manual' the moment the user
+  // touches the time picker. Default is 'manual' — clock value is `new Date()`
+  // but the user has implicitly accepted that as their chosen time.
+  const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Completion animation
@@ -82,6 +87,7 @@ export default function LogModal() {
       setAttachmentTakenAt(pendingAttachment.takenAt);
       if (pendingAttachment.takenAt) {
         setOccurredAt(new Date(pendingAttachment.takenAt));
+        setOccurredAtSource('exif');
       }
       setPendingAttachment(null);
     }
@@ -159,6 +165,7 @@ export default function LogModal() {
       if (iso) {
         setAttachmentTakenAt(iso);
         setOccurredAt(new Date(iso));
+        setOccurredAtSource('exif');
       }
     }
   }
@@ -191,10 +198,10 @@ export default function LogModal() {
     const now = new Date().toISOString();
     await db.runAsync(
       `INSERT INTO events
-         (id, pet_id, event_type, occurred_at, severity, notes, source, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, 0)`,
+         (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, 0)`,
       [eventId, activePet.id, selectedType!, occurredAt.toISOString(),
-       severity ?? null, notes.trim() || null, now, now]
+       severity ?? null, notes.trim() || null, occurredAtSource, now, now]
     );
     if (selectedType === 'meal' && foodId) {
       const mealId = uuid();
@@ -296,17 +303,31 @@ export default function LogModal() {
     );
   }
 
+  function handleChangeTimePress() {
+    // The act of opening the picker is the user's commitment to override the
+    // EXIF-set time, so flip provenance immediately rather than waiting for
+    // an actual value change. Matches the spec: attribution disappears the
+    // moment they tap Change.
+    if (occurredAtSource === 'exif') setOccurredAtSource('manual');
+    setShowTimePicker(!showTimePicker);
+  }
+
   function renderTimeRow() {
     return (
-      <View style={styles.timeRow}>
-        <Text style={styles.timeLabel}>
-          {occurredAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
-          {' · '}
-          {formatTime(occurredAt)}
-        </Text>
-        <TouchableOpacity onPress={() => setShowTimePicker(!showTimePicker)} hitSlop={8}>
-          <Text style={styles.changeTimeBtn}>Change</Text>
-        </TouchableOpacity>
+      <View>
+        <View style={styles.timeRow}>
+          <Text style={styles.timeLabel}>
+            {occurredAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+            {' · '}
+            {formatTime(occurredAt)}
+          </Text>
+          <TouchableOpacity onPress={handleChangeTimePress} hitSlop={12}>
+            <Text style={styles.changeTimeBtn}>Change</Text>
+          </TouchableOpacity>
+        </View>
+        {occurredAtSource === 'exif' && (
+          <Text style={styles.exifAttribution}>set from your photo</Text>
+        )}
       </View>
     );
   }
@@ -648,6 +669,11 @@ const styles = StyleSheet.create({
   changeTimeBtn: {
     fontSize: 14,
     color: theme.colorAccent,
+  },
+  exifAttribution: {
+    fontSize: 12,
+    color: theme.colorTextTertiary,
+    marginTop: 2,
   },
 
   // ── Confirm button ──

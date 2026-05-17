@@ -107,6 +107,7 @@ export async function syncPendingEvents(): Promise<void> {
     severity: number | null;
     notes: string | null;
     source: string;
+    occurred_at_source: string;
     deleted_at: string | null;
     created_at: string;
     updated_at: string;
@@ -123,6 +124,7 @@ export async function syncPendingEvents(): Promise<void> {
       severity: e.severity,
       notes: e.notes,
       source: e.source,
+      occurred_at_source: e.occurred_at_source ?? 'manual',
       deleted_at: e.deleted_at,
       created_at: e.created_at,
       updated_at: e.updated_at,
