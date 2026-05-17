@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.12 | Last Updated: May 2026
+**Version:** 1.16 | Last Updated: May 2026
 
 ---
 
@@ -259,10 +259,10 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 - Step 3 — `extract-food-from-photo` Edge Function ✓
 - Step 4 — Picker UX (three-zone meal-log screen, text-only tiles) ✓
 - Step 5 — Photo capture + AI confirm UX ✓
-- Step 6 — Food detail screen + library-tap entry point (§4.1.1) ← Next on food track
-- Step 7 — EXIF attribution UI
+- Step 6 — Food detail screen + library-tap entry point (§4.1.1) ✓
+- Step 7 — EXIF attribution UI ← Next on food track
 
-**Current phase:** Step 9 — Vet report (food library track at Step 6; pick up after vet report unless PM redirects)
+**Current phase:** Step 9 — Vet report (food library track at Step 7; pick up after vet report unless PM redirects)
 
 ---
 
@@ -459,7 +459,13 @@ If the answer to either question is uncertain, it needs more work before it ship
 
 ---
 
-## Version History
+## Future Work / Ideas (Not Yet Scoped)
+
+Ideas surfaced during sessions that the PM hasn't formally scoped into a build step. Capture them here so they aren't lost; promote into the Build Sequence or Open Questions when the PM decides to take them on.
+
+- **Detail-screen pattern for History events.** The food detail screen (Step 6, May 2026) was praised as a UX motion worth reusing — long-press a row in History → an Event Detail screen with the event's photo, severity, notes, and edit affordances inline. Distinct from the existing `edit-event.tsx` modal, which is form-first. Touches Timeline + edit-event; non-trivial. Punted from the food-library PR.
+- **Food Library as a top-level navigation item.** Currently the only way to reach the library is FAB → Meal → picker. The library is gaining prominence and may deserve to be a first-class destination (tab bar entry or drawer). Defer until the rest of the food-library track lands and we see how often owners want to browse without logging.
+- **Smarter library deletes.** The Step 6 implementation hard-deletes the food and soft-deletes every meal that ever referenced it ("kills all records" — PM call for the test version). Later we may want to preserve meal history with a tombstoned food reference (so correlation/diet-trial data isn't lost when a user re-tidies the library). Revisit before second-user beta.
 
 | Version | Date | Summary |
 |---|---|---|
@@ -477,3 +483,6 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.11 | May 2026 | Food library step 2 complete: migration 008_food_photos_rls.sql adds RLS policies to nyx-food-photos (INSERT + SELECT for authenticated users; UPDATE/DELETE intentionally omitted at MVP). Three open questions resolved: vision model (Sonnet 4.6, unanimous), image compression (client-only, unanimous), bucket creation (PM completed via dashboard). |
 | v1.12 | May 2026 | Food library step 4 complete: three-zone meal-log picker (Add new → Recent → Library), text-only tiles, one-tap log path. Pivot mid-session from photo thumbnails to text tiles after user testing surfaced that user-snapped pet-food photos in a dense grid produced a chaotic surface and broken state machine — photos still captured for the detail screen and AI extraction, just not surfaced in the picker. Zone order changed from Recent-first to Add-new-first per PM call after testing (camera CTA needs to be in initial field of view). Two future scopes captured in requirements doc: library tile → food detail entry point (§4.1.1) and time editor on one-tap path (§4.1.2). Build sequence in CLAUDE.md restructured to show food-library track sub-steps with ✓ markers. |
 | v1.13 | May 2026 | Food library step 5 complete: photo capture + AI confirm flow at `app/food-capture.tsx`. Multi-step camera path (front required → ingredients encouraged → barcode encouraged), client-side compression via `compressForUpload` in `lib/storage.ts`, pending food_items insert before `extract-food-from-photo` invocation, confirm screen with Looks-right / Edit, EXIF-time meal log on commit. Legacy `food-new` text form in `app/log.tsx` deleted; picker's Add-new now routes to `/food-capture?fromLog=1`. Bug-fix bundled into the Edge Function (`format` enum mismatch — AI emits 'dry'/'wet' but DB enum is 'dry_kibble'/'wet_canned'; column was `ingredients_notes` not `ingredients`; null booleans tripped NOT NULL constraints). Tests added for new `mapFormatToDb` helper. PM hand-off: re-deploy the Edge Function (`supabase functions deploy extract-food-from-photo`) so the schema-correct writes ship. |
+| v1.14 | May 2026 | Food library step 6 complete: food detail screen at `app/food/[id].tsx`. Editable hero (PhotoCarousel with swipeable signed-URL pages + add-photo CTA), brand/product/format/ingredients/barcode form, retry CTA when `ai_extraction_status='failed'` (and a quieter "Re-run AI extraction" affordance when 'completed'). Realtime postgres_changes subscription on `food_items` filtered by id; cleanup on unmount via `supabase.removeChannel`. Save flips `source` to `'user'` only when the diff includes a field the user actually changed; cache row is kept in sync so picker tiles reflect edits immediately. Entry point: long-press on a FoodPicker tile (the deferred §4.1.1 call — chosen over a header "Manage library" view because it preserves the one-tap log path and surfaces detail from where the food lives). New shared component at `components/food/PhotoCarousel.tsx`. |
+| v1.15 | May 2026 | Food detail screen — PM feedback round. Added page-indicator dots to PhotoCarousel (only render when ≥2 pages). Add-photo now prompts for slot first (Front / Ingredients / Barcode / Other) — canonical slots overwrite the existing storage path; "Other" appends. **Delete food** added: hard-deletes `food_items` + `meals`, soft-deletes parent `events` (respects the "never DELETE events" anti-pattern), drops them from the in-memory event store. Per PM call this is "kills all records" for the test version — smarter tombstone behavior captured under Future Work. Self-QA fix: rewrote `applyRow` field-seeding with a baseline-diff approach so realtime updates only override fields the user hasn't edited (previous logic could clobber a manually picked `dry_kibble` format). New "Future Work / Ideas" section in CLAUDE.md captures: detail-screen pattern for History events, Food Library as a nav-level item, smarter library deletes. |
+| v1.16 | May 2026 | Bug fix: deleting a food appeared to succeed but the food kept coming back. Root cause — `food_items` had SELECT/INSERT/UPDATE RLS policies but no DELETE policy. Supabase-js returns success with 0 rows affected when RLS silently blocks a DELETE, then `refreshFoodCache` re-inserts the row on next focus. Fix: migration `009_food_items_delete_policy.sql` adds `FOR DELETE USING (auth.uid() = created_by_user_id)`. Bundled with the UI PR (violates the schema-PR-on-its-own anti-pattern) because the feature doesn't work without it and the PR is still under QA — flagged explicitly in the handoff. Also hardened the client: delete now uses `.select()` and treats a 0-row response as an error so a future RLS regression surfaces immediately instead of silently re-appearing. Also: `FoodPicker` swapped from a mount-only `useEffect` to `useFocusEffect` so deletes/adds reflect when the picker comes back into focus. |
