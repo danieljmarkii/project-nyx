@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.10 | Last Updated: May 2026
+**Version:** 1.12 | Last Updated: May 2026
 
 ---
 
@@ -252,9 +252,16 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 9. **Vet report** — Edge Function, PDF generation, share token, share sheet ← Current phase
 10. **AI Signal Edge Function** — Claude API call, single-sentence output, caching
 
-**Parallel track — Food library redesign** (requirements complete; ready to build). Photo-first food entry with async AI extraction. Replaces the current text-form food add in `app/log.tsx`. Requirements live in `docs/food-library-redesign-requirements.md` — read that file before starting any food-related work. Build order is detailed there; treat it as a separate, schema-bounded track that can run alongside Step 9.
+**Parallel track — Food library redesign.** Photo-first food entry with async AI extraction. Replaces the current text-form food add in `app/log.tsx`. Requirements live in `docs/food-library-redesign-requirements.md` — read that file before starting any food-related work.
+- Step 1 — Schema migration ✓
+- Step 2 — Bucket + RLS setup ✓
+- Step 3 — `extract-food-from-photo` Edge Function ✓
+- Step 4 — Picker UX (three-zone meal-log screen, text-only tiles) ✓
+- Step 5 — Photo capture + AI confirm UX ← Next on food track
+- Step 6 — Food detail screen + library-tap entry point (§4.1.1)
+- Step 7 — EXIF attribution UI
 
-**Current phase:** Step 9 — Vet report (food library redesign queued as parallel track; pick up after vet report unless PM redirects)
+**Current phase:** Step 9 — Vet report (food library track at Step 5; pick up after vet report unless PM redirects)
 
 ---
 
@@ -467,3 +474,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.9 | May 2026 | Steps 7 ✓ and 8 ✓ marked complete. Step 8 additions: expo-network installed, syncStore (Zustand) added, getSyncStatus() db helper, useSync updated with addNetworkStateListener for reconnect detection, SyncBanner component (appears only >24h stale). LWW for multi-device deferred post-MVP with code comment. Current phase advanced to Step 9 (Vet report). |
 | v1.10 | May 2026 | Food library redesign — research/requirements session. Decided on photo-first food entry with async Claude vision extraction; rejected OPFF and Chewy import paths (OPFF coverage diagnostic surfaced API and quality issues; Chewy ruled out on ToS). New requirements doc at `docs/food-library-redesign-requirements.md`. Added Read-These entry pointing to it. New anti-pattern: interactive elements without explicit `hitSlop` below 44pt. New QA edge case: the 3am-stumbling test. Three new open questions: vision model choice, image compression location, `nyx-food-photos` bucket creation. Build sequence updated to queue the food library redesign as a parallel track to Step 9. |
 | v1.11 | May 2026 | Food library step 2 complete: migration 008_food_photos_rls.sql adds RLS policies to nyx-food-photos (INSERT + SELECT for authenticated users; UPDATE/DELETE intentionally omitted at MVP). Three open questions resolved: vision model (Sonnet 4.6, unanimous), image compression (client-only, unanimous), bucket creation (PM completed via dashboard). |
+| v1.12 | May 2026 | Food library step 4 complete: three-zone meal-log picker (Add new → Recent → Library), text-only tiles, one-tap log path. Pivot mid-session from photo thumbnails to text tiles after user testing surfaced that user-snapped pet-food photos in a dense grid produced a chaotic surface and broken state machine — photos still captured for the detail screen and AI extraction, just not surfaced in the picker. Zone order changed from Recent-first to Add-new-first per PM call after testing (camera CTA needs to be in initial field of view). Two future scopes captured in requirements doc: library tile → food detail entry point (§4.1.1) and time editor on one-tap path (§4.1.2). Build sequence in CLAUDE.md restructured to show food-library track sub-steps with ✓ markers. |

@@ -89,6 +89,25 @@ When the user taps "Meal" from the FAB, present a single screen with three zones
 - Recent empty (new user, no logs): collapse this zone; promote Library.
 - Library empty (truly first log, ever): jump straight into the camera flow.
 
+**Zone ordering note (May 2026):** The picker renders **Add new → Recent → Library** top to bottom. PM call after implementation: the camera CTA needs to sit in the user's first field of view so adding a new food is discoverable without scrolling. This overrides the original "Recent first" ordering in the table above. Tile rendering and one-tap behavior unchanged.
+
+**Tile rendering note (May 2026):** Tiles are **text-only** (brand bold, product-name 2 lines, type label uppercase muted). The earlier photo-thumbnail design was abandoned after implementation revealed that user-snapped pet-food photos in a dense grid produced a chaotic surface and uneven empty/photo state machine. Photos are still captured on food creation — they remain useful for the food detail screen (§4.3) and AI extraction (§5.1) — but are not surfaced in the picker.
+
+### 4.1.1 Tap-into a library tile — food detail entry point *(deferred)*
+
+A tile in the Recent or Library zones currently has only the **one-tap log** behavior. To open the food detail screen (§4.3) for editing brand/product/ingredients/etc., the user needs a second entry point. Two candidates (PM to call):
+
+- **Long-press** a tile → opens detail. Discoverable via standard mobile pattern; keeps the one-tap log clean.
+- **"Manage library"** screen accessible from a header action on the picker → list view with tap → detail.
+
+Out of scope for the initial picker PR. Captured here so the detail screen build (§9 step 6) wires up the entry point.
+
+### 4.1.2 Time editor / back-dating on the one-tap log path *(deferred)*
+
+The one-tap log path uses `new Date()` for `occurred_at` — no time editor surfaces in the picker. Back-dating today requires editing the event from Timeline after it lands. This is a knowingly accepted trade for the 10-second test on the hot path.
+
+Future scope (post-MVP polish): add a subtle "Change time" affordance to the picker, possibly as a row that appears between Add-new and Recent when expanded. Must not regress the 10-second test — the picker should remain one-tap for the common case. EXIF attribution (§4.4) does *not* fire on this path because no photo is captured at log time; this is intentional.
+
 ### 4.2 Add new food — photo capture
 
 1. **Front of package required.** Camera opens. User snaps front of package.

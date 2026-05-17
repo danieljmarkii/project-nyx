@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Animated, KeyboardAvoidingView, Platform, FlatList, Image, Alert,
+  ScrollView, Animated, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -10,25 +10,19 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
+import { FoodPicker } from '../components/log/FoodPicker';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
-import { getDb } from '../lib/db';
+import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
 import { uuid, exifDateToISO } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'food-new' | 'symptom' | 'simple' | 'stool-type' | 'complete';
-
-interface CachedFood {
-  id: string;
-  brand: string;
-  product_name: string;
-  format: string;
-}
 
 const TYPE_ICONS: Record<EventTypeKey, string> = {
   meal: '🍽',
@@ -77,8 +71,7 @@ export default function LogModal() {
   const [attachmentUri, setAttachmentUri] = useState<string | null>(null);
   const [attachmentTakenAt, setAttachmentTakenAt] = useState<string | null>(null);
 
-  // Food state
-  const [foods, setFoods] = useState<CachedFood[]>([]);
+  // Food state (set by the picker; used by handleConfirm)
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [selectedFoodBrand, setSelectedFoodBrand] = useState<string | null>(null);
   const [selectedFoodProduct, setSelectedFoodProduct] = useState<string | null>(null);
@@ -127,10 +120,6 @@ export default function LogModal() {
   }, [typeParam]);
 
   useEffect(() => {
-    if (step === 'food') loadFoods();
-  }, [step]);
-
-  useEffect(() => {
     if (step !== 'complete') return;
     Animated.parallel([
       Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
@@ -139,20 +128,6 @@ export default function LogModal() {
     const t = setTimeout(() => router.back(), 1000);
     return () => clearTimeout(t);
   }, [step]);
-
-  async function loadFoods() {
-    const db = getDb();
-    // GROUP BY brand+product_name deduplicates entries that were created locally
-    // and then also synced down from the global food_items table.
-    const rows = await db.getAllAsync<CachedFood>(
-      `SELECT id, brand, product_name, format
-       FROM food_items_cache
-       GROUP BY LOWER(brand), LOWER(product_name)
-       ORDER BY MAX(COALESCE(last_used_at, '')) DESC, brand ASC
-       LIMIT 30`
-    );
-    setFoods(rows);
-  }
 
   function handleTypeSelect(type: EventTypeKey) {
     setSelectedType(type);
@@ -229,9 +204,13 @@ export default function LogModal() {
     const foodId = uuid();
     const db = getDb();
     const now = new Date().toISOString();
+    // Storage path is decided upfront so the cache (and remote row) reference
+    // the same path the upload will land at. Writing the local file URI here
+    // breaks the picker — getPublicUrl(...) would produce a broken URL.
+    const storagePath = newFoodPhotoUri ? `${foodId}/label.jpg` : null;
     await db.runAsync(
       `INSERT OR REPLACE INTO food_items_cache (id, brand, product_name, format, photo_path, cached_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      [foodId, newBrand.trim(), newProduct.trim(), newFormat, newFoodPhotoUri ?? null, now]
+      [foodId, newBrand.trim(), newProduct.trim(), newFormat, storagePath, now]
     );
     // Best-effort remote insert — food_items is a global shared catalog
     supabase.from('food_items').insert({
@@ -244,27 +223,54 @@ export default function LogModal() {
       if (error) console.warn('[food] remote insert failed:', error.message);
     });
     // Upload food label photo if taken
-    if (newFoodPhotoUri) {
-      const storagePath = `${foodId}/label.jpg`;
+    if (newFoodPhotoUri && storagePath) {
       uploadPhoto('nyx-food-photos', storagePath, newFoodPhotoUri)
-        .then(() => supabase.from('food_items').update({ photo_path: storagePath }).eq('id', foodId))
+        .then(() => supabase.from('food_items').update({
+          photo_path: storagePath,
+          photo_paths: [storagePath],
+        }).eq('id', foodId))
         .catch(console.error);
     }
-    setSelectedFoodId(foodId);
-    setSelectedFoodBrand(newBrand.trim());
-    setSelectedFoodProduct(newProduct.trim());
+    const brand = newBrand.trim();
+    const product = newProduct.trim();
     setNewBrand('');
     setNewProduct('');
     setNewFormat('dry_kibble');
     setNewFoodPhotoUri(null);
-    // Return to food screen with new item selected
-    await loadFoods();
-    setStep('food');
+    // One-tap log: when a new food is added inside the meal-log flow,
+    // log the meal immediately rather than dropping the user back into the picker.
+    await handlePickFood({
+      id: foodId,
+      brand,
+      product_name: product,
+      format: newFormat,
+      photo_path: storagePath,
+    });
   }
 
-  async function handleConfirm() {
+  // One-tap log path from the new picker — bypasses state so it works
+  // even before `selectedFoodId` has propagated through React.
+  async function handlePickFood(food: PickerFood) {
+    setSelectedFoodId(food.id);
+    setSelectedFoodBrand(food.brand);
+    setSelectedFoodProduct(food.product_name);
+    await handleConfirm({
+      foodId: food.id,
+      foodBrand: food.brand,
+      foodProduct: food.product_name,
+    });
+  }
+
+  async function handleConfirm(override?: {
+    foodId: string;
+    foodBrand: string;
+    foodProduct: string;
+  }) {
     if (!activePet) return;
-    if (selectedType === 'meal' && !selectedFoodId) return;
+    const foodId = override?.foodId ?? selectedFoodId;
+    const foodBrand = override?.foodBrand ?? selectedFoodBrand;
+    const foodProduct = override?.foodProduct ?? selectedFoodProduct;
+    if (selectedType === 'meal' && !foodId) return;
     const db = getDb();
     const eventId = uuid();
     const now = new Date().toISOString();
@@ -275,16 +281,16 @@ export default function LogModal() {
       [eventId, activePet.id, selectedType!, occurredAt.toISOString(),
        severity ?? null, notes.trim() || null, now, now]
     );
-    if (selectedType === 'meal' && selectedFoodId) {
+    if (selectedType === 'meal' && foodId) {
       const mealId = uuid();
       await db.runAsync(
         `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, synced)
          VALUES (?, ?, ?, ?, 'unknown', ?, 0)`,
-        [mealId, eventId, activePet.id, selectedFoodId, now]
+        [mealId, eventId, activePet.id, foodId, now]
       );
       await db.runAsync(
         `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
-        [now, selectedFoodId]
+        [now, foodId]
       );
     }
     prependEvent({
@@ -298,10 +304,10 @@ export default function LogModal() {
       deleted_at: null,
       created_at: now,
       updated_at: now,
-      food_item_id: selectedFoodId,
-      food_brand: selectedFoodBrand,
-      food_product_name: selectedFoodProduct,
-      quantity: selectedFoodId ? 'unknown' : null,
+      food_item_id: foodId,
+      food_brand: foodBrand,
+      food_product_name: foodProduct,
+      quantity: foodId ? 'unknown' : null,
     });
 
     // Save and upload photo attachment if present
@@ -452,10 +458,9 @@ export default function LogModal() {
     );
   }
 
-  // ── Food library ────────────────────────────────────────────────────────────
+  // ── Food picker (Recent / Library / + Add new) ─────────────────────────────
 
   if (step === 'food') {
-    const canConfirm = !!selectedFoodId;
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
@@ -465,67 +470,16 @@ export default function LogModal() {
           <Text style={styles.headerTitle}>What did {petName} eat?</Text>
           <View style={styles.headerSpacer} />
         </View>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <FlatList
-            data={foods}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.foodList}
-            ListEmptyComponent={
-              <Text style={styles.emptyState}>No foods in the library yet. Add one below.</Text>
-            }
-            renderItem={({ item }) => {
-              const isSelected = item.id === selectedFoodId;
-              return (
-                <TouchableOpacity
-                  style={[styles.foodItem, isSelected && styles.foodItemSelected]}
-                  onPress={() => {
-                    setSelectedFoodId(item.id);
-                    setSelectedFoodBrand(item.brand);
-                    setSelectedFoodProduct(item.product_name);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.foodItemName, isSelected && styles.foodItemNameSelected]}>
-                    {item.product_name}
-                  </Text>
-                  <Text style={[styles.foodItemBrand, isSelected && styles.foodItemBrandSelected]}>
-                    {item.brand}
-                  </Text>
-                  {isSelected && <Text style={styles.foodItemCheck}>✓</Text>}
-                </TouchableOpacity>
-              );
-            }}
-            ListFooterComponent={
-              <TouchableOpacity style={styles.addFoodBtn} onPress={() => setStep('food-new')}>
-                <Text style={styles.addFoodBtnText}>+ Add new food</Text>
-              </TouchableOpacity>
-            }
+        {activePet && (
+          <FoodPicker
+            petId={activePet.id}
+            onPickFood={handlePickFood}
+            // Photo-capture flow lands in the next PR (Step 5 of the food
+            // library redesign). Until then, fall back to the existing
+            // text form so users aren't blocked from adding new foods.
+            onAddNew={() => setStep('food-new')}
           />
-          <View style={styles.bottomPanel}>
-            {renderPhotoAttachRow()}
-            {renderNotesInput()}
-            {renderTimeRow()}
-            {showTimePicker && (
-              <DateTimePicker
-                value={occurredAt}
-                mode="datetime"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                maximumDate={new Date()}
-                onChange={(_e, date) => {
-                  if (Platform.OS === 'android') setShowTimePicker(false);
-                  if (date) setOccurredAt(date);
-                }}
-              />
-            )}
-            <TouchableOpacity
-              style={[styles.confirmBtn, !canConfirm && styles.confirmBtnDisabled]}
-              onPress={handleConfirm}
-              disabled={!canConfirm}
-            >
-              <Text style={styles.confirmBtnText}>Log meal</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+        )}
       </SafeAreaView>
     );
   }
@@ -702,7 +656,7 @@ export default function LogModal() {
           <View style={styles.bottomAction}>
             <TouchableOpacity
               style={[styles.confirmBtn, !canConfirm && styles.confirmBtnDisabled]}
-              onPress={handleConfirm}
+              onPress={() => handleConfirm()}
               disabled={!canConfirm}
             >
               <Text style={styles.confirmBtnText}>Log {eventLabel.toLowerCase()}</Text>
@@ -745,7 +699,7 @@ export default function LogModal() {
             )}
           </ScrollView>
           <View style={styles.bottomAction}>
-            <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
+            <TouchableOpacity style={styles.confirmBtn} onPress={() => handleConfirm()}>
               <Text style={styles.confirmBtnText}>
                 {eventLabel === 'Other' ? 'Log event' : `Log ${eventLabel.toLowerCase()}`}
               </Text>
@@ -824,73 +778,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
-  },
-
-  // ── Food list ──
-  foodList: {
-    padding: theme.space2,
-    paddingBottom: 0,
-  },
-  emptyState: {
-    fontSize: 15,
-    color: theme.colorTextSecondary,
-    textAlign: 'center',
-    paddingVertical: theme.space4,
-    lineHeight: 22,
-  },
-  foodItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: theme.space2,
-    paddingHorizontal: theme.space2,
-    borderRadius: theme.radiusSmall,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    marginBottom: theme.space1,
-    backgroundColor: theme.colorSurface,
-  },
-  foodItemSelected: {
-    borderColor: theme.colorNeutralDark,
-    backgroundColor: theme.colorNeutralDark,
-  },
-  foodItemName: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorTextPrimary,
-  },
-  foodItemNameSelected: {
-    color: '#fff',
-  },
-  foodItemBrand: {
-    fontSize: 13,
-    color: theme.colorTextSecondary,
-    marginRight: theme.space1,
-  },
-  foodItemBrandSelected: {
-    color: 'rgba(255,255,255,0.7)',
-  },
-  foodItemCheck: {
-    fontSize: 15,
-    color: '#fff',
-  },
-  addFoodBtn: {
-    paddingVertical: theme.space2,
-    marginTop: theme.space1,
-    alignItems: 'center',
-  },
-  addFoodBtnText: {
-    fontSize: 15,
-    color: theme.colorAccent,
-    fontWeight: theme.fontWeightMedium,
-  },
-
-  // ── Bottom panel (food screen) ──
-  bottomPanel: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colorBorder,
-    padding: theme.space2,
-    gap: theme.space2,
   },
 
   // ── Notes input ──
