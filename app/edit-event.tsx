@@ -15,7 +15,7 @@ import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
-import { uuid } from '../lib/utils';
+import { uuid, formatExifAttribution } from '../lib/utils';
 
 interface CachedFood {
   id: string;
@@ -223,24 +223,21 @@ export default function EditEventModal() {
           <SectionLabel label="Time" style={{ marginBottom: 4 }} />
           <TouchableOpacity
             style={styles.timeRow}
-            onPress={() => {
-              // Tapping Change is the user's commitment to override — flip
-              // provenance immediately so the attribution disappears.
-              if (occurredAtSource !== 'manual') setOccurredAtSource('manual');
-              setShowTimePicker(!showTimePicker);
-            }}
+            onPress={() => setShowTimePicker(!showTimePicker)}
             activeOpacity={0.7}
           >
             <Text style={styles.timeValue}>
               {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
               {'  '}
               {formatTime(occurredAt)}
+              {occurredAtSource === 'exif' && (
+                <Text style={styles.exifAttribution}>
+                  {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
+                </Text>
+              )}
             </Text>
             <Text style={styles.changeLabel}>Change</Text>
           </TouchableOpacity>
-          {occurredAtSource === 'exif' && (
-            <Text style={styles.exifAttribution}>from your photo</Text>
-          )}
           {showTimePicker && (
             <DateTimePicker
               value={occurredAt}
@@ -249,7 +246,13 @@ export default function EditEventModal() {
               maximumDate={new Date()}
               onChange={(_e: unknown, date?: Date) => {
                 if (Platform.OS === 'android') setShowTimePicker(false);
-                if (date) setOccurredAt(date);
+                if (!date) return;
+                // Provenance flips only on an actual value change so a
+                // peek-tap doesn't silently drop the EXIF attribution.
+                if (occurredAtSource === 'exif' && date.getTime() !== occurredAt.getTime()) {
+                  setOccurredAtSource('manual');
+                }
+                setOccurredAt(date);
               }}
             />
           )}
@@ -436,10 +439,8 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
   },
   exifAttribution: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colorTextTertiary,
-    marginTop: 4,
-    paddingHorizontal: theme.space1,
   },
   photoRow: {
     flexDirection: 'row',

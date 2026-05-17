@@ -25,7 +25,7 @@ This replaces the typeahead-from-third-party-catalog approach (OPFF / Chewy) tha
 | D3 | **One photo required** (front of package). Barcode + ingredients photos are encouraged but optional. | The UI should heavily encourage all three but not block on the latter two. |
 | D4 | **Confirm extracted brand + product name** in one tap on first-add. Ingredients & barcode extracted silently and shown editable on the food detail screen. | "Tier the trust by stakes" — high-stakes / high-accuracy fields confirmed, low-stakes / async fields verified post-hoc. |
 | D5 | EXIF timestamp from food photo populates the **meal event time** when photo is added via the log flow; populates the **catalog entry time** when added via library management. | EXIF fallback to `new Date()` on malformed/absent EXIF (existing pattern). Source recorded as `occurred_at_source`. |
-| D6 | Time-from-EXIF must be **surfaced in the UX** so the user knows we pre-populated it. | Inline subtle attribution beside the time selector: `"5:26 PM · set from your photo"`. Applies to **both** food and vomit photo flows for consistency. |
+| D6 | Time-from-EXIF must be **surfaced in the UX** so the user knows we pre-populated it. | Inline subtle attribution beside the time selector: `"5:26 PM · from your photo"` (same-day) or `"5:26 PM · from your photo (Mon May 12)"` (back-dated library pick). Applies to **both** food and vomit photo flows for consistency. |
 | D7 | Async extraction via Edge Function. **Never block logging on extraction.** | Meal logs immediately; library entry shows `ai_extraction_status='pending'` until completed. |
 | D8 | Resolution of the Designer × Data Scientist conflict on user-edits-to-catalog: | Per-user overrides via additive `food_item_overrides` table — *deferred post-MVP*. MVP has direct edit on the (single-user) global library, which is acceptable because there is one user. |
 
@@ -130,14 +130,21 @@ Editable view of a single food. Fields:
 
 ### 4.4 Time-from-EXIF attribution
 
-Whenever the meal event's time was set from EXIF (not manually), the time selector area shows:
+Whenever the meal event's time was set from EXIF (not manually), the time selector area shows the attribution **inline** with the time, separated by a centered dot:
 
 ```
-5:26 PM  ·  set from your photo
-[Change]
+5:26 PM  ·  from your photo            [Change]
 ```
 
-The "set from your photo" text is muted (theme `colors.textSubtle`). It disappears the moment the user taps **Change** (because then it's no longer EXIF-sourced — `occurred_at_source` becomes `'manual'`).
+When the EXIF date isn't today (a library-photo backfill), the attribution carries the date so the user can spot it before confirming:
+
+```
+5:26 PM  ·  from your photo (Mon May 12)   [Change]
+```
+
+The attribution text is muted (theme `colorTextTertiary`). It disappears only when the user **actually edits** the time — opening the picker to peek does not flip `occurred_at_source`. The moment the picker emits a new value that differs from the seeded one, `occurred_at_source` becomes `'manual'` and the attribution drops.
+
+Future-dated EXIF (e.g. camera clock off) is treated as untrusted and ignored at seed time — the event falls back to `'now'` rather than landing a time past the current clock.
 
 Apply this consistently to the existing **vomit photo** flow as well — it currently uses EXIF silently and should get the same attribution treatment.
 
@@ -195,7 +202,7 @@ Explicitly deferred. Do not silently expand scope.
 ## 7. New tech debt logged
 
 - **Tap-target audit sweep.** Multiple interactive elements below the 44pt iOS HIG minimum. Tracked in CLAUDE.md anti-patterns; deferred to post-Step-10 polish unless a specific 3am-stumbling case forces it earlier.
-- **Vomit photo EXIF attribution.** Existing vomit-photo flow uses EXIF silently. As part of this work, retrofit the "set from your photo" attribution to that flow too. Same pattern, both surfaces.
+- **Vomit photo EXIF attribution.** Existing vomit-photo flow uses EXIF silently. As part of this work, retrofit the "from your photo" attribution to that flow too. Same pattern, both surfaces.
 
 ---
 
@@ -220,7 +227,7 @@ Each step is its own PR. Schema is **never** bundled with UI per CLAUDE.md.
 4. **Picker UX PR** — new three-zone meal-log screen (Recent / Library / + Add new). Replaces the current FlatList in `app/log.tsx`.
 5. **Photo capture + confirm UX PR** — camera flow, AI confirm screen, library write.
 6. **Food detail screen PR** — editable view, realtime status updates, manual "Re-run extraction" button.
-7. **EXIF attribution UI PR** — inline `· set from your photo` next to time selector, on both food and vomit flows. Includes the `occurred_at_source` column wiring (this is technically a schema add — bundle with #1 if it doesn't bloat that PR; otherwise its own micro-migration).
+7. **EXIF attribution UI PR** — inline `· from your photo` next to time selector, on both food and vomit flows. Includes the `occurred_at_source` column wiring (this is technically a schema add — bundle with #1 if it doesn't bloat that PR; otherwise its own micro-migration).
 
 ---
 

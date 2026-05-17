@@ -72,7 +72,7 @@ export function FAB() {
 
       await db.runAsync(
         'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, 0)',
-        [eventId, activePet.id, 'meal', now, 'manual', 'manual'],
+        [eventId, activePet.id, 'meal', now, 'manual', 'now'],
       );
       await db.runAsync(
         'INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, synced) VALUES (?, ?, ?, ?, ?, 0)',
@@ -117,7 +117,7 @@ export function FAB() {
 
       await db.runAsync(
         'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, 0)',
-        [eventId, activePet.id, type, now, 'manual', 'manual'],
+        [eventId, activePet.id, type, now, 'manual', 'now'],
       );
 
       prependEvent({

@@ -18,7 +18,7 @@ import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
-import { uuid, exifDateToISO } from '../lib/utils';
+import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
 
@@ -85,8 +85,9 @@ export default function LogModal() {
     if (pendingAttachment) {
       setAttachmentUri(pendingAttachment.localUri);
       setAttachmentTakenAt(pendingAttachment.takenAt);
-      if (pendingAttachment.takenAt) {
-        setOccurredAt(new Date(pendingAttachment.takenAt));
+      const trustedIso = trustedPastExifIso(pendingAttachment.takenAt);
+      if (trustedIso) {
+        setOccurredAt(new Date(trustedIso));
         setOccurredAtSource('exif');
       }
       setPendingAttachment(null);
@@ -161,7 +162,7 @@ export default function LogModal() {
     const exifRaw = (asset.exif as Record<string, unknown> | undefined);
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
     if (typeof dateRaw === 'string') {
-      const iso = exifDateToISO(dateRaw);
+      const iso = trustedPastExifIso(exifDateToISO(dateRaw));
       if (iso) {
         setAttachmentTakenAt(iso);
         setOccurredAt(new Date(iso));
@@ -303,31 +304,32 @@ export default function LogModal() {
     );
   }
 
-  function handleChangeTimePress() {
-    // The act of opening the picker is the user's commitment to override the
-    // EXIF-set time, so flip provenance immediately rather than waiting for
-    // an actual value change. Matches the spec: attribution disappears the
-    // moment they tap Change.
-    if (occurredAtSource === 'exif') setOccurredAtSource('manual');
-    setShowTimePicker(!showTimePicker);
+  // Provenance flips only on an actual value change, so tapping the row to
+  // peek at the picker doesn't silently drop the EXIF attribution.
+  function handleTimePickerChange(date?: Date) {
+    if (!date) return;
+    if (occurredAtSource === 'exif' && date.getTime() !== occurredAt.getTime()) {
+      setOccurredAtSource('manual');
+    }
+    setOccurredAt(date);
   }
 
   function renderTimeRow() {
     return (
-      <View>
-        <View style={styles.timeRow}>
-          <Text style={styles.timeLabel}>
-            {occurredAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
-            {' · '}
-            {formatTime(occurredAt)}
-          </Text>
-          <TouchableOpacity onPress={handleChangeTimePress} hitSlop={12}>
-            <Text style={styles.changeTimeBtn}>Change</Text>
-          </TouchableOpacity>
-        </View>
-        {occurredAtSource === 'exif' && (
-          <Text style={styles.exifAttribution}>from your photo</Text>
-        )}
+      <View style={styles.timeRow}>
+        <Text style={styles.timeLabel}>
+          {occurredAt.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+          {' · '}
+          {formatTime(occurredAt)}
+          {occurredAtSource === 'exif' && (
+            <Text style={styles.exifAttribution}>
+              {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
+            </Text>
+          )}
+        </Text>
+        <TouchableOpacity onPress={() => setShowTimePicker(!showTimePicker)} hitSlop={12}>
+          <Text style={styles.changeTimeBtn}>Change</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -511,7 +513,7 @@ export default function LogModal() {
                 maximumDate={new Date()}
                 onChange={(_e, date) => {
                   if (Platform.OS === 'android') setShowTimePicker(false);
-                  if (date) setOccurredAt(date);
+                  handleTimePickerChange(date);
                 }}
               />
             )}
@@ -556,7 +558,7 @@ export default function LogModal() {
                 maximumDate={new Date()}
                 onChange={(_e, date) => {
                   if (Platform.OS === 'android') setShowTimePicker(false);
-                  if (date) setOccurredAt(date);
+                  handleTimePickerChange(date);
                 }}
               />
             )}
@@ -671,9 +673,8 @@ const styles = StyleSheet.create({
     color: theme.colorAccent,
   },
   exifAttribution: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colorTextTertiary,
-    marginTop: 2,
   },
 
   // ── Confirm button ──

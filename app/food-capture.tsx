@@ -26,7 +26,7 @@ import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
-import { uuid, exifDateToISO } from '../lib/utils';
+import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 
 type CaptureStep =
   | 'intro'
@@ -183,7 +183,11 @@ export default function FoodCaptureScreen() {
 
     const exifRaw = asset.exif as Record<string, unknown> | undefined;
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
-    const exifIso = typeof dateRaw === 'string' ? exifDateToISO(dateRaw) : null;
+    // trustedPastExifIso drops future-dated EXIF (wrong camera clock) so we
+    // never seed a meal time past `now`.
+    const exifIso = typeof dateRaw === 'string'
+      ? trustedPastExifIso(exifDateToISO(dateRaw))
+      : null;
 
     const slotIndex = slot === 'front' ? 0 : slot === 'ingredients' ? 1 : 2;
     return {
@@ -541,18 +545,16 @@ export default function FoodCaptureScreen() {
           <Text style={styles.confirmCaption}>Is this right?</Text>
           <TouchableOpacity
             style={styles.mealTimeRow}
-            onPress={() => {
-              if (mealOccurredAtSource !== 'manual') setMealOccurredAtSource('manual');
-              setShowMealTimePicker((v) => !v);
-            }}
+            onPress={() => setShowMealTimePicker((v) => !v)}
             activeOpacity={0.7}
             hitSlop={12}
           >
             <Text style={styles.mealTimeText}>
-              Logged at{' '}
               {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               {mealOccurredAtSource === 'exif' ? (
-                <Text style={styles.mealTimeAttribution}>{'  ·  from your photo'}</Text>
+                <Text style={styles.mealTimeAttribution}>
+                  {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
+                </Text>
               ) : null}
             </Text>
             <Text style={styles.mealTimeChange}>Change</Text>
@@ -565,7 +567,13 @@ export default function FoodCaptureScreen() {
               maximumDate={new Date()}
               onChange={(_e, date) => {
                 if (Platform.OS === 'android') setShowMealTimePicker(false);
-                if (date) setMealOccurredAt(date);
+                if (!date) return;
+                // Provenance flips only on an actual value change so a peek-tap
+                // doesn't silently drop the EXIF attribution.
+                if (mealOccurredAtSource === 'exif' && date.getTime() !== mealOccurredAt.getTime()) {
+                  setMealOccurredAtSource('manual');
+                }
+                setMealOccurredAt(date);
               }}
             />
           )}
