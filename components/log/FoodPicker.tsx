@@ -13,13 +13,16 @@ interface Props {
   onPickFood: (food: PickerFood) => void;
   // Fires when the user taps "Add new" — opens the photo capture flow.
   onAddNew: () => void;
+  // Long-press on a tile — opens the food detail screen for editing.
+  // Kept separate from onPickFood so the one-tap log path stays clean.
+  onOpenDetail?: (food: PickerFood) => void;
 }
 
 const RECENT_DAYS = 14;
 const RECENT_LIMIT = 5;
 const SCREEN_PADDING = theme.space2;
 
-export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
+export function FoodPicker({ petId, onPickFood, onAddNew, onOpenDetail }: Props) {
   const [recent, setRecent] = useState<PickerFood[]>([]);
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [search, setSearch] = useState('');
@@ -95,6 +98,7 @@ export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
                   productName={f.product_name}
                   format={f.format}
                   onPress={() => onPickFood(f)}
+                  onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
                 />
               </View>
             ))}
@@ -132,6 +136,7 @@ export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
                     productName={f.product_name}
                     format={f.format}
                     onPress={() => onPickFood(f)}
+                    onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
                   />
                 ))}
                 {row.length === 1 && <View style={styles.gridSpacer} />}

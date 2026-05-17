@@ -391,6 +391,9 @@ export default function LogModal() {
             // Photo-first food capture (Step 5). On confirm, food-capture
             // logs the meal itself and routes back home — log.tsx is bypassed.
             onAddNew={() => router.push('/food-capture?fromLog=1')}
+            // Long-press on a tile opens the editable detail screen. The
+            // one-tap log path is preserved on regular tap.
+            onOpenDetail={(food) => router.push(`/food/${food.id}`)}
           />
         )}
       </SafeAreaView>
