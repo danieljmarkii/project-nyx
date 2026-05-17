@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.12 | Last Updated: May 2026
+**Version:** 1.14 | Last Updated: May 2026
 
 ---
 
@@ -289,6 +289,22 @@ Establish these from session one. Do not drift from them. When a new convention 
 - Edge Function secrets (service role key, Claude API key) are set via `supabase secrets set` and never stored in the repo.
 - When a new secret is required, document it here and flag to the PM to provision it in EAS Secrets before the next production build.
 
+### Secrets Register
+
+Single source of truth for every secret the project uses. Update this table inline the moment a new secret is introduced — do not wait for the session summary. When you reference a secret in code, sanity-check it against this table; if it's missing here, add it and flag a PM Action Item to provision it.
+
+| Name | Location | Used by | Provisioned? | Notes |
+|---|---|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | `.env.local` (local), EAS env (build) | Client | ✓ local; confirm before first prod build | Public; safe to expose |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` (local), EAS env (build) | Client | ✓ local; confirm before first prod build | Public; RLS-gated |
+| `SUPABASE_SERVICE_ROLE_KEY` | `supabase secrets` | Edge Functions | ✓ | Server-only; never ship to client |
+| `ANTHROPIC_API_KEY` | `supabase secrets` | `extract-food-from-photo`, future AI Signal | ✓ for food extraction; re-confirm before Step 10 | Server-only |
+
+**Columns:**
+- **Location** — exact mechanism (`.env.local`, `supabase secrets`, EAS env, EAS Secrets). If it lives in more than one place, list both.
+- **Provisioned?** — ✓ if set in that location and known working; ✗ or "needed" if not yet. When ✗, add a PM Action Item.
+- **Notes** — public vs server-only, rotation cadence, anything non-obvious.
+
 ---
 
 ## Git Workflow
@@ -329,7 +345,23 @@ Establish these from session one. Do not drift from them. When a new convention 
 
 **If running non-interactively (CI trigger, background agent, GitHub Action):** Skip the check-in. Read `technical-spec.md` and proceed based on the Current Phase line in this file.
 
+Before asking the three questions, pre-load and surface in the opening message: (a) the **Current Phase** line from the Build Sequence, (b) any **PM Action Items** still open from the last session summary, and (c) any **Open Questions** flagged as blocking the current phase. This lets the PM answer "no change" and move directly into work instead of recapping.
+
 Then read the relevant docs for the confirmed build step before writing any code.
+
+### Definition of Done — Before Saying "Done"
+
+Before reporting a feature, sub-step, or PR as complete, run this checklist explicitly and surface pass/fail. Do not collapse it to "looks good."
+
+- [ ] Acceptance criteria from `technical-spec.md` for this step listed and marked pass/fail (QA persona)
+- [ ] Diff scanned against the anti-pattern lists in this file — none introduced
+- [ ] Types pass (`tsc --noEmit` or equivalent) and lint is clean
+- [ ] No new secret used without an entry in the Secrets Register
+- [ ] Dev Handoff block emitted, including Manual QA Script
+- [ ] PM Action Items consolidated for any work only the PM can finish
+- [ ] If this push completes a chunk: Next Session Kickoff prompts emitted
+
+If any box is unchecked, the work is not done — say so explicitly rather than claiming success.
 
 ### During the Session
 
@@ -369,6 +401,48 @@ Then press **`r`** in the Expo terminal to reload the app on your device after a
 **When an Edge Function is included**, add:
 > Run `supabase functions deploy <function-name>` in the Codespace terminal to deploy the updated function to Supabase.
 
+#### Manual QA Script (required, every push)
+
+After the command sequence above, emit a numbered on-device QA script the PM can run in under 3 minutes. The script must:
+
+- Start from a known state (e.g. "open Expo Go, reload with `r`")
+- List the specific taps and inputs to exercise the change (golden path first, then 1–2 edge cases)
+- Tell the PM **what to expect** at each step, so they can spot regressions without reading code
+- Tie back to acceptance criteria for the current build step — call out which criterion each check verifies
+- Flag any check the PM cannot perform on-device (e.g. "verify in Supabase dashboard that `events.synced=1`")
+
+Format:
+
+```
+### Manual QA — <feature>
+1. <action> → <expected> (AC: <criterion ref>)
+2. <action> → <expected>
+3. Edge case: <action> → <expected>
+```
+
+If the change is backend-only (Edge Function, migration, schema), the QA script is the curl/SQL/dashboard steps to verify it instead — same numbered format.
+
+### PR Merge / Next Session Kickoff
+
+When a PR is opened or pushed that completes a chunk of work (build step ✓, sub-step ✓, or a self-contained feature), emit a **Next Session Kickoff** block alongside the Dev Handoff. The PM uses these prompts to start the next session cleanly without re-explaining context.
+
+Format:
+
+```
+### Next Session Kickoff
+**Recommended first prompt:**
+> <copy-pasteable prompt, 1–3 sentences, names the build step and concrete first task>
+
+**Alternate prompts (if priorities shift):**
+- <prompt for a parallel-track item>
+- <prompt for an open question that's now ready to decide>
+```
+
+Rules:
+- The recommended prompt always points at the next item in the **Build Sequence** unless a blocking open question makes that impossible — in which case the prompt is "resolve open question X."
+- Each prompt is self-contained: it names the file, step number, or doc the next session should read first.
+- If a PM Action Item from this session is a prerequisite (e.g. "deploy function X first"), say so explicitly in the prompt.
+
 ### Session End — Automatic Summary
 
 Produce this summary automatically at the end of every session without being asked. If the session ends abruptly, produce a partial summary covering what was completed.
@@ -394,8 +468,14 @@ Produce this summary automatically at the end of every session without being ask
 ### Known Issues / Tech Debt
 [Anything intentionally deferred or left rough, with a note on why]
 
+### PM Action Items
+[Consolidated checklist of every action only the PM can take, deduplicated across the session. Format: `- [ ] <action> — <why it's needed>`. Examples: run migration X in Supabase SQL Editor; deploy Edge Function Y; provision secret Z in EAS; create bucket via dashboard; reply to open question W. If there are none, write "None."]
+
 ### Recommended Next Steps
 [Ordered list of what to tackle next session, with rationale for the ordering]
+
+### Next Session Kickoff
+[Copy-pasteable prompts the PM can paste into a new session — see PR Merge / Next Session Kickoff section above for format. Always include the recommended first prompt; include alternates if multiple tracks are live.]
 
 ### Documentation Updates
 CLAUDE.md — [Changes made this session. Already applied inline.]
@@ -477,3 +557,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.11 | May 2026 | Food library step 2 complete: migration 008_food_photos_rls.sql adds RLS policies to nyx-food-photos (INSERT + SELECT for authenticated users; UPDATE/DELETE intentionally omitted at MVP). Three open questions resolved: vision model (Sonnet 4.6, unanimous), image compression (client-only, unanimous), bucket creation (PM completed via dashboard). |
 | v1.12 | May 2026 | Food library step 4 complete: three-zone meal-log picker (Add new → Recent → Library), text-only tiles, one-tap log path. Pivot mid-session from photo thumbnails to text tiles after user testing surfaced that user-snapped pet-food photos in a dense grid produced a chaotic surface and broken state machine — photos still captured for the detail screen and AI extraction, just not surfaced in the picker. Zone order changed from Recent-first to Add-new-first per PM call after testing (camera CTA needs to be in initial field of view). Two future scopes captured in requirements doc: library tile → food detail entry point (§4.1.1) and time editor on one-tap path (§4.1.2). Build sequence in CLAUDE.md restructured to show food-library track sub-steps with ✓ markers. |
 | v1.13 | May 2026 | Food library step 5 complete: photo capture + AI confirm flow at `app/food-capture.tsx`. Multi-step camera path (front required → ingredients encouraged → barcode encouraged), client-side compression via `compressForUpload` in `lib/storage.ts`, pending food_items insert before `extract-food-from-photo` invocation, confirm screen with Looks-right / Edit, EXIF-time meal log on commit. Legacy `food-new` text form in `app/log.tsx` deleted; picker's Add-new now routes to `/food-capture?fromLog=1`. Bug-fix bundled into the Edge Function (`format` enum mismatch — AI emits 'dry'/'wet' but DB enum is 'dry_kibble'/'wet_canned'; column was `ingredients_notes` not `ingredients`; null booleans tripped NOT NULL constraints). Tests added for new `mapFormatToDb` helper. PM hand-off: re-deploy the Edge Function (`supabase functions deploy extract-food-from-photo`) so the schema-correct writes ship. |
+| v1.14 | May 2026 | Workflow improvements session. Dev Handoff now requires a numbered Manual QA Script tied to acceptance criteria. New "PR Merge / Next Session Kickoff" section: every chunk-completing push emits copy-pasteable prompts for the next session. New Secrets Register table under Environment and Secrets — every secret's location, consumer, and provisioning status tracked inline. Session summary template gains a "PM Action Items" checklist (consolidated, deduplicated) and a "Next Session Kickoff" block. New "Definition of Done" checklist runs before any feature is marked complete (AC, anti-patterns, types, secrets, handoff, kickoff). Session start now pre-loads Current Phase + open PM actions + blocking questions so the PM can answer "no change" and skip the recap. Header version drift (1.12 → 1.13) fixed. |
