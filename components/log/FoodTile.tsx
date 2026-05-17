@@ -6,6 +6,7 @@ interface Props {
   productName: string;
   format: string;
   onPress: () => void;
+  onLongPress?: () => void;
 }
 
 const FORMAT_LABEL: Record<string, string> = {
@@ -22,13 +23,15 @@ const FORMAT_LABEL: Record<string, string> = {
 // Text-only food tile. Hierarchy (top→bottom): brand, product name (2 lines),
 // type label. Tap anywhere → meal logs immediately. Tile is the full tap
 // target (≥44pt by virtue of minHeight: 88).
-export function FoodTile({ brand, productName, format, onPress }: Props) {
+export function FoodTile({ brand, productName, format, onPress, onLongPress }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
 
   return (
     <TouchableOpacity
       style={styles.tile}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={350}
       activeOpacity={0.7}
     >
       <View style={styles.content}>

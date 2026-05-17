@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.16 | Last Updated: May 2026
+**Version:** 1.17 | Last Updated: May 2026
 
 ---
 
@@ -8,10 +8,10 @@
 _Auto-maintained. Update inline at session end (and any time these change mid-session). This block is the canonical answer to "where are we?" — every other section in this file is reference material._
 
 - **Current Phase:** Step 9 — Vet report
-- **Parallel track:** Food library — Step 6 (food detail screen + library-tap entry point per `docs/food-library-redesign-requirements.md` §4.1.1)
+- **Parallel track:** Food library — Step 7 (EXIF attribution UI)
 - **Blocking Open Questions:** PDF rendering library for Step 9 (`pdf-lib` vs `puppeteer` vs `react-pdf`)
 - **Open PM Action Items:** none carried over from last session
-- **Last session:** v1.16 (CLAUDE.md refactor — Status dashboard, Open Questions split, history archive)
+- **Last session:** v1.17 (workflow improvements — Manual QA scripts, Next Session Kickoff, Secrets Register, Backlog artifact, DoD upgrades, Status dashboard)
 
 ---
 
@@ -274,8 +274,8 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 - Step 3 — `extract-food-from-photo` Edge Function ✓
 - Step 4 — Picker UX (three-zone meal-log screen, text-only tiles) ✓
 - Step 5 — Photo capture + AI confirm UX ✓
-- Step 6 — Food detail screen + library-tap entry point (§4.1.1) ← Next on food track
-- Step 7 — EXIF attribution UI
+- Step 6 — Food detail screen + library-tap entry point (§4.1.1) ✓
+- Step 7 — EXIF attribution UI ← Next on food track
 
 _Current phase lives in the **Status** block at the top of this file. Update both blocks together when the phase advances._
 
@@ -605,10 +605,10 @@ If the answer to either question is uncertain, it needs more work before it ship
 
 ## Version History
 
-Most recent three versions only. Older entries archived at `docs/CLAUDE-md-history.md`.
+Most recent three versions only. Older entries archived at `docs/CLAUDE-md-history.md`. The three "Future Work / Ideas" items added to CLAUDE.md in v1.15 (detail-screen pattern for History events, Food Library as a top-level nav item, smarter library deletes) have moved to `docs/backlog.md` as B-003/B-004/B-005 — that file is now the single home for deferred items.
 
 | Version | Date | Summary |
 |---|---|---|
-| v1.14 | May 2026 | Workflow improvements session. Dev Handoff now requires a numbered Manual QA Script tied to acceptance criteria. New "PR Merge / Next Session Kickoff" section: every chunk-completing push emits copy-pasteable prompts for the next session. New Secrets Register table under Environment and Secrets — every secret's location, consumer, and provisioning status tracked inline. Session summary template gains a "PM Action Items" checklist (consolidated, deduplicated) and a "Next Session Kickoff" block. New "Definition of Done" checklist runs before any feature is marked complete (AC, anti-patterns, types, secrets, handoff, kickoff). Session start now pre-loads Current Phase + open PM actions + blocking questions so the PM can answer "no change" and skip the recap. Header version drift (1.12 → 1.13) fixed. |
-| v1.15 | May 2026 | Workflow improvements round 2. New `docs/backlog.md` artifact + Backlog Protocol section in CLAUDE.md — destination for all "log this for the future" items, accessed via `view backlog`. New Stale Open Question Triage rule: questions open >3 sessions are forced into one of four resolutions. New Build Step Kickoff requirement: AC pasted verbatim into session at the start of every new step. New Migration Safety Pre-flight in Git Workflow: rollback plan, destructive y/n, and backfill required in every schema PR description. DoD gains automated-tests check (stores, Edge Functions, shared utilities), persona sign-off line, and future-self review for new patterns. Dev Handoff now requires `npm test` before any push that touches testable surfaces. Seeded backlog with B-001 (AI cost & rate-limit strategy, deferred per PM) and B-002 (pre-production readiness checklist). |
-| v1.16 | May 2026 | CLAUDE.md refactor. Added a Status dashboard at the top of the file — Current Phase, food-library track, blocking Open Questions, open PM Action Items — so the most-checked information is canonical, not derived. Split Open Questions table into Open / Resolved sub-tables (matches the Backlog pattern; eliminates scan friction from mixed rows). Trimmed inline Version History to last 3 entries; older versions archived at `docs/CLAUDE-md-history.md`. No behavioral changes — pure organization. |
+| v1.15 | May 2026 | Food detail screen — PM feedback round. Added page-indicator dots to PhotoCarousel (only render when ≥2 pages). Add-photo now prompts for slot first (Front / Ingredients / Barcode / Other) — canonical slots overwrite the existing storage path; "Other" appends. **Delete food** added: hard-deletes `food_items` + `meals`, soft-deletes parent `events` (respects the "never DELETE events" anti-pattern), drops them from the in-memory event store. Per PM call this is "kills all records" for the test version — smarter tombstone behavior captured in the backlog. Self-QA fix: rewrote `applyRow` field-seeding with a baseline-diff approach so realtime updates only override fields the user hasn't edited (previous logic could clobber a manually picked `dry_kibble` format). |
+| v1.16 | May 2026 | Bug fix: deleting a food appeared to succeed but the food kept coming back. Root cause — `food_items` had SELECT/INSERT/UPDATE RLS policies but no DELETE policy. Supabase-js returns success with 0 rows affected when RLS silently blocks a DELETE, then `refreshFoodCache` re-inserts the row on next focus. Fix: migration `009_food_items_delete_policy.sql` adds `FOR DELETE USING (auth.uid() = created_by_user_id)`. Bundled with the UI PR (violates the schema-PR-on-its-own anti-pattern) because the feature doesn't work without it and the PR is still under QA — flagged explicitly in the handoff. Also hardened the client: delete now uses `.select()` and treats a 0-row response as an error so a future RLS regression surfaces immediately instead of silently re-appearing. Also: `FoodPicker` swapped from a mount-only `useEffect` to `useFocusEffect` so deletes/adds reflect when the picker comes back into focus. |
+| v1.17 | May 2026 | Workflow improvements (multi-round). Dev Handoff now requires a numbered Manual QA Script tied to acceptance criteria. New "PR Merge / Next Session Kickoff" section: chunk-completing pushes emit copy-pasteable prompts for the next session. New Secrets Register table — every secret's location, consumer, and provisioning status tracked inline. Session summary gains "PM Action Items" checklist and "Next Session Kickoff" block. New "Definition of Done" checklist (AC, anti-patterns, types, automated-tests, secrets, persona sign-off, future-self review, handoff, kickoff). New `docs/backlog.md` artifact + Backlog Protocol section — destination for all "log this for the future" items, accessed via `view backlog`. Seeded with B-001 (AI cost & rate-limit), B-002 (pre-prod readiness), plus B-003/B-004/B-005 migrated from the prior "Future Work / Ideas" section (which has been removed). New Stale Open Question Triage rule. Build Step Kickoff: AC pasted verbatim into session at start of every step. Migration Safety Pre-flight required in every schema PR description. Dev Handoff requires `npm test` before push when testable surfaces change. CLAUDE.md refactor: new Status dashboard at top of file (canonical "where are we?"), Open Questions split into Open / Resolved sub-tables, Version History trimmed to last 3 inline + archived at `docs/CLAUDE-md-history.md`. |
