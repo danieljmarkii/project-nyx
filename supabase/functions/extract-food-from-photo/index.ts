@@ -341,10 +341,25 @@ Deno.serve(async (req: Request) => {
     }
     if (dbFormat) updatePayload.format = dbFormat
 
-    const { error: updateError } = await adminClient
+    let { error: updateError } = await adminClient
       .from('food_items')
       .update(updatePayload)
       .eq('id', food_item_id)
+
+    // UPC collision: another row already owns this barcode (food_items is
+    // globally scoped, so any user's prior scan can collide). Retry with
+    // upc_barcode nulled so the rest of the extraction still lands. Proper
+    // merge-to-existing is tracked in docs/backlog.md.
+    if (updateError && (updateError as { code?: string }).code === '23505') {
+      console.warn(
+        `UPC collision on food_item ${food_item_id} (upc=${extraction.upc_barcode}); retrying with null upc_barcode`,
+      )
+      updatePayload.upc_barcode = null
+      ;({ error: updateError } = await adminClient
+        .from('food_items')
+        .update(updatePayload)
+        .eq('id', food_item_id))
+    }
 
     if (updateError) {
       throw new Error(`DB update failed: ${updateError.message}`)
