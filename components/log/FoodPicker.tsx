@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Dimensions,
+  View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
-import { FoodThumb } from './FoodThumb';
+import { FoodTile } from './FoodTile';
 
 interface Props {
   petId: string;
-  // Fires when the user taps a Recent or Library thumbnail — one-tap log.
+  // Fires when the user taps a Recent or Library tile — one-tap log.
   onPickFood: (food: PickerFood) => void;
   // Fires when the user taps "Add new" — opens the photo capture flow.
   onAddNew: () => void;
@@ -17,9 +17,7 @@ interface Props {
 
 const RECENT_DAYS = 14;
 const RECENT_LIMIT = 5;
-const GRID_COLUMNS = 2;
 const SCREEN_PADDING = theme.space2;
-const GRID_GAP = theme.space2;
 
 export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
   const [recent, setRecent] = useState<PickerFood[]>([]);
@@ -51,10 +49,15 @@ export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
     );
   }, [library, search]);
 
-  const screenWidth = Dimensions.get('window').width;
-  const gridItemSize = Math.floor(
-    (screenWidth - SCREEN_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS,
-  );
+  // Render library in fixed-size pairs so each row is a 2-col grid with
+  // matching tile heights (driven by the tallest tile in the row).
+  const libraryRows = useMemo(() => {
+    const rows: PickerFood[][] = [];
+    for (let i = 0; i < filteredLibrary.length; i += 2) {
+      rows.push(filteredLibrary.slice(i, i + 2));
+    }
+    return rows;
+  }, [filteredLibrary]);
 
   return (
     <ScrollView
@@ -72,12 +75,11 @@ export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
             contentContainerStyle={styles.recentRow}
           >
             {recent.map((f) => (
-              <View key={f.id} style={styles.recentItem}>
-                <FoodThumb
+              <View key={f.id} style={styles.recentTile}>
+                <FoodTile
                   brand={f.brand}
                   productName={f.product_name}
-                  photoPath={f.photo_path}
-                  size={96}
+                  format={f.format}
                   onPress={() => onPickFood(f)}
                 />
               </View>
@@ -107,18 +109,18 @@ export function FoodPicker({ petId, onPickFood, onAddNew }: Props) {
           </Text>
         ) : (
           <View style={styles.grid}>
-            {filteredLibrary.map((f) => (
-              <View
-                key={f.id}
-                style={[styles.gridItem, { width: gridItemSize }]}
-              >
-                <FoodThumb
-                  brand={f.brand}
-                  productName={f.product_name}
-                  photoPath={f.photo_path}
-                  size={gridItemSize}
-                  onPress={() => onPickFood(f)}
-                />
+            {libraryRows.map((row, idx) => (
+              <View key={idx} style={styles.gridRow}>
+                {row.map((f) => (
+                  <FoodTile
+                    key={f.id}
+                    brand={f.brand}
+                    productName={f.product_name}
+                    format={f.format}
+                    onPress={() => onPickFood(f)}
+                  />
+                ))}
+                {row.length === 1 && <View style={styles.gridSpacer} />}
               </View>
             ))}
           </View>
@@ -159,8 +161,8 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     paddingRight: theme.space2,
   },
-  recentItem: {
-    width: 96,
+  recentTile: {
+    width: 160,
   },
   search: {
     fontSize: theme.textMD,
@@ -176,12 +178,14 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space2,
   },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: GRID_GAP,
+    gap: theme.space2,
   },
-  gridItem: {
-    // width set inline based on screen width
+  gridRow: {
+    flexDirection: 'row',
+    gap: theme.space2,
+  },
+  gridSpacer: {
+    flex: 1,
   },
   addCta: {
     flexDirection: 'row',
