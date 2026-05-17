@@ -204,9 +204,13 @@ export default function LogModal() {
     const foodId = uuid();
     const db = getDb();
     const now = new Date().toISOString();
+    // Storage path is decided upfront so the cache (and remote row) reference
+    // the same path the upload will land at. Writing the local file URI here
+    // breaks the picker — getPublicUrl(...) would produce a broken URL.
+    const storagePath = newFoodPhotoUri ? `${foodId}/label.jpg` : null;
     await db.runAsync(
       `INSERT OR REPLACE INTO food_items_cache (id, brand, product_name, format, photo_path, cached_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      [foodId, newBrand.trim(), newProduct.trim(), newFormat, newFoodPhotoUri ?? null, now]
+      [foodId, newBrand.trim(), newProduct.trim(), newFormat, storagePath, now]
     );
     // Best-effort remote insert — food_items is a global shared catalog
     supabase.from('food_items').insert({
@@ -219,10 +223,12 @@ export default function LogModal() {
       if (error) console.warn('[food] remote insert failed:', error.message);
     });
     // Upload food label photo if taken
-    if (newFoodPhotoUri) {
-      const storagePath = `${foodId}/label.jpg`;
+    if (newFoodPhotoUri && storagePath) {
       uploadPhoto('nyx-food-photos', storagePath, newFoodPhotoUri)
-        .then(() => supabase.from('food_items').update({ photo_path: storagePath }).eq('id', foodId))
+        .then(() => supabase.from('food_items').update({
+          photo_path: storagePath,
+          photo_paths: [storagePath],
+        }).eq('id', foodId))
         .catch(console.error);
     }
     const brand = newBrand.trim();
@@ -238,7 +244,7 @@ export default function LogModal() {
       brand,
       product_name: product,
       format: newFormat,
-      photo_path: newFoodPhotoUri,
+      photo_path: storagePath,
     });
   }
 
