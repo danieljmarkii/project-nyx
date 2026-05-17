@@ -29,12 +29,13 @@ import { uuid, exifDateToISO } from '../lib/utils';
 
 type CaptureStep =
   | 'intro'
-  | 'after-front'
-  | 'after-ingredients'
+  | 'review'
   | 'uploading'
   | 'confirm'
   | 'edit'
   | 'complete';
+
+type OptionalSlot = 'ingredients' | 'barcode';
 
 interface CapturedPhoto {
   localUri: string;
@@ -82,6 +83,17 @@ export default function FoodCaptureScreen() {
   const [frontPhoto, setFrontPhoto] = useState<CapturedPhoto | null>(null);
   const [ingredientsPhoto, setIngredientsPhoto] = useState<CapturedPhoto | null>(null);
   const [barcodePhoto, setBarcodePhoto] = useState<CapturedPhoto | null>(null);
+  // Tracks slots the user has explicitly skipped on the review screen so we
+  // don't re-encourage them after a Skip tap. Filling a slot via the tile
+  // (out of order) doesn't need to live here — `*Photo` state is the truth.
+  const [skippedSlots, setSkippedSlots] = useState<Set<OptionalSlot>>(() => new Set());
+
+  // Next slot the review screen should encourage, or null if the user has
+  // either captured or skipped both optional shots.
+  const nextEncouragedSlot: OptionalSlot | null =
+    !ingredientsPhoto && !skippedSlots.has('ingredients') ? 'ingredients'
+    : !barcodePhoto    && !skippedSlots.has('barcode')    ? 'barcode'
+    : null;
 
   // Extraction state — populated after Edge Function returns.
   const [extracting, setExtracting] = useState(false);
@@ -178,39 +190,42 @@ export default function FoodCaptureScreen() {
     const photo = await pickPhoto('front');
     if (!photo) return;
     setFrontPhoto(photo);
-    setStep('after-front');
+    setStep('review');
   }
 
-  async function handleSnapIngredients() {
-    const photo = await pickPhoto('ingredients');
+  // Primary CTA on the review screen — captures the next encouraged slot.
+  // Doesn't auto-advance; the review screen will re-render with the next
+  // encouragement (or the Continue CTA) once state updates.
+  async function handleSnapNext() {
+    if (!nextEncouragedSlot) return;
+    const photo = await pickPhoto(nextEncouragedSlot);
     if (!photo) return;
-    setIngredientsPhoto(photo);
-    setStep('after-ingredients');
+    if (nextEncouragedSlot === 'ingredients') setIngredientsPhoto(photo);
+    else                                       setBarcodePhoto(photo);
   }
 
-  async function handleSnapBarcode() {
-    const photo = await pickPhoto('barcode');
-    if (!photo) return;
-    setBarcodePhoto(photo);
-    await runUploadAndExtract(frontPhoto!, ingredientsPhoto, photo);
+  function handleSkipNext() {
+    if (!nextEncouragedSlot) return;
+    setSkippedSlots((prev) => new Set(prev).add(nextEncouragedSlot));
   }
 
   // Tile-tap from the PhotoChecklist — sets the chosen slot's photo without
-  // changing step. Lets the user fill slots out of order or replace a shot.
+  // changing step. Filling a slot also clears its skipped flag so the review
+  // CTA reflects reality.
   async function handleSlotTap(slot: 'front' | 'ingredients' | 'barcode') {
     const photo = await pickPhoto(slot);
     if (!photo) return;
     if (slot === 'front')            setFrontPhoto(photo);
     else if (slot === 'ingredients') setIngredientsPhoto(photo);
     else                             setBarcodePhoto(photo);
-  }
-
-  async function handleSkipToConfirm(opts: { skipIngredients?: boolean; skipBarcode?: boolean } = {}) {
-    await runUploadAndExtract(
-      frontPhoto!,
-      opts.skipIngredients ? null : ingredientsPhoto,
-      opts.skipBarcode ? null : barcodePhoto,
-    );
+    if (slot !== 'front') {
+      setSkippedSlots((prev) => {
+        if (!prev.has(slot)) return prev;
+        const next = new Set(prev);
+        next.delete(slot);
+        return next;
+      });
+    }
   }
 
   // Upload all captured photos and kick off async extraction. The food_items
@@ -409,8 +424,26 @@ export default function FoodCaptureScreen() {
     );
   }
 
-  // ── After front: encourage ingredients ──
-  if (step === 'after-front') {
+  // ── Review: tile checklist + next-encouraged-slot CTA ──
+  // One screen for both ingredients and barcode encouragement. The CTA and
+  // copy are computed from `nextEncouragedSlot` so tile-taps that fill a
+  // slot out of order never leave the CTA pointing at a slot that's already
+  // captured.
+  if (step === 'review') {
+    const heading = nextEncouragedSlot === 'ingredients' ? 'Add the ingredients label'
+                  : nextEncouragedSlot === 'barcode'     ? 'Add the barcode'
+                  : 'Ready to read the label';
+    const body = nextEncouragedSlot === 'ingredients'
+      ? 'Optional, but lets us extract the full ingredients list. You can skip and add it later.'
+      : nextEncouragedSlot === 'barcode'
+      ? 'A clear shot of the barcode helps the AI confirm the exact product. Optional.'
+      : 'We\'ll read the front of the package and confirm with you.';
+    const ctaLabel = nextEncouragedSlot === 'ingredients' ? 'Add ingredients photo'
+                   : nextEncouragedSlot === 'barcode'     ? 'Add barcode photo'
+                   : 'Continue';
+    const ctaAction = nextEncouragedSlot
+      ? handleSnapNext
+      : () => runUploadAndExtract(frontPhoto!, ingredientsPhoto, barcodePhoto);
     return (
       <SafeAreaView style={styles.container}>
         <Header title="Add a food" onBack={() => setStep('intro')} />
@@ -421,57 +454,22 @@ export default function FoodCaptureScreen() {
             barcode={barcodePhoto}
             onSlotTap={handleSlotTap}
           />
-          <Text style={styles.introHeading}>Add the ingredients label</Text>
-          <Text style={styles.introBody}>
-            Optional, but lets us extract the full ingredients list. You can
-            skip and add it later.
-          </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleSnapIngredients} activeOpacity={0.85}>
-            <Text style={styles.primaryBtnIcon}>📷</Text>
-            <Text style={styles.primaryBtnText}>Add ingredients photo</Text>
+          <Text style={styles.introHeading}>{heading}</Text>
+          <Text style={styles.introBody}>{body}</Text>
+          <TouchableOpacity style={styles.primaryBtn} onPress={ctaAction} activeOpacity={0.85}>
+            {nextEncouragedSlot && <Text style={styles.primaryBtnIcon}>📷</Text>}
+            <Text style={styles.primaryBtnText}>{ctaLabel}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={() => setStep('after-ingredients')}
-            hitSlop={8}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.secondaryBtnText}>Skip</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  // ── After ingredients: encourage barcode ──
-  if (step === 'after-ingredients') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Header title="Add a food" onBack={() => setStep('after-front')} />
-        <ScrollView contentContainerStyle={styles.introScroll}>
-          <PhotoChecklist
-            front={frontPhoto}
-            ingredients={ingredientsPhoto}
-            barcode={barcodePhoto}
-            onSlotTap={handleSlotTap}
-          />
-          <Text style={styles.introHeading}>Add the barcode</Text>
-          <Text style={styles.introBody}>
-            A clear shot of the barcode helps the AI confirm the exact
-            product. Optional — skip if you don't have one handy.
-          </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleSnapBarcode} activeOpacity={0.85}>
-            <Text style={styles.primaryBtnIcon}>📷</Text>
-            <Text style={styles.primaryBtnText}>Add barcode photo</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.secondaryBtn}
-            onPress={() => handleSkipToConfirm()}
-            hitSlop={8}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.secondaryBtnText}>Skip and confirm</Text>
-          </TouchableOpacity>
+          {nextEncouragedSlot && (
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={handleSkipNext}
+              hitSlop={8}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.secondaryBtnText}>Skip</Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </SafeAreaView>
     );
