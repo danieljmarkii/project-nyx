@@ -321,13 +321,17 @@ Deno.serve(async (req: Request) => {
     // with sensible defaults — fall back rather than send null and trip the
     // constraint. `ingredients_notes` is the actual column (Edge Function
     // previously wrote to a non-existent `ingredients` column).
+    // Claude's tool-use boolean schema is not always honoured — we've seen
+    // the literal string "null" come back for is_grain_free / is_prescription.
+    // `?? false` only catches real null/undefined, so coerce strictly here.
+    const toBool = (v: unknown): boolean => v === true
     const dbFormat = mapFormatToDb(extraction.format)
     const updatePayload: Record<string, unknown> = {
       brand:                    extraction.brand,
       product_name:             extraction.product_name,
       primary_protein:          extraction.primary_protein,
-      is_grain_free:            extraction.is_grain_free ?? false,
-      is_prescription:          extraction.is_prescription ?? false,
+      is_grain_free:            toBool(extraction.is_grain_free),
+      is_prescription:          toBool(extraction.is_prescription),
       ingredients_notes:        extraction.ingredients_text,
       upc_barcode:              extraction.upc_barcode,
       source:                   'ai_extracted',
