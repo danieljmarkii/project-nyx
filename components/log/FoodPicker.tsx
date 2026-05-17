@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
@@ -27,20 +28,25 @@ export function FoodPicker({ petId, onPickFood, onAddNew, onOpenDetail }: Props)
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const [r, l] = await Promise.all([
-        getRecentFoods(petId, RECENT_DAYS, RECENT_LIMIT),
-        getLibraryFoods(),
-      ]);
-      if (!cancelled) {
-        setRecent(r);
-        setLibrary(l);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [petId]);
+  // Reload on every focus so foods added or deleted from the detail screen
+  // are reflected when the picker comes back into view (router.back() doesn't
+  // remount the picker, so a mount-only useEffect would show stale data).
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const [r, l] = await Promise.all([
+          getRecentFoods(petId, RECENT_DAYS, RECENT_LIMIT),
+          getLibraryFoods(),
+        ]);
+        if (!cancelled) {
+          setRecent(r);
+          setLibrary(l);
+        }
+      })();
+      return () => { cancelled = true; };
+    }, [petId]),
+  );
 
   const filteredLibrary = useMemo(() => {
     const q = search.trim().toLowerCase();
