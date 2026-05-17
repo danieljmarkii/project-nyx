@@ -8,8 +8,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
-import { SectionLabel } from '../components/ui/SectionLabel';
-import { FilterChip } from '../components/ui/FilterChip';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
@@ -22,7 +20,7 @@ import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
 import { uuid, exifDateToISO } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'food-new' | 'symptom' | 'simple' | 'stool-type' | 'complete';
+type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
 
 const TYPE_ICONS: Record<EventTypeKey, string> = {
   meal: '🍽',
@@ -33,17 +31,6 @@ const TYPE_ICONS: Record<EventTypeKey, string> = {
   itch: '🐾',
   other: '➕',
 };
-
-const FOOD_FORMATS = [
-  { value: 'dry_kibble', label: 'Dry kibble' },
-  { value: 'wet_canned', label: 'Wet / canned' },
-  { value: 'raw', label: 'Raw' },
-  { value: 'freeze_dried', label: 'Freeze-dried' },
-  { value: 'fresh_cooked', label: 'Fresh cooked' },
-  { value: 'topper', label: 'Topper' },
-  { value: 'treat', label: 'Treat' },
-  { value: 'other', label: 'Other' },
-];
 
 const SEVERITY_CONFIG = [
   { value: 1, label: 'Mild' },
@@ -75,12 +62,6 @@ export default function LogModal() {
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [selectedFoodBrand, setSelectedFoodBrand] = useState<string | null>(null);
   const [selectedFoodProduct, setSelectedFoodProduct] = useState<string | null>(null);
-
-  // New food form
-  const [newBrand, setNewBrand] = useState('');
-  const [newProduct, setNewProduct] = useState('');
-  const [newFormat, setNewFormat] = useState('dry_kibble');
-  const [newFoodPhotoUri, setNewFoodPhotoUri] = useState<string | null>(null);
 
   // Symptom state
   const [severity, setSeverity] = useState<number | null>(null);
@@ -182,72 +163,6 @@ export default function LogModal() {
     }
   }
 
-  async function handlePickFoodLabelPhoto() {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Camera access needed', 'Allow camera access in Settings to scan a label.');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.9,
-      exif: false,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setNewFoodPhotoUri(result.assets[0].uri);
-    }
-  }
-
-  async function handleNewFoodSave() {
-    if (!newBrand.trim() || !newProduct.trim()) return;
-    const foodId = uuid();
-    const db = getDb();
-    const now = new Date().toISOString();
-    // Storage path is decided upfront so the cache (and remote row) reference
-    // the same path the upload will land at. Writing the local file URI here
-    // breaks the picker — getPublicUrl(...) would produce a broken URL.
-    const storagePath = newFoodPhotoUri ? `${foodId}/label.jpg` : null;
-    await db.runAsync(
-      `INSERT OR REPLACE INTO food_items_cache (id, brand, product_name, format, photo_path, cached_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      [foodId, newBrand.trim(), newProduct.trim(), newFormat, storagePath, now]
-    );
-    // Best-effort remote insert — food_items is a global shared catalog
-    supabase.from('food_items').insert({
-      id: foodId,
-      brand: newBrand.trim(),
-      product_name: newProduct.trim(),
-      format: newFormat,
-      created_by_user_id: user?.id ?? null,
-    }).then(({ error }) => {
-      if (error) console.warn('[food] remote insert failed:', error.message);
-    });
-    // Upload food label photo if taken
-    if (newFoodPhotoUri && storagePath) {
-      uploadPhoto('nyx-food-photos', storagePath, newFoodPhotoUri)
-        .then(() => supabase.from('food_items').update({
-          photo_path: storagePath,
-          photo_paths: [storagePath],
-        }).eq('id', foodId))
-        .catch(console.error);
-    }
-    const brand = newBrand.trim();
-    const product = newProduct.trim();
-    setNewBrand('');
-    setNewProduct('');
-    setNewFormat('dry_kibble');
-    setNewFoodPhotoUri(null);
-    // One-tap log: when a new food is added inside the meal-log flow,
-    // log the meal immediately rather than dropping the user back into the picker.
-    await handlePickFood({
-      id: foodId,
-      brand,
-      product_name: product,
-      format: newFormat,
-      photo_path: storagePath,
-    });
-  }
-
   // One-tap log path from the new picker — bypasses state so it works
   // even before `selectedFoodId` has propagated through React.
   async function handlePickFood(food: PickerFood) {
@@ -345,7 +260,6 @@ export default function LogModal() {
       setStep('type');
       return;
     }
-    if (step === 'food-new') { setStep('food'); return; }
   }
 
   const petName = activePet?.name ?? 'your pet';
@@ -474,86 +388,11 @@ export default function LogModal() {
           <FoodPicker
             petId={activePet.id}
             onPickFood={handlePickFood}
-            // Photo-capture flow lands in the next PR (Step 5 of the food
-            // library redesign). Until then, fall back to the existing
-            // text form so users aren't blocked from adding new foods.
-            onAddNew={() => setStep('food-new')}
+            // Photo-first food capture (Step 5). On confirm, food-capture
+            // logs the meal itself and routes back home — log.tsx is bypassed.
+            onAddNew={() => router.push('/food-capture?fromLog=1')}
           />
         )}
-      </SafeAreaView>
-    );
-  }
-
-  // ── Add new food ────────────────────────────────────────────────────────────
-
-  if (step === 'food-new') {
-    const canSave = newBrand.trim().length > 0 && newProduct.trim().length > 0;
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
-            <Text style={styles.backBtnText}>←</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add a food</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
-            <TouchableOpacity style={styles.scanLabelBtn} onPress={handlePickFoodLabelPhoto} activeOpacity={0.8}>
-              {newFoodPhotoUri ? (
-                <>
-                  <Image source={{ uri: newFoodPhotoUri }} style={styles.scanLabelThumb} resizeMode="cover" />
-                  <Text style={styles.scanLabelText}>Label photo attached · tap to retake</Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.scanLabelIcon}>📷</Text>
-                  <Text style={styles.scanLabelText}>Scan food label (optional)</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            <SectionLabel label="Brand" style={styles.fieldLabelSpacing} />
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. Royal Canin"
-              placeholderTextColor={theme.colorTextSecondary}
-              value={newBrand}
-              onChangeText={setNewBrand}
-              autoCapitalize="words"
-              returnKeyType="next"
-            />
-            <SectionLabel label="Product name" style={styles.fieldLabelSpacing} />
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. Gastrointestinal Adult"
-              placeholderTextColor={theme.colorTextSecondary}
-              value={newProduct}
-              onChangeText={setNewProduct}
-              autoCapitalize="words"
-              returnKeyType="done"
-            />
-            <SectionLabel label="Format" style={styles.fieldLabelSpacing} />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.formatRow}>
-              {FOOD_FORMATS.map((f) => (
-                <View key={f.value} style={{ marginRight: theme.space1 }}>
-                  <FilterChip
-                    label={f.label}
-                    active={newFormat === f.value}
-                    onPress={() => setNewFormat(f.value)}
-                    variant="filled"
-                  />
-                </View>
-              ))}
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.confirmBtn, !canSave && styles.confirmBtnDisabled]}
-              onPress={handleNewFoodSave}
-              disabled={!canSave}
-            >
-              <Text style={styles.confirmBtnText}>Save and continue</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -824,27 +663,6 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
-  // ── New food form ──
-  formScroll: {
-    padding: theme.space3,
-    gap: theme.space2,
-  },
-  fieldLabelSpacing: {
-    marginBottom: -theme.space1,
-  },
-  textInput: {
-    fontSize: 16,
-    color: theme.colorTextPrimary,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    paddingHorizontal: theme.space2,
-    height: 48,
-  },
-  formatRow: {
-    marginBottom: theme.space2,
-  },
-
   // ── Severity ──
   symptomScroll: {
     padding: theme.space3,
@@ -964,29 +782,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     backgroundColor: theme.colorSurface,
   },
-  // Food label scan
-  scanLabelBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space2,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    padding: theme.space2,
-    marginBottom: theme.space1,
-  },
-  scanLabelIcon: { fontSize: 18 },
-  scanLabelText: {
-    fontSize: 14,
-    color: theme.colorTextSecondary,
-    flex: 1,
-  },
-  scanLabelThumb: {
-    width: 44,
-    height: 44,
-    borderRadius: theme.radiusSmall,
-  },
-
   // ── Stool choice ──
   stoolChoiceContainer: {
     flex: 1,

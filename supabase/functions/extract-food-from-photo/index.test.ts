@@ -9,9 +9,29 @@ import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/
 import {
   parseToolResult,
   normaliseConfidence,
+  mapFormatToDb,
   blobToBase64,
   type ExtractionResult,
 } from './index.ts'
+
+// ── mapFormatToDb ─────────────────────────────────────────────────────────────
+
+Deno.test('mapFormatToDb — translates AI enum to food_format', () => {
+  assertStrictEquals(mapFormatToDb('dry'), 'dry_kibble')
+  assertStrictEquals(mapFormatToDb('wet'), 'wet_canned')
+  assertStrictEquals(mapFormatToDb('treats'), 'treat')
+  assertStrictEquals(mapFormatToDb('supplement'), 'topper')
+  assertStrictEquals(mapFormatToDb('raw'), 'raw')
+  assertStrictEquals(mapFormatToDb('other'), 'other')
+})
+
+Deno.test('mapFormatToDb — null in, null out', () => {
+  assertStrictEquals(mapFormatToDb(null), null)
+})
+
+Deno.test('mapFormatToDb — unknown value falls back to other', () => {
+  assertStrictEquals(mapFormatToDb('hallucinated_format'), 'other')
+})
 
 // ── normaliseConfidence ───────────────────────────────────────────────────────
 
