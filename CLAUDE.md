@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.14 | Last Updated: May 2026
+**Version:** 1.15 | Last Updated: May 2026
 
 ---
 
@@ -27,6 +27,7 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 | `research.md` | When making product decisions about scope, features, or user behavior. Market and persona data lives here. |
 | `docs/food-library-redesign-requirements.md` | Any session touching food entry, the meal log flow, the food library/picker, or AI-driven extraction of food data. Output of the May 2026 photo-library research session. |
 | `competitive-landscape.md` | When evaluating feature positioning or vet-facing strategy. |
+| `docs/backlog.md` | When the PM asks to `view backlog` / `show backlog`. Also read at session start to surface any backlog item whose **Blocks** column matches the Current Phase. See the Backlog Protocol section below. |
 
 ---
 
@@ -239,6 +240,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 
 Do not skip steps. Do not begin step N+1 before step N passes all acceptance criteria. QA explicitly verifies criteria before any step is marked complete. Acceptance criteria for each step are defined in `technical-spec.md` § Build Phases — read that section before marking any step complete.
 
+**Build Step Kickoff.** The first time a session starts work on a new build step (or sub-step), QA pastes the acceptance criteria from `technical-spec.md` verbatim into the session as a visible target before any code is written. This keeps the AC in scroll-range for the whole session so end-of-session verification is honest, not reconstructed from memory.
+
 If a blocking open question (see Open Questions table) remains unanswered after one full session and work cannot proceed, document a provisional decision in the table, flag it in the session summary, and proceed on the assumption it will be confirmed or overridden by the PM.
 
 1. **Scaffold and auth** — Expo project, Supabase project, auth flow, `user_profiles` trigger ✓
@@ -331,6 +334,13 @@ Single source of truth for every secret the project uses. Update this table inli
 - Squash merge to keep `main` history clean and linear.
 - Do not merge a PR if QA criteria for the current build step are not yet met.
 
+**Migration Safety Pre-flight.** Any PR containing a schema migration must include, in the PR description:
+- **Rollback plan** — exact reversal steps (e.g. `DROP COLUMN X`, `DROP TABLE Y`) or `Irreversible — back up first` if not.
+- **Destructive y/n** — `y` if the migration drops, renames, or alters a column with existing data; `n` if it's purely additive.
+- **Backfill** — if existing rows need values, the SQL or script that produces them; `N/A` if not.
+
+If destructive=`y`, the PR description also names the table(s) affected and the row-count check the PM should run before applying. Migrations are the highest-blast-radius action in this repo; this pre-flight is non-optional.
+
 ---
 
 ## Session Protocol
@@ -356,7 +366,10 @@ Before reporting a feature, sub-step, or PR as complete, run this checklist expl
 - [ ] Acceptance criteria from `technical-spec.md` for this step listed and marked pass/fail (QA persona)
 - [ ] Diff scanned against the anti-pattern lists in this file — none introduced
 - [ ] Types pass (`tsc --noEmit` or equivalent) and lint is clean
+- [ ] **Automated tests**: if the diff touches a Zustand store, an Edge Function, or a shared utility in `lib/`, tests exist for the new logic and `npm test` passes locally. If no test was added, the DoD line reads `tests: N/A — <reason>` (e.g. "pure UI screen, no extractable logic") and the Engineer persona signs off on the exemption.
 - [ ] No new secret used without an entry in the Secrets Register
+- [ ] **Persona sign-off line** emitted for the feature: name which personas reviewed and what they verified. Example: `Designer ✓ (principles 1, 3) — Engineer ✓ — Data N/A — Dr. Chen N/A`. `N/A` is fine; silence is not.
+- [ ] **Future-self review** (for PRs introducing a *new* pattern, not just using an existing one): one-sentence answer to "would I still want this here in 12 months?" If the answer is uncertain, name the risk before merging.
 - [ ] Dev Handoff block emitted, including Manual QA Script
 - [ ] PM Action Items consolidated for any work only the PM can finish
 - [ ] If this push completes a chunk: Next Session Kickoff prompts emitted
@@ -394,6 +407,12 @@ npx expo start --tunnel
 Starts the Metro bundler and opens a public ngrok tunnel so Expo Go on your phone can reach the dev server from outside the Codespace network.
 
 Then press **`r`** in the Expo terminal to reload the app on your device after a pull.
+
+**Before pushing**, if the diff touches a store, Edge Function, or shared utility, run:
+```bash
+npm test
+```
+Confirms automated tests pass locally. Do not push a chunk-completing PR with failing or skipped tests — fix or mark `tests: N/A` in the DoD with the Engineer's exemption rationale.
 
 **When a Supabase migration is included in the push**, add:
 > Run `supabase/migrations/<filename>.sql` in the Supabase SQL Editor (dashboard → SQL Editor → New query → paste → Run). This applies the schema change to the live database — migrations are not run automatically.
@@ -489,7 +508,7 @@ Project Brief (Claude.ai) — [Flag if the brief in project instructions needs u
 
 ## Documentation Update Protocol
 
-Three tiers. Different rules for each.
+Three tiers. Different rules for each. (For "log this for the future" items, see the **Backlog Protocol** section below — those go in `docs/backlog.md`, not in any of these tiers.)
 
 **Tier 1: `CLAUDE.md`**
 Update immediately when a decision is made. Do not wait for the session summary. This file must always reflect the current state of the project, not the state at session start. When you append an anti-pattern, resolve an open question, or establish a new convention, write it here in the moment.
@@ -504,6 +523,30 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 ---
 
+## Backlog Protocol
+
+The backlog lives at `docs/backlog.md`. It is the destination for anything that would otherwise be said as "let's log that for the future" — out-of-scope features, deferred refactors, pre-prod requirements, decisions deferred past the current phase.
+
+**When to add a row:** any time you're about to say "we should do X later," "noted for future," "deferring this," or the PM says any of those phrases. Write the row immediately, in-session, before continuing the conversation. Do not batch-add at session end and do not wait for PM approval — adding a backlog row is reversible and cheap; losing the item is not.
+
+**Row format** (see `docs/backlog.md` for the live table):
+
+| Field | Notes |
+|---|---|
+| ID | Sequential `B-NNN`. Never reuse. |
+| Title | Short, scannable. |
+| Why | One line. Enough context that future-you can re-evaluate without re-deriving. |
+| Priority | `Now` / `Next` / `Later` (see file for definitions) |
+| Added | ISO date |
+| Blocks | The build step, phase, or condition that should trigger this. `—` if none. |
+| Status | `Open` until done. When closing, leave the row and mark `Done — <date>` with resolving PR/session. |
+
+**`view backlog` command:** when the PM types `view backlog`, `show backlog`, `what's in the backlog`, or any natural-language equivalent, read `docs/backlog.md` and present it grouped by priority. Surface anything whose **Blocks** column matches the Current Phase at the top. Do not invoke this proactively at every session start — only on request, or when a session-start scan reveals a backlog item that blocks the Current Phase.
+
+**Distinction from Open Questions:** Open Questions are *unresolved decisions* that need PM input to unblock work. Backlog items are *resolved deferrals* — we know what to do, just not now. If an item needs a decision, it goes in Open Questions; if it needs execution at a later time, it goes in the backlog.
+
+---
+
 ## Open Questions
 
 Do not make silent assumptions about these. Surface the relevant question when you reach the step that requires an answer.
@@ -511,6 +554,8 @@ Do not make silent assumptions about these. Surface the relevant question when y
 When a question is resolved, mark it resolved with the decision and date rather than deleting the row. The resolution is part of the record.
 
 If a blocking question remains unanswered after one full session, document a provisional decision and flag it for PM confirmation rather than stalling indefinitely.
+
+**Stale question triage.** Any question with status `Open` across **three or more sessions** gets a forced re-evaluation at the next session start: (a) still relevant — keep open; (b) no longer relevant — mark resolved with rationale; (c) ready for a provisional decision — write one and flag for PM confirmation; (d) belongs in the backlog instead — move it to `docs/backlog.md` and remove from this table. Do not let questions sit untouched indefinitely; an aged-out question is usually one of these four things, not actually "still open."
 
 | Question | Blocks | Status |
 |---|---|---|
@@ -558,3 +603,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.12 | May 2026 | Food library step 4 complete: three-zone meal-log picker (Add new → Recent → Library), text-only tiles, one-tap log path. Pivot mid-session from photo thumbnails to text tiles after user testing surfaced that user-snapped pet-food photos in a dense grid produced a chaotic surface and broken state machine — photos still captured for the detail screen and AI extraction, just not surfaced in the picker. Zone order changed from Recent-first to Add-new-first per PM call after testing (camera CTA needs to be in initial field of view). Two future scopes captured in requirements doc: library tile → food detail entry point (§4.1.1) and time editor on one-tap path (§4.1.2). Build sequence in CLAUDE.md restructured to show food-library track sub-steps with ✓ markers. |
 | v1.13 | May 2026 | Food library step 5 complete: photo capture + AI confirm flow at `app/food-capture.tsx`. Multi-step camera path (front required → ingredients encouraged → barcode encouraged), client-side compression via `compressForUpload` in `lib/storage.ts`, pending food_items insert before `extract-food-from-photo` invocation, confirm screen with Looks-right / Edit, EXIF-time meal log on commit. Legacy `food-new` text form in `app/log.tsx` deleted; picker's Add-new now routes to `/food-capture?fromLog=1`. Bug-fix bundled into the Edge Function (`format` enum mismatch — AI emits 'dry'/'wet' but DB enum is 'dry_kibble'/'wet_canned'; column was `ingredients_notes` not `ingredients`; null booleans tripped NOT NULL constraints). Tests added for new `mapFormatToDb` helper. PM hand-off: re-deploy the Edge Function (`supabase functions deploy extract-food-from-photo`) so the schema-correct writes ship. |
 | v1.14 | May 2026 | Workflow improvements session. Dev Handoff now requires a numbered Manual QA Script tied to acceptance criteria. New "PR Merge / Next Session Kickoff" section: every chunk-completing push emits copy-pasteable prompts for the next session. New Secrets Register table under Environment and Secrets — every secret's location, consumer, and provisioning status tracked inline. Session summary template gains a "PM Action Items" checklist (consolidated, deduplicated) and a "Next Session Kickoff" block. New "Definition of Done" checklist runs before any feature is marked complete (AC, anti-patterns, types, secrets, handoff, kickoff). Session start now pre-loads Current Phase + open PM actions + blocking questions so the PM can answer "no change" and skip the recap. Header version drift (1.12 → 1.13) fixed. |
+| v1.15 | May 2026 | Workflow improvements round 2. New `docs/backlog.md` artifact + Backlog Protocol section in CLAUDE.md — destination for all "log this for the future" items, accessed via `view backlog`. New Stale Open Question Triage rule: questions open >3 sessions are forced into one of four resolutions. New Build Step Kickoff requirement: AC pasted verbatim into session at the start of every new step. New Migration Safety Pre-flight in Git Workflow: rollback plan, destructive y/n, and backfill required in every schema PR description. DoD gains automated-tests check (stores, Edge Functions, shared utilities), persona sign-off line, and future-self review for new patterns. Dev Handoff now requires `npm test` before any push that touches testable surfaces. Seeded backlog with B-001 (AI cost & rate-limit strategy, deferred per PM) and B-002 (pre-production readiness checklist). |
