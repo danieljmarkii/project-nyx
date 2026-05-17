@@ -26,6 +26,18 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6928a16e-3d2e-4a2e-ac87-b6c20176430b"
+      }
+    },
+    "owner": "project-nyx",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6928a16e-3d2e-4a2e-ac87-b6c20176430b"
     }
   }
 }

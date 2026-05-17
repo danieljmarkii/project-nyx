@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.17 | Last Updated: May 2026
+**Version:** 1.18 | Last Updated: May 2026
 
 ---
 
@@ -10,8 +10,12 @@ _Auto-maintained. Update inline at session end (and any time these change mid-se
 - **Current Phase:** Step 9 — Vet report
 - **Parallel track:** Food library — Step 7 (EXIF attribution UI)
 - **Blocking Open Questions:** PDF rendering library for Step 9 (`pdf-lib` vs `puppeteer` vs `react-pdf`)
-- **Open PM Action Items:** none carried over from last session
-- **Last session:** v1.17 (workflow improvements — Manual QA scripts, Next Session Kickoff, Secrets Register, Backlog artifact, DoD upgrades, Status dashboard)
+- **Open PM Action Items:**
+  - [ ] Run one-time EAS setup in Codespace: `npm install -g eas-cli && eas login && eas init && eas update:configure`, then commit + push the `app.json` changes (`extra.eas.projectId`, `updates.url`, `runtimeVersion`)
+  - [ ] After first `eas update --branch preview`, open Expo Go on phone → tap the published project → confirm app loads end-to-end (log a meal, snap a food photo, confirm Claude extraction returns)
+  - [ ] Start Apple Developer enrollment ($99/yr, 1–3 day approval) so we can graduate from Runtime A (Expo Go + `eas update`) to a real TestFlight build
+- **Runtime in use:** Runtime A — `eas update --branch preview` + Expo Go (no Apple Developer account required). See CLAUDE.md → Dev Handoff for the daily commands.
+- **Last session:** v1.18 (EAS Update workflow set up — `eas.json` added with `preview` channel; CLAUDE.md Dev Handoff split into Runtime A daily-driver + Runtime B active-dev; Secrets Register tracks EAS / Apple Developer status)
 
 ---
 
@@ -314,6 +318,8 @@ Single source of truth for every secret the project uses. Update this table inli
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` (local), EAS env (build) | Client | ✓ local; confirm before first prod build | Public; RLS-gated |
 | `SUPABASE_SERVICE_ROLE_KEY` | `supabase secrets` | Edge Functions | ✓ | Server-only; never ship to client |
 | `ANTHROPIC_API_KEY` | `supabase secrets` | `extract-food-from-photo`, future AI Signal | ✓ for food extraction; re-confirm before Step 10 | Server-only |
+| `EXPO_TOKEN` | Codespace env (optional) | `eas update`, `eas build` CLI | ✗ — interactive `eas login` works fine for now | Only needed if we automate EAS publishing from CI. For manual `eas update` from Codespace, `eas login` once per Codespace is sufficient. |
+| Apple Developer account | EAS / App Store Connect | Future iOS preview/production builds | ✗ — not yet enrolled | Required for TestFlight + standalone iOS builds. Enrollment takes 1–3 days. Until then, daily-driver runtime is Runtime A (`eas update` + Expo Go). |
 
 **Columns:**
 - **Location** — exact mechanism (`.env.local`, `supabase secrets`, EAS env, EAS Secrets). If it lives in more than one place, list both.
@@ -399,26 +405,60 @@ If any box is unchecked, the work is not done — say so explicitly rather than 
 
 ### Dev Handoff — After Every Push
 
-After every `git push`, output the exact terminal commands the PM needs to run to get the latest code into Expo Go. Format each command as a code block followed by one plain-English sentence explaining why it is being run. Do not skip commands or assume the PM remembers the sequence from a previous session.
+After every `git push`, output the exact terminal commands the PM needs to run to get the latest code onto their phone. Format each command as a code block followed by one plain-English sentence explaining why it is being run. Do not skip commands or assume the PM remembers the sequence from a previous session.
 
-**Standard handoff sequence (use this every time, adapting as needed):**
+There are **two runtimes** the PM uses, and the handoff differs for each. Pick the one that matches what the PM is doing this session, and emit only that sequence — do not dump both unless the change requires both.
+
+#### Runtime A — Daily-driver build (default, via `eas update` + Expo Go)
+
+This is the runtime the PM lives in day-to-day. The app is published as a JS bundle to Expo's CDN on the `preview` channel; Expo Go opens it from a saved project entry. No Codespace tunnel required for the PM to use the app — only for the PM to publish a new version.
+
+**Default handoff sequence (use this every time we ship a PM-visible change, until we cut over to a real EAS preview build with an Apple Developer account):**
 
 ```bash
 git pull origin <branch-name>
 ```
-Pulls the latest committed code from GitHub into your local Codespace so your running app matches what was just built.
+Pulls the latest committed code into your Codespace so the bundle you publish matches what was just built.
+
+```bash
+eas update --branch preview --message "<one-line description of change>"
+```
+Compiles the current JS bundle (with your `.env.local` env vars baked in) and uploads it to Expo's CDN on the `preview` channel. Expo Go picks it up on next cold open of the Nyx project on your phone.
+
+Then on your phone: **fully close Expo Go** (swipe it away from app switcher), reopen it, and tap the Nyx project under "Recent" or "Projects." It will fetch the new bundle on launch. A warm reload is not enough — the bundle is cached and only refetched on cold open.
+
+**One-time setup (first session only, then never again):**
+
+```bash
+npm install -g eas-cli
+eas login
+eas init                          # links the project, writes extra.eas.projectId into app.json
+eas update:configure              # adds expo-updates runtime + updates.url to app.json
+```
+After this runs, commit any changes `eas` made to `app.json` and push. From then on, the PM only needs the two-command default sequence above.
+
+#### Runtime B — Active development (Metro + tunnel, only when iterating)
+
+Use this only when actively iterating on a feature and you need hot reload. Not required for daily use of the app.
+
+```bash
+git pull origin <branch-name>
+```
+Pulls the latest committed code from GitHub into your local Codespace.
 
 ```bash
 ./node_modules/@expo/ngrok-bin-linux-x64/ngrok authtoken <your-token>
 ```
-Authenticates the bundled ngrok binary that Expo uses to create a tunnel — required once per Codespace session because the token is not persisted across container restarts.
+Authenticates the bundled ngrok binary — required once per Codespace session because the token is not persisted across container restarts.
 
 ```bash
 npx expo start --tunnel
 ```
-Starts the Metro bundler and opens a public ngrok tunnel so Expo Go on your phone can reach the dev server from outside the Codespace network.
+Starts Metro and opens a public ngrok tunnel so Expo Go on your phone can reach the dev server. Scan the QR code with the phone camera to open it.
 
-Then press **`r`** in the Expo terminal to reload the app on your device after a pull.
+Then press **`r`** in the Expo terminal to reload the app on your device after a pull. Hot reload picks up most JS edits automatically.
+
+**Default to Runtime A in the handoff.** Only emit Runtime B instructions if the PM explicitly asks to iterate live, or the change is unstable enough to want hot reload while testing.
 
 **Before pushing**, if the diff touches a store, Edge Function, or shared utility, run:
 ```bash
@@ -429,8 +469,9 @@ Confirms automated tests pass locally. Do not push a chunk-completing PR with fa
 **When a Supabase migration is included in the push**, add:
 > Run `supabase/migrations/<filename>.sql` in the Supabase SQL Editor (dashboard → SQL Editor → New query → paste → Run). This applies the schema change to the live database — migrations are not run automatically.
 
-**When an Edge Function is included**, add:
-> Run `supabase functions deploy <function-name>` in the Codespace terminal to deploy the updated function to Supabase.
+**When an Edge Function is included**, add both deploy paths and let the PM pick:
+> **Option A (CLI, preferred):** `supabase functions deploy <function-name>` in the Codespace terminal. Requires one-time `supabase login` + `supabase link --project-ref aigchluqluzuhtbfllgh` setup; the Supabase CLI is not yet installed in the Codespace as of v1.18.
+> **Option B (dashboard paste, current default):** Supabase Dashboard → Edge Functions → `<function-name>` → paste the contents of `supabase/functions/<function-name>/index.ts` into the editor → Deploy. Used because Supabase CLI install in Codespaces has been flaky for the PM. Track Supabase CLI install as a one-time setup task in the next session that touches Edge Functions.
 
 #### Manual QA Script (required, every push)
 
@@ -609,6 +650,6 @@ Most recent three versions only. Older entries archived at `docs/CLAUDE-md-histo
 
 | Version | Date | Summary |
 |---|---|---|
-| v1.15 | May 2026 | Food detail screen — PM feedback round. Added page-indicator dots to PhotoCarousel (only render when ≥2 pages). Add-photo now prompts for slot first (Front / Ingredients / Barcode / Other) — canonical slots overwrite the existing storage path; "Other" appends. **Delete food** added: hard-deletes `food_items` + `meals`, soft-deletes parent `events` (respects the "never DELETE events" anti-pattern), drops them from the in-memory event store. Per PM call this is "kills all records" for the test version — smarter tombstone behavior captured in the backlog. Self-QA fix: rewrote `applyRow` field-seeding with a baseline-diff approach so realtime updates only override fields the user hasn't edited (previous logic could clobber a manually picked `dry_kibble` format). |
 | v1.16 | May 2026 | Bug fix: deleting a food appeared to succeed but the food kept coming back. Root cause — `food_items` had SELECT/INSERT/UPDATE RLS policies but no DELETE policy. Supabase-js returns success with 0 rows affected when RLS silently blocks a DELETE, then `refreshFoodCache` re-inserts the row on next focus. Fix: migration `009_food_items_delete_policy.sql` adds `FOR DELETE USING (auth.uid() = created_by_user_id)`. Bundled with the UI PR (violates the schema-PR-on-its-own anti-pattern) because the feature doesn't work without it and the PR is still under QA — flagged explicitly in the handoff. Also hardened the client: delete now uses `.select()` and treats a 0-row response as an error so a future RLS regression surfaces immediately instead of silently re-appearing. Also: `FoodPicker` swapped from a mount-only `useEffect` to `useFocusEffect` so deletes/adds reflect when the picker comes back into focus. |
 | v1.17 | May 2026 | Workflow improvements (multi-round). Dev Handoff now requires a numbered Manual QA Script tied to acceptance criteria. New "PR Merge / Next Session Kickoff" section: chunk-completing pushes emit copy-pasteable prompts for the next session. New Secrets Register table — every secret's location, consumer, and provisioning status tracked inline. Session summary gains "PM Action Items" checklist and "Next Session Kickoff" block. New "Definition of Done" checklist (AC, anti-patterns, types, automated-tests, secrets, persona sign-off, future-self review, handoff, kickoff). New `docs/backlog.md` artifact + Backlog Protocol section — destination for all "log this for the future" items, accessed via `view backlog`. Seeded with B-001 (AI cost & rate-limit), B-002 (pre-prod readiness), plus B-003/B-004/B-005 migrated from the prior "Future Work / Ideas" section (which has been removed). New Stale Open Question Triage rule. Build Step Kickoff: AC pasted verbatim into session at start of every step. Migration Safety Pre-flight required in every schema PR description. Dev Handoff requires `npm test` before push when testable surfaces change. CLAUDE.md refactor: new Status dashboard at top of file (canonical "where are we?"), Open Questions split into Open / Resolved sub-tables, Version History trimmed to last 3 inline + archived at `docs/CLAUDE-md-history.md`. |
+| v1.18 | May 2026 | **Daily-driver runtime change.** PM wanted to actually live in the MVP on their phone without keeping a Codespace + Metro tunnel alive. Set up EAS Update + Expo Go as the daily-driver runtime — `eas.json` added with `development` / `preview` / `production` build profiles and matching update channels; `preview` channel is what `eas update` publishes to. Daily flow: `eas update --branch preview --message "..."` from Codespace → fully close + reopen Expo Go on phone → Nyx loads the new bundle. CLAUDE.md Dev Handoff split into **Runtime A** (default — `eas update` + Expo Go, no Apple Developer needed) and **Runtime B** (active dev — Metro + tunnel, only when hot reload matters). Secrets Register gained rows for `EXPO_TOKEN` (optional, for CI automation) and Apple Developer account (not yet enrolled — blocks graduation to TestFlight / standalone iOS builds). Status block updated with three PM Action Items: one-time `eas init` / `eas update:configure` setup, smoke test on phone after first publish, and starting Apple Developer enrollment in parallel. |
