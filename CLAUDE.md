@@ -1,5 +1,17 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.16 | Last Updated: May 2026
+**Version:** 1.17 | Last Updated: May 2026
+
+---
+
+## Status
+
+_Auto-maintained. Update inline at session end (and any time these change mid-session). This block is the canonical answer to "where are we?" — every other section in this file is reference material._
+
+- **Current Phase:** Step 9 — Vet report
+- **Parallel track:** Food library — Step 7 (EXIF attribution UI)
+- **Blocking Open Questions:** PDF rendering library for Step 9 (`pdf-lib` vs `puppeteer` vs `react-pdf`)
+- **Open PM Action Items:** none carried over from last session
+- **Last session:** v1.17 (workflow improvements — Manual QA scripts, Next Session Kickoff, Secrets Register, Backlog artifact, DoD upgrades, Status dashboard)
 
 ---
 
@@ -27,6 +39,7 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 | `research.md` | When making product decisions about scope, features, or user behavior. Market and persona data lives here. |
 | `docs/food-library-redesign-requirements.md` | Any session touching food entry, the meal log flow, the food library/picker, or AI-driven extraction of food data. Output of the May 2026 photo-library research session. |
 | `competitive-landscape.md` | When evaluating feature positioning or vet-facing strategy. |
+| `docs/backlog.md` | When the PM asks to `view backlog` / `show backlog`. Also read at session start to surface any backlog item whose **Blocks** column matches the Current Phase. See the Backlog Protocol section below. |
 
 ---
 
@@ -239,6 +252,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 
 Do not skip steps. Do not begin step N+1 before step N passes all acceptance criteria. QA explicitly verifies criteria before any step is marked complete. Acceptance criteria for each step are defined in `technical-spec.md` § Build Phases — read that section before marking any step complete.
 
+**Build Step Kickoff.** The first time a session starts work on a new build step (or sub-step), QA pastes the acceptance criteria from `technical-spec.md` verbatim into the session as a visible target before any code is written. This keeps the AC in scroll-range for the whole session so end-of-session verification is honest, not reconstructed from memory.
+
 If a blocking open question (see Open Questions table) remains unanswered after one full session and work cannot proceed, document a provisional decision in the table, flag it in the session summary, and proceed on the assumption it will be confirmed or overridden by the PM.
 
 1. **Scaffold and auth** — Expo project, Supabase project, auth flow, `user_profiles` trigger ✓
@@ -262,7 +277,7 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 - Step 6 — Food detail screen + library-tap entry point (§4.1.1) ✓
 - Step 7 — EXIF attribution UI ← Next on food track
 
-**Current phase:** Step 9 — Vet report (food library track at Step 7; pick up after vet report unless PM redirects)
+_Current phase lives in the **Status** block at the top of this file. Update both blocks together when the phase advances._
 
 ---
 
@@ -288,6 +303,22 @@ Establish these from session one. Do not drift from them. When a new convention 
 - Supabase URL and anon key live in `.env.local` as `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`. The `EXPO_PUBLIC_` prefix makes them available client-side; anything without that prefix is server-only.
 - Edge Function secrets (service role key, Claude API key) are set via `supabase secrets set` and never stored in the repo.
 - When a new secret is required, document it here and flag to the PM to provision it in EAS Secrets before the next production build.
+
+### Secrets Register
+
+Single source of truth for every secret the project uses. Update this table inline the moment a new secret is introduced — do not wait for the session summary. When you reference a secret in code, sanity-check it against this table; if it's missing here, add it and flag a PM Action Item to provision it.
+
+| Name | Location | Used by | Provisioned? | Notes |
+|---|---|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | `.env.local` (local), EAS env (build) | Client | ✓ local; confirm before first prod build | Public; safe to expose |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` (local), EAS env (build) | Client | ✓ local; confirm before first prod build | Public; RLS-gated |
+| `SUPABASE_SERVICE_ROLE_KEY` | `supabase secrets` | Edge Functions | ✓ | Server-only; never ship to client |
+| `ANTHROPIC_API_KEY` | `supabase secrets` | `extract-food-from-photo`, future AI Signal | ✓ for food extraction; re-confirm before Step 10 | Server-only |
+
+**Columns:**
+- **Location** — exact mechanism (`.env.local`, `supabase secrets`, EAS env, EAS Secrets). If it lives in more than one place, list both.
+- **Provisioned?** — ✓ if set in that location and known working; ✗ or "needed" if not yet. When ✗, add a PM Action Item.
+- **Notes** — public vs server-only, rotation cadence, anything non-obvious.
 
 ---
 
@@ -315,6 +346,13 @@ Establish these from session one. Do not drift from them. When a new convention 
 - Squash merge to keep `main` history clean and linear.
 - Do not merge a PR if QA criteria for the current build step are not yet met.
 
+**Migration Safety Pre-flight.** Any PR containing a schema migration must include, in the PR description:
+- **Rollback plan** — exact reversal steps (e.g. `DROP COLUMN X`, `DROP TABLE Y`) or `Irreversible — back up first` if not.
+- **Destructive y/n** — `y` if the migration drops, renames, or alters a column with existing data; `n` if it's purely additive.
+- **Backfill** — if existing rows need values, the SQL or script that produces them; `N/A` if not.
+
+If destructive=`y`, the PR description also names the table(s) affected and the row-count check the PM should run before applying. Migrations are the highest-blast-radius action in this repo; this pre-flight is non-optional.
+
 ---
 
 ## Session Protocol
@@ -329,7 +367,26 @@ Establish these from session one. Do not drift from them. When a new convention 
 
 **If running non-interactively (CI trigger, background agent, GitHub Action):** Skip the check-in. Read `technical-spec.md` and proceed based on the Current Phase line in this file.
 
+Before asking the three questions, surface the **Status** block from the top of this file in the opening message. That block holds the Current Phase, parallel-track status, blocking Open Questions, and any open PM Action Items — i.e. everything the PM would need to recap. This lets the PM answer "no change" and move directly into work instead of recapping.
+
 Then read the relevant docs for the confirmed build step before writing any code.
+
+### Definition of Done — Before Saying "Done"
+
+Before reporting a feature, sub-step, or PR as complete, run this checklist explicitly and surface pass/fail. Do not collapse it to "looks good."
+
+- [ ] Acceptance criteria from `technical-spec.md` for this step listed and marked pass/fail (QA persona)
+- [ ] Diff scanned against the anti-pattern lists in this file — none introduced
+- [ ] Types pass (`tsc --noEmit` or equivalent) and lint is clean
+- [ ] **Automated tests**: if the diff touches a Zustand store, an Edge Function, or a shared utility in `lib/`, tests exist for the new logic and `npm test` passes locally. If no test was added, the DoD line reads `tests: N/A — <reason>` (e.g. "pure UI screen, no extractable logic") and the Engineer persona signs off on the exemption.
+- [ ] No new secret used without an entry in the Secrets Register
+- [ ] **Persona sign-off line** emitted for the feature: name which personas reviewed and what they verified. Example: `Designer ✓ (principles 1, 3) — Engineer ✓ — Data N/A — Dr. Chen N/A`. `N/A` is fine; silence is not.
+- [ ] **Future-self review** (for PRs introducing a *new* pattern, not just using an existing one): one-sentence answer to "would I still want this here in 12 months?" If the answer is uncertain, name the risk before merging.
+- [ ] Dev Handoff block emitted, including Manual QA Script
+- [ ] PM Action Items consolidated for any work only the PM can finish
+- [ ] If this push completes a chunk: Next Session Kickoff prompts emitted
+
+If any box is unchecked, the work is not done — say so explicitly rather than claiming success.
 
 ### During the Session
 
@@ -363,11 +420,59 @@ Starts the Metro bundler and opens a public ngrok tunnel so Expo Go on your phon
 
 Then press **`r`** in the Expo terminal to reload the app on your device after a pull.
 
+**Before pushing**, if the diff touches a store, Edge Function, or shared utility, run:
+```bash
+npm test
+```
+Confirms automated tests pass locally. Do not push a chunk-completing PR with failing or skipped tests — fix or mark `tests: N/A` in the DoD with the Engineer's exemption rationale.
+
 **When a Supabase migration is included in the push**, add:
 > Run `supabase/migrations/<filename>.sql` in the Supabase SQL Editor (dashboard → SQL Editor → New query → paste → Run). This applies the schema change to the live database — migrations are not run automatically.
 
 **When an Edge Function is included**, add:
 > Run `supabase functions deploy <function-name>` in the Codespace terminal to deploy the updated function to Supabase.
+
+#### Manual QA Script (required, every push)
+
+After the command sequence above, emit a numbered on-device QA script the PM can run in under 3 minutes. The script must:
+
+- Start from a known state (e.g. "open Expo Go, reload with `r`")
+- List the specific taps and inputs to exercise the change (golden path first, then 1–2 edge cases)
+- Tell the PM **what to expect** at each step, so they can spot regressions without reading code
+- Tie back to acceptance criteria for the current build step — call out which criterion each check verifies
+- Flag any check the PM cannot perform on-device (e.g. "verify in Supabase dashboard that `events.synced=1`")
+
+Format:
+
+```
+### Manual QA — <feature>
+1. <action> → <expected> (AC: <criterion ref>)
+2. <action> → <expected>
+3. Edge case: <action> → <expected>
+```
+
+If the change is backend-only (Edge Function, migration, schema), the QA script is the curl/SQL/dashboard steps to verify it instead — same numbered format.
+
+### PR Merge / Next Session Kickoff
+
+When a PR is opened or pushed that completes a chunk of work (build step ✓, sub-step ✓, or a self-contained feature), emit a **Next Session Kickoff** block alongside the Dev Handoff. The PM uses these prompts to start the next session cleanly without re-explaining context.
+
+Format:
+
+```
+### Next Session Kickoff
+**Recommended first prompt:**
+> <copy-pasteable prompt, 1–3 sentences, names the build step and concrete first task>
+
+**Alternate prompts (if priorities shift):**
+- <prompt for a parallel-track item>
+- <prompt for an open question that's now ready to decide>
+```
+
+Rules:
+- The recommended prompt always points at the next item in the **Build Sequence** unless a blocking open question makes that impossible — in which case the prompt is "resolve open question X."
+- Each prompt is self-contained: it names the file, step number, or doc the next session should read first.
+- If a PM Action Item from this session is a prerequisite (e.g. "deploy function X first"), say so explicitly in the prompt.
 
 ### Session End — Automatic Summary
 
@@ -394,8 +499,14 @@ Produce this summary automatically at the end of every session without being ask
 ### Known Issues / Tech Debt
 [Anything intentionally deferred or left rough, with a note on why]
 
+### PM Action Items
+[Consolidated checklist of every action only the PM can take, deduplicated across the session. Format: `- [ ] <action> — <why it's needed>`. Examples: run migration X in Supabase SQL Editor; deploy Edge Function Y; provision secret Z in EAS; create bucket via dashboard; reply to open question W. If there are none, write "None."]
+
 ### Recommended Next Steps
 [Ordered list of what to tackle next session, with rationale for the ordering]
+
+### Next Session Kickoff
+[Copy-pasteable prompts the PM can paste into a new session — see PR Merge / Next Session Kickoff section above for format. Always include the recommended first prompt; include alternates if multiple tracks are live.]
 
 ### Documentation Updates
 CLAUDE.md — [Changes made this session. Already applied inline.]
@@ -409,7 +520,7 @@ Project Brief (Claude.ai) — [Flag if the brief in project instructions needs u
 
 ## Documentation Update Protocol
 
-Three tiers. Different rules for each.
+Three tiers. Different rules for each. (For "log this for the future" items, see the **Backlog Protocol** section below — those go in `docs/backlog.md`, not in any of these tiers.)
 
 **Tier 1: `CLAUDE.md`**
 Update immediately when a decision is made. Do not wait for the session summary. This file must always reflect the current state of the project, not the state at session start. When you append an anti-pattern, resolve an open question, or establish a new convention, write it here in the moment.
@@ -424,6 +535,30 @@ Claude Code cannot edit this directly. Flag when it needs updating in the sessio
 
 ---
 
+## Backlog Protocol
+
+The backlog lives at `docs/backlog.md`. It is the destination for anything that would otherwise be said as "let's log that for the future" — out-of-scope features, deferred refactors, pre-prod requirements, decisions deferred past the current phase.
+
+**When to add a row:** any time you're about to say "we should do X later," "noted for future," "deferring this," or the PM says any of those phrases. Write the row immediately, in-session, before continuing the conversation. Do not batch-add at session end and do not wait for PM approval — adding a backlog row is reversible and cheap; losing the item is not.
+
+**Row format** (see `docs/backlog.md` for the live table):
+
+| Field | Notes |
+|---|---|
+| ID | Sequential `B-NNN`. Never reuse. |
+| Title | Short, scannable. |
+| Why | One line. Enough context that future-you can re-evaluate without re-deriving. |
+| Priority | `Now` / `Next` / `Later` (see file for definitions) |
+| Added | ISO date |
+| Blocks | The build step, phase, or condition that should trigger this. `—` if none. |
+| Status | `Open` until done. When closing, leave the row and mark `Done — <date>` with resolving PR/session. |
+
+**`view backlog` command:** when the PM types `view backlog`, `show backlog`, `what's in the backlog`, or any natural-language equivalent, read `docs/backlog.md` and present it grouped by priority. Surface anything whose **Blocks** column matches the Current Phase at the top. Do not invoke this proactively at every session start — only on request, or when a session-start scan reveals a backlog item that blocks the Current Phase.
+
+**Distinction from Open Questions:** Open Questions are *unresolved decisions* that need PM input to unblock work. Backlog items are *resolved deferrals* — we know what to do, just not now. If an item needs a decision, it goes in Open Questions; if it needs execution at a later time, it goes in the backlog.
+
+---
+
 ## Open Questions
 
 Do not make silent assumptions about these. Surface the relevant question when you reach the step that requires an answer.
@@ -431,6 +566,10 @@ Do not make silent assumptions about these. Surface the relevant question when y
 When a question is resolved, mark it resolved with the decision and date rather than deleting the row. The resolution is part of the record.
 
 If a blocking question remains unanswered after one full session, document a provisional decision and flag it for PM confirmation rather than stalling indefinitely.
+
+**Stale question triage.** Any question with status `Open` across **three or more sessions** gets a forced re-evaluation at the next session start: (a) still relevant — keep open; (b) no longer relevant — mark resolved with rationale; (c) ready for a provisional decision — write one and flag for PM confirmation; (d) belongs in the backlog instead — move it to `docs/backlog.md` and remove from this table. Do not let questions sit untouched indefinitely; an aged-out question is usually one of these four things, not actually "still open."
+
+### Open
 
 | Question | Blocks | Status |
 |---|---|---|
@@ -443,6 +582,11 @@ If a blocking question remains unanswered after one full session, document a pro
 | Pet photo upload RLS: `nyx-pet-photos` bucket was created via SQL (owner=null), causing uploads to fail with 42501 even with correct policies. Workaround: re-create bucket via dashboard UI, or implement upload via Edge Function with service role key. | Step 7: Pet profile | Open — needs resolution before photo upload ships |
 | Stool schema consolidation: `stool_normal` and `diarrhea` are currently stored as separate `event_type` values. UI-level consolidation is done (single "Stool" entry point with Normal/Loose sub-step). Full migration to `event_type='stool'` with a `stool_consistency` sub-field requires a dedicated schema migration PR. | Step 8+ | Deferred by PM — tackle before Step 9 |
 | Font decision: `fontBody` and `fontDisplay` slots exist in `theme.ts` but still resolve to `'System'`. Recommend Inter (body) + a humanist sans for display. Needs PM typeface decision before wiring up `expo-google-fonts`. | Post-Step 7 | Open |
+
+### Resolved
+
+| Question | Blocks | Resolution |
+|---|---|---|
 | Food library redesign — which Claude vision model for `extract-food-from-photo` Edge Function? Sonnet 4.6 vs Haiku 4.5. Trade-off is per-call cost vs ingredient-extraction accuracy. | Food library Edge Function | **Resolved May 2026 — Sonnet 4.6.** Unanimous team vote. Extraction fires once per food; cost is bounded. Accuracy of ingredient extraction is load-bearing for the confirm-screen UX and Dr. Chen's clinical trust in the data. |
 | Food library redesign — where does image compression run? Client (`expo-image-manipulator`) is preferred; Edge Function defensive resize is the fallback. Decide before upload code ships. | Food library upload flow | **Resolved May 2026 — Client-only.** Unanimous team vote. 1600px/q75 enforced in client code via `expo-image-manipulator`. Defensive resize in Edge Function adds Deno image-processing dependency with no quality upside for a single upload path. Revisit if a web upload path is added post-MVP. |
 | `nyx-food-photos` Supabase Storage bucket — same SQL-vs-dashboard RLS landmine as `nyx-pet-photos`. Must be created via dashboard UI, not migration SQL. | Food library Edge Function & upload | **Resolved May 2026 — PM created bucket via dashboard UI between sessions. RLS policies applied via migration 008_food_photos_rls.sql (PR #17).** |
@@ -459,30 +603,12 @@ If the answer to either question is uncertain, it needs more work before it ship
 
 ---
 
-## Future Work / Ideas (Not Yet Scoped)
+## Version History
 
-Ideas surfaced during sessions that the PM hasn't formally scoped into a build step. Capture them here so they aren't lost; promote into the Build Sequence or Open Questions when the PM decides to take them on.
-
-- **Detail-screen pattern for History events.** The food detail screen (Step 6, May 2026) was praised as a UX motion worth reusing — long-press a row in History → an Event Detail screen with the event's photo, severity, notes, and edit affordances inline. Distinct from the existing `edit-event.tsx` modal, which is form-first. Touches Timeline + edit-event; non-trivial. Punted from the food-library PR.
-- **Food Library as a top-level navigation item.** Currently the only way to reach the library is FAB → Meal → picker. The library is gaining prominence and may deserve to be a first-class destination (tab bar entry or drawer). Defer until the rest of the food-library track lands and we see how often owners want to browse without logging.
-- **Smarter library deletes.** The Step 6 implementation hard-deletes the food and soft-deletes every meal that ever referenced it ("kills all records" — PM call for the test version). Later we may want to preserve meal history with a tombstoned food reference (so correlation/diet-trial data isn't lost when a user re-tidies the library). Revisit before second-user beta.
+Most recent three versions only. Older entries archived at `docs/CLAUDE-md-history.md`. The three "Future Work / Ideas" items added to CLAUDE.md in v1.15 (detail-screen pattern for History events, Food Library as a top-level nav item, smarter library deletes) have moved to `docs/backlog.md` as B-003/B-004/B-005 — that file is now the single home for deferred items.
 
 | Version | Date | Summary |
 |---|---|---|
-| v1.0 | May 2026 | Initial file. Created before first Claude Code session. Based on product brief, technical spec, design principles, schema, research, and competitive landscape. |
-| v1.1 | May 2026 | Active session check-in protocol. Persona conflict escalation format. Mid-session CLAUDE.md updates. Acceptance criteria explicit pass/fail by QA. Anti-pattern and edge case lists made appendable. Three-tier documentation update protocol. Missing doc handling. Code conventions section. Open questions table with resolution tracking. Freemium gate question added. |
-| v1.2 | May 2026 | Async/non-interactive session handling. Environment and secrets management section. Git workflow with PR format requirements. Testing conventions added to Code Conventions. Provisional decision protocol for stalled blocking questions. Build sequence updated with ✓ markers and current phase (Step 4a). Acceptance criteria pointer added to build sequence. Persona conflict protocol surfaced as its own section. Anti-pattern lists seeded with additional items (auth store pattern, modal-on-modal, attachment storage). |
-| v1.3 | May 2026 | Fixed doc filename references in the Read These table to match actual filenames in /docs/. Appended four engineering anti-patterns from Step 4a session: schema+UI bundling, utility duplication, quick-log components in wrong location. Appended two QA edge cases: EXIF fallback, failed upload retry. |
-| v1.4 | May 2026 | Added Veterinarian (Dr. Alex Chen) and Pet Owner (Jordan) personas to the Product Team section. Personas include mandate, needs, anti-needs, consultation triggers, and key question. |
-| v1.5 | May 2026 | Updated build sequence: 4a ✓, Step 5 Zones 2 & 3 ✓ (Zone 1 deferred to Step 10), current phase updated to Step 6. Session note: CLAUDE.md was not being updated between sessions — build sequence was stale at 4a despite Steps 4a and 5 (partial) being complete. |
-| v1.6 | May 2026 | Step 6 ✓. Current phase updated to Step 7. Anti-pattern added: setting height directly on FlatList is unreliable in flex column layouts — wrap in a View with the height constraint instead. |
-| v1.7 | May 2026 | Step 7 in progress. Built pet profile screen (display, edit, conditions, diet trial card, photo). Known bug: pet photo upload blocked by Supabase Storage RLS on SQL-created bucket (owner=null). Anti-pattern added: create buckets via dashboard UI not raw SQL. Open question added for RLS resolution path. |
-| v1.8 | May 2026 | Design system session. Built full component library (Card, SectionLabel, PrimaryButton, FilterChip, Badge, Divider), expanded theme tokens (type scale, weights, letter-spacing, semantic colors, shadow tokens), and applied the system across every screen. Custom text-only tab bar (fixes clipping). Today zone redesigned as timestamped event strip. Trend zone now shows direction (dominant symptom, this-week vs last-week delta). FAB redesigned: symptom buttons warm-tinted and prominent, Vet appointment removed, Loose stool renamed. Emoji consistency pass across all event types. Stool/diarrhea consolidated at UI level (schema migration deferred). Two new open questions: stool schema migration, font decision. |
-| v1.9 | May 2026 | Steps 7 ✓ and 8 ✓ marked complete. Step 8 additions: expo-network installed, syncStore (Zustand) added, getSyncStatus() db helper, useSync updated with addNetworkStateListener for reconnect detection, SyncBanner component (appears only >24h stale). LWW for multi-device deferred post-MVP with code comment. Current phase advanced to Step 9 (Vet report). |
-| v1.10 | May 2026 | Food library redesign — research/requirements session. Decided on photo-first food entry with async Claude vision extraction; rejected OPFF and Chewy import paths (OPFF coverage diagnostic surfaced API and quality issues; Chewy ruled out on ToS). New requirements doc at `docs/food-library-redesign-requirements.md`. Added Read-These entry pointing to it. New anti-pattern: interactive elements without explicit `hitSlop` below 44pt. New QA edge case: the 3am-stumbling test. Three new open questions: vision model choice, image compression location, `nyx-food-photos` bucket creation. Build sequence updated to queue the food library redesign as a parallel track to Step 9. |
-| v1.11 | May 2026 | Food library step 2 complete: migration 008_food_photos_rls.sql adds RLS policies to nyx-food-photos (INSERT + SELECT for authenticated users; UPDATE/DELETE intentionally omitted at MVP). Three open questions resolved: vision model (Sonnet 4.6, unanimous), image compression (client-only, unanimous), bucket creation (PM completed via dashboard). |
-| v1.12 | May 2026 | Food library step 4 complete: three-zone meal-log picker (Add new → Recent → Library), text-only tiles, one-tap log path. Pivot mid-session from photo thumbnails to text tiles after user testing surfaced that user-snapped pet-food photos in a dense grid produced a chaotic surface and broken state machine — photos still captured for the detail screen and AI extraction, just not surfaced in the picker. Zone order changed from Recent-first to Add-new-first per PM call after testing (camera CTA needs to be in initial field of view). Two future scopes captured in requirements doc: library tile → food detail entry point (§4.1.1) and time editor on one-tap path (§4.1.2). Build sequence in CLAUDE.md restructured to show food-library track sub-steps with ✓ markers. |
-| v1.13 | May 2026 | Food library step 5 complete: photo capture + AI confirm flow at `app/food-capture.tsx`. Multi-step camera path (front required → ingredients encouraged → barcode encouraged), client-side compression via `compressForUpload` in `lib/storage.ts`, pending food_items insert before `extract-food-from-photo` invocation, confirm screen with Looks-right / Edit, EXIF-time meal log on commit. Legacy `food-new` text form in `app/log.tsx` deleted; picker's Add-new now routes to `/food-capture?fromLog=1`. Bug-fix bundled into the Edge Function (`format` enum mismatch — AI emits 'dry'/'wet' but DB enum is 'dry_kibble'/'wet_canned'; column was `ingredients_notes` not `ingredients`; null booleans tripped NOT NULL constraints). Tests added for new `mapFormatToDb` helper. PM hand-off: re-deploy the Edge Function (`supabase functions deploy extract-food-from-photo`) so the schema-correct writes ship. |
-| v1.14 | May 2026 | Food library step 6 complete: food detail screen at `app/food/[id].tsx`. Editable hero (PhotoCarousel with swipeable signed-URL pages + add-photo CTA), brand/product/format/ingredients/barcode form, retry CTA when `ai_extraction_status='failed'` (and a quieter "Re-run AI extraction" affordance when 'completed'). Realtime postgres_changes subscription on `food_items` filtered by id; cleanup on unmount via `supabase.removeChannel`. Save flips `source` to `'user'` only when the diff includes a field the user actually changed; cache row is kept in sync so picker tiles reflect edits immediately. Entry point: long-press on a FoodPicker tile (the deferred §4.1.1 call — chosen over a header "Manage library" view because it preserves the one-tap log path and surfaces detail from where the food lives). New shared component at `components/food/PhotoCarousel.tsx`. |
-| v1.15 | May 2026 | Food detail screen — PM feedback round. Added page-indicator dots to PhotoCarousel (only render when ≥2 pages). Add-photo now prompts for slot first (Front / Ingredients / Barcode / Other) — canonical slots overwrite the existing storage path; "Other" appends. **Delete food** added: hard-deletes `food_items` + `meals`, soft-deletes parent `events` (respects the "never DELETE events" anti-pattern), drops them from the in-memory event store. Per PM call this is "kills all records" for the test version — smarter tombstone behavior captured under Future Work. Self-QA fix: rewrote `applyRow` field-seeding with a baseline-diff approach so realtime updates only override fields the user hasn't edited (previous logic could clobber a manually picked `dry_kibble` format). New "Future Work / Ideas" section in CLAUDE.md captures: detail-screen pattern for History events, Food Library as a nav-level item, smarter library deletes. |
+| v1.15 | May 2026 | Food detail screen — PM feedback round. Added page-indicator dots to PhotoCarousel (only render when ≥2 pages). Add-photo now prompts for slot first (Front / Ingredients / Barcode / Other) — canonical slots overwrite the existing storage path; "Other" appends. **Delete food** added: hard-deletes `food_items` + `meals`, soft-deletes parent `events` (respects the "never DELETE events" anti-pattern), drops them from the in-memory event store. Per PM call this is "kills all records" for the test version — smarter tombstone behavior captured in the backlog. Self-QA fix: rewrote `applyRow` field-seeding with a baseline-diff approach so realtime updates only override fields the user hasn't edited (previous logic could clobber a manually picked `dry_kibble` format). |
 | v1.16 | May 2026 | Bug fix: deleting a food appeared to succeed but the food kept coming back. Root cause — `food_items` had SELECT/INSERT/UPDATE RLS policies but no DELETE policy. Supabase-js returns success with 0 rows affected when RLS silently blocks a DELETE, then `refreshFoodCache` re-inserts the row on next focus. Fix: migration `009_food_items_delete_policy.sql` adds `FOR DELETE USING (auth.uid() = created_by_user_id)`. Bundled with the UI PR (violates the schema-PR-on-its-own anti-pattern) because the feature doesn't work without it and the PR is still under QA — flagged explicitly in the handoff. Also hardened the client: delete now uses `.select()` and treats a 0-row response as an error so a future RLS regression surfaces immediately instead of silently re-appearing. Also: `FoodPicker` swapped from a mount-only `useEffect` to `useFocusEffect` so deletes/adds reflect when the picker comes back into focus. |
+| v1.17 | May 2026 | Workflow improvements (multi-round). Dev Handoff now requires a numbered Manual QA Script tied to acceptance criteria. New "PR Merge / Next Session Kickoff" section: chunk-completing pushes emit copy-pasteable prompts for the next session. New Secrets Register table — every secret's location, consumer, and provisioning status tracked inline. Session summary gains "PM Action Items" checklist and "Next Session Kickoff" block. New "Definition of Done" checklist (AC, anti-patterns, types, automated-tests, secrets, persona sign-off, future-self review, handoff, kickoff). New `docs/backlog.md` artifact + Backlog Protocol section — destination for all "log this for the future" items, accessed via `view backlog`. Seeded with B-001 (AI cost & rate-limit), B-002 (pre-prod readiness), plus B-003/B-004/B-005 migrated from the prior "Future Work / Ideas" section (which has been removed). New Stale Open Question Triage rule. Build Step Kickoff: AC pasted verbatim into session at start of every step. Migration Safety Pre-flight required in every schema PR description. Dev Handoff requires `npm test` before push when testable surfaces change. CLAUDE.md refactor: new Status dashboard at top of file (canonical "where are we?"), Open Questions split into Open / Resolved sub-tables, Version History trimmed to last 3 inline + archived at `docs/CLAUDE-md-history.md`. |
