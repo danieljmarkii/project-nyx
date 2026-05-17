@@ -5,14 +5,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as Updates from 'expo-updates';
 import { theme } from '../../constants/theme';
+import { BUILD_VERSION } from '../../constants/build';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, getPublicUrl } from '../../lib/storage';
+import { getLocalEventCount } from '../../lib/db';
+import { downloadRemoteData } from '../../lib/sync';
 import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
+import { useSyncStore } from '../../store/syncStore';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 
@@ -64,6 +69,7 @@ function statusLabel(status: string): string {
 export default function ProfileScreen() {
   const { activePet, updatePet, setActivePet, setOnboarded } = usePetStore();
   const { user } = useAuthStore();
+  const { pendingCount, oldestPendingAt } = useSyncStore();
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
@@ -77,6 +83,37 @@ export default function ProfileScreen() {
 
   const [photoUploading, setPhotoUploading] = useState(false);
   const [wiping, setWiping] = useState(false);
+
+  // ── Debug card state (diagnostic, not user-facing feature) ──
+  const [localEventCount, setLocalEventCount] = useState<number | null>(null);
+  const [forceSyncRunning, setForceSyncRunning] = useState(false);
+  const [forceSyncResult, setForceSyncResult] = useState<string | null>(null);
+
+  const refreshLocalEventCount = useCallback(async () => {
+    if (!activePet) return;
+    const n = await getLocalEventCount(activePet.id);
+    setLocalEventCount(n);
+  }, [activePet?.id]);
+
+  useEffect(() => { refreshLocalEventCount(); }, [refreshLocalEventCount]);
+
+  async function handleForceSync() {
+    if (!activePet) return;
+    setForceSyncRunning(true);
+    setForceSyncResult(null);
+    const before = await getLocalEventCount(activePet.id);
+    try {
+      await downloadRemoteData(activePet.id);
+      const after = await getLocalEventCount(activePet.id);
+      setLocalEventCount(after);
+      setForceSyncResult(`OK — ${before} → ${after} events`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setForceSyncResult(`ERR — ${msg}`);
+    } finally {
+      setForceSyncRunning(false);
+    }
+  }
 
   const loadConditions = useCallback(async () => {
     if (!activePet) return;
@@ -444,6 +481,73 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </Card>
 
+        {/* ── Debug card (diagnostic; ship-only while shaking out the EAS workflow) ── */}
+        <Card style={styles.sectionGap}>
+          <Text style={styles.sectionTitle}>Debug</Text>
+          <Divider style={styles.accountDivider} />
+
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>Build: </Text>
+            {BUILD_VERSION}
+          </Text>
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>Update ID: </Text>
+            {(Updates.updateId ?? 'embedded (no OTA applied)').slice(0, 8)}
+          </Text>
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>Channel: </Text>
+            {Updates.channel || '—'}
+          </Text>
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>Runtime: </Text>
+            {Updates.runtimeVersion || '—'}
+          </Text>
+
+          <Divider style={styles.accountDivider} />
+
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>Email: </Text>
+            {user?.email ?? '—'}
+          </Text>
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>User ID: </Text>
+            {user?.id ? `…${user.id.slice(-12)}` : '—'}
+          </Text>
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>Pet: </Text>
+            {activePet?.name ?? '—'}
+            {activePet?.id ? ` (…${activePet.id.slice(-12)})` : ''}
+          </Text>
+
+          <Divider style={styles.accountDivider} />
+
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>Local events: </Text>
+            {localEventCount ?? '…'}
+          </Text>
+          <Text style={styles.debugLine}>
+            <Text style={styles.debugLabel}>Pending upload: </Text>
+            {pendingCount}{oldestPendingAt ? ` (oldest ${oldestPendingAt.slice(11, 16)} UTC)` : ''}
+          </Text>
+
+          <Divider style={styles.accountDivider} />
+
+          <TouchableOpacity
+            style={styles.debugButton}
+            onPress={handleForceSync}
+            disabled={forceSyncRunning || !activePet}
+          >
+            {forceSyncRunning
+              ? <ActivityIndicator color={theme.colorAccent} />
+              : <Text style={styles.debugButtonText}>Force download now</Text>
+            }
+          </TouchableOpacity>
+
+          {forceSyncResult && (
+            <Text style={styles.debugResult}>{forceSyncResult}</Text>
+          )}
+        </Card>
+
         <View style={styles.bottomPad} />
       </ScrollView>
 
@@ -694,6 +798,33 @@ const styles = StyleSheet.create({
   destructiveText: {
     fontSize: theme.textMD,
     color: '#C0392B',
+  },
+
+  // ── Debug card ──
+  debugLine: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  debugLabel: {
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+  },
+  debugButton: {
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: theme.radiusSmall,
+    borderWidth: 1,
+    borderColor: theme.colorAccent,
+  },
+  debugButtonText: {
+    fontSize: theme.textSM,
+    color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
+  },
+  debugResult: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    textAlign: 'center',
   },
 
   // ── Empty / bottom ──
