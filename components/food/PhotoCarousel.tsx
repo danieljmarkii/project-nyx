@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   View, Image, StyleSheet, ScrollView, ActivityIndicator,
   Dimensions, TouchableOpacity, Text,
+  NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
 import { theme } from '../../constants/theme';
 import { getSignedUrl } from '../../lib/storage';
@@ -19,6 +20,7 @@ const HERO_HEIGHT = 280;
 export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   const [urls, setUrls] = useState<(string | null)[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,38 +63,59 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   }
 
   const screenWidth = Dimensions.get('window').width;
+  const totalPages = urls.length + (onAddPhoto ? 1 : 0);
+
+  function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    const x = e.nativeEvent.contentOffset.x;
+    const next = Math.round(x / screenWidth);
+    if (next !== page) setPage(next);
+  }
 
   return (
-    <ScrollView
-      horizontal
-      pagingEnabled
-      showsHorizontalScrollIndicator={false}
-      style={styles.scroll}
-    >
-      {urls.map((url, idx) => (
-        <View key={`${photoPaths[idx]}-${idx}`} style={[styles.slide, { width: screenWidth }]}>
-          {url ? (
-            <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />
-          ) : (
-            <View style={[styles.image, styles.imageMissing]}>
-              <Text style={styles.emptyText}>Photo unavailable</Text>
-            </View>
-          )}
-        </View>
-      ))}
-      {onAddPhoto && (
-        <View style={[styles.slide, { width: screenWidth }]}>
-          <TouchableOpacity
-            style={[styles.image, styles.addSlide]}
-            onPress={onAddPhoto}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.emptyIcon}>＋</Text>
-            <Text style={styles.emptyText}>Add another photo</Text>
-          </TouchableOpacity>
+    <View>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        style={styles.scroll}
+        onScroll={handleScroll}
+        scrollEventThrottle={32}
+      >
+        {urls.map((url, idx) => (
+          <View key={`${photoPaths[idx]}-${idx}`} style={[styles.slide, { width: screenWidth }]}>
+            {url ? (
+              <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />
+            ) : (
+              <View style={[styles.image, styles.imageMissing]}>
+                <Text style={styles.emptyText}>Photo unavailable</Text>
+              </View>
+            )}
+          </View>
+        ))}
+        {onAddPhoto && (
+          <View style={[styles.slide, { width: screenWidth }]}>
+            <TouchableOpacity
+              style={[styles.image, styles.addSlide]}
+              onPress={onAddPhoto}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.emptyIcon}>＋</Text>
+              <Text style={styles.emptyText}>Add another photo</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
+      {totalPages > 1 && (
+        <View style={styles.dotsRow} pointerEvents="none">
+          {Array.from({ length: totalPages }).map((_, i) => (
+            <View
+              key={i}
+              style={[styles.dot, i === page && styles.dotActive]}
+            />
+          ))}
         </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -137,5 +160,26 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
+  },
+  dotsRow: {
+    position: 'absolute',
+    bottom: theme.space1,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+  },
+  dotActive: {
+    backgroundColor: '#fff',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 });

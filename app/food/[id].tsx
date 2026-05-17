@@ -21,6 +21,7 @@ import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
+import { useEventStore } from '../../store/eventStore';
 
 const FOOD_FORMATS = [
   { value: 'dry_kibble', label: 'Dry kibble' },
@@ -70,6 +71,8 @@ export default function FoodDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [addingPhoto, setAddingPhoto] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const removeFromToday = useEventStore((s) => s.removeFromToday);
 
   // ── Fetch + realtime subscription ──
   useEffect(() => {
@@ -113,10 +116,13 @@ export default function FoodDetailScreen() {
   }, [id]);
 
   function applyRow(next: FoodRow) {
+    // Capture the *previous* baseline before we mutate it — the field-seeding
+    // logic below uses it to detect "user has not edited this field" (i.e.
+    // form value still equals the last value we loaded from the server). If
+    // it matches, we update from the server (so AI completion lands cleanly).
+    // If it diverges, the user has typed — leave their edit alone.
+    const prev = baseline.current;
     setRow(next);
-    // Only seed the form fields the first time, or when the server's value
-    // changed while the user wasn't actively editing them. We always rebase
-    // the baseline so the save-time diff stays accurate.
     baseline.current = {
       brand: next.brand,
       product_name: next.product_name,
@@ -124,14 +130,13 @@ export default function FoodDetailScreen() {
       ingredients_notes: next.ingredients_notes,
       upc_barcode: next.upc_barcode,
     };
-    // Brand/product seeded once; if the AI later corrects them while the
-    // user hasn't typed, surface the new value. If they have typed, leave
-    // their edit alone.
-    setBrand((cur) => (cur === '' || cur === 'Extracting…' ? next.brand : cur));
-    setProductName((cur) => (cur === '' || cur === 'Extracting…' ? next.product_name : cur));
-    setFormat((cur) => (cur === 'dry_kibble' && next.format ? next.format : cur || next.format));
-    setIngredients((cur) => (cur === '' ? (next.ingredients_notes ?? '') : cur));
-    setBarcode((cur) => (cur === '' ? (next.upc_barcode ?? '') : cur));
+    const nextIngredients = next.ingredients_notes ?? '';
+    const nextBarcode = next.upc_barcode ?? '';
+    setBrand((cur) => (!prev || cur === prev.brand) ? next.brand : cur);
+    setProductName((cur) => (!prev || cur === prev.product_name) ? next.product_name : cur);
+    setFormat((cur) => (!prev || cur === prev.format) ? next.format : cur);
+    setIngredients((cur) => (!prev || cur === (prev.ingredients_notes ?? '')) ? nextIngredients : cur);
+    setBarcode((cur) => (!prev || cur === (prev.upc_barcode ?? '')) ? nextBarcode : cur);
   }
 
   // ── Save ──
@@ -197,9 +202,32 @@ export default function FoodDetailScreen() {
     router.back();
   }
 
-  // ── Add photo (appends to photo_paths) ──
+  // ── Add photo ─────────────────────────────────────────────────────────────
+  // Two-step prompt: which slot, then where the photo comes from. Replacing
+  // a slot overwrites the existing storage object at the canonical path; new
+  // photos beyond the three canonical slots append as "additional". The
+  // storage path's slot suffix is how we later identify which photo is what
+  // (the array itself is positional but can be sparse when ingredients was
+  // skipped at capture).
+  type AddSlot = 'front' | 'ingredients' | 'barcode' | 'additional';
   async function handleAddPhoto() {
     if (!row) return;
+    const slot = await new Promise<AddSlot | null>((resolve) => {
+      Alert.alert(
+        'Which photo?',
+        'Replace or add a specific shot of the package.',
+        [
+          { text: 'Front of package', onPress: () => resolve('front') },
+          { text: 'Ingredients label', onPress: () => resolve('ingredients') },
+          { text: 'Barcode',           onPress: () => resolve('barcode') },
+          { text: 'Other',             onPress: () => resolve('additional') },
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(null) },
+      );
+    });
+    if (!slot) return;
+
     const source = await new Promise<'camera' | 'library' | null>((resolve) => {
       Alert.alert(
         'Add photo',
@@ -243,18 +271,34 @@ export default function FoodDetailScreen() {
 
     setAddingPhoto(true);
     try {
-      const nextIndex = row.photo_paths.length;
-      const storagePath = `${row.id}/${nextIndex}-additional.jpg`;
+      // Build the storage path. Canonical slots reuse a stable name so the
+      // bucket doesn't accumulate dupes when the user replaces a shot;
+      // additional slots get a unique index.
+      const storagePath = slot === 'additional'
+        ? `${row.id}/${row.photo_paths.length}-additional.jpg`
+        : `${row.id}/${slot === 'front' ? 0 : slot === 'ingredients' ? 1 : 2}-${slot}.jpg`;
+
       const compressedUri = await compressForUpload(asset.uri, asset.width, asset.height);
       await uploadPhoto('nyx-food-photos', storagePath, compressedUri);
 
-      const nextPaths = [...row.photo_paths, storagePath];
+      // Replace the existing path for this slot if one already exists; else
+      // append. Match by suffix because the canonical names include the slot.
+      const suffix = slot === 'additional' ? null : `-${slot}.jpg`;
+      const existingIdx = suffix
+        ? row.photo_paths.findIndex((p) => p.endsWith(suffix))
+        : -1;
+      const nextPaths = [...row.photo_paths];
+      if (existingIdx >= 0) {
+        nextPaths[existingIdx] = storagePath;
+      } else {
+        nextPaths.push(storagePath);
+      }
+
       const { error } = await supabase
         .from('food_items')
         .update({ photo_paths: nextPaths })
         .eq('id', row.id);
       if (error) throw error;
-      // Optimistic local update; realtime will also deliver this.
       setRow({ ...row, photo_paths: nextPaths });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -288,6 +332,91 @@ export default function FoodDetailScreen() {
     setRetrying(false);
     if (error) {
       Alert.alert('Extraction failed to start', error.message);
+    }
+  }
+
+  // ── Delete food + all logged meals of it ──────────────────────────────────
+  // PM call (May 2026): deleting a food from the library also kills every
+  // meal log that referenced it. Engineering anti-pattern says "never DELETE
+  // events" — so we hard-delete food_items + meals (no soft-delete column on
+  // either) and soft-delete the parent events (set deleted_at). The net
+  // owner-visible effect is "the food and its history are gone."
+  function handleDelete() {
+    if (!row) return;
+    Alert.alert(
+      'Delete this food?',
+      'This will also remove every meal you\'ve logged for it. This can\'t be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => runDelete() },
+      ],
+    );
+  }
+
+  async function runDelete() {
+    if (!row) return;
+    setDeleting(true);
+    try {
+      const nowIso = new Date().toISOString();
+
+      // 1. Collect event_ids of meals that reference this food (remote, then local).
+      const { data: remoteMeals, error: mealQueryErr } = await supabase
+        .from('meals')
+        .select('event_id')
+        .eq('food_item_id', row.id);
+      if (mealQueryErr) throw mealQueryErr;
+      const remoteEventIds = (remoteMeals ?? []).map((m) => m.event_id as string);
+
+      const db = getDb();
+      const localMeals = await db.getAllAsync<{ event_id: string }>(
+        'SELECT event_id FROM meals WHERE food_item_id = ?',
+        [row.id],
+      );
+      const localEventIds = localMeals.map((m) => m.event_id);
+      const allEventIds = Array.from(new Set([...remoteEventIds, ...localEventIds]));
+
+      // 2. Soft-delete the parent events (remote + local). Soft delete on
+      //    events is the established anti-pattern guardrail.
+      if (allEventIds.length > 0) {
+        const { error: remoteSoftErr } = await supabase
+          .from('events')
+          .update({ deleted_at: nowIso })
+          .in('id', allEventIds);
+        if (remoteSoftErr) throw remoteSoftErr;
+
+        const placeholders = allEventIds.map(() => '?').join(',');
+        await db.runAsync(
+          `UPDATE events SET deleted_at = ?, updated_at = ?, synced = 0
+             WHERE id IN (${placeholders})`,
+          [nowIso, nowIso, ...allEventIds],
+        );
+      }
+
+      // 3. Hard-delete meals (remote + local) and the food_items row (remote)
+      //    plus the picker cache row (local).
+      const { error: mealsDelErr } = await supabase
+        .from('meals')
+        .delete()
+        .eq('food_item_id', row.id);
+      if (mealsDelErr) throw mealsDelErr;
+      await db.runAsync('DELETE FROM meals WHERE food_item_id = ?', [row.id]);
+
+      const { error: foodDelErr } = await supabase
+        .from('food_items')
+        .delete()
+        .eq('id', row.id);
+      if (foodDelErr) throw foodDelErr;
+      await db.runAsync('DELETE FROM food_items_cache WHERE id = ?', [row.id]);
+
+      // 4. Drop any of the deleted events from the in-memory store so Home's
+      //    Today zone and any open Timeline view update without a remount.
+      allEventIds.forEach((id) => removeFromToday(id));
+
+      router.back();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('Could not delete food', msg);
+      setDeleting(false);
     }
   }
 
@@ -437,6 +566,18 @@ export default function FoodDetailScreen() {
                   : <Text style={styles.secondaryActionText}>Re-run AI extraction</Text>}
               </TouchableOpacity>
             )}
+
+            <TouchableOpacity
+              style={styles.deleteAction}
+              onPress={handleDelete}
+              disabled={deleting}
+              hitSlop={8}
+              activeOpacity={0.7}
+            >
+              {deleting
+                ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
+                : <Text style={styles.deleteActionText}>Delete this food</Text>}
+            </TouchableOpacity>
           </View>
         </ScrollView>
 
@@ -591,6 +732,17 @@ const styles = StyleSheet.create({
   secondaryActionText: {
     fontSize: theme.textMD,
     color: theme.colorAccent,
+  },
+  deleteAction: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.space2,
+    marginTop: theme.space1,
+    minHeight: 44,
+  },
+  deleteActionText: {
+    fontSize: theme.textMD,
+    color: theme.colorEventSymptom,
   },
   photoUploadingRow: {
     flexDirection: 'row',
