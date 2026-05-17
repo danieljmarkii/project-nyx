@@ -401,11 +401,18 @@ export default function FoodDetailScreen() {
       if (mealsDelErr) throw mealsDelErr;
       await db.runAsync('DELETE FROM meals WHERE food_item_id = ?', [row.id]);
 
-      const { error: foodDelErr } = await supabase
+      // RLS silently returns 0 rows on a blocked DELETE (no error) — use
+      // .select() so we can detect that case explicitly. If the row vanished
+      // without the policy allowing the delete we'd never know otherwise.
+      const { data: deletedFood, error: foodDelErr } = await supabase
         .from('food_items')
         .delete()
-        .eq('id', row.id);
+        .eq('id', row.id)
+        .select('id');
       if (foodDelErr) throw foodDelErr;
+      if (!deletedFood || deletedFood.length === 0) {
+        throw new Error('The food could not be deleted (permission denied).');
+      }
       await db.runAsync('DELETE FROM food_items_cache WHERE id = ?', [row.id]);
 
       // 4. Drop any of the deleted events from the in-memory store so Home's
