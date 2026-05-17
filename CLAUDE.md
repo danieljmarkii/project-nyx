@@ -1,5 +1,17 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.15 | Last Updated: May 2026
+**Version:** 1.16 | Last Updated: May 2026
+
+---
+
+## Status
+
+_Auto-maintained. Update inline at session end (and any time these change mid-session). This block is the canonical answer to "where are we?" — every other section in this file is reference material._
+
+- **Current Phase:** Step 9 — Vet report
+- **Parallel track:** Food library — Step 6 (food detail screen + library-tap entry point per `docs/food-library-redesign-requirements.md` §4.1.1)
+- **Blocking Open Questions:** PDF rendering library for Step 9 (`pdf-lib` vs `puppeteer` vs `react-pdf`)
+- **Open PM Action Items:** none carried over from last session
+- **Last session:** v1.16 (CLAUDE.md refactor — Status dashboard, Open Questions split, history archive)
 
 ---
 
@@ -265,7 +277,7 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 - Step 6 — Food detail screen + library-tap entry point (§4.1.1) ← Next on food track
 - Step 7 — EXIF attribution UI
 
-**Current phase:** Step 9 — Vet report (food library track at Step 6; pick up after vet report unless PM redirects)
+_Current phase lives in the **Status** block at the top of this file. Update both blocks together when the phase advances._
 
 ---
 
@@ -355,7 +367,7 @@ If destructive=`y`, the PR description also names the table(s) affected and the 
 
 **If running non-interactively (CI trigger, background agent, GitHub Action):** Skip the check-in. Read `technical-spec.md` and proceed based on the Current Phase line in this file.
 
-Before asking the three questions, pre-load and surface in the opening message: (a) the **Current Phase** line from the Build Sequence, (b) any **PM Action Items** still open from the last session summary, and (c) any **Open Questions** flagged as blocking the current phase. This lets the PM answer "no change" and move directly into work instead of recapping.
+Before asking the three questions, surface the **Status** block from the top of this file in the opening message. That block holds the Current Phase, parallel-track status, blocking Open Questions, and any open PM Action Items — i.e. everything the PM would need to recap. This lets the PM answer "no change" and move directly into work instead of recapping.
 
 Then read the relevant docs for the confirmed build step before writing any code.
 
@@ -557,6 +569,8 @@ If a blocking question remains unanswered after one full session, document a pro
 
 **Stale question triage.** Any question with status `Open` across **three or more sessions** gets a forced re-evaluation at the next session start: (a) still relevant — keep open; (b) no longer relevant — mark resolved with rationale; (c) ready for a provisional decision — write one and flag for PM confirmation; (d) belongs in the backlog instead — move it to `docs/backlog.md` and remove from this table. Do not let questions sit untouched indefinitely; an aged-out question is usually one of these four things, not actually "still open."
 
+### Open
+
 | Question | Blocks | Status |
 |---|---|---|
 | Which PDF rendering library for the Edge Function? (`pdf-lib` vs `puppeteer` vs `react-pdf`) | Step 9: Vet report | Open |
@@ -568,6 +582,11 @@ If a blocking question remains unanswered after one full session, document a pro
 | Pet photo upload RLS: `nyx-pet-photos` bucket was created via SQL (owner=null), causing uploads to fail with 42501 even with correct policies. Workaround: re-create bucket via dashboard UI, or implement upload via Edge Function with service role key. | Step 7: Pet profile | Open — needs resolution before photo upload ships |
 | Stool schema consolidation: `stool_normal` and `diarrhea` are currently stored as separate `event_type` values. UI-level consolidation is done (single "Stool" entry point with Normal/Loose sub-step). Full migration to `event_type='stool'` with a `stool_consistency` sub-field requires a dedicated schema migration PR. | Step 8+ | Deferred by PM — tackle before Step 9 |
 | Font decision: `fontBody` and `fontDisplay` slots exist in `theme.ts` but still resolve to `'System'`. Recommend Inter (body) + a humanist sans for display. Needs PM typeface decision before wiring up `expo-google-fonts`. | Post-Step 7 | Open |
+
+### Resolved
+
+| Question | Blocks | Resolution |
+|---|---|---|
 | Food library redesign — which Claude vision model for `extract-food-from-photo` Edge Function? Sonnet 4.6 vs Haiku 4.5. Trade-off is per-call cost vs ingredient-extraction accuracy. | Food library Edge Function | **Resolved May 2026 — Sonnet 4.6.** Unanimous team vote. Extraction fires once per food; cost is bounded. Accuracy of ingredient extraction is load-bearing for the confirm-screen UX and Dr. Chen's clinical trust in the data. |
 | Food library redesign — where does image compression run? Client (`expo-image-manipulator`) is preferred; Edge Function defensive resize is the fallback. Decide before upload code ships. | Food library upload flow | **Resolved May 2026 — Client-only.** Unanimous team vote. 1600px/q75 enforced in client code via `expo-image-manipulator`. Defensive resize in Edge Function adds Deno image-processing dependency with no quality upside for a single upload path. Revisit if a web upload path is added post-MVP. |
 | `nyx-food-photos` Supabase Storage bucket — same SQL-vs-dashboard RLS landmine as `nyx-pet-photos`. Must be created via dashboard UI, not migration SQL. | Food library Edge Function & upload | **Resolved May 2026 — PM created bucket via dashboard UI between sessions. RLS policies applied via migration 008_food_photos_rls.sql (PR #17).** |
@@ -586,21 +605,10 @@ If the answer to either question is uncertain, it needs more work before it ship
 
 ## Version History
 
+Most recent three versions only. Older entries archived at `docs/CLAUDE-md-history.md`.
+
 | Version | Date | Summary |
 |---|---|---|
-| v1.0 | May 2026 | Initial file. Created before first Claude Code session. Based on product brief, technical spec, design principles, schema, research, and competitive landscape. |
-| v1.1 | May 2026 | Active session check-in protocol. Persona conflict escalation format. Mid-session CLAUDE.md updates. Acceptance criteria explicit pass/fail by QA. Anti-pattern and edge case lists made appendable. Three-tier documentation update protocol. Missing doc handling. Code conventions section. Open questions table with resolution tracking. Freemium gate question added. |
-| v1.2 | May 2026 | Async/non-interactive session handling. Environment and secrets management section. Git workflow with PR format requirements. Testing conventions added to Code Conventions. Provisional decision protocol for stalled blocking questions. Build sequence updated with ✓ markers and current phase (Step 4a). Acceptance criteria pointer added to build sequence. Persona conflict protocol surfaced as its own section. Anti-pattern lists seeded with additional items (auth store pattern, modal-on-modal, attachment storage). |
-| v1.3 | May 2026 | Fixed doc filename references in the Read These table to match actual filenames in /docs/. Appended four engineering anti-patterns from Step 4a session: schema+UI bundling, utility duplication, quick-log components in wrong location. Appended two QA edge cases: EXIF fallback, failed upload retry. |
-| v1.4 | May 2026 | Added Veterinarian (Dr. Alex Chen) and Pet Owner (Jordan) personas to the Product Team section. Personas include mandate, needs, anti-needs, consultation triggers, and key question. |
-| v1.5 | May 2026 | Updated build sequence: 4a ✓, Step 5 Zones 2 & 3 ✓ (Zone 1 deferred to Step 10), current phase updated to Step 6. Session note: CLAUDE.md was not being updated between sessions — build sequence was stale at 4a despite Steps 4a and 5 (partial) being complete. |
-| v1.6 | May 2026 | Step 6 ✓. Current phase updated to Step 7. Anti-pattern added: setting height directly on FlatList is unreliable in flex column layouts — wrap in a View with the height constraint instead. |
-| v1.7 | May 2026 | Step 7 in progress. Built pet profile screen (display, edit, conditions, diet trial card, photo). Known bug: pet photo upload blocked by Supabase Storage RLS on SQL-created bucket (owner=null). Anti-pattern added: create buckets via dashboard UI not raw SQL. Open question added for RLS resolution path. |
-| v1.8 | May 2026 | Design system session. Built full component library (Card, SectionLabel, PrimaryButton, FilterChip, Badge, Divider), expanded theme tokens (type scale, weights, letter-spacing, semantic colors, shadow tokens), and applied the system across every screen. Custom text-only tab bar (fixes clipping). Today zone redesigned as timestamped event strip. Trend zone now shows direction (dominant symptom, this-week vs last-week delta). FAB redesigned: symptom buttons warm-tinted and prominent, Vet appointment removed, Loose stool renamed. Emoji consistency pass across all event types. Stool/diarrhea consolidated at UI level (schema migration deferred). Two new open questions: stool schema migration, font decision. |
-| v1.9 | May 2026 | Steps 7 ✓ and 8 ✓ marked complete. Step 8 additions: expo-network installed, syncStore (Zustand) added, getSyncStatus() db helper, useSync updated with addNetworkStateListener for reconnect detection, SyncBanner component (appears only >24h stale). LWW for multi-device deferred post-MVP with code comment. Current phase advanced to Step 9 (Vet report). |
-| v1.10 | May 2026 | Food library redesign — research/requirements session. Decided on photo-first food entry with async Claude vision extraction; rejected OPFF and Chewy import paths (OPFF coverage diagnostic surfaced API and quality issues; Chewy ruled out on ToS). New requirements doc at `docs/food-library-redesign-requirements.md`. Added Read-These entry pointing to it. New anti-pattern: interactive elements without explicit `hitSlop` below 44pt. New QA edge case: the 3am-stumbling test. Three new open questions: vision model choice, image compression location, `nyx-food-photos` bucket creation. Build sequence updated to queue the food library redesign as a parallel track to Step 9. |
-| v1.11 | May 2026 | Food library step 2 complete: migration 008_food_photos_rls.sql adds RLS policies to nyx-food-photos (INSERT + SELECT for authenticated users; UPDATE/DELETE intentionally omitted at MVP). Three open questions resolved: vision model (Sonnet 4.6, unanimous), image compression (client-only, unanimous), bucket creation (PM completed via dashboard). |
-| v1.12 | May 2026 | Food library step 4 complete: three-zone meal-log picker (Add new → Recent → Library), text-only tiles, one-tap log path. Pivot mid-session from photo thumbnails to text tiles after user testing surfaced that user-snapped pet-food photos in a dense grid produced a chaotic surface and broken state machine — photos still captured for the detail screen and AI extraction, just not surfaced in the picker. Zone order changed from Recent-first to Add-new-first per PM call after testing (camera CTA needs to be in initial field of view). Two future scopes captured in requirements doc: library tile → food detail entry point (§4.1.1) and time editor on one-tap path (§4.1.2). Build sequence in CLAUDE.md restructured to show food-library track sub-steps with ✓ markers. |
-| v1.13 | May 2026 | Food library step 5 complete: photo capture + AI confirm flow at `app/food-capture.tsx`. Multi-step camera path (front required → ingredients encouraged → barcode encouraged), client-side compression via `compressForUpload` in `lib/storage.ts`, pending food_items insert before `extract-food-from-photo` invocation, confirm screen with Looks-right / Edit, EXIF-time meal log on commit. Legacy `food-new` text form in `app/log.tsx` deleted; picker's Add-new now routes to `/food-capture?fromLog=1`. Bug-fix bundled into the Edge Function (`format` enum mismatch — AI emits 'dry'/'wet' but DB enum is 'dry_kibble'/'wet_canned'; column was `ingredients_notes` not `ingredients`; null booleans tripped NOT NULL constraints). Tests added for new `mapFormatToDb` helper. PM hand-off: re-deploy the Edge Function (`supabase functions deploy extract-food-from-photo`) so the schema-correct writes ship. |
 | v1.14 | May 2026 | Workflow improvements session. Dev Handoff now requires a numbered Manual QA Script tied to acceptance criteria. New "PR Merge / Next Session Kickoff" section: every chunk-completing push emits copy-pasteable prompts for the next session. New Secrets Register table under Environment and Secrets — every secret's location, consumer, and provisioning status tracked inline. Session summary template gains a "PM Action Items" checklist (consolidated, deduplicated) and a "Next Session Kickoff" block. New "Definition of Done" checklist runs before any feature is marked complete (AC, anti-patterns, types, secrets, handoff, kickoff). Session start now pre-loads Current Phase + open PM actions + blocking questions so the PM can answer "no change" and skip the recap. Header version drift (1.12 → 1.13) fixed. |
 | v1.15 | May 2026 | Workflow improvements round 2. New `docs/backlog.md` artifact + Backlog Protocol section in CLAUDE.md — destination for all "log this for the future" items, accessed via `view backlog`. New Stale Open Question Triage rule: questions open >3 sessions are forced into one of four resolutions. New Build Step Kickoff requirement: AC pasted verbatim into session at the start of every new step. New Migration Safety Pre-flight in Git Workflow: rollback plan, destructive y/n, and backfill required in every schema PR description. DoD gains automated-tests check (stores, Edge Functions, shared utilities), persona sign-off line, and future-self review for new patterns. Dev Handoff now requires `npm test` before any push that touches testable surfaces. Seeded backlog with B-001 (AI cost & rate-limit strategy, deferred per PM) and B-002 (pre-production readiness checklist). |
+| v1.16 | May 2026 | CLAUDE.md refactor. Added a Status dashboard at the top of the file — Current Phase, food-library track, blocking Open Questions, open PM Action Items — so the most-checked information is canonical, not derived. Split Open Questions table into Open / Resolved sub-tables (matches the Backlog pattern; eliminates scan friction from mixed rows). Trimmed inline Version History to last 3 entries; older versions archived at `docs/CLAUDE-md-history.md`. No behavioral changes — pure organization. |
