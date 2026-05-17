@@ -213,6 +213,110 @@ export async function syncPendingAttachments(): Promise<void> {
   }
 }
 
+// Pull events + meals for the pet from Supabase into local SQLite.
+//
+// Why this exists: without it, a second device signed into the same account
+// shows an empty timeline — the existing sync code is upload-only. Step 8 was
+// only half-built; this closes the remote→local direction.
+//
+// Watermark: MAX(updated_at) on local events for this pet. Empty table → null
+// → pull everything (first sync on a fresh device). >= rather than > so we
+// don't miss rows that share the boundary timestamp; upsert below makes the
+// re-fetch a no-op.
+//
+// Safety: the ON CONFLICT branch has WHERE events.synced = 1, so a pending
+// local edit (synced=0) is never clobbered by an incoming server row. The
+// upload pass in useSync runs first, so in practice anything still synced=0
+// at this point is a *new* edit made after the upload kicked off.
+export async function downloadRemoteData(petId: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+
+  const watermarkRow = await db.getFirstAsync<{ max_updated: string | null }>(
+    'SELECT MAX(updated_at) AS max_updated FROM events WHERE pet_id = ?',
+    [petId],
+  );
+  const watermark = watermarkRow?.max_updated ?? null;
+
+  let eventsQuery = supabase.from('events').select('*').eq('pet_id', petId);
+  if (watermark) eventsQuery = eventsQuery.gte('updated_at', watermark);
+
+  const { data: remoteEvents, error: eventsError } = await eventsQuery;
+  if (eventsError) {
+    console.error('[sync] events download failed:', eventsError.message);
+    return;
+  }
+  if (!remoteEvents || remoteEvents.length === 0) return;
+
+  for (const e of remoteEvents) {
+    await db.runAsync(
+      `INSERT INTO events
+         (id, pet_id, event_type, occurred_at, severity, notes,
+          source, occurred_at_source, deleted_at, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON CONFLICT(id) DO UPDATE SET
+         event_type         = excluded.event_type,
+         occurred_at        = excluded.occurred_at,
+         severity           = excluded.severity,
+         notes              = excluded.notes,
+         source             = excluded.source,
+         occurred_at_source = excluded.occurred_at_source,
+         deleted_at         = excluded.deleted_at,
+         updated_at         = excluded.updated_at,
+         synced             = 1
+       WHERE events.synced = 1`,
+      [
+        e.id, e.pet_id, e.event_type, e.occurred_at,
+        e.severity, e.notes,
+        e.source ?? 'manual',
+        e.occurred_at_source ?? 'manual',
+        e.deleted_at,
+        e.created_at, e.updated_at,
+      ],
+    );
+  }
+
+  // Pull meal child rows for the events we just touched. Meals are 1:1 with
+  // meal events; the FK to events(id) means we MUST upsert events first.
+  const eventIds = remoteEvents.map((e: { id: string }) => e.id);
+  const { data: remoteMeals, error: mealsError } = await supabase
+    .from('meals')
+    .select('*')
+    .in('event_id', eventIds);
+
+  if (mealsError) {
+    console.error('[sync] meals download failed:', mealsError.message);
+    return;
+  }
+  if (!remoteMeals) return;
+
+  for (const m of remoteMeals) {
+    await db.runAsync(
+      `INSERT INTO meals
+         (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON CONFLICT(id) DO UPDATE SET
+         food_item_id    = excluded.food_item_id,
+         quantity        = excluded.quantity,
+         is_full_portion = excluded.is_full_portion,
+         notes           = excluded.notes,
+         synced          = 1
+       WHERE meals.synced = 1`,
+      [
+        m.id, m.event_id, m.pet_id, m.food_item_id,
+        m.quantity ?? 'unknown',
+        m.is_full_portion === null || m.is_full_portion === undefined
+          ? null
+          : m.is_full_portion ? 1 : 0,
+        m.notes,
+        m.created_at,
+      ],
+    );
+  }
+}
+
 export async function refreshFoodCache(): Promise<void> {
   const db = getDb();
 
