@@ -175,6 +175,24 @@ export function parseToolResult(response: ClaudeResponse): ExtractionResult | nu
   }
 }
 
+// The Claude tool emits short format names ('dry', 'wet', ...) for token
+// efficiency. The Postgres food_format enum uses the longer picker-friendly
+// names. Map them here so the DB update doesn't get rejected by the enum.
+const AI_FORMAT_TO_DB: Record<string, string> = {
+  dry:          'dry_kibble',
+  wet:          'wet_canned',
+  raw:          'raw',
+  freeze_dried: 'freeze_dried',
+  treats:       'treat',
+  supplement:   'topper',
+  other:        'other',
+}
+
+export function mapFormatToDb(aiFormat: string | null): string | null {
+  if (!aiFormat) return null
+  return AI_FORMAT_TO_DB[aiFormat] ?? 'other'
+}
+
 // Ensures every confidence field is present and clamped to [0, 1].
 export function normaliseConfidence(raw: Partial<ConfidenceScores>): ConfidenceScores {
   const clamp = (v: number | undefined) => Math.min(1, Math.max(0, v ?? 0))
@@ -298,23 +316,34 @@ Deno.serve(async (req: Request) => {
       throw new Error('Claude did not return a valid extraction result')
     }
 
-    // 4. Write extracted fields back to food_items
+    // 4. Write extracted fields back to food_items.
+    // `format`, `is_grain_free`, `is_prescription` are NOT NULL on the table
+    // with sensible defaults — fall back rather than send null and trip the
+    // constraint. `ingredients_notes` is the actual column (Edge Function
+    // previously wrote to a non-existent `ingredients` column).
+    // Claude's tool-use boolean schema is not always honoured — we've seen
+    // the literal string "null" come back for is_grain_free / is_prescription.
+    // `?? false` only catches real null/undefined, so coerce strictly here.
+    const toBool = (v: unknown): boolean => v === true
+    const dbFormat = mapFormatToDb(extraction.format)
+    const updatePayload: Record<string, unknown> = {
+      brand:                    extraction.brand,
+      product_name:             extraction.product_name,
+      primary_protein:          extraction.primary_protein,
+      is_grain_free:            toBool(extraction.is_grain_free),
+      is_prescription:          toBool(extraction.is_prescription),
+      ingredients_notes:        extraction.ingredients_text,
+      upc_barcode:              extraction.upc_barcode,
+      source:                   'ai_extracted',
+      ai_extraction_status:     'completed',
+      ai_extraction_confidence: extraction.confidence,
+      ai_extraction_error:      null,
+    }
+    if (dbFormat) updatePayload.format = dbFormat
+
     const { error: updateError } = await adminClient
       .from('food_items')
-      .update({
-        brand:                    extraction.brand,
-        product_name:             extraction.product_name,
-        format:                   extraction.format,
-        primary_protein:          extraction.primary_protein,
-        is_grain_free:            extraction.is_grain_free,
-        is_prescription:          extraction.is_prescription,
-        ingredients:              extraction.ingredients_text,
-        upc_barcode:              extraction.upc_barcode,
-        source:                   'ai_extracted',
-        ai_extraction_status:     'completed',
-        ai_extraction_confidence: extraction.confidence,
-        ai_extraction_error:      null,
-      })
+      .update(updatePayload)
       .eq('id', food_item_id)
 
     if (updateError) {

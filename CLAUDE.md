@@ -87,6 +87,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Writing new quick-log UI directly in screen files — quick-log components belong in `components/log/` per the project structure in `nyx-technical-spec-v1_0.md`
 - Setting `height` directly on a `FlatList` to constrain it in a flex column layout — the FlatList requests layout space independently of its style prop, producing large unexpected gaps. Wrap in a `<View style={{ height: N }}>` instead.
 - Creating Supabase Storage buckets via raw SQL (`INSERT INTO storage.buckets`) instead of the Supabase dashboard UI — SQL-created buckets have `owner=null` and RLS policies on `storage.objects` may silently fail even when the policy SQL appears correct. Always create buckets via the Storage UI or the Supabase JS client's admin API so the bucket row is fully initialized.
+- Uploading photos via `fetch(localUri).blob()` in React Native — produces a 0-byte blob even though `supabase-js` reports a successful upload. Downstream consumers (Edge Functions, signed URL viewers) then see an empty file. Read the file as a `Uint8Array` via `new File(uri).bytes()` from `expo-file-system` and upload that instead.
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
 ---
@@ -257,11 +258,11 @@ If a blocking open question (see Open Questions table) remains unanswered after 
 - Step 2 — Bucket + RLS setup ✓
 - Step 3 — `extract-food-from-photo` Edge Function ✓
 - Step 4 — Picker UX (three-zone meal-log screen, text-only tiles) ✓
-- Step 5 — Photo capture + AI confirm UX ← Next on food track
-- Step 6 — Food detail screen + library-tap entry point (§4.1.1)
+- Step 5 — Photo capture + AI confirm UX ✓
+- Step 6 — Food detail screen + library-tap entry point (§4.1.1) ← Next on food track
 - Step 7 — EXIF attribution UI
 
-**Current phase:** Step 9 — Vet report (food library track at Step 5; pick up after vet report unless PM redirects)
+**Current phase:** Step 9 — Vet report (food library track at Step 6; pick up after vet report unless PM redirects)
 
 ---
 
@@ -475,3 +476,4 @@ If the answer to either question is uncertain, it needs more work before it ship
 | v1.10 | May 2026 | Food library redesign — research/requirements session. Decided on photo-first food entry with async Claude vision extraction; rejected OPFF and Chewy import paths (OPFF coverage diagnostic surfaced API and quality issues; Chewy ruled out on ToS). New requirements doc at `docs/food-library-redesign-requirements.md`. Added Read-These entry pointing to it. New anti-pattern: interactive elements without explicit `hitSlop` below 44pt. New QA edge case: the 3am-stumbling test. Three new open questions: vision model choice, image compression location, `nyx-food-photos` bucket creation. Build sequence updated to queue the food library redesign as a parallel track to Step 9. |
 | v1.11 | May 2026 | Food library step 2 complete: migration 008_food_photos_rls.sql adds RLS policies to nyx-food-photos (INSERT + SELECT for authenticated users; UPDATE/DELETE intentionally omitted at MVP). Three open questions resolved: vision model (Sonnet 4.6, unanimous), image compression (client-only, unanimous), bucket creation (PM completed via dashboard). |
 | v1.12 | May 2026 | Food library step 4 complete: three-zone meal-log picker (Add new → Recent → Library), text-only tiles, one-tap log path. Pivot mid-session from photo thumbnails to text tiles after user testing surfaced that user-snapped pet-food photos in a dense grid produced a chaotic surface and broken state machine — photos still captured for the detail screen and AI extraction, just not surfaced in the picker. Zone order changed from Recent-first to Add-new-first per PM call after testing (camera CTA needs to be in initial field of view). Two future scopes captured in requirements doc: library tile → food detail entry point (§4.1.1) and time editor on one-tap path (§4.1.2). Build sequence in CLAUDE.md restructured to show food-library track sub-steps with ✓ markers. |
+| v1.13 | May 2026 | Food library step 5 complete: photo capture + AI confirm flow at `app/food-capture.tsx`. Multi-step camera path (front required → ingredients encouraged → barcode encouraged), client-side compression via `compressForUpload` in `lib/storage.ts`, pending food_items insert before `extract-food-from-photo` invocation, confirm screen with Looks-right / Edit, EXIF-time meal log on commit. Legacy `food-new` text form in `app/log.tsx` deleted; picker's Add-new now routes to `/food-capture?fromLog=1`. Bug-fix bundled into the Edge Function (`format` enum mismatch — AI emits 'dry'/'wet' but DB enum is 'dry_kibble'/'wet_canned'; column was `ingredients_notes` not `ingredients`; null booleans tripped NOT NULL constraints). Tests added for new `mapFormatToDb` helper. PM hand-off: re-deploy the Edge Function (`supabase functions deploy extract-food-from-photo`) so the schema-correct writes ship. |
