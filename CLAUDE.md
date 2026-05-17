@@ -469,8 +469,9 @@ Confirms automated tests pass locally. Do not push a chunk-completing PR with fa
 **When a Supabase migration is included in the push**, add:
 > Run `supabase/migrations/<filename>.sql` in the Supabase SQL Editor (dashboard → SQL Editor → New query → paste → Run). This applies the schema change to the live database — migrations are not run automatically.
 
-**When an Edge Function is included**, add:
-> Run `supabase functions deploy <function-name>` in the Codespace terminal to deploy the updated function to Supabase.
+**When an Edge Function is included**, add both deploy paths and let the PM pick:
+> **Option A (CLI, preferred):** `supabase functions deploy <function-name>` in the Codespace terminal. Requires one-time `supabase login` + `supabase link --project-ref aigchluqluzuhtbfllgh` setup; the Supabase CLI is not yet installed in the Codespace as of v1.18.
+> **Option B (dashboard paste, current default):** Supabase Dashboard → Edge Functions → `<function-name>` → paste the contents of `supabase/functions/<function-name>/index.ts` into the editor → Deploy. Used because Supabase CLI install in Codespaces has been flaky for the PM. Track Supabase CLI install as a one-time setup task in the next session that touches Edge Functions.
 
 #### Manual QA Script (required, every push)
 
