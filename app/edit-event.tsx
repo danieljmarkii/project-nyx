@@ -239,7 +239,7 @@ export default function EditEventModal() {
             <Text style={styles.changeLabel}>Change</Text>
           </TouchableOpacity>
           {occurredAtSource === 'exif' && (
-            <Text style={styles.exifAttribution}>set from your photo</Text>
+            <Text style={styles.exifAttribution}>from your photo</Text>
           )}
           {showTimePicker && (
             <DateTimePicker

@@ -326,7 +326,7 @@ export default function LogModal() {
           </TouchableOpacity>
         </View>
         {occurredAtSource === 'exif' && (
-          <Text style={styles.exifAttribution}>set from your photo</Text>
+          <Text style={styles.exifAttribution}>from your photo</Text>
         )}
       </View>
     );

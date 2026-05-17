@@ -552,7 +552,7 @@ export default function FoodCaptureScreen() {
               Logged at{' '}
               {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               {mealOccurredAtSource === 'exif' ? (
-                <Text style={styles.mealTimeAttribution}>{'  ·  set from your photo'}</Text>
+                <Text style={styles.mealTimeAttribution}>{'  ·  from your photo'}</Text>
               ) : null}
             </Text>
             <Text style={styles.mealTimeChange}>Change</Text>
