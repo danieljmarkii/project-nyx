@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
@@ -27,19 +28,23 @@ export async function compressForUpload(
 
 
 // Upload a local file URI (file:// or content://) to Supabase Storage.
-// Uses fetch→blob, which React Native supports natively for local URIs.
+//
+// In React Native, `fetch(localUri).blob()` returns a 0-byte blob —
+// supabase-js then "successfully" uploads an empty object, which the
+// extract-food-from-photo Edge Function later rejects as
+// `image cannot be empty`. We read the file as a Uint8Array via
+// expo-file-system instead, which streams the bytes correctly.
 export async function uploadPhoto(
   bucket: string,
   storagePath: string,
   localUri: string,
   mimeType: string = 'image/jpeg',
 ): Promise<void> {
-  const response = await fetch(localUri);
-  const blob = await response.blob();
+  const bytes = await new File(localUri).bytes();
 
   const { error } = await supabase.storage
     .from(bucket)
-    .upload(storagePath, blob, { contentType: mimeType, upsert: true });
+    .upload(storagePath, bytes, { contentType: mimeType, upsert: true });
 
   if (error) throw error;
 }

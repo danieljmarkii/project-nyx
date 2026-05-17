@@ -87,6 +87,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Writing new quick-log UI directly in screen files — quick-log components belong in `components/log/` per the project structure in `nyx-technical-spec-v1_0.md`
 - Setting `height` directly on a `FlatList` to constrain it in a flex column layout — the FlatList requests layout space independently of its style prop, producing large unexpected gaps. Wrap in a `<View style={{ height: N }}>` instead.
 - Creating Supabase Storage buckets via raw SQL (`INSERT INTO storage.buckets`) instead of the Supabase dashboard UI — SQL-created buckets have `owner=null` and RLS policies on `storage.objects` may silently fail even when the policy SQL appears correct. Always create buckets via the Storage UI or the Supabase JS client's admin API so the bucket row is fully initialized.
+- Uploading photos via `fetch(localUri).blob()` in React Native — produces a 0-byte blob even though `supabase-js` reports a successful upload. Downstream consumers (Edge Functions, signed URL viewers) then see an empty file. Read the file as a `Uint8Array` via `new File(uri).bytes()` from `expo-file-system` and upload that instead.
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
 ---
