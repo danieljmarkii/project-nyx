@@ -8,6 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "update:preview": "eas update --branch preview",
     "prepare": "git config core.hooksPath .githooks"
   },
   "dependencies": {
