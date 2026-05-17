@@ -359,24 +359,41 @@ export default function FoodDetailScreen() {
     try {
       const nowIso = new Date().toISOString();
 
-      // 1. Collect event_ids of meals that reference this food (remote, then local).
+      // 1. Collect every food_items row with the same brand+product+format.
+      //    Captures of the same package via food-capture produce distinct
+      //    rows (fresh uuid per capture); the library tile collapses them
+      //    via GROUP BY in getLibraryFoods, so deleting by the current row's
+      //    id alone would leave the duplicates visible.
+      const { data: dupFoods, error: dupErr } = await supabase
+        .from('food_items')
+        .select('id')
+        .eq('brand', row.brand)
+        .eq('product_name', row.product_name)
+        .eq('format', row.format);
+      if (dupErr) throw dupErr;
+      const allFoodIds = Array.from(
+        new Set([row.id, ...(dupFoods ?? []).map((f) => f.id as string)]),
+      );
+
+      // 2. Collect event_ids of meals referencing any of those foods.
       const { data: remoteMeals, error: mealQueryErr } = await supabase
         .from('meals')
         .select('event_id')
-        .eq('food_item_id', row.id);
+        .in('food_item_id', allFoodIds);
       if (mealQueryErr) throw mealQueryErr;
       const remoteEventIds = (remoteMeals ?? []).map((m) => m.event_id as string);
 
       const db = getDb();
+      const foodPlaceholders = allFoodIds.map(() => '?').join(',');
       const localMeals = await db.getAllAsync<{ event_id: string }>(
-        'SELECT event_id FROM meals WHERE food_item_id = ?',
-        [row.id],
+        `SELECT event_id FROM meals WHERE food_item_id IN (${foodPlaceholders})`,
+        allFoodIds,
       );
       const localEventIds = localMeals.map((m) => m.event_id);
       const allEventIds = Array.from(new Set([...remoteEventIds, ...localEventIds]));
 
-      // 2. Soft-delete the parent events (remote + local). Soft delete on
-      //    events is the established anti-pattern guardrail.
+      // 3. Soft-delete the parent events (remote + local). Anti-pattern says
+      //    never DELETE events, so we soft-delete.
       if (allEventIds.length > 0) {
         const { error: remoteSoftErr } = await supabase
           .from('events')
@@ -384,39 +401,53 @@ export default function FoodDetailScreen() {
           .in('id', allEventIds);
         if (remoteSoftErr) throw remoteSoftErr;
 
-        const placeholders = allEventIds.map(() => '?').join(',');
+        const eventPlaceholders = allEventIds.map(() => '?').join(',');
         await db.runAsync(
           `UPDATE events SET deleted_at = ?, updated_at = ?, synced = 0
-             WHERE id IN (${placeholders})`,
+             WHERE id IN (${eventPlaceholders})`,
           [nowIso, nowIso, ...allEventIds],
         );
       }
 
-      // 3. Hard-delete meals (remote + local) and the food_items row (remote)
-      //    plus the picker cache row (local).
+      // 4. Hard-delete meals (no soft-delete column on meals).
       const { error: mealsDelErr } = await supabase
         .from('meals')
         .delete()
-        .eq('food_item_id', row.id);
+        .in('food_item_id', allFoodIds);
       if (mealsDelErr) throw mealsDelErr;
-      await db.runAsync('DELETE FROM meals WHERE food_item_id = ?', [row.id]);
+      await db.runAsync(
+        `DELETE FROM meals WHERE food_item_id IN (${foodPlaceholders})`,
+        allFoodIds,
+      );
 
-      // RLS silently returns 0 rows on a blocked DELETE (no error) — use
-      // .select() so we can detect that case explicitly. If the row vanished
-      // without the policy allowing the delete we'd never know otherwise.
-      const { data: deletedFood, error: foodDelErr } = await supabase
+      // 5. Hard-delete every matching food_items row. Use .select() so we
+      //    detect a silent RLS block (supabase-js returns success with 0
+      //    rows affected when the DELETE policy is missing).
+      const { data: deletedFoods, error: foodDelErr } = await supabase
         .from('food_items')
         .delete()
-        .eq('id', row.id)
+        .in('id', allFoodIds)
         .select('id');
       if (foodDelErr) throw foodDelErr;
-      if (!deletedFood || deletedFood.length === 0) {
-        throw new Error('The food could not be deleted (permission denied).');
+      if (!deletedFoods || deletedFoods.length === 0) {
+        throw new Error(
+          'Server rejected the delete (permission denied). Make sure migration 009_food_items_delete_policy.sql has been applied in the Supabase SQL Editor.',
+        );
       }
-      await db.runAsync('DELETE FROM food_items_cache WHERE id = ?', [row.id]);
 
-      // 4. Drop any of the deleted events from the in-memory store so Home's
-      //    Today zone and any open Timeline view update without a remount.
+      // 6. Sweep the local cache by brand+product+format too, so duplicates
+      //    with the same descriptive fields but different ids are removed
+      //    even if they hadn't synced to the server yet.
+      await db.runAsync(
+        `DELETE FROM food_items_cache
+           WHERE LOWER(brand) = LOWER(?)
+             AND LOWER(product_name) = LOWER(?)
+             AND format = ?`,
+        [row.brand, row.product_name, row.format],
+      );
+
+      // 7. Drop any of the affected events from the in-memory event store
+      //    so Home / Timeline update without a remount.
       allEventIds.forEach((id) => removeFromToday(id));
 
       router.back();
