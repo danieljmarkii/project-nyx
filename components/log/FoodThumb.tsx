@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { theme } from '../../constants/theme';
-import { getPublicUrl } from '../../lib/storage';
+import { getSignedUrl } from '../../lib/storage';
 
 interface Props {
   brand: string;
@@ -15,10 +15,20 @@ interface Props {
 // outer touchable's padding, regardless of the visual `size` chosen
 // by the caller — satisfies the 3am-stumbling test.
 export function FoodThumb({ brand, productName, photoPath, size, onPress }: Props) {
-  const photoUri = useMemo(
-    () => (photoPath ? getPublicUrl('nyx-food-photos', photoPath) : null),
-    [photoPath],
-  );
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!photoPath) {
+      setPhotoUri(null);
+      return;
+    }
+    getSignedUrl('nyx-food-photos', photoPath).then((url) => {
+      if (!cancelled) setPhotoUri(url);
+    });
+    return () => { cancelled = true; };
+  }, [photoPath]);
+
   const initials = (brand?.[0] ?? '?').toUpperCase();
 
   return (
