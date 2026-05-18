@@ -20,11 +20,18 @@ const FORMAT_LABEL: Record<string, string> = {
   // 'other' intentionally maps to '' — no chip when the format is unspecified.
 };
 
-// Text-only food tile. Hierarchy (top→bottom): brand, product name (2 lines),
-// type label. Tap anywhere → meal logs immediately. Tile is the full tap
-// target (≥44pt by virtue of minHeight: 88).
+// Text-only food tile. Product name is the primary line — for a single-brand
+// household ("a wall of Fancy Feast"), the flavor in product_name is what
+// disambiguates one tile from the next, so it owns the visual centre. Brand
+// and format collapse into a single tertiary metadata line at the top
+// ("FANCY FEAST · WET") so the body of the tile is entirely about the food.
+// Tap anywhere → meal logs immediately. Tile is the full tap target
+// (≥44pt by virtue of minHeight).
 export function FoodTile({ brand, productName, format, onPress, onLongPress }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
+  const metaLine = typeLabel
+    ? `${brand.toUpperCase()} · ${typeLabel.toUpperCase()}`
+    : brand.toUpperCase();
 
   return (
     <TouchableOpacity
@@ -34,15 +41,12 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress }: P
       delayLongPress={350}
       activeOpacity={0.7}
     >
-      <View style={styles.content}>
-        <Text style={styles.brand} numberOfLines={1}>
-          {brand}
-        </Text>
-        <Text style={styles.product} numberOfLines={2}>
-          {productName}
-        </Text>
-      </View>
-      {typeLabel ? <Text style={styles.type}>{typeLabel.toUpperCase()}</Text> : null}
+      <Text style={styles.meta} numberOfLines={1}>
+        {metaLine}
+      </Text>
+      <Text style={styles.product} numberOfLines={2}>
+        {productName}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -56,26 +60,18 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     backgroundColor: theme.colorSurface,
     padding: theme.space2,
-    justifyContent: 'space-between',
+    gap: theme.space1,
   },
-  content: {
-    gap: 2,
-  },
-  brand: {
-    fontSize: theme.textMD,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-  },
-  product: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-    lineHeight: 18,
-  },
-  type: {
+  meta: {
     fontSize: theme.textXS,
     fontWeight: theme.weightMedium,
     color: theme.colorTextTertiary,
     letterSpacing: theme.trackingWidest,
-    marginTop: theme.space1,
+  },
+  product: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    lineHeight: 20,
   },
 });
