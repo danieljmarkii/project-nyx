@@ -185,6 +185,7 @@ export function AddConditionModal({
                 value={diagnosedAt ?? new Date()}
                 mode="date"
                 display="spinner"
+                themeVariant="light"
                 maximumDate={new Date()}
                 onChange={(_e: unknown, date?: Date) => {
                   if (Platform.OS === 'android') setShowDatePicker(false);

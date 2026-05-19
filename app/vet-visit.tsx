@@ -246,6 +246,8 @@ export default function VetVisitModal() {
               value={visitedAt}
               mode="date"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant="light"
+              accentColor={theme.colorAccent}
               maximumDate={new Date()}
               onChange={(_e, date) => {
                 if (Platform.OS === 'android') setShowDatePicker(false);
@@ -316,6 +318,8 @@ export default function VetVisitModal() {
               value={nextVisitAt ?? new Date()}
               mode="date"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant="light"
+              accentColor={theme.colorAccent}
               minimumDate={new Date()}
               onChange={(_e, date) => {
                 if (Platform.OS === 'android') setShowNextDatePicker(false);

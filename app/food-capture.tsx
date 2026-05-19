@@ -564,6 +564,8 @@ export default function FoodCaptureScreen() {
               value={mealOccurredAt}
               mode="datetime"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant="light"
+              accentColor={theme.colorAccent}
               maximumDate={new Date()}
               onChange={(_e, date) => {
                 if (Platform.OS === 'android') setShowMealTimePicker(false);

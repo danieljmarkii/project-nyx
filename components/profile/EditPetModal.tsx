@@ -331,6 +331,7 @@ export function EditPetModal({ visible, onClose }: Props) {
                 value={dob ?? new Date(2020, 0, 1)}
                 mode="date"
                 display="spinner"
+                themeVariant="light"
                 maximumDate={new Date()}
                 onChange={(_e: unknown, date?: Date) => {
                   if (Platform.OS === 'android') setShowDatePicker(false);
