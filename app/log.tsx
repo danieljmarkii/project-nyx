@@ -510,6 +510,8 @@ export default function LogModal() {
                 value={occurredAt}
                 mode="datetime"
                 display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                themeVariant="light"
+                accentColor={theme.colorAccent}
                 maximumDate={new Date()}
                 onChange={(_e, date) => {
                   if (Platform.OS === 'android') setShowTimePicker(false);
@@ -555,6 +557,8 @@ export default function LogModal() {
                 value={occurredAt}
                 mode="datetime"
                 display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                themeVariant="light"
+                accentColor={theme.colorAccent}
                 maximumDate={new Date()}
                 onChange={(_e, date) => {
                   if (Platform.OS === 'android') setShowTimePicker(false);

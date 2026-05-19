@@ -243,6 +243,8 @@ export default function EditEventModal() {
               value={occurredAt}
               mode="datetime"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              themeVariant="light"
+              accentColor={theme.colorAccent}
               maximumDate={new Date()}
               onChange={(_e: unknown, date?: Date) => {
                 if (Platform.OS === 'android') setShowTimePicker(false);
