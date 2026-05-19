@@ -7,9 +7,9 @@
 
 _Auto-maintained. Update inline at session end (and any time these change mid-session). This block is the canonical answer to "where are we?" — every other section in this file is reference material._
 
-- **Current Phase:** Step 9 — Vet report
+- **Current Phase:** Step 9 — Vet report (paused — B-010 event timestamp uncertainty surfaced as a Step 9 prerequisite; tackle B-010 next, then resume Step 9)
 - **Parallel track:** Food library — Step 7 (EXIF attribution UI)
-- **Blocking Open Questions:** PDF rendering library for Step 9 (`pdf-lib` vs `puppeteer` vs `react-pdf`)
+- **Blocking Open Questions:** PDF rendering library for Step 9 (`pdf-lib` vs `puppeteer` vs `react-pdf`); event timestamp uncertainty modelling — witnessed flag vs window fields vs confidence enum (see B-010 + research brief `docs/research/2026-05-event-timestamp-uncertainty.md`)
 - **Open PM Action Items:**
   - [ ] Run one-time EAS setup in Codespace: `npm install -g eas-cli && eas login && eas init && eas update:configure`, then commit + push the `app.json` changes (`extra.eas.projectId`, `updates.url`, `runtimeVersion`)
   - [ ] After first `eas update --branch preview`, open Expo Go on phone → tap the published project → confirm app loads end-to-end (log a meal, snap a food photo, confirm Claude extraction returns)
@@ -624,6 +624,7 @@ If a blocking question remains unanswered after one full session, document a pro
 | Pet photo upload RLS: `nyx-pet-photos` bucket was created via SQL (owner=null), causing uploads to fail with 42501 even with correct policies. Workaround: re-create bucket via dashboard UI, or implement upload via Edge Function with service role key. | Step 7: Pet profile | Open — needs resolution before photo upload ships |
 | Stool schema consolidation: `stool_normal` and `diarrhea` are currently stored as separate `event_type` values. UI-level consolidation is done (single "Stool" entry point with Normal/Loose sub-step). Full migration to `event_type='stool'` with a `stool_consistency` sub-field requires a dedicated schema migration PR. | Step 8+ | Deferred by PM — tackle before Step 9 |
 | Font decision: `fontBody` and `fontDisplay` slots exist in `theme.ts` but still resolve to `'System'`. Recommend Inter (body) + a humanist sans for display. Needs PM typeface decision before wiring up `expo-google-fonts`. | Post-Step 7 | Open |
+| Event timestamp uncertainty: should `events.occurred_at` stay as a single precise timestamp, or should the schema represent witnessed-vs-discovered events explicitly? Three options under discussion — (A) boolean `occurred_at_witnessed` flag; (B) nullable `occurred_at_earliest` / `occurred_at_latest` window fields with `occurred_at` derived; (C) `occurred_at_confidence` enum (`witnessed` / `estimated` / `window`) plus optional window fields. Evidence base in `docs/research/2026-05-event-timestamp-uncertainty.md`; tracked as B-010. Decision affects schema migration, quick-log UX, vet-report rendering, and correlation-engine weighting. | Step 9: Vet report (false-precise timestamps would ship a clinical regression); Step 10: AI Signal correlation windows | Open — needs PM decision before next schema PR |
 
 ### Resolved
 
