@@ -7,6 +7,7 @@ interface Props {
   event: NyxEvent;
   isExpanded: boolean;
   onToggle: () => void;
+  onOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }
@@ -23,7 +24,7 @@ function formatOccurredAt(iso: string): string {
   });
 }
 
-export function EventRow({ event, isExpanded, onToggle, onEdit, onDelete }: Props) {
+export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete }: Props) {
   const config = EVENT_TYPES[event.event_type as EventTypeKey] ?? FALLBACK_CONFIG;
   const isSymptom = config.hasSeverity;
 
@@ -36,6 +37,8 @@ export function EventRow({ event, isExpanded, onToggle, onEdit, onDelete }: Prop
     <TouchableOpacity
       style={[styles.row, isExpanded && styles.rowExpanded]}
       onPress={onToggle}
+      onLongPress={onOpen}
+      delayLongPress={300}
       activeOpacity={0.7}
     >
       <View style={[styles.emojiCol, isSymptom && styles.emojiColSymptom]}>
@@ -57,6 +60,9 @@ export function EventRow({ event, isExpanded, onToggle, onEdit, onDelete }: Prop
               <Text style={styles.notes}>{event.notes}</Text>
             ) : null}
             <View style={styles.actions}>
+              <TouchableOpacity onPress={onOpen} hitSlop={8} style={styles.editBtn}>
+                <Text style={styles.editBtnText}>View</Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={onEdit} hitSlop={8} style={styles.editBtn}>
                 <Text style={styles.editBtnText}>Edit</Text>
               </TouchableOpacity>
