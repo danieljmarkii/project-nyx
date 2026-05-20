@@ -177,6 +177,22 @@ export async function getTimeline(
   );
 }
 
+export async function getEventById(eventId: string): Promise<TimelineRow | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<TimelineRow>(
+    `SELECT e.id, e.pet_id, e.event_type, e.occurred_at, e.severity, e.notes,
+            e.source, e.deleted_at, e.created_at, e.updated_at,
+            m.food_item_id, m.quantity,
+            f.brand AS food_brand, f.product_name AS food_product_name
+     FROM events e
+     LEFT JOIN meals m ON m.event_id = e.id
+     LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE e.id = ? AND e.deleted_at IS NULL`,
+    [eventId],
+  );
+  return row ?? null;
+}
+
 export async function softDeleteEvent(eventId: string): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
@@ -237,6 +253,11 @@ export async function getEventAttachment(eventId: string): Promise<{
     'SELECT id, local_uri, storage_path, mime_type FROM event_attachments WHERE event_id = ? ORDER BY sort_order ASC LIMIT 1',
     [eventId],
   );
+}
+
+export async function deleteEventAttachmentLocal(attachmentId: string): Promise<void> {
+  const db = getDb();
+  await db.runAsync('DELETE FROM event_attachments WHERE id = ?', [attachmentId]);
 }
 
 export interface PickerFood {

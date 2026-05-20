@@ -167,6 +167,10 @@ export default function HistoryScreen() {
     });
   }
 
+  function handleOpen(event: NyxEvent) {
+    router.push({ pathname: '/event/[id]', params: { id: event.id } });
+  }
+
   function handleDelete(event: NyxEvent) {
     Alert.alert(
       'Remove this log?',
@@ -253,6 +257,7 @@ export default function HistoryScreen() {
               event={item}
               isExpanded={expandedId === item.id}
               onToggle={() => handleToggle(item.id)}
+              onOpen={() => handleOpen(item)}
               onEdit={() => handleEdit(item)}
               onDelete={() => handleDelete(item)}
             />
