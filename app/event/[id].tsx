@@ -12,6 +12,7 @@ import {
   getDb,
   getEventById,
   getEventAttachment,
+  getEventSource,
   getMealForEvent,
   softDeleteEvent,
   deleteEventAttachmentLocal,
@@ -21,7 +22,7 @@ import { uploadPhoto, getSignedUrl } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents } from '../../lib/sync';
 import { useEventStore } from '../../store/eventStore';
-import { uuid } from '../../lib/utils';
+import { uuid, formatExifAttribution } from '../../lib/utils';
 
 const HERO_HEIGHT = 320;
 
@@ -60,6 +61,7 @@ export default function EventDetailScreen() {
   const [event, setEvent] = useState<TimelineRow | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
+  const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [actionsVisible, setActionsVisible] = useState(false);
@@ -88,6 +90,8 @@ export default function EventDetailScreen() {
         const meal = await getMealForEvent(id);
         if (meal) setFoodLabel({ brand: meal.food_brand, product: meal.food_product_name });
       }
+
+      getEventSource(id).then(setOccurredAtSource).catch(() => {});
     } catch (e) {
       console.error('[event-detail] load failed:', e);
     } finally {
@@ -258,6 +262,11 @@ export default function EventDetailScreen() {
   const config = EVENT_TYPES[event.event_type as EventTypeKey];
   const label = config?.label ?? 'Event';
   const photoUri = attachment?.local_uri ?? remoteUrl;
+  // Meals' clinical artifact is the food name, not a photo. Don't show an
+  // empty-state hero begging for one — flagged by Dr. Chen + Jordan during
+  // on-device review. If a meal happens to have a photo, the hero still renders.
+  const isMeal = event.event_type === 'meal';
+  const showEmptyHero = !photoUri && !isMeal;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -271,12 +280,13 @@ export default function EventDetailScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Hero photo */}
+        {/* Hero photo — present when a photo exists; on symptom events without
+            a photo, an empty-state tap-to-add hero. Meals skip the empty hero. */}
         {photoUri ? (
           <TouchableOpacity activeOpacity={0.95} onPress={() => setPhotoViewerVisible(true)}>
             <Image source={{ uri: photoUri }} style={styles.hero} resizeMode="cover" />
           </TouchableOpacity>
-        ) : (
+        ) : showEmptyHero ? (
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={handleAddPhoto}
@@ -292,7 +302,7 @@ export default function EventDetailScreen() {
               </>
             )}
           </TouchableOpacity>
-        )}
+        ) : null}
 
         {/* Body */}
         <View style={styles.body}>
@@ -301,6 +311,11 @@ export default function EventDetailScreen() {
           <Text style={styles.timeRow}>
             {formatTime(event.occurred_at)} · {formatRelative(event.occurred_at)}
           </Text>
+          {occurredAtSource === 'exif' ? (
+            <Text style={styles.exifAttribution}>
+              {formatExifAttribution(event.occurred_at)}
+            </Text>
+          ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (
             <View style={styles.section}>
@@ -339,10 +354,6 @@ export default function EventDetailScreen() {
           onPress={() => setActionsVisible(false)}
         >
           <View style={styles.sheet}>
-            <TouchableOpacity style={styles.sheetItem} onPress={handleEdit}>
-              <Text style={styles.sheetItemText}>Edit</Text>
-            </TouchableOpacity>
-            <View style={styles.sheetDivider} />
             <TouchableOpacity style={styles.sheetItem} onPress={handleDelete}>
               <Text style={[styles.sheetItemText, styles.sheetItemDestructive]}>Remove</Text>
             </TouchableOpacity>
@@ -470,6 +481,11 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     marginTop: 4,
   },
+  exifAttribution: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    marginTop: 2,
+  },
   section: {
     marginTop: theme.space3,
   },
@@ -552,10 +568,6 @@ const styles = StyleSheet.create({
   },
   sheetItemDestructive: {
     color: theme.colorEventSymptom,
-  },
-  sheetDivider: {
-    height: 1,
-    backgroundColor: theme.colorBorder,
   },
   photoViewer: {
     flex: 1,
