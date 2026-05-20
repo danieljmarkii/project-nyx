@@ -255,6 +255,11 @@ export async function getEventAttachment(eventId: string): Promise<{
   );
 }
 
+export async function deleteEventAttachmentLocal(attachmentId: string): Promise<void> {
+  const db = getDb();
+  await db.runAsync('DELETE FROM event_attachments WHERE id = ?', [attachmentId]);
+}
+
 export interface PickerFood {
   id: string;
   brand: string;

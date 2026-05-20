@@ -14,6 +14,7 @@ import {
   getEventAttachment,
   getMealForEvent,
   softDeleteEvent,
+  deleteEventAttachmentLocal,
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl } from '../../lib/storage';
@@ -150,6 +151,39 @@ export default function EventDetailScreen() {
       { text: 'Choose from library', onPress: () => launchPicker('library') },
       { text: 'Cancel', style: 'cancel' },
     ]);
+  }
+
+  async function handleRemovePhoto() {
+    if (!attachment) return;
+    Alert.alert(
+      'Remove photo?',
+      'The photo will be detached from this event.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            const att = attachment;
+            // Optimistic UI: clear immediately, restore on failure
+            setAttachment(null);
+            setRemoteUrl(null);
+            setPhotoViewerVisible(false);
+            try {
+              await deleteEventAttachmentLocal(att.id);
+              // Best-effort remote cleanup; ignore errors (next sync of this
+              // device's local state will be authoritative)
+              supabase.storage.from('nyx-event-attachments').remove([att.storage_path]).catch(() => {});
+              supabase.from('event_attachments').delete().eq('id', att.id).then(() => {}, () => {});
+            } catch (e) {
+              console.error('[event-detail] remove photo failed:', e);
+              setAttachment(att);
+              Alert.alert('Could not remove', 'Try again.');
+            }
+          },
+        },
+      ],
+    );
   }
 
   async function launchPicker(source: 'camera' | 'library') {
@@ -337,6 +371,22 @@ export default function EventDetailScreen() {
             >
               <Text style={styles.photoViewerCloseText}>✕  Close</Text>
             </TouchableOpacity>
+            <View style={styles.photoViewerRightActions}>
+              <TouchableOpacity
+                style={styles.photoViewerSecondary}
+                onPress={() => { setPhotoViewerVisible(false); handleAddPhoto(); }}
+                hitSlop={12}
+              >
+                <Text style={styles.photoViewerSecondaryText}>Replace</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.photoViewerDestructive}
+                onPress={handleRemovePhoto}
+                hitSlop={12}
+              >
+                <Text style={styles.photoViewerDestructiveText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -533,6 +583,31 @@ const styles = StyleSheet.create({
   photoViewerCloseText: {
     fontSize: 16,
     color: '#fff',
+    fontWeight: theme.fontWeightMedium,
+  },
+  photoViewerRightActions: {
+    flexDirection: 'row',
+    gap: theme.space1,
+  },
+  photoViewerSecondary: {
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: theme.radiusSmall,
+  },
+  photoViewerSecondaryText: {
+    fontSize: 15,
+    color: '#fff',
+    fontWeight: theme.fontWeightMedium,
+  },
+  photoViewerDestructive: {
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+    borderRadius: theme.radiusSmall,
+  },
+  photoViewerDestructiveText: {
+    fontSize: 15,
+    color: '#ff6b6b',
     fontWeight: theme.fontWeightMedium,
   },
 });
