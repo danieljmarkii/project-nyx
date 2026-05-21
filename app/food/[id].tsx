@@ -67,6 +67,7 @@ export default function FoodDetailScreen() {
 
   const [row, setRow] = useState<FoodRow | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [removingStale, setRemovingStale] = useState(false);
 
   // Editable fields — seeded from row on first load and on realtime updates.
   // Snapshot of the values we loaded from the server (so we can diff on save
@@ -473,6 +474,38 @@ export default function FoodDetailScreen() {
     }
   }
 
+  // Local cache can hold rows that no longer exist on Supabase — a failed
+  // upsert during capture, a deleted-elsewhere food whose refreshFoodCache
+  // hasn't run yet, or testing artifacts. The picker reads from cache so
+  // these orphans linger as un-tappable tiles. This is the only way out of
+  // that state without nuking the whole local DB.
+  async function handleRemoveStale() {
+    if (!id) return;
+    Alert.alert(
+      'Remove from library?',
+      'This food can\'t be loaded from the server. Removing it clears it from your library on this device. Any meals you logged with it stay in History.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            setRemovingStale(true);
+            try {
+              const db = getDb();
+              await db.runAsync('DELETE FROM food_items_cache WHERE id = ?', [id]);
+              router.back();
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              Alert.alert('Could not remove', msg);
+              setRemovingStale(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   // ── Render ──
   if (loadError) {
     return (
@@ -480,6 +513,17 @@ export default function FoodDetailScreen() {
         <Header title="Food" onClose={() => router.back()} />
         <View style={styles.centerMessage}>
           <Text style={styles.errorText}>{loadError}</Text>
+          <TouchableOpacity
+            style={styles.staleRemoveBtn}
+            onPress={handleRemoveStale}
+            disabled={removingStale}
+            hitSlop={8}
+            activeOpacity={0.7}
+          >
+            {removingStale
+              ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
+              : <Text style={styles.staleRemoveText}>Remove from library</Text>}
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -812,6 +856,18 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   deleteActionText: {
+    fontSize: theme.textMD,
+    color: theme.colorEventSymptom,
+  },
+  staleRemoveBtn: {
+    marginTop: theme.space2,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  staleRemoveText: {
     fontSize: theme.textMD,
     color: theme.colorEventSymptom,
   },
