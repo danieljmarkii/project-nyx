@@ -33,10 +33,11 @@ export async function syncPendingMeals(): Promise<void> {
     const placeholders = foodIds.map(() => '?').join(',');
     const localFoods = await db.getAllAsync<{
       id: string; brand: string; product_name: string; format: string;
+      food_type: string | null;
       primary_protein: string | null; is_novel_protein: number;
       is_grain_free: number; is_prescription: number;
     }>(
-      `SELECT id, brand, product_name, format, primary_protein,
+      `SELECT id, brand, product_name, format, food_type, primary_protein,
               is_novel_protein, is_grain_free, is_prescription
        FROM food_items_cache WHERE id IN (${placeholders})`,
       foodIds
@@ -48,6 +49,7 @@ export async function syncPendingMeals(): Promise<void> {
           brand: f.brand,
           product_name: f.product_name,
           format: f.format,
+          food_type: f.food_type,
           primary_protein: f.primary_protein,
           is_novel_protein: Boolean(f.is_novel_protein),
           is_grain_free: Boolean(f.is_grain_free),
@@ -218,7 +220,7 @@ export async function refreshFoodCache(): Promise<void> {
 
   const { data, error } = await supabase
     .from('food_items')
-    .select('id, brand, product_name, format, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths');
+    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths');
 
   if (error || !data) return;
 
@@ -229,9 +231,9 @@ export async function refreshFoodCache(): Promise<void> {
       : null;
     await db.runAsync(
       `INSERT OR REPLACE INTO food_items_cache
-        (id, brand, product_name, format, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [item.id, item.brand, item.product_name, item.format, item.primary_protein ?? null,
+        (id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [item.id, item.brand, item.product_name, item.format, item.food_type ?? null, item.primary_protein ?? null,
        item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, now]
     );
   }

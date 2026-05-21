@@ -111,6 +111,15 @@ export async function initDb(): Promise<void> {
     // Column already exists — safe to ignore
   }
 
+  // food_type — usage classification (meal | treat | other) distinct from
+  // physical `format`. B-011. Nullable; legacy rows stay NULL until the user
+  // classifies them on the food detail screen. Mirrors migration 010.
+  try {
+    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN food_type TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   // occurred_at_source records the provenance of an event's timestamp:
   // 'manual' (user chose), 'exif' (from photo metadata), 'now' (auto-set when
   // we couldn't read EXIF). Surfaced in the UI as a subtle attribution. Mirrors
@@ -265,6 +274,7 @@ export interface PickerFood {
   brand: string;
   product_name: string;
   format: string;
+  food_type: string | null;
   photo_path: string | null;
 }
 
@@ -277,7 +287,7 @@ export async function getRecentFoods(
   const db = getDb();
   const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
   return db.getAllAsync<PickerFood>(
-    `SELECT f.id, f.brand, f.product_name, f.format, f.photo_path
+    `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path
      FROM meals m
      JOIN events e ON e.id = m.event_id
      JOIN food_items_cache f ON f.id = m.food_item_id
@@ -295,7 +305,7 @@ export async function getRecentFoods(
 export async function getLibraryFoods(): Promise<PickerFood[]> {
   const db = getDb();
   return db.getAllAsync<PickerFood>(
-    `SELECT id, brand, product_name, format, photo_path
+    `SELECT id, brand, product_name, format, food_type, photo_path
      FROM food_items_cache
      GROUP BY LOWER(brand), LOWER(product_name)
      ORDER BY brand COLLATE NOCASE ASC, product_name COLLATE NOCASE ASC`,

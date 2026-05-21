@@ -34,6 +34,15 @@ const FOOD_FORMATS = [
   { value: 'other', label: 'Other' },
 ];
 
+// B-011 usage classification. NULL preserved for legacy rows the user hasn't
+// classified yet — this screen is the only manual-backfill entry point.
+type FoodType = 'meal' | 'treat' | 'other';
+const FOOD_TYPES: { value: FoodType; label: string }[] = [
+  { value: 'meal',  label: 'Meal' },
+  { value: 'treat', label: 'Treat' },
+  { value: 'other', label: 'Other' },
+];
+
 type ExtractionStatus = 'pending' | 'completed' | 'failed' | 'manual';
 
 interface FoodRow {
@@ -41,6 +50,7 @@ interface FoodRow {
   brand: string;
   product_name: string;
   format: string;
+  food_type: FoodType | null;
   ingredients_notes: string | null;
   upc_barcode: string | null;
   photo_paths: string[];
@@ -50,7 +60,7 @@ interface FoodRow {
   source: string;
 }
 
-const SELECT_COLS = 'id, brand, product_name, format, ingredients_notes, upc_barcode, photo_paths, primary_protein, ai_extraction_status, ai_extraction_error, source';
+const SELECT_COLS = 'id, brand, product_name, format, food_type, ingredients_notes, upc_barcode, photo_paths, primary_protein, ai_extraction_status, ai_extraction_error, source';
 
 export default function FoodDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -64,9 +74,10 @@ export default function FoodDetailScreen() {
   const [brand, setBrand] = useState('');
   const [productName, setProductName] = useState('');
   const [format, setFormat] = useState('dry_kibble');
+  const [foodType, setFoodType] = useState<FoodType | null>(null);
   const [ingredients, setIngredients] = useState('');
   const [barcode, setBarcode] = useState('');
-  const baseline = useRef<Pick<FoodRow, 'brand' | 'product_name' | 'format' | 'ingredients_notes' | 'upc_barcode'> | null>(null);
+  const baseline = useRef<Pick<FoodRow, 'brand' | 'product_name' | 'format' | 'food_type' | 'ingredients_notes' | 'upc_barcode'> | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -127,6 +138,7 @@ export default function FoodDetailScreen() {
       brand: next.brand,
       product_name: next.product_name,
       format: next.format,
+      food_type: next.food_type,
       ingredients_notes: next.ingredients_notes,
       upc_barcode: next.upc_barcode,
     };
@@ -135,6 +147,7 @@ export default function FoodDetailScreen() {
     setBrand((cur) => (!prev || cur === prev.brand) ? next.brand : cur);
     setProductName((cur) => (!prev || cur === prev.product_name) ? next.product_name : cur);
     setFormat((cur) => (!prev || cur === prev.format) ? next.format : cur);
+    setFoodType((cur) => (!prev || cur === prev.food_type) ? next.food_type : cur);
     setIngredients((cur) => (!prev || cur === (prev.ingredients_notes ?? '')) ? nextIngredients : cur);
     setBarcode((cur) => (!prev || cur === (prev.upc_barcode ?? '')) ? nextBarcode : cur);
   }
@@ -154,6 +167,7 @@ export default function FoodDetailScreen() {
       brand.trim() !== base.brand ||
       productName.trim() !== base.product_name ||
       format !== base.format ||
+      foodType !== base.food_type ||
       trimmedIngredients !== base.ingredients_notes ||
       trimmedBarcode !== base.upc_barcode;
 
@@ -173,6 +187,7 @@ export default function FoodDetailScreen() {
         brand: brand.trim(),
         product_name: productName.trim(),
         format,
+        food_type: foodType,
         ingredients_notes: trimmedIngredients,
         upc_barcode: trimmedBarcode,
         source: nextSource,
@@ -191,9 +206,9 @@ export default function FoodDetailScreen() {
       const db = getDb();
       await db.runAsync(
         `UPDATE food_items_cache
-           SET brand = ?, product_name = ?, format = ?
+           SET brand = ?, product_name = ?, format = ?, food_type = ?
          WHERE id = ?`,
-        [brand.trim(), productName.trim(), format, row.id],
+        [brand.trim(), productName.trim(), format, foodType, row.id],
       );
     } catch (err) {
       console.warn('[food-detail] cache update failed:', err);
@@ -558,6 +573,19 @@ export default function FoodDetailScreen() {
               ))}
             </ScrollView>
 
+            <SectionLabel label="Type" />
+            <View style={styles.foodTypeRow}>
+              {FOOD_TYPES.map((t) => (
+                <FilterChip
+                  key={t.value}
+                  label={t.label}
+                  active={foodType === t.value}
+                  onPress={() => setFoodType(t.value)}
+                  variant="filled"
+                />
+              ))}
+            </View>
+
             <SectionLabel label="Ingredients" />
             {isPending ? (
               <View style={styles.pendingBox}>
@@ -711,6 +739,11 @@ const styles = StyleSheet.create({
     paddingTop: theme.space2,
   },
   formatRow: {
+    marginBottom: theme.space1,
+  },
+  foodTypeRow: {
+    flexDirection: 'row',
+    gap: theme.space1,
     marginBottom: theme.space1,
   },
   pendingBox: {
