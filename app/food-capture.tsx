@@ -57,6 +57,17 @@ const FOOD_FORMATS = [
   { value: 'other', label: 'Other' },
 ];
 
+// Usage classification (B-011). Distinct from `format` (physical form).
+// Defaults to 'meal' on the confirm screen — most adds are meals, treats are
+// the explicit user action. NULL is never set from this screen; it's reserved
+// for legacy rows the user hasn't classified yet on the food detail screen.
+type FoodType = 'meal' | 'treat' | 'other';
+const FOOD_TYPES: { value: FoodType; label: string }[] = [
+  { value: 'meal',  label: 'Meal' },
+  { value: 'treat', label: 'Treat' },
+  { value: 'other', label: 'Other' },
+];
+
 // Map AI 'format' enum to the cache's format key (Edge Function emits the
 // canonical pet-nutrition enum; cache uses the picker-friendly variant).
 function mapAiFormat(ai: string | null | undefined): string {
@@ -101,6 +112,8 @@ export default function FoodCaptureScreen() {
   const [extractedBrand, setExtractedBrand] = useState<string>('');
   const [extractedProduct, setExtractedProduct] = useState<string>('');
   const [extractedFormat, setExtractedFormat] = useState<string>('dry_kibble');
+  // Default to 'meal' — the common case. User taps a chip to override.
+  const [foodType, setFoodType] = useState<FoodType>('meal');
   const [extractionFailed, setExtractionFailed] = useState(false);
 
   // Meal-time override on the confirm screen. Initialised lazily on entry to
@@ -283,6 +296,8 @@ export default function FoodCaptureScreen() {
         brand: 'Extracting…',
         product_name: 'Extracting…',
         format: 'other',
+        // food_type is intentionally NOT set here — the user picks it on the
+        // confirm screen. commitFood writes it through to food_items on save.
         created_by_user_id: user?.id ?? null,
         photo_paths: storagePaths,
         ai_extraction_status: 'pending',
@@ -331,27 +346,27 @@ export default function FoodCaptureScreen() {
   // Write the food into the local cache and (if from the meal-log flow) log
   // the meal immediately. EXIF from the front-of-package photo seeds the
   // meal's occurred_at — falls back to new Date() per the existing pattern.
-  async function commitFood(brand: string, product: string, format: string) {
+  async function commitFood(brand: string, product: string, format: string, type: FoodType) {
     if (!brand.trim() || !product.trim()) return;
     if (submitting.current) return; // guard against double-tap
     submitting.current = true;
     try {
-      await commitFoodInner(brand, product, format);
+      await commitFoodInner(brand, product, format, type);
     } catch (err) {
       console.error('[food-capture] commit failed:', err);
       submitting.current = false; // allow retry
     }
   }
 
-  async function commitFoodInner(brand: string, product: string, format: string) {
+  async function commitFoodInner(brand: string, product: string, format: string, type: FoodType) {
     const db = getDb();
     const now = new Date().toISOString();
     const frontStoragePath = frontPhoto?.storagePath ?? null;
     await db.runAsync(
       `INSERT OR REPLACE INTO food_items_cache
-         (id, brand, product_name, format, photo_path, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [foodId, brand.trim(), product.trim(), format, frontStoragePath, now],
+         (id, brand, product_name, format, food_type, photo_path, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [foodId, brand.trim(), product.trim(), format, type, frontStoragePath, now],
     );
 
     // If extraction didn't run (manual path), the row may not exist remotely
@@ -363,6 +378,7 @@ export default function FoodCaptureScreen() {
       brand: brand.trim(),
       product_name: product.trim(),
       format,
+      food_type: type,
       created_by_user_id: user?.id ?? null,
       photo_paths: frontPhoto ? [frontPhoto.storagePath, ingredientsPhoto?.storagePath, barcodePhoto?.storagePath].filter(Boolean) : [],
       ai_extraction_status: frontPhoto ? (extractionFailed ? 'failed' : 'completed') : 'manual',
@@ -543,6 +559,18 @@ export default function FoodCaptureScreen() {
             </View>
           )}
           <Text style={styles.confirmCaption}>Is this right?</Text>
+          <SectionLabel label="Type" />
+          <View style={styles.foodTypeRow}>
+            {FOOD_TYPES.map((t) => (
+              <FilterChip
+                key={t.value}
+                label={t.label}
+                active={foodType === t.value}
+                onPress={() => setFoodType(t.value)}
+                variant="filled"
+              />
+            ))}
+          </View>
           <TouchableOpacity
             style={styles.mealTimeRow}
             onPress={() => setShowMealTimePicker((v) => !v)}
@@ -579,7 +607,7 @@ export default function FoodCaptureScreen() {
           )}
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => commitFood(extractedBrand, extractedProduct, extractedFormat)}
+            onPress={() => commitFood(extractedBrand, extractedProduct, extractedFormat, foodType)}
             activeOpacity={0.85}
           >
             <Text style={styles.primaryBtnText}>Looks right</Text>
@@ -648,9 +676,21 @@ export default function FoodCaptureScreen() {
                 </View>
               ))}
             </ScrollView>
+            <SectionLabel label="Type" />
+            <View style={styles.foodTypeRow}>
+              {FOOD_TYPES.map((t) => (
+                <FilterChip
+                  key={t.value}
+                  label={t.label}
+                  active={foodType === t.value}
+                  onPress={() => setFoodType(t.value)}
+                  variant="filled"
+                />
+              ))}
+            </View>
             <TouchableOpacity
               style={[styles.primaryBtn, !canSave && styles.primaryBtnDisabled]}
-              onPress={() => commitFood(extractedBrand, extractedProduct, extractedFormat)}
+              onPress={() => commitFood(extractedBrand, extractedProduct, extractedFormat, foodType)}
               disabled={!canSave}
               activeOpacity={0.85}
             >
@@ -964,6 +1004,11 @@ const styles = StyleSheet.create({
     height: 48,
   },
   formatRow: {
+    marginBottom: theme.space2,
+  },
+  foodTypeRow: {
+    flexDirection: 'row',
+    gap: theme.space1,
     marginBottom: theme.space2,
   },
   failedBanner: {

@@ -58,15 +58,32 @@ export function FoodPicker({ petId, onPickFood, onAddNew, onOpenDetail }: Props)
     );
   }, [library, search]);
 
-  // Render library in fixed-size pairs so each row is a 2-col grid with
+  // Group the (filtered) library by food_type. B-011: treats and meals are
+  // distinct mental models — surfacing them as separate sections lets the
+  // owner scan "treats" or "meals" without parsing every tile. Rows the user
+  // hasn't classified yet (NULL) plus the explicit 'other' bucket collapse
+  // into a third section so nothing is hidden from the picker.
+  const groupedLibrary = useMemo(() => {
+    const meals: PickerFood[] = [];
+    const treats: PickerFood[] = [];
+    const other: PickerFood[] = [];
+    for (const f of filteredLibrary) {
+      if (f.food_type === 'meal') meals.push(f);
+      else if (f.food_type === 'treat') treats.push(f);
+      else other.push(f);
+    }
+    return { meals, treats, other };
+  }, [filteredLibrary]);
+
+  // Render any group in fixed-size pairs so each row is a 2-col grid with
   // matching tile heights (driven by the tallest tile in the row).
-  const libraryRows = useMemo(() => {
+  function toRows(foods: PickerFood[]): PickerFood[][] {
     const rows: PickerFood[][] = [];
-    for (let i = 0; i < filteredLibrary.length; i += 2) {
-      rows.push(filteredLibrary.slice(i, i + 2));
+    for (let i = 0; i < foods.length; i += 2) {
+      rows.push(foods.slice(i, i + 2));
     }
     return rows;
-  }, [filteredLibrary]);
+  }
 
   return (
     <ScrollView
@@ -132,26 +149,57 @@ export function FoodPicker({ petId, onPickFood, onAddNew, onOpenDetail }: Props)
               : 'No matches.'}
           </Text>
         ) : (
-          <View style={styles.grid}>
-            {libraryRows.map((row, idx) => (
-              <View key={idx} style={styles.gridRow}>
-                {row.map((f) => (
-                  <FoodTile
-                    key={f.id}
-                    brand={f.brand}
-                    productName={f.product_name}
-                    format={f.format}
-                    onPress={() => onPickFood(f)}
-                    onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
-                  />
-                ))}
-                {row.length === 1 && <View style={styles.gridSpacer} />}
-              </View>
-            ))}
+          <View style={styles.groups}>
+            <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
+              onPickFood={onPickFood} onOpenDetail={onOpenDetail} toRows={toRows} />
+            <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
+              onPickFood={onPickFood} onOpenDetail={onOpenDetail} toRows={toRows} />
+            <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
+              onPickFood={onPickFood} onOpenDetail={onOpenDetail} toRows={toRows}
+              hint="Long-press a tile to set Meal or Treat." />
           </View>
         )}
       </View>
     </ScrollView>
+  );
+}
+
+// Renders a single grouped section of the library. Hidden when the group is
+// empty so the picker doesn't show a "Treats" header with nothing under it.
+function LibraryGroup({
+  label, foods, onPickFood, onOpenDetail, toRows, hint,
+}: {
+  label: string;
+  foods: PickerFood[];
+  onPickFood: (food: PickerFood) => void;
+  onOpenDetail?: (food: PickerFood) => void;
+  toRows: (foods: PickerFood[]) => PickerFood[][];
+  hint?: string;
+}) {
+  if (foods.length === 0) return null;
+  const rows = toRows(foods);
+  return (
+    <View style={styles.group}>
+      <Text style={styles.groupLabel}>{label}</Text>
+      {hint && <Text style={styles.groupHint}>{hint}</Text>}
+      <View style={styles.grid}>
+        {rows.map((row, idx) => (
+          <View key={idx} style={styles.gridRow}>
+            {row.map((f) => (
+              <FoodTile
+                key={f.id}
+                brand={f.brand}
+                productName={f.product_name}
+                format={f.format}
+                onPress={() => onPickFood(f)}
+                onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
+              />
+            ))}
+            {row.length === 1 && <View style={styles.gridSpacer} />}
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -186,6 +234,24 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     paddingVertical: theme.space2,
+  },
+  groups: {
+    gap: theme.space2,
+  },
+  group: {
+    gap: theme.space1,
+  },
+  groupLabel: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextSecondary,
+    letterSpacing: theme.trackingWide,
+    textTransform: 'uppercase',
+  },
+  groupHint: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginBottom: theme.space1,
   },
   grid: {
     gap: theme.space2,
