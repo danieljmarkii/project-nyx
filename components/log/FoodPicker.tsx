@@ -156,7 +156,7 @@ export function FoodPicker({ petId, onPickFood, onAddNew, onOpenDetail }: Props)
               onPickFood={onPickFood} onOpenDetail={onOpenDetail} toRows={toRows} />
             <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
               onPickFood={onPickFood} onOpenDetail={onOpenDetail} toRows={toRows}
-              hint="Long-press a tile to set Meal or Treat." />
+              hint="Long-press a tile to classify it." />
           </View>
         )}
       </View>
