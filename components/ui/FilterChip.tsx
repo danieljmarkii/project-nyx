@@ -3,7 +3,8 @@ import { theme } from '../../constants/theme';
 
 type Variant =
   | 'default'   // active: teal outline + tinted background (date presets)
-  | 'filled';   // active: dark filled (type filters)
+  | 'filled'    // active: dark filled (type filters)
+  | 'onDark';   // active: accent fill on a dark parent surface (intake chips in Toast)
 
 interface Props {
   label: string;
@@ -13,54 +14,94 @@ interface Props {
 }
 
 export function FilterChip({ label, active, onPress, variant = 'default' }: Props) {
-  const isFilled = variant === 'filled';
+  const set = STYLE_BY_VARIANT[variant];
   return (
     <TouchableOpacity
-      style={[
-        styles.chip,
-        active && (isFilled ? styles.chipActiveFilled : styles.chipActiveOutline),
-      ]}
+      style={[set.base, active && set.activeContainer]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <Text
-        style={[
-          styles.label,
-          active && (isFilled ? styles.labelActiveFilled : styles.labelActiveOutline),
-        ]}
-      >
-        {label}
-      </Text>
+      <Text style={[set.label, active && set.activeLabel]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radiusFull,
-    borderWidth: 1,
+const baseChip = {
+  paddingHorizontal: 12,
+  paddingVertical: 6,
+  borderRadius: theme.radiusFull,
+  borderWidth: 1,
+} as const;
+
+const baseLabel = {
+  fontSize: theme.textSM,
+  fontWeight: theme.weightMedium,
+} as const;
+
+const defaultVariant = StyleSheet.create({
+  base: {
+    ...baseChip,
     borderColor: theme.colorBorder,
     backgroundColor: theme.colorSurface,
   },
-  chipActiveOutline: {
+  activeContainer: {
     borderColor: theme.colorAccent,
     backgroundColor: theme.colorAccentLight,
   },
-  chipActiveFilled: {
+  label: {
+    ...baseLabel,
+    color: theme.colorTextSecondary,
+  },
+  activeLabel: {
+    color: theme.colorAccent,
+  },
+});
+
+const filledVariant = StyleSheet.create({
+  base: {
+    ...baseChip,
+    borderColor: theme.colorBorder,
+    backgroundColor: theme.colorSurface,
+  },
+  activeContainer: {
     backgroundColor: theme.colorNeutralDark,
     borderColor: theme.colorNeutralDark,
   },
   label: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
+    ...baseLabel,
     color: theme.colorTextSecondary,
   },
-  labelActiveOutline: {
-    color: theme.colorAccent,
-  },
-  labelActiveFilled: {
+  activeLabel: {
     color: '#fff',
   },
 });
+
+// Use inside a dark-surface container (e.g. the post-log Toast card).
+// Inactive: translucent white border + soft white label, transparent fill so
+// the parent card colour shows through. Active: accent fill, white label —
+// reads cleanly against the dark card without competing with the card's
+// own affordances.
+const onDarkVariant = StyleSheet.create({
+  base: {
+    ...baseChip,
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'transparent',
+  },
+  activeContainer: {
+    backgroundColor: theme.colorAccent,
+    borderColor: theme.colorAccent,
+  },
+  label: {
+    ...baseLabel,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  activeLabel: {
+    color: '#fff',
+  },
+});
+
+const STYLE_BY_VARIANT = {
+  default: defaultVariant,
+  filled: filledVariant,
+  onDark: onDarkVariant,
+};

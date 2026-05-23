@@ -192,10 +192,23 @@ export default function LogModal() {
     });
     // Defer the toast past the 1s completion checkmark + modal dismiss so
     // it appears at the root layer (not occluded by the still-presented
-    // modal on iOS) where the user can actually see and act on it.
+    // modal on iOS) where the user can actually see and act on it. The
+    // WSAVA intake chip row is rendered in the toast only when the just-
+    // logged food has food_type='meal' (B-014). NOTE: every meal-entry
+    // path must route through this toast — if a non-picker meal flow is
+    // ever added (e.g. a manual quick-add), it must fire showToast too,
+    // or the intake capture surface vanishes for that path.
     if (result) {
+      const foodType = food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
+        ? food.food_type
+        : null;
       showToast(
-        { eventId: result.eventId, occurredAt: result.occurredAt },
+        {
+          eventId: result.eventId,
+          occurredAt: result.occurredAt,
+          foodType,
+          intakeRating: null,
+        },
         { delayMs: 1100 },
       );
     }

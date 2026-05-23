@@ -157,6 +157,8 @@ export interface TimelineRow {
   quantity: string | null;
   food_brand: string | null;
   food_product_name: string | null;
+  food_type: string | null;
+  intake_rating: string | null;
 }
 
 export async function getTimeline(
@@ -182,8 +184,8 @@ export async function getTimeline(
   return db.getAllAsync<TimelineRow>(
     `SELECT e.id, e.pet_id, e.event_type, e.occurred_at, e.severity, e.notes,
             e.source, e.deleted_at, e.created_at, e.updated_at,
-            m.food_item_id, m.quantity,
-            f.brand AS food_brand, f.product_name AS food_product_name
+            m.food_item_id, m.quantity, m.intake_rating,
+            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
@@ -200,8 +202,8 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
   const row = await db.getFirstAsync<TimelineRow>(
     `SELECT e.id, e.pet_id, e.event_type, e.occurred_at, e.severity, e.notes,
             e.source, e.deleted_at, e.created_at, e.updated_at,
-            m.food_item_id, m.quantity,
-            f.brand AS food_brand, f.product_name AS food_product_name
+            m.food_item_id, m.quantity, m.intake_rating,
+            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
@@ -252,6 +254,20 @@ export async function updateMealFood(eventId: string, foodItemId: string): Promi
   await db.runAsync(
     'UPDATE meals SET food_item_id = ?, synced = 0 WHERE event_id = ?',
     [foodItemId, eventId],
+  );
+}
+
+// WSAVA 5-point intake rating. Pass `null` to clear. Marks the meal
+// unsynced so the next sync flush propagates the change to Supabase.
+// B-014. See: docs/research/2026-05-feeding-windows-and-partial-eating.md
+export async function updateMealIntake(
+  eventId: string,
+  rating: 'refused' | 'picked' | 'some' | 'most' | 'all' | null,
+): Promise<void> {
+  const db = getDb();
+  await db.runAsync(
+    'UPDATE meals SET intake_rating = ?, synced = 0 WHERE event_id = ?',
+    [rating, eventId],
   );
 }
 
@@ -334,14 +350,19 @@ export async function getMealForEvent(eventId: string): Promise<{
   food_item_id: string | null;
   food_brand: string | null;
   food_product_name: string | null;
+  food_type: string | null;
+  intake_rating: string | null;
 } | null> {
   const db = getDb();
   return db.getFirstAsync<{
     food_item_id: string | null;
     food_brand: string | null;
     food_product_name: string | null;
+    food_type: string | null;
+    intake_rating: string | null;
   }>(
-    `SELECT m.food_item_id, f.brand AS food_brand, f.product_name AS food_product_name
+    `SELECT m.food_item_id, m.intake_rating,
+            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
      FROM meals m
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE m.event_id = ?`,

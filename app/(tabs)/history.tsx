@@ -55,7 +55,9 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     food_item_id: row.food_item_id,
     food_brand: row.food_brand,
     food_product_name: row.food_product_name,
+    food_type: row.food_type,
     quantity: row.quantity,
+    intake_rating: row.intake_rating as NyxEvent['intake_rating'],
   };
 }
 

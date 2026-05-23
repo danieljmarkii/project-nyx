@@ -17,6 +17,7 @@ interface RecentFood {
   id: string;
   brand: string;
   product_name: string;
+  food_type: string | null;
 }
 
 export function FAB() {
@@ -53,7 +54,7 @@ export function FAB() {
     // Join meals so we only surface foods this pet has actually eaten,
     // not every food in the global cache.
     const foods = db.getAllSync<RecentFood>(
-      `SELECT DISTINCT f.id, f.brand, f.product_name
+      `SELECT DISTINCT f.id, f.brand, f.product_name, f.food_type
        FROM food_items_cache f
        INNER JOIN meals m ON m.food_item_id = f.id AND m.pet_id = ?
        ORDER BY f.last_used_at DESC
@@ -102,8 +103,15 @@ export function FAB() {
       });
       closeMenu();
       // Post-log toast offers a one-tap path back to the time picker for
-      // owners backfilling a meal given before they reached their phone.
-      showToast({ eventId, occurredAt: now });
+      // owners backfilling a meal given before they reached their phone,
+      // plus the WSAVA intake chip row when the food is classified as a
+      // meal (B-014). Every meal-entry path must route through this toast
+      // — if a non-picker meal flow is added later, mirror this call.
+      const foodType =
+        food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
+          ? food.food_type
+          : null;
+      showToast({ eventId, occurredAt: now, foodType, intakeRating: null });
     } finally {
       setLogging(null);
     }

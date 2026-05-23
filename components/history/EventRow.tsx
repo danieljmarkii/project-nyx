@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { NyxEvent } from '../../store/eventStore';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { theme } from '../../constants/theme';
+import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 
 interface Props {
   event: NyxEvent;
@@ -51,7 +52,12 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
         </View>
 
         {foodLabel ? (
-          <Text style={styles.foodName} numberOfLines={1}>{foodLabel}</Text>
+          <View style={styles.foodLine}>
+            <Text style={styles.foodName} numberOfLines={1}>{foodLabel}</Text>
+            {/* Read-only intake badge — IntakeChipRow returns null when value
+                is null, so unrated meals stay visually quiet. */}
+            <IntakeChipRow value={(event.intake_rating ?? null) as IntakeRating | null} />
+          </View>
         ) : null}
 
         {isExpanded ? (
@@ -124,9 +130,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: theme.colorTextSecondary,
   },
+  foodLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    flexWrap: 'wrap',
+  },
   foodName: {
     fontSize: 13,
     color: theme.colorTextSecondary,
+    flexShrink: 1,
   },
   expandedContent: {
     marginTop: theme.space1,
