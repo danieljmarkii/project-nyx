@@ -125,7 +125,11 @@ export function Toast() {
         statusBarTranslucent
       >
         <Pressable style={styles.backdrop} onPress={cancelPicker} />
-        <View style={styles.sheet}>
+        {/* Empty-onPress Pressable around the sheet so taps on the title
+            or whitespace are captured here and don't fall through to the
+            absolute-positioned backdrop, silently dismissing the picker
+            mid-edit. */}
+        <Pressable style={styles.sheet} onPress={() => {}}>
           <Text style={styles.sheetTitle}>When did this happen?</Text>
           {draft && (
             <DateTimePicker
@@ -152,7 +156,7 @@ export function Toast() {
               <Text style={[styles.sheetSave, saving && styles.sheetSaveDisabled]}>Save</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </Pressable>
       </Modal>
     </>
   );
