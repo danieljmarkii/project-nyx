@@ -15,17 +15,13 @@ import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
-import { uuid, formatExifAttribution } from '../lib/utils';
+import { uuid, formatExifAttribution, formatTime } from '../lib/utils';
 
 interface CachedFood {
   id: string;
   brand: string;
   product_name: string;
   format: string;
-}
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 export default function EditEventModal() {

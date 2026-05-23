@@ -14,11 +14,12 @@ import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
+import { useToastStore } from '../store/toastStore';
 import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
-import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
+import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
 
@@ -40,15 +41,12 @@ const SEVERITY_CONFIG = [
   { value: 5, label: 'Severe' },
 ];
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
 export default function LogModal() {
   const { activePet } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
+  const showToast = useToastStore((s) => s.show);
   const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
 
   const [step, setStep] = useState<Step>('type');
@@ -172,28 +170,42 @@ export default function LogModal() {
   }
 
   // One-tap log path from the new picker — bypasses state so it works
-  // even before `selectedFoodId` has propagated through React.
+  // even before `selectedFoodId` has propagated through React. Provenance
+  // is forced to 'now' because the user never saw the time picker on this
+  // path; the post-log toast offers the "Change time" escape hatch.
   async function handlePickFood(food: PickerFood) {
     setSelectedFoodId(food.id);
     setSelectedFoodBrand(food.brand);
     setSelectedFoodProduct(food.product_name);
-    await handleConfirm({
+    const result = await handleConfirm({
       foodId: food.id,
       foodBrand: food.brand,
       foodProduct: food.product_name,
+      occurredAtSource: 'now',
     });
+    // Defer the toast past the 1s completion checkmark + modal dismiss so
+    // it appears at the root layer (not occluded by the still-presented
+    // modal on iOS) where the user can actually see and act on it.
+    if (result) {
+      showToast(
+        { eventId: result.eventId, occurredAt: result.occurredAt },
+        { delayMs: 1100 },
+      );
+    }
   }
 
   async function handleConfirm(override?: {
     foodId: string;
     foodBrand: string;
     foodProduct: string;
-  }) {
-    if (!activePet) return;
+    occurredAtSource?: 'manual' | 'exif' | 'now';
+  }): Promise<{ eventId: string; occurredAt: string } | null> {
+    if (!activePet) return null;
     const foodId = override?.foodId ?? selectedFoodId;
     const foodBrand = override?.foodBrand ?? selectedFoodBrand;
     const foodProduct = override?.foodProduct ?? selectedFoodProduct;
-    if (selectedType === 'meal' && !foodId) return;
+    if (selectedType === 'meal' && !foodId) return null;
+    const effectiveSource = override?.occurredAtSource ?? occurredAtSource;
     const db = getDb();
     const eventId = uuid();
     const now = new Date().toISOString();
@@ -202,7 +214,7 @@ export default function LogModal() {
          (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced)
        VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, 0)`,
       [eventId, activePet.id, selectedType!, occurredAt.toISOString(),
-       severity ?? null, notes.trim() || null, occurredAtSource, now, now]
+       severity ?? null, notes.trim() || null, effectiveSource, now, now]
     );
     if (selectedType === 'meal' && foodId) {
       const mealId = uuid();
@@ -258,6 +270,7 @@ export default function LogModal() {
     syncPendingEvents()
       .then(() => syncPendingMeals())
       .catch(console.error);
+    return { eventId, occurredAt: occurredAt.toISOString() };
   }
 
   function handleBack() {

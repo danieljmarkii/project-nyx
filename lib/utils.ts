@@ -31,6 +31,12 @@ export function trustedPastExifIso(exifIso: string | null | undefined): string |
   return exifIso;
 }
 
+// Locale-aware hh:mm formatter shared by every surface that renders an
+// event's clock time (log forms, edit, toast).
+export function formatTime(date: Date): string {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 // Format an ISO timestamp for the EXIF attribution. Always includes the
 // time; appends the date when it's not today, so a library-photo backfill
 // is visible to the user before they confirm.
