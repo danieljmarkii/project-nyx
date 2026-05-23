@@ -659,7 +659,7 @@ const styles = StyleSheet.create({
   },
   photoViewerDestructiveText: {
     fontSize: 15,
-    color: '#ff6b6b',
+    color: theme.colorDangerOnDark,
     fontWeight: theme.fontWeightMedium,
   },
 });

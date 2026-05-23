@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   labelDestructive: {
-    color: '#C0392B',
+    color: theme.colorDanger,
   },
   labelDisabled: {
     color: theme.colorTextTertiary,
