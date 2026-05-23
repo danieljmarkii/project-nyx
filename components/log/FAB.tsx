@@ -86,6 +86,10 @@ export function FAB() {
         [now, food.id],
       );
 
+      const foodType =
+        food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
+          ? food.food_type
+          : null;
       prependEvent({
         id: eventId,
         pet_id: activePet.id,
@@ -100,17 +104,15 @@ export function FAB() {
         food_item_id: food.id,
         food_brand: food.brand,
         food_product_name: food.product_name,
+        food_type: foodType,
       });
       closeMenu();
       // Post-log toast offers a one-tap path back to the time picker for
       // owners backfilling a meal given before they reached their phone,
-      // plus the WSAVA intake chip row when the food is classified as a
-      // meal (B-014). Every meal-entry path must route through this toast
-      // — if a non-picker meal flow is added later, mirror this call.
-      const foodType =
-        food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
-          ? food.food_type
-          : null;
+      // plus the WSAVA intake chip row for food_type 'meal' and 'treat'
+      // (B-014; treats added 2026-05-23). Every meal-entry path must route
+      // through this toast — if a non-picker meal flow is added later,
+      // mirror this call.
       showToast({ eventId, occurredAt: now, foodType, intakeRating: null });
     } finally {
       setLogging(null);

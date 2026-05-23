@@ -29,6 +29,12 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   const config = EVENT_TYPES[event.event_type as EventTypeKey] ?? FALLBACK_CONFIG;
   const isSymptom = config.hasSeverity;
 
+  // Meal events backed by a treat-typed food render as "Treat". Legacy NULL
+  // and 'meal'/'other' food_type keep the "Meal" label.
+  const rowLabel = event.event_type === 'meal' && event.food_type === 'treat'
+    ? 'Treat'
+    : config.label;
+
   // brand · product_name — matches how people refer to food ("Fancy Feast · Chunky Chicken")
   const foodLabel = event.food_brand && event.food_product_name
     ? `${event.food_brand} · ${event.food_product_name}`
@@ -47,7 +53,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
       </View>
       <View style={styles.content}>
         <View style={styles.topLine}>
-          <Text style={styles.label}>{config.label}</Text>
+          <Text style={styles.label}>{rowLabel}</Text>
           <Text style={styles.time}>{formatOccurredAt(event.occurred_at)}</Text>
         </View>
 

@@ -424,6 +424,7 @@ export default function FoodCaptureScreen() {
         food_item_id: foodId,
         food_brand: brand.trim(),
         food_product_name: product.trim(),
+        food_type: type,
         quantity: 'unknown',
       });
       syncPendingEvents().then(() => syncPendingMeals()).catch(console.error);

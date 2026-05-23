@@ -9,8 +9,9 @@ import type { IntakeRating } from '../components/log/IntakeChipRow';
 //      reached their phone (Linear/Gmail "Undo send" pattern). Preserves
 //      Principle 1: tap-to-log stays one tap.
 //   2. WSAVA intake chips — owner-reported intake (refused / picked /
-//      some / most / all) per Dr. Chen. Only rendered when the just-
-//      logged food has food_type='meal' (B-014).
+//      some / most / all) per Dr. Chen. Rendered for food_type 'meal'
+//      and 'treat' (B-014; treats added 2026-05-23 — treat refusal is
+//      itself a clinical signal). Default stays null; never pre-stamped.
 //
 // If a third affordance is ever proposed for this toast, stop and
 // reconsider — the surface is intentionally narrow.
@@ -19,8 +20,8 @@ export interface MealToastPayload {
   // ISO UTC of the logged event's occurred_at.
   occurredAt: string;
   // food_items.food_type of the just-logged food, or null if unclassified.
-  // Drives whether the intake chip row renders. Treats and 'other' do not
-  // get the chip row; the locked v1 gating per B-014.
+  // Drives whether the intake chip row renders — 'meal' and 'treat' get
+  // it (B-014; treats added 2026-05-23). 'other' and null opt out.
   foodType: 'meal' | 'treat' | 'other' | null;
   // In-flight intake rating. Starts null; updated optimistically via
   // patchIntakeRating when the user taps a chip.
