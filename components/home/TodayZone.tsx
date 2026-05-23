@@ -85,6 +85,9 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
   const config = EVENT_TYPES[event.event_type as EventTypeKey] ?? FALLBACK;
   const isSymptom = SYMPTOM_TYPES.has(event.event_type as EventTypeKey);
   const isMeal = event.event_type === 'meal';
+  // Meal events backed by a treat-typed food render as "Treat". Legacy NULL
+  // and 'meal'/'other' food_type keep the "Meal" label.
+  const rowLabel = isMeal && event.food_type === 'treat' ? 'Treat' : config.label;
 
   return (
     <View style={[styles.eventRow, showBorder && styles.eventRowBorder]}>
@@ -97,7 +100,7 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
       </View>
 
       <View style={styles.eventMeta}>
-        <Text style={styles.eventLabel}>{config.label}</Text>
+        <Text style={styles.eventLabel}>{rowLabel}</Text>
         {isMeal && event.food_product_name ? (
           <Text style={styles.eventSub} numberOfLines={1}>
             {event.food_product_name}

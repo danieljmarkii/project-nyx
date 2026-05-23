@@ -15,7 +15,7 @@ export function useEvents() {
 
     const events = await db.getAllAsync<any>(
       `SELECT e.*, m.food_item_id, m.quantity,
-              f.brand AS food_brand, f.product_name AS food_product_name
+              f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
        FROM events e
        LEFT JOIN meals m ON m.event_id = e.id
        LEFT JOIN food_items_cache f ON f.id = m.food_item_id
