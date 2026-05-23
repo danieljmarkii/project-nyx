@@ -16,7 +16,10 @@ export interface NyxEvent {
   food_item_id?: string | null;
   food_brand?: string | null;
   food_product_name?: string | null;
+  food_type?: string | null;
   quantity?: string | null;
+  // WSAVA 5-point owner-reported intake (B-014). NULL = unrated.
+  intake_rating?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null;
 }
 
 interface EventState {

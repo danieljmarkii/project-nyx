@@ -19,6 +19,7 @@ export async function syncPendingMeals(): Promise<void> {
     is_full_portion: number | null;
     notes: string | null;
     created_at: string;
+    intake_rating: string | null;
   }>('SELECT * FROM meals WHERE synced = 0 LIMIT 100');
 
   if (unsyncedMeals.length === 0) return;
@@ -74,6 +75,7 @@ export async function syncPendingMeals(): Promise<void> {
       is_full_portion: m.is_full_portion === null ? null : Boolean(m.is_full_portion),
       notes: m.notes,
       created_at: m.created_at,
+      intake_rating: m.intake_rating,
     })),
     { onConflict: 'id' }
   );

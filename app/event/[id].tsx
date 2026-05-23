@@ -16,13 +16,15 @@ import {
   getMealForEvent,
   softDeleteEvent,
   deleteEventAttachmentLocal,
+  updateMealIntake,
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
-import { syncPendingEvents } from '../../lib/sync';
+import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { useEventStore } from '../../store/eventStore';
 import { uuid, formatExifAttribution } from '../../lib/utils';
+import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 
 const HERO_HEIGHT = 320;
 
@@ -63,6 +65,7 @@ export default function EventDetailScreen() {
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
+  const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [actionsVisible, setActionsVisible] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -71,6 +74,10 @@ export default function EventDetailScreen() {
   const loadAll = useCallback(async () => {
     if (!id) return;
     setLoading(true);
+    // Reset per-event state up-front so navigating from event A → event B
+    // doesn't briefly flash A's food label / rating until B's queries return.
+    setFoodLabel(null);
+    setIntakeRating(null);
     try {
       const row = await getEventById(id);
       setEvent(row);
@@ -88,7 +95,14 @@ export default function EventDetailScreen() {
 
       if (EVENT_TYPES[row.event_type as EventTypeKey]?.hasFood) {
         const meal = await getMealForEvent(id);
-        if (meal) setFoodLabel({ brand: meal.food_brand, product: meal.food_product_name });
+        if (meal) {
+          setFoodLabel({ brand: meal.food_brand, product: meal.food_product_name });
+          const rating = meal.intake_rating;
+          setIntakeRating(
+            rating === 'refused' || rating === 'picked' || rating === 'some'
+              || rating === 'most' || rating === 'all' ? rating : null,
+          );
+        }
       }
 
       getEventSource(id).then(setOccurredAtSource).catch(() => {});
@@ -100,6 +114,21 @@ export default function EventDetailScreen() {
   }, [id]);
 
   useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
+
+  async function handleIntakeChange(next: IntakeRating | null) {
+    if (!event) return;
+    const prev = intakeRating;
+    // Optimistic update — keep the screen responsive while the write happens.
+    setIntakeRating(next);
+    try {
+      await updateMealIntake(event.id, next);
+      syncPendingMeals().catch(console.error);
+    } catch (e) {
+      console.error('[event-detail] failed to update intake rating:', e);
+      setIntakeRating(prev);
+      Alert.alert('Could not save', 'Try again in a moment.');
+    }
+  }
 
   function handleEdit() {
     if (!event) return;
@@ -322,6 +351,17 @@ export default function EventDetailScreen() {
               <Text style={styles.sectionLabel}>FOOD</Text>
               {foodLabel.product ? <Text style={styles.foodProduct}>{foodLabel.product}</Text> : null}
               {foodLabel.brand ? <Text style={styles.foodBrand}>{foodLabel.brand}</Text> : null}
+            </View>
+          ) : null}
+
+          {isMeal ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>INTAKE</Text>
+              <IntakeChipRow
+                value={intakeRating}
+                onChange={handleIntakeChange}
+                label={null}
+              />
             </View>
           ) : null}
 
