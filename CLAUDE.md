@@ -8,14 +8,14 @@
 _Auto-maintained. Update inline at session end (and any time these change mid-session). This block is the canonical answer to "where are we?" — every other section in this file is reference material._
 
 - **Current Phase:** Step 9 — Vet report (paused — B-010 event timestamp uncertainty surfaced as a Step 9 prerequisite; tackle B-010 next, then resume Step 9)
-- **Parallel track:** Food library — Step 7 (EXIF attribution UI)
+- **Parallel track:** Food library / intake — B-014 capture surfaces COMPLETE (all four shipped). Next food-track items are backlog (B-017 food_format/food_type overlap, B-009/B-018 dedup) or downstream intake consumers (diet-trial compliance, AI Signal intake lines, vet-report intake rendering)
 - **Blocking Open Questions:** PDF rendering library for Step 9 (`pdf-lib` vs `puppeteer` vs `react-pdf`); event timestamp uncertainty modelling — witnessed flag vs window fields vs confidence enum (see B-010 + research brief `docs/research/2026-05-event-timestamp-uncertainty.md`)
 - **Open PM Action Items:**
   - [ ] Run one-time EAS setup in Codespace: `npm install -g eas-cli && eas login && eas init && eas update:configure`, then commit + push the `app.json` changes (`extra.eas.projectId`, `updates.url`, `runtimeVersion`)
   - [ ] After first `eas update --branch preview`, open Expo Go on phone → tap the published project → confirm app loads end-to-end (log a meal, snap a food photo, confirm Claude extraction returns)
   - [ ] Start Apple Developer enrollment ($99/yr, 1–3 day approval) so we can graduate from Runtime A (Expo Go + `eas update`) to a real TestFlight build
 - **Runtime in use:** Runtime A — `eas update --branch preview` + Expo Go (no Apple Developer account required). See CLAUDE.md → Dev Handoff for the daily commands.
-- **Last session:** v1.18 (EAS Update workflow set up — `eas.json` added with `preview` channel; CLAUDE.md Dev Handoff split into Runtime A daily-driver + Runtime B active-dev; Secrets Register tracks EAS / Apple Developer status)
+- **Last session:** B-014 close-out + treat taxonomy (PRs #40, #41 merged). PR #40 (α): "Treat" row label in History + Today for `food_type='treat'` meal events; fixed `food_type` missing from `prependEvent` (treat label now shows on Home immediately); opted treats into the WSAVA intake chip row (PM decision — treat refusal is a clinical signal; default stays null, never auto-stamped 'all'). PR #41 (β): added the intake chip row to the `edit-event.tsx` form (fourth + final v1 capture surface; save-on-Save, Cancel-discards). Added B-023 (Home meal-preferences zone). B-014 v1 capture surfaces now COMPLETE.
 
 ---
 
