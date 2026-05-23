@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>B-010 — Quick-log "Found it" flow (Option C)</title>
+<style>
+  :root{
+    --accent:#4A90A4; --accent-light:#EBF4F7;
+    --dark:#1A1A1A; --mid:#3D3D3D; --neutral-light:#F5F5F3;
+    --surface:#FFFFFF; --surface-subtle:#FAFAF9;
+    --t-primary:#1A1A1A; --t-secondary:#6B6B6B; --t-tertiary:#A0A09E;
+    --border:#E8E8E6; --border-strong:#D0D0CE;
+    --symptom:#C97A6F; --symptom-light:#FBF0EF;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:#ECECEA;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--t-primary); -webkit-font-smoothing:antialiased;
+    padding:32px 24px 64px;
+  }
+  h1{font-size:24px; font-weight:600; letter-spacing:-0.3px; margin:0 0 4px;}
+  .sub{color:var(--t-secondary); font-size:15px; max-width:760px; line-height:1.5; margin:0 0 8px;}
+  .legend{max-width:760px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px 20px; margin:16px 0 40px; font-size:14px; line-height:1.6; color:var(--mid);}
+  .legend b{color:var(--dark);}
+  .pill-tag{display:inline-block; font-size:11px; font-weight:600; letter-spacing:0.4px; text-transform:uppercase; padding:2px 8px; border-radius:999px; vertical-align:middle;}
+  .tag-wit{background:var(--accent-light); color:var(--accent);}
+  .tag-est{background:#F3EEDD; color:#9A7B22;}
+  .tag-win{background:var(--symptom-light); color:var(--symptom);}
+
+  h2{font-size:13px; font-weight:600; letter-spacing:0.8px; text-transform:uppercase; color:var(--t-secondary); margin:48px 0 4px;}
+  .section-note{color:var(--t-secondary); font-size:14px; max-width:760px; line-height:1.5; margin:0 0 24px;}
+
+  .row{display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;}
+  .step{width:300px;}
+  .caption{font-size:13px; color:var(--t-secondary); line-height:1.45; margin-top:12px;}
+  .caption .n{display:inline-flex; width:20px; height:20px; border-radius:999px; background:var(--dark); color:#fff; font-size:12px; font-weight:600; align-items:center; justify-content:center; margin-right:6px; vertical-align:middle;}
+  .arrow{align-self:center; font-size:28px; color:var(--t-tertiary); padding-top:120px;}
+
+  /* phone frame */
+  .phone{width:300px; background:var(--surface); border-radius:34px; border:1px solid var(--border-strong); box-shadow:0 8px 30px rgba(0,0,0,0.10); overflow:hidden;}
+  .notch{height:26px; display:flex; justify-content:center;}
+  .notch::after{content:""; width:96px; height:18px; background:#000; border-radius:0 0 14px 14px;}
+  .screen{padding:0 0 16px;}
+  .nav{display:flex; align-items:center; padding:8px 16px; border-bottom:1px solid var(--border);}
+  .nav .back{font-size:22px; color:var(--dark); width:32px;}
+  .nav .title{flex:1; text-align:center; font-size:17px; font-weight:500; color:var(--dark);}
+  .nav .spacer{width:32px;}
+  .body{padding:20px 18px 0;}
+  .photo-row{display:flex; align-items:center; gap:8px; padding:6px 0; color:var(--t-secondary); font-size:14px;}
+  .sev-label{font-size:22px; font-weight:500; color:var(--dark); margin:14px 0 12px;}
+  .sev-row{display:flex; justify-content:space-between; margin-bottom:18px;}
+  .sev{display:flex; flex-direction:column; align-items:center; gap:6px;}
+  .sev .circle{width:46px; height:46px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:500; color:var(--dark); border:1px solid transparent;}
+  .sev .lab{font-size:11px; color:var(--t-secondary); height:14px;}
+  .sev.sel .circle{background:var(--dark); color:#fff; border-color:var(--dark);}
+  .divider{height:1px; background:var(--border); margin:4px 0 14px;}
+  .note{border:1px solid var(--border); border-radius:8px; padding:10px 12px; color:var(--t-tertiary); font-size:14px; min-height:42px;}
+
+  /* time + confidence controls */
+  .time-row{display:flex; align-items:center; justify-content:space-between; margin-top:16px;}
+  .time-label{font-size:14px; color:var(--t-secondary);}
+  .time-label .strong{color:var(--t-primary);}
+  .change{font-size:14px; color:var(--accent);}
+  .found-link{font-size:14px; color:var(--accent); margin-top:12px; display:flex; align-items:center; justify-content:space-between;}
+  .found-link .chev{color:var(--t-tertiary);}
+
+  .seg{display:flex; border:1px solid var(--border-strong); border-radius:10px; overflow:hidden; margin-top:16px;}
+  .seg div{flex:1; text-align:center; padding:11px 0; font-size:14px; font-weight:500; color:var(--t-secondary);}
+  .seg div.on{background:var(--dark); color:#fff;}
+  .seg.soft div.on{background:var(--accent-light); color:var(--accent);}
+
+  .found-panel{background:var(--surface-subtle); border:1px solid var(--border); border-radius:12px; padding:14px; margin-top:16px;}
+  .found-head{font-size:13px; font-weight:600; color:var(--mid); margin-bottom:10px;}
+  .modepick{display:flex; gap:18px; margin-bottom:12px;}
+  .modepick label{font-size:14px; color:var(--t-secondary); display:flex; align-items:center; gap:6px;}
+  .radio{width:16px; height:16px; border-radius:999px; border:2px solid var(--border-strong); display:inline-block;}
+  .radio.on{border-color:var(--accent); background:radial-gradient(var(--accent) 0 5px, #fff 6px);}
+  .field{display:flex; align-items:center; justify-content:space-between; background:#fff; border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:14px; color:var(--t-primary); margin-bottom:8px;}
+  .field .lab{color:var(--t-secondary);}
+  .field .chev{color:var(--t-tertiary);}
+  .hint{font-size:12px; color:var(--t-tertiary); margin-top:4px;}
+
+  .cta{margin:22px 18px 0; background:var(--dark); color:#fff; border-radius:16px; text-align:center; padding:15px 0; font-size:16px; font-weight:500;}
+
+  table{border-collapse:collapse; width:100%; max-width:880px; margin-top:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; font-size:14px;}
+  th,td{text-align:left; padding:12px 16px; border-bottom:1px solid var(--border);}
+  th{background:var(--neutral-light); font-weight:600; font-size:12px; letter-spacing:0.4px; text-transform:uppercase; color:var(--t-secondary);}
+  tr:last-child td{border-bottom:none;}
+  td code{background:var(--neutral-light); padding:2px 6px; border-radius:4px; font-size:13px;}
+  .vet{font-family:ui-monospace,Menlo,monospace; font-size:13px;}
+</style>
+</head>
+<body>
+
+  <h1>B-010 — Quick-log "Found it" flow</h1>
+  <p class="sub">Option C, rendered with the real app theme. Event type shown is <b>Vomit</b>; the same control appears on stool, lethargy, and "other". Meals are excluded.</p>
+
+  <div class="legend">
+    Every logged time carries one quiet <b>confidence</b> tag, set by which path you take — never a question you have to answer:
+    <span class="pill-tag tag-wit">witnessed</span> you saw it · exact time &nbsp;
+    <span class="pill-tag tag-est">estimated</span> you found it, know roughly when · single time &nbsp;
+    <span class="pill-tag tag-win">window</span> you found it, only know a range · two times (or "before now")
+  </div>
+
+  <!-- ============ TOP-LEVEL AFFORDANCE ============ -->
+  <h2>Step 1 · The two design directions for the top of the flow</h2>
+  <p class="section-note">Both keep <b>witnessed = one tap</b> (pre-selected, just hit Log). They differ only in how prominent "Found it" is. You leaned toward optimizing for the found case (~65% of incidents), which favors Direction&nbsp;2.</p>
+
+  <div class="row">
+    <div class="step">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="nav"><div class="back">&larr;</div><div class="title">Vomit</div><div class="spacer"></div></div>
+        <div class="body">
+          <div class="photo-row">&#128247;&nbsp; Attach photo</div>
+          <div class="sev-label">How severe?</div>
+          <div class="sev-row">
+            <div class="sev"><div class="circle" style="background:rgba(26,26,26,0.15)">1</div><div class="lab">Mild</div></div>
+            <div class="sev sel"><div class="circle">2</div><div class="lab"></div></div>
+            <div class="sev"><div class="circle" style="background:rgba(26,26,26,0.50)">3</div><div class="lab"></div></div>
+            <div class="sev"><div class="circle" style="background:rgba(26,26,26,0.67)">4</div><div class="lab"></div></div>
+            <div class="sev"><div class="circle" style="background:rgba(26,26,26,0.85)">5</div><div class="lab">Severe</div></div>
+          </div>
+          <div class="divider"></div>
+          <div class="note">Add a note (optional)</div>
+          <div class="time-row"><div class="time-label"><span class="strong">May 18 &middot; 7:42 AM</span></div><div class="change">Change</div></div>
+          <div class="found-link"><span>Found it &mdash; didn't see it happen</span><span class="chev">&rsaquo;</span></div>
+        </div>
+        <div class="cta">Log vomit</div>
+      </div></div>
+      <div class="caption"><b>Direction 1 — Quiet default.</b> Witnessed time stands; "Found it" is a calm peer link below it. No question posed. Witnessed = 0 extra taps; found = 1 tap.</div>
+    </div>
+
+    <div class="step">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="nav"><div class="back">&larr;</div><div class="title">Vomit</div><div class="spacer"></div></div>
+        <div class="body">
+          <div class="photo-row">&#128247;&nbsp; Attach photo</div>
+          <div class="sev-label">How severe?</div>
+          <div class="sev-row">
+            <div class="sev"><div class="circle" style="background:rgba(26,26,26,0.15)">1</div><div class="lab">Mild</div></div>
+            <div class="sev sel"><div class="circle">2</div><div class="lab"></div></div>
+            <div class="sev"><div class="circle" style="background:rgba(26,26,26,0.50)">3</div><div class="lab"></div></div>
+            <div class="sev"><div class="circle" style="background:rgba(26,26,26,0.67)">4</div><div class="lab"></div></div>
+            <div class="sev"><div class="circle" style="background:rgba(26,26,26,0.85)">5</div><div class="lab">Severe</div></div>
+          </div>
+          <div class="divider"></div>
+          <div class="note">Add a note (optional)</div>
+          <div class="seg"><div class="on">Saw it happen</div><div>Found it</div></div>
+          <div class="time-row"><div class="time-label"><span class="strong">May 18 &middot; 7:42 AM</span></div><div class="change">Change</div></div>
+        </div>
+        <div class="cta">Log vomit</div>
+      </div></div>
+      <div class="caption"><b>Direction 2 — Explicit binary.</b> "Saw it / Found it" as equal pills ("Saw it" pre-selected). Found is as prominent as its 65% reality, and maps to the exact question Dr. Chen asks in clinic. Soft labels, no interrogative heading.</div>
+    </div>
+  </div>
+
+  <!-- ============ THE FOUND FLOW ============ -->
+  <h2>Step 2 · What happens after you tap "Found it" — the same in both directions</h2>
+  <p class="section-note">This is the part the low-fi sketch made murky. Tapping "Found it" is <b>honest in one tap</b> and then lets you add precision <b>only if you have it</b>. Most logs stop at screen ①.</p>
+
+  <div class="row">
+    <!-- 1: before now default -->
+    <div class="step">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="nav"><div class="back">&larr;</div><div class="title">Vomit</div><div class="spacer"></div></div>
+        <div class="body">
+          <div class="seg soft"><div>Saw it happen</div><div class="on">Found it</div></div>
+          <div class="found-panel">
+            <div class="found-head">When did it happen?</div>
+            <div class="field"><span class="lab">Sometime before</span><span>May 18 &middot; 7:42 AM</span></div>
+            <div class="hint">Stamped to now &mdash; when you found it. Logs as-is.</div>
+            <div class="found-link" style="margin-top:12px;"><span>Know roughly when? &nbsp;<span class="pill-tag tag-est" style="margin-left:2px;">optional</span></span><span class="chev">&rsaquo;</span></div>
+          </div>
+        </div>
+        <div class="cta">Log vomit</div>
+      </div></div>
+      <div class="caption"><span class="n">1</span><b>One tap, done.</b> <span class="pill-tag tag-win">window</span> latest = now, earliest open. Vet sees "found by 7:42 AM" &mdash; honest, no false precision. Stop here, or tap "Know roughly when?"</div>
+    </div>
+
+    <div class="arrow">&rarr;</div>
+
+    <!-- 2: around a time -->
+    <div class="step">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="nav"><div class="back">&larr;</div><div class="title">Vomit</div><div class="spacer"></div></div>
+        <div class="body">
+          <div class="seg soft"><div>Saw it happen</div><div class="on">Found it</div></div>
+          <div class="found-panel">
+            <div class="found-head">When did it happen?</div>
+            <div class="modepick">
+              <label><span class="radio on"></span>Around a time</label>
+              <label><span class="radio"></span>Between two times</label>
+            </div>
+            <div class="field"><span class="lab">Around</span><span>May 18 &middot; ~4:00 AM <span class="chev">&#9662;</span></span></div>
+            <div class="hint">e.g. found vomit by the treats left out overnight</div>
+          </div>
+        </div>
+        <div class="cta">Log vomit</div>
+      </div></div>
+      <div class="caption"><span class="n">2</span><b>A rough single time.</b> <span class="pill-tag tag-est">estimated</span> one time, tagged so the report shows "~4:00 AM (estimated)" &mdash; not pretending you witnessed it. <i>The 4am treat-counter case.</i></div>
+    </div>
+
+    <div class="arrow">&rarr;</div>
+
+    <!-- 3: between two times -->
+    <div class="step">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="nav"><div class="back">&larr;</div><div class="title">Vomit</div><div class="spacer"></div></div>
+        <div class="body">
+          <div class="seg soft"><div>Saw it happen</div><div class="on">Found it</div></div>
+          <div class="found-panel">
+            <div class="found-head">When did it happen?</div>
+            <div class="modepick">
+              <label><span class="radio"></span>Around a time</label>
+              <label><span class="radio on"></span>Between two times</label>
+            </div>
+            <div class="field"><span class="lab">From</span><span>May 18 &middot; 2:00 PM <span class="chev">&#9662;</span></span></div>
+            <div class="field"><span class="lab">To</span><span>May 18 &middot; 4:00 PM <span class="chev">&#9662;</span></span></div>
+            <div class="hint">Stored as ~3:00 PM (midpoint); range kept for the vet</div>
+          </div>
+        </div>
+        <div class="cta">Log vomit</div>
+      </div></div>
+      <div class="caption"><span class="n">3</span><b>A bounded window.</b> <span class="pill-tag tag-win">window</span> both edges set. Report shows "between 2:00&ndash;4:00 PM". <i>The bedroom case: clean at 2pm, found at 4pm.</i></div>
+    </div>
+  </div>
+
+  <!-- ============ STORAGE / VET ============ -->
+  <h2>Step 3 · What gets stored &amp; how the vet report reads it</h2>
+  <table>
+    <tr><th>Your action</th><th>confidence</th><th>occurred_at (derived)</th><th>Vet report shows</th></tr>
+    <tr><td>Log without touching "Found it"</td><td><span class="pill-tag tag-wit">witnessed</span></td><td>the stamp (7:42 AM)</td><td class="vet">7:42 AM</td></tr>
+    <tr><td>"Found it", stop at ①</td><td><span class="pill-tag tag-win">window</span></td><td>latest (7:42 AM)</td><td class="vet">found by 7:42 AM</td></tr>
+    <tr><td>"Found it" &rarr; Around &rarr; ~4 AM</td><td><span class="pill-tag tag-est">estimated</span></td><td>4:00 AM</td><td class="vet">~4:00 AM (estimated)</td></tr>
+    <tr><td>"Found it" &rarr; Between &rarr; 2&ndash;4 PM</td><td><span class="pill-tag tag-win">window</span></td><td>midpoint (3:00 PM)</td><td class="vet">between 2:00&ndash;4:00 PM</td></tr>
+  </table>
+  <p class="section-note" style="margin-top:16px;"><code>occurred_at</code> is always set, so every existing screen and query keeps working untouched &mdash; the window fields and the confidence tag are purely additive.</p>
+
+</body>
+</html>
