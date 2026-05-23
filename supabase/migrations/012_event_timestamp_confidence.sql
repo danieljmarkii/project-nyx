@@ -20,6 +20,11 @@
 --                 is a single point but NOT witnessed (e.g. ~4am)
 --     window    — owner found it, only knows a range; the event
 --                 occurred between earliest and latest
+--     (NULL)    — unclassified: legacy rows from before this migration,
+--                 and any row logged before the quick-log affordance
+--                 ships. NOT a claim either way. The app sets an explicit
+--                 value on every new log going forward; the PM hand-populates
+--                 the (small) set of existing rows.
 --
 --   occurred_at_earliest / occurred_at_latest — the window bounds,
 --     populated ONLY when confidence = 'window'. Either edge may be
@@ -48,12 +53,11 @@
 --                 ALTER TABLE events DROP COLUMN occurred_at_latest;
 --                 ALTER TABLE events DROP COLUMN occurred_at_confidence;
 --                 DROP TYPE occurred_at_confidence;
---   Backfill:     N/A — existing rows take the DEFAULT 'witnessed'
---                 with both window fields NULL. This matches the old
---                 implicit model (owners set/accepted a precise time
---                 in the prior UI), so it is the correct, lossless
---                 back-fill. Same reasoning as the occurred_at_source
---                 = 'manual' back-fill in 007.
+--   Backfill:     None automated. The column is nullable with no default,
+--                 so existing rows land as NULL = unclassified. PM decision
+--                 (2026-05-23): hand-populate the small set of existing rows
+--                 rather than assert a blanket 'witnessed', which would bake
+--                 in the false precision B-010 exists to remove.
 -- ============================================================
 
 CREATE TYPE occurred_at_confidence AS ENUM (
@@ -62,8 +66,10 @@ CREATE TYPE occurred_at_confidence AS ENUM (
   'window'
 );
 
+-- Nullable, no default: existing rows land as NULL (unclassified) for
+-- manual population. The app sets an explicit value on every new log.
 ALTER TABLE events
-  ADD COLUMN occurred_at_confidence occurred_at_confidence NOT NULL DEFAULT 'witnessed';
+  ADD COLUMN occurred_at_confidence occurred_at_confidence;
 
 ALTER TABLE events
   ADD COLUMN occurred_at_earliest TIMESTAMPTZ;

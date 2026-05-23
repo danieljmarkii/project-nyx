@@ -143,14 +143,14 @@ export async function initDb(): Promise<void> {
 
   // occurred_at_confidence + window bounds — B-010 event timestamp uncertainty.
   // 'witnessed' (saw it; exact), 'estimated' (found it, rough single time),
-  // 'window' (found it, only a range). occurred_at stays the canonical/derived
-  // point so existing reads keep working; earliest/latest bound a 'window'.
-  // The server enforces the field/ordering CHECKs (migration 012); the local
-  // mirror just holds the columns. Mirrors migration 012 on the server.
+  // 'window' (found it, only a range); NULL = unclassified (legacy / pre-UI).
+  // occurred_at stays the canonical/derived point so existing reads keep
+  // working; earliest/latest bound a 'window'. Nullable with no default — the
+  // app sets an explicit value on every new log. The server enforces the
+  // field/ordering CHECKs (migration 012); the local mirror just holds the
+  // columns. Mirrors migration 012 on the server.
   try {
-    await database.execAsync(
-      `ALTER TABLE events ADD COLUMN occurred_at_confidence TEXT NOT NULL DEFAULT 'witnessed'`,
-    );
+    await database.execAsync(`ALTER TABLE events ADD COLUMN occurred_at_confidence TEXT`);
   } catch {
     // Column already exists — safe to ignore
   }
