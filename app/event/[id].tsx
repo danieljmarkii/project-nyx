@@ -74,6 +74,10 @@ export default function EventDetailScreen() {
   const loadAll = useCallback(async () => {
     if (!id) return;
     setLoading(true);
+    // Reset per-event state up-front so navigating from event A → event B
+    // doesn't briefly flash A's food label / rating until B's queries return.
+    setFoodLabel(null);
+    setIntakeRating(null);
     try {
       const row = await getEventById(id);
       setEvent(row);

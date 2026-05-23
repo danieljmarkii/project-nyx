@@ -235,14 +235,16 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusFull,
     minHeight: 44,
     gap: theme.space2,
-    width: '100%',
     ...shadows.md,
   },
   // Card: taller multi-row container for meal events with intake chips.
-  // Sits above the tab bar like the pill but reserves space for the chip row.
+  // Sits ABOVE the FAB (not beside it like the pill) so the chip row can
+  // span full width without colliding with the FAB. FAB is at bottom: 72,
+  // height 56 → its top is at 128; card sits at 144 to clear it with a bit
+  // of breathing room.
   wrapperCard: {
     position: 'absolute',
-    bottom: TAB_BAR_HEIGHT + 8,
+    bottom: TAB_BAR_HEIGHT + 64,
     left: theme.space2,
     right: theme.space2,
     zIndex: 50,

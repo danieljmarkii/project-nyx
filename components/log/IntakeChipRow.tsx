@@ -45,10 +45,13 @@ export function IntakeChipRow({
   if (readOnly && value === null) return null;
 
   // Read-only with a rating: single compact chip showing the rating only.
+  // `pointerEvents="none"` lets taps fall through to the parent row (e.g.
+  // History's expand-on-tap), so the badge reads as decoration, not as a
+  // dead touch target on top of the row's actual gesture.
   if (readOnly) {
     const opt = OPTIONS.find((o) => o.value === value)!;
     return (
-      <View style={styles.readOnlyWrap}>
+      <View style={styles.readOnlyWrap} pointerEvents="none">
         <FilterChip
           label={opt.label}
           active

@@ -259,16 +259,23 @@ export async function updateMealFood(eventId: string, foodItemId: string): Promi
 
 // WSAVA 5-point intake rating. Pass `null` to clear. Marks the meal
 // unsynced so the next sync flush propagates the change to Supabase.
+// Throws if no meal row exists for this event — SQLite's UPDATE
+// silently affects zero rows in that case, which would let the UI
+// claim success while persisting nothing. Callers' existing error
+// paths revert optimistic state on the throw.
 // B-014. See: docs/research/2026-05-feeding-windows-and-partial-eating.md
 export async function updateMealIntake(
   eventId: string,
   rating: 'refused' | 'picked' | 'some' | 'most' | 'all' | null,
 ): Promise<void> {
   const db = getDb();
-  await db.runAsync(
+  const res = await db.runAsync(
     'UPDATE meals SET intake_rating = ?, synced = 0 WHERE event_id = ?',
     [rating, eventId],
   );
+  if (res.changes === 0) {
+    throw new Error(`No meal row for event ${eventId}`);
+  }
 }
 
 export async function getEventAttachment(eventId: string): Promise<{
