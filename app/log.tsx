@@ -187,6 +187,7 @@ export default function LogModal() {
       foodId: food.id,
       foodBrand: food.brand,
       foodProduct: food.product_name,
+      foodType: food.food_type ?? null,
       occurredAt: effectiveOccurredAt,
       occurredAtSource: usingExif ? 'exif' : 'now',
     });
@@ -218,6 +219,7 @@ export default function LogModal() {
     foodId: string;
     foodBrand: string;
     foodProduct: string;
+    foodType?: string | null;
     occurredAt?: Date;
     occurredAtSource?: 'manual' | 'exif' | 'now';
   }): Promise<{ eventId: string; occurredAt: string } | null> {
@@ -264,6 +266,7 @@ export default function LogModal() {
       food_item_id: foodId,
       food_brand: foodBrand,
       food_product_name: foodProduct,
+      food_type: override?.foodType ?? null,
       quantity: foodId ? 'unknown' : null,
     });
 
