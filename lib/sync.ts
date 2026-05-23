@@ -112,6 +112,9 @@ export async function syncPendingEvents(): Promise<void> {
     notes: string | null;
     source: string;
     occurred_at_source: string;
+    occurred_at_confidence: string | null;
+    occurred_at_earliest: string | null;
+    occurred_at_latest: string | null;
     deleted_at: string | null;
     created_at: string;
     updated_at: string;
@@ -129,6 +132,10 @@ export async function syncPendingEvents(): Promise<void> {
       notes: e.notes,
       source: e.source,
       occurred_at_source: e.occurred_at_source ?? 'manual',
+      // B-010 — NULL when unset (legacy rows / pre-confidence inserts).
+      occurred_at_confidence: e.occurred_at_confidence ?? null,
+      occurred_at_earliest: e.occurred_at_earliest ?? null,
+      occurred_at_latest: e.occurred_at_latest ?? null,
       deleted_at: e.deleted_at,
       created_at: e.created_at,
       updated_at: e.updated_at,

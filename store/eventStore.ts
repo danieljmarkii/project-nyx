@@ -5,7 +5,11 @@ export interface NyxEvent {
   id: string;
   pet_id: string;
   event_type: EventTypeKey | 'other';
-  occurred_at: string; // ISO UTC
+  occurred_at: string; // ISO UTC — canonical/derived point
+  // B-010 event timestamp uncertainty. confidence NULL = unclassified (legacy).
+  occurred_at_confidence?: 'witnessed' | 'estimated' | 'window' | null;
+  occurred_at_earliest?: string | null; // ISO UTC, window lower bound
+  occurred_at_latest?: string | null;   // ISO UTC, window upper bound
   severity: number | null;
   notes: string | null;
   source: 'manual' | 'reminder' | 'imported';
