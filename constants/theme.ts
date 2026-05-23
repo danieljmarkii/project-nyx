@@ -28,33 +28,42 @@ export const theme = {
   trackingWide: 0.4,
   trackingWidest: 0.8,   // zone labels, section labels
 
-  // ── Colors ───────────────────────────────────────────────────────────────
-  // One accent — interactive elements + primary trend line only. Never decorative.
-  colorAccent: '#4A90A4',
-  colorAccentLight: '#EBF4F7',    // tinted surface behind accent elements
+  // ── Colors — palette "A · Linear Clean" ───────────────────────────────────
+  // Restrained greyscale + one confident accent, in the Linear/Vercel/Cal.com
+  // register. The accent is for interactive elements + meal events only — never
+  // decorative. Symptom and danger are deliberately SEPARATE semantic tokens:
+  // symptom data uses a calm terracotta (never an alarm-red an owner would
+  // over-read), danger is reserved for destructive actions. See
+  // design-principles.md § Color.
+  colorAccent: '#5E6AD2',         // Linear indigo — interactive elements, meal events
+  colorAccentLight: '#EEEFFB',    // tinted surface behind accent elements
 
-  // Neutrals
-  colorNeutralDark: '#1A1A1A',
-  colorNeutralMid: '#3D3D3D',
-  colorNeutralLight: '#F5F5F3',
-  colorSurface: '#FFFFFF',
-  colorSurfaceSubtle: '#FAFAF9',  // elevated inner surfaces
+  // Neutrals — cool, tight off-white
+  colorNeutralDark: '#16161A',    // near-black — FAB, primary buttons, display text
+  colorNeutralMid: '#3A3A42',
+  colorNeutralLight: '#F6F6F7',   // app page background
+  colorSurface: '#FFFFFF',        // cards / modals
+  colorSurfaceSubtle: '#FAFAFB',  // elevated inner surfaces
 
   // Text
-  colorTextPrimary: '#1A1A1A',
-  colorTextSecondary: '#6B6B6B',
-  colorTextTertiary: '#A0A09E',
+  colorTextPrimary: '#16161A',
+  colorTextSecondary: '#6A6A73',
+  colorTextTertiary: '#9B9BA3',
 
   // Borders
-  colorBorder: '#E8E8E6',
-  colorBorderStrong: '#D0D0CE',
+  colorBorder: '#EAEAEC',
+  colorBorderStrong: '#D3D3D8',
 
   // Event semantic colors
-  colorEventSymptom: '#C97A6F',
+  colorEventSymptom: '#C97A6F',   // calm terracotta — symptom data + trend bars
   colorEventSymptomLight: '#FBF0EF',
-  colorEventMeal: '#4A90A4',
-  colorEventMealLight: '#EBF4F7',
-  colorChartEmpty: '#E8E8E6',
+  colorEventMeal: '#5E6AD2',      // meals share the accent
+  colorEventMealLight: '#EEEFFB',
+  colorChartEmpty: '#EAEAEC',
+
+  // Danger — destructive actions only (delete / wipe). Never decorative.
+  colorDanger: '#C0392B',         // on light surfaces
+  colorDangerOnDark: '#FF6B6B',   // brighter — destructive text on dark backdrops (photo viewer)
 
   // ── Spacing — 8pt grid ────────────────────────────────────────────────────
   space1: 8,

@@ -7,6 +7,7 @@ import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { useSync } from '../hooks/useSync';
 import { Toast } from '../components/ui/Toast';
+import { theme } from '../constants/theme';
 
 export default function RootLayout() {
   const { setSession, setLoading } = useAuthStore();
@@ -40,7 +41,7 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.colorNeutralLight } }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="onboarding" />
