@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { useSync } from '../hooks/useSync';
+import { Toast } from '../components/ui/Toast';
 
 export default function RootLayout() {
   const { setSession, setLoading } = useAuthStore();
@@ -51,6 +52,7 @@ export default function RootLayout() {
         <Stack.Screen name="event/[id]" />
         <Stack.Screen name="report" />
       </Stack>
+      <Toast />
     </>
   );
 }

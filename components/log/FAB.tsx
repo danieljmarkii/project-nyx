@@ -9,6 +9,7 @@ import { theme } from '../../constants/theme';
 import { useAttachmentStore } from '../../store/attachmentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
+import { useToastStore } from '../../store/toastStore';
 import { getDb } from '../../lib/db';
 import { uuid, exifDateToISO } from '../../lib/utils';
 
@@ -22,6 +23,7 @@ export function FAB() {
   const { setPendingAttachment } = useAttachmentStore();
   const { prependEvent } = useEventStore();
   const { activePet } = usePetStore();
+  const showToast = useToastStore((s) => s.show);
 
   const [open, setOpen] = useState(false);
   const [recentFoods, setRecentFoods] = useState<RecentFood[]>([]);
@@ -99,6 +101,9 @@ export function FAB() {
         food_product_name: food.product_name,
       });
       closeMenu();
+      // Post-log toast offers a one-tap path back to the time picker for
+      // owners backfilling a meal given before they reached their phone.
+      showToast({ eventId, occurredAt: now });
     } finally {
       setLogging(null);
     }

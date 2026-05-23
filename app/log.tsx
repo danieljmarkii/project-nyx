@@ -14,11 +14,12 @@ import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
+import { useToastStore } from '../store/toastStore';
 import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
-import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
+import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
 
@@ -40,15 +41,12 @@ const SEVERITY_CONFIG = [
   { value: 5, label: 'Severe' },
 ];
 
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
 export default function LogModal() {
   const { activePet } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
+  const showToast = useToastStore((s) => s.show);
   const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
 
   const [step, setStep] = useState<Step>('type');
@@ -172,28 +170,51 @@ export default function LogModal() {
   }
 
   // One-tap log path from the new picker — bypasses state so it works
-  // even before `selectedFoodId` has propagated through React.
+  // even before `selectedFoodId` has propagated through React. Provenance
+  // is forced to 'now' (with a fresh new Date()) because the user never
+  // saw the time picker on this path; the post-log toast offers the
+  // "Change time" escape hatch. Exception: if a photo with EXIF was
+  // attached before reaching the picker, preserve that provenance and
+  // the EXIF-derived time — Dr. Chen relies on EXIF-stamped meals for
+  // clinical trust, and clobbering it here would silently drop that.
   async function handlePickFood(food: PickerFood) {
     setSelectedFoodId(food.id);
     setSelectedFoodBrand(food.brand);
     setSelectedFoodProduct(food.product_name);
-    await handleConfirm({
+    const usingExif = occurredAtSource === 'exif';
+    const effectiveOccurredAt = usingExif ? occurredAt : new Date();
+    const result = await handleConfirm({
       foodId: food.id,
       foodBrand: food.brand,
       foodProduct: food.product_name,
+      occurredAt: effectiveOccurredAt,
+      occurredAtSource: usingExif ? 'exif' : 'now',
     });
+    // Defer the toast past the 1s completion checkmark + modal dismiss so
+    // it appears at the root layer (not occluded by the still-presented
+    // modal on iOS) where the user can actually see and act on it.
+    if (result) {
+      showToast(
+        { eventId: result.eventId, occurredAt: result.occurredAt },
+        { delayMs: 1100 },
+      );
+    }
   }
 
   async function handleConfirm(override?: {
     foodId: string;
     foodBrand: string;
     foodProduct: string;
-  }) {
-    if (!activePet) return;
+    occurredAt?: Date;
+    occurredAtSource?: 'manual' | 'exif' | 'now';
+  }): Promise<{ eventId: string; occurredAt: string } | null> {
+    if (!activePet) return null;
     const foodId = override?.foodId ?? selectedFoodId;
     const foodBrand = override?.foodBrand ?? selectedFoodBrand;
     const foodProduct = override?.foodProduct ?? selectedFoodProduct;
-    if (selectedType === 'meal' && !foodId) return;
+    if (selectedType === 'meal' && !foodId) return null;
+    const effectiveOccurredAt = override?.occurredAt ?? occurredAt;
+    const effectiveSource = override?.occurredAtSource ?? occurredAtSource;
     const db = getDb();
     const eventId = uuid();
     const now = new Date().toISOString();
@@ -201,8 +222,8 @@ export default function LogModal() {
       `INSERT INTO events
          (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced)
        VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, 0)`,
-      [eventId, activePet.id, selectedType!, occurredAt.toISOString(),
-       severity ?? null, notes.trim() || null, occurredAtSource, now, now]
+      [eventId, activePet.id, selectedType!, effectiveOccurredAt.toISOString(),
+       severity ?? null, notes.trim() || null, effectiveSource, now, now]
     );
     if (selectedType === 'meal' && foodId) {
       const mealId = uuid();
@@ -220,7 +241,7 @@ export default function LogModal() {
       id: eventId,
       pet_id: activePet.id,
       event_type: selectedType!,
-      occurred_at: occurredAt.toISOString(),
+      occurred_at: effectiveOccurredAt.toISOString(),
       severity: severity ?? null,
       notes: notes.trim() || null,
       source: 'manual',
@@ -258,6 +279,7 @@ export default function LogModal() {
     syncPendingEvents()
       .then(() => syncPendingMeals())
       .catch(console.error);
+    return { eventId, occurredAt: effectiveOccurredAt.toISOString() };
   }
 
   function handleBack() {
