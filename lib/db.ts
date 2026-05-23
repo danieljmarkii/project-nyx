@@ -140,6 +140,30 @@ export async function initDb(): Promise<void> {
   } catch {
     // Column already exists — safe to ignore
   }
+
+  // occurred_at_confidence + window bounds — B-010 event timestamp uncertainty.
+  // 'witnessed' (saw it; exact), 'estimated' (found it, rough single time),
+  // 'window' (found it, only a range). occurred_at stays the canonical/derived
+  // point so existing reads keep working; earliest/latest bound a 'window'.
+  // The server enforces the field/ordering CHECKs (migration 012); the local
+  // mirror just holds the columns. Mirrors migration 012 on the server.
+  try {
+    await database.execAsync(
+      `ALTER TABLE events ADD COLUMN occurred_at_confidence TEXT NOT NULL DEFAULT 'witnessed'`,
+    );
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    await database.execAsync(`ALTER TABLE events ADD COLUMN occurred_at_earliest TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    await database.execAsync(`ALTER TABLE events ADD COLUMN occurred_at_latest TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
 }
 
 export interface TimelineRow {
