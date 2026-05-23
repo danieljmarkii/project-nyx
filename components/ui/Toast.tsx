@@ -2,10 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
 } from 'react-native';
-
-// Tab bar height from app/(tabs)/_layout.tsx — toast must clear it so it
-// isn't occluded when the user lands back on a tabs screen after a log.
-const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme, shadows } from '../../constants/theme';
 import { useToastStore } from '../../store/toastStore';
@@ -13,6 +9,10 @@ import { useEventStore } from '../../store/eventStore';
 import { updateEvent } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
+
+// Tab bar height from app/(tabs)/_layout.tsx — toast must clear it so it
+// isn't occluded when the user lands back on a tabs screen after a log.
+const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
 
 // Bottom-anchored post-log confirmation toast. Mounted once at the root
 // layout so it persists across modal dismissals (FAB sheet closes, log
