@@ -131,6 +131,15 @@ export async function initDb(): Promise<void> {
   } catch {
     // Column already exists — safe to ignore
   }
+
+  // intake_rating — WSAVA 5-point owner-reported intake (refused | picked |
+  // some | most | all). Nullable; NULL = unrated. B-014. Mirrors migration 011
+  // on the server.
+  try {
+    await database.execAsync(`ALTER TABLE meals ADD COLUMN intake_rating TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
 }
 
 export interface TimelineRow {
