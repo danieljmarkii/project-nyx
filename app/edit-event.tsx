@@ -10,12 +10,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, getMealForEvent, getEventAttachment, getEventSource } from '../lib/db';
+import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getEventAttachment, getEventSource } from '../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
 import { uuid, formatExifAttribution, formatTime } from '../lib/utils';
+import { IntakeChipRow, IntakeRating } from '../components/log/IntakeChipRow';
 
 interface CachedFood {
   id: string;
@@ -58,6 +59,12 @@ export default function EditEventModal() {
   const [showFoodPicker, setShowFoodPicker] = useState(false);
   const [foods, setFoods] = useState<CachedFood[]>([]);
 
+  // WSAVA intake (B-014). Held in local state and persisted on Save —
+  // unlike the detail screen's optimistic-on-tap, this is a Cancel-able
+  // form, so intake must follow the same discard-on-Cancel semantics as
+  // every other field here.
+  const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
+
   const [saving, setSaving] = useState(false);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
 
@@ -71,6 +78,11 @@ export default function EditEventModal() {
           setCurrentFoodId(meal.food_item_id);
           setCurrentFoodBrand(meal.food_brand);
           setCurrentFoodProduct(meal.food_product_name);
+          const r = meal.intake_rating;
+          setIntakeRating(
+            r === 'refused' || r === 'picked' || r === 'some'
+              || r === 'most' || r === 'all' ? r : null,
+          );
         }
       }).catch(console.error);
     }
@@ -144,6 +156,10 @@ export default function EditEventModal() {
         await updateMealFood(id, currentFoodId);
       }
 
+      if (config.hasFood) {
+        await updateMealIntake(id, intakeRating);
+      }
+
       // Persist new photo attachment if one was selected
       if (newAttachmentUri) {
         const db = getDb();
@@ -180,6 +196,7 @@ export default function EditEventModal() {
         food_item_id: currentFoodId,
         food_brand: currentFoodBrand,
         food_product_name: currentFoodProduct,
+        intake_rating: intakeRating,
       });
 
       // Attachments are handled above with their own direct upload + retry-on-reconnect pattern
@@ -325,6 +342,18 @@ export default function EditEventModal() {
                   })}
                 </View>
               ) : null}
+            </>
+          ) : null}
+
+          {/* Intake (meal events only — includes treats, B-014) */}
+          {config.hasFood ? (
+            <>
+              <SectionLabel label="Intake" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <IntakeChipRow
+                value={intakeRating}
+                onChange={setIntakeRating}
+                label={null}
+              />
             </>
           ) : null}
 
