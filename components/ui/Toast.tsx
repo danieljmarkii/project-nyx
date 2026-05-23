@@ -30,8 +30,9 @@ const INTAKE_CONFIRM_HOLD_MS = 1500;
 //      their phone (Linear/Gmail "Undo send" pattern). Preserves Principle 1:
 //      tap-to-log stays one tap.
 //   2. WSAVA intake chips — owner-reported intake (refused / picked / some
-//      / most / all). Rendered only when the just-logged food has
-//      food_type='meal' (B-014). Treats and 'other' opt out.
+//      / most / all). Rendered for food_type 'meal' and 'treat' (B-014;
+//      treats added 2026-05-23 — treat refusal is a clinical signal).
+//      Default stays null; never pre-stamped. 'other' opts out.
 //
 // Both affordances are skippable: the toast auto-dismisses with the user's
 // last input preserved. If a third affordance is proposed for this toast,
@@ -132,7 +133,12 @@ export function Toast() {
   if (!payload && !visible) return null;
 
   const occurredDate = payload ? new Date(payload.occurredAt) : new Date();
-  const showIntake = payload?.foodType === 'meal';
+  // Intake capture renders for meals and treats. Treats opt in (PM call
+  // 2026-05-23) because treat refusal is itself a clinical signal — a pet
+  // declining a treat often precedes declining meals. Default stays null;
+  // we never pre-stamp 'all', which would bias the intake data. 'other'
+  // and unclassified foods stay opted out.
+  const showIntake = payload?.foodType === 'meal' || payload?.foodType === 'treat';
 
   return (
     <>

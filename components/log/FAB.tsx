@@ -109,9 +109,10 @@ export function FAB() {
       closeMenu();
       // Post-log toast offers a one-tap path back to the time picker for
       // owners backfilling a meal given before they reached their phone,
-      // plus the WSAVA intake chip row when the food is classified as a
-      // meal (B-014). Every meal-entry path must route through this toast
-      // — if a non-picker meal flow is added later, mirror this call.
+      // plus the WSAVA intake chip row for food_type 'meal' and 'treat'
+      // (B-014; treats added 2026-05-23). Every meal-entry path must route
+      // through this toast — if a non-picker meal flow is added later,
+      // mirror this call.
       showToast({ eventId, occurredAt: now, foodType, intakeRating: null });
     } finally {
       setLogging(null);
