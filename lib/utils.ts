@@ -50,3 +50,30 @@ export function formatExifAttribution(iso: string, now: Date = new Date()): stri
   const datePart = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
   return `from your photo (${datePart})`;
 }
+
+// B-010 event timestamp uncertainty.
+//   witnessed — owner saw it; occurred_at is the exact point
+//   estimated — owner found it, knows roughly when; a single point, not witnessed
+//   window    — owner found it, only a range; bounded by earliest/latest
+export type OccurredConfidence = 'witnessed' | 'estimated' | 'window';
+
+// Derive the canonical occurred_at point from a confidence selection so every
+// existing reader (timeline, correlation engine, vet report) keeps working off
+// a single timestamp. Pure — the one place the window→point reduction lives.
+//   witnessed / estimated -> the chosen point
+//   window, both edges     -> midpoint
+//   window, one edge        -> the known edge (e.g. "sometime before now" = latest)
+//   window, neither edge    -> falls back to point (shouldn't happen; UI guards it)
+export function deriveOccurredAt(input: {
+  confidence: OccurredConfidence;
+  point: Date;
+  earliest: Date | null;
+  latest: Date | null;
+}): Date {
+  const { confidence, point, earliest, latest } = input;
+  if (confidence !== 'window') return point;
+  if (earliest && latest) return new Date((earliest.getTime() + latest.getTime()) / 2);
+  if (latest) return latest;
+  if (earliest) return earliest;
+  return point;
+}
