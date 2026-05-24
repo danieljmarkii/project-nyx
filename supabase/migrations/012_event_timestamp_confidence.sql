@@ -34,10 +34,12 @@
 -- occurred_at is RETAINED as the canonical/derived point so every
 -- existing query, index, and the timeline keep working untouched:
 --   witnessed/estimated -> the point the owner set
---   window (both edges)  -> midpoint, derived at write time
---   window (latest only) -> latest
--- Derivation lives in the app layer (same place timezone conversion
--- already does), not in the DB.
+--   window               -> the latest edge ("no later than" / discovery
+--                           time) — a real value the owner entered, never an
+--                           invented midpoint (PM decision 2026-05-24).
+-- It is a sort/representative key only; surfaces render the window (not this
+-- point) when confidence != witnessed. Derivation lives in the app layer
+-- (same place timezone conversion already does), not in the DB.
 --
 -- Confidence is ORTHOGONAL to occurred_at_source (007). A photo of
 -- discovered vomit is EXIF-stamped at discovery, not occurrence, so

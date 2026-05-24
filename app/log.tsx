@@ -9,6 +9,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { FoodPicker } from '../components/log/FoodPicker';
+import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
@@ -19,9 +20,19 @@ import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
-import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime } from '../lib/utils';
+import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
+
+// B-010 — the time fields a logged event carries. occurred_at is always a
+// single derived point; confidence + window bounds describe its certainty.
+type TimeFields = {
+  confidence: OccurredConfidence;
+  occurredAt: Date;
+  earliest: Date | null;
+  latest: Date | null;
+  source: 'manual' | 'exif' | 'now';
+};
 
 const TYPE_ICONS: Record<EventTypeKey, string> = {
   meal: '🍽',
@@ -73,6 +84,18 @@ export default function LogModal() {
   // but the user has implicitly accepted that as their chosen time.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [showTimePicker, setShowTimePicker] = useState(false);
+
+  // B-010 confidence state — used on the simple step (discovery-prone events).
+  // 'saw' keeps the witnessed one-tap default; 'found' opens the window/estimate
+  // path. occurredAt above doubles as the witnessed/estimated point.
+  const [timeMode, setTimeMode] = useState<TimeMode>('saw');
+  const [foundMode, setFoundMode] = useState<FoundMode>('before');
+  const [earliest, setEarliest] = useState<Date | null>(null);
+  const [foundLatest, setFoundLatest] = useState<Date>(() => new Date());
+  // Estimated point is kept separate from `occurredAt` (the witnessed point)
+  // so a guess entered in "Around a time" can never bleed into a witnessed log
+  // if the owner toggles back to "Saw it happen".
+  const [estimatedAt, setEstimatedAt] = useState<Date>(() => new Date());
 
   // Completion animation
   const checkScale = useRef(new Animated.Value(0.5)).current;
@@ -188,8 +211,15 @@ export default function LogModal() {
       foodBrand: food.brand,
       foodProduct: food.product_name,
       foodType: food.food_type ?? null,
-      occurredAt: effectiveOccurredAt,
-      occurredAtSource: usingExif ? 'exif' : 'now',
+      // Meals are inherently witnessed — you see yourself put the bowl down.
+      // The B-010 found path does not apply (you don't "discover" a meal).
+      timeFields: {
+        confidence: 'witnessed',
+        occurredAt: effectiveOccurredAt,
+        earliest: null,
+        latest: null,
+        source: usingExif ? 'exif' : 'now',
+      },
     });
     // Defer the toast past the 1s completion checkmark + modal dismiss so
     // it appears at the root layer (not occluded by the still-presented
@@ -220,25 +250,31 @@ export default function LogModal() {
     foodBrand: string;
     foodProduct: string;
     foodType?: string | null;
-    occurredAt?: Date;
-    occurredAtSource?: 'manual' | 'exif' | 'now';
+    timeFields?: TimeFields;
   }): Promise<{ eventId: string; occurredAt: string } | null> {
     if (!activePet) return null;
     const foodId = override?.foodId ?? selectedFoodId;
     const foodBrand = override?.foodBrand ?? selectedFoodBrand;
     const foodProduct = override?.foodProduct ?? selectedFoodProduct;
     if (selectedType === 'meal' && !foodId) return null;
-    const effectiveOccurredAt = override?.occurredAt ?? occurredAt;
-    const effectiveSource = override?.occurredAtSource ?? occurredAtSource;
+    // Meals pass their own witnessed time fields; the simple step derives from
+    // the confidence affordance.
+    const tf = override?.timeFields ?? buildTimeFields();
+    const effectiveOccurredAt = tf.occurredAt;
+    const effectiveSource = tf.source;
     const db = getDb();
     const eventId = uuid();
     const now = new Date().toISOString();
     await db.runAsync(
       `INSERT INTO events
-         (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, 0)`,
+         (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
+          occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
+          created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, 0)`,
       [eventId, activePet.id, selectedType!, effectiveOccurredAt.toISOString(),
-       severity ?? null, notes.trim() || null, effectiveSource, now, now]
+       severity ?? null, notes.trim() || null, effectiveSource,
+       tf.confidence, tf.earliest ? tf.earliest.toISOString() : null,
+       tf.latest ? tf.latest.toISOString() : null, now, now]
     );
     if (selectedType === 'meal' && foodId) {
       const mealId = uuid();
@@ -257,6 +293,9 @@ export default function LogModal() {
       pet_id: activePet.id,
       event_type: selectedType!,
       occurred_at: effectiveOccurredAt.toISOString(),
+      occurred_at_confidence: tf.confidence,
+      occurred_at_earliest: tf.earliest ? tf.earliest.toISOString() : null,
+      occurred_at_latest: tf.latest ? tf.latest.toISOString() : null,
       severity: severity ?? null,
       notes: notes.trim() || null,
       source: 'manual',
@@ -303,6 +342,10 @@ export default function LogModal() {
     if (step === 'food' || step === 'symptom' || step === 'simple' || step === 'stool-type') {
       setSelectedType(null);
       setSeverity(null);
+      // Reset B-010 confidence state so the next event starts witnessed.
+      setTimeMode('saw');
+      setFoundMode('before');
+      setEarliest(null);
       setStep('type');
       return;
     }
@@ -350,6 +393,57 @@ export default function LogModal() {
       setOccurredAtSource('manual');
     }
     setOccurredAt(date);
+  }
+
+  function handleTimeModeChange(m: TimeMode) {
+    if (m === 'found') {
+      setFoundMode('before');
+      // A photo of discovered evidence is EXIF-stamped at discovery — the
+      // window's latest edge — so seed from it; otherwise default to now.
+      setFoundLatest(occurredAtSource === 'exif' ? occurredAt : new Date());
+    }
+    setTimeMode(m);
+  }
+
+  function handleFoundModeChange(m: FoundMode) {
+    // Seed the estimate from when they found it, as a starting point to adjust.
+    if (m === 'around' && foundMode !== 'around') {
+      setEstimatedAt(foundLatest);
+    }
+    // Seed a sane lower bound the first time the owner opens a window.
+    if (m === 'between' && !earliest) {
+      setEarliest(new Date(foundLatest.getTime() - 2 * 60 * 60 * 1000));
+    }
+    setFoundMode(m);
+  }
+
+  // Clamp earliest <= latest so a windowed event never violates the
+  // chk_occurred_window_order DB constraint (B-010 migration 012).
+  function handleLatestChange(d: Date) {
+    setFoundLatest(d);
+    if (earliest && earliest.getTime() > d.getTime()) setEarliest(d);
+  }
+
+  // Derive the stored time fields from the affordance the owner touched.
+  // occurred_at is always a single point so every existing reader keeps
+  // working; confidence + window bounds carry the uncertainty (B-010).
+  function buildTimeFields(): TimeFields {
+    if (timeMode === 'saw') {
+      return { confidence: 'witnessed', occurredAt, earliest: null, latest: null, source: occurredAtSource };
+    }
+    if (foundMode === 'around') {
+      return { confidence: 'estimated', occurredAt: estimatedAt, earliest: null, latest: null, source: 'manual' };
+    }
+    // 'before' (open-ended) or 'between' (bounded) -> window
+    const e = foundMode === 'between' ? earliest : null;
+    const l = foundLatest;
+    return {
+      confidence: 'window',
+      occurredAt: deriveOccurredAt({ confidence: 'window', point: occurredAt, earliest: e, latest: l }),
+      earliest: e,
+      latest: l,
+      source: 'manual',
+    };
   }
 
   function renderTimeRow() {
@@ -587,19 +681,21 @@ export default function LogModal() {
           <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
             {renderPhotoAttachRow()}
             {renderNotesInput()}
-            {renderTimeRow()}
-            {showTimePicker && (
-              <DateTimePicker
-                value={occurredAt}
-                mode="datetime"
-                display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                maximumDate={new Date()}
-                onChange={(_e, date) => {
-                  if (Platform.OS === 'android') setShowTimePicker(false);
-                  handleTimePickerChange(date);
-                }}
-              />
-            )}
+            <TimeConfidenceField
+              mode={timeMode}
+              onModeChange={handleTimeModeChange}
+              point={occurredAt}
+              pointSource={occurredAtSource}
+              onPointChange={handleTimePickerChange}
+              foundMode={foundMode}
+              onFoundModeChange={handleFoundModeChange}
+              estimatedAt={estimatedAt}
+              onEstimatedChange={setEstimatedAt}
+              earliest={earliest}
+              latest={foundLatest}
+              onEarliestChange={setEarliest}
+              onLatestChange={handleLatestChange}
+            />
           </ScrollView>
           <View style={styles.bottomAction}>
             <TouchableOpacity style={styles.confirmBtn} onPress={() => handleConfirm()}>
