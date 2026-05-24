@@ -23,7 +23,7 @@ import { uploadPhoto, getSignedUrl } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { useEventStore } from '../../store/eventStore';
-import { uuid, formatExifAttribution } from '../../lib/utils';
+import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 
 const HERO_HEIGHT = 320;
@@ -50,10 +50,6 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], {
     weekday: 'long', month: 'long', day: 'numeric',
   });
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 export default function EventDetailScreen() {
@@ -290,6 +286,12 @@ export default function EventDetailScreen() {
 
   const config = EVENT_TYPES[event.event_type as EventTypeKey];
   const label = config?.label ?? 'Event';
+  const timeDisplay = describeOccurredAt({
+    confidence: event.occurred_at_confidence as 'witnessed' | 'estimated' | 'window' | null,
+    occurredAt: event.occurred_at,
+    earliest: event.occurred_at_earliest,
+    latest: event.occurred_at_latest,
+  });
   const photoUri = attachment?.local_uri ?? remoteUrl;
   // Meals' clinical artifact is the food name, not a photo. Don't show an
   // empty-state hero begging for one — flagged by Dr. Chen + Jordan during
@@ -338,9 +340,23 @@ export default function EventDetailScreen() {
           <Text style={styles.typeLabel}>{label.toUpperCase()}</Text>
           <Text style={styles.dateBig}>{formatDate(event.occurred_at)}</Text>
           <Text style={styles.timeRow}>
-            {formatTime(event.occurred_at)} · {formatRelative(event.occurred_at)}
+            {timeDisplay.primary}
+            {timeDisplay.isExact ? ` · ${formatRelative(event.occurred_at)}` : ''}
           </Text>
-          {occurredAtSource === 'exif' ? (
+          {/* B-010 — when the time wasn't witnessed, say so plainly. Honest, not
+              alarming (Designer / Dr. Chen): the report must never present a
+              found time as a clinically-exact one. */}
+          {timeDisplay.tag ? (
+            <Text style={styles.confidenceNote}>
+              {timeDisplay.tag === 'estimated'
+                ? 'Estimated — not witnessed'
+                : 'Found, not witnessed'}
+            </Text>
+          ) : null}
+          {/* EXIF attribution only when the time is exact: a found event's photo
+              is stamped at discovery, not occurrence, so the window/estimate
+              already carries the meaning here. */}
+          {occurredAtSource === 'exif' && timeDisplay.isExact ? (
             <Text style={styles.exifAttribution}>
               {formatExifAttribution(event.occurred_at)}
             </Text>
@@ -522,6 +538,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   exifAttribution: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    marginTop: 2,
+  },
+  confidenceNote: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     marginTop: 2,

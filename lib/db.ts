@@ -171,6 +171,9 @@ export interface TimelineRow {
   pet_id: string;
   event_type: string;
   occurred_at: string;
+  occurred_at_confidence: string | null;
+  occurred_at_earliest: string | null;
+  occurred_at_latest: string | null;
   severity: number | null;
   notes: string | null;
   source: string;
@@ -206,7 +209,9 @@ export async function getTimeline(
   }
   params.push(limit, offset);
   return db.getAllAsync<TimelineRow>(
-    `SELECT e.id, e.pet_id, e.event_type, e.occurred_at, e.severity, e.notes,
+    `SELECT e.id, e.pet_id, e.event_type, e.occurred_at,
+            e.occurred_at_confidence, e.occurred_at_earliest, e.occurred_at_latest,
+            e.severity, e.notes,
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
@@ -224,7 +229,9 @@ export async function getTimeline(
 export async function getEventById(eventId: string): Promise<TimelineRow | null> {
   const db = getDb();
   const row = await db.getFirstAsync<TimelineRow>(
-    `SELECT e.id, e.pet_id, e.event_type, e.occurred_at, e.severity, e.notes,
+    `SELECT e.id, e.pet_id, e.event_type, e.occurred_at,
+            e.occurred_at_confidence, e.occurred_at_earliest, e.occurred_at_latest,
+            e.severity, e.notes,
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
@@ -253,13 +260,29 @@ export async function updateEvent(
     severity: number | null;
     notes: string | null;
     occurred_at_source?: 'manual' | 'exif' | 'now';
+    // B-010 — re-classifying confidence on edit. Window bounds are only
+    // non-null for confidence 'window'; the caller derives occurred_at from
+    // them (latest edge) so existing readers keep working.
+    occurred_at_confidence?: 'witnessed' | 'estimated' | 'window' | null;
+    occurred_at_earliest?: string | null;
+    occurred_at_latest?: string | null;
   },
 ): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
   await db.runAsync(
-    'UPDATE events SET occurred_at = ?, severity = ?, notes = ?, occurred_at_source = ?, updated_at = ?, synced = 0 WHERE id = ?',
-    [fields.occurred_at, fields.severity ?? null, fields.notes, fields.occurred_at_source ?? 'manual', now, eventId],
+    `UPDATE events SET occurred_at = ?, severity = ?, notes = ?, occurred_at_source = ?,
+            occurred_at_confidence = ?, occurred_at_earliest = ?, occurred_at_latest = ?,
+            updated_at = ?, synced = 0
+     WHERE id = ?`,
+    [
+      fields.occurred_at, fields.severity ?? null, fields.notes,
+      fields.occurred_at_source ?? 'manual',
+      fields.occurred_at_confidence ?? null,
+      fields.occurred_at_earliest ?? null,
+      fields.occurred_at_latest ?? null,
+      now, eventId,
+    ],
   );
 }
 
@@ -271,6 +294,32 @@ export async function getEventSource(eventId: string): Promise<'manual' | 'exif'
   );
   const s = row?.occurred_at_source;
   return s === 'exif' || s === 'now' ? s : 'manual';
+}
+
+// B-010 — load the stored confidence + window bounds so the edit form can
+// reconstruct the "Saw it / Found it" control's state. Returns null confidence
+// for legacy/unclassified rows (the form then defaults to witnessed).
+export async function getEventTimeFields(eventId: string): Promise<{
+  confidence: 'witnessed' | 'estimated' | 'window' | null;
+  earliest: string | null;
+  latest: string | null;
+}> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{
+    occurred_at_confidence: string | null;
+    occurred_at_earliest: string | null;
+    occurred_at_latest: string | null;
+  }>(
+    'SELECT occurred_at_confidence, occurred_at_earliest, occurred_at_latest FROM events WHERE id = ?',
+    [eventId],
+  );
+  const c = row?.occurred_at_confidence;
+  const confidence = c === 'witnessed' || c === 'estimated' || c === 'window' ? c : null;
+  return {
+    confidence,
+    earliest: row?.occurred_at_earliest ?? null,
+    latest: row?.occurred_at_latest ?? null,
+  };
 }
 
 export async function updateMealFood(eventId: string, foodItemId: string): Promise<void> {

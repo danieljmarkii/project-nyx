@@ -3,6 +3,7 @@ import { NyxEvent } from '../../store/eventStore';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { theme } from '../../constants/theme';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
+import { describeOccurredAt } from '../../lib/utils';
 
 interface Props {
   event: NyxEvent;
@@ -15,14 +16,8 @@ interface Props {
 
 const FALLBACK_CONFIG = { label: 'Event', emoji: '·', hasSeverity: false };
 
-function formatOccurredAt(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString([], {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function formatDatePart(iso: string): string {
+  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete }: Props) {
@@ -40,6 +35,16 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
     ? `${event.food_brand} · ${event.food_product_name}`
     : event.food_product_name ?? event.food_brand ?? null;
 
+  // B-010 — read-only confidence marker so the timeline stops implying false
+  // precision on found/estimated events. Witnessed and legacy (null) rows keep
+  // the plain time and show no tag.
+  const timeDisplay = describeOccurredAt({
+    confidence: event.occurred_at_confidence,
+    occurredAt: event.occurred_at,
+    earliest: event.occurred_at_earliest,
+    latest: event.occurred_at_latest,
+  });
+
   return (
     <TouchableOpacity
       style={[styles.row, isExpanded && styles.rowExpanded]}
@@ -54,7 +59,14 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
       <View style={styles.content}>
         <View style={styles.topLine}>
           <Text style={styles.label}>{rowLabel}</Text>
-          <Text style={styles.time}>{formatOccurredAt(event.occurred_at)}</Text>
+          <View style={styles.timeCol}>
+            <Text style={styles.time}>
+              {formatDatePart(event.occurred_at)}, {timeDisplay.compact}
+            </Text>
+            {timeDisplay.tag ? (
+              <Text style={styles.timeTag}>{timeDisplay.tag}</Text>
+            ) : null}
+          </View>
         </View>
 
         {foodLabel ? (
@@ -132,9 +144,19 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
     color: theme.colorTextPrimary,
   },
+  timeCol: {
+    alignItems: 'flex-end',
+  },
   time: {
     fontSize: 13,
     color: theme.colorTextSecondary,
+  },
+  timeTag: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    letterSpacing: theme.trackingWide,
+    textTransform: 'uppercase',
+    marginTop: 1,
   },
   foodLine: {
     flexDirection: 'row',
