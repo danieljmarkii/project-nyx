@@ -273,6 +273,17 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
         </View>
       ) : null}
 
+      {!dismissed ? (
+        <TouchableOpacity
+          onPress={handleRetry}
+          disabled={retrying}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={styles.rerunRow}
+        >
+          <Text style={styles.linkText}>{retrying ? 'Re-running…' : 'Re-run analysis'}</Text>
+        </TouchableOpacity>
+      ) : null}
+
       <Text style={styles.disclaimer}>This is a quick read of a single moment, not a diagnosis.</Text>
     </View>
   );
@@ -381,6 +392,10 @@ const styles = StyleSheet.create({
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
     marginTop: 6,
+  },
+  rerunRow: {
+    paddingVertical: theme.space1,
+    alignSelf: 'flex-start',
   },
   dismissedRow: {
     flexDirection: 'row',
