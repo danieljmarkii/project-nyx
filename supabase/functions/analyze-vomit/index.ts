@@ -47,6 +47,11 @@ const CONCURRENT_LETHARGY_HOURS = 24
 // last week — so we never flag a non-logger. (Data caveat, B-027.)
 const INTAKE_BASELINE_WINDOW_DAYS = 7
 
+// Claude rejects any single image whose base64 payload exceeds 5 MB. Full-res
+// photos (uploaded before client-side compression existed) can exceed it; we
+// skip those rather than 500.
+const MAX_CLAUDE_IMAGE_BASE64 = 5_242_880
+
 // ── Enum vocabularies (must match the DB enums in migration 013) ──────────────
 const COLOURS = ['clear', 'white', 'yellow', 'green', 'brown', 'tan', 'pink_red', 'dark_red', 'black_coffee_ground', 'mixed', 'unsure'] as const
 const CONTENTS = ['undigested_food', 'partially_digested_food', 'bile', 'foam', 'liquid_only', 'grass_or_plant', 'hair', 'unsure'] as const
@@ -524,8 +529,9 @@ Deno.serve(async (req: Request) => {
     const photoPaths = (attachments ?? []).map((a) => a.storage_path as string)
     const hasPhoto = photoPaths.length > 0
 
-    // 3. Vision call (only if there is a photo).
+    // 3. Vision call (only if there is a usable photo).
     let analysis: VomitAnalysis | null = null
+    let photoTooLarge = false
     if (hasPhoto) {
       const blobs = await Promise.all(
         photoPaths.slice(0, 3).map(async (path) => {
@@ -535,8 +541,15 @@ Deno.serve(async (req: Request) => {
         }),
       )
       const imageParts = await Promise.all(blobs.map(blobToImagePart))
-      analysis = await runVisionCall(imageParts)
-      if (!analysis) throw new Error('Vision model did not return an analysis')
+      // Drop any image over Claude's 5 MB cap rather than 500. If that leaves
+      // nothing to send, fall through to the contextual floor with an honest
+      // "couldn't read the photo" read.
+      const usableImages = imageParts.filter((p) => p.data.length <= MAX_CLAUDE_IMAGE_BASE64)
+      photoTooLarge = usableImages.length === 0
+      if (usableImages.length > 0) {
+        analysis = await runVisionCall(usableImages)
+        if (!analysis) throw new Error('Vision model did not return an analysis')
+      }
     }
 
     // 4. Deterministic contextual flags + escalation floor.
@@ -559,6 +572,8 @@ Deno.serve(async (req: Request) => {
       readText = buildContextualReadText(petName, contextualFlags)
     } else if (analysis?.read_text) {
       readText = analysis.read_text
+    } else if (photoTooLarge) {
+      readText = `This photo's a bit too large for me to read. Try replacing it with a fresh shot and I'll take another look. If you're worried about ${petName}, your vet is the best call.`
     } else {
       readText = buildNoFlagReadText(petName, hasPhoto)
     }
