@@ -112,68 +112,70 @@ export function TimeConfidenceField({
         <View style={styles.panel}>
           <Text style={styles.panelHead}>When did it happen?</Text>
 
-          {foundMode === 'before' ? (
+          {/* All three modes are always reachable — selecting one is reversible
+              (no one-way "Know roughly when?" door). 'before' is the default. */}
+          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('before')} hitSlop={8}>
+            <View style={[styles.radio, foundMode === 'before' && styles.radioOn]}>
+              {foundMode === 'before' && <View style={styles.radioDot} />}
+            </View>
+            <Text style={styles.radioLab}>Sometime before</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('around')} hitSlop={8}>
+            <View style={[styles.radio, foundMode === 'around' && styles.radioOn]}>
+              {foundMode === 'around' && <View style={styles.radioDot} />}
+            </View>
+            <Text style={styles.radioLab}>Around a time</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('between')} hitSlop={8}>
+            <View style={[styles.radio, foundMode === 'between' && styles.radioOn]}>
+              {foundMode === 'between' && <View style={styles.radioDot} />}
+            </View>
+            <Text style={styles.radioLab}>Between two times</Text>
+          </TouchableOpacity>
+
+          {foundMode === 'before' && (
             <>
               <View style={styles.field}>
-                <Text style={styles.fieldLab}>Sometime before</Text>
+                <Text style={styles.fieldLab}>Found it by</Text>
                 <TouchableOpacity onPress={() => setOpen(open === 'latest' ? null : 'latest')} hitSlop={8}>
                   <Text style={styles.fieldVal}>{stamp(latest)}</Text>
                 </TouchableOpacity>
               </View>
               {renderPicker('latest', latest, onLatestChange, new Date())}
-              <Text style={styles.hint}>Stamped to when you found it. Logs as-is.</Text>
-              <TouchableOpacity style={styles.knowRow} onPress={() => onFoundModeChange('around')} hitSlop={8}>
-                <Text style={styles.knowText}>Know roughly when?</Text>
-                <Text style={styles.chev}>›</Text>
-              </TouchableOpacity>
+              <Text style={styles.hint}>Recorded as “found by {formatTime(latest)}” — no guessing.</Text>
             </>
-          ) : (
+          )}
+
+          {foundMode === 'around' && (
             <>
-              <View style={styles.modePick}>
-                <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('around')} hitSlop={8}>
-                  <View style={[styles.radio, foundMode === 'around' && styles.radioOn]}>
-                    {foundMode === 'around' && <View style={styles.radioDot} />}
-                  </View>
-                  <Text style={styles.radioLab}>Around a time</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.radioRow} onPress={() => onFoundModeChange('between')} hitSlop={8}>
-                  <View style={[styles.radio, foundMode === 'between' && styles.radioOn]}>
-                    {foundMode === 'between' && <View style={styles.radioDot} />}
-                  </View>
-                  <Text style={styles.radioLab}>Between two times</Text>
+              <View style={styles.field}>
+                <Text style={styles.fieldLab}>Around</Text>
+                <TouchableOpacity onPress={() => setOpen(open === 'estimated' ? null : 'estimated')} hitSlop={8}>
+                  <Text style={styles.fieldVal}>{stamp(estimatedAt)}</Text>
                 </TouchableOpacity>
               </View>
+              {renderPicker('estimated', estimatedAt, onEstimatedChange, new Date())}
+              <Text style={styles.hint}>A best guess — logged as an estimate, not a witnessed time.</Text>
+            </>
+          )}
 
-              {foundMode === 'around' ? (
-                <>
-                  <View style={styles.field}>
-                    <Text style={styles.fieldLab}>Around</Text>
-                    <TouchableOpacity onPress={() => setOpen(open === 'estimated' ? null : 'estimated')} hitSlop={8}>
-                      <Text style={styles.fieldVal}>{stamp(estimatedAt)}</Text>
-                    </TouchableOpacity>
-                  </View>
-                  {renderPicker('estimated', estimatedAt, onEstimatedChange, new Date())}
-                  <Text style={styles.hint}>A best guess — logged as an estimate, not a witnessed time.</Text>
-                </>
-              ) : (
-                <>
-                  <View style={styles.field}>
-                    <Text style={styles.fieldLab}>From</Text>
-                    <TouchableOpacity onPress={() => setOpen(open === 'earliest' ? null : 'earliest')} hitSlop={8}>
-                      <Text style={styles.fieldVal}>{earliest ? stamp(earliest) : 'Set time'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                  {renderPicker('earliest', earliest ?? latest, onEarliestChange, latest)}
-                  <View style={styles.field}>
-                    <Text style={styles.fieldLab}>To</Text>
-                    <TouchableOpacity onPress={() => setOpen(open === 'latest' ? null : 'latest')} hitSlop={8}>
-                      <Text style={styles.fieldVal}>{stamp(latest)}</Text>
-                    </TouchableOpacity>
-                  </View>
-                  {renderPicker('latest', latest, onLatestChange, new Date())}
-                  <Text style={styles.hint}>Stored as the midpoint; the range is kept for your vet.</Text>
-                </>
-              )}
+          {foundMode === 'between' && (
+            <>
+              <View style={styles.field}>
+                <Text style={styles.fieldLab}>From</Text>
+                <TouchableOpacity onPress={() => setOpen(open === 'earliest' ? null : 'earliest')} hitSlop={8}>
+                  <Text style={styles.fieldVal}>{earliest ? stamp(earliest) : 'Set time'}</Text>
+                </TouchableOpacity>
+              </View>
+              {renderPicker('earliest', earliest ?? latest, onEarliestChange, latest)}
+              <View style={styles.field}>
+                <Text style={styles.fieldLab}>To</Text>
+                <TouchableOpacity onPress={() => setOpen(open === 'latest' ? null : 'latest')} hitSlop={8}>
+                  <Text style={styles.fieldVal}>{stamp(latest)}</Text>
+                </TouchableOpacity>
+              </View>
+              {renderPicker('latest', latest, onLatestChange, new Date())}
+              <Text style={styles.hint}>The full range is kept for your vet.</Text>
             </>
           )}
         </View>
@@ -266,25 +268,6 @@ const styles = StyleSheet.create({
   hint: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-  },
-  knowRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-  },
-  knowText: {
-    fontSize: theme.textSM,
-    color: theme.colorAccent,
-  },
-  chev: {
-    fontSize: theme.textMD,
-    color: theme.colorTextTertiary,
-  },
-  modePick: {
-    flexDirection: 'row',
-    gap: theme.space3,
-    paddingVertical: theme.space1,
   },
   radioRow: {
     flexDirection: 'row',
