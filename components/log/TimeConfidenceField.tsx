@@ -53,6 +53,10 @@ export function TimeConfidenceField({
         mode="datetime"
         display={pickerDisplay}
         maximumDate={maxDate}
+        // Force light theme + brand accent so the picker stays readable when
+        // the device is in OS dark mode against our white surfaces (cf. #28).
+        themeVariant="light"
+        accentColor={theme.colorAccent}
         onChange={(_e, d) => {
           if (Platform.OS === 'android') setOpen(null);
           if (d) onPick(d);
