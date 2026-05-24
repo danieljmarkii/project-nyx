@@ -19,9 +19,10 @@ import {
   updateMealIntake,
   TimelineRow,
 } from '../../lib/db';
-import { uploadPhoto, getSignedUrl } from '../../lib/storage';
+import { uploadPhoto, getSignedUrl, compressForUpload } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
+import { triggerVomitAnalysis } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
@@ -243,8 +244,12 @@ export default function EventDetailScreen() {
         [attId, event.id, event.pet_id, localUri, storagePath, now],
       );
       setAttachment({ id: attId, local_uri: localUri, storage_path: storagePath });
+      // Compress before upload (≤1600px, q75) so the file stays under Claude's
+      // 5 MB cap — also the recovery path for a historic event whose original
+      // full-size photo is too large to analyze.
+      const uploadUri = await compressForUpload(localUri);
       // Fire-and-forget upload; sync retries on reconnect if it fails
-      uploadPhoto('nyx-event-attachments', storagePath, localUri)
+      uploadPhoto('nyx-event-attachments', storagePath, uploadUri)
         .then(async () => {
           const { error } = await supabase.from('event_attachments').upsert(
             { id: attId, event_id: event.id, pet_id: event.pet_id, storage_path: storagePath, mime_type: 'image/jpeg' },
@@ -254,6 +259,9 @@ export default function EventDetailScreen() {
           // synced when the row truly landed, else leave it for the retry queue.
           if (error) { console.warn('[event-detail] attachment upsert failed:', error.message); return; }
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+          // Re-analyze a vomit event whose photo just changed (e.g. replacing an
+          // oversized historic photo with a compressed one).
+          if (event.event_type === 'vomit') triggerVomitAnalysis(event.id).catch(() => {});
         })
         .catch(console.error);
     } catch (e) {

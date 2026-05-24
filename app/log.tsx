@@ -19,7 +19,7 @@ import { useToastStore } from '../store/toastStore';
 import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
-import { uploadPhoto } from '../lib/storage';
+import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
@@ -321,8 +321,13 @@ export default function LogModal() {
         [attId, eventId, activePet.id, attachmentUri, storagePath, attachmentTakenAt ?? null, now]
       );
       const isVomit = selectedType === 'vomit';
-      uploadPhoto('nyx-event-attachments', storagePath, attachmentUri)
-        .then(async () => {
+      // Compress before upload (longest edge ≤1600px, JPEG q75) so the file
+      // stays well under Claude's 5 MB image cap and bounds storage. Runs in an
+      // async block so it doesn't delay the completion animation below.
+      (async () => {
+        try {
+          const uploadUri = await compressForUpload(attachmentUri);
+          await uploadPhoto('nyx-event-attachments', storagePath, uploadUri);
           const { error: attErr } = await supabase.from('event_attachments').upsert({
             id: attId, event_id: eventId, pet_id: activePet.id,
             storage_path: storagePath, mime_type: 'image/jpeg', taken_at: attachmentTakenAt,
@@ -337,8 +342,10 @@ export default function LogModal() {
           // B-027: cache-on-log. The photo + attachment row are now in Supabase,
           // so the analyze-vomit function can read them. Fire-and-forget.
           if (isVomit) triggerVomitAnalysis(eventId).catch(() => {});
-        })
-        .catch(console.error);
+        } catch (e) {
+          console.error('[log] photo upload failed:', e);
+        }
+      })();
     }
 
     setStep('complete');
