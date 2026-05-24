@@ -24,6 +24,7 @@
 // extract-food-from-photo. Re-analysis never clobbers a human-edited field.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -409,7 +410,11 @@ export function detectImageMediaType(bytes: Uint8Array): ClaudeMediaType {
 async function blobToImagePart(blob: Blob): Promise<ImagePart> {
   const bytes = new Uint8Array(await blob.arrayBuffer())
   const mediaType = detectImageMediaType(bytes)
-  const data = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
+  // Encode straight from the byte array. The old btoa(Array.from(bytes,…).join(''))
+  // materialised one JS string per byte — for a multi-MB uncompressed phone photo
+  // that's hundreds of MB of intermediate strings, tripping the Edge Function
+  // memory limit. encodeBase64 operates on the Uint8Array directly.
+  const data = encodeBase64(bytes)
   return { data, mediaType }
 }
 
