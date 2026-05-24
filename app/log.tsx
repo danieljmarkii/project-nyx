@@ -323,15 +323,19 @@ export default function LogModal() {
       const isVomit = selectedType === 'vomit';
       uploadPhoto('nyx-event-attachments', storagePath, attachmentUri)
         .then(async () => {
-          await supabase.from('event_attachments').upsert({
+          const { error: attErr } = await supabase.from('event_attachments').upsert({
             id: attId, event_id: eventId, pet_id: activePet.id,
             storage_path: storagePath, mime_type: 'image/jpeg', taken_at: attachmentTakenAt,
           }, { onConflict: 'id' });
+          // Only mark synced + analyze if the row actually landed. supabase-js
+          // returns errors rather than throwing, so an ignored error here is
+          // what previously left rows flagged synced but absent from Supabase.
+          // On failure leave synced=0 so the queue retries; the lazy detail-open
+          // trigger will analyze once the row is up.
+          if (attErr) { console.warn('[log] event_attachment upsert failed:', attErr.message); return; }
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
-          // B-027: cache-on-log. The photo + attachment row are now in
-          // Supabase (the upsert above implies the event synced too, via the
-          // event_attachments → events FK), so the analyze-vomit function can
-          // read them. Fire-and-forget; the detail screen also triggers lazily.
+          // B-027: cache-on-log. The photo + attachment row are now in Supabase,
+          // so the analyze-vomit function can read them. Fire-and-forget.
           if (isVomit) triggerVomitAnalysis(eventId).catch(() => {});
         })
         .catch(console.error);

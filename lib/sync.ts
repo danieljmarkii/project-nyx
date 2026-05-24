@@ -213,14 +213,53 @@ export async function syncPendingAttachments(): Promise<void> {
   for (const att of pending) {
     try {
       await uploadPhoto('nyx-event-attachments', att.storage_path, att.local_uri, att.mime_type);
-      await supabase.from('event_attachments').upsert({
+      const { error } = await supabase.from('event_attachments').upsert({
         id: att.id, event_id: att.event_id, pet_id: att.pet_id,
         storage_path: att.storage_path, mime_type: att.mime_type, taken_at: att.taken_at,
       }, { onConflict: 'id' });
+      // Only mark synced when the row actually landed. Previously the upsert
+      // error was ignored and synced was set unconditionally — so a failed
+      // upsert (e.g. the event_attachments table not existing in Supabase) left
+      // rows flagged "synced" but absent server-side, invisible until something
+      // read them back. supabase-js returns errors, it does not throw.
+      if (error) { console.warn('[sync] event_attachment upsert failed:', error.message); continue; }
       await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [att.id]);
     } catch (e) {
       console.warn('[sync] event_attachment upload failed:', e);
     }
+  }
+}
+
+// Force-push a single event's local attachments to Supabase, ignoring the
+// `synced` flag. Recovers rows wrongly marked synced before the upsert-error
+// fix above — their photo files are already in storage, only the row is
+// missing. Used by the AI-analysis trigger so analysis works on events logged
+// before the fix, without waiting for (or being skipped by) the queue sweep.
+export async function ensureEventAttachmentsSynced(eventId: string): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+  const atts = await db.getAllAsync<{
+    id: string; event_id: string; pet_id: string;
+    local_uri: string; storage_path: string;
+    mime_type: string; taken_at: string | null;
+  }>('SELECT * FROM event_attachments WHERE event_id = ?', [eventId]);
+
+  for (const att of atts) {
+    // Best-effort re-upload — the file is usually already in storage, so a
+    // failure here (e.g. the local file is gone) must not block the row write.
+    try {
+      await uploadPhoto('nyx-event-attachments', att.storage_path, att.local_uri, att.mime_type);
+    } catch (e) {
+      console.warn('[sync] attachment re-upload skipped:', e);
+    }
+    const { error } = await supabase.from('event_attachments').upsert({
+      id: att.id, event_id: att.event_id, pet_id: att.pet_id,
+      storage_path: att.storage_path, mime_type: att.mime_type, taken_at: att.taken_at,
+    }, { onConflict: 'id' });
+    if (error) { console.warn('[sync] ensureEventAttachmentsSynced upsert failed:', error.message); continue; }
+    await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [att.id]);
   }
 }
 

@@ -246,10 +246,13 @@ export default function EventDetailScreen() {
       // Fire-and-forget upload; sync retries on reconnect if it fails
       uploadPhoto('nyx-event-attachments', storagePath, localUri)
         .then(async () => {
-          await supabase.from('event_attachments').upsert(
+          const { error } = await supabase.from('event_attachments').upsert(
             { id: attId, event_id: event.id, pet_id: event.pet_id, storage_path: storagePath, mime_type: 'image/jpeg' },
             { onConflict: 'id' },
           );
+          // supabase-js returns the error rather than throwing — only flag
+          // synced when the row truly landed, else leave it for the retry queue.
+          if (error) { console.warn('[event-detail] attachment upsert failed:', error.message); return; }
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
         })
         .catch(console.error);
