@@ -13,8 +13,28 @@ import {
   computeContextualFlags,
   applyEscalationFloor,
   buildContextualReadText,
+  detectImageMediaType,
   type ContextInput,
 } from './index.ts'
+
+// ── detectImageMediaType ──────────────────────────────────────────────────────
+
+Deno.test('detectImageMediaType — JPEG', () => {
+  assertStrictEquals(detectImageMediaType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])), 'image/jpeg')
+})
+
+Deno.test('detectImageMediaType — PNG', () => {
+  assertStrictEquals(detectImageMediaType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])), 'image/png')
+})
+
+Deno.test('detectImageMediaType — WebP (RIFF....WEBP) — the real-world bug', () => {
+  const webp = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50])
+  assertStrictEquals(detectImageMediaType(webp), 'image/webp')
+})
+
+Deno.test('detectImageMediaType — unknown bytes default to jpeg', () => {
+  assertStrictEquals(detectImageMediaType(new Uint8Array([0x00, 0x01, 0x02, 0x03])), 'image/jpeg')
+})
 
 // ── parseAnalysisToolResult ───────────────────────────────────────────────────
 

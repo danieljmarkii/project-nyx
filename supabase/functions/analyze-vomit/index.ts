@@ -385,15 +385,38 @@ async function assembleContext(
 
 // ── Vision call ────────────────────────────────────────────────────────────────
 
-async function blobToBase64(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer())
-  return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
+type ClaudeMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+interface ImagePart { data: string; mediaType: ClaudeMediaType }
+
+// Claude rejects a request whose declared media_type doesn't match the actual
+// bytes. Photos are uploaded with a hardcoded .jpg name + image/jpeg
+// content-type, but the underlying bytes can be WebP/PNG/etc (e.g. iOS image
+// picker output). Sniff the magic bytes so we declare the real type.
+export function detectImageMediaType(bytes: Uint8Array): ClaudeMediaType {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif'
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && // "RIFF"
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50    // "WEBP"
+  ) return 'image/webp'
+  // Unknown (incl. HEIC, which Claude does not accept): default to jpeg. If it's
+  // genuinely something Claude can't read, the API surfaces a clear 400.
+  return 'image/jpeg'
 }
 
-async function runVisionCall(base64Images: string[]): Promise<VomitAnalysis | null> {
-  const imageBlocks = base64Images.map((data) => ({
+async function blobToImagePart(blob: Blob): Promise<ImagePart> {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const mediaType = detectImageMediaType(bytes)
+  const data = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(''))
+  return { data, mediaType }
+}
+
+async function runVisionCall(images: ImagePart[]): Promise<VomitAnalysis | null> {
+  const imageBlocks = images.map((img) => ({
     type: 'image' as const,
-    source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data },
+    source: { type: 'base64' as const, media_type: img.mediaType, data: img.data },
   }))
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -506,8 +529,8 @@ Deno.serve(async (req: Request) => {
           return data
         }),
       )
-      const base64 = await Promise.all(blobs.map(blobToBase64))
-      analysis = await runVisionCall(base64)
+      const imageParts = await Promise.all(blobs.map(blobToImagePart))
+      analysis = await runVisionCall(imageParts)
       if (!analysis) throw new Error('Vision model did not return an analysis')
     }
 
