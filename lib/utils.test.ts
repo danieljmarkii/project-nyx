@@ -17,13 +17,13 @@ describe('deriveOccurredAt', () => {
     ).toBe(point.toISOString());
   });
 
-  it('returns the midpoint for a bounded window', () => {
-    // 2pm–4pm bedroom case -> 3pm
+  it('returns the latest edge for a bounded window (no invented midpoint)', () => {
+    // 2pm–4pm bedroom case -> "by 4pm", not a synthesized 3pm
     const earliest = at('2026-05-18T14:00:00.000Z');
     const latest = at('2026-05-18T16:00:00.000Z');
     expect(
       deriveOccurredAt({ confidence: 'window', point: new Date(), earliest, latest }).toISOString(),
-    ).toBe(at('2026-05-18T15:00:00.000Z').toISOString());
+    ).toBe(latest.toISOString());
   });
 
   it('returns latest for an open-ended "sometime before now" window', () => {

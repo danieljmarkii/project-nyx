@@ -61,9 +61,15 @@ export type OccurredConfidence = 'witnessed' | 'estimated' | 'window';
 // existing reader (timeline, correlation engine, vet report) keeps working off
 // a single timestamp. Pure — the one place the window→point reduction lives.
 //   witnessed / estimated -> the chosen point
-//   window, both edges     -> midpoint
-//   window, one edge        -> the known edge (e.g. "sometime before now" = latest)
-//   window, neither edge    -> falls back to point (shouldn't happen; UI guards it)
+//   window                 -> the latest edge ("no later than" / discovery time)
+//                             — a real value the owner entered, never an
+//                             invented midpoint (PM decision 2026-05-24). The
+//                             window fields remain the source of truth; this is
+//                             only a sort/representative key, and surfaces must
+//                             render the window, not this point, when
+//                             confidence != witnessed.
+//   window, only earliest   -> earliest (degenerate; UI guards against it)
+//   window, neither edge    -> falls back to point (shouldn't happen)
 export function deriveOccurredAt(input: {
   confidence: OccurredConfidence;
   point: Date;
@@ -72,7 +78,6 @@ export function deriveOccurredAt(input: {
 }): Date {
   const { confidence, point, earliest, latest } = input;
   if (confidence !== 'window') return point;
-  if (earliest && latest) return new Date((earliest.getTime() + latest.getTime()) / 2);
   if (latest) return latest;
   if (earliest) return earliest;
   return point;
