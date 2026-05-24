@@ -82,3 +82,66 @@ export function deriveOccurredAt(input: {
   if (earliest) return earliest;
   return point;
 }
+
+// How a stored event's time renders once we honor its confidence (B-010).
+//   primary — full natural phrase for a primary surface (detail, vet report)
+//   compact — drops prefix words for dense rows (history)
+//   tag     — short qualifier, null when witnessed/unclassified so exact times
+//             stay visually quiet
+//   isExact — whether a relative "3 hr ago" suffix is honest to append
+export interface OccurredAtDisplay {
+  primary: string;
+  compact: string;
+  tag: string | null;
+  isExact: boolean;
+}
+
+// Render an event's occurred_at honoring its confidence — the single place the
+// witnessed/estimated/window phrasing lives, so detail, history, and the vet
+// report stay consistent and never imply false precision. Never invents a
+// midpoint: a window renders as its bounds. Legacy rows (confidence null) fall
+// back to the bare point — not a claim either way, just the value we have.
+export function describeOccurredAt(input: {
+  confidence?: OccurredConfidence | null;
+  occurredAt: string;
+  earliest?: string | null;
+  latest?: string | null;
+}): OccurredAtDisplay {
+  const { confidence } = input;
+  const point = new Date(input.occurredAt);
+  const earliest = input.earliest ? new Date(input.earliest) : null;
+  const latest = input.latest ? new Date(input.latest) : null;
+
+  if (confidence === 'estimated') {
+    const t = `~${formatTime(point)}`;
+    return { primary: t, compact: t, tag: 'estimated', isExact: false };
+  }
+
+  if (confidence === 'window') {
+    if (earliest && latest) {
+      const e = formatTime(earliest);
+      const l = formatTime(latest);
+      return {
+        primary: `between ${e} and ${l}`,
+        compact: `${e}–${l}`,
+        tag: 'approximate',
+        isExact: false,
+      };
+    }
+    if (latest) {
+      const l = formatTime(latest);
+      return { primary: `found by ${l}`, compact: `by ${l}`, tag: 'approximate', isExact: false };
+    }
+    if (earliest) {
+      // Degenerate (lower edge only) — capture UI guards against it, but render
+      // honestly rather than fall through to a misleading exact point.
+      const e = formatTime(earliest);
+      return { primary: `after ${e}`, compact: `after ${e}`, tag: 'approximate', isExact: false };
+    }
+    // Window with no edges — nothing to anchor on; fall through to the point.
+  }
+
+  // witnessed, unclassified legacy (null), or a degenerate edgeless window.
+  const t = formatTime(point);
+  return { primary: t, compact: t, tag: null, isExact: true };
+}

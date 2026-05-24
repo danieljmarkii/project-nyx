@@ -10,13 +10,14 @@ import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getEventAttachment, getEventSource } from '../lib/db';
+import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
-import { uuid, formatExifAttribution, formatTime } from '../lib/utils';
+import { uuid, formatExifAttribution, formatTime, deriveOccurredAt } from '../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../components/log/IntakeChipRow';
+import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 
 interface CachedFood {
   id: string;
@@ -47,6 +48,22 @@ export default function EditEventModal() {
   // Provenance of the saved `occurred_at`. Loaded from the local DB on mount;
   // flips to 'manual' the moment the user taps the time row.
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
+
+  // B-010 — editable witnessed/found confidence (QA Note 1: confidence wasn't
+  // editable after logging). Shown only for non-meal events; meals are always
+  // witnessed. Reconstructed from stored fields on mount. Mirrors log.tsx.
+  const showConfidenceControl = !config.hasFood;
+  const [timeMode, setTimeMode] = useState<TimeMode>('saw');
+  const [foundMode, setFoundMode] = useState<FoundMode>('before');
+  const [earliest, setEarliest] = useState<Date | null>(null);
+  const [foundLatest, setFoundLatest] = useState<Date>(() =>
+    occurredAtParam ? new Date(occurredAtParam) : new Date(),
+  );
+  // Estimated point kept distinct from `occurredAt` (the witnessed point) so a
+  // guess never leaks into a witnessed log when the owner toggles back.
+  const [estimatedAt, setEstimatedAt] = useState<Date>(() =>
+    occurredAtParam ? new Date(occurredAtParam) : new Date(),
+  );
 
   // Photo attachment
   const [existingAttachmentUri, setExistingAttachmentUri] = useState<string | null>(null);
@@ -92,6 +109,30 @@ export default function EditEventModal() {
     }).catch(console.error);
 
     getEventSource(id).then(setOccurredAtSource).catch(console.error);
+
+    // Reconstruct the "Saw it / Found it" control from stored confidence +
+    // window bounds. Legacy/unclassified (null) rows default to witnessed.
+    getEventTimeFields(id).then(({ confidence, earliest: e, latest: l }) => {
+      if (confidence === 'estimated') {
+        setTimeMode('found');
+        setFoundMode('around');
+        setEstimatedAt(occurredAtParam ? new Date(occurredAtParam) : new Date());
+      } else if (confidence === 'window') {
+        setTimeMode('found');
+        if (e && l) {
+          setFoundMode('between');
+          setEarliest(new Date(e));
+          setFoundLatest(new Date(l));
+        } else if (l) {
+          setFoundMode('before');
+          setFoundLatest(new Date(l));
+        } else if (e) {
+          // Degenerate lower-edge-only window — render as open-ended "before".
+          setFoundMode('before');
+          setFoundLatest(new Date(e));
+        }
+      }
+    }).catch(console.error);
   }, [id]);
 
   useEffect(() => {
@@ -141,15 +182,82 @@ export default function EditEventModal() {
     }
   }
 
+  // Witnessed point picker (TimeConfidenceField 'saw' mode). Provenance flips
+  // exif->manual only on an actual value change so a peek-tap keeps EXIF.
+  function handlePointChange(date: Date) {
+    if (occurredAtSource === 'exif' && date.getTime() !== occurredAt.getTime()) {
+      setOccurredAtSource('manual');
+    }
+    setOccurredAt(date);
+  }
+
+  function handleTimeModeChange(m: TimeMode) {
+    if (m === 'found') {
+      setFoundMode('before');
+      setFoundLatest(occurredAtSource === 'exif' ? occurredAt : new Date());
+    }
+    setTimeMode(m);
+  }
+
+  function handleFoundModeChange(m: FoundMode) {
+    if (m === 'around' && foundMode !== 'around') {
+      setEstimatedAt(foundLatest);
+    }
+    if (m === 'between' && !earliest) {
+      setEarliest(new Date(foundLatest.getTime() - 2 * 60 * 60 * 1000));
+    }
+    setFoundMode(m);
+  }
+
+  // Clamp earliest <= latest so a windowed event never violates the
+  // chk_occurred_window_order DB constraint (B-010 migration 012).
+  function handleLatestChange(d: Date) {
+    setFoundLatest(d);
+    if (earliest && earliest.getTime() > d.getTime()) setEarliest(d);
+  }
+
+  // Derive the stored time fields from the affordance touched (mirrors log.tsx).
+  // occurred_at stays a single point; confidence + window bounds carry the
+  // uncertainty. Meals never reach here — they're forced witnessed in handleSave.
+  function buildTimeFields() {
+    if (timeMode === 'saw') {
+      return { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
+    }
+    if (foundMode === 'around') {
+      return { confidence: 'estimated' as const, occurredAt: estimatedAt, earliest: null as Date | null, latest: null as Date | null, source: 'manual' as const };
+    }
+    const e = foundMode === 'between' ? earliest : null;
+    const l = foundLatest;
+    return {
+      confidence: 'window' as const,
+      occurredAt: deriveOccurredAt({ confidence: 'window', point: occurredAt, earliest: e, latest: l }),
+      earliest: e,
+      latest: l,
+      source: 'manual' as const,
+    };
+  }
+
   async function handleSave() {
     if (!id) return;
     setSaving(true);
     try {
+      // Meals are always witnessed (you see yourself put the bowl down); the
+      // confidence control isn't shown for them, so force witnessed here.
+      const tf = showConfidenceControl
+        ? buildTimeFields()
+        : { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
+      const occurredAtIso = tf.occurredAt.toISOString();
+      const earliestIso = tf.earliest ? tf.earliest.toISOString() : null;
+      const latestIso = tf.latest ? tf.latest.toISOString() : null;
+
       await updateEvent(id, {
-        occurred_at: occurredAt.toISOString(),
+        occurred_at: occurredAtIso,
         severity: null,
         notes: notes.trim() || null,
-        occurred_at_source: occurredAtSource,
+        occurred_at_source: tf.source,
+        occurred_at_confidence: tf.confidence,
+        occurred_at_earliest: earliestIso,
+        occurred_at_latest: latestIso,
       });
 
       if (config.hasFood && currentFoodId) {
@@ -190,7 +298,10 @@ export default function EditEventModal() {
       }
 
       patchInToday(id, {
-        occurred_at: occurredAt.toISOString(),
+        occurred_at: occurredAtIso,
+        occurred_at_confidence: tf.confidence,
+        occurred_at_earliest: earliestIso,
+        occurred_at_latest: latestIso,
         severity: null,
         notes: notes.trim() || null,
         food_item_id: currentFoodId,
@@ -234,40 +345,57 @@ export default function EditEventModal() {
 
           {/* Time */}
           <SectionLabel label="Time" style={{ marginBottom: 4 }} />
-          <TouchableOpacity
-            style={styles.timeRow}
-            onPress={() => setShowTimePicker(!showTimePicker)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.timeValue}>
-              {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
-              {'  '}
-              {formatTime(occurredAt)}
-              {occurredAtSource === 'exif' && (
-                <Text style={styles.exifAttribution}>
-                  {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
-                </Text>
-              )}
-            </Text>
-            <Text style={styles.changeLabel}>Change</Text>
-          </TouchableOpacity>
-          {showTimePicker && (
-            <DateTimePicker
-              value={occurredAt}
-              mode="datetime"
-              display={Platform.OS === 'ios' ? 'inline' : 'default'}
-              maximumDate={new Date()}
-              onChange={(_e: unknown, date?: Date) => {
-                if (Platform.OS === 'android') setShowTimePicker(false);
-                if (!date) return;
-                // Provenance flips only on an actual value change so a
-                // peek-tap doesn't silently drop the EXIF attribution.
-                if (occurredAtSource === 'exif' && date.getTime() !== occurredAt.getTime()) {
-                  setOccurredAtSource('manual');
-                }
-                setOccurredAt(date);
-              }}
+          {showConfidenceControl ? (
+            // Non-meal events can be re-classified witnessed/found after logging.
+            <TimeConfidenceField
+              mode={timeMode}
+              onModeChange={handleTimeModeChange}
+              point={occurredAt}
+              pointSource={occurredAtSource}
+              onPointChange={handlePointChange}
+              foundMode={foundMode}
+              onFoundModeChange={handleFoundModeChange}
+              estimatedAt={estimatedAt}
+              onEstimatedChange={setEstimatedAt}
+              earliest={earliest}
+              latest={foundLatest}
+              onEarliestChange={setEarliest}
+              onLatestChange={handleLatestChange}
             />
+          ) : (
+            // Meals are always witnessed — keep the plain point picker.
+            <>
+              <TouchableOpacity
+                style={styles.timeRow}
+                onPress={() => setShowTimePicker(!showTimePicker)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.timeValue}>
+                  {occurredAt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                  {'  '}
+                  {formatTime(occurredAt)}
+                  {occurredAtSource === 'exif' && (
+                    <Text style={styles.exifAttribution}>
+                      {'  ·  '}{formatExifAttribution(occurredAt.toISOString())}
+                    </Text>
+                  )}
+                </Text>
+                <Text style={styles.changeLabel}>Change</Text>
+              </TouchableOpacity>
+              {showTimePicker && (
+                <DateTimePicker
+                  value={occurredAt}
+                  mode="datetime"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  maximumDate={new Date()}
+                  onChange={(_e: unknown, date?: Date) => {
+                    if (Platform.OS === 'android') setShowTimePicker(false);
+                    if (!date) return;
+                    handlePointChange(date);
+                  }}
+                />
+              )}
+            </>
           )}
 
           {/* Photo */}
