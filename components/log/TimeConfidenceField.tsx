@@ -13,7 +13,7 @@ import { formatTime, formatExifAttribution } from '../../lib/utils';
 
 export type TimeMode = 'saw' | 'found';
 export type FoundMode = 'before' | 'around' | 'between';
-type OpenPicker = 'point' | 'earliest' | 'latest' | null;
+type OpenPicker = 'point' | 'estimated' | 'earliest' | 'latest' | null;
 
 interface Props {
   mode: TimeMode;
@@ -25,6 +25,10 @@ interface Props {
   // Found sub-mode and window bounds.
   foundMode: FoundMode;
   onFoundModeChange: (m: FoundMode) => void;
+  // Estimated point — kept distinct from `point` so a guess never leaks into a
+  // witnessed log.
+  estimatedAt: Date;
+  onEstimatedChange: (d: Date) => void;
   earliest: Date | null;
   latest: Date;
   onEarliestChange: (d: Date) => void;
@@ -39,6 +43,7 @@ export function TimeConfidenceField({
   mode, onModeChange,
   point, pointSource, onPointChange,
   foundMode, onFoundModeChange,
+  estimatedAt, onEstimatedChange,
   earliest, latest, onEarliestChange, onLatestChange,
 }: Props) {
   const [open, setOpen] = useState<OpenPicker>(null);
@@ -143,11 +148,11 @@ export function TimeConfidenceField({
                 <>
                   <View style={styles.field}>
                     <Text style={styles.fieldLab}>Around</Text>
-                    <TouchableOpacity onPress={() => setOpen(open === 'point' ? null : 'point')} hitSlop={8}>
-                      <Text style={styles.fieldVal}>{stamp(point)}</Text>
+                    <TouchableOpacity onPress={() => setOpen(open === 'estimated' ? null : 'estimated')} hitSlop={8}>
+                      <Text style={styles.fieldVal}>{stamp(estimatedAt)}</Text>
                     </TouchableOpacity>
                   </View>
-                  {renderPicker('point', point, onPointChange, new Date())}
+                  {renderPicker('estimated', estimatedAt, onEstimatedChange, new Date())}
                   <Text style={styles.hint}>A best guess — logged as an estimate, not a witnessed time.</Text>
                 </>
               ) : (

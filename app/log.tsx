@@ -92,6 +92,10 @@ export default function LogModal() {
   const [foundMode, setFoundMode] = useState<FoundMode>('before');
   const [earliest, setEarliest] = useState<Date | null>(null);
   const [foundLatest, setFoundLatest] = useState<Date>(() => new Date());
+  // Estimated point is kept separate from `occurredAt` (the witnessed point)
+  // so a guess entered in "Around a time" can never bleed into a witnessed log
+  // if the owner toggles back to "Saw it happen".
+  const [estimatedAt, setEstimatedAt] = useState<Date>(() => new Date());
 
   // Completion animation
   const checkScale = useRef(new Animated.Value(0.5)).current;
@@ -402,6 +406,10 @@ export default function LogModal() {
   }
 
   function handleFoundModeChange(m: FoundMode) {
+    // Seed the estimate from when they found it, as a starting point to adjust.
+    if (m === 'around' && foundMode !== 'around') {
+      setEstimatedAt(foundLatest);
+    }
     // Seed a sane lower bound the first time the owner opens a window.
     if (m === 'between' && !earliest) {
       setEarliest(new Date(foundLatest.getTime() - 2 * 60 * 60 * 1000));
@@ -424,7 +432,7 @@ export default function LogModal() {
       return { confidence: 'witnessed', occurredAt, earliest: null, latest: null, source: occurredAtSource };
     }
     if (foundMode === 'around') {
-      return { confidence: 'estimated', occurredAt, earliest: null, latest: null, source: 'manual' };
+      return { confidence: 'estimated', occurredAt: estimatedAt, earliest: null, latest: null, source: 'manual' };
     }
     // 'before' (open-ended) or 'between' (bounded) -> window
     const e = foundMode === 'between' ? earliest : null;
@@ -681,6 +689,8 @@ export default function LogModal() {
               onPointChange={handleTimePickerChange}
               foundMode={foundMode}
               onFoundModeChange={handleFoundModeChange}
+              estimatedAt={estimatedAt}
+              onEstimatedChange={setEstimatedAt}
               earliest={earliest}
               latest={foundLatest}
               onEarliestChange={setEarliest}
