@@ -170,6 +170,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 **Anti-patterns to prevent:**
 - Any new table missing RLS policies
 - Queries that filter by `user_id` directly instead of going through `pet_id` — breaks multi-pet isolation
+- Deriving a "preference" (like/dislike/favorite) from a single `intake_rating`, or labeling declining/refused intake as a taste verdict. Intake decline and refusal are frequently *disease* signals, not preference (anorexia is a non-specific marker across CKD, dental disease, nausea, hyperthyroidism; the feline 48hr hepatic-lipidosis window makes "stopped eating" near-emergent — see `docs/research/2026-05-feeding-windows-and-partial-eating.md`). Any surface reading `intake_rating` (AI Signal, vet report, preferences/B-023) must: (1) treat preference as a *rate over N samples*, never a single rating; (2) route decline/refusal toward a health flag, never soften it into "picky"; (3) never reassure an owner whose pet may be unwell. The like/dislike framing is safe only for the *positive, multi-sample* signal.
 - *(Append new anti-patterns here as they are discovered in the codebase)*
 
 ---
@@ -225,6 +226,30 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Assessing whether an onboarding step is worth the friction it adds
 
 **Key question Jordan asks:** "Can I do this in under 10 seconds while my dog is being weird?"
+
+---
+
+### Pet Owner (cat) — Sam
+**Role:** Cat-owner variant of Jordan. Represents the grazing, picky-eater usage context — the true target user for food-preference surfaces (B-023) and the broader "known for more than sensitive stomachs" positioning. Drafted as a stub May 2026 (flagged since v1.19); flesh out before scoping B-023.
+
+**Who Sam is:** 29, one indoor cat (Pixel, 6yo domestic shorthair). Not in a diet trial — Pixel is broadly healthy. Sam's recurring pain is the cabinet of half-eaten cans Pixel rejected after one sniff. The adage "you can never guess what a cat will like" is Sam's daily reality. Buys on guesswork, wastes food and money, and worries whenever Pixel skips a meal.
+
+**What Sam needs from Nyx:**
+- An honest read on what Pixel actually eats vs. ignores — "will she like this?" answered by data, not gut feel, before spending on a new case
+- Confirmation-over-entry; Pixel grazes, so logging must tolerate "offered ≠ consumed" without nagging
+- Early, non-alarming warning when intake genuinely drops — Sam can't tell "being fussy" from "getting sick," and that ambiguity is exactly the clinical danger zone (48hr feline window)
+
+**What Sam does not want:**
+- A cutesy "preferences" gimmick that treats a sick cat as merely picky
+- Pressure to log every grazing nibble — the grazing baseline must not feel like failure
+- To be made anxious by normal feline fussiness
+
+**Consulting Sam when:**
+- Designing any food-preference / likes-dislikes surface (B-023) or intake-trend display
+- Evaluating cat-specific feeding flows (grazing, free-feeding, partial eating)
+- Writing copy that distinguishes normal fussiness from clinically meaningful intake decline
+
+**Key question Sam asks:** "Will Pixel actually eat this — and would I know if she'd stopped because she's sick, not just fussy?"
 
 ---
 
