@@ -25,6 +25,7 @@ import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { useEventStore } from '../../store/eventStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
+import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 
 const HERO_HEIGHT = 320;
 
@@ -360,6 +361,10 @@ export default function EventDetailScreen() {
             <Text style={styles.exifAttribution}>
               {formatExifAttribution(event.occurred_at)}
             </Text>
+          ) : null}
+
+          {event.event_type === 'vomit' ? (
+            <VomitAnalysisSection eventId={event.id} />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (

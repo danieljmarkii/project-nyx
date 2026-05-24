@@ -20,6 +20,7 @@ import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto } from '../lib/storage';
+import { triggerVomitAnalysis } from '../lib/analysis';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
@@ -319,6 +320,7 @@ export default function LogModal() {
          VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
         [attId, eventId, activePet.id, attachmentUri, storagePath, attachmentTakenAt ?? null, now]
       );
+      const isVomit = selectedType === 'vomit';
       uploadPhoto('nyx-event-attachments', storagePath, attachmentUri)
         .then(async () => {
           await supabase.from('event_attachments').upsert({
@@ -326,6 +328,11 @@ export default function LogModal() {
             storage_path: storagePath, mime_type: 'image/jpeg', taken_at: attachmentTakenAt,
           }, { onConflict: 'id' });
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
+          // B-027: cache-on-log. The photo + attachment row are now in
+          // Supabase (the upsert above implies the event synced too, via the
+          // event_attachments → events FK), so the analyze-vomit function can
+          // read them. Fire-and-forget; the detail screen also triggers lazily.
+          if (isVomit) triggerVomitAnalysis(eventId).catch(() => {});
         })
         .catch(console.error);
     }
