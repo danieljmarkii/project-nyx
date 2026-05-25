@@ -531,7 +531,7 @@ Deno.serve(async (req: Request) => {
 
     // 3. Vision call (only if there is a usable photo).
     let analysis: VomitAnalysis | null = null
-    let photoTooLarge = false
+    let photoUnreadable = false
     if (hasPhoto) {
       const blobs = await Promise.all(
         photoPaths.slice(0, 3).map(async (path) => {
@@ -541,14 +541,28 @@ Deno.serve(async (req: Request) => {
         }),
       )
       const imageParts = await Promise.all(blobs.map(blobToImagePart))
-      // Drop any image over Claude's 5 MB cap rather than 500. If that leaves
-      // nothing to send, fall through to the contextual floor with an honest
-      // "couldn't read the photo" read.
+      // Drop any image over Claude's 5 MB cap.
       const usableImages = imageParts.filter((p) => p.data.length <= MAX_CLAUDE_IMAGE_BASE64)
-      photoTooLarge = usableImages.length === 0
-      if (usableImages.length > 0) {
-        analysis = await runVisionCall(usableImages)
-        if (!analysis) throw new Error('Vision model did not return an analysis')
+      if (usableImages.length === 0) {
+        photoUnreadable = true // all oversized
+      } else {
+        try {
+          analysis = await runVisionCall(usableImages)
+          if (!analysis) throw new Error('Vision model did not return an analysis')
+        } catch (visionErr) {
+          const msg = visionErr instanceof Error ? visionErr.message : String(visionErr)
+          // A Claude 400 means the image itself is unusable — undecodable format
+          // (e.g. HEIC, which Claude can't read), corrupt, or a partial upload.
+          // Degrade gracefully to the contextual floor with an honest "couldn't
+          // read the photo" read rather than 500. Re-throw anything else
+          // (transient Claude/network errors) so it's a real, retryable failure.
+          if (msg.includes('Claude API error 400')) {
+            console.warn('analyze-vomit: image unreadable, degrading:', msg)
+            photoUnreadable = true
+          } else {
+            throw visionErr
+          }
+        }
       }
     }
 
@@ -572,8 +586,8 @@ Deno.serve(async (req: Request) => {
       readText = buildContextualReadText(petName, contextualFlags)
     } else if (analysis?.read_text) {
       readText = analysis.read_text
-    } else if (photoTooLarge) {
-      readText = `This photo's a bit too large for me to read. Try replacing it with a fresh shot and I'll take another look. If you're worried about ${petName}, your vet is the best call.`
+    } else if (photoUnreadable) {
+      readText = `I couldn't read this photo — it may be too large or in a format I can't open. Try replacing it with a fresh shot and I'll take another look. If you're worried about ${petName}, your vet is the best call.`
     } else {
       readText = buildNoFlagReadText(petName, hasPhoto)
     }
