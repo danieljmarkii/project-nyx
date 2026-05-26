@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { theme } from '../../constants/theme';
 import { getSignedUrl } from '../../lib/storage';
+import { PhotoViewer } from '../ui';
 
 interface Props {
   // Storage paths into the nyx-food-photos bucket. Bucket is private so we
@@ -21,6 +22,9 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   const [urls, setUrls] = useState<(string | null)[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
+  // Tap a photo to expand it fullscreen for in-hand product comparison (B-022).
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,7 +88,12 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
         {urls.map((url, idx) => (
           <View key={`${photoPaths[idx]}-${idx}`} style={[styles.slide, { width: screenWidth }]}>
             {url ? (
-              <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => { setViewerIndex(idx); setViewerVisible(true); }}
+              >
+                <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />
+              </TouchableOpacity>
             ) : (
               <View style={[styles.image, styles.imageMissing]}>
                 <Text style={styles.emptyText}>Photo unavailable</Text>
@@ -115,6 +124,13 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
           ))}
         </View>
       )}
+
+      <PhotoViewer
+        visible={viewerVisible}
+        uris={urls}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerVisible(false)}
+      />
     </View>
   );
 }

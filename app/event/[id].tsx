@@ -27,6 +27,7 @@ import { useEventStore } from '../../store/eventStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
+import { PhotoViewer } from '../../components/ui';
 
 const HERO_HEIGHT = 320;
 
@@ -434,45 +435,13 @@ export default function EventDetailScreen() {
       </Modal>
 
       {/* Fullscreen photo viewer */}
-      <Modal
+      <PhotoViewer
         visible={photoViewerVisible}
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={() => setPhotoViewerVisible(false)}
-      >
-        <View style={styles.photoViewer}>
-          <Image
-            source={{ uri: photoUri ?? '' }}
-            style={styles.photoViewerImage}
-            resizeMode="contain"
-          />
-          <View style={styles.photoViewerActions}>
-            <TouchableOpacity
-              style={styles.photoViewerClose}
-              onPress={() => setPhotoViewerVisible(false)}
-              hitSlop={12}
-            >
-              <Text style={styles.photoViewerCloseText}>✕  Close</Text>
-            </TouchableOpacity>
-            <View style={styles.photoViewerRightActions}>
-              <TouchableOpacity
-                style={styles.photoViewerSecondary}
-                onPress={() => { setPhotoViewerVisible(false); handleAddPhoto(); }}
-                hitSlop={12}
-              >
-                <Text style={styles.photoViewerSecondaryText}>Replace</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.photoViewerDestructive}
-                onPress={handleRemovePhoto}
-                hitSlop={12}
-              >
-                <Text style={styles.photoViewerDestructiveText}>Remove</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        uris={[photoUri ?? null]}
+        onClose={() => setPhotoViewerVisible(false)}
+        onReplace={() => { setPhotoViewerVisible(false); handleAddPhoto(); }}
+        onRemove={handleRemovePhoto}
+      />
     </SafeAreaView>
   );
 }
@@ -645,58 +614,5 @@ const styles = StyleSheet.create({
   },
   sheetItemDestructive: {
     color: theme.colorEventSymptom,
-  },
-  photoViewer: {
-    flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  photoViewerImage: {
-    width: '100%',
-    flex: 1,
-  },
-  photoViewerActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    width: '100%',
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space3,
-    paddingBottom: 40,
-  },
-  photoViewerClose: {
-    paddingVertical: theme.space1,
-    paddingHorizontal: theme.space2,
-  },
-  photoViewerCloseText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: theme.fontWeightMedium,
-  },
-  photoViewerRightActions: {
-    flexDirection: 'row',
-    gap: theme.space1,
-  },
-  photoViewerSecondary: {
-    paddingVertical: theme.space1,
-    paddingHorizontal: theme.space2,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: theme.radiusSmall,
-  },
-  photoViewerSecondaryText: {
-    fontSize: 15,
-    color: '#fff',
-    fontWeight: theme.fontWeightMedium,
-  },
-  photoViewerDestructive: {
-    paddingVertical: theme.space1,
-    paddingHorizontal: theme.space2,
-    borderRadius: theme.radiusSmall,
-  },
-  photoViewerDestructiveText: {
-    fontSize: 15,
-    color: '#ff6b6b',
-    fontWeight: theme.fontWeightMedium,
   },
 });
