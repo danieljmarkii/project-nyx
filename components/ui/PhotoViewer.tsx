@@ -56,7 +56,12 @@ export function PhotoViewer({ visible, uris, initialIndex = 0, onClose, onReplac
     return (
       <View key={key} style={[styles.slide, { width: screenWidth }]}>
         {uri ? (
-          <Image source={{ uri }} style={styles.image} resizeMode="contain" />
+          // Tap anywhere on the photo to dismiss (Jordan: thumb went to the
+          // image, not the corner). absoluteFill pins the image to the slide so
+          // a flex:1 image never collapses; swipe still pages via the ScrollView.
+          <TouchableOpacity activeOpacity={1} onPress={onClose} style={StyleSheet.absoluteFill}>
+            <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+          </TouchableOpacity>
         ) : (
           <View style={styles.unavailable}>
             <Text style={styles.unavailableText}>Photo unavailable</Text>
@@ -88,10 +93,12 @@ export function PhotoViewer({ visible, uris, initialIndex = 0, onClose, onReplac
             {uris.map((u, i) => renderImage(u, `${i}`))}
           </ScrollView>
         ) : uris[0] ? (
-          // Single image renders as a direct child of the viewer (no slide
-          // wrapper) — a flex:1 image inside a nested slide collapses to black
-          // here, while the same wrapper renders fine inside the ScrollView.
-          <Image source={{ uri: uris[0] }} style={styles.image} resizeMode="contain" />
+          // Single image: the touchable takes the proven full-screen box
+          // (width:'100%', flex:1) and the image absoluteFills it — tap to
+          // dismiss without reintroducing the flex-collapse-to-black bug.
+          <TouchableOpacity activeOpacity={1} onPress={onClose} style={styles.image}>
+            <Image source={{ uri: uris[0] }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+          </TouchableOpacity>
         ) : (
           <View style={styles.unavailable}>
             <Text style={styles.unavailableText}>Photo unavailable</Text>
