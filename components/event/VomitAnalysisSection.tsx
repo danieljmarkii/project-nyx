@@ -47,7 +47,7 @@ const MAX_POLLS = 12; // ~36s — covers a slow vision call without spinning for
 const COLOUR_LABELS: Record<string, string> = {
   clear: 'Clear', white: 'White', yellow: 'Yellow', green: 'Green', brown: 'Brown',
   tan: 'Tan', pink_red: 'Pink / red', dark_red: 'Dark red',
-  black_coffee_ground: 'Black / coffee-ground', mixed: 'Mixed', unsure: 'Unclear',
+  black_coffee_ground: 'Black', mixed: 'Mixed', unsure: 'Unclear',
 };
 const CONTENT_LABELS: Record<string, string> = {
   undigested_food: 'Undigested food', partially_digested_food: 'Partly digested food',
@@ -55,12 +55,12 @@ const CONTENT_LABELS: Record<string, string> = {
   hair: 'Hair', unsure: 'Unclear',
 };
 const CONSISTENCY_LABELS: Record<string, string> = {
-  watery: 'Watery', foamy: 'Foamy', mucoid_slimy: 'Mucoid / slimy',
+  watery: 'Watery', foamy: 'Foamy', mucoid_slimy: 'Slimy',
   soft_formed: 'Soft / formed', chunky: 'Chunky', unsure: 'Unclear',
 };
 const BLOOD_LABELS: Record<string, string> = {
   none_visible: 'None visible', fresh_red: 'Fresh red',
-  coffee_ground: 'Coffee-ground (digested)', unsure: 'Unclear',
+  coffee_ground: 'Dark / older blood', unsure: 'Unclear',
 };
 
 const REC_LABEL: Record<Recommendation, string> = {
@@ -211,7 +211,7 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
         <Text style={styles.sectionLabel}>AI READ</Text>
         <View style={styles.neutralCard}>
           <Text style={styles.readText}>Not enough to say about this one yet.</Text>
-          <TouchableOpacity onPress={handleRetry} hitSlop={8} disabled={retrying}>
+          <TouchableOpacity onPress={handleRetry} hitSlop={16} disabled={retrying}>
             <Text style={styles.linkText}>{retrying ? 'Working…' : 'Try analysis'}</Text>
           </TouchableOpacity>
         </View>
@@ -240,7 +240,7 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
       {dismissed ? (
         <View style={styles.dismissedRow}>
           <Text style={styles.dismissedText}>AI note hidden</Text>
-          <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={12}>
+          <TouchableOpacity onPress={() => setDismissed(false)} hitSlop={16}>
             <Text style={styles.linkText}>Show</Text>
           </TouchableOpacity>
         </View>
@@ -250,7 +250,7 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
             <Text style={[styles.recLabel, labelTone]}>{REC_LABEL[rec]}</Text>
             <TouchableOpacity
               onPress={() => setDismissed(true)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
               style={styles.dismissBtn}
             >
               <Text style={styles.dismissX}>✕</Text>
