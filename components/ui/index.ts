@@ -5,3 +5,4 @@ export { FilterChip } from './FilterChip';
 export { Badge } from './Badge';
 export { Divider } from './Divider';
 export { SyncBanner } from './SyncBanner';
+export { PhotoViewer } from './PhotoViewer';
