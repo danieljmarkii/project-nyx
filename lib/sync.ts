@@ -190,10 +190,15 @@ export async function syncPendingVetVisits(): Promise<void> {
   for (const att of unsyncedAtts) {
     try {
       await uploadPhoto('nyx-vet-attachments', att.storage_path, att.local_uri, att.mime_type);
-      await supabase.from('vet_visit_attachments').upsert({
+      const { error } = await supabase.from('vet_visit_attachments').upsert({
         id: att.id, vet_visit_id: att.vet_visit_id, pet_id: att.pet_id,
         storage_path: att.storage_path, mime_type: att.mime_type, taken_at: att.taken_at,
       }, { onConflict: 'id' });
+      // Only mark synced when the row actually landed — supabase-js returns
+      // errors rather than throwing, so an ignored error here would flag the row
+      // synced while it's absent server-side (same trap fixed for event
+      // attachments). Leave synced=0 on failure so the queue retries.
+      if (error) { console.warn('[sync] vet_visit_attachment upsert failed:', error.message); continue; }
       await db.runAsync('UPDATE vet_visit_attachments SET synced = 1 WHERE id = ?', [att.id]);
     } catch (e) {
       console.warn('[sync] vet_visit_attachment upload failed:', e);
