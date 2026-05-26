@@ -1,0 +1,31 @@
+-- ============================================================
+-- food_format — add 'jerky' physical-form value
+-- See: docs/backlog.md B-024
+-- ============================================================
+-- A jerky treat has no honest physical-form value today; the
+-- closest existing values are 'freeze_dried' or 'dry_kibble',
+-- neither of which is correct. Adding 'jerky' lets the Format
+-- chip describe the physical form accurately.
+--
+-- This is orthogonal to food_type='treat' (B-011): a jerky is a
+-- treat by *type*, jerky by *format*. Purely additive — it does
+-- NOT reshape the enum (that destructive reshape is B-017, which
+-- will carry 'jerky' forward when it lands).
+--
+-- Placed AFTER 'freeze_dried' to match the picker chip ordering.
+-- Note: ALTER TYPE ... ADD VALUE adds the label only; a freshly
+-- added value is unusable until the enclosing transaction commits,
+-- so this statement must not share a transaction with code that
+-- writes 'jerky'. It stands alone here, so that's safe.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (additive enum value only; no column/data change)
+--   Rollback:     Postgres cannot DROP an enum value. Leaving 'jerky'
+--                 unused is harmless. A true reversal requires the
+--                 full type-recreation dance (create food_format_v2
+--                 without 'jerky', ALTER COLUMN ... USING, DROP TYPE,
+--                 RENAME) and is only worthwhile if rows already use it.
+--   Backfill:     N/A — no existing rows change.
+-- ============================================================
+
+ALTER TYPE food_format ADD VALUE IF NOT EXISTS 'jerky' AFTER 'freeze_dried';
