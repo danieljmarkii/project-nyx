@@ -162,12 +162,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
-    flexWrap: 'wrap',
   },
   foodName: {
     fontSize: 13,
     color: theme.colorTextSecondary,
-    flexShrink: 1,
+    // flex:1 lets the name absorb all slack and truncate, pinning the
+    // read-only intake badge flush-right under the timestamp so it reads
+    // as a scannable right rail instead of drifting with text length.
+    flex: 1,
   },
   expandedContent: {
     marginTop: theme.space1,
