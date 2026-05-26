@@ -54,7 +54,7 @@ export function PhotoViewer({ visible, uris, initialIndex = 0, onClose, onReplac
 
   function renderImage(uri: string | null, key: string) {
     return (
-      <View key={key} style={[styles.slide, { width: multi ? screenWidth : undefined }]}>
+      <View key={key} style={[styles.slide, { width: screenWidth }]}>
         {uri ? (
           <Image source={{ uri }} style={styles.image} resizeMode="contain" />
         ) : (
