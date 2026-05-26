@@ -212,7 +212,7 @@ export default function HistoryScreen() {
   const isEmpty = events.length === 0 && !loading;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
 
       {/* Unified filter section — one surface, one border at the bottom */}
       <View style={styles.filterSection}>
@@ -307,9 +307,11 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
+  // White so the top safe-area inset blends with the white filter header
+  // instead of showing a grey band under the status bar
   container: {
     flex: 1,
-    backgroundColor: theme.colorNeutralLight,
+    backgroundColor: theme.colorSurface,
   },
   // Single white surface for title + chips, border only at the bottom
   filterSection: {
@@ -347,6 +349,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     flex: 1,
+    backgroundColor: theme.colorNeutralLight,
   },
   emptyState: {
     paddingHorizontal: theme.space4,
