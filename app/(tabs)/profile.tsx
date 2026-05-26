@@ -286,7 +286,7 @@ export default function ProfileScreen() {
   const subtitle = [speciesLabel, activePet.breed].filter(Boolean).join(' · ');
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ── Pet header ── */}
