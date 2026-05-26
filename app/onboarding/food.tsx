@@ -11,7 +11,7 @@ import { theme } from '../../constants/theme';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 
-type FoodFormat = 'dry_kibble' | 'wet_canned' | 'raw' | 'freeze_dried' | 'fresh_cooked' | 'topper' | 'treat' | 'other';
+type FoodFormat = 'dry_kibble' | 'wet_canned' | 'raw' | 'freeze_dried' | 'jerky' | 'fresh_cooked' | 'topper' | 'treat' | 'other';
 
 const FORMAT_OPTIONS: { value: FoodFormat; label: string }[] = [
   { value: 'dry_kibble', label: 'Dry kibble' },

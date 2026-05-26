@@ -86,8 +86,8 @@ const EXTRACTION_TOOL = {
       },
       format: {
         type: 'string',
-        enum: ['dry', 'wet', 'raw', 'freeze_dried', 'treats', 'supplement', 'other'],
-        description: 'Physical format of the food.',
+        enum: ['dry', 'wet', 'raw', 'freeze_dried', 'jerky', 'treats', 'supplement', 'other'],
+        description: 'Physical format of the food. Use "jerky" for dried meat-strip treats (distinct from "freeze_dried").',
       },
       primary_protein: {
         type: 'string',
@@ -183,6 +183,7 @@ const AI_FORMAT_TO_DB: Record<string, string> = {
   wet:          'wet_canned',
   raw:          'raw',
   freeze_dried: 'freeze_dried',
+  jerky:        'jerky',
   treats:       'treat',
   supplement:   'topper',
   other:        'other',

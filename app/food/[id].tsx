@@ -28,6 +28,7 @@ const FOOD_FORMATS = [
   { value: 'wet_canned', label: 'Wet / canned' },
   { value: 'raw', label: 'Raw' },
   { value: 'freeze_dried', label: 'Freeze-dried' },
+  { value: 'jerky', label: 'Jerky' },
   { value: 'fresh_cooked', label: 'Fresh cooked' },
   { value: 'topper', label: 'Topper' },
   { value: 'treat', label: 'Treat' },

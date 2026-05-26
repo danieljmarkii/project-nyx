@@ -21,6 +21,7 @@ Deno.test('mapFormatToDb — translates AI enum to food_format', () => {
   assertStrictEquals(mapFormatToDb('wet'), 'wet_canned')
   assertStrictEquals(mapFormatToDb('treats'), 'treat')
   assertStrictEquals(mapFormatToDb('supplement'), 'topper')
+  assertStrictEquals(mapFormatToDb('jerky'), 'jerky')
   assertStrictEquals(mapFormatToDb('raw'), 'raw')
   assertStrictEquals(mapFormatToDb('other'), 'other')
 })
