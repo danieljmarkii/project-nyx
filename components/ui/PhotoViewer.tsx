@@ -87,8 +87,15 @@ export function PhotoViewer({ visible, uris, initialIndex = 0, onClose, onReplac
           >
             {uris.map((u, i) => renderImage(u, `${i}`))}
           </ScrollView>
+        ) : uris[0] ? (
+          // Single image renders as a direct child of the viewer (no slide
+          // wrapper) — a flex:1 image inside a nested slide collapses to black
+          // here, while the same wrapper renders fine inside the ScrollView.
+          <Image source={{ uri: uris[0] }} style={styles.image} resizeMode="contain" />
         ) : (
-          renderImage(uris[0] ?? null, '0')
+          <View style={styles.unavailable}>
+            <Text style={styles.unavailableText}>Photo unavailable</Text>
+          </View>
         )}
 
         {multi && (
