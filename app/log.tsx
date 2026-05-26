@@ -19,7 +19,8 @@ import { useToastStore } from '../store/toastStore';
 import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
-import { uploadPhoto } from '../lib/storage';
+import { uploadPhoto, compressForUpload } from '../lib/storage';
+import { triggerVomitAnalysis } from '../lib/analysis';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
@@ -319,15 +320,32 @@ export default function LogModal() {
          VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
         [attId, eventId, activePet.id, attachmentUri, storagePath, attachmentTakenAt ?? null, now]
       );
-      uploadPhoto('nyx-event-attachments', storagePath, attachmentUri)
-        .then(async () => {
-          await supabase.from('event_attachments').upsert({
+      const isVomit = selectedType === 'vomit';
+      // Compress before upload (longest edge ≤1600px, JPEG q75) so the file
+      // stays well under Claude's 5 MB image cap and bounds storage. Runs in an
+      // async block so it doesn't delay the completion animation below.
+      (async () => {
+        try {
+          const uploadUri = await compressForUpload(attachmentUri);
+          await uploadPhoto('nyx-event-attachments', storagePath, uploadUri);
+          const { error: attErr } = await supabase.from('event_attachments').upsert({
             id: attId, event_id: eventId, pet_id: activePet.id,
             storage_path: storagePath, mime_type: 'image/jpeg', taken_at: attachmentTakenAt,
           }, { onConflict: 'id' });
+          // Only mark synced + analyze if the row actually landed. supabase-js
+          // returns errors rather than throwing, so an ignored error here is
+          // what previously left rows flagged synced but absent from Supabase.
+          // On failure leave synced=0 so the queue retries; the lazy detail-open
+          // trigger will analyze once the row is up.
+          if (attErr) { console.warn('[log] event_attachment upsert failed:', attErr.message); return; }
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
-        })
-        .catch(console.error);
+          // B-027: cache-on-log. The photo + attachment row are now in Supabase,
+          // so the analyze-vomit function can read them. Fire-and-forget.
+          if (isVomit) triggerVomitAnalysis(eventId).catch(() => {});
+        } catch (e) {
+          console.error('[log] photo upload failed:', e);
+        }
+      })();
     }
 
     setStep('complete');
