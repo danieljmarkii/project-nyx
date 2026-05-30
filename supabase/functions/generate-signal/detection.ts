@@ -329,6 +329,16 @@ export function fisherExactRightTail(a: number, b: number, c: number, d: number)
 }
 
 // ── Detector ①: food/protein → symptom correlation ─────────────────────────
+//
+// KNOWN LIMITATION — TODO(B-050): this detector is still MEAL-ANCHORED and attributes
+// each symptom episode to its single nearest-preceding meal. That is a deliberate
+// placeholder that the team has already rejected as incorrect: it can blame the wrong
+// food (winner-take-all) and exonerate a daily staple. The agreed replacement is a
+// SYMPTOM-ANCHORED case-crossover (multi-implication of all in-window proteins, matched
+// control windows with a logging-eligibility guard, McNemar test, attribution-confidence
+// gating for multi-cat). Tests pass against the placeholder's behaviour, NOT against a
+// correct correlation — do not wire this into the Edge Function (Step 2) or present its
+// output as a real finding until B-050 lands. See docs/backlog.md B-050.
 
 const MS_PER_HOUR = 3_600_000
 
