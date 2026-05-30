@@ -245,9 +245,68 @@ Deno.test('detectCorrelations — single coincident exposure (a<2 guard) → emp
   assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
 })
 
+// ── Detector ①: pseudoreplication fixes (P0) ─────────────────────────────────
+
+Deno.test('detectCorrelations — one symptom does NOT inflate across several meals in its window', () => {
+  // Each day has THREE chicken meals close together, then ONE itch shortly after.
+  // Naively, that one symptom would mark all three meals "followed" → a=9. With
+  // nearest-preceding attribution, each symptom claims ONE meal → a=3.
+  const mealEvents = [
+    proteinMeal(20, 'chicken'), proteinMeal(20, 'chicken'), proteinMeal(20, 'chicken'),
+    proteinMeal(21, 'chicken'), proteinMeal(21, 'chicken'), proteinMeal(21, 'chicken'),
+    proteinMeal(22, 'chicken'), proteinMeal(22, 'chicken'), proteinMeal(22, 'chicken'),
+    proteinMeal(25, 'salmon'), proteinMeal(26, 'salmon'), proteinMeal(27, 'salmon'), proteinMeal(28, 'salmon'),
+  ].map((m, i) => ({ ...m, occurredAt: m.occurredAt.replace('T08', `T0${(i % 3) + 5}`) }))
+  const symptomEvents = [
+    symptom('itch', at(20, 9)),
+    symptom('itch', at(21, 9)),
+    symptom('itch', at(22, 9)),
+  ]
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.protein, 'chicken')
+  assert.equal(f.exposedWithSymptom, 3, 'one symptom per day → 3 attributed meals, not 9')
+  assert.equal(f.exposedTotal, 9)
+  assert.equal(f.symptomEventCount, 3)
+})
+
+Deno.test('detectCorrelations — rapid re-logs of one bout collapse to a single episode', () => {
+  const mealEvents = [
+    proteinMeal(20, 'chicken'), proteinMeal(21, 'chicken'), proteinMeal(22, 'chicken'),
+    proteinMeal(25, 'salmon'), proteinMeal(26, 'salmon'), proteinMeal(27, 'salmon'),
+  ]
+  // One vomiting bout logged three times within an hour — must count as ONE episode,
+  // so it stays below the ≥3-episode floor and produces nothing (not a false Early read).
+  const symptomEvents = [
+    symptom('vomit', at(20, 9, 0)),
+    symptom('vomit', at(20, 9, 20)),
+    symptom('vomit', at(20, 9, 40)),
+  ]
+  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
+})
+
+Deno.test('detectCorrelations — dermatological symptoms use the longer (72h) window', () => {
+  // Itch appears ~2 days after each chicken meal — outside an 8h GI window but inside
+  // the 72h dermatological window. With the per-class window this is detectable.
+  const mealEvents = [
+    proteinMeal(18, 'chicken'), proteinMeal(20, 'chicken'), proteinMeal(22, 'chicken'),
+    proteinMeal(25, 'salmon'), proteinMeal(26, 'salmon'), proteinMeal(27, 'salmon'),
+  ]
+  const symptomEvents = [
+    symptom('itch', at(20, 6)), // ~46h after chicken day18
+    symptom('itch', at(22, 6)), // ~46h after chicken day20
+    symptom('itch', at(24, 6)), // ~46h after chicken day22
+  ]
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].protein, 'chicken')
+  assert.equal(findings[0].correlationWindowHours, 72)
+})
+
 // ── Detector ②: intake-decline triggers ─────────────────────────────────────
 
-Deno.test('detectIntakeDecline — consecutive low days below baseline fire the flag', () => {
+Deno.test('detectIntakeDecline — consecutive low days below baseline fire the flag (dog, 2-day path)', () => {
   const mealEvents = [
     ratedMeal(18, 'all'),
     ratedMeal(20, 'all'),
@@ -257,15 +316,57 @@ Deno.test('detectIntakeDecline — consecutive low days below baseline fire the 
     ratedMeal(29, 'picked'), // recent day 1
     ratedMeal(30, 'refused'), // recent day 0
   ]
-  const findings = detectIntakeDecline(input({ pet: cat, mealEvents }))
+  // Dog: the 2-consecutive-day path. (Cats fire on a single day — see the feline test below.)
+  const findings = detectIntakeDecline(input({ pet: dog, mealEvents }))
   assert.equal(findings.length, 1)
   const f = findings[0]
   assert.equal(f.trigger, 'consecutive_low')
   assert.equal(f.priorityClass, 'safety')
-  assert.equal(f.species, 'cat')
+  assert.equal(f.species, 'dog')
   assert.equal(f.daysBelowBaseline, 2)
   assert.ok(f.baselineScore > f.recentScore)
   assert.equal(f.refusedFoodLabel, null)
+})
+
+// ── Detector ②: feline sensitivity (P0 — Dr. Chen) ───────────────────────────
+
+Deno.test('detectIntakeDecline — a CAT fires on a SINGLE below-baseline day (48hr window)', () => {
+  const mealEvents = [
+    ratedMeal(18, 'all'),
+    ratedMeal(20, 'all'),
+    ratedMeal(22, 'all'),
+    ratedMeal(24, 'all'),
+    ratedMeal(26, 'all'),
+    ratedMeal(30, 'refused'), // ONE recent low day, nothing logged day 29
+  ]
+  const findings = detectIntakeDecline(input({ pet: cat, mealEvents }))
+  assert.equal(findings.length, 1, 'a cat should not have to wait for a second low day')
+  assert.equal(findings[0].trigger, 'consecutive_low')
+  assert.equal(findings[0].daysBelowBaseline, 1)
+})
+
+Deno.test('detectIntakeDecline — a DOG does NOT fire on a single low day (needs two)', () => {
+  const mealEvents = [
+    ratedMeal(18, 'all'),
+    ratedMeal(20, 'all'),
+    ratedMeal(22, 'all'),
+    ratedMeal(24, 'all'),
+    ratedMeal(26, 'all'),
+    ratedMeal(30, 'refused'), // only one recent low day
+  ]
+  assert.deepEqual(detectIntakeDecline(input({ pet: dog, mealEvents })), [])
+})
+
+Deno.test('detectIntakeDecline — cat single-day path ignores a mild one-notch dip (all→most)', () => {
+  const mealEvents = [
+    ratedMeal(18, 'all'),
+    ratedMeal(20, 'all'),
+    ratedMeal(22, 'all'),
+    ratedMeal(24, 'all'),
+    ratedMeal(26, 'all'),
+    ratedMeal(30, 'most'), // below baseline but not genuinely low — must not cry wolf
+  ]
+  assert.deepEqual(detectIntakeDecline(input({ pet: cat, mealEvents })), [])
 })
 
 Deno.test('detectIntakeDecline — refusal of a normally-eaten food fires even when daily means look ok', () => {
@@ -279,7 +380,9 @@ Deno.test('detectIntakeDecline — refusal of a normally-eaten food fires even w
     ratedMeal(29, 'all', { foodItemId: 'F2', foodLabel: 'the chicken can' }),
     ratedMeal(30, 'all', { foodItemId: 'F2', foodLabel: 'the chicken can' }),
   ]
-  const findings = detectIntakeDecline(input({ pet: cat, mealEvents }))
+  // Dog isolates the refusal trigger: the 2-day baseline window has too few prior
+  // meals to evaluate the consecutive-low path, so only refused_normal_food can fire.
+  const findings = detectIntakeDecline(input({ pet: dog, mealEvents }))
   assert.equal(findings.length, 1)
   const f = findings[0]
   assert.equal(f.trigger, 'refused_normal_food')
@@ -424,4 +527,11 @@ Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
   assert.equal(DEFAULT_CONFIG.correlation.establishedMinSymptomEvents, 5)
   assert.equal(DEFAULT_CONFIG.correlation.establishedMinExposuresPerArm, 5)
   assert.equal(DEFAULT_CONFIG.intakeDecline.consecutiveDaysBelowBaseline, 2)
+  // GI vs dermatological windows + the re-log episode gap (pseudoreplication fix).
+  assert.equal(DEFAULT_CONFIG.correlationWindowHoursByType.vomit, 8)
+  assert.equal(DEFAULT_CONFIG.correlationWindowHoursByType.itch, 72)
+  assert.equal(DEFAULT_CONFIG.symptomEpisodeGapHours, 3)
+  // Feline sensitivity override (P0).
+  assert.equal(DEFAULT_CONFIG.intakeDecline.cat.consecutiveDaysBelowBaseline, 1)
+  assert.equal(DEFAULT_CONFIG.intakeDecline.cat.singleDayConcernCeiling, 2)
 })

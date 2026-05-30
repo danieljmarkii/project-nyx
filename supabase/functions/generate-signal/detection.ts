@@ -83,7 +83,14 @@ export interface MealEvent {
 
 export interface DetectionInput {
   pet: PetContext
+  /**
+   * Symptom events for this pet. CONTRACT: the caller (the `generate-signal` Edge
+   * Function) MUST exclude soft-deleted rows (`deleted_at IS NULL`) before passing
+   * them in — this pure module has no notion of deletion and would otherwise
+   * correlate/flag against events the owner has removed.
+   */
   symptomEvents: SymptomEvent[]
+  /** Meal events for this pet. Same soft-delete contract as `symptomEvents`. */
   mealEvents: MealEvent[]
   /** Reference "now" (ISO-8601 UTC), injected so detection is deterministic and testable. */
   now: string
@@ -115,11 +122,15 @@ export interface CorrelationFinding extends FindingBase {
   tier: EvidenceTier
   symptomType: SymptomType
   protein: string
-  /** Meals exposed to this protein that were followed by the symptom within the window. */
+  /**
+   * Meals exposed to this protein that are the *nearest preceding meal* of ≥1 symptom
+   * episode within the window. Counts MEALS (each ≤1), not symptoms — so a single
+   * symptom can never inflate this across several meals (the pseudoreplication fix).
+   */
   exposedWithSymptom: number
   /** All meals exposed to this protein (the "exposed arm"). */
   exposedTotal: number
-  /** Meals NOT exposed to this protein that were followed by the symptom. */
+  /** Unexposed meals that are the nearest preceding meal of ≥1 symptom episode. */
   unexposedWithSymptom: number
   /** All meals with a known, different protein (the "unexposed arm"). */
   unexposedTotal: number
@@ -131,8 +142,13 @@ export interface CorrelationFinding extends FindingBase {
   pValue: number
   /** Bonferroni-corrected significance threshold actually applied (alpha / family size). */
   correctedAlpha: number
-  /** Distinct symptom events of this type observed — the §7 "≥N symptom events" arm. */
+  /**
+   * Distinct symptom *episodes* of this type (rapid re-logs of one bout collapsed) —
+   * the §7 "≥N symptom events" arm. Episode-collapsing prevents one bout logged five
+   * times from clearing the floor as five independent confirmations.
+   */
   symptomEventCount: number
+  /** The symptom-class-specific window actually applied (GI ~8h, dermatological ~72h). */
   correlationWindowHours: number
   /** Hard marker for the phrasing layer + reviewers: never emit causal copy. */
   associationalOnly: true
@@ -172,8 +188,17 @@ export interface RankedFinding {
 // ── Configuration (§7 thresholds = v1 defaults) ─────────────────────────────
 
 export interface DetectionConfig {
-  /** Meal-before-symptom window, in hours (schema reference query [2] uses 8). */
+  /** Default meal-before-symptom window, in hours (schema reference query [2] uses 8 for GI). */
   correlationWindowHours: number
+  /**
+   * Per-symptom-class window override. GI symptoms (vomit/diarrhea) react within hours;
+   * dermatological symptoms (itch/scratch/skin_reaction) have a multi-day latency, so an
+   * 8h window would systematically miss true food→skin associations. Falls back to
+   * `correlationWindowHours` for any type not listed.
+   */
+  correlationWindowHoursByType: Partial<Record<SymptomType, number>>
+  /** Symptoms of one type within this many hours collapse into a single episode (re-log guard). */
+  symptomEpisodeGapHours: number
   correlation: {
     /** §7 Early: ≥3 symptom events. */
     earlyMinSymptomEvents: number
@@ -193,7 +218,7 @@ export interface DetectionConfig {
   intakeDecline: {
     /** Coverage floor — below this many rated meals the detector stays SILENT (never a false flag). */
     minRatedMealsForBaseline: number
-    /** §7: number of consecutive recent days below baseline that trips the flag. */
+    /** §7: number of consecutive recent days below baseline that trips the flag (default/dog). */
     consecutiveDaysBelowBaseline: number
     /** Lookback window (days) used to establish the baseline. */
     baselineWindowDays: number
@@ -205,12 +230,33 @@ export interface DetectionConfig {
     normallyEatenMinSamples: number
     /** Recency window (days) within which a refusal counts as "just refused". */
     refusalRecencyDays: number
+    /**
+     * Cat-specific sensitivity override (Dr. Chen — P0). The feline 48hr hepatic-lipidosis
+     * window makes waiting for 2 consecutive low days too slow, so a cat fires on a SINGLE
+     * below-baseline day. To avoid crying wolf on a one-day dip from "all" to "most", the
+     * single-day path additionally requires that day's mean to sit at/below
+     * `singleDayConcernCeiling` (i.e. genuinely low, not merely a notch down). The coverage
+     * floor and logging-gap guards are unchanged — sensitivity is raised on the day count
+     * only, never by treating absent data as a decline.
+     */
+    cat: {
+      consecutiveDaysBelowBaseline: number
+      singleDayConcernCeiling: number
+    }
   }
 }
 
 /** §7 table, adopted as the v1 starting defaults (PM 2026-05-30); tune on real data, not a re-decision. */
 export const DEFAULT_CONFIG: DetectionConfig = {
   correlationWindowHours: 8,
+  correlationWindowHoursByType: {
+    vomit: 8,
+    diarrhea: 8,
+    itch: 72,
+    scratch: 72,
+    skin_reaction: 72,
+  },
+  symptomEpisodeGapHours: 3,
   correlation: {
     earlyMinSymptomEvents: 3,
     earlyMinExposuresPerArm: 3,
@@ -228,6 +274,10 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     normallyEatenScoreFloor: 3,
     normallyEatenMinSamples: 3,
     refusalRecencyDays: 2,
+    cat: {
+      consecutiveDaysBelowBaseline: 1,
+      singleDayConcernCeiling: 2,
+    },
   },
 }
 
@@ -282,17 +332,24 @@ export function fisherExactRightTail(a: number, b: number, c: number, d: number)
 
 const MS_PER_HOUR = 3_600_000
 
-function wasFollowedBySymptom(
-  mealMs: number,
-  symptomMsList: number[],
-  windowHours: number,
-): boolean {
-  const windowMs = windowHours * MS_PER_HOUR
-  for (const sMs of symptomMsList) {
-    const gap = sMs - mealMs
-    if (gap >= 0 && gap <= windowMs) return true
+/**
+ * Collapse a list of same-type symptom timestamps into episode ONSET times: any two
+ * within `gapHours` of each other belong to one episode, represented by the earliest
+ * (the onset, which is what the meal→symptom window should anchor on). This is half of
+ * the pseudoreplication fix — a single bout re-logged several times is one episode, not
+ * several independent confirmations.
+ */
+function toEpisodeOnsets(symptomMsList: number[], gapHours: number): number[] {
+  if (symptomMsList.length === 0) return []
+  const gapMs = gapHours * MS_PER_HOUR
+  const sorted = [...symptomMsList].sort((a, b) => a - b)
+  const onsets: number[] = [sorted[0]]
+  let prev = sorted[0]
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] - prev > gapMs) onsets.push(sorted[i])
+    prev = sorted[i]
   }
-  return false
+  return onsets
 }
 
 export function detectCorrelations(
@@ -300,13 +357,14 @@ export function detectCorrelations(
   config: DetectionConfig = DEFAULT_CONFIG,
 ): CorrelationFinding[] {
   const cfg = config.correlation
-  const windowHours = config.correlationWindowHours
 
-  // Meals usable for correlation must carry a known protein.
+  // Meals usable for correlation must carry a known protein. Sorted ascending so the
+  // nearest-preceding-meal lookup can pick the latest meal at or before a symptom onset.
   const classifiableMeals = input.mealEvents
     .filter((m) => m.primaryProtein && m.primaryProtein.trim().length > 0)
     .map((m) => ({ ms: Date.parse(m.occurredAt), protein: m.primaryProtein!.trim().toLowerCase() }))
     .filter((m) => Number.isFinite(m.ms))
+    .sort((x, y) => x.ms - y.ms)
 
   const proteins = Array.from(new Set(classifiableMeals.map((m) => m.protein)))
   if (proteins.length < 2 || classifiableMeals.length === 0) {
@@ -320,6 +378,7 @@ export function detectCorrelations(
   interface Candidate {
     protein: string
     symptomType: SymptomType
+    windowHours: number
     a: number
     b: number
     c: number
@@ -329,17 +388,34 @@ export function detectCorrelations(
   const candidates: Candidate[] = []
 
   for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
-    const symptomMsList = input.symptomEvents
+    const windowHours = config.correlationWindowHoursByType[symptomType] ?? config.correlationWindowHours
+    const windowMs = windowHours * MS_PER_HOUR
+
+    const rawMsList = input.symptomEvents
       .filter((s) => s.type === symptomType)
       .map((s) => Date.parse(s.occurredAt))
       .filter((ms) => Number.isFinite(ms))
-    const symptomEventCount = symptomMsList.length
+    // Pseudoreplication fix, part 1: collapse re-logged bouts into distinct episodes.
+    const onsets = toEpisodeOnsets(rawMsList, config.symptomEpisodeGapHours)
+    const symptomEventCount = onsets.length
     if (symptomEventCount < cfg.earlyMinSymptomEvents) continue
 
-    // Precompute, per meal, whether it was followed by THIS symptom type.
-    const followed = classifiableMeals.map((m) =>
-      wasFollowedBySymptom(m.ms, symptomMsList, windowHours),
-    )
+    // Pseudoreplication fix, part 2: attribute each episode to its SINGLE nearest
+    // preceding meal within the window. A meal is "symptom-positive" if it is the
+    // proximate meal for ≥1 episode — so one symptom can never light up several meals,
+    // and the protein nearest in time (not every protein in the window) carries it.
+    const attributedMealIdx = new Set<number>()
+    for (const onset of onsets) {
+      let bestIdx = -1
+      // classifiableMeals is sorted ascending; scan back for the latest meal <= onset.
+      for (let i = classifiableMeals.length - 1; i >= 0; i--) {
+        if (classifiableMeals[i].ms <= onset) {
+          if (onset - classifiableMeals[i].ms <= windowMs) bestIdx = i
+          break
+        }
+      }
+      if (bestIdx >= 0) attributedMealIdx.add(bestIdx)
+    }
 
     for (const protein of proteins) {
       let a = 0
@@ -348,7 +424,7 @@ export function detectCorrelations(
       let d = 0
       classifiableMeals.forEach((m, i) => {
         const exposed = m.protein === protein
-        const hit = followed[i]
+        const hit = attributedMealIdx.has(i)
         if (exposed && hit) a++
         else if (exposed && !hit) b++
         else if (!exposed && hit) c++
@@ -363,7 +439,7 @@ export function detectCorrelations(
       ) {
         continue
       }
-      candidates.push({ protein, symptomType, a, b, c, d, symptomEventCount })
+      candidates.push({ protein, symptomType, windowHours, a, b, c, d, symptomEventCount })
     }
   }
 
@@ -374,7 +450,7 @@ export function detectCorrelations(
 
   const findings: CorrelationFinding[] = []
   for (const cand of candidates) {
-    const { a, b, c, d, protein, symptomType, symptomEventCount } = cand
+    const { a, b, c, d, protein, symptomType, symptomEventCount, windowHours } = cand
     const exposedTotal = a + b
     const unexposedTotal = c + d
     const exposedRate = exposedTotal === 0 ? 0 : a / exposedTotal
@@ -462,7 +538,14 @@ export function detectIntakeDecline(
   // The baseline is the pet's established normal, so it must EXCLUDE the recent
   // days under scrutiny — otherwise a sharp drop dilutes its own baseline and the
   // decline hides itself. Baseline = rated meals older than the recent window.
-  const recentCutoffMs = nowMs - cfg.consecutiveDaysBelowBaseline * MS_PER_DAY
+  //
+  // P0 feline sensitivity (Dr. Chen): a cat fires on a SINGLE below-baseline day
+  // (the 48hr hepatic-lipidosis window), where a dog waits for 2 consecutive days.
+  // The coverage floor and logging-gap guards below are UNCHANGED — we raise
+  // sensitivity on the day count only, never by reading absent data as a decline.
+  const isCat = input.pet.species === 'cat'
+  const consecutiveDays = isCat ? cfg.cat.consecutiveDaysBelowBaseline : cfg.consecutiveDaysBelowBaseline
+  const recentCutoffMs = nowMs - consecutiveDays * MS_PER_DAY
   const baselineMeals = windowMeals.filter((m) => m.ms < recentCutoffMs)
 
   if (baselineMeals.length >= cfg.minRatedMealsForBaseline) {
@@ -473,7 +556,7 @@ export function detectIntakeDecline(
     // A day with no rated meal is skipped, never treated as a decline — a logging
     // gap must not masquerade as anorexia (§9 / B-027 data caveat).
     const recentDays: { mean: number }[] = []
-    for (let i = 0; i < cfg.consecutiveDaysBelowBaseline; i++) {
+    for (let i = 0; i < consecutiveDays; i++) {
       const key = utcDateKey(nowMs - i * MS_PER_DAY)
       const dayMeals = windowMeals.filter((m) => utcDateKey(m.ms) === key)
       if (dayMeals.length === 0) continue
@@ -481,11 +564,15 @@ export function detectIntakeDecline(
       recentDays.push({ mean })
     }
 
-    if (recentDays.length >= cfg.consecutiveDaysBelowBaseline) {
+    if (recentDays.length >= consecutiveDays) {
       const allBelow = recentDays.every((d) => d.mean < baselineScore)
       const recentMean = recentDays.reduce((sum, d) => sum + d.mean, 0) / recentDays.length
       const material = baselineScore - recentMean >= cfg.minDeclineDelta
-      if (allBelow && material) {
+      // On the single-day (cat) path, also require the day to be genuinely low — not
+      // merely one notch down (e.g. "all"→"most") — so we stay sensitive without crying
+      // wolf. The multi-day path doesn't need this (a sustained dip is itself the signal).
+      const meetsConcernFloor = consecutiveDays > 1 || recentMean <= cfg.cat.singleDayConcernCeiling
+      if (allBelow && material && meetsConcernFloor) {
         findings.push({
           type: 'intake_decline',
           priorityClass: 'safety',
