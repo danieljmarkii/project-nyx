@@ -2,7 +2,7 @@
 
 **Status:** DRAFT (rev 2) — product-team aligned, awaiting PM sign-off
 **Owner build step:** Step 10 (AI Signal Edge Function)
-**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 3, per PM review)
+**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 4, per PM review)
 **Supersedes:** the hardwired empty-state placeholder in `components/home/SignalZone.tsx`
 
 > Output of the 2026-05-30 product-team design session + PM review (rev 2). Read
@@ -10,6 +10,14 @@
 > `docs/nyx-design-principles-v1_0.md` (Principle 3 — **see §3.1, this rev proposes
 > revising it**), and the clinical-guardrails skill (the n=1 asymmetry this layer
 > inherits and relaxes).
+
+### What changed in rev 4 (PM review)
+6. **Consultation widened.** Home-insight design work consults the full set — Designer, Data
+   Scientist, Dr. Chen, Jordan + Sam — not the Designer alone (§11f).
+7. **Weak correlations: floor stands for the home.** Persona verdict (PM invited the override):
+   below-floor correlations stay suppressed on the push surface (multiple-comparisons noise +
+   anxiety/bad-decision risk). A weak-signal **opt-in pull** "patterns we're watching" explore view
+   is kept alive as a possible future (off by default, never concern-framed, never on the home) — §6, open decision (g).
 
 ### What changed in rev 3 (PM review)
 5. **Per-type card presentation.** Cards are not a uniform template — an insight may render as
@@ -215,8 +223,20 @@ Owners want to know how solid a read is. We make confidence **visible but honest
     surface *fast* (note #4) without overclaiming.
   - **Established** — cleared the higher threshold (+ multiple-comparison correction for
     correlations). Drops the qualifier; vet-report-grade.
-- **Weak / below-floor findings stay fully suppressed** (PM agrees) — the tag is only
-  ever shown on findings that already cleared the floor.
+- **Weak / below-floor findings stay fully suppressed on the home** — the tag is only ever
+  shown on findings that already cleared the floor. **PM raised (rev 4):** surface weak
+  correlations if clearly labeled, or behind a user toggle? **Persona verdict (PM invited the
+  override) — floor stands for the home/push surface:**
+  - _Data Scientist + Biostatistician:_ below-floor correlations are dominated by the
+    multiple-comparisons false-positive problem; a "weak" label doesn't make an owner calibrate —
+    they anchor on it and may eliminate a food on noise, confounding their own diet trial.
+  - _Dr. Chen (decisive):_ a weak concern-shaped correlation ("vomits after X") manufactures
+    anxiety + bad decisions on no real evidence — the n=1 spurious-pattern danger B-013 exists to
+    prevent. Labeling doesn't fix it. The Early tier already delivers honest *early* value at the floor.
+  - **Allowed future direction (opt-in pull, NOT v1, NOT the home):** a separate, off-by-default
+    "patterns we're watching" explore view where a curious owner can pull up under-threshold
+    emerging patterns — framed "still learning, keep logging," **never concern-framed, never on the
+    home push surface** (Dr. Chen veto on concern-framing). See open decision (g).
 - **Calm + subordinate treatment** (Designer): a small label/dot, not a loud meter; no
   anxiety-spiking. Reserve the tag for insight types where confidence genuinely varies
   (correlation, trend) — a deterministic fact (preference rate over N, "you've logged 12
@@ -312,14 +332,22 @@ per card; confidence tag is a short calm label.
 - **(a)** Tap-to-expand evidence under a card — v1 or defer? (Designer floats; honest, adds surface.)
 - **(b)** Exact thresholds / tier cut-offs (§7) — lean: start with the table, tune on real dogfood data before locking.
 - **(c)** Visible-card cap (§3.2) — start ~3–4; confirm in design pass.
-- **(f) Per-type card presentation (§3.2)** — a design-phase task for the Designer + Data
-  Scientist: which insight types render as sentence vs stat vs graph, and the shared visual
-  language that keeps mixed formats reading as one calm surface (not a widget gallery). Captured
-  now (PM rev 3); resolved in the design pass before/at build Step 3.
+- **(f) Per-type card presentation (§3.2)** — a design-phase task **led by the Designer + Data
+  Scientist**, with **Dr. Chen** consulted (does a given format — especially a graph — read as
+  clinically useful vs alarming?) and **Jordan + Sam** consulted (is each card legible and worth
+  returning for?). Decides which insight types render as sentence vs stat vs graph, and the shared
+  visual language that keeps mixed formats reading as one calm surface (not a widget gallery).
+  Captured now (PM rev 3); resolved in the design pass before/at build Step 3. _More broadly: all
+  home-insight design work consults this full set — Designer (principles), Data Scientist (data
+  honesty), Dr. Chen (clinical framing), Jordan + Sam (owner usefulness) — not the Designer alone._
 - **(d) Principle 3 revision (§3.1)** — PM to confirm the proposed wording so the canonical
   `design-principles.md` + CLAUDE.md can be updated (Tier 2/3). Until confirmed, build proceeds
   under the rev-2 direction but the canonical principle is unedited.
 - **(e)** Build timing — DECIDED 2026-05-30: land this spec, build in a dedicated session (B-045).
+- **(g) Weak/emerging-correlation opt-in pull surface (§6)** — pursue a future "patterns we're
+  watching" explore view (off by default, never on the home, never concern-framed) or drop?
+  Persona lean: keep weak signals off the home; a pull view is a possible future, not v1. Graduates
+  to its own backlog item only if pursued.
 
 ---
 
