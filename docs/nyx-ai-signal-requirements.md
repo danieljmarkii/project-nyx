@@ -12,7 +12,7 @@
 
 ### What changed in rev 6 (PM decisions finalized)
 9. **All open decisions resolved (§11).** (a) tap-to-expand evidence → **in v1**; (b) thresholds →
-   start with the §7 table, **tune on real data** (PM wants the explainer first — added to §11); (c)
+   **§7 table adopted as v1 defaults, pressure-tested against the PM's real logging for cat Nyx**; (c)
    visible-card cap → **start ~3–4, with a high-priority override** (never withhold a safety insight
    to honor the cap — folded into §3.2 + Principle 3); (d) Principle 3 → **approved + canonical docs
    updated**; (f) per-type presentation → design-phase task; (g) weak *clinical* pull surface →
@@ -292,7 +292,13 @@ Owners want to know how solid a read is. We make confidence **visible but honest
 
 The tension: surface insights **fast** (so owners get value and keep logging) vs keep
 them **high-quality**. Resolution: thresholds are **per-insight-type**, and confidence is
-**visible** (§6) rather than waiting for certainty. Starting points (tune on real data):
+**visible** (§6) rather than waiting for certainty.
+
+**Status (PM-decided 2026-05-30):** the values below are the **adopted v1 starting defaults**
+— not provisional placeholders. We ship with these and **pressure-test the v1 model against
+real data as the PM dogfoods, logging for their cat Nyx.** Adjust only if real logging volume
+shows a default is mis-tuned (too noisy / too silent); any change is a tuning update, not a
+re-decision. This is the live validation loop, not a blocker.
 
 | Insight | Early read fires at | Established at | Notes |
 |---|---|---|---|
@@ -374,10 +380,10 @@ during the build, not before it.
 - **(a) Tap-to-expand evidence — DECIDED: in v1.** Each card is tappable to reveal the
   evidence behind it (§3.2). PM stretched for it in v1; the engine already carries the
   sample sizes the expansion needs, so the cost is UI, not data.
-- **(b) Exact thresholds / tier cut-offs (§7) — DEFERRED to build/tuning (not a now-decision).**
-  Start with the §7 table values; **tune against real dogfood data before locking.** PM wants
-  more detail before weighing in further — see "PM follow-up: thresholds explained" below; no
-  values are locked until that conversation + real data.
+- **(b) Exact thresholds / tier cut-offs (§7) — DECIDED: adopt the §7 table as v1 defaults**
+  (PM, 2026-05-30, after the explainer below). Ship with them and **pressure-test the v1 model
+  against the PM's real logging data for their cat Nyx.** Adjust only if real volume shows a
+  default is mis-tuned — a tuning update against live data, not a re-decision or a build blocker.
 - **(c) Visible-card cap (§3.2) — DECIDED: start ~3–4**, expandable later. **With a standing
   principle (PM):** the cap governs low/medium-priority insights ONLY — a high-priority
   (safety/concern) insight is never withheld to honor an arbitrary cap. If the owner genuinely
