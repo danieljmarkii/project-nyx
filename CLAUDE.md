@@ -127,7 +127,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 **The seven principles — no PM confirmation required to enforce these:**
 1. Zero decisions at moment of event — pet pre-selected, time auto-stamped, food confirmed not entered
 2. Confirmation over entry — after week one, no meal log should require typing
-3. Home screen is an intelligence surface — three zones only: Signal, Today, Trend. No log feed, no nav menu, no upsell.
+3. Home screen is an intelligence surface — a curated, prioritized set of insight cards above today's state and trend. It earns every pixel by being informative, not busy: no raw log feed, no nav menu, no upsell, never a firehose. Safety/concern insights always lead and are never dropped to honor a layout cap. The set of insight types is open-ended and grows with the data model; curation — lead with what matters, cap the *low/medium-priority* visible set, keep each card calm and scannable — keeps "informative" from becoming "dashboard." _(Revised 2026-05-30 from "three zones only: Signal, Today, Trend"; PM-approved. See `docs/nyx-ai-signal-requirements.md` §3.1.)_
 4. The nudge is warm, not nagging — one nudge per day max, specific copy, never generic
 5. Empty states are features — warm, honest, forward-looking; never a blank space or broken chart
 6. The vet report is clinical-grade — scannable in 60 seconds, no decorative elements, no paw prints

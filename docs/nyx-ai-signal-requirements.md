@@ -1,15 +1,22 @@
 # Nyx — AI Signal / Home Intelligence Surface Requirements
 
-**Status:** DRAFT (rev 2) — product-team aligned, awaiting PM sign-off
+**Status:** FINALIZED (rev 6) — all PM decisions resolved; build-ready
 **Owner build step:** Step 10 (AI Signal Edge Function)
-**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 5, per PM review)
+**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 6, per PM review)
 **Supersedes:** the hardwired empty-state placeholder in `components/home/SignalZone.tsx`
 
-> Output of the 2026-05-30 product-team design session + PM review (rev 2). Read
+> Output of the 2026-05-30 product-team design session + PM review (revs 2–6). Read
 > alongside `docs/nyx-technical-spec-v1_0.md` (Step 10 + Zone 1 AC),
-> `docs/nyx-design-principles-v1_0.md` (Principle 3 — **see §3.1, this rev proposes
-> revising it**), and the clinical-guardrails skill (the n=1 asymmetry this layer
-> inherits and relaxes).
+> `docs/nyx-design-principles-v1_0.md` (Principle 3 — **revised 2026-05-30 per §3.1**),
+> and the clinical-guardrails skill (the n=1 asymmetry this layer inherits and relaxes).
+
+### What changed in rev 6 (PM decisions finalized)
+9. **All open decisions resolved (§11).** (a) tap-to-expand evidence → **in v1**; (b) thresholds →
+   start with the §7 table, **tune on real data** (PM wants the explainer first — added to §11); (c)
+   visible-card cap → **start ~3–4, with a high-priority override** (never withhold a safety insight
+   to honor the cap — folded into §3.2 + Principle 3); (d) Principle 3 → **approved + canonical docs
+   updated**; (f) per-type presentation → design-phase task; (g) weak *clinical* pull surface →
+   **punted to backlog B-046**, while v1 stays open to weak *benign* preference insights on the home.
 
 ### What changed in rev 5 (PM review)
 8. **Weak signals gated by risk class, not blanket-suppressed.** The rev-4 suppression applies to
@@ -104,25 +111,22 @@ warm sentence. The model never decides whether a pattern exists.
 
 ## 3. The Home as a composable intelligence surface
 
-### 3.1 Design-principle change — PROPOSED, needs PM confirmation
+### 3.1 Design-principle change — APPROVED (PM, 2026-05-30)
 
-Principle 3 today reads (canonical, `design-principles.md` + CLAUDE.md):
-> *"Home screen is an intelligence surface — three zones only: Signal, Today, Trend.
-> No log feed, no nav menu, no upsell."*
-
-**PM direction (2026-05-30):** the home should be **as informative as possible** and
-open to whatever design makes most sense — multiple insight surfaces over time
+Principle 3 previously read: *"Home screen is an intelligence surface — three zones only:
+Signal, Today, Trend. No log feed, no nav menu, no upsell."* The home should instead be
+**as informative as possible** and open to multiple insight surfaces over time
 (correlations, food/treat preferences, future weight / activity / overfeeding, …).
-This is a real spec deviation (B-023 already flagged the "Home becoming a dashboard"
-tension). **Proposed revised Principle 3** (await PM sign-off before editing the
-canonical docs — Tier 2/3):
+**PM approved 2026-05-30; the canonical Principle 3 in CLAUDE.md and
+`design-principles.md` is updated.** Revised wording:
 
 > *"Home screen is an intelligence surface — a curated, prioritized set of insight
 > cards above today's state and trend. It earns every pixel by being informative,
 > not busy: no raw log feed, no nav menu, no upsell, never a firehose. Safety/concern
-> insights always lead. The set of insight types is open-ended and grows with the data
-> model; curation — lead with what matters, cap the visible set, keep each card calm
-> and scannable — is what keeps 'informative' from becoming 'dashboard.'"*
+> insights always lead and are never dropped to honor a layout cap. The set of insight
+> types is open-ended and grows with the data model; curation — lead with what matters,
+> cap the low/medium-priority visible set, keep each card calm and scannable — keeps
+> 'informative' from becoming 'dashboard.'"*
 
 > **Designer note:** I'm bought in *with* the curation clause. My original concern
 > wasn't "more than one card is bad" — it was "an un-curated dump is bad." A
@@ -131,9 +135,21 @@ canonical docs — Tier 2/3):
 
 ### 3.2 Composition (replaces single-sentence)
 - The surface renders an **ordered stack of insight cards** — each card is one
-  plain-language sentence + optional confidence tag (§6) + optional tap-to-evidence.
+  plain-language finding (sentence / stat / graph per §3.2 below) + optional confidence
+  tag (§6) + **tap-to-expand evidence (v1, see below)**.
 - **Capped visible set** (start: ~3–4 cards) so it stays scannable; overflow via a
-  calm "more insights" affordance, not an infinite feed.
+  calm "more insights" affordance, not an infinite feed. **High-priority override
+  (PM-decided 2026-05-30):** the cap governs the *low/medium-priority* nice-to-knows
+  ONLY. A high-priority (safety/concern) insight is **never** suppressed to honor the
+  cap — if a pet genuinely has 5 things the owner should know, surface all 5. "Lead with
+  what matters" outranks any number we set in this room. (In practice high-priority
+  findings are rare, so this won't routinely blow past the cap; it's a safety valve, not
+  a license to fill the screen.)
+- **Tap-to-expand evidence (v1 — PM-decided 2026-05-30):** each card is tappable to reveal
+  the evidence behind it ("based on 7 vomiting events and 12 chicken meals over 3 weeks").
+  Scannable one-liner at rest, honest detail on demand — this is how an owner *trusts* a
+  card enough to act on it. In v1 scope (stretch); the engine already carries the sample
+  sizes the expansion needs (§4 findings), so the cost is UI, not new data.
 - **Context-adaptive ordering** (see §8): a diet-trial pet leads with trial/correlation
   insights; a healthy grazer leads with preference/intake insights. Same engine,
   different top card by pet context.
@@ -349,28 +365,52 @@ per card; confidence tag is a short calm label.
 
 ---
 
-## 11. Open decisions
+## 11. Decisions (finalized 2026-05-30) + remaining design-phase items
 
-- **(a)** Tap-to-expand evidence under a card — v1 or defer? (Designer floats; honest, adds surface.)
-- **(b)** Exact thresholds / tier cut-offs (§7) — lean: start with the table, tune on real dogfood data before locking.
-- **(c)** Visible-card cap (§3.2) — start ~3–4; confirm in design pass.
-- **(f) Per-type card presentation (§3.2)** — a design-phase task **led by the Designer + Data
-  Scientist**, with **Dr. Chen** consulted (does a given format — especially a graph — read as
+All PM-facing open decisions are now **resolved**. Two items below remain as
+*design-phase tasks* (b, f) — they don't block build start; they're tuned/decided
+during the build, not before it.
+
+- **(a) Tap-to-expand evidence — DECIDED: in v1.** Each card is tappable to reveal the
+  evidence behind it (§3.2). PM stretched for it in v1; the engine already carries the
+  sample sizes the expansion needs, so the cost is UI, not data.
+- **(b) Exact thresholds / tier cut-offs (§7) — DEFERRED to build/tuning (not a now-decision).**
+  Start with the §7 table values; **tune against real dogfood data before locking.** PM wants
+  more detail before weighing in further — see "PM follow-up: thresholds explained" below; no
+  values are locked until that conversation + real data.
+- **(c) Visible-card cap (§3.2) — DECIDED: start ~3–4**, expandable later. **With a standing
+  principle (PM):** the cap governs low/medium-priority insights ONLY — a high-priority
+  (safety/concern) insight is never withheld to honor an arbitrary cap. If the owner genuinely
+  has 5 things they should know, surface all 5. Folded into §3.2 + the revised Principle 3.
+- **(d) Principle 3 revision (§3.1) — DECIDED: APPROVED.** Canonical Principle 3 updated in
+  CLAUDE.md and `design-principles.md` 2026-05-30.
+- **(e) Build timing — DECIDED:** land this spec, build in a dedicated session (B-045).
+- **(f) Per-type card presentation (§3.2) — design-phase task** (not a now-decision). Led by the
+  Designer + Data Scientist; **Dr. Chen** consulted (does a format — esp. a graph — read as
   clinically useful vs alarming?) and **Jordan + Sam** consulted (is each card legible and worth
-  returning for?). Decides which insight types render as sentence vs stat vs graph, and the shared
-  visual language that keeps mixed formats reading as one calm surface (not a widget gallery).
-  Captured now (PM rev 3); resolved in the design pass before/at build Step 3. _More broadly: all
-  home-insight design work consults this full set — Designer (principles), Data Scientist (data
-  honesty), Dr. Chen (clinical framing), Jordan + Sam (owner usefulness) — not the Designer alone._
-- **(d) Principle 3 revision (§3.1)** — PM to confirm the proposed wording so the canonical
-  `design-principles.md` + CLAUDE.md can be updated (Tier 2/3). Until confirmed, build proceeds
-  under the rev-2 direction but the canonical principle is unedited.
-- **(e)** Build timing — DECIDED 2026-05-30: land this spec, build in a dedicated session (B-045).
-- **(g) Weak *clinical*-correlation opt-in pull surface (§6)** — pursue a future "patterns we're
-  watching" explore view (off by default, never on the home, never concern-framed) for under-threshold
-  *clinical* patterns, or drop? Persona lean: keep weak clinical signals off the home push surface; a
-  pull view is a possible future, not v1. (Benign weak preferences are handled separately — they may
-  surface on the home at a lower bar per §6.) Graduates to its own backlog item only if pursued.
+  returning for?). Decides which types render as sentence vs stat vs graph + the shared visual
+  language that keeps mixed formats reading as one calm surface. Resolved in the design pass at/before
+  build Step 3. _All home-insight design work consults this full set, not the Designer alone._
+- **(g) Weak *clinical*-correlation opt-in pull surface (§6) — DECIDED: punt + backlog.** Not v1.
+  Logged as its own backlog item (B-046) for a future "patterns we're watching" opt-in explore
+  view (off by default, never on the home, never concern-framed). **v1 explicitly stays open to weak
+  *non-clinical* (benign positive-preference) insights on the home** at a lower exploratory bar (§6) —
+  that's the part the PM wants preserved, and it is.
+
+### PM follow-up: thresholds explained (re: decision b)
+The "thresholds" are the **minimum data each insight type needs before it's allowed to appear**,
+split into two tiers (§6):
+- **Early read** — the *lower* bar. Enough signal to be worth showing, but labeled provisional
+  ("Early pattern — keep logging to confirm"). This is what lets insights appear *fast* (the
+  ~3–5 day target) so the owner gets value and keeps logging.
+- **Established** — the *higher* bar. Solid enough to drop the qualifier and be vet-report-grade.
+
+Per §7, the bars differ **by insight type, set by the cost of being wrong**: correlations need a
+higher bar (a false "chicken causes vomiting" does harm); safety flags fire at a low bar (missing a
+real decline is worse than a soft false alarm); benign preferences sit lowest (a wrong "likes salmon"
+guess is harmless). The §7 table has concrete starting numbers (e.g. correlation Early = ≥3 symptom
+events AND ≥3 exposures). **These are starting points to validate on real data, not locked law** —
+that's the whole of decision (b): confirm/adjust the numbers once we see real logging volume.
 
 ---
 
