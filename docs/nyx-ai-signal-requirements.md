@@ -2,7 +2,7 @@
 
 **Status:** DRAFT (rev 2) — product-team aligned, awaiting PM sign-off
 **Owner build step:** Step 10 (AI Signal Edge Function)
-**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 2, per PM review)
+**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 3, per PM review)
 **Supersedes:** the hardwired empty-state placeholder in `components/home/SignalZone.tsx`
 
 > Output of the 2026-05-30 product-team design session + PM review (rev 2). Read
@@ -10,6 +10,12 @@
 > `docs/nyx-design-principles-v1_0.md` (Principle 3 — **see §3.1, this rev proposes
 > revising it**), and the clinical-guardrails skill (the n=1 asymmetry this layer
 > inherits and relaxes).
+
+### What changed in rev 3 (PM review)
+5. **Per-type card presentation.** Cards are not a uniform template — an insight may render as
+   a sentence, a stat, or a mini graph, whichever suits the data. Detection stays decoupled from
+   presentation; each registered type owns its renderer (§3.2, §4). Mixed-format coherence is a
+   design-phase task (§11f) for the Designer + Data Scientist.
 
 ### What changed in rev 2 (PM review)
 1. **Home is no longer a single-winning-sentence.** It becomes a curated, prioritized
@@ -116,6 +122,15 @@ canonical docs — Tier 2/3):
   different top card by pet context.
 - **Each new insight type is a card renderer + a detector** (§4 registry) — the home
   grows by registering types, not by redesigning.
+- **Presentation is per-insight-type, not one uniform template** (PM, rev 3). A card may
+  render as a **sentence** (correlation, concern flag), a **stat / single number** (preference
+  rate, days-on-trial), a **mini graph / sparkline** (symptom-frequency trend, intake over time),
+  or a future format that suits the data. Each registered type declares its own presentation;
+  the engine still produces the same structured finding underneath, so detection and rendering
+  stay decoupled. The LLM phrasing layer (§2) applies only to text-shaped cards — a graph card
+  needs data + a calm caption, not a generated sentence. **Curation guardrail still holds:** varied
+  formats must read as one calm, coherent surface, not a gallery of mismatched widgets — a design-phase
+  concern (§11f).
 
 ### 3.3 Display states (each a designed moment — Principle 5)
 | State | Trigger | Pattern |
@@ -129,8 +144,10 @@ canonical docs — Tier 2/3):
 ## 4. Insight taxonomy & detector registry
 
 Detectors are a **pluggable registry** — each returns typed structured findings; the
-home renders a card per type. This is the extensibility spine the PM asked for
-(future: weight, activity, overfeeding, multi-pet preferences, …).
+home renders a card per type, **in whatever presentation format suits that type**
+(sentence / stat / graph / …, see §3.2). This is the extensibility spine the PM asked for
+(future: weight, activity, overfeeding, multi-pet preferences, …). Detection and
+presentation are decoupled: one finding shape per type, one renderer per type.
 
 > **Prioritization (PM decision 2026-05-30):** food→symptom correlation is **promoted
 > to lead v1**. The PM dogfoods with a cat *not* on a diet trial, so the diet-trial
@@ -295,6 +312,10 @@ per card; confidence tag is a short calm label.
 - **(a)** Tap-to-expand evidence under a card — v1 or defer? (Designer floats; honest, adds surface.)
 - **(b)** Exact thresholds / tier cut-offs (§7) — lean: start with the table, tune on real dogfood data before locking.
 - **(c)** Visible-card cap (§3.2) — start ~3–4; confirm in design pass.
+- **(f) Per-type card presentation (§3.2)** — a design-phase task for the Designer + Data
+  Scientist: which insight types render as sentence vs stat vs graph, and the shared visual
+  language that keeps mixed formats reading as one calm surface (not a widget gallery). Captured
+  now (PM rev 3); resolved in the design pass before/at build Step 3.
 - **(d) Principle 3 revision (§3.1)** — PM to confirm the proposed wording so the canonical
   `design-principles.md` + CLAUDE.md can be updated (Tier 2/3). Until confirmed, build proceeds
   under the rev-2 direction but the canonical principle is unedited.
@@ -322,8 +343,11 @@ store a *set* (e.g. a `findings jsonb` column or a child table) instead of a sin
 - **Step 3 — Wire `SignalZone` to the cache.** Replace the placeholder with the composable card
   stack (§3.2): cache-only read, render the ordered cards + confidence tags + live/building/stale
   states, context-adaptive ordering (§8), async regen (daily-expiry + debounced-after-log),
-  optional evidence-expand (§11a). Acceptance: the stack renders, capped + calm; building/stale
-  states render; safety card leads when present.
+  optional evidence-expand (§11a). **Per-type renderers** (§3.2 / §11f): a card-renderer interface
+  keyed by insight type so sentence / stat / graph cards plug in; v1 ships the renderers its v1
+  insight types need, with the shared visual language resolved in the design pass. Acceptance: the
+  stack renders, capped + calm, mixed formats read as one surface; building/stale states render;
+  safety card leads when present.
 
 ---
 
@@ -339,6 +363,11 @@ store a *set* (e.g. a `findings jsonb` column or a child table) instead of a sin
 - **Biostatistician ✓** — correlation gated on multiple-comparison correction + tiering; two error-cost
   profiles (specificity for correlations, sensitivity for safety) drive different floors.
 - **Designer ✓ (conditional)** — endorses the richer home *with* the curation clause in revised
-  Principle 3 (§3.1): capped, prioritized, calm cards — not a dashboard dump. Confidence tag stays subordinate.
+  Principle 3 (§3.1): capped, prioritized, calm cards — not a dashboard dump. Confidence tag stays
+  subordinate. Per-type formats (§3.2) welcome **if** a shared visual language keeps them reading as
+  one calm surface — owns that design pass (§11f).
+- **Data Scientist ✓ (presentation)** — graph/sparkline cards (trend, intake-over-time) are the
+  honest representation for time-series findings; the structured finding already carries the data a
+  graph needs. Co-owns the per-type presentation pass with the Designer (§11f).
 - **Jordan ✓** — wants trial-progress + trigger insights up top; "Early, keep logging" drives return.
 - **Sam ✓** — wants preferences + honest intake warning; decline never "picky"; confidence framing is calming.
