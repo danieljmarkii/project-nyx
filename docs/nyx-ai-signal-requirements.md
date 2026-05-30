@@ -2,7 +2,7 @@
 
 **Status:** DRAFT (rev 2) — product-team aligned, awaiting PM sign-off
 **Owner build step:** Step 10 (AI Signal Edge Function)
-**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 4, per PM review)
+**Created:** 2026-05-30 · **Revised:** 2026-05-30 (rev 5, per PM review)
 **Supersedes:** the hardwired empty-state placeholder in `components/home/SignalZone.tsx`
 
 > Output of the 2026-05-30 product-team design session + PM review (rev 2). Read
@@ -10,6 +10,15 @@
 > `docs/nyx-design-principles-v1_0.md` (Principle 3 — **see §3.1, this rev proposes
 > revising it**), and the clinical-guardrails skill (the n=1 asymmetry this layer
 > inherits and relaxes).
+
+### What changed in rev 5 (PM review)
+8. **Weak signals gated by risk class, not blanket-suppressed.** The rev-4 suppression applies to
+   *clinical/concern-shaped* weak signals (symptom correlations, intake) — being wrong drives harm.
+   **Benign weak signals** (positive food/treat preference, "interesting" non-health patterns) **may
+   surface on the home at a lower, exploratory bar**, since a wrong positive-preference guess is
+   low-stakes. Hard guardrail: *positive preference only* — a weak negative/decline is never reframed
+   as "preference," it routes to the clinical health-flag lane (§6, §7). The opt-in pull view (open
+   decision g) is specifically for weak *clinical* signals.
 
 ### What changed in rev 4 (PM review)
 6. **Consultation widened.** Home-insight design work consults the full set — Designer, Data
@@ -223,20 +232,30 @@ Owners want to know how solid a read is. We make confidence **visible but honest
     surface *fast* (note #4) without overclaiming.
   - **Established** — cleared the higher threshold (+ multiple-comparison correction for
     correlations). Drops the qualifier; vet-report-grade.
-- **Weak / below-floor findings stay fully suppressed on the home** — the tag is only ever
-  shown on findings that already cleared the floor. **PM raised (rev 4):** surface weak
-  correlations if clearly labeled, or behind a user toggle? **Persona verdict (PM invited the
-  override) — floor stands for the home/push surface:**
-  - _Data Scientist + Biostatistician:_ below-floor correlations are dominated by the
-    multiple-comparisons false-positive problem; a "weak" label doesn't make an owner calibrate —
-    they anchor on it and may eliminate a food on noise, confounding their own diet trial.
-  - _Dr. Chen (decisive):_ a weak concern-shaped correlation ("vomits after X") manufactures
-    anxiety + bad decisions on no real evidence — the n=1 spurious-pattern danger B-013 exists to
-    prevent. Labeling doesn't fix it. The Early tier already delivers honest *early* value at the floor.
-  - **Allowed future direction (opt-in pull, NOT v1, NOT the home):** a separate, off-by-default
-    "patterns we're watching" explore view where a curious owner can pull up under-threshold
-    emerging patterns — framed "still learning, keep logging," **never concern-framed, never on the
-    home push surface** (Dr. Chen veto on concern-framing). See open decision (g).
+- **Weak / below-floor findings are gated by RISK CLASS, not blanket-suppressed** (PM
+  refinement, rev 5). The suppression rule applies to *clinical* signals, not *benign* ones — being
+  wrong has wildly different stakes for the two:
+  - **Clinical / concern-shaped weak signals — STAY SUPPRESSED on the home** (symptom correlations,
+    intake-related reads, anything that could drive a care decision).
+    - _Data Scientist + Biostatistician:_ below-floor symptom correlations are dominated by the
+      multiple-comparisons false-positive problem; a "weak" label doesn't make an owner calibrate —
+      they anchor on it and may eliminate a food on noise, confounding their own diet trial.
+    - _Dr. Chen (decisive):_ a weak concern-shaped correlation ("vomits after X") manufactures
+      anxiety + bad decisions on no real evidence — the n=1 spurious-pattern danger B-013 exists to
+      prevent. Labeling doesn't fix it. The Early tier already delivers honest early value at the floor.
+  - **Benign / interest weak signals — MAY surface on the home at a lower bar, framed exploratory**
+    (positive food/treat preference, non-health "interesting" patterns). A wrong positive-preference
+    guess costs a so-so food purchase, not clinical harm, so it doesn't need the clinical bar.
+    Treatment: calm, honestly provisional ("Pixel might be warming to salmon — still early"), clearly
+    low-confidence (§6 tags). A nice return-driver (Designer + Sam).
+    - **Hard guardrail — positive only:** this applies ONLY to the *positive, multi-sample*
+      preference read. A weak *negative*/decline signal is **never** reframed as "preference" — declining
+      intake routes to the clinical health-flag lane (the existing `intake_rating` anti-pattern), it is
+      not softened into "seems picky." The benign lane is for "likes," never for "dislikes/refuses."
+  - **Allowed future direction for the *clinical* weak signals (opt-in pull, NOT v1, NOT the home):**
+    a separate, off-by-default "patterns we're watching" explore view where a curious owner can pull up
+    under-threshold emerging clinical patterns — framed "still learning, keep logging," **never
+    concern-framed, never on the home push surface** (Dr. Chen veto on concern-framing). See open decision (g).
 - **Calm + subordinate treatment** (Designer): a small label/dot, not a loud meter; no
   anxiety-spiking. Reserve the tag for insight types where confidence genuinely varies
   (correlation, trend) — a deterministic fact (preference rate over N, "you've logged 12
@@ -271,10 +290,13 @@ real (non-placeholder) insight — even if Early-tier — within ~3–5 days. Sa
 fire sooner. **Open:** validate these floors against real dogfood data before locking
 (§11).
 
-> **Threshold philosophy (Data Scientist + Biostatistician + Dr. Chen):** correlations
-> bias toward *specificity* (a false "chicken causes vomiting" erodes trust) → higher bar +
-> "Early" labeling. Safety flags bias toward *sensitivity* (a missed decline can be
-> dangerous) → low bar, calm framing. Two different error-cost profiles, two different floors.
+> **Threshold philosophy (Data Scientist + Biostatistician + Dr. Chen):** the floor is set by
+> the *cost of being wrong*, which differs by insight class — three profiles:
+> - **Clinical correlations** bias toward *specificity* (a false "chicken causes vomiting" erodes
+>   trust + drives bad elimination decisions) → higher bar + "Early" labeling; below-floor stays suppressed (§6).
+> - **Safety flags** bias toward *sensitivity* (a missed decline can be dangerous) → low bar, calm framing.
+> - **Benign positive preferences** are low-stakes if wrong (a so-so food purchase) → may surface at a
+>   lower, exploratory bar, honestly provisional (§6). *Positive only* — a decline is a clinical signal, not a preference.
 
 ---
 
@@ -344,10 +366,11 @@ per card; confidence tag is a short calm label.
   `design-principles.md` + CLAUDE.md can be updated (Tier 2/3). Until confirmed, build proceeds
   under the rev-2 direction but the canonical principle is unedited.
 - **(e)** Build timing — DECIDED 2026-05-30: land this spec, build in a dedicated session (B-045).
-- **(g) Weak/emerging-correlation opt-in pull surface (§6)** — pursue a future "patterns we're
-  watching" explore view (off by default, never on the home, never concern-framed) or drop?
-  Persona lean: keep weak signals off the home; a pull view is a possible future, not v1. Graduates
-  to its own backlog item only if pursued.
+- **(g) Weak *clinical*-correlation opt-in pull surface (§6)** — pursue a future "patterns we're
+  watching" explore view (off by default, never on the home, never concern-framed) for under-threshold
+  *clinical* patterns, or drop? Persona lean: keep weak clinical signals off the home push surface; a
+  pull view is a possible future, not v1. (Benign weak preferences are handled separately — they may
+  surface on the home at a lower bar per §6.) Graduates to its own backlog item only if pursued.
 
 ---
 
