@@ -68,10 +68,12 @@ The food library is the foundation of this principle. Jordan sets up their pet's
 
 Jordan opens the app to understand, not to scroll. The home screen answers the question Jordan is actually asking — *is Luna okay, is it getting better?* — before Jordan has to ask it.
 
-**The three-zone home screen:**
+_Revised 2026-05-30 (PM-approved): the Signal evolves from a single daily sentence into a **curated, prioritized set of insight cards**. The home is open-ended in the *types* of insight it can surface (symptom correlations, food/treat preferences, and future weight / activity / over-feeding, …) and in their *presentation* (a card may be a sentence, a stat, or a small graph — whichever suits the data). The discipline is unchanged: informative, never busy. See `docs/nyx-ai-signal-requirements.md` for the full spec._
+
+**The home screen:**
 
 **Zone 1 — The Signal** (dominant, top)
-One AI-generated insight, updated daily. A sentence, not a number. Warm, confident, specific. "Vomiting is down 60% since you switched to turkey." In the empty state (first 5–7 days): an honest, warm message about what's being built. Never a placeholder. Never generic.
+A curated, prioritized stack of AI-generated insight cards, refreshed daily. Each card is warm, confident, specific — "Vomiting is down 60% since you switched to turkey" — and may render as a sentence, a single stat, or a small graph. **Safety/concern insights always lead and are never dropped to honor a layout cap** (the visible-card cap governs only the low/medium-priority nice-to-knows). Cards are tappable to reveal the evidence behind them. In the empty state (first few days): an honest, warm message about what's being built. Never a placeholder. Never generic. Never a firehose.
 
 **Zone 2 — Today** (middle)
 A simple visual of what's been logged today — icon-based, scannable in two seconds. If nothing logged: a single, warm nudge. Not a notification badge. Not a red dot. A sentence. "Nothing logged yet — how's Luna doing?" One tap opens the quick-log. The nudge vanishes the moment anything is logged.
