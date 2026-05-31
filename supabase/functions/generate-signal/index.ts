@@ -1,353 +1,307 @@
-// Supabase Edge Function — generate-signal
-// Checks the ai_signals cache for a fresh entry; generates a new one via
-// Claude Sonnet if stale or absent. Runs with the caller's JWT so RLS
-// enforces pet ownership on every query.
+// Supabase Edge Function — generate-signal  (B-045, Step 2)
+//
+// The AI Signal generator. Architecture B (docs/nyx-ai-signal-requirements.md
+// §2, unanimous): DETERMINISTIC DETECTION + LLM PHRASING. The server computes
+// and ranks *already-true* findings via the pure detection engine
+// (./detection.ts); Claude is handed each finding's structured payload ONLY to
+// render one warm sentence. The model never sees a raw event log and never
+// decides whether a pattern exists — it cannot invent a correlation.
+//
+// Pipeline (§2):
+//   1. Detect    — run detectSignals() over the pet's events + meals.
+//   2. Curate    — cap the low/medium-priority insight set (§3.2); safety/
+//                  concern findings are NEVER dropped to honor the cap.
+//   3. Phrase    — one Haiku sentence per surfaced finding, in parallel, each
+//                  independently falling back to a templated sentence.
+//   4. Cache     — write the ordered set to ai_signals.findings (24h TTL).
+//   5. Fallback  — on ANY LLM failure the surface is still written, from the
+//                  deterministic template. It is never blank because the API
+//                  failed (§2 hard rule).
+//
+// The phrasing / curation / guardrail logic is the pure ./phrasing.ts module
+// (unit-tested offline in phrasing.test.ts, mirroring detection.ts). This file
+// is the I/O shell: DB reads, the Claude call, and the cache write. It runs with
+// the caller's JWT so RLS enforces pet ownership on every read and the cache
+// write — no service role needed (no storage, no cross-user data).
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  detectSignals,
+  DEFAULT_CONFIG,
+  CORRELATION_SYMPTOM_TYPES,
+  type Finding,
+  type SymptomEvent,
+  type MealEvent,
+  type SymptomType,
+  type IntakeRating,
+  type Species,
+  type DetectionInput,
+} from './detection.ts'
+import {
+  templateForFinding,
+  validatePhrasing,
+  curateFindings,
+  buildBuildingText,
+  phrasingPayload,
+  PHRASE_TOOL,
+  PHRASING_SYSTEM,
+  type CachedFinding,
+} from './phrasing.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const SYMPTOM_TYPES = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction', 'lethargy']
+// How far back to pull events. Generous enough for an Established correlation
+// (weeks–months) and the 14-day intake baseline, bounded so the query stays on
+// the (pet_id, occurred_at) index for a dogfooding-scale dataset.
+const LOOKBACK_DAYS = 180
 
-interface EventRow {
+// Claude model for phrasing (PM decision, B-045 Step 2): Haiku 4.5. The
+// clinical/statistical reasoning is fully deterministic upstream; the model
+// only renders copy from an already-true payload, with a templated fallback,
+// so the cheapest capable model is the right call for a per-finding, per-pet,
+// daily-cached call (B-001 cost). Bump this one constant if voice disappoints.
+const PHRASING_MODEL = 'claude-haiku-4-5'
+
+const MS_PER_DAY = 86_400_000
+
+// ── Phrasing call (the only LLM use; reasoning stays deterministic upstream) ──
+
+interface ClaudeToolResponse {
+  content?: Array<{ type: string; name?: string; input?: { sentence?: string } }>
+}
+
+// Phrase one finding. Returns the model sentence if it passes validation,
+// otherwise the deterministic template — so this never throws and never blanks.
+async function phraseFinding(finding: Finding, petName: string): Promise<string> {
+  const fallback = templateForFinding(finding, petName)
+  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+  if (!apiKey) {
+    console.warn('generate-signal: ANTHROPIC_API_KEY unset — using template')
+    return fallback
+  }
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: PHRASING_MODEL,
+        max_tokens: 200,
+        system: PHRASING_SYSTEM,
+        tools: [PHRASE_TOOL],
+        tool_choice: { type: 'tool', name: 'phrase_insight' },
+        messages: [
+          {
+            role: 'user',
+            content:
+              'Phrase this finding as one sentence, using only the facts in this JSON:\n' +
+              JSON.stringify(phrasingPayload(finding, petName)),
+          },
+        ],
+      }),
+    })
+    if (!res.ok) {
+      console.warn(`generate-signal: phrasing API ${res.status} — using template`)
+      return fallback
+    }
+    const data = (await res.json()) as ClaudeToolResponse
+    const block = (data.content ?? []).find(
+      (b) => b.type === 'tool_use' && b.name === 'phrase_insight',
+    )
+    const sentence = block?.input?.sentence?.trim()
+    if (sentence && validatePhrasing(sentence, finding)) return sentence
+    console.warn('generate-signal: phrasing missing or failed validation — using template')
+    return fallback
+  } catch (err) {
+    console.warn('generate-signal: phrasing error — using template:', err)
+    return fallback
+  }
+}
+
+// ── DB → DetectionInput mapping ───────────────────────────────────────────────
+
+interface SymptomRow {
   id: string
   event_type: string
   occurred_at: string
   severity: number | null
 }
 
-interface MealRow {
-  event_id: string
-  food_items: { brand: string; product_name: string } | null
+type FoodItemJoin = {
+  primary_protein: string | null
+  food_type: string | null
+  brand: string
+  product_name: string
+}
+type MealJoin = {
+  food_item_id: string | null
+  intake_rating: string | null
+  food_items: FoodItemJoin | FoodItemJoin[] | null
+}
+interface MealEventRow {
+  id: string
+  occurred_at: string
+  meals: MealJoin | MealJoin[] | null
 }
 
-interface DietTrialRow {
-  started_at: string
-  target_duration_days: number
-  food_items: { brand: string; product_name: string } | null
+function first<T>(v: T | T[] | null | undefined): T | null {
+  if (v == null) return null
+  return Array.isArray(v) ? (v[0] ?? null) : v
 }
 
-interface ConditionRow {
-  condition_name: string
-  status: string
+function mapSymptomRows(rows: SymptomRow[]): SymptomEvent[] {
+  return rows.map((r) => ({
+    id: r.id,
+    type: r.event_type as SymptomType,
+    occurredAt: r.occurred_at,
+    severity: r.severity,
+  }))
 }
 
-interface PetRow {
-  name: string
-  species: string
-  breed: string | null
+function mapMealRows(rows: MealEventRow[]): MealEvent[] {
+  return rows.map((r) => {
+    const meal = first(r.meals)
+    const fi = first(meal?.food_items)
+    return {
+      id: r.id,
+      occurredAt: r.occurred_at,
+      foodItemId: meal?.food_item_id ?? null,
+      primaryProtein: fi?.primary_protein ?? null,
+      intakeRating: (meal?.intake_rating ?? null) as IntakeRating | null,
+      foodType: (fi?.food_type ?? null) as 'meal' | 'treat' | 'other' | null,
+      foodLabel: fi ? `${fi.brand} ${fi.product_name}`.trim() : null,
+      // attributionConfidence omitted → 'high' (today's per-pet logging
+      // semantics). B-040 will supply 'low' for shared / free-fed bowls.
+    }
+  })
 }
 
-interface Correlation {
-  symptomType: string
-  foodBrand: string
-  foodName: string
-  count: number
-}
+// ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS })
   }
 
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
+  }
+
+  let petId: string
   try {
-    const { petId } = await req.json() as { petId: string }
-    if (!petId || typeof petId !== 'string') {
-      return Response.json({ error: 'petId required' }, { status: 400, headers: CORS_HEADERS })
-    }
+    const body = (await req.json()) as { petId?: string }
+    petId = body.petId ?? ''
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400, headers: CORS_HEADERS })
+  }
+  if (!petId || typeof petId !== 'string') {
+    return Response.json({ error: 'petId required' }, { status: 400, headers: CORS_HEADERS })
+  }
 
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
-    }
+  const supabase: SupabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } },
+  )
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } },
-    )
+  try {
+    const nowMs = Date.now()
+    const lookbackIso = new Date(nowMs - LOOKBACK_DAYS * MS_PER_DAY).toISOString()
 
-    // 1. Check fresh cache
-    const { data: cached } = await supabase
-      .from('ai_signals')
-      .select('signal_text, is_building')
-      .eq('pet_id', petId)
-      .gt('expires_at', new Date().toISOString())
-      .order('generated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (cached) {
-      return Response.json(
-        { signal_text: cached.signal_text, is_building: cached.is_building },
-        { headers: CORS_HEADERS },
-      )
-    }
-
-    // 2. Fetch pet info and data in parallel
-    const fourteenDaysAgo = new Date()
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
-
-    const [petResult, eventsResult, conditionsResult, dietTrialResult] = await Promise.all([
-      supabase
-        .from('pets')
-        .select('name, species, breed')
-        .eq('id', petId)
-        .single<PetRow>(),
-
+    // 1. Load pet, symptom events, meal events, active diet trial — all
+    //    ownership-scoped by RLS via the caller's JWT. Soft-deleted rows are
+    //    excluded here (the detection module's documented contract).
+    const [petRes, symptomsRes, mealsRes, trialRes] = await Promise.all([
+      supabase.from('pets').select('name, species').eq('id', petId).maybeSingle(),
       supabase
         .from('events')
         .select('id, event_type, occurred_at, severity')
         .eq('pet_id', petId)
+        .in('event_type', [...CORRELATION_SYMPTOM_TYPES])
         .is('deleted_at', null)
-        .gte('occurred_at', fourteenDaysAgo.toISOString())
-        .order('occurred_at', { ascending: false })
-        .returns<EventRow[]>(),
-
+        .gte('occurred_at', lookbackIso),
       supabase
-        .from('conditions')
-        .select('condition_name, status')
+        .from('events')
+        .select(
+          'id, occurred_at, meals(food_item_id, intake_rating, food_items(primary_protein, food_type, brand, product_name))',
+        )
         .eq('pet_id', petId)
-        .in('status', ['active', 'monitoring'])
-        .returns<ConditionRow[]>(),
-
-      supabase
-        .from('diet_trials')
-        .select('started_at, target_duration_days, food_items(brand, product_name)')
-        .eq('pet_id', petId)
-        .eq('status', 'active')
-        .limit(1)
-        .maybeSingle<DietTrialRow>(),
+        .eq('event_type', 'meal')
+        .is('deleted_at', null)
+        .gte('occurred_at', lookbackIso),
+      supabase.from('diet_trials').select('id').eq('pet_id', petId).eq('status', 'active').limit(1),
     ])
 
-    const pet = petResult.data
-    const events = eventsResult.data ?? []
-    const conditions = conditionsResult.data ?? []
-    const dietTrial = dietTrialResult.data ?? null
-
-    // 3. If no events at all, return building copy without calling Claude
-    if (events.length === 0) {
-      const buildingText = pet
-        ? `We're getting to know ${pet.name}. Keep logging and patterns start appearing in about a week.`
-        : `We're building a picture of your pet's health. Keep logging and patterns will start appearing soon.`
-
-      await supabase.from('ai_signals').insert({
-        pet_id: petId,
-        signal_text: buildingText,
-        is_building: true,
-      })
-
-      return Response.json(
-        { signal_text: buildingText, is_building: true },
-        { headers: CORS_HEADERS },
-      )
+    const pet = petRes.data as { name: string; species: string } | null
+    if (!pet) {
+      return Response.json({ error: 'Pet not found' }, { status: 404, headers: CORS_HEADERS })
     }
+    const petName = pet.name || 'your pet'
 
-    // 4. Fetch meal food details for correlation
-    const mealEventIds = events.filter(e => e.event_type === 'meal').map(e => e.id)
-    const mealsResult = mealEventIds.length > 0
-      ? await supabase
-          .from('meals')
-          .select('event_id, food_items(brand, product_name)')
-          .in('event_id', mealEventIds)
-          .returns<MealRow[]>()
-      : { data: [] as MealRow[] }
+    const symptomEvents = mapSymptomRows((symptomsRes.data ?? []) as SymptomRow[])
+    const mealEvents = mapMealRows((mealsRes.data ?? []) as MealEventRow[])
+    const dietTrialActive = ((trialRes.data ?? []) as unknown[]).length > 0
 
-    const meals = mealsResult.data ?? []
-    const mealFoodMap = new Map(meals.map(m => [m.event_id, m.food_items]))
-
-    // 5. Build correlation pairs (meals eaten within 8h before a symptom)
-    const symptomEvents = events.filter(e => SYMPTOM_TYPES.includes(e.event_type))
-    const mealEvents = events.filter(e => e.event_type === 'meal')
-
-    const pairCounts = new Map<string, Correlation>()
-    for (const symptom of symptomEvents) {
-      const symptomMs = new Date(symptom.occurred_at).getTime()
-      for (const meal of mealEvents) {
-        const mealMs = new Date(meal.occurred_at).getTime()
-        const hoursGap = (symptomMs - mealMs) / 3_600_000
-        if (hoursGap < 0 || hoursGap > 8) continue
-        const food = mealFoodMap.get(meal.id)
-        if (!food) continue
-        const key = `${symptom.event_type}|${food.brand}|${food.product_name}`
-        const existing = pairCounts.get(key)
-        if (existing) {
-          existing.count++
-        } else {
-          pairCounts.set(key, {
-            symptomType: symptom.event_type,
-            foodBrand: food.brand,
-            foodName: food.product_name,
-            count: 1,
-          })
-        }
-      }
+    // 2. Detect — the pure engine ranks already-true findings (safety leads).
+    const input: DetectionInput = {
+      pet: { name: petName, species: pet.species as Species, dietTrialActive },
+      symptomEvents,
+      mealEvents,
+      now: new Date(nowMs).toISOString(),
     }
-    const topCorrelations = Array.from(pairCounts.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 3)
+    const ranked = detectSignals(input, DEFAULT_CONFIG)
 
-    // 6. Diet trial compliance (days with meals since trial started)
-    let trialContext: { foodName: string | null; daysElapsed: number; targetDays: number; compliantDays: number } | null = null
-    if (dietTrial) {
-      const startISO = new Date(dietTrial.started_at).toISOString().split('T')[0]
-      const daysElapsed = Math.max(
-        1,
-        Math.floor((Date.now() - new Date(dietTrial.started_at).getTime()) / 86_400_000),
-      )
-      const compliantDays = new Set(
-        events
-          .filter(e => e.event_type === 'meal' && e.occurred_at >= startISO)
-          .map(e => e.occurred_at.split('T')[0]),
-      ).size
+    // 3. Curate — cap the insight tail; safety findings always kept.
+    const curated = curateFindings(ranked)
 
-      trialContext = {
-        foodName: dietTrial.food_items
-          ? `${dietTrial.food_items.brand} ${dietTrial.food_items.product_name}`
-          : null,
-        daysElapsed,
-        targetDays: dietTrial.target_duration_days,
-        compliantDays,
-      }
-    }
+    // 4. Phrase — one sentence per finding, in parallel, each falling back to
+    //    its template independently. The set is never blank because the LLM
+    //    failed (§2): a failed call yields the template, not a dropped card.
+    const cachedFindings: CachedFinding[] = await Promise.all(
+      curated.map(async (r) => ({
+        rank: r.rank,
+        text: await phraseFinding(r.finding, petName),
+        finding: r.finding,
+      })),
+    )
 
-    // 7. Symptoms before vs after trial start (gives Claude trend context)
-    const trialStartISO = dietTrial?.started_at ?? null
-    const symptomsBeforeTrial = trialStartISO
-      ? symptomEvents.filter(e => e.occurred_at < trialStartISO).length
-      : null
-    const symptomsAfterTrial = trialStartISO
-      ? symptomEvents.filter(e => e.occurred_at >= trialStartISO).length
-      : null
+    // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
+    const isBuilding = cachedFindings.length === 0
+    const hasRecentActivity = [...symptomEvents, ...mealEvents].some(
+      (e) => nowMs - Date.parse(e.occurredAt) <= 2 * MS_PER_DAY,
+    )
+    const signalText = isBuilding
+      ? buildBuildingText(petName, hasRecentActivity)
+      : cachedFindings[0].text
 
-    // 8. Build event count summary
-    const eventCounts: Record<string, number> = {}
-    for (const e of events) {
-      eventCounts[e.event_type] = (eventCounts[e.event_type] ?? 0) + 1
-    }
-
-    // 9. Build prompt
-    const prompt = buildPrompt({
-      pet: pet ?? { name: 'your pet', species: 'unknown', breed: null },
-      conditions,
-      trialContext,
-      symptomsBeforeTrial,
-      symptomsAfterTrial,
-      eventCounts,
-      topCorrelations,
-    })
-
-    // 10. Call Claude
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 120,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-
-    if (!claudeRes.ok) {
-      throw new Error(`Claude API error: ${claudeRes.status}`)
-    }
-
-    const claudeData = await claudeRes.json() as {
-      content: Array<{ type: string; text: string }>
-    }
-    const signalText = claudeData.content[0]?.text?.trim() ?? ''
-
-    if (!signalText) throw new Error('Empty response from Claude')
-
-    // 11. Cache the result
-    await supabase.from('ai_signals').insert({
+    // Replace the pet's cached signal (last-write-wins; keeps row count bounded
+    // without a unique constraint, matching the project's sync philosophy).
+    await supabase.from('ai_signals').delete().eq('pet_id', petId)
+    const { error: insertError } = await supabase.from('ai_signals').insert({
       pet_id: petId,
       signal_text: signalText,
-      is_building: false,
+      is_building: isBuilding,
+      findings: cachedFindings,
     })
+    if (insertError) throw new Error(`ai_signals write failed: ${insertError.message}`)
 
     return Response.json(
-      { signal_text: signalText, is_building: false },
+      { is_building: isBuilding, signal_text: signalText, findings: cachedFindings },
       { headers: CORS_HEADERS },
     )
   } catch (err) {
-    console.error('generate-signal error:', err)
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('generate-signal error:', message)
     return Response.json(
-      { error: 'Signal generation failed' },
+      { error: 'Signal generation failed', detail: message },
       { status: 500, headers: CORS_HEADERS },
     )
   }
 })
-
-function buildPrompt(params: {
-  pet: PetRow
-  conditions: ConditionRow[]
-  trialContext: { foodName: string | null; daysElapsed: number; targetDays: number; compliantDays: number } | null
-  symptomsBeforeTrial: number | null
-  symptomsAfterTrial: number | null
-  eventCounts: Record<string, number>
-  topCorrelations: Correlation[]
-}): string {
-  const { pet, conditions, trialContext, symptomsBeforeTrial, symptomsAfterTrial, eventCounts, topCorrelations } = params
-  const lines: string[] = []
-
-  lines.push(`Pet: ${pet.name} (${pet.species}${pet.breed ? ', ' + pet.breed : ''})`)
-
-  if (conditions.length > 0) {
-    lines.push(`Known conditions: ${conditions.map(c => `${c.condition_name} (${c.status})`).join(', ')}`)
-  }
-
-  if (trialContext) {
-    const foodPart = trialContext.foodName ? ` on ${trialContext.foodName}` : ''
-    lines.push(
-      `Active elimination diet trial${foodPart}: Day ${trialContext.daysElapsed} of ${trialContext.targetDays}.` +
-      ` ${trialContext.compliantDays} of ${trialContext.daysElapsed} days with meals logged.`,
-    )
-    if (symptomsBeforeTrial !== null && symptomsAfterTrial !== null) {
-      lines.push(
-        `Symptom events before trial: ${symptomsBeforeTrial}. Symptom events since trial started: ${symptomsAfterTrial}.`,
-      )
-    }
-  }
-
-  lines.push('')
-  lines.push('Events logged in the last 14 days:')
-  const eventEntries = Object.entries(eventCounts).filter(([, n]) => n > 0)
-  if (eventEntries.length === 0) {
-    lines.push('- None')
-  } else {
-    for (const [type, count] of eventEntries) {
-      lines.push(`- ${type}: ${count} occurrence${count !== 1 ? 's' : ''}`)
-    }
-  }
-
-  if (topCorrelations.length > 0) {
-    lines.push('')
-    lines.push('Meal–symptom correlations (meals eaten within 8h before a symptom event):')
-    for (const c of topCorrelations) {
-      lines.push(
-        `- ${c.symptomType} occurred after ${c.foodBrand} ${c.foodName} on ${c.count} occasion${c.count !== 1 ? 's' : ''}`,
-      )
-    }
-  }
-
-  lines.push('')
-  lines.push(`Generate exactly ONE sentence of health insight for ${pet.name}'s owner. Rules:`)
-  lines.push(`- Use ${pet.name}'s name, not "your pet"`)
-  lines.push('- Be specific: cite numbers, food names, or trends from the data above')
-  lines.push('- Warm but clinical in tone — like a caring friend who knows veterinary medicine')
-  lines.push('- If a pattern is clear and consistent, state it confidently')
-  lines.push('- If the data is too sparse or mixed for a meaningful pattern, describe what IS present honestly')
-  lines.push('- No alarm language before data justifies clinical concern')
-  lines.push('- No exclamation marks')
-  lines.push('- Output ONLY the sentence, nothing else')
-
-  return lines.join('\n')
-}
