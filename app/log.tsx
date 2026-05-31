@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
+import { triggerSignalRegenDebounced } from '../lib/signal';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
@@ -352,6 +353,10 @@ export default function LogModal() {
     syncPendingEvents()
       .then(() => syncPendingMeals())
       .catch(console.error);
+    // Debounced AI Signal regen (§2 freshness): a new event/meal may change the
+    // cached insight set. Debounced so a meal + the symptom logged after it
+    // collapse into one regen. Fire-and-forget — home re-reads cache on focus.
+    triggerSignalRegenDebounced(activePet.id);
     return { eventId, occurredAt: effectiveOccurredAt.toISOString() };
   }
 
