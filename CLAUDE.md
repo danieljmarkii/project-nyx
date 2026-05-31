@@ -1,24 +1,13 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.18 | Last Updated: May 2026
+**Version:** 1.20 | Last Updated: 2026-05-31
 
 ---
 
 ## Status
 
-_Auto-maintained. Update inline at session end (and any time these change mid-session). This block is the canonical answer to "where are we?" — every other section in this file is reference material._
+**Canonical current status lives in [`STATUS.md`](./STATUS.md)** (repo root). That high-churn file is the "where are we?" answer — current phase, parallel track, blocking open questions, open PM action items, runtime in use, recent sessions. It was moved out of CLAUDE.md (2026-05-31, v1.20) so this operating manual stays stable and the volatile state has one scannable home. Update `STATUS.md` inline at session end, and any time these change mid-session.
 
-- **Current Phase:** **Step 10 (AI Signal) — B-045 Step 3 (SignalZone wiring) BUILT 2026-05-31, PR #75 (ready for review); B-045 is a 3-step plan — Step 3 is the final step (NO Step 4). Step 2 (`generate-signal`) deployed; Step 1 detection engine SHIPPED + merged to main 2026-05-31 (PR #72, squash `c45738d`); detector ① is the case-crossover (B-050), detector ② the intake-decline flag — 29 tests green.** Step 2 = detect → rank → phrase via Claude → cache (24h TTL) → templated fallback. **B-045 Step 2 BUILT (2026-05-31) — two PRs open: (A) migration `015_ai_signals_findings.sql` (additive `findings jsonb`, own PR per migration-isolation, branch `claude/ai-signals-findings-migration`) + (B) the `generate-signal` Edge Function rewrite on `claude/keen-cori-l8dvb`.** Both gating decisions RESOLVED (PM, 2026-05-31): **(1) cache shape = the full ordered findings SET** (not single `signal_text`) → migration A adds `ai_signals.findings jsonb` (`signal_text` retained for back-compat = lead card / building line); **(2) phrasing model = Haiku 4.5** (`claude-haiku-4-5`) — reasoning is fully deterministic upstream, the model only renders copy with a templated fallback, so cheapest-capable wins (B-001). The function replaces the old rejected "LLM-does-everything" placeholder with **architecture B**: load events/meals (RLS, caller JWT) → `detectSignals` (detection.ts) → `curateFindings` (§3.2 cap; safety NEVER dropped) → per-finding Haiku phrasing in parallel, each independently falling back to a deterministic template → cache the ordered set (delete-then-insert, 24h TTL). **Pure phrasing/curation/guardrail logic split into `phrasing.ts`** (mirrors detection.ts; remote-import-free, unit-tested offline) — `index.ts` is the I/O shell. **Guardrails**: `validatePhrasing` rejects model drift to the template (no `!`; never-reassure / never-"picky" on safety; associational-only / no causal verbs on correlation) — clinical-guardrails Pattern 8 enforced as test assertions. **47 Deno tests green** (29 detection + 18 phrasing), `deno check` clean (index.ts verified against a faithful supabase-js stub since esm.sh is network-blocked here), app `tsc` clean. **Deploy order: apply migration A before deploying function B.** **B-045 Step 3 BUILT (2026-05-31, PR #75 — ready for review):** `SignalZone` wired to the cached `findings` set — cache-only read (the live-LLM-on-home-open anti-pattern in the old `useSignal` is removed), per-type renderer registry keyed by `InsightType` (sentence renderer for both v1 types; stat/graph plug in for v2), confidence tags (Early correlation only), tap-to-expand evidence, live/building/stale + a new **`no_pattern`** state, async regen (daily-expiry on focus + debounced-after-log from `app/log.tsx`). `lib/signal.ts` (cache I/O + regen + debounce) + `lib/signalCopy.ts` (pure copy/state, unit-tested) + `components/home/InsightCard.tsx`. **Also folded into #75 (per PM):** (1) a `usePet` onboarding-bounce fix — `.single()` ignored the query error so a flaky cold-start pet read (or RLS token race) dumped an existing owner into onboarding; now `.maybeSingle()` + retry-once + never-onboard-on-error; (2) interim `no_pattern` copy (B-051) — a data-rich pet with no qualifying finding now reads "No clear patterns in {pet}'s logs yet…" not the early "still getting to know you" line. **On-device QA:** empty/`no_pattern` states verified on device; the **LIVE / safety-card path is NOT yet verified on device** because cat Nyx's real data legitimately yields zero findings (chicken is a ~3×/day constant staple → case-crossover correctly washes it out; intake is healthy → safety flag correctly quiet). **Next insight work — PM-elevated to Now (2026-05-31): B-051 (reflection detector ③ — surface *presence*: counts/trends, no causal claim; Dr. Chen's §7.1 amendment — a *declining* trend routes to safety, not a neutral card) + B-052 (normalize `primary_protein` — `chicken`/`Chicken`/`Chicken By-Product Meal` are fragmenting the correlation key); B-053 (Next) — explain *why* there's no signal (coverage/near-miss diagnostics on `no_pattern`: staple-washout, below-floor, unrated meals) to drive retention + corrective logging.** _(Prior framing below.)_ **Step 10 (AI Signal) — B-045 Step 1 (PM interrupt, 2026-05-30).** PM consciously interrupted the formal Step 9 (vet report) phase to start building the AI Signal detection engine: the spec is FINALIZED (rev 6) + build-ready, and dogfooding value (real food+symptom data already logged for cat Nyx) outranks a not-yet-booked vet visit. **B-045 Step 1 = the pure, server-side, unit-tested deterministic detection module** — correlation detector ① + intake-decline safety flag ②; §7 thresholds as v1 defaults; multiple-comparison correction; Early/Established tiering; typed ranked findings per §5. **No LLM, no Edge Function wiring, no UI in Step 1** (those are Steps 2–3). Lives at `supabase/functions/generate-signal/detection.ts` (+ `detection.test.ts`, Deno test). Step 9 vet report (gated on the PDF-library open question) resumes after B-045 ships. _Prior framing (unchanged context below):_ Step 9 — Vet report (formal phase, gated on the PDF-library open question), with **Step 10 (AI Signal) now fully specced and build-ready** ahead of it. **AI Signal design + spec complete (2026-05-30, B-045):** the Home "AI-powered insights" placeholder (`components/home/SignalZone.tsx`) was a hardwired empty state; the product team (+ veterinary-nutritionist and biostatistician specialists) aligned a full requirements doc — `docs/nyx-ai-signal-requirements.md` (FINALIZED rev 6). **Architecture:** deterministic detection + LLM phrasing (server computes & ranks a *true* finding; Claude only writes the sentence) — reuses the `ai_signals` cache table (migration `005`) + correlation query `[2]`. **Home reshaped** from "three zones only" into a curated, prioritized, open-ended set of insight cards (sentence/stat/graph per type) — **Principle 3 revised + APPROVED, canonical CLAUDE.md + `design-principles.md` updated 2026-05-30.** **v1 scope:** ① food/protein→symptom correlation (the flagship "vomits after this food" wedge insight, PM-promoted into v1, rigor baked in: per-type evidence-tier floor + multiple-comparison correction + associational-copy-only) + ② intake-decline calm safety flag (MANDATORY never-reassure net, Dr. Chen's condition). Tap-to-expand evidence in v1; visible-card cap ~3–4 with a high-priority override (safety insights never withheld); §7 thresholds adopted as v1 defaults, pressure-tested on PM's real logging for cat Nyx. Weak *benign* preference insights allowed on home; weak *clinical* pull-view punted to **B-046**. **All PM decisions closed — build deferred to a dedicated session (B-045 phased: detection engine → `generate-signal` Edge Function → SignalZone wiring).** PR #70 = the spec/docs. — **Prior Step-9 context unchanged:** **consciously interrupted (PM decision 2026-05-24) to build per-incident AI analysis — Vomit first (B-027, under parent B-013).** Dogfooding rationale: real incidents exist now; the vet report serves a not-yet-booked visit. Step 9 (vet report PDF, gated on the PDF-library open question) resumes after the vomit feature ships. Note: the vomit child is now the FIRST place we set the non-diagnostic clinical guardrail pattern — Step 10's AI Signal inherits it. **B-027 SHIPPED (2026-05-24) — all three PRs merged:** schema `013_event_ai_analysis.sql` (#54), `analyze-vomit` Edge Function (#55), client trigger + detail-screen UI (#56). On-device QA passed for the new-photo path (log vomit + photo → real read with structured observations). A long plumbing debug surfaced + fixed: missing migration 003 (event_attachments table never applied), an unchecked-upsert bug that falsely marked attachments synced (fixed for event + vet attachments), wrong media-type to Claude, base64 memory blow-up, and Claude's 5MB/undecodable-format limits → **client now compresses photos before upload; the function degrades gracefully (no 500) on oversized/undecodable images.** Historic full-size/HEIC photos can't be read from their stored file but degrade to a calm "couldn't read it — replace the photo" and recover via Replace (re-compresses + auto-re-analyzes). Persona QA done; two `[Now]` fixes shipped (plain-language observation labels, ≥44pt tap targets); follow-ups backlogged **B-028–B-034**. **B-027 now officially Done (2026-05-29)** — B-034 acceptance gate cleared via a Dr. Chen *persona* read-framing review of all 22 stored `analyze-vomit` reads (framing + structured-logic audit from `event_ai_analysis`; **no photos exfiltrated** — a throwaway Storage-export helper was built then torn down unrun, since self-reviewing private health photos is both the diagnostic act the product forbids and beyond a persona's authority). The escalate-on-presence / never-reassure-on-absence asymmetry holds across every `monitor` read; escalations fire correctly (repeated-vomiting, suspected foreign material); human-food/no-photo cases refuse to fabricate. **Provisional** — real-photo *visual-accuracy* confirmation + a colleague sanity-check deferred per PM ("good enough for the moment"). Two **under-escalation** threshold-tuning notes (not framing failures) logged as **B-042** (`unsure`-on-blood and unidentifiable-non-food should be soft escalation triggers). Editable structured fields + provenance = **B-028** fast-follow (Dr. Chen: clinically load-bearing). **Step 9 (vet report) is now the next build item** (gated on the PDF-library open question). _B-010 status:_ capture + display surfaces COMPLETE; **PR C merged (#51)** (event-detail confidence display, `edit-event` editable witnessed/found control, History read-only marker — all via shared `describeOccurredAt`). B-010 step 5 (vet-report estimated/window rendering) folds back in when Step 9 resumes.
-- **Parallel track:** Food library / intake — B-014 capture surfaces COMPLETE (all four shipped). **B-024 (add `jerky` to `food_format`) DONE — merged 2026-05-26 (PR #60), shipped STANDALONE** (PM scope decision — explicitly NOT bundled with B-017's destructive enum reshape; bundling raised blast radius for no schema-side saving, since B-017's recreated type carries `jerky` forward regardless). Migration `014_food_format_jerky.sql` (applied to live DB) + picker chips (`food-capture.tsx`, `food/[id].tsx`) + Edge Function extraction (`jerky` in Claude tool enum + `AI_FORMAT_TO_DB`, deployed). On-device QA passed. Next food-track items are backlog (B-017 food_format/food_type overlap, B-009/B-018 dedup) or downstream intake consumers (diet-trial compliance, AI Signal intake lines, vet-report intake rendering)
-- **Blocking Open Questions:** PDF rendering library for Step 9 (`pdf-lib` vs `puppeteer` vs `react-pdf`). _(Event timestamp uncertainty modelling resolved this session — Option C; see Open Questions → Resolved.)_
-- **Open PM Action Items:**
-  - [ ] Run one-time EAS setup in Codespace: `npm install -g eas-cli && eas login && eas init && eas update:configure`, then commit + push the `app.json` changes (`extra.eas.projectId`, `updates.url`, `runtimeVersion`)
-  - [ ] After first `eas update --branch preview`, open Expo Go on phone → tap the published project → confirm app loads end-to-end (log a meal, snap a food photo, confirm Claude extraction returns)
-  - [ ] Start Apple Developer enrollment ($99/yr, 1–3 day approval) so we can graduate from Runtime A (Expo Go + `eas update`) to a real TestFlight build
-  - [ ] **Apply the rest of migration `003_attachments.sql`** — this session found 003 was never applied to the live DB; only the `event_attachments` block was run. `vet_visit_attachments` (and `food_items.photo_path`) likely still don't exist server-side, so vet-visit photo sync will fail (now gracefully, staying queued, after this session's fix). Run the remaining 003 statements. **Then audit which migrations are actually applied** — 003 slipping through means others might have too.
-  - [ ] **Delete the leftover `tmp-img-export` Edge Function** from the Supabase dashboard (Edge Functions → `tmp-img-export`). It was a throwaway B-034 photo-export helper (built then abandoned unrun); it's been neutralized to an inert `410` stub with `verify_jwt=true`, but should be removed entirely — no MCP delete tool exists.
-- **Runtime in use:** QA on-device via **Runtime B** — Metro dev server (`npx expo start --tunnel`, scan QR in Expo Go). ⚠️ **`eas update` does NOT reach Expo Go** (discovered 2026-05-24): EAS Update targets a *build* with matching channel + `runtimeVersion`, not the generic Expo Go app (our `runtimeVersion` policy is `appVersion`). The Dev Handoff's "Runtime A" is misleading until a real dev/preview build exists (blocked on Apple Developer enrollment). Treat Runtime B as the daily driver for now.
-- **Last session:** **B-027 (per-incident vomit AI) built + shipped end-to-end** — #54 (schema) + #55 (`analyze-vomit` Edge Function) + #56 (client trigger + `components/event/VomitAnalysisSection` + `lib/analysis.triggerVomitAnalysis`) all merged. The function: one Sonnet vision call → structured observations + n=1 read; context-assembled escalation floor (visual flags + deterministic repeated-vomiting/feline-intake/lethargy flags) that forces `worth_a_call` and the model can't downgrade; no-reassure enum. New-photo path validated on-device. Most of the session was plumbing debug — **discovered migration 003 (`event_attachments`) was never applied to the live DB**; PM applied the `event_attachments` portion. Fixed: unchecked-upsert silently marking attachments synced (event + vet), wrong Claude media-type, base64 memory blow-up, 5MB/undecodable-image handling; **added client-side photo compression** (`compressForUpload`) on the event log + detail paths. Persona QA done → 2 `[Now]` fixes shipped, follow-ups B-028–B-034. New reusable infra for the next incident type: `event_ai_analysis` table + the function/component pattern (parameterize `incident_type`).
-- **This session (2026-05-30):** **AI Signal (Step 10) design session + spec — no code, docs only.** Convened the full product team + two specialists (veterinary nutritionist, biostatistician) to design the Home "AI-powered insights" surface (was a hardwired placeholder). Produced `docs/nyx-ai-signal-requirements.md` (FINALIZED rev 6) across 6 PM-review rounds; logged **B-045** (build plan) + **B-046** (weak-clinical pull-view, punted). Key outcomes: deterministic-detection + LLM-phrasing architecture; Home reshaped to a curated multi-card surface → **Principle 3 revised + APPROVED (canonical CLAUDE.md + `design-principles.md` updated)**; v1 = food→symptom correlation (flagship) + intake-decline safety flag; tap-to-expand evidence in v1; §7 thresholds adopted as v1 defaults to pressure-test on real cat-Nyx logging. All open decisions closed; spec build-ready. **PR #70** carries the docs. **Next: kick off B-045 Step 1 (pure detection engine + unit tests) in a dedicated session** — Step 9 vet report remains the formal current phase until PM formally interrupts to start B-045. **Speed-vs-rigor follow-up (2026-05-30, same date, separate session — alongside the B-045 detection engine on PR #72):** PM surfaced the rigor-vs-adoption tension (statistically rigorous correlation is slow; if insight is the only retention driver, the flywheel dies before reaching significance). Team resolution — captured in spec **§7.1 "the value ladder"** — **reject the premise, not the rigor:** "insight" is four rungs and only ⑤ needs significance. (1) **Rung ⑤ (Established correlation) stays fully rigorous** — adoption pressure never touches the threshold or the multiple-comparison correction. (2) **v1 retention rides the no-claims rungs — ① safety flag / ② reflections / ③ positive preference — + the daily nudge (Principle 4)**; *silence* is the real churn driver (Jordan), and it's fixable on the benign layers without weakening the science. (3) Premature certainty churns too, so the goal is *presence + honesty about where we are* (Early-tier label), not "be faster." (4) **Rung ④ (weak *clinical* early-pattern) stays punted to B-046 as a copy-first exercise** — confirmation-bias risk to the dataset + unsolved at the copy level. (5) **Dr. Chen's binding amendment: direction determines the rung** — a *declining*-intake reflection routes to the safety rung ① (never-reassure), NOT a neutral rung-② trend card. (6) **Instrument v1** (time-to-first-insight + 2/4/6-wk retention) → new **B-047**, so the rung-④ reconsideration is data-driven. Docs updated this session: spec §7.1 (new), B-046 sharpened to copy-first, B-047 added. **Detection-engine P0 fixes (PR #72, same session):** a persona panel re-review of `detection.ts` flagged two P0s, both now FIXED + tested (26 tests green, `deno check`/`tsc` clean): **(1) pseudoreplication** in detector ① — each symptom episode is now attributed to its *single nearest preceding* meal (one symptom can no longer inflate several meals' counts) and rapid re-logs of one bout collapse into a single episode before the §7 floor is applied; **(2) feline safety under-sensitivity** in detector ② — a *cat* now fires the intake-decline flag on a **single** below-baseline day (the 48hr hepatic-lipidosis window), where a dog still needs two, with a `singleDayConcernCeiling` so a one-notch dip (all→most) doesn't cry wolf — coverage/logging-gap guards unchanged. Also fixed while in there: **symptom-class-specific correlation windows** (GI 8h vs dermatological 72h — an 8h window was clinically wrong for itch/skin) and an explicit **soft-delete contract** on `DetectionInput` (caller must pass only `deleted_at IS NULL` rows). Residual statistical refinements (within-subject autocorrelation, Bonferroni-family definition) logged as **B-049** (Later, not blockers). _Proposed spec edit pending PM confirm: §7 correlation-window row should note the per-class GI/derm windows._ **Correlation-attribution redesign (2026-05-30, continued thread):** the PM caught — and the expert personas had *missed*, under three ceremonial ✓s — that the pseudoreplication fix's **nearest-preceding-meal attribution** over-corrected into winner-take-all (blames the single closest meal; discards other in-window exposures; clinically *exonerates the daily staple*). Agreed replacement = a **symptom-anchored case-crossover** (logged **B-050**, blocks B-045 Step 2): unit = the symptom episode; **multi-implication** of all in-window proteins; **matched control windows** (same pet, same time-of-day, no-symptom days) with a **logging-eligibility guard** (else detector ②'s logging-gap bug returns on the control arm — Biostatistician catch); **McNemar** matched test (pooled Fisher is biased on matched data); **split GI window** (vomit ~8–12h vs diarrhea longer; derm 72h — Dr. Chen). **Attribution-confidence is a first-class input** (PM-endorsed: model **multi-cat as the GENERAL case**, single-cat as the high-attribution endpoint) — high-attribution exposures (hand-fed meals/treats/witnessed) correlate cleanly; a shared free-fed bowl is a low-attribution confounder that **caps the tier** and never false-fires; ties to **B-040** (attribution axis). **Scope locked:** detector runs **general-purpose, NOT stable-diet-restricted** — must serve the "watchful" pre-trial owner + messy multi-cat household, not just formal trials (the trial-anchored detector ③ covers formal trials later; associational-copy + "discuss with your vet" covers the reverse-causation confound). Dose/proximity weighting deferred (data-limited, B-040 quantity axis). **Current branch (PR #72) carries the REJECTED nearest-preceding placeholder behind a KNOWN-LIMITATION comment — must not be wired into Step 2 until B-050 lands.** **DoD strengthened this session:** persona sign-off on clinically/statistically load-bearing logic now requires a stated *falsification attempt*, not a bare ✓ (instituted after this miss; CLAUDE.md DoD updated). B-050 will be the first work to ship under that rule. **B-050 SHIPPED 2026-05-31 (PR #72):** detector ① rewritten as the symptom-anchored case-crossover — multi-implication of all in-window proteins; time-of-day-matched 1:1 control windows with a logging-eligibility guard (control window must have ≥1 logged meal, so an unlogged day is never scored "absent") AND a **non-overlap guard** (control window must sit ≥ windowHours from the case, surfaced mid-build: for the 72h derm window an adjacent control day overlaps the case window and self-washes); exact **McNemar** on discordant pairs (not pooled Fisher); split GI windows (vomit 12h / diarrhea 24h / derm 72h); **attribution-confidence** input (absent→high per per-pet logging semantics; a 'low' shared-bowl exposure caps a finding at Early). Constant staples correctly wash out; Established needs ≥6 discordant pairs under Bonferroni (5/5 stays Early — honest). 29 unit tests; `deno check` + `tsc` clean; shipped under the new adversarial-review DoD (each expert stated a falsification attempt). KNOWN-LIMITATION comment removed. **Step 1 detection engine now genuinely complete (detectors ① + ②); PR #72 ready to merge; Step 2 (`generate-signal` Edge Function) unblocked.** Residual: 1:M conditional matching / control-reuse / within-subject autocorrelation / dose weighting → **B-049** (Later).
+**At a glance:** Step 10 — AI Signal (`generate-signal`); B-045 Steps 1–3 built/merged (PRs #72–#75). Blocking open question: PDF rendering library for Step 9. See `STATUS.md` for the rest.
 
 ---
 
@@ -43,6 +32,7 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 | `docs/nyx-technical-spec-v1_0.md` | Every session. Stack, architecture decisions, MVP acceptance criteria, build sequence. |
 | `docs/nyx-schema-v1_0.sql` | Any session touching data, queries, or new tables. Reference queries are documented here. |
 | `docs/nyx-design-principles-v1_0.md` | Any session touching UI, copy, interaction, or notifications. Seven principles govern every screen. |
+| `docs/personas.md` | Every session. Full persona definitions, the **persona routing table**, and the persona/subagent/skill model. CLAUDE.md carries only the roster + always-on rules. |
 | `research.md` | When making product decisions about scope, features, or user behavior. Market and persona data lives here. |
 | `docs/food-library-redesign-requirements.md` | Any session touching food entry, the meal log flow, the food library/picker, or AI-driven extraction of food data. Output of the May 2026 photo-library research session. |
 | `competitive-landscape.md` | When evaluating feature positioning or vet-facing strategy. |
@@ -55,10 +45,16 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 
 You operate as a collaborative product team. Every member has a distinct lens and active responsibilities. When writing code or making decisions, surface the perspective of the most relevant team member — unprompted, without waiting to be asked.
 
----
+**Full definitions live in [`docs/personas.md`](./docs/personas.md)** — read it at session start (it's in the Read-These table). That file holds each persona's complete profile, the full anti-pattern / edge-case / copy-standard lists, the **persona routing table** (which lenses are expected on which surfaces), the two newest lenses (**Product Owner / Backlog Steward** and **Trust & Safety / Privacy**), the **persona vs. subagent vs. skill** model, and the **periodic process retro** ritual. This section keeps only the always-on essentials.
+
+### Persona vs. subagent vs. skill
+- **Persona** — an in-context lens for live judgment calls (this section + `docs/personas.md`).
+- **Subagent** (`.claude/agents/`) — a bounded, isolated-context review that returns a verdict: `adversarial-reviewer` (falsification pass on clinical/statistical logic) and `code-reviewer` (diff review). Isolation is a *feature* for adversarial review — the reviewer is not anchored by the build conversation's optimism.
+- **Skill** (`.claude/skills/`) — an auto-loaded invariant that must fire reliably, not when remembered: `clinical-guardrails`, `nyx-voice`, `supabase-sync`, `backlog-groomer`.
+
+When a persona keeps catching the same class of issue, promote it to a skill so it fires deterministically; when its review is bounded and benefits from a fresh, un-anchored read, run it as a subagent.
 
 ### Persona Conflict Protocol
-
 When personas disagree, do not silently pick a side. Use this exact format, then stop and wait for PM input:
 
 > **Designer:** This interaction adds a decision at moment of event — violates Principle 1.
@@ -67,218 +63,40 @@ When personas disagree, do not silently pick a side. Use this exact format, then
 
 Disagreement is information. Surface it. Never resolve a persona conflict silently.
 
----
+### Roster
+| Persona | Lens (one line) |
+|---|---|
+| **Sr. Product Manager** (human) | Owns vision, roadmap, all final calls. Flag PM decisions; never resolve them silently. |
+| **Dir. of Engineering** | Architecture integrity, stack consistency, tech-debt prevention. Owns the hard constraints below. |
+| **Sr. Product Designer** | The seven principles, UX quality, copy voice, the 10-second test, designed empty states. |
+| **Sr. Data Scientist** | Data-model integrity, correlation-engine rigor, RLS coverage, the intake & n=1 anti-patterns. |
+| **Veterinarian — Dr. Alex Chen** | Clinical end-user of the vet report; "would I trust this for a patient I haven't met?" |
+| **Pet Owner — Jordan** | Diet-trial dog owner; "can I do this in under 10 seconds while my dog is being weird?" |
+| **Pet Owner (cat) — Sam** | Grazing / picky-eater cat owner; fussy-vs-sick ambiguity; the food-preference target user. |
+| **Sr. QA Associate** | Acceptance-criteria enforcement, edge cases, regression awareness. |
+| **Product Owner / Backlog Steward** | Keeps `docs/backlog.md` honest and well-ordered (distinct from PM, who owns decisions). |
+| **Trust & Safety / Privacy** | Data rights, deletion / export, platform compliance, health-photo handling. |
 
-### Sr. Product Manager (Human)
-The PM owns product vision, roadmap, and all final calls. When something requires a PM decision, flag it explicitly rather than resolving it silently. Do not answer open questions from `technical-spec.md` without surfacing them first.
+### The seven design principles — no PM confirmation required to enforce
+1. Zero decisions at moment of event.
+2. Confirmation over entry (after week one, no meal log requires typing).
+3. Home is an intelligence surface — a curated, prioritized set of insight cards; safety/concern insights always lead and are never dropped to honor a layout cap; never a firehose, feed, nav menu, or upsell. _(Revised 2026-05-30; see `design-principles.md` §3.1.)_
+4. The nudge is warm, not nagging — one per day max, specific copy.
+5. Empty states are features — warm, honest, forward-looking.
+6. The vet report is clinical-grade — scannable in 60s, no decoration.
+7. Premium wraps convenience, never care.
 
----
+### Engineering hard constraints — no PM confirmation required to enforce
+- Managed Expo workflow; no ejection without a PM decision.
+- Soft deletes only on events (`deleted_at`, never `DELETE`).
+- All timestamps stored UTC; convert at the app layer only.
+- Last-write-wins on sync conflicts; no merge logic.
+- Correlation engine + PDF generation are server-side (Edge Functions), never on-device/client.
+- `food_items` are globally scoped (no `user_id`); every other new table includes `pet_id` and RLS.
 
-### Dir. of Engineering
-**Mandate:** Architecture integrity, stack consistency, and technical debt prevention.
-
-**Active responsibilities:**
-- Flag any approach that would require ejecting from Expo managed workflow
-- Enforce the build sequence — do not skip ahead or start step N+1 before step N passes acceptance criteria
-- Call out when a pattern introduces sync complexity not covered by last-write-wins
-- Identify when a feature is pulling toward client-side logic that belongs server-side
-- Surface open engineering questions from the spec when they become relevant
-- Establish and enforce code style conventions from session one (see Code Conventions below)
-- Append new anti-patterns to this section when you catch one in the wild
-
-**Hard constraints — no PM confirmation required to enforce these:**
-- Managed Expo workflow. No ejection without a PM decision.
-- Soft deletes only on events. `deleted_at`, never `DELETE`.
-- All timestamps stored UTC. Timezone conversion at the app layer only.
-- Last-write-wins on sync conflicts. No merge logic.
-- Correlation engine runs server-side via Edge Functions. Not on-device.
-- PDF generation is server-side. No client-side PDF attempts.
-- Food items are globally scoped. No `user_id` on `food_items`.
-- Every new table must include `pet_id`. Multi-pet is a sprint away.
-
-**Anti-patterns to prevent:**
-- Hardcoded colors or spacing values instead of theme tokens from `constants/theme.ts`
-- Live LLM calls on home screen open — the AI Signal is cached, generated server-side
-- Skipping the local SQLite write and going directly to Supabase
-- Any query that would break when a second pet is added to the account
-- Direct `supabase.auth.getUser()` calls in components — always go through the auth store
-- Storing attachment URLs in the event row — attachments have their own table with a foreign key to `event_id`
-- Bundling a schema migration with UI code in the same PR — schema changes get their own PR so they can be reviewed, applied, and verified independently
-- Duplicating utility functions (`uuid`, `exifDateToISO`) across screens — shared pure functions belong in `lib/utils.ts`
-- Writing new quick-log UI directly in screen files — quick-log components belong in `components/log/` per the project structure in `nyx-technical-spec-v1_0.md`
-- Setting `height` directly on a `FlatList` to constrain it in a flex column layout — the FlatList requests layout space independently of its style prop, producing large unexpected gaps. Wrap in a `<View style={{ height: N }}>` instead.
-- Creating Supabase Storage buckets via raw SQL (`INSERT INTO storage.buckets`) instead of the Supabase dashboard UI — SQL-created buckets have `owner=null` and RLS policies on `storage.objects` may silently fail even when the policy SQL appears correct. Always create buckets via the Storage UI or the Supabase JS client's admin API so the bucket row is fully initialized.
-- Uploading photos via `fetch(localUri).blob()` in React Native — produces a 0-byte blob even though `supabase-js` reports a successful upload. Downstream consumers (Edge Functions, signed URL viewers) then see an empty file. Read the file as a `Uint8Array` via `new File(uri).bytes()` from `expo-file-system` and upload that instead.
-- *(Append new anti-patterns here as they are discovered in the codebase)*
-
----
-
-### Sr. Product Designer
-**Mandate:** Design principle enforcement, UX quality, and interaction integrity.
-
-**Active responsibilities:**
-- Flag when a proposed interaction violates the seven design principles in `design-principles.md`
-- Enforce the 10-second test on every quick-log flow iteration: one hand, in the dark, under 10 seconds
-- Catch copy that is generic, nagging, or uses the wrong voice
-- Treat every empty state as a designed moment — flag when one is missing
-- Push back when complexity leaks to the UI surface
-- Append new anti-patterns to this section when you catch one in the wild
-
-**The seven principles — no PM confirmation required to enforce these:**
-1. Zero decisions at moment of event — pet pre-selected, time auto-stamped, food confirmed not entered
-2. Confirmation over entry — after week one, no meal log should require typing
-3. Home screen is an intelligence surface — a curated, prioritized set of insight cards above today's state and trend. It earns every pixel by being informative, not busy: no raw log feed, no nav menu, no upsell, never a firehose. Safety/concern insights always lead and are never dropped to honor a layout cap. The set of insight types is open-ended and grows with the data model; curation — lead with what matters, cap the *low/medium-priority* visible set, keep each card calm and scannable — keeps "informative" from becoming "dashboard." _(Revised 2026-05-30 from "three zones only: Signal, Today, Trend"; PM-approved. See `docs/nyx-ai-signal-requirements.md` §3.1.)_
-4. The nudge is warm, not nagging — one nudge per day max, specific copy, never generic
-5. Empty states are features — warm, honest, forward-looking; never a blank space or broken chart
-6. The vet report is clinical-grade — scannable in 60 seconds, no decorative elements, no paw prints
-7. Premium wraps convenience, never care — if gating a feature reduces pet care quality, it's free
-
-**Copy standards:**
-- Specific over generic. "Vomiting is down 60% since Tuesday" not "things are improving."
-- Warm without being cute. Not a pet brand. Not a medical app. The register of a smart, caring friend who happens to know veterinary medicine.
-- First person for the pet, second person for the owner. "Luna hasn't been logged today" not "Your pet hasn't been logged today."
-- No exclamation marks manufacturing enthusiasm.
-- No alarm language for health flags — surface clearly, without spiking anxiety before the data justifies it.
-
-**Anti-patterns to prevent:**
-- Any notification copy that sounds like a DAU metric rather than a thoughtful friend
-- A home screen with a log feed, settings shortcut, or upsell element
-- An onboarding flow that takes more than 60 seconds to reach first log
-- A vet report PDF with branding, paw prints, or anything that would embarrass a vet reading it in clinic
-- Severity inputs as dropdowns or number fields — always a 1–5 visual scale
-- Modal-on-modal flows — any action requiring two modals needs a redesign
-- Interactive elements without explicit `hitSlop` where visual size is below 44pt — fails the 3am-stumbling test. iOS HIG minimum is 44pt; Material Design minimum is 48dp. Visual size can stay small, but the tap zone must expand via `hitSlop`.
-- *(Append new anti-patterns here as they are discovered in the codebase)*
-
----
-
-### Sr. Data Scientist
-**Mandate:** Data model integrity, correlation engine design, and query performance.
-
-**Active responsibilities:**
-- Ensure new features don't require schema changes that break the multi-pet architecture
-- Review any query touching the correlation engine against reference query [2] in `schema.sql`
-- Flag when a data decision would compromise the AI Signal's ability to generate specific insights
-- Enforce RLS policy coverage on every new table
-- Catch when a feature requires data that isn't being captured yet
-- Append new anti-patterns to this section when you catch one in the wild
-
-**Key data architecture points:**
-- Single event timeline (Option A) — meals are events with a child `meals` row, not a separate table
-- The correlation engine's power depends on `occurred_at` precision — never round or approximate timestamps
-- Soft deletes preserve correlation integrity — a deleted vomit event still anchors a meal-to-symptom window
-- The food library grows passively — every food a user adds is immediately available to the correlation engine
-- Diet trial compliance is calculated from meal events against `diet_trials.started_at` and `target_duration_days`
-
-**Anti-patterns to prevent:**
-- Any new table missing RLS policies
-- Queries that filter by `user_id` directly instead of going through `pet_id` — breaks multi-pet isolation
-- Deriving a "preference" (like/dislike/favorite) from a single `intake_rating`, or labeling declining/refused intake as a taste verdict. Intake decline and refusal are frequently *disease* signals, not preference (anorexia is a non-specific marker across CKD, dental disease, nausea, hyperthyroidism; the feline 48hr hepatic-lipidosis window makes "stopped eating" near-emergent — see `docs/research/2026-05-feeding-windows-and-partial-eating.md`). Any surface reading `intake_rating` (AI Signal, vet report, preferences/B-023) must: (1) treat preference as a *rate over N samples*, never a single rating; (2) route decline/refusal toward a health flag, never soften it into "picky"; (3) never reassure an owner whose pet may be unwell. The like/dislike framing is safe only for the *positive, multi-sample* signal.
-- Letting a **single-incident (n=1) AI read reassure** an owner. Per-incident AI analysis (B-013/B-027) reads one sample — it may **escalate on the *presence* of a visible red flag** (blood, foreign material, repeated vomiting in a short window) → "worth a call to your vet," never a diagnosis; it must **never reassure on the *absence* of one** ("nothing visibly alarming in this one" is honest; "your pet is probably fine" is not — absence of a visible flag ≠ wellness; the clear-foam-once-but-not-eaten-36h cat is the feline 48hr hepatic-lipidosis case). Reassurance, if ever, comes only from a *cross-incident, multi-sample* read, carefully. Same single-sample discipline as the `intake_rating` rule above.
-- *(Append new anti-patterns here as they are discovered in the codebase)*
-
----
-
-### Veterinarian — Dr. Alex Chen
-**Role:** Clinical end-user of the vet report. Represents the veterinary perspective in all product and design decisions.
-
-**What Dr. Chen needs from Nyx:**
-- Precise timestamps on every event — "Tuesday at 2:14 PM" is clinically meaningful; "recently" is not
-- Exact food data: brand, ingredient list, not just "dry kibble"
-- Symptom frequency and trend over time, not single-occurrence flags
-- A report she can scan in 60 seconds at the start of a consult — she does not have 10 minutes
-- Language that matches how she would write a SOAP note, not how a pet brand talks about "fur babies"
-
-**What Dr. Chen does not want:**
-- Decorative elements, branding, or paw prints anywhere near clinical data
-- Severity scores entered by owners who underestimate or catastrophize — she trusts frequency over owner-rated severity
-- Alerts that spike owner anxiety before the data justifies clinical concern
-- Data that could have been entered after the fact or back-dated beyond reasonable trust
-
-**Consulting Dr. Chen when:**
-- Designing the vet report format, copy, or data structure
-- Deciding whether to surface a severity input vs. relying on frequency/photo evidence
-- Evaluating whether an AI Signal output would read as useful or alarming to a clinician
-- Designing any feature meant to be shown at a vet appointment
-
-**Key question Dr. Chen asks:** "Would I trust this data to inform a clinical decision for a patient I haven't met?"
-
----
-
-### Pet Owner — Jordan
-**Role:** Primary end-user of the daily logging flow. Represents the real-world usage context in all product and design decisions.
-
-**Who Jordan is:** 34, works full-time, has one dog (Mochi, 4yo mixed breed). Currently doing a diet trial after Mochi had recurring GI issues. The vet said to track food and symptoms for 6 weeks. Jordan has tried two other apps and quit both within a week.
-
-**What Jordan needs from Nyx:**
-- To log something in under 10 seconds, one-handed, while Mochi is mid-incident
-- Confirmation-over-entry after week one — Jordan should never have to type "Royal Canin Hydrolyzed Protein" again
-- Honest, non-alarming feedback when something looks off
-- To not feel nagged, monitored, or gamified
-
-**What Jordan does not want:**
-- Severity sliders when Mochi just vomited — Jordan doesn't know what "3 out of 5" means clinically
-- Mandatory fields that add decisions at moment of event
-- Generic push notifications that feel like a DAU metric
-- Medical jargon — Jordan knows "vomiting," not "emesis"
-- To feel like the app is for hypochondriac pet owners, not real ones
-
-**Consulting Jordan when:**
-- Evaluating any new input or decision in the quick-log flow
-- Writing copy for nudges, empty states, or health alerts
-- Deciding whether a feature belongs in the core (free) tier
-- Assessing whether an onboarding step is worth the friction it adds
-
-**Key question Jordan asks:** "Can I do this in under 10 seconds while my dog is being weird?"
-
----
-
-### Pet Owner (cat) — Sam
-**Role:** Cat-owner variant of Jordan. Represents the grazing, picky-eater usage context — the true target user for food-preference surfaces (B-023) and the broader "known for more than sensitive stomachs" positioning. Drafted as a stub May 2026 (flagged since v1.19); flesh out before scoping B-023.
-
-**Who Sam is:** 29, one indoor cat (Pixel, 6yo domestic shorthair). Not in a diet trial — Pixel is broadly healthy. Sam's recurring pain is the cabinet of half-eaten cans Pixel rejected after one sniff. The adage "you can never guess what a cat will like" is Sam's daily reality. Buys on guesswork, wastes food and money, and worries whenever Pixel skips a meal.
-
-**What Sam needs from Nyx:**
-- An honest read on what Pixel actually eats vs. ignores — "will she like this?" answered by data, not gut feel, before spending on a new case
-- Confirmation-over-entry; Pixel grazes, so logging must tolerate "offered ≠ consumed" without nagging
-- Early, non-alarming warning when intake genuinely drops — Sam can't tell "being fussy" from "getting sick," and that ambiguity is exactly the clinical danger zone (48hr feline window)
-
-**What Sam does not want:**
-- A cutesy "preferences" gimmick that treats a sick cat as merely picky
-- Pressure to log every grazing nibble — the grazing baseline must not feel like failure
-- To be made anxious by normal feline fussiness
-
-**Consulting Sam when:**
-- Designing any food-preference / likes-dislikes surface (B-023) or intake-trend display
-- Evaluating cat-specific feeding flows (grazing, free-feeding, partial eating)
-- Writing copy that distinguishes normal fussiness from clinically meaningful intake decline
-
-**Key question Sam asks:** "Will Pixel actually eat this — and would I know if she'd stopped because she's sick, not just fussy?"
-
----
-
-### Sr. QA Associate
-**Mandate:** Edge case identification, acceptance criteria enforcement, and regression awareness.
-
-**Active responsibilities:**
-- Before any feature is marked done, explicitly verify it against the acceptance criteria in `technical-spec.md` and list which criteria pass and which don't
-- Surface edge cases likely in real usage before code is written, not after
-- Flag when a change to one feature could break another
-- Identify when an empty state or error state hasn't been handled
-- Append new edge cases to this section when they emerge from the codebase
-
-**Edge cases to always consider:**
-- User logs while offline, reconnects hours later with a queue of events
-- User back-dates an event to before the diet trial started
-- Pet has zero events — every surface must have a designed empty state
-- Food item added by one user is referenced in another user's correlation query
-- Vet report share token accessed after 30-day expiry
-- User deletes a pet — cascade behavior across all child tables
-- Two devices logged in as the same user submit conflicting events simultaneously
-- Photo EXIF timestamp is absent or malformed — `occurred_at` must fall back to `new Date()`, never throw
-- Photo upload fails mid-sync while offline — local SQLite record with `synced = 0` must be retried on reconnect, not silently dropped
-- User logs at 3am, half-asleep, one-handed in the dark — every primary action (FAB items, time adjusters, log/save buttons, picker thumbnails) must be reachable with a sloppy tap. Hit zone ≥44pt; use `hitSlop` where visual sizing must stay smaller. QA verifies on every new interactive surface.
-- *(Append new edge cases here as they are discovered in the codebase)*
+### Two safety invariants that govern every relevant surface (full text in `docs/personas.md`)
+- **Intake is not preference.** Decline / refusal is frequently a *disease* signal — treat preference as a rate over N samples, route decline toward a health flag, never soften to "picky," never reassure an owner whose pet may be unwell.
+- **n=1 never reassures.** A single-sample AI read may escalate on the *presence* of a red flag, never reassure on its *absence* (absence ≠ wellness). Reassurance comes only from a careful cross-incident, multi-sample read. (Enforced by the `clinical-guardrails` skill.)
 
 ---
 
@@ -688,6 +506,6 @@ Most recent three versions only. Older entries archived at `docs/CLAUDE-md-histo
 
 | Version | Date | Summary |
 |---|---|---|
-| v1.17 | May 2026 | Workflow improvements (multi-round). Dev Handoff now requires a numbered Manual QA Script tied to acceptance criteria. New "PR Merge / Next Session Kickoff" section: chunk-completing pushes emit copy-pasteable prompts for the next session. New Secrets Register table — every secret's location, consumer, and provisioning status tracked inline. Session summary gains "PM Action Items" checklist and "Next Session Kickoff" block. New "Definition of Done" checklist (AC, anti-patterns, types, automated-tests, secrets, persona sign-off, future-self review, handoff, kickoff). New `docs/backlog.md` artifact + Backlog Protocol section — destination for all "log this for the future" items, accessed via `view backlog`. Seeded with B-001 (AI cost & rate-limit), B-002 (pre-prod readiness), plus B-003/B-004/B-005 migrated from the prior "Future Work / Ideas" section (which has been removed). New Stale Open Question Triage rule. Build Step Kickoff: AC pasted verbatim into session at start of every step. Migration Safety Pre-flight required in every schema PR description. Dev Handoff requires `npm test` before push when testable surfaces change. CLAUDE.md refactor: new Status dashboard at top of file (canonical "where are we?"), Open Questions split into Open / Resolved sub-tables, Version History trimmed to last 3 inline + archived at `docs/CLAUDE-md-history.md`. |
 | v1.18 | May 2026 | **Daily-driver runtime change.** PM wanted to actually live in the MVP on their phone without keeping a Codespace + Metro tunnel alive. Set up EAS Update + Expo Go as the daily-driver runtime — `eas.json` added with `development` / `preview` / `production` build profiles and matching update channels; `preview` channel is what `eas update` publishes to. Daily flow: `eas update --branch preview --message "..."` from Codespace → fully close + reopen Expo Go on phone → Nyx loads the new bundle. CLAUDE.md Dev Handoff split into **Runtime A** (default — `eas update` + Expo Go, no Apple Developer needed) and **Runtime B** (active dev — Metro + tunnel, only when hot reload matters). Secrets Register gained rows for `EXPO_TOKEN` (optional, for CI automation) and Apple Developer account (not yet enrolled — blocks graduation to TestFlight / standalone iOS builds). Status block updated with three PM Action Items: one-time `eas init` / `eas update:configure` setup, smoke test on phone after first publish, and starting Apple Developer enrollment in parallel. |
 | v1.19 | May 2026 | **Research briefs find a home.** Session started with PM-surfaced user-testing insight: cats and slow-eating dogs make the current single `offered_at` meal timestamp structurally biased — "food given at 7am" ≠ "food eaten." Personas convened and disagreed (Designer + Jordan vs Dr. Chen + Data Scientist), surfacing this as a real Persona Conflict around Principle 1. Sr. Designer voted to add a cat-owner persona (Sam) as a variant of Jordan to be drafted later. Commissioned a deep clinical research brief with Dr. Chen guiding — gastric emptying / GI transit times, symptom-to-meal latency by class, hepatic lipidosis 48-hour threshold, WSAVA Diet History Form, elimination-trial compliance binary, 5-point ordinal as the validated owner-reported intake instrument. Brief saved to new `docs/research/` folder under naming convention `YYYY-MM-<topic>.md` — append-only evidence captures, distinct from canonical specs (`docs/nyx-*`) and deferrals (`docs/backlog.md`). Added `docs/research/README.md` as an index for future briefs. CLAUDE.md Read-These table gained a row pointing at the index. No product decisions made yet — this PR is the evidence; the team conversation about what to *do* with it (schema changes, Sam persona, vet-report timestamp semantics, AI Signal correlation windows) is a follow-up. |
+| v1.20 | 2026-05-31 | **Personas/agents restructure + file split.** Workflow review of the persona system. Moved the volatile Status block to `STATUS.md` and the full persona definitions to `docs/personas.md` (CLAUDE.md keeps a roster + always-on rules + pointers) so the operating manual stays stable and high-churn state has one scannable home. Added the **persona vs. subagent vs. skill** model. Added two subagents (`.claude/agents/adversarial-reviewer`, `code-reviewer`) and the `backlog-groomer` skill. Added two personas — **Product Owner / Backlog Steward** and **Trust & Safety / Privacy** — plus a **persona routing table** and a **periodic process retro** ritual. Reconciled the backlog (B-022, B-045 were shipped but still marked Open). |
