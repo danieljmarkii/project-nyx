@@ -320,6 +320,52 @@ fire sooner. **Open:** validate these floors against real dogfood data before lo
 > - **Benign positive preferences** are low-stakes if wrong (a so-so food purchase) → may surface at a
 >   lower, exploratory bar, honestly provisional (§6). *Positive only* — a decline is a clinical signal, not a preference.
 
+### 7.1 Speed vs. rigor — the value ladder (resolved 2026-05-30, follow-up session)
+
+**The tension, stated plainly (PM):** statistically rigorous correlation (① Established) is *slow*
+— for a cat eating 1–2 cans + 4–5 treats/day, a multiple-comparison-corrected, significant
+food→symptom finding is realistically weeks-to-months out. If insight *is* the only reason to keep
+logging, the flywheel dies before it spins (no insight → churn → never enough data → no insight).
+
+**The room's resolution — we reject the premise, not the rigor.** The chain above is only true if the
+*correlation* carries retention. It shouldn't. "Insight" is four things, and only one needs significance:
+
+| Rung | Fires | Needs stats? | Job |
+|---|---|---|---|
+| ① **Safety flags** (intake-decline ②) | hours–day 1 | **No** — deterministic threshold | Catch the dangerous case fast; deliberately sensitive (§7) |
+| ② **Reflections** (trends, counts, streaks) | week 1 | No — descriptive, **no causal claim** | "We're watching with you" — kills *silence*, the real churn driver |
+| ③ **Positive preference** (multi-sample, benign) | week 1–2 | No — rate over N, never n=1 | Return-driver; Sam's "will she like this" |
+| ④ **Early-tier pattern** (co-occurrence, *not a claim*) | week 2–4 | No, but calibrated/neutral | Hypothesis generation — **punted to B-046** for v1 (see below) |
+| ⑤ **Established correlation** | week 4–12+ | **Yes** — significant + MC-corrected | The clinical-grade wedge insight; stays slow + pure |
+
+**Decisions (team-made, PM deferred the call):**
+1. **Rung ⑤ stays fully rigorous.** Adoption pressure never touches the significance threshold or the
+   multiple-comparison correction. This was the thing at risk; it is protected.
+2. **v1 retention rides the no-claims rungs (①–③) + the daily nudge (Principle 4)** — none make a causal
+   claim, so none compromise the science. The insight surface is not the only retention mechanism, and was
+   never meant to be: *silence* is the churn driver Jordan named (two prior apps quit not for being wrong,
+   but for being a filing cabinet), and silence is fixable on the benign layers.
+3. **Premature certainty churns too.** Jordan distrusts a confident answer at n=3 as much as silence —
+   so "be faster" is not the goal; "be *present* and honest about where we are" is. The Early-tier label
+   (§6) and reflection cards deliver presence without overclaiming.
+4. **Rung ④ (weak *clinical* early-pattern) stays punted to B-046, as a copy-first exercise.** Reasons:
+   (a) confirmation-bias risk — an early "watch chicken" makes the owner selectively over-log chicken,
+   *biasing the very dataset* ⑤ depends on; (b) it is unsolved at the *copy* level (the gap between "worth
+   watching" and "might be the cause" is one verb, and that verb is the whole product); (c) ①–③ + nudge are
+   judged sufficient to hold the ~6-week wait. It returns informed by v1 retention data, not another debate.
+5. **Dr. Chen's amendment (binding): direction determines the rung.** A *declining*-intake reflection is
+   NOT a neutral rung-② stat — it is the front edge of the safety flag and routes to rung ① with
+   never-reassure copy. Only intake going *up*, or symptom counts falling, may render as a calm reflection.
+   A sloppy "Pixel ate 30% less this week" card filed as a neutral trend is exactly how reassurance sneaks
+   into the safety layer.
+6. **Instrument v1** (Data Scientist): log time-to-first-meaningful-insight + 2/4/6-week retention from day
+   one, so the rung-④ reconsideration is data-driven. Tracked as B-047.
+
+**The non-obvious payoff:** rung ④, *when* it ships, is also a statistical accelerant — an early focused
+"watch chicken" converts a many-way blind scan into a 1-hypothesis test, cutting the multiple-comparison
+penalty for that food and pulling ⑤ forward. The fast layer narrows the funnel the slow layer searches.
+That's where speed and rigor stop trading against each other — but it's a B-046 prize, not a v1 shortcut.
+
 ---
 
 ## 8. Owner personas — what they want on the home (PM asked us to loop them in)
