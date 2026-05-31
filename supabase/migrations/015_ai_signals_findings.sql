@@ -1,0 +1,46 @@
+-- ============================================================
+-- ai_signals.findings — store the ordered SET of insight cards,
+-- not just one sentence.
+-- See: docs/nyx-ai-signal-requirements.md §3.2, §12 (Step 2)
+--      docs/backlog.md B-045
+-- ============================================================
+-- The AI Signal home surface was respecified (rev 2+) from a single
+-- winning sentence into a curated, prioritized, OPEN-ENDED set of
+-- insight cards (correlation, intake-decline safety flag, and future
+-- trend/preference/weight/… types). The deterministic detection engine
+-- (supabase/functions/generate-signal/detection.ts) already returns a
+-- ranked RankedFinding[]; this column lets the generate-signal Edge
+-- Function (Step 2) cache that whole ordered set — each finding's
+-- phrased sentence, evidence tier, and sample sizes (for the §3.2
+-- tap-to-expand evidence) — so the Step-3 SignalZone can render the
+-- multi-card stack from one cache-only read.
+--
+-- Shape (array, in ranked display order; safety/concern leads — §5):
+--   [
+--     {
+--       "rank": 0,
+--       "text": "<one warm, plain-language sentence>",
+--       "finding": { ...typed Finding from detection.ts (type,
+--                    priorityClass, tier?, sample sizes, …) }
+--     },
+--     ...
+--   ]
+-- An empty array ([]) pairs with is_building = TRUE: no finding cleared
+-- its evidence-tier floor. Per §9 that is the building/stale state, NEVER
+-- an all-clear.
+--
+-- signal_text is RETAINED (still NOT NULL): the function continues to
+-- write the lead card's sentence (or the building/stale message) into it,
+-- so any reader not yet updated for the set degrades to a single honest
+-- line. New consumers read `findings`.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (additive column, NOT NULL with a safe default)
+--   Rollback:     ALTER TABLE ai_signals DROP COLUMN findings;
+--   Backfill:     N/A — DEFAULT '[]'::jsonb covers any existing row.
+--                 (The table has never been written to in prod, so there
+--                 are no rows to backfill in practice — §1.)
+-- ============================================================
+
+ALTER TABLE ai_signals
+  ADD COLUMN findings jsonb NOT NULL DEFAULT '[]'::jsonb;
