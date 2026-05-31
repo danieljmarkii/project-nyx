@@ -144,9 +144,11 @@ Deno.test('parseToolResult — full extraction with all fields present', () => {
   assertStrictEquals(result.product_name, 'Hydrolyzed Protein Adult HP')
   assertStrictEquals(result.format, 'dry')
   // primary_protein is canonicalized at parse time (B-052): the protein SOURCE,
-  // not the verbatim label — 'hydrolyzed soy protein' → 'soy'. The full verbatim
-  // text is preserved untouched in ingredients_text.
-  assertStrictEquals(result.primary_protein, 'soy')
+  // not the verbatim label. 'hydrolyzed soy protein' → 'hydrolyzed soy' — the
+  // 'protein' qualifier strips but 'hydrolyzed' is kept as a distinct key, since
+  // a hydrolyzed elimination diet must NOT pool with the intact protein. The full
+  // verbatim text is preserved untouched in ingredients_text.
+  assertStrictEquals(result.primary_protein, 'hydrolyzed soy')
   assertStrictEquals(result.is_grain_free, false)
   assertStrictEquals(result.is_prescription, true)
   assertStrictEquals(result.upc_barcode, '030111940005')

@@ -21,25 +21,41 @@
 // fixes.
 //
 // DESIGN — conservative on purpose. A wrong MERGE (lumping two distinct real
-// proteins under one key) silently corrupts a clinical correlation and is far
-// worse than a missed normalization. So this only ever:
-//   (1) lowercases / trims / collapses whitespace + punctuation, and
-//   (2) strips well-known rendering QUALIFIERS that describe the cut/processing,
-//       not the protein identity ('meal', 'by-product', 'fat', 'hydrolyzed', …),
-//   (3) reduces to a single KNOWN canonical protein only when exactly one is
-//       present after stripping.
-// It NEVER merges two different known proteins (a genuine multi-protein label
-// such as "chicken & duck" is preserved, just normalized), and an unrecognized
-// protein (e.g. "ostrich") falls through to its lowercased/qualifier-stripped
-// form rather than being guessed at.
+// ingredients under one key) silently corrupts a clinical correlation and is
+// far worse than a missed normalization. So the rules are deliberately narrow
+// (these guarantees are pinned by the adversarial-review regression tests):
+//
+//   (1) lowercase / trim / collapse whitespace + punctuation;
+//   (2) strip well-known rendering QUALIFIERS that describe the cut/processing,
+//       not the protein identity ('meal', 'by-product', 'fat', …) and the
+//       CONNECTIVES that join a blend ('and', '&', 'with') so word-order and
+//       connector variants of one label collapse together;
+//   (3) reduce to a single token ONLY when exactly one meaningful token remains
+//       after stripping — i.e. the qualifier-stripped label IS one word. This
+//       is what nails 'chicken by-product meal' → 'chicken' WITHOUT merging
+//       'sweet potato' → 'potato' (two meaningful tokens → preserved);
+//   (4) any multi-token label (a genuine multi-protein blend, or a protein with
+//       a descriptor we won't risk dropping like 'sweet potato') is preserved
+//       in full, SORTED, so two distinct ingredients are never collapsed and
+//       order variants ('chicken duck' / 'duck chicken') map to one key.
+//
+// HYDROLYZED is treated as a protein-IDENTITY marker, never stripped: a
+// hydrolyzed elimination diet exists precisely because the intact protein
+// provokes a reaction and the hydrolysate does not, so 'Hydrolyzed Chicken'
+// MUST stay a different key from 'Chicken' or the engine would hide the very
+// signal the diet trial was run to find. Both spellings canonicalize to a
+// leading 'hydrolyzed ' prefix.
 
 /**
- * Rendering/processing qualifier words that describe HOW a protein appears on a
- * label, not WHICH protein it is. Stripped before matching so "chicken by-product
- * meal" and "deboned chicken" both reduce to "chicken". 'by-product' is handled
- * as its hyphen/space variants via tokenization below.
+ * Rendering/processing qualifier words (describe HOW a protein appears, not
+ * WHICH protein) and blend connectives. Stripped before the single-token
+ * reduction so "chicken by-product meal" and "deboned chicken" reduce to
+ * "chicken", and so "chicken & duck" / "chicken and duck" / "duck, chicken"
+ * all collapse to the same sorted key. NOTE: 'hydrolyzed'/'hydrolysed' are
+ * deliberately ABSENT — they mark protein identity (see module header).
  */
 const QUALIFIER_TOKENS = new Set([
+  // rendering / cut / processing
   'meal',
   'by',
   'product',
@@ -57,67 +73,30 @@ const QUALIFIER_TOKENS = new Set([
   'whole',
   'real',
   'natural',
-  'hydrolyzed',
-  'hydrolysed',
+  'flavor',
+  'flavour',
   'protein',
   'isolate',
   'concentrate',
-  'flavor',
-  'flavour',
+  // blend connectives ('&' is already turned into a space by the alnum pass)
+  'and',
+  'with',
+  'plus',
 ])
 
-/**
- * Canonical proteins we recognize. Used only for the final single-protein
- * reduction step — an unknown protein still normalizes by casing/qualifier, it
- * just isn't collapsed against this list. Order is irrelevant. Kept deliberately
- * conservative: every entry here is a distinct source that must NEVER be merged
- * with another entry.
- */
-const KNOWN_PROTEINS = new Set([
-  'chicken',
-  'turkey',
-  'duck',
-  'goose',
-  'quail',
-  'poultry',
-  'beef',
-  'lamb',
-  'pork',
-  'venison',
-  'rabbit',
-  'bison',
-  'goat',
-  'kangaroo',
-  'salmon',
-  'tuna',
-  'trout',
-  'herring',
-  'mackerel',
-  'cod',
-  'sardine',
-  'whitefish',
-  'fish',
-  'egg',
-  'soy',
-  'pea',
-  'lentil',
-  'potato',
-  'chickpea',
-  'liver',
-  'insect',
-])
+const HYDROLYZED_TOKENS = new Set(['hydrolyzed', 'hydrolysed'])
 
 /**
  * Canonicalize a free-text primary-protein label into a single grouping key.
  * Returns null for null/blank input (an unidentified food contributes no
  * protein exposure). See the module header for the why and the conservatism
- * guarantee (never merges two distinct known proteins).
+ * guarantees (never merges two distinct ingredients; keeps hydrolyzed distinct).
  */
 export function normalizeProtein(raw: string | null | undefined): string | null {
   if (raw == null) return null
 
   // Lowercase, replace any non-alphanumeric run (hyphens, slashes, commas,
-  // ampersands, '&', extra spaces) with a single space, and trim.
+  // ampersands, extra spaces) with a single space, and trim.
   const base = raw
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
@@ -126,26 +105,30 @@ export function normalizeProtein(raw: string | null | undefined): string | null 
 
   const tokens = base.split(' ').filter((t) => t.length > 0)
 
-  // Strip qualifier words. Keep everything else (real protein words + any
-  // connective like "and" — preserved so distinct multi-protein labels stay
-  // distinct rather than collapsing to one source).
-  const meaningful = tokens.filter((t) => !QUALIFIER_TOKENS.has(t))
+  // Hydrolyzed is an identity marker, not a qualifier — note it, then drop the
+  // literal token so it doesn't pollute the protein key; we re-add a canonical
+  // 'hydrolyzed ' prefix at the end (also normalizes the -zed/-sed spelling).
+  const isHydrolyzed = tokens.some((t) => HYDROLYZED_TOKENS.has(t))
 
-  // Everything was a qualifier (e.g. "meal", "by-product meal") — nothing
-  // identity-bearing left. Fall back to the lowercased/collapsed original so we
-  // never return an empty key; better an honest odd value than a silent drop.
+  // Strip qualifiers + connectives + the hydrolyzed token. What's left is the
+  // protein identity word(s).
+  const meaningful = tokens.filter(
+    (t) => !QUALIFIER_TOKENS.has(t) && !HYDROLYZED_TOKENS.has(t),
+  )
+
+  // Everything was a qualifier/connective (e.g. "by-product meal") — nothing
+  // identity-bearing left. Fall back to the collapsed base so we never return
+  // an empty key; better an honest odd value than a silent drop. (Returned
+  // WITHOUT the hydrolyzed prefix — a bare "hydrolyzed" carries no protein.)
   if (meaningful.length === 0) return base
 
-  // Distinct known proteins among the meaningful tokens.
-  const knownPresent = Array.from(new Set(meaningful.filter((t) => KNOWN_PROTEINS.has(t))))
+  // Reduce to a single token ONLY when the qualifier strip left exactly one —
+  // i.e. the label really is one protein word ("chicken by-product meal" →
+  // "chicken"). Multi-token labels are preserved in full and SORTED so a
+  // genuine blend ("chicken duck") or a compound ingredient ("sweet potato")
+  // is never merged into a different key, and word-order variants collapse.
+  const key =
+    meaningful.length === 1 ? meaningful[0] : [...meaningful].sort().join(' ')
 
-  // Exactly one known protein (alongside any filler like "free"/"range") →
-  // reduce to it: "free range chicken" / "deboned chicken meal" → "chicken".
-  if (knownPresent.length === 1) return knownPresent[0]
-
-  // Zero or multiple known proteins → preserve the qualifier-stripped string.
-  // Multiple = a genuine multi-protein label ("chicken duck"); zero = an
-  // unrecognized protein. Either way we return a stable, casing/qualifier-
-  // normalized key without risking a wrong merge.
-  return meaningful.join(' ')
+  return isHydrolyzed ? `hydrolyzed ${key}` : key
 }
