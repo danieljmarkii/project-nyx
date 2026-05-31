@@ -38,6 +38,17 @@ export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all'
 
 export type Species = 'dog' | 'cat' | 'other'
 
+/**
+ * How confident we are that THIS pet actually ate a given food (B-040's attribution axis).
+ * 'high' = directly attributable (hand-fed meal, a treat, witnessed eating). 'low' = a
+ * shared / free-fed bowl in a multi-pet home where another pet could have eaten it.
+ * The correlation detector models multi-cat as the GENERAL case: a 'low'-attribution
+ * exposure is carried as a confounder and CAPS the finding at Early (it can never reach
+ * Established, because we can't be sure this pet was the one exposed). Single-cat /
+ * hand-fed = everything 'high' = the clean special case.
+ */
+export type AttributionConfidence = 'high' | 'low'
+
 /** Numeric mapping of the ordinal intake scale, 0 (refused) .. 4 (all). */
 const INTAKE_SCORE: Record<IntakeRating, number> = {
   refused: 0,
@@ -79,6 +90,13 @@ export interface MealEvent {
   foodType: 'meal' | 'treat' | 'other' | null
   /** Optional display label for the food, used in evidence/phrasing payloads. */
   foodLabel?: string | null
+  /**
+   * Attribution confidence for THIS feeding (B-040). Absent/null defaults to 'high' —
+   * matching today's per-pet logging semantics (a meal logged against a pet is an
+   * assertion the pet ate it). B-040 supplies 'low' for shared / free-fed bowls; until
+   * then every exposure is treated as attributable. See AttributionConfidence.
+   */
+  attributionConfidence?: AttributionConfidence | null
 }
 
 export interface DetectionInput {
@@ -112,9 +130,11 @@ interface FindingBase {
 }
 
 /**
- * Food/protein → symptom association. ASSOCIATIONAL ONLY — there is deliberately
- * no causal field. The 2x2 counts power tap-to-expand evidence (§3.2) and let the
- * phrasing layer cite real sample sizes without inventing them.
+ * Food/protein → symptom association, from a SYMPTOM-ANCHORED case-crossover (B-050):
+ * the unit is the symptom episode ("case"), compared against a time-of-day-matched
+ * control window from a symptom-free day for the same pet. ASSOCIATIONAL ONLY — there
+ * is deliberately no causal field. The matched counts power tap-to-expand evidence
+ * (§3.2) and let the phrasing layer cite real numbers without inventing them.
  */
 export interface CorrelationFinding extends FindingBase {
   type: 'food_symptom_correlation'
@@ -122,34 +142,36 @@ export interface CorrelationFinding extends FindingBase {
   tier: EvidenceTier
   symptomType: SymptomType
   protein: string
-  /**
-   * Meals exposed to this protein that are the *nearest preceding meal* of ≥1 symptom
-   * episode within the window. Counts MEALS (each ≤1), not symptoms — so a single
-   * symptom can never inflate this across several meals (the pseudoreplication fix).
-   */
-  exposedWithSymptom: number
-  /** All meals exposed to this protein (the "exposed arm"). */
-  exposedTotal: number
-  /** Unexposed meals that are the nearest preceding meal of ≥1 symptom episode. */
-  unexposedWithSymptom: number
-  /** All meals with a known, different protein (the "unexposed arm"). */
-  unexposedTotal: number
-  exposedRate: number
-  unexposedRate: number
-  /** exposedRate - unexposedRate; positive = symptom enriched after this protein. */
+  /** Matched case/control pairs analysed (a symptom episode + its time-matched control window). */
+  matchedPairs: number
+  /** Of the matched pairs, how many had this protein in the CASE (pre-symptom) window. */
+  caseExposed: number
+  /** Of the matched pairs, how many had this protein in the matched CONTROL window. */
+  controlExposed: number
+  /** Discordant pairs: protein in the case window but NOT the control (the "b" cell of McNemar). */
+  discordantCaseOnly: number
+  /** Discordant pairs: protein in the control window but NOT the case (the "c" cell). */
+  discordantControlOnly: number
+  /** caseExposed/matchedPairs − controlExposed/matchedPairs; positive = enriched before symptoms. */
   riskDifference: number
-  /** One-sided Fisher's exact p (enrichment). Established requires this to clear the corrected bar. */
+  /** One-sided exact McNemar p on the discordant pairs. Established requires it to clear the corrected bar. */
   pValue: number
   /** Bonferroni-corrected significance threshold actually applied (alpha / family size). */
   correctedAlpha: number
   /**
    * Distinct symptom *episodes* of this type (rapid re-logs of one bout collapsed) —
-   * the §7 "≥N symptom events" arm. Episode-collapsing prevents one bout logged five
-   * times from clearing the floor as five independent confirmations.
+   * the §7 "≥N episodes" arm. Episode-collapsing prevents one bout logged five times
+   * from clearing the floor as five independent confirmations.
    */
   symptomEventCount: number
-  /** The symptom-class-specific window actually applied (GI ~8h, dermatological ~72h). */
+  /** The symptom-class-specific window actually applied (vomit ~12h, diarrhea ~24h, derm ~72h). */
   correlationWindowHours: number
+  /**
+   * Weakest attribution among this protein's case-window exposures. 'low' means a
+   * shared / unattributed bowl was implicated → the finding is CAPPED at Early, never
+   * Established (we can't be sure this pet ate it). Single-cat / hand-fed = 'high'.
+   */
+  attributionFloor: AttributionConfidence
   /** Hard marker for the phrasing layer + reviewers: never emit causal copy. */
   associationalOnly: true
 }
@@ -200,18 +222,14 @@ export interface DetectionConfig {
   /** Symptoms of one type within this many hours collapse into a single episode (re-log guard). */
   symptomEpisodeGapHours: number
   correlation: {
-    /** §7 Early: ≥3 symptom events. */
-    earlyMinSymptomEvents: number
-    /** §7 Early: ≥3 exposures in BOTH arms. */
-    earlyMinExposuresPerArm: number
-    /** Guard against an n=1 coincidence printing an Early claim. */
-    earlyMinExposedWithSymptom: number
-    /** §7 Early "relaxed effect bar": minimum positive risk difference. */
+    /** §7 Early: minimum matched case/control pairs (symptom episodes that found a usable control). */
+    earlyMinMatchedPairs: number
+    /** Guard against an n=1 coincidence: minimum discordant case-exposed pairs before an Early claim. */
+    earlyMinDiscordantCaseOnly: number
+    /** §7 Early "relaxed effect bar": minimum positive case−control exposure-rate difference. */
     earlyMinRiskDifference: number
-    /** §7 Established: ≥5 symptom events. */
-    establishedMinSymptomEvents: number
-    /** §7 Established: ≥5 exposures in BOTH arms. */
-    establishedMinExposuresPerArm: number
+    /** §7 Established: minimum matched pairs. */
+    establishedMinMatchedPairs: number
     /** Familywise alpha before multiple-comparison correction. */
     familywiseAlpha: number
   }
@@ -248,22 +266,22 @@ export interface DetectionConfig {
 
 /** §7 table, adopted as the v1 starting defaults (PM 2026-05-30); tune on real data, not a re-decision. */
 export const DEFAULT_CONFIG: DetectionConfig = {
-  correlationWindowHours: 8,
+  correlationWindowHours: 12,
   correlationWindowHoursByType: {
-    vomit: 8,
-    diarrhea: 8,
+    // Split GI by latency (Dr. Chen): acute vomiting is hours; dietary-indiscretion
+    // diarrhea is longer; dermatological reactions are multi-day.
+    vomit: 12,
+    diarrhea: 24,
     itch: 72,
     scratch: 72,
     skin_reaction: 72,
   },
   symptomEpisodeGapHours: 3,
   correlation: {
-    earlyMinSymptomEvents: 3,
-    earlyMinExposuresPerArm: 3,
-    earlyMinExposedWithSymptom: 2,
+    earlyMinMatchedPairs: 3,
+    earlyMinDiscordantCaseOnly: 2,
     earlyMinRiskDifference: 0.2,
-    establishedMinSymptomEvents: 5,
-    establishedMinExposuresPerArm: 5,
+    establishedMinMatchedPairs: 5,
     familywiseAlpha: 0.05,
   },
   intakeDecline: {
@@ -328,19 +346,36 @@ export function fisherExactRightTail(a: number, b: number, c: number, d: number)
   return Math.min(1, p)
 }
 
-// ── Detector ①: food/protein → symptom correlation ─────────────────────────
+/**
+ * One-sided exact McNemar test for matched pairs. Among the b+c DISCORDANT pairs (where
+ * case and control disagree on exposure), each is equally likely to favour the case or
+ * the control under the null, so b ~ Binomial(b+c, 0.5). Returns P(≥ b case-favouring
+ * pairs) — the chance the case-side enrichment is at least this strong by luck. This is
+ * the correct test for the case-crossover's matched design; a pooled/unmatched Fisher
+ * would be biased (Biostatistician, B-050). No discordant pairs → no evidence → p = 1.
+ */
+export function mcNemarExactRightTail(b: number, c: number): number {
+  const n = b + c
+  if (n === 0) return 1
+  const logHalfPow = n * Math.log(0.5)
+  let p = 0
+  for (let k = b; k <= n; k++) p += Math.exp(logChoose(n, k) + logHalfPow)
+  return Math.min(1, p)
+}
+
+// ── Detector ①: food/protein → symptom correlation (symptom-anchored case-crossover) ──
 //
-// KNOWN LIMITATION — TODO(B-050): this detector is still MEAL-ANCHORED and attributes
-// each symptom episode to its single nearest-preceding meal. That is a deliberate
-// placeholder that the team has already rejected as incorrect: it can blame the wrong
-// food (winner-take-all) and exonerate a daily staple. The agreed replacement is a
-// SYMPTOM-ANCHORED case-crossover (multi-implication of all in-window proteins, matched
-// control windows with a logging-eligibility guard, McNemar test, attribution-confidence
-// gating for multi-cat). Tests pass against the placeholder's behaviour, NOT against a
-// correct correlation — do not wire this into the Edge Function (Step 2) or present its
-// output as a real finding until B-050 lands. See docs/backlog.md B-050.
+// Each symptom EPISODE is a "case"; its pre-symptom window is compared against a
+// time-of-day-matched CONTROL window drawn from a symptom-free day for the same pet.
+// This (a) implicates EVERY protein in the case window, not just the nearest meal
+// (no winner-take-all — the nearest-preceding placeholder, B-050, is gone); (b) counts
+// each symptom once (no pseudoreplication); (c) lets a constant daily staple correctly
+// wash out (present in both case and control windows → concordant → no signal); and
+// (d) honours attribution confidence so multi-cat shared bowls degrade instead of
+// false-firing. Matched comparison via the exact McNemar test (not pooled Fisher).
 
 const MS_PER_HOUR = 3_600_000
+const MS_PER_DAY = 86_400_000
 
 /**
  * Collapse a list of same-type symptom timestamps into episode ONSET times: any two
@@ -368,135 +403,188 @@ export function detectCorrelations(
 ): CorrelationFinding[] {
   const cfg = config.correlation
 
-  // Meals usable for correlation must carry a known protein. Sorted ascending so the
-  // nearest-preceding-meal lookup can pick the latest meal at or before a symptom onset.
-  const classifiableMeals = input.mealEvents
+  // Classifiable meals: a known protein + valid time, carrying attribution confidence
+  // (absent → 'high', per today's per-pet logging semantics). Sorted ascending.
+  const meals = input.mealEvents
     .filter((m) => m.primaryProtein && m.primaryProtein.trim().length > 0)
-    .map((m) => ({ ms: Date.parse(m.occurredAt), protein: m.primaryProtein!.trim().toLowerCase() }))
+    .map((m) => ({
+      ms: Date.parse(m.occurredAt),
+      protein: m.primaryProtein!.trim().toLowerCase(),
+      attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
+    }))
     .filter((m) => Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
 
-  const proteins = Array.from(new Set(classifiableMeals.map((m) => m.protein)))
-  if (proteins.length < 2 || classifiableMeals.length === 0) {
-    // Need at least an exposed and an unexposed arm to make any associational claim.
-    return []
+  const proteins = Array.from(new Set(meals.map((m) => m.protein)))
+  // Need contrast: a single constant diet can't be correlated against anything.
+  if (proteins.length < 2) return []
+
+  // Proteins present in [anchor - windowMs, anchor], keyed to the WEAKEST attribution
+  // seen for each (one 'low' exposure caps the protein). mealCount === 0 means the window
+  // is NOT logging-eligible — we can't claim a protein was "absent" when nothing was
+  // logged, so such windows are excluded (this is the guard that stops the detector-②
+  // logging-gap bug from reappearing on the control arm — Biostatistician, B-050).
+  const windowExposures = (anchorMs: number, windowMs: number) => {
+    const exposures = new Map<string, AttributionConfidence>()
+    let mealCount = 0
+    for (const m of meals) {
+      if (m.ms > anchorMs) break // sorted ascending — nothing later precedes the anchor
+      if (anchorMs - m.ms > windowMs) continue // earlier than the window
+      mealCount++
+      if (m.attribution === 'low' || !exposures.has(m.protein)) {
+        exposures.set(m.protein, m.attribution)
+      }
+    }
+    return { exposures, mealCount }
   }
 
-  // First pass: build the 2x2 table for every (protein × symptom) pair that clears
-  // the Early sample floor. These are the hypotheses we actually "look at", so the
-  // multiple-comparison family size is their count (§6 multiple-comparison correction).
   interface Candidate {
     protein: string
     symptomType: SymptomType
     windowHours: number
-    a: number
+    matchedPairs: number
+    caseExposed: number
+    controlExposed: number
     b: number
     c: number
-    d: number
+    attributionFloor: AttributionConfidence
     symptomEventCount: number
   }
   const candidates: Candidate[] = []
 
   for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
-    const windowHours = config.correlationWindowHoursByType[symptomType] ?? config.correlationWindowHours
+    const windowHours =
+      config.correlationWindowHoursByType[symptomType] ?? config.correlationWindowHours
     const windowMs = windowHours * MS_PER_HOUR
 
     const rawMsList = input.symptomEvents
       .filter((s) => s.type === symptomType)
       .map((s) => Date.parse(s.occurredAt))
       .filter((ms) => Number.isFinite(ms))
-    // Pseudoreplication fix, part 1: collapse re-logged bouts into distinct episodes.
+    // Collapse re-logged bouts into distinct episodes; each episode is one "case".
     const onsets = toEpisodeOnsets(rawMsList, config.symptomEpisodeGapHours)
+    if (onsets.length < cfg.earlyMinMatchedPairs) continue
     const symptomEventCount = onsets.length
-    if (symptomEventCount < cfg.earlyMinSymptomEvents) continue
 
-    // Pseudoreplication fix, part 2: attribute each episode to its SINGLE nearest
-    // preceding meal within the window. A meal is "symptom-positive" if it is the
-    // proximate meal for ≥1 episode — so one symptom can never light up several meals,
-    // and the protein nearest in time (not every protein in the window) carries it.
-    const attributedMealIdx = new Set<number>()
+    // Days carrying a symptom episode of this type are ineligible as control days.
+    const symptomDays = new Set(onsets.map((o) => Math.floor(o / MS_PER_DAY)))
+    const mealDays = Array.from(new Set(meals.map((m) => Math.floor(m.ms / MS_PER_DAY)))).sort(
+      (a, b) => a - b,
+    )
+
+    // Build time-of-day-matched case/control pairs (1:1). Time-of-day matching is what
+    // lets a daily staple wash out (present in both windows → concordant) instead of
+    // manufacturing signal. 1:M conditional matching is a future refinement (B-049).
+    const pairs: {
+      caseExp: Map<string, AttributionConfidence>
+      ctrlExp: Map<string, AttributionConfidence>
+    }[] = []
     for (const onset of onsets) {
-      let bestIdx = -1
-      // classifiableMeals is sorted ascending; scan back for the latest meal <= onset.
-      for (let i = classifiableMeals.length - 1; i >= 0; i--) {
-        if (classifiableMeals[i].ms <= onset) {
-          if (onset - classifiableMeals[i].ms <= windowMs) bestIdx = i
-          break
-        }
+      const caseWin = windowExposures(onset, windowMs)
+      // Case window must be logging-eligible too — only compare windows where we know
+      // what was (and wasn't) eaten.
+      if (caseWin.mealCount === 0) continue
+      const caseDay = Math.floor(onset / MS_PER_DAY)
+      const timeOfDay = onset - caseDay * MS_PER_DAY
+
+      let bestCtrl: Map<string, AttributionConfidence> | null = null
+      let bestDist = Infinity
+      for (const d of mealDays) {
+        if (d === caseDay || symptomDays.has(d)) continue
+        const dist = Math.abs(d - caseDay)
+        // The control window must NOT overlap the case window, or the same exposure leaks
+        // into both and washes itself out. For a long (derm, 72h) window the adjacent day
+        // is inside the case window, so the control has to sit ≥ windowHours away. (For a
+        // 12h vomit window any different day already qualifies.)
+        if (dist * MS_PER_DAY <= windowMs) continue
+        if (dist >= bestDist) continue // never skips a strictly-closer day; ties → earliest
+        const ctrlWin = windowExposures(d * MS_PER_DAY + timeOfDay, windowMs)
+        if (ctrlWin.mealCount === 0) continue // control window not logging-eligible
+        bestCtrl = ctrlWin.exposures
+        bestDist = dist
       }
-      if (bestIdx >= 0) attributedMealIdx.add(bestIdx)
+      if (!bestCtrl) continue // no eligible control → this case can't be matched
+      pairs.push({ caseExp: caseWin.exposures, ctrlExp: bestCtrl })
     }
 
+    if (pairs.length < cfg.earlyMinMatchedPairs) continue
+
     for (const protein of proteins) {
-      let a = 0
+      let caseExposed = 0
+      let controlExposed = 0
       let b = 0
       let c = 0
-      let d = 0
-      classifiableMeals.forEach((m, i) => {
-        const exposed = m.protein === protein
-        const hit = attributedMealIdx.has(i)
-        if (exposed && hit) a++
-        else if (exposed && !hit) b++
-        else if (!exposed && hit) c++
-        else d++
-      })
-
-      const exposedTotal = a + b
-      const unexposedTotal = c + d
-      if (
-        exposedTotal < cfg.earlyMinExposuresPerArm ||
-        unexposedTotal < cfg.earlyMinExposuresPerArm
-      ) {
-        continue
+      let attributionFloor: AttributionConfidence = 'high'
+      for (const p of pairs) {
+        const inCase = p.caseExp.has(protein)
+        const inCtrl = p.ctrlExp.has(protein)
+        if (inCase) {
+          caseExposed++
+          if (p.caseExp.get(protein) === 'low') attributionFloor = 'low'
+        }
+        if (inCtrl) controlExposed++
+        if (inCase && !inCtrl) b++
+        else if (!inCase && inCtrl) c++
       }
-      candidates.push({ protein, symptomType, windowHours, a, b, c, d, symptomEventCount })
+      candidates.push({
+        protein,
+        symptomType,
+        windowHours,
+        matchedPairs: pairs.length,
+        caseExposed,
+        controlExposed,
+        b,
+        c,
+        attributionFloor,
+        symptomEventCount,
+      })
     }
   }
 
   if (candidates.length === 0) return []
 
-  // Multiple-comparison correction: Bonferroni over the family of looked-at pairs.
+  // Multiple-comparison correction: Bonferroni over the family of (protein × symptom)
+  // pairs we evaluated — every protein with a built matched set counts (conservative).
   const correctedAlpha = cfg.familywiseAlpha / candidates.length
 
   const findings: CorrelationFinding[] = []
   for (const cand of candidates) {
-    const { a, b, c, d, protein, symptomType, symptomEventCount, windowHours } = cand
-    const exposedTotal = a + b
-    const unexposedTotal = c + d
-    const exposedRate = exposedTotal === 0 ? 0 : a / exposedTotal
-    const unexposedRate = unexposedTotal === 0 ? 0 : c / unexposedTotal
-    const riskDifference = exposedRate - unexposedRate
+    const { matchedPairs, caseExposed, controlExposed, b, c, attributionFloor } = cand
+    const riskDifference = caseExposed / matchedPairs - controlExposed / matchedPairs
 
-    // Only positive associations (symptom enriched AFTER the protein) are findings.
+    // Positive, case-direction enrichment only, with a coincidence guard on discordants.
     if (riskDifference < cfg.earlyMinRiskDifference) continue
-    if (a < cfg.earlyMinExposedWithSymptom) continue
+    if (b < cfg.earlyMinDiscordantCaseOnly) continue
+    if (b <= c) continue
 
-    const pValue = fisherExactRightTail(a, b, c, d)
+    const pValue = mcNemarExactRightTail(b, c)
 
-    const meetsEstablishedSamples =
-      symptomEventCount >= cfg.establishedMinSymptomEvents &&
-      exposedTotal >= cfg.establishedMinExposuresPerArm &&
-      unexposedTotal >= cfg.establishedMinExposuresPerArm
+    // Established requires the higher sample floor AND corrected significance AND clean
+    // attribution — a 'low' (shared-bowl) exposure caps the finding at Early.
     const tier: EvidenceTier =
-      meetsEstablishedSamples && pValue <= correctedAlpha ? 'established' : 'early'
+      attributionFloor === 'high' &&
+      matchedPairs >= cfg.establishedMinMatchedPairs &&
+      pValue <= correctedAlpha
+        ? 'established'
+        : 'early'
 
     findings.push({
       type: 'food_symptom_correlation',
       priorityClass: 'insight',
       tier,
-      symptomType,
-      protein,
-      exposedWithSymptom: a,
-      exposedTotal,
-      unexposedWithSymptom: c,
-      unexposedTotal,
-      exposedRate,
-      unexposedRate,
+      symptomType: cand.symptomType,
+      protein: cand.protein,
+      matchedPairs,
+      caseExposed,
+      controlExposed,
+      discordantCaseOnly: b,
+      discordantControlOnly: c,
       riskDifference,
       pValue,
       correctedAlpha,
-      symptomEventCount,
-      correlationWindowHours: windowHours,
+      symptomEventCount: cand.symptomEventCount,
+      correlationWindowHours: cand.windowHours,
+      attributionFloor,
       associationalOnly: true,
     })
   }
@@ -505,8 +593,6 @@ export function detectCorrelations(
 }
 
 // ── Detector ②: intake-decline calm safety flag ────────────────────────────
-
-const MS_PER_DAY = 86_400_000
 
 /** UTC calendar-date key (YYYY-MM-DD). Timezone-correct day boundaries are a caller concern. */
 function utcDateKey(ms: number): string {

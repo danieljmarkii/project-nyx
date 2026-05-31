@@ -16,6 +16,7 @@ import {
   detectSignals,
   rankFindings,
   fisherExactRightTail,
+  mcNemarExactRightTail,
   intakeScore,
   DEFAULT_CONFIG,
   type CorrelationFinding,
@@ -60,6 +61,19 @@ const symptom = (type: SymptomType, occurredAt: string): SymptomEvent => ({
 const proteinMeal = (day: number, protein: string): MealEvent =>
   meal({ occurredAt: at(day, 8), primaryProtein: protein })
 
+/** Protein meal at a specific hour, with optional attribution confidence (B-050). */
+const pMeal = (
+  day: number,
+  protein: string,
+  hour: number,
+  attribution?: 'high' | 'low',
+): MealEvent =>
+  meal({
+    occurredAt: at(day, hour),
+    primaryProtein: protein,
+    ...(attribution ? { attributionConfidence: attribution } : {}),
+  })
+
 const ratedMeal = (
   day: number,
   rating: IntakeRating,
@@ -98,6 +112,22 @@ Deno.test('fisherExactRightTail — degenerate table carries no evidence (p=1)',
   assert.equal(fisherExactRightTail(0, 0, 3, 3), 1)
 })
 
+// ── mcNemarExactRightTail (matched test for the case-crossover) ───────────────
+
+Deno.test('mcNemarExactRightTail — all discordant pairs favour the case → 0.5^n', () => {
+  assert.ok(Math.abs(mcNemarExactRightTail(3, 0) - 0.125) < 1e-9, 'b=3,c=0 → 0.5^3')
+  assert.ok(Math.abs(mcNemarExactRightTail(6, 0) - 1 / 64) < 1e-9, 'b=6,c=0 → 0.5^6 = 0.015625')
+})
+
+Deno.test('mcNemarExactRightTail — no discordant pairs carries no evidence (p=1)', () => {
+  assert.equal(mcNemarExactRightTail(0, 0), 1)
+})
+
+Deno.test('mcNemarExactRightTail — balanced discordants are not significant', () => {
+  // b=c → exactly at the null; one-sided p should be well above any alpha.
+  assert.ok(mcNemarExactRightTail(2, 2) > 0.5, `expected > 0.5, got ${mcNemarExactRightTail(2, 2)}`)
+})
+
 // ── intakeScore ──────────────────────────────────────────────────────────────
 
 Deno.test('intakeScore — maps the WSAVA ordinal scale 0..4', () => {
@@ -108,200 +138,149 @@ Deno.test('intakeScore — maps the WSAVA ordinal scale 0..4', () => {
   assert.equal(intakeScore('all'), 4)
 })
 
-// ── Detector ①: correlation — Early tier ────────────────────────────────────
+// ── Detector ①: correlation — case-crossover (B-050) ─────────────────────────
 
-Deno.test('detectCorrelations — Early tier fires at the §7 floor (≥3 events, ≥3 both arms)', () => {
+// Helper: a daily staple meal of `protein` at `hour` across an inclusive day range.
+const staple = (from: number, to: number, protein: string, hour: number): MealEvent[] => {
+  const out: MealEvent[] = []
+  for (let d = from; d <= to; d++) out.push(pMeal(d, protein, hour))
+  return out
+}
+
+Deno.test('detectCorrelations — Early tier fires; a daily staple correctly washes out', () => {
   const mealEvents = [
-    proteinMeal(20, 'chicken'),
-    proteinMeal(21, 'chicken'),
-    proteinMeal(22, 'chicken'),
-    proteinMeal(23, 'chicken'), // not followed
-    proteinMeal(25, 'salmon'),
-    proteinMeal(26, 'salmon'),
-    proteinMeal(27, 'salmon'),
-    proteinMeal(28, 'salmon'),
+    ...staple(1, 10, 'chicken', 9), // staple — present before sick AND well days
+    pMeal(2, 'beef', 10), // sporadic treat, only on symptom days
+    pMeal(4, 'beef', 10),
+    pMeal(6, 'beef', 10),
   ]
-  const symptomEvents = [
-    symptom('itch', at(20, 11)),
-    symptom('itch', at(21, 11)),
-    symptom('itch', at(22, 12)),
-  ]
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
   const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
-  assert.equal(findings.length, 1, 'only the chicken→itch association should surface')
+  assert.equal(findings.length, 1, 'chicken must wash out (in case AND control windows); only beef surfaces')
   const f = findings[0]
-  assert.equal(f.protein, 'chicken')
-  assert.equal(f.symptomType, 'itch')
+  assert.equal(f.protein, 'beef')
+  assert.equal(f.symptomType, 'vomit')
   assert.equal(f.tier, 'early')
-  assert.equal(f.exposedWithSymptom, 3)
-  assert.equal(f.exposedTotal, 4)
-  assert.equal(f.unexposedWithSymptom, 0)
-  assert.equal(f.unexposedTotal, 4)
-  assert.equal(f.symptomEventCount, 3)
-  assert.ok(f.riskDifference > 0.7)
+  assert.equal(f.matchedPairs, 3)
+  assert.equal(f.caseExposed, 3)
+  assert.equal(f.controlExposed, 0)
+  assert.equal(f.discordantCaseOnly, 3)
+  assert.equal(f.attributionFloor, 'high')
+  assert.ok(f.riskDifference > 0.9)
   assert.equal(f.associationalOnly, true)
 })
 
-// ── Detector ①: correlation — Established tier ──────────────────────────────
-
-Deno.test('detectCorrelations — Established tier clears ≥5+5 + corrected significance', () => {
+Deno.test('detectCorrelations — Established tier clears ≥5 pairs + corrected McNemar significance', () => {
   const mealEvents = [
-    proteinMeal(18, 'chicken'),
-    proteinMeal(19, 'chicken'),
-    proteinMeal(20, 'chicken'),
-    proteinMeal(21, 'chicken'),
-    proteinMeal(22, 'chicken'),
-    proteinMeal(23, 'chicken'), // not followed
-    proteinMeal(24, 'salmon'),
-    proteinMeal(25, 'salmon'),
-    proteinMeal(26, 'salmon'),
-    proteinMeal(27, 'salmon'),
-    proteinMeal(28, 'salmon'),
-    proteinMeal(29, 'salmon'),
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
   ]
-  const symptomEvents = [
-    symptom('itch', at(18, 11)),
-    symptom('itch', at(19, 11)),
-    symptom('itch', at(20, 11)),
-    symptom('itch', at(21, 11)),
-    symptom('itch', at(22, 11)),
-  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
   const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
   assert.equal(findings.length, 1)
   const f = findings[0]
-  assert.equal(f.protein, 'chicken')
+  assert.equal(f.protein, 'beef')
   assert.equal(f.tier, 'established')
-  assert.equal(f.exposedWithSymptom, 5)
-  assert.equal(f.exposedTotal, 6)
-  assert.equal(f.unexposedTotal, 6)
-  assert.equal(f.symptomEventCount, 5)
-  // Family of looked-at pairs = {chicken×itch, salmon×itch} → Bonferroni alpha 0.025.
+  assert.equal(f.matchedPairs, 6)
+  assert.equal(f.discordantCaseOnly, 6)
+  // Family = {chicken×vomit, beef×vomit} → Bonferroni alpha 0.025; McNemar p = 0.5^6 ≈ 0.0156.
   assert.ok(Math.abs(f.correctedAlpha - 0.025) < 1e-9, `got ${f.correctedAlpha}`)
   assert.ok(f.pValue <= f.correctedAlpha, `p ${f.pValue} must clear corrected alpha`)
 })
 
-// ── Detector ①: below-floor and negative cases → empty (building) ────────────
-
-Deno.test('detectCorrelations — below the symptom-event floor → empty', () => {
+Deno.test('detectCorrelations — a low-attribution (shared-bowl) exposure CAPS the finding at Early', () => {
+  // Identical to the Established case, but beef comes from a shared free-fed bowl.
   const mealEvents = [
-    proteinMeal(20, 'chicken'),
-    proteinMeal(21, 'chicken'),
-    proteinMeal(22, 'chicken'),
-    proteinMeal(25, 'salmon'),
-    proteinMeal(26, 'salmon'),
-    proteinMeal(27, 'salmon'),
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10, 'low')),
   ]
-  // Only 2 itch events — under the ≥3 Early floor.
-  const symptomEvents = [symptom('itch', at(20, 11)), symptom('itch', at(21, 11))]
-  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
-})
-
-Deno.test('detectCorrelations — single protein (no comparison arm) → empty', () => {
-  const mealEvents = [proteinMeal(20, 'chicken'), proteinMeal(21, 'chicken'), proteinMeal(22, 'chicken')]
-  const symptomEvents = [
-    symptom('itch', at(20, 11)),
-    symptom('itch', at(21, 11)),
-    symptom('itch', at(22, 11)),
-  ]
-  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
-})
-
-Deno.test('detectCorrelations — equal rates across arms (no enrichment) → empty', () => {
-  const mealEvents = [
-    proteinMeal(20, 'chicken'),
-    proteinMeal(21, 'chicken'),
-    proteinMeal(22, 'chicken'),
-    proteinMeal(23, 'chicken'),
-    proteinMeal(24, 'salmon'),
-    proteinMeal(25, 'salmon'),
-    proteinMeal(26, 'salmon'),
-    proteinMeal(27, 'salmon'),
-  ]
-  // 2 itches follow chicken, 2 follow salmon → risk difference 0.
-  const symptomEvents = [
-    symptom('itch', at(20, 11)),
-    symptom('itch', at(21, 11)),
-    symptom('itch', at(24, 11)),
-    symptom('itch', at(25, 11)),
-  ]
-  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
-})
-
-Deno.test('detectCorrelations — single coincident exposure (a<2 guard) → empty', () => {
-  const mealEvents = [
-    proteinMeal(20, 'chicken'),
-    proteinMeal(21, 'chicken'),
-    proteinMeal(22, 'chicken'),
-    proteinMeal(25, 'salmon'),
-    proteinMeal(26, 'salmon'),
-    proteinMeal(27, 'salmon'),
-  ]
-  // 3 itch events but only ONE within 8h of a chicken meal; the other two are
-  // far from any meal. Risk difference clears the bar, but a=1 must not print.
-  const symptomEvents = [
-    symptom('itch', at(20, 11)), // follows chicken
-    symptom('itch', at(28, 11)), // no meal nearby
-    symptom('itch', at(29, 11)), // no meal nearby
-  ]
-  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
-})
-
-// ── Detector ①: pseudoreplication fixes (P0) ─────────────────────────────────
-
-Deno.test('detectCorrelations — one symptom does NOT inflate across several meals in its window', () => {
-  // Each day has THREE chicken meals close together, then ONE itch shortly after.
-  // Naively, that one symptom would mark all three meals "followed" → a=9. With
-  // nearest-preceding attribution, each symptom claims ONE meal → a=3.
-  const mealEvents = [
-    proteinMeal(20, 'chicken'), proteinMeal(20, 'chicken'), proteinMeal(20, 'chicken'),
-    proteinMeal(21, 'chicken'), proteinMeal(21, 'chicken'), proteinMeal(21, 'chicken'),
-    proteinMeal(22, 'chicken'), proteinMeal(22, 'chicken'), proteinMeal(22, 'chicken'),
-    proteinMeal(25, 'salmon'), proteinMeal(26, 'salmon'), proteinMeal(27, 'salmon'), proteinMeal(28, 'salmon'),
-  ].map((m, i) => ({ ...m, occurredAt: m.occurredAt.replace('T08', `T0${(i % 3) + 5}`) }))
-  const symptomEvents = [
-    symptom('itch', at(20, 9)),
-    symptom('itch', at(21, 9)),
-    symptom('itch', at(22, 9)),
-  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
   const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
   assert.equal(findings.length, 1)
   const f = findings[0]
-  assert.equal(f.protein, 'chicken')
-  assert.equal(f.exposedWithSymptom, 3, 'one symptom per day → 3 attributed meals, not 9')
-  assert.equal(f.exposedTotal, 9)
-  assert.equal(f.symptomEventCount, 3)
+  assert.equal(f.protein, 'beef')
+  assert.equal(f.matchedPairs, 6, 'same sample size that reached Established with clean attribution')
+  assert.equal(f.attributionFloor, 'low')
+  assert.equal(f.tier, 'early', 'a shared bowl can never reach Established — we are not sure this pet ate it')
 })
 
-Deno.test('detectCorrelations — rapid re-logs of one bout collapse to a single episode', () => {
+Deno.test('detectCorrelations — multi-implication: a symptom implicates EVERY in-window protein', () => {
+  // The 9am-wet + 10am-treat + 11am-symptom case the PM raised: both must be implicated,
+  // not just the nearest meal (the rejected winner-take-all). Controls eat only salmon.
   const mealEvents = [
-    proteinMeal(20, 'chicken'), proteinMeal(21, 'chicken'), proteinMeal(22, 'chicken'),
-    proteinMeal(25, 'salmon'), proteinMeal(26, 'salmon'), proteinMeal(27, 'salmon'),
+    pMeal(2, 'chicken', 9), pMeal(2, 'beef', 10),
+    pMeal(4, 'chicken', 9), pMeal(4, 'beef', 10),
+    pMeal(6, 'chicken', 9), pMeal(6, 'beef', 10),
+    pMeal(1, 'salmon', 9), pMeal(3, 'salmon', 9), pMeal(5, 'salmon', 9), pMeal(7, 'salmon', 9),
   ]
-  // One vomiting bout logged three times within an hour — must count as ONE episode,
-  // so it stays below the ≥3-episode floor and produces nothing (not a false Early read).
-  const symptomEvents = [
-    symptom('vomit', at(20, 9, 0)),
-    symptom('vomit', at(20, 9, 20)),
-    symptom('vomit', at(20, 9, 40)),
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(findings.length, 2, 'both chicken and beef are implicated')
+  const proteins = findings.map((f) => f.protein).sort()
+  assert.deepEqual(proteins, ['beef', 'chicken'])
+  assert.ok(findings.every((f) => f.tier === 'early'))
+})
+
+// ── Detector ①: below-floor and negative cases → empty (building) ────────────
+
+Deno.test('detectCorrelations — below the episode floor → empty', () => {
+  const mealEvents = [
+    ...staple(1, 6, 'chicken', 9),
+    pMeal(2, 'beef', 10),
+    pMeal(4, 'beef', 10),
   ]
+  // Only 2 vomit episodes — under the ≥3 floor.
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11))]
   assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
 })
 
-Deno.test('detectCorrelations — dermatological symptoms use the longer (72h) window', () => {
-  // Itch appears ~2 days after each chicken meal — outside an 8h GI window but inside
-  // the 72h dermatological window. With the per-class window this is detectable.
+Deno.test('detectCorrelations — single protein (no contrast) → empty', () => {
+  const mealEvents = staple(1, 6, 'chicken', 9)
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
+})
+
+Deno.test('detectCorrelations — two constant staples (no variable) → empty', () => {
+  // Both proteins are present before sick AND well days → both concordant → no signal.
+  const mealEvents = [...staple(1, 8, 'chicken', 9), ...staple(1, 8, 'beef', 10)]
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
+})
+
+Deno.test('detectCorrelations — no logged control days → empty (never fabricate "absent")', () => {
+  // Beef + chicken only ever logged on the symptom days; nothing logged on any other day.
+  // The logging-eligibility guard means there is no valid control window, so we refuse to
+  // score the un-logged days as "beef absent" and invent an association (Biostatistician).
   const mealEvents = [
-    proteinMeal(18, 'chicken'), proteinMeal(20, 'chicken'), proteinMeal(22, 'chicken'),
-    proteinMeal(25, 'salmon'), proteinMeal(26, 'salmon'), proteinMeal(27, 'salmon'),
+    pMeal(2, 'chicken', 9), pMeal(2, 'beef', 10),
+    pMeal(4, 'chicken', 9), pMeal(4, 'beef', 10),
+    pMeal(6, 'chicken', 9), pMeal(6, 'beef', 10),
+  ]
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
+})
+
+// ── Detector ①: symptom-class-specific window (Dr. Chen) ─────────────────────
+
+Deno.test('detectCorrelations — dermatological symptoms use the longer (72h) window', () => {
+  // Chicken ~52h before each itch — far outside a 12h GI window, inside the 72h derm one.
+  // Controls sit ≥4 days away (non-overlapping window) and eat only the daily salmon.
+  const mealEvents = [
+    ...staple(1, 18, 'salmon', 20), // daily staple → washes; keeps control days logging-eligible
+    pMeal(1, 'chicken', 8),
+    pMeal(8, 'chicken', 8),
+    pMeal(15, 'chicken', 8),
   ]
   const symptomEvents = [
-    symptom('itch', at(20, 6)), // ~46h after chicken day18
-    symptom('itch', at(22, 6)), // ~46h after chicken day20
-    symptom('itch', at(24, 6)), // ~46h after chicken day22
+    symptom('itch', at(3, 12)), // ~52h after chicken day 1
+    symptom('itch', at(10, 12)), // ~52h after chicken day 8
+    symptom('itch', at(17, 12)), // ~52h after chicken day 15
   ]
   const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
-  assert.equal(findings.length, 1)
-  assert.equal(findings[0].protein, 'chicken')
-  assert.equal(findings[0].correlationWindowHours, 72)
+  const chicken = findings.find((f) => f.protein === 'chicken')
+  assert.ok(chicken, 'chicken→itch should surface on the 72h window')
+  assert.equal(chicken!.correlationWindowHours, 72)
+  assert.equal(chicken!.symptomType, 'itch')
 })
 
 // ── Detector ②: intake-decline triggers ─────────────────────────────────────
@@ -447,17 +426,17 @@ Deno.test('rankFindings — safety always leads, then Established before Early',
     tier: 'early',
     symptomType: 'itch',
     protein: 'chicken',
-    exposedWithSymptom: 3,
-    exposedTotal: 4,
-    unexposedWithSymptom: 0,
-    unexposedTotal: 4,
-    exposedRate: 0.75,
-    unexposedRate: 0,
+    matchedPairs: 4,
+    caseExposed: 3,
+    controlExposed: 0,
+    discordantCaseOnly: 3,
+    discordantControlOnly: 0,
     riskDifference: 0.75,
     pValue: 0.07,
     correctedAlpha: 0.025,
     symptomEventCount: 3,
-    correlationWindowHours: 8,
+    correlationWindowHours: 72,
+    attributionFloor: 'high',
     associationalOnly: true,
   }
   const established: CorrelationFinding = { ...early, tier: 'established', protein: 'beef', pValue: 0.007 }
@@ -486,14 +465,10 @@ Deno.test('detectSignals — end to end: empty input → empty (building)', () =
 
 Deno.test('detectSignals — end to end: safety flag outranks a correlation finding', () => {
   const correlationMeals = [
-    proteinMeal(20, 'chicken'),
-    proteinMeal(21, 'chicken'),
-    proteinMeal(22, 'chicken'),
-    proteinMeal(23, 'chicken'),
-    proteinMeal(25, 'salmon'),
-    proteinMeal(26, 'salmon'),
-    proteinMeal(27, 'salmon'),
-    proteinMeal(28, 'salmon'),
+    ...staple(1, 10, 'chicken', 9),
+    pMeal(2, 'beef', 10),
+    pMeal(4, 'beef', 10),
+    pMeal(6, 'beef', 10),
   ]
   const intakeMeals = [
     ratedMeal(18, 'all'),
@@ -504,11 +479,7 @@ Deno.test('detectSignals — end to end: safety flag outranks a correlation find
     ratedMeal(29, 'picked'),
     ratedMeal(30, 'refused'),
   ]
-  const symptomEvents = [
-    symptom('itch', at(20, 11)),
-    symptom('itch', at(21, 11)),
-    symptom('itch', at(22, 12)),
-  ]
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
   const ranked = detectSignals(
     input({ pet: { name: 'Pixel', species: 'cat', dietTrialActive: true }, mealEvents: [...correlationMeals, ...intakeMeals], symptomEvents }),
   )
@@ -516,19 +487,19 @@ Deno.test('detectSignals — end to end: safety flag outranks a correlation find
   assert.equal(ranked[0].finding.type, 'intake_decline', 'safety must lead (§5)')
   assert.ok(
     ranked.some((r) => r.finding.type === 'food_symptom_correlation'),
-    'the chicken→itch correlation should also be present',
+    'the beef→vomit correlation should also be present',
   )
 })
 
 Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
-  assert.equal(DEFAULT_CONFIG.correlationWindowHours, 8)
-  assert.equal(DEFAULT_CONFIG.correlation.earlyMinSymptomEvents, 3)
-  assert.equal(DEFAULT_CONFIG.correlation.earlyMinExposuresPerArm, 3)
-  assert.equal(DEFAULT_CONFIG.correlation.establishedMinSymptomEvents, 5)
-  assert.equal(DEFAULT_CONFIG.correlation.establishedMinExposuresPerArm, 5)
+  assert.equal(DEFAULT_CONFIG.correlationWindowHours, 12)
+  assert.equal(DEFAULT_CONFIG.correlation.earlyMinMatchedPairs, 3)
+  assert.equal(DEFAULT_CONFIG.correlation.earlyMinDiscordantCaseOnly, 2)
+  assert.equal(DEFAULT_CONFIG.correlation.establishedMinMatchedPairs, 5)
   assert.equal(DEFAULT_CONFIG.intakeDecline.consecutiveDaysBelowBaseline, 2)
-  // GI vs dermatological windows + the re-log episode gap (pseudoreplication fix).
-  assert.equal(DEFAULT_CONFIG.correlationWindowHoursByType.vomit, 8)
+  // Split GI windows (vomit vs diarrhea) + dermatological window + re-log episode gap.
+  assert.equal(DEFAULT_CONFIG.correlationWindowHoursByType.vomit, 12)
+  assert.equal(DEFAULT_CONFIG.correlationWindowHoursByType.diarrhea, 24)
   assert.equal(DEFAULT_CONFIG.correlationWindowHoursByType.itch, 72)
   assert.equal(DEFAULT_CONFIG.symptomEpisodeGapHours, 3)
   // Feline sensitivity override (P0).
