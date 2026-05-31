@@ -143,12 +143,30 @@ Deno.test('parseToolResult — full extraction with all fields present', () => {
   assertStrictEquals(result.brand, 'Royal Canin')
   assertStrictEquals(result.product_name, 'Hydrolyzed Protein Adult HP')
   assertStrictEquals(result.format, 'dry')
-  assertStrictEquals(result.primary_protein, 'hydrolyzed soy protein')
+  // primary_protein is canonicalized at parse time (B-052): the protein SOURCE,
+  // not the verbatim label. 'hydrolyzed soy protein' → 'hydrolyzed soy' — the
+  // 'protein' qualifier strips but 'hydrolyzed' is kept as a distinct key, since
+  // a hydrolyzed elimination diet must NOT pool with the intact protein. The full
+  // verbatim text is preserved untouched in ingredients_text.
+  assertStrictEquals(result.primary_protein, 'hydrolyzed soy')
   assertStrictEquals(result.is_grain_free, false)
   assertStrictEquals(result.is_prescription, true)
   assertStrictEquals(result.upc_barcode, '030111940005')
   assertStrictEquals(result.confidence.brand, 0.99)
   assertStrictEquals(result.confidence.ingredients_text, 0.75)
+})
+
+Deno.test('parseToolResult — canonicalizes primary_protein at write time (B-052)', () => {
+  // The extractor returns label-rendering variants; parseToolResult must store the
+  // canonical grouping key so the correlation engine isn't fed fragmented proteins.
+  const response = makeToolUseResponse({
+    brand: 'Acme',
+    product_name: 'Grain Free',
+    primary_protein: 'Chicken By-Product Meal',
+    confidence: { brand: 0.9, product_name: 0.9 },
+  })
+  const result = parseToolResult(response) as ExtractionResult
+  assertStrictEquals(result.primary_protein, 'chicken')
 })
 
 Deno.test('parseToolResult — optional fields default to null when absent', () => {

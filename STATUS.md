@@ -22,7 +22,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 **Next insight work (PM-elevated to Now, 2026-05-31):**
 - **B-051** — reflection detector ③ (surface *presence*: counts/trends, no causal claim; Dr. Chen's §7.1 amendment — a *declining* trend routes to safety, not a neutral card).
-- **B-052** — normalize `primary_protein` (`chicken`/`Chicken`/`Chicken By-Product Meal` fragment the correlation key).
+- **B-052** — ✅ code complete, **PR #78 (draft)**. `primary_protein` now canonicalized via shared `supabase/functions/_shared/protein.ts` at both write (`extract-food-from-photo`) and read (`detection.ts`) time. Adversarial-review gate passed on the fix (first cut failed on a hydrolyzed-elimination merge + `sweet potato`→`potato` + blend fragmentation — all fixed + regression-tested). Optional historical backfill deferred as a non-blocking PM data action.
 - **B-053** (Next) — explain *why* there's no signal (coverage / near-miss diagnostics on `no_pattern`: staple-washout, below-floor, unrated meals) to drive retention + corrective logging.
 
 **After Step 10:** Step 9 (vet report PDF) resumes — formally interrupted by the PM for B-045 dogfooding value.
@@ -45,6 +45,8 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 ## Open PM Action Items
 
+- [x] **Deploy `extract-food-from-photo` + `generate-signal` for B-052 (PR #78).** ✅ Done 2026-05-31 via `npx supabase functions deploy` — CLI bundled the `_shared/protein.ts` import for both (script sizes 63.86kB / 83.42kB, no import errors). Supabase CLI now installed as a repo dev-dependency, so `npx supabase …` works going forward.
+- [ ] _(Optional, non-blocking)_ **B-052 historical backfill** of existing `food_items.primary_protein` to canonical values. The defensive read-time normalization already covers dirty/legacy rows, so this is data hygiene only — do it if/when you want stored values clean (no SQL shipped, to avoid drift from the TS normalizer).
 - [ ] One-time EAS setup in Codespace: `npm install -g eas-cli && eas login && eas init && eas update:configure`, then commit + push the `app.json` changes (`extra.eas.projectId`, `updates.url`, `runtimeVersion`).
 - [ ] After first `eas update --branch preview`, open Expo Go → confirm app loads end-to-end (log a meal, snap a food photo, confirm Claude extraction returns).
 - [ ] Start Apple Developer enrollment ($99/yr, 1–3 day approval) to graduate from Runtime A (Expo Go + `eas update`) to a real TestFlight build.
@@ -61,6 +63,7 @@ QA on-device via **Runtime B** — Metro dev server (`npx expo start --tunnel`, 
 
 ## Recent Sessions
 
+- **2026-05-31 — B-052 protein normalization + backlog groom (PR #78, draft).** Shared `_shared/protein.ts` `normalizeProtein` (repo's first cross-function module), wired at write (`extract-food-from-photo`) + defensive read (`detection.ts`) time; 53 Deno tests (run via a Node transpile harness — Deno uninstallable in the sandbox). Adversarial-review gate failed the first cut (hydrolyzed-elimination merge, `sweet potato`→`potato`, blend fragmentation) and passed the fix. Groom pass: re-prioritized stale-`Now` B-010 + B-013 → `Next` (gated on paused/unscheduled work); no shipped-but-Open drift found.
 - **2026-05-31 — Workflow tooling (no product code).** Added `/wrap` + `/kickoff` commands (`.claude/commands/`) and `docs/dev-handoff-runbook.md`; trimmed the verbose Runtime A/B scripts out of CLAUDE.md (v1.21). Raced PR #76 (the v1.20 persona/STATUS.md split) — re-cut onto it keeping only the additive command/runbook work. Did not advance the build.
 - **2026-05-31 — B-045 Steps 1–3 shipped.** Detection engine (PR #72, incl. B-050 case-crossover rewrite), migration 015 (PR #73), `generate-signal` Edge Function (PR #74), `SignalZone` wiring (PR #75). Dogfooding on cat Nyx surfaced B-051/B-052/B-053.
 - **2026-05-30 — AI Signal design + spec.** `docs/nyx-ai-signal-requirements.md` finalized (rev 6); Principle 3 revised + approved; speed-vs-rigor "value ladder" (§7.1); B-050 case-crossover redesign caught by PM; DoD strengthened with the adversarial-review rule.

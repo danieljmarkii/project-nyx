@@ -7,6 +7,7 @@
 // ensure only authenticated users can trigger extraction.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { normalizeProtein } from '../_shared/protein.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -166,7 +167,11 @@ export function parseToolResult(response: ClaudeResponse): ExtractionResult | nu
     brand:            input.brand ?? '',
     product_name:     input.product_name ?? '',
     format:           input.format ?? null,
-    primary_protein:  input.primary_protein ?? null,
+    // Canonicalize the protein at WRITE time (B-052) so the stored grouping key is
+    // clean ('Chicken By-Product Meal' → 'chicken') and the correlation engine isn't
+    // fed fragmented variants. `primary_protein` is the protein SOURCE, not verbatim
+    // packaging text — the full label still lives untouched in `ingredients_text`.
+    primary_protein:  normalizeProtein(input.primary_protein ?? null),
     is_grain_free:    input.is_grain_free ?? null,
     is_prescription:  input.is_prescription ?? null,
     ingredients_text: input.ingredients_text ?? null,

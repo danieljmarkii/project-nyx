@@ -21,6 +21,8 @@
 // TypeScript (no Deno-only or Node-only APIs) so it runs in the Edge runtime
 // and is unit-testable in isolation.
 
+import { normalizeProtein } from '../_shared/protein.ts'
+
 // ── Domain types ──────────────────────────────────────────────────────────────
 
 /** Symptom event types the correlation detector considers (schema reference query [2]). */
@@ -82,7 +84,11 @@ export interface MealEvent {
   /** ISO-8601 UTC. */
   occurredAt: string
   foodItemId: string | null
-  /** Normalised primary protein, e.g. 'chicken'. Null when the meal's food is unidentified. */
+  /**
+   * Raw `food_items.primary_protein` free text (e.g. 'chicken', 'Chicken By-Product Meal').
+   * Null when the meal's food is unidentified. The correlation detector canonicalizes this
+   * defensively via `normalizeProtein` (B-052) before grouping — callers need not pre-clean.
+   */
   primaryProtein: string | null
   /** WSAVA intake rating; null for legacy/unrated rows or non-meal foods (treats/other). */
   intakeRating: IntakeRating | null
@@ -405,14 +411,21 @@ export function detectCorrelations(
 
   // Classifiable meals: a known protein + valid time, carrying attribution confidence
   // (absent → 'high', per today's per-pet logging semantics). Sorted ascending.
+  // DEFENSIVE normalization (B-052): `primaryProtein` is free text and historical /
+  // hand-entered rows are dirty ('chicken' vs 'Chicken' vs 'Chicken By-Product Meal'),
+  // so we canonicalize the grouping key here — not just lowercase/trim — to stop one
+  // real protein fragmenting across keys and weakening a true correlation. This is the
+  // read-side net; `extract-food-from-photo` also normalizes at write time.
   const meals = input.mealEvents
-    .filter((m) => m.primaryProtein && m.primaryProtein.trim().length > 0)
     .map((m) => ({
       ms: Date.parse(m.occurredAt),
-      protein: m.primaryProtein!.trim().toLowerCase(),
+      protein: normalizeProtein(m.primaryProtein),
       attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
     }))
-    .filter((m) => Number.isFinite(m.ms))
+    .filter(
+      (m): m is { ms: number; protein: string; attribution: AttributionConfidence } =>
+        m.protein !== null && Number.isFinite(m.ms),
+    )
     .sort((x, y) => x.ms - y.ms)
 
   const proteins = Array.from(new Set(meals.map((m) => m.protein)))

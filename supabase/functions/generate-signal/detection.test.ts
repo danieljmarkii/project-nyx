@@ -221,6 +221,25 @@ Deno.test('detectCorrelations — multi-implication: a symptom implicates EVERY 
   assert.ok(findings.every((f) => f.tier === 'early'))
 })
 
+Deno.test('detectCorrelations — dirty protein variants collapse to ONE key (B-052)', () => {
+  // The sporadic protein is logged with the casing + by-product variants real
+  // food_items rows carry ('beef', 'Beef', 'Beef By-Product Meal'). Defensive
+  // normalization must group them as one protein → one finding with 3 case
+  // exposures, exactly as if every row had read 'beef'. Without it, each variant
+  // is its own key, each appears once, and no key clears the floor.
+  const mealEvents = [
+    ...staple(1, 10, 'chicken', 9),
+    meal({ occurredAt: at(2, 10), primaryProtein: 'Beef' }),
+    meal({ occurredAt: at(4, 10), primaryProtein: 'Beef By-Product Meal' }),
+    meal({ occurredAt: at(6, 10), primaryProtein: 'beef meal' }),
+  ]
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(findings.length, 1, 'the three beef variants must group into one finding')
+  assert.equal(findings[0].protein, 'beef', 'canonical key, not "Beef By-Product Meal"')
+  assert.equal(findings[0].caseExposed, 3, 'all three variant exposures count toward one protein')
+})
+
 // ── Detector ①: below-floor and negative cases → empty (building) ────────────
 
 Deno.test('detectCorrelations — below the episode floor → empty', () => {
