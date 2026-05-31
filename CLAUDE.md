@@ -447,9 +447,13 @@ This is the runtime the PM lives in day-to-day. The app is published as a JS bun
 **Default handoff sequence (use this every time we ship a PM-visible change, until we cut over to a real EAS preview build with an Apple Developer account):**
 
 ```bash
-git pull origin <branch-name>
+git fetch origin <branch-name>
+git checkout <branch-name>
+git pull --ff-only
 ```
-Pulls the latest committed code into your Codespace so the bundle you publish matches what was just built.
+Gets the latest commits, **switches you onto the branch we just pushed to**, and fast-forwards it so the bundle you publish matches what was just built. The `git checkout` is the step that's easy to skip: if you're sitting on a *different* branch (e.g. a previous session's `claude/...` branch) and run a bare `git pull origin <branch-name>`, git tries to **merge** that branch into your current one — and if the two have diverged it stops with `fatal: Need to specify how to reconcile divergent branches`. Switching onto the branch first avoids that entirely. `--ff-only` then fast-forwards or fails loudly, never silently creating a merge commit.
+
+> **One-time fix that kills the "divergent branches" prompt for good** — run this once per Codespace (or with `--global`): `git config --global pull.ff only`. After that, any stray `git pull` fast-forwards or fails fast instead of dropping you into the merge-vs-rebase chooser. And if you ever see that prompt again, the answer is **never** "pick merge or rebase" — it's: you're on the wrong branch. Run `git checkout <the branch named in the handoff>` and re-run. The PM consumes these `claude/...` branches read-only (Claude is the only one committing to them), so there is never a real divergence to reconcile — only a wrong-branch mistake to undo.
 
 ```bash
 eas update --branch preview --message "<one-line description of change>"
@@ -473,9 +477,11 @@ After this runs, commit any changes `eas` made to `app.json` and push. From then
 Use this only when actively iterating on a feature and you need hot reload. Not required for daily use of the app.
 
 ```bash
-git pull origin <branch-name>
+git fetch origin <branch-name>
+git checkout <branch-name>
+git pull --ff-only
 ```
-Pulls the latest committed code from GitHub into your local Codespace.
+Gets the latest commits and **switches you onto the handoff branch** before fast-forwarding — same reason as Runtime A: a bare `git pull origin <branch-name>` from a different branch triggers `fatal: Need to specify how to reconcile divergent branches`. Checkout first, then `--ff-only`. (See the Runtime A note above for the one-time `git config --global pull.ff only` fix.)
 
 ```bash
 ./node_modules/@expo/ngrok-bin-linux-x64/ngrok authtoken <your-token>
