@@ -61,6 +61,7 @@ QA on-device via **Runtime B** — Metro dev server (`npx expo start --tunnel`, 
 
 ## Recent Sessions
 
+- **2026-05-31 — Workflow tooling (no product code).** Added `/wrap` + `/kickoff` commands (`.claude/commands/`) and `docs/dev-handoff-runbook.md`; trimmed the verbose Runtime A/B scripts out of CLAUDE.md (v1.21). Raced PR #76 (the v1.20 persona/STATUS.md split) — re-cut onto it keeping only the additive command/runbook work. Did not advance the build.
 - **2026-05-31 — B-045 Steps 1–3 shipped.** Detection engine (PR #72, incl. B-050 case-crossover rewrite), migration 015 (PR #73), `generate-signal` Edge Function (PR #74), `SignalZone` wiring (PR #75). Dogfooding on cat Nyx surfaced B-051/B-052/B-053.
 - **2026-05-30 — AI Signal design + spec.** `docs/nyx-ai-signal-requirements.md` finalized (rev 6); Principle 3 revised + approved; speed-vs-rigor "value ladder" (§7.1); B-050 case-crossover redesign caught by PM; DoD strengthened with the adversarial-review rule.
 - **2026-05-24 — B-027 (per-incident vomit AI) shipped end-to-end** (#54/#55/#56). Established the `event_ai_analysis` table + the parameterized analyze-function/detail-component pattern; surfaced the migration-003 gap and the sync-upsert/photo-pipeline bug classes (now in the `supabase-sync` skill).

@@ -1,5 +1,5 @@
 # Project Nyx — Claude Code Session Guide
-**Version:** 1.20 | Last Updated: 2026-05-31
+**Version:** 1.21 | Last Updated: 2026-05-31
 
 ---
 
@@ -221,9 +221,11 @@ If destructive=`y`, the PR description also names the table(s) affected and the 
 
 **If running non-interactively (CI trigger, background agent, GitHub Action):** Skip the check-in. Read `technical-spec.md` and proceed based on the Current Phase line in this file.
 
-Before asking the three questions, surface the **Status** block from the top of this file in the opening message. That block holds the Current Phase, parallel-track status, blocking Open Questions, and any open PM Action Items — i.e. everything the PM would need to recap. This lets the PM answer "no change" and move directly into work instead of recapping.
+Before asking the three questions, surface the canonical state from **`STATUS.md`** in the opening message — Current Phase, parallel-track status, blocking Open Questions, and any open PM Action Items, i.e. everything the PM would need to recap. This lets the PM answer "no change" and move directly into work instead of recapping.
 
 Then read the relevant docs for the confirmed build step before writing any code.
+
+**Shortcut:** run `/kickoff` to auto-generate this orientation — it reads `STATUS.md`, surfaces any backlog item that blocks the current Phase, and proposes a concrete first task. It's the mirror of `/wrap`.
 
 ### Definition of Done — Before Saying "Done"
 
@@ -258,62 +260,14 @@ After every `git push`, output the exact terminal commands the PM needs to run t
 
 There are **two runtimes** the PM uses, and the handoff differs for each. Pick the one that matches what the PM is doing this session, and emit only that sequence — do not dump both unless the change requires both.
 
-#### Runtime A — Daily-driver build (default, via `eas update` + Expo Go)
+The full, copy-pasteable command scripts for both runtimes — the one-time EAS/ngrok setup and the complete git "divergent branches" explanation — live in **`docs/dev-handoff-runbook.md`**. Read that file when emitting a handoff and paste the matching runtime's block. Quick reference:
 
-This is the runtime the PM lives in day-to-day. The app is published as a JS bundle to Expo's CDN on the `preview` channel; Expo Go opens it from a saved project entry. No Codespace tunnel required for the PM to use the app — only for the PM to publish a new version.
+- **Runtime A** (intended daily driver — `eas update` + Expo Go): `git fetch` → `git checkout <branch>` → `git pull --ff-only` → `eas update --branch preview --message "..."`, then fully close + cold-open Expo Go. ⚠️ Currently moot — `eas update` does NOT reach Expo Go until a real dev/preview build exists (blocked on Apple Developer enrollment; see STATUS.md → Runtime in Use).
+- **Runtime B** (today's daily driver — Metro + tunnel): `git fetch` → `git checkout <branch>` → `git pull --ff-only` → (once per Codespace) `ngrok authtoken <token>` → `npx expo start --tunnel`, scan the QR, press `r` to reload.
 
-**Default handoff sequence (use this every time we ship a PM-visible change, until we cut over to a real EAS preview build with an Apple Developer account):**
+**Default to Runtime B in the handoff for now** (Runtime A blocked on Apple enrollment). Emit only the runtime that matches the session; pull the exact commands + their explanations from the runbook.
 
-```bash
-git fetch origin <branch-name>
-git checkout <branch-name>
-git pull --ff-only
-```
-Gets the latest commits, **switches you onto the branch we just pushed to**, and fast-forwards it so the bundle you publish matches what was just built. The `git checkout` is the step that's easy to skip: if you're sitting on a *different* branch (e.g. a previous session's `claude/...` branch) and run a bare `git pull origin <branch-name>`, git tries to **merge** that branch into your current one — and if the two have diverged it stops with `fatal: Need to specify how to reconcile divergent branches`. Switching onto the branch first avoids that entirely. `--ff-only` then fast-forwards or fails loudly, never silently creating a merge commit.
-
-> **One-time fix that kills the "divergent branches" prompt for good** — run this once per Codespace (or with `--global`): `git config --global pull.ff only`. After that, any stray `git pull` fast-forwards or fails fast instead of dropping you into the merge-vs-rebase chooser. And if you ever see that prompt again, the answer is **never** "pick merge or rebase" — it's: you're on the wrong branch. Run `git checkout <the branch named in the handoff>` and re-run. The PM consumes these `claude/...` branches read-only (Claude is the only one committing to them), so there is never a real divergence to reconcile — only a wrong-branch mistake to undo.
-
-```bash
-eas update --branch preview --message "<one-line description of change>"
-```
-Compiles the current JS bundle (with your `.env.local` env vars baked in) and uploads it to Expo's CDN on the `preview` channel. Expo Go picks it up on next cold open of the Nyx project on your phone.
-
-Then on your phone: **fully close Expo Go** (swipe it away from app switcher), reopen it, and tap the Nyx project under "Recent" or "Projects." It will fetch the new bundle on launch. A warm reload is not enough — the bundle is cached and only refetched on cold open.
-
-**One-time setup (first session only, then never again):**
-
-```bash
-npm install -g eas-cli
-eas login
-eas init                          # links the project, writes extra.eas.projectId into app.json
-eas update:configure              # adds expo-updates runtime + updates.url to app.json
-```
-After this runs, commit any changes `eas` made to `app.json` and push. From then on, the PM only needs the two-command default sequence above.
-
-#### Runtime B — Active development (Metro + tunnel, only when iterating)
-
-Use this only when actively iterating on a feature and you need hot reload. Not required for daily use of the app.
-
-```bash
-git fetch origin <branch-name>
-git checkout <branch-name>
-git pull --ff-only
-```
-Gets the latest commits and **switches you onto the handoff branch** before fast-forwarding — same reason as Runtime A: a bare `git pull origin <branch-name>` from a different branch triggers `fatal: Need to specify how to reconcile divergent branches`. Checkout first, then `--ff-only`. (See the Runtime A note above for the one-time `git config --global pull.ff only` fix.)
-
-```bash
-./node_modules/@expo/ngrok-bin-linux-x64/ngrok authtoken <your-token>
-```
-Authenticates the bundled ngrok binary — required once per Codespace session because the token is not persisted across container restarts.
-
-```bash
-npx expo start --tunnel
-```
-Starts Metro and opens a public ngrok tunnel so Expo Go on your phone can reach the dev server. Scan the QR code with the phone camera to open it.
-
-Then press **`r`** in the Expo terminal to reload the app on your device after a pull. Hot reload picks up most JS edits automatically.
-
-**Default to Runtime A in the handoff.** Only emit Runtime B instructions if the PM explicitly asks to iterate live, or the change is unstable enough to want hot reload while testing.
+**The one non-negotiable git rule:** always `git checkout <the handoff branch>` *before* pulling. A bare `git pull` from a different branch triggers `fatal: Need to specify how to reconcile divergent branches`; the fix is never "merge vs rebase," it's switching to the right branch. The one-time `git config --global pull.ff only` kills that prompt for good.
 
 **Before pushing**, if the diff touches a store, Edge Function, or shared utility, run:
 ```bash
@@ -373,6 +327,8 @@ Rules:
 ### Session End — Automatic Summary
 
 Produce this summary automatically at the end of every session without being asked. If the session ends abruptly, produce a partial summary covering what was completed.
+
+**Shortcut:** run `/wrap` to produce the whole close-out deterministically — it runs the DoD, updates `STATUS.md` inline (and CLAUDE.md if a decision changed the manual), emits this summary and the Dev Handoff, and always finishes with a paste-ready Next Session Kickoff prompt. Use it every session so the wrap-up is identical each time.
 
 ```
 ## Session Summary — [Date]
@@ -506,6 +462,6 @@ Most recent three versions only. Older entries archived at `docs/CLAUDE-md-histo
 
 | Version | Date | Summary |
 |---|---|---|
-| v1.18 | May 2026 | **Daily-driver runtime change.** PM wanted to actually live in the MVP on their phone without keeping a Codespace + Metro tunnel alive. Set up EAS Update + Expo Go as the daily-driver runtime — `eas.json` added with `development` / `preview` / `production` build profiles and matching update channels; `preview` channel is what `eas update` publishes to. Daily flow: `eas update --branch preview --message "..."` from Codespace → fully close + reopen Expo Go on phone → Nyx loads the new bundle. CLAUDE.md Dev Handoff split into **Runtime A** (default — `eas update` + Expo Go, no Apple Developer needed) and **Runtime B** (active dev — Metro + tunnel, only when hot reload matters). Secrets Register gained rows for `EXPO_TOKEN` (optional, for CI automation) and Apple Developer account (not yet enrolled — blocks graduation to TestFlight / standalone iOS builds). Status block updated with three PM Action Items: one-time `eas init` / `eas update:configure` setup, smoke test on phone after first publish, and starting Apple Developer enrollment in parallel. |
 | v1.19 | May 2026 | **Research briefs find a home.** Session started with PM-surfaced user-testing insight: cats and slow-eating dogs make the current single `offered_at` meal timestamp structurally biased — "food given at 7am" ≠ "food eaten." Personas convened and disagreed (Designer + Jordan vs Dr. Chen + Data Scientist), surfacing this as a real Persona Conflict around Principle 1. Sr. Designer voted to add a cat-owner persona (Sam) as a variant of Jordan to be drafted later. Commissioned a deep clinical research brief with Dr. Chen guiding — gastric emptying / GI transit times, symptom-to-meal latency by class, hepatic lipidosis 48-hour threshold, WSAVA Diet History Form, elimination-trial compliance binary, 5-point ordinal as the validated owner-reported intake instrument. Brief saved to new `docs/research/` folder under naming convention `YYYY-MM-<topic>.md` — append-only evidence captures, distinct from canonical specs (`docs/nyx-*`) and deferrals (`docs/backlog.md`). Added `docs/research/README.md` as an index for future briefs. CLAUDE.md Read-These table gained a row pointing at the index. No product decisions made yet — this PR is the evidence; the team conversation about what to *do* with it (schema changes, Sam persona, vet-report timestamp semantics, AI Signal correlation windows) is a follow-up. |
 | v1.20 | 2026-05-31 | **Personas/agents restructure + file split.** Workflow review of the persona system. Moved the volatile Status block to `STATUS.md` and the full persona definitions to `docs/personas.md` (CLAUDE.md keeps a roster + always-on rules + pointers) so the operating manual stays stable and high-churn state has one scannable home. Added the **persona vs. subagent vs. skill** model. Added two subagents (`.claude/agents/adversarial-reviewer`, `code-reviewer`) and the `backlog-groomer` skill. Added two personas — **Product Owner / Backlog Steward** and **Trust & Safety / Privacy** — plus a **persona routing table** and a **periodic process retro** ritual. Reconciled the backlog (B-022, B-045 were shipped but still marked Open). |
+| v1.21 | 2026-05-31 | **Session-bookend commands + Dev Handoff trim.** Added `/wrap` and `/kickoff` project commands (`.claude/commands/`) so the session-end ritual is deterministic and always finishes with the paste-ready Next Session Kickoff prompt (the PM's most-relied-on output), and the session-start brief is one command. Both aligned to the v1.20 layout — `/wrap` updates `STATUS.md` (not an in-CLAUDE.md block) and uses the `adversarial-reviewer` subagent for the DoD adversarial-review line; `/kickoff` reads `STATUS.md` + blocking backlog items. Extracted the verbose Runtime A/B command scripts + the git "divergent branches" explainer to `docs/dev-handoff-runbook.md`; CLAUDE.md keeps a quick-reference + the one non-negotiable git rule + the npm-test / migration / Edge-Function deploy reminders + the Manual QA Script format. Built in a session that raced v1.20 (PR #76) — the original PR #77 also restructured the Status block in-place, which v1.20 superseded; re-cut onto v1.20 keeping only the still-additive `/wrap` + `/kickoff` + runbook. |
