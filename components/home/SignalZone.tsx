@@ -5,7 +5,7 @@ import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
-import { buildingIntro, staleIntro } from '../../lib/signalCopy';
+import { buildingIntro, noPatternIntro, staleIntro } from '../../lib/signalCopy';
 import type { CachedFinding } from '../../lib/signal';
 
 // Ghosted "what insights look like" previews — kept in the building state so the
@@ -32,6 +32,10 @@ export function SignalZone() {
         <LiveStack findings={findings} petName={petName} />
       ) : state === 'stale' ? (
         <Text style={styles.intro}>{staleIntro(petName)}</Text>
+      ) : state === 'no_pattern' ? (
+        // Substantial history, nothing cleared a floor (B-051) — honest, no
+        // ghosted previews (the owner has logged enough to know the surface).
+        <Text style={styles.intro}>{noPatternIntro(petName)}</Text>
       ) : (
         <BuildingState petName={petName} />
       )}

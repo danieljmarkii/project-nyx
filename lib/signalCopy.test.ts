@@ -1,6 +1,7 @@
 import {
   deriveDisplayState,
   buildingIntro,
+  noPatternIntro,
   staleIntro,
   confidenceTag,
   sampleLine,
@@ -50,23 +51,32 @@ const CAUSAL_RE = /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|res
 
 describe('deriveDisplayState', () => {
   it('is live when any finding is present', () => {
-    expect(deriveDisplayState([cached(correlation())], false)).toBe('live');
+    expect(deriveDisplayState([cached(correlation())], false, false)).toBe('live');
   });
-  it('is building with no findings but recent activity', () => {
-    expect(deriveDisplayState([], true)).toBe('building');
+  it('is building with no findings, recent activity, but little history', () => {
+    expect(deriveDisplayState([], true, false)).toBe('building');
   });
-  it('is stale with no findings and no recent activity', () => {
-    expect(deriveDisplayState([], false)).toBe('stale');
+  it('is no_pattern with no findings, recent activity, and substantial history (B-051)', () => {
+    expect(deriveDisplayState([], true, true)).toBe('no_pattern');
+  });
+  it('is stale with no findings and no recent activity (regardless of history)', () => {
+    expect(deriveDisplayState([], false, false)).toBe('stale');
+    expect(deriveDisplayState([], false, true)).toBe('stale');
   });
 });
 
-describe('building / stale intros', () => {
+describe('empty-state intros', () => {
   it('thread the pet name and never reassure or shout', () => {
-    for (const s of [buildingIntro('Pixel'), staleIntro('Pixel')]) {
+    for (const s of [buildingIntro('Pixel'), noPatternIntro('Pixel'), staleIntro('Pixel')]) {
       expect(s).toContain('Pixel');
       expect(s.includes('!')).toBe(false);
       expect(REASSURANCE_RE.test(s)).toBe(false);
     }
+  });
+  it('no_pattern is about the data and forward-looking, not a wellness claim', () => {
+    const s = noPatternIntro('Pixel');
+    expect(s.toLowerCase()).toContain('no clear patterns');
+    expect(s.toLowerCase()).toContain('yet');
   });
 });
 

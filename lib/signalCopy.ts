@@ -15,7 +15,7 @@
 
 import type { CachedFinding, SignalFinding, SignalSymptomType } from './signal';
 
-export type DisplayState = 'building' | 'stale' | 'live';
+export type DisplayState = 'building' | 'no_pattern' | 'stale' | 'live';
 
 // Owner-facing symptom words (nyx-voice Pattern 5 — plain language, never the
 // stored enum). Mirrors SYMPTOM_LABEL in the generate-signal phrasing module.
@@ -31,21 +31,34 @@ function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-// ── Display state (§3.3) ──────────────────────────────────────────────────────
-// Findings present → live. Otherwise distinguish building (still gathering, with
-// recent activity) from stale (gone quiet 48h+). Empty findings are NEVER an
-// all-clear (§9) — both states are honest "still building" copy.
+// ── Display state (§3.3 + B-051) ──────────────────────────────────────────────
+// Findings present → live. With no findings, three honest empty states — never an
+// all-clear (§9):
+//   - stale     — gone quiet 48h+ (log today)
+//   - no_pattern — substantial history but nothing cleared a floor. This is the
+//     B-051 fix: a heavily-logging owner must NOT be told "keep logging, patterns
+//     in a few days" (reads as "not enough data" → the §7.1 "silence churns"
+//     trap). It is about the DATA ("no clear pattern yet"), not the pet's health.
+//   - building  — genuinely early (still gathering the first days of logs)
 export function deriveDisplayState(
   findings: CachedFinding[],
   hasRecentActivity: boolean,
+  hasSubstantialHistory: boolean,
 ): DisplayState {
   if (findings.length > 0) return 'live';
-  return hasRecentActivity ? 'building' : 'stale';
+  if (!hasRecentActivity) return 'stale';
+  return hasSubstantialHistory ? 'no_pattern' : 'building';
 }
 
-// ── Building / stale intros ───────────────────────────────────────────────────
+// ── Empty-state intros ────────────────────────────────────────────────────────
 export function buildingIntro(petName: string): string {
   return `We're getting to know ${petName}. Keep logging and the first patterns start to surface in a few days.`;
+}
+
+// Substantial history, nothing cleared a floor (B-051). Honest about detection
+// state, forward-looking, and NOT a wellness claim (clinical-guardrails / §9).
+export function noPatternIntro(petName: string): string {
+  return `No clear patterns in ${petName}'s logs yet — we'll keep looking as you keep logging.`;
 }
 
 export function staleIntro(petName: string): string {

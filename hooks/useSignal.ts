@@ -18,24 +18,46 @@ export interface SignalState {
   isLoading: boolean;
 }
 
-// Window for "recent activity" — distinguishes building (still gathering) from
-// stale (gone quiet) when there are no findings. 48h mirrors the Edge Function's
-// own building-vs-stale split and the feline intake-decline concern window.
+// Window for "recent activity" — distinguishes building/no_pattern (still active)
+// from stale (gone quiet) when there are no findings. 48h mirrors the Edge
+// Function's own split and the feline intake-decline concern window.
 const RECENT_ACTIVITY_MS = 48 * 60 * 60 * 1000;
 
+// "Substantial history" floor (B-051): a pet with this much logged history that
+// still has no findings gets the honest "no clear patterns yet" copy rather than
+// the early "still getting to know you" copy. Deliberately modest — a couple of
+// weeks of real logging shouldn't read as "not enough data".
+const SUBSTANTIAL_MIN_EVENTS = 8;
+const SUBSTANTIAL_MIN_DAYS = 7;
+
+interface LocalSignalContext {
+  hasRecentActivity: boolean;
+  hasSubstantialHistory: boolean;
+}
+
 // Read straight from local SQLite (fast, offline-capable, same pattern as
-// useTrend) so the stale/building distinction works without a network round-trip.
-function hasLocalRecentActivity(petId: string): boolean {
+// useTrend) so the empty-state distinctions work without a network round-trip.
+function getLocalSignalContext(petId: string): LocalSignalContext {
   try {
-    const cutoff = new Date(Date.now() - RECENT_ACTIVITY_MS).toISOString();
-    const rows = getDb().getAllSync<{ c: number }>(
-      `SELECT COUNT(*) AS c FROM events
-       WHERE pet_id = ? AND occurred_at >= ? AND deleted_at IS NULL`,
-      [petId, cutoff],
+    const recentCutoff = new Date(Date.now() - RECENT_ACTIVITY_MS).toISOString();
+    const rows = getDb().getAllSync<{ total: number; recent: number; earliest: string | null }>(
+      `SELECT COUNT(*) AS total,
+              COUNT(CASE WHEN occurred_at >= ? THEN 1 END) AS recent,
+              MIN(occurred_at) AS earliest
+       FROM events WHERE pet_id = ? AND deleted_at IS NULL`,
+      [recentCutoff, petId],
     );
-    return (rows[0]?.c ?? 0) > 0;
+    const r = rows[0];
+    const total = r?.total ?? 0;
+    const spanDays = r?.earliest
+      ? (Date.now() - Date.parse(r.earliest)) / (24 * 60 * 60 * 1000)
+      : 0;
+    return {
+      hasRecentActivity: (r?.recent ?? 0) > 0,
+      hasSubstantialHistory: total >= SUBSTANTIAL_MIN_EVENTS && spanDays >= SUBSTANTIAL_MIN_DAYS,
+    };
   } catch {
-    return false;
+    return { hasRecentActivity: false, hasSubstantialHistory: false };
   }
 }
 
@@ -49,7 +71,10 @@ export function useSignal(): SignalState {
   const { activePet } = usePetStore();
   const [findings, setFindings] = useState<CachedFinding[]>([]);
   const [signalText, setSignalText] = useState<string | null>(null);
-  const [hasRecentActivity, setHasRecentActivity] = useState(false);
+  const [localCtx, setLocalCtx] = useState<LocalSignalContext>({
+    hasRecentActivity: false,
+    hasSubstantialHistory: false,
+  });
   const [isLoading, setIsLoading] = useState(false);
   const loadedPetRef = useRef<string | null>(null);
 
@@ -67,7 +92,7 @@ export function useSignal(): SignalState {
       if (firstLoad) setIsLoading(true);
 
       (async () => {
-        if (!cancelled) setHasRecentActivity(hasLocalRecentActivity(petId));
+        if (!cancelled) setLocalCtx(getLocalSignalContext(petId));
         try {
           const row = await readSignalCache(petId);
           if (cancelled) return;
@@ -99,6 +124,10 @@ export function useSignal(): SignalState {
     }, [petId]),
   );
 
-  const displayState = deriveDisplayState(findings, hasRecentActivity);
+  const displayState = deriveDisplayState(
+    findings,
+    localCtx.hasRecentActivity,
+    localCtx.hasSubstantialHistory,
+  );
   return { findings, displayState, signalText, petName, isLoading };
 }
