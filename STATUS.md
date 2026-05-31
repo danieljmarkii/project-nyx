@@ -45,7 +45,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 ## Open PM Action Items
 
-- [ ] **Deploy `extract-food-from-photo` + `generate-signal` for B-052 (PR #78).** Both now import `supabase/functions/_shared/protein.ts` (the repo's first cross-function shared module), so deploy via **CLI** (`supabase functions deploy <fn>` — bundles the `_shared` import automatically); a single-file dashboard paste of `index.ts` would miss it.
+- [x] **Deploy `extract-food-from-photo` + `generate-signal` for B-052 (PR #78).** ✅ Done 2026-05-31 via `npx supabase functions deploy` — CLI bundled the `_shared/protein.ts` import for both (script sizes 63.86kB / 83.42kB, no import errors). Supabase CLI now installed as a repo dev-dependency, so `npx supabase …` works going forward.
 - [ ] _(Optional, non-blocking)_ **B-052 historical backfill** of existing `food_items.primary_protein` to canonical values. The defensive read-time normalization already covers dirty/legacy rows, so this is data hygiene only — do it if/when you want stored values clean (no SQL shipped, to avoid drift from the TS normalizer).
 - [ ] One-time EAS setup in Codespace: `npm install -g eas-cli && eas login && eas init && eas update:configure`, then commit + push the `app.json` changes (`extra.eas.projectId`, `updates.url`, `runtimeVersion`).
 - [ ] After first `eas update --branch preview`, open Expo Go → confirm app loads end-to-end (log a meal, snap a food photo, confirm Claude extraction returns).
