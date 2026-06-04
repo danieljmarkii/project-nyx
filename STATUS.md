@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. Keep this scannable — prose paragraphs belong in session summaries and the backlog, not here._
 
-**Last updated:** 2026-05-31
+**Last updated:** 2026-06-04
 
 ---
 
@@ -50,6 +50,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 - [ ] Start Apple Developer enrollment ($99/yr, 1–3 day approval) to graduate from Runtime A (Expo Go + `eas update`) to a real TestFlight build.
 - [ ] **Apply the rest of migration `003_attachments.sql`** (B-044) — only the `event_attachments` block was applied to the live DB; `vet_visit_attachments` + `food_items.photo_path` likely still missing server-side. Then **audit which migrations are actually applied**.
 - [ ] **Delete the leftover `tmp-img-export` Edge Function** (B-043) from the Supabase dashboard — neutralized to a `410` stub but should be removed entirely (no MCP delete tool exists).
+- [ ] **Decide on draft PR #79** (env fail-fast guard + CLAUDE.md doc fix) — mark ready/merge or close. Independent of the build; prevents the missing-key flavor of the "Invalid API key" chase recurring.
 
 ---
 
@@ -61,6 +62,7 @@ QA on-device via **Runtime B** — Metro dev server (`npx expo start --tunnel`, 
 
 ## Recent Sessions
 
+- **2026-06-04 — Sign-in "Invalid API key" debug + DX guard (no build progress).** Diagnosed Expo Go sign-in failure: env files were correct (`.env` had the valid anon key; verified `HTTP 200` against `/auth/v1/settings` from the Codespace) — root cause was a **stale Metro bundle**, fixed by `rm -rf .expo node_modules/.cache && npx expo start --tunnel -c` + cold-reopen. PM confirmed back in. Shipped a small hardening fix (PR #79, draft): fail-fast guard in `lib/supabase.ts` for missing/placeholder env + corrected stale CLAUDE.md note (env is `process.env.EXPO_PUBLIC_*`, not `app.config.ts`).
 - **2026-05-31 — Workflow tooling (no product code).** Added `/wrap` + `/kickoff` commands (`.claude/commands/`) and `docs/dev-handoff-runbook.md`; trimmed the verbose Runtime A/B scripts out of CLAUDE.md (v1.21). Raced PR #76 (the v1.20 persona/STATUS.md split) — re-cut onto it keeping only the additive command/runbook work. Did not advance the build.
 - **2026-05-31 — B-045 Steps 1–3 shipped.** Detection engine (PR #72, incl. B-050 case-crossover rewrite), migration 015 (PR #73), `generate-signal` Edge Function (PR #74), `SignalZone` wiring (PR #75). Dogfooding on cat Nyx surfaced B-051/B-052/B-053.
 - **2026-05-30 — AI Signal design + spec.** `docs/nyx-ai-signal-requirements.md` finalized (rev 6); Principle 3 revised + approved; speed-vs-rigor "value ladder" (§7.1); B-050 case-crossover redesign caught by PM; DoD strengthened with the adversarial-review rule.
