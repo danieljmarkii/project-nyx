@@ -150,7 +150,7 @@ Establish these from session one. Do not drift from them. When a new convention 
 
 ## Environment and Secrets
 
-- Environment variables are managed via `app.config.ts` using Expo's `extra` field. Never hardcode keys or tokens in source files.
+- Client-side environment variables use Expo's `EXPO_PUBLIC_` convention: they are read directly via `process.env.EXPO_PUBLIC_*` and inlined into the bundle at Metro start. `lib/supabase.ts` fails fast with an actionable error if `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` are missing or still placeholders. Editing `.env.local` requires restarting Metro with `npx expo start -c` (the `-c` clears the cache so new values get inlined). Never hardcode keys or tokens in source files.
 - `.env.local` for local development. This file is gitignored — never commit it.
 - Supabase URL and anon key live in `.env.local` as `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`. The `EXPO_PUBLIC_` prefix makes them available client-side; anything without that prefix is server-only.
 - Edge Function secrets (service role key, Claude API key) are set via `supabase secrets set` and never stored in the repo.
