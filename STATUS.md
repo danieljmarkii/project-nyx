@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. Keep this scannable — prose paragraphs belong in session summaries and the backlog, not here._
 
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-05
 
 ---
 
@@ -26,6 +26,8 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 - **B-053** (Next) — explain *why* there's no signal (coverage / near-miss diagnostics on `no_pattern`: staple-washout, below-floor, unrated meals) to drive retention + corrective logging.
 
 **After Step 10:** Step 9 (vet report PDF) resumes — formally interrupted by the PM for B-045 dogfooding value.
+
+**Side track in flight — B-054 multi-device down-sync (hydration).** New backlog scope (requirements: `docs/multi-device-sync-requirements.md`; 4 phases). **Phase 0 DONE this session** — jest runner wired (closes B-026); PR #82 (draft). Phases 1–3 not started. **Sequencing vs Step 9/10 is an open PM roadmap call** (§9.5). Phase 1 (the "wife's phone" fix) engine is decision-independent; its UI is gated on the §6 cold-start UX ruling (PM dismissed the question this session — still open).
 
 ---
 
@@ -51,6 +53,10 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 - [ ] **Apply the rest of migration `003_attachments.sql`** (B-044) — only the `event_attachments` block was applied to the live DB; `vet_visit_attachments` + `food_items.photo_path` likely still missing server-side. Then **audit which migrations are actually applied**.
 - [ ] **Delete the leftover `tmp-img-export` Edge Function** (B-043) from the Supabase dashboard — neutralized to a `410` stub but should be removed entirely (no MCP delete tool exists).
 - [ ] **Decide on draft PR #79** (env fail-fast guard + CLAUDE.md doc fix) — mark ready/merge or close. Independent of the build; prevents the missing-key flavor of the "Invalid API key" chase recurring.
+- [ ] **Decide on draft PR #82** (B-054 Phase 0 — jest runner, closes B-026). Low-risk, decision-independent prerequisite; `npm test` green (45/45) locally + on PM's machine. Mark ready/merge to put the runner on `main` before Phase 1 builds on it.
+- [ ] **B-054 sequencing call** — is multi-device sync a now/next priority (slips Step 9/10), or does it stay queued? See `docs/multi-device-sync-requirements.md` §9.5.
+- [ ] **B-054 §6 cold-start UX ruling** — needed before Phase 1's UI (not its engine): blocking-when-empty vs progressive vs always-block. (Dismissed this session.)
+- [ ] **Supabase CLI dev-dependency** — added on branch `claude/epic-volta-H8d6o` (`supabase@^2.102.0`, committed there). Not on `main` or the Phase 0 branch yet. Decide whether to fold it into a PR so it survives merge (addresses the long-standing "CLI not installed" action item).
 
 ---
 
@@ -62,6 +68,7 @@ QA on-device via **Runtime B** — Metro dev server (`npx expo start --tunnel`, 
 
 ## Recent Sessions
 
+- **2026-06-05 — B-054 Phase 0: jest runner wired (closes B-026).** Picked up the multi-device-sync backlog item; got up to speed on `docs/multi-device-sync-requirements.md` (4-phase plan). Shipped Phase 0 (PR #82, draft): installed `jest-expo`@~54 + `jest`@29 + testing-library + `babel-preset-expo`, added `babel.config.js` / `jest.config.js` (ignores the `supabase/functions/**` Deno tests), `test` script, pre-push runs `npm test`. 45/45 RN tests green (verified on PM's machine too). Caught + fixed a latent state-leak in `store/toastStore.test.ts` the never-run tests had hidden. Phases 1–3 not started; sequencing + §6 cold-start UX ruling open.
 - **2026-06-04 — Sign-in "Invalid API key" debug + DX guard (no build progress).** Diagnosed Expo Go sign-in failure: env files were correct (`.env` had the valid anon key; verified `HTTP 200` against `/auth/v1/settings` from the Codespace) — root cause was a **stale Metro bundle**, fixed by `rm -rf .expo node_modules/.cache && npx expo start --tunnel -c` + cold-reopen. PM confirmed back in. Shipped a small hardening fix (PR #79, draft): fail-fast guard in `lib/supabase.ts` for missing/placeholder env + corrected stale CLAUDE.md note (env is `process.env.EXPO_PUBLIC_*`, not `app.config.ts`).
 - **2026-05-31 — Workflow tooling (no product code).** Added `/wrap` + `/kickoff` commands (`.claude/commands/`) and `docs/dev-handoff-runbook.md`; trimmed the verbose Runtime A/B scripts out of CLAUDE.md (v1.21). Raced PR #76 (the v1.20 persona/STATUS.md split) — re-cut onto it keeping only the additive command/runbook work. Did not advance the build.
 - **2026-05-31 — B-045 Steps 1–3 shipped.** Detection engine (PR #72, incl. B-050 case-crossover rewrite), migration 015 (PR #73), `generate-signal` Edge Function (PR #74), `SignalZone` wiring (PR #75). Dogfooding on cat Nyx surfaced B-051/B-052/B-053.
