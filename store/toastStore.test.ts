@@ -14,7 +14,12 @@ function payload(over: Partial<MealToastPayload> = {}): MealToastPayload {
 describe('toastStore', () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    // hide() clears the timers + visible flag but intentionally preserves
+    // `payload` so the dismiss fade-out can still render the toast's content.
+    // For a clean per-test reset we also null the payload explicitly — without
+    // this, a payload set by one test leaks into the next.
     useToastStore.getState().hide();
+    useToastStore.setState({ payload: null });
   });
 
   afterEach(() => {
