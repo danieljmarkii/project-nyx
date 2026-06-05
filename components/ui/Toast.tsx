@@ -241,7 +241,11 @@ const styles = StyleSheet.create({
     bottom: TAB_BAR_HEIGHT + 8,
     left: theme.space2,
     right: 88,
-    alignItems: 'flex-start',
+    // Stretch (not flex-start) so the pill fills its bounded wrapper and a
+    // long food name ellipsizes inside it instead of overflowing past the
+    // right:88 FAB gutter. Every toast now carries a food name, so the
+    // full-width bar reads as intentional rather than a content-hugging chip.
+    alignItems: 'stretch',
     zIndex: 50,
     elevation: 12,
   },
@@ -279,6 +283,15 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   headerRow: {
+    // Grow to fill the (now stretched) pill so space-between pushes
+    // "Change time" to the right edge, and shrink so a long food name
+    // ellipsizes via labelCol's flexShrink instead of overflowing. Note:
+    // flexBasis stays 'auto' (NOT the 0% that `flex: 1` shorthand implies) —
+    // 0% would collapse this row against the intake-chip row in the
+    // column-layout card variant.
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
