@@ -5,6 +5,17 @@ import { reconcileBatch, type LocalRowMeta } from './hydration';
 
 type Db = ReturnType<typeof getDb>;
 
+// Sign-out epoch (FR-9 Trust & Safety gate). Bumped on sign-out. An in-flight
+// hydration captures the epoch at the start of the cycle and re-checks it right
+// before each table's write loop (the network fetch beforehand can take
+// seconds — long enough for a sign-out + clearLocalData to land mid-cycle). If
+// the epoch changed, the hydration bails instead of re-populating the local
+// store that the wipe just cleared with the previous account's data.
+let signOutEpoch = 0;
+export function notifySignedOut(): void {
+  signOutEpoch++;
+}
+
 // Which local meta column the reconcile strategy needs: 'updated_at' for LWW,
 // 'synced' for the meals refresh-if-synced guard, 'none' for pure insert-only.
 type LocalMetaKind = 'updated_at' | 'synced' | 'none';
@@ -53,6 +64,10 @@ async function fetchAllRows<T>(table: string, columns: string): Promise<T[] | nu
       .select(columns)
       .order('id', { ascending: true })
       .range(from, from + HYDRATE_PAGE - 1);
+    // null = "couldn't read this table" (distinct from an empty []); the caller
+    // skips the table this cycle and runHydrationStep moves on. A flaky page
+    // mid-pagination discards the accumulated rows for this table — acceptable
+    // because the next cycle re-pulls from the start (full pull, self-healing).
     if (error) { console.warn(`[hydrate] ${table} pull failed:`, error.message); return null; }
     const page = (data ?? []) as unknown as T[];
     out.push(...page);
@@ -404,7 +419,7 @@ interface RemoteVetVisitAttachment {
   mime_type: string | null; taken_at: string | null; sort_order: number | null; created_at: string;
 }
 
-async function hydrateEvents(db: Db): Promise<void> {
+async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
   const rows = await fetchAllRows<RemoteEvent>(
     'events',
     'id, pet_id, event_type, occurred_at, severity, notes, source, ' +
@@ -417,6 +432,7 @@ async function hydrateEvents(db: Db): Promise<void> {
   // FR-4 (naive): replace only when remote is strictly newer. FR-7: soft-deletes
   // ride along on the deleted_at column, hidden by the WHERE deleted_at IS NULL reads.
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const e of toWrite) {
     await db.runAsync(
       `INSERT INTO events
@@ -443,7 +459,7 @@ async function hydrateEvents(db: Db): Promise<void> {
   }
 }
 
-async function hydrateMeals(db: Db): Promise<void> {
+async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
   // Meals have no updated_at (server or local), but they ARE mutated in place
   // (updateMealFood / updateMealIntake — the clinically load-bearing WSAVA
   // intake_rating). So 'refresh-if-synced' (FR-6, corrected): insert when
@@ -459,6 +475,7 @@ async function hydrateMeals(db: Db): Promise<void> {
 
   const localById = await loadLocalRowMeta(db, 'meals', rows.map((r) => r.id), 'synced');
   const { toWrite } = reconcileBatch(rows, localById, 'refresh-if-synced');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const m of toWrite) {
     // DO UPDATE refreshes the mutable fields only; identity columns (event_id,
     // pet_id) are immutable and left untouched. For an absent row the INSERT
@@ -481,7 +498,7 @@ async function hydrateMeals(db: Db): Promise<void> {
   }
 }
 
-async function hydrateEventAttachments(db: Db): Promise<void> {
+async function hydrateEventAttachments(db: Db, stale: () => boolean): Promise<void> {
   // Insert-only (no server updated_at). FR-10: the row carries a storage_path
   // but no on-device file, so local_uri is stored as '' (empty sentinel) and
   // rendering falls back to a signed Storage URL.
@@ -493,6 +510,7 @@ async function hydrateEventAttachments(db: Db): Promise<void> {
 
   const localById = await loadLocalRowMeta(db, 'event_attachments', rows.map((r) => r.id), 'none');
   const { toWrite } = reconcileBatch(rows, localById, 'insert-if-absent');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const a of toWrite) {
     await db.runAsync(
       `INSERT INTO event_attachments
@@ -505,7 +523,7 @@ async function hydrateEventAttachments(db: Db): Promise<void> {
   }
 }
 
-async function hydrateVetVisits(db: Db): Promise<void> {
+async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
   const rows = await fetchAllRows<RemoteVetVisit>(
     'vet_visits',
     'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, created_at, updated_at',
@@ -514,6 +532,7 @@ async function hydrateVetVisits(db: Db): Promise<void> {
 
   const localById = await loadLocalRowMeta(db, 'vet_visits', rows.map((r) => r.id), 'updated_at');
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const v of toWrite) {
     await db.runAsync(
       `INSERT INTO vet_visits
@@ -530,7 +549,7 @@ async function hydrateVetVisits(db: Db): Promise<void> {
   }
 }
 
-async function hydrateVetVisitAttachments(db: Db): Promise<void> {
+async function hydrateVetVisitAttachments(db: Db, stale: () => boolean): Promise<void> {
   const rows = await fetchAllRows<RemoteVetVisitAttachment>(
     'vet_visit_attachments',
     'id, vet_visit_id, pet_id, storage_path, mime_type, taken_at, sort_order, created_at',
@@ -539,6 +558,7 @@ async function hydrateVetVisitAttachments(db: Db): Promise<void> {
 
   const localById = await loadLocalRowMeta(db, 'vet_visit_attachments', rows.map((r) => r.id), 'none');
   const { toWrite } = reconcileBatch(rows, localById, 'insert-if-absent');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const a of toWrite) {
     await db.runAsync(
       `INSERT INTO vet_visit_attachments
@@ -570,10 +590,20 @@ export async function hydrateFromCloud(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
 
+  // FR-9: capture the sign-out epoch; each step re-checks it before writing so a
+  // sign-out + local wipe landing mid-cycle aborts the rest instead of
+  // re-populating the just-cleared store.
+  const epoch = signOutEpoch;
+  const stale = () => signOutEpoch !== epoch;
+
   const db = getDb();
-  await runHydrationStep('events', () => hydrateEvents(db));
-  await runHydrationStep('meals', () => hydrateMeals(db));
-  await runHydrationStep('event_attachments', () => hydrateEventAttachments(db));
-  await runHydrationStep('vet_visits', () => hydrateVetVisits(db));
-  await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db));
+  await runHydrationStep('events', () => hydrateEvents(db, stale));
+  if (stale()) return;
+  await runHydrationStep('meals', () => hydrateMeals(db, stale));
+  if (stale()) return;
+  await runHydrationStep('event_attachments', () => hydrateEventAttachments(db, stale));
+  if (stale()) return;
+  await runHydrationStep('vet_visits', () => hydrateVetVisits(db, stale));
+  if (stale()) return;
+  await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
 }

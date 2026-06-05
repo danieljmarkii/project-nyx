@@ -194,9 +194,11 @@ export async function clearLocalData(): Promise<void> {
       if (!f.local_uri) continue; // hydrated rows carry '' — no local file to remove
       try {
         const file = new File(f.local_uri);
+        // exists is a best-effort fast-path; delete() also throws if the file
+        // is already gone, and the catch handles either way.
         if (file.exists) file.delete();
       } catch {
-        // File already gone / not a managed path — nothing to clean up.
+        // File already gone / not a managed path (e.g. content:// URI) — nothing to clean up.
       }
     }
   } catch (e) {

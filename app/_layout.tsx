@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
 import { initDb, clearLocalData } from '../lib/db';
+import { notifySignedOut } from '../lib/sync';
 import { useSync } from '../hooks/useSync';
 import { Toast } from '../components/ui/Toast';
 
@@ -34,6 +35,9 @@ export default function RootLayout() {
       // refresh can never destroy local data. Awaited so the wipe completes
       // before any subsequent sign-in starts re-hydrating.
       if (event === 'SIGNED_OUT') {
+        // Abort any in-flight hydration BEFORE wiping, so a sync mid-cycle can't
+        // re-populate the store after clearLocalData runs.
+        notifySignedOut();
         await clearLocalData().catch((e) => console.warn('[auth] local wipe failed:', e));
       }
       setSession(session);

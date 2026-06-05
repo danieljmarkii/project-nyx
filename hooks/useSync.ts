@@ -15,6 +15,11 @@ export function useSync() {
   const appState = useRef<AppStateStatus>(AppState.currentState);
   // Tracks whether we were last known to be online so we can detect transitions.
   const wasOnline = useRef<boolean>(true);
+  // Only one sync cycle runs at a time. The three triggers (mount, foreground,
+  // reconnect) can fire near-simultaneously (e.g. cold open), and a cycle now
+  // does a full hydration — overlapping runs would double-pull and interleave
+  // writes. The guard serializes them.
+  const syncInFlight = useRef<boolean>(false);
 
   useEffect(() => {
     if (!session) return;
@@ -30,24 +35,34 @@ export function useSync() {
     // set_updated_at server trigger rewriting updated_at on every write — is
     // Phase 2 (docs/multi-device-sync-requirements.md §5.2 FR-5).
     async function runSync() {
-      // Push up.
-      await syncPendingEvents();
-      await syncPendingMeals();
-      await syncPendingAttachments();
-      await syncPendingVetVisits();
-      // Pull down.
-      await hydrateFromCloud();
-      await refreshFoodCache();
+      if (syncInFlight.current) return;
+      syncInFlight.current = true;
+      try {
+        // Push up.
+        await syncPendingEvents();
+        await syncPendingMeals();
+        await syncPendingAttachments();
+        await syncPendingVetVisits();
+        // Pull down.
+        await hydrateFromCloud();
+        await refreshFoodCache();
 
-      const status = await getSyncStatus();
-      setPendingStatus(status.pendingCount, status.oldestPendingAt);
+        const status = await getSyncStatus();
+        setPendingStatus(status.pendingCount, status.oldestPendingAt);
+      } finally {
+        syncInFlight.current = false;
+      }
     }
 
-    runSync();
+    // runSync now contains awaited chains; swallow rejections at the call sites
+    // so a failed cycle can't surface as an unhandled promise rejection.
+    const safeRunSync = () => runSync().catch((e) => console.warn('[sync] cycle failed:', e));
+
+    safeRunSync();
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {
-        runSync();
+        safeRunSync();
       }
       appState.current = nextState;
     });
@@ -58,7 +73,7 @@ export function useSync() {
       // null as "still online" to avoid false-positive offline transitions.
       const isOnline = !!(state.isConnected && state.isInternetReachable !== false);
       if (!wasOnline.current && isOnline) {
-        runSync();
+        safeRunSync();
       }
       wasOnline.current = isOnline;
     });
