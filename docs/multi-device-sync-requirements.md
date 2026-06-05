@@ -5,6 +5,8 @@
 > Output of a research/requirements session prompted by a real dogfood failure: the PM's wife logged into the shared account on a second phone (Expo Go) and saw an empty log, while the PM's own writes were visible in the Supabase dashboard. Investigation (this session) confirmed the cause is architectural, not a bug or a cache to clear. Read this **and** `CLAUDE.md` before starting the implementation session.
 >
 > Decisions marked **[PM-DECISION]** are open and must be resolved before or during the build session — they are not yet settled. Everything else is a team recommendation ready to build unless the PM overrides.
+>
+> **Getting started:** jump to **§12 Phased delivery plan** — four small PRs in risk order, each with a paste-ready kickoff prompt. The "wife's phone" fix lands in Phase 1.
 
 ---
 
@@ -168,6 +170,59 @@ The seven principles still govern. The relevant ones:
 - **Dr. Chen ✓** — the on-device picture an owner reviews pre-visit must match the full record the vet report renders; hydration closes that gap.
 - **Jordan / Sam ✓✓** — this is the literal "my partner and I both log" story; high real-world value.
 - **QA ✓** — AC set in §8; depends on **B-026** (jest) for AC-8 to be honestly satisfiable.
+
+---
+
+## 12. Phased delivery plan (build order)
+
+This is the recommended build sequence — **four small PRs, not one big one.** The order is deliberate: the risk rises with each phase, and the *visible win* (a second device shows the history) lands in Phase 1, while the *unforgiving correctness work* is isolated in Phase 2 where it can get the heavy review it needs. Each phase is independently shippable and dogfoodable. Don't fold Phase 2 into Phase 1 — the happy-path demo looks identical, but the naive version loses edits in the field.
+
+| Phase | Goal | Delivers | Risk | Depends on |
+|---|---|---|---|---|
+| **0** | Test harness exists | `npm test` runs jest | Low | — (closes **B-026**) |
+| **1** | Second device shows the shared history | The "wife's phone" fix | **Low** | Phase 0 |
+| **2** | No silent edit loss under two writers | Correctness | **Medium** (the careful one) | Phase 1 |
+| **3** | Scale + delete-correctness | Polish | Low–Medium | Phase 2 |
+| **4** *(post-v1, optional)* | Instant cross-device updates | Realtime | Low | Phase 3 |
+
+### Phase 0 — Wire up the test runner (prerequisite)
+**Why first:** the highest-risk logic in the app (sync reconciliation) cannot honestly ship untested, and jest isn't installed yet (`npm test` is a no-op — this is **B-026**). Cheapest single risk-reducer in the whole effort. Small.
+- Add `jest` + `jest-expo` preset + `@testing-library/react-native`, a `test` script, and ideally wire the pre-push hook to run it.
+- **Satisfies:** the precondition for AC-8 across every later phase.
+- **Kickoff prompt:** _"Do B-054 Phase 0 per `docs/multi-device-sync-requirements.md` §12 — wire up jest (B-026): install jest-expo + testing-library, add the `test` script + config, confirm the existing `.test.ts` files run, and have the pre-push hook run `npm test`."_
+
+### Phase 1 — Read-only cold-start hydration + the safety gate (the visible win)
+**Why:** this is the PR that **literally fixes your wife's phone** — a device logs in and sees the account's full history. Deliberately *excludes* two-writer conflict cleverness to stay low-risk. Includes the logout-wipe gate because Phase 1 is the first moment a device holds shareable health data (pulled forward from the original Phase 2 framing — it removes the only Trust & Safety concern with shipping Phase 1, and it's small).
+- **FR-1** `hydrateFromCloud()` in `lib/sync.ts` (mirror of the push functions) for `events`, `meals`, `event_attachments`, `vet_visits`, `vet_visit_attachments`.
+- **FR-2** wire into `runSync()` with correct ordering (push-before-pull; events-before-meals). Naive guard only: **insert-if-absent, else replace-if-`remote.updated_at > local.updated_at`** — enough never to clobber an obviously-newer local row, but *not* yet the trigger-correct LWW (that's Phase 2).
+- **FR-6** meals = insert-if-absent (immutable, no `updated_at`).
+- **FR-7** soft-deleted events propagate for free (just another pulled column).
+- **FR-9** logout clears local SQLite + cached photos (**Trust & Safety gate**).
+- **FR-10** hydrated attachments render from Storage (signed URL), tolerating a missing `local_uri`.
+- **Satisfies:** AC-1, AC-5, AC-6, and AC-2 for non-conflicting writes.
+- **Risk:** Low. Additive; the existing push path is untouched; no conflict subtlety yet.
+- **Dogfoodable:** ✅ Safe for you + your wife on your own phones once this lands.
+- **Kickoff prompt:** _"Do B-054 Phase 1 per `docs/multi-device-sync-requirements.md` §12 — read-only cold-start hydration in `lib/sync.ts` + `useSync.ts` (FR-1, FR-2 ordering, FR-6, FR-7, FR-10) plus the FR-9 logout local-wipe gate. Naive remote-newer guard only; defer trigger-correct LWW to Phase 2. Unit-test the hydration + wipe logic."_
+
+### Phase 2 — Conflict-correctness (the careful one)
+**Why:** makes two-writer reconciliation actually correct, so an edit can never silently disappear. Small code, heavy thought, heavy tests, **mandatory adversarial review.** This is the phase the Dir. of Eng. wants reviewed hardest.
+- **FR-4 / FR-5** resolve the `set_updated_at`-trigger LWW problem per the **[PM-DECISION]** in §9.1 (client-authored timestamp + migration, *or* documented server-time LWW). Implement and **name the failure mode** with a concrete two-device counterexample.
+- **Satisfies:** AC-2 (full bidirectional), AC-3 (offline-edit not clobbered), AC-9 (adversarial review).
+- **Risk:** Medium. This is where this codebase has lost time before; treat the happy-path demo as meaningless and lean on the unit tests + the `adversarial-reviewer` subagent.
+- **Kickoff prompt:** _"Do B-054 Phase 2 per `docs/multi-device-sync-requirements.md` §12 — conflict-correct LWW (FR-4/FR-5). PM decision FR-5 = [(a) client-timestamp+migration | (b) server-time documented]. Unit-test the reconciliation, then run the adversarial-reviewer subagent on it per AC-9."_
+
+### Phase 3 — Scale + delete-correctness
+**Why:** stops two real but lower-urgency defects — re-pulling the whole history on every foreground, and hard-deleted meals lingering as ghost rows.
+- **FR-3** incremental hydration via a per-table high-water mark (`last-pulled updated_at`).
+- **FR-8** hard-deleted-meal reconciliation per the **[PM-DECISION]** in §9.2 (absence-reconciliation pass, or tombstone via **B-005**).
+- **Satisfies:** AC-4 (no ghost rows), AC-7 (no full re-pull / no Home flicker).
+- **Risk:** Low–Medium. Watermark off-by-one is the thing to test.
+- **Kickoff prompt:** _"Do B-054 Phase 3 per `docs/multi-device-sync-requirements.md` §12 — incremental hydration watermark (FR-3) + hard-deleted-meal reconciliation (FR-8, PM decision = [absence-reconcile | tombstone]). Unit-test the watermark boundary."_
+
+### Phase 4 — Realtime (post-v1, optional)
+**Why:** upgrades pull-on-foreground to instant cross-device updates via Supabase `postgres_changes`. Layered *on top of* hydration (still need Phase 1–3 for cold-start backfill + offline catch-up). Shares the Realtime publication plumbing with **B-030**. Out of v1 scope (§10) — schedule only if instant updates prove worth it after dogfooding.
+
+> **Designer × Engineer cold-start UX conflict (§6)** must be ruled by the PM **before Phase 1's UI is built** — it determines whether Phase 1 ships a blocking "Catching up…" state, progressive hydration, or the block-only-when-empty synthesis.
 
 ---
 
