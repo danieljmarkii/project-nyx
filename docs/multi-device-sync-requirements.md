@@ -20,6 +20,21 @@ Consequence: two phones on the same account are two write-only islands. They bot
 
 This is the missing half of Step 8 (Offline Sync). Step 8 built the flush queue (up); this builds hydration (down).
 
+### 1.1 This is a data-durability problem, not just a sharing feature — and not an Expo Go artifact
+
+The bug surfaced via Expo Go, but **Expo Go is not the cause.** Expo Go, TestFlight, and a production App Store build differ only in *how the JS bundle reaches the phone* — none of them change the app's data logic. The same shipped app has the same empty local SQLite on any device whose local store starts empty. **We will have to solve this regardless of distribution channel.**
+
+And it is broader than multi-caregiver sharing. It bites a **single user, in production, with no sharing involved**, in every scenario where local SQLite starts empty:
+
+- **New phone** — user upgrades their device, installs Nyx, logs in → empty history.
+- **Reinstall** — delete + reinstall wipes local SQLite → log in → empty.
+- **A second device they own** — iPad + iPhone on one account never agree.
+- **iOS "Offload App"** / storage reclamation can clear the local store.
+
+The durable record lives in Supabase, but **the app never reads it back** — so the user's own history is *safe in principle and unrecoverable in practice*. For an app whose pitch is "we remember so you don't have to," that's trust-breaking, not a missing enhancement.
+
+**Positioning consequence:** B-054 is closer to **device-portability / data-durability correctness** — a likely **pre-prod blocker** (same conversation as B-039 account-deletion and B-002 pre-prod readiness) — than to an optional sharing feature. Two honest caveats keep it from being a P0 *today*: it is **perceived** loss, not actual loss (nothing is destroyed; it's all in Supabase), and we're currently pre-prod dogfooding on effectively one device. **Phase 1 alone (read-only cold-start hydration) fixes the entire single-user reinstall / new-phone case**, not just the second-caregiver case — the same low-risk PR carries a much larger justification. The now-vs-pre-prod **sequencing remains a PM roadmap call** (§9.5).
+
 ---
 
 ## 2. Background — what crosses devices today (evidence)
@@ -63,7 +78,8 @@ RLS already scopes every one of these to the owning account (`docs/nyx-schema-v1
 
 ## 4. Personas & user stories
 
-- **PM / Jordan (primary).** "My wife and I both care for Mochi. We each log from our own phone, and we both want to open the app and see the *same* up-to-date history — not two halves." → The hero story. Cold-start + steady-state hydration both required.
+- **Any user, new/reinstalled device (foundational — §1.1).** "I got a new phone (or reinstalled the app), logged in, and all my history was gone." → Single-user, no sharing. Solved by Phase 1 cold-start hydration alone. This is the case that makes B-054 a durability concern rather than just a sharing feature.
+- **PM / Jordan (primary sharing story).** "My wife and I both care for Mochi. We each log from our own phone, and we both want to open the app and see the *same* up-to-date history — not two halves." → Cold-start + steady-state hydration both required.
 - **Sam (cat owner).** Often the secondary logger in a household; grazing/intake notes get logged by whoever's home. Needs the other person's intake ratings to show up or the diet picture is wrong.
 - **Dr. Chen (clinical end-user).** The vet report must reflect the *whole* household's logging, not one phone's slice. (Note: the report is server-side and already reads the full Supabase record, so the report itself is fine today — but the owner reviewing on-device before a visit must see the same thing the report will.)
 - **Trust & Safety / Privacy.** A second device now holds a full local copy of the pet's health record. Logout/account-switch must not leave that data behind for the next person who uses the app on that phone (see §5.4).
