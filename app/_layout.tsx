@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
-import { initDb } from '../lib/db';
+import { initDb, clearLocalData } from '../lib/db';
 import { useSync } from '../hooks/useSync';
 import { Toast } from '../components/ui/Toast';
 
@@ -27,7 +27,15 @@ export default function RootLayout() {
       // and redirect to onboarding if none exists.
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // FR-9 (B-054 Trust & Safety gate): wipe the local pet-data copy on an
+      // explicit sign-out before routing away. Gated on the SIGNED_OUT event
+      // specifically — NOT on a null session generally — so a transient token
+      // refresh can never destroy local data. Awaited so the wipe completes
+      // before any subsequent sign-in starts re-hydrating.
+      if (event === 'SIGNED_OUT') {
+        await clearLocalData().catch((e) => console.warn('[auth] local wipe failed:', e));
+      }
       setSession(session);
       if (!session) {
         router.replace('/(auth)/login');

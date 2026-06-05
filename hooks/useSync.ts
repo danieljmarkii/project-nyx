@@ -3,7 +3,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import * as Network from 'expo-network';
 import {
   syncPendingEvents, syncPendingMeals, refreshFoodCache,
-  syncPendingVetVisits, syncPendingAttachments,
+  syncPendingVetVisits, syncPendingAttachments, hydrateFromCloud,
 } from '../lib/sync';
 import { getSyncStatus } from '../lib/db';
 import { useAuthStore } from '../store/authStore';
@@ -19,17 +19,25 @@ export function useSync() {
   useEffect(() => {
     if (!session) return;
 
-    // Events must complete before meals — meals FK references events.id.
-    // Attachments, vet visits, and food cache are independent and run in parallel.
-    // Upsert uses onConflict:'id' so the last row to arrive in Supabase wins.
-    // For single-device MVP this is equivalent to last-write-wins on updated_at.
-    // Multi-device LWW requires a server-side WHERE excluded.updated_at > events.updated_at.
+    // Push-before-pull (B-054 FR-2): flush local writes UP first, then hydrate
+    // remote rows DOWN — so a not-yet-pushed local edit is sent before remote
+    // state is read back, and an older remote copy can't clobber it. Events
+    // must complete before meals (meals FK → events.id); the push path and the
+    // hydrate path both honor that ordering.
+    //
+    // Phase-1 reconcile is the naive guard in lib/hydration.ts (insert-if-
+    // absent, else replace-if-strictly-newer). Trigger-correct LWW — the
+    // set_updated_at server trigger rewriting updated_at on every write — is
+    // Phase 2 (docs/multi-device-sync-requirements.md §5.2 FR-5).
     async function runSync() {
+      // Push up.
       await syncPendingEvents();
       await syncPendingMeals();
-      syncPendingAttachments();
-      syncPendingVetVisits();
-      refreshFoodCache();
+      await syncPendingAttachments();
+      await syncPendingVetVisits();
+      // Pull down.
+      await hydrateFromCloud();
+      await refreshFoodCache();
 
       const status = await getSyncStatus();
       setPendingStatus(status.pendingCount, status.oldestPendingAt);

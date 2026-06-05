@@ -305,7 +305,11 @@ export default function EventDetailScreen() {
     earliest: event.occurred_at_earliest,
     latest: event.occurred_at_latest,
   });
-  const photoUri = attachment?.local_uri ?? remoteUrl;
+  // FR-10 (B-054): a hydrated attachment row carries an empty local_uri (no
+  // on-device file) — fall back to the signed Storage URL rather than handing
+  // an empty string to <Image>.
+  const localUri = attachment?.local_uri && attachment.local_uri.length > 0 ? attachment.local_uri : null;
+  const photoUri = localUri ?? remoteUrl;
   // Meals' clinical artifact is the food name, not a photo. Don't show an
   // empty-state hero begging for one — flagged by Dr. Chen + Jordan during
   // on-device review. If a meal happens to have a photo, the hero still renders.
