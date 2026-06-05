@@ -133,6 +133,13 @@ export function Toast() {
   if (!payload && !visible) return null;
 
   const occurredDate = payload ? new Date(payload.occurredAt) : new Date();
+  // One-glance reminder of what was just logged. Brand + product, trimmed
+  // so a missing brand/product doesn't leave a stray space. Falls back to
+  // the bare "Logged at HH:MM" line when neither is present.
+  const foodName = [payload?.foodBrand, payload?.foodProductName]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
   // Intake capture renders for meals and treats. Treats opt in (PM call
   // 2026-05-23) because treat refusal is itself a clinical signal — a pet
   // declining a treat often precedes declining meals. Default stays null;
@@ -151,7 +158,14 @@ export function Toast() {
       >
         <View style={showIntake ? styles.card : styles.pill}>
           <View style={styles.headerRow}>
-            <Text style={styles.label}>Logged at {formatTime(occurredDate)}</Text>
+            <View style={styles.labelCol}>
+              {foodName ? (
+                <Text style={styles.foodName} numberOfLines={1}>{foodName}</Text>
+              ) : null}
+              <Text style={foodName ? styles.subLabel : styles.label}>
+                Logged at {formatTime(occurredDate)}
+              </Text>
+            </View>
             <TouchableOpacity
               onPress={openPicker}
               hitSlop={12}
@@ -270,11 +284,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: theme.space2,
   },
+  labelCol: {
+    flexShrink: 1,
+    gap: 1,
+  },
+  foodName: {
+    fontSize: theme.textMD,
+    color: '#fff',
+    fontWeight: theme.weightMedium,
+  },
   label: {
     fontSize: theme.textMD,
     color: '#fff',
     fontWeight: theme.weightRegular,
     flexShrink: 1,
+  },
+  // Demoted "Logged at HH:MM" line shown beneath the food name.
+  subLabel: {
+    fontSize: theme.textSM,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: theme.weightRegular,
   },
   action: {
     fontSize: theme.textMD,

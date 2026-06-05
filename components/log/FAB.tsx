@@ -113,7 +113,14 @@ export function FAB() {
       // (B-014; treats added 2026-05-23). Every meal-entry path must route
       // through this toast — if a non-picker meal flow is added later,
       // mirror this call.
-      showToast({ eventId, occurredAt: now, foodType, intakeRating: null });
+      showToast({
+        eventId,
+        occurredAt: now,
+        foodType,
+        foodBrand: food.brand,
+        foodProductName: food.product_name,
+        intakeRating: null,
+      });
     } finally {
       setLogging(null);
     }
@@ -229,7 +236,7 @@ export function FAB() {
                   disabled={logging !== null}
                 >
                   <Text style={styles.menuActionIcon}>🍽</Text>
-                  <Text style={styles.menuActionLabel} numberOfLines={1}>
+                  <Text style={styles.menuActionLabel} numberOfLines={2}>
                     {food.brand} {food.product_name}
                   </Text>
                   {logging === food.id && (
@@ -352,6 +359,10 @@ const styles = StyleSheet.create({
     marginBottom: theme.space2,
     paddingVertical: theme.space1,
     minWidth: 240,
+    // Cap so the right-anchored menu can't run off-screen on narrow phones
+    // while still giving long brand+product names (which now wrap to two
+    // lines instead of truncating) room to breathe.
+    maxWidth: 300,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
