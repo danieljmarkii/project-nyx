@@ -133,6 +133,13 @@ export function Toast() {
   if (!payload && !visible) return null;
 
   const occurredDate = payload ? new Date(payload.occurredAt) : new Date();
+  // One-glance reminder of what was just logged. Brand + product, trimmed
+  // so a missing brand/product doesn't leave a stray space. Falls back to
+  // the bare "Logged at HH:MM" line when neither is present.
+  const foodName = [payload?.foodBrand, payload?.foodProductName]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
   // Intake capture renders for meals and treats. Treats opt in (PM call
   // 2026-05-23) because treat refusal is itself a clinical signal — a pet
   // declining a treat often precedes declining meals. Default stays null;
@@ -151,7 +158,14 @@ export function Toast() {
       >
         <View style={showIntake ? styles.card : styles.pill}>
           <View style={styles.headerRow}>
-            <Text style={styles.label}>Logged at {formatTime(occurredDate)}</Text>
+            <View style={styles.labelCol}>
+              {foodName ? (
+                <Text style={styles.foodName} numberOfLines={1}>{foodName}</Text>
+              ) : null}
+              <Text style={foodName ? styles.subLabel : styles.label}>
+                Logged at {formatTime(occurredDate)}
+              </Text>
+            </View>
             <TouchableOpacity
               onPress={openPicker}
               hitSlop={12}
@@ -227,7 +241,11 @@ const styles = StyleSheet.create({
     bottom: TAB_BAR_HEIGHT + 8,
     left: theme.space2,
     right: 88,
-    alignItems: 'flex-start',
+    // Stretch (not flex-start) so the pill fills its bounded wrapper and a
+    // long food name ellipsizes inside it instead of overflowing past the
+    // right:88 FAB gutter. Every toast now carries a food name, so the
+    // full-width bar reads as intentional rather than a content-hugging chip.
+    alignItems: 'stretch',
     zIndex: 50,
     elevation: 12,
   },
@@ -265,16 +283,40 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   headerRow: {
+    // Grow to fill the (now stretched) pill so space-between pushes
+    // "Change time" to the right edge, and shrink so a long food name
+    // ellipsizes via labelCol's flexShrink instead of overflowing. Note:
+    // flexBasis stays 'auto' (NOT the 0% that `flex: 1` shorthand implies) —
+    // 0% would collapse this row against the intake-chip row in the
+    // column-layout card variant.
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: theme.space2,
+  },
+  labelCol: {
+    flexShrink: 1,
+    gap: 1,
+  },
+  foodName: {
+    fontSize: theme.textMD,
+    color: '#fff',
+    fontWeight: theme.weightMedium,
   },
   label: {
     fontSize: theme.textMD,
     color: '#fff',
     fontWeight: theme.weightRegular,
     flexShrink: 1,
+  },
+  // Demoted "Logged at HH:MM" line shown beneath the food name.
+  subLabel: {
+    fontSize: theme.textSM,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: theme.weightRegular,
   },
   action: {
     fontSize: theme.textMD,

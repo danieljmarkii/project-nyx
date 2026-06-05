@@ -240,6 +240,8 @@ export default function LogModal() {
           eventId: result.eventId,
           occurredAt: result.occurredAt,
           foodType,
+          foodBrand: food.brand,
+          foodProductName: food.product_name,
           intakeRating: null,
         },
         { delayMs: 1100 },

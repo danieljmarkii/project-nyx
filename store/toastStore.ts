@@ -23,6 +23,11 @@ export interface MealToastPayload {
   // Drives whether the intake chip row renders — 'meal' and 'treat' get
   // it (B-014; treats added 2026-05-23). 'other' and null opt out.
   foodType: 'meal' | 'treat' | 'other' | null;
+  // Brand + product of the just-logged food, surfaced in the toast as a
+  // one-glance reminder of what was logged. Optional/nullable: non-food
+  // paths or unnamed foods fall back to the bare "Logged at HH:MM" line.
+  foodBrand?: string | null;
+  foodProductName?: string | null;
   // In-flight intake rating. Starts null; updated optimistically via
   // patchIntakeRating when the user taps a chip.
   intakeRating: IntakeRating | null;
