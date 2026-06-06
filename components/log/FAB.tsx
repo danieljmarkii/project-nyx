@@ -11,6 +11,7 @@ import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useToastStore } from '../../store/toastStore';
 import { getDb } from '../../lib/db';
+import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { uuid, exifDateToISO } from '../../lib/utils';
 
 interface RecentFood {
@@ -86,6 +87,15 @@ export function FAB() {
         [now, food.id],
       );
 
+      // Push immediately (events before meals — meals FK → events.id) so a
+      // quick-logged meal reaches Supabase right away instead of waiting for the
+      // next foreground/reconnect. Matches app/log.tsx; without it, FAB
+      // quick-logs propagate to other devices and become durable only on the
+      // next sync trigger (B-054 surfaced this). Fire-and-forget.
+      syncPendingEvents()
+        .then(() => syncPendingMeals())
+        .catch(console.error);
+
       const foodType =
         food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
           ? food.food_type
@@ -141,6 +151,10 @@ export function FAB() {
         'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, 0)',
         [eventId, activePet.id, type, now, 'manual', 'now'],
       );
+
+      // Push immediately so the quick symptom reaches Supabase right away (no
+      // meal row here, so events only). Fire-and-forget. See handleQuickMeal.
+      syncPendingEvents().catch(console.error);
 
       prependEvent({
         id: eventId,
