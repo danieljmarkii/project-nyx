@@ -1,6 +1,7 @@
 import {
   shouldWriteRemoteRow,
   reconcileBatch,
+  parseTs,
   LOCAL_WIPE_TABLES,
   type LocalRowMeta,
 } from './hydration';
@@ -88,6 +89,36 @@ describe('shouldWriteRemoteRow', () => {
       const remote = { id: 'e', updated_at: T1, deleted_at: T1 };
       expect(shouldWriteRemoteRow(remote, { updated_at: T0 }, 'lww')).toBe(true);
     });
+  });
+});
+
+describe('parseTs — timestamp format normalization', () => {
+  // The SQLite datetime('now') default form must be read as UTC, not local —
+  // asserted against the explicit-Z parse so this holds in any test-runner
+  // timezone (the bug only manifests in non-UTC zones).
+  it('treats the SQLite space-separated form as UTC', () => {
+    expect(parseTs('2026-06-06 14:23:05')).toBe(Date.parse('2026-06-06T14:23:05Z'));
+  });
+
+  it('parses ISO-8601 (client toISOString / Postgres TIMESTAMPTZ) unchanged', () => {
+    expect(parseTs('2026-06-06T14:25:05.000Z')).toBe(Date.parse('2026-06-06T14:25:05.000Z'));
+  });
+
+  it('returns null for empty / unparseable input', () => {
+    expect(parseTs(null)).toBeNull();
+    expect(parseTs(undefined)).toBeNull();
+    expect(parseTs('not-a-date')).toBeNull();
+  });
+
+  it('regression: an ISO delete is newer than an earlier SQLite-default create (cross-device delete propagation)', () => {
+    // The exact failing case: wife's device CREATED the row (local updated_at =
+    // SQLite space form), husband soft-deletes it 2 min later (ISO). The delete
+    // must win so it propagates back to her device. Pre-fix, the space form
+    // parsed as local time and (in a negative-offset zone) looked newer, so the
+    // delete was skipped and the row lingered.
+    const localCreate = { updated_at: '2026-06-06 14:23:05' }; // SQLite default
+    const remoteDelete = { id: 'e', updated_at: '2026-06-06T14:25:05.000Z' };
+    expect(shouldWriteRemoteRow(remoteDelete, localCreate, 'lww')).toBe(true);
   });
 });
 

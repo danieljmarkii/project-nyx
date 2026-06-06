@@ -29,9 +29,25 @@ export interface RemoteRow {
   updated_at?: string | null;
 }
 
-function parseTs(ts: string | null | undefined): number | null {
+// Parse a timestamp to epoch millis for LWW comparison, returning null if
+// unusable. Handles a format trap: SQLite's `datetime('now')` default (used by
+// the events/vet_visits `updated_at` DEFAULT, and by every insert that doesn't
+// set updated_at explicitly — e.g. the FAB quick-log) writes
+// "YYYY-MM-DD HH:MM:SS" — UTC, space-separated, with NO timezone marker.
+// `Date.parse` treats that bare form as LOCAL time, while ISO-8601 values
+// (new Date().toISOString() on the client, TIMESTAMPTZ from Postgres) carry a
+// Z/offset and parse as UTC. A row created on this device and never re-hydrated
+// keeps the space form, so on a device whose timezone isn't UTC its own
+// updated_at parses hours off — and another device's edit/delete to that row is
+// wrongly judged "older" and skipped (the cross-device delete-not-propagating
+// bug). Normalize the space form to explicit UTC before parsing so both sides
+// compare on the same clock.
+export function parseTs(ts: string | null | undefined): number | null {
   if (!ts) return null;
-  const n = Date.parse(ts);
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(ts)
+    ? ts.replace(' ', 'T') + 'Z'
+    : ts;
+  const n = Date.parse(normalized);
   return Number.isNaN(n) ? null : n;
 }
 

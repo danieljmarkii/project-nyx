@@ -74,13 +74,19 @@ export function FAB() {
       const mealId = uuid();
       const db = getDb();
 
+      // Write created_at/updated_at explicitly as ISO-8601 rather than letting
+      // SQLite's datetime('now') default fill them in. The default form
+      // ("YYYY-MM-DD HH:MM:SS", no tz) parses as local time and breaks the
+      // cross-device LWW comparison (see lib/hydration.ts parseTs); keeping
+      // creator-device rows in the same ISO format as hydrated/server rows
+      // avoids that at the source.
       await db.runAsync(
-        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, 0)',
-        [eventId, activePet.id, 'meal', now, 'manual', 'now'],
+        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, ?, ?, 0)',
+        [eventId, activePet.id, 'meal', now, 'manual', 'now', now, now],
       );
       await db.runAsync(
-        'INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, synced) VALUES (?, ?, ?, ?, ?, 0)',
-        [mealId, eventId, activePet.id, food.id, 'unknown'],
+        'INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, synced) VALUES (?, ?, ?, ?, ?, ?, 0)',
+        [mealId, eventId, activePet.id, food.id, 'unknown', now],
       );
       await db.runAsync(
         'UPDATE food_items_cache SET last_used_at = ? WHERE id = ?',
@@ -147,9 +153,11 @@ export function FAB() {
       const eventId = uuid();
       const db = getDb();
 
+      // ISO created_at/updated_at — see handleQuickMeal (avoids the SQLite
+      // datetime('now') local-time parse trap in cross-device LWW).
       await db.runAsync(
-        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, 0)',
-        [eventId, activePet.id, type, now, 'manual', 'now'],
+        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, ?, ?, 0)',
+        [eventId, activePet.id, type, now, 'manual', 'now', now, now],
       );
 
       // Push immediately so the quick symptom reaches Supabase right away (no
