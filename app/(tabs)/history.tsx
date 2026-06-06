@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
@@ -11,7 +11,7 @@ import { EventRow } from '../../components/history/EventRow';
 import { usePetStore } from '../../store/petStore';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { getTimeline, softDeleteEvent, TimelineRow } from '../../lib/db';
-import { syncPendingEvents } from '../../lib/sync';
+import { syncPendingEvents, syncNow } from '../../lib/sync';
 
 const PAGE_SIZE = 50;
 
@@ -75,6 +75,7 @@ export default function HistoryScreen() {
   const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(null);
   const [datePreset, setDatePreset] = useState<DatePreset>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Ref-based guard prevents concurrent loads even when the callback is stale
   const loadingRef = useRef(false);
@@ -107,6 +108,23 @@ export default function HistoryScreen() {
       setLoading(false);
     }
   }, [activePet]);
+
+  // Pull-to-refresh: run a full sync cycle (push local writes up + hydrate
+  // remote rows down — B-054), then re-read the timeline. This is the deliberate
+  // "sync now" gesture; it surfaces another device's writes without the
+  // foreground/reload dance, and ships as the gesture real users expect on a
+  // health timeline. (The automatic refresh-after-hydrate is the §6-gated UI.)
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await syncNow();
+    } catch (e) {
+      console.warn('[history] manual sync failed:', e);
+    } finally {
+      setRefreshing(false);
+    }
+    loadEvents(0, typeFilter, datePreset, true);
+  }, [loadEvents, typeFilter, datePreset]);
 
   // Reload fresh on every focus so edits/deletes from the edit modal are reflected
   useFocusEffect(
@@ -269,6 +287,13 @@ export default function HistoryScreen() {
           )}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.colorTextSecondary}
+            />
+          }
           ListEmptyComponent={
             isEmpty ? (
               <View style={styles.emptyState}>

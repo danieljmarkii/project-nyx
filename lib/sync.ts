@@ -607,3 +607,28 @@ export async function hydrateFromCloud(): Promise<void> {
   if (stale()) return;
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
 }
+
+// One full sync cycle: push local writes UP, then pull remote rows DOWN
+// (FR-2 push-before-pull). Shared by the useSync auto-triggers (mount /
+// foreground / reconnect) and the History pull-to-refresh, so the ordering and
+// the in-flight guard live in one place. Module-level guard: only one cycle
+// runs at a time across ALL callers — overlapping cycles would double-pull and
+// interleave writes. A caller that arrives while one is running no-ops (the
+// running cycle covers it).
+let syncCycleInFlight = false;
+export async function syncNow(): Promise<void> {
+  if (syncCycleInFlight) return;
+  syncCycleInFlight = true;
+  try {
+    // Push up.
+    await syncPendingEvents();
+    await syncPendingMeals();
+    await syncPendingAttachments();
+    await syncPendingVetVisits();
+    // Pull down.
+    await hydrateFromCloud();
+    await refreshFoodCache();
+  } finally {
+    syncCycleInFlight = false;
+  }
+}
