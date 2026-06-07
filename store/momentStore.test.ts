@@ -70,6 +70,11 @@ describe('momentStore', () => {
     // 400ms after the second show; the moment must still be visible then.
     jest.advanceTimersByTime(401);
     expect(useMomentStore.getState().visible).toBe(true);
+    // ...and the replacement's own 1400ms timer fires on schedule from show #2.
+    jest.advanceTimersByTime(998);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(1);
+    expect(useMomentStore.getState().visible).toBe(false);
   });
 
   it('hide() cancels both the pending reveal and the dismiss timer', () => {

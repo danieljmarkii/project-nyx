@@ -365,7 +365,7 @@ export default function LogModal() {
     if (!isMeal) {
       // Tone-aware: symptom logs get a calm confirm (never a festive gold beat
       // over a worrying event); routine logs get the warm-gold celebrate moment.
-      const tone = SYMPTOM_TYPES.has(selectedType as EventTypeKey) ? 'calm' : 'celebrate';
+      const tone = selectedType !== null && SYMPTOM_TYPES.has(selectedType) ? 'calm' : 'celebrate';
       // delayMs clears the dismissing modal so the root overlay isn't briefly
       // occluded on iOS (same reason the meal toast is deferred).
       showMoment({ tone }, { delayMs: 300 });

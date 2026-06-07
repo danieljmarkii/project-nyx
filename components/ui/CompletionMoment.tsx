@@ -5,9 +5,14 @@ import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { useMomentStore } from '../../store/momentStore';
 
-// Diameter of the warm-gold glow. Large enough to bloom past the 88px check
-// ring and read as a radial halo, not a disc.
+// Diameter of the warm-gold glow. Large enough to bloom past the check ring
+// and read as a radial halo, not a disc.
 const GLOW_SIZE = 360;
+// Mint check-ring diameter (design-system PR 4 "moment" spec).
+const CHECK_RING_SIZE = 88;
+// Namespaced so the radial-gradient def can't be hijacked by another SVG that
+// defines a generically-named gradient elsewhere in the tree.
+const GLOW_GRADIENT_ID = 'nyx-completion-glow';
 
 // Root-mounted completion "moment" — the earned beat after a real log (B-063).
 // Store-driven so every log path (the /log forms, the FAB quick actions) can
@@ -26,18 +31,24 @@ export function CompletionMoment() {
   const glowOpacity = useRef(new Animated.Value(0)).current;
   // Backdrop fade — also drives the exit so the surface doesn't snap away.
   const surfaceOpacity = useRef(new Animated.Value(0)).current;
+  // The single in-flight animation (entrance or exit). Stopped before each new
+  // run so a rapid re-log can't tick two composites against the same values.
+  const animRef = useRef<Animated.CompositeAnimation | null>(null);
 
   const tone = payload?.tone ?? 'calm';
 
   useEffect(() => {
+    animRef.current?.stop();
     if (visible) {
-      // Reset so a repeat log re-plays the entrance from the start.
+      // Reset every value (surfaceOpacity included) so a repeat log re-plays
+      // the entrance from zero even if the exit fade was still mid-flight.
+      surfaceOpacity.setValue(0);
       checkScale.setValue(0.6);
       checkOpacity.setValue(0);
       glowScale.setValue(0.4);
       glowOpacity.setValue(0);
       const celebrate = tone === 'celebrate';
-      const anim = Animated.parallel([
+      animRef.current = Animated.parallel([
         Animated.timing(surfaceOpacity, { toValue: 1, duration: theme.durationFast, useNativeDriver: true }),
         // Mint check ring springs in with a slight overshoot.
         Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
@@ -52,14 +63,13 @@ export function CompletionMoment() {
             ]
           : []),
       ]);
-      anim.start();
-      return () => anim.stop();
+    } else {
+      animRef.current = Animated.timing(surfaceOpacity, {
+        toValue: 0, duration: theme.durationFast, useNativeDriver: true,
+      });
     }
-    const exit = Animated.timing(surfaceOpacity, {
-      toValue: 0, duration: theme.durationFast, useNativeDriver: true,
-    });
-    exit.start();
-    return () => exit.stop();
+    animRef.current.start();
+    return () => animRef.current?.stop();
   }, [visible, tone, checkScale, checkOpacity, glowScale, glowOpacity, surfaceOpacity]);
 
   if (!payload) return null;
@@ -79,13 +89,13 @@ export function CompletionMoment() {
         >
           <Svg width={GLOW_SIZE} height={GLOW_SIZE}>
             <Defs>
-              <RadialGradient id="completionGlow" cx="50%" cy="50%" r="50%">
+              <RadialGradient id={GLOW_GRADIENT_ID} cx="50%" cy="50%" r="50%">
                 <Stop offset="0%" stopColor={theme.colorMomentGlow} stopOpacity={0.22} />
                 <Stop offset="40%" stopColor={theme.colorMomentGlow} stopOpacity={0.06} />
                 <Stop offset="70%" stopColor={theme.colorMomentGlow} stopOpacity={0} />
               </RadialGradient>
             </Defs>
-            <Circle cx={GLOW_SIZE / 2} cy={GLOW_SIZE / 2} r={GLOW_SIZE / 2} fill="url(#completionGlow)" />
+            <Circle cx={GLOW_SIZE / 2} cy={GLOW_SIZE / 2} r={GLOW_SIZE / 2} fill={`url(#${GLOW_GRADIENT_ID})`} />
           </Svg>
         </Animated.View>
       )}
@@ -111,7 +121,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space2,
     overflow: 'hidden', // clip the 360px glow on screens narrower than GLOW_SIZE
-    zIndex: 100, // above the tab/Toast layer; this is a deliberate full takeover
+    // Above the tab/Toast layer (deliberate full takeover). Equal to
+    // ColdStartOverlay's z; that one is mounted after us in _layout, so it
+    // intentionally wins during hydration — when no log can be in flight anyway.
+    zIndex: 100,
   },
   // Warm-gold radial halo, centered behind the ring. Absolute so it blooms
   // without displacing the centered ring + label.
@@ -122,9 +135,9 @@ const styles = StyleSheet.create({
   },
   // Mint ring on white — the confirm color, shared by both tones.
   checkCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: CHECK_RING_SIZE,
+    height: CHECK_RING_SIZE,
+    borderRadius: CHECK_RING_SIZE / 2,
     backgroundColor: theme.colorSurface,
     borderWidth: 2,
     borderColor: theme.colorMomentConfirm,
@@ -141,7 +154,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   loggedText: {
-    fontSize: 20,
+    fontSize: theme.textXL,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
   },
