@@ -31,8 +31,11 @@ jest.mock('./utils', () => ({
 
 import { insertMeal } from './meals';
 
-// Lets the fire-and-forget syncPendingEvents().then(syncPendingMeals) microtask
-// chain settle so we can assert the second call landed.
+// Lets the fire-and-forget syncPendingEvents().then(syncPendingMeals) chain
+// settle so we can assert the second call landed. A bare Promise.resolve() is
+// insufficient: the .then(syncPendingMeals) callback is itself a microtask
+// queued after syncPendingEvents()'s promise resolves, so we need a macrotask
+// (setTimeout 0) to drain past it.
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 const PARAMS = {

@@ -271,34 +271,46 @@ export default function LogModal() {
     const isMeal = selectedType === 'meal' && !!foodId;
     let eventId: string;
     let now: string;
-    if (isMeal) {
-      // insertMeal owns the meal event+meal write, the food-recency touch, the
-      // sync push, and the AI-Signal regen (B-059). Meals are always witnessed,
-      // so the confidence/window it writes matches the witnessed timeFields this
-      // path passes in (handlePickFood) — no B-010 information is lost.
-      const res = await insertMeal({
-        petId: activePet.id,
-        foodId: foodId!,
-        occurredAt: effectiveOccurredAt,
-        occurredAtSource: effectiveSource,
-      });
-      eventId = res.eventId;
-      now = res.now;
-    } else {
-      eventId = uuid();
-      now = new Date().toISOString();
-      await db.runAsync(
-        `INSERT INTO events
-           (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
-            occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
-            created_at, updated_at, synced)
-         VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, 0)`,
-        [eventId, activePet.id, selectedType!, effectiveOccurredAt.toISOString(),
-         severity ?? null, notes.trim() || null, effectiveSource,
-         tf.confidence, tf.earliest ? tf.earliest.toISOString() : null,
-         tf.latest ? tf.latest.toISOString() : null, now, now]
-      );
+    // The write can throw (insertMeal now wraps the meal DB writes, and the
+    // non-meal branch hits SQLite directly). Surface a failure instead of
+    // silently freezing on the current step — without this the touch handler
+    // swallows the throw and nothing advances or explains why.
+    try {
+      if (isMeal) {
+        // insertMeal owns the meal event+meal write, the food-recency touch, the
+        // sync push, and the AI-Signal regen (B-059). Meals are always witnessed,
+        // so the confidence/window it writes matches the witnessed timeFields this
+        // path passes in (handlePickFood) — no B-010 information is lost.
+        const res = await insertMeal({
+          petId: activePet.id,
+          foodId: foodId!,
+          occurredAt: effectiveOccurredAt,
+          occurredAtSource: effectiveSource,
+        });
+        eventId = res.eventId;
+        now = res.now;
+      } else {
+        eventId = uuid();
+        now = new Date().toISOString();
+        await db.runAsync(
+          `INSERT INTO events
+             (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
+              occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
+              created_at, updated_at, synced)
+           VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, 0)`,
+          [eventId, activePet.id, selectedType!, effectiveOccurredAt.toISOString(),
+           severity ?? null, notes.trim() || null, effectiveSource,
+           tf.confidence, tf.earliest ? tf.earliest.toISOString() : null,
+           tf.latest ? tf.latest.toISOString() : null, now, now]
+        );
+      }
+    } catch (e) {
+      console.error('[log] event write failed:', e);
+      Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
+      return null;
     }
+    // For a meal, tf.confidence is guaranteed 'witnessed' (handlePickFood always
+    // passes that override) — matching what insertMeal wrote to the DB row.
     prependEvent({
       id: eventId,
       pet_id: activePet.id,

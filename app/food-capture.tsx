@@ -361,6 +361,9 @@ export default function FoodCaptureScreen() {
 
   async function commitFoodInner(brand: string, product: string, format: string, type: FoodType) {
     const db = getDb();
+    // `now` stamps the food_items_cache row below. The meal's event/meal rows get
+    // their own `now` from insertMeal (returned as mealNow) — a sub-millisecond
+    // split with no LWW impact, kept separate so the helper owns its timestamps.
     const now = new Date().toISOString();
     const frontStoragePath = frontPhoto?.storagePath ?? null;
     await db.runAsync(

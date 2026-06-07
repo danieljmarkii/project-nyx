@@ -13,6 +13,7 @@ import { useToastStore } from '../../store/toastStore';
 import { getDb } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import { insertMeal } from '../../lib/meals';
+import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { uuid, exifDateToISO } from '../../lib/utils';
 
 interface RecentFood {
@@ -142,6 +143,11 @@ export function FAB() {
       // Push immediately so the quick symptom reaches Supabase right away (no
       // meal row here, so events only). Fire-and-forget. See handleQuickMeal.
       syncPendingEvents().catch(console.error);
+
+      // Freshness (§2): a symptom is a primary input to the correlation + safety
+      // detectors, so refresh the AI Signal — the full log.tsx symptom flow does
+      // the same. (Meals get this via insertMeal; this is the symptom parallel.)
+      triggerSignalRegenDebounced(activePet.id);
 
       prependEvent({
         id: eventId,
