@@ -107,11 +107,17 @@ export function MealCompletionCard() {
       // Touching the picker means the user explicitly chose a time → flip
       // provenance from 'now' to 'manual' so the vet report and correlation
       // engine can distinguish witnessed-now from owner-backfilled later.
+      // Re-assert occurred_at_confidence: 'witnessed' — meals are always
+      // witnessed (you see yourself put the bowl down; the B-010 found path
+      // never applies), and updateEvent writes confidence on every UPDATE, so
+      // omitting it would silently wipe the row's confidence to NULL. This is a
+      // time edit, not a confidence reclassification; window bounds stay null.
       await updateEvent(payload.eventId, {
         occurred_at: iso,
         severity: null,
         notes: null,
         occurred_at_source: 'manual',
+        occurred_at_confidence: 'witnessed',
       });
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
@@ -192,6 +198,7 @@ export function MealCompletionCard() {
             <TouchableOpacity
               onPress={openPicker}
               hitSlop={12}
+              style={styles.actionBtn}
               accessibilityRole="button"
               accessibilityLabel="Change time of this log"
             >
@@ -313,6 +320,12 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: 'rgba(255,255,255,0.7)',
     fontWeight: theme.weightRegular,
+  },
+  // 44pt min touch target (the 3am-test rule) — the underlined label alone is
+  // 15pt; hitSlop helps but the container guarantees the floor.
+  actionBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
   action: {
     fontSize: theme.textMD,

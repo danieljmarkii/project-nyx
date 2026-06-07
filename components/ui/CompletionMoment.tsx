@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space2,
     overflow: 'hidden', // clip the 360px glow on screens narrower than GLOW_SIZE
-    // Above the tab/Toast layer (deliberate full takeover). Equal to
+    // Above the tab + meal-card layer (deliberate full takeover). Equal to
     // ColdStartOverlay's z; that one is mounted after us in _layout, so it
     // intentionally wins during hydration — when no log can be in flight anyway.
     zIndex: 100,
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   },
   loggedText: {
     fontSize: theme.textXL,
-    fontWeight: theme.fontWeightMedium,
+    fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
   },
 });
