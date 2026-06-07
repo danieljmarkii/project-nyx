@@ -17,6 +17,15 @@ import { usePetStore } from '../store/petStore';
 // the (instant) empty hydration resolves. Once local has data, foreground/
 // reconnect re-syncs reconcile silently — coldStartHydrating is never set, so
 // this never appears on a returning device.
+//
+// Tradeoff (accepted): the headline copy REQUIRES the pet name, so there is no
+// meaningful version of this overlay before usePet resolves the pet. On an
+// existing account the pet is read live from Supabase (it already crosses
+// devices today, §2) and lands fast — typically alongside the hydration — so the
+// pre-pet window where Home briefly shows its own designed empty/loading zones is
+// short and is NOT the misleading "populated-but-empty timeline" that B-054 was
+// built to fix. We accept that brief window rather than render a nameless
+// "Catching up on 's history…".
 export function ColdStartOverlay() {
   const coldStartHydrating = useSyncStore((s) => s.coldStartHydrating);
   const activePet = usePetStore((s) => s.activePet);

@@ -134,9 +134,12 @@ export default function HistoryScreen() {
     } catch (e) {
       console.warn('[history] manual sync failed:', e);
     } finally {
+      // Re-read from local regardless of sync success (offline still refreshes
+      // the local view), and await it so the spinner stays up until the list
+      // repaints — no drop-then-fill flicker.
+      await loadEvents(0, typeFilter, datePreset, true);
       setRefreshing(false);
     }
-    loadEvents(0, typeFilter, datePreset, true);
   }, [loadEvents, typeFilter, datePreset]);
 
   // Reload fresh on every focus so edits/deletes from the edit modal are reflected

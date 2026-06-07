@@ -26,6 +26,12 @@ export function useSync() {
     // established can put up the blocking "Catching up…" overlay, and only if the
     // local store is genuinely empty (true cold start). Foreground/reconnect
     // re-syncs never block — local is already populated, so they reconcile silently.
+    //
+    // Account-switch ordering: on sign-out, _layout.tsx awaits clearLocalData()
+    // BEFORE setSession(null), and this effect keys on `session`, so by the time a
+    // new session triggers a fresh initial run the wipe has already completed —
+    // isLocalDataEmpty() reads a fully-cleared store, not one mid-wipe. (A switch
+    // is also a multi-second UI flow, far longer than the wipe.)
     async function runSync(isInitial: boolean) {
       let blocking = false;
       if (isInitial) {
@@ -41,10 +47,12 @@ export function useSync() {
       } finally {
         // Clear the overlay whether the cycle succeeded or threw — never strand it.
         if (blocking) setColdStartHydrating(false);
+        // Reactive refresh-after-hydrate: bump even on a throw. A cycle that
+        // failed partway may still have written some hydrated rows before the
+        // error (hydrateFromCloud isolates each table), so the screens should
+        // re-read whatever did land. Idempotent and cheap.
+        bumpHydrationTick();
       }
-      // Reactive refresh-after-hydrate: a completed cycle may have pulled rows
-      // from another device. Bump the tick so Home/Trend/History re-read.
-      bumpHydrationTick();
       const status = await getSyncStatus();
       setPendingStatus(status.pendingCount, status.oldestPendingAt);
     }
