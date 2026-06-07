@@ -16,6 +16,8 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
 
 4. **Read the relevant docs for the confirmed step** (the CLAUDE.md "Read These Before Writing Any Code" table tells you which). Don't write code before this.
 
+5. **Sanity-check for doc drift.** Confirm `STATUS.md → Runtime in Use` still agrees with the runbook/CLAUDE.md handoff default. If they disagree (e.g. STATUS.md says TestFlight is live but the handoff docs still call it "blocked"), flag it — a stale handoff means the PM gets the wrong on-device commands. This is a one-line check, not a full audit.
+
 ## Output
 
 Emit, in this order:
