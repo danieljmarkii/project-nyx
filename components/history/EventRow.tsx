@@ -1,6 +1,7 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { NyxEvent } from '../../store/eventStore';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
+import { EventIcon } from '../event/EventIcon';
 import { theme } from '../../constants/theme';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { describeOccurredAt } from '../../lib/utils';
@@ -14,7 +15,7 @@ interface Props {
   onDelete: () => void;
 }
 
-const FALLBACK_CONFIG = { label: 'Event', emoji: '·', hasSeverity: false };
+const FALLBACK_CONFIG = { label: 'Event', hasSeverity: false };
 
 function formatDatePart(iso: string): string {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -54,7 +55,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
       activeOpacity={0.7}
     >
       <View style={[styles.emojiCol, isSymptom && styles.emojiColSymptom]}>
-        <Text style={styles.emoji}>{config.emoji}</Text>
+        <EventIcon type={event.event_type} size={20} />
       </View>
       <View style={styles.content}>
         <View style={styles.topLine}>
@@ -126,9 +127,6 @@ const styles = StyleSheet.create({
   },
   emojiColSymptom: {
     backgroundColor: theme.colorEventSymptomLight,
-  },
-  emoji: {
-    fontSize: 16,
   },
   content: {
     flex: 1,

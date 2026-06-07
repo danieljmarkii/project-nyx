@@ -5,7 +5,9 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { Camera, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { EventIcon } from '../event/EventIcon';
 import { useAttachmentStore } from '../../store/attachmentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
@@ -242,7 +244,9 @@ export function FAB() {
                   activeOpacity={0.7}
                   disabled={logging !== null}
                 >
-                  <Text style={styles.menuActionIcon}>🍽</Text>
+                  <View style={styles.menuActionIcon}>
+                    <EventIcon type="meal" size={20} />
+                  </View>
                   <Text style={styles.menuActionLabel} numberOfLines={2}>
                     {food.brand} {food.product_name}
                   </Text>
@@ -257,7 +261,9 @@ export function FAB() {
               onPress={() => { closeMenu(); router.push('/log?type=meal'); }}
               activeOpacity={0.7}
             >
-              <Text style={styles.menuActionIcon}>✚</Text>
+              <View style={styles.menuActionIcon}>
+                <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
+              </View>
               <Text style={[styles.menuActionLabel, styles.newMealLabel]}>New meal</Text>
             </TouchableOpacity>
 
@@ -274,7 +280,7 @@ export function FAB() {
                 {logging === 'vomit'
                   ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
                   : <>
-                      <Text style={styles.symptomBtnEmoji}>🤢</Text>
+                      <EventIcon type="vomit" size={20} color={theme.colorEventSymptom} />
                       <Text style={styles.symptomBtnText}>Vomit</Text>
                     </>
                 }
@@ -288,7 +294,7 @@ export function FAB() {
                 {logging === 'diarrhea'
                   ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
                   : <>
-                      <Text style={styles.symptomBtnEmoji}>💩</Text>
+                      <EventIcon type="diarrhea" size={20} color={theme.colorEventSymptom} />
                       <Text style={styles.symptomBtnText}>Loose stool</Text>
                     </>
                 }
@@ -299,7 +305,9 @@ export function FAB() {
 
             {/* Full-flow actions */}
             <TouchableOpacity style={styles.menuAction} onPress={handlePhotoLog} activeOpacity={0.7}>
-              <Text style={styles.menuActionIcon}>📷</Text>
+              <View style={styles.menuActionIcon}>
+                <Camera size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
+              </View>
               <Text style={styles.menuActionLabel}>Log with photo</Text>
             </TouchableOpacity>
 
@@ -308,7 +316,9 @@ export function FAB() {
               onPress={() => { closeMenu(); router.push('/log'); }}
               activeOpacity={0.7}
             >
-              <Text style={styles.menuActionIcon}>➕</Text>
+              <View style={styles.menuActionIcon}>
+                <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
+              </View>
               <Text style={styles.menuActionLabel}>More events</Text>
             </TouchableOpacity>
           </Animated.View>
@@ -418,9 +428,6 @@ const styles = StyleSheet.create({
     gap: 4,
     minHeight: 52,
   },
-  symptomBtnEmoji: {
-    fontSize: 18,
-  },
   symptomBtnText: {
     fontSize: 12,
     color: theme.colorEventSymptom,
@@ -435,9 +442,8 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space1,
   },
   menuActionIcon: {
-    fontSize: 18,
     width: 24,
-    textAlign: 'center',
+    alignItems: 'center',
   },
   menuActionLabel: {
     fontSize: 15,

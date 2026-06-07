@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import { Camera } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
@@ -416,7 +417,7 @@ export default function EditEventModal() {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.7}>
-              <Text style={styles.photoRowIcon}>📷</Text>
+              <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
               <Text style={styles.photoRowText}>Attach a photo</Text>
             </TouchableOpacity>
           )}
@@ -588,7 +589,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     backgroundColor: theme.colorNeutralLight,
   },
-  photoRowIcon: { fontSize: 16 },
   photoRowText: {
     fontSize: 15,
     color: theme.colorTextSecondary,
