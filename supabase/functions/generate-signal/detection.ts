@@ -21,6 +21,8 @@
 // TypeScript (no Deno-only or Node-only APIs) so it runs in the Edge runtime
 // and is unit-testable in isolation.
 
+import { canonicalizeProtein } from './protein.ts'
+
 // ── Domain types ──────────────────────────────────────────────────────────────
 
 /** Symptom event types the correlation detector considers (schema reference query [2]). */
@@ -405,14 +407,21 @@ export function detectCorrelations(
 
   // Classifiable meals: a known protein + valid time, carrying attribution confidence
   // (absent → 'high', per today's per-pet logging semantics). Sorted ascending.
+  // B-052: the protein key is canonicalized (lowercase/trim + by-product/meal
+  // qualifier strip + junk-sentinel drop) so one real protein doesn't fracture
+  // across `chicken` / `Chicken By-Product Meal` / the `"null"` string and starve
+  // the matched-pair counts. A meal that canonicalizes to null carries no usable
+  // protein and is excluded (replaces the old bare trim/lowercase + empty check).
   const meals = input.mealEvents
-    .filter((m) => m.primaryProtein && m.primaryProtein.trim().length > 0)
     .map((m) => ({
       ms: Date.parse(m.occurredAt),
-      protein: m.primaryProtein!.trim().toLowerCase(),
+      protein: canonicalizeProtein(m.primaryProtein),
       attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
     }))
-    .filter((m) => Number.isFinite(m.ms))
+    .filter(
+      (m): m is { ms: number; protein: string; attribution: AttributionConfidence } =>
+        m.protein !== null && Number.isFinite(m.ms),
+    )
     .sort((x, y) => x.ms - y.ms)
 
   const proteins = Array.from(new Set(meals.map((m) => m.protein)))
