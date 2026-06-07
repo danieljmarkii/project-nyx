@@ -13,6 +13,7 @@ import { strict as assert } from 'node:assert'
 import {
   detectCorrelations,
   detectIntakeDecline,
+  detectReflections,
   detectSignals,
   rankFindings,
   fisherExactRightTail,
@@ -21,6 +22,7 @@ import {
   DEFAULT_CONFIG,
   type CorrelationFinding,
   type IntakeDeclineFinding,
+  type ReflectionFinding,
   type DetectionInput,
   type MealEvent,
   type SymptomEvent,
@@ -457,7 +459,204 @@ Deno.test('detectIntakeDecline — treats are excluded from the intake baseline'
   assert.deepEqual(detectIntakeDecline(input({ pet: cat, mealEvents })), [])
 })
 
+// ── Detector ③: symptom-count reflection (B-051) ─────────────────────────────
+// Windows are week-over-week relative to NOW = 2026-05-30T12:00 →
+//   current = [May 23 12:00, May 30 12:00)   prior = [May 16 12:00, May 23 12:00)
+
+Deno.test('detectReflections — flat trend surfaces one reflection ("same as last week")', () => {
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)), // current: 3
+    symptom('vomit', at(17, 8)), symptom('vomit', at(19, 8)), symptom('vomit', at(21, 8)), // prior: 3
+  ]
+  const findings = detectReflections(input({ symptomEvents }))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.type, 'reflection')
+  assert.equal(f.priorityClass, 'insight')
+  assert.equal(f.symptomType, 'vomit')
+  assert.equal(f.currentCount, 3)
+  assert.equal(f.priorCount, 3)
+  assert.equal(f.direction, 'flat')
+  assert.equal(f.windowDays, 7)
+})
+
+Deno.test('detectReflections — a falling count reads as improving (Dr. Chen §7.1: counts falling may reflect)', () => {
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)), // current: 3
+    symptom('vomit', at(17, 8)), symptom('vomit', at(18, 8)), symptom('vomit', at(19, 8)),
+    symptom('vomit', at(20, 8)), symptom('vomit', at(21, 8)), // prior: 5
+  ]
+  const findings = detectReflections(input({ symptomEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].direction, 'improving')
+  assert.equal(findings[0].currentCount, 3)
+  assert.equal(findings[0].priorCount, 5)
+})
+
+Deno.test('detectReflections — a RISING trend is suppressed (never normalized; yields to safety lane)', () => {
+  // current 4 > prior 2. Coverage is satisfied in BOTH windows (meals pad prior),
+  // so the ONLY reason for silence is the direction guard — a worsening trend must
+  // never be framed as a neutral reflection (Dr. Chen §7.1 amendment #5).
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(19, 8)),
+  ]
+  const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(20, 8) }), meal({ occurredAt: at(21, 8) })]
+  assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectReflections — a zero-symptom week is NEVER a reflection (absence ≠ wellness, §9)', () => {
+  // Current week well-logged (meals) but no vomiting; prior week had 5. This is the
+  // exact reassurance-by-absence the layer must not produce ("no vomiting this week").
+  const symptomEvents = [
+    symptom('vomit', at(17, 8)), symptom('vomit', at(18, 8)), symptom('vomit', at(19, 8)),
+    symptom('vomit', at(20, 8)), symptom('vomit', at(21, 8)),
+  ]
+  const mealEvents = [meal({ occurredAt: at(24, 8) }), meal({ occurredAt: at(26, 8) }), meal({ occurredAt: at(28, 8) })]
+  assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectReflections — below the episode floor (max < 3) stays silent (noise, not a trend)', () => {
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), // current: 2
+    symptom('vomit', at(17, 8)), symptom('vomit', at(19, 8)), // prior: 2
+  ]
+  // Pad coverage so the suppression is attributable to the episode floor, not coverage.
+  const mealEvents = [meal({ occurredAt: at(28, 8) }), meal({ occurredAt: at(21, 8) })]
+  assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectReflections — a prior-window acute single day is not read as "same as last week" (meal-padding closed)', () => {
+  // The load-bearing adversarial case (B-051 review): current 4 vomits across 4 days;
+  // prior 4 vomits ALL on a single acute day (4 bouts >3h apart → 4 episodes, 1
+  // calendar day). Episode counts are flat (4 vs 4), but last week was only a single
+  // acute day — clinically NOT "the same". The fix tracks symptom-DAYS: current spread
+  // across 4 days vs prior 1 day is an INCREASE in symptom-days → worsening → silent.
+  // Crucially this holds even when the prior window is meal-PADDED to clear the coarse
+  // logging-eligibility floor — the original meal-omitting test passed only by accident.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(17, 12)), symptom('vomit', at(17, 16)), symptom('vomit', at(17, 20)),
+  ]
+  // 2 meal-only prior days → prior logging-days = 3, clears minLoggingDaysPerWindow.
+  const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) })]
+  assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectReflections — a falling symptom-DAY spread alone is enough; rising spread suppresses', () => {
+  // Same episode count both weeks (3 vs 3) but this week is spread over MORE days than
+  // last (3 days vs 1) → an increase in symptom-days → worsening → silent. A reflection
+  // only renders when BOTH episodes and spread are flat-or-falling.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)), // current: 3 episodes / 3 days
+    symptom('vomit', at(17, 8)), symptom('vomit', at(17, 12)), symptom('vomit', at(17, 16)), // prior: 3 episodes / 1 day
+  ]
+  const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) })]
+  assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectReflections — CROSS-SYMPTOM: a reflection is silent while ANY symptom is worsening', () => {
+  // The highest-severity adversarial break (B-051 review): per-symptom the itch is
+  // improving (3 vs 5) and would render a calm "itch is down" card — but the vomit is
+  // RISING (4 vs 1). A soothing reflection must never surface while the pet is worsening
+  // on another axis (Dr. Chen §7.1 amendment #5). The global worsening gate stays silent.
+  const symptomEvents = [
+    // vomit rising 1 → 4
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)),
+    // itch improving 5 → 3
+    symptom('itch', at(24, 9)), symptom('itch', at(26, 9)), symptom('itch', at(28, 9)),
+    symptom('itch', at(16, 13)), symptom('itch', at(17, 9)), symptom('itch', at(18, 9)),
+    symptom('itch', at(19, 9)), symptom('itch', at(20, 9)),
+  ]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('detectReflections — a lone single worsening log does NOT blank a strong improvement', () => {
+  // The worsening gate is sensitive but not hair-trigger: one stray new symptom (count 1,
+  // below worseningMinEpisodes) must not suppress a genuine, material improvement on
+  // another symptom — otherwise noise re-introduces the silence B-051 exists to fix.
+  const symptomEvents = [
+    // itch improving 6 → 3 (material)
+    symptom('itch', at(24, 9)), symptom('itch', at(26, 9)), symptom('itch', at(28, 9)),
+    symptom('itch', at(16, 13)), symptom('itch', at(17, 9)), symptom('itch', at(18, 9)),
+    symptom('itch', at(19, 9)), symptom('itch', at(20, 9)), symptom('itch', at(21, 9)),
+    // a single new vomit this week (count 1 — below the worsening floor of 2)
+    symptom('vomit', at(25, 8)),
+  ]
+  const findings = detectReflections(input({ symptomEvents }))
+  assert.equal(findings.length, 1, 'the strong itch improvement still surfaces')
+  assert.equal(findings[0].symptomType, 'itch')
+  assert.equal(findings[0].direction, 'improving')
+})
+
+Deno.test('detectReflections — surfaces ONE reflection (the symptom most present right now)', () => {
+  const symptomEvents = [
+    // vomit current 4 / prior 5 (improving) — the more present symptom
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(18, 8)), symptom('vomit', at(19, 8)),
+    symptom('vomit', at(20, 8)), symptom('vomit', at(21, 8)),
+    // diarrhea current 3 / prior 3 (flat) — also qualifies but is less present
+    symptom('diarrhea', at(24, 9)), symptom('diarrhea', at(26, 9)), symptom('diarrhea', at(28, 9)),
+    symptom('diarrhea', at(17, 9)), symptom('diarrhea', at(19, 9)), symptom('diarrhea', at(21, 9)),
+  ]
+  const findings = detectReflections(input({ symptomEvents }))
+  assert.equal(findings.length, 1, 'one reflection only — never a wall of count cards')
+  assert.equal(findings[0].symptomType, 'vomit', 'the symptom with the highest current count wins')
+  assert.equal(findings[0].currentCount, 4)
+})
+
 // ── Composition & ranking (§5) ───────────────────────────────────────────────
+
+const reflectionFinding = (over: Partial<ReflectionFinding> = {}): ReflectionFinding => ({
+  type: 'reflection',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  currentCount: 4,
+  priorCount: 4,
+  direction: 'flat',
+  windowDays: 7,
+  ...over,
+})
+
+Deno.test('rankFindings — a reflection ranks below safety AND below a correlation', () => {
+  const early: CorrelationFinding = {
+    type: 'food_symptom_correlation',
+    priorityClass: 'insight',
+    tier: 'early',
+    symptomType: 'vomit',
+    protein: 'beef',
+    matchedPairs: 4,
+    caseExposed: 3,
+    controlExposed: 0,
+    discordantCaseOnly: 3,
+    discordantControlOnly: 0,
+    riskDifference: 0.75,
+    pValue: 0.07,
+    correctedAlpha: 0.025,
+    symptomEventCount: 3,
+    correlationWindowHours: 12,
+    attributionFloor: 'high',
+    associationalOnly: true,
+  }
+  const safety: IntakeDeclineFinding = {
+    type: 'intake_decline',
+    priorityClass: 'safety',
+    trigger: 'consecutive_low',
+    species: 'cat',
+    baselineScore: 3.8,
+    recentScore: 0.5,
+    daysBelowBaseline: 2,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 5,
+  }
+  const reflection = reflectionFinding()
+  // Deliberately pass the reflection FIRST to prove ordering is by band, not input order.
+  const ranked = rankFindings([reflection, early, safety], cat)
+  assert.equal(ranked[0].finding.type, 'intake_decline', 'safety leads')
+  assert.equal(ranked[1].finding.type, 'food_symptom_correlation', 'correlation before reflection')
+  assert.equal(ranked[2].finding.type, 'reflection', 'reflection is the gentlest, lowest layer')
+})
 
 Deno.test('rankFindings — safety always leads, then Established before Early', () => {
   const early: CorrelationFinding = {
@@ -531,6 +730,39 @@ Deno.test('detectSignals — end to end: safety flag outranks a correlation find
   )
 })
 
+Deno.test('detectSignals — B-051: a data-rich pet with no ①/② finding still gets a reflection', () => {
+  // The dogfooding case that opened B-051: a single constant staple (chicken every
+  // day → ① washes out / no protein contrast) and no rated meals (② silent), yet the
+  // owner has logged heavily and the pet vomits. Previously → empty (the misleading
+  // "keep logging" building state). Now → one honest reflection, NOT a safety flag.
+  const mealEvents = staple(16, 30, 'chicken', 9) // unrated meals → no correlation, no intake baseline
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(19, 8)), symptom('vomit', at(21, 8)),
+  ]
+  const ranked = detectSignals(input({ pet: cat, mealEvents, symptomEvents }))
+  assert.equal(ranked.length, 1, 'exactly the reflection — ① and ② produced nothing')
+  assert.equal(ranked[0].finding.type, 'reflection')
+  assert.equal(ranked[0].rank, 0)
+})
+
+Deno.test('detectSignals — a reflection never outranks a co-occurring safety flag', () => {
+  const mealEvents = [
+    // unrated staple keeps ① quiet; the rated decline drives ②
+    ...staple(16, 30, 'chicken', 9),
+    ratedMeal(18, 'all'), ratedMeal(20, 'all'), ratedMeal(22, 'all'), ratedMeal(24, 'all'),
+    ratedMeal(26, 'all'), ratedMeal(29, 'picked'), ratedMeal(30, 'refused'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(19, 8)), symptom('vomit', at(21, 8)),
+  ]
+  const ranked = detectSignals(input({ pet: dog, mealEvents, symptomEvents }))
+  assert.equal(ranked[0].finding.priorityClass, 'safety', 'safety leads')
+  const reflectionRank = ranked.findIndex((r) => r.finding.type === 'reflection')
+  assert.ok(reflectionRank > 0, 'a reflection is present but never the lead while a safety finding exists')
+})
+
 Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
   assert.equal(DEFAULT_CONFIG.correlationWindowHours, 12)
   assert.equal(DEFAULT_CONFIG.correlation.earlyMinMatchedPairs, 3)
@@ -545,4 +777,9 @@ Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
   // Feline sensitivity override (P0).
   assert.equal(DEFAULT_CONFIG.intakeDecline.cat.consecutiveDaysBelowBaseline, 1)
   assert.equal(DEFAULT_CONFIG.intakeDecline.cat.singleDayConcernCeiling, 2)
+  // B-051 reflection floor (Conservative-but-useful) + worsening gate.
+  assert.equal(DEFAULT_CONFIG.reflection.windowDays, 7)
+  assert.equal(DEFAULT_CONFIG.reflection.minEpisodesEitherWindow, 3)
+  assert.equal(DEFAULT_CONFIG.reflection.minLoggingDaysPerWindow, 3)
+  assert.equal(DEFAULT_CONFIG.reflection.worseningMinEpisodes, 2)
 })

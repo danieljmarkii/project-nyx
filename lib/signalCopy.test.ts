@@ -11,6 +11,7 @@ import type {
   CachedFinding,
   CorrelationFinding,
   IntakeDeclineFinding,
+  ReflectionFinding,
 } from './signal';
 
 const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding => ({
@@ -36,7 +37,21 @@ const intakeDecline = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineF
   ...over,
 });
 
-const cached = (finding: CorrelationFinding | IntakeDeclineFinding, rank = 0): CachedFinding => ({
+const reflection = (over: Partial<ReflectionFinding> = {}): ReflectionFinding => ({
+  type: 'reflection',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  currentCount: 4,
+  priorCount: 4,
+  direction: 'flat',
+  windowDays: 7,
+  ...over,
+});
+
+const cached = (
+  finding: CorrelationFinding | IntakeDeclineFinding | ReflectionFinding,
+  rank = 0,
+): CachedFinding => ({
   rank,
   text: 'placeholder sentence',
   finding,
@@ -90,6 +105,9 @@ describe('confidenceTag', () => {
   it('gives a safety flag no confidence tag', () => {
     expect(confidenceTag(intakeDecline())).toBeNull();
   });
+  it('gives a reflection no confidence tag (a count carries no tier)', () => {
+    expect(confidenceTag(reflection())).toBeNull();
+  });
 });
 
 describe('sampleLine', () => {
@@ -113,6 +131,12 @@ describe('sampleLine', () => {
     expect(
       sampleLine(intakeDecline({ trigger: 'refused_normal_food', ratedMealsConsidered: 0 })),
     ).toBe('Compared with what you usually log');
+  });
+  it('shows a week-over-week count for a reflection, no causal/reassurance language', () => {
+    const s = sampleLine(reflection({ currentCount: 4, priorCount: 5 }));
+    expect(s).toBe('4 episodes this week, 5 last week');
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
   });
 });
 
@@ -144,5 +168,23 @@ describe('evidenceText — intake-decline safety flag', () => {
     expect(s).toContain('Tiki Cat salmon');
     expect(REASSURANCE_RE.test(s)).toBe(false);
     expect(DISMISSIVE_RE.test(s)).toBe(false);
+  });
+});
+
+describe('evidenceText — reflection (B-051)', () => {
+  it('flat: names the count + pet, never causal, never an all-clear', () => {
+    const s = evidenceText(reflection({ direction: 'flat', currentCount: 4, priorCount: 4 }), 'Nyx');
+    expect(s).toContain('Nyx');
+    expect(s).toContain('4 episodes');
+    expect(s).toContain('vomiting');
+    expect(s.includes('!')).toBe(false);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('improving: reads "down from N" but is still not a wellness verdict', () => {
+    const s = evidenceText(reflection({ direction: 'improving', currentCount: 2, priorCount: 6 }), 'Nyx');
+    expect(s).toContain('down from 6 episodes');
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
   });
 });

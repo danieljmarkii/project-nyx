@@ -43,3 +43,6 @@ yarn-error.*
 
 # local research-script outputs
 scripts/opff-coverage-results.csv
+
+# Supabase CLI scratch (project ref / pooler metadata written on deploy)
+supabase/.temp/

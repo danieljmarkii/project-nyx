@@ -57,6 +57,9 @@ function SentenceBody({ cached, isLead }: InsightBodyProps) {
 const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactElement> = {
   food_symptom_correlation: SentenceBody,
   intake_decline: SentenceBody,
+  // Reflection (③, B-051) — a descriptive count, rendered as a calm sentence like
+  // the other types; it rides the benign 'insight' rail, never the safety rail.
+  reflection: SentenceBody,
 };
 
 interface Props {
