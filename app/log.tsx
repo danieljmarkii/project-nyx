@@ -105,6 +105,9 @@ export default function LogModal() {
   const checkOpacity = useRef(new Animated.Value(0)).current;
   const glowScale = useRef(new Animated.Value(0.4)).current;
   const glowOpacity = useRef(new Animated.Value(0)).current;
+  // react-native-svg gradient ids are global, so a static id would collide if a
+  // second log modal ever mounts (double-tap FAB race). Make it per-instance.
+  const glowGradientId = useRef(`momentGlow-${uuid()}`).current;
 
   // Consume pending attachment from the FAB photo flow
   useEffect(() => {
@@ -135,7 +138,7 @@ export default function LogModal() {
 
   useEffect(() => {
     if (step !== 'complete') return;
-    Animated.parallel([
+    const moment = Animated.parallel([
       // Warm-gold halo blooms out behind the ring (ease-out, no overshoot).
       Animated.timing(glowOpacity, { toValue: 1, duration: theme.durationFast, useNativeDriver: true }),
       Animated.timing(glowScale, {
@@ -144,10 +147,13 @@ export default function LogModal() {
       // Mint check ring springs in with a slight overshoot.
       Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
       Animated.timing(checkOpacity, { toValue: 1, duration: theme.durationFast, useNativeDriver: true }),
-    ]).start();
+    ]);
+    moment.start();
     // Whole moment dwells well under the 2s earned-moment cap before dismiss.
     const t = setTimeout(() => router.back(), 1000);
-    return () => clearTimeout(t);
+    // Stop the composite on unmount so it can't tick against torn-down nodes if
+    // the modal is dismissed (e.g. OS back gesture) before the dwell timer fires.
+    return () => { moment.stop(); clearTimeout(t); };
   }, [step]);
 
   function handleTypeSelect(type: EventTypeKey) {
@@ -420,13 +426,13 @@ export default function LogModal() {
         >
           <Svg width={GLOW_SIZE} height={GLOW_SIZE}>
             <Defs>
-              <RadialGradient id="momentGlow" cx="50%" cy="50%" r="50%">
+              <RadialGradient id={glowGradientId} cx="50%" cy="50%" r="50%">
                 <Stop offset="0%" stopColor={theme.colorMomentGlow} stopOpacity={0.22} />
                 <Stop offset="40%" stopColor={theme.colorMomentGlow} stopOpacity={0.06} />
                 <Stop offset="70%" stopColor={theme.colorMomentGlow} stopOpacity={0} />
               </RadialGradient>
             </Defs>
-            <Circle cx={GLOW_SIZE / 2} cy={GLOW_SIZE / 2} r={GLOW_SIZE / 2} fill="url(#momentGlow)" />
+            <Circle cx={GLOW_SIZE / 2} cy={GLOW_SIZE / 2} r={GLOW_SIZE / 2} fill={`url(#${glowGradientId})`} />
           </Svg>
         </Animated.View>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
@@ -1053,7 +1059,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: theme.space2,
-    overflow: 'hidden', // clip the glow bloom to the screen
+    overflow: 'hidden', // clip the 360px glow on screens narrower than GLOW_SIZE
   },
   // Warm-gold radial halo, centered behind the ring. Absolute so it blooms
   // without displacing the centered ring + label.
@@ -1078,12 +1084,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 22,
     elevation: 6,
-    zIndex: 1,
   },
   loggedText: {
     fontSize: 20,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
-    zIndex: 1,
   },
 });
