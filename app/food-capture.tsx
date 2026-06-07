@@ -24,8 +24,7 @@ import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
-import { triggerSignalRegenDebounced } from '../lib/signal';
+import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 
@@ -362,6 +361,9 @@ export default function FoodCaptureScreen() {
 
   async function commitFoodInner(brand: string, product: string, format: string, type: FoodType) {
     const db = getDb();
+    // `now` stamps the food_items_cache row below. The meal's event/meal rows get
+    // their own `now` from insertMeal (returned as mealNow) — a sub-millisecond
+    // split with no LWW impact, kept separate so the helper owns its timestamps.
     const now = new Date().toISOString();
     const frontStoragePath = frontPhoto?.storagePath ?? null;
     await db.runAsync(
@@ -390,49 +392,35 @@ export default function FoodCaptureScreen() {
     });
 
     if (cameFromMealLog && activePet) {
-      const eventId = uuid();
       // mealOccurredAt is seeded from EXIF (or now) on confirm-screen entry,
       // and may have been overridden by the user via the date-time picker —
       // in which case mealOccurredAtSource will have flipped to 'manual'.
-      const occurredAt = mealOccurredAt.toISOString();
-      const occurredAtSource = mealOccurredAtSource;
-      await db.runAsync(
-        `INSERT INTO events
-           (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced)
-         VALUES (?, ?, 'meal', ?, NULL, NULL, 'manual', ?, ?, ?, 0)`,
-        [eventId, activePet.id, occurredAt, occurredAtSource, now, now],
-      );
-      const mealId = uuid();
-      await db.runAsync(
-        `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, updated_at, synced)
-         VALUES (?, ?, ?, ?, 'unknown', ?, ?, 0)`,
-        [mealId, eventId, activePet.id, foodId, now, now],
-      );
-      await db.runAsync(
-        `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
-        [now, foodId],
-      );
+      // insertMeal owns the event+meal write, the sync push, and the AI-Signal
+      // regen (B-059) so this path can't drift from the others.
+      const { eventId, occurredAtIso, now: mealNow } = await insertMeal({
+        petId: activePet.id,
+        foodId,
+        occurredAt: mealOccurredAt,
+        occurredAtSource: mealOccurredAtSource,
+      });
       prependEvent({
         id: eventId,
         pet_id: activePet.id,
         event_type: 'meal',
-        occurred_at: occurredAt,
+        occurred_at: occurredAtIso,
+        occurred_at_confidence: 'witnessed',
         severity: null,
         notes: null,
         source: 'manual',
         deleted_at: null,
-        created_at: now,
-        updated_at: now,
+        created_at: mealNow,
+        updated_at: mealNow,
         food_item_id: foodId,
         food_brand: brand.trim(),
         food_product_name: product.trim(),
         food_type: type,
         quantity: 'unknown',
       });
-      syncPendingEvents().then(() => syncPendingMeals()).catch(console.error);
-      // Freshness (§2): refresh the AI Signal after a photo-capture meal log —
-      // same debounced regen log.tsx fires (the FAB path now does too).
-      triggerSignalRegenDebounced(activePet.id);
     }
 
     setStep('complete');
