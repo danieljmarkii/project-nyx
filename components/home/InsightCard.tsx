@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
   sentenceLead: {
     fontFamily: theme.fontDisplay,
     fontSize: theme.textSignal,
-    lineHeight: 34,
+    lineHeight: theme.lineHeightSignal,
     letterSpacing: theme.trackingTight,
   },
   metaRow: {
