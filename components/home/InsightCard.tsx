@@ -34,13 +34,18 @@ const RAIL_COLOR: Record<PriorityClass, string> = {
 // keyed by InsightType so mixed formats still read as one calm surface.
 interface InsightBodyProps {
   cached: CachedFinding;
+  // The lead (top-ranked) finding is the AI Signal headline — it alone wears the
+  // Newsreader display face at textSignal size (v1.2 §4 / type-signal preview).
+  // Subsequent findings stay in the body face so the surface reads as one calm
+  // headline + supporting rows, never a column of competing serif headlines.
+  isLead: boolean;
 }
 
-function SentenceBody({ cached }: InsightBodyProps) {
+function SentenceBody({ cached, isLead }: InsightBodyProps) {
   const tag = confidenceTag(cached.finding);
   return (
     <View style={styles.body}>
-      <Text style={styles.sentence}>{cached.text}</Text>
+      <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
       <View style={styles.metaRow}>
         {tag && <Badge label={tag} variant="muted" />}
         <Text style={styles.sample}>{sampleLine(cached.finding)}</Text>
@@ -57,9 +62,11 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
 interface Props {
   cached: CachedFinding;
   petName: string;
+  // True for the top-ranked row only — gates the display-face headline.
+  isLead?: boolean;
 }
 
-export function InsightCard({ cached, petName }: Props) {
+export function InsightCard({ cached, petName, isLead = false }: Props) {
   const [expanded, setExpanded] = useState(false);
 
   const Body = INSIGHT_RENDERERS[cached.finding.type];
@@ -87,7 +94,7 @@ export function InsightCard({ cached, petName }: Props) {
     >
       <View style={[styles.rail, { backgroundColor: rail }]} />
       <View style={styles.content}>
-        <Body cached={cached} />
+        <Body cached={cached} isLead={isLead} />
         {expanded && <Text style={styles.evidence}>{evidenceText(cached.finding, petName)}</Text>}
         <Text style={styles.expandHint}>{expanded ? 'Hide details' : "Why we're showing this"}</Text>
       </View>
@@ -117,6 +124,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
     lineHeight: 22,
+  },
+  // AI Signal headline — Newsreader display at 26 / 1.3, tracking −0.3, weight
+  // 400 (the only Newsreader face loaded; never set fontWeight here or RN will
+  // request an unloaded bold and fall back). Mirrors type-signal preview.
+  sentenceLead: {
+    fontFamily: theme.fontDisplay,
+    fontSize: theme.textSignal,
+    lineHeight: 34,
+    letterSpacing: theme.trackingTight,
   },
   metaRow: {
     flexDirection: 'row',
