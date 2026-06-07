@@ -11,6 +11,7 @@ import { initDb, clearLocalData } from '../lib/db';
 import { notifySignedOut } from '../lib/sync';
 import { useSync } from '../hooks/useSync';
 import { Toast } from '../components/ui/Toast';
+import { CompletionMoment } from '../components/ui/CompletionMoment';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
 
 // Hold the native splash until the font gate releases, so the first painted
@@ -96,6 +97,7 @@ export default function RootLayout() {
         <Stack.Screen name="report" />
       </Stack>
       <Toast />
+      <CompletionMoment />
       <ColdStartOverlay />
     </>
   );

@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Animated, KeyboardAvoidingView, Platform, Image, Alert,
+  ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -12,12 +12,13 @@ import { theme } from '../constants/theme';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { EventIcon } from '../components/event/EventIcon';
-import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
 import { useToastStore } from '../store/toastStore';
+import { useMomentStore } from '../store/momentStore';
 import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
@@ -27,7 +28,7 @@ import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
+type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type';
 
 // B-010 — the time fields a logged event carries. occurred_at is always a
 // single derived point; confidence + window bounds describe its certainty.
@@ -53,6 +54,7 @@ export default function LogModal() {
   const { prependEvent } = useEventStore();
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
   const showToast = useToastStore((s) => s.show);
+  const showMoment = useMomentStore((s) => s.show);
   const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
 
   const [step, setStep] = useState<Step>('type');
@@ -92,10 +94,6 @@ export default function LogModal() {
   // if the owner toggles back to "Saw it happen".
   const [estimatedAt, setEstimatedAt] = useState<Date>(() => new Date());
 
-  // Completion animation
-  const checkScale = useRef(new Animated.Value(0.5)).current;
-  const checkOpacity = useRef(new Animated.Value(0)).current;
-
   // Consume pending attachment from the FAB photo flow
   useEffect(() => {
     if (pendingAttachment) {
@@ -122,16 +120,6 @@ export default function LogModal() {
       setStep(EVENT_TYPES[t].hasFood ? 'food' : 'simple');
     }
   }, [typeParam]);
-
-  useEffect(() => {
-    if (step !== 'complete') return;
-    Animated.parallel([
-      Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
-      Animated.timing(checkOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
-    ]).start();
-    const t = setTimeout(() => router.back(), 1000);
-    return () => clearTimeout(t);
-  }, [step]);
 
   function handleTypeSelect(type: EventTypeKey) {
     setSelectedType(type);
@@ -216,14 +204,16 @@ export default function LogModal() {
         source: usingExif ? 'exif' : 'now',
       },
     });
-    // Defer the toast past the 1s completion checkmark + modal dismiss so
-    // it appears at the root layer (not occluded by the still-presented
-    // modal on iOS) where the user can actually see and act on it. The
-    // WSAVA intake chip row renders in the toast for food_type 'meal' and
-    // 'treat' (B-014; treats added 2026-05-23). NOTE: every meal-entry
-    // path must route through this toast — if a non-picker meal flow is
-    // ever added (e.g. a manual quick-add), it must fire showToast too,
-    // or the intake capture surface vanishes for that path.
+    // Defer the toast past the modal dismiss so it appears at the root layer
+    // (not occluded by the still-presented modal on iOS) where the user can
+    // see and act on it. Meals deliberately skip the completion moment — the
+    // toast IS their confirmation surface and carries the intake follow-up, so
+    // firing the moment too would double the surface (B-064 unifies the two).
+    // The WSAVA intake chip row renders in the toast for food_type 'meal' and
+    // 'treat' (B-014; treats added 2026-05-23). NOTE: every meal-entry path
+    // must route through this toast — if a non-picker meal flow is ever added
+    // (e.g. a manual quick-add), it must fire showToast too, or the intake
+    // capture surface vanishes for that path.
     if (result) {
       const foodType = food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
         ? food.food_type
@@ -237,7 +227,7 @@ export default function LogModal() {
           foodProductName: food.product_name,
           intakeRating: null,
         },
-        { delayMs: 1100 },
+        { delayMs: 450 },
       );
     }
   }
@@ -362,12 +352,23 @@ export default function LogModal() {
       })();
     }
 
-    setStep('complete');
+    // Dismiss the modal, then play the earned completion moment at the root
+    // layer. Meals are the exception: their confirmation lives in the post-log
+    // toast (handlePickFood), which carries the intake follow-up — the moment
+    // is terminal/non-interactive, so firing both would double the surface
+    // (B-064 unifies meals into a single warm surface).
+    router.back();
     // Non-meal events still push + regen here; insertMeal already did both for
     // the meal branch (§2 freshness — a new event may change the cached insight
     // set; debounced so a meal + the symptom logged after it collapse into one
     // regen). Fire-and-forget — home re-reads cache on focus.
     if (!isMeal) {
+      // Tone-aware: symptom logs get a calm confirm (never a festive gold beat
+      // over a worrying event); routine logs get the warm-gold celebrate moment.
+      const tone = selectedType !== null && SYMPTOM_TYPES.has(selectedType) ? 'calm' : 'celebrate';
+      // delayMs clears the dismissing modal so the root overlay isn't briefly
+      // occluded on iOS (same reason the meal toast is deferred).
+      showMoment({ tone }, { delayMs: 300 });
       syncPendingEvents()
         .then(() => syncPendingMeals())
         .catch(console.error);
@@ -391,19 +392,6 @@ export default function LogModal() {
   }
 
   const petName = activePet?.name ?? 'your pet';
-
-  // ── Completion ──────────────────────────────────────────────────────────────
-
-  if (step === 'complete') {
-    return (
-      <View style={styles.completeContainer}>
-        <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <Text style={styles.checkMark}>✓</Text>
-        </Animated.View>
-        <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>Logged</Animated.Text>
-      </View>
-    );
-  }
 
   // ── Shared sub-components ───────────────────────────────────────────────────
 
@@ -1012,31 +1000,5 @@ const styles = StyleSheet.create({
   stoolChoiceHint: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-  },
-
-  // ── Completion ──
-  completeContainer: {
-    flex: 1,
-    backgroundColor: theme.colorSurface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: theme.space2,
-  },
-  checkCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: theme.colorNeutralDark,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkMark: {
-    fontSize: 36,
-    color: '#fff',
-  },
-  loggedText: {
-    fontSize: 20,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
   },
 });

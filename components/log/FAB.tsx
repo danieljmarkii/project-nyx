@@ -12,6 +12,7 @@ import { useAttachmentStore } from '../../store/attachmentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useToastStore } from '../../store/toastStore';
+import { useMomentStore } from '../../store/momentStore';
 import { getDb } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import { insertMeal } from '../../lib/meals';
@@ -30,6 +31,7 @@ export function FAB() {
   const { prependEvent } = useEventStore();
   const { activePet } = usePetStore();
   const showToast = useToastStore((s) => s.show);
+  const showMoment = useMomentStore((s) => s.show);
 
   const [open, setOpen] = useState(false);
   const [recentFoods, setRecentFoods] = useState<RecentFood[]>([]);
@@ -164,6 +166,10 @@ export function FAB() {
         updated_at: now,
       });
       closeMenu();
+      // Calm completion moment — a symptom log gets a quiet confirm, never the
+      // festive gold beat (B-063). Also closes the prior no-feedback gap: this
+      // quick path used to log silently with no on-screen confirmation at all.
+      showMoment({ tone: 'calm' });
     } finally {
       setLogging(null);
     }
