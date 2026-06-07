@@ -12,6 +12,7 @@ import { usePetStore } from '../../store/petStore';
 import { useToastStore } from '../../store/toastStore';
 import { getDb } from '../../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
+import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { uuid, exifDateToISO } from '../../lib/utils';
 
 interface RecentFood {
@@ -101,6 +102,13 @@ export function FAB() {
       syncPendingEvents()
         .then(() => syncPendingMeals())
         .catch(console.error);
+
+      // Freshness (§2): a quick-logged meal can change the cached insight set, so
+      // refresh the AI Signal — same debounced regen the full log.tsx flow fires.
+      // Without this, the FAB and photo-capture paths left the home Signal stale
+      // until the 24h cache expiry (the gap that made a deploy verification look
+      // like a no-op).
+      triggerSignalRegenDebounced(activePet.id);
 
       const foodType =
         food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'

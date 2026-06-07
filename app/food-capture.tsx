@@ -25,6 +25,7 @@ import { useEventStore } from '../store/eventStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
+import { triggerSignalRegenDebounced } from '../lib/signal';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 
@@ -429,6 +430,9 @@ export default function FoodCaptureScreen() {
         quantity: 'unknown',
       });
       syncPendingEvents().then(() => syncPendingMeals()).catch(console.error);
+      // Freshness (§2): refresh the AI Signal after a photo-capture meal log —
+      // same debounced regen log.tsx fires (the FAB path now does too).
+      triggerSignalRegenDebounced(activePet.id);
     }
 
     setStep('complete');
