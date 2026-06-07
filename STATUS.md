@@ -39,6 +39,19 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 - B-024 (`jerky` in `food_format`) DONE — merged 2026-05-26 (PR #60), shipped standalone (NOT bundled with B-017's destructive enum reshape).
 - Next food-track items: backlog (B-017 `food_format`/`food_type` overlap, B-009/B-018 dedup) or downstream intake consumers (diet-trial compliance, AI Signal intake lines, vet-report intake rendering).
 
+## Parallel Track — Design-System Rebuild (v1.2 "Linear Clean")
+
+Plan of record: `docs/design-system-migration-plan.md` (PM-approved 2026-06-07). Four scoped, independently-revertible PRs; **no schema changes anywhere**.
+
+| PR | Track | Status |
+|---|---|---|
+| 1 | Palette swap (values-only into flat `theme.ts`) | ✅ Merged to main (#99) |
+| 2 | Fonts — Geist (body) + Newsreader (display), load gate, Signal headline | ✅ Merged to main (#100) |
+| 3 | Event icons (emoji → Lucide) — `constants/eventTypes.ts` + event rows / FAB / vet report | 🔨 In progress (this branch) |
+| 4 | Completion "moment" (gold ring in `app/log.tsx`) | ⬜ Remaining |
+
+**Decision (2026-06-07): defer aesthetic QA to end-of-system.** Each PR ships type-clean + test-green and is mechanically verified, but the holistic on-device "does it feel like Calm/Linear/Oura?" aesthetic pass is run **once, after PR 4 lands** — not per-PR. Rationale: the palette, fonts, icons, and gold moment are mutually dependent on screen (an icon tinted against the palette only reads right once the palette + fonts are both in), so judging each in isolation invites re-litigating the same screens four times. The hue-vs-contrast on-device checks that are *PR-local* (e.g. PR 1 §3.6 dark-photo-viewer destructive check) still run per-PR; what's deferred is the subjective whole-system aesthetic sign-off.
+
 ---
 
 ## Blocking Open Questions
