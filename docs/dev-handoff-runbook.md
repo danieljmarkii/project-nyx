@@ -2,15 +2,22 @@
 
 The exact, copy-pasteable command scripts the PM runs to get the latest code onto their phone after a push. Extracted from `CLAUDE.md` (which keeps the *rules* — when to use which runtime, the npm-test / migration / Edge-Function deploy reminders, and the Manual QA Script format). Read this file when emitting a Dev Handoff and paste the block for the runtime that matches the session.
 
-There are **two runtimes**. Pick the one that matches what the PM is doing this session and emit only that sequence — do not dump both unless the change requires both. **Default to Runtime B for now** (Runtime A is blocked on Apple Developer enrollment — `eas update` does not reach Expo Go until a real dev/preview build exists; see `STATUS.md` → Runtime in Use).
+There are **two runtimes**, and they map to two *different intentions*:
+
+- **Runtime B (Metro + tunnel) is the per-push default** — it's how the PM tests a single pushed PR on-device for a one-off look. Emit this after a normal feature push.
+- **Runtime A (`eas update` OTA → TestFlight) is a deliberate, separate "cut a new build" session** — the PM kicks it off **by hand, in its own session**, when changes are significant enough to warrant a new TestFlight version. It is **not** the handoff after every push.
+
+Pick the one that matches the session's intention and emit only that block. **Default to Runtime B** unless the session's explicit goal is cutting a TestFlight build. (Runtime A went live 2026-06-07 — Apple enrollment + first TestFlight build are done, so `eas update` now reaches the build OTA; see `STATUS.md` → Runtime in Use.)
 
 ---
 
-## Runtime A — Daily-driver build (via `eas update` + Expo Go)
+## Runtime A — OTA update to the TestFlight build (via `eas update`)
 
-This is the runtime the PM is *meant* to live in day-to-day once unblocked. The app is published as a JS bundle to Expo's CDN on the `preview` channel; Expo Go opens it from a saved project entry. No Codespace tunnel required for the PM to use the app — only for the PM to publish a new version.
+⚠️ **Not the per-push default.** This is the *deliberate* path the PM runs **by hand, in its own session**, when changes are significant enough to push a new version to TestFlight. For testing a single pushed PR, use Runtime B below.
 
-**Default handoff sequence (use this every time we ship a PM-visible change, until we cut over to a real EAS preview build with an Apple Developer account):**
+The app is published as a JS bundle to Expo's CDN on the `preview` channel; the installed TestFlight build picks it up OTA on next cold open (matching channel + `runtimeVersion`). Live since 2026-06-07 (Apple enrollment + first TestFlight build done). No Codespace tunnel required for the PM to use the app — only to publish a new version.
+
+**Sequence (run when the session's goal is cutting a new TestFlight version):**
 
 ```bash
 git fetch origin <branch-name>
@@ -24,9 +31,9 @@ Gets the latest commits, **switches you onto the branch we just pushed to**, and
 ```bash
 eas update --branch preview --message "<one-line description of change>"
 ```
-Compiles the current JS bundle (with your `.env.local` env vars baked in) and uploads it to Expo's CDN on the `preview` channel. Expo Go picks it up on next cold open of the Nyx project on your phone.
+Compiles the current JS bundle and uploads it to Expo's CDN on the `preview` channel. The installed **TestFlight build** picks it up on next cold open (it must match the build's channel + `runtimeVersion`). Note: EAS cloud builds inline env from the `eas.json` `env` block, not `.env.local` (which is gitignored and never seen by the cloud builder) — see the Secrets Register.
 
-Then on your phone: **fully close Expo Go** (swipe it away from app switcher), reopen it, and tap the Nyx project under "Recent" or "Projects." It will fetch the new bundle on launch. A warm reload is not enough — the bundle is cached and only refetched on cold open.
+Then on your phone: **fully close the Nyx TestFlight app** (swipe it away from app switcher) and reopen it. It fetches the new bundle on launch. A warm reload is not enough — the bundle is cached and only refetched on cold open.
 
 **One-time setup (first session only, then never again):**
 
