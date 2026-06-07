@@ -3,71 +3,93 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
-import { useToastStore } from '../../store/toastStore';
+import { useMomentStore } from '../../store/momentStore';
 import { useEventStore } from '../../store/eventStore';
+import { usePetStore } from '../../store/petStore';
 import { updateEvent, updateMealIntake } from '../../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 
-// Tab bar height from app/(tabs)/_layout.tsx — toast must clear it so it
+// Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it
 // isn't occluded when the user lands back on a tabs screen after a log.
 const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
 
-// Hold the toast open this long after a chip tap so the selected chip is
-// visibly confirmed before dismiss. Per persona round in B-014 planning:
-// snatching the toast immediately reads as the system overriding the
-// input, and ~5s of pre-tap window is too short to honestly read all
-// five WSAVA labels and tap deliberately.
+// Hold the card open this long after a chip tap so the selected chip is visibly
+// confirmed before dismiss. Per the B-014 persona round: snatching it away
+// immediately reads as the system overriding the input.
 const INTAKE_CONFIRM_HOLD_MS = 1500;
 
-// Bottom-anchored post-log toast. Two affordances live here, both triggered
-// by the same event (meal logged via the one-tap picker) and visible in the
-// same moment:
+// Root-mounted MEAL completion card — the warmed bottom-card presentation of the
+// completion moment (B-064). Replaces the old standalone post-log toast: a meal
+// log is now ONE warm surface (gold beat + "Logged {brand}") that ALSO carries
+// the meal follow-ups, instead of a full-screen beat chased by a separate toast.
 //
+// Store-driven (momentStore) so every meal-entry path — the /log picker
+// (handlePickFood) and the FAB quick-meal (handleQuickMeal) — fires the same
+// surface via showMeal(). The full-screen terminal beat for non-meal logs is a
+// sibling presentation rendered by <CompletionMoment/>.
+//
+// Two affordances live here, both visible in the same moment:
 //   1. "Change time" — backfill path for meals fed before the owner reached
 //      their phone (Linear/Gmail "Undo send" pattern). Preserves Principle 1:
 //      tap-to-log stays one tap.
-//   2. WSAVA intake chips — owner-reported intake (refused / picked / some
-//      / most / all). Rendered for food_type 'meal' and 'treat' (B-014;
-//      treats added 2026-05-23 — treat refusal is a clinical signal).
-//      Default stays null; never pre-stamped. 'other' opts out.
+//   2. WSAVA intake chips — owner-reported intake (refused / picked / some /
+//      most / all). Rendered for food_type 'meal' and 'treat' (B-014; treats
+//      added 2026-05-23 — treat refusal is itself a clinical signal). Default
+//      stays null; NEVER pre-stamped. 'other' opts out.
 //
-// Both affordances are skippable: the toast auto-dismisses with the user's
-// last input preserved. If a third affordance is proposed for this toast,
+// Both are skippable: the card auto-dismisses with the user's last input
+// preserved (the "intake is not preference" invariant — capture stays optional,
+// default-null, at peak recall). If a third affordance is ever proposed here,
 // stop and reconsider — the surface is intentionally narrow.
-export function Toast() {
-  const { visible, payload, hide, patchOccurredAt, patchIntakeRating, rescheduleHide } = useToastStore();
+export function MealCompletionCard() {
+  const { visible, payload, hide, patchOccurredAt, patchIntakeRating, rescheduleHide } = useMomentStore();
   const { patchInToday } = useEventStore();
+  const { activePet } = usePetStore();
 
   const translateY = useRef(new Animated.Value(80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  // The gold "beat" — the mint check springs in with a warm-gold halo so the
+  // card carries the moment's warmth without a full-screen takeover.
+  const checkScale = useRef(new Animated.Value(0.6)).current;
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Local draft separate from the toast's authoritative occurredAt so the
-  // picker can be opened, scrubbed, and cancelled without mutating the toast.
+  // Local draft separate from the card's authoritative occurredAt so the picker
+  // can be opened, scrubbed, and cancelled without mutating the card.
   const [draft, setDraft] = useState<Date | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Only the meal presentation renders here; the beat is the sibling overlay.
+  const isMeal = payload?.kind === 'meal';
+  const shown = visible && isMeal;
 
   useEffect(() => {
     Animated.parallel([
       Animated.spring(translateY, {
-        toValue: visible ? 0 : 80,
+        toValue: shown ? 0 : 80,
         useNativeDriver: true,
         tension: 80,
         friction: 11,
       }),
       Animated.timing(opacity, {
-        toValue: visible ? 1 : 0,
-        duration: visible ? 180 : 140,
+        toValue: shown ? 1 : 0,
+        duration: shown ? 180 : 140,
         useNativeDriver: true,
       }),
+      Animated.spring(checkScale, {
+        toValue: shown ? 1 : 0.6,
+        useNativeDriver: true,
+        tension: 60,
+        friction: 7,
+      }),
     ]).start();
-  }, [visible, translateY, opacity]);
+  }, [shown, translateY, opacity, checkScale]);
 
   function openPicker() {
-    if (!payload) return;
+    if (!isMeal) return;
     setDraft(new Date(payload.occurredAt));
     setPickerOpen(true);
   }
@@ -78,7 +100,7 @@ export function Toast() {
   }
 
   async function savePicker() {
-    if (!payload || !draft) return;
+    if (!isMeal || !draft) return;
     setSaving(true);
     try {
       const iso = draft.toISOString();
@@ -95,12 +117,12 @@ export function Toast() {
       patchOccurredAt(iso);
       setPickerOpen(false);
       setDraft(null);
-      // Dismiss the toast on save — the affirmative action is its own
-      // confirmation; lingering with an updated time would just be noise.
+      // Dismiss on save — the affirmative action is its own confirmation;
+      // lingering with an updated time would just be noise.
       hide();
       syncPendingEvents().catch(console.error);
     } catch (e) {
-      console.error('[toast] failed to update event time:', e);
+      console.error('[meal-card] failed to update event time:', e);
       Alert.alert('Could not update time', 'Try again or edit from History.');
     } finally {
       setSaving(false);
@@ -108,63 +130,64 @@ export function Toast() {
   }
 
   async function handleIntakeChange(next: IntakeRating | null) {
-    if (!payload) return;
+    if (!isMeal) return;
+    const eventId = payload.eventId;
+    const prevRating = payload.intakeRating;
     // Optimistic update first so the chip lights immediately. Persistence and
-    // sync follow; if either fails we surface and revert by reloading the
-    // detail screen — the row in History will reload on next focus anyway.
+    // sync follow; if either fails we surface and revert.
     patchIntakeRating(next);
-    patchInToday(payload.eventId, { intake_rating: next });
-    // Cancel the original 5s dismiss in favour of a brief 1.5s confirmation
-    // window so the user sees the selection light up before the toast goes.
+    patchInToday(eventId, { intake_rating: next });
+    // Swap the auto-dismiss for a brief confirmation window so the user sees the
+    // selection light up before the card goes.
     rescheduleHide(INTAKE_CONFIRM_HOLD_MS);
     try {
-      await updateMealIntake(payload.eventId, next);
+      await updateMealIntake(eventId, next);
       syncPendingMeals().catch(console.error);
     } catch (e) {
-      console.error('[toast] failed to update intake rating:', e);
-      // Revert local state. The next focus on History/detail will refetch
-      // from SQLite and confirm ground truth.
-      patchIntakeRating(payload.intakeRating);
-      patchInToday(payload.eventId, { intake_rating: payload.intakeRating });
+      console.error('[meal-card] failed to update intake rating:', e);
+      // Revert local state. The next focus on History/detail will refetch from
+      // SQLite and confirm ground truth.
+      patchIntakeRating(prevRating);
+      patchInToday(eventId, { intake_rating: prevRating });
       Alert.alert('Could not save intake', 'Try again from the meal\'s detail screen.');
     }
   }
 
-  if (!payload && !visible) return null;
+  // Keep rendering through the dismiss fade (payload is preserved by hide()),
+  // but never mount for a beat payload.
+  if (!payload || payload.kind !== 'meal') return null;
 
-  const occurredDate = payload ? new Date(payload.occurredAt) : new Date();
-  // One-glance reminder of what was just logged. Brand + product, trimmed
-  // so a missing brand/product doesn't leave a stray space. Falls back to
-  // the bare "Logged at HH:MM" line when neither is present.
-  const foodName = [payload?.foodBrand, payload?.foodProductName]
+  const occurredDate = new Date(payload.occurredAt);
+  // One-glance reminder of what was just logged. Brand + product, trimmed so a
+  // missing brand/product doesn't leave a stray space.
+  const foodName = [payload.foodBrand, payload.foodProductName]
     .filter(Boolean)
     .join(' ')
     .trim();
   // Intake capture renders for meals and treats. Treats opt in (PM call
-  // 2026-05-23) because treat refusal is itself a clinical signal — a pet
-  // declining a treat often precedes declining meals. Default stays null;
-  // we never pre-stamp 'all', which would bias the intake data. 'other'
-  // and unclassified foods stay opted out.
-  const showIntake = payload?.foodType === 'meal' || payload?.foodType === 'treat';
+  // 2026-05-23) because treat refusal is itself a clinical signal. Default stays
+  // null; never pre-stamped. 'other' and unclassified foods stay opted out.
+  const showIntake = payload.foodType === 'meal' || payload.foodType === 'treat';
+  const petName = activePet?.name ?? 'your pet';
 
   return (
     <>
       <Animated.View
-        pointerEvents={visible ? 'box-none' : 'none'}
-        style={[
-          showIntake ? styles.wrapperCard : styles.wrapperPill,
-          { opacity, transform: [{ translateY }] },
-        ]}
+        pointerEvents={shown ? 'box-none' : 'none'}
+        style={[styles.wrapper, { opacity, transform: [{ translateY }] }]}
       >
-        <View style={showIntake ? styles.card : styles.pill}>
+        <View style={styles.card}>
           <View style={styles.headerRow}>
+            {/* Gold beat: mint check + warm-gold halo, carrying the moment's
+                warmth into the non-blocking card. */}
+            <Animated.View style={[styles.checkBadge, { transform: [{ scale: checkScale }] }]}>
+              <Check size={18} color={theme.colorMomentConfirm} strokeWidth={3} />
+            </Animated.View>
             <View style={styles.labelCol}>
-              {foodName ? (
-                <Text style={styles.foodName} numberOfLines={1}>{foodName}</Text>
-              ) : null}
-              <Text style={foodName ? styles.subLabel : styles.label}>
-                Logged at {formatTime(occurredDate)}
+              <Text style={styles.title} numberOfLines={1}>
+                {foodName ? `Logged · ${foodName}` : 'Logged'}
               </Text>
+              <Text style={styles.subLabel}>{formatTime(occurredDate)}</Text>
             </View>
             <TouchableOpacity
               onPress={openPicker}
@@ -177,8 +200,9 @@ export function Toast() {
           </View>
           {showIntake && (
             <View style={styles.intakeWrap}>
+              <Text style={styles.intakeLabel}>How much did {petName} eat?</Text>
               <IntakeChipRow
-                value={payload?.intakeRating ?? null}
+                value={payload.intakeRating ?? null}
                 onChange={handleIntakeChange}
                 label={null}
                 size="compact"
@@ -197,8 +221,8 @@ export function Toast() {
         statusBarTranslucent
       >
         <Pressable style={styles.backdrop} onPress={cancelPicker} />
-        {/* Empty-onPress Pressable around the sheet so taps on the title
-            or whitespace are captured here and don't fall through to the
+        {/* Empty-onPress Pressable around the sheet so taps on the title or
+            whitespace are captured here and don't fall through to the
             absolute-positioned backdrop, silently dismissing the picker
             mid-edit. */}
         <Pressable style={styles.sheet} onPress={() => {}}>
@@ -235,38 +259,10 @@ export function Toast() {
 }
 
 const styles = StyleSheet.create({
-  // Pill: original "Logged at HH:MM · Change time" shape for non-meal events.
-  wrapperPill: {
-    position: 'absolute',
-    bottom: TAB_BAR_HEIGHT + 8,
-    left: theme.space2,
-    right: 88,
-    // Stretch (not flex-start) so the pill fills its bounded wrapper and a
-    // long food name ellipsizes inside it instead of overflowing past the
-    // right:88 FAB gutter. Every toast now carries a food name, so the
-    // full-width bar reads as intentional rather than a content-hugging chip.
-    alignItems: 'stretch',
-    zIndex: 50,
-    elevation: 12,
-  },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: theme.colorNeutralDark,
-    paddingHorizontal: theme.space2,
-    paddingVertical: 12,
-    borderRadius: theme.radiusFull,
-    minHeight: 44,
-    gap: theme.space2,
-    ...shadows.md,
-  },
-  // Card: taller multi-row container for meal events with intake chips.
-  // Sits ABOVE the FAB (not beside it like the pill) so the chip row can
-  // span full width without colliding with the FAB. FAB is at bottom: 72,
-  // height 56 → its top is at 128; card sits at 144 to clear it with a bit
-  // of breathing room.
-  wrapperCard: {
+  // Sits ABOVE the FAB so the chip row can span full width without colliding
+  // with it. FAB is at bottom: 72, height 56 → its top is at 128; the card
+  // clears that with breathing room.
+  wrapper: {
     position: 'absolute',
     bottom: TAB_BAR_HEIGHT + 64,
     left: theme.space2,
@@ -283,36 +279,36 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   headerRow: {
-    // Grow to fill the (now stretched) pill so space-between pushes
-    // "Change time" to the right edge, and shrink so a long food name
-    // ellipsizes via labelCol's flexShrink instead of overflowing. Note:
-    // flexBasis stays 'auto' (NOT the 0% that `flex: 1` shorthand implies) —
-    // 0% would collapse this row against the intake-chip row in the
-    // column-layout card variant.
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: theme.space2,
   },
+  // Mint ring on the dark card with a warm-gold halo — the celebrate warmth.
+  checkBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1.5,
+    borderColor: theme.colorMomentConfirm,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: theme.colorMomentGlow,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 6,
+  },
   labelCol: {
+    flexGrow: 1,
     flexShrink: 1,
     gap: 1,
   },
-  foodName: {
+  title: {
     fontSize: theme.textMD,
     color: '#fff',
     fontWeight: theme.weightMedium,
   },
-  label: {
-    fontSize: theme.textMD,
-    color: '#fff',
-    fontWeight: theme.weightRegular,
-    flexShrink: 1,
-  },
-  // Demoted "Logged at HH:MM" line shown beneath the food name.
   subLabel: {
     fontSize: theme.textSM,
     color: 'rgba(255,255,255,0.7)',
@@ -326,10 +322,16 @@ const styles = StyleSheet.create({
   },
   intakeWrap: {
     // Subtle separator so the chip row reads as a related-but-distinct
-    // affordance, not a second clickable action on the same line.
+    // affordance, not a second action on the same line.
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.15)',
     paddingTop: theme.space1,
+    gap: 6,
+  },
+  intakeLabel: {
+    fontSize: theme.textSM,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: theme.weightRegular,
   },
 
   backdrop: {

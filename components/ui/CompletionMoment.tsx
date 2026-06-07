@@ -3,7 +3,7 @@ import { StyleSheet, Animated, Easing } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
-import { useMomentStore } from '../../store/momentStore';
+import { useMomentStore, MomentTone } from '../../store/momentStore';
 
 // Diameter of the warm-gold glow. Large enough to bloom past the check ring
 // and read as a radial halo, not a disc.
@@ -22,6 +22,11 @@ const GLOW_GRADIENT_ID = 'nyx-completion-glow';
 // gold halo behind the mint check; 'calm' omits the gold entirely (symptom
 // logs get a quiet, non-festive confirm). The spring check + 'Logged' line are
 // common to both.
+//
+// This overlay renders the full-screen terminal BEAT only. The meal
+// presentation (payload.kind === 'meal') is a non-blocking warmed card carrying
+// intake + "Change time", rendered by <MealCompletionCard/>, so we bail out for
+// it here (B-064).
 export function CompletionMoment() {
   const { visible, payload } = useMomentStore();
 
@@ -35,11 +40,16 @@ export function CompletionMoment() {
   // run so a rapid re-log can't tick two composites against the same values.
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
 
-  const tone = payload?.tone ?? 'calm';
+  // Only the beat presentation lives here; treat any non-beat payload as "not
+  // shown" so the meal card can take over without this overlay animating values
+  // nobody renders.
+  const isBeat = payload?.kind === 'beat';
+  const tone: MomentTone = isBeat ? payload.tone : 'calm';
+  const shown = visible && isBeat;
 
   useEffect(() => {
     animRef.current?.stop();
-    if (visible) {
+    if (shown) {
       // Reset every value (surfaceOpacity included) so a repeat log re-plays
       // the entrance from zero even if the exit fade was still mid-flight.
       surfaceOpacity.setValue(0);
@@ -70,16 +80,17 @@ export function CompletionMoment() {
     }
     animRef.current.start();
     return () => animRef.current?.stop();
-  }, [visible, tone, checkScale, checkOpacity, glowScale, glowOpacity, surfaceOpacity]);
+  }, [shown, tone, checkScale, checkOpacity, glowScale, glowOpacity, surfaceOpacity]);
 
-  if (!payload) return null;
+  // Narrow to BeatPayload for the render (also bails for the meal card).
+  if (!payload || payload.kind !== 'beat') return null;
   const celebrate = tone === 'celebrate';
 
   return (
     <Animated.View
       // Block stray taps on the screen beneath only while the moment is up;
       // released the instant it dismisses so it can never trap the UI.
-      pointerEvents={visible ? 'auto' : 'none'}
+      pointerEvents={shown ? 'auto' : 'none'}
       style={[styles.container, { opacity: surfaceOpacity }]}
     >
       {celebrate && (
