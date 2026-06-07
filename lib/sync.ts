@@ -1,7 +1,13 @@
 import { supabase } from './supabase';
-import { getDb } from './db';
+import { getDb, getWatermark, setWatermark } from './db';
 import { uploadPhoto } from './storage';
-import { reconcileBatch, type LocalRowMeta } from './hydration';
+import {
+  reconcileBatch,
+  advanceWatermark,
+  watermarkQueryFloor,
+  mealsToDeleteByAbsence,
+  type LocalRowMeta,
+} from './hydration';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -48,25 +54,39 @@ async function loadLocalRowMeta(
   return map;
 }
 
-// Pull EVERY row of a table from Supabase, paginating past the server's default
+// Pull rows of a table from Supabase, paginating past the server's default
 // 1,000-row cap. Without this, an account with a long history would hydrate an
 // arbitrary, nondeterministic slice — partially restoring a new phone and
 // FK-orphaning meals whose parent events fell outside the slice. Ordered by id
 // (a stable, unique key) so pages don't skip or duplicate rows. RLS scopes the
 // SELECT to the account, so no explicit pet filter is needed.
+//
+// FR-3: when `since` is given, the pull is INCREMENTAL — only rows whose
+// watermark column is >= the stored high-water mark are fetched (delta), instead
+// of the whole history every foreground. The bound is inclusive on purpose (see
+// the boundary argument in lib/hydration.ts advanceWatermark). A null/absent
+// `since` is the cold-start full pull.
 const HYDRATE_PAGE = 1000;
-async function fetchAllRows<T>(table: string, columns: string): Promise<T[] | null> {
+async function fetchAllRows<T>(
+  table: string,
+  columns: string,
+  since?: { column: string; value: string } | null,
+): Promise<T[] | null> {
   const out: T[] = [];
   for (let from = 0; ; from += HYDRATE_PAGE) {
-    const { data, error } = await supabase
+    let query = supabase
       .from(table)
       .select(columns)
       .order('id', { ascending: true })
       .range(from, from + HYDRATE_PAGE - 1);
+    if (since) query = query.gte(since.column, since.value);
+    const { data, error } = await query;
     // null = "couldn't read this table" (distinct from an empty []); the caller
     // skips the table this cycle and runHydrationStep moves on. A flaky page
     // mid-pagination discards the accumulated rows for this table — acceptable
-    // because the next cycle re-pulls from the start (full pull, self-healing).
+    // because the next cycle re-pulls from the same watermark (self-healing); the
+    // watermark is advanced only after a clean write, so a failed pull never
+    // advances past rows it didn't land.
     if (error) { console.warn(`[hydrate] ${table} pull failed:`, error.message); return null; }
     const page = (data ?? []) as unknown as T[];
     out.push(...page);
@@ -372,12 +392,20 @@ export async function refreshFoodCache(): Promise<void> {
 }
 
 // ============================================================
-// Down-sync / hydration (B-054 Phase 1)
+// Down-sync / hydration (B-054 Phase 1 + Phase 3)
 // ============================================================
 //
 // The inverse of the syncPending* push functions: pull the account's rows from
 // Supabase into local SQLite so a second device — or the same user on a fresh
 // install / new phone — sees the shared history instead of an empty log.
+//
+// Phase 3 (FR-3 / FR-8): pulls are now INCREMENTAL — each table keeps a per-table
+// high-water mark (lib/db.ts sync_watermarks) and asks Supabase only for rows
+// changed since, so a foreground re-sync no longer re-downloads the whole history
+// (cold start, watermark = null, still pulls everything). And because the one
+// place we hard-delete (the food-deletion meal cascade) can't be observed by a
+// pull, reconcileDeletedMeals drops ghost meals by absence. See lib/hydration.ts
+// for the watermark-boundary and absence-guard arguments.
 //
 // RLS already scopes every target table to the owning account
 // (pet_id → pets.user_id = auth.uid()), so a plain SELECT returns exactly this
@@ -425,11 +453,16 @@ interface RemoteVetVisitAttachment {
 }
 
 async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
+  // FR-3: pull only events changed since the last successful pull, with the
+  // commit-skew safety overlap (see watermarkQueryFloor).
+  const since = await getWatermark('events');
+  const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteEvent>(
     'events',
     'id, pet_id, event_type, occurred_at, severity, notes, source, ' +
       'occurred_at_source, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, ' +
       'deleted_at, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
 
@@ -464,6 +497,17 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
       ],
     );
   }
+  // FR-3: advance the watermark to the max updated_at we OBSERVED this pull (all
+  // fetched rows, not just the ones we wrote — a row we skipped under LWW has
+  // still been seen; the commit-skew overlap, not max-vs-written, is what keeps a
+  // late-committing row from being lost). Persist only after the writes above
+  // succeed; a throw mid-loop leaves the old watermark and the next cycle re-pulls
+  // from there. Re-check stale() so a sign-out + wipe landing between the last
+  // write and here can't re-insert the old account's watermark into the just-
+  // cleared table (which would make the next account's login a wrong incremental).
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('events', wm);
 }
 
 async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
@@ -476,9 +520,13 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
   // The clinically load-bearing intake_rating now propagates by authorship-ish
   // order, not by an absence heuristic. Runs after hydrateEvents so the parent
   // event exists before the FK-bearing meal row lands (FR-2 / edge case 10).
+  // FR-3: incremental on meals.updated_at (B-055 / migration 016), with overlap.
+  const since = await getWatermark('meals');
+  const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteMeal>(
     'meals',
     'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating',
+    floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
 
@@ -509,15 +557,23 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
       ],
     );
   }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('meals', wm);
 }
 
 async function hydrateEventAttachments(db: Db, stale: () => boolean): Promise<void> {
   // Insert-only (no server updated_at). FR-10: the row carries a storage_path
   // but no on-device file, so local_uri is stored as '' (empty sentinel) and
   // rendering falls back to a signed Storage URL.
+  // FR-3: incremental on created_at (insert-only — created_at is the only and a
+  // stable change marker; an attachment row is never edited in place), with overlap.
+  const since = await getWatermark('event_attachments');
+  const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteEventAttachment>(
     'event_attachments',
     'id, event_id, pet_id, storage_path, mime_type, taken_at, sort_order, created_at',
+    floor ? { column: 'created_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
 
@@ -534,12 +590,19 @@ async function hydrateEventAttachments(db: Db, stale: () => boolean): Promise<vo
        a.taken_at ?? null, a.sort_order ?? 0, a.created_at],
     );
   }
+  const wm = advanceWatermark(rows.map((r) => r.created_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('event_attachments', wm);
 }
 
 async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
+  // FR-3: incremental on updated_at, with overlap.
+  const since = await getWatermark('vet_visits');
+  const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteVetVisit>(
     'vet_visits',
     'id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
 
@@ -561,12 +624,19 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
        v.notes ?? null, v.next_visit_at ?? null, v.created_at, v.updated_at],
     );
   }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('vet_visits', wm);
 }
 
 async function hydrateVetVisitAttachments(db: Db, stale: () => boolean): Promise<void> {
+  // FR-3: incremental on created_at (insert-only, like event_attachments), with overlap.
+  const since = await getWatermark('vet_visit_attachments');
+  const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteVetVisitAttachment>(
     'vet_visit_attachments',
     'id, vet_visit_id, pet_id, storage_path, mime_type, taken_at, sort_order, created_at',
+    floor ? { column: 'created_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
 
@@ -582,6 +652,62 @@ async function hydrateVetVisitAttachments(db: Db, stale: () => boolean): Promise
       [a.id, a.vet_visit_id, a.pet_id, '', a.storage_path, a.mime_type ?? 'image/jpeg',
        a.taken_at ?? null, a.sort_order ?? 0, a.created_at],
     );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.created_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('vet_visit_attachments', wm);
+}
+
+// FR-8 — hard-deleted-meal absence reconciliation (PM ruling: absence-reconcile,
+// not a tombstone schema). The food-deletion cascade hard-`DELETE`s meals
+// server-side, and a pull (incremental or full) can't observe a row that no
+// longer exists — so a meal deleted on device A would linger as a ghost on
+// device B forever. Each cycle we pull the server's full set of meal ids
+// (id-only — cheap, the "bounded reconciliation pass" of requirements §5.3) and
+// delete any local meal the server no longer has. This is deliberately a FULL id
+// pull, not incremental: absence can only be detected against the complete server
+// set. The pure mealsToDeleteByAbsence guards the load-bearing rule — an unsynced
+// local meal (synced = 0) is NOT yet on the server and must never be reconciled
+// away.
+async function reconcileDeletedMeals(db: Db, stale: () => boolean): Promise<void> {
+  // ⚠️ Verified full pull. This pass DELETEs by absence, so a SILENTLY truncated
+  // read (PostgREST can return data:[] with no error under load / statement
+  // timeout) would make every synced local meal look like a ghost and mass-delete
+  // real data — the highest-blast-radius line in hydration. Guard: get the exact
+  // server count first, then the full id set, and proceed ONLY if they match. A
+  // count/length mismatch (truncation, or a meal added between the two queries)
+  // skips the pass and retries next cycle. Skipping is always the safe direction.
+  const { count, error: countErr } = await supabase
+    .from('meals')
+    .select('id', { count: 'exact', head: true });
+  if (countErr || count === null) {
+    console.warn('[hydrate] meals count failed, skipping absence pass:', countErr?.message);
+    return;
+  }
+  const remote = await fetchAllRows<{ id: string }>('meals', 'id');
+  // null = couldn't read the server set (error). Do NOT delete blind on a failed
+  // read — an empty [] (genuinely no server meals) is a valid set to reconcile
+  // against, but a null is "we don't know", so skip this cycle.
+  if (remote === null) return;
+  if (remote.length !== count) {
+    console.warn(`[hydrate] meals id pull incomplete (${remote.length}/${count}), skipping absence pass`);
+    return;
+  }
+  if (stale()) return; // FR-9: signed out mid-cycle — don't touch the wiped store.
+
+  const serverIds = new Set(remote.map((r) => r.id));
+  const localMeals = await db.getAllAsync<{ id: string; synced: number }>(
+    'SELECT id, synced FROM meals',
+  );
+  const toDelete = mealsToDeleteByAbsence(serverIds, localMeals);
+  if (toDelete.length === 0) return;
+  if (stale()) return; // re-check after the local read (another async hop).
+
+  const CHUNK = 400;
+  for (let i = 0; i < toDelete.length; i += CHUNK) {
+    const chunk = toDelete.slice(i, i + CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    await db.runAsync(`DELETE FROM meals WHERE id IN (${placeholders})`, chunk);
   }
 }
 
@@ -614,6 +740,11 @@ export async function hydrateFromCloud(): Promise<void> {
   await runHydrationStep('events', () => hydrateEvents(db, stale));
   if (stale()) return;
   await runHydrationStep('meals', () => hydrateMeals(db, stale));
+  if (stale()) return;
+  // FR-8: drop ghost meals the server hard-deleted. After hydrateMeals so any
+  // just-inserted meal is already present in the local set (and in the server
+  // set, so it won't be flagged).
+  await runHydrationStep('meals:absence', () => reconcileDeletedMeals(db, stale));
   if (stale()) return;
   await runHydrationStep('event_attachments', () => hydrateEventAttachments(db, stale));
   if (stale()) return;

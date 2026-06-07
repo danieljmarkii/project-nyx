@@ -99,6 +99,107 @@ export function shouldWriteRemoteRow(
   return remoteT > localT;
 }
 
+// ── FR-3: incremental hydration high-water mark ──────────────────────────────
+//
+// After the first (cold) pull, each target table tracks the max timestamp it has
+// successfully pulled; the next pull asks Supabase only for rows changed since
+// (`.gte(column, watermark)`), instead of re-downloading the whole history on
+// every foreground. The watermark column is the row's server-stamped change time:
+// `updated_at` for the LWW tables (events/meals/vet_visits), `created_at` for the
+// insert-only attachment tables (no updated_at).
+//
+// ⚠️ The bound is INCLUSIVE (>=), and that is the whole boundary correctness
+// argument. The watermark is set to max(updated_at) of the rows pulled. A strict
+// (>) bound on the next pull would permanently skip any row whose updated_at
+// exactly equals the stored watermark but that wasn't in the prior pull's
+// snapshot — e.g. a second row server-stamped in the same microsecond, or a row
+// that committed just after our SELECT read. With `.gte` those boundary rows are
+// re-pulled (bounded to the rows sharing the max timestamp — usually one), which
+// is harmless because the reconcile is idempotent: an equal-timestamp LWW
+// comparison is a no-op and an insert-if-absent of an existing row is a no-op.
+// Re-pulling a boundary row is cheap; losing one is silent data loss. Both the
+// watermark and the row timestamps it's compared against are server values, so
+// there is no client-clock skew in this comparison (unlike the LWW path, which
+// parseTs guards).
+//
+// ⚠️ Commit-skew overlap (the OTHER half of the boundary argument). The
+// set_updated_at trigger stamps updated_at = now(), and Postgres now() is
+// TRANSACTION-START time, not commit time. So a write whose transaction began
+// before another device's pull but COMMITS after that pull's snapshot lands with
+// an updated_at *below* the pull's observed max. If the watermark advanced to that
+// max and the next pull used a strict-or-equal bound AT the max, that row would
+// sit permanently below the watermark and never be re-pulled — silent
+// cross-device divergence, the exact "two phones never agree" bug B-054 exists to
+// fix. Defense: the next pull's lower bound is the stored watermark pulled BACK by
+// a safety overlap, re-pulling a short recent window every cycle. The overlap only
+// has to exceed the longest write transaction; mobile single-row upserts are
+// sub-second, so 2 min is enormous headroom, and the re-pulled window reconciles
+// idempotently (equal-timestamp LWW and insert-if-absent are both no-ops). The
+// STORED watermark still advances to the true max so it can never stall.
+export const HYDRATE_WATERMARK_OVERLAP_MS = 2 * 60 * 1000;
+
+// The lower bound for an incremental `.gte()` pull: the stored watermark pulled
+// back by the safety overlap. null (cold start) → null (full pull); an
+// unparseable stored value also falls back to a full pull rather than passing
+// garbage to PostgREST.
+export function watermarkQueryFloor(
+  watermark: string | null,
+  overlapMs: number = HYDRATE_WATERMARK_OVERLAP_MS,
+): string | null {
+  const t = parseTs(watermark);
+  if (t === null) return null;
+  return new Date(t - overlapMs).toISOString();
+}
+
+// Compute the new watermark from a batch of timestamp strings, never regressing
+// below the prior value. Returns `prior` unchanged for an empty batch or one
+// with no parseable timestamps (so a flaky/empty pull never rewinds the mark).
+// Returns the raw max string (not the parsed number) so it can be fed straight
+// back to PostgREST `.gte()` as a timestamptz literal.
+export function advanceWatermark(
+  timestamps: (string | null | undefined)[],
+  prior: string | null,
+): string | null {
+  let bestRaw = prior;
+  let bestNum = parseTs(prior);
+  for (const ts of timestamps) {
+    const n = parseTs(ts);
+    if (n === null) continue;
+    if (bestNum === null || n > bestNum) {
+      bestNum = n;
+      bestRaw = ts ?? bestRaw;
+    }
+  }
+  return bestRaw;
+}
+
+// ── FR-8: hard-deleted-meal absence reconciliation (PM decision: absence) ─────
+//
+// Meals are HARD-`DELETE`d server-side by the food-deletion cascade
+// (app/food/[id].tsx), so a pull can't observe a row that no longer exists — a
+// meal deleted on device A would linger forever as a ghost on device B. v1 fix
+// (requirements §5.3 FR-8, PM ruling = absence-reconcile, not a tombstone
+// schema): periodically pull the server's full set of meal ids (id-only, cheap)
+// and delete any local meal the server no longer has.
+//
+// ⚠️ Load-bearing guard: NEVER delete an unsynced local meal (synced = 0). Such a
+// row legitimately isn't on the server yet — it just hasn't been pushed — so
+// reconciling it by absence would destroy a fresh local write. Only synced = 1
+// rows (which, by definition, came from or were confirmed by the server) are
+// eligible for absence-deletion. Pure so the boundary is unit-tested; the I/O
+// shell in lib/sync.ts supplies the server id set and executes the deletes.
+export function mealsToDeleteByAbsence(
+  serverIds: Iterable<string>,
+  localMeals: { id: string; synced: number }[],
+): string[] {
+  const serverSet = serverIds instanceof Set ? serverIds : new Set(serverIds);
+  const out: string[] = [];
+  for (const m of localMeals) {
+    if (m.synced === 1 && !serverSet.has(m.id)) out.push(m.id);
+  }
+  return out;
+}
+
 // Partition a batch of remote rows into those to write vs those to skip, given
 // the current local state keyed by id. Pure: lib/sync.ts feeds SELECT results
 // in and executes the returned writes.
@@ -127,6 +228,12 @@ export function reconcileBatch<T extends RemoteRow>(
 // everything on the next login. food_items_cache is the global (non-private)
 // food catalog; we clear it too so a different account starts clean and
 // re-hydrates its own view via refreshFoodCache.
+//
+// sync_watermarks (FR-3) MUST be wiped here too: it is not pet data, but a stale
+// per-table high-water mark surviving a sign-out would make the NEXT account's
+// first login an *incremental* pull from the prior account's watermark — silently
+// skipping all of the new account's history older than that mark. Clearing it
+// forces a correct full cold-start pull (watermark = null) after every wipe.
 export const LOCAL_WIPE_TABLES = [
   'meals',
   'event_attachments',
@@ -134,4 +241,5 @@ export const LOCAL_WIPE_TABLES = [
   'events',
   'vet_visits',
   'food_items_cache',
+  'sync_watermarks',
 ] as const;
