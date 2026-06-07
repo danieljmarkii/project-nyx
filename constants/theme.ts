@@ -1,9 +1,15 @@
-// Typography — System font maps to SF Pro (iOS) / Roboto (Android).
-// Replace fontBody/fontDisplay with loaded font family names once
-// expo-google-fonts (or similar) is wired up in the app entry point.
+// Typography — v1.2 "Linear Clean". Geist (body) + Newsreader (display).
+// Families are loaded + registered in lib/fonts.ts and gated at the app entry
+// point (app/_layout.tsx) so no text renders before the faces resolve. Each
+// weight is a distinct family because RN does not synthesize weights for custom
+// fonts; fontBodyMedium/Semibold map the weight tokens to the loaded faces.
+// Only fontDisplay is consumed today (the AI Signal headline) — the app-wide
+// body swap to Geist is the follow-up rollout (see backlog).
 export const theme = {
-  fontBody: 'System',
-  fontDisplay: 'System',
+  fontBody: 'Geist',
+  fontBodyMedium: 'Geist-Medium',
+  fontBodySemibold: 'Geist-SemiBold',
+  fontDisplay: 'Newsreader',
 
   // ── Type scale (sp) ───────────────────────────────────────────────────────
   textXS: 11,    // zone labels, metadata, badge text
@@ -13,6 +19,7 @@ export const theme = {
   textXL: 22,    // page headings
   text2XL: 28,   // display (pet name, hero number)
   textSignal: 26, // AI Signal headline (display face) — consumed by PR 2
+  lineHeightSignal: 34, // AI Signal headline leading (26 × ~1.3, per type-signal preview)
 
   // ── Font weights ──────────────────────────────────────────────────────────
   weightRegular: '400' as const,

@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import { fontMap } from '../lib/fonts';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
@@ -10,9 +13,21 @@ import { useSync } from '../hooks/useSync';
 import { Toast } from '../components/ui/Toast';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
 
+// Hold the native splash until the font gate releases, so the first painted
+// frame is already in the v1.2 faces — no system→custom flash, and no blank
+// frame between the auto-hidden splash and the first render (the failure mode of
+// a bare `return null` gate). Errors are swallowed: a splash-control hiccup must
+// never block startup.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
 export default function RootLayout() {
   const { setSession, setLoading } = useAuthStore();
   const { isOnboarded } = usePetStore();
+
+  // Font-load gate: hold the tree until the v1.2 faces resolve so type never
+  // flashes from system → custom on first paint. On a load error we render
+  // anyway (system fallback) rather than brick the app on a font fetch.
+  const [fontsLoaded, fontError] = useFonts(fontMap);
 
   useSync();
 
@@ -49,6 +64,21 @@ export default function RootLayout() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Auth init (above) runs in parallel while fonts resolve; only the rendered
+  // tree waits. Fonts ready (or a load error → system fallback) releases the
+  // gate and hides the native splash that's been held since module load.
+  const fontGateReleased = fontsLoaded || !!fontError;
+
+  useEffect(() => {
+    if (fontGateReleased) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontGateReleased]);
+
+  if (!fontGateReleased) {
+    return null;
+  }
 
   return (
     <>

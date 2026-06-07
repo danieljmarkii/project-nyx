@@ -54,7 +54,7 @@ function LiveStack({ findings, petName }: { findings: CachedFinding[]; petName: 
       {ordered.map((f, i) => (
         <View key={`${f.finding.type}-${f.rank}`}>
           {i > 0 && <Divider style={styles.rowDivider} />}
-          <InsightCard cached={f} petName={petName} />
+          <InsightCard cached={f} petName={petName} isLead={i === 0} />
         </View>
       ))}
     </View>
