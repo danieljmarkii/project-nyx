@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Animated, KeyboardAvoidingView, Platform, Image, Alert,
+  ScrollView, Animated, Easing, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
+import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera } from 'lucide-react-native';
+import { Camera, Check } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
@@ -38,6 +39,10 @@ type TimeFields = {
   latest: Date | null;
   source: 'manual' | 'exif' | 'now';
 };
+
+// Diameter of the warm-gold completion glow. Large enough to bloom past the
+// 88px check ring and read as an earned radial halo, not a disc.
+const GLOW_SIZE = 360;
 
 const SEVERITY_CONFIG = [
   { value: 1, label: 'Mild' },
@@ -92,9 +97,14 @@ export default function LogModal() {
   // if the owner toggles back to "Saw it happen".
   const [estimatedAt, setEstimatedAt] = useState<Date>(() => new Date());
 
-  // Completion animation
-  const checkScale = useRef(new Animated.Value(0.5)).current;
+  // Completion "moment" — the one earned warm-gold beat (design-system PR 4).
+  // checkScale springs the mint ring in; glow blooms the radial gold halo
+  // behind it. Both reset implicitly per mount (the modal is torn down on
+  // router.back), so the moment only ever plays for a real, just-completed log.
+  const checkScale = useRef(new Animated.Value(0.6)).current;
   const checkOpacity = useRef(new Animated.Value(0)).current;
+  const glowScale = useRef(new Animated.Value(0.4)).current;
+  const glowOpacity = useRef(new Animated.Value(0)).current;
 
   // Consume pending attachment from the FAB photo flow
   useEffect(() => {
@@ -126,9 +136,16 @@ export default function LogModal() {
   useEffect(() => {
     if (step !== 'complete') return;
     Animated.parallel([
+      // Warm-gold halo blooms out behind the ring (ease-out, no overshoot).
+      Animated.timing(glowOpacity, { toValue: 1, duration: theme.durationFast, useNativeDriver: true }),
+      Animated.timing(glowScale, {
+        toValue: 1, duration: theme.durationSlow, easing: Easing.out(Easing.cubic), useNativeDriver: true,
+      }),
+      // Mint check ring springs in with a slight overshoot.
       Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
-      Animated.timing(checkOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.timing(checkOpacity, { toValue: 1, duration: theme.durationFast, useNativeDriver: true }),
     ]).start();
+    // Whole moment dwells well under the 2s earned-moment cap before dismiss.
     const t = setTimeout(() => router.back(), 1000);
     return () => clearTimeout(t);
   }, [step]);
@@ -397,8 +414,23 @@ export default function LogModal() {
   if (step === 'complete') {
     return (
       <View style={styles.completeContainer}>
+        <Animated.View
+          style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]}
+          pointerEvents="none"
+        >
+          <Svg width={GLOW_SIZE} height={GLOW_SIZE}>
+            <Defs>
+              <RadialGradient id="momentGlow" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor={theme.colorMomentGlow} stopOpacity={0.22} />
+                <Stop offset="40%" stopColor={theme.colorMomentGlow} stopOpacity={0.06} />
+                <Stop offset="70%" stopColor={theme.colorMomentGlow} stopOpacity={0} />
+              </RadialGradient>
+            </Defs>
+            <Circle cx={GLOW_SIZE / 2} cy={GLOW_SIZE / 2} r={GLOW_SIZE / 2} fill="url(#momentGlow)" />
+          </Svg>
+        </Animated.View>
         <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <Text style={styles.checkMark}>✓</Text>
+          <Check size={40} color={theme.colorMomentConfirm} strokeWidth={3} />
         </Animated.View>
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>Logged</Animated.Text>
       </View>
@@ -1014,29 +1046,44 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
 
-  // ── Completion ──
+  // ── Completion "moment" (design-system PR 4) ──
   completeContainer: {
     flex: 1,
     backgroundColor: theme.colorSurface,
     justifyContent: 'center',
     alignItems: 'center',
     gap: theme.space2,
+    overflow: 'hidden', // clip the glow bloom to the screen
   },
-  checkCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: theme.colorNeutralDark,
+  // Warm-gold radial halo, centered behind the ring. Absolute so it blooms
+  // without displacing the centered ring + label.
+  glow: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  checkMark: {
-    fontSize: 36,
-    color: '#fff',
+  // Mint ring on white — the confirm color. Carries a soft gold-tinted halo so
+  // the warmth reads even on devices that flatten the radial gradient.
+  checkCircle: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: theme.colorSurface,
+    borderWidth: 2,
+    borderColor: theme.colorMomentConfirm,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: theme.colorMomentGlow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 22,
+    elevation: 6,
+    zIndex: 1,
   },
   loggedText: {
     fontSize: 20,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
+    zIndex: 1,
   },
 });
