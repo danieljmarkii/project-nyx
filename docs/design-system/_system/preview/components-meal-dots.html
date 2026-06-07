@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Meal dots</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 22px 28px; font-family: var(--font-body); background: white; }
+    .lbl { font-size: 11px; font-weight: 500; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.8px; }
+    .head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; }
+    .type { font-size: 15px; font-weight: 500; color: var(--fg-1); }
+    .count { font-size: 13px; font-weight: 500; color: var(--fg-1); }
+    .dir { font-size: 13px; color: var(--accent-1); margin: 4px 0 12px; }
+    .dots { display: flex; gap: 8px; margin-bottom: 8px; }
+    .dot { flex: 1; aspect-ratio: 1; max-width: 32px; max-height: 32px; border-radius: 100px; }
+    .filled { background: #00C2A8; }
+    .empty { background: #EAEAEA; }
+    .axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--fg-2); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="lbl">Trend</div>
+  <div class="head"><div class="type">Meals</div><div class="count">6 of 7 days</div></div>
+  <div class="dir">↑ from 4 days last week</div>
+  <div class="dots">
+    <div class="dot filled"></div>
+    <div class="dot filled"></div>
+    <div class="dot empty"></div>
+    <div class="dot filled"></div>
+    <div class="dot filled"></div>
+    <div class="dot filled"></div>
+    <div class="dot filled"></div>
+  </div>
+  <div class="axis"><span>May 8</span><span>Today</span></div>
+</body>
+</html>

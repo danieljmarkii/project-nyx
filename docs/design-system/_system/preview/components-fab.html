@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · FAB</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 28px; font-family: var(--font-body); background: var(--bg-app); display: flex; gap: 36px; align-items: flex-end; }
+    .col { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .fab { width: 56px; height: 56px; border-radius: 28px; background: #0A0A0A; display: grid; place-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); position: relative; }
+    .plus, .x { width: 20px; height: 20px; position: relative; }
+    .plus::before, .plus::after, .x::before, .x::after { content: ''; position: absolute; background: white; border-radius: 1px; }
+    .plus::before { left: 0; top: 9px; width: 20px; height: 2px; }
+    .plus::after { left: 9px; top: 0; width: 2px; height: 20px; }
+    .x::before { left: 0; top: 9px; width: 20px; height: 2px; transform: rotate(45deg); }
+    .x::after { left: 9px; top: 0; width: 2px; height: 20px; transform: rotate(45deg); }
+    .name { font-size: 11px; color: var(--fg-2); letter-spacing: 0.4px; text-transform: uppercase; }
+
+    .menu { background: white; border: 1px solid var(--border-1); border-radius: 16px; padding: 8px; min-width: 230px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+    .mh { font-size: 11px; font-weight: 500; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.6px; padding: 6px 10px 4px; }
+    .ma { display: flex; align-items: center; gap: 12px; padding: 8px 10px; font-size: 14px; color: var(--fg-1); font-weight: 500; }
+    .ico { width: 22px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="col"><div class="fab"><div class="plus"></div></div><div class="name">FAB · closed</div></div>
+  <div class="col"><div class="fab"><div class="x"></div></div><div class="name">FAB · open (45°)</div></div>
+  <div class="col">
+    <div class="menu">
+      <div class="mh">Recent meals</div>
+      <div class="ma"><div class="ico">🍽</div>Fancy Feast · Chicken</div>
+      <div class="ma"><div class="ico">🍽</div>Open Farm · Turkey</div>
+    </div>
+    <div class="name">Menu</div>
+  </div>
+</body>
+</html>

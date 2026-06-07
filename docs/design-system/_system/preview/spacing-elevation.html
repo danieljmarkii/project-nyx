@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Spacing · Elevation</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 36px 28px; font-family: var(--font-body); background: var(--bg-app); display: flex; gap: 28px; align-items: center; }
+    .card { width: 130px; height: 90px; background: #fff; border-radius: 16px; display: flex; flex-direction: column; justify-content: flex-end; padding: 12px; }
+    .b { border: 1px solid var(--border-1); }
+    .sm { box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .md { box-shadow: 0 2px 10px rgba(0,0,0,0.10); }
+    .lg { box-shadow: 0 4px 18px rgba(0,0,0,0.14); }
+    .name { font-size: 13px; font-weight: 500; color: var(--fg-1); }
+    .use { font-size: 11px; color: var(--fg-3); margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="card b"><div class="name">Bordered</div><div class="use">Default card</div></div>
+  <div class="card sm"><div class="name">Shadow sm</div><div class="use">Light surfaces</div></div>
+  <div class="card md"><div class="name">Shadow md</div><div class="use">Elevated card, menu</div></div>
+  <div class="card lg"><div class="name">Shadow lg</div><div class="use">Floating overlay</div></div>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Project Nyx — Mobile UI Kit</title>
+  <link rel="stylesheet" href="../../colors_and_type.css" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #E5E5E5; font-family: var(--font-body); min-height: 100vh; }
+    .stage { display: flex; align-items: center; justify-content: center; padding: 40px 24px 64px; gap: 24px; flex-wrap: wrap; }
+    .panel { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+    .label { font-size: 11px; font-weight: 500; color: var(--fg-2); letter-spacing: 0.8px; text-transform: uppercase; }
+
+    .nav { position: fixed; top: 16px; left: 16px; right: 16px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 100; justify-content: center; }
+    .nav button {
+      padding: 6px 12px; background: white; border: 1px solid var(--border-1); border-radius: 999px;
+      font-family: inherit; font-size: 12px; color: var(--fg-2); cursor: pointer;
+    }
+    .nav button.active { background: var(--nyx-neutral-dark); color: white; border-color: var(--nyx-neutral-dark); }
+
+    /* In-frame screen container — must take full height of frame */
+    .nyx-screen { height: 100%; display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <script type="text/babel" src="shared.jsx"></script>
+  <script type="text/babel" src="HomeScreen.jsx"></script>
+  <script type="text/babel" src="LogScreen.jsx"></script>
+  <script type="text/babel" src="HistoryScreen.jsx"></script>
+  <script type="text/babel" src="ProfileScreen.jsx"></script>
+  <script type="text/babel" src="OnboardingScreen.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const SEED_EVENTS = [
+      { id: '1', date: 'Today · May 14', time: '8:42 AM', event_type: 'meal', food_brand: 'Open Farm', food_product_name: 'Homestead Turkey & Chicken' },
+      { id: '2', date: 'Today · May 14', time: '9:14 AM', event_type: 'vomit', severity: 3, notes: '20 minutes after breakfast. Mostly water, no kibble.' },
+      { id: '3', date: 'Today · May 14', time: '11:02 AM', event_type: 'stool_normal' },
+      { id: '4', date: 'Yesterday · May 13', time: '8:30 AM', event_type: 'meal', food_brand: 'Open Farm', food_product_name: 'Homestead Turkey & Chicken' },
+      { id: '5', date: 'Yesterday · May 13', time: '6:15 PM', event_type: 'meal', food_brand: 'Open Farm', food_product_name: 'Wild Caught Salmon' },
+      { id: '6', date: 'Yesterday · May 13', time: '9:20 PM', event_type: 'itch', severity: 2, notes: 'Scratching at right ear for ~3 minutes.' },
+      { id: '7', date: 'May 12', time: '8:35 AM', event_type: 'meal', food_brand: 'Fancy Feast', food_product_name: 'Chunky Chicken Feast' },
+      { id: '8', date: 'May 12', time: '10:50 AM', event_type: 'vomit', severity: 4, notes: 'Chunks visible. About 90 min after meal.' },
+      { id: '9', date: 'May 11', time: '8:30 AM', event_type: 'meal', food_brand: 'Fancy Feast', food_product_name: 'Chunky Chicken Feast' },
+      { id: '10', date: 'May 11', time: '7:15 PM', event_type: 'diarrhea', severity: 4 },
+    ];
+
+    const LUNA = {
+      name: 'Luna',
+      species: 'Cat',
+      breed: 'Domestic shorthair',
+      conditions: [
+        { name: 'Suspected food sensitivity', note: 'Started diet trial May 2', status: 'Active' },
+        { name: 'Occasional vomiting', note: 'Tracked since Apr 2026', status: 'Monitoring' },
+      ],
+      foods: [
+        { brand: 'OPEN FARM', product: 'Homestead Turkey & Chicken', format: 'DRY' },
+        { brand: 'OPEN FARM', product: 'Wild Caught Salmon', format: 'WET' },
+        { brand: 'FANCY FEAST', product: 'Chunky Chicken Feast', format: 'WET' },
+      ],
+    };
+
+    function App() {
+      const [view, setView] = useState('home'); // home | history | profile | log | onboarding
+      const [tab, setTab] = useState('Home');
+      const [events, setEvents] = useState(SEED_EVENTS);
+      const [pet, setPet] = useState(LUNA);
+      const [fabOpen, setFabOpen] = useState(false);
+      const [logInitialType, setLogInitialType] = useState(null);
+
+      function handleTabChange(t) {
+        setTab(t);
+        if (t === 'Home') setView('home');
+        else if (t === 'History') setView('history');
+        else if (t === 'Pet') setView('profile');
+      }
+
+      function openLog(type) {
+        setLogInitialType(type || null);
+        setView('log');
+        setFabOpen(false);
+      }
+
+      function logEvent(payload) {
+        const now = new Date();
+        const newEvent = {
+          id: `${Date.now()}`,
+          date: 'Today · May 14',
+          time: now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+          ...payload,
+        };
+        setEvents([newEvent, ...events]);
+        // Return to home after a beat (the completion screen handles its own timing)
+        setTimeout(() => {
+          handleTabChange('Home');
+        }, 1700);
+      }
+
+      function fabPick(action) {
+        setFabOpen(false);
+        if (action.type === 'vomit' || action.type === 'diarrhea') {
+          openLog(action.type);
+        } else if (action.type === 'new-meal') {
+          openLog('meal');
+        } else if (action.type === 'meal') {
+          // Quick-log a recent food directly
+          logEvent({
+            event_type: 'meal',
+            food_brand: action.food.brand,
+            food_product_name: action.food.product,
+          });
+        } else {
+          openLog();
+        }
+      }
+
+      let screen;
+      if (view === 'onboarding') {
+        screen = <OnboardingScreen onComplete={(p) => { setPet({ ...LUNA, ...p, species: p.species[0].toUpperCase() + p.species.slice(1) }); setEvents([]); setView('home'); setTab('Home'); }} />;
+      } else if (view === 'log') {
+        screen = (
+          <LogScreen
+            pet={pet}
+            initialType={logInitialType}
+            onClose={() => { setView(tab === 'Home' ? 'home' : tab === 'History' ? 'history' : 'profile'); setLogInitialType(null); }}
+            onConfirm={(payload) => {
+              logEvent(payload);
+              setLogInitialType(null);
+            }}
+          />
+        );
+      } else {
+        // tab screens — share chrome (tab bar + FAB)
+        const inner = view === 'home'
+          ? <HomeScreen pet={pet} events={events} onOpenLog={() => openLog()} onSeeAll={() => handleTabChange('History')} />
+          : view === 'history'
+          ? <HistoryScreen events={events} />
+          : <ProfileScreen pet={pet} />;
+        screen = (
+          <div className="nyx-screen" style={{ position: 'relative' }}>
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+              {inner}
+              <NyxFABMenu visible={fabOpen} onClose={() => setFabOpen(false)} onPick={fabPick} />
+              <NyxFAB open={fabOpen} onToggle={() => setFabOpen(!fabOpen)} />
+            </div>
+            <NyxTabBar current={tab} onChange={handleTabChange} />
+          </div>
+        );
+      }
+
+      return (
+        <>
+          <div className="nav">
+            <button className={view === 'onboarding' ? 'active' : ''} onClick={() => setView('onboarding')}>Onboarding</button>
+            <button className={view === 'home' ? 'active' : ''} onClick={() => { setView('home'); setTab('Home'); }}>Home</button>
+            <button className={view === 'history' ? 'active' : ''} onClick={() => { setView('history'); setTab('History'); }}>History</button>
+            <button className={view === 'profile' ? 'active' : ''} onClick={() => { setView('profile'); setTab('Pet'); }}>Pet</button>
+            <button className={view === 'log' ? 'active' : ''} onClick={() => openLog()}>Quick-log</button>
+          </div>
+          <div className="stage">
+            <div className="panel">
+              <IOSDevice width={390} height={780}>
+                {screen}
+              </IOSDevice>
+              <div className="label">{view}</div>
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

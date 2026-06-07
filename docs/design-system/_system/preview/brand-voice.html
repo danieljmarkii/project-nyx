@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Brand · Voice</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 24px 28px; font-family: var(--font-body); background: var(--bg-app); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+    .col h4 { font-size: 11px; font-weight: 500; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.8px; margin: 0 0 10px; }
+    .ex { font-size: 14px; line-height: 1.45; padding: 10px 14px; border-radius: 8px; }
+    .yes { background: #E0FBF7; color: var(--fg-1); border-left: 2px solid var(--accent-1); }
+    .no  { background: #FFE4E6; color: var(--fg-1); border-left: 2px solid #F43F5E; text-decoration: line-through; text-decoration-color: rgba(201,122,111,0.5); }
+    .stack { display: flex; flex-direction: column; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div class="grid">
+    <div class="col">
+      <h4>Specific over generic</h4>
+      <div class="stack">
+        <div class="ex yes">Vomiting is down 60% since you switched to turkey.</div>
+        <div class="ex no">Things are improving!</div>
+      </div>
+    </div>
+    <div class="col">
+      <h4>Pet's name, not "your pet"</h4>
+      <div class="stack">
+        <div class="ex yes">Luna hasn't been logged today.</div>
+        <div class="ex no">Your pet hasn't been logged today.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

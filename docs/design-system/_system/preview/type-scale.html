@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Type · Scale</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 24px 28px; font-family: var(--font-body); }
+    .row { display: grid; grid-template-columns: 60px 1fr 110px; align-items: baseline; gap: 16px; padding: 6px 0; border-bottom: 1px dashed var(--border-1); }
+    .row:last-child { border-bottom: 0; }
+    .size { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; letter-spacing: 0.4px; }
+    .specimen { color: var(--fg-1); }
+    .meta { font-size: 11px; color: var(--fg-3); text-align: right; letter-spacing: 0.4px; }
+    .w400 { font-weight: 400; }
+    .w500 { font-weight: 500; }
+  </style>
+</head>
+<body>
+  <div class="row"><div class="size">28 / 2xl</div><div class="specimen w500" style="font-size:28px;letter-spacing:-0.3px">Luna</div><div class="meta">Med · pet name</div></div>
+  <div class="row"><div class="size">22 / xl</div><div class="specimen w500" style="font-size:22px;letter-spacing:-0.3px">How severe?</div><div class="meta">Med · page heading</div></div>
+  <div class="row"><div class="size">17 / lg</div><div class="specimen w500" style="font-size:17px">Log for Luna</div><div class="meta">Med · modal title</div></div>
+  <div class="row"><div class="size">15 / md</div><div class="specimen w400" style="font-size:15px">Nothing logged yet — how's Luna doing?</div><div class="meta">Reg · body</div></div>
+  <div class="row"><div class="size">13 / sm</div><div class="specimen w400" style="font-size:13px;color:var(--fg-2)">↓ from 8 last week — improving</div><div class="meta">Reg · caption</div></div>
+  <div class="row"><div class="size">11 / xs</div><div class="specimen" style="font-size:11px;color:var(--fg-2);letter-spacing:0.8px;text-transform:uppercase;font-weight:500">Signal</div><div class="meta">Med · zone label</div></div>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Badges</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 28px; font-family: var(--font-body); background: var(--bg-app); display: flex; align-items: center; gap: 32px; }
+    .col { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+    .badge { font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 6px; }
+    .symptom { background: #FFE4E6; color: #F43F5E; }
+    .accent { background: #E0FBF7; color: #00C2A8; }
+    .muted { background: #F5F5F5; color: #525252; }
+    .name { font-size: 11px; color: var(--fg-3); letter-spacing: 0.4px; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div class="col"><span class="badge symptom">Symptom</span><span class="name">symptom</span></div>
+  <div class="col"><span class="badge accent">Meal · Confirmed</span><span class="name">accent</span></div>
+  <div class="col"><span class="badge muted">Backdated</span><span class="name">muted</span></div>
+  <div class="col"><span class="badge symptom">Severity 4</span><span class="name">symptom</span></div>
+  <div class="col"><span class="badge accent">Synced</span><span class="name">accent</span></div>
+</body>
+</html>

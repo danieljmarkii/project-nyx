@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Severity stepper</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 30px 28px; font-family: var(--font-body); background: var(--bg-app); }
+    .heading { font-size: 22px; font-weight: 500; color: var(--fg-1); letter-spacing: -0.3px; margin-bottom: 18px; }
+    .row { display: flex; justify-content: space-between; align-items: center; }
+    .item { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: 1; }
+    .circle { width: 52px; height: 52px; border-radius: 26px; display: grid; place-items: center; font-size: 18px; font-weight: 500; color: #0A0A0A; border: 1px solid transparent; }
+    .selected { background: #0A0A0A !important; color: white !important; border-color: #0A0A0A; }
+    .lbl { font-size: 11px; color: var(--fg-2); height: 16px; }
+  </style>
+</head>
+<body>
+  <div class="heading">How severe?</div>
+  <div class="row">
+    <div class="item"><div class="circle" style="background:rgba(26,26,26,0.15)">1</div><div class="lbl">Mild</div></div>
+    <div class="item"><div class="circle" style="background:rgba(26,26,26,0.32)">2</div><div class="lbl"></div></div>
+    <div class="item"><div class="circle" style="background:rgba(26,26,26,0.50)">3</div><div class="lbl"></div></div>
+    <div class="item"><div class="circle selected">4</div><div class="lbl"></div></div>
+    <div class="item"><div class="circle" style="background:rgba(26,26,26,0.85);color:white">5</div><div class="lbl">Severe</div></div>
+  </div>
+</body>
+</html>
