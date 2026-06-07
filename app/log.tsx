@@ -1,24 +1,24 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, Animated, Easing, KeyboardAvoidingView, Platform, Image, Alert,
+  ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
 } from 'react-native';
-import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, Check } from 'lucide-react-native';
+import { Camera } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { EventIcon } from '../components/event/EventIcon';
-import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
 import { useToastStore } from '../store/toastStore';
+import { useMomentStore } from '../store/momentStore';
 import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
@@ -28,7 +28,7 @@ import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type' | 'complete';
+type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type';
 
 // B-010 — the time fields a logged event carries. occurred_at is always a
 // single derived point; confidence + window bounds describe its certainty.
@@ -39,10 +39,6 @@ type TimeFields = {
   latest: Date | null;
   source: 'manual' | 'exif' | 'now';
 };
-
-// Diameter of the warm-gold completion glow. Large enough to bloom past the
-// 88px check ring and read as an earned radial halo, not a disc.
-const GLOW_SIZE = 360;
 
 const SEVERITY_CONFIG = [
   { value: 1, label: 'Mild' },
@@ -58,6 +54,7 @@ export default function LogModal() {
   const { prependEvent } = useEventStore();
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
   const showToast = useToastStore((s) => s.show);
+  const showMoment = useMomentStore((s) => s.show);
   const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
 
   const [step, setStep] = useState<Step>('type');
@@ -97,18 +94,6 @@ export default function LogModal() {
   // if the owner toggles back to "Saw it happen".
   const [estimatedAt, setEstimatedAt] = useState<Date>(() => new Date());
 
-  // Completion "moment" — the one earned warm-gold beat (design-system PR 4).
-  // checkScale springs the mint ring in; glow blooms the radial gold halo
-  // behind it. Both reset implicitly per mount (the modal is torn down on
-  // router.back), so the moment only ever plays for a real, just-completed log.
-  const checkScale = useRef(new Animated.Value(0.6)).current;
-  const checkOpacity = useRef(new Animated.Value(0)).current;
-  const glowScale = useRef(new Animated.Value(0.4)).current;
-  const glowOpacity = useRef(new Animated.Value(0)).current;
-  // react-native-svg gradient ids are global, so a static id would collide if a
-  // second log modal ever mounts (double-tap FAB race). Make it per-instance.
-  const glowGradientId = useRef(`momentGlow-${uuid()}`).current;
-
   // Consume pending attachment from the FAB photo flow
   useEffect(() => {
     if (pendingAttachment) {
@@ -135,26 +120,6 @@ export default function LogModal() {
       setStep(EVENT_TYPES[t].hasFood ? 'food' : 'simple');
     }
   }, [typeParam]);
-
-  useEffect(() => {
-    if (step !== 'complete') return;
-    const moment = Animated.parallel([
-      // Warm-gold halo blooms out behind the ring (ease-out, no overshoot).
-      Animated.timing(glowOpacity, { toValue: 1, duration: theme.durationFast, useNativeDriver: true }),
-      Animated.timing(glowScale, {
-        toValue: 1, duration: theme.durationSlow, easing: Easing.out(Easing.cubic), useNativeDriver: true,
-      }),
-      // Mint check ring springs in with a slight overshoot.
-      Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 7 }),
-      Animated.timing(checkOpacity, { toValue: 1, duration: theme.durationFast, useNativeDriver: true }),
-    ]);
-    moment.start();
-    // Whole moment dwells well under the 2s earned-moment cap before dismiss.
-    const t = setTimeout(() => router.back(), 1000);
-    // Stop the composite on unmount so it can't tick against torn-down nodes if
-    // the modal is dismissed (e.g. OS back gesture) before the dwell timer fires.
-    return () => { moment.stop(); clearTimeout(t); };
-  }, [step]);
 
   function handleTypeSelect(type: EventTypeKey) {
     setSelectedType(type);
@@ -239,14 +204,16 @@ export default function LogModal() {
         source: usingExif ? 'exif' : 'now',
       },
     });
-    // Defer the toast past the 1s completion checkmark + modal dismiss so
-    // it appears at the root layer (not occluded by the still-presented
-    // modal on iOS) where the user can actually see and act on it. The
-    // WSAVA intake chip row renders in the toast for food_type 'meal' and
-    // 'treat' (B-014; treats added 2026-05-23). NOTE: every meal-entry
-    // path must route through this toast — if a non-picker meal flow is
-    // ever added (e.g. a manual quick-add), it must fire showToast too,
-    // or the intake capture surface vanishes for that path.
+    // Defer the toast past the modal dismiss so it appears at the root layer
+    // (not occluded by the still-presented modal on iOS) where the user can
+    // see and act on it. Meals deliberately skip the completion moment — the
+    // toast IS their confirmation surface and carries the intake follow-up, so
+    // firing the moment too would double the surface (B-064 unifies the two).
+    // The WSAVA intake chip row renders in the toast for food_type 'meal' and
+    // 'treat' (B-014; treats added 2026-05-23). NOTE: every meal-entry path
+    // must route through this toast — if a non-picker meal flow is ever added
+    // (e.g. a manual quick-add), it must fire showToast too, or the intake
+    // capture surface vanishes for that path.
     if (result) {
       const foodType = food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
         ? food.food_type
@@ -260,7 +227,7 @@ export default function LogModal() {
           foodProductName: food.product_name,
           intakeRating: null,
         },
-        { delayMs: 1100 },
+        { delayMs: 450 },
       );
     }
   }
@@ -385,12 +352,23 @@ export default function LogModal() {
       })();
     }
 
-    setStep('complete');
+    // Dismiss the modal, then play the earned completion moment at the root
+    // layer. Meals are the exception: their confirmation lives in the post-log
+    // toast (handlePickFood), which carries the intake follow-up — the moment
+    // is terminal/non-interactive, so firing both would double the surface
+    // (B-064 unifies meals into a single warm surface).
+    router.back();
     // Non-meal events still push + regen here; insertMeal already did both for
     // the meal branch (§2 freshness — a new event may change the cached insight
     // set; debounced so a meal + the symptom logged after it collapse into one
     // regen). Fire-and-forget — home re-reads cache on focus.
     if (!isMeal) {
+      // Tone-aware: symptom logs get a calm confirm (never a festive gold beat
+      // over a worrying event); routine logs get the warm-gold celebrate moment.
+      const tone = SYMPTOM_TYPES.has(selectedType as EventTypeKey) ? 'calm' : 'celebrate';
+      // delayMs clears the dismissing modal so the root overlay isn't briefly
+      // occluded on iOS (same reason the meal toast is deferred).
+      showMoment({ tone }, { delayMs: 300 });
       syncPendingEvents()
         .then(() => syncPendingMeals())
         .catch(console.error);
@@ -414,34 +392,6 @@ export default function LogModal() {
   }
 
   const petName = activePet?.name ?? 'your pet';
-
-  // ── Completion ──────────────────────────────────────────────────────────────
-
-  if (step === 'complete') {
-    return (
-      <View style={styles.completeContainer}>
-        <Animated.View
-          style={[styles.glow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]}
-          pointerEvents="none"
-        >
-          <Svg width={GLOW_SIZE} height={GLOW_SIZE}>
-            <Defs>
-              <RadialGradient id={glowGradientId} cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor={theme.colorMomentGlow} stopOpacity={0.22} />
-                <Stop offset="40%" stopColor={theme.colorMomentGlow} stopOpacity={0.06} />
-                <Stop offset="70%" stopColor={theme.colorMomentGlow} stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Circle cx={GLOW_SIZE / 2} cy={GLOW_SIZE / 2} r={GLOW_SIZE / 2} fill={`url(#${glowGradientId})`} />
-          </Svg>
-        </Animated.View>
-        <Animated.View style={[styles.checkCircle, { transform: [{ scale: checkScale }], opacity: checkOpacity }]}>
-          <Check size={40} color={theme.colorMomentConfirm} strokeWidth={3} />
-        </Animated.View>
-        <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>Logged</Animated.Text>
-      </View>
-    );
-  }
 
   // ── Shared sub-components ───────────────────────────────────────────────────
 
@@ -1050,44 +1000,5 @@ const styles = StyleSheet.create({
   stoolChoiceHint: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-  },
-
-  // ── Completion "moment" (design-system PR 4) ──
-  completeContainer: {
-    flex: 1,
-    backgroundColor: theme.colorSurface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: theme.space2,
-    overflow: 'hidden', // clip the 360px glow on screens narrower than GLOW_SIZE
-  },
-  // Warm-gold radial halo, centered behind the ring. Absolute so it blooms
-  // without displacing the centered ring + label.
-  glow: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  // Mint ring on white — the confirm color. Carries a soft gold-tinted halo so
-  // the warmth reads even on devices that flatten the radial gradient.
-  checkCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: theme.colorSurface,
-    borderWidth: 2,
-    borderColor: theme.colorMomentConfirm,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: theme.colorMomentGlow,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 22,
-    elevation: 6,
-  },
-  loggedText: {
-    fontSize: 20,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
   },
 });
