@@ -12,6 +12,7 @@ export const theme = {
   textLG: 17,    // modal headers, subheadings
   textXL: 22,    // page headings
   text2XL: 28,   // display (pet name, hero number)
+  textSignal: 26, // AI Signal headline (display face) — consumed by PR 2
 
   // ── Font weights ──────────────────────────────────────────────────────────
   weightRegular: '400' as const,
@@ -28,33 +29,44 @@ export const theme = {
   trackingWide: 0.4,
   trackingWidest: 0.8,   // zone labels, section labels
 
-  // ── Colors ───────────────────────────────────────────────────────────────
+  // ── Colors (Design System v1.2 "Linear Clean") ────────────────────────────
   // One accent — interactive elements + primary trend line only. Never decorative.
-  colorAccent: '#4A90A4',
-  colorAccentLight: '#EBF4F7',    // tinted surface behind accent elements
+  colorAccent: '#00C2A8',
+  colorAccentLight: '#E0FBF7',    // tinted surface behind accent elements
 
   // Neutrals
-  colorNeutralDark: '#1A1A1A',
-  colorNeutralMid: '#3D3D3D',
-  colorNeutralLight: '#F5F5F3',
+  colorNeutralDark: '#0A0A0A',
+  colorNeutralMid: '#262626',
+  colorNeutralLight: '#FAFAFA',
   colorSurface: '#FFFFFF',
-  colorSurfaceSubtle: '#FAFAF9',  // elevated inner surfaces
+  colorSurfaceSubtle: '#F5F5F5',  // elevated inner surfaces
 
   // Text
-  colorTextPrimary: '#1A1A1A',
-  colorTextSecondary: '#6B6B6B',
-  colorTextTertiary: '#A0A09E',
+  colorTextPrimary: '#0A0A0A',
+  colorTextSecondary: '#525252',
+  colorTextTertiary: '#737373',
+  colorTextDisabled: '#A3A3A3',
 
   // Borders
-  colorBorder: '#E8E8E6',
-  colorBorderStrong: '#D0D0CE',
+  colorBorder: '#EAEAEA',
+  colorBorderStrong: '#D4D4D4',
 
   // Event semantic colors
-  colorEventSymptom: '#C97A6F',
-  colorEventSymptomLight: '#FBF0EF',
-  colorEventMeal: '#4A90A4',
-  colorEventMealLight: '#EBF4F7',
-  colorChartEmpty: '#E8E8E6',
+  colorEventSymptom: '#F43F5E',
+  colorEventSymptomLight: '#FFE4E6',
+  colorEventMeal: '#00C2A8',
+  colorEventMealLight: '#E0FBF7',
+  colorChartEmpty: '#F0F0F0',
+
+  // Destructive — surface-aware. colorDestructive is tuned for light surfaces;
+  // colorDestructiveOnDark is the known-good red for the black photo-viewer
+  // backdrop, where #DC2626 reads muddy (see migration plan §3.4).
+  colorDestructive: '#DC2626',
+  colorDestructiveOnDark: '#ff6b6b',
+
+  // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
+  colorMomentGlow: '#FBBF24',
+  colorMomentConfirm: '#00C2A8',
 
   // ── Spacing — 8pt grid ────────────────────────────────────────────────────
   space1: 8,
@@ -101,5 +113,12 @@ export const shadows = {
     shadowOpacity: 0.14,
     shadowRadius: 18,
     elevation: 8,
+  },
+  fab: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
 };
