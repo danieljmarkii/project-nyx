@@ -162,8 +162,8 @@ Single source of truth for every secret the project uses. Update this table inli
 
 | Name | Location | Used by | Provisioned? | Notes |
 |---|---|---|---|---|
-| `EXPO_PUBLIC_SUPABASE_URL` | `.env.local` (local), EAS env (build) | Client | ✓ local; confirm before first prod build | Public; safe to expose |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` (local), EAS env (build) | Client | ✓ local; confirm before first prod build | Public; RLS-gated |
+| `EXPO_PUBLIC_SUPABASE_URL` | `.env.local` (local), `eas.json` `build.*.env` (build) | Client | ✓ local; ✓ build (eas.json env, all 3 profiles, 2026-06-07) | Public; safe to expose. Committed in `eas.json` — fine, it's inlined into every client bundle regardless. Was the cause of the first TestFlight crash-on-launch (env unset → `lib/supabase.ts` fail-fast throw at startup). |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `.env.local` (local), `eas.json` `build.*.env` (build) | Client | ✓ local; ✓ build (eas.json env, all 3 profiles, 2026-06-07) | Public; RLS-gated. Committed in `eas.json` — same rationale; rotate via Supabase dashboard if ever needed. |
 | `SUPABASE_SERVICE_ROLE_KEY` | `supabase secrets` | Edge Functions | ✓ | Server-only; never ship to client |
 | `ANTHROPIC_API_KEY` | `supabase secrets` | `extract-food-from-photo`, `analyze-vomit`, `generate-signal` (AI Signal phrasing, Haiku 4.5) | ✓ — already provisioned; confirmed reused by `generate-signal` (B-045 Step 2). No new key needed. | Server-only. `generate-signal` degrades to deterministic templates if unset, so a missing key is non-fatal but loses LLM phrasing. |
 | `EXPO_TOKEN` | Codespace env (optional) | `eas update`, `eas build` CLI | ✗ — interactive `eas login` works fine for now | Only needed if we automate EAS publishing from CI. For manual `eas update` from Codespace, `eas login` once per Codespace is sufficient. |
