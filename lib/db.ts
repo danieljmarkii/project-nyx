@@ -238,6 +238,21 @@ export async function clearLocalData(): Promise<void> {
   }
 }
 
+// B-054 §6 — is the local pet-data store empty? Used to gate the block-only-when-empty
+// cold-start overlay: an empty events+vet_visits store means this is a true cold
+// start (fresh device / reinstall / different account after the sign-out wipe),
+// so the first hydration should block behind "Catching up…". A populated store
+// reconciles silently. Soft-deleted events still count as "has data" — the row
+// exists locally, so this isn't a cold start. meals hang off events, so checking
+// the two record tables is sufficient.
+export async function isLocalDataEmpty(): Promise<boolean> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ total: number }>(
+    `SELECT (SELECT COUNT(*) FROM events) + (SELECT COUNT(*) FROM vet_visits) AS total`,
+  );
+  return (row?.total ?? 0) === 0;
+}
+
 export interface TimelineRow {
   id: string;
   pet_id: string;

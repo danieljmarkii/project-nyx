@@ -10,6 +10,7 @@ import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { EventRow } from '../../components/history/EventRow';
 import { usePetStore } from '../../store/petStore';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
+import { useSyncStore } from '../../store/syncStore';
 import { getTimeline, softDeleteEvent, TimelineRow } from '../../lib/db';
 import { syncPendingEvents, syncNow } from '../../lib/sync';
 
@@ -67,6 +68,10 @@ function rowToEvent(row: TimelineRow): NyxEvent {
 export default function HistoryScreen() {
   const { activePet } = usePetStore();
   const { removeFromToday, todayEvents } = useEventStore();
+  // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
+  // cycle finishes while this tab is open, so another device's writes appear
+  // without a manual pull-to-refresh.
+  const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
   const [events, setEvents] = useState<NyxEvent[]>([]);
   const [offset, setOffset] = useState(0);
@@ -79,6 +84,14 @@ export default function HistoryScreen() {
 
   // Ref-based guard prevents concurrent loads even when the callback is stale
   const loadingRef = useRef(false);
+
+  // Keep the current filters reachable from the hydration-tick effect without
+  // making them its deps (which would re-fire it on every filter change, where
+  // the explicit handlers already reload).
+  const typeFilterRef = useRef(typeFilter);
+  const datePresetRef = useRef(datePreset);
+  typeFilterRef.current = typeFilter;
+  datePresetRef.current = datePreset;
 
   const loadEvents = useCallback(async (
     currentOffset: number,
@@ -135,6 +148,19 @@ export default function HistoryScreen() {
       loadEvents(0, typeFilter, datePreset, true);
     }, [activePet, typeFilter, datePreset]),
   );
+
+  // Reactive refresh-after-hydrate (B-054 §6): when a background sync cycle
+  // completes, re-read the timeline so hydrated rows surface immediately. Skip
+  // the mount run — useFocusEffect already loads on focus; this only fires on
+  // subsequent tick changes (a cycle finishing while the tab is open).
+  const firstTick = useRef(true);
+  useEffect(() => {
+    if (firstTick.current) {
+      firstTick.current = false;
+      return;
+    }
+    loadEvents(0, typeFilterRef.current, datePresetRef.current, true);
+  }, [hydrationTick, loadEvents]);
 
   // Real-time: prepend new events logged via FAB while this tab is visible
   const latestTodayId = todayEvents[0]?.id;
