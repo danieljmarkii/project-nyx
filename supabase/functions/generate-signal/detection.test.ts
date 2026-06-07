@@ -221,6 +221,46 @@ Deno.test('detectCorrelations — multi-implication: a symptom implicates EVERY 
   assert.ok(findings.every((f) => f.tier === 'early'))
 })
 
+// ── Detector ①: B-052 protein-key canonicalization (read-time) ───────────────
+
+Deno.test('detectCorrelations — B-052: by-product/casing variants pool into one protein', () => {
+  // The same sporadic protein logged under three fragmented labels across the
+  // symptom days. Pre-B-052 each keyed as a DISTINCT protein (appearing once →
+  // below the ≥2 discordant-case floor → NO finding). Canonicalized, they pool
+  // into one 'beef' key that clears the Early floor — the exact fracture B-052
+  // exists to fix (chicken staple still washes out as before).
+  const mealEvents = [
+    ...staple(1, 10, 'chicken', 9),
+    pMeal(2, 'Beef', 10),
+    pMeal(4, 'Beef By-Product Meal', 10),
+    pMeal(6, 'beef by-product', 10),
+  ]
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(findings.length, 1, 'the fragmented beef labels must pool into one finding')
+  const f = findings[0]
+  assert.equal(f.protein, 'beef')
+  assert.equal(f.matchedPairs, 3)
+  assert.equal(f.caseExposed, 3, 'all three case windows count toward one canonical key')
+  assert.equal(f.discordantCaseOnly, 3)
+})
+
+Deno.test('detectCorrelations — B-052: the "null" string is not a protein (no false contrast)', () => {
+  // A pet fed only chicken, but some rows carry the literal "null" string. Pre-B-052
+  // that string counted as a second protein — manufacturing the contrast the
+  // proteins.length >= 2 guard needs AND surfacing a junk "meals containing null"
+  // finding. Canonicalized to null it is excluded, so the genuinely single-protein
+  // diet correctly yields nothing.
+  const mealEvents = [
+    ...staple(1, 10, 'chicken', 9),
+    pMeal(2, 'null', 10),
+    pMeal(4, 'null', 10),
+    pMeal(6, 'null', 10),
+  ]
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+  assert.deepEqual(detectCorrelations(input({ mealEvents, symptomEvents })), [])
+})
+
 // ── Detector ①: below-floor and negative cases → empty (building) ────────────
 
 Deno.test('detectCorrelations — below the episode floor → empty', () => {
