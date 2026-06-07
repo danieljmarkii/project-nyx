@@ -1,6 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { NyxEvent } from '../../store/eventStore';
-import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
 import { theme } from '../../constants/theme';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
@@ -23,7 +23,11 @@ function formatDatePart(iso: string): string {
 
 export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete }: Props) {
   const config = EVENT_TYPES[event.event_type as EventTypeKey] ?? FALLBACK_CONFIG;
-  const isSymptom = config.hasSeverity;
+  // Category tint comes from SYMPTOM_TYPES, not config.hasSeverity — the latter
+  // is false for every type since severity left the MVP, so it silently
+  // disabled the rose symptom circle in History (caught in PR-3 review). Shared
+  // with TodayZone so both row surfaces agree on what reads as a symptom.
+  const isSymptom = SYMPTOM_TYPES.has(event.event_type as EventTypeKey);
 
   // Meal events backed by a treat-typed food render as "Treat". Legacy NULL
   // and 'meal'/'other' food_type keep the "Meal" label.
@@ -55,7 +59,11 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
       activeOpacity={0.7}
     >
       <View style={[styles.emojiCol, isSymptom && styles.emojiColSymptom]}>
-        <EventIcon type={event.event_type} size={20} />
+        <EventIcon
+          type={event.event_type}
+          size={20}
+          color={isSymptom ? theme.colorEventSymptom : theme.colorTextSecondary}
+        />
       </View>
       <View style={styles.content}>
         <View style={styles.topLine}>

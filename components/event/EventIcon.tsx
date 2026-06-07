@@ -1,10 +1,19 @@
-import { Circle, type LucideIcon } from 'lucide-react-native';
+import { CircleHelp, type LucideIcon } from 'lucide-react-native';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { theme } from '../../constants/theme';
 
 // Allowed icon sizes — the 16/20/24 step the design-system migration plan (§5)
 // pins so glyphs sit consistently against adjacent copy across surfaces.
 export type EventIconSize = 16 | 20 | 24;
+
+// Resolve an event_type to its Lucide glyph. Pure + render-free so the fallback
+// branch is unit-testable without pulling react-native-svg into jest. Unknown /
+// UI-unexposed types (skin_reaction, weight_check, medication, scratch, or a
+// stale imported row) get CircleHelp — deliberately NOT Circle, which is the
+// real glyph for stool_normal, so an unknown type can't masquerade as a stool.
+export function iconForType(type: EventTypeKey | string): LucideIcon {
+  return EVENT_TYPES[type as EventTypeKey]?.icon ?? CircleHelp;
+}
 
 interface Props {
   // Accepts the raw event_type string (callers cast from the DB), not just a
@@ -25,6 +34,6 @@ interface Props {
  * 1.5–2px band the design principles' iconography rule calls for.
  */
 export function EventIcon({ type, size = 20, color = theme.colorTextSecondary }: Props) {
-  const Icon: LucideIcon = EVENT_TYPES[type as EventTypeKey]?.icon ?? Circle;
+  const Icon = iconForType(type);
   return <Icon size={size} color={color} strokeWidth={1.75} />;
 }

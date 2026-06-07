@@ -35,3 +35,10 @@ export const EVENT_TYPES = {
 // but not exposed in the MVP quick-log UI. May be added post-MVP.
 
 export type EventTypeKey = keyof typeof EVENT_TYPES;
+
+// The event types treated as symptoms (vs. meal / stool_normal / other). Drives
+// the rose category tint on row surfaces. Shared here so EventRow and TodayZone
+// can't drift to different definitions of "is this a symptom?".
+export const SYMPTOM_TYPES: ReadonlySet<EventTypeKey> = new Set([
+  'vomit', 'diarrhea', 'lethargy', 'itch',
+]);

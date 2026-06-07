@@ -4,15 +4,12 @@ import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
-import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
 import { NyxEvent } from '../../store/eventStore';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
 
-const SYMPTOM_TYPES: ReadonlySet<EventTypeKey> = new Set([
-  'vomit', 'diarrhea', 'lethargy', 'itch',
-]);
 const FALLBACK = { label: 'Event' };
 const MAX_SHOWN = 3;
 
