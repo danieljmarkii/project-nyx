@@ -7,9 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import { Camera } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
+import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
@@ -35,16 +37,6 @@ type TimeFields = {
   earliest: Date | null;
   latest: Date | null;
   source: 'manual' | 'exif' | 'now';
-};
-
-const TYPE_ICONS: Record<EventTypeKey, string> = {
-  meal: '🍽',
-  vomit: '🤢',
-  diarrhea: '💩',
-  stool_normal: '💩',
-  lethargy: '😴',
-  itch: '🐾',
-  other: '➕',
 };
 
 const SEVERITY_CONFIG = [
@@ -426,7 +418,7 @@ export default function LogModal() {
     }
     return (
       <TouchableOpacity style={styles.photoRow} onPress={handlePickPhoto} activeOpacity={0.8}>
-        <Text style={styles.photoRowIcon}>📷</Text>
+        <Camera size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
         <Text style={styles.photoRowText}>Attach photo</Text>
       </TouchableOpacity>
     );
@@ -555,7 +547,7 @@ export default function LogModal() {
               onPress={() => handleTypeSelect(key)}
               activeOpacity={0.7}
             >
-              <Text style={styles.typeIcon}>{TYPE_ICONS[key]}</Text>
+              <EventIcon type={key} size={24} />
               <Text style={styles.typeLabel}>{key === 'stool_normal' ? 'Stool' : config.label}</Text>
             </TouchableOpacity>
           ))}
@@ -565,7 +557,7 @@ export default function LogModal() {
               onPress={handlePickPhoto}
               activeOpacity={0.7}
             >
-              <Text style={styles.typeIcon}>📷</Text>
+              <Camera size={24} color={theme.colorTextSecondary} strokeWidth={1.75} />
               <Text style={styles.typeLabel}>Attach photo</Text>
             </TouchableOpacity>
           )}
@@ -620,7 +612,7 @@ export default function LogModal() {
             onPress={() => { setSelectedType('stool_normal'); setStep('simple'); }}
             activeOpacity={0.7}
           >
-            <Text style={styles.stoolChoiceEmoji}>💩</Text>
+            <EventIcon type="stool_normal" size={24} />
             <Text style={styles.stoolChoiceLabel}>Normal</Text>
             <Text style={styles.stoolChoiceHint}>Formed, typical</Text>
           </TouchableOpacity>
@@ -629,7 +621,7 @@ export default function LogModal() {
             onPress={() => { setSelectedType('diarrhea'); setStep('simple'); }}
             activeOpacity={0.7}
           >
-            <Text style={styles.stoolChoiceEmoji}>💩</Text>
+            <EventIcon type="diarrhea" size={24} color={theme.colorEventSymptom} />
             <Text style={styles.stoolChoiceLabel}>Loose</Text>
             <Text style={styles.stoolChoiceHint}>Soft, runny, or diarrhea</Text>
           </TouchableOpacity>
@@ -817,9 +809,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.space1,
   },
-  typeIcon: {
-    fontSize: 28,
-  },
   typeLabel: {
     fontSize: 15,
     fontWeight: theme.fontWeightMedium,
@@ -943,7 +932,6 @@ const styles = StyleSheet.create({
     gap: theme.space1,
     paddingVertical: theme.space1,
   },
-  photoRowIcon: { fontSize: 16 },
   photoRowText: {
     fontSize: 14,
     color: theme.colorTextSecondary,
@@ -1015,9 +1003,6 @@ const styles = StyleSheet.create({
   stoolChoiceBtnLoose: {
     backgroundColor: theme.colorEventSymptomLight,
     borderColor: theme.colorEventSymptomLight,
-  },
-  stoolChoiceEmoji: {
-    fontSize: 36,
   },
   stoolChoiceLabel: {
     fontSize: theme.textLG,

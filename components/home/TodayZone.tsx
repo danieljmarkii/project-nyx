@@ -4,15 +4,13 @@ import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
-import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
+import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
+import { EventIcon } from '../event/EventIcon';
 import { NyxEvent } from '../../store/eventStore';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
 
-const SYMPTOM_TYPES: ReadonlySet<EventTypeKey> = new Set([
-  'vomit', 'diarrhea', 'lethargy', 'itch',
-]);
-const FALLBACK = { label: 'Event', emoji: '·' };
+const FALLBACK = { label: 'Event' };
 const MAX_SHOWN = 3;
 
 function formatEventTime(iso: string): string {
@@ -89,6 +87,15 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
   // and 'meal'/'other' food_type keep the "Meal" label.
   const rowLabel = isMeal && event.food_type === 'treat' ? 'Treat' : config.label;
 
+  // Tint the glyph to its category so meal vs. symptom reads at a glance — the
+  // mid-tone sits cleanly on the light category-tinted circle (mint/rose) and
+  // is more legible there than a flat gray. Neutral (fg-2) otherwise.
+  const iconColor = isSymptom
+    ? theme.colorEventSymptom
+    : isMeal
+      ? theme.colorEventMeal
+      : theme.colorTextSecondary;
+
   return (
     <View style={[styles.eventRow, showBorder && styles.eventRowBorder]}>
       <View style={[
@@ -96,7 +103,7 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
         isMeal && styles.iconMeal,
         isSymptom && styles.iconSymptom,
       ]}>
-        <Text style={styles.iconEmoji}>{config.emoji}</Text>
+        <EventIcon type={event.event_type} size={16} color={iconColor} />
       </View>
 
       <View style={styles.eventMeta}>
@@ -162,10 +169,6 @@ const styles = StyleSheet.create({
   },
   iconSymptom: {
     backgroundColor: theme.colorEventSymptomLight,
-  },
-  iconEmoji: {
-    fontSize: 15,
-    lineHeight: 20,
   },
   eventMeta: {
     flex: 1,
