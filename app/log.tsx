@@ -19,6 +19,7 @@ import { useToastStore } from '../store/toastStore';
 import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
+import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
@@ -267,29 +268,35 @@ export default function LogModal() {
     const effectiveOccurredAt = tf.occurredAt;
     const effectiveSource = tf.source;
     const db = getDb();
-    const eventId = uuid();
-    const now = new Date().toISOString();
-    await db.runAsync(
-      `INSERT INTO events
-         (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
-          occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
-          created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, 0)`,
-      [eventId, activePet.id, selectedType!, effectiveOccurredAt.toISOString(),
-       severity ?? null, notes.trim() || null, effectiveSource,
-       tf.confidence, tf.earliest ? tf.earliest.toISOString() : null,
-       tf.latest ? tf.latest.toISOString() : null, now, now]
-    );
-    if (selectedType === 'meal' && foodId) {
-      const mealId = uuid();
+    const isMeal = selectedType === 'meal' && !!foodId;
+    let eventId: string;
+    let now: string;
+    if (isMeal) {
+      // insertMeal owns the meal event+meal write, the food-recency touch, the
+      // sync push, and the AI-Signal regen (B-059). Meals are always witnessed,
+      // so the confidence/window it writes matches the witnessed timeFields this
+      // path passes in (handlePickFood) — no B-010 information is lost.
+      const res = await insertMeal({
+        petId: activePet.id,
+        foodId: foodId!,
+        occurredAt: effectiveOccurredAt,
+        occurredAtSource: effectiveSource,
+      });
+      eventId = res.eventId;
+      now = res.now;
+    } else {
+      eventId = uuid();
+      now = new Date().toISOString();
       await db.runAsync(
-        `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, updated_at, synced)
-         VALUES (?, ?, ?, ?, 'unknown', ?, ?, 0)`,
-        [mealId, eventId, activePet.id, foodId, now, now]
-      );
-      await db.runAsync(
-        `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
-        [now, foodId]
+        `INSERT INTO events
+           (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
+            occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
+            created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, 0)`,
+        [eventId, activePet.id, selectedType!, effectiveOccurredAt.toISOString(),
+         severity ?? null, notes.trim() || null, effectiveSource,
+         tf.confidence, tf.earliest ? tf.earliest.toISOString() : null,
+         tf.latest ? tf.latest.toISOString() : null, now, now]
       );
     }
     prependEvent({
@@ -352,13 +359,16 @@ export default function LogModal() {
     }
 
     setStep('complete');
-    syncPendingEvents()
-      .then(() => syncPendingMeals())
-      .catch(console.error);
-    // Debounced AI Signal regen (§2 freshness): a new event/meal may change the
-    // cached insight set. Debounced so a meal + the symptom logged after it
-    // collapse into one regen. Fire-and-forget — home re-reads cache on focus.
-    triggerSignalRegenDebounced(activePet.id);
+    // Non-meal events still push + regen here; insertMeal already did both for
+    // the meal branch (§2 freshness — a new event may change the cached insight
+    // set; debounced so a meal + the symptom logged after it collapse into one
+    // regen). Fire-and-forget — home re-reads cache on focus.
+    if (!isMeal) {
+      syncPendingEvents()
+        .then(() => syncPendingMeals())
+        .catch(console.error);
+      triggerSignalRegenDebounced(activePet.id);
+    }
     return { eventId, occurredAt: effectiveOccurredAt.toISOString() };
   }
 

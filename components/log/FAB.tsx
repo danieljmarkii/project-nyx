@@ -11,8 +11,8 @@ import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useToastStore } from '../../store/toastStore';
 import { getDb } from '../../lib/db';
-import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
-import { triggerSignalRegenDebounced } from '../../lib/signal';
+import { syncPendingEvents } from '../../lib/sync';
+import { insertMeal } from '../../lib/meals';
 import { uuid, exifDateToISO } from '../../lib/utils';
 
 interface RecentFood {
@@ -70,45 +70,15 @@ export function FAB() {
     if (logging || !activePet) return;
     setLogging(food.id);
     try {
-      const now = new Date().toISOString();
-      const eventId = uuid();
-      const mealId = uuid();
-      const db = getDb();
-
-      // Write created_at/updated_at explicitly as ISO-8601 rather than letting
-      // SQLite's datetime('now') default fill them in. The default form
-      // ("YYYY-MM-DD HH:MM:SS", no tz) parses as local time and breaks the
-      // cross-device LWW comparison (see lib/hydration.ts parseTs); keeping
-      // creator-device rows in the same ISO format as hydrated/server rows
-      // avoids that at the source.
-      await db.runAsync(
-        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, ?, ?, 0)',
-        [eventId, activePet.id, 'meal', now, 'manual', 'now', now, now],
-      );
-      await db.runAsync(
-        'INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, updated_at, synced) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
-        [mealId, eventId, activePet.id, food.id, 'unknown', now, now],
-      );
-      await db.runAsync(
-        'UPDATE food_items_cache SET last_used_at = ? WHERE id = ?',
-        [now, food.id],
-      );
-
-      // Push immediately (events before meals — meals FK → events.id) so a
-      // quick-logged meal reaches Supabase right away instead of waiting for the
-      // next foreground/reconnect. Matches app/log.tsx; without it, FAB
-      // quick-logs propagate to other devices and become durable only on the
-      // next sync trigger (B-054 surfaced this). Fire-and-forget.
-      syncPendingEvents()
-        .then(() => syncPendingMeals())
-        .catch(console.error);
-
-      // Freshness (§2): a quick-logged meal can change the cached insight set, so
-      // refresh the AI Signal — same debounced regen the full log.tsx flow fires.
-      // Without this, the FAB and photo-capture paths left the home Signal stale
-      // until the 24h cache expiry (the gap that made a deploy verification look
-      // like a no-op).
-      triggerSignalRegenDebounced(activePet.id);
+      // insertMeal owns the event+meal write, the food-recency touch, the sync
+      // push, AND the AI-Signal regen (B-059) — so this quick-log path can't
+      // drift out of sync with the other entry points the way it once did.
+      const { eventId, occurredAtIso, now } = await insertMeal({
+        petId: activePet.id,
+        foodId: food.id,
+        occurredAt: new Date(),
+        occurredAtSource: 'now',
+      });
 
       const foodType =
         food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
@@ -118,7 +88,8 @@ export function FAB() {
         id: eventId,
         pet_id: activePet.id,
         event_type: 'meal',
-        occurred_at: now,
+        occurred_at: occurredAtIso,
+        occurred_at_confidence: 'witnessed',
         severity: null,
         notes: null,
         source: 'manual',
@@ -139,7 +110,7 @@ export function FAB() {
       // mirror this call.
       showToast({
         eventId,
-        occurredAt: now,
+        occurredAt: occurredAtIso,
         foodType,
         foodBrand: food.brand,
         foodProductName: food.product_name,
