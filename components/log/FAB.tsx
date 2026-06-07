@@ -11,6 +11,7 @@ import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useToastStore } from '../../store/toastStore';
 import { getDb } from '../../lib/db';
+import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { uuid, exifDateToISO } from '../../lib/utils';
 
 interface RecentFood {
@@ -73,18 +74,33 @@ export function FAB() {
       const mealId = uuid();
       const db = getDb();
 
+      // Write created_at/updated_at explicitly as ISO-8601 rather than letting
+      // SQLite's datetime('now') default fill them in. The default form
+      // ("YYYY-MM-DD HH:MM:SS", no tz) parses as local time and breaks the
+      // cross-device LWW comparison (see lib/hydration.ts parseTs); keeping
+      // creator-device rows in the same ISO format as hydrated/server rows
+      // avoids that at the source.
       await db.runAsync(
-        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, 0)',
-        [eventId, activePet.id, 'meal', now, 'manual', 'now'],
+        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, ?, ?, 0)',
+        [eventId, activePet.id, 'meal', now, 'manual', 'now', now, now],
       );
       await db.runAsync(
-        'INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, synced) VALUES (?, ?, ?, ?, ?, 0)',
-        [mealId, eventId, activePet.id, food.id, 'unknown'],
+        'INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, synced) VALUES (?, ?, ?, ?, ?, ?, 0)',
+        [mealId, eventId, activePet.id, food.id, 'unknown', now],
       );
       await db.runAsync(
         'UPDATE food_items_cache SET last_used_at = ? WHERE id = ?',
         [now, food.id],
       );
+
+      // Push immediately (events before meals — meals FK → events.id) so a
+      // quick-logged meal reaches Supabase right away instead of waiting for the
+      // next foreground/reconnect. Matches app/log.tsx; without it, FAB
+      // quick-logs propagate to other devices and become durable only on the
+      // next sync trigger (B-054 surfaced this). Fire-and-forget.
+      syncPendingEvents()
+        .then(() => syncPendingMeals())
+        .catch(console.error);
 
       const foodType =
         food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
@@ -137,10 +153,16 @@ export function FAB() {
       const eventId = uuid();
       const db = getDb();
 
+      // ISO created_at/updated_at — see handleQuickMeal (avoids the SQLite
+      // datetime('now') local-time parse trap in cross-device LWW).
       await db.runAsync(
-        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, 0)',
-        [eventId, activePet.id, type, now, 'manual', 'now'],
+        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, ?, ?, 0)',
+        [eventId, activePet.id, type, now, 'manual', 'now', now, now],
       );
+
+      // Push immediately so the quick symptom reaches Supabase right away (no
+      // meal row here, so events only). Fire-and-forget. See handleQuickMeal.
+      syncPendingEvents().catch(console.error);
 
       prependEvent({
         id: eventId,

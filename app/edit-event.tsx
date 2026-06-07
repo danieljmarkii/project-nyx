@@ -106,7 +106,12 @@ export default function EditEventModal() {
     }
 
     getEventAttachment(id).then((att) => {
-      if (att) setExistingAttachmentUri(att.local_uri);
+      // FR-10 (B-054): a hydrated attachment row carries an empty local_uri (no
+      // on-device file). Don't hand '' to <Image> — treat it as absent so the
+      // edit screen shows no broken thumbnail. (The detail screen resolves the
+      // Storage signed URL; editing the photo on a download-only device is out
+      // of Phase 1 scope.)
+      if (att && att.local_uri.length > 0) setExistingAttachmentUri(att.local_uri);
     }).catch(console.error);
 
     getEventSource(id).then(setOccurredAtSource).catch(console.error);

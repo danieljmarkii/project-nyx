@@ -1,4 +1,6 @@
 import * as SQLite from 'expo-sqlite';
+import { File } from 'expo-file-system';
+import { LOCAL_WIPE_TABLES } from './hydration';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -163,6 +165,54 @@ export async function initDb(): Promise<void> {
     await database.execAsync(`ALTER TABLE events ADD COLUMN occurred_at_latest TEXT`);
   } catch {
     // Column already exists — safe to ignore
+  }
+}
+
+// FR-9 (B-054, Trust & Safety ship gate) — wipe the local copy of the
+// account's pet data on sign-out. Now that hydration mirrors the full health
+// record into local SQLite, a shared or borrowed device would otherwise leak
+// the prior account's data to whoever signs in next. Safe to clear because
+// hydration re-pulls everything on the next login.
+//
+// Best-effort deletes the on-device attachment files first (the captured
+// originals in the app sandbox), then clears the synced tables in FK-safe order.
+// Globally-scoped food_items_cache is cleared too (re-hydrated by
+// refreshFoodCache) so a different account starts from a clean view. Errors are
+// swallowed per-step — a wipe that half-fails must not block sign-out, and the
+// rows being gone is what actually gates data exposure.
+export async function clearLocalData(): Promise<void> {
+  const database = getDb();
+
+  // Delete the captured local image files referenced by attachment rows.
+  try {
+    const files = await database.getAllAsync<{ local_uri: string | null }>(
+      `SELECT local_uri FROM event_attachments
+       UNION ALL
+       SELECT local_uri FROM vet_visit_attachments`,
+    );
+    for (const f of files) {
+      if (!f.local_uri) continue; // hydrated rows carry '' — no local file to remove
+      try {
+        const file = new File(f.local_uri);
+        // exists is a best-effort fast-path; delete() also throws if the file
+        // is already gone, and the catch handles either way.
+        if (file.exists) file.delete();
+      } catch {
+        // File already gone / not a managed path (e.g. content:// URI) — nothing to clean up.
+      }
+    }
+  } catch (e) {
+    console.warn('[wipe] attachment file cleanup skipped:', e);
+  }
+
+  // Clear the synced tables. FK-safe order (children first) so the deletes
+  // never trip a foreign-key constraint regardless of cascade settings.
+  for (const table of LOCAL_WIPE_TABLES) {
+    try {
+      await database.execAsync(`DELETE FROM ${table}`);
+    } catch (e) {
+      console.warn(`[wipe] failed to clear ${table}:`, e);
+    }
   }
 }
 

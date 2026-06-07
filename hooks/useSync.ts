@@ -1,10 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import * as Network from 'expo-network';
-import {
-  syncPendingEvents, syncPendingMeals, refreshFoodCache,
-  syncPendingVetVisits, syncPendingAttachments,
-} from '../lib/sync';
+import { syncNow } from '../lib/sync';
 import { getSyncStatus } from '../lib/db';
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore } from '../store/syncStore';
@@ -19,27 +16,25 @@ export function useSync() {
   useEffect(() => {
     if (!session) return;
 
-    // Events must complete before meals — meals FK references events.id.
-    // Attachments, vet visits, and food cache are independent and run in parallel.
-    // Upsert uses onConflict:'id' so the last row to arrive in Supabase wins.
-    // For single-device MVP this is equivalent to last-write-wins on updated_at.
-    // Multi-device LWW requires a server-side WHERE excluded.updated_at > events.updated_at.
+    // A full sync cycle (push-before-pull, B-054 FR-2) lives in syncNow(), shared
+    // with the History pull-to-refresh; the in-flight guard is module-level there
+    // so overlapping triggers (mount/foreground/reconnect) serialize across both
+    // entry points. Here we just run a cycle then refresh the pending-status badge.
     async function runSync() {
-      await syncPendingEvents();
-      await syncPendingMeals();
-      syncPendingAttachments();
-      syncPendingVetVisits();
-      refreshFoodCache();
-
+      await syncNow();
       const status = await getSyncStatus();
       setPendingStatus(status.pendingCount, status.oldestPendingAt);
     }
 
-    runSync();
+    // Swallow rejections at the call sites so a failed cycle can't surface as an
+    // unhandled promise rejection.
+    const safeRunSync = () => runSync().catch((e) => console.warn('[sync] cycle failed:', e));
+
+    safeRunSync();
 
     const appStateSub = AppState.addEventListener('change', (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active') {
-        runSync();
+        safeRunSync();
       }
       appState.current = nextState;
     });
@@ -50,7 +45,7 @@ export function useSync() {
       // null as "still online" to avoid false-positive offline transitions.
       const isOnline = !!(state.isConnected && state.isInternetReachable !== false);
       if (!wasOnline.current && isOnline) {
-        runSync();
+        safeRunSync();
       }
       wasOnline.current = isOnline;
     });
