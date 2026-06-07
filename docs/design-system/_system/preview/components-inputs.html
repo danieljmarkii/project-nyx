@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Inputs</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 26px 28px; font-family: var(--font-body); background: var(--bg-app); display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+    .group { display: flex; flex-direction: column; gap: 6px; }
+    .lbl { font-size: 11px; font-weight: 500; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.8px; }
+    .input { border: 1px solid var(--border-1); border-radius: 8px; background: white; padding: 12px 14px; font-family: var(--font-body); font-size: 15px; color: var(--fg-1); }
+    .input.placeholder { color: var(--fg-2); }
+    .input.focused { border-color: var(--accent-1); box-shadow: 0 0 0 3px rgba(74,144,164,0.18); outline: none; }
+    .input.notes { min-height: 60px; }
+  </style>
+</head>
+<body>
+  <div class="group"><div class="lbl">Name</div><div class="input">Luna</div></div>
+  <div class="group"><div class="lbl">Empty</div><div class="input placeholder">e.g. Luna</div></div>
+  <div class="group"><div class="lbl">Focused</div><div class="input focused">Luna<span style="color:var(--accent-1)">|</span></div></div>
+  <div class="group"><div class="lbl">Notes</div><div class="input notes placeholder">Add a note (optional)</div></div>
+</body>
+</html>

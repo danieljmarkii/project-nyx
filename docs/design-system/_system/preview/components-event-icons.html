@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Event icons</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 22px 28px; font-family: var(--font-body); background: var(--bg-app); }
+    .row { display: flex; justify-content: space-between; align-items: center; }
+    .item { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; }
+    .ico { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; font-size: 20px; }
+    .meal { background: #E0FBF7; }
+    .symptom { background: #FFE4E6; }
+    .neutral { background: #F5F5F5; }
+    .lbl { font-size: 12px; color: var(--fg-2); }
+  </style>
+</head>
+<body>
+  <div class="row">
+    <div class="item"><div class="ico meal">🍽</div><div class="lbl">Meal</div></div>
+    <div class="item"><div class="ico symptom">🤢</div><div class="lbl">Vomit</div></div>
+    <div class="item"><div class="ico symptom">💩</div><div class="lbl">Loose stool</div></div>
+    <div class="item"><div class="ico neutral">💩</div><div class="lbl">Stool</div></div>
+    <div class="item"><div class="ico symptom">😴</div><div class="lbl">Lethargy</div></div>
+    <div class="item"><div class="ico symptom">🐾</div><div class="lbl">Itch</div></div>
+    <div class="item"><div class="ico neutral">➕</div><div class="lbl">Other</div></div>
+  </div>
+</body>
+</html>

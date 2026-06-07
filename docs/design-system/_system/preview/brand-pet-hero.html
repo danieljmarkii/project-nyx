@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Brand · Pet hero</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 28px; font-family: var(--font-body); background: #FAFAFA; display: flex; align-items: center; gap: 32px; }
+    .avatar {
+      width: 64px; height: 64px; border-radius: 32px;
+      display: grid; place-items: center;
+      font-family: var(--font-display);
+      font-size: 32px; color: #FFFFFF; letter-spacing: -1.5px;
+      font-weight: 400; padding-bottom: 4px;
+    }
+    /* The pet-hero avatar is the single sanctioned gradient in v1.2 — see
+       README §Color philosophy. Retuned from the v1.1 warm trio to a
+       gold→rose→mint sweep that nods to the moments palette but reads as
+       "this animal" rather than "this brand." */
+    .a1 { background: linear-gradient(135deg, #FBBF24 0%, #F43F5E 60%, #00C2A8 100%); box-shadow: 0 6px 20px #FBBF2440; }
+    .a2 { background: linear-gradient(135deg, #00C2A8 0%, #2C6FA6 60%, #0A0A0A 100%); box-shadow: 0 6px 20px #00C2A840; }
+    .a3 { background: linear-gradient(135deg, #F43F5E 0%, #FBBF24 100%); box-shadow: 0 6px 20px #F43F5E40; }
+    .col { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+    .name { font-size: 14px; font-weight: 500; color: var(--fg-1); margin-top: 6px; }
+    .meta { font-size: 11px; color: var(--fg-3); letter-spacing: 0.4px; }
+  </style>
+</head>
+<body>
+  <div class="col"><div class="avatar a1">l</div><div class="name">Luna</div><div class="meta">Aurora (default)</div></div>
+  <div class="col"><div class="avatar a2">m</div><div class="name">Miso</div><div class="meta">Dusk</div></div>
+  <div class="col"><div class="avatar a3">b</div><div class="name">Biscuit</div><div class="meta">Ember</div></div>
+</body>
+</html>

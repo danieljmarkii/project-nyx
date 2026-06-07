@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Buttons</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 28px; font-family: var(--font-body); background: var(--bg-app); }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; align-items: center; }
+    .btn { padding: 14px 20px; border-radius: 16px; font-size: 15px; font-weight: 500; text-align: center; border: 1px solid transparent; cursor: pointer; }
+    .primary { background: #0A0A0A; color: white; }
+    .secondary { background: transparent; color: var(--fg-2); border-color: var(--border-1); }
+    .destructive { background: transparent; color: #C0392B; }
+    .disabled { background: var(--border-1); color: var(--fg-3); }
+    .meta { font-size: 11px; color: var(--fg-3); letter-spacing: 0.4px; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div class="grid">
+    <div class="btn primary">Continue</div>
+    <div class="meta">Primary · dark fill · 16px radius</div>
+    <div class="btn secondary">Cancel</div>
+    <div class="meta">Secondary · bordered transparent</div>
+    <div class="btn destructive">Remove pet</div>
+    <div class="meta">Destructive · label only, no fill</div>
+    <div class="btn disabled">Continue</div>
+    <div class="meta">Disabled · border-1 fill</div>
+  </div>
+</body>
+</html>

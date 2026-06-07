@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Color · Event semantics</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; background: #FAFAFA; }
+    .group { border: 1px solid var(--border-1); border-radius: 12px; padding: 16px; background: #FFFFFF; }
+    .group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .icon { width: 36px; height: 36px; border-radius: 18px; display: grid; place-items: center; font-size: 18px; }
+    .title { font-size: 13px; font-weight: 500; color: var(--fg-1); }
+    .sub { font-size: 11px; color: var(--fg-2); }
+    .pair { display: flex; gap: 10px; }
+    .sw { flex: 1; }
+    .chip { height: 36px; border-radius: 6px; border: 1px solid var(--border-1); margin-bottom: 6px; }
+    .hex { font-size: 11px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <div class="group">
+    <div class="group-head">
+      <div class="icon" style="background:#E0FBF7">🍽</div>
+      <div><div class="title">Meal</div><div class="sub">Shares accent — meal IS the accent action</div></div>
+    </div>
+    <div class="pair">
+      <div class="sw"><div class="chip" style="background:#00C2A8;border-color:#00C2A8"></div><div class="hex">#00C2A8</div></div>
+      <div class="sw"><div class="chip" style="background:#E0FBF7"></div><div class="hex">#E0FBF7</div></div>
+    </div>
+  </div>
+  <div class="group">
+    <div class="group-head">
+      <div class="icon" style="background:#FFE4E6">🤢</div>
+      <div><div class="title">Symptom</div><div class="sub">Vomit · loose stool · lethargy · itch</div></div>
+    </div>
+    <div class="pair">
+      <div class="sw"><div class="chip" style="background:#F43F5E;border-color:#F43F5E"></div><div class="hex">#F43F5E</div></div>
+      <div class="sw"><div class="chip" style="background:#FFE4E6"></div><div class="hex">#FFE4E6</div></div>
+    </div>
+  </div>
+</body>
+</html>

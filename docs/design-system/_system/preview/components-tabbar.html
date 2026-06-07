@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Tab bar</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 30px 28px; font-family: var(--font-body); background: var(--bg-app); }
+    .bar { background: white; border: 1px solid var(--border-1); border-radius: 12px; display: flex; height: 60px; align-items: center; }
+    .tab { flex: 1; text-align: center; font-size: 13px; font-weight: 500; color: var(--fg-3); letter-spacing: 0.4px; }
+    .tab.active { color: var(--fg-1); }
+    .note { font-size: 11px; color: var(--fg-3); letter-spacing: 0.4px; text-transform: uppercase; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div class="tab active">Home</div>
+    <div class="tab">History</div>
+    <div class="tab">Pet</div>
+  </div>
+  <div class="note">Text-only · three tabs maximum · no icons</div>
+</body>
+</html>

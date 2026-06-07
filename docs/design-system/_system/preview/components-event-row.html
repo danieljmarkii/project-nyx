@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Event row</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; font-family: var(--font-body); background: white; }
+    .row { display: flex; align-items: flex-start; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--border-1); }
+    .row:last-child { border-bottom: 0; }
+    .ico { width: 36px; height: 36px; border-radius: 18px; display: grid; place-items: center; font-size: 16px; flex-shrink: 0; margin-top: 2px; }
+    .ico.meal { background: #E0FBF7; }
+    .ico.symptom { background: #FFE4E6; }
+    .ico.neutral { background: #F5F5F5; }
+    .content { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+    .top { display: flex; justify-content: space-between; align-items: center; }
+    .lbl { font-size: 15px; font-weight: 500; color: var(--fg-1); }
+    .time { font-size: 13px; color: var(--fg-2); }
+    .sub { font-size: 13px; color: var(--fg-2); }
+  </style>
+</head>
+<body>
+  <div class="row"><div class="ico meal">🍽</div><div class="content"><div class="top"><div class="lbl">Meal</div><div class="time">May 14 · 8:42 AM</div></div><div class="sub">Fancy Feast · Chunky Chicken</div></div></div>
+  <div class="row"><div class="ico symptom">🤢</div><div class="content"><div class="top"><div class="lbl">Vomit</div><div class="time">May 14 · 9:14 AM</div></div><div class="sub">20 min after meal · severity 4</div></div></div>
+  <div class="row"><div class="ico neutral">💩</div><div class="content"><div class="top"><div class="lbl">Stool</div><div class="time">May 14 · 11:02 AM</div></div></div></div>
+</body>
+</html>

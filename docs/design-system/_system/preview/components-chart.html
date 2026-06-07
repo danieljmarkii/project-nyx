@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Components · Charts</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { margin: 0; padding: 22px 28px; font-family: var(--font-body); background: white; }
+    .lbl { font-size: 11px; font-weight: 500; color: var(--fg-2); text-transform: uppercase; letter-spacing: 0.8px; }
+    .head { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; }
+    .type { font-size: 15px; font-weight: 500; color: var(--fg-1); }
+    .count { font-size: 13px; font-weight: 500; color: var(--fg-1); }
+    .dir { font-size: 13px; color: var(--accent-1); margin: 4px 0 12px; }
+    .bars { display: flex; align-items: flex-end; gap: 2px; height: 72px; }
+    .col { flex: 1; height: 72px; display: flex; align-items: flex-end; }
+    .bar { width: 100%; background: #F43F5E; border-radius: 2px; }
+    .empty { background: #EAEAEA; opacity: 0.35; height: 100%; }
+    .axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--fg-2); }
+  </style>
+</head>
+<body>
+  <div class="lbl">Trend</div>
+  <div class="head"><div class="type">Vomit</div><div class="count">3 this week</div></div>
+  <div class="dir">↓ from 8 last week — improving</div>
+  <div class="bars">
+    <div class="col"><div class="empty"></div></div>
+    <div class="col"><div class="bar" style="height:30px"></div></div>
+    <div class="col"><div class="bar" style="height:55px"></div></div>
+    <div class="col"><div class="bar" style="height:42px"></div></div>
+    <div class="col"><div class="bar" style="height:72px"></div></div>
+    <div class="col"><div class="empty"></div></div>
+    <div class="col"><div class="bar" style="height:50px"></div></div>
+    <div class="col"><div class="empty"></div></div>
+    <div class="col"><div class="bar" style="height:22px"></div></div>
+    <div class="col"><div class="empty"></div></div>
+    <div class="col"><div class="empty"></div></div>
+    <div class="col"><div class="bar" style="height:22px"></div></div>
+    <div class="col"><div class="empty"></div></div>
+    <div class="col"><div class="bar" style="height:22px"></div></div>
+  </div>
+  <div class="axis"><span>May 1</span><span>Today</span></div>
+</body>
+</html>
