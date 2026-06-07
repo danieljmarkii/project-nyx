@@ -66,6 +66,23 @@ Deno.test('does NOT strip a word that merely ends in "meal" with no boundary', (
   assert.equal(canonicalizeProtein('oatmeal'), 'oatmeal')
 })
 
+Deno.test('trailing/leading punctuation does not re-fragment the key', () => {
+  // Adversarial-review gap (B-052): a stray trailing comma/period blocked the
+  // $-anchored qualifier strip and re-split the key. These must all pool to 'chicken'.
+  assert.equal(canonicalizeProtein('chicken,'), 'chicken')
+  assert.equal(canonicalizeProtein('Chicken.'), 'chicken')
+  assert.equal(canonicalizeProtein('chicken meal,'), 'chicken')
+  assert.equal(canonicalizeProtein('(chicken)'), 'chicken')
+  assert.equal(canonicalizeProtein('"chicken"'), 'chicken')
+  // Junk with trailing punctuation still nullifies.
+  assert.equal(canonicalizeProtein('null,'), null)
+  // The four real variants + a punctuation-tailed one all collapse to one key.
+  const keys = new Set(
+    ['chicken', 'Chicken', 'Chicken By-Product Meal', 'chicken meal,'].map(canonicalizeProtein),
+  )
+  assert.deepEqual([...keys], ['chicken'])
+})
+
 Deno.test('idempotent: canonicalize(canonicalize(x)) === canonicalize(x)', () => {
   for (const raw of ['Chicken By-Product Meal', 'ocean whitefish', 'Turkey Meal', 'null']) {
     const once = canonicalizeProtein(raw)

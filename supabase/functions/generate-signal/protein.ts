@@ -64,6 +64,13 @@ export function canonicalizeProtein(raw: string | null | undefined): string | nu
 
   // Lowercase, trim, collapse internal whitespace runs to single spaces.
   let v = raw.trim().toLowerCase().replace(/\s+/g, ' ');
+
+  // Trim leading/trailing punctuation, quotes, and brackets (e.g. a stray
+  // "chicken," or "(chicken)"). A trailing comma/period otherwise blocks the
+  // $-anchored qualifier strip below and re-fragments the key ("chicken meal,"
+  // would split from both "chicken" and "chicken meal") — the exact starvation
+  // B-052 fixes. Internal characters (the hyphen in "by-product") are untouched.
+  v = v.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
   if (PROTEIN_JUNK.has(v)) return null;
 
   // Normalize the spelling of "by product" / "byproduct" → "by-product" so the
