@@ -23,11 +23,12 @@ import { syncPendingEvents, syncPendingMeals } from './sync';
 // bundle never pulls in the Deno detection module. Source of truth for the full
 // shape: detection.ts; keep these in sync if a rendered field is added there.
 
-export type InsightType = 'food_symptom_correlation' | 'intake_decline';
+export type InsightType = 'food_symptom_correlation' | 'intake_decline' | 'reflection';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
 export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction';
 export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food';
+export type ReflectionDirection = 'flat' | 'improving';
 
 export interface CorrelationFinding {
   type: 'food_symptom_correlation';
@@ -50,7 +51,20 @@ export interface IntakeDeclineFinding {
   ratedMealsConsidered: number;
 }
 
-export type SignalFinding = CorrelationFinding | IntakeDeclineFinding;
+// Reflection (③, B-051) — descriptive symptom-count trend, no causal/wellness
+// claim. Renders only for a flat or improving (falling) trend; ranks below safety
+// and below correlations. Mirror of detection.ts ReflectionFinding (rendered fields).
+export interface ReflectionFinding {
+  type: 'reflection';
+  priorityClass: 'insight';
+  symptomType: SignalSymptomType;
+  currentCount: number;
+  priorCount: number;
+  direction: ReflectionDirection;
+  windowDays: number;
+}
+
+export type SignalFinding = CorrelationFinding | IntakeDeclineFinding | ReflectionFinding;
 
 export interface CachedFinding {
   rank: number;

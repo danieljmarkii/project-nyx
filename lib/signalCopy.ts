@@ -89,6 +89,9 @@ export function sampleLine(finding: SignalFinding): string {
       'matched days',
     )} of logs`;
   }
+  if (finding.type === 'reflection') {
+    return `${count(finding.currentCount, 'episode', 'episodes')} this week, ${finding.priorCount} last week`;
+  }
   if (finding.trigger === 'refused_normal_food') {
     return finding.ratedMealsConsidered > 0
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
@@ -113,6 +116,17 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       `Across ${count(finding.matchedPairs, 'matched day', 'matched days')} of logs, ${petName}'s ${symptom} ` +
       `has tended to follow meals containing ${finding.protein} within about ${window} hours. ` +
       `This is a pattern in your logs, not a proven link — worth mentioning to your vet.`
+    );
+  }
+  if (finding.type === 'reflection') {
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const trend =
+      finding.direction === 'improving'
+        ? `down from ${count(finding.priorCount, 'episode', 'episodes')} the week before`
+        : 'about the same as the week before';
+    return (
+      `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week — ${trend}. ` +
+      `This is a count we're tracking with you — not a diagnosis, and not a verdict on how ${petName} is doing. Keep logging and we'll keep watching the trend.`
     );
   }
   if (finding.trigger === 'refused_normal_food') {

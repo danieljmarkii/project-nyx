@@ -7,14 +7,21 @@
 // access, and NO LLM call — the model (Step 2) only renders an already-true
 // finding into a sentence; it never decides whether a pattern exists.
 //
-// Two v1 detectors live here (§4):
+// Three v1 detectors live here (§4):
 //   ① food/protein → symptom correlation  (the flagship wedge insight)
 //   ② intake-decline calm safety flag      (MANDATORY never-reassure net)
+//   ③ symptom-count reflection             (B-051 — the §7.1 rung-② "presence"
+//      layer: "Nyx vomited 4 times this week — same as last." Counts/streaks,
+//      NO causal claim. Renders only for a FLAT or IMPROVING (falling) trend; a
+//      worsening trend is suppressed — never normalized as a neutral reflection
+//      — and a zero-symptom week is never surfaced (absence ≠ wellness, §9).)
 //
-// Both honour the §6/§7 evidence-tier floors and the clinical guardrails in §9
-// and CLAUDE.md (associational-only correlation copy; intake decline routed as
+// All three honour the §6/§7 evidence-tier floors and the clinical guardrails in
+// §9 and CLAUDE.md (associational-only correlation copy; intake decline routed as
 // calm concern, never softened to "picky", never reassuring, and silent — not
-// a false flag and not an all-clear — when intake-rating coverage is thin).
+// a false flag and not an all-clear — when intake-rating coverage is thin; a
+// reflection is descriptive only, never reassures, and ranks below every safety
+// finding).
 //
 // Why it lives under supabase/functions/: it is server-side code the
 // `generate-signal` Edge Function (Step 2) imports. It is written as portable
@@ -118,7 +125,7 @@ export interface DetectionInput {
 
 // ── Finding types (§4/§5) ───────────────────────────────────────────────────
 
-export type InsightType = 'food_symptom_correlation' | 'intake_decline'
+export type InsightType = 'food_symptom_correlation' | 'intake_decline' | 'reflection'
 
 /** Safety/concern always leads (§5); everything else is an insight. */
 export type PriorityClass = 'safety' | 'insight'
@@ -201,7 +208,38 @@ export interface IntakeDeclineFinding extends FindingBase {
   ratedMealsConsidered: number
 }
 
-export type Finding = CorrelationFinding | IntakeDeclineFinding
+/** A reflection only ever describes a FLAT ("same as last week") or IMPROVING (falling) trend. */
+export type ReflectionDirection = 'flat' | 'improving'
+
+/**
+ * Symptom-count reflection (③, B-051) — the §7.1 rung-② "presence" layer. Purely
+ * DESCRIPTIVE: a count of symptom episodes this week vs last, with NO causal claim
+ * and NO wellness claim. It exists so a data-rich pet that produced no ①/② finding
+ * still gets something honest on the Signal instead of the "keep logging" empty
+ * state (the "silence churns" failure §7.1 names). Hard constraints, enforced in
+ * detectReflections and re-asserted by phrasing/validatePhrasing:
+ *   - renders ONLY for current ≤ prior (flat or falling). A rising trend is
+ *     suppressed — worsening is owned by the safety lane (②/①) + per-incident
+ *     analysis, NEVER framed as a neutral reflection (Dr. Chen, §7.1 amendment #5).
+ *   - NEVER on a zero current count — "no vomiting this week" is reassurance-by-
+ *     absence (§9), not a reflection.
+ *   - ranks BELOW every safety finding AND below correlations (the gentlest layer).
+ */
+export interface ReflectionFinding extends FindingBase {
+  type: 'reflection'
+  priorityClass: 'insight'
+  symptomType: SymptomType
+  /** Distinct symptom episodes (re-logs collapsed) in the current window. ≥1 by construction. */
+  currentCount: number
+  /** Distinct symptom episodes in the prior (previous-period) window. ≥ currentCount by construction. */
+  priorCount: number
+  /** 'flat' = same count as last period; 'improving' = fewer than last. Never 'worsening' (suppressed). */
+  direction: ReflectionDirection
+  /** Length of each comparison window, in days (the period: 7 = week-over-week). */
+  windowDays: number
+}
+
+export type Finding = CorrelationFinding | IntakeDeclineFinding | ReflectionFinding
 
 /** A finding plus its resolved sort position, returned by the engine in ranked order. */
 export interface RankedFinding {
@@ -264,6 +302,24 @@ export interface DetectionConfig {
       singleDayConcernCeiling: number
     }
   }
+  reflection: {
+    /** Length of each comparison period, in days (week-over-week = 7). */
+    windowDays: number
+    /**
+     * Honesty floor: the larger of the two windows' episode counts must reach this
+     * before a trend is worth stating (mirrors §7's ≥3 correlation episode floor).
+     * Below it, a "same as last week" on 1–2 episodes is noise, not a reflection.
+     */
+    minEpisodesEitherWindow: number
+    /**
+     * Logging-eligibility floor: each window must contain at least this many distinct
+     * days with ANY logged event. This is the load-bearing guard that stops a logging
+     * GAP from being read as "improving" — the same lesson as detector ②'s coverage
+     * floor and detector ①'s control-window guard. A pet who simply stopped logging
+     * last week must never be told their symptoms "fell".
+     */
+    minLoggingDaysPerWindow: number
+  }
 }
 
 /** §7 table, adopted as the v1 starting defaults (PM 2026-05-30); tune on real data, not a re-decision. */
@@ -298,6 +354,17 @@ export const DEFAULT_CONFIG: DetectionConfig = {
       consecutiveDaysBelowBaseline: 1,
       singleDayConcernCeiling: 2,
     },
+  },
+  // B-051 reflection floor — Conservative-but-useful (product-team call 2026-06-07,
+  // PM deferred the exact values). Week-over-week; needs ≥3 episodes in the busier
+  // window to bother stating a trend, and ≥3 actively-logged days in BOTH windows so
+  // a logging gap can't masquerade as improvement. Tunable on real dogfood data per
+  // the §7 philosophy — not a re-decision. (Known: week-over-week is jittery on small
+  // counts; B-047 instrumentation watches whether that matters.)
+  reflection: {
+    windowDays: 7,
+    minEpisodesEitherWindow: 3,
+    minLoggingDaysPerWindow: 3,
   },
 }
 
@@ -738,6 +805,99 @@ export function detectIntakeDecline(
   return findings
 }
 
+// ── Detector ③: symptom-count reflection (B-051) ────────────────────────────
+//
+// The §7.1 rung-② "presence" layer. A purely DESCRIPTIVE count of symptom episodes
+// this period vs last — "Nyx vomited 4 times this week, same as last." NO causal
+// claim (that's rung ⑤ / detector ①), NO wellness claim (§9). Its whole job is to
+// keep a data-rich pet from falling to the "keep logging" empty state when neither
+// ① nor ② fired (the dogfooding case that opened B-051: a constant-staple diet
+// washes ① out and steady intake keeps ② silent, yet the owner has logged heavily).
+//
+// Three guardrails, all enforced here and re-asserted by the phrasing layer:
+//   (1) DIRECTION — render only for current ≤ prior (flat or falling). A rising
+//       trend is SUPPRESSED, never reframed as a neutral reflection (Dr. Chen's
+//       §7.1 amendment #5 — worsening is the safety lane's job, not ③'s).
+//   (2) ABSENCE — never render on a zero current count; "no vomiting this week"
+//       is reassurance-by-absence (§9), the exact thing the layer must not do.
+//   (3) LOGGING-ELIGIBILITY — both windows must be actively logged, so a logging
+//       gap can't read as "improving" (the recurring §9 / B-027 / B-050 trap).
+//
+// Surfaces at most ONE reflection (the symptom most present right now) so the
+// Signal stays calm — never a wall of count cards.
+
+export function detectReflections(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): ReflectionFinding[] {
+  const cfg = config.reflection
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return []
+
+  const windowMs = cfg.windowDays * MS_PER_DAY
+  const currentStart = nowMs - windowMs
+  const priorStart = nowMs - 2 * windowMs
+
+  // Logging-eligibility (guardrail 3): distinct UTC days carrying ANY event the
+  // detector can see (symptom or meal) in each window. A window that wasn't
+  // actively logged cannot anchor an honest trend. Using only the events in
+  // DetectionInput means an owner who logs *other* event types we don't receive
+  // could be under-counted here — that errs toward SILENCE (over-suppression),
+  // never toward a false "improving" claim, which is the safe direction.
+  const allEventMs = [
+    ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
+    ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
+  ].filter((ms) => Number.isFinite(ms))
+
+  const loggingDays = (start: number, end: number): number => {
+    const days = new Set<number>()
+    for (const ms of allEventMs) {
+      if (ms >= start && ms < end) days.add(Math.floor(ms / MS_PER_DAY))
+    }
+    return days.size
+  }
+  if (loggingDays(currentStart, nowMs) < cfg.minLoggingDaysPerWindow) return []
+  if (loggingDays(priorStart, currentStart) < cfg.minLoggingDaysPerWindow) return []
+
+  // Per symptom type: episode counts in each window (re-logs collapsed, consistent
+  // with detector ①'s episode definition — one bout logged five times is one count).
+  const candidates: ReflectionFinding[] = []
+  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+    const msList = input.symptomEvents
+      .filter((s) => s.type === symptomType)
+      .map((s) => Date.parse(s.occurredAt))
+      .filter((ms) => Number.isFinite(ms))
+    const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
+    const current = onsets.filter((ms) => ms >= currentStart && ms < nowMs).length
+    const prior = onsets.filter((ms) => ms >= priorStart && ms < currentStart).length
+
+    if (current < 1) continue // guardrail 2 — never a zero-symptom (absence) reflection
+    if (current > prior) continue // guardrail 1 — rising trend suppressed (yields to safety lane)
+    if (Math.max(current, prior) < cfg.minEpisodesEitherWindow) continue // too thin to state a trend
+
+    candidates.push({
+      type: 'reflection',
+      priorityClass: 'insight',
+      symptomType,
+      currentCount: current,
+      priorCount: prior,
+      direction: current === prior ? 'flat' : 'improving',
+      windowDays: cfg.windowDays,
+    })
+  }
+
+  if (candidates.length === 0) return []
+
+  // One reflection only — the symptom most present in the pet's life right now
+  // (highest current count; tie → larger fall, then symptom-type order). Calm
+  // surface over completeness.
+  candidates.sort((a, b) => {
+    if (b.currentCount !== a.currentCount) return b.currentCount - a.currentCount
+    return b.priorCount - b.currentCount - (a.priorCount - a.currentCount)
+  })
+  return [candidates[0]]
+}
+
 // ── Detector registry (§4) ──────────────────────────────────────────────────
 
 export interface Detector {
@@ -753,6 +913,7 @@ export interface Detector {
 export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'food_symptom_correlation', detect: detectCorrelations },
   { type: 'intake_decline', detect: detectIntakeDecline },
+  { type: 'reflection', detect: detectReflections },
 ]
 
 // ── Composition & ranking (§5) ──────────────────────────────────────────────
@@ -761,8 +922,12 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //   0  safety / concern — always leads, always visible (§5.1)
 //   1  context-lead insight for this pet (§5.2, §8)
 //   2  remaining qualifying insights (§5.3)
+//   3  reflection (③, B-051) — the gentlest "presence" layer; ALWAYS below every
+//      safety finding AND below every correlation, never the lead of a data-rich
+//      pet that has a real correlation to show.
 function priorityBand(finding: Finding, ctx: PetContext): number {
   if (finding.priorityClass === 'safety') return 0
+  if (finding.type === 'reflection') return 3
   // Correlation is the context-lead insight for a diet-trial pet (Jordan's stack, §8).
   if (finding.type === 'food_symptom_correlation' && ctx.dietTrialActive) return 1
   return 2

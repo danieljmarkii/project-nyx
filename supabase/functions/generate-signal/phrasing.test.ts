@@ -17,6 +17,7 @@ import { strict as assert } from 'node:assert'
 import {
   templateCorrelation,
   templateIntakeDecline,
+  templateReflection,
   templateForFinding,
   validatePhrasing,
   curateFindings,
@@ -27,6 +28,8 @@ import {
 import type {
   CorrelationFinding,
   IntakeDeclineFinding,
+  ReflectionFinding,
+  ReflectionDirection,
   Finding,
   RankedFinding,
   SymptomType,
@@ -66,6 +69,17 @@ const intakeDecline = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineF
   daysBelowBaseline: 2,
   refusedFoodLabel: null,
   ratedMealsConsidered: 8,
+  ...over,
+})
+
+const reflection = (over: Partial<ReflectionFinding> = {}): ReflectionFinding => ({
+  type: 'reflection',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  currentCount: 4,
+  priorCount: 4,
+  direction: 'flat',
+  windowDays: 7,
   ...over,
 })
 
@@ -148,6 +162,55 @@ Deno.test('every intake-decline template — never reassures, never dismissive, 
   }
 })
 
+// ── templateReflection (B-051 — descriptive count, never causal, never reassure) ─
+
+Deno.test('templateReflection — flat reads "about the same", names the count, no cause/reassure', () => {
+  const t = templateReflection(reflection({ direction: 'flat', currentCount: 4, priorCount: 4 }), 'Nyx')
+  assert.ok(t.includes('Nyx'))
+  assert.ok(t.includes('4'), 'names the count')
+  assert.ok(t.includes('vomiting'), 'plain-language symptom, not the enum')
+  assert.ok(/about the same/i.test(t))
+  assert.equal(CAUSAL.test(t), false, 'a count is not a cause')
+  assert.equal(REASSURE.test(t), false, '"same as last week" is not an all-clear')
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, reflection()), 'own template passes validation')
+})
+
+Deno.test('templateReflection — improving reads "down from N", still no reassurance', () => {
+  const t = templateReflection(reflection({ direction: 'improving', currentCount: 2, priorCount: 5 }), 'Nyx')
+  assert.ok(/down from 5/i.test(t))
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(REASSURE.test(t), false, 'a falling count is still not a wellness verdict (§9)')
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, reflection({ direction: 'improving' })))
+})
+
+Deno.test('templateReflection — plain-language label for every symptom type, no jargon leak', () => {
+  const types: SymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction']
+  for (const symptomType of types) {
+    const t = templateReflection(reflection({ symptomType }), 'Nyx')
+    assert.ok(t.includes(SYMPTOM_LABEL[symptomType]), `uses the plain label for ${symptomType}`)
+    assert.equal(t.includes('!'), false)
+  }
+})
+
+// clinical-guardrails Pattern 8: the never-reassure invariant as a TEST, scanning
+// every reflection string the function can emit — not a code comment.
+Deno.test('every reflection template — never reassures, never causal, no "!"', () => {
+  const directions: ReflectionDirection[] = ['flat', 'improving']
+  const types: SymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction']
+  for (const direction of directions) {
+    for (const symptomType of types) {
+      for (const [current, prior] of [[3, 3], [2, 6], [1, 4]]) {
+        const t = templateReflection(reflection({ direction, symptomType, currentCount: current, priorCount: prior }), 'Nyx')
+        assert.equal(REASSURE.test(t), false, `reassurance in: ${t}`)
+        assert.equal(CAUSAL.test(t), false, `causal in: ${t}`)
+        assert.equal(t.includes('!'), false, `exclamation in: ${t}`)
+      }
+    }
+  }
+})
+
 // ── validatePhrasing (defense in depth against model drift) ─────────────────────
 
 Deno.test('validatePhrasing — rejects exclamation marks', () => {
@@ -180,6 +243,23 @@ Deno.test('validatePhrasing — rejects reassurance / "picky" on a safety findin
   ]) {
     assert.equal(validatePhrasing(bad, intakeDecline()), false, `should reject: ${bad}`)
   }
+})
+
+Deno.test('validatePhrasing — rejects reassurance OR a causal claim on a reflection', () => {
+  for (const bad of [
+    "Nyx vomited 4 times this week — about the same, so she's probably fine.", // reassurance
+    'Four episodes this week, all clear otherwise.', // reassurance
+    'Nyx vomited 4 times this week, likely because of the chicken.', // causal
+    'Vomiting is the same as last week and due to her food.', // causal
+  ]) {
+    assert.equal(validatePhrasing(bad, reflection()), false, `should reject: ${bad}`)
+  }
+})
+
+Deno.test('validatePhrasing — accepts a plain descriptive reflection sentence', () => {
+  assert.ok(
+    validatePhrasing("We've logged 4 episodes of vomiting for Nyx this week — about the same as last week.", reflection()),
+  )
 })
 
 Deno.test('validatePhrasing — rejects too-short and too-long', () => {
@@ -264,4 +344,5 @@ Deno.test('SYMPTOM_LABEL — every symptom has a plain-language label', () => {
 Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(templateForFinding(correlation(), 'Mochi').includes('tended to follow'))
   assert.ok(/vet/i.test(templateForFinding(intakeDecline(), 'Pixel')))
+  assert.ok(/about the same as last week/i.test(templateForFinding(reflection(), 'Nyx')))
 })

@@ -19,6 +19,7 @@ import type {
   Finding,
   CorrelationFinding,
   IntakeDeclineFinding,
+  ReflectionFinding,
   RankedFinding,
   SymptomType,
 } from './detection.ts'
@@ -73,10 +74,26 @@ export function templateIntakeDecline(f: IntakeDeclineFinding, petName: string):
   return `${petName} has eaten less than usual ${span} — worth keeping an eye on, and a word with your vet if it carries on.`
 }
 
+export function templateReflection(f: ReflectionFinding, petName: string): string {
+  // Descriptive count only (B-051 / §7.1 rung ②). Never causal, never reassuring,
+  // never an absence-of-symptom all-clear. Plain symptom word, specific numbers.
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  const noun = f.currentCount === 1 ? 'episode' : 'episodes'
+  if (f.direction === 'improving') {
+    return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week, down from ${f.priorCount} last week.`
+  }
+  return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week — about the same as last week.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
-  return finding.type === 'food_symptom_correlation'
-    ? templateCorrelation(finding, petName)
-    : templateIntakeDecline(finding, petName)
+  switch (finding.type) {
+    case 'food_symptom_correlation':
+      return templateCorrelation(finding, petName)
+    case 'intake_decline':
+      return templateIntakeDecline(finding, petName)
+    case 'reflection':
+      return templateReflection(finding, petName)
+  }
 }
 
 export function buildBuildingText(petName: string, hasRecentActivity: boolean): string {
@@ -112,6 +129,12 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // Associational only — the model may not assert causation.
     if (CAUSAL_RE.test(t)) return false
   }
+  if (finding.type === 'reflection') {
+    // A reflection is a descriptive count (B-051): it may not assert a cause, and
+    // — crucially — may not reassure. "Same as last week" is a count, not an
+    // all-clear; the reduction of a symptom is never a wellness verdict (§9).
+    if (CAUSAL_RE.test(t) || REASSURANCE_RE.test(t)) return false
+  }
   return true
 }
 
@@ -146,6 +169,17 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       matched_days: finding.matchedPairs,
       symptom_episodes: finding.symptomEventCount,
       relationship: 'associational', // the symptom TENDS TO FOLLOW the food; NOT causal
+    }
+  }
+  if (finding.type === 'reflection') {
+    return {
+      insight_type: 'reflection',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      count_this_week: finding.currentCount,
+      count_last_week: finding.priorCount,
+      direction: finding.direction, // 'flat' | 'improving' (never 'worsening' — suppressed upstream)
+      relationship: 'descriptive_count', // a count we are noting — NOT a cause and NOT an all-clear
     }
   }
   return {
@@ -191,4 +225,9 @@ export const PHRASING_SYSTEM =
   '(5) For an intake_decline: surface it calmly and clearly and point toward keeping an eye on it ' +
   'and a word with the vet. NEVER reassure, NEVER say the pet is fine/okay/healthy, NEVER call the ' +
   'pet "picky" or frame eating less as fussiness. ' +
+  '(6) For a reflection: state the COUNT of episodes this week and compare it to last week as a plain ' +
+  'fact — "about the same as last week" when direction is "flat", "fewer than last week" when ' +
+  '"improving". It is DESCRIPTIVE ONLY: NEVER suggest or imply a cause, and NEVER reassure — do not say ' +
+  'the pet is fine/okay/healthy/all clear, and never imply that fewer or unchanged symptoms mean the pet ' +
+  'is well. It is a count you are noting together, not a verdict. ' +
   'Call phrase_insight with your one sentence.'
