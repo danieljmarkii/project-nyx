@@ -438,7 +438,7 @@ export default function ProfileScreen() {
           <Divider style={styles.accountDivider} />
           <TouchableOpacity style={styles.accountRow} onPress={handleWipeData} disabled={wiping}>
             {wiping
-              ? <ActivityIndicator color="#C0392B" />
+              ? <ActivityIndicator color={theme.colorDestructive} />
               : <Text style={styles.destructiveText}>Wipe my data</Text>
             }
           </TouchableOpacity>
@@ -693,7 +693,7 @@ const styles = StyleSheet.create({
   },
   destructiveText: {
     fontSize: theme.textMD,
-    color: '#C0392B',
+    color: theme.colorDestructive,
   },
 
   // ── Empty / bottom ──

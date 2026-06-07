@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
   },
   destructiveText: {
     fontSize: 15,
-    color: '#ff6b6b',
+    color: theme.colorDestructiveOnDark,
     fontWeight: theme.fontWeightMedium,
   },
 });
