@@ -16,9 +16,9 @@ export function notifySignedOut(): void {
   signOutEpoch++;
 }
 
-// Which local meta column the reconcile strategy needs: 'updated_at' for LWW,
-// 'synced' for the meals refresh-if-synced guard, 'none' for pure insert-only.
-type LocalMetaKind = 'updated_at' | 'synced' | 'none';
+// Which local meta column the reconcile strategy needs: 'updated_at' for LWW
+// (events, meals, vet_visits), 'none' for pure insert-only (attachments).
+type LocalMetaKind = 'updated_at' | 'none';
 
 // Load the local id → meta map for the given ids so the pure reconcileBatch can
 // decide which remote rows to write. Chunked to stay under SQLite's variable
@@ -30,19 +30,18 @@ async function loadLocalRowMeta(
   kind: LocalMetaKind,
 ): Promise<Map<string, LocalRowMeta>> {
   const map = new Map<string, LocalRowMeta>();
-  const cols = kind === 'updated_at' ? 'id, updated_at' : kind === 'synced' ? 'id, synced' : 'id';
+  const cols = kind === 'updated_at' ? 'id, updated_at' : 'id';
   const CHUNK = 400;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);
     const placeholders = chunk.map(() => '?').join(',');
-    const rows = await db.getAllAsync<{ id: string; updated_at?: string | null; synced?: number | null }>(
+    const rows = await db.getAllAsync<{ id: string; updated_at?: string | null }>(
       `SELECT ${cols} FROM ${table} WHERE id IN (${placeholders})`,
       chunk,
     );
     for (const r of rows) {
       map.set(r.id, {
         updated_at: kind === 'updated_at' ? r.updated_at ?? null : null,
-        synced: kind === 'synced' ? r.synced ?? null : null,
       });
     }
   }
@@ -93,6 +92,7 @@ export async function syncPendingMeals(): Promise<void> {
     is_full_portion: number | null;
     notes: string | null;
     created_at: string;
+    updated_at: string;
     intake_rating: string | null;
   }>('SELECT * FROM meals WHERE synced = 0 LIMIT 100');
 
@@ -149,6 +149,11 @@ export async function syncPendingMeals(): Promise<void> {
       is_full_portion: m.is_full_portion === null ? null : Boolean(m.is_full_portion),
       notes: m.notes,
       created_at: m.created_at,
+      // B-055 — send the client updated_at. The set_updated_at trigger rewrites
+      // it to server-NOW on the conflict-update branch (server-time LWW, FR-5),
+      // so this value is authoritative only for a brand-new INSERT; either way
+      // the row lands with a usable updated_at for the next device to compare.
+      updated_at: m.updated_at,
       intake_rating: m.intake_rating,
     })),
     { onConflict: 'id' }
@@ -156,9 +161,9 @@ export async function syncPendingMeals(): Promise<void> {
 
   if (error) {
     console.error('[sync] meals upsert failed:', error.message,
-      '| code:', (error as any).code,
-      '| details:', (error as any).details,
-      '| hint:', (error as any).hint,
+      '| code:', error.code,
+      '| details:', error.details,
+      '| hint:', error.hint,
     );
     return;
   }
@@ -392,7 +397,7 @@ export async function refreshFoodCache(): Promise<void> {
 // The supabase client is created without generated DB types, so select()
 // results degrade to a loose error sentinel — we cast each pull to a concrete
 // row shape. These mirror the server columns (docs/nyx-schema-v1_0.sql +
-// migrations 003/007/011/012).
+// migrations 003/007/011/012/016).
 interface RemoteEvent {
   id: string; pet_id: string; event_type: string; occurred_at: string;
   severity: number | null; notes: string | null; source: string | null;
@@ -403,7 +408,7 @@ interface RemoteEvent {
 interface RemoteMeal {
   id: string; event_id: string; pet_id: string; food_item_id: string | null;
   quantity: string | null; is_full_portion: boolean | null; notes: string | null;
-  created_at: string; intake_rating: string | null;
+  created_at: string; updated_at: string; intake_rating: string | null;
 }
 interface RemoteEventAttachment {
   id: string; event_id: string; pet_id: string; storage_path: string;
@@ -429,7 +434,8 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
   if (!rows || rows.length === 0) return;
 
   const localById = await loadLocalRowMeta(db, 'events', rows.map((r) => r.id), 'updated_at');
-  // FR-4 (naive): replace only when remote is strictly newer. FR-7: soft-deletes
+  // FR-4: server-time LWW — replace only when remote is strictly newer (see
+  // lib/hydration.ts header for the accepted failure mode). FR-7: soft-deletes
   // ride along on the deleted_at column, hidden by the WHERE deleted_at IS NULL reads.
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
@@ -448,7 +454,8 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
          occurred_at_earliest=excluded.occurred_at_earliest,
          occurred_at_latest=excluded.occurred_at_latest,
          deleted_at=excluded.deleted_at, created_at=excluded.created_at,
-         updated_at=excluded.updated_at, synced=1`,
+         updated_at=excluded.updated_at, synced=1
+       WHERE events.synced = 1`,
       [
         e.id, e.pet_id, e.event_type, e.occurred_at, e.severity ?? null, e.notes ?? null,
         e.source ?? 'manual', e.occurred_at_source ?? 'manual',
@@ -460,39 +467,45 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
 }
 
 async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
-  // Meals have no updated_at (server or local), but they ARE mutated in place
-  // (updateMealFood / updateMealIntake — the clinically load-bearing WSAVA
-  // intake_rating). So 'refresh-if-synced' (FR-6, corrected): insert when
-  // absent, refresh a converged (synced=1) local meal from the server so
-  // another device's correction propagates, never clobber a pending local edit
-  // (synced=0). Runs after hydrateEvents so the parent event exists before the
-  // FK-bearing meal row lands (FR-2 / edge case 10).
+  // Meals now carry updated_at (B-055 / migration 016), so they reconcile by the
+  // same server-time LWW as events: insert when absent, else replace only when
+  // the remote row is strictly newer. This retires the Phase-1 'refresh-if-synced'
+  // synced-flag proxy — a real timestamp protects a pending local edit (its
+  // updated_at is newer than the stale remote, and push-before-pull sends it up
+  // first regardless) AND lets a converged row take a genuine remote correction.
+  // The clinically load-bearing intake_rating now propagates by authorship-ish
+  // order, not by an absence heuristic. Runs after hydrateEvents so the parent
+  // event exists before the FK-bearing meal row lands (FR-2 / edge case 10).
   const rows = await fetchAllRows<RemoteMeal>(
     'meals',
-    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, intake_rating',
+    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating',
   );
   if (!rows || rows.length === 0) return;
 
-  const localById = await loadLocalRowMeta(db, 'meals', rows.map((r) => r.id), 'synced');
-  const { toWrite } = reconcileBatch(rows, localById, 'refresh-if-synced');
+  const localById = await loadLocalRowMeta(db, 'meals', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const m of toWrite) {
     // DO UPDATE refreshes the mutable fields only; identity columns (event_id,
-    // pet_id) are immutable and left untouched. For an absent row the INSERT
-    // branch runs; for a synced=1 local row the UPDATE branch propagates the
-    // remote correction.
+    // pet_id) are immutable and left untouched. The `WHERE meals.synced = 1`
+    // backstop (B-055) is defense-in-depth: the pure reconcile already protects a
+    // pending local edit by LWW, but this guarantees a hydrate write can never
+    // overwrite a row with an unpushed local edit even if the in-memory filter is
+    // ever bypassed (the synced column is a clean 0/1 int, so unlike a timestamp
+    // it's safe to compare in SQL — no parseTs format trap).
     await db.runAsync(
       `INSERT INTO meals
-        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, intake_rating, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          food_item_id=excluded.food_item_id, quantity=excluded.quantity,
          is_full_portion=excluded.is_full_portion, notes=excluded.notes,
-         intake_rating=excluded.intake_rating, synced=1`,
+         intake_rating=excluded.intake_rating, updated_at=excluded.updated_at, synced=1
+       WHERE meals.synced = 1`,
       [
         m.id, m.event_id, m.pet_id, m.food_item_id ?? null, m.quantity ?? 'unknown',
         m.is_full_portion === null || m.is_full_portion === undefined ? null : (m.is_full_portion ? 1 : 0),
-        m.notes ?? null, m.created_at, m.intake_rating ?? null,
+        m.notes ?? null, m.created_at, m.updated_at, m.intake_rating ?? null,
       ],
     );
   }
@@ -542,7 +555,8 @@ async function hydrateVetVisits(db: Db, stale: () => boolean): Promise<void> {
          pet_id=excluded.pet_id, visited_at=excluded.visited_at, clinic_name=excluded.clinic_name,
          vet_name=excluded.vet_name, reason=excluded.reason, notes=excluded.notes,
          next_visit_at=excluded.next_visit_at, created_at=excluded.created_at,
-         updated_at=excluded.updated_at, synced=1`,
+         updated_at=excluded.updated_at, synced=1
+       WHERE vet_visits.synced = 1`,
       [v.id, v.pet_id, v.visited_at, v.clinic_name ?? null, v.vet_name ?? null, v.reason ?? null,
        v.notes ?? null, v.next_visit_at ?? null, v.created_at, v.updated_at],
     );

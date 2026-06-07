@@ -20,26 +20,26 @@ describe('shouldWriteRemoteRow', () => {
     });
   });
 
-  describe('insert-if-absent (meals FR-6, attachments)', () => {
+  describe('insert-if-absent (attachments — no server updated_at, insert-only)', () => {
     it('never overwrites an existing local row, even if remote looks newer', () => {
       const local: LocalRowMeta = { updated_at: T0 };
-      expect(shouldWriteRemoteRow({ id: 'm', updated_at: T1 }, local, 'insert-if-absent')).toBe(false);
+      expect(shouldWriteRemoteRow({ id: 'a', updated_at: T1 }, local, 'insert-if-absent')).toBe(false);
     });
 
     it('does not require an updated_at to make the keep-local decision', () => {
-      // meals carry no updated_at at all — presence alone protects the local row.
-      expect(shouldWriteRemoteRow({ id: 'm' }, {}, 'insert-if-absent')).toBe(false);
+      // attachments carry no updated_at — presence alone protects the local row
+      // (and its local-only local_uri column).
+      expect(shouldWriteRemoteRow({ id: 'a' }, {}, 'insert-if-absent')).toBe(false);
     });
   });
 
-  describe('lww naive guard', () => {
+  describe('lww (events, meals, vet_visits — accepted Phase-2 server-time LWW)', () => {
     it('replaces when the remote row is strictly newer', () => {
       expect(shouldWriteRemoteRow({ id: 'e', updated_at: T1 }, { updated_at: T0 }, 'lww')).toBe(true);
     });
 
-    it('keeps the local row when the remote copy is older (offline-edit guard)', () => {
-      // The Phase-1 stand-in for AC-3: a locally-newer edit is not clobbered by
-      // an older remote copy. (Trigger-correct LWW is Phase 2.)
+    it('keeps the local row when the remote copy is older (offline-edit guard, AC-3)', () => {
+      // A locally-newer edit is not clobbered by an older remote copy.
       expect(shouldWriteRemoteRow({ id: 'e', updated_at: T0 }, { updated_at: T1 }, 'lww')).toBe(false);
     });
 
@@ -60,25 +60,38 @@ describe('shouldWriteRemoteRow', () => {
     });
   });
 
-  describe('refresh-if-synced (meals FR-6 — mutable, no updated_at)', () => {
-    it('inserts an absent meal (cold start)', () => {
-      expect(shouldWriteRemoteRow({ id: 'm' }, undefined, 'refresh-if-synced')).toBe(true);
+  describe('meals LWW (B-055 — intake_rating correction propagation, replaces refresh-if-synced)', () => {
+    it('propagates a converged meal\'s newer remote intake correction', () => {
+      // Device A corrected intake_rating at T1; B has the older converged row (T0).
+      // Real LWW now carries the correction instead of the synced-flag proxy.
+      expect(shouldWriteRemoteRow({ id: 'm', updated_at: T1 }, { updated_at: T0 }, 'lww')).toBe(true);
     });
 
-    it('refreshes a converged local meal so another device\'s correction propagates', () => {
-      // Device A corrected intake_rating; B already has the row, synced=1.
-      expect(shouldWriteRemoteRow({ id: 'm' }, { synced: 1 }, 'refresh-if-synced')).toBe(true);
+    it('does not clobber B\'s newer local intake edit with an older remote meal', () => {
+      // B rated intake locally at T1 (updated_at bumped by updateMealIntake);
+      // the stale remote copy at T0 must not win. (The SQL synced=1 backstop in
+      // sync.ts is the second line of defense for the unpushed case.)
+      expect(shouldWriteRemoteRow({ id: 'm', updated_at: T0 }, { updated_at: T1 }, 'lww')).toBe(false);
     });
 
-    it('never clobbers a meal with a pending local edit (synced=0)', () => {
-      // B made its own intake correction not yet pushed — push-before-pull
-      // sends it up first; the older remote copy must not overwrite it.
-      expect(shouldWriteRemoteRow({ id: 'm' }, { synced: 0 }, 'refresh-if-synced')).toBe(false);
+    it('cold-start meal with a backfilled updated_at writes (no NULL special-casing)', () => {
+      // Migration 016 backfills updated_at = created_at, so a hydrated meal always
+      // has a usable timestamp — no undated-meal branch needed.
+      expect(shouldWriteRemoteRow({ id: 'm', updated_at: T0 }, undefined, 'lww')).toBe(true);
     });
+  });
 
-    it('treats a missing synced flag as unsynced (conservative — do not clobber)', () => {
-      expect(shouldWriteRemoteRow({ id: 'm' }, { synced: null }, 'refresh-if-synced')).toBe(false);
-      expect(shouldWriteRemoteRow({ id: 'm' }, {}, 'refresh-if-synced')).toBe(false);
+  describe('server-time LWW failure mode (FR-5, documented bound — AC-9)', () => {
+    it('the later server-arrival wins regardless of wall-clock authorship', () => {
+      // Two offline edits to the SAME row: A authored later by wall clock (T1) but
+      // B's push reached the server last, so the trigger stamped B's row with the
+      // newest updated_at (Tserver > T1). From a third device's view, LWW takes
+      // B — the named, bounded surprise. Content is never merged; one whole edit
+      // supersedes the other. This is the accepted v1 behavior, not a bug.
+      const Tserver = '2026-06-01T11:00:00.001Z'; // server NOW, just after T1
+      const remoteB_lastToLand = { id: 'r', updated_at: Tserver };
+      const localA_authoredLater = { updated_at: T1 };
+      expect(shouldWriteRemoteRow(remoteB_lastToLand, localA_authoredLater, 'lww')).toBe(true);
     });
   });
 
@@ -141,7 +154,7 @@ describe('reconcileBatch', () => {
     expect(skipped.map((r) => r.id)).toEqual(['older', 'same']);
   });
 
-  it('under insert-if-absent, writes only ids not already local (FR-6 meals)', () => {
+  it('under insert-if-absent, writes only ids not already local (attachments)', () => {
     const remote = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
     const localById = new Map<string, LocalRowMeta>([['b', {}]]);
     const { toWrite, skipped } = reconcileBatch(remote, localById, 'insert-if-absent');

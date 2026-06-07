@@ -41,6 +41,7 @@ export async function initDb(): Promise<void> {
       is_full_portion INTEGER,
       notes           TEXT,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
       synced          INTEGER NOT NULL DEFAULT 0
     );
 
@@ -141,6 +142,27 @@ export async function initDb(): Promise<void> {
     await database.execAsync(`ALTER TABLE meals ADD COLUMN intake_rating TEXT`);
   } catch {
     // Column already exists — safe to ignore
+  }
+
+  // updated_at — B-055 / B-054 Phase 2. Gives meals a real last-write-wins
+  // timestamp so cross-device meal edits reconcile like events instead of the
+  // Phase-1 synced-flag proxy. SQLite can't ADD COLUMN with a non-constant
+  // default (datetime('now')), so add it nullable then backfill from created_at
+  // (the honest last-change time for a pre-migration row) — no NULLs to
+  // special-case in the reconcile. Mirrors migration 016 on the server.
+  try {
+    await database.execAsync(`ALTER TABLE meals ADD COLUMN updated_at TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  // Backfill in its own try so it still runs if the ADD COLUMN above already
+  // happened on a prior launch (a single try/catch would let a transient failure
+  // between ADD and UPDATE leave pre-migration rows NULL forever — SQLite gives
+  // no DDL+DML transaction guarantee). Idempotent: only touches NULL rows.
+  try {
+    await database.execAsync(`UPDATE meals SET updated_at = created_at WHERE updated_at IS NULL`);
+  } catch {
+    // No updated_at column yet (ADD failed for a real reason) — nothing to backfill.
   }
 
   // occurred_at_confidence + window bounds — B-010 event timestamp uncertainty.
@@ -374,10 +396,19 @@ export async function getEventTimeFields(eventId: string): Promise<{
 
 export async function updateMealFood(eventId: string, foodItemId: string): Promise<void> {
   const db = getDb();
-  await db.runAsync(
-    'UPDATE meals SET food_item_id = ?, synced = 0 WHERE event_id = ?',
-    [foodItemId, eventId],
+  // Stamp updated_at (B-055) so a local meal edit carries a fresh LWW timestamp
+  // and isn't clobbered by an older remote copy on the next hydrate. ISO/UTC so
+  // parseTs compares it on the same clock as server TIMESTAMPTZ values.
+  // Throw on a zero-row UPDATE for the same reason updateMealIntake does: SQLite
+  // silently affects zero rows when no meal exists for the event, which would let
+  // the caller (app/edit-event.tsx) claim success while persisting nothing.
+  const res = await db.runAsync(
+    'UPDATE meals SET food_item_id = ?, updated_at = ?, synced = 0 WHERE event_id = ?',
+    [foodItemId, new Date().toISOString(), eventId],
   );
+  if (res.changes === 0) {
+    throw new Error(`No meal row for event ${eventId}`);
+  }
 }
 
 // WSAVA 5-point intake rating. Pass `null` to clear. Marks the meal
@@ -392,9 +423,12 @@ export async function updateMealIntake(
   rating: 'refused' | 'picked' | 'some' | 'most' | 'all' | null,
 ): Promise<void> {
   const db = getDb();
+  // Stamp updated_at (B-055) — see updateMealFood. intake_rating is the
+  // clinically load-bearing field, so a cross-device correction must win by
+  // real LWW, not the synced-flag proxy.
   const res = await db.runAsync(
-    'UPDATE meals SET intake_rating = ?, synced = 0 WHERE event_id = ?',
-    [rating, eventId],
+    'UPDATE meals SET intake_rating = ?, updated_at = ?, synced = 0 WHERE event_id = ?',
+    [rating, new Date().toISOString(), eventId],
   );
   if (res.changes === 0) {
     throw new Error(`No meal row for event ${eventId}`);

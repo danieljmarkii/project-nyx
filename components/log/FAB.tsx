@@ -85,8 +85,8 @@ export function FAB() {
         [eventId, activePet.id, 'meal', now, 'manual', 'now', now, now],
       );
       await db.runAsync(
-        'INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, synced) VALUES (?, ?, ?, ?, ?, ?, 0)',
-        [mealId, eventId, activePet.id, food.id, 'unknown', now],
+        'INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, updated_at, synced) VALUES (?, ?, ?, ?, ?, ?, ?, 0)',
+        [mealId, eventId, activePet.id, food.id, 'unknown', now, now],
       );
       await db.runAsync(
         'UPDATE food_items_cache SET last_used_at = ? WHERE id = ?',

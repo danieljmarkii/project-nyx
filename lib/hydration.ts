@@ -6,22 +6,37 @@
 // (mirrors the phrasing.ts / index.ts split in generate-signal and the
 // deriveOccurredAt helper in lib/utils).
 //
-// Phase 1 is deliberately a NAIVE guard — insert-if-absent, else replace only
-// when the remote row is strictly newer by updated_at. It is NOT the
-// trigger-correct last-write-wins: the set_updated_at server trigger rewrites
-// updated_at = NOW() on every server write, so server-arrival order is not true
-// authorship order (docs/multi-device-sync-requirements.md §5.2, FR-5). That
-// correctness work is Phase 2. This guard's only job is to never clobber an
-// obviously-newer local row (e.g. an offline edit not yet pushed).
+// ── Conflict model (Phase 2, FR-4/FR-5 — the ACCEPTED v1 design, not a stopgap)
+// Reconciliation is last-write-wins on `updated_at`: a remote row overwrites the
+// local row only when it is STRICTLY newer, so a locally-newer edit (e.g. an
+// offline change not yet pushed) is never clobbered by an older remote copy.
+// As of migration 016 (B-055) meals carry `updated_at` too, so events, meals,
+// and vet_visits all reconcile the same way; the Phase-1 `refresh-if-synced`
+// synced-flag proxy for meals is retired.
+//
+// ⚠️ Named failure mode (PM decision, requirements §5.2 FR-5 = server-time LWW).
+// The schema's `set_updated_at` trigger stamps `updated_at = NOW()` on every
+// server write, including the DO UPDATE branch of a client upsert. So "last
+// write" means "last push to REACH THE SERVER", not true authorship time. The
+// bounded surprise: if two devices each edit the SAME row while offline and then
+// reconnect, push-before-pull sends both edits up and the one whose push lands
+// last at the server wins — regardless of which edit was actually made later by
+// wall clock. For two trusted caregivers who rarely edit the same row in the
+// same window this is acceptable for v1; the row's content is never merged or
+// corrupted, one whole edit simply supersedes the other. The true-authorship fix
+// (a client-authored timestamp the trigger ignores) is deferred to if/when
+// linked accounts land. This comment IS the §5.2 requirement that the failure
+// mode be named rather than left implicit (the useSync.ts:25 debt, paid down).
+//
+// Note: push-before-pull (FR-2) is the real protector of an UNPUSHED local edit
+// — it ships up first, so by the time the pull runs the server row already is
+// that edit. LWW handles everything already converged. The two are complementary.
 
-export type ReconcileStrategy = 'lww' | 'insert-if-absent' | 'refresh-if-synced';
+export type ReconcileStrategy = 'lww' | 'insert-if-absent';
 
 export interface LocalRowMeta {
-  // null/undefined for tables without an updated_at column (meals, attachments).
+  // null/undefined for tables without an updated_at column (attachments).
   updated_at?: string | null;
-  // The local synced flag (0 = pending local write, 1 = converged with server).
-  // Only consulted by 'refresh-if-synced'.
-  synced?: number | null;
 }
 
 export interface RemoteRow {
@@ -31,17 +46,18 @@ export interface RemoteRow {
 
 // Parse a timestamp to epoch millis for LWW comparison, returning null if
 // unusable. Handles a format trap: SQLite's `datetime('now')` default (used by
-// the events/vet_visits `updated_at` DEFAULT, and by every insert that doesn't
-// set updated_at explicitly — e.g. the FAB quick-log) writes
-// "YYYY-MM-DD HH:MM:SS" — UTC, space-separated, with NO timezone marker.
-// `Date.parse` treats that bare form as LOCAL time, while ISO-8601 values
-// (new Date().toISOString() on the client, TIMESTAMPTZ from Postgres) carry a
-// Z/offset and parse as UTC. A row created on this device and never re-hydrated
-// keeps the space form, so on a device whose timezone isn't UTC its own
-// updated_at parses hours off — and another device's edit/delete to that row is
-// wrongly judged "older" and skipped (the cross-device delete-not-propagating
-// bug). Normalize the space form to explicit UTC before parsing so both sides
-// compare on the same clock.
+// the events/vet_visits/meals `updated_at` DEFAULT, and by any insert that
+// doesn't set updated_at explicitly) writes "YYYY-MM-DD HH:MM:SS" — UTC,
+// space-separated, with NO timezone marker. `Date.parse` treats that bare form
+// as LOCAL time, while ISO-8601 values (new Date().toISOString() on the client,
+// TIMESTAMPTZ from Postgres) carry a Z/offset and parse as UTC. A row created on
+// this device and never re-hydrated keeps the space form, so on a device whose
+// timezone isn't UTC its own updated_at parses hours off — and another device's
+// edit/delete to that row is wrongly judged "older" and skipped (the cross-device
+// delete-not-propagating bug). Normalize the space form to explicit UTC before
+// parsing so both sides compare on the same clock. (The app's writers now all use
+// toISOString(); this guard defends legacy/default rows. Two narrower offset-less
+// forms are out of scope — see B-056.)
 export function parseTs(ts: string | null | undefined): number | null {
   if (!ts) return null;
   const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(ts)
@@ -66,23 +82,11 @@ export function shouldWriteRemoteRow(
   // local-only local_uri column (the on-device file path).
   if (strategy === 'insert-if-absent') return false;
 
-  // Meals (FR-6): no updated_at column exists (server or local), so we can't do
-  // updated_at LWW — but meals ARE mutated in place by updateMealFood /
-  // updateMealIntake (the clinically load-bearing WSAVA intake_rating). Pure
-  // insert-if-absent would silently drop a cross-device meal correction and
-  // leave device B reassuring on a stale intake reading — a violation of the
-  // intake-safety invariant. Without a timestamp the safe proxy is the synced
-  // flag: refresh a converged (synced=1) local meal from the server so another
-  // device's correction propagates, but never clobber a row with a pending
-  // local edit (synced=0) — push-before-pull sends that up first. (Two offline
-  // edits to the same meal still resolve by server arrival; that's the same
-  // bounded Phase-2 limit as events. Principled fix = a meals.updated_at
-  // migration, see backlog.)
-  if (strategy === 'refresh-if-synced') {
-    return (local.synced ?? 0) === 1;
-  }
-
-  // LWW (naive Phase 1): replace only when the remote row is strictly newer.
+  // LWW (events, meals, vet_visits): replace only when the remote row is
+  // strictly newer. See the header for the server-time-LWW failure mode. Note
+  // the I/O shell ALSO applies a `WHERE <table>.synced = 1` SQL backstop on the
+  // DO UPDATE so an unpushed local edit can't be overwritten even if this filter
+  // is ever bypassed — defense-in-depth, not the primary guard.
   const remoteT = parseTs(remote.updated_at);
   const localT = parseTs(local.updated_at);
   // An undated remote row can't be shown to be newer → don't clobber.

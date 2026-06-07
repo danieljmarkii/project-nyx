@@ -403,9 +403,9 @@ export default function FoodCaptureScreen() {
       );
       const mealId = uuid();
       await db.runAsync(
-        `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, synced)
-         VALUES (?, ?, ?, ?, 'unknown', ?, 0)`,
-        [mealId, eventId, activePet.id, foodId, now],
+        `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, 'unknown', ?, ?, 0)`,
+        [mealId, eventId, activePet.id, foodId, now, now],
       );
       await db.runAsync(
         `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
