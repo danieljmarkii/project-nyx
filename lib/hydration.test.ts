@@ -2,6 +2,10 @@ import {
   shouldWriteRemoteRow,
   reconcileBatch,
   parseTs,
+  advanceWatermark,
+  watermarkQueryFloor,
+  mealsToDeleteByAbsence,
+  HYDRATE_WATERMARK_OVERLAP_MS,
   LOCAL_WIPE_TABLES,
   type LocalRowMeta,
 } from './hydration';
@@ -169,6 +173,130 @@ describe('reconcileBatch', () => {
   });
 });
 
+describe('advanceWatermark (FR-3 incremental high-water mark)', () => {
+  it('returns the max timestamp of the batch on a cold start (null prior)', () => {
+    expect(advanceWatermark([T0, T1], null)).toBe(T1);
+  });
+
+  it('advances past the prior watermark when the batch is newer', () => {
+    expect(advanceWatermark([T1], T0)).toBe(T1);
+  });
+
+  it('never regresses below the prior watermark (older batch keeps prior)', () => {
+    // An incremental pull at gte(T1) could still surface a row whose updated_at
+    // equals/precedes T1 (boundary re-pull); it must not drag the mark backward.
+    expect(advanceWatermark([T0], T1)).toBe(T1);
+  });
+
+  it('keeps the prior watermark for an empty batch (no rewind on an empty pull)', () => {
+    expect(advanceWatermark([], T1)).toBe(T1);
+    expect(advanceWatermark([], null)).toBeNull();
+  });
+
+  it('ignores unparseable / null timestamps when computing the max', () => {
+    expect(advanceWatermark([null, 'not-a-date', T0, undefined], null)).toBe(T0);
+  });
+
+  it('compares across timestamp formats on a single clock (SQLite-default vs ISO)', () => {
+    // A row carrying the SQLite space form must not be judged newer than a later
+    // ISO row just because of the parse-as-local trap parseTs fixes.
+    const sqliteForm = '2026-06-01 10:30:00'; // == 10:30Z, between T0 (10:00Z) and T1 (11:00Z)
+    expect(advanceWatermark([T0, sqliteForm], null)).toBe(sqliteForm);
+    expect(advanceWatermark([sqliteForm, T1], null)).toBe(T1);
+  });
+
+  it('boundary: re-running a gte(watermark) pull never skips a row at exactly the watermark', () => {
+    // The off-by-one the requirements call out. Model the server-side
+    // .gte(updated_at, watermark) filter as an inclusive predicate and prove the
+    // round-trip is lossless: after advancing to the batch max, a *new* row
+    // stamped at exactly that max (same-microsecond commit, or a row that landed
+    // just after the prior snapshot) is still returned by the next pull. A strict
+    // (>) bound would drop it silently.
+    const pull1 = [{ id: 'a', updated_at: T0 }, { id: 'b', updated_at: T1 }];
+    const wm = advanceWatermark(pull1.map((r) => r.updated_at), null);
+    expect(wm).toBe(T1);
+
+    const serverNow = [
+      { id: 'a', updated_at: T0 },
+      { id: 'b', updated_at: T1 },
+      { id: 'c', updated_at: T1 }, // arrived at exactly the watermark, after pull1
+    ];
+    const inclusivePull = serverNow.filter((r) => {
+      const t = parseTs(r.updated_at);
+      const w = parseTs(wm);
+      return t !== null && w !== null && t >= w; // mirrors PostgREST .gte()
+    });
+    expect(inclusivePull.map((r) => r.id)).toEqual(['b', 'c']);
+
+    // And the boundary re-pull doesn't push the mark forward spuriously.
+    expect(advanceWatermark(inclusivePull.map((r) => r.updated_at), wm)).toBe(T1);
+  });
+});
+
+describe('watermarkQueryFloor (FR-3 commit-skew safety overlap)', () => {
+  it('returns null for a cold start (no watermark → full pull)', () => {
+    expect(watermarkQueryFloor(null)).toBeNull();
+  });
+
+  it('pulls the lower bound back by the overlap so a late-committing row is re-pulled', () => {
+    const floor = watermarkQueryFloor(T1);
+    expect(parseTs(floor)).toBe(parseTs(T1)! - HYDRATE_WATERMARK_OVERLAP_MS);
+  });
+
+  it('honors a custom overlap', () => {
+    const floor = watermarkQueryFloor(T1, 1000);
+    expect(parseTs(floor)).toBe(parseTs(T1)! - 1000);
+  });
+
+  it('falls back to a full pull (null) on an unparseable stored watermark', () => {
+    // Defensive: never pass garbage to PostgREST .gte(); a corrupt mark re-pulls all.
+    expect(watermarkQueryFloor('not-a-date')).toBeNull();
+  });
+
+  it('floor stays below the stored watermark so the boundary stays inclusive', () => {
+    // The stored watermark advances to the true max; the query floor is strictly
+    // below it, so the next pull always re-covers the boundary plus the skew window.
+    const floor = watermarkQueryFloor(T1);
+    expect(parseTs(floor)!).toBeLessThan(parseTs(T1)!);
+  });
+});
+
+describe('mealsToDeleteByAbsence (FR-8 hard-deleted-meal reconciliation)', () => {
+  it('deletes a synced local meal the server no longer has (the ghost)', () => {
+    const local = [{ id: 'ghost', synced: 1 }, { id: 'keep', synced: 1 }];
+    expect(mealsToDeleteByAbsence(new Set(['keep']), local)).toEqual(['ghost']);
+  });
+
+  it('NEVER deletes an unsynced local meal absent from the server (not-yet-pushed write)', () => {
+    // The load-bearing guard: a synced=0 meal legitimately isn't on the server
+    // yet; absence-reconciling it would destroy a fresh local log.
+    const local = [{ id: 'fresh', synced: 0 }];
+    expect(mealsToDeleteByAbsence(new Set<string>(), local)).toEqual([]);
+  });
+
+  it('keeps synced meals the server still has', () => {
+    const local = [{ id: 'a', synced: 1 }, { id: 'b', synced: 1 }];
+    expect(mealsToDeleteByAbsence(new Set(['a', 'b']), local)).toEqual([]);
+  });
+
+  it('reconciles a synced ghost away even when the server set is empty', () => {
+    // An empty server set is a valid input (account has no meals); a leftover
+    // synced row must be the food-cascade hard-delete and gets dropped. (The I/O
+    // shell only calls this on a non-null pull, so [] means "really none".)
+    const local = [{ id: 'ghost', synced: 1 }, { id: 'fresh', synced: 0 }];
+    expect(mealsToDeleteByAbsence(new Set<string>(), local)).toEqual(['ghost']);
+  });
+
+  it('accepts an array of ids as well as a Set', () => {
+    const local = [{ id: 'a', synced: 1 }, { id: 'b', synced: 1 }];
+    expect(mealsToDeleteByAbsence(['a'], local)).toEqual(['b']);
+  });
+
+  it('handles an empty local set', () => {
+    expect(mealsToDeleteByAbsence(new Set(['x']), [])).toEqual([]);
+  });
+});
+
 describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
   const order = (t: string) => LOCAL_WIPE_TABLES.indexOf(t as never);
 
@@ -178,16 +306,23 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
     expect(order('vet_visit_attachments')).toBeLessThan(order('vet_visits'));
   });
 
-  it('covers exactly the account-scoped hydration target set plus the food cache', () => {
+  it('covers exactly the account-scoped hydration target set plus the food cache and watermarks', () => {
     expect([...LOCAL_WIPE_TABLES].sort()).toEqual(
       [
         'event_attachments',
         'events',
         'food_items_cache',
         'meals',
+        'sync_watermarks',
         'vet_visit_attachments',
         'vet_visits',
       ].sort(),
     );
+  });
+
+  it('includes sync_watermarks so an account switch cold-starts (FR-3 × FR-9)', () => {
+    // A surviving watermark would make the next account's first login an
+    // incremental pull from the prior account's mark, skipping its older history.
+    expect(LOCAL_WIPE_TABLES).toContain('sync_watermarks');
   });
 });

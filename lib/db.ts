@@ -105,6 +105,18 @@ export async function initDb(): Promise<void> {
       synced          INTEGER NOT NULL DEFAULT 0,
       created_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- B-054 Phase 3 / FR-3 — incremental hydration high-water marks. One row per
+    -- hydrated table; watermark is the max server change-timestamp pulled so far
+    -- (updated_at for the LWW tables, created_at for the insert-only attachment
+    -- tables). The next pull asks Supabase only for rows >= this value instead of
+    -- re-downloading the whole history. Wiped on sign-out (LOCAL_WIPE_TABLES) so a
+    -- new account on the same device cold-starts correctly. Local-only bookkeeping;
+    -- never synced to Supabase.
+    CREATE TABLE IF NOT EXISTS sync_watermarks (
+      table_name    TEXT PRIMARY KEY,
+      watermark     TEXT NOT NULL
+    );
   `);
 
   // Add photo_path to food_items_cache if upgrading from earlier schema
@@ -251,6 +263,29 @@ export async function isLocalDataEmpty(): Promise<boolean> {
     `SELECT (SELECT COUNT(*) FROM events) + (SELECT COUNT(*) FROM vet_visits) AS total`,
   );
   return (row?.total ?? 0) === 0;
+}
+
+// FR-3 — read/write the per-table incremental-hydration watermark. getWatermark
+// returns null when the table has never been pulled (cold start → full pull) or
+// after a sign-out wipe. setWatermark upserts; the caller persists it only after
+// the table's rows have been written, so a mid-write failure leaves the old
+// watermark and the next cycle safely re-pulls from there.
+export async function getWatermark(table: string): Promise<string | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ watermark: string }>(
+    'SELECT watermark FROM sync_watermarks WHERE table_name = ?',
+    [table],
+  );
+  return row?.watermark ?? null;
+}
+
+export async function setWatermark(table: string, value: string): Promise<void> {
+  const db = getDb();
+  await db.runAsync(
+    `INSERT INTO sync_watermarks (table_name, watermark) VALUES (?, ?)
+     ON CONFLICT(table_name) DO UPDATE SET watermark = excluded.watermark`,
+    [table, value],
+  );
 }
 
 export interface TimelineRow {
