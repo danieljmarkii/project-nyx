@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { usePetStore } from '../store/petStore';
+import { useSyncStore } from '../store/syncStore';
 
 export type TrendMode = 'symptom' | 'feeding' | 'compliance';
 
@@ -31,6 +32,8 @@ const SYMPTOM_TYPES = new Set(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_rea
 
 export function useTrend(): { data: TrendData | null; isLoading: boolean } {
   const { activePet } = usePetStore();
+  // B-054 §6 — recompute the trend after a sync cycle hydrates new events.
+  const hydrationTick = useSyncStore((s) => s.hydrationTick);
   const [data, setData] = useState<TrendData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -152,7 +155,7 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
 
     load();
     return () => { cancelled = true; };
-  }, [activePet?.id]);
+  }, [activePet?.id, hydrationTick]);
 
   return { data, isLoading };
 }
