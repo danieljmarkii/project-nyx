@@ -11,7 +11,6 @@ import { EventIcon } from '../event/EventIcon';
 import { useAttachmentStore } from '../../store/attachmentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
-import { useToastStore } from '../../store/toastStore';
 import { useMomentStore } from '../../store/momentStore';
 import { getDb } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
@@ -30,8 +29,8 @@ export function FAB() {
   const { setPendingAttachment } = useAttachmentStore();
   const { prependEvent } = useEventStore();
   const { activePet } = usePetStore();
-  const showToast = useToastStore((s) => s.show);
   const showMoment = useMomentStore((s) => s.show);
+  const showMealMoment = useMomentStore((s) => s.showMeal);
 
   const [open, setOpen] = useState(false);
   const [recentFoods, setRecentFoods] = useState<RecentFood[]>([]);
@@ -107,13 +106,15 @@ export function FAB() {
         food_type: foodType,
       });
       closeMenu();
-      // Post-log toast offers a one-tap path back to the time picker for
-      // owners backfilling a meal given before they reached their phone,
-      // plus the WSAVA intake chip row for food_type 'meal' and 'treat'
-      // (B-014; treats added 2026-05-23). Every meal-entry path must route
-      // through this toast — if a non-picker meal flow is added later,
-      // mirror this call.
-      showToast({
+      // Meal completion card: the warmed bottom-card presentation of the
+      // completion moment (B-064). Carries the gold beat + "Logged {brand}", a
+      // one-tap path back to the time picker for owners backfilling a meal fed
+      // before they reached their phone, AND the WSAVA intake chip row for
+      // food_type 'meal' and 'treat' (B-014; treats added 2026-05-23). Every
+      // meal-entry path must route through showMeal — if a non-picker meal flow
+      // is added later, mirror this call (otherwise intake capture vanishes for
+      // that path). Replaces the retired standalone post-log toast.
+      showMealMoment({
         eventId,
         occurredAt: occurredAtIso,
         foodType,

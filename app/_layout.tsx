@@ -10,7 +10,7 @@ import { usePetStore } from '../store/petStore';
 import { initDb, clearLocalData } from '../lib/db';
 import { notifySignedOut } from '../lib/sync';
 import { useSync } from '../hooks/useSync';
-import { Toast } from '../components/ui/Toast';
+import { MealCompletionCard } from '../components/ui/MealCompletionCard';
 import { CompletionMoment } from '../components/ui/CompletionMoment';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
 
@@ -96,7 +96,7 @@ export default function RootLayout() {
         <Stack.Screen name="event/[id]" />
         <Stack.Screen name="report" />
       </Stack>
-      <Toast />
+      <MealCompletionCard />
       <CompletionMoment />
       <ColdStartOverlay />
     </>

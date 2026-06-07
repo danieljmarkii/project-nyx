@@ -17,7 +17,6 @@ import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
-import { useToastStore } from '../store/toastStore';
 import { useMomentStore } from '../store/momentStore';
 import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
@@ -53,8 +52,8 @@ export default function LogModal() {
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
-  const showToast = useToastStore((s) => s.show);
   const showMoment = useMomentStore((s) => s.show);
+  const showMealMoment = useMomentStore((s) => s.showMeal);
   const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
 
   const [step, setStep] = useState<Step>('type');
@@ -178,7 +177,7 @@ export default function LogModal() {
   // One-tap log path from the new picker — bypasses state so it works
   // even before `selectedFoodId` has propagated through React. Provenance
   // is forced to 'now' (with a fresh new Date()) because the user never
-  // saw the time picker on this path; the post-log toast offers the
+  // saw the time picker on this path; the meal completion card offers the
   // "Change time" escape hatch. Exception: if a photo with EXIF was
   // attached before reaching the picker, preserve that provenance and
   // the EXIF-derived time — Dr. Chen relies on EXIF-stamped meals for
@@ -204,21 +203,22 @@ export default function LogModal() {
         source: usingExif ? 'exif' : 'now',
       },
     });
-    // Defer the toast past the modal dismiss so it appears at the root layer
-    // (not occluded by the still-presented modal on iOS) where the user can
-    // see and act on it. Meals deliberately skip the completion moment — the
-    // toast IS their confirmation surface and carries the intake follow-up, so
-    // firing the moment too would double the surface (B-064 unifies the two).
-    // The WSAVA intake chip row renders in the toast for food_type 'meal' and
-    // 'treat' (B-014; treats added 2026-05-23). NOTE: every meal-entry path
-    // must route through this toast — if a non-picker meal flow is ever added
-    // (e.g. a manual quick-add), it must fire showToast too, or the intake
-    // capture surface vanishes for that path.
+    // Defer the meal card past the modal dismiss so it appears at the root layer
+    // (not occluded by the still-presented modal on iOS) where the user can see
+    // and act on it. Meals fire the meal presentation of the completion moment —
+    // a single warmed bottom card (gold beat + "Logged {brand}") that ALSO
+    // carries the intake follow-up + "Change time" (B-064 unified what used to be
+    // a separate post-log toast). They deliberately skip the full-screen beat;
+    // firing both would double the surface. The WSAVA intake chip row renders for
+    // food_type 'meal' and 'treat' (B-014; treats added 2026-05-23). NOTE: every
+    // meal-entry path must route through showMeal — if a non-picker meal flow is
+    // ever added (e.g. a manual quick-add), it must fire showMeal too, or the
+    // intake capture surface vanishes for that path.
     if (result) {
       const foodType = food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
         ? food.food_type
         : null;
-      showToast(
+      showMealMoment(
         {
           eventId: result.eventId,
           occurredAt: result.occurredAt,
@@ -353,10 +353,11 @@ export default function LogModal() {
     }
 
     // Dismiss the modal, then play the earned completion moment at the root
-    // layer. Meals are the exception: their confirmation lives in the post-log
-    // toast (handlePickFood), which carries the intake follow-up — the moment
-    // is terminal/non-interactive, so firing both would double the surface
-    // (B-064 unifies meals into a single warm surface).
+    // layer. Meals are the exception: their confirmation is the meal completion
+    // card (handlePickFood) — the warmed bottom-card presentation that carries
+    // the intake follow-up. The full-screen beat here is terminal/non-interactive,
+    // so firing both would double the surface (B-064 unifies meals into a single
+    // warm surface).
     router.back();
     // Non-meal events still push + regen here; insertMeal already did both for
     // the meal branch (§2 freshness — a new event may change the cached insight
