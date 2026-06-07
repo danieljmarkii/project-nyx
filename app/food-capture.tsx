@@ -144,10 +144,17 @@ export default function FoodCaptureScreen() {
     return () => clearTimeout(t);
   }, [step]);
 
-  // Asks the user where the photo comes from — camera or library. Returning
-  // null means the user cancelled at any point in the chain.
-  async function pickPhoto(slot: 'front' | 'ingredients' | 'barcode'): Promise<CapturedPhoto | null> {
-    const source = await new Promise<'camera' | 'library' | null>((resolve) => {
+  // Captures a photo for a slot. When `presetSource` is supplied (the intro
+  // screen, where Take photo / Choose from library are explicit on-screen
+  // buttons) we go straight to that source — no action sheet. When it's
+  // omitted (the review screen's optional ingredients/barcode slots) we fall
+  // back to the source chooser so those single CTAs still offer both paths.
+  // Returning null means the user cancelled at any point in the chain.
+  async function pickPhoto(
+    slot: 'front' | 'ingredients' | 'barcode',
+    presetSource?: 'camera' | 'library',
+  ): Promise<CapturedPhoto | null> {
+    const source = presetSource ?? await new Promise<'camera' | 'library' | null>((resolve) => {
       Alert.alert(
         'Add photo',
         undefined,
@@ -213,8 +220,8 @@ export default function FoodCaptureScreen() {
     };
   }
 
-  async function handleSnapFront() {
-    const photo = await pickPhoto('front');
+  async function handleSnapFront(source: 'camera' | 'library') {
+    const photo = await pickPhoto('front', source);
     if (!photo) return;
     setFrontPhoto(photo);
     setStep('review');
@@ -455,12 +462,16 @@ export default function FoodCaptureScreen() {
         <ScrollView contentContainerStyle={styles.introScroll}>
           <Text style={styles.introHeading}>Add the front of the package</Text>
           <Text style={styles.introBody}>
-            Take a photo or pick one from your library. The label and barcode
-            are optional but make the entry more useful later.
+            A clear shot of the front lets us read the label. The ingredients
+            and barcode are optional but make the entry more useful later.
           </Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleSnapFront} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => handleSnapFront('camera')} activeOpacity={0.85}>
             <Text style={styles.primaryBtnIcon}>📷</Text>
-            <Text style={styles.primaryBtnText}>Add front photo</Text>
+            <Text style={styles.primaryBtnText}>Take a photo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.outlineBtn} onPress={() => handleSnapFront('library')} activeOpacity={0.85}>
+            <Text style={styles.outlineBtnIcon}>🖼</Text>
+            <Text style={styles.outlineBtnText}>Choose from library</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} hitSlop={8}>
             <Text style={styles.linkBtnText}>Enter manually</Text>
@@ -845,6 +856,30 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: '#fff',
+  },
+  // Outline button — the on-screen "Choose from library" affordance. Reads as
+  // a real button (visible border) so the library path isn't hidden, while
+  // sitting clearly below the dark "Take a photo" primary. Distinct from the
+  // plain-text `secondaryBtn` used for Skip / Edit elsewhere on this screen.
+  outlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.space1,
+    backgroundColor: theme.colorSurface,
+    borderWidth: 1,
+    borderColor: theme.colorBorderStrong,
+    borderRadius: theme.radiusMedium,
+    paddingVertical: theme.space2,
+    minHeight: 52,
+  },
+  outlineBtnIcon: {
+    fontSize: 18,
+  },
+  outlineBtnText: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
   secondaryBtn: {
     alignItems: 'center',
