@@ -313,12 +313,20 @@ export interface DetectionConfig {
     minEpisodesEitherWindow: number
     /**
      * Logging-eligibility floor: each window must contain at least this many distinct
-     * days with ANY logged event. This is the load-bearing guard that stops a logging
-     * GAP from being read as "improving" — the same lesson as detector ②'s coverage
-     * floor and detector ①'s control-window guard. A pet who simply stopped logging
-     * last week must never be told their symptoms "fell".
+     * days with ANY logged event. A coarse "was the app used at all" floor — the
+     * symptom-day spread guard in detectReflections is what actually protects against
+     * a symptom-logging gap reading as "improving".
      */
     minLoggingDaysPerWindow: number
+    /**
+     * Global worsening gate floor (adversarial review fix): the whole reflection layer
+     * stays silent if ANY tracked symptom has at least this many current-window episodes
+     * AND is rising (more episodes OR more symptom-days than the prior window). Set BELOW
+     * minEpisodesEitherWindow on purpose — we are more eager to stay silent on a worsening
+     * pet than to make a reflection claim (sensitivity over specificity for worsening,
+     * mirroring detector ②). A lone single log (count 1) never blanks the surface.
+     */
+    worseningMinEpisodes: number
   }
 }
 
@@ -365,6 +373,7 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     windowDays: 7,
     minEpisodesEitherWindow: 3,
     minLoggingDaysPerWindow: 3,
+    worseningMinEpisodes: 2,
   },
 }
 
@@ -838,12 +847,12 @@ export function detectReflections(
   const currentStart = nowMs - windowMs
   const priorStart = nowMs - 2 * windowMs
 
-  // Logging-eligibility (guardrail 3): distinct UTC days carrying ANY event the
-  // detector can see (symptom or meal) in each window. A window that wasn't
-  // actively logged cannot anchor an honest trend. Using only the events in
-  // DetectionInput means an owner who logs *other* event types we don't receive
-  // could be under-counted here — that errs toward SILENCE (over-suppression),
-  // never toward a false "improving" claim, which is the safe direction.
+  // Logging-eligibility floor: distinct UTC days carrying ANY event the detector
+  // can see (symptom or meal) in each window. A window that wasn't actively logged
+  // at all cannot anchor an honest trend. NOTE: this is a coarse "was the app used"
+  // floor only — it does NOT by itself prove symptoms were being tracked (an owner
+  // can log meals but not symptoms). The symptom-DAY spread guard below is what
+  // actually protects against a symptom-logging gap reading as flat/improving.
   const allEventMs = [
     ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
     ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
@@ -859,32 +868,74 @@ export function detectReflections(
   if (loggingDays(currentStart, nowMs) < cfg.minLoggingDaysPerWindow) return []
   if (loggingDays(priorStart, currentStart) < cfg.minLoggingDaysPerWindow) return []
 
-  // Per symptom type: episode counts in each window (re-logs collapsed, consistent
-  // with detector ①'s episode definition — one bout logged five times is one count).
-  const candidates: ReflectionFinding[] = []
+  // Per symptom type: episode counts AND distinct symptom-DAYS in each window
+  // (re-logs collapsed, consistent with detector ①). Tracking symptom-days as well
+  // as episodes is what closes the meal-padding gap (adversarial review, B-051): a
+  // prior week with one acute multi-bout day looks like the low-activity period it
+  // was (1 symptom-day), so a spread-out current week reads as an INCREASE in days,
+  // not a flat "same as last week".
+  interface SymptomStat {
+    symptomType: SymptomType
+    currentCount: number
+    priorCount: number
+    currentDays: number
+    priorDays: number
+  }
+  const stats: SymptomStat[] = []
   for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
     const msList = input.symptomEvents
       .filter((s) => s.type === symptomType)
       .map((s) => Date.parse(s.occurredAt))
       .filter((ms) => Number.isFinite(ms))
     const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours)
-    const current = onsets.filter((ms) => ms >= currentStart && ms < nowMs).length
-    const prior = onsets.filter((ms) => ms >= priorStart && ms < currentStart).length
-
-    if (current < 1) continue // guardrail 2 — never a zero-symptom (absence) reflection
-    if (current > prior) continue // guardrail 1 — rising trend suppressed (yields to safety lane)
-    if (Math.max(current, prior) < cfg.minEpisodesEitherWindow) continue // too thin to state a trend
-
-    candidates.push({
-      type: 'reflection',
-      priorityClass: 'insight',
+    const cur = onsets.filter((ms) => ms >= currentStart && ms < nowMs)
+    const pri = onsets.filter((ms) => ms >= priorStart && ms < currentStart)
+    stats.push({
       symptomType,
-      currentCount: current,
-      priorCount: prior,
-      direction: current === prior ? 'flat' : 'improving',
-      windowDays: cfg.windowDays,
+      currentCount: cur.length,
+      priorCount: pri.length,
+      currentDays: new Set(cur.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
+      priorDays: new Set(pri.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
     })
   }
+
+  // GLOBAL worsening gate (the load-bearing clinical fix — adversarial review,
+  // B-051 / Dr. Chen §7.1 amendment #5). A reflection must NEVER read as a calm
+  // "improving" card while the pet is worsening on ANY axis — the per-symptom
+  // direction guard alone is defeated across symptoms (rising vomit + falling itch
+  // would surface a soothing "itch is down" card while the rising vomit is dropped).
+  // So if ANY tracked symptom is MATERIALLY worsening — more episodes OR spread
+  // across more days than last period — the WHOLE reflection layer stays silent and
+  // yields to the safety lane (②/①) + per-incident analysis. The materiality floor
+  // is deliberately LOWER than the render floor (sensitivity over specificity for
+  // worsening, like detector ②): a single stray log won't blank the surface, but a
+  // real repeated rise will. Absence (currentCount 0) is never "worsening".
+  const anyWorsening = stats.some(
+    (s) =>
+      s.currentCount >= cfg.worseningMinEpisodes &&
+      (s.currentCount > s.priorCount || s.currentDays > s.priorDays),
+  )
+  if (anyWorsening) return []
+
+  // Candidates: flat-or-improving on BOTH episode count AND symptom-day spread, on a
+  // real current count, with enough history in the busier window to state a trend.
+  const candidates: ReflectionFinding[] = stats
+    .filter(
+      (s) =>
+        s.currentCount >= 1 && // never a zero-symptom (absence) reflection (§9)
+        s.currentCount <= s.priorCount && // flat or falling episode count
+        s.currentDays <= s.priorDays && // flat or falling spread (closes the meal-padding gap)
+        Math.max(s.currentCount, s.priorCount) >= cfg.minEpisodesEitherWindow,
+    )
+    .map((s) => ({
+      type: 'reflection' as const,
+      priorityClass: 'insight' as const,
+      symptomType: s.symptomType,
+      currentCount: s.currentCount,
+      priorCount: s.priorCount,
+      direction: (s.currentCount === s.priorCount ? 'flat' : 'improving') as ReflectionDirection,
+      windowDays: cfg.windowDays,
+    }))
 
   if (candidates.length === 0) return []
 

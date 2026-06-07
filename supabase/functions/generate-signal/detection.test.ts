@@ -526,17 +526,68 @@ Deno.test('detectReflections — below the episode floor (max < 3) stays silent 
   assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
 })
 
-Deno.test('detectReflections — a prior-window LOGGING GAP is not read as "same as last week"', () => {
-  // The load-bearing adversarial case: current 4 vomits across 4 days; prior 4 vomits
-  // ALL on a single acute day (4 bouts >3h apart → 4 episodes, 1 calendar day). The
-  // counts are flat (4 vs 4), but last week was only logged on ONE day — too thin to
-  // honestly call "the same". The coverage guard suppresses; without it we'd emit a
-  // falsely-confident "same as last week" off a single logged day.
+Deno.test('detectReflections — a prior-window acute single day is not read as "same as last week" (meal-padding closed)', () => {
+  // The load-bearing adversarial case (B-051 review): current 4 vomits across 4 days;
+  // prior 4 vomits ALL on a single acute day (4 bouts >3h apart → 4 episodes, 1
+  // calendar day). Episode counts are flat (4 vs 4), but last week was only a single
+  // acute day — clinically NOT "the same". The fix tracks symptom-DAYS: current spread
+  // across 4 days vs prior 1 day is an INCREASE in symptom-days → worsening → silent.
+  // Crucially this holds even when the prior window is meal-PADDED to clear the coarse
+  // logging-eligibility floor — the original meal-omitting test passed only by accident.
   const symptomEvents = [
     symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
     symptom('vomit', at(17, 8)), symptom('vomit', at(17, 12)), symptom('vomit', at(17, 16)), symptom('vomit', at(17, 20)),
   ]
+  // 2 meal-only prior days → prior logging-days = 3, clears minLoggingDaysPerWindow.
+  const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) })]
+  assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectReflections — a falling symptom-DAY spread alone is enough; rising spread suppresses', () => {
+  // Same episode count both weeks (3 vs 3) but this week is spread over MORE days than
+  // last (3 days vs 1) → an increase in symptom-days → worsening → silent. A reflection
+  // only renders when BOTH episodes and spread are flat-or-falling.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)), // current: 3 episodes / 3 days
+    symptom('vomit', at(17, 8)), symptom('vomit', at(17, 12)), symptom('vomit', at(17, 16)), // prior: 3 episodes / 1 day
+  ]
+  const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) })]
+  assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectReflections — CROSS-SYMPTOM: a reflection is silent while ANY symptom is worsening', () => {
+  // The highest-severity adversarial break (B-051 review): per-symptom the itch is
+  // improving (3 vs 5) and would render a calm "itch is down" card — but the vomit is
+  // RISING (4 vs 1). A soothing reflection must never surface while the pet is worsening
+  // on another axis (Dr. Chen §7.1 amendment #5). The global worsening gate stays silent.
+  const symptomEvents = [
+    // vomit rising 1 → 4
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)),
+    // itch improving 5 → 3
+    symptom('itch', at(24, 9)), symptom('itch', at(26, 9)), symptom('itch', at(28, 9)),
+    symptom('itch', at(16, 13)), symptom('itch', at(17, 9)), symptom('itch', at(18, 9)),
+    symptom('itch', at(19, 9)), symptom('itch', at(20, 9)),
+  ]
   assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+})
+
+Deno.test('detectReflections — a lone single worsening log does NOT blank a strong improvement', () => {
+  // The worsening gate is sensitive but not hair-trigger: one stray new symptom (count 1,
+  // below worseningMinEpisodes) must not suppress a genuine, material improvement on
+  // another symptom — otherwise noise re-introduces the silence B-051 exists to fix.
+  const symptomEvents = [
+    // itch improving 6 → 3 (material)
+    symptom('itch', at(24, 9)), symptom('itch', at(26, 9)), symptom('itch', at(28, 9)),
+    symptom('itch', at(16, 13)), symptom('itch', at(17, 9)), symptom('itch', at(18, 9)),
+    symptom('itch', at(19, 9)), symptom('itch', at(20, 9)), symptom('itch', at(21, 9)),
+    // a single new vomit this week (count 1 — below the worsening floor of 2)
+    symptom('vomit', at(25, 8)),
+  ]
+  const findings = detectReflections(input({ symptomEvents }))
+  assert.equal(findings.length, 1, 'the strong itch improvement still surfaces')
+  assert.equal(findings[0].symptomType, 'itch')
+  assert.equal(findings[0].direction, 'improving')
 })
 
 Deno.test('detectReflections — surfaces ONE reflection (the symptom most present right now)', () => {
@@ -726,8 +777,9 @@ Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
   // Feline sensitivity override (P0).
   assert.equal(DEFAULT_CONFIG.intakeDecline.cat.consecutiveDaysBelowBaseline, 1)
   assert.equal(DEFAULT_CONFIG.intakeDecline.cat.singleDayConcernCeiling, 2)
-  // B-051 reflection floor (Conservative-but-useful).
+  // B-051 reflection floor (Conservative-but-useful) + worsening gate.
   assert.equal(DEFAULT_CONFIG.reflection.windowDays, 7)
   assert.equal(DEFAULT_CONFIG.reflection.minEpisodesEitherWindow, 3)
   assert.equal(DEFAULT_CONFIG.reflection.minLoggingDaysPerWindow, 3)
+  assert.equal(DEFAULT_CONFIG.reflection.worseningMinEpisodes, 2)
 })

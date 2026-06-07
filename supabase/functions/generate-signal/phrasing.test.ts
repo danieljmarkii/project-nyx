@@ -262,6 +262,24 @@ Deno.test('validatePhrasing — accepts a plain descriptive reflection sentence'
   )
 })
 
+// Broadened reassurance vocabulary (B-051 adversarial review): the model slipped
+// wellness SYNONYMS past the original keyword list. These must now be rejected on a
+// safety finding AND a reflection. (Reflections are additionally phrased template-only
+// in index.ts, so the model never produces them in prod — this is defense in depth.)
+Deno.test('validatePhrasing — rejects reassurance synonyms ("on the mend", "thriving", …)', () => {
+  for (const bad of [
+    'Pixel is on the mend this week.',
+    'Pixel seems to be thriving lately.',
+    'Pixel is recovering nicely.',
+    'Pixel is doing well overall.',
+    'Pixel looks much better than last week.',
+    'Pixel is back to normal.',
+  ]) {
+    assert.equal(validatePhrasing(bad, intakeDecline()), false, `safety should reject: ${bad}`)
+    assert.equal(validatePhrasing(bad, reflection()), false, `reflection should reject: ${bad}`)
+  }
+})
+
 Deno.test('validatePhrasing — rejects too-short and too-long', () => {
   assert.equal(validatePhrasing('ok', intakeDecline()), false)
   assert.equal(validatePhrasing('x '.repeat(200), correlation()), false)

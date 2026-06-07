@@ -111,8 +111,14 @@ export function buildBuildingText(petName: string, hasRecentActivity: boolean): 
 // makes a causal claim on a correlation, or shouts is REJECTED to the template.
 // The invariant is a code check + a test assertion, not a comment.
 
+// Broadened after the B-051 adversarial review surfaced reassurance *synonyms* the
+// model slipped past the original list ("on the mend", "thriving", "much better").
+// This is a keyword screen, not a paraphrase-proof guarantee — the structural
+// defense for the reflection layer is that it is phrased template-only (index.ts),
+// never by the model. This list still hardens the model-phrased safety/correlation
+// paths against the obvious wellness vocabulary.
 const REASSURANCE_RE =
-  /\b(fine|okay|ok|healthy|all clear|nothing to worry|probably fine|no concern|don't worry|doing great|all good)\b/i
+  /\b(fine|okay|ok|healthy|all clear|nothing to worry|nothing serious|probably fine|no concern|don't worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|back to normal|right track)\b/i
 const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i
 const CAUSAL_RE =
   /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic)|intoleran(?:t|ce)|reacts? to|leads? to|results? in)\b/i
