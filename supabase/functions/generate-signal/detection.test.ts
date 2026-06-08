@@ -15,6 +15,8 @@ import {
   detectIntakeDecline,
   detectReflections,
   detectSignals,
+  detectCoverage,
+  rankCoverageDiagnostics,
   rankFindings,
   fisherExactRightTail,
   mcNemarExactRightTail,
@@ -30,6 +32,9 @@ import {
   type IntakeRating,
   type PetContext,
   type Finding,
+  type CoverageDiagnostic,
+  type RateMealsDiagnostic,
+  type StapleWashoutDiagnostic,
 } from './detection.ts'
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
@@ -782,4 +787,222 @@ Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
   assert.equal(DEFAULT_CONFIG.reflection.minEpisodesEitherWindow, 3)
   assert.equal(DEFAULT_CONFIG.reflection.minLoggingDaysPerWindow, 3)
   assert.equal(DEFAULT_CONFIG.reflection.worseningMinEpisodes, 2)
+  // B-053 coverage-diagnostic floors.
+  assert.equal(DEFAULT_CONFIG.coverage.stapleMinMeals, 4)
+  // staple_washout's symptom floor MUST track ①'s Early episode floor so it only fires
+  // when the staple is the sole blocker (closes the below-floor masquerade — B-053).
+  assert.equal(DEFAULT_CONFIG.coverage.stapleMinSymptomEpisodes, 3)
+  assert.equal(
+    DEFAULT_CONFIG.coverage.stapleMinSymptomEpisodes,
+    DEFAULT_CONFIG.correlation.earlyMinMatchedPairs,
+    'staple-washout symptom floor must stay aligned with the correlation Early episode floor',
+  )
+})
+
+// ── Coverage diagnostics (B-053) ────────────────────────────────────────────
+// The "why is there still no signal?" companion. v1 surfaces exactly two reasons:
+// rate_meals (ACTION) and staple_washout (EXPLANATION). The clinical guardrails
+// under test: staple_washout is FULLY suppressed on a diet-trial pet, never fires
+// without symptoms to explain, and the action diagnostic always outranks the
+// explanation.
+
+const dietTrialDog: PetContext = { name: 'Mochi', species: 'dog', dietTrialActive: true }
+
+/** A meal carrying BOTH a protein and an intake rating (the "rated staple" shape). */
+const ratedProteinMeal = (day: number, protein: string, rating: IntakeRating): MealEvent =>
+  meal({ occurredAt: at(day, 8), primaryProtein: protein, intakeRating: rating, foodType: 'meal' })
+
+const findDiag = <T extends CoverageDiagnostic['type']>(
+  diags: CoverageDiagnostic[],
+  type: T,
+): Extract<CoverageDiagnostic, { type: T }> | undefined =>
+  diags.find((d) => d.type === type) as Extract<CoverageDiagnostic, { type: T }> | undefined
+
+Deno.test('detectCoverage — rate_meals fires when meals are logged but too few are rated', () => {
+  const mealEvents = [
+    proteinMeal(20, 'chicken'),
+    proteinMeal(21, 'beef'),
+    proteinMeal(22, 'chicken'),
+    ratedProteinMeal(23, 'chicken', 'all'), // only 1 rated; floor is 4
+  ]
+  const rm = findDiag(detectCoverage(input({ mealEvents })), 'rate_meals')
+  assert.ok(rm, 'rate_meals present')
+  assert.equal(rm!.actionability, 'action')
+  assert.equal(rm!.ratedMeals, 1)
+  assert.equal(rm!.ratedMealsNeeded, DEFAULT_CONFIG.intakeDecline.minRatedMealsForBaseline)
+})
+
+Deno.test('detectCoverage — rate_meals is silent once enough meals are rated (② steady, not a gap)', () => {
+  const mealEvents = [
+    ratedProteinMeal(20, 'chicken', 'all'),
+    ratedProteinMeal(21, 'beef', 'all'),
+    ratedProteinMeal(22, 'chicken', 'all'),
+    ratedProteinMeal(23, 'beef', 'all'),
+  ]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents })), 'rate_meals'), undefined)
+})
+
+Deno.test('detectCoverage — rate_meals does not fire when no meals are logged (not a coverage gap)', () => {
+  const symptomEvents = [symptom('vomit', at(20, 8)), symptom('vomit', at(24, 8))]
+  assert.equal(findDiag(detectCoverage(input({ symptomEvents })), 'rate_meals'), undefined)
+})
+
+Deno.test('detectCoverage — staple_washout explains a single-protein diet with symptoms (Nyx)', () => {
+  // chicken in every (well-rated) meal → ② is fed enough (no rate_meals); ① has no contrast.
+  const mealEvents = [
+    ratedProteinMeal(18, 'chicken', 'all'),
+    ratedProteinMeal(20, 'chicken', 'all'),
+    ratedProteinMeal(22, 'chicken', 'all'),
+    ratedProteinMeal(24, 'chicken', 'all'),
+    ratedProteinMeal(26, 'chicken', 'all'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(19, 8)),
+    symptom('vomit', at(21, 8)),
+    symptom('vomit', at(25, 8)),
+  ]
+  const diags = detectCoverage(input({ pet: dog, mealEvents, symptomEvents }))
+  const sw = findDiag(diags, 'staple_washout')
+  assert.ok(sw, 'staple_washout present')
+  assert.equal(sw!.actionability, 'explanation')
+  assert.equal(sw!.protein, 'chicken')
+  assert.equal(sw!.symptomEpisodes, 3)
+  // Nyx's meals are well-rated → no rate-meals nudge, only the explanation.
+  assert.equal(findDiag(diags, 'rate_meals'), undefined)
+})
+
+Deno.test('detectCoverage — staple_washout is FULLY suppressed on a diet-trial pet', () => {
+  const mealEvents = [
+    ratedProteinMeal(18, 'chicken', 'all'),
+    ratedProteinMeal(20, 'chicken', 'all'),
+    ratedProteinMeal(22, 'chicken', 'all'),
+    ratedProteinMeal(24, 'chicken', 'all'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(19, 8)),
+    symptom('vomit', at(21, 8)),
+    symptom('vomit', at(25, 8)),
+  ]
+  assert.equal(
+    findDiag(detectCoverage(input({ pet: dietTrialDog, mealEvents, symptomEvents })), 'staple_washout'),
+    undefined,
+    'a constant staple on a diet-trial pet must never be flagged — that IS the elimination diet',
+  )
+})
+
+Deno.test('detectCoverage — staple_washout does not fire when there is protein contrast', () => {
+  const mealEvents = [
+    ratedProteinMeal(18, 'chicken', 'all'),
+    ratedProteinMeal(20, 'beef', 'all'),
+    ratedProteinMeal(22, 'chicken', 'all'),
+    ratedProteinMeal(24, 'beef', 'all'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(19, 8)),
+    symptom('vomit', at(21, 8)),
+    symptom('vomit', at(25, 8)),
+  ]
+  assert.equal(
+    findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'staple_washout'),
+    undefined,
+  )
+})
+
+Deno.test('detectCoverage — staple_washout stays silent with no symptoms (never imply symptoms exist)', () => {
+  const mealEvents = [
+    ratedProteinMeal(18, 'chicken', 'all'),
+    ratedProteinMeal(20, 'chicken', 'all'),
+    ratedProteinMeal(22, 'chicken', 'all'),
+    ratedProteinMeal(24, 'chicken', 'all'),
+  ]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents })), 'staple_washout'), undefined)
+})
+
+Deno.test('detectCoverage — staple_washout needs real meal volume to claim "nearly every meal"', () => {
+  const mealEvents = [proteinMeal(22, 'chicken'), proteinMeal(24, 'chicken')] // 2 < stapleMinMeals(4)
+  // Enough symptoms (≥3) that meal VOLUME is the only thing keeping staple_washout silent.
+  const symptomEvents = [
+    symptom('vomit', at(19, 8)),
+    symptom('vomit', at(21, 8)),
+    symptom('vomit', at(23, 8)),
+  ]
+  assert.equal(
+    findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'staple_washout'),
+    undefined,
+  )
+})
+
+Deno.test('detectCoverage — staple_washout stays silent below the symptom-episode floor (no below-floor masquerade)', () => {
+  // A constant staple + real meal volume, but only 2 symptom episodes — below the
+  // correlation Early floor (3). The staple is NOT the sole blocker (too-few-symptoms
+  // is co-present, an out-of-v1 reason), so we must NOT explain it as a staple problem.
+  const mealEvents = [
+    ratedProteinMeal(18, 'chicken', 'all'),
+    ratedProteinMeal(20, 'chicken', 'all'),
+    ratedProteinMeal(22, 'chicken', 'all'),
+    ratedProteinMeal(24, 'chicken', 'all'),
+  ]
+  const symptomEvents = [symptom('vomit', at(21, 8)), symptom('vomit', at(25, 8))] // 2 < floor 3
+  assert.equal(
+    findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'staple_washout'),
+    undefined,
+  )
+})
+
+Deno.test('detectCoverage — B-052: by-product/qualifier variants pool into one staple', () => {
+  const mealEvents = [
+    meal({ occurredAt: at(18, 8), primaryProtein: 'Chicken', intakeRating: 'all' }),
+    meal({ occurredAt: at(20, 8), primaryProtein: 'chicken by-product meal', intakeRating: 'all' }),
+    meal({ occurredAt: at(22, 8), primaryProtein: 'CHICKEN', intakeRating: 'all' }),
+    meal({ occurredAt: at(24, 8), primaryProtein: 'chicken', intakeRating: 'all' }),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(19, 8)),
+    symptom('vomit', at(21, 8)),
+    symptom('vomit', at(23, 8)),
+  ]
+  const sw = findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'staple_washout')
+  assert.ok(sw, 'variants pool to a single staple → washout is explained, not fractured')
+  assert.equal(sw!.protein, 'chicken')
+})
+
+Deno.test('detectCoverage — ranks the ACTION (rate_meals) above the EXPLANATION (staple_washout)', () => {
+  // A single staple (chicken), most meals unrated → BOTH diagnostics apply.
+  const mealEvents = [
+    proteinMeal(18, 'chicken'),
+    proteinMeal(20, 'chicken'),
+    proteinMeal(22, 'chicken'),
+    ratedProteinMeal(24, 'chicken', 'all'), // 1 rated < floor
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(17, 8)),
+    symptom('vomit', at(19, 8)),
+    symptom('vomit', at(23, 8)),
+  ]
+  const diags = detectCoverage(input({ mealEvents, symptomEvents }))
+  assert.equal(diags.length, 2)
+  assert.equal(diags[0].type, 'rate_meals', 'action leads (it also activates detector ②)')
+  assert.equal(diags[1].type, 'staple_washout', 'explanation follows')
+})
+
+Deno.test('rankCoverageDiagnostics — action before explanation regardless of input order', () => {
+  const sw: StapleWashoutDiagnostic = {
+    type: 'staple_washout',
+    actionability: 'explanation',
+    protein: 'chicken',
+    symptomEpisodes: 2,
+  }
+  const rm: RateMealsDiagnostic = {
+    type: 'rate_meals',
+    actionability: 'action',
+    ratedMeals: 1,
+    ratedMealsNeeded: 4,
+  }
+  const ranked = rankCoverageDiagnostics([sw, rm])
+  assert.equal(ranked[0].type, 'rate_meals')
+  assert.equal(ranked[1].type, 'staple_washout')
+})
+
+Deno.test('detectCoverage — empty input yields no diagnostics', () => {
+  assert.deepEqual(detectCoverage(input({})), [])
 })

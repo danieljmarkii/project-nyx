@@ -7,11 +7,14 @@ import {
   isSignalCacheStale,
   regenerateSignal,
   type CachedFinding,
+  type CoverageDiagnostic,
 } from '../lib/signal';
 import { deriveDisplayState, type DisplayState } from '../lib/signalCopy';
 
 export interface SignalState {
   findings: CachedFinding[];
+  /** Ranked "why no signal yet?" diagnostics (B-053); rendered only on no_pattern. */
+  coverage: CoverageDiagnostic[];
   displayState: DisplayState;
   signalText: string | null;
   petName: string;
@@ -70,6 +73,7 @@ function getLocalSignalContext(petId: string): LocalSignalContext {
 export function useSignal(): SignalState {
   const { activePet } = usePetStore();
   const [findings, setFindings] = useState<CachedFinding[]>([]);
+  const [coverage, setCoverage] = useState<CoverageDiagnostic[]>([]);
   const [signalText, setSignalText] = useState<string | null>(null);
   const [localCtx, setLocalCtx] = useState<LocalSignalContext>({
     hasRecentActivity: false,
@@ -89,7 +93,16 @@ export function useSignal(): SignalState {
       // we keep the last cached cards visible to avoid a flicker.
       const firstLoad = loadedPetRef.current !== petId;
       loadedPetRef.current = petId;
-      if (firstLoad) setIsLoading(true);
+      // On a pet SWITCH, clear the previous pet's cached data so its findings or
+      // coverage diagnostic can't flash on the new pet during the async read
+      // (multi-pet safety — coverage names a real protein, so a stale flash is
+      // especially conspicuous).
+      if (firstLoad) {
+        setIsLoading(true);
+        setFindings([]);
+        setCoverage([]);
+        setSignalText(null);
+      }
 
       (async () => {
         if (!cancelled) setLocalCtx(getLocalSignalContext(petId));
@@ -97,6 +110,7 @@ export function useSignal(): SignalState {
           const row = await readSignalCache(petId);
           if (cancelled) return;
           setFindings(row?.findings ?? []);
+          setCoverage(row?.coverage ?? []);
           setSignalText(row?.signalText ?? null);
 
           if (isSignalCacheStale(row)) {
@@ -106,6 +120,7 @@ export function useSignal(): SignalState {
               .then((fresh) => {
                 if (cancelled || !fresh) return;
                 setFindings(fresh.findings);
+                setCoverage(fresh.coverage);
                 setSignalText(fresh.signalText);
               })
               .catch(() => {});
@@ -129,5 +144,5 @@ export function useSignal(): SignalState {
     localCtx.hasRecentActivity,
     localCtx.hasSubstantialHistory,
   );
-  return { findings, displayState, signalText, petName, isLoading };
+  return { findings, coverage, displayState, signalText, petName, isLoading };
 }

@@ -1,0 +1,41 @@
+-- ============================================================
+-- ai_signals.coverage — store the ranked "why there's no signal yet"
+-- coverage diagnostics, separate from the findings set.
+-- See: docs/nyx-ai-signal-requirements.md §7.1, §9
+--      docs/backlog.md B-053
+-- ============================================================
+-- B-053: when NO finding clears its floor, the generate-signal Edge
+-- Function still knows WHY each detector stayed silent. It now caches a
+-- ranked, clinically-narrowed set of coverage diagnostics so the home's
+-- no_pattern surface can replace the generic "no clear patterns yet" line
+-- with an honest, specific reason + at most one safe corrective action
+-- (the §7.1 silence-churn fix).
+--
+-- WHY A SEPARATE COLUMN (not folded into `findings`): coverage diagnostics
+-- are a DIFFERENT kind of thing from findings — they describe the absence
+-- of a signal and its cause, not a detected pattern. They render on the
+-- no_pattern surface, never in the live insight stack, and any consumer
+-- iterating `findings` (the Step-3 SignalZone live stack, the vet report
+-- later) must never accidentally pick one up. Keeping them in their own
+-- column makes that separation structural, not conventional.
+--
+-- Shape (array, in ranked display order — ACTION before EXPLANATION):
+--   [
+--     { "type": "rate_meals",     "actionability": "action",
+--       "ratedMeals": 1, "ratedMealsNeeded": 4 },
+--     { "type": "staple_washout", "actionability": "explanation",
+--       "protein": "chicken", "symptomEpisodes": 3 }
+--   ]
+-- Populated ONLY when findings is empty (is_building = TRUE); an empty
+-- array ([]) means either there ARE findings, or no diagnostic applied.
+-- Per §9 this is about DATA COVERAGE, never wellness — "no pattern" is
+-- never an all-clear.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (additive column, NOT NULL with a safe default)
+--   Rollback:     ALTER TABLE ai_signals DROP COLUMN coverage;
+--   Backfill:     N/A — DEFAULT '[]'::jsonb covers any existing row.
+-- ============================================================
+
+ALTER TABLE ai_signals
+  ADD COLUMN coverage jsonb NOT NULL DEFAULT '[]'::jsonb;

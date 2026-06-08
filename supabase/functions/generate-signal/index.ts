@@ -27,9 +27,11 @@
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
   detectSignals,
+  detectCoverage,
   DEFAULT_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
   type Finding,
+  type CoverageDiagnostic,
   type SymptomEvent,
   type MealEvent,
   type SymptomType,
@@ -290,6 +292,16 @@ Deno.serve(async (req: Request) => {
       ? buildBuildingText(petName, hasRecentActivity)
       : cachedFindings[0].text
 
+    // Coverage diagnostics (B-053) — the "why no signal yet?" reasons. We compute
+    // them whenever there are NO findings (isBuilding); the server cannot know which
+    // empty-state the client will derive (building/no_pattern/stale needs the local
+    // hasSubstantialHistory the server doesn't have), so it caches coverage for any
+    // empty result and the CLIENT renders the top diagnostic only on no_pattern. The
+    // detectors are individually safe on a truly-empty pet (rate_meals needs ≥1 meal,
+    // staple_washout needs a single protein + symptoms), so a pure building pet
+    // yields []. Per §9 these describe DATA COVERAGE, never wellness.
+    const coverage: CoverageDiagnostic[] = isBuilding ? detectCoverage(input, DEFAULT_CONFIG) : []
+
     // Replace the pet's cached signal (last-write-wins; keeps row count bounded
     // without a unique constraint, matching the project's sync philosophy).
     await supabase.from('ai_signals').delete().eq('pet_id', petId)
@@ -298,11 +310,12 @@ Deno.serve(async (req: Request) => {
       signal_text: signalText,
       is_building: isBuilding,
       findings: cachedFindings,
+      coverage,
     })
     if (insertError) throw new Error(`ai_signals write failed: ${insertError.message}`)
 
     return Response.json(
-      { is_building: isBuilding, signal_text: signalText, findings: cachedFindings },
+      { is_building: isBuilding, signal_text: signalText, findings: cachedFindings, coverage },
       { headers: CORS_HEADERS },
     )
   } catch (err) {
