@@ -79,9 +79,9 @@ export interface CachedFinding {
 // the ABSENCE of a signal and its cause, not a detected pattern, and must never be
 // picked up by code iterating the live findings stack. Ranked ACTION before
 // EXPLANATION; the surface shows the top one. Per §9 these are about DATA COVERAGE,
-// never wellness — "no pattern" is never an all-clear.
-export type CoverageDiagnosticType = 'rate_meals' | 'staple_washout';
-export type CoverageActionability = 'action' | 'explanation';
+// never wellness — "no pattern" is never an all-clear. (The string-literal union
+// aliases CoverageDiagnosticType / CoverageActionability live in detection.ts; the
+// client needs only the concrete shapes, so they are not re-exported here unused.)
 
 export interface RateMealsDiagnostic {
   type: 'rate_meals';
@@ -94,6 +94,8 @@ export interface StapleWashoutDiagnostic {
   type: 'staple_washout';
   actionability: 'explanation';
   protein: string;
+  // Retained for parity with the cached shape + future copy (e.g. citing the count);
+  // coverageCopy() does not render it today.
   symptomEpisodes: number;
 }
 

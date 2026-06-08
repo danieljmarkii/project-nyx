@@ -93,7 +93,16 @@ export function useSignal(): SignalState {
       // we keep the last cached cards visible to avoid a flicker.
       const firstLoad = loadedPetRef.current !== petId;
       loadedPetRef.current = petId;
-      if (firstLoad) setIsLoading(true);
+      // On a pet SWITCH, clear the previous pet's cached data so its findings or
+      // coverage diagnostic can't flash on the new pet during the async read
+      // (multi-pet safety — coverage names a real protein, so a stale flash is
+      // especially conspicuous).
+      if (firstLoad) {
+        setIsLoading(true);
+        setFindings([]);
+        setCoverage([]);
+        setSignalText(null);
+      }
 
       (async () => {
         if (!cancelled) setLocalCtx(getLocalSignalContext(petId));

@@ -292,12 +292,14 @@ Deno.serve(async (req: Request) => {
       ? buildBuildingText(petName, hasRecentActivity)
       : cachedFindings[0].text
 
-    // Coverage diagnostics (B-053) — the "why no signal yet?" reasons for the
-    // no_pattern surface. Only meaningful when there are no findings to show; when
-    // a finding cleared its floor the surface is live and coverage is irrelevant.
-    // The client decides building-vs-no_pattern-vs-stale and renders the top
-    // diagnostic only on no_pattern (substantial history). Per §9 these describe
-    // DATA COVERAGE, never wellness.
+    // Coverage diagnostics (B-053) — the "why no signal yet?" reasons. We compute
+    // them whenever there are NO findings (isBuilding); the server cannot know which
+    // empty-state the client will derive (building/no_pattern/stale needs the local
+    // hasSubstantialHistory the server doesn't have), so it caches coverage for any
+    // empty result and the CLIENT renders the top diagnostic only on no_pattern. The
+    // detectors are individually safe on a truly-empty pet (rate_meals needs ≥1 meal,
+    // staple_washout needs a single protein + symptoms), so a pure building pet
+    // yields []. Per §9 these describe DATA COVERAGE, never wellness.
     const coverage: CoverageDiagnostic[] = isBuilding ? detectCoverage(input, DEFAULT_CONFIG) : []
 
     // Replace the pet's cached signal (last-write-wins; keeps row count bounded
