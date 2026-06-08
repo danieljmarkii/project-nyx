@@ -120,6 +120,9 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
     lineHeight: 20,
+    // Match the single-text states' bottom spacing so the two-line (action) variant
+    // doesn't sit tighter against the card edge (code-review nit).
+    marginBottom: theme.space2,
   },
   rowDivider: {
     marginHorizontal: -theme.space1,
