@@ -247,6 +247,61 @@ export interface RankedFinding {
   rank: number
 }
 
+// ── Coverage diagnostics (B-053) ────────────────────────────────────────────
+//
+// When NO finding clears its floor the engine still KNOWS why each detector
+// stayed silent. B-053 surfaces the clinically-safe subset of those reasons on
+// the no_pattern surface, so an owner who has logged for weeks gets an honest
+// "here's why there's no signal yet" instead of the generic "no patterns" line
+// (the §7.1 silence-churn risk). Same deterministic split as findings: the
+// engine emits a structured, RANKED diagnostic set; copy is templated downstream
+// (no LLM — like reflections ③).
+
+/** The two v1 diagnostics. `add_protein` / below-floor / no-control-days are deliberately out (see detectCoverage). */
+export type CoverageDiagnosticType = 'rate_meals' | 'staple_washout'
+
+/** Whether the diagnostic carries a corrective ask (`action`) or is purely informative (`explanation`). */
+export type CoverageActionability = 'action' | 'explanation'
+
+interface CoverageDiagnosticBase {
+  type: CoverageDiagnosticType
+  actionability: CoverageActionability
+}
+
+/**
+ * Detector ② (intake-decline) is dormant because too few meals are RATED to
+ * establish an intake baseline — the line-710 coverage floor. Rating more wakes
+ * the detector, so this is the ACTION diagnostic (safe, corrective, improves the
+ * dataset). It never reads as wellness — it's about coverage, not health.
+ */
+export interface RateMealsDiagnostic extends CoverageDiagnosticBase {
+  type: 'rate_meals'
+  actionability: 'action'
+  /** Rated meals seen (foodType 'meal' + a non-null intake rating). */
+  ratedMeals: number
+  /** The §7 floor that wakes detector ② (intakeDecline.minRatedMealsForBaseline). */
+  ratedMealsNeeded: number
+}
+
+/**
+ * Detector ① (correlation) can't run because a SINGLE protein is in (nearly)
+ * every meal — the line-505 "no contrast" discard. EXPLANATION ONLY: never a
+ * "vary the diet" ask (that sabotages a vet-directed elimination trial — our
+ * primary wedge — and inverts Pets>$), and FULLY SUPPRESSED on diet-trial pets
+ * (the constant staple IS the elimination diet). It is honest uncertainty
+ * ("we can't tell yet whether it's linked"), never reassurance.
+ */
+export interface StapleWashoutDiagnostic extends CoverageDiagnosticBase {
+  type: 'staple_washout'
+  actionability: 'explanation'
+  /** The staple protein present across (nearly) every classifiable meal, e.g. 'chicken'. */
+  protein: string
+  /** Distinct symptom episodes (any correlation type, re-logs collapsed) the owner is trying to understand. */
+  symptomEpisodes: number
+}
+
+export type CoverageDiagnostic = RateMealsDiagnostic | StapleWashoutDiagnostic
+
 // ── Configuration (§7 thresholds = v1 defaults) ─────────────────────────────
 
 export interface DetectionConfig {
@@ -328,6 +383,32 @@ export interface DetectionConfig {
      */
     worseningMinEpisodes: number
   }
+  coverage: {
+    /**
+     * Min classifiable meals before "eats X in nearly every meal" is an honest
+     * staple-washout claim. Below it, the single protein could just be a couple of
+     * early logs, not an established staple.
+     */
+    stapleMinMeals: number
+    /**
+     * Min distinct symptom episodes (any correlation type) for staple-washout to
+     * fire. Set to the correlation Early floor (correlation.earlyMinMatchedPairs),
+     * NOT 1, and this alignment is load-bearing (adversarial review, B-053):
+     *  - It must be ≥ 1 so "we can't tell whether it's linked to the symptoms you're
+     *    tracking" is TRUE — there are symptoms to explain (else reassurance-by-
+     *    implication: implying symptoms that don't exist).
+     *  - It must MATCH ①'s episode floor so staple-washout only claims "the staple is
+     *    why we can't assess linkage" when ① COULD have surfaced something given
+     *    protein contrast. Below that, the staple is NOT the sole blocker — too-few-
+     *    symptoms (the deliberately out-of-v1 "below-floor" reason) is co-present, and
+     *    the honest surface is the generic building/no_pattern line, not a staple
+     *    explanation that papers over the second blocker. Keeping them aligned closes
+     *    the below-floor masquerade.
+     * (The rate_meals floor likewise reuses intakeDecline.minRatedMealsForBaseline —
+     * no separate knob; a diagnostic should mirror the floor of the detector it explains.)
+     */
+    stapleMinSymptomEpisodes: number
+  }
 }
 
 /** §7 table, adopted as the v1 starting defaults (PM 2026-05-30); tune on real data, not a re-decision. */
@@ -374,6 +455,15 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     minEpisodesEitherWindow: 3,
     minLoggingDaysPerWindow: 3,
     worseningMinEpisodes: 2,
+  },
+  // B-053 coverage-diagnostic floors. stapleMinMeals keeps "eats X in nearly every
+  // meal" honest; stapleMinSymptomEpisodes mirrors the correlation Early episode
+  // floor (correlation.earlyMinMatchedPairs = 3) so staple-washout only fires when
+  // the staple is the SOLE blocker — closing the below-floor masquerade (see the
+  // field doc + adversarial review, B-053). Tune on real data, not a re-decision.
+  coverage: {
+    stapleMinMeals: 4,
+    stapleMinSymptomEpisodes: 3,
   },
 }
 
@@ -475,33 +565,47 @@ function toEpisodeOnsets(symptomMsList: number[], gapHours: number): number[] {
   return onsets
 }
 
+/** A meal reduced to the fields the correlation/coverage logic needs. */
+interface ClassifiedMeal {
+  ms: number
+  protein: string
+  attribution: AttributionConfidence
+}
+
+/**
+ * Classifiable meals: a known (canonicalized) protein + valid time, carrying
+ * attribution confidence (absent → 'high', per today's per-pet logging semantics).
+ * Sorted ascending. B-052: the protein key is canonicalized (lowercase/trim +
+ * by-product/meal qualifier strip + junk-sentinel drop) so one real protein doesn't
+ * fracture across `chicken` / `Chicken By-Product Meal` / the `"null"` string and
+ * starve the matched-pair counts. A meal that canonicalizes to null carries no usable
+ * protein and is excluded — this is the detection.ts line-498 discard, shared by
+ * detectCorrelations AND the B-053 staple-washout coverage diagnostic so the
+ * "classifiable meal" definition has ONE source and cannot drift.
+ */
+function classifyMeals(mealEvents: MealEvent[]): ClassifiedMeal[] {
+  return mealEvents
+    .map((m) => ({
+      ms: Date.parse(m.occurredAt),
+      protein: canonicalizeProtein(m.primaryProtein),
+      attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
+    }))
+    .filter((m): m is ClassifiedMeal => m.protein !== null && Number.isFinite(m.ms))
+    .sort((x, y) => x.ms - y.ms)
+}
+
 export function detectCorrelations(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
 ): CorrelationFinding[] {
   const cfg = config.correlation
 
-  // Classifiable meals: a known protein + valid time, carrying attribution confidence
-  // (absent → 'high', per today's per-pet logging semantics). Sorted ascending.
-  // B-052: the protein key is canonicalized (lowercase/trim + by-product/meal
-  // qualifier strip + junk-sentinel drop) so one real protein doesn't fracture
-  // across `chicken` / `Chicken By-Product Meal` / the `"null"` string and starve
-  // the matched-pair counts. A meal that canonicalizes to null carries no usable
-  // protein and is excluded (replaces the old bare trim/lowercase + empty check).
-  const meals = input.mealEvents
-    .map((m) => ({
-      ms: Date.parse(m.occurredAt),
-      protein: canonicalizeProtein(m.primaryProtein),
-      attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
-    }))
-    .filter(
-      (m): m is { ms: number; protein: string; attribution: AttributionConfidence } =>
-        m.protein !== null && Number.isFinite(m.ms),
-    )
-    .sort((x, y) => x.ms - y.ms)
+  const meals = classifyMeals(input.mealEvents)
 
   const proteins = Array.from(new Set(meals.map((m) => m.protein)))
   // Need contrast: a single constant diet can't be correlated against anything.
+  // The < 2 case is exactly what the B-053 staple-washout diagnostic explains
+  // (proteins.length === 1 → a namable constant staple); see detectStapleWashout.
   if (proteins.length < 2) return []
 
   // Proteins present in [anchor - windowMs, anchor], keyed to the WEAKEST attribution
@@ -684,17 +788,23 @@ function utcDateKey(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
-export function detectIntakeDecline(
-  input: DetectionInput,
-  config: DetectionConfig = DEFAULT_CONFIG,
-): IntakeDeclineFinding[] {
-  const cfg = config.intakeDecline
-  const nowMs = Date.parse(input.now)
-  if (!Number.isFinite(nowMs)) return []
+/** A rated meal reduced to the fields the intake-decline / coverage logic needs. */
+interface RatedMeal {
+  ms: number
+  score: number
+  foodItemId: string | null
+  foodLabel: string | null
+}
 
-  // Only 'meal'-type foods with a real rating contribute. Treats/other and unrated
-  // rows are excluded so a logging gap can never masquerade as a decline.
-  const ratedMeals = input.mealEvents
+/**
+ * Rated meals only: 'meal'-type foods with a real intake rating, sorted ascending.
+ * Treats/other and unrated rows are excluded so a logging gap can never masquerade
+ * as a decline. Shared by detectIntakeDecline AND the B-053 rate_meals coverage
+ * diagnostic so the "rated meal" definition (the line-710 coverage floor) has ONE
+ * source and cannot drift.
+ */
+function classifyRatedMeals(mealEvents: MealEvent[]): RatedMeal[] {
+  return mealEvents
     .filter((m) => m.foodType === 'meal' && m.intakeRating != null)
     .map((m) => ({
       ms: Date.parse(m.occurredAt),
@@ -704,9 +814,22 @@ export function detectIntakeDecline(
     }))
     .filter((m) => Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
+}
+
+export function detectIntakeDecline(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): IntakeDeclineFinding[] {
+  const cfg = config.intakeDecline
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return []
+
+  const ratedMeals = classifyRatedMeals(input.mealEvents)
 
   // Coverage floor: too few rated meals → SILENT. Silence is not an all-clear (§9);
   // the composition layer renders the building/stale state, never "intake is fine".
+  // This line-710 discard is exactly what the B-053 rate_meals diagnostic explains
+  // (rating more meals wakes this detector); see detectRateMeals.
   if (ratedMeals.length < cfg.minRatedMealsForBaseline) return []
 
   const baselineWindowStart = nowMs - cfg.baselineWindowDays * MS_PER_DAY
@@ -947,6 +1070,127 @@ export function detectReflections(
     return b.priorCount - b.currentCount - (a.priorCount - a.currentCount)
   })
   return [candidates[0]]
+}
+
+// ── Coverage diagnostics (B-053) ────────────────────────────────────────────
+//
+// "Why is there still no signal?" — the structured, ranked subset of silent-
+// detector reasons that are clinically SAFE to surface on the no_pattern surface.
+// Direction resolved by the product team 2026-06-07 (docs/backlog.md B-053): the
+// original five-reason corrective list was narrowed on Dr. Chen + Data Scientist
+// review to TWO, with three reframed or suppressed:
+//   • rate_meals (ACTION) — detector ② dormant for lack of rated meals; rating
+//     a few wakes it. Reads from the line-710 floor (via classifyRatedMeals).
+//   • staple_washout (EXPLANATION) — detector ① has no protein contrast because
+//     one staple is in nearly every meal. Reads from the line-505 discard (via
+//     classifyMeals). EXPLANATION ONLY (never a "vary the diet" ask — that
+//     sabotages a vet-directed elimination trial) and FULLY SUPPRESSED on
+//     diet-trial pets.
+// Deliberately OUT of v1 (re-stated so a future self doesn't "restore" them
+// without re-reading the clinical rationale in B-053):
+//   • below-floor (too few symptom episodes, the line-551 discard) — overlaps the
+//     building state and is reassurance-adjacent. Dropped.
+//   • no-control-days (the line-595 discard) — a pet with no symptom-free days
+//     belongs at the vet, not nudged with a logging tip. Suppressed (the safety
+//     lane owns this case).
+//   • add-protein / sparse protein data (the line-498 discard) — deferred to a
+//     B-053 follow-up gated on B-052 write-time normalization.
+// Same deterministic-engine + templated-copy split as findings; NO LLM in this
+// loop (like reflections ③). Copy lives on the no_pattern surface (lib/signalCopy)
+// because that surface is client-rendered; this module emits structure only.
+
+/** Distinct symptom episodes across ALL correlation types (re-logs collapsed, like detector ①). */
+function countSymptomEpisodes(symptomEvents: SymptomEvent[], config: DetectionConfig): number {
+  let total = 0
+  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+    const msList = symptomEvents
+      .filter((s) => s.type === symptomType)
+      .map((s) => Date.parse(s.occurredAt))
+      .filter((ms) => Number.isFinite(ms))
+    total += toEpisodeOnsets(msList, config.symptomEpisodeGapHours).length
+  }
+  return total
+}
+
+function detectRateMeals(
+  input: DetectionInput,
+  config: DetectionConfig,
+): RateMealsDiagnostic | null {
+  // Only meaningful when the owner IS logging meals — otherwise "rate a few meals"
+  // is a non-sequitur (that's the building/empty case, not a coverage gap). We gate
+  // on raw meal-type events, NOT rated ones, since the whole point is unrated meals.
+  const mealsLogged = input.mealEvents.filter((m) => m.foodType === 'meal').length
+  if (mealsLogged === 0) return null
+
+  // The line-710 floor: too few RATED meals to establish an intake baseline → ②
+  // stays silent. If the floor is already met, ②'s silence is NOT a coverage gap
+  // (intake is simply steady) — no diagnostic. This is what gives a healthy,
+  // well-rated pet (Nyx) staple_washout instead of a spurious rate-meals nudge.
+  const ratedMeals = classifyRatedMeals(input.mealEvents).length
+  const needed = config.intakeDecline.minRatedMealsForBaseline
+  if (ratedMeals >= needed) return null
+
+  return { type: 'rate_meals', actionability: 'action', ratedMeals, ratedMealsNeeded: needed }
+}
+
+function detectStapleWashout(
+  input: DetectionInput,
+  config: DetectionConfig,
+): StapleWashoutDiagnostic | null {
+  // FULLY SUPPRESSED on diet-trial pets: the constant staple IS the elimination
+  // diet. Explaining "you feed chicken every meal, so we can't tell if it's linked"
+  // implies the owner should vary it — sabotaging the trial and inverting Pets>$.
+  if (input.pet.dietTrialActive) return null
+
+  const meals = classifyMeals(input.mealEvents)
+  const proteins = Array.from(new Set(meals.map((m) => m.protein)))
+  // The line-505 discard, narrowed to the NAMABLE single staple: exactly one
+  // protein. (0 proteins is the deferred sparse-protein case; ≥2 with a dominant
+  // staple is a future refinement — v1 is the clean constant-staple case.)
+  if (proteins.length !== 1) return null
+  // "...eats X in nearly every meal" must be honest — needs real meal volume.
+  if (meals.length < config.coverage.stapleMinMeals) return null
+
+  // "...linked to the symptoms you're tracking" must be TRUE — there must be
+  // symptoms to explain, or the copy falsely implies symptoms (reassurance-by-
+  // implication). No symptoms → no diagnostic (falls back to the generic line).
+  const symptomEpisodes = countSymptomEpisodes(input.symptomEvents, config)
+  if (symptomEpisodes < config.coverage.stapleMinSymptomEpisodes) return null
+
+  return { type: 'staple_washout', actionability: 'explanation', protein: proteins[0], symptomEpisodes }
+}
+
+// Rank by corrective leverage (B-053): the ACTION diagnostic (rate_meals — both
+// actionable AND it activates detector ②) leads the EXPLANATION (staple_washout —
+// no ask). The no_pattern surface shows the top one.
+const COVERAGE_ACTIONABILITY_ORDER: Record<CoverageActionability, number> = {
+  action: 0,
+  explanation: 1,
+}
+
+export function rankCoverageDiagnostics(diagnostics: CoverageDiagnostic[]): CoverageDiagnostic[] {
+  return [...diagnostics].sort(
+    (a, b) =>
+      COVERAGE_ACTIONABILITY_ORDER[a.actionability] - COVERAGE_ACTIONABILITY_ORDER[b.actionability],
+  )
+}
+
+/**
+ * Coverage-diagnostic entry point — the "why no signal yet?" companion to
+ * detectSignals. Returns the ranked, clinically-safe diagnostics (action before
+ * explanation). The caller surfaces these ONLY on the no_pattern state (substantial
+ * history, no finding cleared a floor); they are never an all-clear (§9).
+ */
+export function detectCoverage(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): CoverageDiagnostic[] {
+  const diagnostics: CoverageDiagnostic[] = []
+  const rateMeals = detectRateMeals(input, config)
+  if (rateMeals) diagnostics.push(rateMeals)
+  const staple = detectStapleWashout(input, config)
+  if (staple) diagnostics.push(staple)
+  return rankCoverageDiagnostics(diagnostics)
 }
 
 // ── Detector registry (§4) ──────────────────────────────────────────────────

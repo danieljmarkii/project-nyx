@@ -72,10 +72,38 @@ export interface CachedFinding {
   finding: SignalFinding;
 }
 
+// ── Coverage diagnostics (B-053) ──────────────────────────────────────────────
+// The "why is there no signal yet?" reasons for the no_pattern surface. Mirror of
+// detection.ts CoverageDiagnostic (rendered fields). Cached in the SEPARATE
+// ai_signals.coverage column (migration 017), never in `findings` — they describe
+// the ABSENCE of a signal and its cause, not a detected pattern, and must never be
+// picked up by code iterating the live findings stack. Ranked ACTION before
+// EXPLANATION; the surface shows the top one. Per §9 these are about DATA COVERAGE,
+// never wellness — "no pattern" is never an all-clear.
+export type CoverageDiagnosticType = 'rate_meals' | 'staple_washout';
+export type CoverageActionability = 'action' | 'explanation';
+
+export interface RateMealsDiagnostic {
+  type: 'rate_meals';
+  actionability: 'action';
+  ratedMeals: number;
+  ratedMealsNeeded: number;
+}
+
+export interface StapleWashoutDiagnostic {
+  type: 'staple_washout';
+  actionability: 'explanation';
+  protein: string;
+  symptomEpisodes: number;
+}
+
+export type CoverageDiagnostic = RateMealsDiagnostic | StapleWashoutDiagnostic;
+
 export interface SignalCacheRow {
   signalText: string | null;
   isBuilding: boolean;
   findings: CachedFinding[];
+  coverage: CoverageDiagnostic[];
   expiresAt: string;
 }
 
@@ -85,7 +113,7 @@ export interface SignalCacheRow {
 export async function readSignalCache(petId: string): Promise<SignalCacheRow | null> {
   const { data, error } = await supabase
     .from('ai_signals')
-    .select('signal_text, is_building, findings, expires_at')
+    .select('signal_text, is_building, findings, coverage, expires_at')
     .eq('pet_id', petId)
     .order('expires_at', { ascending: false })
     .limit(1)
@@ -96,6 +124,7 @@ export async function readSignalCache(petId: string): Promise<SignalCacheRow | n
     signalText: (data.signal_text as string) ?? null,
     isBuilding: (data.is_building as boolean) ?? true,
     findings: Array.isArray(data.findings) ? (data.findings as CachedFinding[]) : [],
+    coverage: Array.isArray(data.coverage) ? (data.coverage as CoverageDiagnostic[]) : [],
     expiresAt: data.expires_at as string,
   };
 }

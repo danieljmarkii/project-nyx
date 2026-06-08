@@ -6,12 +6,15 @@ import {
   confidenceTag,
   sampleLine,
   evidenceText,
+  coverageCopy,
 } from './signalCopy';
 import type {
   CachedFinding,
   CorrelationFinding,
   IntakeDeclineFinding,
   ReflectionFinding,
+  RateMealsDiagnostic,
+  StapleWashoutDiagnostic,
 } from './signal';
 
 const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding => ({
@@ -168,6 +171,56 @@ describe('evidenceText — intake-decline safety flag', () => {
     expect(s).toContain('Tiki Cat salmon');
     expect(REASSURANCE_RE.test(s)).toBe(false);
     expect(DISMISSIVE_RE.test(s)).toBe(false);
+  });
+});
+
+describe('coverageCopy (B-053)', () => {
+  const rateMeals = (over: Partial<RateMealsDiagnostic> = {}): RateMealsDiagnostic => ({
+    type: 'rate_meals',
+    actionability: 'action',
+    ratedMeals: 1,
+    ratedMealsNeeded: 4,
+    ...over,
+  });
+  const stapleWashout = (over: Partial<StapleWashoutDiagnostic> = {}): StapleWashoutDiagnostic => ({
+    type: 'staple_washout',
+    actionability: 'explanation',
+    protein: 'chicken',
+    symptomEpisodes: 3,
+    ...over,
+  });
+
+  it('rate_meals: names the pet, carries a calm action, never reassures or shouts', () => {
+    const { why, action } = coverageCopy(rateMeals(), 'Nyx');
+    expect(why).toContain('Nyx');
+    expect(why.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(why)).toBe(false);
+    expect(action).not.toBeNull();
+    expect(action).toContain('Nyx');
+    expect(action!.toLowerCase()).toContain('rat'); // "rating"/"rate"
+    expect(action!.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(action!)).toBe(false);
+  });
+
+  it('staple_washout: EXPLANATION ONLY — no action, associational, never causal/reassuring', () => {
+    const { why, action } = coverageCopy(stapleWashout({ protein: 'chicken' }), 'Nyx');
+    expect(action).toBeNull(); // never a "vary the diet" ask
+    expect(why).toContain('Nyx');
+    expect(why).toContain('chicken');
+    expect(why.includes('!')).toBe(false);
+    expect(CAUSAL_RE.test(why)).toBe(false); // associational, not causal
+    expect(REASSURANCE_RE.test(why)).toBe(false); // coverage, never wellness
+  });
+
+  it('never reads as an all-clear for either diagnostic (§9 — coverage, not wellness)', () => {
+    for (const d of [rateMeals(), stapleWashout()]) {
+      const { why, action } = coverageCopy(d, 'Pixel');
+      for (const s of [why, action].filter((x): x is string => x !== null)) {
+        expect(REASSURANCE_RE.test(s)).toBe(false);
+        expect(DISMISSIVE_RE.test(s)).toBe(false);
+        expect(s.includes('!')).toBe(false);
+      }
+    }
   });
 });
 

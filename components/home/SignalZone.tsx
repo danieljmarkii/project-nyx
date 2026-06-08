@@ -5,8 +5,8 @@ import { Divider } from '../ui/Divider';
 import { SectionLabel } from '../ui/SectionLabel';
 import { InsightCard } from './InsightCard';
 import { useSignal } from '../../hooks/useSignal';
-import { buildingIntro, noPatternIntro, staleIntro } from '../../lib/signalCopy';
-import type { CachedFinding } from '../../lib/signal';
+import { buildingIntro, coverageCopy, noPatternIntro, staleIntro } from '../../lib/signalCopy';
+import type { CachedFinding, CoverageDiagnostic } from '../../lib/signal';
 
 // Ghosted "what insights look like" previews — kept in the building state so the
 // empty moment teaches what's coming (Principle 5: empty states are features).
@@ -16,7 +16,7 @@ const PREVIEW_INSIGHTS = [
 ];
 
 export function SignalZone() {
-  const { findings, displayState, petName, isLoading } = useSignal();
+  const { findings, coverage, displayState, petName, isLoading } = useSignal();
 
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame.
@@ -33,13 +33,38 @@ export function SignalZone() {
       ) : state === 'stale' ? (
         <Text style={styles.intro}>{staleIntro(petName)}</Text>
       ) : state === 'no_pattern' ? (
-        // Substantial history, nothing cleared a floor (B-051) — honest, no
-        // ghosted previews (the owner has logged enough to know the surface).
-        <Text style={styles.intro}>{noPatternIntro(petName)}</Text>
+        // Substantial history, nothing cleared a floor (B-051) — honest, no ghosted
+        // previews (the owner has logged enough to know the surface). B-053: when
+        // the engine knows WHY there's no signal yet, surface the top coverage
+        // diagnostic's one-line why + ≤1 safe action instead of the generic line.
+        <NoPatternState petName={petName} coverage={coverage} />
       ) : (
         <BuildingState petName={petName} />
       )}
     </Card>
+  );
+}
+
+// no_pattern — show the top coverage diagnostic (B-053) if the engine produced one,
+// else the honest generic line. The diagnostic is about DATA COVERAGE, never
+// wellness; the action (if any) is a calm corrective, never a nag.
+function NoPatternState({
+  petName,
+  coverage,
+}: {
+  petName: string;
+  coverage: CoverageDiagnostic[];
+}) {
+  const top = coverage[0];
+  if (!top) {
+    return <Text style={styles.intro}>{noPatternIntro(petName)}</Text>;
+  }
+  const { why, action } = coverageCopy(top, petName);
+  return (
+    <View>
+      <Text style={styles.intro}>{why}</Text>
+      {action ? <Text style={styles.coverageAction}>{action}</Text> : null}
+    </View>
   );
 }
 
@@ -87,6 +112,14 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     lineHeight: 22,
     marginBottom: theme.space2,
+  },
+  // The single corrective action under a coverage diagnostic (B-053) — calm and
+  // gently actionable, never a nag. Sits just below the "why" line.
+  coverageAction: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+    lineHeight: 20,
   },
   rowDivider: {
     marginHorizontal: -theme.space1,

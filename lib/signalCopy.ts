@@ -13,7 +13,12 @@
 // "picky". These strings are hand-written guardrail-clean (they are not passed
 // through the server's validatePhrasing).
 
-import type { CachedFinding, SignalFinding, SignalSymptomType } from './signal';
+import type {
+  CachedFinding,
+  CoverageDiagnostic,
+  SignalFinding,
+  SignalSymptomType,
+} from './signal';
 
 export type DisplayState = 'building' | 'no_pattern' | 'stale' | 'live';
 
@@ -63,6 +68,42 @@ export function noPatternIntro(petName: string): string {
 
 export function staleIntro(petName: string): string {
   return `Not enough recent data to show a pattern. Log today and we'll keep building ${petName}'s picture.`;
+}
+
+// ── Coverage diagnostics (B-053) ──────────────────────────────────────────────
+// On the no_pattern surface, replace the generic noPatternIntro with the TOP
+// coverage diagnostic's one-line WHY there's no signal yet + at most one safe
+// corrective ACTION. Template-only (no LLM, like reflections ③). Hard rules,
+// enforced here and asserted in signalCopy.test.ts:
+//   - About DATA COVERAGE, never wellness — "no pattern" never reads as "fine"
+//     (clinical-guardrails / §9). No reassurance vocabulary, ever.
+//   - staple_washout is EXPLANATION ONLY: it carries NO action. It must never ask
+//     the owner to vary the diet (that sabotages a vet-directed elimination trial),
+//     and it stays associational — never a causal claim about the protein.
+//   - Warm, specific, not nagging (nyx-voice): the action is folded into the
+//     surface, never a push, and never an exclamation.
+export interface CoverageCopy {
+  /** One-line reason there's no signal yet. */
+  why: string;
+  /** A single safe corrective action, or null for explanation-only diagnostics. */
+  action: string | null;
+}
+
+export function coverageCopy(diagnostic: CoverageDiagnostic, petName: string): CoverageCopy {
+  if (diagnostic.type === 'rate_meals') {
+    // ACTION diagnostic: detector ② is dormant for lack of rated meals. Rating more
+    // wakes it. About coverage of appetite data, not a verdict on how the pet is.
+    return {
+      why: `${petName}'s meals aren't rated often enough yet for us to watch for changes in appetite.`,
+      action: `Add a quick rating when you log a meal, and we'll start watching how much ${petName} eats.`,
+    };
+  }
+  // staple_washout — EXPLANATION ONLY, no action. Honest uncertainty ("we can't tell
+  // yet"), never reassurance, never a "vary the diet" ask, associational not causal.
+  return {
+    why: `${petName} eats ${diagnostic.protein} in nearly every meal, so we can't yet tell whether it's linked to the symptoms you're tracking — there's nothing to compare it against.`,
+    action: null,
+  };
 }
 
 // ── Confidence tag (§6) ───────────────────────────────────────────────────────
