@@ -62,7 +62,7 @@ function statusLabel(status: string): string {
 }
 
 export default function ProfileScreen() {
-  const { activePet, updatePet, setActivePet, setOnboarded } = usePetStore();
+  const { activePet, updatePet } = usePetStore();
   const { user } = useAuthStore();
 
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -76,7 +76,6 @@ export default function ProfileScreen() {
   const [trialLoading, setTrialLoading] = useState(true);
 
   const [photoUploading, setPhotoUploading] = useState(false);
-  const [wiping, setWiping] = useState(false);
 
   const loadConditions = useCallback(async () => {
     if (!activePet) return;
@@ -240,30 +239,6 @@ export default function ProfileScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => supabase.auth.signOut() },
     ]);
-  }
-
-  async function handleWipeData() {
-    Alert.alert(
-      'Wipe all data',
-      'This will permanently delete your pet, all logs, and your profile. You will be signed out.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Wipe everything',
-          style: 'destructive',
-          onPress: async () => {
-            if (!user) return;
-            setWiping(true);
-            await supabase.from('pets').delete().eq('user_id', user.id);
-            await supabase.from('user_profiles').delete().eq('id', user.id);
-            setActivePet(null);
-            setOnboarded(false);
-            setWiping(false);
-            supabase.auth.signOut();
-          },
-        },
-      ],
-    );
   }
 
   if (!activePet) {
@@ -434,13 +409,6 @@ export default function ProfileScreen() {
           <Divider style={styles.accountDivider} />
           <TouchableOpacity style={styles.accountRow} onPress={handleSignOut}>
             <Text style={styles.accountRowText}>Sign out</Text>
-          </TouchableOpacity>
-          <Divider style={styles.accountDivider} />
-          <TouchableOpacity style={styles.accountRow} onPress={handleWipeData} disabled={wiping}>
-            {wiping
-              ? <ActivityIndicator color={theme.colorDestructive} />
-              : <Text style={styles.destructiveText}>Wipe my data</Text>
-            }
           </TouchableOpacity>
         </Card>
 
@@ -690,10 +658,6 @@ const styles = StyleSheet.create({
   accountRowText: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-  },
-  destructiveText: {
-    fontSize: theme.textMD,
-    color: theme.colorDestructive,
   },
 
   // ── Empty / bottom ──
