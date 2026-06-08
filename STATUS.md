@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. Keep this scannable — prose paragraphs belong in session summaries and the backlog, not here._
 
-**Last updated:** 2026-06-08 (B-053 v1 — no-signal coverage diagnostics on the `no_pattern` surface, shipped via #115; engine + cache + surface, adversarial-review PASS; awaiting migration 017 + `generate-signal` deploy + on-device QA)
+**Last updated:** 2026-06-08 (B-053 v1 — no-signal coverage diagnostics, shipped via #115; engine + cache + surface, adversarial-review PASS. **Migration 017 applied to live DB + `generate-signal` deployed (v10) + deploy verified logic-identical to repo + Nyx cache cleared** — only on-device QA remains)
 
 ---
 
@@ -66,7 +66,8 @@ Plan of record: `docs/design-system-migration-plan.md` (PM-approved 2026-06-07).
 
 ## Open PM Action Items
 
-- [ ] **B-053 ship steps (PR #115):** (1) apply `supabase/migrations/017_ai_signals_coverage.sql` in the Supabase SQL Editor (additive `coverage` jsonb on `ai_signals`); (2) deploy `generate-signal` (CLI `supabase functions deploy generate-signal`, or dashboard paste) — this redeploys the detection engine, so confirm the live bundle contains `detectCoverage`; (3) clear cat Nyx's `ai_signals` row to force a regen, then on-device verify the `no_pattern` Signal shows the **staple-washout** explanation (single-protein diet + ≥3 symptom episodes, well-rated meals → explanation only, no action line). **Order matters:** migrate before deploy, or the function's `coverage` insert errors (PostgREST 42703 missing column).
+- [x] ~~**B-053 ship steps — migration + deploy (PR #115).**~~ **DONE 2026-06-08 (via MCP):** migration `017_ai_signals_coverage.sql` applied to the live DB (`ai_signals.coverage` jsonb NOT NULL DEFAULT `[]` verified present + recorded in the migrations table as `ai_signals_coverage`); `generate-signal` deployed (**v10, ACTIVE**) and the deployed bundle verified **logic-identical to the repo** (read-back diff — only `// ───` comment-rule lengths differ; `protein.ts` byte-identical); Nyx's stale `ai_signals` row cleared to force a fresh regen.
+- [ ] **B-053 on-device QA (the remaining step).** Open the app for cat Nyx → the Signal regenerates against v10. **Caveat:** the coverage diagnostic only shows in the **no_pattern** state (no findings). Nyx's cleared row was `is_building:false` (she had the B-051 *reflection* finding), so if the reflection still fires she'll see THAT (live), not the staple-washout — that's correct behavior, not a bug. To see B-053's `staple_washout`, Nyx must be in no_pattern (no reflection/correlation/intake finding). Verify there: single-protein diet + ≥3 symptom episodes + well-rated meals → explanation line, **no action**.
 - [ ] **Revoke the Supabase personal access token** (`nyx-cli-deploy`, `sbp_…`) generated 2026-06-07 for the `generate-signal` CLI deploy — https://supabase.com/dashboard/account/tokens. It's account-level and lives in the session transcript; revoke now that the deploy is done.
 - [ ] **Get `main` onto the dogfood device** — the reflection client renderer is now on `main` (PR #106 merged); pull `main` in Expo Go so the live reflection finding renders (a device still on a pre-#106 client would get a blank Signal for a `reflection`-only finding).
 - [x] ~~One-time EAS setup in Codespace + commit `app.json` (`extra.eas.projectId`, `updates.url`, `runtimeVersion`).~~ **DONE** — `projectId`/`updates.url`/`runtimeVersion` present in `app.json`; `eas build` produced a real iOS binary.
