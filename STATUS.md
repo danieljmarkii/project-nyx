@@ -111,6 +111,8 @@ Plan of record: `docs/design-system-migration-plan.md` (PM-approved 2026-06-07).
 
 ⚠️ **First-build gotcha, fixed:** the initial TestFlight build crashed on launch — `lib/supabase.ts` fail-fast throws at startup when `EXPO_PUBLIC_SUPABASE_*` are unset, and EAS cloud builds never see the gitignored `.env.local`. Fix = `env` block (public URL + anon key) in all three `eas.json` build profiles (PR #90, merged 2026-06-07). Any future build now inlines them; don't strip that block.
 
+ℹ️ **Export-compliance flag:** `app.json` → `ios.infoPlist.ITSAppUsesNonExemptEncryption: false` (committed 2026-06-09, PR #121) auto-answers Apple's encryption questionnaire so TestFlight/App Store uploads stop prompting on every build. Was living as uncommitted local drift on the PM's Codespace until then — same config-drift class as the `eas.json` env block above; now in the repo so it survives a fresh clone.
+
 ---
 
 ## Recent Sessions
