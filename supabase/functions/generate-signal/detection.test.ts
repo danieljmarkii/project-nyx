@@ -27,6 +27,7 @@ import {
   type ReflectionFinding,
   type DetectionInput,
   type MealEvent,
+  type FeedingArrangement,
   type SymptomEvent,
   type SymptomType,
   type IntakeRating,
@@ -86,6 +87,20 @@ const ratedMeal = (
   rating: IntakeRating,
   over: Partial<MealEvent> = {},
 ): MealEvent => meal({ occurredAt: at(day, 8), intakeRating: rating, foodType: 'meal', ...over })
+
+/** A free-fed standing fact (B-040). Dates are ISO; null activeUntil = still active. */
+const arrangement = (
+  protein: string | null,
+  activeFrom: string | null,
+  activeUntil: string | null,
+  attribution?: 'high' | 'low',
+): FeedingArrangement => ({
+  id: nextId(),
+  primaryProtein: protein,
+  activeFrom,
+  activeUntil,
+  ...(attribution ? { attributionConfidence: attribution } : {}),
+})
 
 const dog: PetContext = { name: 'Mochi', species: 'dog', dietTrialActive: false }
 const cat: PetContext = { name: 'Pixel', species: 'cat', dietTrialActive: false }
@@ -226,6 +241,130 @@ Deno.test('detectCorrelations — multi-implication: a symptom implicates EVERY 
   const proteins = findings.map((f) => f.protein).sort()
   assert.deepEqual(proteins, ['beef', 'chicken'])
   assert.ok(findings.every((f) => f.tier === 'early'))
+})
+
+// ── Detector ①: B-040 free-feeding ingestion (standing exposures, PR 4) ──────
+
+Deno.test('detectCorrelations — B-040: a free-fed food does not surface from its OWN sporadic discrete logs (no false correlate)', () => {
+  // A pet free-fed chicken 24/7, plus a daily beef staple. Chicken ALSO gets logged
+  // as a discrete meal on symptom days only (the owner happens to log it then).
+  // WITHOUT the arrangement, that sporadic discrete chicken false-fires (present in
+  // case windows, absent from controls). WITH the free-fed fact, chicken is excluded
+  // from candidacy (background context, §3) → it cannot surface. Beef is a daily
+  // staple → concordant → washes out. Net: no finding (the honest answer).
+  const mealEvents = [
+    ...staple(1, 7, 'beef', 9), // daily staple → washes out, but gives contrast + eligibility
+    pMeal(2, 'chicken', 10), // discrete chicken logged only on symptom days
+    pMeal(4, 'chicken', 10),
+    pMeal(6, 'chicken', 10),
+  ]
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+
+  // Sanity: without the free-fed fact, the sporadic discrete chicken DOES false-fire.
+  const withoutArr = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(withoutArr.length, 1, 'baseline: sporadic discrete chicken surfaces as an Early correlate')
+  assert.equal(withoutArr[0].protein, 'chicken')
+
+  // With the free-fed fact, chicken is always-present → concordant → washes out.
+  const withArr = detectCorrelations(
+    input({ mealEvents, symptomEvents, feedingArrangements: [arrangement('chicken', at(1, 0), null)] }),
+  )
+  assert.equal(withArr.length, 0, 'a free-fed food is excluded — never a clean correlate on its own')
+})
+
+Deno.test('detectCorrelations — B-040: a free-fed food cannot MANUFACTURE a correlate at its active-window boundary (adversarial review)', () => {
+  // The adversarial-review counterexample (PR 4): a new free-fed chicken introduced at
+  // a CONTIGUOUS symptom flare. The discrete data alone is ONE chicken log (b=1, below
+  // the discordant floor → no finding). With the arrangement, chicken is present on
+  // every symptom day inside its span, but the time-of-day-matched controls are forced
+  // onto days BEFORE activeFrom (contiguous symptom days leave no in-span control day),
+  // where chicken is genuinely absent — which (pre-fix) fabricated case-discordant
+  // pairs and surfaced an Early chicken correlate the discrete data cannot support.
+  // A free-fed protein is background context, never a clean correlate on its own (§3),
+  // so it is excluded entirely; its active-window boundary can no longer manufacture one.
+  const mealEvents = [
+    ...staple(1, 25, 'beef', 8), // eligibility + contrast; concordant → washes out
+    pMeal(12, 'chicken', 9), // the single discrete chicken log, at introduction
+  ]
+  const symptomEvents = [12, 13, 14, 15].map((d) => symptom('vomit', at(d, 11)))
+
+  // Baseline: without the arrangement, a single discrete chicken log is below the Early
+  // discordant floor (b=1 < 2) → no chicken finding.
+  const withoutArr = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(
+    withoutArr.some((f) => f.protein === 'chicken'),
+    false,
+    'one discrete chicken log alone is below the discordant floor',
+  )
+
+  // With the free-fed arrangement, the active-window boundary must NOT fabricate one.
+  const withArr = detectCorrelations(
+    input({ mealEvents, symptomEvents, feedingArrangements: [arrangement('chicken', at(12, 0), null)] }),
+  )
+  assert.equal(
+    withArr.some((f) => f.protein === 'chicken'),
+    false,
+    'a free-fed protein is excluded — its active-window boundary cannot manufacture a correlate',
+  )
+})
+
+Deno.test('detectCorrelations — B-040: an in-window free-fed bowl CAPS an otherwise-Established finding at Early (confounder)', () => {
+  // The Established fixture (beef → vomit, 6 clean pairs), but the pet ALSO free-feeds
+  // a SEPARATE food (salmon) the whole time. Salmon is never the subject of a finding
+  // (not a discrete-meal protein), but as an uncontrolled standing exposure it confounds
+  // the matched set → beef can no longer reach Established (§3 engine rule). The sample
+  // size and beef's own attribution are unchanged — only the tier is capped.
+  const mealEvents = [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(
+    input({ mealEvents, symptomEvents, feedingArrangements: [arrangement('salmon', at(1, 0), null)] }),
+  )
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.protein, 'beef')
+  assert.equal(f.matchedPairs, 6, 'same sample size that reached Established with no free-feeding')
+  assert.equal(f.attributionFloor, 'high', "beef's own attribution is untouched — salmon is the confounder")
+  assert.equal(f.tier, 'early', 'an uncontrolled standing exposure in-window blocks Established')
+})
+
+Deno.test('detectCorrelations — B-040: a null-protein free-fed bowl still caps the tier (generic standing confounder)', () => {
+  // Even when the free-fed food has no identified protein, it is an uncontrolled
+  // standing exposure and must cap the tier. It injects no named protein (so it never
+  // becomes a finding) but still sets standingInWindow.
+  const mealEvents = [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(
+    input({ mealEvents, symptomEvents, feedingArrangements: [arrangement(null, at(1, 0), null)] }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].protein, 'beef')
+  assert.equal(findings[0].tier, 'early', 'an unidentified standing exposure is still a confounder')
+})
+
+Deno.test('detectCorrelations — B-040: an ENDED arrangement (active span before the episodes) does NOT cap (boundary respect)', () => {
+  // The same Established fixture shifted to days 5–16, with a free-fed bowl that was
+  // active ONLY on days 1–2 and has since ended. No analysis window overlaps that span,
+  // so it is correctly absent — no blanket "always present forever" — and Established
+  // is reached. This is the active-window boundary being honoured.
+  const mealEvents = [
+    ...staple(5, 16, 'chicken', 9),
+    ...[5, 6, 7, 8, 9, 10].map((d) => pMeal(d, 'beef', 10)),
+  ]
+  const symptomEvents = [5, 6, 7, 8, 9, 10].map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(
+    input({ mealEvents, symptomEvents, feedingArrangements: [arrangement('salmon', at(1, 0), at(2, 0))] }),
+  )
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.protein, 'beef')
+  assert.equal(f.matchedPairs, 6)
+  assert.equal(f.tier, 'established', 'an arrangement that ended before the episodes does not confound them')
 })
 
 // ── Detector ①: B-052 protein-key canonicalization (read-time) ───────────────

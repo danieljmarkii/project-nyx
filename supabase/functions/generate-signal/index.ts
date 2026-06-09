@@ -34,6 +34,7 @@ import {
   type CoverageDiagnostic,
   type SymptomEvent,
   type MealEvent,
+  type FeedingArrangement,
   type SymptomType,
   type IntakeRating,
   type Species,
@@ -175,6 +176,32 @@ function mapSymptomRows(rows: SymptomRow[]): SymptomEvent[] {
   }))
 }
 
+interface ArrangementRow {
+  id: string
+  is_shared: boolean
+  active_from: string | null
+  active_until: string | null
+  food_items: { primary_protein: string | null } | { primary_protein: string | null }[] | null
+}
+
+// Map active free_choice arrangements to standing exposures (B-040 R1, PR 4). Only
+// free_choice rows are fetched (meal_fed is vet-report metadata, not a standing
+// exposure — its intake IS the discrete meal stream). is_shared → 'low' attribution
+// (multi-cat shared bowl, deferred); in R1 is_shared is always FALSE → 'high'
+// (single-pet free-fed: no other pet could have eaten it). Forward-compatible for free.
+function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[] {
+  return rows.map((r) => {
+    const fi = first(r.food_items)
+    return {
+      id: r.id,
+      primaryProtein: fi?.primary_protein ?? null,
+      activeFrom: r.active_from,
+      activeUntil: r.active_until,
+      attributionConfidence: r.is_shared ? 'low' : 'high',
+    }
+  })
+}
+
 function mapMealRows(rows: MealEventRow[]): MealEvent[] {
   return rows.map((r) => {
     const meal = first(r.meals)
@@ -229,7 +256,7 @@ Deno.serve(async (req: Request) => {
     // 1. Load pet, symptom events, meal events, active diet trial — all
     //    ownership-scoped by RLS via the caller's JWT. Soft-deleted rows are
     //    excluded here (the detection module's documented contract).
-    const [petRes, symptomsRes, mealsRes, trialRes] = await Promise.all([
+    const [petRes, symptomsRes, mealsRes, trialRes, arrangementsRes] = await Promise.all([
       supabase.from('pets').select('name, species').eq('id', petId).maybeSingle(),
       supabase
         .from('events')
@@ -248,6 +275,15 @@ Deno.serve(async (req: Request) => {
         .is('deleted_at', null)
         .gte('occurred_at', lookbackIso),
       supabase.from('diet_trials').select('id').eq('pet_id', petId).eq('status', 'active').limit(1),
+      // Active free-fed standing facts (B-040 R1, PR 4). No lookback filter: a
+      // free_choice bowl set months ago and still down is a current standing exposure.
+      // The active-window overlap is resolved inside detection, not the query.
+      supabase
+        .from('feeding_arrangements')
+        .select('id, is_shared, active_from, active_until, food_items(primary_protein)')
+        .eq('pet_id', petId)
+        .eq('method', 'free_choice')
+        .is('deleted_at', null),
     ])
 
     const pet = petRes.data as { name: string; species: string } | null
@@ -258,6 +294,7 @@ Deno.serve(async (req: Request) => {
 
     const symptomEvents = mapSymptomRows((symptomsRes.data ?? []) as SymptomRow[])
     const mealEvents = mapMealRows((mealsRes.data ?? []) as MealEventRow[])
+    const feedingArrangements = mapArrangementRows((arrangementsRes.data ?? []) as ArrangementRow[])
     const dietTrialActive = ((trialRes.data ?? []) as unknown[]).length > 0
 
     // 2. Detect — the pure engine ranks already-true findings (safety leads).
@@ -265,6 +302,7 @@ Deno.serve(async (req: Request) => {
       pet: { name: petName, species: pet.species as Species, dietTrialActive },
       symptomEvents,
       mealEvents,
+      feedingArrangements,
       now: new Date(nowMs).toISOString(),
     }
     const ranked = detectSignals(input, DEFAULT_CONFIG)
