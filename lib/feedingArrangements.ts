@@ -390,3 +390,17 @@ export function confirmedLabel(iso: string): string {
   if (d.toDateString() === now.toDateString()) return 'today';
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
+
+// §6a passive freshness is a NUDGE, not a persistent link: the one-tap "still
+// accurate?" affordance surfaces only once an arrangement hasn't been re-attested
+// for a while, so a fresh bowl stays calm (Designer + Sam) and the data-integrity
+// hazard a re-attest guards against — a forgotten-but-actually-ended arrangement —
+// is what triggers it (Data Scientist, §6a). A recently-confirmed one is fine, so
+// it shows nothing. Tunable; 14 days avoids re-prompting a stable standing fact.
+export const FRESHNESS_STALE_DAYS = 14;
+
+export function isArrangementStale(updatedAtIso: string, now: Date = new Date()): boolean {
+  const d = new Date(updatedAtIso);
+  if (isNaN(d.getTime())) return false;
+  return now.getTime() - d.getTime() >= FRESHNESS_STALE_DAYS * 24 * 60 * 60 * 1000;
+}

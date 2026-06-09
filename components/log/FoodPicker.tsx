@@ -8,7 +8,7 @@ import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
 import {
   getActiveArrangementsForPet, confirmArrangementFresh, ActiveArrangementView,
-  formatCalendarDate, confirmedLabel,
+  formatCalendarDate, isArrangementStale,
 } from '../../lib/feedingArrangements';
 import { FoodTile } from './FoodTile';
 
@@ -35,6 +35,9 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
   const [search, setSearch] = useState('');
+  // Brief "Confirmed ✓" acknowledgment after a freshness re-attest, so the tap
+  // never reads as a dead control even as the row settles back to fresh.
+  const [justConfirmedId, setJustConfirmedId] = useState<string | null>(null);
 
   // Just the "Always available" arrangements — re-read after a freshness confirm
   // (below) without re-running the whole recent/library load.
@@ -76,13 +79,19 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
   );
 
   // §6a passive freshness — one-tap re-confirm a bowl is still down, inline in the
-  // section (never a push). Re-reads so "confirmed {date}" updates to today.
+  // section (never a push). The re-read settles the row back to fresh (so the
+  // nudge disappears); the brief "Confirmed ✓" flash is the visible acknowledgment.
   const handleConfirmFresh = useCallback(async (foodItemId: string) => {
+    setJustConfirmedId(foodItemId);
     try {
       await confirmArrangementFresh(petId, foodItemId);
       await reloadArrangements();
     } catch (err) {
       console.warn('[FoodPicker] freshness confirm failed:', err);
+    } finally {
+      setTimeout(() => {
+        setJustConfirmedId((cur) => (cur === foodItemId ? null : cur));
+      }, 1500);
     }
   }, [petId, reloadArrangements]);
 
@@ -209,21 +218,27 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
                         {a.brand} {a.product_name}
                       </Text>
                       <Text style={styles.alwaysRowMeta}>
-                        Free-choice{since ? ` · since ${since}` : ''} · confirmed{' '}
-                        {confirmedLabel(a.updated_at)}
+                        Free-choice{since ? ` · since ${since}` : ''}
                       </Text>
                     </View>
                   </TouchableOpacity>
-                  {/* §6a passive freshness — separate tap target so the row tap
-                      still opens detail; never a push. */}
-                  <TouchableOpacity
-                    onPress={() => handleConfirmFresh(a.food_item_id)}
-                    hitSlop={10}
-                    activeOpacity={0.7}
-                    style={styles.alwaysConfirm}
-                  >
-                    <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
-                  </TouchableOpacity>
+                  {/* §6a passive freshness — a NUDGE, not a persistent link: the
+                      one-tap re-attest shows only once the arrangement is stale, so
+                      a fresh bowl stays quiet. Separate tap target so the row tap
+                      still opens detail; never a push. The "Confirmed ✓" flash is
+                      the visible acknowledgment before the row settles to fresh. */}
+                  {justConfirmedId === a.food_item_id ? (
+                    <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
+                  ) : isArrangementStale(a.updated_at) ? (
+                    <TouchableOpacity
+                      onPress={() => handleConfirmFresh(a.food_item_id)}
+                      hitSlop={10}
+                      activeOpacity={0.7}
+                      style={styles.alwaysConfirm}
+                    >
+                      <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               );
             })}
@@ -367,6 +382,13 @@ const styles = StyleSheet.create({
   alwaysConfirmText: {
     fontSize: theme.textSM,
     color: theme.colorAccent,
+  },
+  alwaysConfirmed: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    minHeight: 44,
+    textAlignVertical: 'center',
+    paddingVertical: theme.space1,
   },
   alwaysDot: {
     width: 8,

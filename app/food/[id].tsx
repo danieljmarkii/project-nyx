@@ -23,7 +23,7 @@ import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
 import {
   startFreeChoice, endFreeChoice, getActiveArrangementMeta, confirmArrangementFresh,
-  confirmedLabel, ActiveArrangementMeta,
+  confirmedLabel, isArrangementStale, ActiveArrangementMeta,
 } from '../../lib/feedingArrangements';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
@@ -101,6 +101,9 @@ export default function FoodDetailScreen() {
   // §6a passive "last confirmed" freshness line.
   const [arrangementMeta, setArrangementMeta] = useState<ActiveArrangementMeta | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Brief "Confirmed ✓" acknowledgment after a re-attest, before the line settles
+  // back to fresh (and the "Still accurate?" nudge disappears).
+  const [confirmedFlash, setConfirmedFlash] = useState(false);
 
   // ── Fetch + realtime subscription ──
   useEffect(() => {
@@ -192,6 +195,8 @@ export default function FoodDetailScreen() {
     try {
       await confirmArrangementFresh(activePet.id, id);
       await reloadArrangement();
+      setConfirmedFlash(true);
+      setTimeout(() => setConfirmedFlash(false), 1500);
     } catch (err) {
       console.warn('[food-detail] freshness confirm failed:', err);
     } finally {
@@ -720,17 +725,24 @@ export default function FoodDetailScreen() {
                     <Text style={styles.freshnessText}>
                       Last confirmed {confirmedLabel(arrangementMeta.updated_at)}
                     </Text>
-                    <TouchableOpacity
-                      onPress={handleConfirmFresh}
-                      disabled={confirming}
-                      hitSlop={12}
-                      activeOpacity={0.7}
-                      style={styles.freshnessActionBtn}
-                    >
-                      <Text style={styles.freshnessAction}>
-                        {confirming ? 'Confirming…' : 'Still accurate?'}
-                      </Text>
-                    </TouchableOpacity>
+                    {/* §6a passive freshness — the one-tap re-attest is a nudge
+                        that shows only once stale; a fresh arrangement just shows
+                        the date. "Confirmed ✓" flashes as the tap acknowledgment. */}
+                    {confirmedFlash ? (
+                      <Text style={styles.freshnessConfirmed}>Confirmed ✓</Text>
+                    ) : isArrangementStale(arrangementMeta.updated_at) ? (
+                      <TouchableOpacity
+                        onPress={handleConfirmFresh}
+                        disabled={confirming}
+                        hitSlop={12}
+                        activeOpacity={0.7}
+                        style={styles.freshnessActionBtn}
+                      >
+                        <Text style={styles.freshnessAction}>
+                          {confirming ? 'Confirming…' : 'Still accurate?'}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 )}
               </View>
@@ -970,6 +982,10 @@ const styles = StyleSheet.create({
   freshnessAction: {
     fontSize: theme.textSM,
     color: theme.colorAccent,
+  },
+  freshnessConfirmed: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
   deleteAction: {
     alignItems: 'center',

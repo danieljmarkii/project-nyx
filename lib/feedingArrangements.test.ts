@@ -27,7 +27,8 @@ jest.mock('./utils', () => ({ uuid: () => 'arr-1' }));
 import {
   startFreeChoice, endFreeChoice, localDateString,
   deriveBoundaryMarkers, confirmArrangementFresh, getActiveArrangementMeta,
-  confirmedLabel, formatCalendarDate, BoundaryArrangementRow,
+  confirmedLabel, formatCalendarDate, isArrangementStale, FRESHNESS_STALE_DAYS,
+  BoundaryArrangementRow,
 } from './feedingArrangements';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -193,5 +194,23 @@ describe('formatCalendarDate / confirmedLabel', () => {
   it('reads "today" for a same-day confirmation, else the date', () => {
     expect(confirmedLabel(new Date().toISOString())).toBe('today');
     expect(confirmedLabel('2020-01-15T08:00:00.000Z')).toBe('Jan 15');
+  });
+});
+
+describe('isArrangementStale', () => {
+  const now = new Date('2026-06-20T12:00:00.000Z');
+  it('is false for a recently-confirmed arrangement (within the window)', () => {
+    expect(isArrangementStale('2026-06-20T11:00:00.000Z', now)).toBe(false); // today
+    expect(isArrangementStale('2026-06-10T12:00:00.000Z', now)).toBe(false); // 10d < 14d
+  });
+  it('is true once past the stale window', () => {
+    expect(isArrangementStale('2026-06-06T12:00:00.000Z', now)).toBe(true);  // exactly 14d
+    expect(isArrangementStale('2026-05-01T12:00:00.000Z', now)).toBe(true);
+  });
+  it('never nags on a malformed timestamp', () => {
+    expect(isArrangementStale('garbage', now)).toBe(false);
+  });
+  it('uses a sane default window', () => {
+    expect(FRESHNESS_STALE_DAYS).toBe(14);
   });
 });
