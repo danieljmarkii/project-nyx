@@ -311,6 +311,7 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
       [
         'event_attachments',
         'events',
+        'feeding_arrangements',
         'food_items_cache',
         'meals',
         'sync_watermarks',

@@ -570,6 +570,7 @@ export default function LogModal() {
         {activePet && (
           <FoodPicker
             petId={activePet.id}
+            petName={activePet.name}
             onPickFood={handlePickFood}
             // Photo-first food capture (Step 5). On confirm, food-capture
             // logs the meal itself and routes back home — log.tsx is bypassed.

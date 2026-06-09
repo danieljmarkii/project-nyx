@@ -240,6 +240,10 @@ export const LOCAL_WIPE_TABLES = [
   'vet_visit_attachments',
   'events',
   'vet_visits',
+  // feeding_arrangements (B-040 R1) — a pet-child standing-fact table mirrored
+  // from Supabase, so it's account-scoped data that must not leak to the next
+  // account on a shared device. No local FK constraint, so order is free.
+  'feeding_arrangements',
   'food_items_cache',
   'sync_watermarks',
 ] as const;

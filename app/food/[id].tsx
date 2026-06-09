@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -21,7 +21,9 @@ import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
+import { isFreeChoiceActive, startFreeChoice, endFreeChoice } from '../../lib/feedingArrangements';
 import { useEventStore } from '../../store/eventStore';
+import { usePetStore } from '../../store/petStore';
 
 const FOOD_FORMATS = [
   { value: 'dry_kibble', label: 'Dry kibble' },
@@ -85,6 +87,13 @@ export default function FoodDetailScreen() {
   const [addingPhoto, setAddingPhoto] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const removeFromToday = useEventStore((s) => s.removeFromToday);
+  const activePet = usePetStore((s) => s.activePet);
+
+  // B-040 R1 — "Always available" (free-choice) standing fact for the active pet.
+  // Read from local SQLite; toggling writes locally + queues a sync push. Optimistic
+  // with revert-on-failure so the switch never lies about a write that didn't land.
+  const [freeChoice, setFreeChoice] = useState(false);
+  const [freeChoiceSaving, setFreeChoiceSaving] = useState(false);
 
   // ── Fetch + realtime subscription ──
   useEffect(() => {
@@ -126,6 +135,38 @@ export default function FoodDetailScreen() {
       supabase.removeChannel(channel);
     };
   }, [id]);
+
+  // Load the current free-choice state for this (pet, food). Re-runs if the
+  // active pet changes. Local read — hydration fills the row on a fresh device.
+  useEffect(() => {
+    if (!id || !activePet) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const active = await isFreeChoiceActive(activePet.id, id);
+        if (!cancelled) setFreeChoice(active);
+      } catch (err) {
+        console.warn('[food-detail] free-choice load failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, activePet?.id]);
+
+  async function handleToggleFreeChoice(next: boolean) {
+    if (!activePet || !id) return;
+    setFreeChoice(next); // optimistic
+    setFreeChoiceSaving(true);
+    try {
+      if (next) await startFreeChoice(activePet.id, id);
+      else await endFreeChoice(activePet.id, id);
+    } catch (err) {
+      setFreeChoice(!next); // revert — the write didn't land
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert("Couldn't update", msg);
+    } finally {
+      setFreeChoiceSaving(false);
+    }
+  }
 
   function applyRow(next: FoodRow) {
     // Capture the *previous* baseline before we mutate it — the field-seeding
@@ -617,6 +658,32 @@ export default function FoodDetailScreen() {
               autoCorrect={false}
             />
 
+            {/* B-040 R1 — "Always available" standing fact. Set-once, lives in the
+                food domain (never the pet page). A free-fed food means intake is
+                NOT directly observed; the vet report carries that caveat (§2/§6). */}
+            {activePet && (
+              <View style={styles.freeChoiceCard}>
+                <View style={styles.freeChoiceRow}>
+                  <View style={styles.freeChoiceText}>
+                    <Text style={styles.freeChoiceLabel}>
+                      Always available for {activePet.name}?
+                    </Text>
+                    <Text style={styles.freeChoiceHelper}>
+                      {activePet.name} can graze this throughout the day — we'll note it
+                      as free-choice on the vet report.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={freeChoice}
+                    onValueChange={handleToggleFreeChoice}
+                    disabled={freeChoiceSaving}
+                    trackColor={{ true: theme.colorAccent, false: theme.colorBorderStrong }}
+                    ios_backgroundColor={theme.colorBorderStrong}
+                  />
+                </View>
+              </View>
+            )}
+
             {/* A "try again" affordance for completed extractions — useful when
                 the AI got it wrong but the user wants to re-run rather than
                 hand-edit everything. Hidden during pending to keep the UI calm. */}
@@ -804,6 +871,31 @@ const styles = StyleSheet.create({
   secondaryActionText: {
     fontSize: theme.textMD,
     color: theme.colorAccent,
+  },
+  freeChoiceCard: {
+    backgroundColor: theme.colorNeutralLight,
+    borderRadius: theme.radiusMedium,
+    padding: theme.space2,
+    marginTop: theme.space1,
+  },
+  freeChoiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+  },
+  freeChoiceText: {
+    flex: 1,
+    gap: 4,
+  },
+  freeChoiceLabel: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+  },
+  freeChoiceHelper: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: 18,
   },
   deleteAction: {
     alignItems: 'center',

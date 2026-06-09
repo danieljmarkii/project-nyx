@@ -391,6 +391,80 @@ export async function refreshFoodCache(): Promise<void> {
   }
 }
 
+// Flush unsynced free-feeding arrangements to Supabase (B-040 R1). A standing
+// fact set/ended from the food-detail toggle (lib/feedingArrangements.ts).
+// Mirrors the syncPendingMeals shape: refresh the JWT (Pattern 4), pre-sync the
+// referenced food_items so the FK can't reject the row (Pattern 6 — the food may
+// have been created offline), upsert last-write-wins (Pattern 5), and only flip
+// synced=1 when the row actually landed (Pattern 1). RLS gates the write to the
+// owning account; deleted_at rides the upsert payload, never a separate DELETE.
+export async function syncPendingFeedingArrangements(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+
+  const unsynced = await db.getAllAsync<{
+    id: string; pet_id: string; food_item_id: string; method: string;
+    active_from: string | null; active_until: string | null; is_shared: number;
+    notes: string | null; deleted_at: string | null; created_at: string; updated_at: string;
+  }>('SELECT * FROM feeding_arrangements WHERE synced = 0 LIMIT 100');
+
+  if (unsynced.length === 0) return;
+
+  // Pattern 6 — ensure every referenced food exists server-side before the
+  // arrangement upsert, or the FK constraint rejects it and the queue retries
+  // forever. Same shape as the meals pre-sync.
+  const foodIds = [...new Set(unsynced.map((a) => a.food_item_id))];
+  if (foodIds.length > 0) {
+    const placeholders = foodIds.map(() => '?').join(',');
+    const localFoods = await db.getAllAsync<{
+      id: string; brand: string; product_name: string; format: string;
+      food_type: string | null; primary_protein: string | null;
+      is_novel_protein: number; is_grain_free: number; is_prescription: number;
+    }>(
+      `SELECT id, brand, product_name, format, food_type, primary_protein,
+              is_novel_protein, is_grain_free, is_prescription
+       FROM food_items_cache WHERE id IN (${placeholders})`,
+      foodIds,
+    );
+    if (localFoods.length > 0) {
+      const { error: foodError } = await supabase.from('food_items').upsert(
+        localFoods.map((f) => ({
+          id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
+          food_type: f.food_type, primary_protein: f.primary_protein,
+          is_novel_protein: Boolean(f.is_novel_protein),
+          is_grain_free: Boolean(f.is_grain_free),
+          is_prescription: Boolean(f.is_prescription),
+          created_by_user_id: session.user.id,
+        })),
+        { onConflict: 'id', ignoreDuplicates: true },
+      );
+      if (foodError) {
+        console.warn('[sync] food_items pre-sync (arrangements) failed:', foodError.message);
+      }
+    }
+  }
+
+  const { error } = await supabase.from('feeding_arrangements').upsert(
+    unsynced.map((a) => ({
+      id: a.id, pet_id: a.pet_id, food_item_id: a.food_item_id, method: a.method,
+      active_from: a.active_from, active_until: a.active_until,
+      is_shared: Boolean(a.is_shared), notes: a.notes,
+      deleted_at: a.deleted_at, created_at: a.created_at, updated_at: a.updated_at,
+    })),
+    { onConflict: 'id' },
+  );
+
+  if (error) {
+    console.error('[sync] feeding_arrangements upsert failed:', error.message);
+    return;
+  }
+
+  const ids = unsynced.map((a) => `'${a.id}'`).join(',');
+  await db.execAsync(`UPDATE feeding_arrangements SET synced = 1 WHERE id IN (${ids})`);
+}
+
 // ============================================================
 // Down-sync / hydration (B-054 Phase 1 + Phase 3)
 // ============================================================
@@ -450,6 +524,11 @@ interface RemoteVetVisit {
 interface RemoteVetVisitAttachment {
   id: string; vet_visit_id: string; pet_id: string; storage_path: string;
   mime_type: string | null; taken_at: string | null; sort_order: number | null; created_at: string;
+}
+interface RemoteFeedingArrangement {
+  id: string; pet_id: string; food_item_id: string; method: string | null;
+  active_from: string | null; active_until: string | null; is_shared: boolean | null;
+  notes: string | null; deleted_at: string | null; created_at: string; updated_at: string;
 }
 
 async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
@@ -658,6 +737,48 @@ async function hydrateVetVisitAttachments(db: Db, stale: () => boolean): Promise
   if (wm) await setWatermark('vet_visit_attachments', wm);
 }
 
+async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise<void> {
+  // B-040 R1 — a pet-child LWW table, reconciled like events/vet_visits:
+  // incremental on updated_at with the commit-skew overlap, replace only when the
+  // remote row is strictly newer (a pending local toggle isn't clobbered by an
+  // older remote copy, and push-before-pull ships it up first regardless). The
+  // `WHERE feeding_arrangements.synced = 1` backstop guarantees a hydrate write
+  // can never overwrite an unpushed local toggle. No FK to events/meals, so its
+  // order in the cycle is free (food_items is global, written by refreshFoodCache).
+  const since = await getWatermark('feeding_arrangements');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteFeedingArrangement>(
+    'feeding_arrangements',
+    'id, pet_id, food_item_id, method, active_from, active_until, is_shared, notes, deleted_at, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(db, 'feeding_arrangements', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const a of toWrite) {
+    await db.runAsync(
+      `INSERT INTO feeding_arrangements
+        (id, pet_id, food_item_id, method, active_from, active_until, is_shared, notes,
+         deleted_at, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         food_item_id=excluded.food_item_id, method=excluded.method,
+         active_from=excluded.active_from, active_until=excluded.active_until,
+         is_shared=excluded.is_shared, notes=excluded.notes,
+         deleted_at=excluded.deleted_at, updated_at=excluded.updated_at, synced=1
+       WHERE feeding_arrangements.synced = 1`,
+      [a.id, a.pet_id, a.food_item_id, a.method ?? 'free_choice',
+       a.active_from ?? null, a.active_until ?? null, a.is_shared ? 1 : 0,
+       a.notes ?? null, a.deleted_at ?? null, a.created_at, a.updated_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('feeding_arrangements', wm);
+}
+
 // FR-8 — hard-deleted-meal absence reconciliation (PM ruling: absence-reconcile,
 // not a tombstone schema). The food-deletion cascade hard-`DELETE`s meals
 // server-side, and a pull (incremental or full) can't observe a row that no
@@ -751,6 +872,8 @@ export async function hydrateFromCloud(): Promise<void> {
   await runHydrationStep('vet_visits', () => hydrateVetVisits(db, stale));
   if (stale()) return;
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
+  if (stale()) return;
+  await runHydrationStep('feeding_arrangements', () => hydrateFeedingArrangements(db, stale));
 }
 
 // One full sync cycle: push local writes UP, then pull remote rows DOWN
@@ -770,6 +893,7 @@ export async function syncNow(): Promise<void> {
     await syncPendingMeals();
     await syncPendingAttachments();
     await syncPendingVetVisits();
+    await syncPendingFeedingArrangements();
     // Pull down.
     await hydrateFromCloud();
     await refreshFoodCache();
