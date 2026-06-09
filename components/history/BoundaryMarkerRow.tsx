@@ -25,7 +25,9 @@ function describe(marker: BoundaryMarker): string {
     case 'stopped':
       return `Stopped free-feeding ${marker.foodLabel}${suffix}`;
     case 'switched':
-      return `Switched free-feeding to ${marker.toFoodLabel}${suffix}`;
+      // Keep the "from" food — on a clinical timeline the vet needs to see what
+      // the switch replaced, not just the new food.
+      return `Switched free-feeding from ${marker.foodLabel} to ${marker.toFoodLabel}${suffix}`;
   }
 }
 

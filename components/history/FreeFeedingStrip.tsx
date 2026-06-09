@@ -38,7 +38,7 @@ const styles = StyleSheet.create({
     paddingBottom: theme.space2,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
-    gap: 6,
+    gap: theme.space1,
   },
   label: {
     fontSize: theme.textXS,
@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   items: {
-    gap: 4,
+    gap: theme.space1,
   },
   itemRow: {
     flexDirection: 'row',

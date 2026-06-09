@@ -8,10 +8,13 @@
 // jest hoists jest.mock() above the imports, so any variable a factory closes
 // over must be `mock`-prefixed.
 
-const mockRunAsync = jest.fn().mockResolvedValue(undefined);
+const mockRunAsync = jest.fn().mockResolvedValue({ changes: 1, lastInsertRowId: 0 });
 const mockGetFirstAsync = jest.fn().mockResolvedValue(null); // null = not active
+const mockGetAllAsync = jest.fn().mockResolvedValue([]);
 jest.mock('./db', () => ({
-  getDb: () => ({ runAsync: mockRunAsync, getFirstAsync: mockGetFirstAsync }),
+  getDb: () => ({
+    runAsync: mockRunAsync, getFirstAsync: mockGetFirstAsync, getAllAsync: mockGetAllAsync,
+  }),
 }));
 
 const mockSyncPendingFeedingArrangements = jest.fn().mockResolvedValue(undefined);
@@ -31,8 +34,10 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
   mockRunAsync.mockClear();
+  mockRunAsync.mockResolvedValue({ changes: 1, lastInsertRowId: 0 });
   mockGetFirstAsync.mockClear();
   mockGetFirstAsync.mockResolvedValue(null);
+  mockGetAllAsync.mockClear();
   mockSyncPendingFeedingArrangements.mockClear();
 });
 
@@ -103,6 +108,13 @@ describe('confirmArrangementFresh', () => {
     expect(sql).not.toMatch(/INSERT/);
     expect(mockRunAsync.mock.calls.some((c) => /DELETE/.test(c[0] as string))).toBe(false);
     expect(mockSyncPendingFeedingArrangements).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not push when no row matched (arrangement ended elsewhere)', async () => {
+    mockRunAsync.mockResolvedValue({ changes: 0, lastInsertRowId: 0 });
+    await confirmArrangementFresh('pet-1', 'food-1');
+    await flush();
+    expect(mockSyncPendingFeedingArrangements).not.toHaveBeenCalled();
   });
 });
 

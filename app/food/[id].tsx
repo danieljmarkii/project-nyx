@@ -957,7 +957,7 @@ const styles = StyleSheet.create({
     paddingTop: theme.space1,
     borderTopWidth: 1,
     borderTopColor: theme.colorBorder,
-    minHeight: 32,
+    minHeight: theme.space4,
   },
   freshnessText: {
     fontSize: theme.textXS,

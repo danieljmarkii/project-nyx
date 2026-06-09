@@ -434,7 +434,7 @@ export default function HistoryScreen() {
             ) : null
           }
           ListFooterComponent={
-            hasMore && events.length > 0 ? (
+            hasMore && merged.length > 0 ? (
               <TouchableOpacity style={styles.loadMore} onPress={handleLoadMore} activeOpacity={0.7}>
                 <Text style={styles.loadMoreText}>Load more</Text>
               </TouchableOpacity>

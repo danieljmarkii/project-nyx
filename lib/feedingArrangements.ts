@@ -174,7 +174,7 @@ export async function getActiveArrangementMeta(
 export async function confirmArrangementFresh(petId: string, foodItemId: string): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
-  await db.runAsync(
+  const result = await db.runAsync(
     `UPDATE feeding_arrangements
        SET updated_at = ?, synced = 0
      WHERE pet_id = ? AND food_item_id = ?
@@ -183,7 +183,9 @@ export async function confirmArrangementFresh(petId: string, foodItemId: string)
        AND deleted_at IS NULL`,
     [now, petId, foodItemId],
   );
-  pushArrangements();
+  // Only push if a row actually changed — if the arrangement was concurrently
+  // ended elsewhere (zero rows matched), there's nothing new to send up.
+  if (result && result.changes > 0) pushArrangements();
 }
 
 // Toggle ON — start a free-choice standing fact for this (pet, food). Idempotent:

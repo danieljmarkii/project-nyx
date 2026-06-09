@@ -357,10 +357,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space1,
+    minHeight: 44,
   },
   alwaysConfirm: {
     paddingVertical: theme.space1,
     justifyContent: 'center',
+    minHeight: 44,
   },
   alwaysConfirmText: {
     fontSize: theme.textSM,
