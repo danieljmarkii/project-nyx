@@ -6,7 +6,10 @@ import { useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
-import { getActiveArrangementsForPet, ActiveArrangementView } from '../../lib/feedingArrangements';
+import {
+  getActiveArrangementsForPet, confirmArrangementFresh, ActiveArrangementView,
+  formatCalendarDate, confirmedLabel,
+} from '../../lib/feedingArrangements';
 import { FoodTile } from './FoodTile';
 
 interface Props {
@@ -23,15 +26,6 @@ interface Props {
   onOpenDetail?: (food: PickerFood) => void;
 }
 
-// 'YYYY-MM-DD' (a DATE column value) → "Jun 2" for the "since" line. Built from
-// the date parts directly so there's no timezone shift on a bare calendar day.
-function formatSince(date: string): string | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-}
-
 const RECENT_DAYS = 14;
 const RECENT_LIMIT = 5;
 const SCREEN_PADDING = theme.space2;
@@ -41,6 +35,16 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
   const [search, setSearch] = useState('');
+
+  // Just the "Always available" arrangements — re-read after a freshness confirm
+  // (below) without re-running the whole recent/library load.
+  const reloadArrangements = useCallback(async () => {
+    try {
+      setArrangements(await getActiveArrangementsForPet(petId));
+    } catch (err) {
+      console.warn('[FoodPicker] arrangements reload failed:', err);
+    }
+  }, [petId]);
 
   // Reload on every focus so foods added or deleted from the detail screen — and
   // free-choice arrangements toggled there — are reflected when the picker comes
@@ -70,6 +74,17 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
       return () => { cancelled = true; };
     }, [petId]),
   );
+
+  // §6a passive freshness — one-tap re-confirm a bowl is still down, inline in the
+  // section (never a push). Re-reads so "confirmed {date}" updates to today.
+  const handleConfirmFresh = useCallback(async (foodItemId: string) => {
+    try {
+      await confirmArrangementFresh(petId, foodItemId);
+      await reloadArrangements();
+    } catch (err) {
+      console.warn('[FoodPicker] freshness confirm failed:', err);
+    }
+  }, [petId, reloadArrangements]);
 
   const filteredLibrary = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -168,36 +183,48 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
         ) : (
           <View style={styles.alwaysList}>
             {arrangements.map((a) => {
-              const since = a.active_from ? formatSince(a.active_from) : null;
+              const since = formatCalendarDate(a.active_from);
               return (
-                <TouchableOpacity
-                  key={a.id}
-                  style={styles.alwaysRow}
-                  // food_type/photo_path are null because this is a display-only
-                  // view shape — the detail screen re-fetches the full food row.
-                  onPress={() =>
-                    onOpenDetail?.({
-                      id: a.food_item_id,
-                      brand: a.brand,
-                      product_name: a.product_name,
-                      format: a.format,
-                      food_type: null,
-                      photo_path: null,
-                    })
-                  }
-                  activeOpacity={0.7}
-                  hitSlop={8}
-                >
-                  <View style={styles.alwaysDot} />
-                  <View style={styles.alwaysRowText}>
-                    <Text style={styles.alwaysRowTitle} numberOfLines={1}>
-                      {a.brand} {a.product_name}
-                    </Text>
-                    <Text style={styles.alwaysRowMeta}>
-                      Free-choice{since ? ` · since ${since}` : ''}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                <View key={a.id} style={styles.alwaysRow}>
+                  <TouchableOpacity
+                    style={styles.alwaysMain}
+                    // food_type/photo_path are null because this is a display-only
+                    // view shape — the detail screen re-fetches the full food row.
+                    onPress={() =>
+                      onOpenDetail?.({
+                        id: a.food_item_id,
+                        brand: a.brand,
+                        product_name: a.product_name,
+                        format: a.format,
+                        food_type: null,
+                        photo_path: null,
+                      })
+                    }
+                    activeOpacity={0.7}
+                    hitSlop={8}
+                  >
+                    <View style={styles.alwaysDot} />
+                    <View style={styles.alwaysRowText}>
+                      <Text style={styles.alwaysRowTitle} numberOfLines={1}>
+                        {a.brand} {a.product_name}
+                      </Text>
+                      <Text style={styles.alwaysRowMeta}>
+                        Free-choice{since ? ` · since ${since}` : ''} · confirmed{' '}
+                        {confirmedLabel(a.updated_at)}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                  {/* §6a passive freshness — separate tap target so the row tap
+                      still opens detail; never a push. */}
+                  <TouchableOpacity
+                    onPress={() => handleConfirmFresh(a.food_item_id)}
+                    hitSlop={10}
+                    activeOpacity={0.7}
+                    style={styles.alwaysConfirm}
+                  >
+                    <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
+                  </TouchableOpacity>
+                </View>
               );
             })}
           </View>
@@ -321,9 +348,23 @@ const styles = StyleSheet.create({
   alwaysRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.space1,
+    gap: theme.space2,
     paddingVertical: theme.space1,
     minHeight: 44,
+  },
+  alwaysMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  alwaysConfirm: {
+    paddingVertical: theme.space1,
+    justifyContent: 'center',
+  },
+  alwaysConfirmText: {
+    fontSize: theme.textSM,
+    color: theme.colorAccent,
   },
   alwaysDot: {
     width: 8,
