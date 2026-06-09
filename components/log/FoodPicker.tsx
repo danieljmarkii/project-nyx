@@ -50,15 +50,21 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
     useCallback(() => {
       let cancelled = false;
       (async () => {
-        const [r, l, a] = await Promise.all([
-          getRecentFoods(petId, RECENT_DAYS, RECENT_LIMIT),
-          getLibraryFoods(),
-          getActiveArrangementsForPet(petId),
-        ]);
-        if (!cancelled) {
-          setRecent(r);
-          setLibrary(l);
-          setArrangements(a);
+        try {
+          const [r, l, a] = await Promise.all([
+            getRecentFoods(petId, RECENT_DAYS, RECENT_LIMIT),
+            getLibraryFoods(),
+            getActiveArrangementsForPet(petId),
+          ]);
+          if (!cancelled) {
+            setRecent(r);
+            setLibrary(l);
+            setArrangements(a);
+          }
+        } catch (err) {
+          // No silent failures in the data path (house rule). Leave the prior
+          // state intact — navigating away and back re-runs this load.
+          console.warn('[FoodPicker] load failed:', err);
         }
       })();
       return () => { cancelled = true; };
@@ -161,36 +167,39 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
           </Text>
         ) : (
           <View style={styles.alwaysList}>
-            {arrangements.map((a) => (
-              <TouchableOpacity
-                key={a.id}
-                style={styles.alwaysRow}
-                onPress={() =>
-                  onOpenDetail?.({
-                    id: a.food_item_id,
-                    brand: a.brand,
-                    product_name: a.product_name,
-                    format: a.format,
-                    food_type: null,
-                    photo_path: null,
-                  })
-                }
-                activeOpacity={0.7}
-                hitSlop={8}
-              >
-                <View style={styles.alwaysDot} />
-                <View style={styles.alwaysRowText}>
-                  <Text style={styles.alwaysRowTitle} numberOfLines={1}>
-                    {a.brand} {a.product_name}
-                  </Text>
-                  <Text style={styles.alwaysRowMeta}>
-                    Free-choice{a.active_from && formatSince(a.active_from)
-                      ? ` · since ${formatSince(a.active_from)}`
-                      : ''}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+            {arrangements.map((a) => {
+              const since = a.active_from ? formatSince(a.active_from) : null;
+              return (
+                <TouchableOpacity
+                  key={a.id}
+                  style={styles.alwaysRow}
+                  // food_type/photo_path are null because this is a display-only
+                  // view shape — the detail screen re-fetches the full food row.
+                  onPress={() =>
+                    onOpenDetail?.({
+                      id: a.food_item_id,
+                      brand: a.brand,
+                      product_name: a.product_name,
+                      format: a.format,
+                      food_type: null,
+                      photo_path: null,
+                    })
+                  }
+                  activeOpacity={0.7}
+                  hitSlop={8}
+                >
+                  <View style={styles.alwaysDot} />
+                  <View style={styles.alwaysRowText}>
+                    <Text style={styles.alwaysRowTitle} numberOfLines={1}>
+                      {a.brand} {a.product_name}
+                    </Text>
+                    <Text style={styles.alwaysRowMeta}>
+                      Free-choice{since ? ` · since ${since}` : ''}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </View>
