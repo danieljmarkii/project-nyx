@@ -7,7 +7,7 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
 import {
-  getActiveArrangementsForPet, confirmArrangementFresh, ActiveArrangementView,
+  getActiveArrangementsForPet, confirmArrangementFresh, endFreeChoice, ActiveArrangementView,
   formatCalendarDate, isArrangementStale,
 } from '../../lib/feedingArrangements';
 import { FoodTile } from './FoodTile';
@@ -38,6 +38,11 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
   // Brief "Confirmed ✓" acknowledgment after a freshness re-attest, so the tap
   // never reads as a dead control even as the row settles back to fresh.
   const [justConfirmedId, setJustConfirmedId] = useState<string | null>(null);
+  // Which row has its "still out? yes / no" choices open. The stale nudge is a
+  // QUESTION, so tapping it reveals a two-way answer rather than silently
+  // auto-confirming "yes" — and "no" (the bowl ended) is the outcome freshness
+  // exists to catch (§6a; Data Scientist), so it's a first-class choice.
+  const [choosingId, setChoosingId] = useState<string | null>(null);
 
   // Just the "Always available" arrangements — re-read after a freshness confirm
   // (below) without re-running the whole recent/library load.
@@ -78,10 +83,11 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
     }, [petId]),
   );
 
-  // §6a passive freshness — one-tap re-confirm a bowl is still down, inline in the
-  // section (never a push). The re-read settles the row back to fresh (so the
-  // nudge disappears); the brief "Confirmed ✓" flash is the visible acknowledgment.
-  const handleConfirmFresh = useCallback(async (foodItemId: string) => {
+  // §6a passive freshness — "Yes, still out": re-attest the bowl is still down
+  // (never a push). The re-read settles the row back to fresh (so the nudge
+  // disappears); the brief "Confirmed ✓" flash is the visible acknowledgment.
+  const handleConfirmYes = useCallback(async (foodItemId: string) => {
+    setChoosingId(null);
     setJustConfirmedId(foodItemId);
     try {
       await confirmArrangementFresh(petId, foodItemId);
@@ -92,6 +98,18 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
       setTimeout(() => {
         setJustConfirmedId((cur) => (cur === foodItemId ? null : cur));
       }, 1500);
+    }
+  }, [petId, reloadArrangements]);
+
+  // "No, it's stopped": end the arrangement (soft — writes the active_until
+  // "Stopped" boundary History renders). The row drops out of the active list.
+  const handleStopped = useCallback(async (foodItemId: string) => {
+    setChoosingId(null);
+    try {
+      await endFreeChoice(petId, foodItemId);
+      await reloadArrangements();
+    } catch (err) {
+      console.warn('[FoodPicker] end arrangement failed:', err);
     }
   }, [petId, reloadArrangements]);
 
@@ -194,51 +212,78 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
             {arrangements.map((a) => {
               const since = formatCalendarDate(a.active_from);
               return (
-                <View key={a.id} style={styles.alwaysRow}>
-                  <TouchableOpacity
-                    style={styles.alwaysMain}
-                    // food_type/photo_path are null because this is a display-only
-                    // view shape — the detail screen re-fetches the full food row.
-                    onPress={() =>
-                      onOpenDetail?.({
-                        id: a.food_item_id,
-                        brand: a.brand,
-                        product_name: a.product_name,
-                        format: a.format,
-                        food_type: null,
-                        photo_path: null,
-                      })
-                    }
-                    activeOpacity={0.7}
-                    hitSlop={8}
-                  >
-                    <View style={styles.alwaysDot} />
-                    <View style={styles.alwaysRowText}>
-                      <Text style={styles.alwaysRowTitle} numberOfLines={1}>
-                        {a.brand} {a.product_name}
-                      </Text>
-                      <Text style={styles.alwaysRowMeta}>
-                        Free-choice{since ? ` · since ${since}` : ''}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                  {/* §6a passive freshness — a NUDGE, not a persistent link: the
-                      one-tap re-attest shows only once the arrangement is stale, so
-                      a fresh bowl stays quiet. Separate tap target so the row tap
-                      still opens detail; never a push. The "Confirmed ✓" flash is
-                      the visible acknowledgment before the row settles to fresh. */}
-                  {justConfirmedId === a.food_item_id ? (
-                    <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
-                  ) : isArrangementStale(a.updated_at) ? (
+                <View key={a.id} style={styles.alwaysItem}>
+                  <View style={styles.alwaysRow}>
                     <TouchableOpacity
-                      onPress={() => handleConfirmFresh(a.food_item_id)}
-                      hitSlop={10}
+                      style={styles.alwaysMain}
+                      // food_type/photo_path are null because this is a display-only
+                      // view shape — the detail screen re-fetches the full food row.
+                      onPress={() =>
+                        onOpenDetail?.({
+                          id: a.food_item_id,
+                          brand: a.brand,
+                          product_name: a.product_name,
+                          format: a.format,
+                          food_type: null,
+                          photo_path: null,
+                        })
+                      }
                       activeOpacity={0.7}
-                      style={styles.alwaysConfirm}
+                      hitSlop={8}
                     >
-                      <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
+                      <View style={styles.alwaysDot} />
+                      <View style={styles.alwaysRowText}>
+                        <Text style={styles.alwaysRowTitle} numberOfLines={1}>
+                          {a.brand} {a.product_name}
+                        </Text>
+                        <Text style={styles.alwaysRowMeta}>
+                          Free-choice{since ? ` · since ${since}` : ''}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
-                  ) : null}
+                    {/* §6a passive freshness — a NUDGE, not a persistent link: the
+                        re-attest shows only once the arrangement is stale, so a fresh
+                        bowl stays quiet. Tapping it opens a two-way answer (below)
+                        rather than silently auto-confirming "yes"; never a push. */}
+                    {justConfirmedId === a.food_item_id ? (
+                      <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
+                    ) : isArrangementStale(a.updated_at) && choosingId !== a.food_item_id ? (
+                      <TouchableOpacity
+                        onPress={() => setChoosingId(a.food_item_id)}
+                        hitSlop={10}
+                        activeOpacity={0.7}
+                        style={styles.alwaysConfirm}
+                      >
+                        <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  {choosingId === a.food_item_id && (
+                    <View style={styles.freshnessChoices}>
+                      <Text style={styles.freshnessPrompt}>
+                        Still always out for {petName ?? 'your pet'}?
+                      </Text>
+                      <View style={styles.freshnessChoiceBtns}>
+                        <TouchableOpacity
+                          onPress={() => handleConfirmYes(a.food_item_id)}
+                          hitSlop={8}
+                          activeOpacity={0.7}
+                          style={styles.freshnessChoiceBtn}
+                        >
+                          <Text style={styles.choiceYes}>Yes, still out</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleStopped(a.food_item_id)}
+                          hitSlop={8}
+                          activeOpacity={0.7}
+                          style={styles.freshnessChoiceBtn}
+                        >
+                          <Text style={styles.choiceNo}>No, it's stopped</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </View>
               );
             })}
@@ -360,12 +405,41 @@ const styles = StyleSheet.create({
   alwaysList: {
     gap: theme.space1,
   },
+  alwaysItem: {
+    gap: theme.space1,
+  },
   alwaysRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.space2,
     paddingVertical: theme.space1,
     minHeight: 44,
+  },
+  freshnessChoices: {
+    paddingLeft: theme.space2,
+    paddingBottom: theme.space1,
+    gap: theme.space1,
+  },
+  freshnessPrompt: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  freshnessChoiceBtns: {
+    flexDirection: 'row',
+    gap: theme.space3,
+  },
+  freshnessChoiceBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  choiceYes: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
+  },
+  choiceNo: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
   alwaysMain: {
     flex: 1,
