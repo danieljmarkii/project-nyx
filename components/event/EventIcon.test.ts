@@ -1,4 +1,4 @@
-import { UtensilsCrossed, Droplet, Circle, CircleHelp } from 'lucide-react-native';
+import { UtensilsCrossed, Wind, Circle, CircleHelp } from 'lucide-react-native';
 import { iconForType } from './EventIcon';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 
@@ -8,7 +8,7 @@ import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 describe('iconForType', () => {
   it('maps a known event type to its Lucide glyph', () => {
     expect(iconForType('meal')).toBe(UtensilsCrossed);
-    expect(iconForType('vomit')).toBe(Droplet);
+    expect(iconForType('vomit')).toBe(Wind);
     expect(iconForType('stool_normal')).toBe(Circle);
   });
 
