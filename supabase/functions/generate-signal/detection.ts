@@ -116,16 +116,20 @@ export interface MealEvent {
  *
  *   • It enters the correlation case-crossover as an in-window exposure, so a
  *     free-fed food is NEVER silently absent from the analysis.
- *   • Because it is CONSTANT across its active span it is present in BOTH the case
- *     window and the time-matched control window → concordant → it washes out (the
- *     "matched-out" property). A 24/7 food can never be a clean correlate on its own.
- *   • Its active-window BOUNDARIES remain analyzable: a window straddling
- *     activeFrom/activeUntil correctly sees the exposure on one side only; windows
- *     wholly outside the span see it absent (no blanket "always present forever").
- *   • While in-window it is a CONFOUNDER that caps any correlation at Early — an
- *     uncontrolled standing exposure means we cannot certify a clean Established
- *     association for ANY protein in that window (§3 engine rule). This is separate
- *     from, and additive to, per-meal attribution (a shared bowl is ALSO 'low').
+ *   • A free-fed food is background context, never a clean correlate on its own (§3):
+ *     while its arrangement is in-window, its protein is EXCLUDED from correlation
+ *     candidacy. (Exclusion — not concordance-washout — because at an active-window
+ *     boundary the matched control can land OUTSIDE the span, where the food is truly
+ *     absent, which would otherwise manufacture a case-only discordant pair the
+ *     discrete data cannot support. Adversarial review, PR 4.)
+ *   • Its active-window BOUNDARIES remain analyzable: the exposure is in-window only
+ *     within [activeFrom, activeUntil]; an ENDED arrangement touching none of the
+ *     analysis windows does NOT exclude its protein (it was controlled then) — no
+ *     blanket "always present forever".
+ *   • While in-window it is a CONFOUNDER that caps any OTHER protein's correlation at
+ *     Early — an uncontrolled standing exposure means we cannot certify a clean
+ *     Established association for any protein in that window (§3 engine rule). This is
+ *     separate from, and additive to, per-meal attribution (a shared bowl is ALSO 'low').
  *
  * Only `free_choice` arrangements are standing exposures; `meal_fed` arrangements
  * are vet-report metadata (their intake IS the discrete meal stream) and must NOT
@@ -599,9 +603,12 @@ export function mcNemarExactRightTail(b: number, c: number): number {
 //
 // B-040 (free-feeding R1, PR 4): active free_choice feeding_arrangements enter here as
 // in-window STANDING exposures (input.feedingArrangements → classifyArrangements). A
-// 24/7 bowl is matched-out (present in case AND control → concordant → washes out, never
-// a clean correlate); its active-window boundaries stay analyzable; and while in-window
-// it is a confounder that caps any finding at Early. The capture side of the §3 contract.
+// free-fed food is background context, never a clean correlate on its own (§3): any
+// protein under an active free-fed arrangement that is in-window for a matched pair is
+// EXCLUDED from candidacy (so it can never surface — and its active-window boundary can
+// never manufacture a discordant pair, the bug the adversarial review caught). Any
+// standing exposure in-window separately CAPS every still-evaluated protein at Early as
+// a confounder. The capture side of the §3 contract.
 
 const MS_PER_HOUR = 3_600_000
 const MS_PER_DAY = 86_400_000
@@ -671,8 +678,9 @@ interface StandingExposure {
  * Reduce free-fed arrangements to standing exposures with parsed, end-of-day-
  * inclusive active windows (B-040). The protein is canonicalized through the SAME
  * canonicalizeProtein path as meals (ONE source — a free-fed "Chicken By-Product
- * Meal" and a logged "chicken" meal must pool, or the standing food would fail to
- * wash out its own discrete logs). `active_from`/`active_until` are DATE columns, so
+ * Meal" and a logged "chicken" meal must resolve to the same key, or the exclusion
+ * would miss the discrete logs of the free-fed food). `active_from`/`active_until`
+ * are DATE columns, so
  * activeUntil is treated as inclusive of its whole day (the bowl is down all of that
  * day). A row with an unparseable or inverted/empty window is dropped — a garbage
  * span must never silently confound (cap) every finding.
@@ -708,12 +716,19 @@ export function detectCorrelations(
   const cfg = config.correlation
 
   const meals = classifyMeals(input.mealEvents)
-  // Free-fed standing exposures (B-040). NOTE: deliberately NOT folded into the
-  // candidate `proteins` set below — a free-fed food is background context, never a
-  // correlate candidate on its own (§3). It only (a) injects into case/control
-  // windows so a matching discrete protein washes out, and (b) flags an in-window
-  // standing confounder so the tier is capped. A free-fed-only protein (never logged
-  // as a discrete meal) is therefore never the subject of a finding.
+  // Free-fed standing exposures (B-040). A free-fed food is BACKGROUND context, never
+  // a correlate candidate on its own (§3). It does two things here, and ONLY these:
+  //   (a) any protein under an active free-fed arrangement that is in-window for a
+  //       matched pair is EXCLUDED from candidacy (freeFedProteins below). This is the
+  //       direct encoding of "never a clean correlate on its own" and the fix for the
+  //       active-window-boundary manufacture the adversarial review caught (PR 4): when
+  //       contiguous symptom days force the matched control onto a day OUTSIDE the
+  //       arrangement's span, the food is case-present / control-absent purely by the
+  //       boundary, fabricating discordant pairs the discrete data cannot support.
+  //   (b) ANY standing exposure in-window flags `standingConfounder`, capping every
+  //       OTHER (still-evaluated) protein at Early.
+  // A free-fed-only protein (never logged as a discrete meal) is never in `proteins` to
+  // begin with; a free-fed protein that ALSO has discrete logs is removed by (a).
   const standing = classifyArrangements(input.feedingArrangements ?? [])
 
   const proteins = Array.from(new Set(meals.map((m) => m.protein)))
@@ -728,14 +743,16 @@ export function detectCorrelations(
   // logged, so such windows are excluded (this is the guard that stops the detector-②
   // logging-gap bug from reappearing on the control arm — Biostatistician, B-050).
   //
-  // Free-fed standing exposures (B-040) are layered on top: a 24/7 bowl is "present"
-  // in every window whose time overlaps its active span. Constant presence in BOTH
-  // case and control → it washes out (matched-out); at an active-window boundary one
-  // side sees it and the other does not (still analyzable). A standing exposure does
-  // NOT count toward mealCount — it tells us the free-fed food was PRESENT, never that
-  // other foods were ABSENT, so it must not manufacture logging-eligibility for an
-  // absence claim. Its presence is reported via `standingInWindow` so the tier logic
-  // can cap a confounded finding at Early.
+  // Free-fed standing exposures (B-040) are detected per window but DELIBERATELY NOT
+  // merged into `exposures` (the discrete-meal exposure set). Two separate signals are
+  // returned instead: `standingProteins` (named free-fed proteins in-window → excluded
+  // from candidacy) and `standingInWindow` (ANY free-fed exposure in-window, incl. an
+  // unidentified one → caps the tier). They are kept OUT of `exposures` so a standing
+  // exposure can never add a discordant case-only pair for its own protein (the
+  // boundary-manufacture bug); washout-by-exclusion replaces washout-by-injection. A
+  // standing exposure also does NOT count toward mealCount — it tells us the free-fed
+  // food was PRESENT, never that other foods were ABSENT, so it must not manufacture
+  // logging-eligibility for an absence claim (the B-027/B-050 logging-gap guard).
   const windowExposures = (anchorMs: number, windowMs: number) => {
     const exposures = new Map<string, AttributionConfidence>()
     let mealCount = 0
@@ -749,17 +766,16 @@ export function detectCorrelations(
     }
     const windowStart = anchorMs - windowMs
     let standingInWindow = false
+    const standingProteins = new Set<string>()
     for (const s of standing) {
       // Interval overlap of the standing active span [fromMs, untilMs) with the
       // exposure window [windowStart, anchorMs].
       if (s.fromMs <= anchorMs && windowStart < s.untilMs) {
         standingInWindow = true
-        if (s.protein !== null && (s.attribution === 'low' || !exposures.has(s.protein))) {
-          exposures.set(s.protein, s.attribution)
-        }
+        if (s.protein !== null) standingProteins.add(s.protein)
       }
     }
-    return { exposures, mealCount, standingInWindow }
+    return { exposures, mealCount, standingInWindow, standingProteins }
   }
 
   interface Candidate {
@@ -814,6 +830,12 @@ export function detectCorrelations(
       /** A free-fed standing exposure was in the case OR control window (B-040 confounder). */
       standing: boolean
     }[] = []
+    // Proteins under an active free-fed arrangement that was in-window for ≥1 matched
+    // pair (case OR control) of this symptom. These are excluded from candidacy — a
+    // free-fed food is background context, never a clean correlate on its own (§3).
+    // Scoped to actual overlap: an ENDED arrangement whose span touches none of these
+    // windows leaves its protein evaluable on the discrete data it WAS controlled for.
+    const freeFedProteins = new Set<string>()
     for (const onset of onsets) {
       const caseWin = windowExposures(onset, windowMs)
       // Case window must be logging-eligible too — only compare windows where we know
@@ -822,8 +844,11 @@ export function detectCorrelations(
       const caseDay = Math.floor(onset / MS_PER_DAY)
       const timeOfDay = onset - caseDay * MS_PER_DAY
 
-      let bestCtrl: { exposures: Map<string, AttributionConfidence>; standingInWindow: boolean } | null =
-        null
+      let bestCtrl: {
+        exposures: Map<string, AttributionConfidence>
+        standingInWindow: boolean
+        standingProteins: Set<string>
+      } | null = null
       let bestDist = Infinity
       for (const d of mealDays) {
         if (d === caseDay || symptomDays.has(d)) continue
@@ -840,6 +865,8 @@ export function detectCorrelations(
         bestDist = dist
       }
       if (!bestCtrl) continue // no eligible control → this case can't be matched
+      for (const p of caseWin.standingProteins) freeFedProteins.add(p)
+      for (const p of bestCtrl.standingProteins) freeFedProteins.add(p)
       pairs.push({
         caseExp: caseWin.exposures,
         ctrlExp: bestCtrl.exposures,
@@ -856,6 +883,10 @@ export function detectCorrelations(
     const standingConfounder = pairs.some((p) => p.standing)
 
     for (const protein of proteins) {
+      // A free-fed protein is background context, never a clean correlate on its own
+      // (§3) — exclude it so its active-window boundary cannot manufacture discordant
+      // pairs (adversarial review, B-040 PR 4).
+      if (freeFedProteins.has(protein)) continue
       let caseExposed = 0
       let controlExposed = 0
       let b = 0

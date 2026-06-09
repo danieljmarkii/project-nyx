@@ -245,13 +245,13 @@ Deno.test('detectCorrelations — multi-implication: a symptom implicates EVERY 
 
 // ── Detector ①: B-040 free-feeding ingestion (standing exposures, PR 4) ──────
 
-Deno.test('detectCorrelations — B-040: a free-fed food washes out its OWN sporadic discrete logs (no false correlate)', () => {
+Deno.test('detectCorrelations — B-040: a free-fed food does not surface from its OWN sporadic discrete logs (no false correlate)', () => {
   // A pet free-fed chicken 24/7, plus a daily beef staple. Chicken ALSO gets logged
   // as a discrete meal on symptom days only (the owner happens to log it then).
   // WITHOUT the arrangement, that sporadic discrete chicken false-fires (present in
-  // case windows, absent from controls). WITH the free-fed fact injected, chicken is
-  // present in every window → concordant → it correctly washes out. Beef is a daily
-  // staple → also concordant. Net: no finding (the honest answer).
+  // case windows, absent from controls). WITH the free-fed fact, chicken is excluded
+  // from candidacy (background context, §3) → it cannot surface. Beef is a daily
+  // staple → concordant → washes out. Net: no finding (the honest answer).
   const mealEvents = [
     ...staple(1, 7, 'beef', 9), // daily staple → washes out, but gives contrast + eligibility
     pMeal(2, 'chicken', 10), // discrete chicken logged only on symptom days
@@ -269,7 +269,43 @@ Deno.test('detectCorrelations — B-040: a free-fed food washes out its OWN spor
   const withArr = detectCorrelations(
     input({ mealEvents, symptomEvents, feedingArrangements: [arrangement('chicken', at(1, 0), null)] }),
   )
-  assert.equal(withArr.length, 0, 'a 24/7 free-fed food is matched-out — never a clean correlate on its own')
+  assert.equal(withArr.length, 0, 'a free-fed food is excluded — never a clean correlate on its own')
+})
+
+Deno.test('detectCorrelations — B-040: a free-fed food cannot MANUFACTURE a correlate at its active-window boundary (adversarial review)', () => {
+  // The adversarial-review counterexample (PR 4): a new free-fed chicken introduced at
+  // a CONTIGUOUS symptom flare. The discrete data alone is ONE chicken log (b=1, below
+  // the discordant floor → no finding). With the arrangement, chicken is present on
+  // every symptom day inside its span, but the time-of-day-matched controls are forced
+  // onto days BEFORE activeFrom (contiguous symptom days leave no in-span control day),
+  // where chicken is genuinely absent — which (pre-fix) fabricated case-discordant
+  // pairs and surfaced an Early chicken correlate the discrete data cannot support.
+  // A free-fed protein is background context, never a clean correlate on its own (§3),
+  // so it is excluded entirely; its active-window boundary can no longer manufacture one.
+  const mealEvents = [
+    ...staple(1, 25, 'beef', 8), // eligibility + contrast; concordant → washes out
+    pMeal(12, 'chicken', 9), // the single discrete chicken log, at introduction
+  ]
+  const symptomEvents = [12, 13, 14, 15].map((d) => symptom('vomit', at(d, 11)))
+
+  // Baseline: without the arrangement, a single discrete chicken log is below the Early
+  // discordant floor (b=1 < 2) → no chicken finding.
+  const withoutArr = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(
+    withoutArr.some((f) => f.protein === 'chicken'),
+    false,
+    'one discrete chicken log alone is below the discordant floor',
+  )
+
+  // With the free-fed arrangement, the active-window boundary must NOT fabricate one.
+  const withArr = detectCorrelations(
+    input({ mealEvents, symptomEvents, feedingArrangements: [arrangement('chicken', at(12, 0), null)] }),
+  )
+  assert.equal(
+    withArr.some((f) => f.protein === 'chicken'),
+    false,
+    'a free-fed protein is excluded — its active-window boundary cannot manufacture a correlate',
+  )
 })
 
 Deno.test('detectCorrelations — B-040: an in-window free-fed bowl CAPS an otherwise-Established finding at Early (confounder)', () => {
