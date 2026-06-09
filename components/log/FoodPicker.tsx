@@ -6,10 +6,14 @@ import { useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
+import { getActiveArrangementsForPet, ActiveArrangementView } from '../../lib/feedingArrangements';
 import { FoodTile } from './FoodTile';
 
 interface Props {
   petId: string;
+  // For the "Always available" empty-state copy — addressed by name. Falls back
+  // to 'your pet' (nyx-voice Pattern 1) when absent.
+  petName?: string;
   // Fires when the user taps a Recent or Library tile — one-tap log.
   onPickFood: (food: PickerFood) => void;
   // Fires when the user taps "Add new" — opens the photo capture flow.
@@ -19,29 +23,42 @@ interface Props {
   onOpenDetail?: (food: PickerFood) => void;
 }
 
+// 'YYYY-MM-DD' (a DATE column value) → "Jun 2" for the "since" line. Built from
+// the date parts directly so there's no timezone shift on a bare calendar day.
+function formatSince(date: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
 const RECENT_DAYS = 14;
 const RECENT_LIMIT = 5;
 const SCREEN_PADDING = theme.space2;
 
-export function FoodPicker({ petId, onPickFood, onAddNew, onOpenDetail }: Props) {
+export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail }: Props) {
   const [recent, setRecent] = useState<PickerFood[]>([]);
   const [library, setLibrary] = useState<PickerFood[]>([]);
+  const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
   const [search, setSearch] = useState('');
 
-  // Reload on every focus so foods added or deleted from the detail screen
-  // are reflected when the picker comes back into view (router.back() doesn't
-  // remount the picker, so a mount-only useEffect would show stale data).
+  // Reload on every focus so foods added or deleted from the detail screen — and
+  // free-choice arrangements toggled there — are reflected when the picker comes
+  // back into view (router.back() doesn't remount the picker, so a mount-only
+  // useEffect would show stale data).
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
       (async () => {
-        const [r, l] = await Promise.all([
+        const [r, l, a] = await Promise.all([
           getRecentFoods(petId, RECENT_DAYS, RECENT_LIMIT),
           getLibraryFoods(),
+          getActiveArrangementsForPet(petId),
         ]);
         if (!cancelled) {
           setRecent(r);
           setLibrary(l);
+          setArrangements(a);
         }
       })();
       return () => { cancelled = true; };
@@ -128,6 +145,55 @@ export function FoodPicker({ petId, onPickFood, onAddNew, onOpenDetail }: Props)
           </ScrollView>
         </View>
       )}
+
+      {/* B-040 R1 — "Always available" (free-choice) standing facts. Pinned above
+          the regular food grid (§5). Styled distinctly from log-tap tiles: a quiet
+          dot + label, NOT a loud chip (§11), and a tap opens the food's detail
+          (where the toggle lives) rather than logging a meal — these are standing
+          facts, not events. A designed empty state when there are none (P5). */}
+      <View style={styles.zone}>
+        <SectionLabel label="Always available" />
+        {arrangements.length === 0 ? (
+          <Text style={styles.alwaysEmpty}>
+            Nothing always-out yet. If {petName ?? 'your pet'} grazes a bowl that's
+            down all day, open a food and turn on “Always available” — we'll note it
+            as free-choice for the vet.
+          </Text>
+        ) : (
+          <View style={styles.alwaysList}>
+            {arrangements.map((a) => (
+              <TouchableOpacity
+                key={a.id}
+                style={styles.alwaysRow}
+                onPress={() =>
+                  onOpenDetail?.({
+                    id: a.food_item_id,
+                    brand: a.brand,
+                    product_name: a.product_name,
+                    format: a.format,
+                    food_type: null,
+                    photo_path: null,
+                  })
+                }
+                activeOpacity={0.7}
+                hitSlop={8}
+              >
+                <View style={styles.alwaysDot} />
+                <View style={styles.alwaysRowText}>
+                  <Text style={styles.alwaysRowTitle} numberOfLines={1}>
+                    {a.brand} {a.product_name}
+                  </Text>
+                  <Text style={styles.alwaysRowMeta}>
+                    Free-choice{a.active_from && formatSince(a.active_from)
+                      ? ` · since ${formatSince(a.active_from)}`
+                      : ''}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
 
       <View style={styles.zone}>
         <SectionLabel label="Library" />
@@ -234,6 +300,39 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     paddingVertical: theme.space2,
+  },
+  alwaysEmpty: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: 19,
+  },
+  alwaysList: {
+    gap: theme.space1,
+  },
+  alwaysRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    paddingVertical: theme.space1,
+    minHeight: 44,
+  },
+  alwaysDot: {
+    width: 8,
+    height: 8,
+    borderRadius: theme.radiusFull,
+    backgroundColor: theme.colorAccent,
+  },
+  alwaysRowText: {
+    flex: 1,
+  },
+  alwaysRowTitle: {
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+  },
+  alwaysRowMeta: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginTop: 2,
   },
   groups: {
     gap: theme.space2,

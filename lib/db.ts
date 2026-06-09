@@ -106,6 +106,40 @@ export async function initDb(): Promise<void> {
       created_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- feeding_arrangements — pet↔food standing fact ("always available / free-fed").
+    -- B-040 R1 (PR 2). Mirrors supabase/migrations/018_feeding_arrangements.sql.
+    -- A STANDING FACT, not a per-nibble log: one row per (pet, food) free-choice
+    -- arrangement. active_until IS NULL = currently active (the bowl is still down);
+    -- a set active_until is the "stopped" lifecycle boundary History renders (§6a,
+    -- PR 3). is_shared is the inert multi-pet hook (always 0 in R1). Soft-delete via
+    -- deleted_at — never DELETE. active_from/active_until are calendar days
+    -- 'YYYY-MM-DD'; created_at/updated_at are ISO/UTC so cross-device LWW compares
+    -- on the same clock (B-055 lesson). synced=0 queues the row for the next push.
+    CREATE TABLE IF NOT EXISTS feeding_arrangements (
+      id            TEXT PRIMARY KEY,
+      pet_id        TEXT NOT NULL,
+      food_item_id  TEXT NOT NULL,
+      method        TEXT NOT NULL DEFAULT 'free_choice',
+      active_from   TEXT,
+      active_until  TEXT,
+      is_shared     INTEGER NOT NULL DEFAULT 0,
+      notes         TEXT,
+      deleted_at    TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced        INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_feeding_arrangements_unsynced
+      ON feeding_arrangements(synced)
+      WHERE synced = 0;
+
+    -- Hot read: "active arrangements for this pet" (food-detail toggle state,
+    -- library "Always available" section, History strip). Excludes soft-deleted.
+    CREATE INDEX IF NOT EXISTS idx_feeding_arrangements_pet
+      ON feeding_arrangements(pet_id)
+      WHERE deleted_at IS NULL;
+
     -- B-054 Phase 3 / FR-3 — incremental hydration high-water marks. One row per
     -- hydrated table; watermark is the max server change-timestamp pulled so far
     -- (updated_at for the LWW tables, created_at for the insert-only attachment
