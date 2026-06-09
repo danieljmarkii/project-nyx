@@ -1,6 +1,6 @@
 # Nyx — Free-Feeding / Always-Available Food Requirements
 
-**Status:** Design — build-ready for the R1 slice (this doc). Consolidates the B-040 backlog row into a single source of truth.
+**Status:** Design — build-ready for the R1 slice (this doc). Consolidates the B-040 backlog row into a single source of truth. **Revised 2026-06-09** with the design-review decisions (§11): free-feeding lives in the **food domain** (food detail = edit, food library = consolidated view), **never the pet page**; History renders it (ambient strip + boundary markers, §6a); engine ingestion promoted into R1 scope (§8).
 **Backlog:** B-040 (`docs/backlog.md`)
 **Evidence base:** `docs/research/2026-05-feeding-windows-and-partial-eating.md` (§1 free-feeding prevalence + multi-cat attribution; §3/§4 diet-trial integrity + WSAVA feeding-*method* field; §6 clinical implications)
 **Team session:** 2026-06-07 (this doc). Prior kickoff + scoping captured on the B-040 row (2026-05-26 / -27).
@@ -120,14 +120,18 @@ CREATE INDEX idx_feeding_arrangements_pet
 
 The interaction must be a **standing fact set once**, never a per-nibble prompt. This is what dissolves the long-standing Designer/Jordan ↔ Dr. Chen/Data conflict — at this scope the whole team agrees.
 
-**Entry point (lean recommendation, confirm at build):** on the **food detail screen** (`app/food/[id].tsx`) — a single control: *"Always available for {pet}?"* toggle (→ creates/ends a `free_choice` arrangement). Secondary entry from **pet profile** (`app/(tabs)/profile` / pet edit) showing "{pet}'s always-available foods." Optionally surfaced in **onboarding food** (`app/onboarding/food.tsx`) for the staple, but onboarding brevity (≤60s to first log) takes priority — likely a post-onboarding setup, not an added onboarding step.
+**Entry point (DECIDED 2026-06-09 — food domain only; see §11):** free-feeding lives **entirely in the food domain — never the pet page** (PM: "food belongs with food; splitting it across the pet page and the food library doesn't make sense").
+- **Edit home — food detail screen** (`app/food/[id].tsx`): a single *"Always available for {pet}?"* toggle that creates/ends a `free_choice` arrangement. In a multi-pet household this becomes a per-pet selector ("Always available for: ◉ Theia ◯ Nyx"); single-pet today = implicit.
+- **Consolidated view — food library**: an *"Always available"* section pinned above the regular food grid, styled distinctly from meal-loggable tiles (this is a standing fact, not a log-tap). It is the natural top-of-tab anchor when the food library graduates to its own tab.
+- **Pet profile screen: nothing.** The pet-level clinical picture is carried by the **vet report** (§6), not the profile screen — Dr. Chen withdrew the "vet wants it at the pet level" objection on that basis.
+- Onboarding: not an added step; free-choice can be set post-onboarding from the food the staple was created as.
 
 **Copy register (nyx-voice):** first-person-pet / second-person-owner, no exclamation, no "picky." e.g. label *"Always available"*; helper *"{pet} can graze this throughout the day — we'll note it as free-choice on the vet report."* Never frame absence of logs as a problem.
 
 **Principle compliance:**
 - **P1 (zero decisions at moment of event):** R1 adds *no* decision to the quick-log flow. It's a setup affordance, not an event prompt.
 - **P2 (confirmation over entry):** toggle, not typing.
-- **P5 (empty states):** a pet with no arrangements shows a designed, warm empty state ("No always-available foods yet — add one if {pet} grazes a bowl throughout the day").
+- **P5 (empty states):** the food library's *Always available* section, when empty, shows a designed, warm empty state ("Nothing always-out yet — if {pet} grazes a bowl that's down all day, add it here and we'll note it as free-choice for the vet").
 
 **QA / 3am test:** the toggle's tap zone ≥44pt (`hitSlop` if visually smaller). Setting an arrangement must not interfere with the existing 10-second meal-log path.
 
@@ -147,20 +151,37 @@ This is a Step 9 consumer; R1 ships the *data*, the rendering lands when Step 9 
 
 ---
 
+## 6a. History tab rendering (DECIDED 2026-06-09 — Option C; Designer + Sam + Jordan)
+
+The History tab is a flat, filterable list of **discrete events** (meals, vomits…). Free-feeding is a *standing fact* with no events, so it has no native home there — yet it is food and it is intake, so it must be **visible** (PM). The risk the PM named: a free-fed bowl goes *out of sight, out of mind* and is forgotten. Resolution = **Option C**:
+
+- **Persistent ambient strip, pinned to the top of History** — e.g. *"Always available: Hill's w/d · since Jun 2"* — rendered as standing **context, visibly not an event** (quieter treatment, no timestamp, not an editable event row). Present every time the tab opens, so it can't be forgotten — the direct answer to the out-of-sight risk.
+- **Boundary markers, inline in the stream** — discrete, *real* events at the lifecycle edges: *"Started free-feeding Hill's w/d" / "Stopped" / "Switched to …"*. These are true discrete facts and belong on a timeline (and give Jordan the trial-relevant context).
+- **Passive freshness, NOT a push** (food library + food detail): a *"last confirmed {date}"* line with a one-tap **"still accurate?"** confirm, shown **only when the owner is already there**. No notification. Sam's hard line: never push "is the bowl still down?" — that's the nag that makes her quit apps.
+- **Rejected — synthetic grazing events.** Fabricated daily "ate from bowl" rows are per-nibble logging through the back door (Principle 1/2) and a data-integrity violation (Dr. Chen/Data — a meal the owner never witnessed, read as observed intake). Absolute no.
+
+**Data-integrity rationale for freshness (Data Scientist):** a stale arrangement that *actually ended* but was never toggled off is a **false ongoing exposure** — it would keep capping confidence tiers and show wrong intake on the vet report. Passive freshness is the cheapest honest guard. A forgotten-but-accurate arrangement is fine; a forgotten-and-wrong one is the hazard.
+
+**Open (non-blocking, PM-noted):** whether a *months-stale* arrangement earns a single **pull-surfaced** (never push) in-app prompt. Lean = not in v1 (passive freshness + library visibility suffice). Sam/Designer stopped short of endorsing even one prompt.
+
+---
+
 ## 7. Open decisions for the build session (not blocking this doc)
 
-1. **Entry-point placement** — food detail toggle (lean) vs pet-profile list vs onboarding. Confirm with Designer at build.
+1. ~~Entry-point placement~~ **DECIDED 2026-06-09 (§5 / §11):** food domain only — food detail = edit, food library = consolidated view, pet page = nothing.
 2. **`meal_fed` capture in R1** — do we let owners declare meal-fed staples too, or infer meal-fed from logged meals and only *capture* free-choice? Lean: capture free-choice only; infer the rest. (Keeps R1 small.)
 3. **Active-window UX** — R1 likely just needs an on/off toggle (start = today, end = on toggle-off). Explicit date editing can wait.
 4. **Local SQLite + sync** — `feeding_arrangements` is a new synced pet-child table → it must go through the local-first sync queue (`supabase-sync` skill: pet-ownership, last-write-wins, never `INSERT OR REPLACE`). Confirm hydration coverage (B-054) includes it.
 
 ---
 
-## 8. Build order (when R1 is greenlit for build)
+## 8. Build order (when R1 is greenlit for build) — revised 2026-06-09
 
 1. **PR 1 — schema:** `feeding_arrangements` migration + RLS, on its own (Migration Safety Pre-flight above). Generate TS types.
-2. **PR 2 — capture UX:** the standing-fact toggle + empty state + local SQLite table + sync-queue + hydration wiring. nyx-voice copy pass; Designer + Sam + QA (3am/44pt) sign-off.
-3. **Later:** Option C witnessed-eating log; Step 9 vet-report feeding-method rendering; correlation-engine confounder honoring (verify B-050 reads arrangements as in-window background exposure that caps the tier).
+2. **PR 2 — capture + view UX:** the food-detail standing-fact toggle, the **food-library "Always available" section** (+ empty state), local SQLite table + sync-queue + hydration wiring (§7.4 / B-054). nyx-voice copy pass; Designer + Sam + QA (3am/44pt) sign-off. Pet page untouched.
+3. **PR 3 — History rendering (§6a):** ambient strip + boundary markers + passive "last confirmed" freshness. No synthetic events.
+4. **PR 4 — engine ingestion (PROMOTED out of "Later" per PM #3, 2026-06-09):** `detection.ts` ingests active `feeding_arrangements` as in-window background exposures so free-fed food is **never silently absent from Signals**. Honor the Biostatistician's reality: a 24/7-constant food is matched-out (no contrast → never a clean correlate); its **window boundaries** are analyzable; it caps tiers as a confounder (shared-bowl teeth deferred to multi-pet). Adversarial review required (clinically/statistically load-bearing).
+5. **Later (unchanged):** Option C witnessed-eating log; Step 9 vet-report feeding-method rendering (R1 ships the data).
 
 ---
 
@@ -179,3 +200,17 @@ This is a Step 9 consumer; R1 ships the *data*, the rendering lands when Step 9 
 ## 10. Sequencing note (PM roadmap call — flagged, not resolved here)
 
 B-040 is `Now`, but so are B-039 (App Store account-deletion blocker), B-051/B-052 (live AI-Signal quality), and Step 9 (vet report) is the formal current phase. Starting the R1 *build* means one of those slips. This doc makes R1 build-ready; **whether to start it next is the PM's roadmap call** (Dir. of Eng flag, carried from the backlog row).
+
+---
+
+## 11. Design-review decisions (2026-06-09)
+
+Team reconvened on the mockup demo (`docs/mockups/free-feeding-r1-mockup.html`). PM decisions, now binding on this spec:
+
+1. **Free-feeding lives in the food domain, never the pet page** (#1). Food detail = edit; food library = consolidated "Always available" section (styled distinctly; future top-of-tab anchor); pet profile shows nothing; the vet report carries the pet-level clinical picture. Dr. Chen withdrew the "vet wants it at the pet level" objection — satisfied by the report, not the profile screen.
+2. **Set-once standing fact confirmed** (#2 listening check ✓): set when the behavior starts, touched again only when it ends/changes. No recurring interaction.
+3. **Free-fed food IS a first-class Signals input** (#3) — engine ingestion **promoted into R1 build scope** (§8 PR 4), no longer "Later." Honest ceiling (Biostatistician): an always-available food is a constant → matched-out → rarely if ever a clean correlate; it earns its place via vet-report completeness, window-boundary analyzability, and confounder tier-capping. **Framing rule:** ship as *honesty/completeness*, not "Signals now finds patterns in free-fed food."
+4. **History rendering = Option C** (#4; §6a): persistent ambient strip + boundary markers + passive freshness; no synthetic events.
+5. **Mockup nit** (#5): the food-library free-choice badge is smaller/quieter (dot + label), not a loud filled chip.
+
+**Team sentiment (gut-check):** aligned on direction, clear-eyed on the ceiling. Strong: Sam, Dr. Chen, Designer/Jordan, PO. Reserved (in a good way): Data Scientist — the washout reality means we must not oversell free-fed correlation. One watch (Dir. of Eng): R1 now touches `detection.ts` (engine ingestion), so it's no longer a pure additive edge feature — still small, but the one place scope grew.

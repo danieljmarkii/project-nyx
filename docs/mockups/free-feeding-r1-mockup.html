@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nyx — Free-Feeding (R1) Mockup · B-040</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+  /* ── Theme tokens, mirrored from constants/theme.ts (v1.2 "Linear Clean") ── */
+  :root{
+    --font-body:'Geist',-apple-system,system-ui,sans-serif;
+    --font-display:'Newsreader',Georgia,serif;
+    --accent:#00C2A8; --accent-light:#E0FBF7;
+    --neutral-dark:#0A0A0A; --neutral-light:#FAFAFA;
+    --surface:#FFFFFF; --surface-subtle:#F5F5F5;
+    --text-primary:#0A0A0A; --text-secondary:#525252; --text-tertiary:#737373; --text-disabled:#A3A3A3;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --symptom:#F43F5E; --symptom-light:#FFE4E6;
+    --s1:8px; --s2:16px; --s3:24px; --s4:32px;
+    --r-sm:8px; --r-md:16px; --r-lg:24px; --r-full:999px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-body);background:#E7E9EE;color:var(--text-primary);-webkit-font-smoothing:antialiased;padding:40px 24px 64px;}
+  .page-head{max-width:1180px;margin:0 auto 32px;}
+  .page-head h1{font-family:var(--font-display);font-weight:400;font-size:30px;letter-spacing:-0.3px;}
+  .page-head .sub{color:var(--text-secondary);font-size:14px;margin-top:6px;line-height:1.5;max-width:820px;}
+  .page-head .meta{color:var(--text-tertiary);font-size:12px;margin-top:10px;}
+  .stage{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:28px;align-items:start;}
+  @media(max-width:1100px){.stage{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:620px){.stage{grid-template-columns:1fr;}}
+  .frame-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .caption{font-size:13px;color:var(--text-secondary);text-align:center;line-height:1.45;max-width:260px;}
+  .caption b{color:var(--text-primary);font-weight:600;}
+  .caption .tag{display:inline-block;font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--accent);background:var(--accent-light);border-radius:var(--r-full);padding:2px 8px;margin-bottom:6px;font-weight:600;}
+
+  .phone{width:268px;background:var(--surface);border-radius:34px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 18px 50px rgba(10,10,12,.22);overflow:hidden;border:1px solid #DADCE2;}
+  .screen{height:580px;display:flex;flex-direction:column;background:var(--surface);}
+  .statusbar{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:11px;font-weight:500;}
+  .statusbar .dots{letter-spacing:1px;}
+  .appbar{display:flex;align-items:center;padding:14px var(--s2);border-bottom:1px solid var(--border);}
+  .appbar .side{width:40px;}
+  .appbar .title{flex:1;text-align:center;font-size:17px;font-weight:500;}
+  .appbar .x{text-align:right;color:var(--text-secondary);font-size:18px;}
+  .appbar .back{color:var(--text-secondary);font-size:18px;}
+  .appbar .plus{text-align:right;color:var(--accent);font-size:22px;}
+
+  .body{flex:1;overflow:hidden;padding:var(--s3);display:flex;flex-direction:column;gap:var(--s2);}
+  .seclabel{font-size:11px;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.8px;}
+  .input{border:1px solid var(--border);border-radius:var(--r-sm);min-height:46px;padding:11px var(--s2);font-size:15px;color:var(--text-primary);display:flex;align-items:center;}
+  .chiprow{display:flex;gap:var(--s1);flex-wrap:wrap;}
+  .chip{padding:6px 12px;border-radius:var(--r-full);border:1px solid var(--border);font-size:13px;font-weight:500;color:var(--text-secondary);background:var(--surface);white-space:nowrap;}
+  .chip.active{background:var(--neutral-dark);border-color:var(--neutral-dark);color:#fff;}
+  .photo{height:118px;background:var(--surface-subtle);border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;color:var(--text-disabled);font-size:12px;border:1px solid var(--border);}
+
+  /* ── R1 control: standing-fact toggle ── */
+  .avail-card{border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);display:flex;flex-direction:column;gap:10px;}
+  .avail-card.on{border-color:var(--accent);background:var(--accent-light);}
+  .avail-top{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .avail-q{font-size:15px;font-weight:500;}
+  .avail-help{font-size:13px;line-height:1.5;color:var(--text-secondary);}
+  .avail-note{font-size:12px;line-height:1.45;color:var(--text-tertiary);display:flex;gap:6px;align-items:flex-start;}
+  .avail-note .ic{color:var(--accent);font-weight:600;}
+  .toggle{width:48px;height:28px;border-radius:var(--r-full);background:var(--border-strong);position:relative;flex:none;}
+  .toggle .knob{position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);}
+  .toggle.on{background:var(--accent);}
+  .toggle.on .knob{left:22px;}
+  .primary{background:var(--neutral-dark);color:#fff;border-radius:var(--r-md);min-height:50px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;}
+  .bottombar{border-top:1px solid var(--border);padding:var(--s2);}
+
+  /* ── Food library ── */
+  .lib-band{background:var(--accent-light);border:1px solid #CFF3EE;border-radius:var(--r-md);padding:14px var(--s2);display:flex;flex-direction:column;gap:12px;}
+  .lib-band .band-h{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:#0E8F7E;}
+  .lib-band .band-h .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);}
+  .lib-row{display:flex;align-items:center;gap:11px;}
+  .lib-row .av{width:38px;height:38px;border-radius:10px;background:#fff;border:1px solid #CFF3EE;flex:none;display:flex;align-items:center;justify-content:center;font-size:17px;}
+  .lib-row .name{font-size:14px;font-weight:500;}
+  .lib-row .meta{font-size:11px;color:var(--text-tertiary);margin-top:2px;}
+  .badge-quiet{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;color:#0E8F7E;white-space:nowrap;}
+  .badge-quiet .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .tile{border:1px solid var(--border);border-radius:var(--r-md);padding:12px;display:flex;flex-direction:column;gap:8px;min-height:78px;}
+  .tile .th{height:34px;background:var(--surface-subtle);border-radius:8px;}
+  .tile .tn{font-size:12px;font-weight:500;}
+  .tile .tm{font-size:10px;color:var(--text-tertiary);}
+
+  /* ── History ── */
+  .ambient{background:var(--accent-light);border:1px solid #CFF3EE;border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:10px;}
+  .ambient .ic{font-size:16px;}
+  .ambient .txt{flex:1;min-width:0;}
+  .ambient .t1{font-size:12.5px;font-weight:500;color:#0E8F7E;}
+  .ambient .t2{font-size:11px;color:var(--text-tertiary);margin-top:1px;}
+  .ambient .ctx{font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#0E8F7E;opacity:.7;}
+  .boundary{display:flex;align-items:center;gap:9px;margin:2px 0;}
+  .boundary .line{flex:1;height:1px;background:var(--border);}
+  .boundary .b-txt{font-size:11px;color:var(--text-secondary);white-space:nowrap;display:flex;align-items:center;gap:5px;}
+  .boundary .b-txt .d{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  .evrow{display:flex;align-items:center;gap:11px;padding:9px 0;}
+  .evrow .ec{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:15px;background:var(--accent-light);}
+  .evrow.sym .ec{background:var(--symptom-light);}
+  .evrow .en{font-size:14px;font-weight:500;}
+  .evrow .em{font-size:11px;color:var(--text-tertiary);margin-top:1px;}
+  .evrow .etime{font-size:11px;color:var(--text-tertiary);margin-left:auto;}
+
+  /* ── Vet report ── */
+  .vr{padding:22px;flex:1;overflow:hidden;display:flex;flex-direction:column;gap:18px;}
+  .vr .doc-h{font-family:var(--font-display);font-weight:400;font-size:19px;}
+  .vr .doc-sub{font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.8px;margin-top:2px;}
+  .vr .rule{height:1px;background:var(--border);}
+  .vr .sec-h{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--text-secondary);margin-bottom:10px;}
+  .vr .kv{display:flex;flex-direction:column;gap:11px;}
+  .vr .k{font-size:11px;color:var(--text-tertiary);}
+  .vr .v{font-size:13.5px;color:var(--text-primary);line-height:1.45;}
+  .vr .v .caveat{color:var(--symptom);font-weight:500;}
+  .vr .v .muted{color:var(--text-secondary);}
+  .vr .flag{font-size:11.5px;line-height:1.5;color:var(--text-secondary);background:var(--surface-subtle);border-radius:var(--r-sm);padding:10px 12px;border-left:3px solid var(--border-strong);}
+
+  .legend{max-width:1180px;margin:40px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:22px 26px;}
+  .legend h2{font-size:15px;font-weight:600;margin-bottom:12px;}
+  .legend ul{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:10px 32px;}
+  @media(max-width:720px){.legend ul{grid-template-columns:1fr;}}
+  .legend li{font-size:13px;line-height:1.5;color:var(--text-secondary);padding-left:18px;position:relative;}
+  .legend li::before{content:'';position:absolute;left:0;top:7px;width:7px;height:7px;border-radius:50%;background:var(--accent);}
+  .legend li b{color:var(--text-primary);font-weight:600;}
+  .legend .note{font-size:12px;color:var(--text-tertiary);margin-top:14px;line-height:1.5;}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Free-feeding / always-available food — R1 mockup <span style="font-size:14px;color:var(--text-tertiary);font-family:var(--font-body)">· rev 2 (2026-06-09 decisions)</span></h1>
+  <div class="sub">B-040, R1 slice (the free-choice <b>standing fact</b>). Set once, never a per-nibble log. Reflects the design-review decisions: free-feeding lives <b>entirely in the food domain</b> (never the pet page); History surfaces it as an <b>ambient strip + boundary markers</b>. Styled with the live app tokens (accent <code>#00C2A8</code>, Geist + Newsreader).</div>
+  <div class="meta">Mockup only — not built. Source of truth: <code>docs/nyx-free-feeding-requirements.md</code> (§5, §6a, §8, §11)</div>
+</div>
+
+<div class="stage">
+
+  <!-- 1. FOOD DETAIL with the standing-fact toggle (ON state) -->
+  <div class="frame-wrap">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="appbar"><span class="side back">‹</span><span class="title">Food</span><span class="side x">✕</span></div>
+      <div class="body">
+        <div class="photo">Hill's w/d · package photo</div>
+        <div class="seclabel">Format</div>
+        <div class="chiprow">
+          <span class="chip active">Dry kibble</span>
+          <span class="chip">Wet / canned</span>
+          <span class="chip">Raw</span>
+        </div>
+        <div class="seclabel">Availability</div>
+        <div class="avail-card on">
+          <div class="avail-top">
+            <span class="avail-q">Always available for Theia?</span>
+            <span class="toggle on"><span class="knob"></span></span>
+          </div>
+          <div class="avail-help">Theia can graze this throughout the day — we'll note it as free-choice on the vet report.</div>
+          <div class="avail-note"><span class="ic">ⓘ</span><span>Since it's always down, we won't read quiet days as “didn't eat.”</span></div>
+        </div>
+      </div>
+      <div class="bottombar"><div class="primary">Save</div></div>
+    </div></div>
+    <div class="caption"><span class="tag">§5 · edit home</span>The standing fact is set on the <b>food detail screen</b> — one toggle. ON shows the free-choice confirmation + the “quiet days ≠ didn't eat” promise in owner voice.</div>
+  </div>
+
+  <!-- 2. FOOD LIBRARY — pinned "Always available" section -->
+  <div class="frame-wrap">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="appbar"><span class="side back">‹</span><span class="title">Food library</span><span class="side plus">＋</span></div>
+      <div class="body">
+        <div class="lib-band">
+          <div class="band-h"><span class="dot"></span>Always available · Theia</div>
+          <div class="lib-row">
+            <span class="av">🥣</span>
+            <span style="flex:1;min-width:0">
+              <span class="name">Hill's w/d Multi-Benefit</span>
+              <span class="meta" style="display:block">Dry · since Jun 2 · confirmed Jun 7</span>
+            </span>
+            <span class="badge-quiet"><span class="dot"></span>Free-choice</span>
+          </div>
+          <div class="lib-row">
+            <span class="av">🥣</span>
+            <span style="flex:1;min-width:0">
+              <span class="name">Purina Pro Plan</span>
+              <span class="meta" style="display:block">Dry · since May 18 · confirmed Jun 1</span>
+            </span>
+            <span class="badge-quiet"><span class="dot"></span>Free-choice</span>
+          </div>
+        </div>
+        <div class="seclabel">Your foods</div>
+        <div class="grid">
+          <div class="tile"><div class="th"></div><span class="tn">Fancy Feast Paté</span><span class="tm">Wet · meal</span></div>
+          <div class="tile"><div class="th"></div><span class="tn">Temptations</span><span class="tm">Treat</span></div>
+        </div>
+      </div>
+    </div></div>
+    <div class="caption"><span class="tag">§5 · food domain</span>The consolidated view lives in the <b>food library</b> — a pinned “Always available” section above the normal grid. Badge is a quiet dot + label now (was a giant pill). “Confirmed” date = passive freshness.</div>
+  </div>
+
+  <!-- 3. HISTORY — ambient strip + boundary marker -->
+  <div class="frame-wrap">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="appbar"><span class="side back">‹</span><span class="title">History</span><span class="side x"> </span></div>
+      <div class="body" style="gap:var(--s1)">
+        <div class="chiprow" style="margin-bottom:4px">
+          <span class="chip active">All</span><span class="chip">Meal</span><span class="chip">Vomit</span>
+        </div>
+        <div class="ambient">
+          <span class="ic">🥣</span>
+          <span class="txt">
+            <span class="t1">Always available: Hill's w/d</span>
+            <span class="t2">since Jun 2 · grazed, not logged</span>
+          </span>
+          <span class="ctx">standing</span>
+        </div>
+        <div class="evrow"><span class="ec">🍽</span><span><span class="en">Fancy Feast Paté</span><span class="em">Ate most</span></span><span class="etime">8:10a</span></div>
+        <div class="evrow sym"><span class="ec">🤢</span><span><span class="en">Vomit</span><span class="em">Clear / foam</span></span><span class="etime">Jun 5</span></div>
+        <div class="boundary"><span class="line"></span><span class="b-txt"><span class="d"></span>Started free-feeding Hill's w/d</span><span class="line"></span></div>
+        <div class="evrow"><span class="ec">🍽</span><span><span class="en">Fancy Feast Paté</span><span class="em">Ate all</span></span><span class="etime">Jun 2</span></div>
+      </div>
+    </div></div>
+    <div class="caption"><span class="tag">§6a · Option C</span><b>Pinned ambient strip</b> (standing context, not an event) keeps it from being forgotten + a <b>boundary marker</b> in the stream for “started free-feeding.” No fake daily “ate” rows.</div>
+  </div>
+
+  <!-- 4. VET REPORT feeding-method line -->
+  <div class="frame-wrap">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="appbar"><span class="side back">‹</span><span class="title">Vet report</span><span class="side x">⤓</span></div>
+      <div class="vr">
+        <div>
+          <div class="doc-h">Diet history</div>
+          <div class="doc-sub">Theia · DSH · 6y</div>
+        </div>
+        <div class="rule"></div>
+        <div>
+          <div class="sec-h">Feeding method</div>
+          <div class="kv">
+            <div>
+              <div class="k">Free-choice (always available)</div>
+              <div class="v">Hill's w/d Multi-Benefit <span class="muted">(dry)</span><br><span class="caveat">Intake not directly observed.</span></div>
+            </div>
+            <div>
+              <div class="k">Meal-fed</div>
+              <div class="v">Fancy Feast Classic Paté <span class="muted">(wet) · 1×/day, AM</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="flag">Free-choice foods are recorded as standing exposure, not per-meal intake. Quiet logging days are not evidence of reduced appetite.</div>
+      </div>
+    </div></div>
+    <div class="caption"><span class="tag">§6 · vet report</span>The pet-level clinical picture lives <b>here</b>, not the pet profile screen — a WSAVA feeding-method line with “Intake not directly observed” verbatim (Dr. Chen).</div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h2>What rev 2 changed (and what the mockup is asserting)</h2>
+  <ul>
+    <li><b>Food with food.</b> Pet-page surface removed entirely; free-feeding now lives only on the food detail screen (edit) + food library (view). The pet-level clinical read is the vet report.</li>
+    <li><b>History = Option C.</b> Ambient strip (standing context, never an event) + boundary markers at start/stop/switch. <b>No synthetic grazing events</b> — that was a hard no from Dr. Chen/Data.</li>
+    <li><b>Passive freshness.</b> “Confirmed {date}” in the library, with a tap-to-confirm when you're already there. No push notification (Sam's line) — but it guards against a stale arrangement showing false intake.</li>
+    <li><b>Badge fixed.</b> Free-choice is now a quiet dot + label, not the oversized filled pill.</li>
+    <li><b>Set once.</b> Still a standing fact — zero additions to the 10-second quick-log path (Principle 1/2).</li>
+    <li><b>In Signals, honestly.</b> The detector ingests free-fed food as in-window exposure — but a 24/7-constant food is matched-out and rarely a clean correlate. It earns its place via completeness + boundaries + confounder-capping, not flashy findings.</li>
+  </ul>
+  <div class="note">Multi-pet shared-bowl attribution + quantity recovery remain deferred (spec §0). Open non-blocking nit: whether a months-stale arrangement earns one <em>pull-surfaced</em> (never push) prompt — lean is no for v1.</div>
+</div>
+
+</body>
+</html>
