@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, RefreshControl,
 } from 'react-native';
@@ -8,15 +8,34 @@ import { theme } from '../../constants/theme';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { EventRow } from '../../components/history/EventRow';
+import { BoundaryMarkerRow } from '../../components/history/BoundaryMarkerRow';
+import { FreeFeedingStrip } from '../../components/history/FreeFeedingStrip';
 import { usePetStore } from '../../store/petStore';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { getTimeline, softDeleteEvent, TimelineRow } from '../../lib/db';
 import { syncPendingEvents, syncNow } from '../../lib/sync';
+import {
+  getActiveArrangementsForPet, getBoundaryMarkers,
+  ActiveArrangementView, BoundaryMarker,
+} from '../../lib/feedingArrangements';
 
 const PAGE_SIZE = 50;
 
 type DatePreset = '7d' | '30d' | null;
+
+// History renders two kinds of timeline row: discrete events, and the quiet
+// free-feeding lifecycle boundary markers (§6a). They're merged into one desc
+// stream so a "Started free-feeding" sits at the foot of its calendar day.
+type ListItem =
+  | { kind: 'event'; event: NyxEvent }
+  | { kind: 'marker'; marker: BoundaryMarker };
+
+function itemSortMs(item: ListItem): number {
+  return item.kind === 'event'
+    ? new Date(item.event.occurred_at).getTime()
+    : item.marker.sortMs;
+}
 
 const TYPE_FILTERS: { key: EventTypeKey | null; label: string }[] = [
   { key: null, label: 'All' },
@@ -74,6 +93,10 @@ export default function HistoryScreen() {
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
 
   const [events, setEvents] = useState<NyxEvent[]>([]);
+  // B-040 R1 §6a — free-feeding standing facts: the pinned ambient strip
+  // (currently-active arrangements) + the inline lifecycle boundary markers.
+  const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
+  const [markers, setMarkers] = useState<BoundaryMarker[]>([]);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -122,6 +145,28 @@ export default function HistoryScreen() {
     }
   }, [activePet]);
 
+  // Free-feeding standing facts (§6a): the active arrangements for the pinned
+  // strip + the lifecycle boundary markers for the stream. Cheap reads (few
+  // rows); re-run on focus and after a hydrate so another device's toggle shows.
+  const loadFreeFeeding = useCallback(async () => {
+    if (!activePet) {
+      setArrangements([]);
+      setMarkers([]);
+      return;
+    }
+    try {
+      const [active, bm] = await Promise.all([
+        getActiveArrangementsForPet(activePet.id),
+        getBoundaryMarkers(activePet.id),
+      ]);
+      setArrangements(active);
+      setMarkers(bm);
+    } catch (e) {
+      // No silent failures (house rule). Leave prior state; focus re-runs this.
+      console.warn('[history] free-feeding load failed:', e);
+    }
+  }, [activePet]);
+
   // Pull-to-refresh: run a full sync cycle (push local writes up + hydrate
   // remote rows down — B-054), then re-read the timeline. This is the deliberate
   // "sync now" gesture; it surfaces another device's writes without the
@@ -137,10 +182,13 @@ export default function HistoryScreen() {
       // Re-read from local regardless of sync success (offline still refreshes
       // the local view), and await it so the spinner stays up until the list
       // repaints — no drop-then-fill flicker.
-      await loadEvents(0, typeFilter, datePreset, true);
+      await Promise.all([
+        loadEvents(0, typeFilter, datePreset, true),
+        loadFreeFeeding(),
+      ]);
       setRefreshing(false);
     }
-  }, [loadEvents, typeFilter, datePreset]);
+  }, [loadEvents, loadFreeFeeding, typeFilter, datePreset]);
 
   // Reload fresh on every focus so edits/deletes from the edit modal are reflected
   useFocusEffect(
@@ -149,6 +197,7 @@ export default function HistoryScreen() {
       setHasMore(true);
       setExpandedId(null);
       loadEvents(0, typeFilter, datePreset, true);
+      loadFreeFeeding();
     }, [activePet, typeFilter, datePreset]),
   );
 
@@ -163,7 +212,8 @@ export default function HistoryScreen() {
       return;
     }
     loadEvents(0, typeFilterRef.current, datePresetRef.current, true);
-  }, [hydrationTick, loadEvents]);
+    loadFreeFeeding();
+  }, [hydrationTick, loadEvents, loadFreeFeeding]);
 
   // Real-time: prepend new events logged via FAB while this tab is visible
   const latestTodayId = todayEvents[0]?.id;
@@ -256,7 +306,35 @@ export default function HistoryScreen() {
     );
   }
 
-  const isEmpty = events.length === 0 && !loading;
+  // Merge boundary markers into the event stream (§6a). Markers are not a
+  // NyxEvent type, so they only appear when the list isn't type-filtered (a
+  // "Vomit" filter shouldn't surface feeding boundaries). They respect the date
+  // preset, and — while more events remain unpaginated — are withheld if older
+  // than the oldest loaded event, so they never render above events that should
+  // sit below them. Once fully loaded (or with no events at all) all qualifying
+  // markers show.
+  const merged = useMemo<ListItem[]>(() => {
+    const eventItems: ListItem[] = events.map((e) => ({ kind: 'event', event: e }));
+    if (typeFilter !== null) return eventItems;
+
+    const cutoff = dateAfterForPreset(datePreset);
+    const cutoffMs = cutoff ? new Date(cutoff).getTime() : null;
+    const oldestEventMs = events.length > 0
+      ? new Date(events[events.length - 1].occurred_at).getTime()
+      : null;
+
+    const markerItems: ListItem[] = markers
+      .filter((m) => {
+        if (cutoffMs !== null && m.sortMs < cutoffMs) return false;
+        if (oldestEventMs !== null && hasMore && m.sortMs < oldestEventMs) return false;
+        return true;
+      })
+      .map((m) => ({ kind: 'marker' as const, marker: m }));
+
+    return [...eventItems, ...markerItems].sort((a, b) => itemSortMs(b) - itemSortMs(a));
+  }, [events, markers, typeFilter, datePreset, hasMore]);
+
+  const isEmpty = merged.length === 0 && !loading;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -299,21 +377,30 @@ export default function HistoryScreen() {
         </View>
       </View>
 
+      {/* §6a ambient strip — pinned above the list (not in the scroll) so a
+          free-fed bowl stays visible every time the tab opens, never out of
+          sight / out of mind. Standing context, not an event row. */}
+      <FreeFeedingStrip arrangements={arrangements} />
+
       {/* Event list — flex: 1 so it fills remaining space regardless of event count */}
       <View style={styles.listContainer}>
-        <FlatList<NyxEvent>
-          data={events}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <EventRow
-              event={item}
-              isExpanded={expandedId === item.id}
-              onToggle={() => handleToggle(item.id)}
-              onOpen={() => handleOpen(item)}
-              onEdit={() => handleEdit(item)}
-              onDelete={() => handleDelete(item)}
-            />
-          )}
+        <FlatList<ListItem>
+          data={merged}
+          keyExtractor={(item) => item.kind === 'event' ? `e:${item.event.id}` : `m:${item.marker.id}`}
+          renderItem={({ item }) =>
+            item.kind === 'marker' ? (
+              <BoundaryMarkerRow marker={item.marker} />
+            ) : (
+              <EventRow
+                event={item.event}
+                isExpanded={expandedId === item.event.id}
+                onToggle={() => handleToggle(item.event.id)}
+                onOpen={() => handleOpen(item.event)}
+                onEdit={() => handleEdit(item.event)}
+                onDelete={() => handleDelete(item.event)}
+              />
+            )
+          }
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
           refreshControl={
@@ -347,13 +434,13 @@ export default function HistoryScreen() {
             ) : null
           }
           ListFooterComponent={
-            hasMore && events.length > 0 ? (
+            hasMore && merged.length > 0 ? (
               <TouchableOpacity style={styles.loadMore} onPress={handleLoadMore} activeOpacity={0.7}>
                 <Text style={styles.loadMoreText}>Load more</Text>
               </TouchableOpacity>
             ) : null
           }
-          contentContainerStyle={events.length === 0 ? styles.listEmpty : undefined}
+          contentContainerStyle={merged.length === 0 ? styles.listEmpty : undefined}
         />
       </View>
     </SafeAreaView>

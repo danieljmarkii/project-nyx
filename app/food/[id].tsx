@@ -6,7 +6,7 @@
 //
 // Realtime: subscribes to postgres_changes on the food_items row so the
 // pending → completed transition lands without a manual refresh.
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Switch,
@@ -21,7 +21,10 @@ import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
-import { isFreeChoiceActive, startFreeChoice, endFreeChoice } from '../../lib/feedingArrangements';
+import {
+  startFreeChoice, endFreeChoice, getActiveArrangementMeta, confirmArrangementFresh,
+  confirmedLabel, isArrangementStale, ActiveArrangementMeta,
+} from '../../lib/feedingArrangements';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 
@@ -94,6 +97,17 @@ export default function FoodDetailScreen() {
   // with revert-on-failure so the switch never lies about a write that didn't land.
   const [freeChoice, setFreeChoice] = useState(false);
   const [freeChoiceSaving, setFreeChoiceSaving] = useState(false);
+  // The active arrangement's meta (null = not free-fed). updated_at backs the
+  // §6a passive "last confirmed" freshness line.
+  const [arrangementMeta, setArrangementMeta] = useState<ActiveArrangementMeta | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  // Brief "Confirmed ✓" acknowledgment after a re-attest, before the line settles
+  // back to fresh (and the "Still accurate?" nudge disappears).
+  const [confirmedFlash, setConfirmedFlash] = useState(false);
+  // Whether the stale nudge's two-way "still out? yes / no" answer is open. The
+  // nudge is a question, so tapping it asks rather than silently auto-confirming;
+  // "no" (the bowl ended) is the outcome freshness exists to catch (§6a / Data).
+  const [freshnessChoosing, setFreshnessChoosing] = useState(false);
 
   // ── Fetch + realtime subscription ──
   useEffect(() => {
@@ -136,35 +150,81 @@ export default function FoodDetailScreen() {
     };
   }, [id]);
 
-  // Load the current free-choice state for this (pet, food). Re-runs if the
-  // active pet changes. Local read — hydration fills the row on a fresh device.
-  useEffect(() => {
+  // Load the current free-choice state + freshness meta for this (pet, food).
+  // Re-runs if the active pet changes. Local read — hydration fills the row on a
+  // fresh device.
+  const reloadArrangement = useCallback(async () => {
     if (!id || !activePet) return;
+    const meta = await getActiveArrangementMeta(activePet.id, id);
+    setArrangementMeta(meta);
+    setFreeChoice(!!meta);
+  }, [id, activePet?.id]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const active = await isFreeChoiceActive(activePet.id, id);
-        if (!cancelled) setFreeChoice(active);
+        if (!cancelled) await reloadArrangement();
       } catch (err) {
         console.warn('[food-detail] free-choice load failed:', err);
       }
     })();
     return () => { cancelled = true; };
-  }, [id, activePet?.id]);
+  }, [reloadArrangement]);
 
   async function handleToggleFreeChoice(next: boolean) {
     if (!activePet || !id) return;
+    setFreshnessChoosing(false); // don't carry an open answer across a toggle
     setFreeChoice(next); // optimistic
     setFreeChoiceSaving(true);
     try {
       if (next) await startFreeChoice(activePet.id, id);
       else await endFreeChoice(activePet.id, id);
+      // Re-read so the freshness line reflects the new arrangement (or clears).
+      await reloadArrangement();
     } catch (err) {
       setFreeChoice(!next); // revert — the write didn't land
       const msg = err instanceof Error ? err.message : String(err);
       Alert.alert("Couldn't update", msg);
     } finally {
       setFreeChoiceSaving(false);
+    }
+  }
+
+  // §6a passive freshness — one-tap re-confirm that the bowl is still down. Never
+  // a push; shown only here (and in the library), only when the owner is already
+  // looking. Bumps updated_at so the line reads "Last confirmed today".
+  // "Yes, still out" — re-attest the bowl is still down.
+  async function handleConfirmFresh() {
+    if (!activePet || !id) return;
+    setFreshnessChoosing(false);
+    setConfirming(true);
+    try {
+      await confirmArrangementFresh(activePet.id, id);
+      await reloadArrangement();
+      setConfirmedFlash(true);
+      setTimeout(() => setConfirmedFlash(false), 1500);
+    } catch (err) {
+      console.warn('[food-detail] freshness confirm failed:', err);
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  // "No, it's stopped" — end the arrangement (soft; reuses the toggle-off path,
+  // writes the active_until "Stopped" boundary History renders). The free-choice
+  // card's toggle flips off and the freshness line disappears via reloadArrangement.
+  async function handleStopFresh() {
+    if (!activePet || !id) return;
+    setFreshnessChoosing(false);
+    setFreeChoice(false); // optimistic
+    try {
+      await endFreeChoice(activePet.id, id);
+      await reloadArrangement();
+    } catch (err) {
+      setFreeChoice(true); // revert — the write didn't land
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert("Couldn't update", msg);
     }
   }
 
@@ -681,6 +741,63 @@ export default function FoodDetailScreen() {
                     ios_backgroundColor={theme.colorBorderStrong}
                   />
                 </View>
+
+                {/* §6a passive freshness — last-confirmed + one-tap re-confirm.
+                    Shown only while free-fed; updated_at backs "last confirmed". */}
+                {freeChoice && arrangementMeta && (
+                  <>
+                    <View style={styles.freshnessRow}>
+                      <Text style={styles.freshnessText}>
+                        Last confirmed {confirmedLabel(arrangementMeta.updated_at)}
+                      </Text>
+                      {/* §6a passive freshness — the re-attest is a nudge that shows
+                          only once stale; a fresh arrangement just shows the date.
+                          Tapping it opens a two-way answer (below) rather than
+                          silently auto-confirming. "Confirmed ✓" flashes on yes. */}
+                      {confirmedFlash ? (
+                        <Text style={styles.freshnessConfirmed}>Confirmed ✓</Text>
+                      ) : isArrangementStale(arrangementMeta.updated_at) && !freshnessChoosing ? (
+                        <TouchableOpacity
+                          onPress={() => setFreshnessChoosing(true)}
+                          hitSlop={12}
+                          activeOpacity={0.7}
+                          style={styles.freshnessActionBtn}
+                        >
+                          <Text style={styles.freshnessAction}>Still accurate?</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+
+                    {freshnessChoosing && (
+                      <View style={styles.freshnessChoices}>
+                        <Text style={styles.freshnessPrompt}>
+                          Still always out for {activePet.name}?
+                        </Text>
+                        <View style={styles.freshnessChoiceBtns}>
+                          <TouchableOpacity
+                            onPress={handleConfirmFresh}
+                            disabled={confirming}
+                            hitSlop={8}
+                            activeOpacity={0.7}
+                            style={styles.freshnessChoiceBtn}
+                          >
+                            <Text style={styles.choiceYes}>
+                              {confirming ? 'Confirming…' : 'Yes, still out'}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={handleStopFresh}
+                            hitSlop={8}
+                            activeOpacity={0.7}
+                            style={styles.freshnessChoiceBtn}
+                          >
+                            <Text style={styles.choiceNo}>No, it's stopped</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+                  </>
+                )}
               </View>
             )}
 
@@ -896,6 +1013,57 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: 18,
+  },
+  freshnessRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: theme.space2,
+    paddingTop: theme.space1,
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+    minHeight: theme.space4,
+  },
+  freshnessText: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+  },
+  freshnessActionBtn: {
+    paddingVertical: theme.space1,
+    justifyContent: 'center',
+  },
+  freshnessAction: {
+    fontSize: theme.textSM,
+    color: theme.colorAccent,
+  },
+  freshnessConfirmed: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  freshnessChoices: {
+    marginTop: theme.space1,
+    gap: theme.space1,
+  },
+  freshnessPrompt: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  freshnessChoiceBtns: {
+    flexDirection: 'row',
+    gap: theme.space3,
+  },
+  freshnessChoiceBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  choiceYes: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
+  },
+  choiceNo: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
   deleteAction: {
     alignItems: 'center',
