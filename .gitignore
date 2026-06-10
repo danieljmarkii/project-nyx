@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# scratch — local design mockups / throwaway artifacts (delivered, not committed)
+.mockups/
+
 # Expo
 .expo/
 dist/
