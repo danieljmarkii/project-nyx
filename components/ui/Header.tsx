@@ -1,16 +1,21 @@
 import { ReactNode } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { ChevronLeft, MoreHorizontal, X } from 'lucide-react-native';
+import { ChevronLeft, X } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 
 // Shared navigation header (B-075) — one bar for every full screen: a leading
-// slot (back ‹ / close ✕ / none), a centered title, and a trailing slot
-// (overflow ⋯ menu, or an arbitrary node). Replaces the six hand-rolled headers
-// the app grew. The leading action is ALWAYS caller-controlled (onLeadingPress)
-// — never a hardcoded router.back(), because some screens (log's multi-step
-// flow, food-capture) need back to mean "previous step", not "pop the screen".
+// slot (back ‹ / close ✕ / none), a centered title, and an optional trailing
+// slot. Replaces the six hand-rolled headers the app grew. The leading action
+// is ALWAYS caller-controlled (onLeadingPress) — never a hardcoded
+// router.back(), because some screens (log's multi-step flow, food-capture)
+// need back to mean "previous step", not "pop the screen".
 // This is NOT the Home identity strip (HomeHeader) — that's the top-level-tab
-// variant; this is the back/title/overflow bar for pushed + modal screens.
+// variant; this is the back/title bar for pushed + modal screens.
+//
+// No built-in overflow (⋯) menu: a single secondary action belongs inline on
+// the screen, not hidden behind a tap-to-reveal menu (PM call, B-075). A screen
+// that genuinely has *several* secondary actions can pass its own trigger via
+// `right`.
 
 type LeadingKind = 'back' | 'close' | 'none';
 
@@ -18,10 +23,7 @@ interface HeaderProps {
   title?: string;
   leading?: LeadingKind;
   onLeadingPress?: () => void;
-  // When provided, renders the standard ⋯ button wired to this handler
-  // (typically opening showOverflowMenu). Ignored if `right` is given.
-  onOverflow?: () => void;
-  // Arbitrary trailing content (e.g. a "Save" text button) — overrides ⋯.
+  // Arbitrary trailing content (e.g. a "Save" text button).
   right?: ReactNode;
 }
 
@@ -29,13 +31,7 @@ interface HeaderProps {
 // 3am-stumbling minimum without inflating the visual size.
 const HIT = { top: 12, bottom: 12, left: 12, right: 12 };
 
-export function Header({
-  title,
-  leading = 'none',
-  onLeadingPress,
-  onOverflow,
-  right,
-}: HeaderProps) {
+export function Header({ title, leading = 'none', onLeadingPress, right }: HeaderProps) {
   return (
     <View style={styles.bar}>
       <View style={styles.side}>
@@ -65,19 +61,7 @@ export function Header({
         <View style={styles.title} />
       )}
 
-      <View style={[styles.side, styles.sideRight]}>
-        {right ??
-          (onOverflow ? (
-            <TouchableOpacity
-              onPress={onOverflow}
-              hitSlop={HIT}
-              accessibilityRole="button"
-              accessibilityLabel="More options"
-            >
-              <MoreHorizontal size={24} color={theme.colorTextSecondary} />
-            </TouchableOpacity>
-          ) : null)}
-      </View>
+      <View style={[styles.side, styles.sideRight]}>{right}</View>
     </View>
   );
 }

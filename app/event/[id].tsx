@@ -28,7 +28,6 @@ import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { Header, PhotoViewer } from '../../components/ui';
-import { showOverflowMenu } from '../../lib/overflowMenu';
 
 const HERO_HEIGHT = 320;
 
@@ -140,14 +139,6 @@ export default function EventDetailScreen() {
         notes: event.notes ?? '',
       },
     });
-  }
-
-  // Overflow ("⋯") menu — secondary/destructive actions only (PM call, B-075).
-  // Edit stays the inline primary action in the footer; Remove lives here.
-  function openOverflow() {
-    showOverflowMenu([
-      { label: 'Remove', destructive: true, onPress: handleDelete },
-    ]);
   }
 
   function handleDelete() {
@@ -324,7 +315,6 @@ export default function EventDetailScreen() {
         leading="back"
         title={label}
         onLeadingPress={() => router.back()}
-        onOverflow={openOverflow}
       />
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -411,10 +401,21 @@ export default function EventDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Edit button — bottom action, jumps to the existing edit form */}
+      {/* Bottom actions — Edit is the filled primary; Remove is a subordinate,
+          destructive text action below it (PM call: a single secondary action
+          doesn't justify a ⋯ menu). Spacing + text-only treatment keep the
+          destructive action from reading as a peer of Edit. */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.editButton} onPress={handleEdit} activeOpacity={0.85}>
           <Text style={styles.editButtonText}>Edit</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.removeButton}
+          onPress={handleDelete}
+          activeOpacity={0.7}
+          hitSlop={8}
+        >
+          <Text style={styles.removeButtonText}>Remove</Text>
         </TouchableOpacity>
       </View>
 
@@ -538,6 +539,16 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.fontWeightMedium,
     color: '#fff',
+  },
+  removeButton: {
+    marginTop: theme.space1,
+    paddingVertical: theme.space1,
+    alignItems: 'center',
+  },
+  removeButtonText: {
+    fontSize: theme.textMD,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorDestructive,
   },
   loadingState: {
     flex: 1,
