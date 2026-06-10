@@ -37,6 +37,46 @@ export function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// Compact pet age for the Home identity strip (B-076) — distinct from the Pet
+// tab's detailed "4yr 2mo": here we want the single coarsest unit ("4 yrs",
+// "8 mo") that reads at a glance above the Signal. Returns null when there's no
+// usable DOB (missing, malformed, or in the future) so the caller can omit the
+// unit entirely rather than render a placeholder dash on the home surface.
+export function petAgeShort(dob: string | null): string | null {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (Number.isNaN(birth.getTime())) return null;
+  const now = new Date();
+  const months =
+    (now.getFullYear() - birth.getFullYear()) * 12 +
+    (now.getMonth() - birth.getMonth());
+  if (months < 0) return null; // future DOB — nonsense, omit rather than show "0 mo"
+  if (months < 1) return 'Under 1 mo';
+  if (months < 12) return `${months} mo`;
+  const years = Math.floor(months / 12);
+  return years === 1 ? '1 yr' : `${years} yrs`;
+}
+
+// The single slim line under the pet name in the Home identity strip (B-076):
+// "{breed} · {age}". Each part is optional, joined only when present, so a pet
+// with just a breed or just an age still reads cleanly. When neither exists,
+// fall back to the species word ("Dog"/"Cat") so the line is never empty on a
+// known pet — but return '' for 'other' with no detail, letting the caller drop
+// the line rather than print a meaningless "Other".
+export function petIdentityLine(pet: {
+  species: string;
+  breed: string | null;
+  date_of_birth: string | null;
+}): string {
+  const age = petAgeShort(pet.date_of_birth);
+  const breed = pet.breed?.trim() || null;
+  const parts = [breed, age].filter(Boolean) as string[];
+  if (parts.length) return parts.join(' · ');
+  if (pet.species === 'dog') return 'Dog';
+  if (pet.species === 'cat') return 'Cat';
+  return '';
+}
+
 // Format an ISO timestamp for the EXIF attribution. Always includes the
 // time; appends the date when it's not today, so a library-photo backfill
 // is visible to the user before they confirm.

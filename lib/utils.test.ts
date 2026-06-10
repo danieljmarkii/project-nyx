@@ -1,6 +1,20 @@
-import { deriveOccurredAt, describeOccurredAt, formatTime } from './utils';
+import {
+  deriveOccurredAt,
+  describeOccurredAt,
+  formatTime,
+  petAgeShort,
+  petIdentityLine,
+} from './utils';
 
 const at = (iso: string) => new Date(iso);
+
+// Build a DOB exactly `m` whole months before today. petAgeShort diffs by
+// calendar month and ignores day-of-month, so a fixed day (15th) keeps the
+// expectation stable regardless of which day the test runs.
+const monthsAgo = (m: number): string => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() - m, 15).toISOString().slice(0, 10);
+};
 
 describe('deriveOccurredAt', () => {
   it('returns the point for witnessed events', () => {
@@ -102,5 +116,69 @@ describe('describeOccurredAt', () => {
     expect(d.primary).toBe(t(iso));
     expect(d.tag).toBeNull();
     expect(d.isExact).toBe(true);
+  });
+});
+
+describe('petAgeShort', () => {
+  it('returns null when there is no DOB', () => {
+    expect(petAgeShort(null)).toBeNull();
+  });
+
+  it('returns null for a malformed DOB rather than NaN', () => {
+    expect(petAgeShort('not-a-date')).toBeNull();
+  });
+
+  it('returns null for a future DOB instead of "0 mo"', () => {
+    expect(petAgeShort(monthsAgo(-6))).toBeNull();
+  });
+
+  it('renders the youngest band as "Under 1 mo"', () => {
+    expect(petAgeShort(monthsAgo(0))).toBe('Under 1 mo');
+  });
+
+  it('renders months under a year', () => {
+    expect(petAgeShort(monthsAgo(3))).toBe('3 mo');
+  });
+
+  it('renders exactly one year as the singular "1 yr"', () => {
+    expect(petAgeShort(monthsAgo(12))).toBe('1 yr');
+  });
+
+  it('renders multiple years, dropping the trailing months', () => {
+    expect(petAgeShort(monthsAgo(50))).toBe('4 yrs');
+  });
+});
+
+describe('petIdentityLine', () => {
+  it('joins breed and age with a separator', () => {
+    expect(
+      petIdentityLine({ species: 'dog', breed: 'Mixed breed', date_of_birth: monthsAgo(50) }),
+    ).toBe('Mixed breed · 4 yrs');
+  });
+
+  it('shows breed alone when DOB is missing', () => {
+    expect(
+      petIdentityLine({ species: 'dog', breed: 'Beagle', date_of_birth: null }),
+    ).toBe('Beagle');
+  });
+
+  it('shows age alone when breed is missing', () => {
+    expect(
+      petIdentityLine({ species: 'cat', breed: null, date_of_birth: monthsAgo(50) }),
+    ).toBe('4 yrs');
+  });
+
+  it('treats a blank breed as missing and falls back to species', () => {
+    expect(
+      petIdentityLine({ species: 'dog', breed: '   ', date_of_birth: null }),
+    ).toBe('Dog');
+  });
+
+  it('falls back to the species word when nothing else is known', () => {
+    expect(petIdentityLine({ species: 'cat', breed: null, date_of_birth: null })).toBe('Cat');
+  });
+
+  it('returns an empty string for "other" with no detail, so the line is dropped', () => {
+    expect(petIdentityLine({ species: 'other', breed: null, date_of_birth: null })).toBe('');
   });
 });

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEvents } from '../../hooks/useEvents';
 import { useSyncStore } from '../../store/syncStore';
 import { theme } from '../../constants/theme';
+import { HomeHeader } from '../../components/home/HomeHeader';
 import { SignalZone } from '../../components/home/SignalZone';
 import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
@@ -20,6 +21,9 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      {/* Pinned identity strip (B-076) — stays put while the zones scroll, so
+          the AI Signal still leads the scrollable intelligence surface. */}
+      <HomeHeader />
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
