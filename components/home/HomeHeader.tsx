@@ -1,4 +1,5 @@
 import { Image, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
 import { getPublicUrl } from '../../lib/storage';
@@ -16,6 +17,9 @@ const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 // switcher itself is not built here (single-pet today; designed-for, not built).
 export function HomeHeader() {
   const activePet = usePetStore((s) => s.activePet);
+  // Own the top safe-area inset so the white surface bleeds up behind the
+  // status bar — otherwise the screen's grey bg shows above the strip.
+  const insets = useSafeAreaInsets();
 
   // Home only renders behind a created pet (usePet redirects to onboarding
   // otherwise), but guard anyway so a transient null never throws.
@@ -28,7 +32,7 @@ export function HomeHeader() {
   const line = petIdentityLine(activePet);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
       <Text style={styles.wordmark}>Project Nyx</Text>
       <View style={styles.identityRow}>
         {photoUri ? (
@@ -61,7 +65,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
     paddingHorizontal: theme.space2,
-    paddingTop: 10,
+    // paddingTop is applied inline as insets.top + 10 so the white surface
+    // fills the status-bar inset (no grey strip above the header).
     paddingBottom: 12,
   },
   // Quiet brand mark in the display face — identity, not a banner. "Project Nyx"
