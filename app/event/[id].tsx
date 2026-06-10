@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Image, Alert, Modal, ActivityIndicator,
+  Image, Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -27,7 +27,7 @@ import { useEventStore } from '../../store/eventStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
-import { PhotoViewer } from '../../components/ui';
+import { Header, PhotoViewer } from '../../components/ui';
 
 const HERO_HEIGHT = 320;
 
@@ -66,7 +66,6 @@ export default function EventDetailScreen() {
   const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
-  const [actionsVisible, setActionsVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
@@ -131,7 +130,6 @@ export default function EventDetailScreen() {
 
   function handleEdit() {
     if (!event) return;
-    setActionsVisible(false);
     router.push({
       pathname: '/edit-event',
       params: {
@@ -145,7 +143,6 @@ export default function EventDetailScreen() {
 
   function handleDelete() {
     if (!event) return;
-    setActionsVisible(false);
     Alert.alert(
       'Remove this log?',
       `This will remove the ${EVENT_TYPES[event.event_type as EventTypeKey]?.label ?? 'event'} from history.`,
@@ -283,12 +280,8 @@ export default function EventDetailScreen() {
 
   if (!event) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-            <Text style={styles.backText}>‹ History</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <Header leading="back" onLeadingPress={() => router.back()} />
         <View style={styles.loadingState}>
           <Text style={styles.emptyTitle}>Event not found</Text>
           <Text style={styles.emptyBody}>It may have been removed.</Text>
@@ -318,14 +311,11 @@ export default function EventDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
-          <Text style={styles.backText}>‹ History</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setActionsVisible(true)} hitSlop={12} style={styles.moreBtn}>
-          <Text style={styles.moreText}>•••</Text>
-        </TouchableOpacity>
-      </View>
+      <Header
+        leading="back"
+        title={label}
+        onLeadingPress={() => router.back()}
+      />
 
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Hero photo — present when a photo exists; on symptom events without
@@ -411,32 +401,23 @@ export default function EventDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Edit button — bottom action, jumps to the existing edit form */}
+      {/* Bottom actions — Edit is the filled primary; Remove is a subordinate,
+          destructive text action below it (PM call: a single secondary action
+          doesn't justify a ⋯ menu). Spacing + text-only treatment keep the
+          destructive action from reading as a peer of Edit. */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.editButton} onPress={handleEdit} activeOpacity={0.85}>
           <Text style={styles.editButtonText}>Edit</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Actions sheet (Edit / Delete) */}
-      <Modal
-        visible={actionsVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setActionsVisible(false)}
-      >
         <TouchableOpacity
-          style={styles.sheetBackdrop}
-          activeOpacity={1}
-          onPress={() => setActionsVisible(false)}
+          style={styles.removeButton}
+          onPress={handleDelete}
+          activeOpacity={0.7}
+          hitSlop={8}
         >
-          <View style={styles.sheet}>
-            <TouchableOpacity style={styles.sheetItem} onPress={handleDelete}>
-              <Text style={[styles.sheetItemText, styles.sheetItemDestructive]}>Remove</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.removeButtonText}>Remove</Text>
         </TouchableOpacity>
-      </Modal>
+      </View>
 
       {/* Fullscreen photo viewer */}
       <PhotoViewer
@@ -454,27 +435,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colorSurface,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space1,
-    height: 44,
-  },
-  backBtn: {},
-  backText: {
-    fontSize: 16,
-    color: theme.colorAccent,
-    fontWeight: theme.fontWeightMedium,
-  },
-  moreBtn: {},
-  moreText: {
-    fontSize: 18,
-    color: theme.colorTextPrimary,
-    fontWeight: theme.fontWeightMedium,
-    letterSpacing: 1,
   },
   scroll: {
     paddingBottom: theme.space5,
@@ -580,6 +540,16 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
     color: '#fff',
   },
+  removeButton: {
+    marginTop: theme.space1,
+    paddingVertical: theme.space1,
+    alignItems: 'center',
+  },
+  removeButtonText: {
+    fontSize: theme.textMD,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorDestructive,
+  },
   loadingState: {
     flex: 1,
     justifyContent: 'center',
@@ -594,29 +564,5 @@ const styles = StyleSheet.create({
   emptyBody: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-  },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: theme.colorSurface,
-    margin: theme.space2,
-    borderRadius: theme.radiusMedium,
-    overflow: 'hidden',
-  },
-  sheetItem: {
-    paddingVertical: theme.space2,
-    paddingHorizontal: theme.space3,
-    alignItems: 'center',
-  },
-  sheetItemText: {
-    fontSize: 17,
-    color: theme.colorAccent,
-    fontWeight: theme.fontWeightMedium,
-  },
-  sheetItemDestructive: {
-    color: theme.colorEventSymptom,
   },
 });

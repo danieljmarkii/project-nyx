@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nyx — Home Identity Strip Mockup · B-076</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+  /* ── Theme tokens, mirrored from constants/theme.ts (v1.2 "Linear Clean") ── */
+  :root{
+    --font-body:'Geist',-apple-system,system-ui,sans-serif;
+    --font-display:'Newsreader',Georgia,serif;
+    --accent:#00C2A8; --accent-light:#E0FBF7;
+    --neutral-dark:#0A0A0A; --neutral-light:#FAFAFA;
+    --surface:#FFFFFF; --surface-subtle:#F5F5F5;
+    --text-primary:#0A0A0A; --text-secondary:#525252; --text-tertiary:#737373; --text-disabled:#A3A3A3;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --symptom:#F43F5E; --symptom-light:#FFE4E6;
+    --s1:8px; --s2:16px; --s3:24px; --s4:32px;
+    --r-sm:8px; --r-md:16px; --r-lg:24px; --r-full:999px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-body);background:#E7E9EE;color:var(--text-primary);-webkit-font-smoothing:antialiased;padding:40px 24px 64px;}
+  .page-head{max-width:1180px;margin:0 auto 32px;}
+  .page-head h1{font-family:var(--font-display);font-weight:400;font-size:30px;letter-spacing:-0.3px;}
+  .page-head .sub{color:var(--text-secondary);font-size:14px;margin-top:6px;line-height:1.5;max-width:860px;}
+  .page-head .meta{color:var(--text-tertiary);font-size:12px;margin-top:10px;}
+  .stage{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:28px;align-items:start;}
+  @media(max-width:1100px){.stage{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:620px){.stage{grid-template-columns:1fr;}}
+  .frame-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .caption{font-size:13px;color:var(--text-secondary);text-align:center;line-height:1.45;max-width:262px;}
+  .caption b{color:var(--text-primary);font-weight:600;}
+  .caption .tag{display:inline-block;font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--accent);background:var(--accent-light);border-radius:var(--r-full);padding:2px 8px;margin-bottom:6px;font-weight:600;}
+  .caption .tag.warn{color:var(--symptom);background:var(--symptom-light);}
+
+  .phone{width:268px;background:var(--surface);border-radius:34px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 18px 50px rgba(10,10,12,.22);overflow:hidden;border:1px solid #DADCE2;}
+  .screen{height:600px;display:flex;flex-direction:column;background:var(--neutral-light);}
+  .statusbar{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:11px;font-weight:500;background:var(--surface);}
+  .statusbar .dots{letter-spacing:1px;}
+
+  /* ── The Home identity strip (the thing under review) ── */
+  .idstrip{background:var(--surface);border-bottom:1px solid var(--border);padding:10px var(--s2) 12px;}
+  .wordmark{font-family:var(--font-display);font-weight:400;font-size:15px;letter-spacing:-0.2px;color:var(--text-tertiary);}
+  .id-row{display:flex;align-items:center;gap:11px;margin-top:8px;}
+  .avatar{width:38px;height:38px;border-radius:var(--r-full);background:linear-gradient(135deg,#FFD9A8,#F7B267);flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;}
+  .avatar.cat{background:linear-gradient(135deg,#CDE8E2,#9FD8CC);}
+  .id-text{flex:1;min-width:0;}
+  .id-name{font-size:17px;font-weight:600;color:var(--text-primary);line-height:1.1;}
+  .id-sub{font-size:12px;color:var(--text-tertiary);margin-top:2px;}
+  .chev{color:var(--text-disabled);font-size:16px;flex:none;}
+  .chev.future{opacity:.5;}
+
+  .body{flex:1;overflow:hidden;padding:var(--s3) var(--s2);display:flex;flex-direction:column;gap:14px;}
+
+  /* ── Zone 1: AI Signal (must keep leading) ── */
+  .zlabel{font-size:11px;font-weight:500;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.8px;}
+  .signal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);box-shadow:0 1px 4px rgba(0,0,0,.05);}
+  .signal.warn{border-left:3px solid var(--symptom);}
+  .signal .stext{font-family:var(--font-display);font-weight:400;font-size:19px;line-height:1.32;letter-spacing:-0.3px;color:var(--text-primary);}
+  .signal .smeta{font-size:11px;color:var(--text-tertiary);margin-top:9px;letter-spacing:.4px;}
+
+  /* ── Zone 2: Today ── */
+  .today{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);}
+  .today .row{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-secondary);padding:3px 0;}
+  .today .dot{width:7px;height:7px;border-radius:var(--r-full);background:var(--accent);flex:none;}
+  .today .dot.sym{background:var(--symptom);}
+
+  /* ── Zone 3: Trend (sketch) ── */
+  .trend{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);}
+  .bars{display:flex;align-items:flex-end;gap:6px;height:44px;margin-top:10px;}
+  .bars i{flex:1;background:var(--accent-light);border-radius:3px 3px 0 0;}
+  .bars i.s{background:var(--symptom-light);}
+
+  .tabbar{height:54px;background:var(--surface);border-top:1px solid var(--border);display:flex;}
+  .tabbar div{flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;letter-spacing:.4px;color:var(--text-disabled);}
+  .tabbar div.on{color:var(--neutral-dark);}
+
+  /* fuller-block anti-example */
+  .fullcard{background:var(--surface);border-bottom:1px solid var(--border);padding:var(--s2);}
+  .fullcard .id-row{margin-top:0;}
+  .fullcard .avatar{width:52px;height:52px;font-size:24px;}
+  .fullcard .metarow{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap;}
+  .fullcard .pill{font-size:11px;color:var(--text-secondary);background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--r-full);padding:3px 9px;}
+
+  .legend{max-width:1180px;margin:36px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:22px 26px;}
+  .legend h2{font-family:var(--font-display);font-weight:400;font-size:19px;margin-bottom:12px;}
+  .legend ul{margin:0 0 4px 18px;}
+  .legend li{font-size:13.5px;color:var(--text-secondary);line-height:1.65;}
+  .legend li b{color:var(--text-primary);font-weight:600;}
+  .legend .rule{height:1px;background:var(--border);margin:16px 0;}
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1>Home identity strip — design options</h1>
+    <p class="sub">For the product-team discussion on a Home header (B-076). Direction: a <b>thin orienting strip</b> — wordmark + avatar + pet name + one slim line — that keeps the AI&nbsp;Signal leading (Principle&nbsp;3). Frame A is today's baseline (no header). Frame D is the fuller block we are <b>not</b> building, shown so the Signal-push-down cost is visible.</p>
+    <p class="meta">Tokens mirror constants/theme.ts (v1.2 "Linear Clean"). Geist body · Newsreader display. Not pixel-final — this settles layout & Principle-3 fit before any code.</p>
+  </div>
+
+  <div class="stage">
+
+    <!-- A — baseline, no header -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="body" style="padding-top:var(--s2);">
+          <div class="zlabel">Signal</div>
+          <div class="signal warn">
+            <div class="stext">Mochi has vomited 3 times this week, up from 1 last week.</div>
+            <div class="smeta">BASED ON 4 EVENTS · TAP FOR DETAIL</div>
+          </div>
+          <div class="zlabel">Today</div>
+          <div class="today">
+            <div class="row"><span class="dot"></span> Breakfast · Hydrolyzed Protein · ate all</div>
+            <div class="row"><span class="dot sym"></span> Vomit · 7:24 AM</div>
+          </div>
+          <div class="zlabel">7-day trend</div>
+          <div class="trend"><div class="bars"><i></i><i class="s"></i><i></i><i></i><i class="s"></i><i class="s"></i><i></i></div></div>
+        </div>
+        <div class="tabbar"><div class="on">Home</div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag">A · today</span>No header at all. Clean, but no brand identity and no orientation — "whose home is this?" is implicit.</div>
+    </div>
+
+    <!-- B — recommended thin strip -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="idstrip">
+          <div class="wordmark">Project Nyx</div>
+          <div class="id-row">
+            <div class="avatar">🐕</div>
+            <div class="id-text">
+              <div class="id-name">Mochi</div>
+              <div class="id-sub">Mixed breed · 4 yrs</div>
+            </div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="zlabel">Signal</div>
+          <div class="signal warn">
+            <div class="stext">Mochi has vomited 3 times this week, up from 1 last week.</div>
+            <div class="smeta">BASED ON 4 EVENTS · TAP FOR DETAIL</div>
+          </div>
+          <div class="zlabel">Today</div>
+          <div class="today">
+            <div class="row"><span class="dot"></span> Breakfast · Hydrolyzed Protein · ate all</div>
+            <div class="row"><span class="dot sym"></span> Vomit · 7:24 AM</div>
+          </div>
+          <div class="zlabel">7-day trend</div>
+          <div class="trend"><div class="bars"><i></i><i class="s"></i><i></i><i></i><i class="s"></i><i class="s"></i><i></i></div></div>
+        </div>
+        <div class="tabbar"><div class="on">Home</div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag">B · recommended</span><b>Thin strip.</b> Wordmark + avatar + name + one slim line. Signal still leads, fully visible. ~64pt of chrome.</div>
+    </div>
+
+    <!-- C — thin strip, switcher-ready (future) -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="idstrip">
+          <div class="wordmark">Project Nyx</div>
+          <div class="id-row">
+            <div class="avatar cat">🐈</div>
+            <div class="id-text">
+              <div class="id-name">Pixel</div>
+              <div class="id-sub">Domestic shorthair · 6 yrs</div>
+            </div>
+            <div class="chev future">⌄</div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="zlabel">Signal</div>
+          <div class="signal">
+            <div class="stext">Pixel has eaten most of every meal for 5 days running.</div>
+            <div class="smeta">BASED ON 9 MEALS · TAP FOR DETAIL</div>
+          </div>
+          <div class="zlabel">Today</div>
+          <div class="today">
+            <div class="row"><span class="dot"></span> Breakfast · Tuna pâté · ate most</div>
+            <div class="row"><span class="dot"></span> Dinner · offered 6:10 PM</div>
+          </div>
+          <div class="zlabel">7-day trend</div>
+          <div class="trend"><div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div>
+        <div class="tabbar"><div class="on">Home</div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag">C · future-ready</span>Same strip, with the dimmed <b>⌄ switcher</b> affordance. <b>Designed for, not built now</b> — the avatar/name is the natural tap-target multi-pet will light up.</div>
+    </div>
+
+    <!-- D — fuller block (anti-example) -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="fullcard">
+          <div class="wordmark" style="margin-bottom:10px;">Project Nyx</div>
+          <div class="id-row">
+            <div class="avatar">🐕</div>
+            <div class="id-text">
+              <div class="id-name" style="font-size:20px;">Mochi</div>
+              <div class="id-sub">Logging since March</div>
+            </div>
+          </div>
+          <div class="metarow">
+            <span class="pill">Mixed breed</span><span class="pill">4 years</span>
+            <span class="pill">12.4 kg</span><span class="pill">Diet trial · wk 3</span>
+          </div>
+        </div>
+        <div class="body" style="gap:12px;">
+          <div class="zlabel">Signal</div>
+          <div class="signal warn">
+            <div class="stext">Mochi has vomited 3 times this week, up from 1 last week.</div>
+            <div class="smeta">BASED ON 4 EVENTS · TAP FOR DETAIL</div>
+          </div>
+          <div class="zlabel">Today</div>
+          <div class="today">
+            <div class="row"><span class="dot"></span> Breakfast · Hydrolyzed Protein · ate all</div>
+          </div>
+        </div>
+        <div class="tabbar"><div class="on">Home</div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag warn">D · not building</span><b>Fuller block.</b> Breed/age/weight/trial duplicate the Pet tab and shove the safety Signal toward the fold. Shown only to make the cost visible.</div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <h2>What this mock is settling</h2>
+    <ul>
+      <li><b>Principle 3 fit.</b> B keeps the AI&nbsp;Signal as the first content card — chrome sits <i>above</i> the intelligence surface, it doesn't push into it. D shows what "too much" costs.</li>
+      <li><b>No Pet-tab duplication.</b> The strip carries identity (who am I looking at), not the profile (breed/age/conditions/weight/trial) — that stays the Pet tab's job. B's one slim line is orientation, not a profile.</li>
+      <li><b>Switcher-ready, not switcher-built.</b> C shows the future multi-pet tap-target (dimmed ⌄). We design the avatar/name as the eventual switcher entry point but don't build switching until multi-pet is scoped.</li>
+      <li><b>Wordmark.</b> "Project Nyx" placeholder in the Newsreader display face, quiet (tertiary) so it reads as identity, not a banner. Real name swaps in later with no layout change.</li>
+    </ul>
+    <div class="rule"></div>
+    <ul>
+      <li style="color:var(--text-tertiary);"><b style="color:var(--text-primary);">Open for PM:</b> in B's slim line — breed + age (shown), or something warmer/less static (e.g. "Logging since March", as in D)? Breed/age is reference data that never changes; a status line earns its pixels more often. Worth a look on-device both ways.</li>
+    </ul>
+  </div>
+</body>
+</html>

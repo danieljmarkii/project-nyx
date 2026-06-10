@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEvents } from '../../hooks/useEvents';
 import { useSyncStore } from '../../store/syncStore';
 import { theme } from '../../constants/theme';
+import { HomeHeader } from '../../components/home/HomeHeader';
 import { SignalZone } from '../../components/home/SignalZone';
 import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
@@ -19,7 +20,14 @@ export default function HomeScreen() {
   }, [loadTodayEvents, hydrationTick]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    // 'top' is intentionally NOT a SafeAreaView edge here — the HomeHeader owns
+    // the top inset so its white surface bleeds behind the status bar. Letting
+    // SafeAreaView pad the top would paint the inset with the grey screen bg,
+    // leaving a grey strip above the white header.
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      {/* Pinned identity strip (B-076) — stays put while the zones scroll, so
+          the AI Signal still leads the scrollable intelligence surface. */}
+      <HomeHeader />
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
