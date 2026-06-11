@@ -21,6 +21,7 @@ import type {
   IntakeDeclineFinding,
   ReflectionFinding,
   SymptomWorseningFinding,
+  PostprandialTimingFinding,
   RankedFinding,
   SymptomType,
 } from './detection.ts'
@@ -119,6 +120,18 @@ export function templateWorsening(f: SymptomWorseningFinding, petName: string): 
   return `${petName} has had ${f.currentCount} ${episodeNoun} of ${symptom} this week, ${priorClause} — worth a word with your vet.`
 }
 
+export function templatePostprandialTiming(f: PostprandialTimingFinding, petName: string): string {
+  // Detector ⑤ (B-078) — template-only (no LLM, like ③/④). Names TIMING ONLY: never a
+  // food/protein/brand/form (§9.1 — those ride feedingFormsInEvidence into the vet report),
+  // never causal ("of eating" is a timing reference, not "because of"), never a mechanism
+  // word ("regurgitation"/"eating speed" — §9.2), never inverted on a below-floor result
+  // (that case never reaches here — the engine stays silent). Honest denominator: "we could
+  // time" (the eligible count), never the raw episode count.
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  const lastTwo = f.lastTwoEligibleRapid ? ', including the last two' : ''
+  return `${f.rapidCount} of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName} happened within ${f.rapidWindowMinutes} minutes of eating${lastTwo} — a timing pattern worth mentioning to your vet.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
@@ -129,6 +142,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateReflection(finding, petName)
     case 'symptom_worsening':
       return templateWorsening(finding, petName)
+    case 'postprandial_timing':
+      return templatePostprandialTiming(finding, petName)
   }
 }
 
@@ -158,6 +173,15 @@ const REASSURANCE_RE =
 const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i
 const CAUSAL_RE =
   /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic)|intoleran(?:t|ce)|reacts? to|leads? to|results? in)\b/i
+// Detector ⑤ (B-078) must never imply a MECHANISM — the card reports a timing pattern
+// for the vet to interpret, never "regurgitation"/"reflux"/"eating speed" (§9.2 / kickoff).
+const MECHANISM_RE =
+  /\b(regurgitat\w*|reflux|esophag\w*|megaesophagus|eating speed|eats? too fast|wolf(?:s|ed|ing)? (?:it )?down|gulp\w*|swallow\w* too fast|bilious|empty stomach)\b/i
+// …nor name a FOOD/protein/form (§9.1 — owner copy is timing-only; form rides the vet
+// report). A timing claim that mentions a protein or form is a model drift back to
+// attribution. "eating" is a timing reference, not a food, so it is not screened.
+const FOOD_NAMING_RE =
+  /\b(chicken|beef|turkey|lamb|duck|salmon|tuna|whitefish|fish|pork|rabbit|venison|bison|kibble|treats?|dry food|wet food|protein)\b/i
 
 export function validatePhrasing(text: string, finding: Finding): boolean {
   const t = text?.trim() ?? ''
@@ -184,6 +208,16 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // only (index.ts) so the model is never in this loop, but if that ever changes
     // this screen still holds the never-causal line.
     if (CAUSAL_RE.test(t)) return false
+  }
+  if (finding.type === 'postprandial_timing') {
+    // Detector ⑤ (B-078) is a descriptive TIMING count — anamnesis, never mechanism.
+    // It may not assert a cause, imply a mechanism ('regurgitation'/'eating speed'),
+    // name a food/protein/form (§9.1), or reassure (a below-floor result is silence,
+    // never "not meal-related"). Template-only (index.ts) so the model is never in this
+    // loop — but if that ever changes, this screen holds all four lines.
+    if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t) || REASSURANCE_RE.test(t)) {
+      return false
+    }
   }
   return true
 }
@@ -246,6 +280,21 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       tier: finding.tier, // 'firm' | 'standard' | 'soft' — urgency register
       relationship: 'descriptive_count', // a frequency we are noting — NOT a cause
       severity: 'calm_safety_flag', // surface clearly, never reassure
+    }
+  }
+  if (finding.type === 'postprandial_timing') {
+    // Template-only (index.ts), so this payload is never actually sent to the model;
+    // kept for shape-correctness and parity. Deliberately carries TIMING ONLY — no food
+    // form (§9.1: form stays in feedingFormsInEvidence for the vet report, never the claim).
+    return {
+      insight_type: 'postprandial_timing',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      rapid_count: finding.rapidCount,
+      eligible_count: finding.eligibleCount,
+      window_minutes: finding.rapidWindowMinutes,
+      including_last_two: finding.lastTwoEligibleRapid,
+      relationship: 'associational_timing', // a timing pattern we are noting — NOT a cause, NOT a mechanism
     }
   }
   return {

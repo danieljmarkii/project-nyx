@@ -14,6 +14,7 @@ import type {
   IntakeDeclineFinding,
   ReflectionFinding,
   SymptomWorseningFinding,
+  PostprandialTimingFinding,
   RateMealsDiagnostic,
   StapleWashoutDiagnostic,
 } from './signal';
@@ -66,12 +67,28 @@ const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorsenin
   ...over,
 });
 
+const postprandial = (over: Partial<PostprandialTimingFinding> = {}): PostprandialTimingFinding => ({
+  type: 'postprandial_timing',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  rapidCount: 4,
+  eligibleCount: 12,
+  totalEpisodes: 14,
+  rapidWindowMinutes: 30,
+  lastTwoEligibleRapid: true,
+  medianMinutesSinceFeeding: 18,
+  feedingFormsInEvidence: ['dry treat'],
+  windowDays: 60,
+  ...over,
+});
+
 const cached = (
   finding:
     | CorrelationFinding
     | IntakeDeclineFinding
     | ReflectionFinding
-    | SymptomWorseningFinding,
+    | SymptomWorseningFinding
+    | PostprandialTimingFinding,
   rank = 0,
 ): CachedFinding => ({
   rank,
@@ -341,5 +358,48 @@ describe('evidenceText — symptom-worsening (④)', () => {
   });
   it('carries no confidence tag (safety weight is shown by the rail + lead, not a tag)', () => {
     expect(confidenceTag(worsening())).toBe(null);
+  });
+});
+
+// The ⑤ owner surface must read as TIMING anamnesis — never a food/cause/mechanism.
+const MECHANISM_RE = /\b(regurgitat|reflux|esophag|eating speed|eats? too fast|wolf|gulp|bilious)\b/i;
+const FOOD_RE = /\b(chicken|beef|turkey|lamb|duck|salmon|tuna|kibble|treats?|protein)\b/i;
+
+describe('postprandial timing (⑤, B-078) — client copy', () => {
+  it('sampleLine cites rapid over the TIMED denominator, never the raw total', () => {
+    const s = sampleLine(postprandial({ rapidCount: 4, eligibleCount: 12, rapidWindowMinutes: 30 }));
+    expect(s).toContain('4 of 12 timed episodes');
+    expect(s).toContain('within 30 min of eating');
+  });
+
+  it('carries no confidence tag (a deterministic count shows its sample size, §2)', () => {
+    expect(confidenceTag(postprandial())).toBeNull();
+  });
+
+  it('evidenceText shows the actual median timing + the honest denominator, points to the vet', () => {
+    const s = evidenceText(
+      postprandial({ totalEpisodes: 14, eligibleCount: 12, rapidCount: 4, medianMinutesSinceFeeding: 18 }),
+      'Nyx',
+    );
+    expect(s).toContain('14 episodes');
+    expect(s).toContain('12 could be timed');
+    expect(s).toContain('about 18 minutes');
+    expect(s).toMatch(/vet/i);
+  });
+
+  it('owner copy names timing only — never a food, cause, or mechanism (§9.1/§9.2)', () => {
+    const s = evidenceText(postprandial({ feedingFormsInEvidence: ['dry treat', 'chicken kibble'] }), 'Nyx');
+    expect(MECHANISM_RE.test(s)).toBe(false);
+    expect(FOOD_RE.test(s)).toBe(false);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(s.includes('!')).toBe(false);
+    // The sample line is equally clean.
+    const sl = sampleLine(postprandial());
+    expect(MECHANISM_RE.test(sl)).toBe(false);
+    expect(FOOD_RE.test(sl)).toBe(false);
+  });
+
+  it('ranks as a cap-subject insight, never on the safety rail', () => {
+    expect(postprandial().priorityClass).toBe('insight');
   });
 });

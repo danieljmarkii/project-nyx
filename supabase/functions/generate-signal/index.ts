@@ -38,6 +38,7 @@ import {
   type SymptomType,
   type IntakeRating,
   type Species,
+  type OccurredAtConfidence,
   type DetectionInput,
 } from './detection.ts'
 import {
@@ -80,15 +81,21 @@ interface ClaudeToolResponse {
 // otherwise the deterministic template — so this never throws and never blanks.
 async function phraseFinding(finding: Finding, petName: string): Promise<string> {
   const fallback = templateForFinding(finding, petName)
-  // Reflections (③, B-051) AND symptom-worsening (④) are phrased DETERMINISTICALLY —
-  // never sent to the LLM. Both are count statements ("4 episodes of vomiting this week
-  // — same as last week" / "...up from 2 last week"); the model adds little warmth but
-  // introduces real reassurance-drift risk ("on the mend", "trending the right way"),
-  // and validatePhrasing's keyword screen cannot reliably catch paraphrase (adversarial
-  // review, B-051). Worsening is a SAFETY count where editorializing is most dangerous —
-  // exactly where the model must not be in the loop — so we render the template, which
-  // is guardrail-clean by construction and tested (clinical-guardrails Pattern 8).
-  if (finding.type === 'reflection' || finding.type === 'symptom_worsening') return fallback
+  // Reflections (③, B-051), symptom-worsening (④) AND postprandial-timing (⑤, B-078) are
+  // phrased DETERMINISTICALLY — never sent to the LLM. All are count statements ("4 episodes
+  // of vomiting this week — same as last week" / "...up from 2 last week" / "4 of 12 we could
+  // time, within 30 min of eating"); the model adds little warmth but introduces real drift
+  // risk — reassurance ("on the mend") for ③/④, and for ⑤ a slide back into mechanism
+  // ("regurgitation") or food attribution that validatePhrasing's keyword screen cannot
+  // reliably catch by paraphrase (adversarial review, B-051 / §2 of the descriptive spec).
+  // We render the template, which is guardrail-clean by construction and tested.
+  if (
+    finding.type === 'reflection' ||
+    finding.type === 'symptom_worsening' ||
+    finding.type === 'postprandial_timing'
+  ) {
+    return fallback
+  }
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) {
     console.warn('generate-signal: ANTHROPIC_API_KEY unset — using template')
@@ -142,6 +149,7 @@ interface SymptomRow {
   id: string
   event_type: string
   occurred_at: string
+  occurred_at_confidence: string | null
   severity: number | null
 }
 
@@ -159,6 +167,7 @@ type MealJoin = {
 interface MealEventRow {
   id: string
   occurred_at: string
+  occurred_at_confidence: string | null
   meals: MealJoin | MealJoin[] | null
 }
 
@@ -172,6 +181,9 @@ function mapSymptomRows(rows: SymptomRow[]): SymptomEvent[] {
     id: r.id,
     type: r.event_type as SymptomType,
     occurredAt: r.occurred_at,
+    // B-010 timestamp confidence (B-078): gates timed-eligibility for the descriptive
+    // lane (⑤). NULL/absent ⇒ ignored by ①–④, ineligible for ⑤'s strict witnessed gate.
+    occurredAtConfidence: (r.occurred_at_confidence ?? null) as OccurredAtConfidence | null,
     severity: r.severity,
   }))
 }
@@ -209,6 +221,9 @@ function mapMealRows(rows: MealEventRow[]): MealEvent[] {
     return {
       id: r.id,
       occurredAt: r.occurred_at,
+      // B-010 timestamp confidence (B-078): a feeding is timed-eligible when 'witnessed'
+      // OR NULL (meals are inherently witnessed; legacy NULL carries the same semantics).
+      occurredAtConfidence: (r.occurred_at_confidence ?? null) as OccurredAtConfidence | null,
       foodItemId: meal?.food_item_id ?? null,
       primaryProtein: fi?.primary_protein ?? null,
       intakeRating: (meal?.intake_rating ?? null) as IntakeRating | null,
@@ -260,7 +275,7 @@ Deno.serve(async (req: Request) => {
       supabase.from('pets').select('name, species').eq('id', petId).maybeSingle(),
       supabase
         .from('events')
-        .select('id, event_type, occurred_at, severity')
+        .select('id, event_type, occurred_at, occurred_at_confidence, severity')
         .eq('pet_id', petId)
         .in('event_type', [...CORRELATION_SYMPTOM_TYPES])
         .is('deleted_at', null)
@@ -268,7 +283,7 @@ Deno.serve(async (req: Request) => {
       supabase
         .from('events')
         .select(
-          'id, occurred_at, meals(food_item_id, intake_rating, food_items(primary_protein, food_type, brand, product_name))',
+          'id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, food_items(primary_protein, food_type, brand, product_name))',
         )
         .eq('pet_id', petId)
         .eq('event_type', 'meal')
