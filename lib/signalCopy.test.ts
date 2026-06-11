@@ -18,6 +18,8 @@ import type {
   TimeOfDayClusteringFinding,
   RateMealsDiagnostic,
   StapleWashoutDiagnostic,
+  MealTypeCollapseDiagnostic,
+  DietChurnDiagnostic,
 } from './signal';
 
 const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding => ({
@@ -266,6 +268,80 @@ describe('coverageCopy (B-053)', () => {
 
   it('never reads as an all-clear for either diagnostic (§9 — coverage, not wellness)', () => {
     for (const d of [rateMeals(), stapleWashout()]) {
+      const { why, action } = coverageCopy(d, 'Pixel');
+      for (const s of [why, action].filter((x): x is string => x !== null)) {
+        expect(REASSURANCE_RE.test(s)).toBe(false);
+        expect(DISMISSIVE_RE.test(s)).toBe(false);
+        expect(s.includes('!')).toBe(false);
+      }
+    }
+  });
+
+  // ── B-080 diet-structure observations (coverage lane per §9.3) ──────────────
+  const collapse = (
+    over: Partial<MealTypeCollapseDiagnostic> = {},
+  ): MealTypeCollapseDiagnostic => ({
+    type: 'meal_type_collapse',
+    actionability: 'explanation',
+    gapDays: 6,
+    loggedDays: 8,
+    treatsPerDayMedian: 2,
+    windowDays: 10,
+    ...over,
+  });
+  const churn = (over: Partial<DietChurnDiagnostic> = {}): DietChurnDiagnostic => ({
+    type: 'diet_churn',
+    actionability: 'explanation',
+    novelFoodCount: 3,
+    symptomEpisodesInWindow: 2,
+    windowDays: 14,
+    ...over,
+  });
+
+  it('meal_type_collapse: names the pet + the specific count, never causal/reassuring/shouting', () => {
+    const { why, action } = coverageCopy(collapse({ gapDays: 6, windowDays: 10 }), 'Nyx');
+    expect(why).toContain('Nyx');
+    expect(why).toContain('6 of the last 10 days');
+    expect(why.includes('!')).toBe(false);
+    expect(CAUSAL_RE.test(why)).toBe(false);
+    expect(REASSURANCE_RE.test(why)).toBe(false);
+    expect(action).not.toBeNull();
+    expect(action!.includes('!')).toBe(false);
+    expect(CAUSAL_RE.test(action!)).toBe(false);
+    expect(REASSURANCE_RE.test(action!)).toBe(false);
+  });
+
+  it('meal_type_collapse: carries the NON-NEGOTIABLE log-only acknowledgement (§5.1)', () => {
+    // The engine sees only the log; the copy must hedge that it cannot know what was
+    // actually eaten ("if that's the full picture" / "if {pet} ate more than you logged").
+    const { action } = coverageCopy(collapse(), 'Nyx');
+    expect(action).not.toBeNull();
+    expect(action!.toLowerCase()).toContain('full picture');
+    expect(action!.toLowerCase()).toContain('more than you logged');
+    expect(action!.toLowerCase()).toContain('vet');
+  });
+
+  it('diet_churn: names the new-food count, warm + non-judgmental, never causal/reassuring', () => {
+    const { why, action } = coverageCopy(churn({ novelFoodCount: 3 }), 'Nyx');
+    expect(why).toContain('Nyx');
+    expect(why).toContain('3 new foods');
+    expect(why.includes('!')).toBe(false);
+    expect(CAUSAL_RE.test(why)).toBe(false);
+    expect(REASSURANCE_RE.test(why)).toBe(false);
+    expect(action).not.toBeNull();
+    expect(action!.includes('!')).toBe(false);
+    expect(CAUSAL_RE.test(action!)).toBe(false);
+    expect(REASSURANCE_RE.test(action!)).toBe(false);
+  });
+
+  it('diet_churn: pluralizes a single new food correctly', () => {
+    const { why } = coverageCopy(churn({ novelFoodCount: 1 }), 'Nyx');
+    expect(why).toContain('1 new food ');
+    expect(why).not.toContain('1 new foods');
+  });
+
+  it('never reads as an all-clear for the diet-structure diagnostics either (§9)', () => {
+    for (const d of [collapse(), churn()]) {
       const { why, action } = coverageCopy(d, 'Pixel');
       for (const s of [why, action].filter((x): x is string => x !== null)) {
         expect(REASSURANCE_RE.test(s)).toBe(false);

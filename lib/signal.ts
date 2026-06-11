@@ -174,7 +174,32 @@ export interface StapleWashoutDiagnostic {
   symptomEpisodes: number;
 }
 
-export type CoverageDiagnostic = RateMealsDiagnostic | StapleWashoutDiagnostic;
+// B-080 diet-structure observations (descriptive lane Phase 3), rendered in the
+// coverage lane per the §9.3 PM decision. Mirror of detection.ts; coverageCopy()
+// renders gapDays/windowDays (collapse) and novelFoodCount (churn). The remaining
+// fields ride for parity with the cached shape + the Step-9 vet report.
+export interface MealTypeCollapseDiagnostic {
+  type: 'meal_type_collapse';
+  actionability: 'explanation';
+  gapDays: number;
+  loggedDays: number;
+  treatsPerDayMedian: number;
+  windowDays: number;
+}
+
+export interface DietChurnDiagnostic {
+  type: 'diet_churn';
+  actionability: 'explanation';
+  novelFoodCount: number;
+  symptomEpisodesInWindow: number;
+  windowDays: number;
+}
+
+export type CoverageDiagnostic =
+  | RateMealsDiagnostic
+  | StapleWashoutDiagnostic
+  | MealTypeCollapseDiagnostic
+  | DietChurnDiagnostic;
 
 export interface SignalCacheRow {
   signalText: string | null;
