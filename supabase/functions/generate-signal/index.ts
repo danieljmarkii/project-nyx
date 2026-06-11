@@ -80,15 +80,15 @@ interface ClaudeToolResponse {
 // otherwise the deterministic template — so this never throws and never blanks.
 async function phraseFinding(finding: Finding, petName: string): Promise<string> {
   const fallback = templateForFinding(finding, petName)
-  // Reflections (③, B-051) are phrased DETERMINISTICALLY — never sent to the LLM.
-  // A reflection is a bland count ("4 episodes of vomiting this week — same as last
-  // week"); the model adds little warmth but introduces real reassurance-drift risk
-  // ("on the mend", "trending the right way"), and validatePhrasing's keyword screen
-  // cannot reliably catch paraphrase (adversarial review, B-051). The §7.1 rung-②
-  // presence layer is exactly where editorializing must not happen, so we remove the
-  // model from the loop entirely for this type. The template is guardrail-clean by
-  // construction and tested (clinical-guardrails Pattern 8).
-  if (finding.type === 'reflection') return fallback
+  // Reflections (③, B-051) AND symptom-worsening (④) are phrased DETERMINISTICALLY —
+  // never sent to the LLM. Both are count statements ("4 episodes of vomiting this week
+  // — same as last week" / "...up from 2 last week"); the model adds little warmth but
+  // introduces real reassurance-drift risk ("on the mend", "trending the right way"),
+  // and validatePhrasing's keyword screen cannot reliably catch paraphrase (adversarial
+  // review, B-051). Worsening is a SAFETY count where editorializing is most dangerous —
+  // exactly where the model must not be in the loop — so we render the template, which
+  // is guardrail-clean by construction and tested (clinical-guardrails Pattern 8).
+  if (finding.type === 'reflection' || finding.type === 'symptom_worsening') return fallback
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) {
     console.warn('generate-signal: ANTHROPIC_API_KEY unset — using template')

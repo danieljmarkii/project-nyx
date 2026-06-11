@@ -13,6 +13,7 @@ import type {
   CorrelationFinding,
   IntakeDeclineFinding,
   ReflectionFinding,
+  SymptomWorseningFinding,
   RateMealsDiagnostic,
   StapleWashoutDiagnostic,
 } from './signal';
@@ -51,8 +52,26 @@ const reflection = (over: Partial<ReflectionFinding> = {}): ReflectionFinding =>
   ...over,
 });
 
+const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorseningFinding => ({
+  type: 'symptom_worsening',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  currentCount: 4,
+  priorCount: 2,
+  currentDays: 2,
+  priorDays: 2,
+  trigger: 'more_episodes',
+  tier: 'standard',
+  windowDays: 7,
+  ...over,
+});
+
 const cached = (
-  finding: CorrelationFinding | IntakeDeclineFinding | ReflectionFinding,
+  finding:
+    | CorrelationFinding
+    | IntakeDeclineFinding
+    | ReflectionFinding
+    | SymptomWorseningFinding,
   rank = 0,
 ): CachedFinding => ({
   rank,
@@ -239,5 +258,76 @@ describe('evidenceText — reflection (B-051)', () => {
     expect(s).toContain('down from 6 episodes');
     expect(CAUSAL_RE.test(s)).toBe(false);
     expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+});
+
+describe('sampleLine — symptom-worsening (④)', () => {
+  it('shows the week-over-week EPISODE count for the more_episodes arm', () => {
+    const s = sampleLine(worsening({ trigger: 'more_episodes', currentCount: 4, priorCount: 2 }));
+    expect(s).toContain('4 episodes');
+    expect(s).toContain('2 last week');
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('shows the week-over-week DAY count for the more_days arm', () => {
+    const s = sampleLine(worsening({ trigger: 'more_days', currentDays: 3, priorDays: 1 }));
+    expect(s).toContain('3 days');
+    expect(s).toContain('1 last week');
+  });
+});
+
+describe('evidenceText — symptom-worsening (④)', () => {
+  it('standard: names the rise, points to the vet, never causal, never reassures', () => {
+    const s = evidenceText(worsening({ tier: 'standard', currentCount: 4, priorCount: 2 }), 'Nyx');
+    expect(s).toContain('Nyx');
+    expect(s).toContain('4 episodes');
+    expect(s).toMatch(/word with your vet/i);
+    expect(s.includes('!')).toBe(false);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('standard with prior 0 reads "after none the week before", not reassurance', () => {
+    const s = evidenceText(worsening({ tier: 'standard', currentCount: 3, priorCount: 0 }), 'Nyx');
+    expect(s).toMatch(/after none the week before/i);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('firm: leads with day density and the firmest calm ask', () => {
+    const s = evidenceText(
+      worsening({ tier: 'firm', currentCount: 6, priorCount: 2, currentDays: 5 }),
+      'Nyx',
+    );
+    expect(s).toMatch(/5 days/i);
+    expect(s).toMatch(/vet visit soon/i);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('soft (more_days): talks in days, gentlest ask', () => {
+    const s = evidenceText(
+      worsening({ tier: 'soft', trigger: 'more_days', currentDays: 3, priorDays: 1 }),
+      'Nyx',
+    );
+    expect(s).toMatch(/3 days/i);
+    expect(s).toMatch(/keeping an eye on/i);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
+  it('every tier/arm is guardrail-clean (never reassures/dismissive/causal, no "!")', () => {
+    for (const tier of ['firm', 'standard', 'soft'] as const) {
+      for (const trigger of ['more_episodes', 'more_days'] as const) {
+        for (const priorCount of [0, 2]) {
+          const s = evidenceText(
+            worsening({ tier, trigger, currentCount: 5, priorCount, currentDays: 5, priorDays: 2 }),
+            'Nyx',
+          );
+          expect(REASSURANCE_RE.test(s)).toBe(false);
+          expect(DISMISSIVE_RE.test(s)).toBe(false);
+          expect(CAUSAL_RE.test(s)).toBe(false);
+          expect(s.includes('!')).toBe(false);
+        }
+      }
+    }
+  });
+  it('carries no confidence tag (safety weight is shown by the rail + lead, not a tag)', () => {
+    expect(confidenceTag(worsening())).toBe(null);
   });
 });

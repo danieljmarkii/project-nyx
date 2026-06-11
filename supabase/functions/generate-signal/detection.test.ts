@@ -14,6 +14,7 @@ import {
   detectCorrelations,
   detectIntakeDecline,
   detectReflections,
+  detectWorsening,
   detectSignals,
   detectCoverage,
   rankCoverageDiagnostics,
@@ -25,6 +26,7 @@ import {
   type CorrelationFinding,
   type IntakeDeclineFinding,
   type ReflectionFinding,
+  type SymptomWorseningFinding,
   type DetectionInput,
   type MealEvent,
   type FeedingArrangement,
@@ -750,6 +752,222 @@ Deno.test('detectReflections — surfaces ONE reflection (the symptom most prese
   assert.equal(findings[0].currentCount, 4)
 })
 
+// ── Detector ④: symptom-frequency worsening (the deterministic worsening lane) ──
+// Same week-over-week windows as ③ relative to NOW = 2026-05-30T12:00.
+
+Deno.test('detectWorsening — an episode-count rise fires the STANDARD tier (not dense)', () => {
+  // current 4 episodes across only 2 days (24, 26 — two bouts each, >3h apart) → not
+  // dense; prior 2 episodes. A clear rise, calm "word with your vet" register.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(24, 12)),
+    symptom('vomit', at(26, 8)), symptom('vomit', at(26, 12)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(19, 8)),
+  ]
+  // Pad logging-eligibility to 3 distinct days in BOTH windows (meals, not symptoms).
+  const mealEvents = [meal({ occurredAt: at(28, 8) }), meal({ occurredAt: at(21, 8) })]
+  const findings = detectWorsening(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.type, 'symptom_worsening')
+  assert.equal(f.priorityClass, 'safety')
+  assert.equal(f.symptomType, 'vomit')
+  assert.equal(f.currentCount, 4)
+  assert.equal(f.priorCount, 2)
+  assert.equal(f.currentDays, 2)
+  assert.equal(f.priorDays, 2)
+  assert.equal(f.trigger, 'more_episodes')
+  assert.equal(f.tier, 'standard')
+  assert.equal(f.windowDays, 7)
+})
+
+Deno.test('detectWorsening — symptoms on most days fires the FIRM tier (density-anchored)', () => {
+  // current 4 episodes on 4 DISTINCT days (≥ worseningDenseDayFloor) → "book a vet
+  // visit soon"; prior 2 episodes. Density, not raw count, lifts it to firm.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)),
+    symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(19, 8)),
+  ]
+  const mealEvents = [meal({ occurredAt: at(21, 8) })] // prior 3rd logging day
+  const findings = detectWorsening(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].tier, 'firm')
+  assert.equal(findings[0].currentDays, 4)
+  assert.equal(findings[0].currentCount, 4)
+  assert.equal(findings[0].trigger, 'more_episodes')
+})
+
+Deno.test('detectWorsening — same count but more SPREAD fires the SOFT (more_days) tier', () => {
+  // current 3 episodes over 3 days; prior 3 episodes ALL on one acute day. Episode
+  // counts are flat (3 vs 3) but the symptom-day spread rose (3 vs 1) → worsening via
+  // the more_days arm, the gentlest "keeping an eye on" register. This is the EXACT
+  // input ③'s gate suppresses on — the valve: ③ silent ⟺ ④ speaks.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(17, 12)), symptom('vomit', at(17, 16)),
+  ]
+  const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) })]
+  const findings = detectWorsening(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].trigger, 'more_days')
+  assert.equal(findings[0].tier, 'soft')
+  assert.equal(findings[0].currentCount, 3)
+  assert.equal(findings[0].priorCount, 3)
+  assert.equal(findings[0].currentDays, 3)
+  assert.equal(findings[0].priorDays, 1)
+  // The valve: reflections are silent on exactly this input.
+  assert.deepEqual(detectReflections(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectWorsening — a rise from a LOGGED zero fires (prior count 0 is allowed)', () => {
+  // current 3 episodes; prior week had NO vomiting but WAS logged (meals on 3 days),
+  // so the zero is real, not a logging gap. A symptom appearing is at least as real as
+  // 2→4 — it must fire, with the "after none last week" framing.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)),
+  ]
+  const mealEvents = [
+    meal({ occurredAt: at(17, 8) }), meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) }),
+  ]
+  const findings = detectWorsening(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].priorCount, 0)
+  assert.equal(findings[0].currentCount, 3)
+  assert.equal(findings[0].trigger, 'more_episodes')
+  assert.equal(findings[0].tier, 'standard')
+})
+
+Deno.test('detectWorsening — a DARK prior week cannot manufacture a rise (fake-rise guard)', () => {
+  // current 4 episodes; prior window has only ONE logged day → not logging-eligible.
+  // current 4 > prior 0 looks like a rise, but we cannot trust a rise measured against
+  // an unlogged week (the symptoms may simply not have been recorded). Stay SILENT —
+  // and note the residual that DOES get through (a logged-but-under-logged prior) errs
+  // toward escalation, never toward a false all-clear (§9).
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)),
+    symptom('vomit', at(26, 8)), symptom('vomit', at(27, 8)),
+  ]
+  const mealEvents = [meal({ occurredAt: at(17, 8) })] // prior logging days = 1 (< floor)
+  assert.deepEqual(detectWorsening(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectWorsening — re-logs of ONE bout collapse to one episode (no manufactured rise)', () => {
+  // Five rapid logs of a single bout (all within 3h) collapse to ONE episode, so the
+  // current count is 1 — below the worsening floor — and nothing fires. A single bout
+  // logged five times must never read as a five-episode surge.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8, 0)), symptom('vomit', at(24, 8, 30)), symptom('vomit', at(24, 9, 0)),
+    symptom('vomit', at(24, 9, 30)), symptom('vomit', at(24, 10, 0)),
+  ]
+  const mealEvents = [
+    meal({ occurredAt: at(25, 8) }), meal({ occurredAt: at(26, 8) }), // current logging days
+    meal({ occurredAt: at(17, 8) }), meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) }),
+  ]
+  assert.deepEqual(detectWorsening(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectWorsening — an IMPROVING trend never fires (worsening lane only)', () => {
+  // current 3 vs prior 5 (falling) → ③ reflects "improving"; ④ stays silent.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(18, 8)), symptom('vomit', at(19, 8)),
+    symptom('vomit', at(20, 8)), symptom('vomit', at(21, 8)),
+  ]
+  assert.deepEqual(detectWorsening(input({ symptomEvents })), [])
+})
+
+Deno.test('detectWorsening — a lone single new episode does NOT fire (count 1 < floor)', () => {
+  // One new vomit this week, none last week. A single isolated episode is not a
+  // worsening trend (mirrors ③'s lone-log guard) — per-incident analysis owns the
+  // acute single event, not this trend lane.
+  const symptomEvents = [symptom('vomit', at(25, 8))]
+  const mealEvents = [
+    meal({ occurredAt: at(24, 8) }), meal({ occurredAt: at(26, 8) }),
+    meal({ occurredAt: at(17, 8) }), meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) }),
+  ]
+  assert.deepEqual(detectWorsening(input({ symptomEvents, mealEvents })), [])
+})
+
+Deno.test('detectWorsening — CROSS-SYMPTOM: fires for the worsening symptom while ③ is silent (valve closed)', () => {
+  // The mirror of the reflection cross-symptom test: vomit rising 1→4 (worsening),
+  // itch improving 5→3. ③ stays globally silent (a soothing "itch is down" card must
+  // not surface while vomit rises); ④ now OWNS the suppressed case and emits ONE card
+  // for the rising vomit. ③ silent ⟺ ④ speaks — the one-way valve is closed.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)),
+    symptom('itch', at(24, 9)), symptom('itch', at(26, 9)), symptom('itch', at(28, 9)),
+    symptom('itch', at(16, 13)), symptom('itch', at(17, 9)), symptom('itch', at(18, 9)),
+    symptom('itch', at(19, 9)), symptom('itch', at(20, 9)),
+  ]
+  assert.deepEqual(detectReflections(input({ symptomEvents })), [])
+  const worsening = detectWorsening(input({ symptomEvents }))
+  assert.equal(worsening.length, 1)
+  assert.equal(worsening[0].symptomType, 'vomit')
+  assert.equal(worsening[0].tier, 'firm') // vomit on 4 days → dense
+})
+
+Deno.test('detectWorsening — surfaces ONE card: the symptom with the largest rise', () => {
+  // vomit rises 1→4 (rise 3); diarrhea rises 2→3 (rise 1). Both worsen, but the calm
+  // safety surface shows only the most-worsening symptom.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)),
+    symptom('diarrhea', at(24, 9)), symptom('diarrhea', at(26, 9)), symptom('diarrhea', at(28, 9)),
+    symptom('diarrhea', at(17, 9)), symptom('diarrhea', at(19, 9)),
+  ]
+  const mealEvents = [meal({ occurredAt: at(21, 8) })]
+  const findings = detectWorsening(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].symptomType, 'vomit')
+})
+
+Deno.test('detectWorsening — within the safety band, intake-decline outranks worsening (both kept)', () => {
+  // A pet eating less AND vomiting more shows BOTH safety cards (curation never drops
+  // safety) — the two-signal gestalt the re-run brief found missing. Intake-decline
+  // (faster-killing anorexia) leads.
+  const worsening: SymptomWorseningFinding = {
+    type: 'symptom_worsening',
+    priorityClass: 'safety',
+    symptomType: 'vomit',
+    currentCount: 4,
+    priorCount: 2,
+    currentDays: 4,
+    priorDays: 2,
+    trigger: 'more_episodes',
+    tier: 'firm',
+    windowDays: 7,
+  }
+  const decline: IntakeDeclineFinding = {
+    type: 'intake_decline',
+    priorityClass: 'safety',
+    trigger: 'consecutive_low',
+    species: 'cat',
+    baselineScore: 3.6,
+    recentScore: 1,
+    daysBelowBaseline: 1,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 6,
+  }
+  const ranked = rankFindings([worsening, decline], cat)
+  assert.equal(ranked.length, 2, 'both safety cards are kept')
+  assert.equal(ranked[0].finding.type, 'intake_decline', 'intake-decline leads worsening')
+  assert.equal(ranked[1].finding.type, 'symptom_worsening')
+})
+
+Deno.test('detectSignals — end to end: a worsening pet leads with the safety worsening card', () => {
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)),
+  ]
+  // Prior window needs ≥3 logged days for the rise to be trustworthy (fake-rise guard).
+  const mealEvents = [meal({ occurredAt: at(18, 8) }), meal({ occurredAt: at(19, 8) })]
+  const ranked = detectSignals(input({ pet: cat, symptomEvents, mealEvents }))
+  assert.equal(ranked.length, 1)
+  assert.equal(ranked[0].finding.type, 'symptom_worsening')
+  assert.equal(ranked[0].finding.priorityClass, 'safety')
+})
+
 // ── Composition & ranking (§5) ───────────────────────────────────────────────
 
 const reflectionFinding = (over: Partial<ReflectionFinding> = {}): ReflectionFinding => ({
@@ -926,6 +1144,8 @@ Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
   assert.equal(DEFAULT_CONFIG.reflection.minEpisodesEitherWindow, 3)
   assert.equal(DEFAULT_CONFIG.reflection.minLoggingDaysPerWindow, 3)
   assert.equal(DEFAULT_CONFIG.reflection.worseningMinEpisodes, 2)
+  // Detector ④ firm-tier density floor (B-reshaped): symptoms on ≥4 of 7 days.
+  assert.equal(DEFAULT_CONFIG.reflection.worseningDenseDayFloor, 4)
   // B-053 coverage-diagnostic floors.
   assert.equal(DEFAULT_CONFIG.coverage.stapleMinMeals, 4)
   // staple_washout's symptom floor MUST track ①'s Early episode floor so it only fires

@@ -60,6 +60,9 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // Reflection (③, B-051) — a descriptive count, rendered as a calm sentence like
   // the other types; it rides the benign 'insight' rail, never the safety rail.
   reflection: SentenceBody,
+  // Symptom-frequency worsening (④) — also a calm sentence, but a SAFETY finding, so
+  // it rides the safety rail (via priorityClass) and leads the surface.
+  symptom_worsening: SentenceBody,
 };
 
 interface Props {

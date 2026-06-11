@@ -133,6 +133,13 @@ export function sampleLine(finding: SignalFinding): string {
   if (finding.type === 'reflection') {
     return `${count(finding.currentCount, 'episode', 'episodes')} this week, ${finding.priorCount} last week`;
   }
+  if (finding.type === 'symptom_worsening') {
+    // Show the axis that actually rose: days for the more_days arm, episodes otherwise.
+    if (finding.trigger === 'more_days') {
+      return `${count(finding.currentDays, 'day', 'days')} this week, ${finding.priorDays} last week`;
+    }
+    return `${count(finding.currentCount, 'episode', 'episodes')} this week, ${finding.priorCount} last week`;
+  }
   if (finding.trigger === 'refused_normal_food') {
     return finding.ratedMealsConsidered > 0
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
@@ -168,6 +175,35 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     return (
       `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week — ${trend}. ` +
       `This is a count we're tracking with you — not a diagnosis, and not a verdict on how ${petName} is doing. Keep logging and we'll keep watching the trend.`
+    );
+  }
+  if (finding.type === 'symptom_worsening') {
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const priorPhrase =
+      finding.priorCount === 0
+        ? 'after none the week before'
+        : `up from ${count(finding.priorCount, 'episode', 'episodes')} the week before`;
+    // Firm tier — symptoms on most days. Lead with the day density; firmest (calm) ask.
+    if (finding.tier === 'firm') {
+      return (
+        `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} on ` +
+        `${count(finding.currentDays, 'day', 'days')} this week, ${priorPhrase}. Symptoms on most days is a pattern ` +
+        `worth a vet visit soon — a read of your logs, not a diagnosis.`
+      );
+    }
+    // The more_days-only arm (same episode count, more spread): talk in days, gentlest ask.
+    if (finding.trigger === 'more_days') {
+      return (
+        `We've logged ${symptom} for ${petName} on ${count(finding.currentDays, 'day', 'days')} this week, up from ` +
+        `${count(finding.priorDays, 'day', 'days')} the week before. It's a pattern in your logs, not a diagnosis — ` +
+        `worth keeping an eye on, and a word with your vet if it carries on.`
+      );
+    }
+    // Standard — an episode-count rise, not dense.
+    return (
+      `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week, ` +
+      `${priorPhrase}. It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an ` +
+      `eye on whether it carries on.`
     );
   }
   if (finding.trigger === 'refused_normal_food') {

@@ -20,6 +20,7 @@ import type {
   CorrelationFinding,
   IntakeDeclineFinding,
   ReflectionFinding,
+  SymptomWorseningFinding,
   RankedFinding,
   SymptomType,
 } from './detection.ts'
@@ -85,6 +86,33 @@ export function templateReflection(f: ReflectionFinding, petName: string): strin
   return `We've logged ${f.currentCount} ${noun} of ${symptom} for ${petName} this week — about the same as last week.`
 }
 
+export function templateWorsening(f: SymptomWorseningFinding, petName: string): string {
+  // Detector ④ — descriptive frequency, routed to concern. Never causal, never a
+  // severity verdict ("worse"), never reassures. Urgency rides the resolved tier
+  // (density-anchored, decided in the engine). Calm register mirrors intake-decline.
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  const episodeNoun = f.currentCount === 1 ? 'episode' : 'episodes'
+
+  if (f.tier === 'firm') {
+    // Dense current week — symptoms on most days. Lead with the day density, carry the
+    // episode count in support, and name the firmest (still calm) next action.
+    const priorClause =
+      f.priorCount === 0 ? 'after none last week' : `up from ${f.priorCount} last week`
+    return `${petName} has had ${symptom} on ${f.currentDays} of the last ${f.windowDays} days (${f.currentCount} ${episodeNoun}), ${priorClause} — worth booking a vet visit soon.`
+  }
+
+  if (f.tier === 'soft') {
+    // The more_days-only arm (same episode count, more spread), not dense. priorDays ≥ 1
+    // by construction here (the counts are flat at ≥ worseningMinEpisodes).
+    return `${petName} has had ${symptom} on ${f.currentDays} separate days this week, up from ${f.priorDays} last week — worth keeping an eye on, and a word with your vet if it carries on.`
+  }
+
+  // 'standard' — an episode-count rise, not dense.
+  const priorClause =
+    f.priorCount === 0 ? 'after none last week' : `up from ${f.priorCount} last week`
+  return `${petName} has had ${f.currentCount} ${episodeNoun} of ${symptom} this week, ${priorClause} — worth a word with your vet.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
@@ -93,6 +121,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateIntakeDecline(finding, petName)
     case 'reflection':
       return templateReflection(finding, petName)
+    case 'symptom_worsening':
+      return templateWorsening(finding, petName)
   }
 }
 
@@ -141,6 +171,14 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // all-clear; the reduction of a symptom is never a wellness verdict (§9).
     if (CAUSAL_RE.test(t) || REASSURANCE_RE.test(t)) return false
   }
+  if (finding.type === 'symptom_worsening') {
+    // Detector ④ is a descriptive frequency rise routed to concern. Reassurance/
+    // "picky" are already barred by the safety branch above; it ALSO may not assert
+    // a cause (it is frequency, never causation). Defense-in-depth: ④ is template-
+    // only (index.ts) so the model is never in this loop, but if that ever changes
+    // this screen still holds the never-causal line.
+    if (CAUSAL_RE.test(t)) return false
+  }
   return true
 }
 
@@ -186,6 +224,22 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       count_last_week: finding.priorCount,
       direction: finding.direction, // 'flat' | 'improving' (never 'worsening' — suppressed upstream)
       relationship: 'descriptive_count', // a count we are noting — NOT a cause and NOT an all-clear
+    }
+  }
+  if (finding.type === 'symptom_worsening') {
+    // Template-only (index.ts), so this payload is never actually sent to the model;
+    // kept for shape-correctness and parity with the other types.
+    return {
+      insight_type: 'symptom_worsening',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      count_this_week: finding.currentCount,
+      count_last_week: finding.priorCount,
+      days_this_week: finding.currentDays,
+      days_last_week: finding.priorDays,
+      tier: finding.tier, // 'firm' | 'standard' | 'soft' — urgency register
+      relationship: 'descriptive_count', // a frequency we are noting — NOT a cause
+      severity: 'calm_safety_flag', // surface clearly, never reassure
     }
   }
   return {
