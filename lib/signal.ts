@@ -28,7 +28,8 @@ export type InsightType =
   | 'intake_decline'
   | 'reflection'
   | 'symptom_worsening'
-  | 'postprandial_timing';
+  | 'postprandial_timing'
+  | 'timeofday_clustering';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
 export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction';
@@ -110,12 +111,35 @@ export interface PostprandialTimingFinding {
   windowDays: number;
 }
 
+// Time-of-day clustering (⑥, B-079) — a descriptive count of witnessed vomiting episodes
+// that fall in one band of the pet's LOCAL day, over an explicit witnessed denominator.
+// ASSOCIATIONAL/anamnesis only: names a clock band, never a cause or mechanism (§4.5). An
+// 'insight' (cap-subject), ranked below safety and below correlations, and MUTUALLY
+// EXCLUSIVE with ⑤ (⑤ wins — §4.4). Mirror of detection.ts TimeOfDayClusteringFinding
+// (rendered fields). `timezone` is carried for the Step-9 vet report; owner copy renders
+// the local band words, not the raw zone. The server-only `associationalOnly: true` marker
+// is intentionally omitted — like the ⑤ and correlation mirrors, it is a phrasing-layer
+// guardrail flag, not a rendered field, so the client mirror carries only what it renders.
+export interface TimeOfDayClusteringFinding {
+  type: 'timeofday_clustering';
+  priorityClass: 'insight';
+  symptomType: SignalSymptomType;
+  clusterStartLocalHour: number;
+  clusterWindowHours: number;
+  clusterCount: number;
+  eligibleCount: number;
+  totalEpisodes: number;
+  timezone: string;
+  windowDays: number;
+}
+
 export type SignalFinding =
   | CorrelationFinding
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
-  | PostprandialTimingFinding;
+  | PostprandialTimingFinding
+  | TimeOfDayClusteringFinding;
 
 export interface CachedFinding {
   rank: number;

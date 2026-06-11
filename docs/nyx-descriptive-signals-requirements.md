@@ -257,8 +257,8 @@ max-count window. Fire when **all** pass:
 | Floor | Default | Why |
 |---|---|---|
 | `minEligibleEpisodes` | 6 | below this, any "cluster" is a coin run |
-| `minClusterEpisodes` | 4 | the cluster itself needs real mass |
-| `minClusterFraction` | 0.5 | half of all episodes in a 4h window ≈ 3× the 16.7% uniform base rate |
+| `minClusterEpisodes` | 5 | the cluster itself needs real mass (calibrated up from 4 — see below) |
+| `minClusterFraction` | 0.6 | the chance guard, calibrated up from 0.5 — see below |
 | `clusterWindowHours` | 4 | wide enough to be robust to ±1h logging slop, narrow enough to mean something |
 | `windowDays` | 60 | same era-bounding as ⑤ |
 
@@ -266,6 +266,20 @@ The fraction floor is the chance guard, but 24 window positions are an implicit
 multiple-comparison; the floors are deliberately conservative and **the property test
 in §7 is a required, not optional, part of the build**: ≥1,000 uniform-random fixtures
 at n=6..10 must fire ≪5%.
+
+**Calibration note (B-079 build, PM-ratified 2026-06-11).** The originally-specced floors
+(`minClusterEpisodes 4` / `minClusterFraction 0.5`) **failed this section's own §7 property
+test** — on uniform-random onsets they fire at ~21.6%, not ≪5%, because the naive
+"3× the 16.7% base rate" reasoning ignores the 24-window multiple-comparison this section
+itself flags. The property test is the binding acceptance gate, so the floors were
+calibrated **up** to `minClusterEpisodes 5` / `minClusterFraction 0.6` → pooled ~3.6%
+uniform-random fire rate, while still firing the §4.1/§7 golden ("5 of 8" = 0.625). One
+**accepted residual** remains (B-083): the per-`n=8` slice fires ~7.4%, because "5 of 8" *is*
+the golden — no fixed threshold can fire the golden while suppressing a same-strength chance
+cluster at n=8 (the same tension as ⑤'s grazing guard, B-081). It is accepted for v1 (the
+card is descriptive, never reassures, never causal) and made visible by a per-n assertion in
+the §7 property test. Tune on real-data false-positives per B-047/B-083, not a re-decision.
+
 
 ### 4.4 Interaction with ⑤ — mutual exclusion, ⑤ wins
 

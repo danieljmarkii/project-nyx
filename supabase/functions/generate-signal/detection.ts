@@ -34,6 +34,16 @@
 //      timing, never a food/cause/mechanism (§9.1/§9.2). Template-only phrasing, like ③/④.
 //      Three load-bearing gates: witnessed-confidence (B-010), free-feeding exclusion
 //      (B-040), and the grazing guard — see detectPostprandialTiming.)
+//   ⑥ time-of-day clustering                 (B-079 — the descriptive lane Phase 2. A count
+//      of how many witnessed vomiting episodes fall in one band of the pet's LOCAL day
+//      (e.g. "5 of 8 between 4 and 8 in the morning" — the classic empty-stomach early-AM
+//      case). Deterministic sliding-window scan over local hour-of-day; the only new input
+//      is DetectionInput.timezone (IANA, from user_profiles) — absent/invalid ⇒ SILENT,
+//      never guess UTC (§4.2). ASSOCIATIONAL only — names a clock band, never a cause or a
+//      mechanism word ('bilious'/'empty stomach' — §4.5). Template-only phrasing, like ③/④/⑤.
+//      MUTUALLY EXCLUSIVE with ⑤, ⑤ wins (§4.4): a schedule-fed post-prandial vomiter
+//      clusters by clock trivially, so ⑤'s firing suppresses ⑥ for that symptom in the
+//      composition layer — see suppressTimeOfDayWhenPostprandial.)
 //
 // All honour the §6/§7 evidence-tier floors and the clinical guardrails in
 // §9 and CLAUDE.md (associational-only correlation copy; intake decline routed as
@@ -224,6 +234,14 @@ export interface DetectionInput {
    * confounder) per detectCorrelations. See FeedingArrangement.
    */
   feedingArrangements?: FeedingArrangement[]
+  /**
+   * Pet owner's IANA timezone (e.g. 'America/New_York'), from user_profiles.timezone —
+   * Phase 2 (⑥ time-of-day clustering) ONLY. Timestamps are stored UTC; "4–7am" only means
+   * something in the pet's local day, so ⑥ converts onset instants to local hour-of-day with
+   * this zone. ABSENT/invalid ⇒ ⑥ is silent (never guess UTC — §4.2). Detectors ①–⑤ ignore
+   * it, so omitting it is byte-identical to today's behavior.
+   */
+  timezone?: string
   /** Reference "now" (ISO-8601 UTC), injected so detection is deterministic and testable. */
   now: string
 }
@@ -236,6 +254,7 @@ export type InsightType =
   | 'reflection'
   | 'symptom_worsening'
   | 'postprandial_timing'
+  | 'timeofday_clustering'
 
 /** Safety/concern always leads (§5); everything else is an insight. */
 export type PriorityClass = 'safety' | 'insight'
@@ -439,12 +458,55 @@ export interface PostprandialTimingFinding extends FindingBase {
   windowDays: number
 }
 
+/**
+ * Time-of-day clustering (⑥, B-079 — descriptive lane Phase 2). A purely DESCRIPTIVE
+ * count: of the witnessed vomiting episodes we can place on the clock, how many fall in
+ * one `clusterWindowHours` band of the pet's LOCAL day. No model — each onset's local
+ * hour-of-day is an observed fact (converted from the stored UTC instant via the pet's
+ * IANA timezone), and the aggregate is a count over an explicit witnessed denominator.
+ * ASSOCIATIONAL ONLY: there is deliberately no causal field, and the claim names a CLOCK
+ * BAND only — never a mechanism ('bilious'/'empty stomach' is the vet's inference, not the
+ * card's — §4.5). Its clinical value is the NOT-meal-adjacent case (early-morning
+ * empty-stomach vomiting → a feeding-schedule conversation), which is exactly why ⑤
+ * (post-prandial) suppresses it when ⑤ fires for the same symptom (§4.4 — a
+ * schedule-fed post-prandial vomiter clusters by clock trivially). Never inverted: a
+ * below-floor result is SILENCE, never "no particular time of day".
+ *
+ * Local time is the WHOLE point and a new dependency: timestamps are stored UTC (hard
+ * constraint), and "4–7am" only means something in the pet's local day. An absent or
+ * invalid timezone ⇒ the detector is SILENT (never guess UTC — §4.2). DST is absorbed by
+ * per-instant conversion (Intl.DateTimeFormat), so two same-local-hour onsets on opposite
+ * sides of a clock change bucket together.
+ */
+export interface TimeOfDayClusteringFinding extends FindingBase {
+  type: 'timeofday_clustering'
+  priorityClass: 'insight'
+  symptomType: SymptomType
+  /** Local hour-of-day (0–23, pet-local) the winning cluster window STARTS at. */
+  clusterStartLocalHour: number
+  /** Width of the cluster window in hours (the band is [start, start + width) on the clock). */
+  clusterWindowHours: number
+  /** Episodes whose local hour falls in the winning band — the numerator. */
+  clusterCount: number
+  /** The honest denominator: witnessed, in-window episodes we could place on the clock. */
+  eligibleCount: number
+  /** All in-window vomit episodes (any confidence) — so evidence can say "of N total, M timeable". */
+  totalEpisodes: number
+  /** The IANA zone the local-hour conversion was computed in (carried for the vet report). */
+  timezone: string
+  /** Hard marker for the phrasing layer + reviewers: timing/association only, never causal. */
+  associationalOnly: true
+  /** The analysis window in days (bounds the denominator to the current era of the pet's life). */
+  windowDays: number
+}
+
 export type Finding =
   | CorrelationFinding
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
   | PostprandialTimingFinding
+  | TimeOfDayClusteringFinding
 
 /** A finding plus its resolved sort position, returned by the engine in ranked order. */
 export interface RankedFinding {
@@ -640,6 +702,27 @@ export interface DetectionConfig {
     /** §3.3: analysis window in days, bounding the denominator to the current era. */
     windowDays: number
   }
+  timeofday: {
+    /** §4.3: below this many witnessed/timeable episodes, any "cluster" is a coin run. Matches ⑤. */
+    minEligibleEpisodes: number
+    /** §4.3: the winning band itself needs real mass — fewer than this is not a cluster. */
+    minClusterEpisodes: number
+    /**
+     * §4.3: minimum fraction of eligible episodes in the winning band. 0.5 of a 4h window ≈
+     * 3× the 16.7% uniform base rate — the chance guard. The 24 sliding window positions are
+     * an implicit multiple-comparison, so this floor is deliberately conservative (and the
+     * §7 property test is a REQUIRED part of the build, not optional).
+     */
+    minClusterFraction: number
+    /**
+     * §4.3: width of the sliding cluster window, in hours. Wide enough to be robust to ±1h
+     * logging slop, narrow enough that "this band" still means something. The scan slides it
+     * around the 24h clock in 1h steps (24 wrap-around positions) and takes the max-count band.
+     */
+    clusterWindowHours: number
+    /** §4.3: analysis window in days, bounding the denominator to the current era (same as ⑤). */
+    windowDays: number
+  }
   coverage: {
     /**
      * Min classifiable meals before "eats X in nearly every meal" is an honest
@@ -731,6 +814,38 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     minObservedToExpectedRatio: 2,
     rapidWindowMinutes: 30,
     feedingLookbackHours: 24,
+    windowDays: 60,
+  },
+  // B-079 detector ⑥ (time-of-day clustering) floors (§4.3).
+  //
+  // CALIBRATION NOTE (B-079 build, flagged for PM ratification of the §4.3 doc table): the
+  // §4.3 listed defaults (minClusterEpisodes 4, minClusterFraction 0.5) FAIL the §7 property
+  // test that the same section mandates as a "required, not optional" build gate — on
+  // uniform-random onsets (n=6..10) they fire at ~21.6%, not ≪5%. §4.3 itself names the
+  // cause: "the 24 window positions are an implicit multiple-comparison" — the naive
+  // "3× the 16.7% base rate" reasoning ignores the scan over 24 overlapping windows. The
+  // property test is the binding acceptance check, so the floors are calibrated UP to pass
+  // it while preserving the §4.1 / §7 golden ("5 of 8" = fraction 0.625): minClusterEpisodes
+  // 5 + minClusterFraction 0.6 → measured ~3.3% uniform-random fire rate (deno sweep, 20k
+  // trials). The change is conservative (errs toward silence — the safe direction for a
+  // never-reassure descriptive insight) and is the spec-sanctioned lever (§7 / tier-2 footer:
+  // tune the config defaults). Proposed §4.3 doc edit flagged in the session summary.
+  //
+  // ACCEPTED RESIDUAL (B-079 adversarial review, B-083): the ~3.3% is the POOLED n=6..10 rate;
+  // the n=8 slice ALONE fires at ~7.4% on uniform-random onsets, because "5 of 8" (the exact
+  // §4.1/§7 golden, fraction 0.625) is the combinatorial sweet spot that clears both floors.
+  // This residual is INTRINSIC and cannot be tuned out without raising minClusterFraction above
+  // 0.625, which would kill the very golden the detector exists to fire — the same accepted
+  // tension as ⑤'s grazing guard (B-081). It is accepted for v1 because the card is descriptive
+  // ("worth mentioning to your vet"), never reassures, and never claims a cause — its worst case
+  // is a mildly-noisy clock card routed to a vet, never a false all-clear. The §7 property test
+  // makes the per-n=8 rate VISIBLE (asserts it, not just the pooled rate) so it is tracked, not
+  // hidden. Tune on real data per B-047/B-083, not a re-decision.
+  timeofday: {
+    minEligibleEpisodes: 6,
+    minClusterEpisodes: 5,
+    minClusterFraction: 0.6,
+    clusterWindowHours: 4,
     windowDays: 60,
   },
   // B-053 coverage-diagnostic floors. stapleMinMeals keeps "eats X in nearly every
@@ -1841,6 +1956,156 @@ export function detectPostprandialTiming(
   ]
 }
 
+// ── Detector ⑥: time-of-day clustering (B-079 — descriptive lane Phase 2) ────
+//
+// A purely DESCRIPTIVE, deterministic count: of the witnessed vomiting episodes we can
+// place on the clock, how many fall in one band of the pet's LOCAL day. No model — each
+// onset's local hour-of-day is an observed fact, and the aggregate is a count over an
+// explicit witnessed denominator ("5 of 8", never the raw episode count). It enriches the
+// vet conversation as anamnesis (the classic empty-stomach early-morning case is a
+// feeding-schedule conversation) — NEVER mechanism, NEVER cause (§4.5 / §1.1).
+//
+// SCOPE: VOMIT episodes only, mirroring ⑤ (B-078). The entire spec §4 (§4.1 claim, §7
+// fixtures, §1's early-morning-bilious framing) is vomiting; a clock-cluster card on a
+// dermatological symptom would invite a mechanism reading the descriptive lane forbids,
+// and the ⑤-suppresses-⑥ mutual exclusion (§4.4) is only defined where both run. Both
+// detectors vomit-only keeps that interaction clean. Generalizing to other symptom types
+// is purely additive and a later PM decision; restricting now is the safe, spec-aligned
+// default (the same call ⑤ made).
+//
+// LOCAL TIME is the whole point and a NEW dependency (§4.2): timestamps are stored UTC
+// (hard constraint), and "4–8am" only means something in the pet's local day. The onset
+// instant is converted to local hour-of-day via Intl.DateTimeFormat with the pet's IANA
+// timezone (DetectionInput.timezone, from user_profiles). Intl is built into both the Deno
+// Edge runtime and the Node test runner, so no new runtime dependency. An ABSENT or INVALID
+// timezone ⇒ the detector is SILENT — we never guess UTC, because a wrong day-boundary
+// would manufacture a false cluster. DST is absorbed by per-instant conversion (two
+// same-local-hour onsets on opposite sides of a clock change bucket together).
+//
+// METHOD (§4.3): bucket witnessed-eligible onsets by local hour (0–23), then slide a
+// `clusterWindowHours`-wide window around the 24h circle in 1h steps (24 wrap-around
+// positions) and take the max-count band. Fire only when ALL floors pass (denominator,
+// cluster mass, cluster fraction). Episode collapsing reuses the engine's 3h gap, so a
+// re-logged bout is one episode. Witnessed-confidence is the same B-010 gate as ⑤: a
+// discovered onset's time is a guess and can't be placed on the clock. (No free-feeding
+// gate — ⑥ is about the symptom clock, not feeding, so a free-fed bowl is irrelevant here.)
+
+/** ⑥ runs on vomit only — see the SCOPE note above. */
+const TIMEOFDAY_SYMPTOM_TYPE: SymptomType = 'vomit'
+
+/**
+ * Convert a UTC instant to the pet's local hour-of-day (0–23) via the IANA `timezone`.
+ * Returns null when the zone is invalid (Intl throws) or the hour can't be parsed — the
+ * caller treats null as "silent", never a guessed UTC hour (§4.2). Built on Intl (portable:
+ * Deno Edge + Node test runner, no new dependency); DST is handled per-instant by Intl.
+ */
+function localHourOfDay(ms: number, timezone: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      hour12: false,
+    }).formatToParts(new Date(ms))
+    const hourStr = parts.find((p) => p.type === 'hour')?.value
+    if (hourStr == null) return null
+    let h = Number.parseInt(hourStr, 10)
+    if (!Number.isInteger(h)) return null
+    if (h === 24) h = 0 // hour12:false can emit '24' at local midnight in some Intl builds
+    return h >= 0 && h <= 23 ? h : null
+  } catch {
+    return null // invalid IANA zone → Intl.DateTimeFormat throws → silent
+  }
+}
+
+export function detectTimeOfDayClustering(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): TimeOfDayClusteringFinding[] {
+  const cfg = config.timeofday
+  const tz = input.timezone
+  if (!tz) return [] // §4.2 — no timezone, never guess UTC
+
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return []
+  // Probe the zone once: an invalid IANA string makes every conversion null → silent. This
+  // distinguishes "bad zone" (silent) from "good zone, no cluster" (also silent, but honest).
+  if (localHourOfDay(nowMs, tz) === null) return []
+
+  const windowMs = cfg.windowDays * MS_PER_DAY
+  const windowStart = nowMs - windowMs
+
+  const vomitEvents = input.symptomEvents
+    .filter((s) => s.type === TIMEOFDAY_SYMPTOM_TYPE)
+    .map((s) => ({ ms: Date.parse(s.occurredAt), confidence: s.occurredAtConfidence ?? null }))
+    .filter((e) => Number.isFinite(e.ms))
+  const episodes = toConfidenceEpisodes(vomitEvents, config.symptomEpisodeGapHours)
+
+  // totalEpisodes = ALL in-window vomit episodes (any confidence) — the honesty context
+  // "of N total, M could be placed on the clock". Eligibility narrows from here.
+  const inWindow = episodes.filter((e) => e.onsetMs >= windowStart && e.onsetMs <= nowMs)
+  const totalEpisodes = inWindow.length
+
+  // Witnessed-eligible only (§2): a discovered onset's time is a guess; it can't be placed
+  // on the clock. (estimated/window/NULL excluded from numerator AND denominator.)
+  const localHours: number[] = []
+  for (const e of inWindow) {
+    if (e.confidence !== 'witnessed') continue
+    const h = localHourOfDay(e.onsetMs, tz)
+    if (h === null) continue // a single un-convertible instant is dropped, not guessed
+    localHours.push(h)
+  }
+
+  const eligibleCount = localHours.length
+  // Denominator floor (§4.3): below this, any "cluster" is a coin run. Also guards the
+  // fraction division below (minEligibleEpisodes ≥ 1).
+  if (eligibleCount < cfg.minEligibleEpisodes) return []
+
+  // Bucket by local hour, then slide a clusterWindowHours-wide window over the 24h clock
+  // (24 wrap-around positions) and take the max-count band. Tie-break (adversarial review,
+  // B-079): among equal-count windows, prefer one whose START hour is OCCUPIED, then the
+  // earliest such start. Without this, an all-at-7am cluster would report "between 4am and
+  // 8am" (the earliest window containing hour 7) — honest but loose; the occupied-start rule
+  // tightens the band's leading edge onto where episodes actually begin ("7am" / "5am"),
+  // which reads truer in the vet conversation. Fully deterministic; the fire DECISION is
+  // unaffected (only the reported band start moves), so the property-test fire rate is identical.
+  const counts = new Array<number>(24).fill(0)
+  for (const h of localHours) counts[h]++
+  let bestStart = 0
+  let bestCount = -1
+  let bestStartOccupied = false
+  for (let start = 0; start < 24; start++) {
+    let c = 0
+    for (let k = 0; k < cfg.clusterWindowHours; k++) c += counts[(start + k) % 24]
+    const startOccupied = counts[start] > 0
+    if (c > bestCount || (c === bestCount && startOccupied && !bestStartOccupied)) {
+      bestCount = c
+      bestStart = start
+      bestStartOccupied = startOccupied
+    }
+  }
+
+  // Floors (§4.3) — ALL must pass. Below-floor is SILENCE, never an inverted "no particular
+  // time of day" claim (the §3.5 never-inverted rule, inherited).
+  if (bestCount < cfg.minClusterEpisodes) return []
+  if (bestCount / eligibleCount < cfg.minClusterFraction) return []
+
+  return [
+    {
+      type: 'timeofday_clustering',
+      priorityClass: 'insight',
+      symptomType: TIMEOFDAY_SYMPTOM_TYPE,
+      clusterStartLocalHour: bestStart,
+      clusterWindowHours: cfg.clusterWindowHours,
+      clusterCount: bestCount,
+      eligibleCount,
+      totalEpisodes,
+      timezone: tz,
+      associationalOnly: true,
+      windowDays: cfg.windowDays,
+    },
+  ]
+}
+
 // ── Coverage diagnostics (B-053) ────────────────────────────────────────────
 //
 // "Why is there still no signal?" — the structured, ranked subset of silent-
@@ -1979,6 +2244,7 @@ export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'intake_decline', detect: detectIntakeDecline },
   { type: 'symptom_worsening', detect: detectWorsening },
   { type: 'postprandial_timing', detect: detectPostprandialTiming },
+  { type: 'timeofday_clustering', detect: detectTimeOfDayClustering },
   { type: 'reflection', detect: detectReflections },
 ]
 
@@ -1988,9 +2254,9 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //   0  safety / concern — always leads, always visible (§5.1)
 //   1  context-lead insight for this pet (§5.2, §8)
 //   2  remaining qualifying insights (§5.3) — correlations + the descriptive-lane
-//      detectors (⑤ postprandial timing, B-078); ordered WITHIN the band by
-//      INSIGHT_TYPE_ORDER (correlations lead the descriptive lane — §6 of the
-//      descriptive-signals spec).
+//      detectors (⑤ postprandial timing, B-078; ⑥ time-of-day clustering, B-079);
+//      ordered WITHIN the band by INSIGHT_TYPE_ORDER (correlations lead, then ⑤, then
+//      ⑥ — §6 of the descriptive-signals spec).
 //   3  reflection (③, B-051) — the gentlest "presence" layer; ALWAYS below every
 //      safety finding AND below every correlation, never the lead of a data-rich
 //      pet that has a real correlation to show.
@@ -1999,7 +2265,7 @@ function priorityBand(finding: Finding, ctx: PetContext): number {
   if (finding.type === 'reflection') return 3
   // Correlation is the context-lead insight for a diet-trial pet (Jordan's stack, §8).
   if (finding.type === 'food_symptom_correlation' && ctx.dietTrialActive) return 1
-  return 2 // correlations (non-trial) + postprandial_timing (⑤)
+  return 2 // correlations (non-trial) + postprandial_timing (⑤) + timeofday_clustering (⑥)
 }
 
 const TIER_ORDER: Record<EvidenceTier, number> = { established: 0, early: 1 }
@@ -2010,6 +2276,7 @@ const TIER_ORDER: Record<EvidenceTier, number> = { established: 0, early: 1 }
 const INSIGHT_TYPE_ORDER: Record<string, number> = {
   food_symptom_correlation: 0,
   postprandial_timing: 1,
+  timeofday_clustering: 2,
 }
 
 // Within the safety band (band 0): intake-decline leads symptom-frequency worsening.
@@ -2063,6 +2330,28 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
 }
 
 /**
+ * §4.4 / §6 curation — ⑤ (postprandial timing) and ⑥ (time-of-day clustering) are
+ * MUTUALLY EXCLUSIVE per symptom type, and ⑤ wins. A schedule-fed post-prandial vomiter
+ * clusters by clock trivially, so ⑥ would merely re-state ⑤'s pattern as a clock pattern;
+ * ⑥'s clinical value is highest exactly when episodes are NOT meal-adjacent (the
+ * empty-stomach early-morning case). So drop any ⑥ finding whose symptom type already has
+ * a ⑤ finding. This lives in the COMPOSITION layer (not inside the detector) so each
+ * detector stays pure and independently unit-testable, matching §6's "curation" framing.
+ * It runs before ranking; a symptom with no ⑤ finding keeps its ⑥ card untouched.
+ */
+function suppressTimeOfDayWhenPostprandial(findings: Finding[]): Finding[] {
+  const postprandialTypes = new Set(
+    findings
+      .filter((f): f is PostprandialTimingFinding => f.type === 'postprandial_timing')
+      .map((f) => f.symptomType),
+  )
+  if (postprandialTypes.size === 0) return findings
+  return findings.filter(
+    (f) => !(f.type === 'timeofday_clustering' && postprandialTypes.has(f.symptomType)),
+  )
+}
+
+/**
  * Top-level entry point. Runs every registered detector, composes and ranks the
  * results (§5). An empty array means no finding cleared its floor — the caller
  * renders the building/stale state (§3.3); it is NOT an all-clear (§9).
@@ -2075,5 +2364,6 @@ export function detectSignals(
   for (const detector of DETECTOR_REGISTRY) {
     findings.push(...detector.detect(input, config))
   }
-  return rankFindings(findings, input.pet)
+  // §4.4/§6 mutual exclusion (⑤ suppresses ⑥ per symptom) before ranking.
+  return rankFindings(suppressTimeOfDayWhenPostprandial(findings), input.pet)
 }
