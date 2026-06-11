@@ -797,6 +797,28 @@ Deno.test('detectWorsening — symptoms on most days fires the FIRM tier (densit
   assert.equal(findings[0].trigger, 'more_episodes')
 })
 
+Deno.test('detectWorsening — FIRM via the more_days arm on a FALLING count (adversarial repro)', () => {
+  // prior 6 episodes on 2 acute days; current 4 episodes spread over 4 days. The episode
+  // count FELL (6→4) but the symptom-day spread ROSE (2→4) and the current week is dense
+  // (≥4 days) → firm tier via the more_days arm. The finding is real; the phrasing layer
+  // must compare on the DAYS axis here, never render "(4 episodes) up from 6" (the wart
+  // the adversarial review caught) — asserted in phrasing.test.ts / signalCopy.test.ts.
+  const symptomEvents = [
+    symptom('vomit', at(24, 8)), symptom('vomit', at(25, 8)), symptom('vomit', at(26, 8)), symptom('vomit', at(28, 8)),
+    symptom('vomit', at(17, 8)), symptom('vomit', at(17, 12)), symptom('vomit', at(17, 16)),
+    symptom('vomit', at(19, 8)), symptom('vomit', at(19, 12)), symptom('vomit', at(19, 16)),
+  ]
+  const mealEvents = [meal({ occurredAt: at(21, 8) })] // prior 3rd logging day
+  const findings = detectWorsening(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].tier, 'firm')
+  assert.equal(findings[0].trigger, 'more_days')
+  assert.equal(findings[0].currentCount, 4)
+  assert.equal(findings[0].priorCount, 6) // count fell — the days axis is what rose
+  assert.equal(findings[0].currentDays, 4)
+  assert.equal(findings[0].priorDays, 2)
+})
+
 Deno.test('detectWorsening — same count but more SPREAD fires the SOFT (more_days) tier', () => {
   // current 3 episodes over 3 days; prior 3 episodes ALL on one acute day. Episode
   // counts are flat (3 vs 3) but the symptom-day spread rose (3 vs 1) → worsening via

@@ -411,6 +411,25 @@ Deno.test('templateWorsening — firm tier leads with day density and the firmes
   assert.ok(validatePhrasing(t, worsening({ tier: 'firm' })))
 })
 
+Deno.test('templateWorsening — FIRM via more_days on a falling count compares on DAYS, not episodes', () => {
+  // The adversarial-review wart: firm reached via the more_days arm with currentCount <
+  // priorCount must NOT render "(4 episodes) up from 6" (a miscount). Phrase the rise on
+  // the days axis (the one that actually rose).
+  const t = templateWorsening(
+    worsening({ tier: 'firm', trigger: 'more_days', currentCount: 4, priorCount: 6, currentDays: 4, priorDays: 2 }),
+    'Nyx',
+  )
+  assert.ok(/4 of the last 7 days/i.test(t), 'leads with density')
+  assert.ok(/up from 2 the week before/i.test(t), 'compares on the days axis')
+  assert.equal(/up from 6/.test(t), false, 'never implies an episode-count rise that did not happen')
+  assert.equal(/\(4 episode/.test(t), false, 'no misleading episode parenthetical on the falling-count arm')
+  assert.ok(/booking a vet visit soon/i.test(t))
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, worsening({ tier: 'firm', trigger: 'more_days' })))
+})
+
 Deno.test('templateWorsening — soft (more_days) tier talks in days, gentlest ask', () => {
   const t = templateWorsening(
     worsening({ tier: 'soft', trigger: 'more_days', currentCount: 3, priorCount: 3, currentDays: 3, priorDays: 1 }),

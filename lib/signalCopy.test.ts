@@ -301,6 +301,18 @@ describe('evidenceText — symptom-worsening (④)', () => {
     expect(CAUSAL_RE.test(s)).toBe(false);
     expect(REASSURANCE_RE.test(s)).toBe(false);
   });
+  it('firm via more_days on a falling count compares on DAYS, never "up from N episodes"', () => {
+    const s = evidenceText(
+      worsening({ tier: 'firm', trigger: 'more_days', currentCount: 4, priorCount: 6, currentDays: 4, priorDays: 2 }),
+      'Nyx',
+    );
+    expect(s).toMatch(/on 4 days this week/i);
+    expect(s).toMatch(/up from 2 days the week before/i);
+    expect(/up from 6/.test(s)).toBe(false); // the episode count fell — never imply a rise
+    expect(s).toMatch(/vet visit soon/i);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+  });
   it('soft (more_days): talks in days, gentlest ask', () => {
     const s = evidenceText(
       worsening({ tier: 'soft', trigger: 'more_days', currentDays: 3, priorDays: 1 }),

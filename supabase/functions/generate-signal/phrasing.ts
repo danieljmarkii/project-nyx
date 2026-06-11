@@ -94,8 +94,14 @@ export function templateWorsening(f: SymptomWorseningFinding, petName: string): 
   const episodeNoun = f.currentCount === 1 ? 'episode' : 'episodes'
 
   if (f.tier === 'firm') {
-    // Dense current week — symptoms on most days. Lead with the day density, carry the
-    // episode count in support, and name the firmest (still calm) next action.
+    // Dense current week — symptoms on most days. Phrase the rise on the axis that
+    // ACTUALLY rose (the trigger): for more_days the episode count is flat-or-FALLING
+    // (density did the lifting), so an "up from {priorCount}" episode clause would be a
+    // miscount — compare on days instead (adversarial review, B-reshaped firm wart).
+    if (f.trigger === 'more_days') {
+      return `${petName} has had ${symptom} on ${f.currentDays} of the last ${f.windowDays} days, up from ${f.priorDays} the week before — worth booking a vet visit soon.`
+    }
+    // more_episodes — the count rose; lead with day density, carry the episode count.
     const priorClause =
       f.priorCount === 0 ? 'after none last week' : `up from ${f.priorCount} last week`
     return `${petName} has had ${symptom} on ${f.currentDays} of the last ${f.windowDays} days (${f.currentCount} ${episodeNoun}), ${priorClause} — worth booking a vet visit soon.`

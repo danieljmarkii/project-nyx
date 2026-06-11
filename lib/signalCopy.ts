@@ -183,8 +183,17 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       finding.priorCount === 0
         ? 'after none the week before'
         : `up from ${count(finding.priorCount, 'episode', 'episodes')} the week before`;
-    // Firm tier — symptoms on most days. Lead with the day density; firmest (calm) ask.
+    // Firm tier — symptoms on most days. Phrase the rise on the axis that actually rose
+    // (the trigger). For more_days the episode count is flat-or-falling, so compare on
+    // days, not episodes (adversarial review — avoids the "4 episodes, up from 6" miscount).
     if (finding.tier === 'firm') {
+      if (finding.trigger === 'more_days') {
+        return (
+          `We've logged ${symptom} for ${petName} on ${count(finding.currentDays, 'day', 'days')} this week, up ` +
+          `from ${count(finding.priorDays, 'day', 'days')} the week before. Symptoms on most days is a pattern ` +
+          `worth a vet visit soon — a read of your logs, not a diagnosis.`
+        );
+      }
       return (
         `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} on ` +
         `${count(finding.currentDays, 'day', 'days')} this week, ${priorPhrase}. Symptoms on most days is a pattern ` +
