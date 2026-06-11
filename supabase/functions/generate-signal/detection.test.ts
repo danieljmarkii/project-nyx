@@ -2197,3 +2197,36 @@ Deno.test('rankCoverageDiagnostics — rate_meals (ACTION) still leads diet-stru
   assert.equal(ranked[0].type, 'rate_meals')
   assert.equal(ranked[1].type, 'meal_type_collapse')
 })
+
+Deno.test('detectCoverage — meal_type_collapse: window is the trailing W CALENDAR days, gapDays never exceeds windowDays', () => {
+  // Adversarial-review regression: with a non-midnight `now`, a raw ms-span window
+  // [now − 10d, now] straddles 11 distinct UTC calendar days, which (pre-fix) let
+  // gapDays reach 11 against the literal windowDays of 10 → the impossible copy
+  // "11 of the last 10 days". 11 consecutive treats-only calendar days (20–30), with
+  // day-20 treats placed LATE (after the old ms-window start) so the old code would
+  // have counted day 20 as an 11th gap day. The calendar-day window must exclude day 20.
+  const now = at(30, 17, 30) // deliberately not midnight
+  const mealEvents: MealEvent[] = [treatOn(20, 18), treatOn(20, 20)]
+  for (let d = 21; d <= 30; d++) mealEvents.push(treatOn(d, 9), treatOn(d, 14))
+  const c = findDiag(detectCoverage(input({ mealEvents, now })), 'meal_type_collapse')
+  assert.ok(c, 'collapse present')
+  assert.equal(c.windowDays, 10)
+  assert.ok(c.gapDays <= c.windowDays, `gapDays ${c.gapDays} must not exceed windowDays ${c.windowDays}`)
+  assert.equal(c.gapDays, 10, 'exactly the trailing 10 calendar days [21..30] count; day 20 is excluded')
+  assert.equal(c.loggedDays, 10)
+})
+
+Deno.test('detectCoverage — diet_churn: a food with an unparseable timestamp row is NOT counted as novel', () => {
+  // Adversarial-review regression: F0 was genuinely eaten earlier, but that earlier row
+  // has a corrupt timestamp (dropped by the finite-ms filter), leaving only an in-window
+  // row — which must NOT make F0 read as novel. Churn errs toward silence. With F0
+  // excluded only NF1/NF2 remain (2 < 3 floor) → silent.
+  const mealEvents = [
+    meal({ occurredAt: 'not-a-date', foodType: 'meal', foodItemId: 'F0', primaryProtein: 'chicken' }),
+    novelFood(20, 'F0'),
+    novelFood(18, 'NF1'),
+    novelFood(19, 'NF2'),
+  ]
+  const symptomEvents = [symptom('vomit', at(18, 9)), symptom('vomit', at(20, 9))]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'diet_churn'), undefined)
+})

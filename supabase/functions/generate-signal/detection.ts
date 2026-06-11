@@ -2312,11 +2312,21 @@ function detectMealTypeCollapse(
   const cfg = config.dietStructure
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return null
-  const windowStart = nowMs - cfg.collapseWindowDays * MS_PER_DAY
+
+  // The window is the trailing `collapseWindowDays` UTC CALENDAR days ending today
+  // (inclusive) — NOT a raw ms span. A raw `nowMs - W*MS_PER_DAY` span starting at a
+  // non-midnight instant straddles W+1 distinct calendar-day buckets, which would let
+  // gapDays exceed windowDays and render the impossible "11 of the last 10 days"
+  // (adversarial review, B-080). Bucketing the window into exactly W calendar days
+  // keeps the numerator ≤ the denominator the copy states.
+  const todayBucket = Math.floor(nowMs / MS_PER_DAY)
+  const earliestBucket = todayBucket - (cfg.collapseWindowDays - 1)
 
   const feedings = input.mealEvents
     .map((m) => ({ ms: Date.parse(m.occurredAt), foodType: m.foodType }))
-    .filter((f) => Number.isFinite(f.ms) && f.ms >= windowStart && f.ms <= nowMs)
+    // f.ms ≤ nowMs drops clock-skew future rows; the bucket floor bounds us to exactly
+    // collapseWindowDays calendar days (bucket ≤ todayBucket is implied by ms ≤ nowMs).
+    .filter((f) => Number.isFinite(f.ms) && f.ms <= nowMs && Math.floor(f.ms / MS_PER_DAY) >= earliestBucket)
   if (feedings.length === 0) return null
 
   // Classification floor: if too few feedings carry a non-null foodType, the meal/treat
@@ -2324,9 +2334,14 @@ function detectMealTypeCollapse(
   const classified = feedings.filter((f) => f.foodType != null).length
   if (classified / feedings.length < cfg.minClassifiedFraction) return null
 
-  // Per-UTC-day buckets (mirrors the reflection day-spread approach; collapse needs no
-  // timezone, unlike ⑥). Only days with ≥1 logged feeding exist here — dark days are
-  // absent by construction and so can never be counted as gap days.
+  // Per-UTC-day buckets (mirrors the reflection day-spread approach). Only days with ≥1
+  // logged feeding exist here — dark days are absent by construction and so can never be
+  // counted as gap days. KNOWN RESIDUAL (B-084): a "day" here is a UTC calendar day, not
+  // the owner's local day, so near a window edge a negative-UTC-offset owner's evening
+  // meal can land on the next UTC day and shift one boundary day's classification. The
+  // effect is ≤1 day at the edges (a regular feeding schedule self-corrects — each UTC
+  // day inherits the prior evening's meal in its early hours); local-day bucketing via
+  // the ⑥ timezone plumbing is the principled fix, flagged for a PM call.
   const byDay = new Map<number, { meals: number; treats: number }>()
   for (const f of feedings) {
     const day = Math.floor(f.ms / MS_PER_DAY)
@@ -2374,15 +2389,24 @@ function detectDietChurn(
   const windowStart = nowMs - cfg.churnWindowDays * MS_PER_DAY
 
   const firstSeen = new Map<string, number>()
+  // A food with ANY unparseable-timestamp row has an unknowable first-seen, so we cannot
+  // certify it as novel — exclude it entirely rather than treat its earliest PARSEABLE
+  // row as the first exposure (which would let a genuinely-old food read as new off a
+  // single corrupt earlier timestamp). Churn errs toward silence (adversarial review).
+  const unknowableFirstSeen = new Set<string>()
   for (const m of input.mealEvents) {
     if (!m.foodItemId) continue
     const ms = Date.parse(m.occurredAt)
-    if (!Number.isFinite(ms)) continue
+    if (!Number.isFinite(ms)) {
+      unknowableFirstSeen.add(m.foodItemId)
+      continue
+    }
     const prev = firstSeen.get(m.foodItemId)
     if (prev === undefined || ms < prev) firstSeen.set(m.foodItemId, ms)
   }
   let novelFoodCount = 0
-  for (const ms of firstSeen.values()) {
+  for (const [foodItemId, ms] of firstSeen) {
+    if (unknowableFirstSeen.has(foodItemId)) continue
     if (ms >= windowStart && ms <= nowMs) novelFoodCount++
   }
   if (novelFoodCount < cfg.minNovelFoods) return null

@@ -116,7 +116,11 @@ const cached = (
 
 // The clinical guardrail (clinical-guardrails Patterns 6/8): client-composed copy
 // on a safety finding must never reassure, never call the pet "picky", never shout.
-const REASSURANCE_RE = /\b(fine|okay|ok|healthy|all clear|nothing to worry|probably fine|no concern|don't worry|doing great|all good)\b/i;
+// Kept IDENTICAL to the server's screen in phrasing.ts (REASSURANCE_RE/DISMISSIVE_RE/
+// CAUSAL_RE) so client-template copy is held to the same bar the model-phrased paths
+// are, and a future copy edit can't drift past the weaker subset (adversarial review).
+const REASSURANCE_RE =
+  /\b(fine|okay|ok|healthy|all clear|nothing to worry|nothing serious|probably fine|no concern|don't worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|back to normal|right track)\b/i;
 const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i;
 // Correlation copy is associational only — no causal verbs.
 const CAUSAL_RE = /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic)|intoleran(?:t|ce)|reacts? to|leads? to|results? in)\b/i;
