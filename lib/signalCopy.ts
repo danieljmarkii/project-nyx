@@ -140,6 +140,10 @@ export function sampleLine(finding: SignalFinding): string {
     }
     return `${count(finding.currentCount, 'episode', 'episodes')} this week, ${finding.priorCount} last week`;
   }
+  if (finding.type === 'postprandial_timing') {
+    // The honest denominator: rapid over the episodes we could TIME, never the raw total.
+    return `${finding.rapidCount} of ${count(finding.eligibleCount, 'timed episode', 'timed episodes')} within ${finding.rapidWindowMinutes} min of eating`;
+  }
   if (finding.trigger === 'refused_normal_food') {
     return finding.ratedMealsConsidered > 0
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
@@ -213,6 +217,20 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week, ` +
       `${priorPhrase}. It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an ` +
       `eye on whether it carries on.`
+    );
+  }
+  if (finding.type === 'postprandial_timing') {
+    // Tap-to-expand evidence (§3.3): show the actual observed timings (the median minutes,
+    // since the window is a descriptive bucket, not a clinical threshold) + the honesty
+    // context "of N total, M could be timed". Timing ONLY — no food/cause/mechanism (§9.1/
+    // §9.2). The food forms live in the payload for the Step-9 vet report, not here.
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    return (
+      `Of ${petName}'s ${count(finding.totalEpisodes, 'episode', 'episodes')} of ${symptom} in the last ` +
+      `${finding.windowDays} days, ${finding.eligibleCount} could be timed against a recent feeding — and ` +
+      `${finding.rapidCount} of those happened within ${finding.rapidWindowMinutes} minutes of eating ` +
+      `(typically about ${finding.medianMinutesSinceFeeding} minutes). This is a timing pattern in your ` +
+      `logs, not a diagnosis — worth mentioning to your vet.`
     );
   }
   if (finding.trigger === 'refused_normal_food') {

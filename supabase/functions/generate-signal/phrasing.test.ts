@@ -19,6 +19,7 @@ import {
   templateIntakeDecline,
   templateReflection,
   templateWorsening,
+  templatePostprandialTiming,
   templateForFinding,
   validatePhrasing,
   curateFindings,
@@ -34,6 +35,7 @@ import type {
   SymptomWorseningFinding,
   WorseningTier,
   WorseningTrigger,
+  PostprandialTimingFinding,
   Finding,
   RankedFinding,
   SymptomType,
@@ -100,6 +102,26 @@ const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorsenin
   windowDays: 7,
   ...over,
 })
+
+const postprandial = (over: Partial<PostprandialTimingFinding> = {}): PostprandialTimingFinding => ({
+  type: 'postprandial_timing',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  rapidCount: 4,
+  eligibleCount: 12,
+  totalEpisodes: 14,
+  rapidWindowMinutes: 30,
+  lastTwoEligibleRapid: true,
+  medianMinutesSinceFeeding: 18,
+  feedingFormsInEvidence: ['dry treat'],
+  associationalOnly: true,
+  windowDays: 60,
+  ...over,
+})
+
+// Mechanism / food vocabularies the ⑤ timing copy must never contain (§9.1/§9.2).
+const MECHANISM = /\b(regurgitat|reflux|esophag|eating speed|eats? too fast|wolf|gulp|bilious)\b/i
+const FOOD = /\b(chicken|beef|turkey|lamb|duck|salmon|tuna|kibble|treats?|protein)\b/i
 
 // Reassurance / dismissive / causal vocabularies the copy must never contain.
 const REASSURE = /\b(fine|okay|healthy|all clear|nothing to worry|probably fine|no concern|all good|doing great)\b/i
@@ -488,6 +510,60 @@ Deno.test('validatePhrasing — rejects reassurance on a worsening (safety) find
   }
 })
 
+// ── templatePostprandialTiming (⑤ — descriptive timing, B-078) ───────────────────
+
+Deno.test('templatePostprandialTiming — states the honest denominator, names timing only, points to the vet', () => {
+  const t = templatePostprandialTiming(postprandial({ rapidCount: 4, eligibleCount: 12 }), 'Nyx')
+  // "4 of the 12 … we could time" — the eligible denominator, never the raw episode count.
+  assert.ok(/4 of the 12/.test(t), 'cites rapid over the eligible denominator')
+  assert.ok(/we could time/.test(t), 'honest "we could time" framing')
+  assert.ok(/within 30 minutes of eating/.test(t))
+  assert.ok(/including the last two/.test(t), 'recency salience when lastTwoEligibleRapid')
+  assert.ok(/vet/i.test(t))
+  // Guardrail-clean by construction: no cause, no mechanism, no food, no reassurance, no "!".
+  assert.equal(MECHANISM.test(t), false, 'no mechanism word')
+  assert.equal(FOOD.test(t), false, 'names no food/protein/form')
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, postprandial()), 'own template passes validation')
+})
+
+Deno.test('templatePostprandialTiming — drops "the last two" when they were not both rapid', () => {
+  const t = templatePostprandialTiming(postprandial({ lastTwoEligibleRapid: false }), 'Nyx')
+  assert.equal(/including the last two/.test(t), false)
+  assert.ok(validatePhrasing(t, postprandial({ lastTwoEligibleRapid: false })))
+})
+
+Deno.test('validatePhrasing — rejects MECHANISM language on a postprandial finding (§9.2)', () => {
+  for (const bad of [
+    'Nyx vomited within minutes of eating, likely regurgitation.',
+    'This timing points to reflux soon after meals.',
+    "It looks like Nyx's eating speed is the issue.",
+    'Nyx wolfs down food and brings it back up.',
+  ]) {
+    assert.equal(validatePhrasing(bad, postprandial()), false, `should reject: ${bad}`)
+  }
+})
+
+Deno.test('validatePhrasing — rejects food-naming and causal claims on a postprandial finding (§9.1)', () => {
+  for (const bad of [
+    '4 of 12 episodes happened soon after eating chicken.',
+    'Vomiting tends to follow her dry treats within 30 minutes.',
+    'The rapid episodes are caused by eating too soon.',
+  ]) {
+    assert.equal(validatePhrasing(bad, postprandial()), false, `should reject: ${bad}`)
+  }
+})
+
+Deno.test('validatePhrasing — accepts a plain timing-only postprandial sentence', () => {
+  assert.ok(
+    validatePhrasing(
+      '4 of the 12 vomiting episodes we could time for Nyx happened within 30 minutes of eating — worth mentioning to your vet.',
+      postprandial(),
+    ),
+  )
+})
+
 // ── templateForFinding dispatch ─────────────────────────────────────────────────
 
 Deno.test('templateForFinding — dispatches by type', () => {
@@ -495,4 +571,5 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/vet/i.test(templateForFinding(intakeDecline(), 'Pixel')))
   assert.ok(/about the same as last week/i.test(templateForFinding(reflection(), 'Nyx')))
   assert.ok(/word with your vet/i.test(templateForFinding(worsening(), 'Nyx')))
+  assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
 })

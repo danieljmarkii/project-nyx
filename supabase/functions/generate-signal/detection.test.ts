@@ -15,6 +15,7 @@ import {
   detectIntakeDecline,
   detectReflections,
   detectWorsening,
+  detectPostprandialTiming,
   detectSignals,
   detectCoverage,
   rankCoverageDiagnostics,
@@ -27,6 +28,8 @@ import {
   type IntakeDeclineFinding,
   type ReflectionFinding,
   type SymptomWorseningFinding,
+  type PostprandialTimingFinding,
+  type OccurredAtConfidence,
   type DetectionInput,
   type MealEvent,
   type FeedingArrangement,
@@ -988,6 +991,274 @@ Deno.test('detectSignals — end to end: a worsening pet leads with the safety w
   assert.equal(ranked.length, 1)
   assert.equal(ranked[0].finding.type, 'symptom_worsening')
   assert.equal(ranked[0].finding.priorityClass, 'safety')
+})
+
+// ── Detector ⑤: postprandial timing (B-078 — descriptive lane Phase 1) ───────
+//
+// The §7 falsification fixtures, pasted as the visible AC for this build step. Each
+// load-bearing gate — the grazing guard, the witnessed-confidence gate, the
+// free-feeding exclusion — has a fixture that tries to break it.
+
+/** A WITNESSED-onset vomit episode at day/hour/min (the only timed-eligible onset). */
+const wVomit = (day: number, hour = 12, min = 0): SymptomEvent => ({
+  ...symptom('vomit', at(day, hour, min)),
+  occurredAtConfidence: 'witnessed',
+})
+
+/** A vomit episode with explicit (or NULL) timestamp confidence. */
+const cVomit = (
+  day: number,
+  hour: number,
+  confidence: OccurredAtConfidence | null,
+): SymptomEvent => ({
+  ...symptom('vomit', at(day, hour, 0)),
+  occurredAtConfidence: confidence,
+})
+
+/** A timed feeding (treat) at day/hour/min; confidence absent ⇒ witnessed semantics. */
+const feeding = (day: number, hour: number, min = 0, over: Partial<MealEvent> = {}): MealEvent =>
+  meal({ occurredAt: at(day, hour, min), foodType: 'treat', primaryProtein: 'x', ...over })
+
+/**
+ * The golden fixture (§7 #1): 12 witnessed vomit episodes (May 16..27), the last 4 rapid
+ * (a feeding 20 min before onset) and the first 8 slow (a feeding 5h before), with ~8
+ * feedings/day so the grazing guard is genuinely exercised at the bar.
+ *   eligible = 12, rapid = 4, fraction 0.33, expectedRapid ≈ 2.0 → threshold = 4 → FIRES.
+ */
+function ppGolden(): { symptomEvents: SymptomEvent[]; mealEvents: MealEvent[] } {
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  for (let i = 0; i < 12; i++) {
+    const day = 16 + i
+    symptomEvents.push(wVomit(day, 12, 0))
+    if (i >= 8) mealEvents.push(feeding(day, 11, 40)) // 20 min before onset → rapid
+    else mealEvents.push(feeding(day, 7, 0)) // 5h before onset → eligible, not rapid
+    for (let h = 0; h < 7; h++) mealEvents.push(feeding(day, h, 0)) // 7 earlier fillers → 8/day
+  }
+  return { symptomEvents, mealEvents }
+}
+
+const ppFinding = (over: Partial<PostprandialTimingFinding> = {}): PostprandialTimingFinding => ({
+  type: 'postprandial_timing',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  rapidCount: 4,
+  eligibleCount: 12,
+  totalEpisodes: 14,
+  rapidWindowMinutes: 30,
+  lastTwoEligibleRapid: true,
+  medianMinutesSinceFeeding: 18,
+  feedingFormsInEvidence: ['dry treat'],
+  associationalOnly: true,
+  windowDays: 60,
+  ...over,
+})
+
+Deno.test('detectPostprandialTiming — golden: 4 rapid of 12 timed, ~8 feedings/day → fires with exact counts', () => {
+  const { symptomEvents, mealEvents } = ppGolden()
+  const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.rapidCount, 4)
+  assert.equal(f.eligibleCount, 12)
+  assert.equal(f.totalEpisodes, 12)
+  assert.equal(f.rapidWindowMinutes, 30)
+  assert.equal(f.lastTwoEligibleRapid, true)
+  assert.equal(f.medianMinutesSinceFeeding, 20)
+  assert.equal(f.symptomType, 'vomit')
+  assert.equal(f.priorityClass, 'insight')
+  assert.equal(f.associationalOnly, true)
+})
+
+Deno.test('detectPostprandialTiming — §7#2: discovered onsets are excluded from numerator AND denominator (still counted in totalEpisodes)', () => {
+  const { symptomEvents, mealEvents } = ppGolden()
+  // 3 EXTRA rapid-looking episodes (a feeding 20 min before each) but DISCOVERED — a
+  // discovered vomit can never be "20 min after eating". If confidence were ignored
+  // they'd inflate eligible 12→15 and rapid 4→7. They must not — but they DO count toward
+  // the "of N total" honesty context.
+  const extraSymptoms = [cVomit(13, 12, 'estimated'), cVomit(14, 12, 'window'), cVomit(15, 12, null)]
+  const extraFeedings = [feeding(13, 11, 40), feeding(14, 11, 40), feeding(15, 11, 40)]
+  const findings = detectPostprandialTiming(
+    input({
+      symptomEvents: [...symptomEvents, ...extraSymptoms],
+      mealEvents: [...mealEvents, ...extraFeedings],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].eligibleCount, 12, 'estimated/window/NULL onsets excluded from the denominator')
+  assert.equal(findings[0].rapidCount, 4, 'estimated/window/NULL onsets excluded from the numerator')
+  assert.equal(findings[0].totalEpisodes, 15, 'but they DO count toward "of N total" honesty context')
+})
+
+Deno.test('detectPostprandialTiming — §7#3: an episode under an active free_choice bowl is ineligible (free-feeding exclusion)', () => {
+  const { symptomEvents, mealEvents } = ppGolden()
+  // A free-fed bowl down across the whole span: "minutes since last LOGGED feeding" is
+  // fiction (the pet may have grazed at any moment) → every episode ineligible → silent.
+  const findings = detectPostprandialTiming(
+    input({ symptomEvents, mealEvents, feedingArrangements: [arrangement('x', '2026-05-01', null, 'high')] }),
+  )
+  assert.equal(findings.length, 0)
+})
+
+Deno.test('detectPostprandialTiming — §7#4: a 20-treat/day grazer (4 rapid of 14) stays silent (grazing guard)', () => {
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  // 14 witnessed episodes (May 14..27); 4 rapid, 10 slow; 20 feedings/day. The chance base
+  // rate is high (expected ≈ 5.8, threshold ≈ 11.7) so 4 observed rapid cannot clear it —
+  // Sam's all-day nibbler can't trip a scary card. Recency + fraction + minRapid all pass,
+  // so ONLY the grazing guard is doing the suppression.
+  for (let i = 0; i < 14; i++) {
+    const day = 14 + i
+    symptomEvents.push(wVomit(day, 12, 0))
+    if (i >= 10) mealEvents.push(feeding(day, 11, 40))
+    else mealEvents.push(feeding(day, 6, 0))
+    for (let h = 0; h < 19; h++) mealEvents.push(feeding(day, 0, h * 2)) // 19 earlier fillers → 20/day
+  }
+  const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 0)
+})
+
+Deno.test('detectPostprandialTiming — §7#5: 3 rapid episodes all >14 days old stay silent (recency floor)', () => {
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  // 4 witnessed rapid episodes on May 1..4 — in-window (60d) but all >14 days before NOW
+  // (May 30), so none is recent enough to lead. Only recency suppresses (grazing passes).
+  for (let i = 0; i < 4; i++) {
+    const day = 1 + i
+    symptomEvents.push(wVomit(day, 12, 0))
+    mealEvents.push(feeding(day, 11, 40))
+    mealEvents.push(feeding(day, 7, 0))
+  }
+  const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 0)
+})
+
+Deno.test('detectPostprandialTiming — §7#6: a legacy NULL-confidence meal is still a valid feeding; an ESTIMATED feeding is not', () => {
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  // The rapid feedings carry NO occurredAtConfidence (legacy NULL) — they must still
+  // anchor the "20 min after eating" timing (meals are inherently witnessed). Per loop the
+  // 11:40 feeding is at an EVEN index, the 7:00 feeding at an odd index.
+  for (let i = 0; i < 4; i++) {
+    const day = 24 + i
+    symptomEvents.push(wVomit(day, 12, 0))
+    mealEvents.push(meal({ occurredAt: at(day, 11, 40), foodType: 'treat', primaryProtein: 'x' })) // NULL conf
+    mealEvents.push(feeding(day, 7, 0))
+  }
+  const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].rapidCount, 4, 'NULL-confidence meals anchor the rapid claim')
+
+  // Contrast: if those rapid feedings were ESTIMATED (a guessed time), they cannot anchor
+  // the claim — the nearest TIMED-eligible feeding becomes the 5h-earlier one → no rapid.
+  const estimated = mealEvents.map((m, idx) =>
+    idx % 2 === 0 ? { ...m, occurredAtConfidence: 'estimated' as OccurredAtConfidence } : m,
+  )
+  assert.equal(
+    detectPostprandialTiming(input({ symptomEvents, mealEvents: estimated })).length,
+    0,
+    'an estimated feeding time cannot anchor the rapid claim',
+  )
+})
+
+Deno.test('detectPostprandialTiming — §7#7: a re-logged bout (3 rows in 2h) collapses to ONE episode (no inflated count)', () => {
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  // 4 rapid bouts (May 24..27); the day-27 bout is logged 3 times within 2h (< the 3h
+  // episode gap). If re-logs inflated the count, rapid/total would read 6 — they must read 4.
+  for (let i = 0; i < 4; i++) {
+    const day = 24 + i
+    symptomEvents.push(wVomit(day, 12, 0))
+    mealEvents.push(feeding(day, 11, 40))
+    mealEvents.push(feeding(day, 7, 0))
+  }
+  symptomEvents.push(wVomit(27, 12, 50), wVomit(27, 13, 30)) // re-logs of the day-27 bout
+  const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].rapidCount, 4, 're-logs collapse: 4 bouts, not 6')
+  assert.equal(findings[0].totalEpisodes, 4)
+  assert.equal(findings[0].eligibleCount, 4)
+})
+
+Deno.test('detectPostprandialTiming — below the rapid FRACTION floor stays silent (3 rapid of 20 timed is noise)', () => {
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  // 20 witnessed eligible episodes, only 3 rapid → fraction 0.15 < 0.25. Feeding rate is
+  // low (2/day) so the grazing guard passes; the FRACTION floor is the sole suppressor.
+  for (let i = 0; i < 17; i++) {
+    const day = 1 + i // May 1..17, slow
+    symptomEvents.push(wVomit(day, 12, 0))
+    mealEvents.push(feeding(day, 6, 0))
+    mealEvents.push(feeding(day, 5, 0))
+  }
+  for (const day of [25, 26, 27]) {
+    symptomEvents.push(wVomit(day, 12, 0))
+    mealEvents.push(feeding(day, 11, 40)) // rapid, recent
+    mealEvents.push(feeding(day, 5, 0))
+  }
+  const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 0)
+})
+
+Deno.test('detectPostprandialTiming — no timed feeding in the preceding 24h → episode leaves the denominator', () => {
+  // Witnessed rapid-looking episodes but the only feeding is 30h before onset → no feeding
+  // in the preceding window → "time since feeding" is undefined → eligible 0 → silent.
+  const symptomEvents = [wVomit(24, 12), wVomit(25, 12), wVomit(26, 12)]
+  const mealEvents = [feeding(23, 6, 0), feeding(24, 6, 0), feeding(25, 6, 0)] // each 30h before next onset
+  // (onset day d at 12:00; nearest feeding day d-1 at 06:00 = 30h earlier → outside 24h)
+  const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
+  assert.equal(findings.length, 0)
+})
+
+Deno.test('detectPostprandialTiming — within band 2, a correlation leads ⑤ (descriptive lane order, §6)', () => {
+  const corr: CorrelationFinding = {
+    type: 'food_symptom_correlation',
+    priorityClass: 'insight',
+    tier: 'early',
+    symptomType: 'vomit',
+    protein: 'beef',
+    matchedPairs: 4,
+    caseExposed: 4,
+    controlExposed: 1,
+    discordantCaseOnly: 3,
+    discordantControlOnly: 0,
+    riskDifference: 0.75,
+    pValue: 0.06,
+    correctedAlpha: 0.01,
+    symptomEventCount: 4,
+    correlationWindowHours: 12,
+    attributionFloor: 'high',
+    associationalOnly: true,
+  }
+  const ranked = rankFindings([ppFinding(), corr], dog)
+  assert.equal(ranked[0].finding.type, 'food_symptom_correlation', 'correlation leads the descriptive lane')
+  assert.equal(ranked[1].finding.type, 'postprandial_timing')
+})
+
+Deno.test('detectPostprandialTiming — ⑤ is an INSIGHT (cap-subject), never above a co-firing safety flag', () => {
+  const worsening: SymptomWorseningFinding = {
+    type: 'symptom_worsening',
+    priorityClass: 'safety',
+    symptomType: 'vomit',
+    currentCount: 4,
+    priorCount: 2,
+    currentDays: 4,
+    priorDays: 2,
+    trigger: 'more_episodes',
+    tier: 'firm',
+    windowDays: 7,
+  }
+  const ranked = rankFindings([ppFinding(), worsening], dog)
+  assert.equal(ranked[0].finding.priorityClass, 'safety', 'safety always leads')
+  assert.equal(ranked[1].finding.type, 'postprandial_timing')
+})
+
+Deno.test('detectSignals — end to end: a clean post-prandial pattern surfaces ⑤ as an insight card', () => {
+  const { symptomEvents, mealEvents } = ppGolden()
+  const ranked = detectSignals(input({ symptomEvents, mealEvents }))
+  const pp = ranked.find((r) => r.finding.type === 'postprandial_timing')
+  assert.ok(pp, 'the post-prandial card surfaces end to end')
+  assert.equal(pp!.finding.priorityClass, 'insight')
 })
 
 // ── Composition & ranking (§5) ───────────────────────────────────────────────

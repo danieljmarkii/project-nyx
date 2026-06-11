@@ -7,7 +7,7 @@
 // access, and NO LLM call — the model (Step 2) only renders an already-true
 // finding into a sentence; it never decides whether a pattern exists.
 //
-// Four v1 detectors live here (§4):
+// Detectors live here (§4). Five today (①–④ + ⑤):
 //   ① food/protein → symptom correlation  (the flagship wedge insight)
 //   ② intake-decline calm safety flag      (MANDATORY never-reassure net)
 //   ③ symptom-count reflection             (B-051 — the §7.1 rung-② "presence"
@@ -27,8 +27,15 @@
 //      like ③. By §7.1 amendment #5 — "direction determines the rung" — symptom
 //      worsening is the front edge of a safety flag, the symptom-axis mirror of the
 //      declining-intake routing detector ② already does for the intake axis.)
+//   ⑤ postprandial timing                   (B-078 — the deterministic DESCRIPTIVE lane,
+//      Phase 1. A count of how many timed vomiting episodes happened ≤30 min after eating,
+//      over an explicit eligible denominator. Pure observed facts: witnessed onset +
+//      nearest-preceding feeding minutes; no model. ASSOCIATIONAL/anamnesis only — names
+//      timing, never a food/cause/mechanism (§9.1/§9.2). Template-only phrasing, like ③/④.
+//      Three load-bearing gates: witnessed-confidence (B-010), free-feeding exclusion
+//      (B-040), and the grazing guard — see detectPostprandialTiming.)
 //
-// All four honour the §6/§7 evidence-tier floors and the clinical guardrails in
+// All honour the §6/§7 evidence-tier floors and the clinical guardrails in
 // §9 and CLAUDE.md (associational-only correlation copy; intake decline routed as
 // calm concern, never softened to "picky", never reassuring, and silent — not
 // a false flag and not an all-clear — when intake-rating coverage is thin; a
@@ -71,6 +78,17 @@ export type Species = 'dog' | 'cat' | 'other'
  */
 export type AttributionConfidence = 'high' | 'low'
 
+/**
+ * How confident we are about WHEN an event actually occurred (B-010, migration #45).
+ * 'witnessed' = the owner saw it happen (a real, precise instant). 'estimated'/'window'
+ * = a discovered event whose time is a guess or a range — the stored `occurred_at` is the
+ * LATEST edge of that range, never an observation. Legacy/absent = NULL = unknown (no
+ * blanket backfill, per the B-010 resolution). This axis is load-bearing for the
+ * descriptive-timing lane (B-078/B-079): a "12 minutes after eating" claim is only honest
+ * for a witnessed onset — a discovered vomit can never be timed against a meal.
+ */
+export type OccurredAtConfidence = 'witnessed' | 'estimated' | 'window'
+
 /** Numeric mapping of the ordinal intake scale, 0 (refused) .. 4 (all). */
 const INTAKE_SCORE: Record<IntakeRating, number> = {
   refused: 0,
@@ -97,6 +115,13 @@ export interface SymptomEvent {
   /** ISO-8601 UTC. B-010 confidence-window weighting is a future refinement; v1 uses the point. */
   occurredAt: string
   severity?: number | null
+  /**
+   * B-010 timestamp confidence (B-078). Absent/null ⇒ today's behavior is unchanged
+   * (detectors ①–④ ignore this field). The descriptive-timing lane (⑤/⑥) treats only a
+   * 'witnessed' onset as timed-eligible — `estimated`/`window`/NULL are excluded, since a
+   * windowed `occurred_at` is the latest EDGE, not an observation.
+   */
+  occurredAtConfidence?: OccurredAtConfidence | null
 }
 
 export interface MealEvent {
@@ -119,6 +144,14 @@ export interface MealEvent {
    * then every exposure is treated as attributable. See AttributionConfidence.
    */
   attributionConfidence?: AttributionConfidence | null
+  /**
+   * B-010 timestamp confidence (B-078). A feeding is timed-eligible when its confidence
+   * is 'witnessed' OR null/absent: meals are inherently witnessed and every entry point
+   * now writes 'witnessed' (lib/meals.ts); legacy NULL meal rows carry the same semantics
+   * (mirrors the `attributionConfidence` absent→'high' precedent). 'estimated'/'window'
+   * are excluded from the descriptive-timing lane. Absent ⇒ today's behavior unchanged.
+   */
+  occurredAtConfidence?: OccurredAtConfidence | null
 }
 
 /**
@@ -202,6 +235,7 @@ export type InsightType =
   | 'intake_decline'
   | 'reflection'
   | 'symptom_worsening'
+  | 'postprandial_timing'
 
 /** Safety/concern always leads (§5); everything else is an insight. */
 export type PriorityClass = 'safety' | 'insight'
@@ -365,11 +399,52 @@ export interface SymptomWorseningFinding extends FindingBase {
   windowDays: number
 }
 
+/**
+ * Rapid post-prandial timing (⑤, B-078 — descriptive lane Phase 1). A purely
+ * DESCRIPTIVE count: of the vomiting episodes we could TIME (witnessed onset, a
+ * timed-eligible feeding logged in the preceding window, not under a free-fed bowl),
+ * how many happened within `rapidWindowMinutes` of eating. ASSOCIATIONAL ONLY — there
+ * is deliberately no causal field, and the OWNER-FACING claim names timing only, never
+ * a food/protein/form (PM-RATIFIED §9.1: forms ride `feedingFormsInEvidence` for the
+ * tap-to-expand evidence + the Step-9 vet report, never the card). The claim's clinical
+ * rationale is ANAMNESIS — "a timing pattern the vet will want to know" — never mechanism
+ * (§9.2 / Clinician's Brief: timing is NOT a regurgitation-vs-vomiting differentiator);
+ * copy implying 'regurgitation'/'eating speed' is a validatePhrasing failure. Never
+ * inverted: a below-floor result is SILENCE, never "episodes don't seem meal-related"
+ * (§3.5). `rapidWindowMinutes` is a descriptive BUCKET (no clinical cutoff exists), so the
+ * payload always carries `medianMinutesSinceFeeding` — the actual observed timings, for
+ * the evidence expansion and the vet report.
+ */
+export interface PostprandialTimingFinding extends FindingBase {
+  type: 'postprandial_timing'
+  priorityClass: 'insight'
+  symptomType: SymptomType
+  /** Eligible episodes whose nearest preceding timed-eligible feeding was ≤ rapidWindowMinutes before onset. */
+  rapidCount: number
+  /** The honest denominator: timed-eligible episodes (witnessed, not free-fed, with a feeding in the preceding window). */
+  eligibleCount: number
+  /** All in-window vomit episodes (any confidence) — so evidence can say "of N total, M could be timed". */
+  totalEpisodes: number
+  /** The descriptive timing bucket actually applied (default 30; science-anchored, §9.2). */
+  rapidWindowMinutes: number
+  /** The two most-recent eligible episodes are BOTH rapid — powers "including the last two" recency salience. */
+  lastTwoEligibleRapid: boolean
+  /** Median minutes-since-feeding across the rapid episodes — the actual observed timing (evidence + vet report). */
+  medianMinutesSinceFeeding: number
+  /** Forms of the feedings before the rapid episodes (e.g. ['dry treat']) — EVIDENCE/vet-report ONLY, never the claim (§9.1). */
+  feedingFormsInEvidence: string[]
+  /** Hard marker for the phrasing layer + reviewers: timing/association only, never causal, never mechanism. */
+  associationalOnly: true
+  /** The analysis window in days (bounds the denominator to the current era of the pet's life). */
+  windowDays: number
+}
+
 export type Finding =
   | CorrelationFinding
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
+  | PostprandialTimingFinding
 
 /** A finding plus its resolved sort position, returned by the engine in ranked order. */
 export interface RankedFinding {
@@ -526,6 +601,33 @@ export interface DetectionConfig {
      */
     worseningDenseDayFloor: number
   }
+  postprandial: {
+    /** §3.3: minimum rapid episodes before a pattern is worth stating (2 is an anecdote). */
+    minRapidEpisodes: number
+    /** §3.3: minimum rapid/eligible fraction — a few rapid out of many timed is noise. */
+    minRapidFraction: number
+    /** §3.3: ≥1 rapid episode must fall within this many days, so a stale cluster doesn't lead. */
+    recencyDays: number
+    /**
+     * §3.3 — the GRAZING GUARD ratio. A frequently-fed pet is "within 30 min of eating"
+     * much of the day by chance; observed rapid must clear this multiple of the
+     * chance-expected rapid count (expectedRapid = eligible × min(1, feedingRate ×
+     * rapidWindowMinutes / 1440)) before the detector fires. Calibrated so an ~8-feeding/day
+     * pet fires at the bar and a 20-treat/day grazer cannot trip it by base rate.
+     */
+    minObservedToExpectedRatio: number
+    /**
+     * §3.3 / §9.2 — the rapid bucket, in minutes. SCIENCE-ANCHORED not data-anchored (PM
+     * directive): no canonical clinical cutoff exists, so 30 operationalizes the literature's
+     * "soon/shortly after eating" band (minutes to ~1h); it is a descriptive bucket, which is
+     * why the payload always carries the actual median minutes.
+     */
+    rapidWindowMinutes: number
+    /** §3.2: a feeding must fall within this many hours before onset for "time since feeding" to be defined. */
+    feedingLookbackHours: number
+    /** §3.3: analysis window in days, bounding the denominator to the current era. */
+    windowDays: number
+  }
   coverage: {
     /**
      * Min classifiable meals before "eats X in nearly every meal" is an honest
@@ -602,6 +704,21 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     // week shows symptoms on ≥4 of 7 days. Anchored to density, not a raw count cutoff,
     // so the one new escalation boundary is clinically defensible (see WorseningTier).
     worseningDenseDayFloor: 4,
+  },
+  // B-078 detector ⑤ (postprandial timing) floors. The window is science-anchored
+  // (§9.2: no canonical clinical cutoff; 30 min operationalizes the literature's
+  // "soon after eating" band), NOT tuned to the dogfood cat's observed ≤15-min episodes.
+  // The grazing-guard ratio is the load-bearing piece: observed rapid must clear 2× the
+  // chance-expected count, so a frequently-fed pet can't trip the detector by base rate.
+  // Tune on real data, not a re-decision (parent-doc §7 / decision (b)).
+  postprandial: {
+    minRapidEpisodes: 3,
+    minRapidFraction: 0.25,
+    recencyDays: 14,
+    minObservedToExpectedRatio: 2,
+    rapidWindowMinutes: 30,
+    feedingLookbackHours: 24,
+    windowDays: 60,
   },
   // B-053 coverage-diagnostic floors. stapleMinMeals keeps "eats X in nearly every
   // meal" honest; stapleMinSymptomEpisodes mirrors the correlation Early episode
@@ -1483,6 +1600,228 @@ export function detectWorsening(
   ]
 }
 
+// ── Detector ⑤: postprandial timing (B-078 — descriptive lane Phase 1) ──────
+//
+// A purely DESCRIPTIVE, deterministic count: of the vomiting episodes we could TIME,
+// how many happened within `rapidWindowMinutes` of eating. No model, no inference —
+// each episode's minutes-since-last-feeding is an observed fact, and the aggregate is
+// a count over an explicit eligible denominator ("4 of 12 we could time", never the raw
+// episode count). It enriches the vet conversation as anamnesis (a standard GI-history
+// item) — NEVER mechanism, NEVER cause, NEVER diagnosis (§9.2 / Clinician's Brief:
+// timing is not a regurgitation-vs-vomiting differentiator). Owner copy names TIMING
+// ONLY (§9.1); food form rides `feedingFormsInEvidence` into the evidence + vet report.
+//
+// SCOPE (provisional, flagged for PM): runs on VOMIT episodes only. The entire spec —
+// §1 origin, §3.1 claim, §7 fixtures, §9.2 literature anchor — is vomiting; a
+// post-prandial-timing card on a dermatological symptom would imply a food-allergy
+// MECHANISM (the exact thing §1/§3.5 forbid), and for diarrhea a 30-min window isn't
+// physiologically meal-linked. Generalizing to other symptom types is purely additive
+// and is a later PM decision; restricting now is the safe, spec-aligned default.
+//
+// The three load-bearing gates (all from §2/§3), each with a falsification fixture:
+//   • witnessed-confidence eligibility (B-010): only a 'witnessed' onset is timed —
+//     a discovered vomit ('estimated'/'window'/NULL) can never be "12 min after eating",
+//     so it is excluded from numerator AND denominator. Feedings are NULL-tolerant
+//     (witnessed semantics), mirroring attributionConfidence absent→'high'.
+//   • free-feeding exclusion (B-040): while a free_choice bowl was available in the
+//     preceding window, "minutes since last LOGGED feeding" is fiction — the episode is
+//     ineligible (out of numerator AND denominator).
+//   • the GRAZING GUARD (§3.3, Data Scientist, load-bearing): a frequently-fed pet is
+//     "within 30 min of eating" much of the day by chance. Observed rapid must clear 2×
+//     the chance-expected count (deterministic correction, no hypothesis test), so Sam's
+//     all-day nibbler cannot trip the detector by base rate.
+//
+// Nearest-preceding is the CORRECT semantics for a timing claim — the May
+// "nearest-preceding meal" attribution bug was about blaming a food IDENTITY, which this
+// claim deliberately does not do (§9 decision 1). Episode collapsing reuses the engine's
+// 3h gap (toEpisodes…), so a re-logged bout is one episode, never an inflated count.
+
+/** A feeding reduced to the fields ⑤ needs: time + an evidence-only form label. */
+interface TimedFeeding {
+  ms: number
+  /** foodLabel ?? foodType — EVIDENCE/vet-report only (§9.1), never the owner claim. */
+  form: string | null
+}
+
+/**
+ * Timed-eligible feedings (§2): confidence 'witnessed' OR null/absent (meals are
+ * inherently witnessed; legacy NULL carries the same semantics). 'estimated'/'window'
+ * are excluded — a feeding whose time is a guess can't anchor a minutes-since claim.
+ * ANY foodType (treats are exactly the relevant feedings — §3.2). Sorted ascending.
+ */
+function classifyTimedFeedings(mealEvents: MealEvent[]): TimedFeeding[] {
+  return mealEvents
+    .filter((m) => {
+      const c = m.occurredAtConfidence ?? null
+      return c === null || c === 'witnessed'
+    })
+    .map((m) => ({ ms: Date.parse(m.occurredAt), form: m.foodLabel ?? m.foodType ?? null }))
+    .filter((f) => Number.isFinite(f.ms))
+    .sort((a, b) => a.ms - b.ms)
+}
+
+/** A symptom episode reduced to its onset time + the onset event's timestamp confidence. */
+interface ConfidenceEpisode {
+  onsetMs: number
+  confidence: OccurredAtConfidence | null
+}
+
+/**
+ * Collapse same-type symptom events into episodes carrying the ONSET event's confidence
+ * (§2: "the onset event's confidence is the episode's confidence"). Same 3h-gap collapsing
+ * as toEpisodeOnsets — a re-logged bout is one episode — but we need each episode's
+ * confidence, which the ms-only toEpisodeOnsets throws away.
+ */
+function toConfidenceEpisodes(
+  events: { ms: number; confidence: OccurredAtConfidence | null }[],
+  gapHours: number,
+): ConfidenceEpisode[] {
+  if (events.length === 0) return []
+  const gapMs = gapHours * MS_PER_HOUR
+  const sorted = [...events].sort((a, b) => a.ms - b.ms)
+  const episodes: ConfidenceEpisode[] = [{ onsetMs: sorted[0].ms, confidence: sorted[0].confidence }]
+  let prev = sorted[0].ms
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].ms - prev > gapMs) {
+      episodes.push({ onsetMs: sorted[i].ms, confidence: sorted[i].confidence })
+    }
+    prev = sorted[i].ms
+  }
+  return episodes
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+}
+
+/** ⑤ runs on vomit only — see the SCOPE note above. */
+const POSTPRANDIAL_SYMPTOM_TYPE: SymptomType = 'vomit'
+const MS_PER_MINUTE = 60_000
+
+export function detectPostprandialTiming(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): PostprandialTimingFinding[] {
+  const cfg = config.postprandial
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return []
+
+  const windowMs = cfg.windowDays * MS_PER_DAY
+  const windowStart = nowMs - windowMs
+  const feedingLookbackMs = cfg.feedingLookbackHours * MS_PER_HOUR
+  const recencyMs = cfg.recencyDays * MS_PER_DAY
+
+  const feedings = classifyTimedFeedings(input.mealEvents)
+  // Free-fed standing facts (B-040): if a bowl was available any time in the preceding
+  // window, time-since-feeding is fiction → the episode is ineligible. classifyArrangements
+  // parses + drops garbage spans; the protein is irrelevant here (any active bowl excludes).
+  const standing = classifyArrangements(input.feedingArrangements ?? [])
+
+  const vomitEvents = input.symptomEvents
+    .filter((s) => s.type === POSTPRANDIAL_SYMPTOM_TYPE)
+    .map((s) => ({ ms: Date.parse(s.occurredAt), confidence: s.occurredAtConfidence ?? null }))
+    .filter((e) => Number.isFinite(e.ms))
+  const episodes = toConfidenceEpisodes(vomitEvents, config.symptomEpisodeGapHours)
+
+  // totalEpisodes = ALL in-window vomit episodes (any confidence) — the honesty context
+  // "of N total, M could be timed". Eligibility narrows from here.
+  const inWindow = episodes.filter((e) => e.onsetMs >= windowStart && e.onsetMs <= nowMs)
+  const totalEpisodes = inWindow.length
+
+  // The nearest preceding timed-eligible feeding within the lookback window (or null).
+  // Feedings are sorted ascending, so the last one at/under the anchor and inside the
+  // lookback is the nearest preceding.
+  const nearestPreceding = (onsetMs: number): TimedFeeding | null => {
+    let best: TimedFeeding | null = null
+    for (const f of feedings) {
+      if (f.ms > onsetMs) break
+      if (onsetMs - f.ms > feedingLookbackMs) continue
+      best = f
+    }
+    return best
+  }
+
+  // A free_choice bowl active any time in [onset - lookback, onset] makes "minutes since
+  // last logged feeding" untrustworthy → the episode is ineligible.
+  const freeFedNear = (onsetMs: number): boolean => {
+    const lookbackStart = onsetMs - feedingLookbackMs
+    return standing.some((s) => s.fromMs <= onsetMs && lookbackStart < s.untilMs)
+  }
+
+  interface EligibleEpisode {
+    onsetMs: number
+    minutesSince: number
+    rapid: boolean
+    form: string | null
+  }
+  const eligible: EligibleEpisode[] = []
+  for (const e of inWindow) {
+    if (e.confidence !== 'witnessed') continue // strict witnessed gate (B-010, §2)
+    if (freeFedNear(e.onsetMs)) continue // free-feeding exclusion (B-040, §2)
+    const feeding = nearestPreceding(e.onsetMs)
+    if (!feeding) continue // no timed feeding in the preceding window → time-since undefined
+    const minutesSince = (e.onsetMs - feeding.ms) / MS_PER_MINUTE
+    eligible.push({
+      onsetMs: e.onsetMs,
+      minutesSince,
+      rapid: minutesSince <= cfg.rapidWindowMinutes,
+      form: feeding.form,
+    })
+  }
+
+  const eligibleCount = eligible.length
+  if (eligibleCount === 0) return []
+  const rapidEpisodes = eligible.filter((e) => e.rapid)
+  const rapidCount = rapidEpisodes.length
+
+  // Floors (§3.3) — ALL must pass. Below-floor is SILENCE, never an inverted "not
+  // meal-related" claim (§3.5).
+  if (rapidCount < cfg.minRapidEpisodes) return []
+  if (rapidCount / eligibleCount < cfg.minRapidFraction) return []
+  // Recency: a stale cluster must not lead today's surface.
+  if (!rapidEpisodes.some((e) => nowMs - e.onsetMs <= recencyMs)) return []
+
+  // The GRAZING GUARD (§3.3) — observed rapid must clear 2× the chance-expected count.
+  // feedingRatePerDay = timed-eligible feedings ÷ distinct days carrying one (in-window).
+  const inWindowFeedings = feedings.filter((f) => f.ms >= windowStart && f.ms <= nowMs)
+  const feedingDays = new Set(inWindowFeedings.map((f) => Math.floor(f.ms / MS_PER_DAY))).size
+  const feedingRatePerDay = feedingDays > 0 ? inWindowFeedings.length / feedingDays : 0
+  const expectedRapid =
+    eligibleCount * Math.min(1, (feedingRatePerDay * cfg.rapidWindowMinutes) / 1440)
+  if (rapidCount < Math.max(cfg.minRapidEpisodes, cfg.minObservedToExpectedRatio * expectedRapid)) {
+    return []
+  }
+
+  // Payload. "Including the last two" = the two most-recent ELIGIBLE episodes are both rapid.
+  const byOnsetDesc = [...eligible].sort((a, b) => b.onsetMs - a.onsetMs)
+  const lastTwoEligibleRapid =
+    byOnsetDesc.length >= 2 && byOnsetDesc[0].rapid && byOnsetDesc[1].rapid
+  const medianMinutesSinceFeeding = Math.round(median(rapidEpisodes.map((e) => e.minutesSince)))
+  const feedingFormsInEvidence = Array.from(
+    new Set(rapidEpisodes.map((e) => e.form).filter((f): f is string => f != null)),
+  )
+
+  return [
+    {
+      type: 'postprandial_timing',
+      priorityClass: 'insight',
+      symptomType: POSTPRANDIAL_SYMPTOM_TYPE,
+      rapidCount,
+      eligibleCount,
+      totalEpisodes,
+      rapidWindowMinutes: cfg.rapidWindowMinutes,
+      lastTwoEligibleRapid,
+      medianMinutesSinceFeeding,
+      feedingFormsInEvidence,
+      associationalOnly: true,
+      windowDays: cfg.windowDays,
+    },
+  ]
+}
+
 // ── Coverage diagnostics (B-053) ────────────────────────────────────────────
 //
 // "Why is there still no signal?" — the structured, ranked subset of silent-
@@ -1620,6 +1959,7 @@ export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'food_symptom_correlation', detect: detectCorrelations },
   { type: 'intake_decline', detect: detectIntakeDecline },
   { type: 'symptom_worsening', detect: detectWorsening },
+  { type: 'postprandial_timing', detect: detectPostprandialTiming },
   { type: 'reflection', detect: detectReflections },
 ]
 
@@ -1628,7 +1968,10 @@ export const DETECTOR_REGISTRY: Detector[] = [
 // Priority bands, lowest number ranks first.
 //   0  safety / concern — always leads, always visible (§5.1)
 //   1  context-lead insight for this pet (§5.2, §8)
-//   2  remaining qualifying insights (§5.3)
+//   2  remaining qualifying insights (§5.3) — correlations + the descriptive-lane
+//      detectors (⑤ postprandial timing, B-078); ordered WITHIN the band by
+//      INSIGHT_TYPE_ORDER (correlations lead the descriptive lane — §6 of the
+//      descriptive-signals spec).
 //   3  reflection (③, B-051) — the gentlest "presence" layer; ALWAYS below every
 //      safety finding AND below every correlation, never the lead of a data-rich
 //      pet that has a real correlation to show.
@@ -1637,10 +1980,18 @@ function priorityBand(finding: Finding, ctx: PetContext): number {
   if (finding.type === 'reflection') return 3
   // Correlation is the context-lead insight for a diet-trial pet (Jordan's stack, §8).
   if (finding.type === 'food_symptom_correlation' && ctx.dietTrialActive) return 1
-  return 2
+  return 2 // correlations (non-trial) + postprandial_timing (⑤)
 }
 
 const TIER_ORDER: Record<EvidenceTier, number> = { established: 0, early: 1 }
+
+// Within-band ordering for the band-2 insight stack (§6, descriptive-signals spec):
+// correlations lead, then the descriptive lane (⑤ → ⑥ → diet-structure as they land).
+// Reflection (③) is band 3, so it never reaches this comparator. Unlisted types tie.
+const INSIGHT_TYPE_ORDER: Record<string, number> = {
+  food_symptom_correlation: 0,
+  postprandial_timing: 1,
+}
 
 // Within the safety band (band 0): intake-decline leads symptom-frequency worsening.
 // Anorexia (esp. the feline 48h hepatic-lipidosis window) is a faster-killing emergency
@@ -1680,6 +2031,11 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
         return order[x.trigger] - order[y.trigger]
       }
     }
+
+    // Same-band, different insight types (e.g. a correlation + a postprandial-timing
+    // card both in band 2): correlations lead the descriptive lane (§6).
+    const typeDiff = (INSIGHT_TYPE_ORDER[x.type] ?? 9) - (INSIGHT_TYPE_ORDER[y.type] ?? 9)
+    if (typeDiff !== 0) return typeDiff
 
     return 0
   })

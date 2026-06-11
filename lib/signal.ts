@@ -27,7 +27,8 @@ export type InsightType =
   | 'food_symptom_correlation'
   | 'intake_decline'
   | 'reflection'
-  | 'symptom_worsening';
+  | 'symptom_worsening'
+  | 'postprandial_timing';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
 export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction';
@@ -88,11 +89,33 @@ export interface SymptomWorseningFinding {
   windowDays: number;
 }
 
+// Rapid post-prandial timing (⑤, B-078) — a descriptive count of timed vomiting
+// episodes that happened within `rapidWindowMinutes` of eating, over an explicit
+// eligible denominator. ASSOCIATIONAL/anamnesis only: the owner surface names TIMING,
+// never a food/cause/mechanism (§9.1/§9.2). An 'insight' (cap-subject), ranked below
+// safety and below correlations. Mirror of detection.ts PostprandialTimingFinding
+// (rendered fields). `feedingFormsInEvidence` is carried for the Step-9 vet report; the
+// owner copy does not render it (§9.1).
+export interface PostprandialTimingFinding {
+  type: 'postprandial_timing';
+  priorityClass: 'insight';
+  symptomType: SignalSymptomType;
+  rapidCount: number;
+  eligibleCount: number;
+  totalEpisodes: number;
+  rapidWindowMinutes: number;
+  lastTwoEligibleRapid: boolean;
+  medianMinutesSinceFeeding: number;
+  feedingFormsInEvidence: string[];
+  windowDays: number;
+}
+
 export type SignalFinding =
   | CorrelationFinding
   | IntakeDeclineFinding
   | ReflectionFinding
-  | SymptomWorseningFinding;
+  | SymptomWorseningFinding
+  | PostprandialTimingFinding;
 
 export interface CachedFinding {
   rank: number;
