@@ -340,6 +340,13 @@ describe('coverageCopy (B-053)', () => {
     expect(why).not.toContain('1 new foods');
   });
 
+  it('diet_churn: the window in the copy is driven by windowDays, never hardcoded', () => {
+    expect(coverageCopy(churn({ windowDays: 14 }), 'Nyx').why).toContain('the last 14 days');
+    // If churnWindowDays is ever tuned, the copy must follow it (regression for the
+    // hardcoded "two weeks" the code review caught).
+    expect(coverageCopy(churn({ windowDays: 21 }), 'Nyx').why).toContain('the last 21 days');
+  });
+
   it('never reads as an all-clear for the diet-structure diagnostics either (§9)', () => {
     for (const d of [collapse(), churn()]) {
       const { why, action } = coverageCopy(d, 'Pixel');

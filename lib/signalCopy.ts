@@ -120,10 +120,11 @@ export function coverageCopy(diagnostic: CoverageDiagnostic, petName: string): C
   }
   // B-080 (b) diet churn — several brand-new foods appeared while symptoms are active.
   // A coverage observation: each new food reduces what the engine can conclude. Warm and
-  // non-judgmental ("trying new foods is completely fine"), never causal, never a verdict.
+  // non-judgmental ("trying new foods is completely understandable"), never causal, never
+  // a verdict. The day count is driven by windowDays so the copy stays true if it's tuned.
   if (diagnostic.type === 'diet_churn') {
     return {
-      why: `${count(diagnostic.novelFoodCount, 'new food', 'new foods')} first appeared in ${petName}'s logs in the last two weeks — each new food makes it harder for us to tell what might be linked to the symptoms you're tracking.`,
+      why: `${count(diagnostic.novelFoodCount, 'new food', 'new foods')} first appeared in ${petName}'s logs in the last ${diagnostic.windowDays} days — each new food makes it harder for us to tell what might be linked to the symptoms you're tracking.`,
       action: `Trying new foods is completely understandable. If you're able to keep the diet steady for a stretch, patterns get easier to spot.`,
     };
   }

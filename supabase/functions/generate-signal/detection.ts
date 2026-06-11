@@ -2329,7 +2329,7 @@ function detectMealTypeCollapse(
   // absent by construction and so can never be counted as gap days.
   const byDay = new Map<number, { meals: number; treats: number }>()
   for (const f of feedings) {
-    const day = Math.floor((f.ms as number) / MS_PER_DAY)
+    const day = Math.floor(f.ms / MS_PER_DAY)
     const e = byDay.get(day) ?? { meals: 0, treats: 0 }
     if (f.foodType === 'meal') e.meals++
     else if (f.foodType === 'treat') e.treats++
