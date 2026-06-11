@@ -1484,6 +1484,17 @@ Deno.test('detectTimeOfDayClustering — below the cluster-MASS floor stays sile
   assert.equal(detectTimeOfDayClustering(input({ symptomEvents, timezone: NY })).length, 0)
 })
 
+Deno.test('detectTimeOfDayClustering — tie-break: an all-same-hour cluster reports a band that STARTS on the occupied hour', () => {
+  // 6 episodes all at local 7am (UTC 11). Windows [4,8),[5,9),[6,10),[7,11) all catch 6; the
+  // occupied-start tie-break picks [7,11) ("between 7am and 11am") over the looser [4,8),
+  // tightening the band's leading edge onto where the episodes actually are (adversarial review).
+  const symptomEvents = [20, 21, 22, 23, 24, 25].map((d) => wVomit(d, 11)) // local 7
+  const findings = detectTimeOfDayClustering(input({ symptomEvents, timezone: NY }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].clusterStartLocalHour, 7, 'band starts on the occupied hour, not an empty leading hour')
+  assert.equal(findings[0].clusterCount, 6)
+})
+
 Deno.test('detectTimeOfDayClustering — a re-logged bout (3 rows in 2h) collapses to ONE episode (no inflated cluster)', () => {
   // 6 distinct cluster bouts at local 5am; the day-25 bout is logged 3 times within 2h (< the
   // 3h gap). If re-logs inflated the count, cluster/eligible would read 8 — they must read 6.
@@ -1543,28 +1554,49 @@ Deno.test('detectTimeOfDayClustering — §7#2 PROPERTY TEST: ≥1,000 uniform-r
   const rng = mulberry32(0x9e3779b9)
   const nowMs = Date.parse(NOW)
   const DAY_MS = 86_400_000
-  const TRIALS = 2000
+  // 4000 trials per n so the per-n slice (below) is a stable estimate, not noise.
+  const PER_N = 4000
   let fires = 0
-  for (let t = 0; t < TRIALS; t++) {
-    const n = 6 + Math.floor(rng() * 5) // 6..10
-    const days = new Set<number>()
-    while (days.size < n) days.add(1 + Math.floor(rng() * 50)) // n distinct day offsets in 1..50
-    const symptomEvents: SymptomEvent[] = []
-    for (const d of days) {
-      const ms = nowMs - d * DAY_MS + Math.floor(rng() * DAY_MS) // uniform within the day
-      symptomEvents.push(wVomitIso(new Date(ms).toISOString()))
+  let total = 0
+  const perN: Record<number, { fires: number; total: number }> = {}
+  for (let n = 6; n <= 10; n++) {
+    perN[n] = { fires: 0, total: 0 }
+    for (let t = 0; t < PER_N; t++) {
+      const days = new Set<number>()
+      while (days.size < n) days.add(1 + Math.floor(rng() * 50)) // n distinct day offsets in 1..50
+      const symptomEvents: SymptomEvent[] = []
+      for (const d of days) {
+        const ms = nowMs - d * DAY_MS + Math.floor(rng() * DAY_MS) // uniform within the day
+        symptomEvents.push(wVomitIso(new Date(ms).toISOString()))
+      }
+      const fired = detectTimeOfDayClustering(input({ symptomEvents, timezone: NY })).length > 0
+      perN[n].total++
+      total++
+      if (fired) {
+        perN[n].fires++
+        fires++
+      }
     }
-    if (detectTimeOfDayClustering(input({ symptomEvents, timezone: NY })).length > 0) fires++
   }
-  const fireRate = fires / TRIALS
-  // Measured ~3.6% with the calibrated floors (minClusterEpisodes 5 + minClusterFraction
-  // 0.6) — comfortably ≪5%. The seed is fixed, so this is deterministic; the 4.5% bar is a
-  // guard with margin, not a coin flip. (The spec's listed 4/0.5 defaults fire at ~21.6%
-  // here — see the DEFAULT_CONFIG.timeofday calibration note.)
-  assert.ok(
-    fireRate < 0.045,
-    `uniform-random fire rate ${(fireRate * 100).toFixed(2)}% must be ≪5%`,
-  )
+  const pooledRate = fires / total
+  // (1) The spec's §7 AC: the POOLED n=6..10 rate is ≪5%. Measured ~3.6% with the calibrated
+  // floors (minClusterEpisodes 5 + minClusterFraction 0.6); the spec's listed 4/0.5 defaults
+  // fire at ~21.6% here (see the DEFAULT_CONFIG.timeofday calibration note). Seed is fixed →
+  // deterministic; the 4.5% bar is a guard with margin.
+  assert.ok(pooledRate < 0.045, `pooled uniform-random fire rate ${(pooledRate * 100).toFixed(2)}% must be ≪5%`)
+  // (2) Make the per-n residual VISIBLE, not hidden by pooling (adversarial review, B-083):
+  // n=8 is the worst slice (~7.4%) because "5 of 8" (0.625) is exactly the golden — an
+  // INTRINSIC residual the floors cannot remove without killing the golden. Assert each slice
+  // stays under a tracked ceiling so a regression that worsens it is caught; the n=8 bound is
+  // deliberately above 7.4%. (Accepted for v1: descriptive, never-reassure card — see config.)
+  for (let n = 6; n <= 10; n++) {
+    const r = perN[n].fires / perN[n].total
+    const ceiling = n === 8 ? 0.1 : 0.05
+    assert.ok(
+      r < ceiling,
+      `n=${n} uniform-random fire rate ${(r * 100).toFixed(2)}% exceeded its tracked ceiling ${ceiling}`,
+    )
+  }
 })
 
 // Deterministic mulberry32 PRNG — keeps the property test reproducible across runs.

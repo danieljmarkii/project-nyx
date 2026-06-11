@@ -830,7 +830,17 @@ export const DEFAULT_CONFIG: DetectionConfig = {
   // trials). The change is conservative (errs toward silence — the safe direction for a
   // never-reassure descriptive insight) and is the spec-sanctioned lever (§7 / tier-2 footer:
   // tune the config defaults). Proposed §4.3 doc edit flagged in the session summary.
-  // Tune further on real data per B-047, not a re-decision.
+  //
+  // ACCEPTED RESIDUAL (B-079 adversarial review, B-083): the ~3.3% is the POOLED n=6..10 rate;
+  // the n=8 slice ALONE fires at ~7.4% on uniform-random onsets, because "5 of 8" (the exact
+  // §4.1/§7 golden, fraction 0.625) is the combinatorial sweet spot that clears both floors.
+  // This residual is INTRINSIC and cannot be tuned out without raising minClusterFraction above
+  // 0.625, which would kill the very golden the detector exists to fire — the same accepted
+  // tension as ⑤'s grazing guard (B-081). It is accepted for v1 because the card is descriptive
+  // ("worth mentioning to your vet"), never reassures, and never claims a cause — its worst case
+  // is a mildly-noisy clock card routed to a vet, never a false all-clear. The §7 property test
+  // makes the per-n=8 rate VISIBLE (asserts it, not just the pooled rate) so it is tracked, not
+  // hidden. Tune on real data per B-047/B-083, not a re-decision.
   timeofday: {
     minEligibleEpisodes: 6,
     minClusterEpisodes: 5,
@@ -2051,18 +2061,26 @@ export function detectTimeOfDayClustering(
   if (eligibleCount < cfg.minEligibleEpisodes) return []
 
   // Bucket by local hour, then slide a clusterWindowHours-wide window over the 24h clock
-  // (24 wrap-around positions) and take the max-count band. Ties resolve to the EARLIEST
-  // start (the `> bestCount` strict comparison), so the result is fully deterministic.
+  // (24 wrap-around positions) and take the max-count band. Tie-break (adversarial review,
+  // B-079): among equal-count windows, prefer one whose START hour is OCCUPIED, then the
+  // earliest such start. Without this, an all-at-7am cluster would report "between 4am and
+  // 8am" (the earliest window containing hour 7) — honest but loose; the occupied-start rule
+  // tightens the band's leading edge onto where episodes actually begin ("7am" / "5am"),
+  // which reads truer in the vet conversation. Fully deterministic; the fire DECISION is
+  // unaffected (only the reported band start moves), so the property-test fire rate is identical.
   const counts = new Array<number>(24).fill(0)
   for (const h of localHours) counts[h]++
   let bestStart = 0
   let bestCount = -1
+  let bestStartOccupied = false
   for (let start = 0; start < 24; start++) {
     let c = 0
     for (let k = 0; k < cfg.clusterWindowHours; k++) c += counts[(start + k) % 24]
-    if (c > bestCount) {
+    const startOccupied = counts[start] > 0
+    if (c > bestCount || (c === bestCount && startOccupied && !bestStartOccupied)) {
       bestCount = c
       bestStart = start
+      bestStartOccupied = startOccupied
     }
   }
 

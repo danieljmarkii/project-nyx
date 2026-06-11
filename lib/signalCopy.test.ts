@@ -377,8 +377,10 @@ describe('evidenceText — symptom-worsening (④)', () => {
   });
 });
 
-// The ⑤ owner surface must read as TIMING anamnesis — never a food/cause/mechanism.
-const MECHANISM_RE = /\b(regurgitat|reflux|esophag|eating speed|eats? too fast|wolf|gulp|bilious)\b/i;
+// The ⑤/⑥ owner surface must read as TIMING anamnesis — never a food/cause/mechanism.
+// Includes "empty stomach" for ⑥ parity with the server-side phrasing guardrail (§4.5).
+const MECHANISM_RE =
+  /\b(regurgitat|reflux|esophag|eating speed|eats? too fast|wolf|gulp|bilious|empty.?stomach)\b/i;
 const FOOD_RE = /\b(chicken|beef|turkey|lamb|duck|salmon|tuna|kibble|treats?|protein)\b/i;
 
 describe('postprandial timing (⑤, B-078) — client copy', () => {
