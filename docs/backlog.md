@@ -13,6 +13,16 @@ A running list of items intentionally deferred from the current build sequence. 
 - **Next** — tackle within the next 2–3 sessions or the next build phase
 - **Later** — real but not time-sensitive; revisit when conditions change (e.g. pre-prod, multi-pet, paid tier)
 
+**Status — lead with a structured head.** The Status cell must **begin** with one state token from this fixed set, then the date and resolving PR, so the column reads true at a glance and drift is machine-checkable:
+
+- `Open` — not started.
+- `In progress — <date> (PR #N)` — actively being built; say what's left.
+- `Partial — <date> (PR #N)` — a defined slice shipped, more deferred; name the remaining slices.
+- `Blocked — <reason>` — can't proceed; state the blocker (usually an Open Question).
+- `Done — <date> (PR #N)` — shipped. Keep the row (don't delete); never close without a resolving PR/session reference.
+
+**Rewrite the head when state changes — do NOT append the update to the tail of an already-long cell.** The recurring drift this file suffers is exactly that: a row that *opens* with `draft PR #106` / `R1 slice scoped` while a `Done` marker sits buried 200 words later — so the column lies even though the truth is technically "in the row" (caught reactively as B-022/B-045 on 2026-05-31, B-040/B-051/B-075 on 2026-06-11). Narrative and history may stay **below** the head, but the first token must be current. `/wrap` Step 4 reconciles these rows for every B-ID a session touches; the `backlog-groomer` skill enforces the head.
+
 ---
 
 ## Open
