@@ -334,9 +334,12 @@ export default function EditEventModal() {
   return (
     <SafeAreaView style={styles.container}>
       <Header
-        leading="close"
         title={`Edit ${config.label}`}
-        onLeadingPress={() => router.back()}
+        left={
+          <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn} hitSlop={8}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        }
         right={
           <TouchableOpacity
             onPress={handleSave}
@@ -524,6 +527,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colorSurface,
+  },
+  cancelBtn: {},
+  cancelBtnText: {
+    fontSize: 16,
+    color: theme.colorTextSecondary,
   },
   saveBtn: {},
   saveBtnDisabled: { opacity: 0.4 },
