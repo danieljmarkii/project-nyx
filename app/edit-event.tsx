@@ -9,6 +9,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../constants/theme';
+import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
@@ -332,20 +333,24 @@ export default function EditEventModal() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn} hitSlop={8}>
-          <Text style={styles.cancelBtnText}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit {config.label}</Text>
-        <TouchableOpacity
-          onPress={handleSave}
-          style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-          disabled={saving}
-          hitSlop={8}
-        >
-          <Text style={styles.saveBtnText}>Save</Text>
-        </TouchableOpacity>
-      </View>
+      <Header
+        title={`Edit ${config.label}`}
+        left={
+          <TouchableOpacity onPress={() => router.back()} style={styles.cancelBtn} hitSlop={8}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        }
+        right={
+          <TouchableOpacity
+            onPress={handleSave}
+            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            disabled={saving}
+            hitSlop={8}
+          >
+            <Text style={styles.saveBtnText}>Save</Text>
+          </TouchableOpacity>
+        }
+      />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
@@ -522,20 +527,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colorSurface,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: theme.space3,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: theme.fontWeightMedium,
-    color: theme.colorNeutralDark,
   },
   cancelBtn: {},
   cancelBtnText: {

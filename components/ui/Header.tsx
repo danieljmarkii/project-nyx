@@ -16,6 +16,13 @@ import { theme } from '../../constants/theme';
 // the screen, not hidden behind a tap-to-reveal menu (PM call, B-075). A screen
 // that genuinely has *several* secondary actions can pass its own trigger via
 // `right`.
+//
+// `left` is the leading-slot escape hatch, mirroring `right`: pass arbitrary
+// content when a screen's existing leading affordance isn't a plain back/close
+// icon — e.g. a form modal that already had a literal "Cancel" text button and
+// shouldn't be downgraded to a ✕ just to fit the component. When `left` is set
+// it overrides `leading`. Reach for `leading="back" | "close"` first; `left` is
+// only for the genuine exceptions.
 
 type LeadingKind = 'back' | 'close' | 'none';
 
@@ -23,6 +30,8 @@ interface HeaderProps {
   title?: string;
   leading?: LeadingKind;
   onLeadingPress?: () => void;
+  // Arbitrary leading content (e.g. a "Cancel" text button). Overrides `leading`.
+  left?: ReactNode;
   // Arbitrary trailing content (e.g. a "Save" text button).
   right?: ReactNode;
 }
@@ -31,11 +40,13 @@ interface HeaderProps {
 // 3am-stumbling minimum without inflating the visual size.
 const HIT = { top: 12, bottom: 12, left: 12, right: 12 };
 
-export function Header({ title, leading = 'none', onLeadingPress, right }: HeaderProps) {
+export function Header({ title, leading = 'none', onLeadingPress, left, right }: HeaderProps) {
   return (
     <View style={styles.bar}>
       <View style={styles.side}>
-        {leading !== 'none' ? (
+        {left !== undefined ? (
+          left
+        ) : leading !== 'none' ? (
           <TouchableOpacity
             onPress={onLeadingPress}
             hitSlop={HIT}

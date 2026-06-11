@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
+import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { PhotoCarousel } from '../../components/food/PhotoCarousel';
@@ -579,7 +580,7 @@ export default function FoodDetailScreen() {
   if (loadError) {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Food" onClose={() => router.back()} />
+        <Header leading="back" title="Food" onLeadingPress={() => router.back()} />
         <View style={styles.centerMessage}>
           <Text style={styles.errorText}>{loadError}</Text>
         </View>
@@ -590,7 +591,7 @@ export default function FoodDetailScreen() {
   if (!row) {
     return (
       <SafeAreaView style={styles.container}>
-        <Header title="Food" onClose={() => router.back()} />
+        <Header leading="back" title="Food" onLeadingPress={() => router.back()} />
         <View style={styles.centerMessage}>
           <ActivityIndicator color={theme.colorAccent} />
         </View>
@@ -604,7 +605,7 @@ export default function FoodDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <Header title="Food" onClose={() => router.back()} />
+      <Header leading="back" title="Food" onLeadingPress={() => router.back()} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -849,47 +850,10 @@ export default function FoodDetailScreen() {
   );
 }
 
-function Header({ title, onClose }: { title: string; onClose: () => void }) {
-  return (
-    <View style={styles.header}>
-      <View style={styles.headerSide} />
-      <Text style={styles.headerTitle}>{title}</Text>
-      <TouchableOpacity onPress={onClose} style={styles.headerSide} hitSlop={10}>
-        <Text style={styles.headerClose}>✕</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colorSurface,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.space2,
-    paddingVertical: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-  },
-  headerSide: {
-    width: 44,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextPrimary,
-    textAlign: 'center',
-  },
-  headerClose: {
-    fontSize: 20,
-    color: theme.colorTextSecondary,
   },
   scroll: {
     paddingBottom: theme.space3,
