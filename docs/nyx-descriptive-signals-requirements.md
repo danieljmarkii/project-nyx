@@ -148,6 +148,7 @@ to the template are fixed by the payload (§3.4).
 | Floor | Default | Why |
 |---|---|---|
 | `minRapidEpisodes` | 3 | mirrors the §7 ≥3-episode philosophy; 2 is an anecdote |
+| `minEligibleEpisodes` — **the denominator floor** | 6 | "N of M" needs a real M. Added by the B-078 adversarial review (see below): the grazing guard scales with `eligibleCount`, so at a tiny denominator it collapses to `minRapidEpisodes` and a grazer's few coincidental rapid vomits fire. Matches detector ⑥'s `minEligibleEpisodes` ("below this any cluster is a coin run"). |
 | `minRapidFraction` | 0.25 | 3 rapid out of 30 timed episodes is noise, not a pattern |
 | `recencyDays` (≥1 rapid episode within) | 14 | a stale cluster shouldn't lead today's surface |
 | `minObservedToExpectedRatio` — **the grazing guard** | 2 | see below |
@@ -171,10 +172,28 @@ fire only if rapidCount ≥ max(minRapidEpisodes, minObservedToExpectedRatio × 
 
 Calibration on the brief's real data at the 30-min window: ~8 feedings/day → chance ≈
 16.7%, expected ≈ 2.0 of 12, threshold = max(3, 4.0) = 4 → observed 4 **fires** (at
-exactly the bar — the guard is doing real work). An extreme 20-treat/day grazer:
-chance ≈ 42%, expected ≈ 5.8 of 14, threshold ≈ 12 → 4 observed **does not fire**.
-Sam's grazing cat cannot trip this detector by base rate; the wider science-anchored
-window is affordable precisely because the guard scales with it.
+exactly the bar — the guard is doing real work). An extreme 20-treat/day grazer with the
+brief's shape (4 rapid of 14): chance ≈ 42%, expected ≈ 5.8 of 14, threshold ≈ 12 → 4
+observed **does not fire**.
+
+**Limitation — the guard is a relative check with a small-sample residual (B-078
+adversarial review, accepted by PM 2026-06-11).** The `2× expected` rule scales with
+`eligibleCount`, so at a *small* denominator it collapses to the `minRapidEpisodes` count
+floor. A grazer with only ~3 witnessed vomits that all happen to land near a graze
+therefore fires on a ~7% base-rate coincidence — and the §7 golden ("4 of 12") is itself
+only a ~6% pattern, so **no fixed threshold can fire the golden while suppressing a
+same-strength grazer** (a proper binomial tail confirms they are statistically
+indistinguishable). The earlier claim that "Sam's grazing cat *cannot* trip this by base
+rate" was therefore only true at large `eligibleCount`. Two mitigations, not a cure:
+(1) the `minEligibleEpisodes` denominator floor (above) removes the smallest-N cases the
+review broke on; (2) the residual above the floor is **accepted** for v1 because the card
+is descriptive ("worth mentioning to your vet"), never reassures, and never claims a cause
+or mechanism — its worst case is a mildly noisy timing card routed to a vet conversation,
+not a false all-clear or a missed safety flag. The thresholds (`minEligibleEpisodes`,
+`minObservedToExpectedRatio`, `rapidWindowMinutes`) are **tuned on real data per §7 +
+B-081**, where the live false-positive rate can be measured — a tighter separation test
+(e.g. a binomial-tail bar like detector ①'s McNemar, with a recalibrated golden) is the
+documented next step if the residual proves too noisy.
 
 ### 3.4 Finding payload
 
@@ -368,11 +387,16 @@ this is exactly the load-bearing class the 2026-05-30 rule exists for).
 2. Discovered vomit (`estimated`/`window`/NULL confidence) → excluded from numerator
    AND denominator.
 3. Episode overlapping an active `free_choice` arrangement → ineligible.
-4. 20-treat/day grazer, 4 rapid of 14 → **silent** (grazing guard).
+4. 20-treat/day grazer, 4 rapid of 14 → **silent** (grazing guard). NOTE: this only
+   exercises the guard at *large* `eligibleCount`; the small-N case is fixture 9.
 5. 3 rapid episodes all >30 days old → silent (recency).
 6. Legacy NULL-confidence *meal* → still a valid feeding (witnessed semantics).
 7. Re-logged single bout (3 rows in 2h) → one episode.
-8. `validatePhrasing` rejects causal/reassuring/food-naming sentences for the type.
+8. `validatePhrasing` rejects causal/reassuring/food-naming/**mechanism** sentences for the type.
+9. **(adversarial regression, B-078)** Grazer with only 3 witnessed vomits all near a
+   graze → **silent** via the `minEligibleEpisodes` denominator floor (the §3.3 guard
+   alone fires here — see the §3.3 limitation note). Plus the floor boundary: 5 timeable
+   episodes → silent, 6 → fires.
 
 **⑥ must pass:**
 1. Golden fixture: 8 witnessed episodes, 5 in a 4h local band → fires with correct
@@ -473,8 +497,11 @@ blocks 1.
 - **Trust & Safety ✓** — computed counts only, no new data classes, no raw-log AI
   reads; cleaner than the emerging-signals proposal this grew out of.
 - **Jordan ✓** — "4 of 12 right after eating" is something I'd literally repeat to the
-  vet; **Sam ✓** — the grazing guard means Pixel's all-day nibbling can't trip a scary
-  card by accident.
+  vet; **Sam ✓ (conditional, revised 2026-06-11)** — the grazing guard + the
+  `minEligibleEpisodes` denominator floor mean Pixel's all-day nibbling can't trip a card
+  on a *handful* of coincidental vomits; the small-sample residual above the floor (§3.3
+  limitation) is accepted for v1 and tuned on real data (B-081), because the card is a
+  descriptive "mention to your vet", never a scary all-clear or a causal claim.
 
 ---
 

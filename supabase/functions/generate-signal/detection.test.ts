@@ -1118,12 +1118,13 @@ Deno.test('detectPostprandialTiming — §7#4: a 20-treat/day grazer (4 rapid of
   assert.equal(findings.length, 0)
 })
 
-Deno.test('detectPostprandialTiming — §7#5: 3 rapid episodes all >14 days old stay silent (recency floor)', () => {
+Deno.test('detectPostprandialTiming — §7#5: rapid episodes all >14 days old stay silent (recency floor)', () => {
   const symptomEvents: SymptomEvent[] = []
   const mealEvents: MealEvent[] = []
-  // 4 witnessed rapid episodes on May 1..4 — in-window (60d) but all >14 days before NOW
-  // (May 30), so none is recent enough to lead. Only recency suppresses (grazing passes).
-  for (let i = 0; i < 4; i++) {
+  // 6 witnessed rapid episodes on May 1..6 — in-window (60d) and above the eligible-
+  // denominator floor, but all >14 days before NOW (May 30), so none is recent enough to
+  // lead. Only recency suppresses (denominator + grazing both pass).
+  for (let i = 0; i < 6; i++) {
     const day = 1 + i
     symptomEvents.push(wVomit(day, 12, 0))
     mealEvents.push(feeding(day, 11, 40))
@@ -1138,16 +1139,17 @@ Deno.test('detectPostprandialTiming — §7#6: a legacy NULL-confidence meal is 
   const mealEvents: MealEvent[] = []
   // The rapid feedings carry NO occurredAtConfidence (legacy NULL) — they must still
   // anchor the "20 min after eating" timing (meals are inherently witnessed). Per loop the
-  // 11:40 feeding is at an EVEN index, the 7:00 feeding at an odd index.
-  for (let i = 0; i < 4; i++) {
-    const day = 24 + i
+  // 11:40 feeding is at an EVEN index, the 7:00 feeding at an odd index. 6 episodes (May
+  // 22..27) to clear the eligible-denominator floor.
+  for (let i = 0; i < 6; i++) {
+    const day = 22 + i
     symptomEvents.push(wVomit(day, 12, 0))
     mealEvents.push(meal({ occurredAt: at(day, 11, 40), foodType: 'treat', primaryProtein: 'x' })) // NULL conf
     mealEvents.push(feeding(day, 7, 0))
   }
   const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
   assert.equal(findings.length, 1)
-  assert.equal(findings[0].rapidCount, 4, 'NULL-confidence meals anchor the rapid claim')
+  assert.equal(findings[0].rapidCount, 6, 'NULL-confidence meals anchor the rapid claim')
 
   // Contrast: if those rapid feedings were ESTIMATED (a guessed time), they cannot anchor
   // the claim — the nearest TIMED-eligible feeding becomes the 5h-earlier one → no rapid.
@@ -1164,10 +1166,10 @@ Deno.test('detectPostprandialTiming — §7#6: a legacy NULL-confidence meal is 
 Deno.test('detectPostprandialTiming — §7#7: a re-logged bout (3 rows in 2h) collapses to ONE episode (no inflated count)', () => {
   const symptomEvents: SymptomEvent[] = []
   const mealEvents: MealEvent[] = []
-  // 4 rapid bouts (May 24..27); the day-27 bout is logged 3 times within 2h (< the 3h
-  // episode gap). If re-logs inflated the count, rapid/total would read 6 — they must read 4.
-  for (let i = 0; i < 4; i++) {
-    const day = 24 + i
+  // 6 rapid bouts (May 22..27); the day-27 bout is logged 3 times within 2h (< the 3h
+  // episode gap). If re-logs inflated the count, rapid/total would read 8 — they must read 6.
+  for (let i = 0; i < 6; i++) {
+    const day = 22 + i
     symptomEvents.push(wVomit(day, 12, 0))
     mealEvents.push(feeding(day, 11, 40))
     mealEvents.push(feeding(day, 7, 0))
@@ -1175,9 +1177,9 @@ Deno.test('detectPostprandialTiming — §7#7: a re-logged bout (3 rows in 2h) c
   symptomEvents.push(wVomit(27, 12, 50), wVomit(27, 13, 30)) // re-logs of the day-27 bout
   const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
   assert.equal(findings.length, 1)
-  assert.equal(findings[0].rapidCount, 4, 're-logs collapse: 4 bouts, not 6')
-  assert.equal(findings[0].totalEpisodes, 4)
-  assert.equal(findings[0].eligibleCount, 4)
+  assert.equal(findings[0].rapidCount, 6, 're-logs collapse: 6 bouts, not 8')
+  assert.equal(findings[0].totalEpisodes, 6)
+  assert.equal(findings[0].eligibleCount, 6)
 })
 
 Deno.test('detectPostprandialTiming — below the rapid FRACTION floor stays silent (3 rapid of 20 timed is noise)', () => {
@@ -1208,6 +1210,39 @@ Deno.test('detectPostprandialTiming — no timed feeding in the preceding 24h �
   // (onset day d at 12:00; nearest feeding day d-1 at 06:00 = 30h earlier → outside 24h)
   const findings = detectPostprandialTiming(input({ symptomEvents, mealEvents }))
   assert.equal(findings.length, 0)
+})
+
+Deno.test('detectPostprandialTiming — ADVERSARIAL REGRESSION: a grazer with 3 witnessed vomits near feedings is suppressed (denominator floor, B-078/B-081)', () => {
+  // The adversarial-review break: a 20-feeds/day grazer with only 3 witnessed vomits, each
+  // ~10 min after a graze. The 2× grazing guard scales with eligibleCount, so at
+  // eligibleCount=3 it collapses to the minRapidEpisodes floor and FIRES on a ~7% base-rate
+  // coincidence. The minimum-eligible DENOMINATOR floor (6) suppresses it — "3 of 3" is too
+  // small a sample to call a pattern.
+  const symptomEvents: SymptomEvent[] = []
+  const mealEvents: MealEvent[] = []
+  for (const day of [25, 26, 27]) {
+    symptomEvents.push(wVomit(day, 12, 0))
+    mealEvents.push(feeding(day, 11, 50)) // 10 min before onset → rapid
+    for (let h = 0; h < 19; h++) mealEvents.push(feeding(day, Math.floor(h / 2), (h % 2) * 30)) // 20 grazes/day
+  }
+  const findings = detectPostprandialTiming(input({ pet: cat, symptomEvents, mealEvents }))
+  assert.equal(findings.length, 0, 'eligibleCount 3 < minEligibleEpisodes 6 → silent')
+})
+
+Deno.test('detectPostprandialTiming — the eligible-denominator floor: 5 timeable episodes is too few, 6 fires', () => {
+  const build = (n: number) => {
+    const symptomEvents: SymptomEvent[] = []
+    const mealEvents: MealEvent[] = []
+    for (let i = 0; i < n; i++) {
+      const day = 22 + i // recent, distinct days
+      symptomEvents.push(wVomit(day, 12, 0))
+      mealEvents.push(feeding(day, 11, 40)) // 20 min before → rapid
+      mealEvents.push(feeding(day, 7, 0)) // a second feeding so the rate isn't degenerate
+    }
+    return { symptomEvents, mealEvents }
+  }
+  assert.equal(detectPostprandialTiming(input(build(5))).length, 0, '5 eligible < floor → silent')
+  assert.equal(detectPostprandialTiming(input(build(6))).length, 1, '6 eligible == floor → fires')
 })
 
 Deno.test('detectPostprandialTiming — within band 2, a correlation leads ⑤ (descriptive lane order, §6)', () => {
@@ -1439,6 +1474,12 @@ Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
   assert.equal(DEFAULT_CONFIG.reflection.worseningMinEpisodes, 2)
   // Detector ④ firm-tier density floor (B-reshaped): symptoms on ≥4 of 7 days.
   assert.equal(DEFAULT_CONFIG.reflection.worseningDenseDayFloor, 4)
+  // B-078 detector ⑤ floors (window science-anchored; denominator floor = adversarial fix).
+  assert.equal(DEFAULT_CONFIG.postprandial.rapidWindowMinutes, 30)
+  assert.equal(DEFAULT_CONFIG.postprandial.minRapidEpisodes, 3)
+  assert.equal(DEFAULT_CONFIG.postprandial.minEligibleEpisodes, 6)
+  assert.equal(DEFAULT_CONFIG.postprandial.minObservedToExpectedRatio, 2)
+  assert.equal(DEFAULT_CONFIG.postprandial.windowDays, 60)
   // B-053 coverage-diagnostic floors.
   assert.equal(DEFAULT_CONFIG.coverage.stapleMinMeals, 4)
   // staple_washout's symptom floor MUST track ①'s Early episode floor so it only fires

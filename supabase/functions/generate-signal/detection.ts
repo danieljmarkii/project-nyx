@@ -604,6 +604,18 @@ export interface DetectionConfig {
   postprandial: {
     /** §3.3: minimum rapid episodes before a pattern is worth stating (2 is an anecdote). */
     minRapidEpisodes: number
+    /**
+     * Minimum timed-eligible episodes (the DENOMINATOR) before "N of M" is a real
+     * fraction (adversarial-review fix, B-078 / B-081). The grazing guard scales
+     * `expectedRapid` with `eligibleCount`, so at a tiny denominator it collapses to the
+     * `minRapidEpisodes` floor and a grazer whose few witnessed vomits all land near a
+     * graze fires on a ~7% base-rate coincidence (the reviewer's break). This floor
+     * suppresses those smallest-N cases; the residual above it is an accepted, tuned-on-
+     * real-data limitation (PM 2026-06-11; the golden "4 of 12" is itself only a ~6%
+     * pattern, so the guard cannot separate it from a same-strength grazer — §3.3). Set to
+     * 6 to match detector ⑥'s `minEligibleEpisodes` ("below this any cluster is a coin run").
+     */
+    minEligibleEpisodes: number
     /** §3.3: minimum rapid/eligible fraction — a few rapid out of many timed is noise. */
     minRapidFraction: number
     /** §3.3: ≥1 rapid episode must fall within this many days, so a stale cluster doesn't lead. */
@@ -713,6 +725,7 @@ export const DEFAULT_CONFIG: DetectionConfig = {
   // Tune on real data, not a re-decision (parent-doc §7 / decision (b)).
   postprandial: {
     minRapidEpisodes: 3,
+    minEligibleEpisodes: 6,
     minRapidFraction: 0.25,
     recencyDays: 14,
     minObservedToExpectedRatio: 2,
@@ -1611,7 +1624,7 @@ export function detectWorsening(
 // timing is not a regurgitation-vs-vomiting differentiator). Owner copy names TIMING
 // ONLY (§9.1); food form rides `feedingFormsInEvidence` into the evidence + vet report.
 //
-// SCOPE (provisional, flagged for PM): runs on VOMIT episodes only. The entire spec —
+// SCOPE (PM-ratified 2026-06-11): runs on VOMIT episodes only. The entire spec —
 // §1 origin, §3.1 claim, §7 fixtures, §9.2 literature anchor — is vomiting; a
 // post-prandial-timing card on a dermatological symptom would imply a food-allergy
 // MECHANISM (the exact thing §1/§3.5 forbid), and for diarrhea a 30-min window isn't
@@ -1628,8 +1641,12 @@ export function detectWorsening(
 //     ineligible (out of numerator AND denominator).
 //   • the GRAZING GUARD (§3.3, Data Scientist, load-bearing): a frequently-fed pet is
 //     "within 30 min of eating" much of the day by chance. Observed rapid must clear 2×
-//     the chance-expected count (deterministic correction, no hypothesis test), so Sam's
-//     all-day nibbler cannot trip the detector by base rate.
+//     the chance-expected count (deterministic correction, no hypothesis test). PAIRED
+//     with a minimum-eligible DENOMINATOR floor (minEligibleEpisodes): the 2× guard
+//     scales with eligibleCount, so at a tiny denominator it collapses to the count floor
+//     and a grazer's few coincidental rapid vomits slip through (adversarial-review
+//     break, B-078). The denominator floor suppresses those smallest-N cases; the residual
+//     above it is an accepted limitation tuned on real data (PM 2026-06-11; B-081).
 //
 // Nearest-preceding is the CORRECT semantics for a timing claim — the May
 // "nearest-preceding meal" attribution bug was about blaming a food IDENTITY, which this
@@ -1773,7 +1790,9 @@ export function detectPostprandialTiming(
   }
 
   const eligibleCount = eligible.length
-  if (eligibleCount === 0) return []
+  // Denominator floor (adversarial-review fix, B-078/B-081): "N of M" needs a real M.
+  // Also guards the fraction division below (minEligibleEpisodes ≥ 1).
+  if (eligibleCount < cfg.minEligibleEpisodes) return []
   const rapidEpisodes = eligible.filter((e) => e.rapid)
   const rapidCount = rapidEpisodes.length
 
