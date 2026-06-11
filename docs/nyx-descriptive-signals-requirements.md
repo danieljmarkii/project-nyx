@@ -1,8 +1,8 @@
 # Nyx — Descriptive Timing & Diet-Structure Signals Requirements
 
-**Status:** PROPOSED (rev 1) — PM-commissioned 2026-06-11; open decisions in §9 carry provisional answers awaiting PM ratification
+**Status:** rev 2 — Phases 1–2 BUILD-READY (PM decisions §9.1/§9.2 made 2026-06-11); Phase 3 placement open pending mockup (§9.3)
 **Owner build step:** Step 10 evolution (AI Signal — descriptive lane)
-**Created:** 2026-06-11
+**Created:** 2026-06-11 · **Revised:** 2026-06-11 (rev 2 — PM review + literature check)
 **Extends:** `docs/nyx-ai-signal-requirements.md` (the §-references below are to that doc unless noted)
 
 > Output of the 2026-06-11 product-team reflection on the Fable 5 re-run brief
@@ -19,8 +19,14 @@ every input is a per-event observed fact, and every claim is a count with its
 denominator attached.
 
 1. **Rapid post-prandial timing** — 4 of 14 vomit episodes ≤15 min after eating,
-   including the last two (brief §4.1/§6.4a). Clinically load-bearing: minutes-after-eating
-   points a vet at eating speed / regurgitation rather than the stomach itself.
+   including the last two (brief §4.1/§6.4a). Clinically useful as **anamnesis, not
+   diagnosis**: timing-to-meal is a standard GI-history item a vet will ask about, and
+   regurgitation classically presents "soon after eating" (Merck Vet Manual,
+   megaesophagus/esophagitis) — but per Clinician's Brief, timing relative to feeding
+   is *not* by itself a regurgitation-vs-vomiting differentiator (mechanism, retching,
+   bile and food state are). The card therefore reports the pattern and routes it to
+   the vet conversation; it never implies a mechanism. (Literature check 2026-06-11,
+   sources in §9.2.)
 2. **Time-of-day clustering** — episodes concentrated in one band of the day (the
    adjacent pattern the team ranked third; classic example is early-morning
    empty-stomach/bilious vomiting — a feeding-schedule conversation).
@@ -117,7 +123,7 @@ the new fields — their behavior is byte-identical.
 
 ### 3.1 Claim shape
 
-> "4 of the 12 vomiting episodes we could time happened within 15 minutes of eating —
+> "4 of the 12 vomiting episodes we could time happened within 30 minutes of eating —
 > including the last two. That timing is worth mentioning to your vet."
 
 Strictly descriptive: each episode's minutes-since-last-feeding is an observed fact;
@@ -145,7 +151,13 @@ to the template are fixed by the payload (§3.4).
 | `minRapidFraction` | 0.25 | 3 rapid out of 30 timed episodes is noise, not a pattern |
 | `recencyDays` (≥1 rapid episode within) | 14 | a stale cluster shouldn't lead today's surface |
 | `minObservedToExpectedRatio` — **the grazing guard** | 2 | see below |
+| `rapidWindowMinutes` | 30 | **science-anchored, not data-anchored** (PM directive §9.2): operationalizes the literature's "soon/shortly after eating" band (minutes to ~1h); deliberately NOT tuned to the dogfood cat's observed ≤15-min episodes |
 | `windowDays` (analysis window) | 60 | bounds the denominator to the current era of the pet's life |
+
+Because the window is a *descriptive bucket*, not a clinical threshold (none exists in
+the literature — §9.2), the payload always carries `medianMinutesSinceFeeding` so the
+evidence expansion and the vet report show the **actual** observed timings, never just
+the bucket membership.
 
 **The grazing guard (Data Scientist, load-bearing).** A frequently-fed pet is "within
 15 minutes of eating" much of the day by chance. Deterministic correction, no
@@ -157,10 +169,12 @@ expectedRapid = eligibleEpisodes × min(1, feedingRatePerDay × rapidWindowMinut
 fire only if rapidCount ≥ max(minRapidEpisodes, minObservedToExpectedRatio × expectedRapid)
 ```
 
-Calibration on the brief's real data: ~8 feedings/day → chance ≈ 8.3%, expected ≈ 1.0
-of 12, threshold = max(3, 2.0) = 3 → observed 4 **fires**. An extreme 20-treat/day
-grazer: chance ≈ 21%, expected ≈ 2.9 of 14, threshold = max(3, 5.8) → 4 observed
-**does not fire**. Sam's grazing cat cannot trip this detector by base rate.
+Calibration on the brief's real data at the 30-min window: ~8 feedings/day → chance ≈
+16.7%, expected ≈ 2.0 of 12, threshold = max(3, 4.0) = 4 → observed 4 **fires** (at
+exactly the bar — the guard is doing real work). An extreme 20-treat/day grazer:
+chance ≈ 42%, expected ≈ 5.8 of 14, threshold ≈ 12 → 4 observed **does not fire**.
+Sam's grazing cat cannot trip this detector by base rate; the wider science-anchored
+window is affordable precisely because the guard scales with it.
 
 ### 3.4 Finding payload
 
@@ -263,7 +277,7 @@ attached, never causal, never a "bilious" or any mechanism word.
 
 ## 5. Diet-structure observations (Phase 3)
 
-### 5.1 What and where — PM lean ratified with a Designer ship-gate
+### 5.1 What and where — placement OPEN pending mockup (§9.3)
 
 Two observations, **one card max** (`diet_structure` finding, band 2 after ⑥):
 
@@ -275,11 +289,12 @@ Two observations, **one card max** (`diet_structure` finding, band 2 after ⑥):
 
 The team's 2026-06-11 session flagged the lane question (Signal card vs B-053
 coverage lane) and a voice risk: these describe the **owner's feeding/logging
-behavior**, not the pet, and must never read as judgment. **PM direction is the Signal
-surface**; the team carries it with a hard ship-gate: the Designer + nyx-voice pass on
-the final strings is a **blocking** DoD item for Phase 3 — if the strings can't be made
-observational-and-warm, the fallback placement is the B-053 coverage lane (no re-vote
-needed, the structure work is identical).
+behavior**, not the pet, and must never read as judgment. **Placement is an open PM
+decision pending a mockup** (§9.3) — this section is written placement-agnostic
+(detector, floors, suppression and payload are identical in either lane). Whichever
+lane wins, the Designer + nyx-voice pass on the final strings is a **blocking** DoD
+item for Phase 3: if the strings can't be made observational-and-warm, they don't ship
+in either lane.
 
 Honesty device, non-negotiable (Dr. Chen + Trust): the collapse copy must acknowledge
 the log-only view ("if that matches what she actually ate") — the engine cannot know
@@ -385,7 +400,7 @@ this is exactly the load-bearing class the 2026-05-30 rule exists for).
 |---|---|---|
 | **1 — ⑤ post-prandial timing** | `detection.ts` (detector + config + types), confidence plumbing (`index.ts` selects, input mapping), `phrasing.ts` templates + validation, client mirror (`lib/signal.ts`, `lib/signalCopy.ts`, `InsightCard`), tests | No migration. Deploy = redeploy `generate-signal`. |
 | **2 — ⑥ time-of-day clustering** | detector + `timezone` plumbing (`user_profiles` fetch), templates, tests incl. property test | Depends on Phase 1's confidence plumbing only. |
-| **3 — diet-structure** | detector + templates + tests; **Designer/nyx-voice ship-gate on final strings** | Composes with B-070 (treats-vs-meals denominator) — reconcile if B-070 lands first. |
+| **3 — diet-structure** | detector + templates + tests; **Designer/nyx-voice ship-gate on final strings** | **Prerequisite: §9.3 placement decision (mockup → PM call).** Composes with B-070 (treats-vs-meals denominator) — reconcile if B-070 lands first. |
 
 Each phase is independently shippable and independently valuable; nothing in 2/3
 blocks 1.
@@ -394,20 +409,43 @@ blocks 1.
 
 ## 9. Decisions
 
-### Provisional (flagged for PM ratification — per CLAUDE.md, documented rather than stalling)
+### PM-decided (2026-06-11, rev 1 review)
 
-1. **⑤ owner-copy names timing only; food form rides evidence/vet report.** The
-   2026-06-11 session's one genuine conflict: Data Scientist (timing-only claim; with
-   5–10 treats/day the nearest feeding is a treat by base rate — naming form re-enters
-   the attribution trap) vs Dr. Chen (dry-vs-wet form is load-bearing for the
-   regurgitation differential). Provisional resolution: **timing-only on the card**;
-   `feedingFormsInEvidence` carries form into tap-to-expand + the vet report, which is
-   where the clinical differential actually happens. Dr. Chen accepts contingent on the
-   vet report carrying it; revisit only if vets report the card under-informs.
-2. **`rapidWindowMinutes` = 15** (the observed pattern; literature spans ~30). The §7
-   tune-on-real-data rule applies — changing it is a tuning update, not a re-decision.
-3. **Diet-structure ships on the Signal surface** (PM lean) **with the Designer
-   ship-gate** (§5.1); coverage-lane fallback pre-agreed if the strings fail the gate.
+1. **RATIFIED — ⑤ owner-copy names timing only; food form rides evidence/vet report.**
+   The session's one genuine conflict: Data Scientist (timing-only claim; with 5–10
+   treats/day the nearest feeding is a treat by base rate — naming form re-enters the
+   attribution trap) vs Dr. Chen (dry-vs-wet form matters to the esophageal-vs-gastric
+   conversation). PM ratified **timing-only on the card**; `feedingFormsInEvidence`
+   carries form into tap-to-expand + the vet report. The 2026-06-11 literature check
+   (below) retroactively strengthens this: timing isn't a differentiator either, so the
+   card claims neither timing-as-diagnosis nor form-as-diagnosis — it reports a pattern
+   for the vet to interpret.
+2. **`rapidWindowMinutes` = 30 — science-anchored, not data-anchored (PM directive).**
+   The PM explicitly declined to set the window from their own cat's observed ≤15-min
+   episodes ("I don't want to anchor the app just on my cat's data"). Literature check
+   2026-06-11: no canonical minute cutoff exists; regurgitation classically presents
+   "soon after eating" with owner-facing sources converging on **minutes to ~1 hour**
+   ([Merck Vet Manual — esophageal disorders](https://www.merckvetmanual.com/dog-owners/digestive-disorders-of-dogs/disorders-of-the-esophagus-in-dogs),
+   [VIN Veterinary Partner](https://veterinarypartner.vin.com/default.aspx?pid=19239&id=4952781)),
+   and per [Clinician's Brief](https://www.cliniciansbrief.com/article/regurgitation-or-vomiting)
+   *"timing of the episodes in relation to feeding … [is] not [a] distinguishing
+   factor"* between regurgitation and vomiting. Consequences: (a) 30 min
+   operationalizes the literature band's conservative end without Nyx-anchoring;
+   (b) the window is a descriptive bucket, so the payload always carries the actual
+   median minutes (§3.3); (c) the claim's clinical rationale is anamnesis ("a timing
+   pattern the vet will want to know"), never mechanism (§1.1) — copy implying
+   "regurgitation" or "eating speed" is a `validatePhrasing` failure. §7's
+   tune-on-real-data rule still applies to the number itself.
+
+### Open (PM, before Phase 3 only — Phases 1–2 are unblocked)
+
+3. **Diet-structure surface placement — pending a mockup.** PM (2026-06-11): "I need
+   more information on this one. Potentially a mockup to better understand." Action:
+   produce a Signal-surface mockup showing the diet-structure card in the band-2 stack
+   vs the coverage-lane alternative (precedent: the free-feeding HTML/PNG mockups in
+   `docs/mockups/`), then decide. §5 is written to be placement-agnostic: the detector,
+   floors, suppression rules and payload are identical in either lane; only the
+   renderer differs. The Designer/nyx-voice ship-gate applies in both.
 
 ### Decided by this spec (team-internal, no PM input needed)
 
