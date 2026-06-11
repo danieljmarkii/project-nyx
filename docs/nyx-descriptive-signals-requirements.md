@@ -1,6 +1,6 @@
 # Nyx — Descriptive Timing & Diet-Structure Signals Requirements
 
-**Status:** rev 2 — Phases 1–2 BUILD-READY (PM decisions §9.1/§9.2 made 2026-06-11); Phase 3 placement open pending mockup (§9.3)
+**Status:** rev 3 — Phases 1–2 SHIPPED (⑤ #135 / ⑥ #137, deployed); Phase 3 placement RESOLVED 2026-06-11 (§9.3 → Lane B / B-053 coverage lane) and BUILT (PR #138, draft). Remaining blocker: the Designer/nyx-voice ship-gate sign-off on the final strings.
 **Owner build step:** Step 10 evolution (AI Signal — descriptive lane)
 **Created:** 2026-06-11 · **Revised:** 2026-06-11 (rev 2 — PM review + literature check)
 **Extends:** `docs/nyx-ai-signal-requirements.md` (the §-references below are to that doc unless noted)
@@ -481,15 +481,25 @@ blocks 1.
    "regurgitation" or "eating speed" is a `validatePhrasing` failure. §7's
    tune-on-real-data rule still applies to the number itself.
 
-### Open (PM, before Phase 3 only — Phases 1–2 are unblocked)
+### Resolved (PM, Phase 3 placement)
 
-3. **Diet-structure surface placement — pending a mockup.** PM (2026-06-11): "I need
-   more information on this one. Potentially a mockup to better understand." Action:
-   produce a Signal-surface mockup showing the diet-structure card in the band-2 stack
-   vs the coverage-lane alternative (precedent: the free-feeding HTML/PNG mockups in
-   `docs/mockups/`), then decide. §5 is written to be placement-agnostic: the detector,
-   floors, suppression rules and payload are identical in either lane; only the
-   renderer differs. The Designer/nyx-voice ship-gate applies in both.
+3. **Diet-structure surface placement — RESOLVED 2026-06-11: Lane B (B-053 coverage
+   lane).** PM picked it off the `docs/mockups/diet-structure-placement-mockup.html`/
+   `.png` mockup (both candidate lanes × both observations, live app tokens). Rationale:
+   these describe the owner's feeding/logging **structure**, so framing them as "here's
+   why there's no signal yet" is honest where a band-2 card beside a clinical finding
+   would read as a verdict on the pet; the coverage lane also never competes for the
+   visible-card cap and enriches the thin `no_pattern` surface. Accepted cost: diet-churn
+   (which needs active symptoms) is silent whenever another finding fires — acceptable
+   because diet-structure is enrichment, not safety. **Built as two coverage-lane
+   diagnostics** (`meal_type_collapse` / `diet_churn`) rather than a single
+   `DietStructureFinding`: in the coverage lane each is its own `CoverageDiagnostic`
+   variant (cached in `ai_signals.coverage`, rendered by `coverageCopy`), so the §5.3
+   `Finding` payload shape is superseded by the two diagnostic payloads — the **fields**
+   (gapDays/loggedDays/treatsPerDayMedian; novelFoodCount/symptomEpisodesInWindow) are
+   unchanged. §5.2 floors/suppression are exactly as specced. Original action (for the
+   record): produce a mockup of band-2 vs coverage-lane, then decide. The Designer/
+   nyx-voice ship-gate still applies (and is the remaining blocking DoD item).
 
 ### Decided by this spec (team-internal, no PM input needed)
 
