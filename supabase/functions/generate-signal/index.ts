@@ -81,18 +81,20 @@ interface ClaudeToolResponse {
 // otherwise the deterministic template — so this never throws and never blanks.
 async function phraseFinding(finding: Finding, petName: string): Promise<string> {
   const fallback = templateForFinding(finding, petName)
-  // Reflections (③, B-051), symptom-worsening (④) AND postprandial-timing (⑤, B-078) are
-  // phrased DETERMINISTICALLY — never sent to the LLM. All are count statements ("4 episodes
-  // of vomiting this week — same as last week" / "...up from 2 last week" / "4 of 12 we could
-  // time, within 30 min of eating"); the model adds little warmth but introduces real drift
-  // risk — reassurance ("on the mend") for ③/④, and for ⑤ a slide back into mechanism
-  // ("regurgitation") or food attribution that validatePhrasing's keyword screen cannot
-  // reliably catch by paraphrase (adversarial review, B-051 / §2 of the descriptive spec).
-  // We render the template, which is guardrail-clean by construction and tested.
+  // Reflections (③, B-051), symptom-worsening (④), postprandial-timing (⑤, B-078) AND
+  // time-of-day clustering (⑥, B-079) are phrased DETERMINISTICALLY — never sent to the LLM.
+  // All are count statements ("4 episodes of vomiting this week — same as last week" /
+  // "...up from 2 last week" / "4 of 12 we could time, within 30 min of eating" / "5 of 8
+  // between 4am and 8am"); the model adds little warmth but introduces real drift risk —
+  // reassurance ("on the mend") for ③/④, and for ⑤/⑥ a slide back into mechanism
+  // ("regurgitation"/"bilious") or food attribution that validatePhrasing's keyword screen
+  // cannot reliably catch by paraphrase (adversarial review, B-051 / §2 of the descriptive
+  // spec). We render the template, which is guardrail-clean by construction and tested.
   if (
     finding.type === 'reflection' ||
     finding.type === 'symptom_worsening' ||
-    finding.type === 'postprandial_timing'
+    finding.type === 'postprandial_timing' ||
+    finding.type === 'timeofday_clustering'
   ) {
     return fallback
   }
@@ -271,7 +273,7 @@ Deno.serve(async (req: Request) => {
     // 1. Load pet, symptom events, meal events, active diet trial — all
     //    ownership-scoped by RLS via the caller's JWT. Soft-deleted rows are
     //    excluded here (the detection module's documented contract).
-    const [petRes, symptomsRes, mealsRes, trialRes, arrangementsRes] = await Promise.all([
+    const [petRes, symptomsRes, mealsRes, trialRes, arrangementsRes, profileRes] = await Promise.all([
       supabase.from('pets').select('name, species').eq('id', petId).maybeSingle(),
       supabase
         .from('events')
@@ -299,6 +301,10 @@ Deno.serve(async (req: Request) => {
         .eq('pet_id', petId)
         .eq('method', 'free_choice')
         .is('deleted_at', null),
+      // Caller's IANA timezone (B-079, detector ⑥). RLS on user_profiles scopes to the
+      // owner's own row (auth.uid() = id), so this returns the pet owner's profile. Absent
+      // / unreadable ⇒ undefined ⇒ ⑥ stays silent (never guess UTC — §4.2).
+      supabase.from('user_profiles').select('timezone').maybeSingle(),
     ])
 
     const pet = petRes.data as { name: string; species: string } | null
@@ -311,6 +317,9 @@ Deno.serve(async (req: Request) => {
     const mealEvents = mapMealRows((mealsRes.data ?? []) as MealEventRow[])
     const feedingArrangements = mapArrangementRows((arrangementsRes.data ?? []) as ArrangementRow[])
     const dietTrialActive = ((trialRes.data ?? []) as unknown[]).length > 0
+    // B-079 (⑥): the owner's IANA timezone. A non-string / empty value ⇒ undefined ⇒ ⑥ silent.
+    const profile = profileRes.data as { timezone: string | null } | null
+    const timezone = profile?.timezone || undefined
 
     // 2. Detect — the pure engine ranks already-true findings (safety leads).
     const input: DetectionInput = {
@@ -318,6 +327,7 @@ Deno.serve(async (req: Request) => {
       symptomEvents,
       mealEvents,
       feedingArrangements,
+      timezone,
       now: new Date(nowMs).toISOString(),
     }
     const ranked = detectSignals(input, DEFAULT_CONFIG)

@@ -22,6 +22,7 @@ import type {
   ReflectionFinding,
   SymptomWorseningFinding,
   PostprandialTimingFinding,
+  TimeOfDayClusteringFinding,
   RankedFinding,
   SymptomType,
 } from './detection.ts'
@@ -132,6 +133,34 @@ export function templatePostprandialTiming(f: PostprandialTimingFinding, petName
   return `${f.rapidCount} of the ${f.eligibleCount} ${symptom} episodes we could time for ${petName} happened within ${f.rapidWindowMinutes} minutes of eating${lastTwo} — a timing pattern worth mentioning to your vet.`
 }
 
+// Plain 12-hour clock label for a local hour 0..23: 0→'12am', 4→'4am', 12→'12pm', 23→'11pm'.
+// Pure presentation; mirrored on the client (lib/signalCopy.ts) — keep the two in sync.
+export function clockHourLabel(hour: number): string {
+  const norm = ((Math.round(hour) % 24) + 24) % 24
+  const period = norm < 12 ? 'am' : 'pm'
+  const h12 = norm % 12 === 0 ? 12 : norm % 12
+  return `${h12}${period}`
+}
+
+// The cluster band in plain words, e.g. start 4 width 4 → "between 4am and 8am"; a
+// wrap-around start 23 width 4 → "between 11pm and 3am". The upper bound is the window's
+// exclusive end (start + width), which reads naturally as the span ("a 4-hour window from 4am").
+export function localHourBand(startHour: number, windowHours: number): string {
+  const end = (startHour + windowHours) % 24
+  return `between ${clockHourLabel(startHour)} and ${clockHourLabel(end)}`
+}
+
+export function templateTimeOfDayClustering(f: TimeOfDayClusteringFinding, petName: string): string {
+  // Detector ⑥ (B-079) — template-only (no LLM, like ③/④/⑤). Names a CLOCK BAND only:
+  // never a cause ("happened between 4am and 8am" is a timing reference, not "because"),
+  // never a mechanism word ('bilious'/'empty stomach' — §4.5), never inverted on a
+  // below-floor result (that case never reaches here — the engine stays silent). Honest
+  // denominator: "timed episodes" (the witnessed/placeable count), never the raw total.
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  const band = localHourBand(f.clusterStartLocalHour, f.clusterWindowHours)
+  return `${f.clusterCount} of ${petName}'s ${f.eligibleCount} timed ${symptom} episodes happened ${band} — a timing pattern worth mentioning to your vet.`
+}
+
 export function templateForFinding(finding: Finding, petName: string): string {
   switch (finding.type) {
     case 'food_symptom_correlation':
@@ -144,6 +173,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateWorsening(finding, petName)
     case 'postprandial_timing':
       return templatePostprandialTiming(finding, petName)
+    case 'timeofday_clustering':
+      return templateTimeOfDayClustering(finding, petName)
   }
 }
 
@@ -218,6 +249,14 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t) || REASSURANCE_RE.test(t)) {
       return false
     }
+  }
+  if (finding.type === 'timeofday_clustering') {
+    // Detector ⑥ (B-079) is a descriptive CLOCK-BAND count — anamnesis, never mechanism.
+    // It may not assert a cause, imply a mechanism ('bilious'/'empty stomach' — §4.5), or
+    // reassure (a below-floor result is silence, never "no particular time of day").
+    // Template-only (index.ts) so the model is never in this loop — but if that ever
+    // changes, this screen holds the line.
+    if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || REASSURANCE_RE.test(t)) return false
   }
   return true
 }
@@ -295,6 +334,20 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       window_minutes: finding.rapidWindowMinutes,
       including_last_two: finding.lastTwoEligibleRapid,
       relationship: 'associational_timing', // a timing pattern we are noting — NOT a cause, NOT a mechanism
+    }
+  }
+  if (finding.type === 'timeofday_clustering') {
+    // Template-only (index.ts), so this payload is never actually sent to the model; kept
+    // for shape-correctness and parity. Carries the CLOCK BAND only — no mechanism, no cause.
+    return {
+      insight_type: 'timeofday_clustering',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      cluster_count: finding.clusterCount,
+      eligible_count: finding.eligibleCount,
+      cluster_start_local_hour: finding.clusterStartLocalHour,
+      cluster_window_hours: finding.clusterWindowHours,
+      relationship: 'associational_timing', // a clock pattern we are noting — NOT a cause, NOT a mechanism
     }
   }
   return {

@@ -66,6 +66,9 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // Postprandial timing (⑤, B-078) — a descriptive timing count, rendered as a calm
   // sentence on the benign 'insight' rail; no confidence tag (it shows its sample size).
   postprandial_timing: SentenceBody,
+  // Time-of-day clustering (⑥, B-079) — a descriptive clock-band count, also a calm
+  // sentence on the 'insight' rail; no confidence tag (it shows its sample size).
+  timeofday_clustering: SentenceBody,
 };
 
 interface Props {

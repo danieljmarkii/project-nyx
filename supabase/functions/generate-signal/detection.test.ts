@@ -16,6 +16,7 @@ import {
   detectReflections,
   detectWorsening,
   detectPostprandialTiming,
+  detectTimeOfDayClustering,
   detectSignals,
   detectCoverage,
   rankCoverageDiagnostics,
@@ -29,6 +30,7 @@ import {
   type ReflectionFinding,
   type SymptomWorseningFinding,
   type PostprandialTimingFinding,
+  type TimeOfDayClusteringFinding,
   type OccurredAtConfidence,
   type DetectionInput,
   type MealEvent,
@@ -1295,6 +1297,286 @@ Deno.test('detectSignals — end to end: a clean post-prandial pattern surfaces 
   assert.ok(pp, 'the post-prandial card surfaces end to end')
   assert.equal(pp!.finding.priorityClass, 'insight')
 })
+
+// ── Detector ⑥: time-of-day clustering (B-079 — descriptive lane Phase 2) ─────
+//
+// The §7 ⑥ falsification fixtures, pasted as the visible AC for this build step:
+//   #1 golden (non-UTC tz, exact local hours) + a DST-crossing variant
+//   #2 the REQUIRED uniform-random property test (≥1,000 fixtures fire ≪5%)
+//   #3 missing/invalid timezone → silent
+//   #4 ⑤ fires for the symptom type → ⑥ suppressed (via detectSignals composition)
+//   #5 wrap-around cluster (23:00–03:00) detected correctly
+// plus the shared gates: witnessed-confidence eligibility, the minEligibleEpisodes
+// denominator floor, episode-collapse, and the cluster-mass / cluster-fraction floors.
+
+const NY = 'America/New_York' // EDT (UTC-4) in May 2026; EST (UTC-5) after Nov 1.
+
+/** A witnessed vomit at an explicit ISO instant (for the DST + property fixtures). */
+const wVomitIso = (iso: string): SymptomEvent => ({
+  ...symptom('vomit', iso),
+  occurredAtConfidence: 'witnessed',
+})
+
+/**
+ * The ⑥ golden (§7 #1): 8 witnessed vomit episodes in May (NY = EDT, UTC-4), 5 of them in
+ * the local 4–8am band (local hours 4,5,6,7,5 → UTC 8,9,10,11,9) and 3 elsewhere (local
+ * 13,14,16). eligible 8, cluster 5 in [4,8) → fires; start local hour 4.
+ */
+function todGolden(): SymptomEvent[] {
+  return [
+    wVomit(20, 8), // local 4
+    wVomit(21, 9), // local 5
+    wVomit(22, 10), // local 6
+    wVomit(23, 11), // local 7
+    wVomit(24, 9), // local 5
+    wVomit(25, 17), // local 13
+    wVomit(26, 18), // local 14
+    wVomit(27, 20), // local 16
+  ]
+}
+
+const todFinding = (over: Partial<TimeOfDayClusteringFinding> = {}): TimeOfDayClusteringFinding => ({
+  type: 'timeofday_clustering',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  clusterStartLocalHour: 4,
+  clusterWindowHours: 4,
+  clusterCount: 5,
+  eligibleCount: 8,
+  totalEpisodes: 8,
+  timezone: NY,
+  associationalOnly: true,
+  windowDays: 60,
+  ...over,
+})
+
+Deno.test('detectTimeOfDayClustering — §7#1 golden: 5 of 8 in a local 4–8am band fires with exact local hours (non-UTC tz)', () => {
+  const findings = detectTimeOfDayClustering(input({ symptomEvents: todGolden(), timezone: NY }))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.clusterStartLocalHour, 4, 'cluster window starts at local 4am')
+  assert.equal(f.clusterWindowHours, 4)
+  assert.equal(f.clusterCount, 5)
+  assert.equal(f.eligibleCount, 8)
+  assert.equal(f.totalEpisodes, 8)
+  assert.equal(f.timezone, NY)
+  assert.equal(f.symptomType, 'vomit')
+  assert.equal(f.priorityClass, 'insight')
+  assert.equal(f.associationalOnly, true)
+})
+
+Deno.test('detectTimeOfDayClustering — §7#1 golden: DST-crossing set converts per-instant (a fixed offset would miscount)', () => {
+  // 8 witnessed episodes straddling the Nov 1 2026 fall-back. The Oct-31 onset (UTC 08:00,
+  // still EDT/-4 → local 4) and the Nov-5 onset (UTC 10:00, now EST/-5 → local 5) only BOTH
+  // land in the 4–8am band under per-instant conversion. A naive fixed -4 would push the
+  // Nov-10 onset (UTC 12:00) to local 8 (outside the band) → cluster 4, not 5. So a
+  // clusterCount of 5 at start 4 is the DST-correctness assertion.
+  const symptomEvents = [
+    wVomitIso('2026-10-20T09:00:00.000Z'), // EDT → local 5
+    wVomitIso('2026-10-28T10:00:00.000Z'), // EDT → local 6
+    wVomitIso('2026-10-31T08:00:00.000Z'), // EDT → local 4
+    wVomitIso('2026-11-05T10:00:00.000Z'), // EST → local 5  (post-fallback, -5)
+    wVomitIso('2026-11-10T12:00:00.000Z'), // EST → local 7
+    wVomitIso('2026-10-22T17:00:00.000Z'), // EDT → local 13
+    wVomitIso('2026-11-07T20:00:00.000Z'), // EST → local 15
+    wVomitIso('2026-11-12T23:00:00.000Z'), // EST → local 18
+  ]
+  const findings = detectTimeOfDayClustering(
+    input({ symptomEvents, timezone: NY, now: '2026-11-15T12:00:00.000Z' }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].clusterStartLocalHour, 4)
+  assert.equal(findings[0].clusterCount, 5)
+  assert.equal(findings[0].eligibleCount, 8)
+})
+
+Deno.test('detectTimeOfDayClustering — §7#3: a MISSING timezone is silent (never guess UTC)', () => {
+  assert.equal(detectTimeOfDayClustering(input({ symptomEvents: todGolden() })).length, 0)
+})
+
+Deno.test('detectTimeOfDayClustering — §7#3: an INVALID timezone is silent (Intl throws → no false cluster)', () => {
+  assert.equal(
+    detectTimeOfDayClustering(input({ symptomEvents: todGolden(), timezone: 'Not/AZone' })).length,
+    0,
+  )
+})
+
+Deno.test('detectTimeOfDayClustering — §7#5: a wrap-around cluster (11pm–3am) is detected correctly', () => {
+  // 5 episodes in the local 23–03 band (local hours 23,0,1,2,23) + 3 elsewhere. The episodes
+  // are placed on non-adjacent UTC days so the 23:00/00:00 pair never collapses (>3h apart).
+  // EDT: local h → UTC h+4. local 23 → UTC 03 (next UTC day), local 0 → UTC 04, etc.
+  const symptomEvents = [
+    wVomitIso('2026-05-21T03:00:00.000Z'), // May20 local 23
+    wVomitIso('2026-05-22T04:00:00.000Z'), // May22 local 0
+    wVomitIso('2026-05-24T05:00:00.000Z'), // May24 local 1
+    wVomitIso('2026-05-26T06:00:00.000Z'), // May26 local 2
+    wVomitIso('2026-05-29T03:00:00.000Z'), // May28 local 23
+    wVomitIso('2026-05-15T14:00:00.000Z'), // local 10
+    wVomitIso('2026-05-17T15:00:00.000Z'), // local 11
+    wVomitIso('2026-05-19T16:00:00.000Z'), // local 12
+  ]
+  const findings = detectTimeOfDayClustering(input({ symptomEvents, timezone: NY }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].clusterStartLocalHour, 23, 'the winning window wraps from 11pm')
+  assert.equal(findings[0].clusterCount, 5)
+  assert.equal(findings[0].eligibleCount, 8)
+})
+
+Deno.test('detectTimeOfDayClustering — §2 witnessed gate: discovered onsets are excluded from numerator AND denominator (but counted in totalEpisodes)', () => {
+  // The golden's 5 cluster episodes are downgraded to discovered (estimated/window/NULL): a
+  // discovered onset's time is a guess and can't be placed on the clock → eligible drops to
+  // 3 (< floor) → silent, yet totalEpisodes still sees all 8.
+  const symptomEvents = [
+    cVomit(20, 8, 'estimated'),
+    cVomit(21, 9, 'window'),
+    cVomit(22, 10, null),
+    cVomit(23, 11, 'estimated'),
+    cVomit(24, 9, 'window'),
+    wVomit(25, 17),
+    wVomit(26, 18),
+    wVomit(27, 20),
+  ]
+  assert.equal(detectTimeOfDayClustering(input({ symptomEvents, timezone: NY })).length, 0)
+})
+
+Deno.test('detectTimeOfDayClustering — the eligible-denominator floor: 5 timeable episodes is too few, 6 fires', () => {
+  // n episodes all at local 5am (UTC 9). The whole set IS the cluster (fraction 1.0), so only
+  // the minEligibleEpisodes floor decides: 5 → silent, 6 → fires.
+  const build = (n: number) => {
+    const out: SymptomEvent[] = []
+    for (let i = 0; i < n; i++) out.push(wVomit(20 + i, 9)) // distinct days, local 5
+    return out
+  }
+  assert.equal(detectTimeOfDayClustering(input({ symptomEvents: build(5), timezone: NY })).length, 0)
+  assert.equal(detectTimeOfDayClustering(input({ symptomEvents: build(6), timezone: NY })).length, 1)
+})
+
+Deno.test('detectTimeOfDayClustering — below the cluster-FRACTION floor stays silent (mass passes, fraction fails)', () => {
+  // 9 eligible, 5 in the local 4–8am band (mass 5 ≥ minClusterEpisodes passes) but the other
+  // 4 are scattered, so the band holds only 5/9 = 0.556 < minClusterFraction (0.6) → silent.
+  // ISOLATES the fraction floor (the mass floor is satisfied).
+  const symptomEvents = [
+    wVomit(20, 8), // local 4
+    wVomit(21, 9), // local 5
+    wVomit(22, 10), // local 6
+    wVomit(23, 11), // local 7
+    wVomit(24, 9), // local 5
+    wVomit(25, 16), // local 12  (spread, all midday UTC so consecutive days never collapse)
+    wVomit(26, 17), // local 13
+    wVomit(27, 20), // local 16
+    wVomit(28, 23), // local 19
+  ]
+  assert.equal(detectTimeOfDayClustering(input({ symptomEvents, timezone: NY })).length, 0)
+})
+
+Deno.test('detectTimeOfDayClustering — below the cluster-MASS floor stays silent (fraction passes, mass fails)', () => {
+  // 6 eligible, the densest 4h band holds 4 (fraction 4/6 = 0.667 ≥ minClusterFraction passes)
+  // but 4 < minClusterEpisodes (5) → silent. ISOLATES the mass floor (the fraction is fine).
+  // local hours {4,5,6,7, 15,16}: [4,8)=4, [13,17)=2.
+  const symptomEvents = [
+    wVomit(20, 8), // local 4
+    wVomit(21, 9), // local 5
+    wVomit(22, 10), // local 6
+    wVomit(23, 11), // local 7
+    wVomit(24, 19), // local 15
+    wVomit(25, 20), // local 16
+  ]
+  assert.equal(detectTimeOfDayClustering(input({ symptomEvents, timezone: NY })).length, 0)
+})
+
+Deno.test('detectTimeOfDayClustering — a re-logged bout (3 rows in 2h) collapses to ONE episode (no inflated cluster)', () => {
+  // 6 distinct cluster bouts at local 5am; the day-25 bout is logged 3 times within 2h (< the
+  // 3h gap). If re-logs inflated the count, cluster/eligible would read 8 — they must read 6.
+  const symptomEvents = [
+    wVomit(20, 9),
+    wVomit(21, 9),
+    wVomit(22, 9),
+    wVomit(23, 9),
+    wVomit(24, 9),
+    wVomit(25, 9, 0),
+    wVomit(25, 9, 50), // re-log
+    wVomit(25, 10, 30), // re-log
+  ]
+  const findings = detectTimeOfDayClustering(input({ symptomEvents, timezone: NY }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].clusterCount, 6, 're-logs collapse: 6 bouts, not 8')
+  assert.equal(findings[0].eligibleCount, 6)
+  assert.equal(findings[0].totalEpisodes, 6)
+})
+
+Deno.test('detectTimeOfDayClustering — §7#4: ⑤ fires for the symptom → ⑥ suppressed (via detectSignals composition)', () => {
+  // The ⑤ golden (a schedule-fed post-prandial vomiter) clusters by clock trivially — all
+  // onsets at UTC 12:00 → local 8. So ⑥ WOULD fire standalone; the §4.4 mutual exclusion
+  // (⑤ wins) drops it in detectSignals.
+  const { symptomEvents, mealEvents } = ppGolden()
+  // Standalone, ⑥ fires (proving the suppression — not absence — explains the result).
+  assert.equal(
+    detectTimeOfDayClustering(input({ symptomEvents, mealEvents, timezone: NY })).length,
+    1,
+    '⑥ fires standalone on the clustered post-prandial pattern',
+  )
+  const ranked = detectSignals(input({ symptomEvents, mealEvents, timezone: NY }))
+  assert.ok(
+    ranked.some((r) => r.finding.type === 'postprandial_timing'),
+    '⑤ fires',
+  )
+  assert.ok(
+    !ranked.some((r) => r.finding.type === 'timeofday_clustering'),
+    '⑥ is suppressed because ⑤ fired for vomit (§4.4)',
+  )
+})
+
+Deno.test('detectTimeOfDayClustering — ⑥ surfaces via detectSignals when ⑤ does NOT fire (no meals → no post-prandial)', () => {
+  // A NOT-meal-adjacent early-morning cluster (no feedings at all → ⑤ silent) is exactly ⑥'s
+  // clinical value. It surfaces as a band-2 insight.
+  const ranked = detectSignals(input({ symptomEvents: todGolden(), timezone: NY }))
+  const tod = ranked.find((r) => r.finding.type === 'timeofday_clustering')
+  assert.ok(tod, '⑥ surfaces end to end when ⑤ is silent')
+  assert.equal(tod!.finding.priorityClass, 'insight')
+})
+
+Deno.test('detectTimeOfDayClustering — §7#2 PROPERTY TEST: ≥1,000 uniform-random onset fixtures fire ≪5%', () => {
+  // The 24 sliding window positions are an implicit multiple-comparison; this is the required
+  // falsification that the conservative floors keep the CHANCE fire rate well under 5%. Seeded
+  // RNG so the result is deterministic. Each fixture: n∈[6,10] witnessed episodes on distinct
+  // recent days (so no episode-collapse confounds), each at a uniform-random local time.
+  const rng = mulberry32(0x9e3779b9)
+  const nowMs = Date.parse(NOW)
+  const DAY_MS = 86_400_000
+  const TRIALS = 2000
+  let fires = 0
+  for (let t = 0; t < TRIALS; t++) {
+    const n = 6 + Math.floor(rng() * 5) // 6..10
+    const days = new Set<number>()
+    while (days.size < n) days.add(1 + Math.floor(rng() * 50)) // n distinct day offsets in 1..50
+    const symptomEvents: SymptomEvent[] = []
+    for (const d of days) {
+      const ms = nowMs - d * DAY_MS + Math.floor(rng() * DAY_MS) // uniform within the day
+      symptomEvents.push(wVomitIso(new Date(ms).toISOString()))
+    }
+    if (detectTimeOfDayClustering(input({ symptomEvents, timezone: NY })).length > 0) fires++
+  }
+  const fireRate = fires / TRIALS
+  // Measured ~3.6% with the calibrated floors (minClusterEpisodes 5 + minClusterFraction
+  // 0.6) — comfortably ≪5%. The seed is fixed, so this is deterministic; the 4.5% bar is a
+  // guard with margin, not a coin flip. (The spec's listed 4/0.5 defaults fire at ~21.6%
+  // here — see the DEFAULT_CONFIG.timeofday calibration note.)
+  assert.ok(
+    fireRate < 0.045,
+    `uniform-random fire rate ${(fireRate * 100).toFixed(2)}% must be ≪5%`,
+  )
+})
+
+// Deterministic mulberry32 PRNG — keeps the property test reproducible across runs.
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let x = Math.imul(a ^ (a >>> 15), 1 | a)
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296
+  }
+}
 
 // ── Composition & ranking (§5) ───────────────────────────────────────────────
 

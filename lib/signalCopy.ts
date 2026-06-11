@@ -36,6 +36,23 @@ function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+// Plain 12-hour clock label for a local hour 0..23 (⑥, B-079): 0→'12am', 4→'4am',
+// 12→'12pm', 23→'11pm'. Mirror of clockHourLabel in the generate-signal phrasing module —
+// keep the two in sync (the client can't import the Deno detection/phrasing code).
+function clockHourLabel(hour: number): string {
+  const norm = ((Math.round(hour) % 24) + 24) % 24;
+  const period = norm < 12 ? 'am' : 'pm';
+  const h12 = norm % 12 === 0 ? 12 : norm % 12;
+  return `${h12}${period}`;
+}
+
+// The cluster band in plain words (⑥): start 4 width 4 → "between 4am and 8am"; a
+// wrap-around start 23 width 4 → "between 11pm and 3am". Mirror of localHourBand in phrasing.ts.
+function localHourBand(startHour: number, windowHours: number): string {
+  const end = (startHour + windowHours) % 24;
+  return `between ${clockHourLabel(startHour)} and ${clockHourLabel(end)}`;
+}
+
 // ── Display state (§3.3 + B-051) ──────────────────────────────────────────────
 // Findings present → live. With no findings, three honest empty states — never an
 // all-clear (§9):
@@ -144,6 +161,10 @@ export function sampleLine(finding: SignalFinding): string {
     // The honest denominator: rapid over the episodes we could TIME, never the raw total.
     return `${finding.rapidCount} of ${count(finding.eligibleCount, 'timed episode', 'timed episodes')} within ${finding.rapidWindowMinutes} min of eating`;
   }
+  if (finding.type === 'timeofday_clustering') {
+    // The honest denominator: clustered over the episodes we could place on the clock.
+    return `${finding.clusterCount} of ${count(finding.eligibleCount, 'timed episode', 'timed episodes')} ${localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours)}`;
+  }
   if (finding.trigger === 'refused_normal_food') {
     return finding.ratedMealsConsidered > 0
       ? `Compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}`
@@ -231,6 +252,19 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       `${finding.rapidCount} of those happened within ${finding.rapidWindowMinutes} minutes of eating ` +
       `(typically about ${finding.medianMinutesSinceFeeding} minutes). This is a timing pattern in your ` +
       `logs, not a diagnosis — worth mentioning to your vet.`
+    );
+  }
+  if (finding.type === 'timeofday_clustering') {
+    // Tap-to-expand evidence (§4): the honest denominator ("of N total, M had a clear time")
+    // + the clock band in plain words. Timing ONLY — no cause/mechanism (§4.5). The IANA zone
+    // rides the payload for the Step-9 vet report, not this owner-facing copy.
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const band = localHourBand(finding.clusterStartLocalHour, finding.clusterWindowHours);
+    return (
+      `Of ${petName}'s ${count(finding.totalEpisodes, 'episode', 'episodes')} of ${symptom} in the last ` +
+      `${finding.windowDays} days, ${finding.eligibleCount} had a clear enough time to place in the day — and ` +
+      `${finding.clusterCount} of those happened ${band}. This is a timing pattern in your logs, not a ` +
+      `diagnosis — worth mentioning to your vet.`
     );
   }
   if (finding.trigger === 'refused_normal_food') {

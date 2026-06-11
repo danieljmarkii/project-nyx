@@ -15,6 +15,7 @@ import type {
   ReflectionFinding,
   SymptomWorseningFinding,
   PostprandialTimingFinding,
+  TimeOfDayClusteringFinding,
   RateMealsDiagnostic,
   StapleWashoutDiagnostic,
 } from './signal';
@@ -82,13 +83,28 @@ const postprandial = (over: Partial<PostprandialTimingFinding> = {}): Postprandi
   ...over,
 });
 
+const timeofday = (over: Partial<TimeOfDayClusteringFinding> = {}): TimeOfDayClusteringFinding => ({
+  type: 'timeofday_clustering',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  clusterStartLocalHour: 4,
+  clusterWindowHours: 4,
+  clusterCount: 5,
+  eligibleCount: 8,
+  totalEpisodes: 8,
+  timezone: 'America/New_York',
+  windowDays: 60,
+  ...over,
+});
+
 const cached = (
   finding:
     | CorrelationFinding
     | IntakeDeclineFinding
     | ReflectionFinding
     | SymptomWorseningFinding
-    | PostprandialTimingFinding,
+    | PostprandialTimingFinding
+    | TimeOfDayClusteringFinding,
   rank = 0,
 ): CachedFinding => ({
   rank,
@@ -401,5 +417,48 @@ describe('postprandial timing (⑤, B-078) — client copy', () => {
 
   it('ranks as a cap-subject insight, never on the safety rail', () => {
     expect(postprandial().priorityClass).toBe('insight');
+  });
+});
+
+describe('time-of-day clustering (⑥, B-079) — client copy', () => {
+  it('sampleLine cites the cluster over the TIMED denominator + the local band', () => {
+    const s = sampleLine(timeofday({ clusterCount: 5, eligibleCount: 8, clusterStartLocalHour: 4 }));
+    expect(s).toContain('5 of 8 timed episodes');
+    expect(s).toContain('between 4am and 8am');
+  });
+
+  it('sampleLine renders a wrap-around band naturally', () => {
+    const s = sampleLine(timeofday({ clusterStartLocalHour: 23 }));
+    expect(s).toContain('between 11pm and 3am');
+  });
+
+  it('carries no confidence tag (a deterministic count shows its sample size, §2)', () => {
+    expect(confidenceTag(timeofday())).toBeNull();
+  });
+
+  it('evidenceText shows the honest denominator + the clock band, points to the vet', () => {
+    const s = evidenceText(
+      timeofday({ totalEpisodes: 10, eligibleCount: 8, clusterCount: 5, clusterStartLocalHour: 4 }),
+      'Nyx',
+    );
+    expect(s).toContain('10 episodes');
+    expect(s).toContain('8 had a clear enough time');
+    expect(s).toContain('between 4am and 8am');
+    expect(s).toMatch(/vet/i);
+  });
+
+  it('owner copy names a clock band only — never a cause or mechanism (§4.5)', () => {
+    const s = evidenceText(timeofday(), 'Nyx');
+    expect(MECHANISM_RE.test(s)).toBe(false);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+    expect(REASSURANCE_RE.test(s)).toBe(false);
+    expect(s.includes('!')).toBe(false);
+    const sl = sampleLine(timeofday());
+    expect(MECHANISM_RE.test(sl)).toBe(false);
+    expect(CAUSAL_RE.test(sl)).toBe(false);
+  });
+
+  it('ranks as a cap-subject insight, never on the safety rail', () => {
+    expect(timeofday().priorityClass).toBe('insight');
   });
 });

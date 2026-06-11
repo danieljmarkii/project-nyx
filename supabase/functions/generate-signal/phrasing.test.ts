@@ -20,6 +20,9 @@ import {
   templateReflection,
   templateWorsening,
   templatePostprandialTiming,
+  templateTimeOfDayClustering,
+  clockHourLabel,
+  localHourBand,
   templateForFinding,
   validatePhrasing,
   curateFindings,
@@ -36,6 +39,7 @@ import type {
   WorseningTier,
   WorseningTrigger,
   PostprandialTimingFinding,
+  TimeOfDayClusteringFinding,
   Finding,
   RankedFinding,
   SymptomType,
@@ -114,6 +118,21 @@ const postprandial = (over: Partial<PostprandialTimingFinding> = {}): Postprandi
   lastTwoEligibleRapid: true,
   medianMinutesSinceFeeding: 18,
   feedingFormsInEvidence: ['dry treat'],
+  associationalOnly: true,
+  windowDays: 60,
+  ...over,
+})
+
+const timeofday = (over: Partial<TimeOfDayClusteringFinding> = {}): TimeOfDayClusteringFinding => ({
+  type: 'timeofday_clustering',
+  priorityClass: 'insight',
+  symptomType: 'vomit',
+  clusterStartLocalHour: 4,
+  clusterWindowHours: 4,
+  clusterCount: 5,
+  eligibleCount: 8,
+  totalEpisodes: 8,
+  timezone: 'America/New_York',
   associationalOnly: true,
   windowDays: 60,
   ...over,
@@ -564,6 +583,62 @@ Deno.test('validatePhrasing — accepts a plain timing-only postprandial sentenc
   )
 })
 
+// ── templateTimeOfDayClustering (⑥ — descriptive clock clustering, B-079) ─────────
+
+Deno.test('clockHourLabel — plain 12-hour labels across the day, incl. midnight/noon and wrap', () => {
+  assert.equal(clockHourLabel(0), '12am')
+  assert.equal(clockHourLabel(4), '4am')
+  assert.equal(clockHourLabel(11), '11am')
+  assert.equal(clockHourLabel(12), '12pm')
+  assert.equal(clockHourLabel(13), '1pm')
+  assert.equal(clockHourLabel(23), '11pm')
+  assert.equal(clockHourLabel(24), '12am', 'wraps')
+})
+
+Deno.test('localHourBand — renders the band, including a wrap-around window', () => {
+  assert.equal(localHourBand(4, 4), 'between 4am and 8am')
+  assert.equal(localHourBand(23, 4), 'between 11pm and 3am', 'wrap-around reads naturally')
+  assert.equal(localHourBand(0, 4), 'between 12am and 4am')
+})
+
+Deno.test('templateTimeOfDayClustering — states the honest denominator, names the clock band only, points to the vet', () => {
+  const t = templateTimeOfDayClustering(timeofday({ clusterCount: 5, eligibleCount: 8 }), 'Nyx')
+  assert.ok(/5 of Nyx's 8 timed/.test(t), 'cites clustered over the timed denominator')
+  assert.ok(/between 4am and 8am/.test(t), 'names the local clock band')
+  assert.ok(/vet/i.test(t))
+  // Guardrail-clean by construction: no cause, no mechanism, no reassurance, no "!".
+  assert.equal(MECHANISM.test(t), false, 'no mechanism word (never "bilious"/"empty stomach")')
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, timeofday()), 'own template passes validation')
+})
+
+Deno.test('templateTimeOfDayClustering — a wrap-around band renders in the sentence', () => {
+  const t = templateTimeOfDayClustering(timeofday({ clusterStartLocalHour: 23 }), 'Nyx')
+  assert.ok(/between 11pm and 3am/.test(t))
+  assert.ok(validatePhrasing(t, timeofday({ clusterStartLocalHour: 23 })))
+})
+
+Deno.test('validatePhrasing — rejects MECHANISM / causal / reassurance on a timeofday finding (§4.5)', () => {
+  for (const bad of [
+    'Nyx vomits in the early morning, likely bilious empty-stomach reflux.',
+    'The early-morning cluster is caused by an empty stomach overnight.',
+    'These morning episodes are nothing to worry about.',
+  ]) {
+    assert.equal(validatePhrasing(bad, timeofday()), false, `should reject: ${bad}`)
+  }
+})
+
+Deno.test('validatePhrasing — accepts a plain clock-band timeofday sentence', () => {
+  assert.ok(
+    validatePhrasing(
+      "5 of Nyx's 8 timed vomiting episodes happened between 4am and 8am — a timing pattern worth mentioning to your vet.",
+      timeofday(),
+    ),
+  )
+})
+
 // ── templateForFinding dispatch ─────────────────────────────────────────────────
 
 Deno.test('templateForFinding — dispatches by type', () => {
@@ -572,4 +647,5 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/about the same as last week/i.test(templateForFinding(reflection(), 'Nyx')))
   assert.ok(/word with your vet/i.test(templateForFinding(worsening(), 'Nyx')))
   assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
+  assert.ok(/between 4am and 8am/.test(templateForFinding(timeofday(), 'Nyx')))
 })
