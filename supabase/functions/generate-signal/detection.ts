@@ -7,7 +7,7 @@
 // access, and NO LLM call — the model (Step 2) only renders an already-true
 // finding into a sentence; it never decides whether a pattern exists.
 //
-// Three v1 detectors live here (§4):
+// Four v1 detectors live here (§4):
 //   ① food/protein → symptom correlation  (the flagship wedge insight)
 //   ② intake-decline calm safety flag      (MANDATORY never-reassure net)
 //   ③ symptom-count reflection             (B-051 — the §7.1 rung-② "presence"
@@ -15,13 +15,26 @@
 //      NO causal claim. Renders only for a FLAT or IMPROVING (falling) trend; a
 //      worsening trend is suppressed — never normalized as a neutral reflection
 //      — and a zero-symptom week is never surfaced (absence ≠ wellness, §9).)
+//   ④ symptom-frequency worsening          (the deterministic worsening lane — the
+//      SAFETY-class counterpart to ③. ③'s worsening gate suppresses a rising trend
+//      and, until now, nothing fired in its place — a one-way valve into silence
+//      that opened exactly when the pet was getting worse (2026-06 re-run brief §3,
+//      §6.1, observed live 2026-06-10). ④ OWNS that suppressed case: it fires on the
+//      EXACT predicate ③'s gate suppresses on (shared `isWorsening`, so the valve is
+//      provably closed — they can never drift), as a never-reassure safety finding.
+//      Descriptive frequency only, NO causal claim (that's ①/⑤). Copy urgency tiers
+//      on current-week symptom-DAY density, not raw count. Template-only phrasing,
+//      like ③. By §7.1 amendment #5 — "direction determines the rung" — symptom
+//      worsening is the front edge of a safety flag, the symptom-axis mirror of the
+//      declining-intake routing detector ② already does for the intake axis.)
 //
-// All three honour the §6/§7 evidence-tier floors and the clinical guardrails in
+// All four honour the §6/§7 evidence-tier floors and the clinical guardrails in
 // §9 and CLAUDE.md (associational-only correlation copy; intake decline routed as
 // calm concern, never softened to "picky", never reassuring, and silent — not
 // a false flag and not an all-clear — when intake-rating coverage is thin; a
 // reflection is descriptive only, never reassures, and ranks below every safety
-// finding).
+// finding; worsening is descriptive frequency, never causal, never reassures, and
+// leads as a safety finding below intake-decline).
 //
 // Why it lives under supabase/functions/: it is server-side code the
 // `generate-signal` Edge Function (Step 2) imports. It is written as portable
@@ -184,7 +197,11 @@ export interface DetectionInput {
 
 // ── Finding types (§4/§5) ───────────────────────────────────────────────────
 
-export type InsightType = 'food_symptom_correlation' | 'intake_decline' | 'reflection'
+export type InsightType =
+  | 'food_symptom_correlation'
+  | 'intake_decline'
+  | 'reflection'
+  | 'symptom_worsening'
 
 /** Safety/concern always leads (§5); everything else is an insight. */
 export type PriorityClass = 'safety' | 'insight'
@@ -298,7 +315,61 @@ export interface ReflectionFinding extends FindingBase {
   windowDays: number
 }
 
-export type Finding = CorrelationFinding | IntakeDeclineFinding | ReflectionFinding
+/** Which arm of the worsening predicate fired — drives copy (§ B-045 / detector ④). */
+export type WorseningTrigger = 'more_episodes' | 'more_days'
+
+/**
+ * Copy-urgency tier for a worsening finding (decided B-reshaped, PM 2026-06-11).
+ * Urgency rides current-week symptom-DAY DENSITY, not raw episode count or the
+ * (noisy, small-N) week-over-week delta — "vomiting on most days this week" is a
+ * clinically defensible escalation marker on its own, and is stable under the
+ * episode/day-collapsing the engine already does. The week-over-week rise gates
+ * WHETHER we speak (isWorsening); density gates HOW firmly:
+ *   - 'firm'     — current window is dense (≥ worseningDenseDayFloor symptom-days):
+ *                  "...on N of the last 7 days — worth booking a vet visit soon."
+ *   - 'standard' — an episode-count rise, not dense: "...up from M last week — worth
+ *                  a word with your vet."
+ *   - 'soft'     — the more_days-only arm (same episode count, more spread), not
+ *                  dense: the gentlest "...worth keeping an eye on..." register.
+ * The tier is resolved in the deterministic engine (where it is adversarially
+ * reviewed), NOT in phrasing — copy only renders the already-decided tier.
+ */
+export type WorseningTier = 'firm' | 'standard' | 'soft'
+
+/**
+ * Symptom-frequency worsening (④) — the SAFETY-class owner of the case ③'s worsening
+ * gate suppresses. Purely DESCRIPTIVE frequency (episode/day counts this period vs
+ * last), with NO causal claim (that is ①/⑤) and NO severity verdict — it never says
+ * the pet is "worse", only that the symptom is happening more often / on more days.
+ * NEVER reassures (it is a safety finding); its ABSENCE is silence, not wellness.
+ * Fires on the EXACT predicate detectReflections suppresses on (shared `isWorsening`),
+ * so the valve between "③ goes silent" and "④ speaks" is closed by construction.
+ */
+export interface SymptomWorseningFinding extends FindingBase {
+  type: 'symptom_worsening'
+  priorityClass: 'safety'
+  symptomType: SymptomType
+  /** Distinct symptom episodes (re-logs collapsed) in the current window. ≥ worseningMinEpisodes. */
+  currentCount: number
+  /** Distinct symptom episodes in the prior window. May be 0 (a rise from a logged zero). */
+  priorCount: number
+  /** Distinct symptom-DAYS in the current window (density signal; re-logs on one day = 1 day). */
+  currentDays: number
+  /** Distinct symptom-DAYS in the prior window. */
+  priorDays: number
+  /** 'more_episodes' = the count rose; 'more_days' = same count, spread over more days. */
+  trigger: WorseningTrigger
+  /** Resolved copy-urgency tier (density-anchored — see WorseningTier). */
+  tier: WorseningTier
+  /** Length of each comparison window, in days (7 = week-over-week). */
+  windowDays: number
+}
+
+export type Finding =
+  | CorrelationFinding
+  | IntakeDeclineFinding
+  | ReflectionFinding
+  | SymptomWorseningFinding
 
 /** A finding plus its resolved sort position, returned by the engine in ranked order. */
 export interface RankedFinding {
@@ -439,8 +510,21 @@ export interface DetectionConfig {
      * minEpisodesEitherWindow on purpose — we are more eager to stay silent on a worsening
      * pet than to make a reflection claim (sensitivity over specificity for worsening,
      * mirroring detector ②). A lone single log (count 1) never blanks the surface.
+     *
+     * SHARED with detector ④ (the worsening lane) via `isWorsening`: this is the single
+     * trigger floor for BOTH ③'s suppression AND ④'s firing, so the valve cannot drift.
      */
     worseningMinEpisodes: number
+    /**
+     * Detector ④ copy-urgency density floor: a worsening finding whose current window
+     * carries at least this many distinct symptom-DAYS gets the 'firm' ("book a vet
+     * visit soon") register; below it, the count-rise arm is 'standard' and the
+     * spread-only arm is 'soft'. Density (symptom-days), not raw episode count, anchors
+     * urgency — "vomiting on most days this week" is a defensible escalation marker and
+     * is stable under episode/day collapsing. Default 4 of a 7-day window = "more days
+     * than not". Tune on real data, not a re-decision.
+     */
+    worseningDenseDayFloor: number
   }
   coverage: {
     /**
@@ -514,6 +598,10 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     minEpisodesEitherWindow: 3,
     minLoggingDaysPerWindow: 3,
     worseningMinEpisodes: 2,
+    // B-reshaped (PM 2026-06-11): firm "book a vet visit soon" copy when the current
+    // week shows symptoms on ≥4 of 7 days. Anchored to density, not a raw count cutoff,
+    // so the one new escalation boundary is clinically defensible (see WorseningTier).
+    worseningDenseDayFloor: 4,
   },
   // B-053 coverage-diagnostic floors. stapleMinMeals keeps "eats X in nearly every
   // meal" honest; stapleMinSymptomEpisodes mirrors the correlation Early episode
@@ -1150,24 +1238,51 @@ export function detectIntakeDecline(
 // Surfaces at most ONE reflection (the symptom most present right now) so the
 // Signal stays calm — never a wall of count cards.
 
-export function detectReflections(
-  input: DetectionInput,
-  config: DetectionConfig = DEFAULT_CONFIG,
-): ReflectionFinding[] {
+/**
+ * Per-symptom episode AND symptom-DAY counts for the current vs prior window —
+ * the shared substrate of BOTH detector ③ (reflection) and detector ④ (worsening).
+ * Tracking symptom-DAYS as well as episodes closes the meal-padding gap (adversarial
+ * review, B-051): a prior week with one acute multi-bout day was a single low-activity
+ * symptom-day, so a spread-out current week reads as an INCREASE in days, not "same".
+ */
+interface SymptomStat {
+  symptomType: SymptomType
+  currentCount: number
+  priorCount: number
+  currentDays: number
+  priorDays: number
+}
+
+interface WindowedStats {
+  stats: SymptomStat[]
+  /** Both windows clear minLoggingDaysPerWindow — the coarse "was the app used" floor. */
+  loggingEligible: boolean
+}
+
+/**
+ * Compute the week-over-week per-symptom stats + logging-eligibility used by ③ and ④.
+ * ONE source for the windowing and the logging floor, so the reflection gate and the
+ * worsening detector can never disagree about which window an event falls in or whether
+ * a window was logged. Returns null only when `now` is unparseable.
+ *
+ * Logging-eligibility is the coarse "distinct UTC days carrying ANY event (symptom or
+ * meal) in each window" floor. NOTE: it does NOT by itself prove symptoms were being
+ * tracked (an owner can log meals but not symptoms). For ③ the symptom-DAY spread guard
+ * is the real protection against a symptom-logging gap reading as "improving"; for ④ a
+ * prior symptom-logging gap can only INFLATE an apparent rise — i.e. it errs toward
+ * escalation, the safe direction under §9 (a false vet nudge, never a false all-clear),
+ * so this same coarse floor is sufficient there (it just blocks a rise manufactured from
+ * a wholly-dark prior week).
+ */
+function computeWindowedStats(input: DetectionInput, config: DetectionConfig): WindowedStats | null {
   const cfg = config.reflection
   const nowMs = Date.parse(input.now)
-  if (!Number.isFinite(nowMs)) return []
+  if (!Number.isFinite(nowMs)) return null
 
   const windowMs = cfg.windowDays * MS_PER_DAY
   const currentStart = nowMs - windowMs
   const priorStart = nowMs - 2 * windowMs
 
-  // Logging-eligibility floor: distinct UTC days carrying ANY event the detector
-  // can see (symptom or meal) in each window. A window that wasn't actively logged
-  // at all cannot anchor an honest trend. NOTE: this is a coarse "was the app used"
-  // floor only — it does NOT by itself prove symptoms were being tracked (an owner
-  // can log meals but not symptoms). The symptom-DAY spread guard below is what
-  // actually protects against a symptom-logging gap reading as flat/improving.
   const allEventMs = [
     ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
     ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
@@ -1180,22 +1295,10 @@ export function detectReflections(
     }
     return days.size
   }
-  if (loggingDays(currentStart, nowMs) < cfg.minLoggingDaysPerWindow) return []
-  if (loggingDays(priorStart, currentStart) < cfg.minLoggingDaysPerWindow) return []
+  const loggingEligible =
+    loggingDays(currentStart, nowMs) >= cfg.minLoggingDaysPerWindow &&
+    loggingDays(priorStart, currentStart) >= cfg.minLoggingDaysPerWindow
 
-  // Per symptom type: episode counts AND distinct symptom-DAYS in each window
-  // (re-logs collapsed, consistent with detector ①). Tracking symptom-days as well
-  // as episodes is what closes the meal-padding gap (adversarial review, B-051): a
-  // prior week with one acute multi-bout day looks like the low-activity period it
-  // was (1 symptom-day), so a spread-out current week reads as an INCREASE in days,
-  // not a flat "same as last week".
-  interface SymptomStat {
-    symptomType: SymptomType
-    currentCount: number
-    priorCount: number
-    currentDays: number
-    priorDays: number
-  }
   const stats: SymptomStat[] = []
   for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
     const msList = input.symptomEvents
@@ -1213,24 +1316,45 @@ export function detectReflections(
       priorDays: new Set(pri.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
     })
   }
+  return { stats, loggingEligible }
+}
 
-  // GLOBAL worsening gate (the load-bearing clinical fix — adversarial review,
-  // B-051 / Dr. Chen §7.1 amendment #5). A reflection must NEVER read as a calm
-  // "improving" card while the pet is worsening on ANY axis — the per-symptom
-  // direction guard alone is defeated across symptoms (rising vomit + falling itch
-  // would surface a soothing "itch is down" card while the rising vomit is dropped).
-  // So if ANY tracked symptom is MATERIALLY worsening — more episodes OR spread
-  // across more days than last period — the WHOLE reflection layer stays silent and
-  // yields to the safety lane (②/①) + per-incident analysis. The materiality floor
-  // is deliberately LOWER than the render floor (sensitivity over specificity for
-  // worsening, like detector ②): a single stray log won't blank the surface, but a
-  // real repeated rise will. Absence (currentCount 0) is never "worsening".
-  const anyWorsening = stats.some(
-    (s) =>
-      s.currentCount >= cfg.worseningMinEpisodes &&
-      (s.currentCount > s.priorCount || s.currentDays > s.priorDays),
+/**
+ * The single worsening predicate (the load-bearing clinical fix — adversarial review,
+ * B-051 / Dr. Chen §7.1 amendment #5). A symptom is materially worsening when it has at
+ * least `worseningMinEpisodes` current-window episodes AND is rising — more episodes OR
+ * spread across more days than the prior window. The materiality floor is deliberately
+ * LOWER than the reflection render floor (sensitivity over specificity for worsening,
+ * like detector ②): a lone single log (count 1) never trips it, but a real repeated rise
+ * does. Absence (currentCount 0) is never "worsening".
+ *
+ * THIS IS THE VALVE. Detector ③ SUPPRESSES when any symptom satisfies it; detector ④
+ * FIRES on exactly the symptoms that satisfy it. One predicate, two consumers — so "③
+ * goes silent ⟺ ④ speaks" holds by construction and the one-way-valve-into-silence
+ * (re-run brief §3/§6.1) cannot reopen via drift.
+ */
+function isWorsening(s: SymptomStat, cfg: DetectionConfig['reflection']): boolean {
+  return (
+    s.currentCount >= cfg.worseningMinEpisodes &&
+    (s.currentCount > s.priorCount || s.currentDays > s.priorDays)
   )
-  if (anyWorsening) return []
+}
+
+export function detectReflections(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): ReflectionFinding[] {
+  const cfg = config.reflection
+  const windowed = computeWindowedStats(input, config)
+  if (!windowed || !windowed.loggingEligible) return []
+  const { stats } = windowed
+
+  // GLOBAL worsening gate: if ANY tracked symptom is worsening, the WHOLE reflection
+  // layer stays silent and yields to the safety lane — detector ④ owns that case now
+  // (shared `isWorsening`, so the valve is closed). The per-symptom direction guard
+  // alone is defeated across symptoms (rising vomit + falling itch would surface a
+  // soothing "itch is down" card while the rising vomit is dropped).
+  if (stats.some((s) => isWorsening(s, cfg))) return []
 
   // Candidates: flat-or-improving on BOTH episode count AND symptom-day spread, on a
   // real current count, with enough history in the busier window to state a trend.
@@ -1262,6 +1386,101 @@ export function detectReflections(
     return b.priorCount - b.currentCount - (a.priorCount - a.currentCount)
   })
   return [candidates[0]]
+}
+
+// ── Detector ④: symptom-frequency worsening (the deterministic worsening lane) ──
+//
+// The SAFETY-class owner of the case detector ③'s worsening gate suppresses. Before
+// this detector existed, a rising symptom trend made ③ go silent with NOTHING firing
+// in its place — a one-way valve into silence that opened exactly when the pet was
+// getting worse (re-run brief §3/§6.1; observed live 2026-06-10, where the Signal
+// regressed to the onboarding empty state one minute after the 15th vomit). ④ closes
+// the valve by firing on the EXACT predicate ③ suppresses on (shared `isWorsening`).
+//
+// It is DESCRIPTIVE FREQUENCY, never a causal claim (that is ①/⑤) and never a severity
+// verdict — it states that a symptom is happening more often / on more days, not that
+// the pet is "worse". It is a safety finding: it NEVER reassures, and its ABSENCE is
+// silence, not wellness.
+//
+// Thresholds (PM-ratified 2026-06-11):
+//   • Trigger — coupled to ③'s gate at worseningMinEpisodes (no higher floor; a higher
+//     floor would reopen a silent band, the very bug being fixed). Both arms: an
+//     episode-count rise OR a symptom-day spread rise. The prior count MAY be 0 (a rise
+//     from a logged zero is at least as clinically real as 2→4).
+//   • Logging-eligibility — BOTH windows must clear the coarse logging floor. This is
+//     the fake-rise guard: a wholly-dark prior week cannot manufacture a rise. A prior
+//     window that was logged but UNDER-logged for symptoms can still inflate the rise,
+//     but that errs toward escalation (a false vet nudge), the safe direction under §9 —
+//     never toward a false all-clear. Documented, accepted residual.
+//   • Copy urgency — tiered on current-week symptom-DAY DENSITY, not raw count (see
+//     WorseningTier / resolveWorseningTier). Density is a defensible escalation marker
+//     on its own and stable under episode/day collapsing.
+//
+// Out of scope (owned elsewhere / deferred): the ABSOLUTE-burden case with no prior
+// window at all (week-1 acute illness) — owned by per-incident analysis (analyze-vomit)
+// and the separate absolute-burden open question; ④ is the WORSENING lane only.
+// Surfaces at most ONE card (the most-worsening symptom) so the safety surface stays
+// calm; co-firing with an intake-decline flag is intentional (both kept by curation —
+// that two-signal gestalt is exactly what the re-run brief found MISSING).
+
+/**
+ * Resolve the copy-urgency tier for a worsening symptom. Density first (a dense current
+ * week is 'firm' regardless of which arm fired — persistent daily symptoms are the
+ * concerning case Dr. Chen named); otherwise the count-rise arm is 'standard' and the
+ * spread-only arm is the gentlest 'soft'.
+ */
+function resolveWorseningTier(
+  s: SymptomStat,
+  trigger: WorseningTrigger,
+  cfg: DetectionConfig['reflection'],
+): WorseningTier {
+  if (s.currentDays >= cfg.worseningDenseDayFloor) return 'firm'
+  return trigger === 'more_episodes' ? 'standard' : 'soft'
+}
+
+export function detectWorsening(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): SymptomWorseningFinding[] {
+  const cfg = config.reflection
+  const windowed = computeWindowedStats(input, config)
+  // Both windows must be logging-eligible — same floor as ③. For ④ specifically this is
+  // the fake-rise guard: a rise measured against a dark prior week is not trustworthy.
+  if (!windowed || !windowed.loggingEligible) return []
+
+  const worsening = windowed.stats.filter((s) => isWorsening(s, cfg))
+  if (worsening.length === 0) return []
+
+  // One card only — the most-worsening symptom: largest episode rise, then larger
+  // current count, then symptom-type order. Calm safety surface over completeness.
+  worsening.sort((a, b) => {
+    const riseDiff = b.currentCount - b.priorCount - (a.currentCount - a.priorCount)
+    if (riseDiff !== 0) return riseDiff
+    if (b.currentCount !== a.currentCount) return b.currentCount - a.currentCount
+    return (
+      CORRELATION_SYMPTOM_TYPES.indexOf(a.symptomType) -
+      CORRELATION_SYMPTOM_TYPES.indexOf(b.symptomType)
+    )
+  })
+
+  const s = worsening[0]
+  // By isWorsening, at least one arm is true. A strict count rise → 'more_episodes';
+  // otherwise the counts are flat and the day-spread arm carried it → 'more_days'.
+  const trigger: WorseningTrigger = s.currentCount > s.priorCount ? 'more_episodes' : 'more_days'
+  return [
+    {
+      type: 'symptom_worsening',
+      priorityClass: 'safety',
+      symptomType: s.symptomType,
+      currentCount: s.currentCount,
+      priorCount: s.priorCount,
+      currentDays: s.currentDays,
+      priorDays: s.priorDays,
+      trigger,
+      tier: resolveWorseningTier(s, trigger, cfg),
+      windowDays: cfg.windowDays,
+    },
+  ]
 }
 
 // ── Coverage diagnostics (B-053) ────────────────────────────────────────────
@@ -1400,6 +1619,7 @@ export interface Detector {
 export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'food_symptom_correlation', detect: detectCorrelations },
   { type: 'intake_decline', detect: detectIntakeDecline },
+  { type: 'symptom_worsening', detect: detectWorsening },
   { type: 'reflection', detect: detectReflections },
 ]
 
@@ -1413,7 +1633,7 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //      safety finding AND below every correlation, never the lead of a data-rich
 //      pet that has a real correlation to show.
 function priorityBand(finding: Finding, ctx: PetContext): number {
-  if (finding.priorityClass === 'safety') return 0
+  if (finding.priorityClass === 'safety') return 0 // intake_decline AND symptom_worsening
   if (finding.type === 'reflection') return 3
   // Correlation is the context-lead insight for a diet-trial pet (Jordan's stack, §8).
   if (finding.type === 'food_symptom_correlation' && ctx.dietTrialActive) return 1
@@ -1421,6 +1641,13 @@ function priorityBand(finding: Finding, ctx: PetContext): number {
 }
 
 const TIER_ORDER: Record<EvidenceTier, number> = { established: 0, early: 1 }
+
+// Within the safety band (band 0): intake-decline leads symptom-frequency worsening.
+// Anorexia (esp. the feline 48h hepatic-lipidosis window) is a faster-killing emergency
+// than a week-over-week symptom-count rise; both still lead every insight, and both are
+// kept by curation (a pet eating less AND vomiting more shows two safety cards — the
+// two-signal gestalt the re-run brief found MISSING).
+const SAFETY_TYPE_ORDER: Record<string, number> = { intake_decline: 0, symptom_worsening: 1 }
 
 /**
  * Orders findings per §5: safety first, then the context-lead insight, then the
@@ -1440,13 +1667,18 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
       return x.pValue - y.pValue
     }
 
-    // Among safety findings, an outright refusal of a normally-eaten food leads.
-    if (x.type === 'intake_decline' && y.type === 'intake_decline') {
-      const order: Record<IntakeDeclineTrigger, number> = {
-        refused_normal_food: 0,
-        consecutive_low: 1,
+    // Among safety findings: intake-decline leads worsening; within intake-decline,
+    // an outright refusal of a normally-eaten food leads.
+    if (x.priorityClass === 'safety' && y.priorityClass === 'safety') {
+      const safetyDiff = (SAFETY_TYPE_ORDER[x.type] ?? 9) - (SAFETY_TYPE_ORDER[y.type] ?? 9)
+      if (safetyDiff !== 0) return safetyDiff
+      if (x.type === 'intake_decline' && y.type === 'intake_decline') {
+        const order: Record<IntakeDeclineTrigger, number> = {
+          refused_normal_food: 0,
+          consecutive_low: 1,
+        }
+        return order[x.trigger] - order[y.trigger]
       }
-      return order[x.trigger] - order[y.trigger]
     }
 
     return 0

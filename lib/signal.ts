@@ -23,12 +23,18 @@ import { syncPendingEvents, syncPendingMeals } from './sync';
 // bundle never pulls in the Deno detection module. Source of truth for the full
 // shape: detection.ts; keep these in sync if a rendered field is added there.
 
-export type InsightType = 'food_symptom_correlation' | 'intake_decline' | 'reflection';
+export type InsightType =
+  | 'food_symptom_correlation'
+  | 'intake_decline'
+  | 'reflection'
+  | 'symptom_worsening';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
 export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction';
 export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food';
 export type ReflectionDirection = 'flat' | 'improving';
+export type WorseningTrigger = 'more_episodes' | 'more_days';
+export type WorseningTier = 'firm' | 'standard' | 'soft';
 
 export interface CorrelationFinding {
   type: 'food_symptom_correlation';
@@ -64,7 +70,29 @@ export interface ReflectionFinding {
   windowDays: number;
 }
 
-export type SignalFinding = CorrelationFinding | IntakeDeclineFinding | ReflectionFinding;
+// Symptom-frequency worsening (④) — the SAFETY-class counterpart to reflection: a
+// rising symptom trend (more episodes, or the same count spread across more days)
+// that detector ③'s worsening gate suppresses. Descriptive frequency, never causal,
+// never reassuring; leads the surface (below intake-decline). Mirror of detection.ts
+// SymptomWorseningFinding (rendered fields). `tier` drives the copy urgency register.
+export interface SymptomWorseningFinding {
+  type: 'symptom_worsening';
+  priorityClass: 'safety';
+  symptomType: SignalSymptomType;
+  currentCount: number;
+  priorCount: number;
+  currentDays: number;
+  priorDays: number;
+  trigger: WorseningTrigger;
+  tier: WorseningTier;
+  windowDays: number;
+}
+
+export type SignalFinding =
+  | CorrelationFinding
+  | IntakeDeclineFinding
+  | ReflectionFinding
+  | SymptomWorseningFinding;
 
 export interface CachedFinding {
   rank: number;

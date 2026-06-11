@@ -18,6 +18,7 @@ import {
   templateCorrelation,
   templateIntakeDecline,
   templateReflection,
+  templateWorsening,
   templateForFinding,
   validatePhrasing,
   curateFindings,
@@ -30,6 +31,9 @@ import type {
   IntakeDeclineFinding,
   ReflectionFinding,
   ReflectionDirection,
+  SymptomWorseningFinding,
+  WorseningTier,
+  WorseningTrigger,
   Finding,
   RankedFinding,
   SymptomType,
@@ -79,6 +83,20 @@ const reflection = (over: Partial<ReflectionFinding> = {}): ReflectionFinding =>
   currentCount: 4,
   priorCount: 4,
   direction: 'flat',
+  windowDays: 7,
+  ...over,
+})
+
+const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorseningFinding => ({
+  type: 'symptom_worsening',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  currentCount: 4,
+  priorCount: 2,
+  currentDays: 2,
+  priorDays: 2,
+  trigger: 'more_episodes',
+  tier: 'standard',
   windowDays: 7,
   ...over,
 })
@@ -357,10 +375,124 @@ Deno.test('SYMPTOM_LABEL — every symptom has a plain-language label', () => {
   assert.equal(SYMPTOM_LABEL.diarrhea, 'loose stool', 'no clinical jargon leaks to the owner')
 })
 
+// ── templateWorsening (④ — safety frequency, tiered, never causal/reassure) ──────
+
+Deno.test('templateWorsening — standard tier names the count rise and points to the vet', () => {
+  const t = templateWorsening(worsening({ tier: 'standard', currentCount: 4, priorCount: 2 }), 'Nyx')
+  assert.ok(t.includes('Nyx'))
+  assert.ok(t.includes('4') && t.includes('2'), 'names both counts')
+  assert.ok(t.includes('vomiting'), 'plain-language symptom, not the enum')
+  assert.ok(/up from 2 last week/i.test(t))
+  assert.ok(/word with your vet/i.test(t), 'routes toward the vet')
+  assert.equal(CAUSAL.test(t), false, 'a frequency is not a cause')
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, worsening({ tier: 'standard' })), 'own template passes validation')
+})
+
+Deno.test('templateWorsening — standard tier with prior 0 reads "after none last week"', () => {
+  const t = templateWorsening(worsening({ tier: 'standard', currentCount: 3, priorCount: 0 }), 'Nyx')
+  assert.ok(/after none last week/i.test(t))
+  assert.equal(REASSURE.test(t), false, '"none last week" then a rise is not reassurance')
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, worsening({ tier: 'standard', priorCount: 0 })))
+})
+
+Deno.test('templateWorsening — firm tier leads with day density and the firmest calm ask', () => {
+  const t = templateWorsening(
+    worsening({ tier: 'firm', currentCount: 6, priorCount: 2, currentDays: 5, windowDays: 7 }),
+    'Nyx',
+  )
+  assert.ok(/5 of the last 7 days/i.test(t), 'leads with density')
+  assert.ok(/booking a vet visit soon/i.test(t), 'firmest, still-calm register')
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, worsening({ tier: 'firm' })))
+})
+
+Deno.test('templateWorsening — FIRM via more_days on a falling count compares on DAYS, not episodes', () => {
+  // The adversarial-review wart: firm reached via the more_days arm with currentCount <
+  // priorCount must NOT render "(4 episodes) up from 6" (a miscount). Phrase the rise on
+  // the days axis (the one that actually rose).
+  const t = templateWorsening(
+    worsening({ tier: 'firm', trigger: 'more_days', currentCount: 4, priorCount: 6, currentDays: 4, priorDays: 2 }),
+    'Nyx',
+  )
+  assert.ok(/4 of the last 7 days/i.test(t), 'leads with density')
+  assert.ok(/up from 2 the week before/i.test(t), 'compares on the days axis')
+  assert.equal(/up from 6/.test(t), false, 'never implies an episode-count rise that did not happen')
+  assert.equal(/\(4 episode/.test(t), false, 'no misleading episode parenthetical on the falling-count arm')
+  assert.ok(/booking a vet visit soon/i.test(t))
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, worsening({ tier: 'firm', trigger: 'more_days' })))
+})
+
+Deno.test('templateWorsening — soft (more_days) tier talks in days, gentlest ask', () => {
+  const t = templateWorsening(
+    worsening({ tier: 'soft', trigger: 'more_days', currentCount: 3, priorCount: 3, currentDays: 3, priorDays: 1 }),
+    'Nyx',
+  )
+  assert.ok(/3 separate days/i.test(t) && /up from 1/i.test(t), 'talks in days, not episodes')
+  assert.ok(/keeping an eye on/i.test(t), 'gentlest register')
+  assert.equal(CAUSAL.test(t), false)
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, worsening({ tier: 'soft', trigger: 'more_days' })))
+})
+
+// clinical-guardrails Pattern 8: scan EVERY worsening string the function can emit —
+// it is a safety finding, so never reassures, never dismissive, never causal, no "!".
+Deno.test('every worsening template — never reassures/dismissive/causal, no "!"', () => {
+  const tiers: WorseningTier[] = ['firm', 'standard', 'soft']
+  const triggers: WorseningTrigger[] = ['more_episodes', 'more_days']
+  const types: SymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction']
+  for (const tier of tiers) {
+    for (const trigger of triggers) {
+      for (const symptomType of types) {
+        for (const priorCount of [0, 2, 4]) {
+          const t = templateWorsening(
+            worsening({ tier, trigger, symptomType, currentCount: 5, priorCount, currentDays: 5, priorDays: 2 }),
+            'Nyx',
+          )
+          assert.equal(REASSURE.test(t), false, `reassurance in: ${t}`)
+          assert.equal(DISMISSIVE.test(t), false, `dismissive in: ${t}`)
+          assert.equal(CAUSAL.test(t), false, `causal in: ${t}`)
+          assert.equal(t.includes('!'), false, `exclamation in: ${t}`)
+          assert.ok(validatePhrasing(t, worsening({ tier, trigger, symptomType, priorCount })), `validation failed: ${t}`)
+        }
+      }
+    }
+  }
+})
+
+Deno.test('validatePhrasing — rejects a causal claim on a worsening finding', () => {
+  for (const bad of [
+    'Nyx is vomiting more this week because of the chicken.',
+    'The rise in vomiting is due to her new food.',
+    'Nyx vomits more, likely an allergy to chicken.',
+  ]) {
+    assert.equal(validatePhrasing(bad, worsening()), false, `should reject: ${bad}`)
+  }
+})
+
+Deno.test('validatePhrasing — rejects reassurance on a worsening (safety) finding', () => {
+  for (const bad of [
+    'Nyx is vomiting more but is probably fine.',
+    'More episodes this week, nothing to worry about.',
+    'Nyx is on the mend despite the rise.',
+  ]) {
+    assert.equal(validatePhrasing(bad, worsening()), false, `should reject: ${bad}`)
+  }
+})
+
 // ── templateForFinding dispatch ─────────────────────────────────────────────────
 
 Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(templateForFinding(correlation(), 'Mochi').includes('tended to follow'))
   assert.ok(/vet/i.test(templateForFinding(intakeDecline(), 'Pixel')))
   assert.ok(/about the same as last week/i.test(templateForFinding(reflection(), 'Nyx')))
+  assert.ok(/word with your vet/i.test(templateForFinding(worsening(), 'Nyx')))
 })
