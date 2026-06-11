@@ -184,12 +184,18 @@ therefore fires on a ~7% base-rate coincidence — and the §7 golden ("4 of 12"
 only a ~6% pattern, so **no fixed threshold can fire the golden while suppressing a
 same-strength grazer** (a proper binomial tail confirms they are statistically
 indistinguishable). The earlier claim that "Sam's grazing cat *cannot* trip this by base
-rate" was therefore only true at large `eligibleCount`. Two mitigations, not a cure:
-(1) the `minEligibleEpisodes` denominator floor (above) removes the smallest-N cases the
-review broke on; (2) the residual above the floor is **accepted** for v1 because the card
-is descriptive ("worth mentioning to your vet"), never reassures, and never claims a cause
-or mechanism — its worst case is a mildly noisy timing card routed to a vet conversation,
-not a false all-clear or a missed safety flag. The thresholds (`minEligibleEpisodes`,
+rate" was therefore only true at large `eligibleCount`. **The residual is not eliminated
+by the floor, only its smallest-N tail.** A re-review sweep of the regime *above* the
+floor found the worst firing coincidence is **~13–17%**, not ~7%: a *normal* 8–12
+feeds/day cat (not an extreme grazer) with 3 rapid of 6–8 timed episodes by chance still
+fires (e.g. eligible=8 at 8 feeds/day ≈ 13.5%; eligible=6 at 12 feeds/day ≈ 17%). At ~20
+feeds/day the multiplicative guard re-asserts and the firing coincidence drops back to
+1–5%. A future tuner should anchor to the ~13–17% worst case, **not** the ~7% break figure.
+Two mitigations, not a cure: (1) the `minEligibleEpisodes` denominator floor (above)
+removes the smallest-N cases the review broke on; (2) the residual above the floor is
+**accepted** for v1 because the card is descriptive ("worth mentioning to your vet"),
+never reassures, and never claims a cause or mechanism — its worst case is a mildly noisy
+timing card routed to a vet conversation, not a false all-clear or a missed safety flag. The thresholds (`minEligibleEpisodes`,
 `minObservedToExpectedRatio`, `rapidWindowMinutes`) are **tuned on real data per §7 +
 B-081**, where the live false-positive rate can be measured — a tighter separation test
 (e.g. a binomial-tail bar like detector ①'s McNemar, with a recalibrated golden) is the
