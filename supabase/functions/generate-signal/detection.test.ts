@@ -43,6 +43,7 @@ import {
   type CoverageDiagnostic,
   type RateMealsDiagnostic,
   type StapleWashoutDiagnostic,
+  type MealTypeCollapseDiagnostic,
 } from './detection.ts'
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
@@ -2012,4 +2013,220 @@ Deno.test('rankCoverageDiagnostics — action before explanation regardless of i
 
 Deno.test('detectCoverage — empty input yields no diagnostics', () => {
   assert.deepEqual(detectCoverage(input({})), [])
+})
+
+// ── Diet-structure observations (B-080, descriptive lane Phase 3) ────────────
+// Placed in the coverage lane per the §9.3 PM decision. Fixtures = spec §7
+// "Diet-structure must pass". The guardrails under test: dark days never count as
+// gap days (the ④ fake-rise sibling), the classification floor, FULL suppression on
+// diet-trial pets, churn needs active symptoms, and the §5.2 collapse-suppresses-
+// {churn, staple} curation. The copy-honesty fixture lives in lib/signalCopy.test.ts.
+
+/** A treat-type feeding on a given day (protein null → never seen by classifyMeals). */
+const treatOn = (day: number, hour = 9): MealEvent =>
+  meal({ occurredAt: at(day, hour), foodType: 'treat', primaryProtein: null })
+
+/** A meal-type feeding on a given day (varied protein so it never trips staple_washout). */
+const mealOn = (day: number, protein = 'chicken', hour = 8): MealEvent =>
+  meal({ occurredAt: at(day, hour), foodType: 'meal', primaryProtein: protein })
+
+/** A first-ever-appearance food log (distinct foodItemId) for the churn fixtures. */
+const novelFood = (day: number, foodItemId: string): MealEvent =>
+  meal({ occurredAt: at(day, 8), foodType: 'meal', foodItemId, primaryProtein: 'chicken' })
+
+// Six treats-only gap days (21–26) + two meal days (28–29), all inside the last-10-day
+// window [May 20 12:00, May 30 12:00]. ≥80% classified (all carry a foodType).
+const collapseGoldenMeals = (): MealEvent[] => [
+  treatOn(21), treatOn(21, 15),
+  treatOn(22), treatOn(22, 15),
+  treatOn(23), treatOn(23, 15),
+  treatOn(24), treatOn(24, 15),
+  treatOn(25), treatOn(25, 15),
+  treatOn(26), treatOn(26, 15),
+  mealOn(28, 'chicken'),
+  mealOn(29, 'beef'),
+]
+
+Deno.test('detectCoverage — meal_type_collapse golden: 6 treats-only days of the last 10 → fires', () => {
+  const diags = detectCoverage(input({ mealEvents: collapseGoldenMeals() }))
+  const c = findDiag(diags, 'meal_type_collapse')
+  assert.ok(c, 'collapse present')
+  assert.equal(c.gapDays, 6)
+  assert.equal(c.loggedDays, 8)
+  assert.equal(c.treatsPerDayMedian, 2)
+  assert.equal(c.windowDays, 10)
+})
+
+Deno.test('detectCoverage — meal_type_collapse boundary: 4 gap days silent, 5 gap days fires', () => {
+  const fourGap = [
+    treatOn(22), treatOn(22, 15),
+    treatOn(23), treatOn(23, 15),
+    treatOn(24), treatOn(24, 15),
+    treatOn(25), treatOn(25, 15),
+    mealOn(29),
+  ]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents: fourGap })), 'meal_type_collapse'), undefined)
+
+  const fiveGap = [...fourGap, treatOn(26), treatOn(26, 15)]
+  assert.ok(findDiag(detectCoverage(input({ mealEvents: fiveGap })), 'meal_type_collapse'))
+})
+
+Deno.test('detectCoverage — meal_type_collapse: a single stray treat is not a gap day (needs ≥2)', () => {
+  // Five days with exactly ONE treat each — below minTreatsPerGapDay, so zero gap days.
+  const mealEvents = [treatOn(21), treatOn(22), treatOn(23), treatOn(24), treatOn(25)]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents })), 'meal_type_collapse'), undefined)
+})
+
+Deno.test('detectCoverage — meal_type_collapse: dark days (no logging) never count as gap days', () => {
+  // 4 MIXED days (a meal + treats each → not gap); the other 6 in-window days are DARK
+  // (no events at all). "6 of 10 days had no meal" is vacuously true, but the engine must
+  // NOT read silence as "treats-only" → silent. (The ④ fake-rise guard's sibling.)
+  const mealEvents = [
+    mealOn(26), treatOn(26, 15), treatOn(26, 16),
+    mealOn(27), treatOn(27, 15), treatOn(27, 16),
+    mealOn(28), treatOn(28, 15), treatOn(28, 16),
+    mealOn(29), treatOn(29, 15), treatOn(29, 16),
+  ]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents })), 'meal_type_collapse'), undefined)
+})
+
+Deno.test('detectCoverage — meal_type_collapse: below the classification floor (>20% unclassified) → silent', () => {
+  // 6 genuine gap days (12 classified treats) but 4 null-foodType feedings drag the
+  // classified fraction to 12/16 = 0.75 < 0.8 → the meal/treat split is unreliable, silent.
+  const mealEvents = [
+    ...collapseGoldenMeals().filter((m) => m.foodType === 'treat'), // the 12 treats only
+    meal({ occurredAt: at(27, 10), foodType: null }),
+    meal({ occurredAt: at(27, 11), foodType: null }),
+    meal({ occurredAt: at(28, 10), foodType: null }),
+    meal({ occurredAt: at(28, 11), foodType: null }),
+  ]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents })), 'meal_type_collapse'), undefined)
+})
+
+Deno.test('detectCoverage — diet_structure is FULLY suppressed on a diet-trial pet (both observations)', () => {
+  // A fixture that would fire BOTH collapse and churn on a normal pet.
+  const mealEvents = [
+    ...collapseGoldenMeals(),
+    novelFood(18, 'NF1'), novelFood(19, 'NF2'), novelFood(20, 'NF3'),
+  ]
+  const symptomEvents = [symptom('vomit', at(18, 9)), symptom('vomit', at(20, 9))]
+  const diags = detectCoverage(input({ pet: dietTrialDog, mealEvents, symptomEvents }))
+  assert.equal(findDiag(diags, 'meal_type_collapse'), undefined)
+  assert.equal(findDiag(diags, 'diet_churn'), undefined)
+})
+
+Deno.test('detectCoverage — diet_churn golden: 3 new foods with active symptoms → fires', () => {
+  const mealEvents = [novelFood(18, 'NF1'), novelFood(19, 'NF2'), novelFood(20, 'NF3')]
+  const symptomEvents = [symptom('vomit', at(18, 9)), symptom('vomit', at(20, 9))]
+  const c = findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'diet_churn')
+  assert.ok(c, 'churn present')
+  assert.equal(c.novelFoodCount, 3)
+  assert.equal(c.symptomEpisodesInWindow, 2)
+  assert.equal(c.windowDays, 14)
+})
+
+Deno.test('detectCoverage — diet_churn is silent without symptoms in-window (never unsolicited diet advice)', () => {
+  const mealEvents = [novelFood(18, 'NF1'), novelFood(19, 'NF2'), novelFood(20, 'NF3')]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents })), 'diet_churn'), undefined)
+})
+
+Deno.test('detectCoverage — diet_churn boundary: 2 new foods silent, 3 fires', () => {
+  const symptomEvents = [symptom('vomit', at(18, 9)), symptom('vomit', at(20, 9))]
+  const two = [novelFood(18, 'NF1'), novelFood(19, 'NF2')]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents: two, symptomEvents })), 'diet_churn'), undefined)
+  const three = [...two, novelFood(20, 'NF3')]
+  assert.ok(findDiag(detectCoverage(input({ mealEvents: three, symptomEvents })), 'diet_churn'))
+})
+
+Deno.test('detectCoverage — diet_churn: a food first seen BEFORE the window is not novel even if it reappears', () => {
+  // F0 first appeared on day 9 (well before the 14-day window) and is logged again
+  // in-window — it must NOT count toward novelty. Only NF1/NF2 are genuinely new → 2 < 3.
+  const mealEvents = [
+    novelFood(9, 'F0'),
+    novelFood(20, 'F0'), // reappearance, not a first-ever
+    novelFood(18, 'NF1'),
+    novelFood(19, 'NF2'),
+  ]
+  const symptomEvents = [symptom('vomit', at(18, 9)), symptom('vomit', at(20, 9))]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'diet_churn'), undefined)
+})
+
+Deno.test('detectCoverage — §5.2 curation: collapse + churn both true → ONE card (collapse), churn suppressed', () => {
+  const mealEvents = [
+    ...collapseGoldenMeals(),
+    novelFood(18, 'NF1'), novelFood(19, 'NF2'), novelFood(20, 'NF3'),
+  ]
+  const symptomEvents = [symptom('vomit', at(18, 9)), symptom('vomit', at(20, 9))]
+  const diags = detectCoverage(input({ mealEvents, symptomEvents }))
+  assert.ok(findDiag(diags, 'meal_type_collapse'), 'collapse present')
+  assert.equal(findDiag(diags, 'diet_churn'), undefined, 'churn suppressed by collapse (§5.2)')
+})
+
+Deno.test('detectCoverage — §5.2 curation: collapse is never co-rendered with staple_washout (collapse wins)', () => {
+  // A single-protein meal stream (would fire staple_washout) PLUS treats-only days that
+  // fire collapse, with enough symptoms for staple's floor. Collapse must suppress staple.
+  const mealEvents = [
+    // staple_washout shape: 4 chicken meals (well outside the collapse window so those
+    // days aren't treats-only) — established staple, single protein.
+    ratedProteinMeal(21, 'chicken', 'all'),
+    ratedProteinMeal(22, 'chicken', 'all'),
+    ratedProteinMeal(23, 'chicken', 'all'),
+    ratedProteinMeal(24, 'chicken', 'all'),
+    // collapse shape: 5 later treats-only days (25–29).
+    treatOn(25), treatOn(25, 15),
+    treatOn(26), treatOn(26, 15),
+    treatOn(27), treatOn(27, 15),
+    treatOn(28), treatOn(28, 15),
+    treatOn(29), treatOn(29, 15),
+  ]
+  const symptomEvents = [symptom('vomit', at(20, 8)), symptom('vomit', at(21, 8)), symptom('vomit', at(23, 8))]
+  const diags = detectCoverage(input({ mealEvents, symptomEvents }))
+  assert.ok(findDiag(diags, 'meal_type_collapse'), 'collapse present')
+  assert.equal(findDiag(diags, 'staple_washout'), undefined, 'staple suppressed by collapse (§5.2)')
+})
+
+Deno.test('rankCoverageDiagnostics — rate_meals (ACTION) still leads diet-structure observations', () => {
+  const collapse: MealTypeCollapseDiagnostic = {
+    type: 'meal_type_collapse', actionability: 'explanation',
+    gapDays: 6, loggedDays: 8, treatsPerDayMedian: 2, windowDays: 10,
+  }
+  const rm: RateMealsDiagnostic = {
+    type: 'rate_meals', actionability: 'action', ratedMeals: 1, ratedMealsNeeded: 4,
+  }
+  const ranked = rankCoverageDiagnostics([collapse, rm])
+  assert.equal(ranked[0].type, 'rate_meals')
+  assert.equal(ranked[1].type, 'meal_type_collapse')
+})
+
+Deno.test('detectCoverage — meal_type_collapse: window is the trailing W CALENDAR days, gapDays never exceeds windowDays', () => {
+  // Adversarial-review regression: with a non-midnight `now`, a raw ms-span window
+  // [now − 10d, now] straddles 11 distinct UTC calendar days, which (pre-fix) let
+  // gapDays reach 11 against the literal windowDays of 10 → the impossible copy
+  // "11 of the last 10 days". 11 consecutive treats-only calendar days (20–30), with
+  // day-20 treats placed LATE (after the old ms-window start) so the old code would
+  // have counted day 20 as an 11th gap day. The calendar-day window must exclude day 20.
+  const now = at(30, 17, 30) // deliberately not midnight
+  const mealEvents: MealEvent[] = [treatOn(20, 18), treatOn(20, 20)]
+  for (let d = 21; d <= 30; d++) mealEvents.push(treatOn(d, 9), treatOn(d, 14))
+  const c = findDiag(detectCoverage(input({ mealEvents, now })), 'meal_type_collapse')
+  assert.ok(c, 'collapse present')
+  assert.equal(c.windowDays, 10)
+  assert.ok(c.gapDays <= c.windowDays, `gapDays ${c.gapDays} must not exceed windowDays ${c.windowDays}`)
+  assert.equal(c.gapDays, 10, 'exactly the trailing 10 calendar days [21..30] count; day 20 is excluded')
+  assert.equal(c.loggedDays, 10)
+})
+
+Deno.test('detectCoverage — diet_churn: a food with an unparseable timestamp row is NOT counted as novel', () => {
+  // Adversarial-review regression: F0 was genuinely eaten earlier, but that earlier row
+  // has a corrupt timestamp (dropped by the finite-ms filter), leaving only an in-window
+  // row — which must NOT make F0 read as novel. Churn errs toward silence. With F0
+  // excluded only NF1/NF2 remain (2 < 3 floor) → silent.
+  const mealEvents = [
+    meal({ occurredAt: 'not-a-date', foodType: 'meal', foodItemId: 'F0', primaryProtein: 'chicken' }),
+    novelFood(20, 'F0'),
+    novelFood(18, 'NF1'),
+    novelFood(19, 'NF2'),
+  ]
+  const symptomEvents = [symptom('vomit', at(18, 9)), symptom('vomit', at(20, 9))]
+  assert.equal(findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'diet_churn'), undefined)
 })

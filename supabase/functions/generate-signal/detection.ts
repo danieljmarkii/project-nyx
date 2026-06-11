@@ -524,8 +524,19 @@ export interface RankedFinding {
 // engine emits a structured, RANKED diagnostic set; copy is templated downstream
 // (no LLM — like reflections ③).
 
-/** The two v1 diagnostics. `add_protein` / below-floor / no-control-days are deliberately out (see detectCoverage). */
-export type CoverageDiagnosticType = 'rate_meals' | 'staple_washout'
+/**
+ * Coverage diagnostics. `rate_meals` / `staple_washout` are the B-053 v1 pair;
+ * `meal_type_collapse` / `diet_churn` are the B-080 diet-structure pair (descriptive
+ * lane Phase 3, placed in the coverage lane per the §9.3 PM decision — they describe
+ * the owner's feeding/logging STRUCTURE, which is honestly framed as "here's why
+ * there's no signal yet", never a pet-state verdict). `add_protein` / below-floor /
+ * no-control-days remain deliberately out (see detectCoverage).
+ */
+export type CoverageDiagnosticType =
+  | 'rate_meals'
+  | 'staple_washout'
+  | 'meal_type_collapse'
+  | 'diet_churn'
 
 /** Whether the diagnostic carries a corrective ask (`action`) or is purely informative (`explanation`). */
 export type CoverageActionability = 'action' | 'explanation'
@@ -567,7 +578,56 @@ export interface StapleWashoutDiagnostic extends CoverageDiagnosticBase {
   symptomEpisodes: number
 }
 
-export type CoverageDiagnostic = RateMealsDiagnostic | StapleWashoutDiagnostic
+/**
+ * Diet-structure observation (a): on most recent days only treats were logged, no
+ * meals (B-080, spec §5.2a). A descriptive count of the owner's LOGGED diet shape —
+ * never a judgment, never a wellness claim. Dark days (no logging at all) are NOT
+ * gap days (the ④ fake-rise guard's sibling: "didn't log" must never masquerade as
+ * "fed only treats"). EXPLANATION ONLY and FULLY SUPPRESSED on diet-trial pets (the
+ * trial dictates the diet's structure — same rationale as staple_washout). The copy
+ * (lib/signalCopy) carries the non-negotiable log-only acknowledgement ("if that's
+ * the full picture") — the engine sees only the log and must not imply it knows what
+ * was eaten (Dr. Chen + Trust, §5.1).
+ */
+export interface MealTypeCollapseDiagnostic extends CoverageDiagnosticBase {
+  type: 'meal_type_collapse'
+  actionability: 'explanation'
+  /** Days in-window with ≥minTreatsPerGapDay treats AND zero meals (the numerator). */
+  gapDays: number
+  /** Honest denominator context: days in-window with ANY logged feeding (NOT the window size). */
+  loggedDays: number
+  /** Median treats/day across the gap days — evidence/vet-report detail, not the claim. */
+  treatsPerDayMedian: number
+  /** The fixed observation window (days) the claim is stated over ("N of the last W days"). */
+  windowDays: number
+}
+
+/**
+ * Diet-structure observation (b): several brand-new foods appeared while symptoms are
+ * active (B-080, spec §5.2b — the productization of brief §6.5). The owner's most
+ * natural sick-pet response (try new foods) structurally reduces what the engine can
+ * ever conclude, and nothing else in the product says so. A coverage observation, not
+ * a finding: it explains REDUCED ENGINE POWER. EXPLANATION ONLY; FULLY SUPPRESSED on
+ * diet-trial pets (a vet-directed novel-protein switch IS new food — the card must
+ * never contradict a vet's elimination trial). Requires active symptoms in-window
+ * (without them "hold the diet steady" is unsolicited diet advice).
+ */
+export interface DietChurnDiagnostic extends CoverageDiagnosticBase {
+  type: 'diet_churn'
+  actionability: 'explanation'
+  /** Distinct food_item_ids whose FIRST-EVER appearance (in available history) falls in-window. */
+  novelFoodCount: number
+  /** Distinct symptom episodes (any correlation type, re-logs collapsed) in the same window. */
+  symptomEpisodesInWindow: number
+  /** The churn observation window (days). */
+  windowDays: number
+}
+
+export type CoverageDiagnostic =
+  | RateMealsDiagnostic
+  | StapleWashoutDiagnostic
+  | MealTypeCollapseDiagnostic
+  | DietChurnDiagnostic
 
 // ── Configuration (§7 thresholds = v1 defaults) ─────────────────────────────
 
@@ -749,6 +809,28 @@ export interface DetectionConfig {
      */
     stapleMinSymptomEpisodes: number
   }
+  // B-080 diet-structure observations (§5.2). Counts over LOGGED feedings only; the
+  // copy carries the log-only caveat. Tune on real data, not a re-decision.
+  dietStructure: {
+    /** (a) collapse: the fixed observation window, in days ("N of the last W days"). */
+    collapseWindowDays: number
+    /** (a) collapse: a gap day needs at least this many treat-type feedings (so a single stray treat isn't a "treats-only day"). */
+    minTreatsPerGapDay: number
+    /** (a) collapse: fire at ≥ this many gap days in-window. */
+    minGapDays: number
+    /**
+     * (a) collapse: classification floor — at least this fraction of in-window feedings must carry
+     * a non-null foodType, else the meal/treat split itself is unreliable and the count is fiction
+     * (composes with B-070's treats-vs-meals modeling).
+     */
+    minClassifiedFraction: number
+    /** (b) churn: the observation window, in days. */
+    churnWindowDays: number
+    /** (b) churn: fire at ≥ this many first-ever food appearances in-window. */
+    minNovelFoods: number
+    /** (b) churn: require at least this many symptom episodes in-window (else it's unsolicited diet advice). */
+    minSymptomEpisodes: number
+  }
 }
 
 /** §7 table, adopted as the v1 starting defaults (PM 2026-05-30); tune on real data, not a re-decision. */
@@ -856,6 +938,19 @@ export const DEFAULT_CONFIG: DetectionConfig = {
   coverage: {
     stapleMinMeals: 4,
     stapleMinSymptomEpisodes: 3,
+  },
+  // B-080 diet-structure floors (§5.2). collapse: 5 treats-only days out of the last
+  // 10, ≥2 treats/gap-day, ≥80% of feedings classified. churn: 3 brand-new foods +
+  // ≥2 symptom episodes within 14 days. Conservative by design — these describe owner
+  // behavior, so they err toward silence. Tune on real data, not a re-decision.
+  dietStructure: {
+    collapseWindowDays: 10,
+    minTreatsPerGapDay: 2,
+    minGapDays: 5,
+    minClassifiedFraction: 0.8,
+    churnWindowDays: 14,
+    minNovelFoods: 3,
+    minSymptomEpisodes: 2,
   },
 }
 
@@ -2120,6 +2215,13 @@ export function detectTimeOfDayClustering(
 //     classifyMeals). EXPLANATION ONLY (never a "vary the diet" ask — that
 //     sabotages a vet-directed elimination trial) and FULLY SUPPRESSED on
 //     diet-trial pets.
+//   • meal_type_collapse / diet_churn (EXPLANATION) — the B-080 diet-structure pair
+//     (descriptive lane Phase 3). Placed HERE, not in the live findings stack, per
+//     the §9.3 PM decision: they describe the owner's feeding/logging STRUCTURE, so
+//     framing them as "here's why there's no signal yet" is honest where a band-2
+//     card beside a clinical finding would read as a verdict on the pet. Both are
+//     suppressed on diet-trial pets; §5.2 curation (suppressDietStructure): collapse
+//     suppresses churn and is never co-rendered with staple_washout.
 // Deliberately OUT of v1 (re-stated so a future self doesn't "restore" them
 // without re-reading the clinical rationale in B-053):
 //   • below-floor (too few symptom episodes, the line-551 discard) — overlaps the
@@ -2194,18 +2296,167 @@ function detectStapleWashout(
   return { type: 'staple_washout', actionability: 'explanation', protein: proteins[0], symptomEpisodes }
 }
 
-// Rank by corrective leverage (B-053): the ACTION diagnostic (rate_meals — both
-// actionable AND it activates detector ②) leads the EXPLANATION (staple_washout —
-// no ask). The no_pattern surface shows the top one.
-const COVERAGE_ACTIONABILITY_ORDER: Record<CoverageActionability, number> = {
-  action: 0,
-  explanation: 1,
+/**
+ * Diet-structure observation (a) — meal-type collapse (B-080 §5.2a). Counts days
+ * in-window that logged ≥minTreatsPerGapDay treats and ZERO meals. The load-bearing
+ * honesty rule: a day with NO logging at all is NOT a gap day (it never enters the
+ * per-day map), so "didn't log" can never masquerade as "fed only treats" — the
+ * sibling of the ④ fake-rise guard. Suppressed on diet-trial pets (the trial sets
+ * the structure). The claim is stated over the fixed window ("N of the last W days").
+ */
+function detectMealTypeCollapse(
+  input: DetectionInput,
+  config: DetectionConfig,
+): MealTypeCollapseDiagnostic | null {
+  if (input.pet.dietTrialActive) return null
+  const cfg = config.dietStructure
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+
+  // The window is the trailing `collapseWindowDays` UTC CALENDAR days ending today
+  // (inclusive) — NOT a raw ms span. A raw `nowMs - W*MS_PER_DAY` span starting at a
+  // non-midnight instant straddles W+1 distinct calendar-day buckets, which would let
+  // gapDays exceed windowDays and render the impossible "11 of the last 10 days"
+  // (adversarial review, B-080). Bucketing the window into exactly W calendar days
+  // keeps the numerator ≤ the denominator the copy states.
+  const todayBucket = Math.floor(nowMs / MS_PER_DAY)
+  const earliestBucket = todayBucket - (cfg.collapseWindowDays - 1)
+
+  const feedings = input.mealEvents
+    .map((m) => ({ ms: Date.parse(m.occurredAt), foodType: m.foodType }))
+    // f.ms ≤ nowMs drops clock-skew future rows; the bucket floor bounds us to exactly
+    // collapseWindowDays calendar days (bucket ≤ todayBucket is implied by ms ≤ nowMs).
+    .filter((f) => Number.isFinite(f.ms) && f.ms <= nowMs && Math.floor(f.ms / MS_PER_DAY) >= earliestBucket)
+  if (feedings.length === 0) return null
+
+  // Classification floor: if too few feedings carry a non-null foodType, the meal/treat
+  // split is unreliable and any "treats-only day" count is fiction → stay silent.
+  const classified = feedings.filter((f) => f.foodType != null).length
+  if (classified / feedings.length < cfg.minClassifiedFraction) return null
+
+  // Per-UTC-day buckets (mirrors the reflection day-spread approach). Only days with ≥1
+  // logged feeding exist here — dark days are absent by construction and so can never be
+  // counted as gap days. KNOWN RESIDUAL (B-084): a "day" here is a UTC calendar day, not
+  // the owner's local day, so near a window edge a negative-UTC-offset owner's evening
+  // meal can land on the next UTC day and shift one boundary day's classification. The
+  // effect is ≤1 day at the edges (a regular feeding schedule self-corrects — each UTC
+  // day inherits the prior evening's meal in its early hours); local-day bucketing via
+  // the ⑥ timezone plumbing is the principled fix, flagged for a PM call.
+  const byDay = new Map<number, { meals: number; treats: number }>()
+  for (const f of feedings) {
+    const day = Math.floor(f.ms / MS_PER_DAY)
+    const e = byDay.get(day) ?? { meals: 0, treats: 0 }
+    if (f.foodType === 'meal') e.meals++
+    else if (f.foodType === 'treat') e.treats++
+    byDay.set(day, e)
+  }
+
+  const treatsOnGapDays: number[] = []
+  for (const e of byDay.values()) {
+    if (e.meals === 0 && e.treats >= cfg.minTreatsPerGapDay) treatsOnGapDays.push(e.treats)
+  }
+  const gapDays = treatsOnGapDays.length
+  if (gapDays < cfg.minGapDays) return null
+
+  return {
+    type: 'meal_type_collapse',
+    actionability: 'explanation',
+    gapDays,
+    loggedDays: byDay.size,
+    treatsPerDayMedian: Math.round(median(treatsOnGapDays)),
+    windowDays: cfg.collapseWindowDays,
+  }
+}
+
+/**
+ * Diet-structure observation (b) — diet churn (B-080 §5.2b). Counts distinct foods
+ * whose FIRST-EVER appearance (across all available history — index.ts pulls 180d)
+ * falls within the churn window, gated on active symptoms in the same window. A food
+ * with no `foodItemId` cannot be tracked for novelty and is skipped. Suppressed on
+ * diet-trial pets (a vet-directed switch IS new food). Limitation: a food whose true
+ * first-ever exposure predates the 180d lookback and reappears in-window reads as
+ * novel — an accepted edge (a months-dormant food returning is arguably a
+ * reintroduction worth noting); tune on real data.
+ */
+function detectDietChurn(
+  input: DetectionInput,
+  config: DetectionConfig,
+): DietChurnDiagnostic | null {
+  if (input.pet.dietTrialActive) return null
+  const cfg = config.dietStructure
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+  const windowStart = nowMs - cfg.churnWindowDays * MS_PER_DAY
+
+  const firstSeen = new Map<string, number>()
+  // A food with ANY unparseable-timestamp row has an unknowable first-seen, so we cannot
+  // certify it as novel — exclude it entirely rather than treat its earliest PARSEABLE
+  // row as the first exposure (which would let a genuinely-old food read as new off a
+  // single corrupt earlier timestamp). Churn errs toward silence (adversarial review).
+  const unknowableFirstSeen = new Set<string>()
+  for (const m of input.mealEvents) {
+    if (!m.foodItemId) continue
+    const ms = Date.parse(m.occurredAt)
+    if (!Number.isFinite(ms)) {
+      unknowableFirstSeen.add(m.foodItemId)
+      continue
+    }
+    const prev = firstSeen.get(m.foodItemId)
+    if (prev === undefined || ms < prev) firstSeen.set(m.foodItemId, ms)
+  }
+  let novelFoodCount = 0
+  for (const [foodItemId, ms] of firstSeen) {
+    if (unknowableFirstSeen.has(foodItemId)) continue
+    if (ms >= windowStart && ms <= nowMs) novelFoodCount++
+  }
+  if (novelFoodCount < cfg.minNovelFoods) return null
+
+  const inWindowSymptoms = input.symptomEvents.filter((s) => {
+    const ms = Date.parse(s.occurredAt)
+    return Number.isFinite(ms) && ms >= windowStart && ms <= nowMs
+  })
+  const symptomEpisodesInWindow = countSymptomEpisodes(inWindowSymptoms, config)
+  if (symptomEpisodesInWindow < cfg.minSymptomEpisodes) return null
+
+  return {
+    type: 'diet_churn',
+    actionability: 'explanation',
+    novelFoodCount,
+    symptomEpisodesInWindow,
+    windowDays: cfg.churnWindowDays,
+  }
+}
+
+/**
+ * §5.2 mutual-exclusion curation, applied before ranking. Collapse outranks the other
+ * two diet-shaped messages and suppresses them so the surface never nags with
+ * overlapping diet observations:
+ *   - collapse SUPPRESSES churn (spec §5.2b — "collapse outranks churn").
+ *   - collapse is NEVER co-rendered with staple_washout (spec §5.2a). Collapse wins:
+ *     it is the more fundamental, more recent diet-coverage gap ("we're barely seeing
+ *     meals" undercuts any "you feed one protein every meal" claim).
+ */
+function suppressDietStructure(diagnostics: CoverageDiagnostic[]): CoverageDiagnostic[] {
+  const hasCollapse = diagnostics.some((d) => d.type === 'meal_type_collapse')
+  if (!hasCollapse) return diagnostics
+  return diagnostics.filter((d) => d.type !== 'diet_churn' && d.type !== 'staple_washout')
+}
+
+// Single-slot priority for the no_pattern surface. The ACTION diagnostic (rate_meals —
+// both actionable AND it activates safety detector ②) always leads (B-053). The
+// diet-structure observations rank above the standing staple explanation: collapse
+// (most fundamental/recent diet-coverage gap) → churn → staple_washout. Deterministic
+// and total, so the single rendered diagnostic never depends on detector push order.
+const COVERAGE_TYPE_ORDER: Record<CoverageDiagnosticType, number> = {
+  rate_meals: 0,
+  meal_type_collapse: 1,
+  diet_churn: 2,
+  staple_washout: 3,
 }
 
 export function rankCoverageDiagnostics(diagnostics: CoverageDiagnostic[]): CoverageDiagnostic[] {
   return [...diagnostics].sort(
-    (a, b) =>
-      COVERAGE_ACTIONABILITY_ORDER[a.actionability] - COVERAGE_ACTIONABILITY_ORDER[b.actionability],
+    (a, b) => COVERAGE_TYPE_ORDER[a.type] - COVERAGE_TYPE_ORDER[b.type],
   )
 }
 
@@ -2224,7 +2475,11 @@ export function detectCoverage(
   if (rateMeals) diagnostics.push(rateMeals)
   const staple = detectStapleWashout(input, config)
   if (staple) diagnostics.push(staple)
-  return rankCoverageDiagnostics(diagnostics)
+  const collapse = detectMealTypeCollapse(input, config)
+  if (collapse) diagnostics.push(collapse)
+  const churn = detectDietChurn(input, config)
+  if (churn) diagnostics.push(churn)
+  return rankCoverageDiagnostics(suppressDietStructure(diagnostics))
 }
 
 // ── Detector registry (§4) ──────────────────────────────────────────────────
