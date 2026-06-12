@@ -151,6 +151,24 @@
   .dayDetail b { color:var(--t1); font-weight:500; }
   .dayDetail .go { color:var(--accent); font-weight:500; cursor:pointer; display:inline-block; margin-top:5px; }
   .xNote { font-size:12px; color:var(--t3); line-height:1.5; margin-top:14px; }
+  /* rev 4 — explorer depth: stats strip, time-of-day histogram, episode log */
+  .statStrip { display:flex; gap:10px; margin:14px 20px 0; }
+  .statCell { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:11px 12px; }
+  .statCell .v { font-size:17px; font-weight:600; letter-spacing:-.2px; }
+  .statCell .k { font-size:10.5px; color:var(--t3); margin-top:2px; line-height:1.35; }
+  .todWrap { margin-top:14px; }
+  .todBars { display:flex; align-items:flex-end; gap:2px; height:52px; margin-top:8px; }
+  .todBars .tb { flex:1; border-radius:2px 2px 1px 1px; background:var(--clay); opacity:.9; }
+  .todBars .tb.e { background:var(--chartEmpty); height:8% !important; opacity:1; }
+  .todAxis { display:flex; justify-content:space-between; font-size:10px; color:var(--t3); margin-top:5px; }
+  .epRow { display:flex; align-items:flex-start; gap:11px; padding:12px 0; border-top:1px solid var(--border); cursor:pointer; }
+  .epRow:first-of-type { border-top:none; }
+  .epWhen { font-size:13.5px; font-weight:500; }
+  .epFact { font-size:12px; color:var(--t2); margin-top:2px; }
+  .epTags { display:flex; gap:6px; margin-top:5px; }
+  .epTag { font-size:10px; font-weight:500; letter-spacing:.3px; color:var(--t3); background:var(--surfaceSubtle);
+    border:1px solid var(--border); padding:2.5px 8px; border-radius:999px; }
+  .epTag.photo { color:#0B6E61; background:var(--accentLight); border-color:#C7F0E9; }
 
   /* ───────────── HISTORY ───────────── */
   .histHead { padding:8px 20px 0; background:var(--surface); border-bottom:1px solid var(--border); }
@@ -306,7 +324,7 @@
 
 <div class="masthead">
   <h1>Nyx — the experience layer, rebuilt around the data it now holds</h1>
-  <p><b>Rev 3 — Jun 12.</b> Interactive mockup, real data shapes (244 events / 29 days · 46 foods · 177 rated meals). Tap everything: tabs, the Pattern chart, a History day, the FAB, a food. Changed in rev 3: Today generalized to any incident mix, event pictograms retired for a type + color-mark system (the icon decision — Exhibit C), Foods add-flow made camera-first ("the scan").</p>
+  <p><b>Rev 4 — Jun 12.</b> Interactive mockup, real data shapes (244 events / 29 days · 46 foods · 177 rated meals). Tap everything: tabs, the Pattern chart, a History day, the FAB, a food. New in rev 4: the <b>Pattern explorer got real depth</b> — stats strip, time-of-day histogram, per-episode log with confidence tags (tap the Pattern card on Home, or "See the pattern →" on the Signal card). Rev 3 carried: Today generalized, pictograms → type + color marks, camera-first "Scan a food."</p>
   <span class="hint">Annotations to the right update with whatever screen you're on.</span>
 </div>
 
@@ -398,6 +416,11 @@
           <div class="rangeChips">
             <button class="chip">14 days</button><button class="chip on">30 days</button><button class="chip">All</button>
           </div>
+          <div class="statStrip">
+            <div class="statCell"><div class="v">16</div><div class="k">episodes in 30 days</div></div>
+            <div class="statCell"><div class="v">5 <span style="font-size:12px;color:var(--t3);font-weight:400">vs 2</span></div><div class="k">this week vs last (rolling)</div></div>
+            <div class="statCell"><div class="v">8 of 16</div><div class="k">witnessed (timed)</div></div>
+          </div>
           <div class="zone" style="margin-top:12px;">
             <div class="card">
               <div class="patHeadRow" style="margin-top:0"><span class="patType">16 episodes in 30 days</span><span class="patCount" style="color:var(--t2)">5 this week · 2 last</span></div>
@@ -425,6 +448,62 @@
                 <span class="go" onclick="go('scr-history');openDay('day-jun10')">Open this day in History →</span>
               </div>
               <div class="xNote">Counts of what you've logged — the two lanes are shown together for context, not as a link. When a pattern is strong enough to mean something, it appears in Nyx's Signal.</div>
+            </div>
+          </div>
+
+          <div class="zone" style="margin-top:14px;">
+            <div class="card">
+              <span class="zlabel">Time of day</span>
+              <div class="todWrap">
+                <div class="todBars">
+                  <div class="tb e"></div><div class="tb e"></div><div class="tb" style="height:35%"></div><div class="tb" style="height:70%"></div>
+                  <div class="tb" style="height:100%"></div><div class="tb" style="height:35%"></div><div class="tb e"></div><div class="tb e"></div>
+                  <div class="tb" style="height:35%"></div><div class="tb e"></div><div class="tb e"></div><div class="tb e"></div>
+                </div>
+                <div class="todAxis"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div>
+              </div>
+              <div class="xNote" style="margin-top:10px;">When the 8 timed episodes were logged, in 2-hour buckets. Episodes we couldn't time aren't shown.</div>
+            </div>
+          </div>
+
+          <div class="zone" style="margin-top:14px;">
+            <div class="card">
+              <span class="zlabel">Episodes</span>
+              <div style="margin-top:6px;">
+                <div class="epRow" onclick="go('scr-history');openDay('day-today')">
+                  <div class="markCol" style="margin-top:3px;"><i class="mark sym"></i></div>
+                  <div class="evMain">
+                    <div class="epWhen">Today · 8:40 AM</div>
+                    <div class="epFact">6 min after a logged meal (Fancy Feast Ocean Whitefish)</div>
+                    <div class="epTags"><span class="epTag">Witnessed</span></div>
+                  </div>
+                </div>
+                <div class="epRow" onclick="go('scr-history');openDay('day-jun11')">
+                  <div class="markCol" style="margin-top:3px;"><i class="mark sym"></i></div>
+                  <div class="evMain">
+                    <div class="epWhen">Wed, Jun 11 · ~7:00 AM</div>
+                    <div class="epFact">Found it — sometime before 7:00 AM</div>
+                    <div class="epTags"><span class="epTag">Estimated</span></div>
+                  </div>
+                </div>
+                <div class="epRow" onclick="go('scr-history');openDay('day-jun10')">
+                  <div class="markCol" style="margin-top:3px;"><i class="mark sym"></i></div>
+                  <div class="evMain">
+                    <div class="epWhen">Tue, Jun 10 · 9:05 AM</div>
+                    <div class="epFact">3 min after a logged meal · "clear foam, then fine"</div>
+                    <div class="epTags"><span class="epTag">Witnessed</span><span class="epTag photo">Photo</span></div>
+                  </div>
+                </div>
+                <div class="epRow">
+                  <div class="markCol" style="margin-top:3px;"><i class="mark sym"></i></div>
+                  <div class="evMain">
+                    <div class="epWhen">Sun, Jun 8 · 5:15 AM</div>
+                    <div class="epFact">No feeding logged in the prior 12 hours</div>
+                    <div class="epTags"><span class="epTag">Witnessed</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="patFoot" style="margin-top:8px;"><span>All 16 episodes</span><span>→</span></div>
             </div>
           </div>
         </div>
@@ -741,7 +820,9 @@
       <div class="noteKicker">Surface 2 of 5</div>
       <h2>Pattern explorer — the chart you can finally touch</h2>
       <ul>
-        <li><b>Tap-through from Home or the Signal card.</b> 14/30/all-time ranges, per-day bars, tap a bar → that day's detail (episode time, timing-to-meal when witnessed, what else was logged) with a jump into History.</li>
+        <li><b>Deepened in rev 4 — this is the "tap the incident and understand it" surface.</b> Four layers, top to bottom: a stats strip (count, rolling week-over-week, how many could be timed), the per-day chart, a <b>time-of-day histogram</b> (when the timed episodes land in the day), and an <b>episode log</b> — every episode with its one observed fact (timing-to-meal, found-it window, note excerpt), its B-010 confidence tag, and a photo chip, tapping into that day in History.</li>
+        <li class="guard"><b>Display vs claim, the load-bearing line:</b> everything here is a rendering of the raw log — the histogram <i>shows</i> the early-morning mass but never captions it as a pattern. The sentence "5 of 8 timed episodes happened between 4 and 8 AM" belongs to detector ⑥ on the Signal, with its floors (and it's currently blocked on the B-085 timezone write). Per-episode timing facts appear only when the episode was witnessed and no free-feeding arrangement overlapped it (the B-040 rule — with a bowl always out, "X min after eating" can be fiction).</li>
+        <li><b>Tap-through from Home or the Signal card.</b> 14/30/all-time ranges, per-day bars, tap a bar → that day's detail with a jump into History.</li>
         <li><b>Two lanes, deliberately separated:</b> symptom episodes (clay) and meal-logging coverage (mint). The Data Scientist's line: shown together for context, never drawn as one correlated chart — the footnote says exactly that, and signed claims stay in the Signal.</li>
         <li><b>Windows match the engine:</b> “this week / last week” here uses the same rolling-7-day helper as detectors ③/④, killing B-067's contradictory-numbers risk by construction.</li>
         <li class="guard"><b>Never reassures:</b> a quiet chart gets no “all clear” copy — empty days are just empty bars.</li>
