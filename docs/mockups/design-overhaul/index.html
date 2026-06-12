@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nyx — Design Overhaul Mockup (2026-06-12)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+  /* ─── Real v1.2 "Linear Clean" tokens from constants/theme.ts ─── */
+  :root {
+    --accent:#00C2A8; --accentLight:#E0FBF7;
+    --nDark:#0A0A0A; --nMid:#262626; --nLight:#FAFAFA;
+    --surface:#FFFFFF; --surfaceSubtle:#F5F5F5;
+    --t1:#0A0A0A; --t2:#525252; --t3:#737373; --tDis:#A3A3A3;
+    --border:#EAEAEA; --borderStrong:#D4D4D4;
+    --chartEmpty:#F0F0F0;
+    --gold:#FBBF24;
+    /* PROPOSED additions — the attention/safety split (see Exhibit C) */
+    --clay:#BE6A4E;       /* colorEventAttention — GI/symptom observations  */
+    --clayLight:#F8ECE3;  /* colorEventAttentionLight                       */
+    --rose:#F43F5E;       /* colorEventSafety — reserved for safety lane    */
+    --roseLight:#FFE4E6;
+    --body:'Geist',-apple-system,sans-serif;
+    --display:'Newsreader',Georgia,serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+  body { font-family:var(--body); background:#EDEDEA; color:var(--t1); min-height:100vh; }
+
+  .masthead { max-width:1200px; margin:0 auto; padding:36px 24px 8px; }
+  .masthead h1 { font-family:var(--display); font-weight:500; font-size:30px; letter-spacing:-.3px; }
+  .masthead p { color:var(--t2); font-size:14px; margin-top:6px; max-width:680px; line-height:1.55; }
+  .masthead .hint { display:inline-block; margin-top:10px; font-size:12px; color:var(--t3);
+    background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:5px 12px; }
+
+  .stage { max-width:1200px; margin:20px auto 0; padding:0 24px 48px;
+    display:flex; gap:32px; align-items:flex-start; }
+
+  /* ─── Phone ─── */
+  .phoneWrap { flex:0 0 auto; position:sticky; top:24px; }
+  .phone { width:390px; height:800px; background:var(--nLight); border-radius:48px;
+    border:10px solid #111; overflow:hidden; position:relative;
+    box-shadow:0 24px 60px rgba(0,0,0,.22); }
+  .statusbar { height:44px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 26px 0 30px; font-size:13px; font-weight:600; background:transparent;
+    position:relative; z-index:5; }
+  .screen { position:absolute; inset:0; padding-top:44px; display:none; flex-direction:column;
+    overflow:hidden; background:var(--nLight); }
+  .screen.on { display:flex; }
+  .scroll { flex:1; overflow-y:auto; scrollbar-width:none; }
+  .scroll::-webkit-scrollbar { display:none; }
+
+  /* tab bar */
+  .tabbar { position:absolute; bottom:0; left:0; right:0; height:78px; background:rgba(255,255,255,.96);
+    backdrop-filter:blur(8px); border-top:1px solid var(--border); display:flex; z-index:30;
+    padding:8px 8px 22px; }
+  .tab { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+    color:var(--t3); font-size:10.5px; font-weight:500; cursor:pointer; padding-top:6px; border:none; background:none; font-family:var(--body); }
+  .tab svg { width:23px; height:23px; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; }
+  .tab.on { color:var(--t1); }
+  .tab.on svg { stroke-width:2.1; }
+
+  /* FAB */
+  .fab { position:absolute; right:20px; bottom:96px; width:56px; height:56px; border-radius:28px;
+    background:var(--nDark); color:#fff; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.28); cursor:pointer; z-index:31; border:none;
+    transition:transform .18s ease; }
+  .fab svg { width:22px; height:22px; stroke:#fff; stroke-width:2; transition:transform .18s ease; }
+  .fab.open svg { transform:rotate(45deg); }
+
+  /* generic cards */
+  .zone { margin:0 20px 18px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px; }
+  .card.elev { box-shadow:0 2px 10px rgba(0,0,0,.05); border-color:#E4E4E4; }
+  .zlabel { font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--t3); font-weight:500; }
+
+  /* ───────────── HOME ───────────── */
+  .homeHeader { display:flex; align-items:center; gap:12px; padding:10px 20px 14px; background:var(--surface);
+    border-bottom:1px solid var(--border); margin-bottom:18px; }
+  .petAvatar { width:42px; height:42px; border-radius:21px; background:linear-gradient(135deg,#2b2b30,#56565e);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:16px; font-weight:500; }
+  .petName { font-size:17px; font-weight:600; letter-spacing:-.2px; }
+  .petSub { font-size:12px; color:var(--t3); margin-top:1px; }
+
+  .sigHead { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+  .sigFresh { font-size:11px; color:var(--t3); }
+  .safetyChip { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:500;
+    color:#B3334A; background:var(--roseLight); padding:4px 10px; border-radius:999px; margin-bottom:10px; }
+  .safetyChip .dot { width:6px; height:6px; border-radius:3px; background:var(--rose); }
+  .sigLead { font-family:var(--display); font-size:23px; line-height:1.32; letter-spacing:-.3px; font-weight:400; }
+  .sigLead b { font-weight:500; }
+  .sigEvidence { margin-top:12px; padding-top:12px; border-top:1px solid var(--border);
+    font-size:12.5px; color:var(--t2); display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+  .sigEvidence .cta { color:var(--accent); font-weight:500; }
+
+  /* pattern card (replaces Trend zone) */
+  .patCard { cursor:pointer; transition:transform .12s ease; }
+  .patCard:active { transform:scale(.985); }
+  .patHeadRow { display:flex; justify-content:space-between; align-items:baseline; margin:10px 0 2px; }
+  .patType { font-size:15px; font-weight:500; }
+  .patCount { font-size:13px; font-weight:500; }
+  .patSub { font-size:13px; color:var(--t2); margin-bottom:14px; }
+  .bars { display:flex; align-items:flex-end; gap:3px; height:84px; }
+  .bars .b { flex:1; border-radius:3px 3px 1px 1px; background:var(--clay); position:relative; }
+  .bars .b.e { background:var(--chartEmpty); height:100% !important; opacity:.4; border-radius:3px; }
+  .bars .b.today { outline:2px solid var(--nDark); outline-offset:1px; }
+  .mealLane { display:flex; gap:3px; margin-top:8px; }
+  .mealLane i { flex:1; height:5px; border-radius:3px; background:var(--accent); opacity:.85; }
+  .mealLane i.off { background:var(--chartEmpty); opacity:1; }
+  .axis { display:flex; justify-content:space-between; font-size:10.5px; color:var(--t3); margin-top:7px; }
+  .patFoot { margin-top:12px; padding-top:11px; border-top:1px solid var(--border); font-size:12.5px;
+    color:var(--accent); font-weight:500; display:flex; justify-content:space-between; align-items:center; }
+  .laneKey { display:flex; gap:14px; margin-top:9px; font-size:10.5px; color:var(--t3); }
+  .laneKey i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+
+  /* today story */
+  .dayline { position:relative; height:44px; margin:14px 2px 2px; }
+  .dayline .track { position:absolute; top:21px; left:0; right:0; height:2px; background:var(--border); border-radius:1px; }
+  .dayline .now { position:absolute; top:13px; width:1.5px; height:18px; background:var(--t3); }
+  .dl { position:absolute; top:16px; width:12px; height:12px; border-radius:6px; border:2px solid var(--surface); }
+  .dl.meal { background:var(--accent); }
+  .dl.treat { background:var(--surface); border:2px solid var(--accent); }
+  .dl.sym { background:var(--clay); width:14px; height:14px; top:15px; }
+  .dayline .tick { position:absolute; top:36px; font-size:10px; color:var(--t3); transform:translateX(-50%); }
+  .storyLine { font-size:14px; color:var(--t1); margin-top:10px; }
+  .storyLine b { font-weight:500; }
+  .storySub { font-size:12.5px; color:var(--t3); margin-top:3px; }
+  .todayCard { cursor:pointer; }
+
+  /* ───────────── PATTERN EXPLORER ───────────── */
+  .pushHead { display:flex; align-items:center; gap:8px; padding:6px 14px 12px; background:var(--surface);
+    border-bottom:1px solid var(--border); }
+  .backBtn { border:none; background:none; color:var(--t1); font-size:15px; display:flex; align-items:center;
+    gap:3px; cursor:pointer; font-family:var(--body); padding:6px; }
+  .backBtn svg { width:18px; height:18px; stroke:currentColor; stroke-width:2; fill:none; }
+  .pushTitle { font-size:16px; font-weight:600; letter-spacing:-.2px; }
+  .rangeChips { display:flex; gap:6px; padding:14px 20px 2px; }
+  .chip { font-size:12.5px; padding:6px 13px; border-radius:999px; border:1px solid var(--border);
+    background:var(--surface); color:var(--t2); cursor:pointer; font-family:var(--body); }
+  .chip.on { background:var(--nDark); color:#fff; border-color:var(--nDark); }
+  .xBars { display:flex; align-items:flex-end; gap:4px; height:130px; margin-top:6px; }
+  .xBars .b { flex:1; border-radius:4px 4px 2px 2px; background:var(--clay); cursor:pointer; position:relative; }
+  .xBars .b.e { background:var(--chartEmpty); height:100% !important; opacity:.4; }
+  .xBars .b.sel { background:#9C4F36; outline:2px solid var(--nDark); outline-offset:1px; }
+  .dayDetail { background:var(--surfaceSubtle); border:1px solid var(--border); border-radius:12px;
+    padding:13px 14px; margin-top:14px; font-size:13px; color:var(--t2); line-height:1.5; }
+  .dayDetail b { color:var(--t1); font-weight:500; }
+  .dayDetail .go { color:var(--accent); font-weight:500; cursor:pointer; display:inline-block; margin-top:5px; }
+  .xNote { font-size:12px; color:var(--t3); line-height:1.5; margin-top:14px; }
+
+  /* ───────────── HISTORY ───────────── */
+  .histHead { padding:8px 20px 0; background:var(--surface); border-bottom:1px solid var(--border); }
+  .histTitleRow { display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; }
+  .histTitle { font-size:23px; font-weight:600; letter-spacing:-.3px; }
+  .viewToggle { display:flex; background:var(--surfaceSubtle); border-radius:9px; padding:2px; }
+  .viewToggle button { border:none; background:none; font-size:12px; font-weight:500; color:var(--t3);
+    padding:5px 12px; border-radius:7px; cursor:pointer; font-family:var(--body); }
+  .viewToggle button.on { background:var(--surface); color:var(--t1); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .filterRow { display:flex; gap:6px; padding:2px 0 12px; overflow-x:auto; scrollbar-width:none; }
+  .ffStrip { margin:12px 20px 0; background:var(--accentLight); border:1px solid #C7F0E9; border-radius:12px;
+    padding:10px 14px; font-size:12.5px; color:#0B6E61; display:flex; gap:8px; align-items:center; }
+  .ffStrip svg { width:15px; height:15px; stroke:#0B6E61; stroke-width:1.75; fill:none; flex:none; }
+
+  .dayGroup { margin:14px 20px 0; background:var(--surface); border:1px solid var(--border); border-radius:16px; overflow:hidden; }
+  .dayHead { display:flex; align-items:center; gap:10px; padding:13px 16px; cursor:pointer; }
+  .dayDate { font-size:14px; font-weight:600; flex:1; }
+  .dayDate small { display:block; font-size:11.5px; color:var(--t3); font-weight:400; margin-top:1px; }
+  .pill { font-size:11.5px; font-weight:500; padding:4px 9px; border-radius:999px; }
+  .pill.meals { color:#0B6E61; background:var(--accentLight); }
+  .pill.sym { color:#9C4F36; background:var(--clayLight); }
+  .chev { width:16px; height:16px; stroke:var(--t3); stroke-width:2; fill:none; transition:transform .18s; }
+  .dayGroup.open .chev { transform:rotate(180deg); }
+  .symRow, .evRow { display:flex; align-items:center; gap:11px; padding:11px 16px; border-top:1px solid var(--border); }
+  .evIcon { width:32px; height:32px; border-radius:16px; background:var(--nLight); display:flex; align-items:center; justify-content:center; flex:none; }
+  .evIcon.sym { background:var(--clayLight); }
+  .evIcon.meal { background:var(--accentLight); }
+  .evIcon svg { width:16px; height:16px; }
+  .evMain { flex:1; min-width:0; }
+  .evLabel { font-size:14px; font-weight:500; }
+  .evSub { font-size:12px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+  .evTime { font-size:12px; color:var(--t3); text-align:right; }
+  .evTime small { display:block; font-size:9.5px; letter-spacing:.4px; text-transform:uppercase; color:var(--tDis); }
+  .mealSummaryRow { display:flex; align-items:center; gap:11px; padding:11px 16px; border-top:1px solid var(--border);
+    cursor:pointer; }
+  .mealSummaryRow .evSub { color:var(--t3); }
+  .expandHint { font-size:12px; color:var(--accent); font-weight:500; }
+  .dayBody { display:none; }
+  .dayGroup.open .dayBody { display:block; }
+  .dayGroup.open .mealSummaryRow { display:none; }
+  .intakeDot { font-size:10.5px; font-weight:500; color:var(--t3); background:var(--surfaceSubtle);
+    padding:2.5px 7px; border-radius:999px; flex:none; }
+  .intakeDot.refused { color:#9C4F36; background:var(--clayLight); }
+
+  /* ───────────── FOODS ───────────── */
+  .searchBox { margin:12px 20px 0; display:flex; align-items:center; gap:8px; background:var(--surface);
+    border:1px solid var(--border); border-radius:12px; padding:11px 14px; color:var(--t3); font-size:14px; }
+  .searchBox svg { width:16px; height:16px; stroke:var(--t3); stroke-width:2; fill:none; }
+  .shelfLabel { display:flex; justify-content:space-between; align-items:baseline; margin:20px 20px 10px; }
+  .shelfNote { font-size:11px; color:var(--t3); }
+  .favShelf { display:flex; gap:10px; overflow-x:auto; padding:0 20px 4px; scrollbar-width:none; }
+  .favShelf::-webkit-scrollbar { display:none; }
+  .favCard { flex:0 0 138px; background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    padding:10px; cursor:pointer; }
+  .favRate { font-size:13px; font-weight:600; margin-top:8px; }
+  .favRate small { display:block; font-size:10.5px; color:var(--t3); font-weight:400; margin-top:1px; }
+  .favName { font-size:11.5px; color:var(--t2); margin-top:6px; line-height:1.35; }
+  .foodGrid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:10px 20px 0; }
+  .foodCard { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; cursor:pointer; }
+  .packArt { height:108px; display:flex; align-items:center; justify-content:center; position:relative; }
+  .packArt .photoTag { position:absolute; right:7px; top:7px; font-size:9px; letter-spacing:.5px;
+    color:rgba(255,255,255,.92); background:rgba(0,0,0,.34); padding:2px 6px; border-radius:999px; }
+  .foodMeta { padding:9px 11px 11px; }
+  .foodBrand { font-size:9.5px; letter-spacing:.7px; text-transform:uppercase; color:var(--t3); font-weight:500; }
+  .foodName { font-size:13px; font-weight:500; line-height:1.3; margin-top:3px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .ffBadge { display:inline-flex; align-items:center; gap:4px; font-size:10px; color:#0B6E61; margin-top:5px; font-weight:500; }
+
+  /* pack art placeholder SVG canvases */
+  .pa { width:100%; height:100%; }
+
+  /* ───────────── FOOD DETAIL ───────────── */
+  .heroArt { height:190px; position:relative; }
+  .detailBody { padding:16px 20px 0; }
+  .detailBrand { font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--t3); font-weight:500; }
+  .detailName { font-family:var(--display); font-size:24px; font-weight:500; letter-spacing:-.3px; margin-top:4px; line-height:1.2; }
+  .intakeBlock { margin-top:16px; }
+  .stackBar { display:flex; height:10px; border-radius:5px; overflow:hidden; margin-top:10px; background:var(--chartEmpty); }
+  .stackBar .full { background:var(--accent); }
+  .stackBar .part { background:#8AD9CD; }
+  .stackBar .ref { background:var(--clay); }
+  .intakeLine { font-size:14.5px; margin-top:12px; font-weight:500; }
+  .intakeLine small { display:block; font-weight:400; font-size:12.5px; color:var(--t2); margin-top:3px; }
+  .intakeKey { display:flex; gap:14px; margin-top:10px; font-size:11px; color:var(--t3); }
+  .intakeKey i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; }
+  .healthNote { margin-top:13px; padding-top:12px; border-top:1px solid var(--border); font-size:12px;
+    color:var(--t3); line-height:1.55; }
+  .rowToggle { display:flex; align-items:center; justify-content:space-between; padding:14px 0; border-top:1px solid var(--border); margin-top:14px; font-size:14.5px; font-weight:500; }
+  .toggle { width:46px; height:28px; border-radius:14px; background:var(--accent); position:relative; }
+  .toggle::after { content:''; position:absolute; top:3px; right:3px; width:22px; height:22px; border-radius:11px; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+  .ingBlock { padding:14px 0 24px; border-top:1px solid var(--border); margin-top:0; }
+  .ingBlock h4 { font-size:12px; letter-spacing:.6px; text-transform:uppercase; color:var(--t3); font-weight:500; margin-bottom:8px; }
+  .ingBlock p { font-size:13px; color:var(--t2); line-height:1.6; }
+
+  /* ───────────── FAB SHEET ───────────── */
+  .scrim { position:absolute; inset:0; background:rgba(10,10,10,.32); z-index:40; display:none; }
+  .scrim.on { display:block; }
+  .sheet { position:absolute; left:0; right:0; bottom:0; background:var(--surface); border-radius:24px 24px 0 0;
+    z-index:41; padding:10px 18px 30px; transform:translateY(105%); transition:transform .22s ease; }
+  .sheet.on { transform:translateY(0); }
+  .grab { width:38px; height:4px; border-radius:2px; background:var(--borderStrong); margin:4px auto 14px; }
+  .sheetLabel { font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--t3); font-weight:500; margin:6px 2px 8px; }
+  .qRow { display:flex; align-items:center; gap:12px; padding:9px 6px; border-radius:12px; cursor:pointer; }
+  .qRow:active { background:var(--surfaceSubtle); }
+  .qThumb { width:40px; height:40px; border-radius:10px; overflow:hidden; flex:none; }
+  .qMain { flex:1; min-width:0; }
+  .qName { font-size:14.5px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .qSub { font-size:11.5px; color:var(--t3); margin-top:1px; }
+  .symBtns { display:flex; gap:8px; margin-top:4px; }
+  .symBtn { flex:1; display:flex; flex-direction:column; align-items:center; gap:5px; background:var(--clayLight);
+    border:none; border-radius:14px; padding:13px 0 11px; cursor:pointer; font-family:var(--body); }
+  .symBtn span { font-size:12px; font-weight:500; color:#9C4F36; }
+  .symBtn svg { width:21px; height:21px; }
+  .moreRow { display:flex; align-items:center; justify-content:space-between; margin-top:14px; padding:13px 6px 2px;
+    border-top:1px solid var(--border); font-size:14.5px; font-weight:500; color:var(--t2); cursor:pointer; }
+
+  /* ───────────── ANNOTATION PANEL ───────────── */
+  .notes { flex:1; min-width:0; max-width:560px; }
+  .noteCard { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px 24px; display:none; }
+  .noteCard.on { display:block; }
+  .noteKicker { font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--t3); font-weight:500; }
+  .noteCard h2 { font-family:var(--display); font-size:22px; font-weight:500; letter-spacing:-.2px; margin:6px 0 14px; }
+  .noteCard ul { list-style:none; display:flex; flex-direction:column; gap:11px; }
+  .noteCard li { font-size:13.5px; line-height:1.55; color:var(--t2); padding-left:18px; position:relative; }
+  .noteCard li::before { content:''; position:absolute; left:0; top:7px; width:7px; height:7px; border-radius:2px; background:var(--accent); }
+  .noteCard li.flag::before { background:var(--gold); }
+  .noteCard li.guard::before { background:var(--rose); }
+  .noteCard li b { color:var(--t1); font-weight:500; }
+  .legend { display:flex; gap:16px; margin-top:18px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--t3); }
+  .legend i { display:inline-block; width:7px; height:7px; border-radius:2px; margin-right:5px; }
+
+  /* ─── exhibits ─── */
+  .exhibits { max-width:1200px; margin:8px auto 80px; padding:0 24px; }
+  .exhibits h2 { font-family:var(--display); font-size:24px; font-weight:500; margin:34px 0 14px; letter-spacing:-.2px; }
+  .exGrid { display:flex; gap:20px; flex-wrap:wrap; }
+  .exCard { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px 22px; flex:1; min-width:330px; }
+  .exCard h3 { font-size:14px; font-weight:600; margin-bottom:4px; }
+  .exCard .sub { font-size:12.5px; color:var(--t2); line-height:1.55; margin-bottom:16px; }
+  .iconRow { display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  .iconCell { width:74px; text-align:center; }
+  .iconCell .bub { width:46px; height:46px; border-radius:23px; margin:0 auto 6px; display:flex; align-items:center; justify-content:center; }
+  .iconCell .nm { font-size:10.5px; color:var(--t2); line-height:1.3; }
+  .swatchRow { display:flex; gap:10px; flex-wrap:wrap; }
+  .swatch { width:120px; }
+  .swatch .chipC { height:52px; border-radius:10px; border:1px solid rgba(0,0,0,.06); }
+  .swatch .nm { font-size:10.5px; color:var(--t2); margin-top:6px; line-height:1.4; }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <h1>Nyx — the experience layer, rebuilt around the data it now holds</h1>
+  <p>Interactive mockup, real data shapes (244 events / 29 days · 46 foods · 177 rated meals). Everything in the phone is tappable where the proposal says it should be: switch tabs, tap the Pattern chart, expand a History day, open the FAB, tap a food.</p>
+  <span class="hint">Annotations to the right update with whatever screen you're on.</span>
+</div>
+
+<div class="stage">
+  <div class="phoneWrap">
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>􀙇 􀛨</span></div>
+
+      <!-- ═══════════ HOME ═══════════ -->
+      <div class="screen on" id="scr-home">
+        <div class="homeHeader">
+          <div class="petAvatar">N</div>
+          <div><div class="petName">Nyx</div><div class="petSub">Domestic shorthair · tracking since May 14</div></div>
+        </div>
+        <div class="scroll" style="padding-bottom:100px;">
+
+          <!-- SIGNAL -->
+          <div class="zone">
+            <div class="card elev">
+              <div class="sigHead"><span class="zlabel">Signal</span><span class="sigFresh">Updated this morning</span></div>
+              <div class="safetyChip"><span class="dot"></span>Worth a vet visit</div>
+              <div class="sigLead">Nyx has had vomiting on <b>5 of the last 7 days</b> (5 episodes), up from 2 last week — worth booking a vet visit soon.</div>
+              <div class="sigEvidence" onclick="go('scr-pattern')">
+                <span>5 episodes · rolling 7-day windows</span><span class="cta">See the pattern →</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- TODAY -->
+          <div class="zone">
+            <div class="card todayCard" onclick="go('scr-history');openDay('day-today')">
+              <span class="zlabel">Today</span>
+              <div class="dayline">
+                <div class="track"></div>
+                <span class="tick" style="left:4%">6a</span><span class="tick" style="left:33%">12p</span>
+                <span class="tick" style="left:62%">6p</span><span class="tick" style="left:92%">12a</span>
+                <i class="dl meal"  style="left:9%"></i>
+                <i class="dl treat" style="left:17%"></i>
+                <i class="dl sym"   style="left:23%"></i>
+                <i class="dl meal"  style="left:36%"></i>
+                <i class="dl treat" style="left:44%"></i>
+                <i class="dl treat" style="left:48%"></i>
+                <i class="dl meal"  style="left:57%"></i>
+                <div class="now" style="left:60%"></div>
+              </div>
+              <div class="storyLine"><b>3 meals · 3 treats · 1 vomit</b> so far today</div>
+              <div class="storySub">Last logged: Tuna Pâté, 5:12 PM · vomit at 8:40 AM, 6 min after breakfast</div>
+            </div>
+          </div>
+
+          <!-- PATTERN (replaces Trend) -->
+          <div class="zone">
+            <div class="card patCard" onclick="go('scr-pattern')">
+              <span class="zlabel">Pattern</span>
+              <div class="patHeadRow"><span class="patType">Vomiting</span><span class="patCount">5 this week</span></div>
+              <div class="patSub">↑ from 2 last week</div>
+              <div class="bars">
+                <div class="b e"></div><div class="b" style="height:28%"></div><div class="b e"></div><div class="b e"></div>
+                <div class="b" style="height:28%"></div><div class="b e"></div><div class="b e"></div><div class="b e"></div>
+                <div class="b" style="height:28%"></div><div class="b e"></div><div class="b" style="height:56%"></div>
+                <div class="b e"></div><div class="b" style="height:28%"></div><div class="b" style="height:28%"></div>
+                <div class="b e"></div><div class="b" style="height:28%"></div><div class="b" style="height:28%"></div>
+                <div class="b today" style="height:28%"></div>
+              </div>
+              <div class="mealLane">
+                <i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <div class="axis"><span>May 26</span><span>Today</span></div>
+              <div class="laneKey">
+                <span><i style="background:var(--clay)"></i>Vomit episodes</span>
+                <span><i style="background:var(--accent)"></i>Days with meals logged</span>
+              </div>
+              <div class="patFoot"><span>Explore 30 days</span><span>→</span></div>
+            </div>
+          </div>
+
+        </div>
+        <button class="fab" onclick="toggleSheet()" id="fabBtn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+
+      <!-- ═══════════ PATTERN EXPLORER ═══════════ -->
+      <div class="screen" id="scr-pattern">
+        <div class="pushHead">
+          <button class="backBtn" onclick="go('scr-home')"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <span class="pushTitle">Vomiting — pattern</span>
+        </div>
+        <div class="scroll" style="padding-bottom:100px;">
+          <div class="rangeChips">
+            <button class="chip">14 days</button><button class="chip on">30 days</button><button class="chip">All</button>
+          </div>
+          <div class="zone" style="margin-top:12px;">
+            <div class="card">
+              <div class="patHeadRow" style="margin-top:0"><span class="patType">16 episodes in 30 days</span><span class="patCount" style="color:var(--t2)">5 this week · 2 last</span></div>
+              <div class="xBars" id="xbars">
+                <div class="b e"></div><div class="b e"></div><div class="b" style="height:24%"></div><div class="b e"></div>
+                <div class="b" style="height:24%"></div><div class="b e"></div><div class="b e"></div><div class="b" style="height:24%"></div>
+                <div class="b e"></div><div class="b e"></div><div class="b" style="height:24%"></div><div class="b e"></div>
+                <div class="b e"></div><div class="b" style="height:24%"></div><div class="b e"></div><div class="b e"></div>
+                <div class="b" style="height:24%"></div><div class="b e"></div><div class="b e"></div><div class="b" style="height:24%"></div>
+                <div class="b e"></div><div class="b" style="height:24%"></div><div class="b e"></div><div class="b" style="height:48%"></div>
+                <div class="b e"></div><div class="b" style="height:24%"></div><div class="b sel" style="height:24%" ></div><div class="b e"></div>
+                <div class="b" style="height:24%"></div><div class="b" style="height:24%"></div>
+              </div>
+              <div class="axis"><span>May 14</span><span>Jun 12</span></div>
+              <div class="mealLane" style="margin-top:10px;">
+                <i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="off"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <div class="laneKey">
+                <span><i style="background:var(--clay)"></i>Vomit episodes per day</span>
+                <span><i style="background:var(--accent)"></i>Days with meals logged</span>
+              </div>
+              <div class="dayDetail">
+                <b>Tue, Jun 10 — 1 episode, 9:05 AM</b> · witnessed<br>
+                3 meals and 4 treats logged that day. Episode was 3 min after eating.
+                <span class="go" onclick="go('scr-history');openDay('day-jun10')">Open this day in History →</span>
+              </div>
+              <div class="xNote">Counts of what you've logged — the two lanes are shown together for context, not as a link. When a pattern is strong enough to mean something, it appears in Nyx's Signal.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ HISTORY ═══════════ -->
+      <div class="screen" id="scr-history">
+        <div class="histHead">
+          <div class="histTitleRow">
+            <span class="histTitle">History</span>
+            <div class="viewToggle"><button class="on">Days</button><button>All events</button></div>
+          </div>
+          <div class="filterRow">
+            <button class="chip on">All</button><button class="chip">Meals</button><button class="chip">Vomit</button>
+            <button class="chip">Stool</button><button class="chip">Other</button>
+          </div>
+        </div>
+        <div class="scroll" style="padding-bottom:100px;">
+          <div class="ffStrip">
+            <svg viewBox="0 0 24 24"><path d="M4 12c0 4 3.5 7 8 7s8-3 8-7M3 12h18M7 12V8a5 5 0 0 1 10 0v4"/></svg>
+            Dry food is always out for Nyx · Purina One Tender Selects — confirmed Jun 3
+          </div>
+
+          <!-- today -->
+          <div class="dayGroup" id="day-today">
+            <div class="dayHead" onclick="toggleDay('day-today')">
+              <div class="dayDate">Today<small>Thu, Jun 12</small></div>
+              <span class="pill sym">1 vomit</span><span class="pill meals">6 feedings</span>
+              <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="symRow">
+              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg></div>
+              <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">6 min after breakfast</div></div>
+              <div class="evTime">8:40 AM</div>
+            </div>
+            <div class="mealSummaryRow" onclick="toggleDay('day-today')">
+              <div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evMain"><div class="evLabel">3 meals · 3 treats</div><div class="evSub">All eaten fully</div></div>
+              <span class="expandHint">Show</span>
+            </div>
+            <div class="dayBody">
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+                <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Tuna Pâté</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">5:12 PM</div></div>
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2"/></svg></div>
+                <div class="evMain"><div class="evLabel">Treat</div><div class="evSub">Temptations · Catnip Flavor</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">2:30 PM</div></div>
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2"/></svg></div>
+                <div class="evMain"><div class="evLabel">Treat</div><div class="evSub">Friskies · Party Mix California Crunch</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">1:58 PM</div></div>
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+                <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Chicken Feast Grilled</div></div>
+                <span class="intakeDot">Ate most</span><div class="evTime">12:05 PM</div></div>
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2"/></svg></div>
+                <div class="evMain"><div class="evLabel">Treat</div><div class="evSub">Purina · Whisker Lickin's Chicken &amp; Seafood</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">10:15 AM</div></div>
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+                <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Ocean Whitefish</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">8:34 AM</div></div>
+            </div>
+          </div>
+
+          <!-- Jun 11 -->
+          <div class="dayGroup" id="day-jun11">
+            <div class="dayHead" onclick="toggleDay('day-jun11')">
+              <div class="dayDate">Yesterday<small>Wed, Jun 11</small></div>
+              <span class="pill sym">1 vomit</span><span class="pill meals">9 feedings</span>
+              <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="symRow">
+              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg></div>
+              <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">Found it — sometime before 7:00 AM</div></div>
+              <div class="evTime">~7:00 AM<small>estimated</small></div>
+            </div>
+            <div class="mealSummaryRow" onclick="toggleDay('day-jun11')">
+              <div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evMain"><div class="evLabel">4 meals · 5 treats</div><div class="evSub">1 left unfinished</div></div>
+              <span class="expandHint">Show</span>
+            </div>
+            <div class="dayBody">
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+                <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Tuna Pâté</div></div>
+                <span class="intakeDot">Ate some</span><div class="evTime">7:48 PM</div></div>
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2"/></svg></div>
+                <div class="evMain"><div class="evLabel">Treat ×3</div><div class="evSub">Temptations · Seafood Medley</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">3:20 PM</div></div>
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+                <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Chicken Feast Grilled</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">12:18 PM</div></div>
+            </div>
+          </div>
+
+          <!-- Jun 10 -->
+          <div class="dayGroup" id="day-jun10">
+            <div class="dayHead" onclick="toggleDay('day-jun10')">
+              <div class="dayDate">Tue, Jun 10</div>
+              <span class="pill sym">1 vomit</span><span class="pill meals">7 feedings</span>
+              <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="symRow">
+              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg></div>
+              <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">3 min after eating · photo attached</div></div>
+              <div class="evTime">9:05 AM</div>
+            </div>
+            <div class="mealSummaryRow" onclick="toggleDay('day-jun10')">
+              <div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evMain"><div class="evLabel">3 meals · 4 treats</div><div class="evSub">All eaten fully</div></div>
+              <span class="expandHint">Show</span>
+            </div>
+            <div class="dayBody">
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+                <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Ocean Whitefish</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">9:02 AM</div></div>
+            </div>
+          </div>
+
+          <!-- quiet day -->
+          <div class="dayGroup" id="day-jun9">
+            <div class="dayHead" onclick="toggleDay('day-jun9')">
+              <div class="dayDate">Mon, Jun 9</div>
+              <span class="pill meals">8 feedings</span>
+              <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="dayBody">
+              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+                <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Tuna Pâté</div></div>
+                <span class="intakeDot">Ate all</span><div class="evTime">6:50 PM</div></div>
+            </div>
+          </div>
+
+        </div>
+        <button class="fab" onclick="toggleSheet()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+
+      <!-- ═══════════ FOODS ═══════════ -->
+      <div class="screen" id="scr-foods">
+        <div class="histHead">
+          <div class="histTitleRow"><span class="histTitle">Foods</span>
+            <button class="chip" style="font-weight:500;">+ Add food</button>
+          </div>
+        </div>
+        <div class="scroll" style="padding-bottom:100px;">
+          <div class="searchBox"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg>Search 46 foods…</div>
+
+          <div class="shelfLabel"><span class="zlabel">Reliable favorites</span><span class="shelfNote">5+ rated offers, eaten fully ≥90%</span></div>
+          <div class="favShelf">
+            <div class="favCard">
+              <div class="packArt" style="height:74px;border-radius:9px;overflow:hidden;"><svg class="pa" viewBox="0 0 140 76" preserveAspectRatio="xMidYMid slice"><rect width="140" height="76" fill="#7A4FAF"/><rect x="22" y="8" width="96" height="60" rx="8" fill="#8E63C2"/><text x="70" y="34" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="Geist">WHISKER</text><text x="70" y="48" text-anchor="middle" fill="#F4D35E" font-size="11" font-weight="700" font-family="Geist">LICKIN'S</text></svg></div>
+              <div class="favRate">26 of 26<small>rated offers eaten fully</small></div>
+              <div class="favName">Purina · Whisker Lickin's Chicken &amp; Seafood</div>
+            </div>
+            <div class="favCard">
+              <div class="packArt" style="height:74px;border-radius:9px;overflow:hidden;"><svg class="pa" viewBox="0 0 140 76" preserveAspectRatio="xMidYMid slice"><rect width="140" height="76" fill="#1F6FB2"/><rect x="22" y="8" width="96" height="60" rx="8" fill="#3585C6"/><text x="70" y="34" text-anchor="middle" fill="#fff" font-size="10" font-weight="700" font-family="Geist">PARTY MIX</text><text x="70" y="48" text-anchor="middle" fill="#FFD24A" font-size="9" font-weight="700" font-family="Geist">LOBSTER · MAC</text></svg></div>
+              <div class="favRate">10 of 10<small>rated offers eaten fully</small></div>
+              <div class="favName">Friskies · Party Mix Lobster &amp; Mac 'N' Cheese</div>
+            </div>
+            <div class="favCard">
+              <div class="packArt" style="height:74px;border-radius:9px;overflow:hidden;"><svg class="pa" viewBox="0 0 140 76" preserveAspectRatio="xMidYMid slice"><rect width="140" height="76" fill="#C2452D"/><rect x="22" y="8" width="96" height="60" rx="8" fill="#D55A40"/><text x="70" y="34" text-anchor="middle" fill="#fff" font-size="10" font-weight="700" font-family="Geist">SQUEEZE UP</text><text x="70" y="48" text-anchor="middle" fill="#FFE3B3" font-size="9" font-weight="700" font-family="Geist">CHICKEN</text></svg></div>
+              <div class="favRate">8 of 8<small>rated offers eaten fully</small></div>
+              <div class="favName">Delectables · Squeeze Up with Chicken</div>
+            </div>
+          </div>
+
+          <div class="shelfLabel"><span class="zlabel">Library</span><span class="shelfNote">18 brands · grouped A–Z</span></div>
+          <div class="foodGrid">
+            <div class="foodCard" onclick="go('scr-fooddetail')">
+              <div class="packArt"><svg class="pa" viewBox="0 0 180 108" preserveAspectRatio="xMidYMid slice"><rect width="180" height="108" fill="#E8B428"/><ellipse cx="90" cy="54" rx="58" ry="44" fill="#F2C84B"/><text x="90" y="48" text-anchor="middle" fill="#7A2B1D" font-size="13" font-weight="700" font-family="Geist">TEMPTATIONS</text><text x="90" y="66" text-anchor="middle" fill="#7A2B1D" font-size="10" font-weight="500" font-family="Geist">Catnip Flavor</text></svg><span class="photoTag">PACK</span></div>
+              <div class="foodMeta"><div class="foodBrand">Temptations · Treat</div><div class="foodName">Catnip Flavor</div></div>
+            </div>
+            <div class="foodCard" onclick="go('scr-fooddetail')">
+              <div class="packArt"><svg class="pa" viewBox="0 0 180 108" preserveAspectRatio="xMidYMid slice"><rect width="180" height="108" fill="#205C9E"/><rect x="30" y="12" width="120" height="84" rx="10" fill="#2E70B8"/><text x="90" y="48" text-anchor="middle" fill="#fff" font-size="12" font-weight="700" font-family="Geist">FANCY FEAST</text><text x="90" y="66" text-anchor="middle" fill="#CFE3F7" font-size="10" font-family="Geist">Tuna Pâté</text></svg><span class="photoTag">PACK</span></div>
+              <div class="foodMeta"><div class="foodBrand">Fancy Feast · Wet</div><div class="foodName">Tuna Pâté Classic</div></div>
+            </div>
+            <div class="foodCard" onclick="go('scr-fooddetail')">
+              <div class="packArt"><svg class="pa" viewBox="0 0 180 108" preserveAspectRatio="xMidYMid slice"><rect width="180" height="108" fill="#B23A48"/><rect x="30" y="12" width="120" height="84" rx="10" fill="#C44E5C"/><text x="90" y="48" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="Geist">PURINA ONE</text><text x="90" y="66" text-anchor="middle" fill="#F6D9DD" font-size="9.5" font-family="Geist">Tender Selects</text></svg><span class="photoTag">PACK</span></div>
+              <div class="foodMeta"><div class="foodBrand">Purina One · Dry</div><div class="foodName">Tender Selects Blend Chicken</div>
+                <span class="ffBadge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="2"><path d="M4 12c0 4 3.5 7 8 7s8-3 8-7M3 12h18"/></svg>Always out</span></div>
+            </div>
+            <div class="foodCard" onclick="go('scr-fooddetail')">
+              <div class="packArt"><svg class="pa" viewBox="0 0 180 108" preserveAspectRatio="xMidYMid slice"><rect width="180" height="108" fill="#3E7C4F"/><rect x="30" y="12" width="120" height="84" rx="10" fill="#4E9162"/><text x="90" y="48" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="Geist">VIVA LA KITTY</text><text x="90" y="66" text-anchor="middle" fill="#DCF0E2" font-size="9.5" font-family="Geist">Chicken Bites</text></svg><span class="photoTag">PACK</span></div>
+              <div class="foodMeta"><div class="foodBrand">Viva La Kitty · Treat</div><div class="foodName">Chicken Recipe Bites</div></div>
+            </div>
+          </div>
+        </div>
+        <button class="fab" onclick="toggleSheet()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+
+      <!-- ═══════════ FOOD DETAIL ═══════════ -->
+      <div class="screen" id="scr-fooddetail">
+        <div class="pushHead">
+          <button class="backBtn" onclick="go('scr-foods')"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <span class="pushTitle">Food</span>
+        </div>
+        <div class="scroll" style="padding-bottom:100px;">
+          <div class="heroArt"><svg class="pa" viewBox="0 0 390 190" preserveAspectRatio="xMidYMid slice"><rect width="390" height="190" fill="#E8B428"/><ellipse cx="195" cy="95" rx="130" ry="78" fill="#F2C84B"/><text x="195" y="86" text-anchor="middle" fill="#7A2B1D" font-size="24" font-weight="700" font-family="Geist">TEMPTATIONS</text><text x="195" y="114" text-anchor="middle" fill="#7A2B1D" font-size="15" font-family="Geist">Catnip Flavor</text></svg></div>
+          <div class="detailBody">
+            <div class="detailBrand">Temptations · Treat · Dry</div>
+            <div class="detailName">Catnip Flavor</div>
+
+            <div class="intakeBlock">
+              <span class="zlabel">Intake record</span>
+              <div class="stackBar"><div class="full" style="width:67%"></div><div class="part" style="width:8%"></div><div class="ref" style="width:4%"></div></div>
+              <div class="intakeLine">Eaten fully 16 of 18 rated offers
+                <small>Offered 24 times since May 17 · 6 offers unrated</small></div>
+              <div class="intakeKey">
+                <span><i style="background:var(--accent)"></i>Ate all/most (16)</span>
+                <span><i style="background:#8AD9CD"></i>Some/picked (1)</span>
+                <span><i style="background:var(--clay)"></i>Refused (1)</span>
+              </div>
+              <div class="healthNote">Refusals are counted here, not judged — a change in appetite is a health question, and Nyx's Signal watches for that across every food.</div>
+            </div>
+
+            <div class="rowToggle">Always available for Nyx<span class="toggle"></span></div>
+            <div class="ingBlock">
+              <h4>Ingredients</h4>
+              <p>Chicken by-product meal, ground corn, animal fat, dried meat by-products, brewers rice, catnip, natural and artificial flavors…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ FAB SHEET ═══════════ -->
+      <div class="scrim" id="scrim" onclick="toggleSheet()"></div>
+      <div class="sheet" id="sheet">
+        <div class="grab"></div>
+        <div class="sheetLabel">Log again — one tap</div>
+        <div class="qRow" onclick="toggleSheet()">
+          <div class="qThumb"><svg class="pa" viewBox="0 0 40 40"><rect width="40" height="40" fill="#7A4FAF"/><text x="20" y="25" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Geist">WL</text></svg></div>
+          <div class="qMain"><div class="qName">Whisker Lickin's Chicken &amp; Seafood</div><div class="qSub">Treat · last given 10:15 AM</div></div>
+        </div>
+        <div class="qRow" onclick="toggleSheet()">
+          <div class="qThumb"><svg class="pa" viewBox="0 0 40 40"><rect width="40" height="40" fill="#205C9E"/><text x="20" y="25" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Geist">FF</text></svg></div>
+          <div class="qMain"><div class="qName">Fancy Feast Tuna Pâté</div><div class="qSub">Meal · last fed 5:12 PM</div></div>
+        </div>
+        <div class="qRow" onclick="toggleSheet()">
+          <div class="qThumb"><svg class="pa" viewBox="0 0 40 40"><rect width="40" height="40" fill="#E8B428"/><text x="20" y="25" text-anchor="middle" fill="#7A2B1D" font-size="9" font-weight="700" font-family="Geist">T</text></svg></div>
+          <div class="qMain"><div class="qName">Temptations Catnip Flavor</div><div class="qSub">Treat · last given 2:30 PM</div></div>
+        </div>
+
+        <div class="sheetLabel" style="margin-top:14px;">Something happened</div>
+        <div class="symBtns">
+          <button class="symBtn" onclick="toggleSheet()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg>
+            <span>Vomit</span>
+          </button>
+          <button class="symBtn" onclick="toggleSheet()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5 9c2-1.5 4-1.5 6 0s4 1.5 6 0"/><path d="M5 14c2-1.5 4-1.5 6 0s4 1.5 6 0"/><path d="M5 19c2-1.5 4-1.5 6 0s4 1.5 6 0"/></svg>
+            <span>Loose stool</span>
+          </button>
+        </div>
+        <div class="moreRow" onclick="toggleSheet()">Something else — meal, stool, lethargy, itch…<span>→</span></div>
+      </div>
+
+      <!-- tab bar -->
+      <div class="tabbar">
+        <button class="tab on" id="tab-home" onclick="go('scr-home')">
+          <svg viewBox="0 0 24 24"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>Home</button>
+        <button class="tab" id="tab-history" onclick="go('scr-history')">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>History</button>
+        <button class="tab" id="tab-foods" onclick="go('scr-foods')">
+          <svg viewBox="0 0 24 24"><path d="M4 12c0 4 3.5 7 8 7s8-3 8-7M3 12h18M7 12V8a5 5 0 0 1 10 0v4"/></svg>Foods</button>
+        <button class="tab" id="tab-pet" onclick="go('scr-home')">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21c1.5-4 4.2-6 7.5-6s6 2 7.5 6"/></svg>Nyx</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── annotations ─── -->
+  <div class="notes">
+    <div class="noteCard on" id="note-scr-home">
+      <div class="noteKicker">Surface 1 of 5</div>
+      <h2>Home — three zones become one narrative</h2>
+      <ul>
+        <li><b>Signal unchanged in role, upgraded in connection:</b> the lead card now ends in an evidence row — “See the pattern →” — that opens the chart behind the sentence. Cards finally earn Principle 3's “tappable to reveal the evidence.”</li>
+        <li><b>Today is now the day's story:</b> a time-axis strip (meals solid, treats hollow, symptoms clay) + one narrative line, instead of “last 3 events + N more.” Built for the real shape: ~8 feedings/day. Tap → today in History.</li>
+        <li><b>Trend zone → Pattern card:</b> bigger bars, a feeding lane for context, and the whole card is tappable into a 30-day explorer. This resolves B-067 by making the chart the <i>evidence layer</i>: reflection ③ suppresses when the Pattern card charts that symptom, and both share one window helper.</li>
+        <li class="guard"><b>Safety invariant intact:</b> the safety card always leads, is never capped, and the rose accent is now <i>reserved</i> for the safety lane — everything observational is clay.</li>
+        <li class="flag"><b>Stretch flag:</b> Principle 3's zone list (Signal/Today/Trend) is reinterpreted as Signal/Today/Pattern with shared evidence — needs a Tier-2 doc note.</li>
+      </ul>
+      <div class="legend"><span><i style="background:var(--accent)"></i>change</span><span><i style="background:var(--gold)"></i>principle stretch</span><span><i style="background:var(--rose)"></i>safety guardrail</span></div>
+    </div>
+
+    <div class="noteCard" id="note-scr-pattern">
+      <div class="noteKicker">Surface 2 of 5</div>
+      <h2>Pattern explorer — the chart you can finally touch</h2>
+      <ul>
+        <li><b>Tap-through from Home or the Signal card.</b> 14/30/all-time ranges, per-day bars, tap a bar → that day's detail (episode time, timing-to-meal when witnessed, what else was logged) with a jump into History.</li>
+        <li><b>Two lanes, deliberately separated:</b> symptom episodes (clay) and meal-logging coverage (mint). The Data Scientist's line: shown together for context, never drawn as one correlated chart — the footnote says exactly that, and signed claims stay in the Signal.</li>
+        <li><b>Windows match the engine:</b> “this week / last week” here uses the same rolling-7-day helper as detectors ③/④, killing B-067's contradictory-numbers risk by construction.</li>
+        <li class="guard"><b>Never reassures:</b> a quiet chart gets no “all clear” copy — empty days are just empty bars.</li>
+      </ul>
+    </div>
+
+    <div class="noteCard" id="note-scr-history">
+      <div class="noteKicker">Surface 3 of 5</div>
+      <h2>History — days, not a wall</h2>
+      <ul>
+        <li><b>Day-grouped by default.</b> At 8.4 events/day, the chronological dump was ~50 rows per screen-week. A day card = date + count pills; <b>symptom rows always visible</b> even collapsed (the 16 vomit events are the needles; the 228 meals are the haystack); feedings collapse to one summary row (“3 meals · 4 treats · all eaten fully”).</li>
+        <li><b>Density control:</b> Days ⇄ All-events toggle. Filters and pull-to-refresh unchanged; type-filtering “Vomit” flips to the flat view automatically.</li>
+        <li><b>Time honesty carried through:</b> found/estimated events keep their B-010 tags in the group (“~7:00 AM · estimated”).</li>
+        <li><b>Free-feeding strip and boundary markers stay</b> — the strip stays pinned; markers render at their day's foot.</li>
+        <li><b>Intake at a glance:</b> the rating rides each row as a quiet chip; a refusal renders clay, not red, and is just a fact on the row.</li>
+      </ul>
+    </div>
+
+    <div class="noteCard" id="note-scr-foods">
+      <div class="noteKicker">Surface 4 of 5</div>
+      <h2>Foods — a top-level tab (B-004), photo-forward</h2>
+      <ul>
+        <li><b>Fourth tab.</b> The library stopped being a picker detail: 46 foods, 18 brands, free-feeding management, and now an intake record per food. Browsing without logging is a real job.</li>
+        <li><b>Photo-forward tiles, without the chaos:</b> 42/46 foods already have front-of-pack photos. The fix for the abandoned photo-grid attempt is an <b>AI pack-shot crop</b>: extraction returns a crop box, the client crops once at add-time (no new server image dependency), tiles get uniform clean pack art. Text tile remains the no-photo fallback.</li>
+        <li class="guard"><b>“Reliable favorites” obeys the intake invariant:</b> positive-only, floor of 5+ rated offers at ≥90% eaten-fully, denominator printed on the card (“26 of 26”). No dislike shelf exists — decline is a health signal and routes to detector ②, never to a taste verdict.</li>
+        <li class="flag"><b>Stretch flag:</b> “three tabs maximum at MVP” (interaction principles) becomes four. Argued as: MVP qualifier + the FAB remains the universal log path, so navigation stays flat.</li>
+        <li><b>Brand canonicalization needed</b> (“Purina Friskies” vs “Friskies” are two brands today) before brand grouping ships — composes with B-052.</li>
+      </ul>
+    </div>
+
+    <div class="noteCard" id="note-scr-fooddetail">
+      <div class="noteKicker">Surface 4b</div>
+      <h2>Food detail — the intake record</h2>
+      <ul>
+        <li><b>Rate over N, denominator first:</b> “Eaten fully 16 of 18 rated offers · offered 24 times · 6 unrated.” The stacked bar shows full/partial/refused as counts, never a star rating, never the word “picky.”</li>
+        <li class="guard"><b>Refusals route to health, in the copy itself:</b> the footnote under every intake record says refusals are watched by the Signal as an appetite question — the surface never interprets them as taste.</li>
+        <li><b>Everything else stays:</b> always-available toggle (B-040), editable ingredients, re-run extraction.</li>
+      </ul>
+    </div>
+
+    <div class="noteCard" id="note-sheet">
+      <div class="noteKicker">Surface 5 of 5</div>
+      <h2>FAB — a sheet, three jobs, nothing else</h2>
+      <ul>
+        <li><b>Bottom sheet replaces the popover</b> — thumb-reach, 44pt+ rows, same one-tap re-log (kept, as ordered: it's the best thing about the FAB). Recent items show pack-art thumbnails and treats are eligible, not just meals.</li>
+        <li><b>“Log with photo” is gone.</b> Photos attach inside every flow; a photo is evidence on an event, not an event type.</li>
+        <li><b>Symptom chips stay</b> (vomit / loose stool, clay not red), then one “Something else” row into the full log screen. Five decisions became three.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ─── exhibits ─── -->
+<div class="exhibits">
+  <h2>Exhibit C — why stool and vomit stopped reading like blood</h2>
+  <div class="exGrid">
+    <div class="exCard">
+      <h3>Before — one red for everything</h3>
+      <div class="sub">Every symptom shares <code>#F43F5E</code> rose. A droplet glyph tinted red literally draws blood. Concern and emergency are indistinguishable.</div>
+      <div class="iconRow">
+        <div class="iconCell"><div class="bub" style="background:#FFE4E6"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.9"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg></div><div class="nm">Vomit (Droplet)</div></div>
+        <div class="iconCell"><div class="bub" style="background:#FFE4E6"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.9"><path d="M8 3s4 5 4 8a4 4 0 0 1-8 0c0-3 4-8 4-8z"/><path d="M17 8s3 3.5 3 6a3 3 0 0 1-6 0c0-2.5 3-6 3-6z"/></svg></div><div class="nm">Loose stool (Droplets)</div></div>
+        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9"><circle cx="12" cy="12" r="9"/></svg></div><div class="nm">Stool (Circle)</div></div>
+      </div>
+    </div>
+    <div class="exCard">
+      <h3>After — clay for observations, rose reserved for safety</h3>
+      <div class="sub">New token pair <code>colorEventAttention #BE6A4E</code> / light <code>#F8ECE3</code>. Glyph metaphors move from droplets to motion/form: vomit = expelled-wave arcs, loose stool = loose waves, stool = a settled form. Rose appears only on safety-lane cards and destructive actions.</div>
+      <div class="iconRow">
+        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg></div><div class="nm">Vomit</div></div>
+        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5 9c2-1.5 4-1.5 6 0s4 1.5 6 0"/><path d="M5 14c2-1.5 4-1.5 6 0s4 1.5 6 0"/><path d="M5 19c2-1.5 4-1.5 6 0s4 1.5 6 0"/></svg></div><div class="nm">Loose stool</div></div>
+        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round"><path d="M7 14c0-3 2-6 5-6s5 3 5 6-2 4-5 4-5-1-5-4z"/></svg></div><div class="nm">Stool (settled form)</div></div>
+        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M14 4l-4 5h4l-5 7 1-5h-4l4-7z"/></svg></div><div class="nm">Itch (sudden)</div></div>
+        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round"><path d="M17 4a8 8 0 1 0 3 9 7 7 0 0 1-3-9z"/></svg></div><div class="nm">Lethargy (kept)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Exhibit D — proposed token additions (values-only, flat names)</h2>
+  <div class="exGrid">
+    <div class="exCard">
+      <div class="swatchRow">
+        <div class="swatch"><div class="chipC" style="background:#BE6A4E"></div><div class="nm"><b>colorEventAttention</b><br>#BE6A4E — GI/symptom observations (was rose)</div></div>
+        <div class="swatch"><div class="chipC" style="background:#F8ECE3"></div><div class="nm"><b>colorEventAttentionLight</b><br>#F8ECE3</div></div>
+        <div class="swatch"><div class="chipC" style="background:#F43F5E"></div><div class="nm"><b>colorEventSymptom → safety only</b><br>#F43F5E — safety cards + destructive</div></div>
+        <div class="swatch"><div class="chipC" style="background:#00C2A8"></div><div class="nm"><b>colorAccent</b><br>unchanged — interactive + meals</div></div>
+      </div>
+      <div class="sub" style="margin-top:14px;">Everything else in this mockup uses the live v1.2 tokens verbatim (Geist body, Newsreader display on the Signal lead, 8pt grid, existing radii/shadows). The attention/safety split is the only palette change proposed.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const screens = ['scr-home','scr-pattern','scr-history','scr-foods','scr-fooddetail'];
+  const tabFor = { 'scr-home':'tab-home','scr-pattern':'tab-home','scr-history':'tab-history','scr-foods':'tab-foods','scr-fooddetail':'tab-foods' };
+  function go(id){
+    screens.forEach(s=>document.getElementById(s).classList.toggle('on', s===id));
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+    document.getElementById(tabFor[id]).classList.add('on');
+    document.querySelectorAll('.noteCard').forEach(n=>n.classList.remove('on'));
+    const note = document.getElementById('note-'+id);
+    if(note) note.classList.add('on');
+    closeSheet();
+  }
+  function toggleDay(id){ document.getElementById(id).classList.toggle('open'); }
+  function openDay(id){ document.getElementById(id).classList.add('open'); }
+  let sheetOpen=false;
+  function toggleSheet(){
+    sheetOpen=!sheetOpen;
+    document.getElementById('sheet').classList.toggle('on', sheetOpen);
+    document.getElementById('scrim').classList.toggle('on', sheetOpen);
+    document.querySelectorAll('.fab').forEach(f=>f.classList.toggle('open', sheetOpen));
+    if(sheetOpen){
+      document.querySelectorAll('.noteCard').forEach(n=>n.classList.remove('on'));
+      document.getElementById('note-sheet').classList.add('on');
+    }
+  }
+  function closeSheet(){
+    if(!sheetOpen) return;
+    sheetOpen=false;
+    document.getElementById('sheet').classList.remove('on');
+    document.getElementById('scrim').classList.remove('on');
+    document.querySelectorAll('.fab').forEach(f=>f.classList.remove('open'));
+  }
+</script>
+</body>
+</html>
