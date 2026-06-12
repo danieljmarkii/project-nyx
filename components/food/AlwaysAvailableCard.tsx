@@ -64,7 +64,8 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
     setMetaByPet(byPet);
     setOnByPet(Object.fromEntries(orderedPets.map((p) => [p.id, !!byPet[p.id]])));
     // foodItemId + the pet-id set are the real dependencies; orderedPets is
-    // identity-unstable across renders, so we key on the joined ids.
+    // identity-unstable across renders, so we key on the joined ids (names
+    // aren't used in this callback, so an id-stable rename needn't retrigger).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [foodItemId, petIdsKey]);
 
@@ -270,6 +271,9 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => handleStopFresh(pet)}
+            // Locked while a "Yes" confirm is in flight so a fast Yes→No
+            // can't end the row mid-confirm and flash a false "Confirmed ✓".
+            disabled={confirmingPetId === pet.id}
             hitSlop={8}
             activeOpacity={0.7}
             style={styles.freshnessChoiceBtn}
