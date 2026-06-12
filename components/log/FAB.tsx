@@ -5,9 +5,11 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, Plus } from 'lucide-react-native';
+import { Camera, ChevronDown, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { EventIcon } from '../event/EventIcon';
+import { PetAvatar } from '../pet/PetAvatar';
+import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { useAttachmentStore } from '../../store/attachmentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
@@ -28,11 +30,12 @@ interface RecentFood {
 export function FAB() {
   const { setPendingAttachment } = useAttachmentStore();
   const { prependEvent } = useEventStore();
-  const { activePet } = usePetStore();
+  const { pets, activePet } = usePetStore();
   const showMoment = useMomentStore((s) => s.show);
   const showMealMoment = useMomentStore((s) => s.showMeal);
 
   const [open, setOpen] = useState(false);
+  const [switcherVisible, setSwitcherVisible] = useState(false);
   const [recentFoods, setRecentFoods] = useState<RecentFood[]>([]);
   const [logging, setLogging] = useState<string | null>(null);
   const fabAnim = useRef(new Animated.Value(0)).current;
@@ -243,6 +246,34 @@ export function FAB() {
           <Animated.View
             style={[styles.menu, { opacity: menuOpacity, transform: [{ translateY: menuTranslateY }] }]}
           >
+            {/* Pet identity leads the log sheet (multi-pet spec §3.3, mock B1).
+                The flip happens *before* logging — v1 has no move-to-pet, so a
+                wrong-pet log means delete + re-log; the log taps below stay
+                one-tap (Principle 1). Renders only when pets.length > 1 —
+                single-pet households see no multi-pet chrome (§7.8). The menu
+                stays open across a flip: recent meals re-query reactively and
+                every write path reads the store at write time. */}
+            {pets.length > 1 && activePet && (
+              <>
+                <TouchableOpacity
+                  style={styles.logForChip}
+                  onPress={() => setSwitcherVisible(true)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
+                >
+                  <View style={styles.menuActionIcon}>
+                    <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={24} />
+                  </View>
+                  <Text style={styles.logForText} numberOfLines={1}>
+                    Logging for <Text style={styles.logForName}>{activePet.name}</Text>
+                  </Text>
+                  <ChevronDown size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
+                </TouchableOpacity>
+                <View style={styles.divider} />
+              </>
+            )}
+
             {/* Recent meals */}
             <Text style={styles.sectionHeader}>Recent meals</Text>
             {recentFoods.length === 0 ? (
@@ -348,6 +379,11 @@ export function FAB() {
           </Animated.View>
         </TouchableOpacity>
       </View>
+
+      <PetSwitcherSheet
+        visible={switcherVisible}
+        onClose={() => setSwitcherVisible(false)}
+      />
     </>
   );
 }
@@ -452,6 +488,24 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     paddingHorizontal: theme.space2,
     paddingVertical: theme.space1,
+  },
+  logForChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+    // The quiet chip still gets the full 44pt tap-target floor.
+    minHeight: 44,
+  },
+  logForText: {
+    flex: 1,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  logForName: {
+    color: theme.colorTextPrimary,
+    fontWeight: theme.weightMedium,
   },
   menuActionIcon: {
     width: 24,
