@@ -58,7 +58,15 @@ export function usePet() {
         return;
       }
 
-      // Query succeeded twice with zero rows — genuinely a new/petless account.
+      // Query succeeded twice with zero rows. If the store already holds a pet
+      // — onboarding/add-pet created one while this retry was in flight and the
+      // row isn't visible to this read yet — trust the store and don't bounce:
+      // re-onboarding an owner who just created a pet risks a duplicate pet.
+      // The next load reconciles against the server. (Adversarial-review find,
+      // multi-pet PR 2.)
+      if (usePetStore.getState().pets.length > 0) return;
+
+      // Genuinely a new/petless account.
       setOnboarded(false);
       router.replace('/onboarding/pet');
     }

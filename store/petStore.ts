@@ -83,6 +83,9 @@ export const usePetStore = create<PetState>((set, get) => ({
     if (options?.select) persistActivePetId(pet.id);
     set((state) => ({
       pets: [...state.pets.filter((p) => p.id !== pet.id), pet],
+      // On an empty store the first pet becomes active even without `select`,
+      // deliberately un-persisted: the launch fallback (oldest active pet)
+      // reproduces the same selection, so nothing is lost on restart.
       activePet: options?.select ? pet : state.activePet ?? pet,
     }));
   },
