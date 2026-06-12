@@ -113,17 +113,15 @@
   .laneKey { display:flex; gap:14px; margin-top:9px; font-size:10.5px; color:var(--t3); }
   .laneKey i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
 
-  /* today story */
-  .dayline { position:relative; height:44px; margin:14px 2px 2px; }
-  .dayline .track { position:absolute; top:21px; left:0; right:0; height:2px; background:var(--border); border-radius:1px; }
-  .dayline .now { position:absolute; top:13px; width:1.5px; height:18px; background:var(--t3); }
-  .dl { position:absolute; top:16px; width:12px; height:12px; border-radius:6px; border:2px solid var(--surface); }
-  .dl.meal { background:var(--accent); }
-  .dl.treat { background:var(--surface); border:2px solid var(--accent); }
-  .dl.sym { background:var(--clay); width:14px; height:14px; top:15px; }
-  .dayline .tick { position:absolute; top:36px; font-size:10px; color:var(--t3); transform:translateX(-50%); }
-  .storyLine { font-size:14px; color:var(--t1); margin-top:10px; }
-  .storyLine b { font-weight:500; }
+  /* today at a glance (rev 2 — count chips, not a dot timeline) */
+  .statChips { display:flex; gap:8px; margin-top:13px; flex-wrap:wrap; }
+  .statChip { display:flex; align-items:center; gap:7px; background:var(--surfaceSubtle);
+    border:1px solid var(--border); border-radius:999px; padding:7px 13px 7px 10px;
+    font-size:13px; font-weight:500; color:var(--t1); }
+  .statChip svg { width:15px; height:15px; }
+  .statChip.sym { background:var(--clayLight); border-color:#EFDACB; color:#9C4F36; }
+  .symCallout { display:flex; align-items:center; gap:11px; margin-top:13px; padding-top:13px;
+    border-top:1px solid var(--border); }
   .storySub { font-size:12.5px; color:var(--t3); margin-top:3px; }
   .todayCard { cursor:pointer; }
 
@@ -197,23 +195,26 @@
   .searchBox svg { width:16px; height:16px; stroke:var(--t3); stroke-width:2; fill:none; }
   .shelfLabel { display:flex; justify-content:space-between; align-items:baseline; margin:20px 20px 10px; }
   .shelfNote { font-size:11px; color:var(--t3); }
-  .favShelf { display:flex; gap:10px; overflow-x:auto; padding:0 20px 4px; scrollbar-width:none; }
-  .favShelf::-webkit-scrollbar { display:none; }
-  .favCard { flex:0 0 138px; background:var(--surface); border:1px solid var(--border); border-radius:14px;
-    padding:10px; cursor:pointer; }
-  .favRate { font-size:13px; font-weight:600; margin-top:8px; }
-  .favRate small { display:block; font-size:10.5px; color:var(--t3); font-weight:400; margin-top:1px; }
-  .favName { font-size:11.5px; color:var(--t2); margin-top:6px; line-height:1.35; }
-  .foodGrid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:10px 20px 0; }
-  .foodCard { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; cursor:pointer; }
-  .packArt { height:108px; display:flex; align-items:center; justify-content:center; position:relative; }
-  .packArt .photoTag { position:absolute; right:7px; top:7px; font-size:9px; letter-spacing:.5px;
-    color:rgba(255,255,255,.92); background:rgba(0,0,0,.34); padding:2px 6px; border-radius:999px; }
-  .foodMeta { padding:9px 11px 11px; }
+  /* rev 2 — full-width rows, neutral surface; pack color contained to a 44px thumb */
+  .listCard { margin:10px 20px 0; background:var(--surface); border:1px solid var(--border);
+    border-radius:16px; overflow:hidden; }
+  .foodRow { display:flex; align-items:center; gap:12px; padding:11px 14px; cursor:pointer;
+    border-top:1px solid var(--border); }
+  .listCard .foodRow:first-child, .listCard .brandHead + .foodRow { border-top:none; }
+  .foodThumb { width:44px; height:44px; border-radius:10px; overflow:hidden; flex:none;
+    background:var(--surfaceSubtle); border:1px solid var(--border); }
+  .foodMain { flex:1; min-width:0; }
   .foodBrand { font-size:9.5px; letter-spacing:.7px; text-transform:uppercase; color:var(--t3); font-weight:500; }
-  .foodName { font-size:13px; font-weight:500; line-height:1.3; margin-top:3px;
-    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-  .ffBadge { display:inline-flex; align-items:center; gap:4px; font-size:10px; color:#0B6E61; margin-top:5px; font-weight:500; }
+  .foodName { font-size:14px; font-weight:500; line-height:1.3; margin-top:2px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .fmtTag { font-size:11px; color:var(--t3); margin-top:2px; }
+  .favStat { text-align:right; flex:none; font-size:13.5px; font-weight:600; }
+  .favStat small { display:block; font-size:10px; color:var(--t3); font-weight:400; margin-top:1px; }
+  .brandHead { font-size:10.5px; letter-spacing:.7px; text-transform:uppercase; color:var(--t3);
+    font-weight:500; padding:13px 14px 7px; border-top:1px solid var(--border); background:var(--surface); }
+  .listCard .brandHead:first-child { border-top:none; }
+  .ffBadge { display:inline-flex; align-items:center; gap:4px; font-size:10px; color:#0B6E61; margin-top:3px; font-weight:500; }
+  .packArt { height:108px; display:flex; align-items:center; justify-content:center; position:relative; }
 
   /* pack art placeholder SVG canvases */
   .pa { width:100%; height:100%; }
@@ -299,7 +300,7 @@
 
 <div class="masthead">
   <h1>Nyx — the experience layer, rebuilt around the data it now holds</h1>
-  <p>Interactive mockup, real data shapes (244 events / 29 days · 46 foods · 177 rated meals). Everything in the phone is tappable where the proposal says it should be: switch tabs, tap the Pattern chart, expand a History day, open the FAB, tap a food.</p>
+  <p><b>Rev 2 — after PM feedback, Jun 12.</b> Interactive mockup, real data shapes (244 events / 29 days · 46 foods · 177 rated meals). Everything in the phone is tappable where the proposal says it should be: switch tabs, tap the Pattern chart, expand a History day, open the FAB, tap a food. Changed in rev 2: Today (chips, not dots), Foods (rows, not tiles), icons (literal, custom-drawn).</p>
   <span class="hint">Annotations to the right update with whatever screen you're on.</span>
 </div>
 
@@ -332,21 +333,16 @@
           <div class="zone">
             <div class="card todayCard" onclick="go('scr-history');openDay('day-today')">
               <span class="zlabel">Today</span>
-              <div class="dayline">
-                <div class="track"></div>
-                <span class="tick" style="left:4%">6a</span><span class="tick" style="left:33%">12p</span>
-                <span class="tick" style="left:62%">6p</span><span class="tick" style="left:92%">12a</span>
-                <i class="dl meal"  style="left:9%"></i>
-                <i class="dl treat" style="left:17%"></i>
-                <i class="dl sym"   style="left:23%"></i>
-                <i class="dl meal"  style="left:36%"></i>
-                <i class="dl treat" style="left:44%"></i>
-                <i class="dl treat" style="left:48%"></i>
-                <i class="dl meal"  style="left:57%"></i>
-                <div class="now" style="left:60%"></div>
+              <div class="statChips">
+                <span class="statChip"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg>3 meals</span>
+                <span class="statChip"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M3.5 12c2.8-3.2 6.7-3.2 9.5 0-2.8 3.2-6.7 3.2-9.5 0z"/><path d="M13 12l4.5-3.2v6.4L13 12z"/></svg>3 treats</span>
+                <span class="statChip sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg>1 vomit</span>
               </div>
-              <div class="storyLine"><b>3 meals · 3 treats · 1 vomit</b> so far today</div>
-              <div class="storySub">Last logged: Tuna Pâté, 5:12 PM · vomit at 8:40 AM, 6 min after breakfast</div>
+              <div class="symCallout">
+                <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div>
+                <div class="evMain"><div class="evLabel">Vomit · 8:40 AM</div><div class="evSub">6 min after breakfast</div></div>
+              </div>
+              <div class="storySub" style="margin-top:11px;">Last logged: Tuna Pâté · 5:12 PM — tap for the full day</div>
             </div>
           </div>
 
@@ -448,7 +444,7 @@
               <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
             </div>
             <div class="symRow">
-              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg></div>
+              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div>
               <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">6 min after breakfast</div></div>
               <div class="evTime">8:40 AM</div>
             </div>
@@ -487,7 +483,7 @@
               <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
             </div>
             <div class="symRow">
-              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg></div>
+              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div>
               <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">Found it — sometime before 7:00 AM</div></div>
               <div class="evTime">~7:00 AM<small>estimated</small></div>
             </div>
@@ -517,7 +513,7 @@
               <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
             </div>
             <div class="symRow">
-              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg></div>
+              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div>
               <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">3 min after eating · photo attached</div></div>
               <div class="evTime">9:05 AM</div>
             </div>
@@ -562,42 +558,58 @@
           <div class="searchBox"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.5-4.5"/></svg>Search 46 foods…</div>
 
           <div class="shelfLabel"><span class="zlabel">Reliable favorites</span><span class="shelfNote">5+ rated offers, eaten fully ≥90%</span></div>
-          <div class="favShelf">
-            <div class="favCard">
-              <div class="packArt" style="height:74px;border-radius:9px;overflow:hidden;"><svg class="pa" viewBox="0 0 140 76" preserveAspectRatio="xMidYMid slice"><rect width="140" height="76" fill="#7A4FAF"/><rect x="22" y="8" width="96" height="60" rx="8" fill="#8E63C2"/><text x="70" y="34" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="Geist">WHISKER</text><text x="70" y="48" text-anchor="middle" fill="#F4D35E" font-size="11" font-weight="700" font-family="Geist">LICKIN'S</text></svg></div>
-              <div class="favRate">26 of 26<small>rated offers eaten fully</small></div>
-              <div class="favName">Purina · Whisker Lickin's Chicken &amp; Seafood</div>
+          <div class="listCard">
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#8E63C2"/><text x="22" y="27" text-anchor="middle" fill="#fff" font-size="10" font-weight="700" font-family="Geist">WL</text></svg></div>
+              <div class="foodMain"><div class="foodBrand">Purina · Treat</div><div class="foodName">Whisker Lickin's Chicken &amp; Seafood</div></div>
+              <div class="favStat">26 of 26<small>eaten fully</small></div>
             </div>
-            <div class="favCard">
-              <div class="packArt" style="height:74px;border-radius:9px;overflow:hidden;"><svg class="pa" viewBox="0 0 140 76" preserveAspectRatio="xMidYMid slice"><rect width="140" height="76" fill="#1F6FB2"/><rect x="22" y="8" width="96" height="60" rx="8" fill="#3585C6"/><text x="70" y="34" text-anchor="middle" fill="#fff" font-size="10" font-weight="700" font-family="Geist">PARTY MIX</text><text x="70" y="48" text-anchor="middle" fill="#FFD24A" font-size="9" font-weight="700" font-family="Geist">LOBSTER · MAC</text></svg></div>
-              <div class="favRate">10 of 10<small>rated offers eaten fully</small></div>
-              <div class="favName">Friskies · Party Mix Lobster &amp; Mac 'N' Cheese</div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#3585C6"/><text x="22" y="27" text-anchor="middle" fill="#fff" font-size="10" font-weight="700" font-family="Geist">PM</text></svg></div>
+              <div class="foodMain"><div class="foodBrand">Friskies · Treat</div><div class="foodName">Party Mix Lobster &amp; Mac 'N' Cheese</div></div>
+              <div class="favStat">10 of 10<small>eaten fully</small></div>
             </div>
-            <div class="favCard">
-              <div class="packArt" style="height:74px;border-radius:9px;overflow:hidden;"><svg class="pa" viewBox="0 0 140 76" preserveAspectRatio="xMidYMid slice"><rect width="140" height="76" fill="#C2452D"/><rect x="22" y="8" width="96" height="60" rx="8" fill="#D55A40"/><text x="70" y="34" text-anchor="middle" fill="#fff" font-size="10" font-weight="700" font-family="Geist">SQUEEZE UP</text><text x="70" y="48" text-anchor="middle" fill="#FFE3B3" font-size="9" font-weight="700" font-family="Geist">CHICKEN</text></svg></div>
-              <div class="favRate">8 of 8<small>rated offers eaten fully</small></div>
-              <div class="favName">Delectables · Squeeze Up with Chicken</div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#D55A40"/><text x="22" y="27" text-anchor="middle" fill="#fff" font-size="10" font-weight="700" font-family="Geist">SU</text></svg></div>
+              <div class="foodMain"><div class="foodBrand">Delectables · Treat</div><div class="foodName">Squeeze Up with Chicken</div></div>
+              <div class="favStat">8 of 8<small>eaten fully</small></div>
             </div>
           </div>
 
-          <div class="shelfLabel"><span class="zlabel">Library</span><span class="shelfNote">18 brands · grouped A–Z</span></div>
-          <div class="foodGrid">
-            <div class="foodCard" onclick="go('scr-fooddetail')">
-              <div class="packArt"><svg class="pa" viewBox="0 0 180 108" preserveAspectRatio="xMidYMid slice"><rect width="180" height="108" fill="#E8B428"/><ellipse cx="90" cy="54" rx="58" ry="44" fill="#F2C84B"/><text x="90" y="48" text-anchor="middle" fill="#7A2B1D" font-size="13" font-weight="700" font-family="Geist">TEMPTATIONS</text><text x="90" y="66" text-anchor="middle" fill="#7A2B1D" font-size="10" font-weight="500" font-family="Geist">Catnip Flavor</text></svg><span class="photoTag">PACK</span></div>
-              <div class="foodMeta"><div class="foodBrand">Temptations · Treat</div><div class="foodName">Catnip Flavor</div></div>
+          <div class="shelfLabel"><span class="zlabel">Library</span><span class="shelfNote">46 foods · 18 brands · A–Z</span></div>
+          <div class="listCard">
+            <div class="brandHead">Fancy Feast</div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#2E70B8"/><text x="22" y="27" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Geist">FF</text></svg></div>
+              <div class="foodMain"><div class="foodName">Tuna Pâté Classic</div><div class="fmtTag">Wet · last fed today</div></div>
             </div>
-            <div class="foodCard" onclick="go('scr-fooddetail')">
-              <div class="packArt"><svg class="pa" viewBox="0 0 180 108" preserveAspectRatio="xMidYMid slice"><rect width="180" height="108" fill="#205C9E"/><rect x="30" y="12" width="120" height="84" rx="10" fill="#2E70B8"/><text x="90" y="48" text-anchor="middle" fill="#fff" font-size="12" font-weight="700" font-family="Geist">FANCY FEAST</text><text x="90" y="66" text-anchor="middle" fill="#CFE3F7" font-size="10" font-family="Geist">Tuna Pâté</text></svg><span class="photoTag">PACK</span></div>
-              <div class="foodMeta"><div class="foodBrand">Fancy Feast · Wet</div><div class="foodName">Tuna Pâté Classic</div></div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#5A8FC4"/><text x="22" y="27" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Geist">FF</text></svg></div>
+              <div class="foodMain"><div class="foodName">Chicken Feast Grilled</div><div class="fmtTag">Wet · last fed today</div></div>
             </div>
-            <div class="foodCard" onclick="go('scr-fooddetail')">
-              <div class="packArt"><svg class="pa" viewBox="0 0 180 108" preserveAspectRatio="xMidYMid slice"><rect width="180" height="108" fill="#B23A48"/><rect x="30" y="12" width="120" height="84" rx="10" fill="#C44E5C"/><text x="90" y="48" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="Geist">PURINA ONE</text><text x="90" y="66" text-anchor="middle" fill="#F6D9DD" font-size="9.5" font-family="Geist">Tender Selects</text></svg><span class="photoTag">PACK</span></div>
-              <div class="foodMeta"><div class="foodBrand">Purina One · Dry</div><div class="foodName">Tender Selects Blend Chicken</div>
-                <span class="ffBadge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="2"><path d="M4 12c0 4 3.5 7 8 7s8-3 8-7M3 12h18"/></svg>Always out</span></div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#4D7FB0"/><text x="22" y="27" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Geist">FF</text></svg></div>
+              <div class="foodMain"><div class="foodName">Ocean Whitefish</div><div class="fmtTag">Wet · last fed today</div></div>
             </div>
-            <div class="foodCard" onclick="go('scr-fooddetail')">
-              <div class="packArt"><svg class="pa" viewBox="0 0 180 108" preserveAspectRatio="xMidYMid slice"><rect width="180" height="108" fill="#3E7C4F"/><rect x="30" y="12" width="120" height="84" rx="10" fill="#4E9162"/><text x="90" y="48" text-anchor="middle" fill="#fff" font-size="11" font-weight="700" font-family="Geist">VIVA LA KITTY</text><text x="90" y="66" text-anchor="middle" fill="#DCF0E2" font-size="9.5" font-family="Geist">Chicken Bites</text></svg><span class="photoTag">PACK</span></div>
-              <div class="foodMeta"><div class="foodBrand">Viva La Kitty · Treat</div><div class="foodName">Chicken Recipe Bites</div></div>
+            <div class="brandHead">Purina One</div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#C44E5C"/><text x="22" y="27" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Geist">P1</text></svg></div>
+              <div class="foodMain"><div class="foodName">Tender Selects Blend Chicken</div>
+                <span class="ffBadge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="2"><path d="M4 12c0 4 3.5 7 8 7s8-3 8-7M3 12h18"/></svg>Always out · confirmed Jun 3</span></div>
+            </div>
+            <div class="brandHead">Temptations</div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#F2C84B"/><text x="22" y="27" text-anchor="middle" fill="#7A2B1D" font-size="9" font-weight="700" font-family="Geist">T</text></svg></div>
+              <div class="foodMain"><div class="foodName">Catnip Flavor</div><div class="fmtTag">Treat · last given today</div></div>
+            </div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#E0B33E"/><text x="22" y="27" text-anchor="middle" fill="#7A2B1D" font-size="9" font-weight="700" font-family="Geist">T</text></svg></div>
+              <div class="foodMain"><div class="foodName">Seafood Medley Flavor</div><div class="fmtTag">Treat · last given Jun 11</div></div>
+            </div>
+            <div class="brandHead">Viva La Kitty</div>
+            <div class="foodRow" onclick="go('scr-fooddetail')">
+              <div class="foodThumb"><svg class="pa" viewBox="0 0 44 44"><rect width="44" height="44" fill="#4E9162"/><text x="22" y="27" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="Geist">VK</text></svg></div>
+              <div class="foodMain"><div class="foodName">Chicken Recipe Bites</div><div class="fmtTag">Treat · last given Jun 8</div></div>
             </div>
           </div>
         </div>
@@ -659,11 +671,11 @@
         <div class="sheetLabel" style="margin-top:14px;">Something happened</div>
         <div class="symBtns">
           <button class="symBtn" onclick="toggleSheet()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg>
             <span>Vomit</span>
           </button>
           <button class="symBtn" onclick="toggleSheet()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5 9c2-1.5 4-1.5 6 0s4 1.5 6 0"/><path d="M5 14c2-1.5 4-1.5 6 0s4 1.5 6 0"/><path d="M5 19c2-1.5 4-1.5 6 0s4 1.5 6 0"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M10 7c0-1.2 1-2.1 2-2.3"/><path d="M6 14.5c0-2.4 2.7-3.8 6-3.8s6 1.4 6 3.8"/><path d="M5 14.8c1.8 1.2 4 1.7 7 1.7s5.2-.5 7-1.7"/><path d="M8.5 18.8v1.4M12 19.3v1.4M15.5 18.8v1.4"/></svg>
             <span>Loose stool</span>
           </button>
         </div>
@@ -692,7 +704,8 @@
       <h2>Home — three zones become one narrative</h2>
       <ul>
         <li><b>Signal unchanged in role, upgraded in connection:</b> the lead card now ends in an evidence row — “See the pattern →” — that opens the chart behind the sentence. Cards finally earn Principle 3's “tappable to reveal the evidence.”</li>
-        <li><b>Today is now the day's story:</b> a time-axis strip (meals solid, treats hollow, symptoms clay) + one narrative line, instead of “last 3 events + N more.” Built for the real shape: ~8 feedings/day. Tap → today in History.</li>
+        <li><b>Today is a glance, not a timeline (rev 2):</b> icon-led count chips (3 meals · 3 treats · 1 vomit) + a real row for any symptom with its timing fact + a last-logged line. The rev-1 dot strip made time-of-day the hero dimension; the team's read of your feedback: the questions Today answers are <i>what and how much</i>, and icons do the differentiating work dots couldn't. Tap → today in History.</li>
+        <li><b>Home/Today vs History/today, de-duplicated by altitude:</b> Home is the 2-second glance (counts + the needle); History is the record (full rows). They no longer look like the same card twice.</li>
         <li><b>Trend zone → Pattern card:</b> bigger bars, a feeding lane for context, and the whole card is tappable into a 30-day explorer. This resolves B-067 by making the chart the <i>evidence layer</i>: reflection ③ suppresses when the Pattern card charts that symptom, and both share one window helper.</li>
         <li class="guard"><b>Safety invariant intact:</b> the safety card always leads, is never capped, and the rose accent is now <i>reserved</i> for the safety lane — everything observational is clay.</li>
         <li class="flag"><b>Stretch flag:</b> Principle 3's zone list (Signal/Today/Trend) is reinterpreted as Signal/Today/Pattern with shared evidence — needs a Tier-2 doc note.</li>
@@ -715,6 +728,7 @@
       <div class="noteKicker">Surface 3 of 5</div>
       <h2>History — days, not a wall</h2>
       <ul>
+        <li><b>Kept as-is in rev 2</b> — your “day view is nice” + the redundancy concern were resolved on the Home side: Today on Home is now a compressed glance, so this day card is the only place a full day renders as rows.</li>
         <li><b>Day-grouped by default.</b> At 8.4 events/day, the chronological dump was ~50 rows per screen-week. A day card = date + count pills; <b>symptom rows always visible</b> even collapsed (the 16 vomit events are the needles; the 228 meals are the haystack); feedings collapse to one summary row (“3 meals · 4 treats · all eaten fully”).</li>
         <li><b>Density control:</b> Days ⇄ All-events toggle. Filters and pull-to-refresh unchanged; type-filtering “Vomit” flips to the flat view automatically.</li>
         <li><b>Time honesty carried through:</b> found/estimated events keep their B-010 tags in the group (“~7:00 AM · estimated”).</li>
@@ -728,7 +742,8 @@
       <h2>Foods — a top-level tab (B-004), photo-forward</h2>
       <ul>
         <li><b>Fourth tab.</b> The library stopped being a picker detail: 46 foods, 18 brands, free-feeding management, and now an intake record per food. Browsing without logging is a real job.</li>
-        <li><b>Photo-forward tiles, without the chaos:</b> 42/46 foods already have front-of-pack photos. The fix for the abandoned photo-grid attempt is an <b>AI pack-shot crop</b>: extraction returns a crop box, the client crops once at add-time (no new server image dependency), tiles get uniform clean pack art. Text tile remains the no-photo fallback.</li>
+        <li><b>Rows, not tiles (rev 2):</b> full-width rows with a 44px thumbnail — pack color is contained to a small square and the surface stays Nyx-neutral. Half-screen photo tiles amplified 46 packs' worth of competing brand color into chaos; rows also stop the truncation problem (one full-width line beats two clipped ones). Grouped by brand with quiet section heads.</li>
+        <li><b>Photos still earn their place:</b> 42/46 foods have front-of-pack shots. The <b>AI pack-shot crop</b> (extraction returns a crop box; client crops once at add-time — no new server image dependency) now feeds the 44px thumb, the detail hero, and the FAB sheet thumbnails. Initials-on-neutral is the no-photo fallback.</li>
         <li class="guard"><b>“Reliable favorites” obeys the intake invariant:</b> positive-only, floor of 5+ rated offers at ≥90% eaten-fully, denominator printed on the card (“26 of 26”). No dislike shelf exists — decline is a health signal and routes to detector ②, never to a taste verdict.</li>
         <li class="flag"><b>Stretch flag:</b> “three tabs maximum at MVP” (interaction principles) becomes four. Argued as: MVP qualifier + the FAB remains the universal log path, so navigation stays flat.</li>
         <li><b>Brand canonicalization needed</b> (“Purina Friskies” vs “Friskies” are two brands today) before brand grouping ships — composes with B-052.</li>
@@ -762,8 +777,8 @@
   <h2>Exhibit C — why stool and vomit stopped reading like blood</h2>
   <div class="exGrid">
     <div class="exCard">
-      <h3>Before — one red for everything</h3>
-      <div class="sub">Every symptom shares <code>#F43F5E</code> rose. A droplet glyph tinted red literally draws blood. Concern and emergency are indistinguishable.</div>
+      <h3>Before — the live Lucide set: abstract glyphs, one red for everything</h3>
+      <div class="sub">This is what shipped in v1.2 PR 3 (already custom stroke icons, not emoji). Two failures survived the swap: Lucide has no literal GI glyphs, so vomit/stool became abstract droplets — and every symptom shares <code>#F43F5E</code> rose, so a red droplet literally draws blood. Concern and emergency are indistinguishable.</div>
       <div class="iconRow">
         <div class="iconCell"><div class="bub" style="background:#FFE4E6"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.9"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg></div><div class="nm">Vomit (Droplet)</div></div>
         <div class="iconCell"><div class="bub" style="background:#FFE4E6"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.9"><path d="M8 3s4 5 4 8a4 4 0 0 1-8 0c0-3 4-8 4-8z"/><path d="M17 8s3 3.5 3 6a3 3 0 0 1-6 0c0-2.5 3-6 3-6z"/></svg></div><div class="nm">Loose stool (Droplets)</div></div>
@@ -771,14 +786,14 @@
       </div>
     </div>
     <div class="exCard">
-      <h3>After — clay for observations, rose reserved for safety</h3>
-      <div class="sub">New token pair <code>colorEventAttention #BE6A4E</code> / light <code>#F8ECE3</code>. Glyph metaphors move from droplets to motion/form: vomit = expelled-wave arcs, loose stool = loose waves, stool = a settled form. Rose appears only on safety-lane cards and destructive actions.</div>
+      <h3>After — literal silhouettes, custom-drawn, clay not red</h3>
+      <div class="sub">The rule: <b>a stool looks like a stool, a vomit looks like a vomit</b> — custom-drawn stroke glyphs (never Apple emoji, no licensing exposure), kept calm by color and line weight instead of abstraction. New token pair <code>colorEventAttention #BE6A4E</code> / light <code>#F8ECE3</code>; rose is reserved for safety-lane cards and destructive actions. These five are the brief for the commissioned Nyx icon family the migration plan already calls for.</div>
       <div class="iconRow">
-        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M4 15c2.5-2 5.5-2 8 0s5.5 2 8 0"/><path d="M6 10.5c2-1.6 4.4-1.6 6.4 0"/><path d="M9 6.5c1.2-1 2.8-1 4 0"/></svg></div><div class="nm">Vomit</div></div>
-        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5 9c2-1.5 4-1.5 6 0s4 1.5 6 0"/><path d="M5 14c2-1.5 4-1.5 6 0s4 1.5 6 0"/><path d="M5 19c2-1.5 4-1.5 6 0s4 1.5 6 0"/></svg></div><div class="nm">Loose stool</div></div>
-        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round"><path d="M7 14c0-3 2-6 5-6s5 3 5 6-2 4-5 4-5-1-5-4z"/></svg></div><div class="nm">Stool (settled form)</div></div>
-        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M14 4l-4 5h4l-5 7 1-5h-4l4-7z"/></svg></div><div class="nm">Itch (sudden)</div></div>
-        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round"><path d="M17 4a8 8 0 1 0 3 9 7 7 0 0 1-3-9z"/></svg></div><div class="nm">Lethargy (kept)</div></div>
+        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div><div class="nm">Vomit — a splash, unmistakably</div></div>
+        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M10 7c0-1.2 1-2.1 2-2.3"/><path d="M6 14.5c0-2.4 2.7-3.8 6-3.8s6 1.4 6 3.8"/><path d="M5 14.8c1.8 1.2 4 1.7 7 1.7s5.2-.5 7-1.7"/><path d="M8.5 18.8v1.4M12 19.3v1.4M15.5 18.8v1.4"/></svg></div><div class="nm">Loose stool — droops &amp; drips</div></div>
+        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.5c1.7.5 2.4 2 1.6 3.4"/><path d="M9.2 7h5c1.5 0 2.5 1.2 2.1 2.6"/><path d="M7 10h9.7c1.7 0 2.8 1.4 2.3 3"/><path d="M5.8 13.5h12.9c1.4 0 2.3 1.1 1.9 2.4-.4 1.3-1.7 2.1-3.3 2.1H7.2c-1.6 0-2.9-.8-3.3-2.1-.4-1.3.5-2.4 1.9-2.4z"/></svg></div><div class="nm">Stool — the swirl, drawn ours</div></div>
+        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><circle cx="9.5" cy="14.5" r="3"/><circle cx="5.8" cy="10" r="1.2"/><circle cx="9.5" cy="8.2" r="1.2"/><circle cx="13.2" cy="10" r="1.2"/><path d="M16.5 6.5l3.5 3.5M18 4.5l3.5 3.5"/></svg></div><div class="nm">Itch — paw + scratch strokes</div></div>
+        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round"><path d="M17 4a8 8 0 1 0 3 9 7 7 0 0 1-3-9z"/></svg></div><div class="nm">Lethargy — kept</div></div>
       </div>
     </div>
   </div>
