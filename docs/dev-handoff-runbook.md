@@ -5,19 +5,21 @@ The exact, copy-pasteable command scripts the PM runs to get the latest code ont
 There are **two runtimes**, and they map to two *different intentions*:
 
 - **Runtime B (Metro + tunnel) is the per-push default** — it's how the PM tests a single pushed PR on-device for a one-off look. Emit this after a normal feature push.
-- **Runtime A (`eas update` OTA → TestFlight) is a deliberate, separate "cut a new build" session** — the PM kicks it off **by hand, in its own session**, when changes are significant enough to warrant a new TestFlight version. It is **not** the handoff after every push.
+- **Runtime A (TestFlight) is a deliberate, separate "cut a new build" session** — the PM kicks it off **by hand, in its own session**, when changes warrant a new TestFlight version. It is **not** the handoff after every push. It has two sub-paths: a fast **OTA** push (JS-only changes → existing build) and a full **native build + submit** (anything native changed, or you want a fresh binary). It went live 2026-06-07 (Apple enrollment + first TestFlight build done); see `STATUS.md` → Runtime in Use.
 
-Pick the one that matches the session's intention and emit only that block. **Default to Runtime B** unless the session's explicit goal is cutting a TestFlight build. (Runtime A went live 2026-06-07 — Apple enrollment + first TestFlight build are done, so `eas update` now reaches the build OTA; see `STATUS.md` → Runtime in Use.)
+Pick the one that matches the session's intention and emit only that block. **Default to Runtime B** unless the session's explicit goal is shipping to TestFlight.
+
+> ⚠️ **The TestFlight build lives on the `production` channel, built with the `production` profile** (`distribution: store`). This was mis-documented as `preview` until 2026-06-12 and cost a full session — see the two traps in `STATUS.md` → Runtime in Use. `preview` is `distribution: internal` (ad-hoc) and is **not** TestFlight-eligible; OTA to TestFlight is `--branch production`, never `--branch preview`.
 
 ---
 
-## Runtime A — OTA update to the TestFlight build (via `eas update`)
+## Runtime A-OTA — push a JS-only change to the existing TestFlight build (via `eas update`)
 
-⚠️ **Not the per-push default.** This is the *deliberate* path the PM runs **by hand, in its own session**, when changes are significant enough to push a new version to TestFlight. For testing a single pushed PR, use Runtime B below.
+⚠️ **Not the per-push default.** Use this when the change is **pure JS/TS/React** (no new native module, SDK bump, or `app.json` native/permission change) and you just want it on the *existing* installed TestFlight build in ~2 minutes. For testing a single pushed PR locally, use Runtime B below; for a native change, use Runtime A-Native.
 
-The app is published as a JS bundle to Expo's CDN on the `preview` channel; the installed TestFlight build picks it up OTA on next cold open (matching channel + `runtimeVersion`). Live since 2026-06-07 (Apple enrollment + first TestFlight build done). No Codespace tunnel required for the PM to use the app — only to publish a new version.
+The app is published as a JS bundle to Expo's CDN on the **`production`** channel; the installed TestFlight build picks it up OTA on next cold open (matching channel + `runtimeVersion`). No Codespace tunnel required.
 
-**Sequence (run when the session's goal is cutting a new TestFlight version):**
+**Sequence:**
 
 ```bash
 git fetch origin <branch-name>
@@ -29,21 +31,47 @@ Gets the latest commits, **switches you onto the branch we just pushed to**, and
 > **One-time fix that kills the "divergent branches" prompt for good** — run this once per Codespace (or with `--global`): `git config --global pull.ff only`. After that, any stray `git pull` fast-forwards or fails fast instead of dropping you into the merge-vs-rebase chooser. And if you ever see that prompt again, the answer is **never** "pick merge or rebase" — it's: you're on the wrong branch. Run `git checkout <the branch named in the handoff>` and re-run. The PM consumes these `claude/...` branches read-only (Claude is the only one committing to them), so there is never a real divergence to reconcile — only a wrong-branch mistake to undo.
 
 ```bash
-eas update --branch preview --message "<one-line description of change>"
+eas update --branch production --message "<one-line description of change>"
 ```
-Compiles the current JS bundle and uploads it to Expo's CDN on the `preview` channel. The installed **TestFlight build** picks it up on next cold open (it must match the build's channel + `runtimeVersion`). Note: EAS cloud builds inline env from the `eas.json` `env` block, not `.env.local` (which is gitignored and never seen by the cloud builder) — see the Secrets Register.
+Compiles the current JS bundle and uploads it to Expo's CDN on the **`production`** channel. The installed **TestFlight build** picks it up on next cold open (it must match the build's channel + `runtimeVersion`). Note: EAS cloud builds inline env from the `eas.json` `env` block, not `.env.local` (which is gitignored and never seen by the cloud builder) — see the Secrets Register.
 
 Then on your phone: **fully close the Nyx TestFlight app** (swipe it away from app switcher) and reopen it. It fetches the new bundle on launch. A warm reload is not enough — the bundle is cached and only refetched on cold open.
+
+---
+
+## Runtime A-Native — cut a fresh TestFlight binary (via `eas build` + submit)
+
+Use this when **anything native changed** (new native module, SDK bump, `app.json` native config or permissions) or you simply want a new build/version in TestFlight. OTA can't carry native changes; this builds a real store-signed binary and submits it. Verified 2026-06-12 (build 22 from `main`).
+
+**Sequence:**
+
+```bash
+git fetch origin <branch-name>
+git checkout <branch-name>
+git pull --ff-only            # same checkout-before-pull rule as above
+```
+
+```bash
+npm install -g eas-cli && eas whoami    # containers are ephemeral; reinstall + confirm login (eas login if needed)
+```
+
+```bash
+eas build --platform ios --profile production --auto-submit
+```
+Builds a **store-signed** binary on the `production` profile (`distribution: store`, `channel: production`) and, on success, submits **that same artifact** straight to TestFlight via the matching `submit.production` profile. `autoIncrement: true` advances the build number (lives on EAS — `appVersionSource: remote`). ~15 min build + ~5–15 min Apple processing, then it appears in TestFlight.
+
+**Hard-won rules (2026-06-12 — each cost real time):**
+- **Use the `production` profile, not `preview`.** `preview` = `distribution: internal` (ad-hoc) → not TestFlight-eligible. Internal binaries can never be submitted.
+- **Use `--auto-submit`, not `eas submit --latest`.** `--latest` picks the latest *store* build and skips internal ones, so it silently re-uploads a stale older binary. `--auto-submit` binds the upload to the binary just built.
+- **"build number N already used" = EAS counter is behind App Store Connect.** Fix: `eas build:version:set --platform ios` → set it above ASC's current max (check TestFlight → builds for the version train), then rebuild. Gaps in build numbers are fine.
 
 **One-time setup (first session only, then never again):**
 
 ```bash
-npm install -g eas-cli
-eas login
 eas init                          # links the project, writes extra.eas.projectId into app.json
-eas update:configure              # adds expo-updates runtime + updates.url to app.json
+eas update:configure              # adds expo-updates runtime + updates.url to app.json (only needed for the OTA path)
 ```
-After this runs, commit any changes `eas` made to `app.json` and push. From then on, the PM only needs the two-command default sequence above.
+After this runs, commit any changes `eas` made to `app.json` and push. From then on, the PM only needs the sequences above.
 
 ---
 
