@@ -112,9 +112,16 @@ export function EditPetModal({ visible, onClose }: Props) {
   const [dob, setDob] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
+  // The pet this form was seeded FOR. Unlike the log paths (which stamp the
+  // pet active at write time, spec §6), an edit must land on the pet whose
+  // values fill the form — if the active pet flips while the modal is open
+  // (possible once the switcher ships), saving Pixel's fields onto Juniper's
+  // row would be a cross-pet overwrite. The save guard below refuses instead.
+  const [editingPetId, setEditingPetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible && activePet) {
+      setEditingPetId(activePet.id);
       setName(activePet.name);
       setSpecies(activePet.species);
       const { breed: b, isOtherBreed: isOther } = initBreedState(activePet);
@@ -149,6 +156,14 @@ export function EditPetModal({ visible, onClose }: Props) {
 
   async function handleSave() {
     if (!activePet || !name.trim()) return;
+    if (activePet.id !== editingPetId) {
+      // Active pet changed under an open form — never save across the flip
+      // (updatePet patches the ACTIVE pet, and the row update would target it
+      // too). Unreachable until the switcher ships; defensive for PR 3.
+      console.warn('[EditPetModal] active pet changed mid-edit; discarding save');
+      onClose();
+      return;
+    }
     setSaving(true);
     try {
       const lbs = weightStr.trim() ? parseFloat(weightStr) : null;

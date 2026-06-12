@@ -71,14 +71,17 @@ export function FAB() {
   }, [open, activePet]);
 
   async function handleQuickMeal(food: RecentFood) {
-    if (logging || !activePet) return;
+    // Write-time pet identity (multi-pet spec §6): read the store at the moment
+    // of write, not the render-time closure (the queue-then-switch edge).
+    const pet = usePetStore.getState().activePet;
+    if (logging || !pet) return;
     setLogging(food.id);
     try {
       // insertMeal owns the event+meal write, the food-recency touch, the sync
       // push, AND the AI-Signal regen (B-059) — so this quick-log path can't
       // drift out of sync with the other entry points the way it once did.
       const { eventId, occurredAtIso, now } = await insertMeal({
-        petId: activePet.id,
+        petId: pet.id,
         foodId: food.id,
         occurredAt: new Date(),
         occurredAtSource: 'now',
@@ -90,7 +93,7 @@ export function FAB() {
           : null;
       prependEvent({
         id: eventId,
-        pet_id: activePet.id,
+        pet_id: pet.id,
         event_type: 'meal',
         occurred_at: occurredAtIso,
         occurred_at_confidence: 'witnessed',
@@ -131,7 +134,9 @@ export function FAB() {
   // (e.g. navigate to a photo-capture screen with the event_id pre-filled
   // so the attachment can be linked). Currently logs silently with no photo path.
   async function handleQuickSymptom(type: 'vomit' | 'diarrhea') {
-    if (logging || !activePet) return;
+    // Write-time pet identity — same rule as handleQuickMeal.
+    const pet = usePetStore.getState().activePet;
+    if (logging || !pet) return;
     setLogging(type);
     try {
       const now = new Date().toISOString();
@@ -142,7 +147,7 @@ export function FAB() {
       // datetime('now') local-time parse trap in cross-device LWW).
       await db.runAsync(
         'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, ?, ?, 0)',
-        [eventId, activePet.id, type, now, 'manual', 'now', now, now],
+        [eventId, pet.id, type, now, 'manual', 'now', now, now],
       );
 
       // Push immediately so the quick symptom reaches Supabase right away (no
@@ -152,11 +157,11 @@ export function FAB() {
       // Freshness (§2): a symptom is a primary input to the correlation + safety
       // detectors, so refresh the AI Signal — the full log.tsx symptom flow does
       // the same. (Meals get this via insertMeal; this is the symptom parallel.)
-      triggerSignalRegenDebounced(activePet.id);
+      triggerSignalRegenDebounced(pet.id);
 
       prependEvent({
         id: eventId,
-        pet_id: activePet.id,
+        pet_id: pet.id,
         event_type: type,
         occurred_at: now,
         severity: null,

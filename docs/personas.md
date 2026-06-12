@@ -202,7 +202,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 ## Pet Owner (cat) — Sam
 **Role:** Cat-owner variant of Jordan. Represents the grazing, picky-eater usage context — the true target user for food-preference surfaces (B-023) and the broader "known for more than sensitive stomachs" positioning. Drafted as a stub May 2026 (flagged since v1.19); flesh out before scoping B-023.
 
-**Who Sam is:** 29, one indoor cat (Pixel, 6yo domestic shorthair). Not in a diet trial — Pixel is broadly healthy. Sam's recurring pain is the cabinet of half-eaten cans Pixel rejected after one sniff. The adage "you can never guess what a cat will like" is Sam's daily reality. Buys on guesswork, wastes food and money, and worries whenever Pixel skips a meal.
+**Who Sam is:** 29, two indoor cats — Pixel (6yo domestic shorthair) and Juniper (2yo domestic shorthair, adopted this spring). Pixel is the fussy one; Juniper eats anything, including Pixel's leftovers — so Sam can rarely say for certain who ate what from a shared bowl. Sam's recurring pains: the cabinet of half-eaten cans Pixel rejected, and now the low-grade worry of telling two cats' habits apart — including who the vomit on the rug belongs to when nobody saw it happen. _(Extended to a two-cat household 2026-06-12 with the multi-pet v1 spec, B-086; the unwitnessed-incident attribution question feeds B-010's window model and the future B-040 attribution layer, not v1 scope.)_
 
 **What Sam needs from Nyx:**
 - An honest read on what Pixel actually eats vs. ignores — "will she like this?" answered by data, not gut feel, before spending on a new case
@@ -218,6 +218,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Designing any food-preference / likes-dislikes surface (B-023) or intake-trend display
 - Evaluating cat-specific feeding flows (grazing, free-feeding, partial eating)
 - Writing copy that distinguishes normal fussiness from clinically meaningful intake decline
+- Designing any multi-pet surface (switcher, per-pet toggles, cross-pet banner); evaluating whether a multi-pet affordance stays invisible for single-pet owners; any shared-bowl or attribution-confidence copy
 
 **Key question Sam asks:** "Will Pixel actually eat this — and would I know if she'd stopped because she's sick, not just fussy?"
 
