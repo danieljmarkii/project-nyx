@@ -11,6 +11,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, getPublicUrl } from '../../lib/storage';
+import { archiveBlockedCopy } from '../../lib/utils';
 import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { EditPetModal } from '../../components/profile/EditPetModal';
@@ -244,10 +245,8 @@ export default function ProfileScreen() {
     // Archive-last-pet is blocked with honest copy (spec §3.5): the app needs
     // one active pet, and true deletion belongs to the Privacy track (B-039).
     if (pets.length <= 1) {
-      Alert.alert(
-        `${activePet.name} is your only pet here`,
-        'Your pet list needs at least one pet, so archiving isn’t available right now. Adding another pet first makes this possible.',
-      );
+      const blocked = archiveBlockedCopy(activePet.name);
+      Alert.alert(blocked.title, blocked.body);
       return;
     }
     setArchivingPet(activePet);

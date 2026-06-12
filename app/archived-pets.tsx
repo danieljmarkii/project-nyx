@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
@@ -22,6 +22,16 @@ export default function ArchivedPetsScreen() {
   const [archivedPets, setArchivedPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  // Gates handleRestore's setState calls if the owner dismisses the modal
+  // mid-restore — the store updates still apply (they must), only the local
+  // list update is skipped on an unmounted screen.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -75,15 +85,19 @@ export default function ArchivedPetsScreen() {
       const store = usePetStore.getState();
       store.setPets(data ?? [], store.activePet?.id ?? null);
 
-      setArchivedPets((prev) => prev.filter((p) => p.id !== pet.id));
+      if (mountedRef.current) {
+        setArchivedPets((prev) => prev.filter((p) => p.id !== pet.id));
+      }
     } catch (e) {
       console.error('[ArchivedPets] restore failed:', e);
-      Alert.alert(
-        'Could not bring back',
-        `Something went wrong and ${pet.name} is still archived. Check your connection and try again.`,
-      );
+      if (mountedRef.current) {
+        Alert.alert(
+          'Could not bring back',
+          `Something went wrong and ${pet.name} is still archived. Check your connection and try again.`,
+        );
+      }
     } finally {
-      setRestoringId(null);
+      if (mountedRef.current) setRestoringId(null);
     }
   }
 
@@ -200,7 +214,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusSmall,
     paddingHorizontal: theme.space2,
     paddingVertical: 8,
-    minHeight: 36,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },

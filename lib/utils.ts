@@ -211,3 +211,14 @@ export function archiveConfirmBody(pet: { sex: 'male' | 'female' | 'unknown' }):
   const possessive = p.possessive.charAt(0).toUpperCase() + p.possessive.slice(1);
   return `${possessive} history stays safe, and ${p.subject} ${p.comesVerb} off your pet list. You can bring ${p.object} back anytime from Archived pets.`;
 }
+
+// Archive-last-pet blocked copy (spec §3.5) — one source for the Pet tab's
+// pre-confirm guard AND the confirm sheet's race re-check, so the two alerts
+// can never drift apart. Honest about the constraint, names the way forward;
+// true deletion stays with the Privacy track.
+export function archiveBlockedCopy(petName: string): { title: string; body: string } {
+  return {
+    title: `${petName} is your only pet here`,
+    body: 'Your pet list needs at least one pet, so archiving isn’t available right now. Adding another pet first makes this possible.',
+  };
+}

@@ -71,6 +71,10 @@ export const theme = {
   colorDestructive: '#DC2626',
   colorDestructiveOnDark: '#ff6b6b',
 
+  // Modal scrim — one value for every bottom-sheet/confirm overlay so stacked
+  // surfaces dim identically (switcher sheet, archive confirm; FAB chip next).
+  colorScrim: 'rgba(10, 10, 10, 0.35)',
+
   // Completion "moment" — consumed by PR 4 (gold ring in app/log.tsx).
   colorMomentGlow: '#FBBF24',
   colorMomentConfirm: '#00C2A8',

@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import { usePetStore, Pet } from '../../store/petStore';
-import { archiveConfirmBody } from '../../lib/utils';
+import { archiveBlockedCopy, archiveConfirmBody } from '../../lib/utils';
 
 interface ArchivePetSheetProps {
   visible: boolean;
@@ -35,10 +35,8 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
     // app must never reach (spec §3.5).
     if (usePetStore.getState().pets.length <= 1) {
       onClose();
-      Alert.alert(
-        `${pet.name} is your only pet here`,
-        'Your pet list needs at least one pet, so archiving isn’t available right now. Adding another pet first makes this possible.',
-      );
+      const blocked = archiveBlockedCopy(pet.name);
+      Alert.alert(blocked.title, blocked.body);
       return;
     }
 
@@ -80,7 +78,7 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
             accessibilityRole="button"
           >
             {archiving
-              ? <ActivityIndicator color="#fff" />
+              ? <ActivityIndicator color={theme.colorSurface} />
               : <Text style={styles.archiveBtnText}>Archive</Text>}
           </TouchableOpacity>
           <TouchableOpacity
@@ -105,7 +103,7 @@ const styles = StyleSheet.create({
   },
   scrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(10, 10, 10, 0.35)',
+    backgroundColor: theme.colorScrim,
   },
   card: {
     marginHorizontal: 14,
@@ -140,7 +138,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   archiveBtnText: {
-    color: '#fff',
+    color: theme.colorSurface,
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
   },

@@ -25,6 +25,9 @@ export function PetAvatar({ name, photoPath, size }: PetAvatarProps) {
 
   return (
     <View style={[styles.placeholder, round]}>
+      {/* Initial scales with the disc (0.4 ratio ≈ textMD at the header's
+          38pt) rather than a fixed token, so smaller switcher-row discs don't
+          render an oversized letter. */}
       <Text style={[styles.initial, { fontSize: Math.round(size * 0.4) }]}>
         {name.charAt(0).toUpperCase()}
       </Text>

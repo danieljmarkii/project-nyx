@@ -1,4 +1,5 @@
 import {
+  archiveBlockedCopy,
   archiveConfirmBody,
   deriveOccurredAt,
   describeOccurredAt,
@@ -208,6 +209,14 @@ describe('petPronouns / archiveConfirmBody', () => {
     (['female', 'male', 'unknown'] as const).forEach((sex) => {
       expect(archiveConfirmBody({ sex })).not.toContain('!');
     });
+  });
+
+  it('archiveBlockedCopy names the pet, stays honest, and carries no exclamation marks', () => {
+    const blocked = archiveBlockedCopy('Pixel');
+    expect(blocked.title).toBe('Pixel is your only pet here');
+    expect(blocked.body).toContain('at least one pet');
+    expect(blocked.title).not.toContain('!');
+    expect(blocked.body).not.toContain('!');
   });
 
   it('pronoun sets are internally consistent', () => {
