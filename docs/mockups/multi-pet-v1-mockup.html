@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nyx — Multi-Pet v1 Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+  /* ── Theme tokens, mirrored from constants/theme.ts (v1.2 "Linear Clean") ── */
+  :root{
+    --font-body:'Geist',-apple-system,system-ui,sans-serif;
+    --font-display:'Newsreader',Georgia,serif;
+    --accent:#00C2A8; --accent-light:#E0FBF7;
+    --neutral-dark:#0A0A0A; --neutral-light:#FAFAFA;
+    --surface:#FFFFFF; --surface-subtle:#F5F5F5;
+    --text-primary:#0A0A0A; --text-secondary:#525252; --text-tertiary:#737373; --text-disabled:#A3A3A3;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --symptom:#F43F5E; --symptom-light:#FFE4E6;
+    --s1:8px; --s2:16px; --s3:24px; --s4:32px;
+    --r-sm:8px; --r-md:16px; --r-lg:24px; --r-full:999px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-body);background:#E7E9EE;color:var(--text-primary);-webkit-font-smoothing:antialiased;padding:40px 24px 64px;}
+  .page-head{max-width:1180px;margin:0 auto 32px;}
+  .page-head h1{font-family:var(--font-display);font-weight:400;font-size:30px;letter-spacing:-0.3px;}
+  .page-head .sub{color:var(--text-secondary);font-size:14px;margin-top:6px;line-height:1.5;max-width:880px;}
+  .page-head .meta{color:var(--text-tertiary);font-size:12px;margin-top:10px;}
+  .rowlabel{max-width:1180px;margin:34px auto 18px;font-family:var(--font-display);font-weight:400;font-size:21px;letter-spacing:-0.2px;}
+  .rowlabel:first-of-type{margin-top:0;}
+  .stage{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:28px;align-items:start;}
+  @media(max-width:1100px){.stage{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:620px){.stage{grid-template-columns:1fr;}}
+  .frame-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .caption{font-size:13px;color:var(--text-secondary);text-align:center;line-height:1.45;max-width:262px;}
+  .caption b{color:var(--text-primary);font-weight:600;}
+  .caption .tag{display:inline-block;font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--accent);background:var(--accent-light);border-radius:var(--r-full);padding:2px 8px;margin-bottom:6px;font-weight:600;}
+  .caption .tag.warn{color:var(--symptom);background:var(--symptom-light);}
+
+  .phone{width:268px;background:var(--surface);border-radius:34px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 18px 50px rgba(10,10,12,.22);overflow:hidden;border:1px solid #DADCE2;position:relative;}
+  .screen{height:600px;display:flex;flex-direction:column;background:var(--neutral-light);position:relative;}
+  .statusbar{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:11px;font-weight:500;background:var(--surface);flex:none;}
+  .statusbar .dots{letter-spacing:1px;}
+
+  /* ── Home identity strip (shipped B-076 component, switcher now live) ── */
+  .idstrip{background:var(--surface);border-bottom:1px solid var(--border);padding:10px var(--s2) 12px;flex:none;}
+  .wordmark{font-family:var(--font-display);font-weight:400;font-size:15px;letter-spacing:-0.2px;color:var(--text-tertiary);}
+  .id-row{display:flex;align-items:center;gap:11px;margin-top:8px;}
+  .avatar{width:38px;height:38px;border-radius:var(--r-full);background:linear-gradient(135deg,#CDE8E2,#9FD8CC);flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;}
+  .avatar.b{background:linear-gradient(135deg,#E3D5F5,#C3A6E8);}
+  .avatar.sm{width:30px;height:30px;font-size:15px;}
+  .id-text{flex:1;min-width:0;}
+  .id-name{font-size:17px;font-weight:600;color:var(--text-primary);line-height:1.1;}
+  .id-sub{font-size:12px;color:var(--text-tertiary);margin-top:2px;}
+  .chev{color:var(--text-secondary);font-size:16px;flex:none;}
+
+  .body{flex:1;overflow:hidden;padding:var(--s3) var(--s2);display:flex;flex-direction:column;gap:14px;}
+  .zlabel{font-size:11px;font-weight:500;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.8px;}
+  .signal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);box-shadow:0 1px 4px rgba(0,0,0,.05);}
+  .signal.warn{border-left:3px solid var(--symptom);}
+  .signal .stext{font-family:var(--font-display);font-weight:400;font-size:19px;line-height:1.32;letter-spacing:-0.3px;color:var(--text-primary);}
+  .signal .smeta{font-size:11px;color:var(--text-tertiary);margin-top:9px;letter-spacing:.4px;}
+  .today{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);}
+  .today .row{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-secondary);padding:3px 0;}
+  .today .dot{width:7px;height:7px;border-radius:var(--r-full);background:var(--accent);flex:none;}
+  .today .dot.sym{background:var(--symptom);}
+  .trend{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);}
+  .bars{display:flex;align-items:flex-end;gap:6px;height:44px;margin-top:10px;}
+  .bars i{flex:1;background:var(--accent-light);border-radius:3px 3px 0 0;}
+  .bars i.s{background:var(--symptom-light);}
+  .tabbar{height:54px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex:none;}
+  .tabbar div{flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;letter-spacing:.4px;color:var(--text-disabled);}
+  .tabbar div.on{color:var(--neutral-dark);}
+
+  /* ── Cross-pet safety breakthrough banner ── */
+  .xpet{display:flex;align-items:center;gap:9px;background:var(--symptom-light);border:1px solid #FBCFD6;border-radius:var(--r-md);padding:9px 12px;}
+  .xpet .avatar{width:26px;height:26px;font-size:13px;}
+  .xpet .xtext{flex:1;font-size:12.5px;color:var(--text-primary);line-height:1.35;}
+  .xpet .xtext b{font-weight:600;}
+  .xpet .xchev{color:var(--text-tertiary);font-size:14px;}
+
+  /* ── Bottom sheets (switcher, log) ── */
+  .scrim{position:absolute;inset:0;background:rgba(10,10,10,.32);}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:var(--r-lg) var(--r-lg) 0 0;padding:10px var(--s2) var(--s3);box-shadow:0 -8px 40px rgba(10,10,12,.18);}
+  .grab{width:36px;height:4px;border-radius:var(--r-full);background:var(--border-strong);margin:0 auto 14px;}
+  .sheet-h{font-size:14px;font-weight:600;margin-bottom:10px;}
+  .petrow{display:flex;align-items:center;gap:11px;padding:10px 6px;border-radius:var(--r-sm);}
+  .petrow.sel{background:var(--accent-light);}
+  .petrow .pname{flex:1;font-size:15px;font-weight:500;}
+  .petrow .psub{font-size:11.5px;color:var(--text-tertiary);margin-top:1px;}
+  .petrow .check{color:var(--accent);font-weight:600;font-size:15px;}
+  .addrow{display:flex;align-items:center;gap:11px;padding:12px 6px;border-top:1px solid var(--border);margin-top:6px;color:var(--text-secondary);font-size:14px;font-weight:500;}
+  .addrow .plus{width:30px;height:30px;border-radius:var(--r-full);border:1.5px dashed var(--border-strong);display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:16px;flex:none;}
+  .archlink{font-size:11.5px;color:var(--text-tertiary);text-align:center;margin-top:12px;}
+
+  /* ── Log sheet (FAB) ── */
+  .logfor{display:flex;align-items:center;gap:9px;background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--r-full);padding:6px 12px 6px 7px;margin-bottom:14px;}
+  .logfor .lf-t{flex:1;font-size:12.5px;color:var(--text-secondary);}
+  .logfor .lf-t b{color:var(--text-primary);font-weight:600;}
+  .logfor .chev{font-size:13px;}
+  .quickgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
+  .qtile{background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--r-md);padding:13px 6px;text-align:center;font-size:12px;font-weight:500;color:var(--text-secondary);}
+  .qtile .gly{font-size:19px;display:block;margin-bottom:5px;}
+  .recent-h{font-size:11px;font-weight:500;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.8px;margin:14px 0 8px;}
+  .meal{display:flex;align-items:center;gap:9px;padding:8px 6px;border-radius:var(--r-sm);background:var(--surface-subtle);border:1px solid var(--border);font-size:13px;color:var(--text-secondary);margin-bottom:7px;}
+  .meal .mdot{width:8px;height:8px;border-radius:var(--r-full);background:var(--accent);flex:none;}
+
+  /* ── Food detail / free-feeding ── */
+  .nav{height:44px;display:flex;align-items:center;gap:10px;padding:0 var(--s2);background:var(--surface);border-bottom:1px solid var(--border);font-size:14px;font-weight:600;flex:none;}
+  .nav .back{color:var(--text-tertiary);font-weight:400;}
+  .foodhero{background:var(--surface);padding:var(--s2);border-bottom:1px solid var(--border);}
+  .foodhero .ft{font-size:17px;font-weight:600;}
+  .foodhero .fs{font-size:12px;color:var(--text-tertiary);margin-top:3px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);}
+  .card .ch{font-size:11px;font-weight:500;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;}
+  .availrow{display:flex;align-items:center;gap:10px;padding:9px 0;}
+  .availrow + .availrow{border-top:1px solid var(--border);}
+  .availrow .an{flex:1;font-size:14px;font-weight:500;}
+  .availrow .asub{font-size:11.5px;color:var(--text-tertiary);margin-top:2px;}
+  .toggle{width:48px;height:28px;border-radius:var(--r-full);background:var(--border-strong);position:relative;flex:none;}
+  .toggle .knob{position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);}
+  .toggle.on{background:var(--accent);}
+  .toggle.on .knob{left:22px;}
+  .ffnote{font-size:12px;color:var(--text-tertiary);line-height:1.5;margin-top:10px;}
+  .sharedhint{display:flex;align-items:center;gap:7px;margin-top:11px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--text-secondary);}
+  .sharedhint .sdot{width:7px;height:7px;border-radius:var(--r-full);background:var(--accent);flex:none;}
+
+  /* ── Pet profile / archive ── */
+  .profhead{background:var(--surface);padding:var(--s3) var(--s2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:13px;}
+  .profhead .avatar{width:52px;height:52px;font-size:24px;}
+  .prow{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:13px var(--s2);font-size:14px;color:var(--text-secondary);display:flex;justify-content:space-between;}
+  .archbtn{border:1px solid var(--border);border-radius:var(--r-md);padding:13px var(--s2);font-size:14px;font-weight:500;color:var(--text-tertiary);text-align:center;margin-top:auto;}
+  .confirm{position:absolute;left:14px;right:14px;bottom:18px;background:var(--surface);border-radius:var(--r-lg);padding:var(--s3) var(--s2) var(--s2);box-shadow:0 -8px 40px rgba(10,10,12,.18);text-align:center;}
+  .confirm .ct{font-size:16px;font-weight:600;}
+  .confirm .cs{font-size:13px;color:var(--text-secondary);line-height:1.5;margin-top:8px;}
+  .confirm .cbtn{margin-top:14px;background:var(--neutral-dark);color:#fff;border-radius:var(--r-md);padding:11px;font-size:14px;font-weight:500;}
+  .confirm .ccancel{margin-top:9px;font-size:13px;color:var(--text-tertiary);}
+
+  .legend{max-width:1180px;margin:36px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:22px 26px;}
+  .legend h2{font-family:var(--font-display);font-weight:400;font-size:19px;margin-bottom:12px;}
+  .legend ul{margin:0 0 4px 18px;}
+  .legend li{font-size:13.5px;color:var(--text-secondary);line-height:1.65;}
+  .legend li b{color:var(--text-primary);font-weight:600;}
+  .legend .rule{height:1px;background:var(--border);margin:16px 0;}
+</style>
+</head>
+<body>
+  <div class="page-head">
+    <h1>Multi-pet v1 — design options</h1>
+    <p class="sub">For PM review before the multi-pet spec is written. Decided going in: <b>per-pet home with a switcher</b> (B-076 strip lights up), <b>device-local active pet</b>, <b>pet identity in the log flow</b> (no move-to-pet in v1), <b>archive-only removal</b>, premium out of scope. Mocked both ways per PM direction: the <b>cross-pet safety banner</b> (frames A3/A4) and the <b>free-feeding capture surface</b> (frames B2/B3). Household shown is Sam's extended persona: Pixel (6, DSH) + Juniper (2, DSH).</p>
+    <p class="meta">Tokens mirror constants/theme.ts (v1.2 "Linear Clean"). Geist body · Newsreader display. Not pixel-final — this settles layout, Principle-3 fit, and the two open options before any code.</p>
+  </div>
+
+  <div class="rowlabel">Home, switcher &amp; the safety question</div>
+  <div class="stage">
+
+    <!-- A1 — per-pet home, switcher live -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="idstrip">
+          <div class="wordmark">Project Nyx</div>
+          <div class="id-row">
+            <div class="avatar">🐈</div>
+            <div class="id-text">
+              <div class="id-name">Pixel</div>
+              <div class="id-sub">Domestic shorthair · 6 yrs</div>
+            </div>
+            <div class="chev">⌄</div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="zlabel">Signal</div>
+          <div class="signal">
+            <div class="stext">Pixel has eaten most of every meal for 5 days running.</div>
+            <div class="smeta">BASED ON 9 MEALS · TAP FOR DETAIL</div>
+          </div>
+          <div class="zlabel">Today</div>
+          <div class="today">
+            <div class="row"><span class="dot"></span> Breakfast · Tuna pâté · ate most</div>
+            <div class="row"><span class="dot"></span> Dinner · offered 6:10 PM</div>
+          </div>
+          <div class="zlabel">7-day trend</div>
+          <div class="trend"><div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div>
+        <div class="tabbar"><div class="on">Home</div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag">A1 · per-pet home</span>The B-076 strip's ⌄ goes live (full-strength, 44pt tap zone). Everything below is <b>one pet's world</b> — Signal, Today, Trend, History, Pet tab all follow the active pet.</div>
+    </div>
+
+    <!-- A2 — switcher sheet open -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="idstrip">
+          <div class="wordmark">Project Nyx</div>
+          <div class="id-row">
+            <div class="avatar">🐈</div>
+            <div class="id-text">
+              <div class="id-name">Pixel</div>
+              <div class="id-sub">Domestic shorthair · 6 yrs</div>
+            </div>
+            <div class="chev">⌄</div>
+          </div>
+        </div>
+        <div class="body" style="opacity:.35;">
+          <div class="zlabel">Signal</div>
+          <div class="signal"><div class="stext">Pixel has eaten most of every meal for 5 days running.</div></div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="sheet-h">Your pets</div>
+          <div class="petrow sel">
+            <div class="avatar sm">🐈</div>
+            <div><div class="pname">Pixel</div><div class="psub">Domestic shorthair · 6 yrs</div></div>
+            <div style="flex:1"></div><div class="check">✓</div>
+          </div>
+          <div class="petrow">
+            <div class="avatar sm b">🐈</div>
+            <div><div class="pname">Juniper</div><div class="psub">Domestic shorthair · 2 yrs</div></div>
+          </div>
+          <div class="addrow"><div class="plus">+</div> Add a pet</div>
+          <div class="archlink">Archived pets</div>
+        </div>
+      </div></div>
+      <div class="caption"><span class="tag">A2 · switcher</span>Tap the strip → bottom sheet. One tap switches and dismisses — selection is <b>device-local</b> (your wife's phone is unaffected). <b>"Add a pet"</b> lives here (reuses the onboarding pet form, minus account setup). Archived pets sit behind a quiet link.</div>
+    </div>
+
+    <!-- A3 — cross-pet safety banner IN -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="idstrip">
+          <div class="wordmark">Project Nyx</div>
+          <div class="id-row">
+            <div class="avatar">🐈</div>
+            <div class="id-text">
+              <div class="id-name">Pixel</div>
+              <div class="id-sub">Domestic shorthair · 6 yrs</div>
+            </div>
+            <div class="chev">⌄</div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="xpet">
+            <div class="avatar b">🐈</div>
+            <div class="xtext"><b>Juniper</b> hasn't finished a meal since Tuesday — worth a look.</div>
+            <div class="xchev">›</div>
+          </div>
+          <div class="zlabel">Signal</div>
+          <div class="signal">
+            <div class="stext">Pixel has eaten most of every meal for 5 days running.</div>
+            <div class="smeta">BASED ON 9 MEALS · TAP FOR DETAIL</div>
+          </div>
+          <div class="zlabel">Today</div>
+          <div class="today">
+            <div class="row"><span class="dot"></span> Breakfast · Tuna pâté · ate most</div>
+          </div>
+          <div class="zlabel">7-day trend</div>
+          <div class="trend"><div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div>
+        <div class="tabbar"><div class="on">Home</div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag">A3 · banner in</span><b>Cross-pet safety breakthrough.</b> Renders <b>only</b> when the non-active pet has a safety-class finding; one tap switches to Juniper. Specific copy, no alarm language. Non-safety insights never cross over.</div>
+    </div>
+
+    <!-- A4 — banner OUT (the cost) -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="idstrip">
+          <div class="wordmark">Project Nyx</div>
+          <div class="id-row">
+            <div class="avatar">🐈</div>
+            <div class="id-text">
+              <div class="id-name">Pixel</div>
+              <div class="id-sub">Domestic shorthair · 6 yrs</div>
+            </div>
+            <div class="chev">⌄</div>
+          </div>
+        </div>
+        <div class="body">
+          <div class="zlabel">Signal</div>
+          <div class="signal">
+            <div class="stext">Pixel has eaten most of every meal for 5 days running.</div>
+            <div class="smeta">BASED ON 9 MEALS · TAP FOR DETAIL</div>
+          </div>
+          <div class="zlabel">Today</div>
+          <div class="today">
+            <div class="row"><span class="dot"></span> Breakfast · Tuna pâté · ate most</div>
+            <div class="row"><span class="dot"></span> Dinner · offered 6:10 PM</div>
+          </div>
+          <div class="zlabel">7-day trend</div>
+          <div class="trend"><div class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        </div>
+        <div class="tabbar"><div class="on">Home</div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag warn">A4 · banner out</span>Same moment, pure toggle model. Juniper's intake flag is live — but <b>this screen is all calm</b>. The owner sees it only if they happen to switch. The 48-hr feline window is what's at stake (Dr. Chen).</div>
+    </div>
+
+  </div>
+
+  <div class="rowlabel">Log flow, free-feeding capture &amp; archive</div>
+  <div class="stage">
+
+    <!-- B1 — log sheet with pet identity -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="idstrip">
+          <div class="wordmark">Project Nyx</div>
+          <div class="id-row">
+            <div class="avatar">🐈</div>
+            <div class="id-text"><div class="id-name">Pixel</div><div class="id-sub">Domestic shorthair · 6 yrs</div></div>
+            <div class="chev">⌄</div>
+          </div>
+        </div>
+        <div class="body" style="opacity:.35;">
+          <div class="zlabel">Signal</div>
+          <div class="signal"><div class="stext">Pixel has eaten most of every meal for 5 days running.</div></div>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="logfor">
+            <div class="avatar sm">🐈</div>
+            <div class="lf-t">Logging for <b>Pixel</b></div>
+            <div class="chev">⌄</div>
+          </div>
+          <div class="quickgrid">
+            <div class="qtile"><span class="gly">🍽</span>Meal</div>
+            <div class="qtile"><span class="gly">🤢</span>Vomit</div>
+            <div class="qtile"><span class="gly">💩</span>Stool</div>
+          </div>
+          <div class="recent-h">Recent meals</div>
+          <div class="meal"><span class="mdot"></span> Tuna pâté · usually breakfast</div>
+          <div class="meal"><span class="mdot"></span> Chicken &amp; rice · usually dinner</div>
+        </div>
+      </div></div>
+      <div class="caption"><span class="tag">B1 · log identity</span><b>"Logging for Pixel"</b> leads the FAB sheet — avatar + name, with a quiet ⌄ to flip pets <i>before</i> logging. Prevention is load-bearing: v1 has no move-to-pet, so a wrong-pet log means delete + re-log. Logging itself stays one tap (Principle 1).</div>
+    </div>
+
+    <!-- B2 — free-feeding Option A: per-pet rows -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="nav"><span class="back">‹ Library</span> Food detail</div>
+        <div class="foodhero">
+          <div class="ft">Hill's w/d dry</div>
+          <div class="fs">Dry · chicken · added May 12</div>
+        </div>
+        <div class="body">
+          <div class="card">
+            <div class="ch">Always available</div>
+            <div class="availrow">
+              <div class="avatar sm">🐈</div>
+              <div class="an">Pixel<div class="asub">since June 2</div></div>
+              <div class="toggle on"><span class="knob"></span></div>
+            </div>
+            <div class="availrow">
+              <div class="avatar sm b">🐈</div>
+              <div class="an">Juniper<div class="asub">since June 2</div></div>
+              <div class="toggle on"><span class="knob"></span></div>
+            </div>
+            <div class="sharedhint"><span class="sdot"></span>Down for both cats — quiet days don't mean nobody ate.</div>
+          </div>
+        </div>
+        <div class="tabbar"><div></div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag">B2 · option A — team lean</span><b>Per-pet rows on food detail.</b> One glance shows the whole household's relationship to this food; both ON <b>is</b> the shared bowl, made visible. Stays in the food domain (§11 decision intact). Active pet sorts first.</div>
+    </div>
+
+    <!-- B3 — free-feeding Option B: active-pet toggle -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="nav"><span class="back">‹ Library</span> Food detail</div>
+        <div class="foodhero">
+          <div class="ft">Hill's w/d dry</div>
+          <div class="fs">Dry · chicken · added May 12</div>
+        </div>
+        <div class="body">
+          <div class="card">
+            <div class="ch">Always available</div>
+            <div class="availrow">
+              <div class="an">Always available for Pixel?</div>
+              <div class="toggle on"><span class="knob"></span></div>
+            </div>
+            <div class="ffnote">Pixel can graze this anytime — quiet days don't mean she didn't eat.</div>
+          </div>
+        </div>
+        <div class="tabbar"><div></div><div>History</div><div>Pet</div></div>
+      </div></div>
+      <div class="caption"><span class="tag warn">B3 · option B</span><b>Active-pet toggle</b> — the shipped single toggle, scoped to whoever's active. Zero new UI and matches "flip to the pet, add the food" exactly. The hazard: Juniper's arrangement on this same bowl is <b>invisible from here</b> — a shared bowl gets half-recorded.</div>
+    </div>
+
+    <!-- B4 — archive -->
+    <div class="frame-wrap">
+      <div class="phone"><div class="screen">
+        <div class="statusbar"><span>9:41</span><span class="dots">▮▮▮ ●</span></div>
+        <div class="nav"><span class="back">‹</span> Juniper</div>
+        <div class="profhead">
+          <div class="avatar b">🐈</div>
+          <div class="id-text"><div class="id-name">Juniper</div><div class="id-sub">Domestic shorthair · 2 yrs</div></div>
+        </div>
+        <div class="body" style="opacity:.35;gap:10px;">
+          <div class="prow">Conditions <span>›</span></div>
+          <div class="prow">Diet trial <span>›</span></div>
+          <div class="archbtn">Archive Juniper</div>
+        </div>
+        <div class="scrim"></div>
+        <div class="confirm">
+          <div class="ct">Archive Juniper?</div>
+          <div class="cs">Her history stays safe, and she comes off your pet list. You can bring her back anytime from Archived pets.</div>
+          <div class="cbtn">Archive</div>
+          <div class="ccancel">Cancel</div>
+        </div>
+      </div></div>
+      <div class="caption"><span class="tag">B4 · archive (ratified)</span><b>Archive-only in v1</b> — quiet action at the bottom of the Pet tab. Hidden from the switcher, all history kept, reversible from "Archived pets" (A2). True deletion stays with the Privacy track (B-039).</div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <h2>What this mock is settling</h2>
+    <ul>
+      <li><b>A3 vs A4 — the safety breakthrough (PM call).</b> The banner is the team's lean: it renders only for <b>safety-class</b> findings on the non-active pet, sits above the Signal because it belongs to a different pet, and is one tap from the right home. A4 shows the cost of leaving it out — a calm screen over a live intake flag on the other cat. It is new Principle-3 surface area, which is why it needs your ratification, not ours.</li>
+      <li><b>B2 vs B3 — free-feeding capture (PM call).</b> Both keep free-feeding in the food domain (your 2026-06-09 "food belongs with food" decision intact — the pet page stays untouched). B2 shows everything and makes shared bowls self-evident; B3 is smaller but hides the other pet's arrangement. Data model is identical either way: two per-pet rows in <code>feeding_arrangements</code>, zero schema or engine work; the future household-bowl consolidation stays the reserved <code>is_shared</code> hook.</li>
+      <li><b>Decided, shown for confirmation:</b> per-pet home (A1), device-local switcher with "Add a pet" in the sheet (A2), pet identity leading the log sheet with a pre-log flip and no move-to-pet (B1), archive-only removal (B4).</li>
+      <li><b>Voice notes:</b> banner copy is specific and calm ("hasn't finished a meal since Tuesday — worth a look"), never alarm language; archive copy is warm and honest about reversibility; free-feeding keeps the "quiet days ≠ didn't eat" promise.</li>
+    </ul>
+    <div class="rule"></div>
+    <ul>
+      <li style="color:var(--text-tertiary);"><b style="color:var(--text-primary);">Open for PM on this page:</b> ① A3 or A4 — banner in or out? ② B2 or B3 — per-pet rows or active-pet toggle? ③ Switcher sheet contents (A2) — anything missing or extra? ④ B1's "Logging for Pixel" placement — leading the sheet, or smaller/quieter?</li>
+    </ul>
+  </div>
+</body>
+</html>

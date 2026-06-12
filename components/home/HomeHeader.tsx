@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
   // is a placeholder name; swaps out with no layout change when it's decided.
   wordmark: {
     fontFamily: theme.fontDisplay,
-    fontSize: theme.textSM,
+    fontSize: theme.textMD,
     color: theme.colorTextTertiary,
     letterSpacing: theme.trackingTight,
   },
@@ -88,29 +88,36 @@ const styles = StyleSheet.create({
     height: AVATAR,
     borderRadius: theme.radiusFull,
   },
+  // Soft tinted disc (per the multi-pet mock the PM approved 2026-06-12) — the
+  // identity anchor and the future switcher tap-target, not a decorative accent.
+  // The previous solid-black disc read harsher than every other home surface.
   avatarPlaceholder: {
     width: AVATAR,
     height: AVATAR,
     borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorNeutralDark,
+    backgroundColor: theme.colorAccentLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Geist faces here (not bare fontWeight): RN doesn't synthesize weights for
+  // custom fonts, so the weight lives in the family name (see lib/fonts.ts).
+  // Header-scoped only — the app-wide Geist body rollout stays B-061.
   avatarInitial: {
+    fontFamily: theme.fontBodySemibold,
     fontSize: theme.textMD,
-    fontWeight: theme.weightSemibold,
-    color: theme.colorSurface,
+    color: theme.colorTextPrimary,
   },
   textColumn: {
     flex: 1,
     minWidth: 0,
   },
   name: {
+    fontFamily: theme.fontBodySemibold,
     fontSize: theme.textLG,
-    fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
   },
   line: {
+    fontFamily: theme.fontBody,
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     marginTop: 2,
