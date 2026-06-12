@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { Alert } from 'react-native';
 import { router } from 'expo-router';
-import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store/authStore';
-import { usePetStore } from '../../store/petStore';
-import { PetForm, PetFormSpecies } from '../../components/pet/PetForm';
+import { supabase } from '../lib/supabase';
+import { useAuthStore } from '../store/authStore';
+import { usePetStore } from '../store/petStore';
+import { PetForm, PetFormSpecies } from '../components/pet/PetForm';
 
-// Account-coupled onboarding wrapper around the shared PetForm: owns the
-// insert, the onboarded flag, and the onboarding routing (multi-pet spec §3.2).
-export default function OnboardingPetScreen() {
+// Add-a-pet route (multi-pet spec §3.2): the bare shared PetForm, no
+// onboarding coupling. Returns to home with the new pet selected, so the
+// owner lands on its (designed-empty) per-pet home.
+export default function AddPetScreen() {
   const { user } = useAuthStore();
-  const { addPet, setOnboarded } = usePetStore();
+  const { addPet } = usePetStore();
 
   const [loading, setLoading] = useState(false);
 
@@ -30,8 +31,7 @@ export default function OnboardingPetScreen() {
       }
 
       addPet(data, { select: true });
-      setOnboarded(true);
-      router.push('/onboarding/food');
+      router.back();
     } catch {
       Alert.alert('Something went wrong', 'Please check your connection and try again.');
     } finally {
@@ -41,9 +41,9 @@ export default function OnboardingPetScreen() {
 
   return (
     <PetForm
-      title="Tell us about your pet."
-      subtitle="This is all we need to get started. Everything else can be added later."
-      submitLabel="Continue"
+      title="Add a pet."
+      subtitle="Just a name and species to start. Everything else can be added later."
+      submitLabel="Add pet"
       loading={loading}
       onSubmit={handleSubmit}
     />

@@ -239,7 +239,11 @@ export default function LogModal() {
     foodType?: string | null;
     timeFields?: TimeFields;
   }): Promise<{ eventId: string; occurredAt: string } | null> {
-    if (!activePet) return null;
+    // Write-time pet identity (multi-pet spec §6): read the store at the moment
+    // of write, never the render-time closure, so an event always lands on the
+    // pet that's active when the log is confirmed (the queue-then-switch edge).
+    const pet = usePetStore.getState().activePet;
+    if (!pet) return null;
     const foodId = override?.foodId ?? selectedFoodId;
     const foodBrand = override?.foodBrand ?? selectedFoodBrand;
     const foodProduct = override?.foodProduct ?? selectedFoodProduct;
@@ -264,7 +268,7 @@ export default function LogModal() {
         // so the confidence/window it writes matches the witnessed timeFields this
         // path passes in (handlePickFood) — no B-010 information is lost.
         const res = await insertMeal({
-          petId: activePet.id,
+          petId: pet.id,
           foodId: foodId!,
           occurredAt: effectiveOccurredAt,
           occurredAtSource: effectiveSource,
@@ -280,7 +284,7 @@ export default function LogModal() {
               occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
               created_at, updated_at, synced)
            VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?, ?, 0)`,
-          [eventId, activePet.id, selectedType!, effectiveOccurredAt.toISOString(),
+          [eventId, pet.id, selectedType!, effectiveOccurredAt.toISOString(),
            severity ?? null, notes.trim() || null, effectiveSource,
            tf.confidence, tf.earliest ? tf.earliest.toISOString() : null,
            tf.latest ? tf.latest.toISOString() : null, now, now]
@@ -295,7 +299,7 @@ export default function LogModal() {
     // passes that override) — matching what insertMeal wrote to the DB row.
     prependEvent({
       id: eventId,
-      pet_id: activePet.id,
+      pet_id: pet.id,
       event_type: selectedType!,
       occurred_at: effectiveOccurredAt.toISOString(),
       occurred_at_confidence: tf.confidence,
@@ -317,12 +321,12 @@ export default function LogModal() {
     // Save and upload photo attachment if present
     if (attachmentUri) {
       const attId = uuid();
-      const storagePath = `${activePet.id}/${eventId}/${attId}.jpg`;
+      const storagePath = `${pet.id}/${eventId}/${attId}.jpg`;
       await db.runAsync(
         `INSERT INTO event_attachments
            (id, event_id, pet_id, local_uri, storage_path, mime_type, taken_at, synced, created_at)
          VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
-        [attId, eventId, activePet.id, attachmentUri, storagePath, attachmentTakenAt ?? null, now]
+        [attId, eventId, pet.id, attachmentUri, storagePath, attachmentTakenAt ?? null, now]
       );
       const isVomit = selectedType === 'vomit';
       // Compress before upload (longest edge ≤1600px, JPEG q75) so the file
@@ -333,7 +337,7 @@ export default function LogModal() {
           const uploadUri = await compressForUpload(attachmentUri);
           await uploadPhoto('nyx-event-attachments', storagePath, uploadUri);
           const { error: attErr } = await supabase.from('event_attachments').upsert({
-            id: attId, event_id: eventId, pet_id: activePet.id,
+            id: attId, event_id: eventId, pet_id: pet.id,
             storage_path: storagePath, mime_type: 'image/jpeg', taken_at: attachmentTakenAt,
           }, { onConflict: 'id' });
           // Only mark synced + analyze if the row actually landed. supabase-js
@@ -373,7 +377,7 @@ export default function LogModal() {
       syncPendingEvents()
         .then(() => syncPendingMeals())
         .catch(console.error);
-      triggerSignalRegenDebounced(activePet.id);
+      triggerSignalRegenDebounced(pet.id);
     }
     return { eventId, occurredAt: effectiveOccurredAt.toISOString() };
   }

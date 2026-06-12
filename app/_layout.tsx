@@ -6,7 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { fontMap } from '../lib/fonts';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { usePetStore } from '../store/petStore';
+import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { initDb, clearLocalData } from '../lib/db';
 import { notifySignedOut } from '../lib/sync';
 import { useSync } from '../hooks/useSync';
@@ -56,6 +56,10 @@ export default function RootLayout() {
         // re-populate the store after clearLocalData runs.
         notifySignedOut();
         await clearLocalData().catch((e) => console.warn('[auth] local wipe failed:', e));
+        // Device-local active-pet selection is account state too — wipe it and
+        // the in-memory pet list so the next sign-in starts clean (FR-9 parity).
+        await clearPersistedActivePetId();
+        usePetStore.getState().reset();
       }
       setSession(session);
       if (!session) {
@@ -92,6 +96,7 @@ export default function RootLayout() {
         <Stack.Screen name="food-capture" options={{ presentation: 'modal' }} />
         <Stack.Screen name="food/[id]" options={{ presentation: 'modal' }} />
         <Stack.Screen name="vet-visit" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="add-pet" options={{ presentation: 'modal' }} />
         <Stack.Screen name="edit-event" options={{ presentation: 'modal' }} />
         <Stack.Screen name="event/[id]" />
         <Stack.Screen name="report" />

@@ -1,58 +1,60 @@
 import { useEffect } from 'react';
 import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
-import { usePetStore } from '../store/petStore';
+import { usePetStore, loadPersistedActivePetId } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 
 export function usePet() {
   const { user } = useAuthStore();
-  const { activePet, isOnboarded, setActivePet, setOnboarded } = usePetStore();
+  const { pets, activePet, isOnboarded, setPets, setOnboarded } = usePetStore();
 
   useEffect(() => {
     if (!user) return;
     const userId = user.id;
     let cancelled = false;
 
-    // Load the active pet, distinguishing a genuinely petless account (→ onboard)
-    // from a flaky cold-start read. The previous version used .single() and
-    // ignored `error`, so ANY empty result — a failed request, or RLS returning
-    // zero rows before the restored auth token was attached — looked identical to
-    // "no pet" and bounced an existing owner into onboarding (risking a duplicate
-    // pet). We now: never onboard on an error, and retry once to absorb the
-    // token-attach race before trusting an empty-but-successful result.
-    async function loadPet(attempt: number): Promise<void> {
+    // Load ALL active pets (multi-pet spec §2) and restore the device-local
+    // selection, distinguishing a genuinely petless account (→ onboard) from a
+    // flaky cold-start read. The single-pet version of this hook used
+    // `.limit(1)` ("oldest pet wins"); the list query keeps the same
+    // oldest-first order so the selection fallback is unchanged for existing
+    // accounts. The retry/onboarding guard applies to the LIST being empty:
+    // never onboard on an error, and retry once to absorb the token-attach
+    // race before trusting an empty-but-successful result (a false onboarding
+    // bounce risks a duplicate pet).
+    async function loadPets(attempt: number): Promise<void> {
+      const persistedId = await loadPersistedActivePetId();
       const { data, error } = await supabase
         .from('pets')
         .select('*')
         .eq('user_id', userId)
         .eq('is_active', true)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .order('created_at', { ascending: true });
       if (cancelled) return;
 
-      if (data) {
-        setActivePet(data);
+      if (data && data.length > 0) {
+        setPets(data, persistedId);
         setOnboarded(true);
         return;
       }
 
-      // No row this attempt. Retry once before trusting it — covers a transient
-      // fetch error and the cold-start race where the auth token isn't attached
-      // yet (RLS then returns empty with no error).
+      // No rows this attempt. Retry once before trusting it — covers a
+      // transient fetch error and the cold-start race where the auth token
+      // isn't attached yet (RLS then returns empty with no error).
       if (attempt === 0) {
-        if (error) console.warn('[usePet] pet fetch failed, retrying:', error.message);
+        if (error) console.warn('[usePet] pets fetch failed, retrying:', error.message);
         setTimeout(() => {
-          if (!cancelled) loadPet(1);
+          if (!cancelled) loadPets(1);
         }, 600);
         return;
       }
 
-      // Still no row on the retry.
+      // Still no rows on the retry.
       if (error) {
-        // Don't assume "no pet" on an error — leave state as-is so a later auth
-        // refresh / screen focus re-fetch recovers, rather than false-onboarding.
-        console.warn('[usePet] pet fetch failed after retry:', error.message);
+        // Don't assume "no pets" on an error — leave state as-is so a later
+        // auth refresh / screen focus re-fetch recovers, rather than
+        // false-onboarding.
+        console.warn('[usePet] pets fetch failed after retry:', error.message);
         return;
       }
 
@@ -61,11 +63,11 @@ export function usePet() {
       router.replace('/onboarding/pet');
     }
 
-    loadPet(0);
+    loadPets(0);
     return () => {
       cancelled = true;
     };
   }, [user]);
 
-  return { activePet, isOnboarded };
+  return { pets, activePet, isOnboarded };
 }

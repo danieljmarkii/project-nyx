@@ -398,21 +398,24 @@ export default function FoodCaptureScreen() {
       if (error) console.warn('[food-capture] upsert failed:', error.message);
     });
 
-    if (cameFromMealLog && activePet) {
+    // Write-time pet identity (multi-pet spec §6): read the store at the moment
+    // of write, not the render-time closure (the queue-then-switch edge).
+    const pet = usePetStore.getState().activePet;
+    if (cameFromMealLog && pet) {
       // mealOccurredAt is seeded from EXIF (or now) on confirm-screen entry,
       // and may have been overridden by the user via the date-time picker —
       // in which case mealOccurredAtSource will have flipped to 'manual'.
       // insertMeal owns the event+meal write, the sync push, and the AI-Signal
       // regen (B-059) so this path can't drift from the others.
       const { eventId, occurredAtIso, now: mealNow } = await insertMeal({
-        petId: activePet.id,
+        petId: pet.id,
         foodId,
         occurredAt: mealOccurredAt,
         occurredAtSource: mealOccurredAtSource,
       });
       prependEvent({
         id: eventId,
-        pet_id: activePet.id,
+        pet_id: pet.id,
         event_type: 'meal',
         occurred_at: occurredAtIso,
         occurred_at_confidence: 'witnessed',

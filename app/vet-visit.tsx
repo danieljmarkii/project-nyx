@@ -106,7 +106,10 @@ export default function VetVisitModal() {
   }
 
   async function handleSave() {
-    if (!activePet) return;
+    // Write-time pet identity (multi-pet spec §6): read the store at the moment
+    // of write, not the render-time closure (the queue-then-switch edge).
+    const pet = usePetStore.getState().activePet;
+    if (!pet) return;
     const db = getDb();
     const visitId = uuid();
     const now = new Date().toISOString();
@@ -118,7 +121,7 @@ export default function VetVisitModal() {
          (id, pet_id, visited_at, clinic_name, vet_name, reason, notes, next_visit_at, created_at, updated_at, synced)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       [
-        visitId, activePet.id, visitedAtStr,
+        visitId, pet.id, visitedAtStr,
         clinicName.trim() || null, vetName.trim() || null,
         reason.trim() || null, notes.trim() || null,
         nextVisitAtStr, now, now,
@@ -127,17 +130,17 @@ export default function VetVisitModal() {
 
     if (photoUri) {
       const attId = uuid();
-      const storagePath = `${activePet.id}/${visitId}/${attId}.jpg`;
+      const storagePath = `${pet.id}/${visitId}/${attId}.jpg`;
       await db.runAsync(
         `INSERT INTO vet_visit_attachments
            (id, vet_visit_id, pet_id, local_uri, storage_path, mime_type, taken_at, synced, created_at)
          VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
-        [attId, visitId, activePet.id, photoUri, storagePath, photoTakenAt ?? null, now]
+        [attId, visitId, pet.id, photoUri, storagePath, photoTakenAt ?? null, now]
       );
       uploadPhoto('nyx-vet-attachments', storagePath, photoUri)
         .then(async () => {
           await supabase.from('vet_visit_attachments').upsert({
-            id: attId, vet_visit_id: visitId, pet_id: activePet.id,
+            id: attId, vet_visit_id: visitId, pet_id: pet.id,
             storage_path: storagePath, mime_type: 'image/jpeg', taken_at: photoTakenAt,
           }, { onConflict: 'id' });
           await db.runAsync('UPDATE vet_visit_attachments SET synced = 1 WHERE id = ?', [attId]);
