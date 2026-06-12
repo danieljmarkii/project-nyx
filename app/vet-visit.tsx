@@ -139,10 +139,17 @@ export default function VetVisitModal() {
       );
       uploadPhoto('nyx-vet-attachments', storagePath, photoUri)
         .then(async () => {
-          await supabase.from('vet_visit_attachments').upsert({
+          // Only mark synced if the row actually landed — supabase-js returns
+          // errors, it doesn't throw, so an unchecked upsert here would flag a
+          // row synced that never reached Supabase (same guard as log.tsx).
+          const { error: attErr } = await supabase.from('vet_visit_attachments').upsert({
             id: attId, vet_visit_id: visitId, pet_id: pet.id,
             storage_path: storagePath, mime_type: 'image/jpeg', taken_at: photoTakenAt,
           }, { onConflict: 'id' });
+          if (attErr) {
+            console.warn('[vet-visit] attachment upsert failed:', attErr.message);
+            return;
+          }
           await db.runAsync('UPDATE vet_visit_attachments SET synced = 1 WHERE id = ?', [attId]);
         })
         .catch(console.error);
