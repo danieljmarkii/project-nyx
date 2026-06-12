@@ -1,9 +1,12 @@
 import {
+  archiveBlockedCopy,
+  archiveConfirmBody,
   deriveOccurredAt,
   describeOccurredAt,
   formatTime,
   petAgeShort,
   petIdentityLine,
+  petPronouns,
 } from './utils';
 
 const at = (iso: string) => new Date(iso);
@@ -180,5 +183,45 @@ describe('petIdentityLine', () => {
 
   it('returns an empty string for "other" with no detail, so the line is dropped', () => {
     expect(petIdentityLine({ species: 'other', breed: null, date_of_birth: null })).toBe('');
+  });
+});
+
+describe('petPronouns / archiveConfirmBody', () => {
+  it('female reads exactly as the approved mock (B4)', () => {
+    expect(archiveConfirmBody({ sex: 'female' })).toBe(
+      'Her history stays safe, and she comes off your pet list. You can bring her back anytime from Archived pets.',
+    );
+  });
+
+  it('male swaps every pronoun, keeping the singular verb', () => {
+    expect(archiveConfirmBody({ sex: 'male' })).toBe(
+      'His history stays safe, and he comes off your pet list. You can bring him back anytime from Archived pets.',
+    );
+  });
+
+  it('unknown takes singular they WITH the plural verb form ("they come")', () => {
+    expect(archiveConfirmBody({ sex: 'unknown' })).toBe(
+      'Their history stays safe, and they come off your pet list. You can bring them back anytime from Archived pets.',
+    );
+  });
+
+  it('copy carries no exclamation marks (nyx-voice)', () => {
+    (['female', 'male', 'unknown'] as const).forEach((sex) => {
+      expect(archiveConfirmBody({ sex })).not.toContain('!');
+    });
+  });
+
+  it('archiveBlockedCopy names the pet, stays honest, and carries no exclamation marks', () => {
+    const blocked = archiveBlockedCopy('Pixel');
+    expect(blocked.title).toBe('Pixel is your only pet here');
+    expect(blocked.body).toContain('at least one pet');
+    expect(blocked.title).not.toContain('!');
+    expect(blocked.body).not.toContain('!');
+  });
+
+  it('pronoun sets are internally consistent', () => {
+    expect(petPronouns('female')).toEqual({ subject: 'she', object: 'her', possessive: 'her', comesVerb: 'comes' });
+    expect(petPronouns('male')).toEqual({ subject: 'he', object: 'him', possessive: 'his', comesVerb: 'comes' });
+    expect(petPronouns('unknown')).toEqual({ subject: 'they', object: 'them', possessive: 'their', comesVerb: 'come' });
   });
 });

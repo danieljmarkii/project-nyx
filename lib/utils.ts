@@ -185,3 +185,40 @@ export function describeOccurredAt(input: {
   const t = formatTime(point);
   return { primary: t, compact: t, tag: null, isExact: true };
 }
+
+// Pronoun set keyed by the pet's recorded sex; 'unknown' takes singular they.
+// Kept as data (not string surgery) because the they-form conjugates
+// differently ("she comes" / "they come") — copy templates pick the verb.
+export interface PetPronouns {
+  subject: string;     // she / he / they
+  object: string;      // her / him / them
+  possessive: string;  // her / his / their
+  comesVerb: string;   // comes / come  (3rd-person-singular vs plural-form)
+}
+
+export function petPronouns(sex: 'male' | 'female' | 'unknown'): PetPronouns {
+  if (sex === 'female') return { subject: 'she', object: 'her', possessive: 'her', comesVerb: 'comes' };
+  if (sex === 'male') return { subject: 'he', object: 'him', possessive: 'his', comesVerb: 'comes' };
+  return { subject: 'they', object: 'them', possessive: 'their', comesVerb: 'come' };
+}
+
+// Archive confirm-sheet body (multi-pet spec §3.5, mock B4 verbatim for the
+// female case): warm + honest about reversibility — history is kept, the pet
+// just leaves the list, and the way back is named. Never alarm language; the
+// data is not going anywhere (soft archive, nothing cascades).
+export function archiveConfirmBody(pet: { sex: 'male' | 'female' | 'unknown' }): string {
+  const p = petPronouns(pet.sex);
+  const possessive = p.possessive.charAt(0).toUpperCase() + p.possessive.slice(1);
+  return `${possessive} history stays safe, and ${p.subject} ${p.comesVerb} off your pet list. You can bring ${p.object} back anytime from Archived pets.`;
+}
+
+// Archive-last-pet blocked copy (spec §3.5) — one source for the Pet tab's
+// pre-confirm guard AND the confirm sheet's race re-check, so the two alerts
+// can never drift apart. Honest about the constraint, names the way forward;
+// true deletion stays with the Privacy track.
+export function archiveBlockedCopy(petName: string): { title: string; body: string } {
+  return {
+    title: `${petName} is your only pet here`,
+    body: 'Your pet list needs at least one pet, so archiving isn’t available right now. Adding another pet first makes this possible.',
+  };
+}

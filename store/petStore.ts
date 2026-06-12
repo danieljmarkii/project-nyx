@@ -59,6 +59,8 @@ interface PetState {
   addPet: (pet: Pet, options?: { select?: boolean }) => void;
   /** Patch the active pet (and its row in the list). */
   updatePet: (updates: Partial<Pet>) => void;
+  /** Drop a pet from the active list (archive); falls back the selection if it was active. */
+  removePet: (petId: string) => void;
   setOnboarded: (onboarded: boolean) => void;
   /** Wipe all pet state. Sign-out only — pairs with clearPersistedActivePetId(). */
   reset: () => void;
@@ -96,6 +98,19 @@ export const usePetStore = create<PetState>((set, get) => ({
       return {
         activePet,
         pets: state.pets.map((p) => (p.id === activePet.id ? activePet : p)),
+      };
+    }),
+  removePet: (petId) =>
+    set((state) => {
+      const pets = state.pets.filter((p) => p.id !== petId);
+      // If the archived pet was active, fall back to the oldest remaining
+      // active pet (spec §3.5) — the same rule the launch restore applies.
+      // The persisted selection is deliberately NOT rewritten: a stale
+      // persisted id resolves to the identical oldest-active fallback on the
+      // next launch, and the next explicit switch overwrites it anyway.
+      return {
+        pets,
+        activePet: resolveActivePet(pets, state.activePet?.id ?? null),
       };
     }),
   setOnboarded: (isOnboarded) => set({ isOnboarded }),
