@@ -239,7 +239,13 @@ export function FAB() {
 
   return (
     <>
-      {open && <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} />}
+      {/* Backdrop unmounts while the switcher Modal is up: on Android the tap
+          that closes the Modal scrim can bleed through to this absolute-fill
+          Pressable and dismiss the menu — the flip-then-log flow needs the
+          menu to survive the flip. */}
+      {open && !switcherVisible && (
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} />
+      )}
 
       <View style={styles.fabContainer} pointerEvents="box-none">
         {open && (
