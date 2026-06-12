@@ -18,7 +18,7 @@ Nyx uses three distinct mechanisms to bring expertise to bear. They are not inte
 
 **Rule of thumb:** a *viewpoint* is a persona; a *bounded task that returns a verdict* is a subagent; a *hard rule that must never be forgotten* is a skill. When a persona keeps catching the same class of issue, promote that issue to a skill so it fires deterministically; when a persona's review is bounded and benefits from an un-anchored fresh read, run it as a subagent.
 
-Current subagents: `adversarial-reviewer`, `code-reviewer` (`.claude/agents/`).
+Current subagents: `adversarial-reviewer`, `code-reviewer`, `rls-privacy-reviewer`, `vet-report-cold-read` (`.claude/agents/`).
 Current skills: `clinical-guardrails`, `nyx-voice`, `supabase-sync`, `backlog-groomer` (`.claude/skills/`).
 
 ---
@@ -169,6 +169,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 
 **Key question Dr. Chen asks:** "Would I trust this data to inform a clinical decision for a patient I haven't met?"
 
+**Backstopped by** the `vet-report-cold-read` subagent (`.claude/agents/vet-report-cold-read.md`) — added 2026-06-12. Once Step 9 renders a report, that agent reads the **rendered artifact** in an isolated context, exactly as a vet who has never met the patient would: 60-second scan first, trust pass second, source cross-check last. The in-context Dr. Chen persona knows what the report is *supposed* to say; the cold-read agent only knows what it actually says — that gap is the review. It refuses to review generation code in place of a rendered artifact (verdict: INSUFFICIENT).
+
 ---
 
 ## Pet Owner — Jordan
@@ -292,6 +294,8 @@ The PM owns product vision, roadmap, and all final calls. When something require
 
 **Key question the Privacy lens asks:** "If this user asked us to show them, export, or delete everything we hold on them — and Apple's reviewer asked how — could we answer honestly today?"
 
+**Backstopped by** the `rls-privacy-reviewer` subagent (`.claude/agents/rls-privacy-reviewer.md`) — added 2026-06-12, the access-control sibling of `adversarial-reviewer` (that one breaks the statistics; this one breaks the boundaries). Invoke it on any surface that creates, widens, or exercises a path to pet health data: share tokens / public links (Step 9), service-role Edge Function queries, new RLS policies, Storage buckets and signed URLs, the deletion cascade (B-039), export (B-041), and analytics pipelines (B-016/B-047). It reports the concrete attack it tried and whether the boundary held; a bare ✓ is a failure of its role. Things it cannot verify from the repo (dashboard-only config) it names as explicit PM checks rather than assuming safe.
+
 ---
 
 ## Persona Routing Table
@@ -305,10 +309,11 @@ Persona invocation should not depend on luck-of-the-memory. When a diff or decis
 | Home / Signal / insight cards | Designer (Principle 3, 5), Data Scientist, Jordan + Sam (context-adaptive) | — |
 | Per-incident AI reads / escalation thresholds / recommendation copy | Dr. Chen, Data Scientist, clinical-guardrails **skill** | `clinical-guardrails` auto-loads |
 | Correlation / detection engine, AI Signal, anything feeding the vet report | Data Scientist, Dr. Chen, **`adversarial-reviewer` subagent** | Adversarial-review DoD line is mandatory |
-| Schema migration / new table / RLS / Storage / sync queue | Dir. of Eng (migration isolation), Data Scientist (RLS, multi-pet), supabase-sync **skill** | `supabase-sync` auto-loads |
+| Schema migration / new table / RLS / Storage / sync queue | Dir. of Eng (migration isolation), Data Scientist (RLS, multi-pet), supabase-sync **skill** | `supabase-sync` auto-loads; **`rls-privacy-reviewer` subagent** on new/changed RLS policies |
+| Share tokens, public/unauthenticated links, service-role Edge Function queries, signed URLs on health photos | Trust & Privacy lens, Dir. of Eng | **`rls-privacy-reviewer` subagent** (mandatory — first real exercise is Step 9's share token) |
 | Intake / preferences / free-feeding surfaces | Data Scientist (intake anti-pattern), Dr. Chen, Sam | — |
-| Vet report | Dr. Chen, Designer (Principle 6) | — |
-| Data export / account deletion / analytics / compliance | Trust & Privacy lens, Dir. of Eng | — |
+| Vet report | Dr. Chen, Designer (Principle 6) | **`vet-report-cold-read` subagent** on the rendered artifact (once Step 9 renders; re-run on content/layout changes) |
+| Data export / account deletion / analytics / compliance | Trust & Privacy lens, Dir. of Eng | **`rls-privacy-reviewer` subagent** |
 | Backlog grooming / "log this for later" / session start scan | Product Owner, backlog-groomer **skill** | `backlog-groomer` |
 | Any PR diff before push | `code-reviewer` subagent (optional, parallelizable) | `/code-review` skill |
 
