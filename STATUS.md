@@ -42,7 +42,7 @@ PM convened the team 2026-06-12; direction ratified across two decision rounds, 
 | PR | What | Status |
 |---|---|---|
 | 1 | Spec + mockups + header restyle-to-mock + backlog anchor (B-086/B-087) | ✅ Shipped via #144 |
-| 2 | Foundation — `petStore.pets[]` + persisted device-local selection, `usePet` rewrite, shared `PetForm` + add-pet route, single-pet-assumption audit (spec §6) | ✅ Shipped via #145 (draft) — adversarial PASS (attribution), 188 jest green, zero schema |
+| 2 | Foundation — `petStore.pets[]` + persisted device-local selection, `usePet` rewrite, shared `PetForm` + add-pet route, single-pet-assumption audit (spec §6) | ✅ Shipped via #145 (merged 2026-06-12) — adversarial PASS (attribution), 188 jest green, zero schema. On-device QA script in PR body still to run on `main` |
 | 3 | Switcher + archive — chevron lights up, switcher sheet, archive/un-archive + Archived-pets screen | Queued (PR 2 done — unblocked) |
 | 4 | Log-flow identity — "Logging for {pet}" chip + pre-log flip on all log paths | Queued (needs PR 3) |
 | 5 | Free-feeding per-pet rows on food detail + library labels | Queued (PR 2 done — unblocked) |
@@ -94,8 +94,8 @@ Plan of record: `docs/design-system-migration-plan.md` (PM-approved 2026-06-07).
 
 ## Open PM Action Items
 
-- [ ] **Confirm the Sam §10 wording landed as intended (applied verbatim in #145).** The 2026-06-12 kickoff message read "approved as-is / with these changes: …" with the changes list empty — the Tier-2 `docs/personas.md` edit was applied **as-is** and flagged on the PR. If wording edits were intended, reply on #145 before merge.
-- [ ] **Review + merge draft PR #145 (multi-pet PR 2 — Foundation)** after the on-device QA script in the PR body (add-pet via deep link, selection survives restart, sign-out fallback, write-time pet_id spot-check).
+- [x] ~~**Confirm the Sam §10 wording landed as intended (applied verbatim in #145).**~~ **Confirmed 2026-06-12 — PM merged #145 with the verbatim §10 text ("wrap it up and merge", no edits requested).** The Tier-2 `docs/personas.md` two-cat Sam extension is final.
+- [x] ~~**Review + merge draft PR #145 (multi-pet PR 2 — Foundation)**~~ — **Merged 2026-06-12 (PM call, same session).** On-device QA script remains in the PR body — run it on `main` (add-pet deep link, selection survives restart, sign-out fallback, write-time pet_id spot-check); flag anything off as a fast-follow.
 - [x] ~~**Multi-pet vs Step 9 roadmap call (next session)**~~ — **Decided 2026-06-12: PR 2 (Foundation) built this session (#145).** Step 9 remains blocked on the PDF-library open question regardless.
 - [ ] **Authoritative re-deploy `generate-signal` from merged `main`** now that #137 is merged — the live v14 was deployed from-branch (B-077/B-078 precedent); re-deploy from merged main for provenance. Bundle path is the B-082 esbuild runbook (verified this session). Low urgency: the live v14 IS the merged code.
 - [x] ~~**Ratify the B-079 §4.3 floor calibration (5/0.6 vs listed 4/0.5).**~~ **RATIFIED 2026-06-11 (PM merged #137).** Spec §4.3 doc table updated to 5/0.6 with the calibration + n=8-residual rationale; rode in #137.
