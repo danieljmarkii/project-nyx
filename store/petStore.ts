@@ -47,6 +47,19 @@ export function resolveActivePet(pets: Pet[], preferredId: string | null): Pet |
   return pets.find((p) => p.id === preferredId) ?? pets[0];
 }
 
+// Display ordering for per-pet surfaces (multi-pet spec §3.4): the active pet
+// leads, the rest keep store (oldest-first) order. Generic so view shapes that
+// only carry {id} can use it too.
+export function orderPetsActiveFirst<T extends { id: string }>(
+  pets: T[],
+  activePetId: string | null,
+): T[] {
+  if (!activePetId) return pets;
+  const active = pets.find((p) => p.id === activePetId);
+  if (!active) return pets;
+  return [active, ...pets.filter((p) => p.id !== activePetId)];
+}
+
 interface PetState {
   pets: Pet[];
   activePet: Pet | null;

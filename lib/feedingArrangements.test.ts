@@ -27,8 +27,10 @@ jest.mock('./utils', () => ({ uuid: () => 'arr-1' }));
 import {
   startFreeChoice, endFreeChoice, localDateString,
   deriveBoundaryMarkers, confirmArrangementFresh, getActiveArrangementMeta,
+  getActiveArrangementsForPets, getArrangementMetasForFood,
+  groupArrangementsByFood, petNameList, arrangementPetsLine, sharedBowlHint,
   confirmedLabel, formatCalendarDate, isArrangementStale, FRESHNESS_STALE_DAYS,
-  BoundaryArrangementRow,
+  BoundaryArrangementRow, HouseholdArrangementView,
 } from './feedingArrangements';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -129,6 +131,145 @@ describe('getActiveArrangementMeta', () => {
   it('returns null when no active arrangement', async () => {
     mockGetFirstAsync.mockResolvedValue(null);
     expect(await getActiveArrangementMeta('pet-1', 'food-1')).toBeNull();
+  });
+});
+
+// ── Multi-pet household view (spec §3.4) ─────────────────────────────────────
+
+describe('getActiveArrangementsForPets / getArrangementMetasForFood', () => {
+  it('returns [] without touching the db for an empty pet list', async () => {
+    expect(await getActiveArrangementsForPets([])).toEqual([]);
+    expect(await getArrangementMetasForFood('food-1', [])).toEqual([]);
+    expect(mockGetAllAsync).not.toHaveBeenCalled();
+  });
+
+  it('binds one placeholder per pet id (B-057 drift guard)', async () => {
+    await getActiveArrangementsForPets(['pet-1', 'pet-2']);
+    let [sql, args] = mockGetAllAsync.mock.calls[0] as [string, unknown[]];
+    expect((sql.match(/\?/g) ?? []).length).toBe(args.length);
+    expect(args).toEqual(['pet-1', 'pet-2']);
+    // Only currently-active, non-deleted free_choice rows surface.
+    expect(sql).toMatch(/active_until IS NULL/);
+    expect(sql).toMatch(/deleted_at IS NULL/);
+
+    await getArrangementMetasForFood('food-1', ['pet-1', 'pet-2']);
+    [sql, args] = mockGetAllAsync.mock.calls[1] as [string, unknown[]];
+    expect((sql.match(/\?/g) ?? []).length).toBe(args.length);
+    expect(args).toEqual(['food-1', 'pet-1', 'pet-2']);
+    expect(sql).toMatch(/active_until IS NULL/);
+    expect(sql).toMatch(/deleted_at IS NULL/);
+  });
+});
+
+describe('groupArrangementsByFood', () => {
+  const pets = [
+    { id: 'pet-active', name: 'Pixel' },
+    { id: 'pet-other', name: 'Juniper' },
+  ];
+  const row = (over: Partial<HouseholdArrangementView>): HouseholdArrangementView => ({
+    id: 'arr-x',
+    pet_id: 'pet-active',
+    food_item_id: 'food-1',
+    active_from: '2026-06-02',
+    updated_at: '2026-06-02T10:00:00.000Z',
+    brand: "Hill's",
+    product_name: 'w/d',
+    format: 'dry_kibble',
+    ...over,
+  });
+
+  it('groups both pets on the same food into one entry, pets in display order', () => {
+    const groups = groupArrangementsByFood(
+      [
+        // Rows arrive in query order (active_from desc) — Juniper's first here,
+        // but the perPet order must follow the pets list (active pet first).
+        row({ id: 'a2', pet_id: 'pet-other', active_from: '2026-06-05' }),
+        row({ id: 'a1', pet_id: 'pet-active', active_from: '2026-06-02' }),
+      ],
+      pets,
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0].food_item_id).toBe('food-1');
+    expect(groups[0].perPet.map((p) => p.petName)).toEqual(['Pixel', 'Juniper']);
+  });
+
+  it('keeps different foods as separate entries in row order', () => {
+    const groups = groupArrangementsByFood(
+      [
+        row({ id: 'a1', food_item_id: 'food-1' }),
+        row({ id: 'a2', food_item_id: 'food-2', pet_id: 'pet-other', brand: 'Purina' }),
+      ],
+      pets,
+    );
+    expect(groups.map((g) => g.food_item_id)).toEqual(['food-1', 'food-2']);
+    expect(groups[1].perPet.map((p) => p.petName)).toEqual(['Juniper']);
+  });
+
+  it('drops rows for a pet not in the household list (e.g. just archived)', () => {
+    const groups = groupArrangementsByFood(
+      [row({ id: 'a1', pet_id: 'pet-archived' })],
+      pets,
+    );
+    expect(groups).toEqual([]);
+  });
+});
+
+describe('petNameList', () => {
+  it('joins names in plain English', () => {
+    expect(petNameList([], 'and')).toBe('');
+    expect(petNameList(['Pixel'], 'or')).toBe('Pixel');
+    expect(petNameList(['Pixel', 'Juniper'], 'and')).toBe('Pixel and Juniper');
+    expect(petNameList(['Pixel', 'Juniper'], 'or')).toBe('Pixel or Juniper');
+    expect(petNameList(['Pixel', 'Juniper', 'Mochi'], 'and')).toBe('Pixel, Juniper, and Mochi');
+  });
+});
+
+describe('arrangementPetsLine', () => {
+  it('labels each pet with its since-date, degrading to the bare name', () => {
+    expect(
+      arrangementPetsLine([
+        { petName: 'Pixel', active_from: '2026-06-02' },
+        { petName: 'Juniper', active_from: null },
+      ]),
+    ).toBe('Pixel since Jun 2 · Juniper');
+  });
+});
+
+describe('sharedBowlHint', () => {
+  it('is null below two pets (a single bowl is not shared)', () => {
+    expect(sharedBowlHint([])).toBeNull();
+    expect(sharedBowlHint([{ name: 'Pixel', species: 'cat' }])).toBeNull();
+  });
+
+  it('reads "both cats" for two same-species pets (mock B2 verbatim)', () => {
+    expect(
+      sharedBowlHint([
+        { name: 'Pixel', species: 'cat' },
+        { name: 'Juniper', species: 'cat' },
+      ]),
+    ).toBe("Down for both cats — quiet days don't mean nobody ate.");
+  });
+
+  it('falls back to names for mixed or unknown species, and for 3+', () => {
+    expect(
+      sharedBowlHint([
+        { name: 'Pixel', species: 'cat' },
+        { name: 'Rex', species: 'dog' },
+      ]),
+    ).toBe("Down for Pixel and Rex — quiet days don't mean nobody ate.");
+    expect(
+      sharedBowlHint([
+        { name: 'Pixel', species: 'other' },
+        { name: 'Juniper', species: 'other' },
+      ]),
+    ).toBe("Down for Pixel and Juniper — quiet days don't mean nobody ate.");
+    expect(
+      sharedBowlHint([
+        { name: 'Pixel', species: 'cat' },
+        { name: 'Juniper', species: 'cat' },
+        { name: 'Mochi', species: 'cat' },
+      ]),
+    ).toBe("Down for Pixel, Juniper, and Mochi — quiet days don't mean nobody ate.");
   });
 });
 

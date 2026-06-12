@@ -7,9 +7,11 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
 import {
-  getActiveArrangementsForPet, confirmArrangementFresh, endFreeChoice, ActiveArrangementView,
+  getActiveArrangementsForPets, confirmArrangementFresh, endFreeChoice,
+  groupArrangementsByFood, arrangementPetsLine, petNameList, FoodArrangementGroup,
   formatCalendarDate, isArrangementStale,
 } from '../../lib/feedingArrangements';
+import { usePetStore, orderPetsActiveFirst } from '../../store/petStore';
 import { FoodTile } from './FoodTile';
 
 interface Props {
@@ -33,8 +35,24 @@ const SCREEN_PADDING = theme.space2;
 export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail }: Props) {
   const [recent, setRecent] = useState<PickerFood[]>([]);
   const [library, setLibrary] = useState<PickerFood[]>([]);
-  const [arrangements, setArrangements] = useState<ActiveArrangementView[]>([]);
+  const [arrangements, setArrangements] = useState<FoodArrangementGroup[]>([]);
   const [search, setSearch] = useState('');
+
+  // Multi-pet spec §3.4: the "Always available" section is a HOUSEHOLD view —
+  // it shows every active pet's standing facts, each entry labeled with its
+  // pet(s). The logging pet (petId, the active pet) sorts first. Single-pet
+  // households keep today's unlabeled rendering (§7.8 — zero new chrome).
+  // The synthetic fallback covers the brief window before the pet store loads.
+  const storePets = usePetStore((s) => s.pets);
+  const householdPets = useMemo(() => {
+    const list: { id: string; name: string; species?: string }[] =
+      storePets.some((p) => p.id === petId)
+        ? storePets
+        : [...storePets, { id: petId, name: petName ?? 'your pet' }];
+    return orderPetsActiveFirst(list, petId);
+  }, [storePets, petId, petName]);
+  const multiPet = householdPets.length > 1;
+  const petIdsKey = householdPets.map((p) => p.id).join(',');
   // Brief "Confirmed ✓" acknowledgment after a freshness re-attest, so the tap
   // never reads as a dead control even as the row settles back to fresh.
   const [justConfirmedId, setJustConfirmedId] = useState<string | null>(null);
@@ -45,14 +63,23 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
   const [choosingId, setChoosingId] = useState<string | null>(null);
 
   // Just the "Always available" arrangements — re-read after a freshness confirm
-  // (below) without re-running the whole recent/library load.
+  // (below) without re-running the whole recent/library load. Household-wide,
+  // grouped one entry per food with its pet(s).
+  const loadArrangements = useCallback(async () => {
+    const rows = await getActiveArrangementsForPets(householdPets.map((p) => p.id));
+    return groupArrangementsByFood(rows, householdPets);
+    // householdPets is identity-unstable across renders; the joined ids are
+    // the real dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [petIdsKey]);
+
   const reloadArrangements = useCallback(async () => {
     try {
-      setArrangements(await getActiveArrangementsForPet(petId));
+      setArrangements(await loadArrangements());
     } catch (err) {
       console.warn('[FoodPicker] arrangements reload failed:', err);
     }
-  }, [petId]);
+  }, [loadArrangements]);
 
   // Reload on every focus so foods added or deleted from the detail screen — and
   // free-choice arrangements toggled there — are reflected when the picker comes
@@ -66,7 +93,7 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
           const [r, l, a] = await Promise.all([
             getRecentFoods(petId, RECENT_DAYS, RECENT_LIMIT),
             getLibraryFoods(),
-            getActiveArrangementsForPet(petId),
+            loadArrangements(),
           ]);
           if (!cancelled) {
             setRecent(r);
@@ -80,17 +107,19 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
         }
       })();
       return () => { cancelled = true; };
-    }, [petId]),
+    }, [petId, loadArrangements]),
   );
 
   // §6a passive freshness — "Yes, still out": re-attest the bowl is still down
   // (never a push). The re-read settles the row back to fresh (so the nudge
   // disappears); the brief "Confirmed ✓" flash is the visible acknowledgment.
-  const handleConfirmYes = useCallback(async (foodItemId: string) => {
+  // Per-(pet, food): in a multi-pet household each pet's arrangement is
+  // re-attested independently (spec §7.7).
+  const handleConfirmYes = useCallback(async (forPetId: string, foodItemId: string) => {
     setChoosingId(null);
     setJustConfirmedId(foodItemId);
     try {
-      await confirmArrangementFresh(petId, foodItemId);
+      await confirmArrangementFresh(forPetId, foodItemId);
       await reloadArrangements();
     } catch (err) {
       console.warn('[FoodPicker] freshness confirm failed:', err);
@@ -99,19 +128,20 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
         setJustConfirmedId((cur) => (cur === foodItemId ? null : cur));
       }, 1500);
     }
-  }, [petId, reloadArrangements]);
+  }, [reloadArrangements]);
 
   // "No, it's stopped": end the arrangement (soft — writes the active_until
-  // "Stopped" boundary History renders). The row drops out of the active list.
-  const handleStopped = useCallback(async (foodItemId: string) => {
+  // "Stopped" boundary History renders). The row drops out of the active list
+  // for that pet only.
+  const handleStopped = useCallback(async (forPetId: string, foodItemId: string) => {
     setChoosingId(null);
     try {
-      await endFreeChoice(petId, foodItemId);
+      await endFreeChoice(forPetId, foodItemId);
       await reloadArrangements();
     } catch (err) {
       console.warn('[FoodPicker] end arrangement failed:', err);
     }
-  }, [petId, reloadArrangements]);
+  }, [reloadArrangements]);
 
   const filteredLibrary = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -203,16 +233,26 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
         <SectionLabel label="Always available" />
         {arrangements.length === 0 ? (
           <Text style={styles.alwaysEmpty}>
-            Nothing always-out yet. If {petName ?? 'your pet'} grazes a bowl that's
+            Nothing always-out yet. If {multiPet
+              ? petNameList(householdPets.map((p) => p.name), 'or')
+              : petName ?? 'your pet'} grazes a bowl that's
             down all day, open a food and turn on “Always available” — we'll note it
             as free-choice for the vet.
           </Text>
         ) : (
           <View style={styles.alwaysList}>
-            {arrangements.map((a) => {
-              const since = formatCalendarDate(a.active_from);
+            {arrangements.map((g) => {
+              // Single-pet: today's unlabeled meta line. Multi-pet: each entry
+              // labeled with the pet(s) it's down for (spec §3.4).
+              const since = formatCalendarDate(g.perPet[0]?.active_from ?? null);
+              const metaLine = multiPet
+                ? `Free-choice · ${arrangementPetsLine(g.perPet)}`
+                : `Free-choice${since ? ` · since ${since}` : ''}`;
+              // §6a staleness stays per-arrangement: the nudge shows when ANY
+              // pet's row is stale, and the answer below asks per stale pet.
+              const staleEntries = g.perPet.filter((p) => isArrangementStale(p.updated_at));
               return (
-                <View key={a.id} style={styles.alwaysItem}>
+                <View key={g.food_item_id} style={styles.alwaysItem}>
                   <View style={styles.alwaysRow}>
                     <TouchableOpacity
                       style={styles.alwaysMain}
@@ -220,10 +260,10 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
                       // view shape — the detail screen re-fetches the full food row.
                       onPress={() =>
                         onOpenDetail?.({
-                          id: a.food_item_id,
-                          brand: a.brand,
-                          product_name: a.product_name,
-                          format: a.format,
+                          id: g.food_item_id,
+                          brand: g.brand,
+                          product_name: g.product_name,
+                          format: g.format,
                           food_type: null,
                           photo_path: null,
                         })
@@ -234,22 +274,20 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
                       <View style={styles.alwaysDot} />
                       <View style={styles.alwaysRowText}>
                         <Text style={styles.alwaysRowTitle} numberOfLines={1}>
-                          {a.brand} {a.product_name}
+                          {g.brand} {g.product_name}
                         </Text>
-                        <Text style={styles.alwaysRowMeta}>
-                          Free-choice{since ? ` · since ${since}` : ''}
-                        </Text>
+                        <Text style={styles.alwaysRowMeta}>{metaLine}</Text>
                       </View>
                     </TouchableOpacity>
                     {/* §6a passive freshness — a NUDGE, not a persistent link: the
-                        re-attest shows only once the arrangement is stale, so a fresh
+                        re-attest shows only once an arrangement is stale, so a fresh
                         bowl stays quiet. Tapping it opens a two-way answer (below)
                         rather than silently auto-confirming "yes"; never a push. */}
-                    {justConfirmedId === a.food_item_id ? (
+                    {justConfirmedId === g.food_item_id ? (
                       <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
-                    ) : isArrangementStale(a.updated_at) && choosingId !== a.food_item_id ? (
+                    ) : staleEntries.length > 0 && choosingId !== g.food_item_id ? (
                       <TouchableOpacity
-                        onPress={() => setChoosingId(a.food_item_id)}
+                        onPress={() => setChoosingId(g.food_item_id)}
                         hitSlop={10}
                         activeOpacity={0.7}
                         style={styles.alwaysConfirm}
@@ -259,14 +297,14 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
                     ) : null}
                   </View>
 
-                  {choosingId === a.food_item_id && (
-                    <View style={styles.freshnessChoices}>
+                  {choosingId === g.food_item_id && staleEntries.map((entry) => (
+                    <View key={entry.pet_id} style={styles.freshnessChoices}>
                       <Text style={styles.freshnessPrompt}>
-                        Still always out for {petName ?? 'your pet'}?
+                        Still always out for {multiPet ? entry.petName : petName ?? 'your pet'}?
                       </Text>
                       <View style={styles.freshnessChoiceBtns}>
                         <TouchableOpacity
-                          onPress={() => handleConfirmYes(a.food_item_id)}
+                          onPress={() => handleConfirmYes(entry.pet_id, g.food_item_id)}
                           hitSlop={8}
                           activeOpacity={0.7}
                           style={styles.freshnessChoiceBtn}
@@ -274,7 +312,7 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
                           <Text style={styles.choiceYes}>Yes, still out</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          onPress={() => handleStopped(a.food_item_id)}
+                          onPress={() => handleStopped(entry.pet_id, g.food_item_id)}
                           hitSlop={8}
                           activeOpacity={0.7}
                           style={styles.freshnessChoiceBtn}
@@ -283,7 +321,7 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
                         </TouchableOpacity>
                       </View>
                     </View>
-                  )}
+                  ))}
                 </View>
               );
             })}

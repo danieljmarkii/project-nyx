@@ -139,6 +139,34 @@ export async function getActiveArrangementsForPet(petId: string): Promise<Active
   );
 }
 
+// Household view (multi-pet spec §3.4): one row per active (pet, food)
+// arrangement across the given pets, so the library "Always available" section
+// can label each food with the pet(s) it's down for. Same shape as
+// ActiveArrangementView plus the owning pet.
+export interface HouseholdArrangementView extends ActiveArrangementView {
+  pet_id: string;
+}
+
+export async function getActiveArrangementsForPets(
+  petIds: string[],
+): Promise<HouseholdArrangementView[]> {
+  if (petIds.length === 0) return [];
+  const db = getDb();
+  const placeholders = petIds.map(() => '?').join(',');
+  return db.getAllAsync<HouseholdArrangementView>(
+    `SELECT fa.id, fa.pet_id, fa.food_item_id, fa.active_from, fa.updated_at,
+            f.brand, f.product_name, f.format
+     FROM feeding_arrangements fa
+     JOIN food_items_cache f ON f.id = fa.food_item_id
+     WHERE fa.pet_id IN (${placeholders})
+       AND fa.method = 'free_choice'
+       AND fa.active_until IS NULL
+       AND fa.deleted_at IS NULL
+     ORDER BY fa.active_from DESC, f.brand COLLATE NOCASE ASC`,
+    petIds,
+  );
+}
+
 // The active arrangement's identity + freshness for a single (pet, food) — what
 // the food-detail screen reads to show both the toggle state and the "last
 // confirmed" line. Null = not currently free-fed. updated_at doubles as the
@@ -164,6 +192,30 @@ export async function getActiveArrangementMeta(
     [petId, foodItemId],
   );
   return row ?? null;
+}
+
+// Per-pet metas for ONE food across the household — what the food-detail
+// per-pet toggle rows (multi-pet spec §3.4, mock B2) read. One query instead
+// of N getActiveArrangementMeta calls; a pet with no row is simply absent.
+export interface ArrangementMetaForPet extends ActiveArrangementMeta {
+  pet_id: string;
+}
+
+export async function getArrangementMetasForFood(
+  foodItemId: string,
+  petIds: string[],
+): Promise<ArrangementMetaForPet[]> {
+  if (petIds.length === 0) return [];
+  const db = getDb();
+  const placeholders = petIds.map(() => '?').join(',');
+  return db.getAllAsync<ArrangementMetaForPet>(
+    `SELECT id, pet_id, active_from, updated_at FROM feeding_arrangements
+     WHERE food_item_id = ? AND pet_id IN (${placeholders})
+       AND method = 'free_choice'
+       AND active_until IS NULL
+       AND deleted_at IS NULL`,
+    [foodItemId, ...petIds],
+  );
 }
 
 // §6a passive freshness — re-attest that an active free-fed arrangement is still
@@ -365,6 +417,109 @@ export async function getBoundaryMarkers(petId: string): Promise<BoundaryMarker[
     [petId],
   );
   return deriveBoundaryMarkers(rows);
+}
+
+// ── Multi-pet grouping + copy (spec §3.4) ────────────────────────────────────
+
+// One pet's slice of a food's standing fact, for display. Carries updated_at so
+// the §6a stale check stays per-arrangement (pet A's stale bowl never nags
+// about pet B's fresh one).
+export interface PetArrangementEntry {
+  pet_id: string;
+  petName: string;
+  active_from: string | null;
+  updated_at: string;
+}
+
+// A food with every household pet it's down for — what the library section
+// renders one entry per food from, labeled with its pet(s).
+export interface FoodArrangementGroup {
+  food_item_id: string;
+  brand: string;
+  product_name: string;
+  format: string;
+  perPet: PetArrangementEntry[];
+}
+
+// Pure: household arrangement rows → one group per food, preserving the rows'
+// order for groups (newest active_from first, matching the query) and the
+// given pets' order within a group (caller passes active-pet-first). Rows for
+// a pet not in the list (e.g. archived between read and render) are dropped —
+// archived pets are excluded from per-pet surfaces (spec §3.5).
+export function groupArrangementsByFood(
+  rows: HouseholdArrangementView[],
+  pets: { id: string; name: string }[],
+): FoodArrangementGroup[] {
+  const petIndex = new Map(pets.map((p, i) => [p.id, i]));
+  const byFood = new Map<string, FoodArrangementGroup>();
+  for (const r of rows) {
+    const idx = petIndex.get(r.pet_id);
+    if (idx === undefined) continue;
+    let group = byFood.get(r.food_item_id);
+    if (!group) {
+      group = {
+        food_item_id: r.food_item_id,
+        brand: r.brand,
+        product_name: r.product_name,
+        format: r.format,
+        perPet: [],
+      };
+      byFood.set(r.food_item_id, group);
+    }
+    group.perPet.push({
+      pet_id: r.pet_id,
+      petName: pets[idx].name,
+      active_from: r.active_from,
+      updated_at: r.updated_at,
+    });
+  }
+  const groups = [...byFood.values()];
+  for (const g of groups) {
+    g.perPet.sort((a, b) => petIndex.get(a.pet_id)! - petIndex.get(b.pet_id)!);
+  }
+  return groups;
+}
+
+// "Pixel and Juniper" / "Pixel, Juniper, and Mochi". Plain English list for the
+// pet-label and empty-state copy (nyx-voice: names over generic "your pets").
+export function petNameList(names: string[], conjunction: 'and' | 'or'): string {
+  if (names.length <= 1) return names[0] ?? '';
+  if (names.length === 2) return `${names[0]} ${conjunction} ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, ${conjunction} ${names[names.length - 1]}`;
+}
+
+// The library entry's pet label: "Pixel since Jun 2 · Juniper since May 12".
+// A malformed/absent window date degrades to the bare name, never a blank
+// clause.
+export function arrangementPetsLine(
+  perPet: { petName: string; active_from: string | null }[],
+): string {
+  return perPet
+    .map((p) => {
+      const since = formatCalendarDate(p.active_from);
+      return since ? `${p.petName} since ${since}` : p.petName;
+    })
+    .join(' · ');
+}
+
+// Mock B2's shared-bowl line, shown when ≥2 pets are ON for the same food:
+// both-ON IS the shared bowl, made visible. The back half carries the §2
+// guardrail in owner voice — absence of witnessed intake is never "didn't
+// eat". Two same-species pets read as "both cats"/"both dogs" (mock verbatim);
+// anything else falls back to names.
+export function sharedBowlHint(
+  petsOn: { name: string; species?: string }[],
+): string | null {
+  if (petsOn.length < 2) return null;
+  const SPECIES_PLURAL: Record<string, string> = { cat: 'cats', dog: 'dogs' };
+  const first = petsOn[0].species;
+  const plural = first ? SPECIES_PLURAL[first] : undefined;
+  const allSame = !!plural && petsOn.every((p) => p.species === first);
+  const who =
+    petsOn.length === 2 && allSame
+      ? `both ${plural}`
+      : petNameList(petsOn.map((p) => p.name), 'and');
+  return `Down for ${who} — quiet days don't mean nobody ate.`;
 }
 
 // ── Shared date formatters ───────────────────────────────────────────────────
