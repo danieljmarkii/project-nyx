@@ -506,7 +506,10 @@ const styles = StyleSheet.create({
   },
   logForText: {
     flex: 1,
-    fontSize: theme.textSM,
+    // textMD, not textSM: the mock's quiet 13pt read too small on-device
+    // (PM QA, 2026-06-12) — and this line is the wrong-pet safeguard, it
+    // shouldn't whisper. Matches menuActionLabel below.
+    fontSize: theme.textMD,
     color: theme.colorTextSecondary,
   },
   logForName: {

@@ -163,8 +163,10 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: 14,
   },
+  // Type sizes bumped one token step from the mock-lifted values after
+  // on-device QA read them as too small (PM, 2026-06-12).
   header: {
-    fontSize: theme.textMD,
+    fontSize: theme.textLG,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     marginBottom: theme.space1,
@@ -191,12 +193,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   petName: {
-    fontSize: theme.textMD,
+    fontSize: theme.textLG,
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
   },
   petLine: {
-    fontSize: theme.textXS,
+    fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     marginTop: 1,
   },
@@ -222,7 +224,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addLabel: {
-    fontSize: theme.textMD,
+    fontSize: theme.textLG,
     fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
   },
@@ -233,7 +235,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   archivedLink: {
-    fontSize: theme.textXS,
+    fontSize: theme.textSM,
     color: theme.colorTextTertiary,
   },
 });

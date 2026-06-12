@@ -102,12 +102,15 @@ const styles = StyleSheet.create({
   // Header-scoped only — the app-wide Geist body rollout stays B-061.
   name: {
     fontFamily: theme.fontBodySemibold,
-    fontSize: theme.textLG,
+    // textXL, up from textLG: the mock-faithful 17 read small on-device (PM
+    // QA, 2026-06-12). The Signal headline (textSignal 26) still leads the
+    // page (Principle 3); the wordmark stays quiet on purpose.
+    fontSize: theme.textXL,
     color: theme.colorTextPrimary,
   },
   line: {
     fontFamily: theme.fontBody,
-    fontSize: theme.textSM,
+    fontSize: theme.textMD,
     color: theme.colorTextTertiary,
     marginTop: 2,
   },
