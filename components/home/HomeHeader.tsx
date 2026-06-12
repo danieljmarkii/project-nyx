@@ -1,47 +1,48 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
-import { getPublicUrl } from '../../lib/storage';
 import { petIdentityLine } from '../../lib/utils';
-
-// Same bucket the Pet tab uploads to — the strip shows that photo when present.
-const PET_PHOTO_BUCKET = 'nyx-pet-photos';
+import { PetAvatar } from '../pet/PetAvatar';
+import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 
 // Home identity strip (B-076) — a thin orienting band above the Signal: a quiet
 // "Project Nyx" wordmark + the active pet's avatar, name, and one slim line.
 // Deliberately NOT a profile card (Principle 3): the AI Signal must keep leading
 // and the full profile (sex/weight/conditions/diet trial) stays the Pet tab's
-// job. It reads the active pet from the store, so when the multi-pet switcher
-// later changes activePet this strip updates with no extra wiring — but the
-// switcher itself is not built here (single-pet today; designed-for, not built).
+// job. The identity row is the switcher tap-target (multi-pet spec §3.1):
+// tapping opens the switcher sheet. The chevron AFFORDANCE renders only when
+// pets.length > 1 — single-pet households see no multi-pet chrome (Jordan's
+// condition) — but the row stays tappable for everyone because the sheet is
+// also the only "Add a pet" entry point (an owner's path to pet #2).
 export function HomeHeader() {
-  const activePet = usePetStore((s) => s.activePet);
+  const { pets, activePet } = usePetStore();
   // Own the top safe-area inset so the white surface bleeds up behind the
   // status bar — otherwise the screen's grey bg shows above the strip.
   const insets = useSafeAreaInsets();
+
+  const [switcherVisible, setSwitcherVisible] = useState(false);
 
   // Home only renders behind a created pet (usePet redirects to onboarding
   // otherwise), but guard anyway so a transient null never throws.
   if (!activePet) return null;
 
-  const photoUri = activePet.photo_path
-    ? getPublicUrl(PET_PHOTO_BUCKET, activePet.photo_path)
-    : null;
-  const initial = activePet.name.charAt(0).toUpperCase();
   const line = petIdentityLine(activePet);
+  const multiPet = pets.length > 1;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
       <Text style={styles.wordmark}>Project Nyx</Text>
-      <View style={styles.identityRow}>
-        {photoUri ? (
-          <Image source={{ uri: photoUri }} style={styles.avatar} resizeMode="cover" />
-        ) : (
-          <View style={styles.avatarPlaceholder}>
-            <Text style={styles.avatarInitial}>{initial}</Text>
-          </View>
-        )}
+      <TouchableOpacity
+        style={styles.identityRow}
+        onPress={() => setSwitcherVisible(true)}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={multiPet ? `Switch pet — ${activePet.name} active` : 'Your pets'}
+      >
+        <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={38} />
         <View style={styles.textColumn}>
           <Text style={styles.name} numberOfLines={1}>
             {activePet.name}
@@ -52,12 +53,18 @@ export function HomeHeader() {
             </Text>
           ) : null}
         </View>
-      </View>
+        {multiPet && (
+          <ChevronDown size={18} color={theme.colorTextSecondary} strokeWidth={1.75} />
+        )}
+      </TouchableOpacity>
+
+      <PetSwitcherSheet
+        visible={switcherVisible}
+        onClose={() => setSwitcherVisible(false)}
+      />
     </View>
   );
 }
-
-const AVATAR = 38;
 
 const styles = StyleSheet.create({
   container: {
@@ -82,35 +89,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 11,
     marginTop: theme.space1,
-  },
-  avatar: {
-    width: AVATAR,
-    height: AVATAR,
-    borderRadius: theme.radiusFull,
-  },
-  // Soft tinted disc (per the multi-pet mock the PM approved 2026-06-12) — the
-  // identity anchor and the future switcher tap-target, not a decorative accent.
-  // The previous solid-black disc read harsher than every other home surface.
-  avatarPlaceholder: {
-    width: AVATAR,
-    height: AVATAR,
-    borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorAccentLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Geist faces here (not bare fontWeight): RN doesn't synthesize weights for
-  // custom fonts, so the weight lives in the family name (see lib/fonts.ts).
-  // Header-scoped only — the app-wide Geist body rollout stays B-061.
-  avatarInitial: {
-    fontFamily: theme.fontBodySemibold,
-    fontSize: theme.textMD,
-    color: theme.colorTextPrimary,
+    // The whole row is the switcher tap zone — spec §3.1 mandates the 44pt
+    // floor (the 38pt avatar alone would undershoot it).
+    minHeight: 44,
   },
   textColumn: {
     flex: 1,
     minWidth: 0,
   },
+  // Geist faces here (not bare fontWeight): RN doesn't synthesize weights for
+  // custom fonts, so the weight lives in the family name (see lib/fonts.ts).
+  // Header-scoped only — the app-wide Geist body rollout stays B-061.
   name: {
     fontFamily: theme.fontBodySemibold,
     fontSize: theme.textLG,

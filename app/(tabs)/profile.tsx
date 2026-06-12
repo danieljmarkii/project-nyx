@@ -15,6 +15,8 @@ import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
+import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
+import { Pet } from '../../store/petStore';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
@@ -62,12 +64,15 @@ function statusLabel(status: string): string {
 }
 
 export default function ProfileScreen() {
-  const { activePet, updatePet } = usePetStore();
+  const { pets, activePet, updatePet } = usePetStore();
   const { user } = useAuthStore();
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
   const [editingCondition, setEditingCondition] = useState<Condition | undefined>(undefined);
+  // Snapshot of the pet the archive sheet was opened FOR (identity rule, see
+  // ArchivePetSheet). Doubles as the sheet's visibility flag.
+  const [archivingPet, setArchivingPet] = useState<Pet | null>(null);
 
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [conditionsLoading, setConditionsLoading] = useState(true);
@@ -232,6 +237,20 @@ export default function ProfileScreen() {
         { text: 'Mark resolved', onPress: () => handleResolveCondition(condition.id) },
       ],
     );
+  }
+
+  function handleArchivePress() {
+    if (!activePet) return;
+    // Archive-last-pet is blocked with honest copy (spec §3.5): the app needs
+    // one active pet, and true deletion belongs to the Privacy track (B-039).
+    if (pets.length <= 1) {
+      Alert.alert(
+        `${activePet.name} is your only pet here`,
+        'Your pet list needs at least one pet, so archiving isn’t available right now. Adding another pet first makes this possible.',
+      );
+      return;
+    }
+    setArchivingPet(activePet);
   }
 
   async function handleSignOut() {
@@ -412,8 +431,29 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </Card>
 
+        {/* Quiet archive action (spec §3.5, mock B4) — bottom of the tab,
+            styled to recede: removal is a rare lifecycle moment, not a daily
+            affordance. Tap on the last active pet explains the block instead
+            of hiding (honest over invisible). */}
+        <TouchableOpacity
+          style={styles.archiveBtn}
+          onPress={handleArchivePress}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+        >
+          <Text style={styles.archiveBtnText}>Archive {activePet.name}</Text>
+        </TouchableOpacity>
+
         <View style={styles.bottomPad} />
       </ScrollView>
+
+      {archivingPet && (
+        <ArchivePetSheet
+          visible
+          pet={archivingPet}
+          onClose={() => setArchivingPet(null)}
+        />
+      )}
 
       <EditPetModal
         visible={editModalVisible}
@@ -658,6 +698,24 @@ const styles = StyleSheet.create({
   accountRowText: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
+  },
+
+  // ── Archive ──
+  archiveBtn: {
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusMedium,
+    paddingVertical: 13,
+    paddingHorizontal: theme.space2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: theme.space1,
+  },
+  archiveBtnText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextTertiary,
   },
 
   // ── Empty / bottom ──
