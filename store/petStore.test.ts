@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   usePetStore,
   resolveActivePet,
+  orderPetsActiveFirst,
   loadPersistedActivePetId,
   clearPersistedActivePetId,
   Pet,
@@ -52,6 +53,22 @@ describe('resolveActivePet', () => {
 
   it('falls back to the oldest pet when there is no preference', () => {
     expect(resolveActivePet([pixel, juniper], null)).toBe(pixel);
+  });
+});
+
+describe('orderPetsActiveFirst', () => {
+  const mochi = makePet('pet-3', 'Mochi');
+
+  it('moves the active pet to the front, keeping store order for the rest', () => {
+    expect(orderPetsActiveFirst([pixel, juniper, mochi], 'pet-2')).toEqual([
+      juniper, pixel, mochi,
+    ]);
+  });
+
+  it('keeps store order when the active pet leads already or is unknown', () => {
+    expect(orderPetsActiveFirst([pixel, juniper], 'pet-1')).toEqual([pixel, juniper]);
+    expect(orderPetsActiveFirst([pixel, juniper], 'pet-gone')).toEqual([pixel, juniper]);
+    expect(orderPetsActiveFirst([pixel, juniper], null)).toEqual([pixel, juniper]);
   });
 });
 
