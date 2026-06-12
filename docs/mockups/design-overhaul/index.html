@@ -118,8 +118,14 @@
   .statChip { display:flex; align-items:center; gap:7px; background:var(--surfaceSubtle);
     border:1px solid var(--border); border-radius:999px; padding:7px 13px 7px 10px;
     font-size:13px; font-weight:500; color:var(--t1); }
-  .statChip svg { width:15px; height:15px; }
   .statChip.sym { background:var(--clayLight); border-color:#EFDACB; color:#9C4F36; }
+  /* rev 3 — the mark system: type carries identity, a small mark carries category */
+  .mark { display:inline-block; width:9px; height:9px; border-radius:5px; flex:none; }
+  .mark.meal { background:var(--accent); }
+  .mark.treat { background:transparent; border:2px solid var(--accent); width:9px; height:9px; }
+  .mark.sym { background:var(--clay); }
+  .mark.neutral { background:var(--borderStrong); }
+  .markCol { width:20px; display:flex; justify-content:center; flex:none; }
   .symCallout { display:flex; align-items:center; gap:11px; margin-top:13px; padding-top:13px;
     border-top:1px solid var(--border); }
   .storySub { font-size:12.5px; color:var(--t3); margin-top:3px; }
@@ -300,7 +306,7 @@
 
 <div class="masthead">
   <h1>Nyx — the experience layer, rebuilt around the data it now holds</h1>
-  <p><b>Rev 2 — after PM feedback, Jun 12.</b> Interactive mockup, real data shapes (244 events / 29 days · 46 foods · 177 rated meals). Everything in the phone is tappable where the proposal says it should be: switch tabs, tap the Pattern chart, expand a History day, open the FAB, tap a food. Changed in rev 2: Today (chips, not dots), Foods (rows, not tiles), icons (literal, custom-drawn).</p>
+  <p><b>Rev 3 — Jun 12.</b> Interactive mockup, real data shapes (244 events / 29 days · 46 foods · 177 rated meals). Tap everything: tabs, the Pattern chart, a History day, the FAB, a food. Changed in rev 3: Today generalized to any incident mix, event pictograms retired for a type + color-mark system (the icon decision — Exhibit C), Foods add-flow made camera-first ("the scan").</p>
   <span class="hint">Annotations to the right update with whatever screen you're on.</span>
 </div>
 
@@ -334,13 +340,19 @@
             <div class="card todayCard" onclick="go('scr-history');openDay('day-today')">
               <span class="zlabel">Today</span>
               <div class="statChips">
-                <span class="statChip"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg>3 meals</span>
-                <span class="statChip"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M3.5 12c2.8-3.2 6.7-3.2 9.5 0-2.8 3.2-6.7 3.2-9.5 0z"/><path d="M13 12l4.5-3.2v6.4L13 12z"/></svg>3 treats</span>
-                <span class="statChip sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg>1 vomit</span>
+                <span class="statChip"><i class="mark meal"></i>3 meals</span>
+                <span class="statChip"><i class="mark treat"></i>3 treats</span>
+                <span class="statChip"><i class="mark neutral"></i>1 stool</span>
+                <span class="statChip sym"><i class="mark sym"></i>1 vomit</span>
+                <span class="statChip sym"><i class="mark sym"></i>1 lethargy</span>
               </div>
               <div class="symCallout">
-                <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div>
+                <div class="markCol"><i class="mark sym"></i></div>
                 <div class="evMain"><div class="evLabel">Vomit · 8:40 AM</div><div class="evSub">6 min after breakfast</div></div>
+              </div>
+              <div class="symCallout" style="margin-top:0; padding-top:9px; border-top:none;">
+                <div class="markCol"><i class="mark sym"></i></div>
+                <div class="evMain"><div class="evLabel">Lethargy · 3:30 PM</div><div class="evSub">"Sleeping more than usual"</div></div>
               </div>
               <div class="storySub" style="margin-top:11px;">Last logged: Tuna Pâté · 5:12 PM — tap for the full day</div>
             </div>
@@ -440,36 +452,46 @@
           <div class="dayGroup" id="day-today">
             <div class="dayHead" onclick="toggleDay('day-today')">
               <div class="dayDate">Today<small>Thu, Jun 12</small></div>
-              <span class="pill sym">1 vomit</span><span class="pill meals">6 feedings</span>
+              <span class="pill sym">1 vomit · 1 lethargy</span><span class="pill meals">6 feedings</span>
               <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
             </div>
             <div class="symRow">
-              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div>
+              <div class="markCol"><i class="mark sym"></i></div>
               <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">6 min after breakfast</div></div>
               <div class="evTime">8:40 AM</div>
             </div>
+            <div class="symRow">
+              <div class="markCol"><i class="mark sym"></i></div>
+              <div class="evMain"><div class="evLabel">Lethargy</div><div class="evSub">"Sleeping more than usual"</div></div>
+              <div class="evTime">3:30 PM</div>
+            </div>
+            <div class="symRow">
+              <div class="markCol"><i class="mark neutral"></i></div>
+              <div class="evMain"><div class="evLabel">Stool</div><div class="evSub">Normal</div></div>
+              <div class="evTime">7:55 AM</div>
+            </div>
             <div class="mealSummaryRow" onclick="toggleDay('day-today')">
-              <div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="markCol"><i class="mark meal"></i></div>
               <div class="evMain"><div class="evLabel">3 meals · 3 treats</div><div class="evSub">All eaten fully</div></div>
               <span class="expandHint">Show</span>
             </div>
             <div class="dayBody">
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark meal"></i></div>
                 <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Tuna Pâté</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">5:12 PM</div></div>
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark treat"></i></div>
                 <div class="evMain"><div class="evLabel">Treat</div><div class="evSub">Temptations · Catnip Flavor</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">2:30 PM</div></div>
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark treat"></i></div>
                 <div class="evMain"><div class="evLabel">Treat</div><div class="evSub">Friskies · Party Mix California Crunch</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">1:58 PM</div></div>
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark meal"></i></div>
                 <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Chicken Feast Grilled</div></div>
                 <span class="intakeDot">Ate most</span><div class="evTime">12:05 PM</div></div>
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark treat"></i></div>
                 <div class="evMain"><div class="evLabel">Treat</div><div class="evSub">Purina · Whisker Lickin's Chicken &amp; Seafood</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">10:15 AM</div></div>
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark meal"></i></div>
                 <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Ocean Whitefish</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">8:34 AM</div></div>
             </div>
@@ -483,23 +505,23 @@
               <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
             </div>
             <div class="symRow">
-              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div>
+              <div class="markCol"><i class="mark sym"></i></div>
               <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">Found it — sometime before 7:00 AM</div></div>
               <div class="evTime">~7:00 AM<small>estimated</small></div>
             </div>
             <div class="mealSummaryRow" onclick="toggleDay('day-jun11')">
-              <div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="markCol"><i class="mark meal"></i></div>
               <div class="evMain"><div class="evLabel">4 meals · 5 treats</div><div class="evSub">1 left unfinished</div></div>
               <span class="expandHint">Show</span>
             </div>
             <div class="dayBody">
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark meal"></i></div>
                 <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Tuna Pâté</div></div>
                 <span class="intakeDot">Ate some</span><div class="evTime">7:48 PM</div></div>
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 4.5v2M12 17.5v2M4.5 12h2M17.5 12h2"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark treat"></i></div>
                 <div class="evMain"><div class="evLabel">Treat ×3</div><div class="evSub">Temptations · Seafood Medley</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">3:20 PM</div></div>
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark meal"></i></div>
                 <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Chicken Feast Grilled</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">12:18 PM</div></div>
             </div>
@@ -513,17 +535,17 @@
               <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
             </div>
             <div class="symRow">
-              <div class="evIcon sym"><svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div>
+              <div class="markCol"><i class="mark sym"></i></div>
               <div class="evMain"><div class="evLabel">Vomit</div><div class="evSub">3 min after eating · photo attached</div></div>
               <div class="evTime">9:05 AM</div>
             </div>
             <div class="mealSummaryRow" onclick="toggleDay('day-jun10')">
-              <div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="markCol"><i class="mark meal"></i></div>
               <div class="evMain"><div class="evLabel">3 meals · 4 treats</div><div class="evSub">All eaten fully</div></div>
               <span class="expandHint">Show</span>
             </div>
             <div class="dayBody">
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark meal"></i></div>
                 <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Ocean Whitefish</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">9:02 AM</div></div>
             </div>
@@ -537,7 +559,7 @@
               <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
             </div>
             <div class="dayBody">
-              <div class="evRow"><div class="evIcon meal"><svg viewBox="0 0 24 24" fill="none" stroke="#0B6E61" stroke-width="1.9" stroke-linecap="round"><path d="M5 11c0 3.9 3.1 7 7 7s7-3.1 7-7"/><path d="M3.5 11h17"/></svg></div>
+              <div class="evRow"><div class="markCol"><i class="mark meal"></i></div>
                 <div class="evMain"><div class="evLabel">Meal</div><div class="evSub">Fancy Feast · Tuna Pâté</div></div>
                 <span class="intakeDot">Ate all</span><div class="evTime">6:50 PM</div></div>
             </div>
@@ -551,7 +573,9 @@
       <div class="screen" id="scr-foods">
         <div class="histHead">
           <div class="histTitleRow"><span class="histTitle">Foods</span>
-            <button class="chip" style="font-weight:500;">+ Add food</button>
+            <button class="chip on" style="font-weight:500; display:flex; align-items:center; gap:6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8a2 2 0 0 1 2-2h1.5l1.5-2h6l1.5 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"/><circle cx="12" cy="12.5" r="3.2"/></svg>
+              Scan a food</button>
           </div>
         </div>
         <div class="scroll" style="padding-bottom:100px;">
@@ -671,11 +695,11 @@
         <div class="sheetLabel" style="margin-top:14px;">Something happened</div>
         <div class="symBtns">
           <button class="symBtn" onclick="toggleSheet()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg>
+            <i class="mark sym" style="width:11px;height:11px;"></i>
             <span>Vomit</span>
           </button>
           <button class="symBtn" onclick="toggleSheet()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M10 7c0-1.2 1-2.1 2-2.3"/><path d="M6 14.5c0-2.4 2.7-3.8 6-3.8s6 1.4 6 3.8"/><path d="M5 14.8c1.8 1.2 4 1.7 7 1.7s5.2-.5 7-1.7"/><path d="M8.5 18.8v1.4M12 19.3v1.4M15.5 18.8v1.4"/></svg>
+            <i class="mark sym" style="width:11px;height:11px;"></i>
             <span>Loose stool</span>
           </button>
         </div>
@@ -704,7 +728,7 @@
       <h2>Home — three zones become one narrative</h2>
       <ul>
         <li><b>Signal unchanged in role, upgraded in connection:</b> the lead card now ends in an evidence row — “See the pattern →” — that opens the chart behind the sentence. Cards finally earn Principle 3's “tappable to reveal the evidence.”</li>
-        <li><b>Today is a glance, not a timeline (rev 2):</b> icon-led count chips (3 meals · 3 treats · 1 vomit) + a real row for any symptom with its timing fact + a last-logged line. The rev-1 dot strip made time-of-day the hero dimension; the team's read of your feedback: the questions Today answers are <i>what and how much</i>, and icons do the differentiating work dots couldn't. Tap → today in History.</li>
+        <li><b>Today generalizes to any incident mix (rev 3):</b> one chip per event type logged today — meals and treats aggregate, every other type gets its own chip (symptoms clay, stool/other neutral), so a lethargy-and-itch day reads exactly like a vomit day. Symptom <i>rows</i> below carry the detail (timing fact when witnessed, note excerpt otherwise), capped at 2 + "and 1 more"; feedings never get rows here. This frame is type-agnostic by construction — nothing is special-cased to vomit.</li>
         <li><b>Home/Today vs History/today, de-duplicated by altitude:</b> Home is the 2-second glance (counts + the needle); History is the record (full rows). They no longer look like the same card twice.</li>
         <li><b>Trend zone → Pattern card:</b> bigger bars, a feeding lane for context, and the whole card is tappable into a 30-day explorer. This resolves B-067 by making the chart the <i>evidence layer</i>: reflection ③ suppresses when the Pattern card charts that symptom, and both share one window helper.</li>
         <li class="guard"><b>Safety invariant intact:</b> the safety card always leads, is never capped, and the rose accent is now <i>reserved</i> for the safety lane — everything observational is clay.</li>
@@ -744,6 +768,7 @@
         <li><b>Fourth tab.</b> The library stopped being a picker detail: 46 foods, 18 brands, free-feeding management, and now an intake record per food. Browsing without logging is a real job.</li>
         <li><b>Rows, not tiles (rev 2):</b> full-width rows with a 44px thumbnail — pack color is contained to a small square and the surface stays Nyx-neutral. Half-screen photo tiles amplified 46 packs' worth of competing brand color into chaos; rows also stop the truncation problem (one full-width line beats two clipped ones). Grouped by brand with quiet section heads.</li>
         <li><b>Photos still earn their place:</b> 42/46 foods have front-of-pack shots. The <b>AI pack-shot crop</b> (extraction returns a crop box; client crops once at add-time — no new server image dependency) now feeds the 44px thumb, the detail hero, and the FAB sheet thumbnails. Initials-on-neutral is the no-photo fallback.</li>
+        <li><b>"Scan a food" is the scan (rev 3):</b> the header CTA opens the shipped camera-first capture flow — snap the pack, AI extracts brand/name/ingredients, one-tap confirm — with "choose from library" as the secondary source (the PR #114 lesson). It was never killed, just hidden behind a quiet "+ Add"; now it's camera-forward again. The <i>barcode</i> scan path stays deferred post-MVP, but this button is exactly where it will live.</li>
         <li class="guard"><b>“Reliable favorites” obeys the intake invariant:</b> positive-only, floor of 5+ rated offers at ≥90% eaten-fully, denominator printed on the card (“26 of 26”). No dislike shelf exists — decline is a health signal and routes to detector ②, never to a taste verdict.</li>
         <li class="flag"><b>Stretch flag:</b> “three tabs maximum at MVP” (interaction principles) becomes four. Argued as: MVP qualifier + the FAB remains the universal log path, so navigation stays flat.</li>
         <li><b>Brand canonicalization needed</b> (“Purina Friskies” vs “Friskies” are two brands today) before brand grouping ships — composes with B-052.</li>
@@ -774,26 +799,27 @@
 
 <!-- ─── exhibits ─── -->
 <div class="exhibits">
-  <h2>Exhibit C — why stool and vomit stopped reading like blood</h2>
+  <h2>Exhibit C — the icon decision: retire the pictograms</h2>
   <div class="exGrid">
     <div class="exCard">
-      <h3>Before — the live Lucide set: abstract glyphs, one red for everything</h3>
-      <div class="sub">This is what shipped in v1.2 PR 3 (already custom stroke icons, not emoji). Two failures survived the swap: Lucide has no literal GI glyphs, so vomit/stool became abstract droplets — and every symptom shares <code>#F43F5E</code> rose, so a red droplet literally draws blood. Concern and emergency are indistinguishable.</div>
-      <div class="iconRow">
-        <div class="iconCell"><div class="bub" style="background:#FFE4E6"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.9"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg></div><div class="nm">Vomit (Droplet)</div></div>
-        <div class="iconCell"><div class="bub" style="background:#FFE4E6"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.9"><path d="M8 3s4 5 4 8a4 4 0 0 1-8 0c0-3 4-8 4-8z"/><path d="M17 8s3 3.5 3 6a3 3 0 0 1-6 0c0-2.5 3-6 3-6z"/></svg></div><div class="nm">Loose stool (Droplets)</div></div>
-        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9"><circle cx="12" cy="12" r="9"/></svg></div><div class="nm">Stool (Circle)</div></div>
+      <h3>Applied in the phone — no pictograms: type + a color mark</h3>
+      <div class="sub"><b>The ruling (Director of Product):</b> three icon systems in (emoji → Lucide → custom literal) and none survived contact — because for a six-word vocabulary that always ships with its label, a pictogram adds metaphor risk and zero information. The word "Vomit" is the most legible icon for vomit. Identity moves to <b>typography</b>; category moves to a <b>9px mark</b>: meal = filled mint, treat = hollow mint, symptom = clay, stool/other = neutral. Calmer, faster to scan, ages perfectly, and there is nothing left to get wrong.</div>
+      <div class="iconRow" style="align-items:center;">
+        <div class="iconCell" style="width:auto; display:flex; align-items:center; gap:8px;"><i class="mark meal" style="display:inline-block;width:9px;height:9px;border-radius:5px;background:var(--accent);"></i><span style="font-size:13px;font-weight:500;">Meal</span></div>
+        <div class="iconCell" style="width:auto; display:flex; align-items:center; gap:8px;"><i style="display:inline-block;width:9px;height:9px;border-radius:5px;border:2px solid var(--accent);"></i><span style="font-size:13px;font-weight:500;">Treat</span></div>
+        <div class="iconCell" style="width:auto; display:flex; align-items:center; gap:8px;"><i style="display:inline-block;width:9px;height:9px;border-radius:5px;background:var(--clay);"></i><span style="font-size:13px;font-weight:500;">Vomit · Loose stool · Lethargy · Itch</span></div>
+        <div class="iconCell" style="width:auto; display:flex; align-items:center; gap:8px;"><i style="display:inline-block;width:9px;height:9px;border-radius:5px;background:var(--borderStrong);"></i><span style="font-size:13px;font-weight:500;">Stool · Other</span></div>
       </div>
+      <div class="sub" style="margin:16px 0 0;">Pictograms survive only where a label cannot exist: the <b>tab bar</b> (wayfinding), <b>functional glyphs</b> (camera, search, back), and the <b>future widget</b> — the one surface that would ever justify commissioning a literal glyph family. Until the widget ships, no event icon exists to argue about.</div>
     </div>
     <div class="exCard">
-      <h3>After — literal silhouettes, custom-drawn, clay not red</h3>
-      <div class="sub">The rule: <b>a stool looks like a stool, a vomit looks like a vomit</b> — custom-drawn stroke glyphs (never Apple emoji, no licensing exposure), kept calm by color and line weight instead of abstraction. New token pair <code>colorEventAttention #BE6A4E</code> / light <code>#F8ECE3</code>; rose is reserved for safety-lane cards and destructive actions. These five are the brief for the commissioned Nyx icon family the migration plan already calls for.</div>
+      <h3>The alternative we're not taking — literal custom glyphs (rev 2)</h3>
+      <div class="sub">Kept for the record: custom-drawn literal silhouettes (a stool that is a swirl, a vomit that is a splash — never Apple emoji, no licensing exposure). It answers "a shit needs to look like a shit" head-on, and it's the fallback brief if type-plus-mark feels too austere on device. The clay/rose split (Exhibit D) applies either way.</div>
       <div class="iconRow">
-        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div><div class="nm">Vomit — a splash, unmistakably</div></div>
-        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M10 7c0-1.2 1-2.1 2-2.3"/><path d="M6 14.5c0-2.4 2.7-3.8 6-3.8s6 1.4 6 3.8"/><path d="M5 14.8c1.8 1.2 4 1.7 7 1.7s5.2-.5 7-1.7"/><path d="M8.5 18.8v1.4M12 19.3v1.4M15.5 18.8v1.4"/></svg></div><div class="nm">Loose stool — droops &amp; drips</div></div>
-        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.5c1.7.5 2.4 2 1.6 3.4"/><path d="M9.2 7h5c1.5 0 2.5 1.2 2.1 2.6"/><path d="M7 10h9.7c1.7 0 2.8 1.4 2.3 3"/><path d="M5.8 13.5h12.9c1.4 0 2.3 1.1 1.9 2.4-.4 1.3-1.7 2.1-3.3 2.1H7.2c-1.6 0-2.9-.8-3.3-2.1-.4-1.3.5-2.4 1.9-2.4z"/></svg></div><div class="nm">Stool — the swirl, drawn ours</div></div>
-        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><circle cx="9.5" cy="14.5" r="3"/><circle cx="5.8" cy="10" r="1.2"/><circle cx="9.5" cy="8.2" r="1.2"/><circle cx="13.2" cy="10" r="1.2"/><path d="M16.5 6.5l3.5 3.5M18 4.5l3.5 3.5"/></svg></div><div class="nm">Itch — paw + scratch strokes</div></div>
-        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round"><path d="M17 4a8 8 0 1 0 3 9 7 7 0 0 1-3-9z"/></svg></div><div class="nm">Lethargy — kept</div></div>
+        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M5.5 16.5c0-1.8 2.6-3 6.5-3s6.5 1.2 6.5 3-2.6 3-6.5 3-6.5-1.2-6.5-3z"/><path d="M12 5v4.5"/><path d="M8.7 6.2l1.3 3"/><path d="M15.3 6.2l-1.3 3"/></svg></div><div class="nm">Vomit — splash</div></div>
+        <div class="iconCell"><div class="bub" style="background:#F8ECE3"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9C4F36" stroke-width="1.9" stroke-linecap="round"><path d="M10 7c0-1.2 1-2.1 2-2.3"/><path d="M6 14.5c0-2.4 2.7-3.8 6-3.8s6 1.4 6 3.8"/><path d="M5 14.8c1.8 1.2 4 1.7 7 1.7s5.2-.5 7-1.7"/><path d="M8.5 18.8v1.4M12 19.3v1.4M15.5 18.8v1.4"/></svg></div><div class="nm">Loose stool</div></div>
+        <div class="iconCell"><div class="bub" style="background:#FAFAFA"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#525252" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.5c1.7.5 2.4 2 1.6 3.4"/><path d="M9.2 7h5c1.5 0 2.5 1.2 2.1 2.6"/><path d="M7 10h9.7c1.7 0 2.8 1.4 2.3 3"/><path d="M5.8 13.5h12.9c1.4 0 2.3 1.1 1.9 2.4-.4 1.3-1.7 2.1-3.3 2.1H7.2c-1.6 0-2.9-.8-3.3-2.1-.4-1.3.5-2.4 1.9-2.4z"/></svg></div><div class="nm">Stool — swirl</div></div>
+        <div class="iconCell"><div class="bub" style="background:#FFE4E6"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F43F5E" stroke-width="1.9"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg></div><div class="nm">(shipped today: red Droplet — retired either way)</div></div>
       </div>
     </div>
   </div>
