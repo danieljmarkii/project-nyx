@@ -551,14 +551,28 @@ export interface PickerFood {
   photo_path: string | null;
 }
 
-// Last N distinct foods logged for this pet within `daysBack` days, most-recent first.
+// The pet's most-recently-eaten distinct foods, newest first — ordered by this
+// pet's actual last meal of each food (MAX(occurred_at)), NOT food_items_cache's
+// `last_used_at`. The latter is global across all pets in the household and is a
+// LOCAL-ONLY column that refreshFoodCache used to reset to NULL on every sync,
+// so ordering by it surfaced an essentially arbitrary set. Pass `daysBack` to
+// bound the window (the picker's "recent" section); pass `null` for no time
+// bound (the FAB quick-log, which re-offers the last few foods regardless of age).
 export async function getRecentFoods(
   petId: string,
-  daysBack: number,
+  daysBack: number | null,
   limit: number,
 ): Promise<PickerFood[]> {
   const db = getDb();
-  const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+  // Params are pushed in the same order their `?` placeholders appear below:
+  // pet_id, then the optional window cutoff, then the limit.
+  const params: (string | number)[] = [petId];
+  let windowClause = '';
+  if (daysBack != null) {
+    windowClause = 'AND e.occurred_at >= ?';
+    params.push(new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString());
+  }
+  params.push(limit);
   return db.getAllAsync<PickerFood>(
     `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path
      FROM meals m
@@ -566,11 +580,11 @@ export async function getRecentFoods(
      JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE m.pet_id = ?
        AND e.deleted_at IS NULL
-       AND e.occurred_at >= ?
+       ${windowClause}
      GROUP BY f.id
      ORDER BY MAX(e.occurred_at) DESC
      LIMIT ?`,
-    [petId, cutoff, limit],
+    params,
   );
 }
 

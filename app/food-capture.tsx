@@ -373,10 +373,22 @@ export default function FoodCaptureScreen() {
     // split with no LWW impact, kept separate so the helper owns its timestamps.
     const now = new Date().toISOString();
     const frontStoragePath = frontPhoto?.storagePath ?? null;
+    // ON CONFLICT DO UPDATE, not INSERT OR REPLACE: on an edit of an existing
+    // food, REPLACE would null the columns not listed here — last_used_at
+    // (local-only recency, unrecoverable once lost) and the AI-extracted
+    // primary_protein/flags hydrated from the server. Update only what this
+    // screen owns; leave the rest intact.
     await db.runAsync(
-      `INSERT OR REPLACE INTO food_items_cache
+      `INSERT INTO food_items_cache
          (id, brand, product_name, format, food_type, photo_path, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         brand = excluded.brand,
+         product_name = excluded.product_name,
+         format = excluded.format,
+         food_type = excluded.food_type,
+         photo_path = excluded.photo_path,
+         cached_at = excluded.cached_at`,
       [foodId, brand.trim(), product.trim(), format, type, frontStoragePath, now],
     );
 
