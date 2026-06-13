@@ -381,10 +381,27 @@ export async function refreshFoodCache(): Promise<void> {
     const photoPath = Array.isArray(item.photo_paths) && item.photo_paths.length > 0
       ? item.photo_paths[0]
       : null;
+    // ON CONFLICT DO UPDATE, not INSERT OR REPLACE: REPLACE deletes the whole
+    // row and re-inserts, silently nulling any column NOT listed here — notably
+    // last_used_at, which is the LOCAL-ONLY recency stamp (no server column to
+    // re-hydrate it from, so once nulled it's gone). That reset the recent-foods
+    // ordering on every sync. DO UPDATE writes only the server-owned columns and
+    // leaves last_used_at intact.
     await db.runAsync(
-      `INSERT OR REPLACE INTO food_items_cache
+      `INSERT INTO food_items_cache
         (id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         brand = excluded.brand,
+         product_name = excluded.product_name,
+         format = excluded.format,
+         food_type = excluded.food_type,
+         primary_protein = excluded.primary_protein,
+         is_novel_protein = excluded.is_novel_protein,
+         is_grain_free = excluded.is_grain_free,
+         is_prescription = excluded.is_prescription,
+         photo_path = excluded.photo_path,
+         cached_at = excluded.cached_at`,
       [item.id, item.brand, item.product_name, item.format, item.food_type ?? null, item.primary_protein ?? null,
        item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, now]
     );
