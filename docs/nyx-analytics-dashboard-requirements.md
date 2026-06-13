@@ -204,6 +204,8 @@ Curated, in priority order. Safety-class cards always lead (Principle 3). Each m
 
 **What it is:** a short, warm narrative at the **top of the dashboard** that synthesizes the already-computed cards into 2–4 sentences — "Here's what I'm seeing for Nyx this month." **Static narrative, NOT a chat** (the "keyhole effect" — chat is the wrong shape for "what changed"; and every chat-based health AI in the research is where the safety incidents cluster).
 
+> **The governing principle: LLM as Phraser, never Analyst.** The model never computes a number, never ranks, never infers a cause, never decides whether a pattern exists. Code does all of that deterministically and hands the model a finished, already-true **fact packet**; the model's *only* job is to turn those facts into warm, plain copy. Every number it emits must trace to the packet — anything it can't trace, it can't say. This one line is what separates the safe players (Google Fitbit, Tableau Pulse, Dexcom) from the retractions (Google Health Overviews, Eight Sleep), it's the architecture Nyx already runs in Step 10, and it governs this entire section.
+
 **Reference models (research, §4.3):** WHOOP's Weekly Performance Assessment for the *shape* (served, periodic, baseline-anchored static narrative); Google's Fitbit three-agent split for the *architecture* (deterministic data-science agent computes, conversational agent only phrases — "structurally prevents hallucinated numbers"); PetPace's "consult your vet, never 'fine'" for the *escalation posture*; Bearable as the *restraint fallback* (when phrasing of a finding is uncertain, show the card and stay silent rather than narrate).
 
 **Architecture — the safe pattern, validated by the entire industry (§4.3):**
@@ -227,6 +229,16 @@ Curated, in priority order. Safety-class cards always lead (Principle 3). Each m
 - **Pass the "what do I do next?" test** or it's a vanity sentence — cut it.
 
 **Why this is genuinely "AI-forward" *and* safe:** it's a new, prominent AI surface, but it stays on the right side of every documented failure precisely because the model never touches the math or the causation — exactly the line that separated the safe players (Dexcom/Samsung/Tableau) from the retractions (Google/Eight Sleep).
+
+### 7.1 Interim state — the "coming soon" summary (ships in PR 3, before the AI lands)
+
+The AI summary is sequenced last (PR 4), but the dashboard ships before it (PR 3). Rather than leave a gap or hide the slot, the AI summary's place ships as a **designed, anticipatory card** pinned at the top of the dashboard — so owners know something good is coming and the layout never jumps when PR 4 lands. PM-requested; this is a feature, built well.
+
+- **Why it's a feature, not a banned placeholder (Principle 5, resolved):** Principle 5 says "never a placeholder" — a gray "Coming soon" chip is exactly that, and is banned. But a *warm, honest, forward-looking* card that tells a small true story about what's being built is precisely what Principle 5 endorses (it's the same move as the first-run Signal empty state, "We're getting to know Luna"). The bar: it must look intentional and calm, reserve the real summary's slot, and point to value that already exists.
+- **Copy (nyx-voice, first-person-pet — final wording at build):** e.g. *"Soon, I'll pull everything I'm noticing across Nyx's patterns into a few plain sentences, right here. For now, the cards below have the details."* Warm, specific about *what's* coming, and it hands the owner to the value that's already on screen.
+- **Must NOT:** promise a clinical capability ("I'll tell you if Nyx is healthy" — crosses the FDA/clinical line even as a tease); read as an upsell (the summary is care-relevant → free, never premium — Principle 7); nag; or use an exclamation mark.
+- **Trust caveat (Designer + Trust & Safety):** only ship the coming-soon if PR 4 is genuinely committed — a "coming soon" that never arrives erodes trust. Frame it as a calm intention, not a dated promise.
+- **Hand-off:** PR 4 swaps `ComingSoonSummary` for `AiSummaryCard` in the *same slot* — zero layout change.
 
 ---
 
@@ -303,16 +315,76 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 
 ---
 
-## 14. Phased build order (when greenlit — after Step 9)
+## 14. PR-by-PR build breakdown (hand-off ready)
 
-**Sequencing:** B-023 is explicitly "must not pull resources from Step 9/10." Step 9 (the vet report) is the blocked, unfinished clinical surface — and it's tier 3, which the dashboard's bridge (§9) depends on. So **Step 9 first is not a detour; it's the foundation.** This dashboard is design-ahead until then.
+**How to use this section.** Each PR is self-contained enough to run in a fresh Claude Code session. That session should first read `CLAUDE.md`, this spec, and the named files, then build exactly one PR to the project's standards (TypeScript strict; theme tokens only; tests per the DoD; one PR per session; draft PR + Manual QA script on push). **No PR in this plan changes the database schema** — the dashboard rides existing tables (`events`, `meals`, `food_items`, `diet_trials`, `feeding_arrangements`) + the `ai_signals` jsonb cache.
 
-Proposed PRs (each small, each its own QA gate):
-1. **Aggregate layer** — local SQLite count/intake/top-food/top-protein aggregates + unit tests (no UI). Pure logic, testable.
-2. **Card components** — the four-layer KPI card, ranking card, frequency-calendar, trend detail screen + `react-native-gifted-charts`. Design-led (Designer + Jordan + Sam).
-3. **The dashboard screen** — seeded card set, entry affordance from Home, per-pet, empty/calibration states.
-4. **The AI summary** — `validateSummary` guardrail, cache, template fallback. **Adversarial review mandatory** (clinically/statistically load-bearing).
-5. **Vet-report bridge** — wires "Share with my vet" to Step 9. **`rls-privacy-reviewer` mandatory.**
+**Dependency map & sequencing**
+- **PR 1 → 2 → 3 → 4 is a strict chain** and is **buildable now** — it needs only the existing Step 10 engine + local SQLite tables, **not** Step 9.
+- **PR 5 (vet bridge) is the only PR that requires Step 9 (the vet report) to exist.** Build it after Step 9 ships.
+- **Roadmap note:** the spec's overall "after Step 9" framing (§1) is a PM *resourcing* call (don't starve the vet report) — not a technical block on PRs 1–4. A build session can run PRs 1–4 ahead of Step 9 if the PM greenlights it.
+
+**Two prerequisites to settle before building (PM + experts, not the build session):**
+- **(§13 #6) the color-as-wellness ruling** — Data Scientist + Dr. Chen decide when color may imply "good/bad for the pet" (proposal: only on *established multi-sample* metrics; single observations stay neutral). **PR 2 needs this as an input.**
+- **`canonicalizeProtein` is server-only today** (`supabase/functions/generate-signal/protein.ts`). PR 1 needs it client-side for top-protein → port it to a shared `lib/protein.ts` (and have the Edge Function import the shared copy, to keep one source).
+
+---
+
+### PR 1 — Analytics aggregate layer (pure logic, no UI)
+- **Goal:** compute every dashboard metric deterministically from local SQLite.
+- **Depends on:** nothing (existing `lib/db.ts`).
+- **Files:** create `lib/analytics.ts` + `lib/analytics.test.ts`; port `canonicalizeProtein` → `lib/protein.ts`.
+- **Functions (pure, per-pet, each takes a window):** `getSymptomCounts`, `getSymptomFrequencyByDay` (calendar grid), `getTopFoods`, `getTopProteins`, `getIntakeRate`, `getDietTrialProgress`, `detectIntakeDecline` (→ a health-watch flag, never "picky").
+- **Key logic:** trailing **calendar** windows (Week / Month / 3-Month), not raw ms spans (the B-084 lesson); min-sample floors (reuse the Signal's) → below-floor returns a `notEnoughData` sentinel, never a fabricated rank; exclude free-fed foods from intake-rate denominators + carry "intake not directly observed"; canonicalize protein before ranking.
+- **AC:** counts/rankings match a hand-built fixture; below-floor → sentinel (no rank invented); `detectIntakeDecline` returns a watch flag and a test asserts it never returns a "preference"/"picky" framing; free-fed foods excluded from intake rates.
+- **Tests:** jest unit (DoD: a `lib/` util ⇒ tests required).
+- **Review:** Data Scientist (floors, denominators, intake≠preference); **adversarial-reviewer** (decline-detection + ranking are statistically/clinically load-bearing).
+- **Schema:** none.
+- **Kickoff prompt:** *"Read CLAUDE.md + docs/nyx-analytics-dashboard-requirements.md (§5, §6, §11, §14 PR 1). Build PR 1: the analytics aggregate layer in `lib/analytics.ts` (pure, per-pet, windowed), porting `canonicalizeProtein` to `lib/protein.ts`. Calendar windows, min-sample floors (below-floor → sentinel, never a fabricated rank), intake-decline routes to a health-watch flag (never 'picky'), free-fed foods excluded from intake rates. Jest tests required. No schema, no UI. Run the adversarial-reviewer on the decline/ranking logic before opening the draft PR."*
+
+### PR 2 — Card components (the visual language)
+- **Goal:** the reusable, calm card set.
+- **Depends on:** PR 1; the §13 #6 color ruling (confirm resolved first).
+- **Files:** create `components/dashboard/MetricCard.tsx` (four layers: label / big number / sparkline / delta), `Sparkline.tsx` (`react-native-gifted-charts` wrapper), `RankingCard.tsx`, `FrequencyCalendarCard.tsx`, `MetricDetailScreen.tsx` (Week/Month/3-Month segmented control); co-located tests; add `react-native-gifted-charts` to `package.json`.
+- **Key logic:** a `polarity: 'adverse' | 'neutral' | 'positive'` prop drives color — **inverted for adverse** (rising vomits = concern, falling = calm, never a green "win"); color applied **only to established multi-sample metrics** per the ruling; charts have no axes/gridlines/legend; plain-language annotation (no jargon); visibly tappable + 44pt/`hitSlop`; theme tokens only.
+- **AC:** four layers render; adverse-rising = concern color, adverse-falling = calm (not green); per-card empty + "still learning the baseline" calibration states; card looks tappable; passes the 10-second glance.
+- **Tests:** component tests for the polarity→color mapping + the empty/calibration-state selection (extract the selection as a pure fn and test it).
+- **Review:** Designer (lead — Principles 3/5, with Jordan + Sam); Engineer (gifted-charts in Expo Go / managed workflow); nyx-voice (annotations).
+- **Schema:** none.
+- **Kickoff prompt:** *"...Build PR 2: the dashboard card components in `components/dashboard/` (MetricCard four-layer big-number+sparkline+delta, RankingCard, FrequencyCalendarCard, MetricDetailScreen) using react-native-gifted-charts. Color is inverted for adverse metrics and applied only to established multi-sample metrics (confirm the §13 #6 ruling is resolved). No axes/gridlines, theme tokens only, 44pt tap targets, visible tappability. Component tests for the color-polarity + empty/calibration-state logic."*
+
+### PR 3 — Dashboard screen + Home entry + the "coming soon" AI-summary card
+- **Goal:** assemble the seeded dashboard, wire the entry point, and ship the designed AI-summary anticipatory state (§7.1).
+- **Depends on:** PR 2.
+- **Files:** create `app/insights/index.tsx` (route, per active pet), `components/dashboard/ComingSoonSummary.tsx`, `components/dashboard/DashboardEmptyState.tsx`; modify `components/home/SignalZone.tsx` (add a quiet "See all of Nyx's patterns →" footer affordance that navigates to the route — **not** a 4th Home zone); extract + test a pure `orderDashboardCards` (safety leads).
+- **Key logic:** seeded card set in priority order (safety first — §6), per active pet (multi-pet switcher-aware), cold-start + calibration states, the `ComingSoonSummary` pinned at the top in the AI summary's slot (§7.1 copy + rules).
+- **AC:** the Home affordance opens the dashboard scoped to the active pet (navigates away, not a zone); cards render in priority order, safety leads; honest empty/calibration states; the coming-soon card is warm and intentional (not a gray box), reserves the slot, makes **no** clinical promise, **no** upsell, **no** "!".
+- **Tests:** jest for `orderDashboardCards` + state selection; screen smoke test.
+- **Review:** Designer (lead, with Jordan + Sam); nyx-voice (coming-soon + empty-state copy); Trust & Safety (coming-soon over-promise check).
+- **Schema:** none.
+- **Kickoff prompt:** *"...Build PR 3: the dashboard screen at `app/insights/index.tsx` (seeded cards in priority order, safety leads, per active pet, empty + calibration states), the Home entry affordance in `components/home/SignalZone.tsx` ('See all of Nyx's patterns →', navigates away — not a 4th zone), and the well-designed `ComingSoonSummary` per §7.1 (warm nyx-voice, reserves the AI-summary slot, no clinical promise / upsell / '!'). Tests for card ordering + state selection."*
+
+### PR 4 — The AI summary (LLM as Phraser)
+- **Goal:** replace the coming-soon card with the real summary, on the deterministic-facts → phrasing architecture (§7).
+- **Depends on:** PR 1 (the fact packet) + PR 3 (the slot); reuses the Step 10 engine (already built).
+- **Files:** extend `supabase/functions/generate-signal/` — assemble a **fact packet** from PR 1's aggregates + existing findings; add `phraseSummary` + **`validateSummary`** in `phrasing.ts`; cache in `ai_signals` jsonb (or a sibling `generate-summary/` function if cleaner) + deno tests; client `lib/summary.ts` (cache-read) + `components/dashboard/AiSummaryCard.tsx` (swaps `ComingSoonSummary` in the **same slot**, evidence tappable).
+- **Key logic (the §7 governing principle):** Haiku 4.5 receives **only the fact packet, never raw events**; phrases 2–4 sentences; **`validateSummary` rejects** any number not in the packet, any reassurance-on-absence, any causal claim, any disease name; deterministic template fallback if the key is unset; 24h cache, regen on the Signal cadence, **cache-read on open (no live LLM call)**; evidence rendered beneath / tappable to the cards it summarizes.
+- **AC:** every number in the output ∈ the packet (test asserts this); quiet/empty data → no reassurance (test); associational only; template fallback when key unset; no live LLM call on dashboard open; tapping evidence opens the underlying cards.
+- **Tests:** deno unit for `validateSummary` (= clinical-guardrails Pattern 8 as assertions) + fallback; jest for client cache-read.
+- **Review:** **adversarial-reviewer MANDATORY** (the never-reassure-on-absence + no-fabricated-number guarantees are the load-bearing claims); `clinical-guardrails` skill; nyx-voice.
+- **Schema:** none (rides `ai_signals` jsonb).
+- **Kickoff prompt:** *"...Build PR 4: the AI summary on the LLM-as-Phraser architecture (§7). Extend generate-signal to assemble a deterministic fact packet (PR 1 aggregates + findings) and phrase it with Haiku via a forced tool, gated by a new `validateSummary` that rejects any number not in the packet, any reassurance-on-absence, any causal claim, any disease name; deterministic template fallback; 24h cache, cache-read on open. Client `AiSummaryCard` replaces `ComingSoonSummary` in the same slot with tappable evidence. Deno tests for validateSummary (clinical-guardrails Pattern 8). The adversarial-reviewer is MANDATORY before the PR is ready."*
+
+### PR 5 — Vet-report bridge
+- **Goal:** "Share with my vet" → the Step 9 report.
+- **Depends on:** **Step 9 (vet report) must be built first.**
+- **Files:** modify the dashboard screen (add the Share action); wire to Step 9's report-generation + share-token path.
+- **Key logic:** default range = since last vet visit (else 30 days); generate the report; native share sheet; inherit Step 9 mechanics (`share_token`, 30-day expiry, `nyx.app/report/{token}`, opens without a vet account). **No owner-only content (the n=1 reads) leaks onto the report** (Principle 6; B-013).
+- **AC:** Share generates a report for the active pet over the default range; token + 30-day expiry; link opens without an account; owner-only reads absent from the report.
+- **Tests:** per Step 9's surface.
+- **Review:** **rls-privacy-reviewer MANDATORY** (first deliberately unauthenticated path to health data from this surface); Dr. Chen / **vet-report-cold-read** on the rendered output.
+- **Schema:** per Step 9.
+- **Kickoff prompt:** *"(After Step 9 ships.) ...Build PR 5: the 'Share with my vet' bridge from the dashboard to the Step 9 vet report (default range = since last visit; share token + 30-day expiry; no owner-only n=1 reads on the report). The rls-privacy-reviewer is MANDATORY; run vet-report-cold-read on the rendered output."*
 
 ---
 
