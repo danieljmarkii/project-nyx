@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nyx — Analytics Dashboard Mockup · B-023 / nyx-analytics-dashboard-requirements.md</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  /* ── Theme tokens, mirrored verbatim from constants/theme.ts (v1.2 "Linear Clean") ── */
+  :root{
+    --font-body:'Geist',-apple-system,system-ui,sans-serif;
+    --font-display:'Newsreader',Georgia,serif;
+    --accent:#00C2A8; --accent-light:#E0FBF7;
+    --neutral-dark:#0A0A0A; --neutral-mid:#262626; --neutral-light:#FAFAFA;
+    --surface:#FFFFFF; --surface-subtle:#F5F5F5;
+    --text-primary:#0A0A0A; --text-secondary:#525252; --text-tertiary:#737373; --text-disabled:#A3A3A3;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --symptom:#F43F5E; --symptom-light:#FFE4E6; --chart-empty:#F0F0F0;
+    /* "calm" = the falling-adverse tone: a settled slate, deliberately NOT green and
+       NOT the accent — a dropping vomit count is relief, never a gamified win (§11 #3). */
+    --calm:#475569; --calm-light:#EEF1F4;
+    --s1:8px; --s2:16px; --s3:24px; --s4:32px;
+    --r-xs:4px; --r-sm:8px; --r-md:16px; --r-lg:24px; --r-full:999px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-body);background:#E7E9EE;color:var(--text-primary);-webkit-font-smoothing:antialiased;padding:40px 24px 72px;}
+
+  /* ── Page header ── */
+  .page-head{max-width:1240px;margin:0 auto 14px;}
+  .page-head h1{font-family:var(--font-display);font-weight:400;font-size:30px;letter-spacing:-0.3px;}
+  .page-head .sub{color:var(--text-secondary);font-size:14px;margin-top:8px;line-height:1.6;max-width:940px;}
+  .page-head .sub b{color:var(--text-primary);font-weight:600;}
+  .page-head code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xs);padding:1px 5px;}
+  .page-head .meta{color:var(--text-tertiary);font-size:12px;margin-top:12px;line-height:1.6;}
+
+  /* ── Frame section heads ── */
+  .lane-head{max-width:1240px;margin:40px auto 20px;display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--border-strong);padding-bottom:11px;}
+  .lane-head .tag{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#fff;background:var(--neutral-dark);border-radius:var(--r-full);padding:3px 11px;font-weight:600;flex:none;}
+  .lane-head.f2 .tag{background:var(--accent);}
+  .lane-head.f3 .tag{background:var(--calm);}
+  .lane-head h2{font-size:18px;font-weight:600;}
+  .lane-head .note{font-size:13px;color:var(--text-secondary);margin-left:auto;max-width:560px;line-height:1.5;text-align:right;}
+  .lane-head .note code{font-family:ui-monospace,monospace;font-size:12px;color:var(--text-tertiary);}
+
+  /* ── Frame layout: phone beside an annotation column ── */
+  .frame{max-width:1240px;margin:0 auto;display:flex;gap:48px;align-items:flex-start;}
+  @media(max-width:900px){.frame{flex-direction:column;align-items:center;gap:24px;}}
+  .phone-col{flex:none;display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .annot-col{flex:1;padding-top:30px;min-width:0;}
+  .frame-cap{font-size:12.5px;color:var(--text-tertiary);text-align:center;max-width:320px;line-height:1.5;}
+
+  /* ── Annotation callouts ── */
+  .annot{display:flex;gap:13px;padding:15px 0;border-bottom:1px solid var(--border);}
+  .annot:last-child{border-bottom:none;}
+  .annot .ico{flex:none;width:26px;height:26px;border-radius:var(--r-full);background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--text-secondary);margin-top:1px;}
+  .annot .ab{flex:1;min-width:0;}
+  .annot .at{font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .annot .ad{font-size:13px;color:var(--text-secondary);line-height:1.55;}
+  .annot .ad code{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--text-tertiary);}
+  .pill{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;font-weight:600;border-radius:var(--r-full);padding:2px 7px;flex:none;}
+  .pill.safety{color:var(--symptom);background:var(--symptom-light);}
+  .pill.voice{color:#0E8F7E;background:var(--accent-light);}
+  .pill.prin{color:var(--calm);background:var(--calm-light);}
+  .pill.open{color:#92600A;background:#FDF2DC;}
+
+  /* ════════════ PHONE CHROME ════════════ */
+  .phone{width:330px;background:var(--surface);border-radius:36px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 18px 50px rgba(10,10,12,.22);overflow:hidden;border:1px solid #DADCE2;position:relative;}
+  .screen{display:flex;flex-direction:column;background:var(--neutral-light);position:relative;min-height:560px;}
+  .statusbar{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:11px;font-weight:600;background:var(--surface);flex:none;}
+  .statusbar .dots{letter-spacing:1px;}
+
+  /* ── Home identity strip (shipped B-076 — components/home/HomeHeader.tsx) ── */
+  .idstrip{background:var(--surface);border-bottom:1px solid var(--border);padding:11px var(--s2) 13px;flex:none;}
+  .wordmark{font-family:var(--font-display);font-weight:400;font-size:15px;letter-spacing:-0.3px;color:var(--text-tertiary);}
+  .id-row{display:flex;align-items:center;gap:11px;margin-top:7px;}
+  .avatar{width:38px;height:38px;border-radius:var(--r-full);background:linear-gradient(135deg,#CDE8E2,#9FD8CC);flex:none;display:flex;align-items:center;justify-content:center;font-size:19px;}
+  .id-text{flex:1;min-width:0;}
+  .id-name{font-family:var(--font-body);font-size:22px;font-weight:600;color:var(--text-primary);line-height:1.05;}
+  .id-sub{font-size:13px;color:var(--text-tertiary);margin-top:2px;}
+
+  .body{flex:1;padding:var(--s2) var(--s2) var(--s3);display:flex;flex-direction:column;gap:14px;}
+  .seclabel{font-size:11px;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.8px;}
+
+  /* ── Signal card (elevated dominant zone — components/home/SignalZone + Card[elevated]) ── */
+  .signal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s3) var(--s2) var(--s2);box-shadow:0 1px 3px rgba(10,10,12,.05),0 8px 24px rgba(10,10,12,.06);display:flex;flex-direction:column;gap:14px;}
+  .insight{display:flex;gap:var(--s2);}
+  .insight .rail{width:3px;border-radius:2px;background:var(--accent);opacity:.85;flex:none;}
+  .insight.safety .rail{background:var(--symptom);}
+  .insight .content{flex:1;display:flex;flex-direction:column;gap:var(--s1);}
+  .insight .lead{font-family:var(--font-display);font-weight:400;font-size:25px;line-height:1.3;letter-spacing:-.3px;color:var(--text-primary);}
+  .insight .metarow{display:flex;align-items:center;gap:var(--s1);flex-wrap:wrap;}
+  .insight .badge{font-size:11px;font-weight:500;color:var(--text-secondary);background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--r-full);padding:2px 9px;}
+  .insight .sample{font-size:11px;color:var(--text-tertiary);}
+  .insight .hint{font-size:11px;font-weight:500;color:var(--accent);margin-top:2px;}
+
+  /* ── THE NEW AFFORDANCE — quiet Signal footer → dashboard (§8). Not a 4th zone. ── */
+  .see-all{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:2px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;font-weight:500;color:var(--accent);cursor:pointer;user-select:none;}
+  .see-all .arr{font-size:14px;transition:transform .15s ease-out;}
+  .see-all:hover .arr{transform:translateX(3px);}
+
+  /* ── Today zone (components/home/TodayZone) ── */
+  .zone-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s2);}
+  .zone-card .zl{font-size:11px;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;}
+  .ev{display:flex;align-items:center;gap:10px;padding:9px 0;}
+  .ev + .ev{border-top:1px solid var(--border);}
+  .ev .ec{width:32px;height:32px;border-radius:var(--r-full);background:var(--accent-light);display:flex;align-items:center;justify-content:center;font-size:15px;flex:none;}
+  .ev .ec.sym{background:var(--symptom-light);}
+  .ev .em{flex:1;min-width:0;}
+  .ev .el{font-size:15px;font-weight:500;color:var(--text-primary);}
+  .ev .es{font-size:13px;color:var(--text-secondary);margin-top:1px;}
+  .ev .et{font-size:13px;color:var(--text-secondary);}
+
+  /* ── Trend zone — diet-trial compliance mode (components/home/TrendZone ComplianceChart) ── */
+  .trend-sub{font-size:13px;color:var(--text-secondary);margin-bottom:12px;}
+  .progress-track{display:flex;height:6px;border-radius:3px;background:var(--chart-empty);overflow:hidden;margin-bottom:9px;}
+  .progress-fill{background:var(--accent);border-radius:3px;}
+  .compliance-note{font-size:13px;color:var(--text-secondary);}
+
+  /* ── Bottom tab bar (Home · History · Pet — NO 4th tab, §8) ── */
+  .tabbar{height:56px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex:none;}
+  .tabbar div{flex:1;display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;font-size:11px;font-weight:500;letter-spacing:.3px;color:var(--text-disabled);}
+  .tabbar div .tg{font-size:17px;line-height:1;}
+  .tabbar div.on{color:var(--neutral-dark);}
+
+  /* ════════════ DASHBOARD ════════════ */
+  .navbar{height:52px;display:flex;align-items:center;gap:12px;padding:0 var(--s2);background:var(--surface);border-bottom:1px solid var(--border);flex:none;}
+  .navbar .back{font-size:20px;color:var(--text-secondary);font-weight:400;}
+  .navbar .nt{font-size:17px;font-weight:600;letter-spacing:-.2px;}
+  .dash-intro{padding:16px var(--s2) 4px;}
+  .dash-intro .di{font-size:13px;color:var(--text-tertiary);}
+  .dash-body{padding:12px var(--s2) var(--s2);display:flex;flex-direction:column;gap:13px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);position:relative;}
+  .card .doorway{position:absolute;top:16px;right:14px;font-size:16px;color:var(--text-disabled);}
+  .card-label{font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.7px;}
+
+  /* ── Coming-soon AI summary card (§7.1) — pinned top, reserves the AI summary slot ── */
+  .summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);display:flex;gap:13px;box-shadow:0 1px 3px rgba(10,10,12,.04);}
+  .summary-card .srail{width:3px;border-radius:2px;background:var(--accent);opacity:.8;flex:none;}
+  .summary-card .sc-body{flex:1;}
+  .summary-card .sc-eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:9px;}
+  .summary-card .sc-glyph{width:18px;height:18px;border-radius:var(--r-full);background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex:none;}
+  .summary-card .sc-glyph svg{display:block;}
+  .summary-card .sc-kicker{font-size:10.5px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);}
+  .summary-card .sc-lead{font-family:var(--font-display);font-weight:400;font-size:19px;line-height:1.4;letter-spacing:-.2px;color:var(--text-primary);}
+  .summary-card .sc-sub{font-size:13px;color:var(--text-secondary);line-height:1.5;margin-top:8px;}
+
+  /* ── Count card (four-layer KPI: label / big number / sparkline / delta) §4.1 ── */
+  .kpi-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+  .kpi-left{min-width:0;}
+  .kpi-ban{font-size:46px;font-weight:600;letter-spacing:-1.5px;line-height:1;color:var(--text-primary);margin-top:10px;}
+  .kpi-ban .unit{font-size:15px;font-weight:500;color:var(--text-tertiary);letter-spacing:0;margin-left:6px;}
+  .kpi-spark{flex:none;width:96px;height:52px;display:flex;align-items:flex-end;}
+  .kpi-delta{display:inline-flex;align-items:center;gap:6px;margin-top:14px;font-size:13px;font-weight:500;}
+  .kpi-delta .arr{font-size:14px;}
+  /* falling adverse = CALM (settled slate), never green, never accent (§11 #3) */
+  .kpi-delta.calm{color:var(--calm);}
+  .kpi-delta.concern{color:var(--symptom);}
+  .kpi-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:9px;line-height:1.5;}
+
+  /* ── Frequency calendar heat-grid (§4.1 / §6) ── */
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;}
+  .cal-dow span{font-size:10px;color:var(--text-disabled);text-align:center;font-weight:500;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .cal-cell{aspect-ratio:1;border-radius:6px;background:var(--chart-empty);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-disabled);}
+  .cal-cell.future{background:transparent;color:#D4D4D8;}
+  .cal-cell.today{box-shadow:inset 0 0 0 1.5px var(--border-strong);color:var(--text-secondary);font-weight:600;}
+  /* heat = vomiting episodes that day; intensity scales with count, tone stays calm-symptom */
+  .cal-cell.h1{background:#FBD0D7;color:#9F1239;}
+  .cal-cell.h2{background:#F78DA0;color:#fff;}
+  .cal-cell.h3{background:var(--symptom);color:#fff;}
+  .cal-legend{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text-tertiary);margin-top:13px;}
+  .cal-legend .sw{width:13px;height:13px;border-radius:4px;flex:none;}
+  .cal-annot{font-size:12.5px;color:var(--text-secondary);margin-top:13px;line-height:1.5;}
+
+  /* ── Ranking card (§6) — ranked list, never a pie ── */
+  .rank-list{margin-top:13px;display:flex;flex-direction:column;gap:2px;}
+  .rank-row{display:flex;align-items:center;gap:11px;padding:8px 0;}
+  .rank-row + .rank-row{border-top:1px solid var(--border);}
+  .rank-n{flex:none;width:18px;font-size:12px;font-weight:600;color:var(--text-disabled);text-align:center;}
+  .rank-name{flex:1;font-size:14.5px;font-weight:500;color:var(--text-primary);min-width:0;}
+  .rank-name .rn-sub{font-size:11.5px;font-weight:400;color:var(--text-tertiary);margin-top:1px;}
+  .rank-bar-wrap{flex:none;width:78px;display:flex;align-items:center;gap:8px;}
+  .rank-bar{flex:1;height:5px;border-radius:3px;background:var(--chart-empty);overflow:hidden;}
+  .rank-bar i{display:block;height:100%;background:var(--accent);opacity:.55;border-radius:3px;}
+  .rank-count{font-size:12px;color:var(--text-secondary);font-weight:500;flex:none;min-width:34px;text-align:right;}
+  .rank-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:13px;line-height:1.5;}
+
+  /* ── Intake rate card (descriptive — NO wellness color, §11 #1/#2) ── */
+  .intake-ban{font-size:40px;font-weight:600;letter-spacing:-1px;line-height:1;margin-top:10px;color:var(--text-primary);}
+  .intake-sub{font-size:12.5px;color:var(--text-tertiary);margin-top:8px;}
+  .intake-annot{font-size:12.5px;color:var(--text-secondary);margin-top:11px;line-height:1.55;padding-top:11px;border-top:1px solid var(--border);}
+
+  /* ── Diet-trial progress card ── */
+  .trial-row{display:flex;align-items:baseline;justify-content:space-between;margin-top:11px;margin-bottom:11px;}
+  .trial-day{font-size:26px;font-weight:600;letter-spacing:-.5px;color:var(--text-primary);}
+  .trial-day .of{font-size:14px;font-weight:500;color:var(--text-tertiary);}
+  .trial-pct{font-size:12.5px;color:var(--text-secondary);}
+  .trial-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:11px;line-height:1.5;}
+
+  /* ── Vet bridge action (§9) ── */
+  .vet-bridge{display:flex;align-items:center;gap:13px;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-md);padding:15px var(--s2);cursor:pointer;}
+  .vet-bridge .vb-ico{width:38px;height:38px;border-radius:var(--r-full);background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex:none;}
+  .vet-bridge .vb-t{flex:1;}
+  .vet-bridge .vb-tt{font-size:15px;font-weight:600;color:var(--text-primary);}
+  .vet-bridge .vb-ts{font-size:12px;color:var(--text-tertiary);margin-top:2px;}
+  .vet-bridge .vb-chev{font-size:18px;color:var(--text-disabled);}
+
+  /* ════════════ SHEETS (frame 3) ════════════ */
+  .scrim{position:absolute;inset:0;background:rgba(10,10,10,.35);}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:var(--r-lg) var(--r-lg) 0 0;padding:12px var(--s2) var(--s3);box-shadow:0 -8px 40px rgba(10,10,12,.2);}
+  .grab{width:36px;height:4px;border-radius:var(--r-full);background:var(--border-strong);margin:0 auto 16px;}
+  .sheet-h{font-family:var(--font-display);font-size:21px;font-weight:500;letter-spacing:-.2px;margin-bottom:6px;}
+  .sheet-p{font-size:13.5px;color:var(--text-secondary);line-height:1.55;margin-bottom:16px;}
+  .range-opt{display:flex;align-items:center;gap:12px;border:1px solid var(--border);border-radius:var(--r-md);padding:13px var(--s2);margin-bottom:9px;}
+  .range-opt.sel{border-color:var(--accent);background:var(--accent-light);}
+  .range-opt .ro-radio{width:20px;height:20px;border-radius:var(--r-full);border:1.5px solid var(--border-strong);flex:none;display:flex;align-items:center;justify-content:center;}
+  .range-opt.sel .ro-radio{border-color:var(--accent);}
+  .range-opt.sel .ro-radio::after{content:'';width:11px;height:11px;border-radius:var(--r-full);background:var(--accent);}
+  .range-opt .ro-t{flex:1;}
+  .range-opt .ro-tt{font-size:14.5px;font-weight:500;}
+  .range-opt .ro-ts{font-size:12px;color:var(--text-tertiary);margin-top:2px;}
+  .privacy-note{display:flex;gap:9px;font-size:12px;color:var(--text-tertiary);line-height:1.5;margin:15px 2px 18px;}
+  .privacy-note .pn-ico{flex:none;margin-top:1px;}
+  .btn-primary{background:var(--accent);color:#fff;border-radius:var(--r-md);padding:15px;text-align:center;font-size:15px;font-weight:600;}
+  .btn-ghost{text-align:center;font-size:14px;font-weight:500;color:var(--text-secondary);padding:13px;margin-top:4px;}
+
+  /* iOS-style share sheet */
+  .share-sheet{position:absolute;left:8px;right:8px;bottom:8px;display:flex;flex-direction:column;gap:8px;}
+  .share-card{background:rgba(245,245,247,.96);backdrop-filter:blur(20px);border-radius:var(--r-md);overflow:hidden;}
+  .share-preview{display:flex;align-items:center;gap:12px;padding:15px var(--s2);border-bottom:1px solid rgba(0,0,0,.07);}
+  .share-preview .sp-thumb{width:42px;height:42px;border-radius:var(--r-sm);background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex:none;font-size:20px;}
+  .share-preview .sp-t{flex:1;min-width:0;}
+  .share-preview .sp-tt{font-size:14px;font-weight:600;color:var(--text-primary);}
+  .share-preview .sp-ts{font-size:12px;color:var(--text-tertiary);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .share-targets{display:flex;gap:18px;padding:16px var(--s2);overflow:hidden;}
+  .share-target{display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;}
+  .share-target .st-ico{width:52px;height:52px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff;}
+  .share-target .st-l{font-size:10.5px;color:var(--text-secondary);}
+  .share-action-row{padding:14px var(--s2);border-top:1px solid rgba(0,0,0,.07);font-size:15px;color:#0A84FF;display:flex;align-items:center;gap:11px;}
+  .share-action-row + .share-action-row{border-top:1px solid rgba(0,0,0,.07);}
+  .share-cancel{background:var(--surface);border-radius:var(--r-md);padding:16px;text-align:center;font-size:16px;font-weight:600;color:#0A84FF;}
+
+  /* ════════════ LEGEND ════════════ */
+  .legend{max-width:1240px;margin:48px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:28px 30px;}
+  .legend h2{font-size:17px;font-weight:600;margin-bottom:6px;}
+  .legend .lead{font-size:13.5px;color:var(--text-secondary);line-height:1.6;margin-bottom:22px;max-width:960px;}
+  .legend h3{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);margin:26px 0 14px;}
+
+  /* polarity reference */
+  .polarity{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  @media(max-width:780px){.polarity{grid-template-columns:1fr;}}
+  .pol{border:1px solid var(--border);border-radius:var(--r-md);padding:18px;}
+  .pol .pol-demo{display:flex;align-items:baseline;gap:10px;margin-bottom:13px;}
+  .pol .pol-num{font-size:30px;font-weight:600;letter-spacing:-1px;color:var(--text-primary);}
+  .pol .pol-d{font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:5px;}
+  .pol .pol-d.calm{color:var(--calm);} .pol .pol-d.concern{color:var(--symptom);} .pol .pol-d.neutral{color:var(--text-tertiary);}
+  .pol .pol-h{font-size:13.5px;font-weight:600;margin-bottom:5px;}
+  .pol .pol-b{font-size:12.5px;color:var(--text-secondary);line-height:1.55;}
+  .pol .pol-b b{color:var(--text-primary);}
+
+  /* invariant map table */
+  table.inv{width:100%;border-collapse:collapse;font-size:13px;}
+  table.inv th,table.inv td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5;}
+  table.inv th{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-tertiary);font-weight:600;}
+  table.inv td:first-child{font-weight:600;color:var(--text-primary);white-space:nowrap;}
+  table.inv td.where{color:var(--text-secondary);}
+  table.inv td.where b{color:var(--text-primary);font-weight:600;}
+
+  .notes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 26px;margin-top:6px;}
+  @media(max-width:780px){.notes-grid{grid-template-columns:1fr;}}
+  .dnote{font-size:13px;line-height:1.55;color:var(--text-secondary);padding-left:16px;position:relative;}
+  .dnote::before{content:'';position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  .dnote b{color:var(--text-primary);font-weight:600;}
+  .dnote .q{color:#92600A;font-weight:600;}
+
+  /* ════════════ STRINGS ════════════ */
+  .strings{max-width:1240px;margin:24px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:28px 30px;}
+  .strings h2{font-size:17px;font-weight:600;margin-bottom:4px;}
+  .strings .lead{font-size:13px;color:var(--text-secondary);margin-bottom:18px;line-height:1.6;max-width:960px;}
+  .strings .grp{margin-bottom:20px;}
+  .strings .grp h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin-bottom:10px;}
+  .strings .s{font-size:13.5px;line-height:1.6;color:var(--text-primary);padding-left:17px;position:relative;margin-bottom:9px;}
+  .strings .s::before{content:'';position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--border-strong);}
+  .strings .s .k{font-weight:600;color:var(--text-secondary);}
+  .strings .s em{color:var(--text-tertiary);font-style:normal;}
+
+  .foot{max-width:1240px;margin:26px auto 0;font-size:12px;color:var(--text-tertiary);line-height:1.6;}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Analytics dashboard — clickable mockup</h1>
+  <div class="sub">The owner-facing <b>patterns destination</b> (tier 2 of the intelligence ladder) and its bridge to the vet report. Built to <code>docs/nyx-analytics-dashboard-requirements.md</code> — §4.1–4.2 visual rules, §5 card taxonomy, §6 seeded set, §7.1 the coming-soon summary, §8 entry point, §9 vet bridge, §11 safety invariants. One pet: <b>Nyx</b>, a cat eight weeks into a salmon elimination trial for vomiting — chosen so every seeded card tells one coherent story. Styled with the live app tokens (accent <code>#00C2A8</code>, Geist + Newsreader, 8pt grid).</div>
+  <div class="meta"><b>Mockup only — not built.</b> Designer-led, with Jordan (“how many times / am I getting better / what do I tell the vet”) and Sam (top food / protein / intake — gated hard on <i>intake ≠ preference</i>). All copy self-audited against <code>nyx-voice</code> + the §11 invariants; strings are ship-gate candidates (listed at the foot). The <span style="color:var(--accent);font-weight:600">teal affordances are clickable</span> — “See all of Nyx's patterns →” and “Share with my vet” navigate between the frames.</div>
+</div>
+
+<!-- ════════════════════════ FRAME 1 — HOME ════════════════════════ -->
+<div class="lane-head f1" id="lane-home">
+  <span class="tag">Frame 1</span>
+  <h2>Home — the entry point</h2>
+  <div class="note">The shipped three zones, untouched. The only addition is a <b>quiet footer affordance on the Signal</b> — it navigates <i>away</i> to the destination, never a 4th zone or tab (Principle 3 / §8).</div>
+</div>
+
+<div class="frame">
+  <div class="phone-col">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="idstrip">
+        <div class="wordmark">Project Nyx</div>
+        <div class="id-row">
+          <div class="avatar">🐈</div>
+          <div class="id-text">
+            <div class="id-name">Nyx</div>
+            <div class="id-sub">Cat · 4 yrs · on a diet trial</div>
+          </div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="seclabel">Signal</div>
+        <div class="signal-card">
+          <div class="insight">
+            <div class="rail"></div>
+            <div class="content">
+              <div class="lead">Vomiting has eased since Nyx switched to salmon — 3 this month, down from 8.</div>
+              <div class="metarow"><span class="badge">Early pattern</span><span class="sample">4 weeks of logs</span></div>
+              <div class="hint">Why we're showing this</div>
+            </div>
+          </div>
+          <!-- THE NEW AFFORDANCE -->
+          <div class="see-all" onclick="goTo('lane-dash')">See all of Nyx's patterns <span class="arr">→</span></div>
+        </div>
+
+        <div class="zone-card">
+          <div class="zl">Today</div>
+          <div class="ev">
+            <div class="ec">🥣</div>
+            <div class="em"><div class="el">Breakfast</div><div class="es">Tiki Cat Salmon Pâté · finished it all</div></div>
+            <div class="et">8:02 AM</div>
+          </div>
+          <div class="ev">
+            <div class="ec">🐟</div>
+            <div class="em"><div class="el">Treat</div><div class="es">Temptations</div></div>
+            <div class="et">2:15 PM</div>
+          </div>
+        </div>
+
+        <div class="zone-card">
+          <div class="zl">Trend</div>
+          <div class="trend-sub">Day 18 of 56 — 17 of 18 days logged</div>
+          <div class="progress-track"><div class="progress-fill" style="flex:.32"></div><div style="flex:.68"></div></div>
+          <div class="compliance-note">94% meal compliance</div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="on"><span class="tg">⌂</span>Home</div>
+        <div><span class="tg">≡</span>History</div>
+        <div><span class="tg">◔</span>Pet</div>
+      </div>
+    </div></div>
+    <div class="frame-cap">Shipped home (B-076 identity strip, Step 10 Signal, Today, Trend). The bar stays Home · History · Pet.</div>
+  </div>
+
+  <div class="annot-col">
+    <div class="annot">
+      <div class="ico">1</div>
+      <div class="ab">
+        <div class="at">The footer affordance <span class="pill prin">Principle 3 · §8</span></div>
+        <div class="ad">“See all of Nyx's patterns →” sits quietly at the foot of the Signal card. It <b>navigates to a destination</b>, not a 4th Home zone and not a 4th tab — Home stays a calm, capped intelligence surface, never a dashboard dump. Tap it to jump to Frame 2.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">2</div>
+      <div class="ab">
+        <div class="at">Quiet, not a CTA <span class="pill voice">nyx-voice</span></div>
+        <div class="ad">Plain accent text + a single arrow, the app's one interactive colour. No button fill, no “Explore Analytics”, no badge. The word is <b>“patterns,”</b> never “Analytics” (engineer jargon, fails nyx-voice) — and the user-facing name is still an open decision (§13 #1).</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">3</div>
+      <div class="ab">
+        <div class="at">Tier 1 vs tier 2</div>
+        <div class="ad">The Signal answers <b>the one thing today</b> (push, ≤4 cards, calm). The destination is where the owner goes to <b>explore the full story</b> (pull, uncapped). Same engine underneath; two jobs, two principles that would fight on one screen (§2).</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">4</div>
+      <div class="ab">
+        <div class="at">One coherent narrative</div>
+        <div class="ad">Nyx is a cat on a salmon elimination trial. That single setup lets the seeded cards in Frame 2 line up — vomiting easing, top food &amp; protein = salmon, intake holding, trial at day 18 — so reviewers can judge the <b>relationships between cards</b>, not just isolated tiles.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ FRAME 2 — DASHBOARD ════════════════════════ -->
+<div class="lane-head f2" id="lane-dash">
+  <span class="tag">Frame 2</span>
+  <h2>The dashboard — seeded cards, safety first</h2>
+  <div class="note">Coming-soon AI summary pinned at top (§7.1), then the §6 seeded set in priority order. Range-free glance surface (the Week/Month/3-Month toggle lives on detail screens only, §8). Charts carry <b>no axes, no gridlines, no legend</b> (§4.2).</div>
+</div>
+
+<div class="frame">
+  <div class="phone-col">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="back">‹</span><span class="nt">Nyx's patterns</span></div>
+      <div class="dash-intro"><div class="di">What I'm seeing this month</div></div>
+      <div class="dash-body">
+
+        <!-- ① COMING-SOON AI SUMMARY (§7.1) — reserves the real summary's slot -->
+        <div class="summary-card">
+          <div class="srail"></div>
+          <div class="sc-body">
+            <div class="sc-eyebrow">
+              <span class="sc-glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 2.5l2.3 5.9 5.9 2.3-5.9 2.3L12 18.9l-2.3-5.9L3.8 10.7l5.9-2.3L12 2.5z" fill="#00C2A8" opacity="0.9"/></svg></span>
+              <span class="sc-kicker">Summary</span>
+            </div>
+            <div class="sc-lead">Soon, I'll pull what I'm noticing about Nyx into a few plain sentences, right here.</div>
+            <div class="sc-sub">For now, the cards below have the details.</div>
+          </div>
+        </div>
+
+        <!-- ② SYMPTOM COUNT — four-layer KPI, adverse polarity, falling = CALM not green -->
+        <div class="card">
+          <span class="doorway">›</span>
+          <div class="kpi-top">
+            <div class="kpi-left">
+              <div class="card-label">Vomiting · this month</div>
+              <div class="kpi-ban">3<span class="unit">episodes</span></div>
+            </div>
+            <div class="kpi-spark">
+              <!-- descending sparkline, calm tone, no axes/values -->
+              <svg width="96" height="46" viewBox="0 0 96 46" fill="none" preserveAspectRatio="none">
+                <polyline points="2,8 18,14 34,12 50,24 66,30 82,36 94,40" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.65"/>
+                <circle cx="94" cy="40" r="3" fill="#475569"/>
+              </svg>
+            </div>
+          </div>
+          <div class="kpi-delta calm"><span class="arr">↓</span> down from 8 last month</div>
+          <div class="kpi-annot">Fewer than last month, across 28 days of logs.</div>
+        </div>
+
+        <!-- ③ FREQUENCY CALENDAR HEAT-GRID -->
+        <div class="card">
+          <div class="cal-head"><div class="card-label">Vomiting · how often</div><div class="card-label" style="color:var(--text-disabled)">June</div></div>
+          <div class="cal-dow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+          <div class="cal-grid">
+            <!-- week 1: blank, Jun1(h1), 2,3,4, 5, 6(h1) -->
+            <div class="cal-cell future"></div>
+            <div class="cal-cell h1">1</div><div class="cal-cell">2</div><div class="cal-cell">3</div><div class="cal-cell">4</div><div class="cal-cell">5</div><div class="cal-cell h1">6</div>
+            <!-- week 2: 7,8,9(h1),10,11,12,13(today) -->
+            <div class="cal-cell">7</div><div class="cal-cell">8</div><div class="cal-cell h1">9</div><div class="cal-cell">10</div><div class="cal-cell">11</div><div class="cal-cell">12</div><div class="cal-cell today">13</div>
+            <!-- week 3-5: future -->
+            <div class="cal-cell future">14</div><div class="cal-cell future">15</div><div class="cal-cell future">16</div><div class="cal-cell future">17</div><div class="cal-cell future">18</div><div class="cal-cell future">19</div><div class="cal-cell future">20</div>
+            <div class="cal-cell future">21</div><div class="cal-cell future">22</div><div class="cal-cell future">23</div><div class="cal-cell future">24</div><div class="cal-cell future">25</div><div class="cal-cell future">26</div><div class="cal-cell future">27</div>
+            <div class="cal-cell future">28</div><div class="cal-cell future">29</div><div class="cal-cell future">30</div>
+          </div>
+          <div class="cal-legend">
+            <span>Fewer</span>
+            <span class="sw" style="background:var(--chart-empty)"></span>
+            <span class="sw h1" style="background:#FBD0D7"></span>
+            <span class="sw" style="background:#F78DA0"></span>
+            <span class="sw" style="background:var(--symptom)"></span>
+            <span>More</span>
+          </div>
+          <div class="cal-annot">3 days with vomiting this month — the most recent was Tuesday.</div>
+        </div>
+
+        <!-- ④ TOP FOOD — ranking, descriptive (most-logged, not "favourite") -->
+        <div class="card">
+          <span class="doorway">›</span>
+          <div class="card-label">Top food · this month</div>
+          <div class="rank-list">
+            <div class="rank-row"><div class="rank-n">1</div><div class="rank-name">Tiki Cat Salmon Pâté</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:100%"></i></div><span class="rank-count">24</span></div></div>
+            <div class="rank-row"><div class="rank-n">2</div><div class="rank-name">Weruva Salmon &amp; Pumpkin</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:38%"></i></div><span class="rank-count">9</span></div></div>
+            <div class="rank-row"><div class="rank-n">3</div><div class="rank-name">Temptations <span class="rn-sub">treat</span></div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:25%"></i></div><span class="rank-count">6</span></div></div>
+          </div>
+          <div class="rank-annot">Tiki Cat Salmon Pâté showed up in 24 of Nyx's meals this month — her most-logged food.</div>
+        </div>
+
+        <!-- ⑤ TOP PROTEIN — the card Nyx is uniquely positioned to show (canonicalised) -->
+        <div class="card">
+          <span class="doorway">›</span>
+          <div class="card-label">Top protein · this month</div>
+          <div class="rank-list">
+            <div class="rank-row"><div class="rank-n">1</div><div class="rank-name">Salmon</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:100%"></i></div><span class="rank-count">33</span></div></div>
+            <div class="rank-row"><div class="rank-n">2</div><div class="rank-name">Chicken</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:18%"></i></div><span class="rank-count">6</span></div></div>
+            <div class="rank-row"><div class="rank-n">3</div><div class="rank-name">Turkey</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:12%"></i></div><span class="rank-count">4</span></div></div>
+          </div>
+          <div class="rank-annot">Salmon was Nyx's most-fed protein this month — in step with her elimination trial.</div>
+        </div>
+
+        <!-- ⑥ INTAKE RATE — descriptive, NO wellness color, watch-routing in copy -->
+        <div class="card">
+          <span class="doorway">›</span>
+          <div class="card-label">Meals finished · this month</div>
+          <div class="intake-ban">84%</div>
+          <div class="intake-sub">47 of 56 meals rated “most” or “all”</div>
+          <div class="intake-annot">This is how much Nyx ate, not what she prefers. A lasting drop in eating is worth a word with your vet — I'll keep watch.</div>
+        </div>
+
+        <!-- ⑦ DIET-TRIAL PROGRESS -->
+        <div class="card">
+          <div class="card-label">Diet trial · salmon elimination</div>
+          <div class="trial-row">
+            <div class="trial-day">Day 18 <span class="of">of 56</span></div>
+            <div class="trial-pct">32% in</div>
+          </div>
+          <div class="progress-track"><div class="progress-fill" style="flex:.32"></div><div style="flex:.68"></div></div>
+          <div class="trial-annot">Nyx is 18 days into her 8-week trial. Keeping it steady helps a pattern show.</div>
+        </div>
+
+        <!-- VET BRIDGE — persistent action (§9), detailed in Frame 3 -->
+        <div class="vet-bridge" onclick="goTo('lane-share')">
+          <div class="vb-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 17v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div class="vb-t"><div class="vb-tt">Share with my vet</div><div class="vb-ts">Turn this into a clinical report →</div></div>
+          <div class="vb-chev">›</div>
+        </div>
+
+      </div>
+    </div></div>
+    <div class="frame-cap">The full scroll, top to bottom. Each card is a doorway (chevron) into a detail screen where the time-range toggle lives.</div>
+  </div>
+
+  <div class="annot-col">
+    <div class="annot">
+      <div class="ico">①</div>
+      <div class="ab">
+        <div class="at">Coming-soon summary <span class="pill prin">§7.1</span> <span class="pill voice">nyx-voice</span></div>
+        <div class="ad">A <b>designed, anticipatory card</b> — not a gray “Coming soon” chip (banned by Principle 5). It tells a small true story, reserves the real summary's exact slot (PR 4 swaps the component in with zero layout change), and hands the owner to the cards below. No clinical promise, no upsell, no “!”.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">②</div>
+      <div class="ab">
+        <div class="at">Symptom count — the load-bearing one <span class="pill safety">§11 #3</span></div>
+        <div class="ad">The four layers: <b>label / big number / sparkline / delta</b>. Colour is <b>inverted for adverse</b> metrics and the subtle part is the falling case — “↓ down from 8” reads <b style="color:var(--calm)">calm slate</b>, <b>never green, never a win, never an all-clear</b>. The number and sparkline stay neutral; only direction carries tone. See the polarity reference below.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">③</div>
+      <div class="ab">
+        <div class="at">Frequency heat-grid <span class="pill prin">§4.1</span></div>
+        <div class="ad">A month grid reads “how often / which days” faster than a bar chart (Apple Health pattern). Intensity scales with episodes per day; future days stay empty, not zeroed. The annotation is a plain <code>nyx-voice</code> sentence — never “0 emesis events / 30d window”.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">④⑤</div>
+      <div class="ab">
+        <div class="at">Top food &amp; protein — ranked, not a pie <span class="pill voice">Sam</span></div>
+        <div class="ad">A short ranked list with counts and a faint bar, no pie/donut. Framed as <b>“most-logged” / “most-fed,”</b> never “favourite” or “preference.” Top protein is the card Nyx is <b>uniquely positioned</b> to show (canonicalised via <code>lib/protein.ts</code>).</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">⑥</div>
+      <div class="ab">
+        <div class="at">Intake rate — the Sam tripwire <span class="pill safety">§11 #1</span></div>
+        <div class="ad"><b>No wellness colour.</b> 84% is descriptive intake, not a green success — a high finished-rate must never reassure, and a <b>declining</b> rate routes to a health watch, never softened to “picky.” The copy carries the vet-routing and the intake≠preference line right on the card.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">⑦</div>
+      <div class="ab">
+        <div class="at">Diet-trial progress</div>
+        <div class="ad">Day counter + progress bar anchored on <code>diet_trials.started_at</code>. The accent is fine here — it's a neutral progress indicator, not a wellness verdict. “Keeping it steady helps a pattern show” echoes the diet-churn guardrail.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">⑧</div>
+      <div class="ab">
+        <div class="at">Ordering — one to confirm <span class="pill open">PM</span></div>
+        <div class="ad">Rendered in the prompt's order. Note §6 groups <b>diet-trial progress</b> under “health trajectory” (group A, leads) while the prompt lists it last. Both agree symptoms lead; the trial-card slot is the one open ordering call for the team.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ FRAME 3 — SHARE WITH MY VET ════════════════════════ -->
+<div class="lane-head f3" id="lane-share">
+  <span class="tag">Frame 3</span>
+  <h2>Share with my vet — the tier 2 → tier 3 bridge</h2>
+  <div class="note">The persistent dashboard action assembles the <b>Step 9 clinical report</b> (default range: since last visit, else 30 days) → server PDF, share token, 30-day expiry, opens without a vet account (§9). The warm cards do <b>not</b> leak onto the clinical export.</div>
+</div>
+
+<div class="frame" style="gap:36px;justify-content:center;flex-wrap:wrap;">
+  <!-- 3a — the prep sheet -->
+  <div class="phone-col">
+    <div class="phone"><div class="screen" style="min-height:600px;">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="back">‹</span><span class="nt">Nyx's patterns</span></div>
+      <!-- dimmed dashboard behind the sheet -->
+      <div class="dash-body" style="opacity:.5;">
+        <div class="card"><div class="card-label">Vomiting · this month</div><div class="kpi-ban" style="font-size:38px;">3<span class="unit">episodes</span></div><div class="kpi-delta calm"><span class="arr">↓</span> down from 8 last month</div></div>
+        <div class="card"><div class="card-label">Top protein · this month</div><div class="rank-list"><div class="rank-row"><div class="rank-n">1</div><div class="rank-name">Salmon</div><span class="rank-count">33</span></div></div></div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sheet-h">Prepare Nyx's report</div>
+        <div class="sheet-p">I'll gather Nyx's meals, symptoms and patterns into a clean, one-page summary your vet can read in about a minute.</div>
+        <div class="range-opt sel">
+          <div class="ro-radio"></div>
+          <div class="ro-t"><div class="ro-tt">Since her last visit</div><div class="ro-ts">Apr 2 → today · 72 days</div></div>
+        </div>
+        <div class="range-opt">
+          <div class="ro-radio"></div>
+          <div class="ro-t"><div class="ro-tt">Last 30 days</div><div class="ro-ts">May 14 → today</div></div>
+        </div>
+        <div class="privacy-note">
+          <span class="pn-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#737373" stroke-width="1.6"/><path d="M8 11V8a4 4 0 018 0v3" stroke="#737373" stroke-width="1.6"/></svg></span>
+          <span>Your vet can open this without an account. The link works for 30 days, then expires.</span>
+        </div>
+        <div class="btn-primary">Create report</div>
+        <div class="btn-ghost">Not now</div>
+      </div>
+    </div></div>
+    <div class="frame-cap"><b>3a · The prep sheet.</b> Range defaults to “since last visit” (§9). Owner-voice privacy line encodes the share-token expiry.</div>
+  </div>
+
+  <!-- 3b — the native share sheet -->
+  <div class="phone-col">
+    <div class="phone"><div class="screen" style="min-height:600px;">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="back">‹</span><span class="nt">Nyx's patterns</span></div>
+      <div class="dash-body" style="opacity:.4;">
+        <div class="card"><div class="card-label">Vomiting · this month</div><div class="kpi-ban" style="font-size:38px;">3<span class="unit">episodes</span></div></div>
+      </div>
+      <div class="scrim" style="background:rgba(10,10,10,.28)"></div>
+      <div class="share-sheet">
+        <div class="share-card">
+          <div class="share-preview">
+            <div class="sp-thumb">📄</div>
+            <div class="sp-t">
+              <div class="sp-tt">Nyx — Health Summary</div>
+              <div class="sp-ts">nyx.app/report/3f9a…c2 · PDF</div>
+            </div>
+          </div>
+          <div class="share-targets">
+            <div class="share-target"><div class="st-ico" style="background:#34C759">✉︎</div><div class="st-l">Messages</div></div>
+            <div class="share-target"><div class="st-ico" style="background:#007AFF">✿</div><div class="st-l">AirDrop</div></div>
+            <div class="share-target"><div class="st-ico" style="background:#FF3B30">✉</div><div class="st-l">Mail</div></div>
+            <div class="share-target"><div class="st-ico" style="background:#5856D6">❒</div><div class="st-l">Copy Link</div></div>
+          </div>
+          <div class="share-action-row">📋&nbsp;&nbsp;Copy Link</div>
+          <div class="share-action-row">⤓&nbsp;&nbsp;Save to Files</div>
+        </div>
+        <div class="share-cancel">Cancel</div>
+      </div>
+    </div></div>
+    <div class="frame-cap"><b>3b · Native share sheet.</b> The Step 9 link <code>nyx.app/report/{token}</code> — first deliberately unauthenticated path to health data (rls-privacy-reviewer gate at build).</div>
+  </div>
+
+  <div class="annot-col" style="padding-top:8px;flex:1 1 300px;">
+    <div class="annot">
+      <div class="ico">A</div>
+      <div class="ab">
+        <div class="at">It produces tier 3, it isn't tier 3 <span class="pill prin">§2 · §9</span></div>
+        <div class="ad">The dashboard is the tier <i>above</i> the report. Tapping Share hands the owner's exploration off to the <b>Step 9 vet report</b> — server-side PDF, share token, 30-day expiry, RLS-enforced. Same engine, clinical consumer.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">B</div>
+      <div class="ab">
+        <div class="at">No warm copy leaks to the vet <span class="pill safety">Principle 6 · B-013</span></div>
+        <div class="ad">The owner's warm cards and any n=1 worry-reads stay <b>owner-only</b>. The bridge re-renders the underlying <i>facts</i> in clinical, scannable-in-60s form — it does not ship the dashboard's voice onto the export.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">C</div>
+      <div class="ab">
+        <div class="at">Sequencing <span class="pill open">build</span></div>
+        <div class="ad">This is <b>PR 5</b> and the only piece that needs Step 9 to exist first (§14). The dashboard itself (PRs 1–4) is buildable now on the existing Step 10 engine + local SQLite — this frame is design-ahead of the live bridge.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ LEGEND — the load-bearing decisions ════════════════════════ -->
+<div class="legend">
+  <h2>How colour carries the verdict — the inverted-polarity reference</h2>
+  <div class="lead">The single most load-bearing visual decision (§11 #2/#3, open decision §13 #6). In a growth dashboard, green = up = good. For pet health that's backwards and quietly dangerous. Colour means <b>“good or bad <i>for the pet</i>,”</b> never “the number went up,” and it appears <b>only on established, multi-sample metrics</b> — a single observation stays neutral.</div>
+  <div class="polarity">
+    <div class="pol">
+      <div class="pol-demo"><span class="pol-num">8</span><span class="pol-d concern">↑ from 3</span></div>
+      <div class="pol-h">Adverse · rising</div>
+      <div class="pol-b">Vomiting climbing is going the <b>wrong way</b> → concern tone (muted rose). Clear, <b>never alarm-red</b> — we surface, we don't spike anxiety (Principle 4 / Dr. Chen).</div>
+    </div>
+    <div class="pol">
+      <div class="pol-demo"><span class="pol-num">3</span><span class="pol-d calm">↓ from 8</span></div>
+      <div class="pol-h">Adverse · falling <span style="font-weight:400;color:var(--text-tertiary);font-size:11px;">(shown in Frame 2)</span></div>
+      <div class="pol-b">Going the <b>right way</b> → a settled <b style="color:var(--calm)">calm slate</b>. Deliberately <b>not green, not the accent</b>: a dropping vomit count is relief, <b>never a gamified “win,” never an all-clear.</b> No streaks or badges on adverse metrics.</div>
+    </div>
+    <div class="pol">
+      <div class="pol-demo"><span class="pol-num">84%</span><span class="pol-d neutral">— meals finished</span></div>
+      <div class="pol-h">Descriptive · no verdict</div>
+      <div class="pol-b">Intake &amp; rankings (top food/protein, finished-rate) get <b>no good/bad colour at all.</b> Colour here would imply a wellness judgement the data can't make — and high intake must never reassure (§11 #1).</div>
+    </div>
+  </div>
+
+  <h3>The §11 safety invariants, made visible</h3>
+  <table class="inv">
+    <tr><th>Invariant</th><th>Where you see it in this mockup</th></tr>
+    <tr><td>#1 · Intake is not preference</td><td class="where">Card ⑥ titled <b>“Meals finished,”</b> never “Favourites.” Copy: “<b>This is how much Nyx ate, not what she prefers.</b>” A declining rate would route to a health watch (see notes), never “picky.”</td></tr>
+    <tr><td>#2 · n=1 never reassures</td><td class="where">No card wears a reassuring colour or read off a single sample. The falling-vomit card states the count + direction and <b>stops</b> — it never says “she's better.” Reassurance is reserved for the multi-sample AI summary (PR 4).</td></tr>
+    <tr><td>#3 · Adverse counts honest, never gamified</td><td class="where">Card ② — falling vomits = <b>calm slate, not green</b>; the sparkline is muted, the big number neutral. No “🎉”, no streak, no “win.”</td></tr>
+    <tr><td>#4 · Associational only, non-causal cue</td><td class="where">No card asserts a cause. The Home Signal hedges (“<i>since</i> the switch”, “early pattern”); correlations live behind the engine with the explicit non-causal framing, not on these glance cards.</td></tr>
+    <tr><td>#5 · Minimum-sample floors</td><td class="where">Every ranking/rate shows its denominator (24 of… , 47 of 56). Below floor, the card becomes the <b>“still learning Nyx's baseline”</b> calibration state — never a fabricated rank (see notes).</td></tr>
+    <tr><td>#6 · Free-feeding honesty</td><td class="where">Top-food framed as <b>“showed up in 24 meals” / “most-logged,”</b> not “ate most” — logging ≠ observed intake; a free-fed food never reads as “didn't eat.”</td></tr>
+  </table>
+
+  <h3>Design notes &amp; open calls for the team</h3>
+  <div class="notes-grid">
+    <div class="dnote"><b>Seeded, never build-your-own.</b> The engine decides card priority (safety leads); the owner never composes a query, picks a segment, or builds a funnel. Same discipline as the Home Signal, extended (§3).</div>
+    <div class="dnote"><b>Empty &amp; calibration states (§10) not shown as a frame.</b> Each card owns a three-part empty state; below the sample floor it shows “<i>still learning Nyx's baseline — 4 more days of meals and this card fills in,</i>” never a flat line or a reassuring read on thin data. <span class="q">Worth a follow-up states board?</span></div>
+    <div class="dnote"><b>Range-free dashboard.</b> No Week/Month/3-Month toggle on this surface — it's a glance. The toggle lives on each card's detail screen (the doorway chevron). Default range = Month (§13 #2).</div>
+    <div class="dnote"><span class="q">Open · §13 #1 —</span> user-facing name. “Nyx's patterns” is shown; leaning that or “Nyx's health.” Never “Analytics.” PM call.</div>
+    <div class="dnote"><span class="q">Open · §13 #6 —</span> the colour-as-wellness ruling (Data Scientist + Dr. Chen) gates the card component. This mockup proposes: colour only on established multi-sample adverse metrics; descriptive metrics stay neutral. Ratify before PR 2.</div>
+    <div class="dnote"><span class="q">Open · ordering —</span> diet-trial card position (§6 group A “leads” vs the prompt's last slot). Symptoms lead either way; the trial slot is the open call.</div>
+  </div>
+</div>
+
+<!-- ════════════════════════ STRINGS — ship-gate candidates ════════════════════════ -->
+<div class="strings">
+  <h2>Candidate strings — nyx-voice ship-gate (blocking)</h2>
+  <div class="lead">Every owner-facing string in the mockup, self-audited against nyx-voice Patterns 1–8 + the §11 invariants: pet named &amp; second-person, specific counts with denominators, plain language not jargon, no exclamation, never reassuring on absence, never causal, intake never relabelled preference. Final Designer + nyx-voice sign-off happens at build.</div>
+
+  <div class="grp">
+    <h3>Coming-soon AI summary (§7.1)</h3>
+    <div class="s"><span class="k">Lead:</span> “Soon, I'll pull what I'm noticing about Nyx into a few plain sentences, right here.” <em>(first-person companion “I”, names Nyx, no clinical promise, no “!”)</em></div>
+    <div class="s"><span class="k">Sub:</span> “For now, the cards below have the details.” <em>(hands the owner to value already on screen — Principle 5)</em></div>
+  </div>
+
+  <div class="grp">
+    <h3>Symptom count &amp; calendar</h3>
+    <div class="s"><span class="k">Count label / delta:</span> “Vomiting · this month” · “↓ down from 8 last month” <em>(direction only; the calm tone is colour, not a word)</em></div>
+    <div class="s"><span class="k">Count annotation:</span> “Fewer than last month, across 28 days of logs.” <em>(states the trend + the coverage; no “improving / better / all-clear”)</em></div>
+    <div class="s"><span class="k">Calendar annotation:</span> “3 days with vomiting this month — the most recent was Tuesday.” <em>(specific, factual, forward-neutral)</em></div>
+  </div>
+
+  <div class="grp">
+    <h3>Food, protein &amp; intake</h3>
+    <div class="s"><span class="k">Top food:</span> “Tiki Cat Salmon Pâté showed up in 24 of Nyx's meals this month — her most-logged food.” <em>(“showed up / most-logged”, never “favourite”; free-feeding-safe)</em></div>
+    <div class="s"><span class="k">Top protein:</span> “Salmon was Nyx's most-fed protein this month — in step with her elimination trial.” <em>(descriptive; ties to the trial without claiming cause)</em></div>
+    <div class="s"><span class="k">Intake rate:</span> “This is how much Nyx ate, not what she prefers. A lasting drop in eating is worth a word with your vet — I'll keep watch.” <em>(§11 #1 — intake≠preference + health-watch routing, no disease name, no reassurance)</em></div>
+  </div>
+
+  <div class="grp">
+    <h3>Diet trial &amp; the vet bridge</h3>
+    <div class="s"><span class="k">Trial:</span> “Nyx is 18 days into her 8-week trial. Keeping it steady helps a pattern show.” <em>(warm, forward-looking; echoes the diet-churn guardrail)</em></div>
+    <div class="s"><span class="k">Bridge action:</span> “Share with my vet” · “Turn this into a clinical report →”</div>
+    <div class="s"><span class="k">Prep sheet:</span> “I'll gather Nyx's meals, symptoms and patterns into a clean, one-page summary your vet can read in about a minute.”</div>
+    <div class="s"><span class="k">Privacy line:</span> “Your vet can open this without an account. The link works for 30 days, then expires.” <em>(encodes the §9 share-token mechanics in owner voice)</em></div>
+  </div>
+
+  <div class="grp">
+    <h3>Home entry affordance (§8)</h3>
+    <div class="s"><span class="k">Footer link:</span> “See all of Nyx's patterns →” <em>(quiet, accent text; “patterns” never “Analytics”)</em></div>
+  </div>
+</div>
+
+<div class="foot">
+  Source of truth: <code>docs/nyx-analytics-dashboard-requirements.md</code> (§4.1–4.2, §5, §6, §7.1, §8, §9, §11, §13). Tokens mirrored from <code>constants/theme.ts</code> (v1.2 “Linear Clean”). Home zones mirror the shipped <code>components/home/</code>. Mockup only — not built; PR-by-PR plan in §14 (this surface is PRs 1–5, the bridge is PR 5 and needs Step 9 first).
+</div>
+
+<script>
+  // Lightweight "clickable" navigation between frames — the teal affordances scroll
+  // to their destination and pulse it briefly, so the entry point and the vet bridge
+  // read as real links in the live HTML. The PNG captures the default (all-open) board.
+  function goTo(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.scrollIntoView({behavior:'smooth', block:'start'});
+    el.style.transition = 'background .2s ease-out';
+    var prev = el.style.background;
+    el.style.background = 'rgba(0,194,168,.12)';
+    setTimeout(function(){ el.style.background = prev; }, 900);
+  }
+</script>
+
+</body>
+</html>
