@@ -261,14 +261,14 @@ export function FAB() {
                   accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
                 >
                   <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={28} />
-                  {/* "Logging for" is a quiet eyebrow; the NAME drops to its own
-                      full-width line so it no longer truncates ("Logging for
-                      Schr…"). Sized to clear the common range comfortably —
-                      Rover 2025 top-200 cat+dog names run mean ~5 / +1SD 6 /
-                      +2SD 7 chars; this line fits ~20 before it would ellipsize. */}
+                  {/* "Logging for" is a quiet eyebrow; the NAME gets its own
+                      line below it. The name WRAPS (never truncates) — a pet's
+                      name should never be cut — and the widened menu keeps
+                      common 1–2 word names (incl. "Schrodingers Cat", 16 ch) on
+                      a single line; only the genuinely long ones spill to two. */}
                   <View style={styles.logForTextCol}>
-                    <Text style={styles.logForLabel}>Logging for</Text>
-                    <Text style={styles.logForName} numberOfLines={1}>{activePet.name}</Text>
+                    <Text style={styles.logForLabel} numberOfLines={1}>Logging for</Text>
+                    <Text style={styles.logForName} numberOfLines={2}>{activePet.name}</Text>
                   </View>
                   <ChevronDown size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
                 </TouchableOpacity>
@@ -425,11 +425,13 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     marginBottom: theme.space2,
     paddingVertical: theme.space1,
-    minWidth: 240,
+    // Wide enough that a 16-char two-word name ("Schrodingers Cat") fits the
+    // pet-identity line without wrapping; long brand+product names + the name
+    // both wrap rather than truncate inside it.
+    minWidth: 290,
     // Cap so the right-anchored menu can't run off-screen on narrow phones
-    // while still giving long brand+product names (which now wrap to two
-    // lines instead of truncating) room to breathe.
-    maxWidth: 300,
+    // (iPhone SE @ 375pt: 330 + the 24pt right inset still leaves a margin).
+    maxWidth: 330,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
