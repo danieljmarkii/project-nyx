@@ -14,18 +14,11 @@ import { useAttachmentStore } from '../../store/attachmentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
-import { getDb } from '../../lib/db';
+import { getDb, getRecentFoods, PickerFood } from '../../lib/db';
 import { syncPendingEvents } from '../../lib/sync';
 import { insertMeal } from '../../lib/meals';
 import { triggerSignalRegenDebounced } from '../../lib/signal';
 import { uuid, exifDateToISO } from '../../lib/utils';
-
-interface RecentFood {
-  id: string;
-  brand: string;
-  product_name: string;
-  food_type: string | null;
-}
 
 export function FAB() {
   const { setPendingAttachment } = useAttachmentStore();
@@ -36,7 +29,7 @@ export function FAB() {
 
   const [open, setOpen] = useState(false);
   const [switcherVisible, setSwitcherVisible] = useState(false);
-  const [recentFoods, setRecentFoods] = useState<RecentFood[]>([]);
+  const [recentFoods, setRecentFoods] = useState<PickerFood[]>([]);
   const [logging, setLogging] = useState<string | null>(null);
   const fabAnim = useRef(new Animated.Value(0)).current;
 
@@ -59,21 +52,20 @@ export function FAB() {
 
   useEffect(() => {
     if (!open || !activePet) return;
-    const db = getDb();
-    // Join meals so we only surface foods this pet has actually eaten,
-    // not every food in the global cache.
-    const foods = db.getAllSync<RecentFood>(
-      `SELECT DISTINCT f.id, f.brand, f.product_name, f.food_type
-       FROM food_items_cache f
-       INNER JOIN meals m ON m.food_item_id = f.id AND m.pet_id = ?
-       ORDER BY f.last_used_at DESC
-       LIMIT 3`,
-      [activePet.id],
-    );
-    setRecentFoods(foods);
+    let cancelled = false;
+    // The last 3 foods THIS pet actually ate, newest first. Shares getRecentFoods
+    // with the picker (single source of truth), which orders by the pet's real
+    // MAX(occurred_at) — not food_items_cache.last_used_at, which is shared across
+    // pets and was reset to NULL on every sync, so the old query returned an
+    // effectively random 3. `null` window = no time bound (re-offer staples of
+    // any age). Async now, so guard against a resolve after the menu closes.
+    getRecentFoods(activePet.id, null, 3)
+      .then((foods) => { if (!cancelled) setRecentFoods(foods); })
+      .catch((e) => console.warn('[FAB] recent foods load failed:', e));
+    return () => { cancelled = true; };
   }, [open, activePet]);
 
-  async function handleQuickMeal(food: RecentFood) {
+  async function handleQuickMeal(food: PickerFood) {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
     // of write, not the render-time closure (the queue-then-switch edge).
     const pet = usePetStore.getState().activePet;
@@ -268,12 +260,16 @@ export function FAB() {
                   accessibilityRole="button"
                   accessibilityLabel={`Logging for ${activePet.name} — switch pet`}
                 >
-                  <View style={styles.menuActionIcon}>
-                    <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={24} />
+                  <PetAvatar name={activePet.name} photoPath={activePet.photo_path} size={28} />
+                  {/* "Logging for" is a quiet eyebrow; the NAME gets its own
+                      line below it. The name WRAPS (never truncates) — a pet's
+                      name should never be cut — and the widened menu keeps
+                      common 1–2 word names (incl. "Schrodingers Cat", 16 ch) on
+                      a single line; only the genuinely long ones spill to two. */}
+                  <View style={styles.logForTextCol}>
+                    <Text style={styles.logForLabel} numberOfLines={1}>Logging for</Text>
+                    <Text style={styles.logForName} numberOfLines={2}>{activePet.name}</Text>
                   </View>
-                  <Text style={styles.logForText} numberOfLines={1}>
-                    Logging for <Text style={styles.logForName}>{activePet.name}</Text>
-                  </Text>
                   <ChevronDown size={16} color={theme.colorTextSecondary} strokeWidth={1.75} />
                 </TouchableOpacity>
                 <View style={styles.divider} />
@@ -429,11 +425,13 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     marginBottom: theme.space2,
     paddingVertical: theme.space1,
-    minWidth: 240,
+    // Wide enough that a 16-char two-word name ("Schrodingers Cat") fits the
+    // pet-identity line without wrapping; long brand+product names + the name
+    // both wrap rather than truncate inside it.
+    minWidth: 290,
     // Cap so the right-anchored menu can't run off-screen on narrow phones
-    // while still giving long brand+product names (which now wrap to two
-    // lines instead of truncating) room to breathe.
-    maxWidth: 300,
+    // (iPhone SE @ 375pt: 330 + the 24pt right inset still leaves a margin).
+    maxWidth: 330,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
@@ -504,15 +502,18 @@ const styles = StyleSheet.create({
     // The quiet chip still gets the full 44pt tap-target floor.
     minHeight: 44,
   },
-  logForText: {
+  logForTextCol: {
     flex: 1,
-    // textMD, not textSM: the mock's quiet 13pt read too small on-device
-    // (PM QA, 2026-06-12) — and this line is the wrong-pet safeguard, it
-    // shouldn't whisper. Matches menuActionLabel below.
-    fontSize: theme.textMD,
+  },
+  logForLabel: {
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
+    marginBottom: 1,
   },
   logForName: {
+    // The name is the wrong-pet safeguard — make it the chip's hero (textLG),
+    // on its own line so it gets the full chip width.
+    fontSize: theme.textLG,
     color: theme.colorTextPrimary,
     fontWeight: theme.weightMedium,
   },
