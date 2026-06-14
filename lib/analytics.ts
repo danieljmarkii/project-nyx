@@ -632,12 +632,11 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
     // normallyEatenScoreFloor, and SILENTLY SUPPRESS the watch the HARDER the pet
     // refuses — an inverse-pseudoreplication false-negative caught by the adversarial
     // review (a dog refusing its food 3× in a day went silent; 1× correctly fired).
-    // This deliberately DIVERGES from detection.ts detector ②, which still has the
-    // same latent bug on its refusal arm (slice(0,-1), no same-day collapse): the
-    // client leads here pending B-090 (port the fix to the Edge engine + redeploy).
-    // The divergence is safe-direction — the dashboard escalates; the Signal is
-    // unchanged, not worsened. (The DECLINE constants stay a byte-exact mirror; only
-    // this refusal-arm logic leads.)
+    // This client surface led with the fix; detection.ts detector ② now MIRRORS it
+    // (B-090, ported + redeployed) — the two decline surfaces have re-converged and
+    // can no longer disagree on a same-day re-logged refusal. The DECLINE constants
+    // stay a byte-exact mirror of detection.ts DEFAULT_CONFIG.intakeDecline; keep the
+    // refusal-arm logic in lock-step too: change one surface, change both.
     const latestDayKey = utcDateKey(latest.ms);
     const prior = sorted.filter((m) => utcDateKey(m.ms) !== latestDayKey);
     if (prior.length < DECLINE.normallyEatenMinSamples) continue;

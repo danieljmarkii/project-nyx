@@ -1531,7 +1531,18 @@ export function detectIntakeDecline(
     if (latest.ms < refusalRecencyStart) continue
     if (latest.score > intakeScore('refused')) continue // only an outright refusal trips this
 
-    const prior = sorted.slice(0, -1)
+    // `prior` = this food's history on days BEFORE the latest meal's day. We exclude
+    // the WHOLE latest calendar day (not a naive slice(0,-1)), so several re-logged
+    // refusals of one food on one day read as ONE refusal, not a history of refusals.
+    // Without this, the earlier same-day refusals fall into `prior`, drag priorMean
+    // below normallyEatenScoreFloor, and SILENTLY suppress the watch the HARDER the pet
+    // refuses — an inverse-pseudoreplication false-negative (a dog refusing its usual
+    // food 3× in one day went silent; 1× correctly fired). This is a never-reassure
+    // safety failure (§9 / §11 #1). Ported from lib/analytics.ts detectIntakeDecline
+    // (B-090): the client health-watch led with this fix; porting it here re-converges
+    // the two decline surfaces so they can never disagree on a refusal.
+    const latestDayKey = utcDateKey(latest.ms)
+    const prior = sorted.filter((m) => utcDateKey(m.ms) !== latestDayKey)
     if (prior.length < cfg.normallyEatenMinSamples) continue
     const priorMean = prior.reduce((sum, m) => sum + m.score, 0) / prior.length
     if (priorMean < cfg.normallyEatenScoreFloor) continue

@@ -565,6 +565,36 @@ Deno.test('detectIntakeDecline — refusal of a normally-eaten food fires even w
   assert.ok(f.baselineScore >= 3)
 })
 
+Deno.test('detectIntakeDecline — same-day re-logged refusals still fire (B-090: no inverse-pseudoreplication suppression)', () => {
+  // A dog refuses its normally-eaten food THREE times in one calendar day (breakfast,
+  // midday, late morning — all before NOW). Under the old `prior = sorted.slice(0,-1)`,
+  // two of those same-day refusals leaked into `prior`, dragged priorMean below
+  // normallyEatenScoreFloor (3), and SILENCED the watch — refusing harder yielded LESS
+  // concern (the inverse-pseudoreplication false-negative the adversarial review caught
+  // client-side, B-090). Excluding the whole latest calendar day from `prior` fixes it.
+  const mealEvents = [
+    // F1 eaten well across three distinct prior days (the established baseline)…
+    ratedMeal(26, 'all', { foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    ratedMeal(27, 'all', { foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    ratedMeal(28, 'all', { foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    // …then refused three times on the latest day.
+    meal({ occurredAt: at(30, 6), intakeRating: 'refused', foodType: 'meal', foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    meal({ occurredAt: at(30, 9), intakeRating: 'refused', foodType: 'meal', foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    meal({ occurredAt: at(30, 11), intakeRating: 'refused', foodType: 'meal', foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+  ]
+  // Dog isolates the refusal trigger: only 3 prior-day meals (< baseline floor of 4),
+  // so the consecutive-low path can't fire and confound the assertion.
+  const findings = detectIntakeDecline(input({ pet: dog, mealEvents }))
+  const refusal = findings.find((f) => f.trigger === 'refused_normal_food')
+  assert.ok(refusal, 'a dog refusing its normally-eaten food 3× in one day must still fire')
+  assert.equal(refusal.priorityClass, 'safety')
+  assert.equal(refusal.refusedFoodLabel, 'the turkey pâté')
+  assert.equal(refusal.recentScore, 0)
+  // Baseline must be the three prior 'all' days (score 4), NOT polluted by the same-day
+  // refusals (which would pull it to 2.4 and suppress the flag).
+  assert.ok(refusal.baselineScore >= 3, `baseline must exclude same-day refusals, got ${refusal.baselineScore}`)
+})
+
 // ── Detector ②: the never-reassure / silent invariants (§9) ──────────────────
 
 Deno.test('detectIntakeDecline — healthy intake produces NO finding (never reassures)', () => {
