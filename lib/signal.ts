@@ -116,8 +116,12 @@ export interface PostprandialTimingFinding {
 // ASSOCIATIONAL/anamnesis only: names a clock band, never a cause or mechanism (§4.5). An
 // 'insight' (cap-subject), ranked below safety and below correlations, and MUTUALLY
 // EXCLUSIVE with ⑤ (⑤ wins — §4.4). Mirror of detection.ts TimeOfDayClusteringFinding
-// (rendered fields). `timezone` is carried for the Step-9 vet report; owner copy renders
-// the local band words, not the raw zone. The server-only `associationalOnly: true` marker
+// (rendered fields). `timezone` is carried so the Step-9 vet report can render the clock
+// band in the pet's local time; owner copy renders the local band words, not the raw zone.
+// TRUST & SAFETY (B-085): the raw IANA zone is coarse-location-adjacent — it is engine
+// input only and must NOT be rendered verbatim into the vet report or any share surface.
+// When Step 9 resumes, derive the band words from it and drop the zone string; never print
+// 'America/New_York'. The server-only `associationalOnly: true` marker
 // is intentionally omitted — like the ⑤ and correlation mirrors, it is a phrasing-layer
 // guardrail flag, not a rendered field, so the client mirror carries only what it renders.
 export interface TimeOfDayClusteringFinding {
