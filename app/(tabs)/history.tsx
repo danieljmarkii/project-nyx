@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect, router } from 'expo-router';
+import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
@@ -22,7 +22,7 @@ import {
 
 const PAGE_SIZE = 50;
 
-type DatePreset = '7d' | '30d' | null;
+type DatePreset = 'today' | '7d' | '30d' | null;
 
 // History renders two kinds of timeline row: discrete events, and the quiet
 // free-feeding lifecycle boundary markers (§6a). They're merged into one desc
@@ -50,12 +50,19 @@ const TYPE_FILTERS: { key: EventTypeKey | null; label: string }[] = [
 
 const DATE_PRESETS: { key: DatePreset; label: string }[] = [
   { key: null, label: 'All time' },
+  { key: 'today', label: 'Today' },
   { key: '7d', label: 'Last 7 days' },
   { key: '30d', label: 'Last 30 days' },
 ];
 
 function dateAfterForPreset(preset: DatePreset): string | null {
   if (!preset) return null;
+  if (preset === 'today') {
+    // Start of the local calendar day — matches the Home "Today" zone's day boundary.
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  }
   const days = preset === '7d' ? 7 : 30;
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -86,6 +93,11 @@ function rowToEvent(row: TimelineRow): NyxEvent {
 
 export default function HistoryScreen() {
   const { activePet } = usePetStore();
+  // The Home "Today" doorway (§8) deep-links here with ?date=today; `ts` is a nonce so
+  // the filter re-applies even when this tab is already mounted (a doorway tap is not a
+  // remount). The filter is fully clearable — tapping any other date chip clears it.
+  const params = useLocalSearchParams<{ date?: string; ts?: string }>();
+  const initialDatePreset: DatePreset = params.date === 'today' ? 'today' : null;
   const { removeFromToday, todayEvents } = useEventStore();
   // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
   // cycle finishes while this tab is open, so another device's writes appear
@@ -101,7 +113,7 @@ export default function HistoryScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(null);
-  const [datePreset, setDatePreset] = useState<DatePreset>(null);
+  const [datePreset, setDatePreset] = useState<DatePreset>(initialDatePreset);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -214,6 +226,20 @@ export default function HistoryScreen() {
     loadEvents(0, typeFilterRef.current, datePresetRef.current, true);
     loadFreeFeeding();
   }, [hydrationTick, loadEvents, loadFreeFeeding]);
+
+  // Re-apply the Home-doorway date filter on a fresh navigation (the tab persists across
+  // switches, so a doorway tap doesn't remount). The `ts` nonce changes per tap; the ref
+  // guards against re-applying on unrelated re-renders. Setting datePreset re-runs the
+  // focus effect (which reloads). First mount is handled by initialDatePreset above, so
+  // the ref is seeded to that ts to avoid a redundant re-apply.
+  const appliedDateTsRef = useRef<string | null>(initialDatePreset ? params.ts ?? null : null);
+  useEffect(() => {
+    if (params.date === 'today' && params.ts && params.ts !== appliedDateTsRef.current) {
+      appliedDateTsRef.current = params.ts;
+      setTypeFilter(null);
+      setDatePreset('today');
+    }
+  }, [params.date, params.ts]);
 
   // Real-time: prepend new events logged via FAB while this tab is visible
   const latestTodayId = todayEvents[0]?.id;

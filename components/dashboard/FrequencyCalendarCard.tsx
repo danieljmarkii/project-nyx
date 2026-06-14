@@ -103,14 +103,14 @@ export function FrequencyCalendarCard({
     <Pressable
       onPress={onPress}
       hitSlop={8}
-      accessibilityRole="button"
+      accessibilityRole={onPress != null ? 'button' : undefined}
       accessibilityLabel={`${title} calendar`}
-      accessibilityHint={accessibilityHint ?? 'Opens the full history'}
+      accessibilityHint={onPress != null ? accessibilityHint ?? 'Opens the full history' : undefined}
       style={({ pressed }) => [styles.card, pressed && onPress != null && styles.pressed]}
     >
       <View style={styles.headerRow}>
         <Text style={styles.title}>{title}</Text>
-        <ChevronRight size={18} color={theme.colorTextDisabled} />
+        {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
       </View>
 
       {isEmpty ? (

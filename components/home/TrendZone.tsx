@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
@@ -15,7 +16,18 @@ export function TrendZone() {
 
   return (
     <Card>
-      <SectionLabel label="Trend" style={styles.label} />
+      {/* §8 doorway — the Trend zone opens the full Patterns dashboard. */}
+      <View style={styles.headerRow}>
+        <SectionLabel label="Trend" />
+        <Pressable
+          onPress={() => router.push('/insights')}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="See all patterns"
+        >
+          <Text style={styles.allPatternsText}>All patterns ›</Text>
+        </Pressable>
+      </View>
       {isLoading || data === null ? (
         <LoadingState />
       ) : !data.hasEnoughData ? (
@@ -184,8 +196,18 @@ function formatShortDate(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
-  label: {
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: theme.space2,
+  },
+  allPatternsText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
+    // Padding + the hitSlop={8} on the Pressable clear the 44pt tap-target floor.
+    paddingVertical: theme.space1,
   },
   chartHeadRow: {
     flexDirection: 'row',

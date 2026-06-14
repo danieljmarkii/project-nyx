@@ -47,14 +47,14 @@ export function RankingCard({
     <Pressable
       onPress={onPress}
       hitSlop={8}
-      accessibilityRole="button"
+      accessibilityRole={onPress != null ? 'button' : undefined}
       accessibilityLabel={title}
-      accessibilityHint={accessibilityHint ?? 'Opens the full list'}
+      accessibilityHint={onPress != null ? accessibilityHint ?? 'Opens the full list' : undefined}
       style={({ pressed }) => [styles.card, pressed && onPress != null && styles.pressed]}
     >
       <View style={styles.headerRow}>
         <Text style={styles.title}>{title}</Text>
-        <ChevronRight size={18} color={theme.colorTextDisabled} />
+        {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
       </View>
 
       {state.kind === 'calibrating' ? (

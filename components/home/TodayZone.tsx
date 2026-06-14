@@ -17,6 +17,12 @@ function formatEventTime(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+// §8 doorway — open History filtered to today (clearable). The `ts` nonce makes the
+// filter re-apply even when the History tab is already mounted; History reads `date`.
+function openHistoryToday() {
+  router.push({ pathname: '/(tabs)/history', params: { date: 'today', ts: String(Date.now()) } });
+}
+
 export function TodayZone() {
   const { activePet } = usePetStore();
   const { todayEvents } = useEvents();
@@ -40,7 +46,17 @@ export function TodayZone() {
 
   return (
     <Card>
-      <SectionLabel label="Today" style={styles.label} />
+      <View style={styles.headerRow}>
+        <SectionLabel label="Today" />
+        <TouchableOpacity
+          onPress={openHistoryToday}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="See today in history"
+        >
+          <Text style={styles.historyLink}>History ›</Text>
+        </TouchableOpacity>
+      </View>
 
       {isEmpty ? (
         <TouchableOpacity
@@ -55,7 +71,7 @@ export function TodayZone() {
         </TouchableOpacity>
       ) : (
         <TouchableOpacity
-          onPress={() => router.push('/(tabs)/history')}
+          onPress={openHistoryToday}
           activeOpacity={0.92}
         >
           <View style={styles.strip}>
@@ -121,8 +137,18 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
 }
 
 const styles = StyleSheet.create({
-  label: {
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: theme.space1,
+  },
+  historyLink: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
+    // Padding + the hitSlop={8} on the touchable clear the 44pt tap-target floor.
+    paddingVertical: theme.space1,
   },
   nudgeRow: {
     flexDirection: 'row',
