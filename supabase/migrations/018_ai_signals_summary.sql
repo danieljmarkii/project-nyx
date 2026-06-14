@@ -1,0 +1,50 @@
+-- ============================================================
+-- ai_signals.summary — cache the dashboard's AI summary object,
+-- separate from the findings set and the coverage diagnostics.
+-- See: docs/nyx-analytics-dashboard-requirements.md §7, §14 (PR 4)
+--      docs/backlog.md B-023
+-- ============================================================
+-- B-023 PR 4: the "Patterns" dashboard leads with a short, warm
+-- narrative ("LLM as Phraser, never Analyst" — §7) that the
+-- generate-signal Edge Function computes in the SAME run as the
+-- findings/coverage and caches here (24h TTL, cache-read on
+-- dashboard open — never a live LLM call). Storing it in the
+-- existing ai_signals row keeps it on the Signal's regen cadence
+-- (daily-expiry + debounced-after-log) with one delete-then-insert.
+--
+-- WHY A SEPARATE COLUMN (not folded into `findings`/`coverage`):
+-- the summary is a DIFFERENT kind of thing — a phrased narrative
+-- with its own provenance + grounding evidence, not a detected
+-- pattern (findings) nor a "why no signal" reason (coverage). Any
+-- consumer iterating `findings` (the SignalZone live stack, the
+-- vet report later) must never pick it up. Its own column makes
+-- that separation structural, not conventional — same rationale
+-- as the coverage column (migration 017).
+--
+-- Shape (object, or NULL when nothing is substantive to summarise —
+-- the client then renders its own "still gathering" state):
+--   {
+--     "text": "<2–4 warm, plain-language sentences>",
+--     "source": "model" | "template",   -- phrasing provenance
+--     "evidence": ["symptom", "intake"], -- dashboard areas it draws from
+--     "hasSafety": true,                 -- a safety finding leads it
+--     "quiet": false                     -- no finding drove it (descriptive only)
+--   }
+-- Every number in `text` traces to a deterministic clause
+-- (validateSummary grounding) — the model never computes a figure.
+-- Per §7/§11 the summary NEVER reassures on absence, never asserts
+-- a cause, never names a disease; "quiet" is never an all-clear.
+--
+-- NULLABLE (no DEFAULT): a summary may legitimately not exist
+-- (cold start, or a building pet). The client treats NULL/absent as
+-- "no summary yet". Existing rows read NULL with no backfill.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (additive nullable column)
+--   Rollback:     ALTER TABLE ai_signals DROP COLUMN summary;
+--   Backfill:     N/A — NULL is the correct "no summary yet" value;
+--                 the next regen per pet populates it.
+-- ============================================================
+
+ALTER TABLE ai_signals
+  ADD COLUMN summary jsonb;

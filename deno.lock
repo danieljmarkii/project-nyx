@@ -36,6 +36,7 @@
         "npm:jest-expo@54.0",
         "npm:jest@^29.7.0",
         "npm:lucide-react-native@^1.17.0",
+        "npm:react-native-gifted-charts@^1.4.77",
         "npm:react-native-safe-area-context@5.6",
         "npm:react-native-screens@4.16",
         "npm:react-native-svg@15.12.1",

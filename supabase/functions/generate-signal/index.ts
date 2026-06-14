@@ -51,6 +51,16 @@ import {
   PHRASING_SYSTEM,
   type CachedFinding,
 } from './phrasing.ts'
+import {
+  buildSummaryPacket,
+  summaryTemplate,
+  summaryModelPayload,
+  validateSummary,
+  SUMMARY_TOOL,
+  SUMMARY_SYSTEM,
+  type CachedSummary,
+  type SummaryFactPacket,
+} from './summary.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -145,6 +155,70 @@ async function phraseFinding(finding: Finding, petName: string): Promise<string>
   }
 }
 
+// ── AI summary phrasing (B-023 PR 4 — the dashboard centerpiece) ──────────────
+// Mirrors phraseFinding: the model is handed the already-true DRAFT sentences and asked
+// only to weave them into 2–4 cohesive sentences. validateSummary rejects any number not
+// in the packet, any reassurance/causal/disease/preference drift, and (on a safety summary)
+// the silent removal of vet-routing. Any failure → the deterministic template. Never throws,
+// never reassures, never blank.
+async function phraseSummaryText(packet: SummaryFactPacket): Promise<CachedSummary> {
+  const template = summaryTemplate(packet)
+  const base: Omit<CachedSummary, 'text' | 'source'> = {
+    evidence: packet.evidence,
+    hasSafety: packet.hasSafety,
+    quiet: packet.quiet,
+  }
+  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+  if (!apiKey) {
+    console.warn('generate-signal: ANTHROPIC_API_KEY unset — summary using template')
+    return { ...base, text: template, source: 'template' }
+  }
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: PHRASING_MODEL,
+        max_tokens: 320,
+        system: SUMMARY_SYSTEM,
+        tools: [SUMMARY_TOOL],
+        tool_choice: { type: 'tool', name: 'write_summary' },
+        messages: [
+          {
+            role: 'user',
+            content:
+              'Weave these already-true draft sentences into one cohesive summary, using only ' +
+              'the facts in this JSON:\n' + JSON.stringify(summaryModelPayload(packet)),
+          },
+        ],
+      }),
+    })
+    if (!res.ok) {
+      console.warn(`generate-signal: summary API ${res.status} — using template`)
+      return { ...base, text: template, source: 'template' }
+    }
+    const data = (await res.json()) as {
+      content?: Array<{ type: string; name?: string; input?: { summary?: string } }>
+    }
+    const block = (data.content ?? []).find(
+      (b) => b.type === 'tool_use' && b.name === 'write_summary',
+    )
+    const summary = block?.input?.summary?.trim()
+    if (summary && validateSummary(summary, packet)) {
+      return { ...base, text: summary, source: 'model' }
+    }
+    console.warn('generate-signal: summary missing or failed validation — using template')
+    return { ...base, text: template, source: 'template' }
+  } catch (err) {
+    console.warn('generate-signal: summary error — using template:', err)
+    return { ...base, text: template, source: 'template' }
+  }
+}
+
 // ── DB → DetectionInput mapping ───────────────────────────────────────────────
 
 interface SymptomRow {
@@ -192,6 +266,7 @@ function mapSymptomRows(rows: SymptomRow[]): SymptomEvent[] {
 
 interface ArrangementRow {
   id: string
+  food_item_id: string | null
   is_shared: boolean
   active_from: string | null
   active_until: string | null
@@ -297,7 +372,7 @@ Deno.serve(async (req: Request) => {
       // The active-window overlap is resolved inside detection, not the query.
       supabase
         .from('feeding_arrangements')
-        .select('id, is_shared, active_from, active_until, food_items(primary_protein)')
+        .select('id, food_item_id, is_shared, active_from, active_until, food_items(primary_protein)')
         .eq('pet_id', petId)
         .eq('method', 'free_choice')
         .is('deleted_at', null),
@@ -315,7 +390,15 @@ Deno.serve(async (req: Request) => {
 
     const symptomEvents = mapSymptomRows((symptomsRes.data ?? []) as SymptomRow[])
     const mealEvents = mapMealRows((mealsRes.data ?? []) as MealEventRow[])
-    const feedingArrangements = mapArrangementRows((arrangementsRes.data ?? []) as ArrangementRow[])
+    const arrangementRows = (arrangementsRes.data ?? []) as ArrangementRow[]
+    const feedingArrangements = mapArrangementRows(arrangementRows)
+    // Foods CURRENTLY free-fed (active_until IS NULL) — the §11 #6 exclusion set for the
+    // summary's finished-rate. Matches the client's getActiveArrangementsForPet definition
+    // (free_choice + active_until IS NULL + not deleted) so the dashboard card and the
+    // summary agree on which foods' intake isn't directly observed.
+    const freeFedFoodIds = new Set<string>(
+      arrangementRows.filter((r) => r.active_until === null && r.food_item_id).map((r) => r.food_item_id as string),
+    )
     const dietTrialActive = ((trialRes.data ?? []) as unknown[]).length > 0
     // B-079 (⑥): the owner's IANA timezone. A non-string / empty value ⇒ undefined ⇒ ⑥ silent.
     const profile = profileRes.data as { timezone: string | null } | null
@@ -346,6 +429,22 @@ Deno.serve(async (req: Request) => {
       })),
     )
 
+    // 4b. AI summary (B-023 PR 4). Assemble a DETERMINISTIC fact packet from the curated
+    //     findings + the descriptive intake aggregates (computed over the same in-memory
+    //     meal/symptom arrays — no second DB read), then phrase it (Haiku join-and-smooth,
+    //     validateSummary-gated, deterministic template fallback). Null when nothing is
+    //     substantive — the client then renders its own "still gathering" state. Reads only
+    //     the cards' data, so it is grounded in what the dashboard shows.
+    const summaryPacket = buildSummaryPacket({
+      petName,
+      findings: curated.map((r) => r.finding),
+      mealEvents,
+      symptomEvents,
+      freeFedFoodIds,
+      nowMs,
+    })
+    const summary: CachedSummary | null = summaryPacket ? await phraseSummaryText(summaryPacket) : null
+
     // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
     const isBuilding = cachedFindings.length === 0
     const hasRecentActivity = [...symptomEvents, ...mealEvents].some(
@@ -374,11 +473,12 @@ Deno.serve(async (req: Request) => {
       is_building: isBuilding,
       findings: cachedFindings,
       coverage,
+      summary,
     })
     if (insertError) throw new Error(`ai_signals write failed: ${insertError.message}`)
 
     return Response.json(
-      { is_building: isBuilding, signal_text: signalText, findings: cachedFindings, coverage },
+      { is_building: isBuilding, signal_text: signalText, findings: cachedFindings, coverage, summary },
       { headers: CORS_HEADERS },
     )
   } catch (err) {

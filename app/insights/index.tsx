@@ -26,12 +26,13 @@ import { MetricCard } from '../../components/dashboard/MetricCard';
 import { RankingCard } from '../../components/dashboard/RankingCard';
 import { FrequencyCalendarCard } from '../../components/dashboard/FrequencyCalendarCard';
 import { CompositionCard } from '../../components/dashboard/CompositionCard';
-import { ComingSoonSummary } from '../../components/dashboard/ComingSoonSummary';
+import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
 import { DashboardEmptyState } from '../../components/dashboard/DashboardEmptyState';
+import { useSummary } from '../../hooks/useSummary';
 
-// The "Patterns" dashboard (B-023 PR 3) — tier 2 of the intelligence ladder (§2): the
-// full story on demand. Summary-led layout (§7): the AI summary's slot (ComingSoonSummary
-// until PR 4) leads, then the seeded card set in priority order — safety always first
+// The "Patterns" dashboard (B-023 PR 3/4) — tier 2 of the intelligence ladder (§2): the
+// full story on demand. Summary-led layout (§7): the AI summary (AiSummaryCard, cache-only,
+// PR 4) leads, then the seeded card set in priority order — safety always first
 // (§6 / Principle 3). Per active pet (multi-pet switcher-aware). Range-free glance: the
 // dashboard is fixed to the MONTH window (§13 #2); the Week/3-Month control lives on the
 // detail screen only, which is a follow-up (see STATUS / backlog).
@@ -46,6 +47,18 @@ const WINDOW: AnalyticsWindow = 'month';
 export default function PatternsScreen() {
   const { activePet } = usePetStore();
   const petName = activePet?.name ?? 'your pet';
+
+  // The AI summary (§7) is cache-only, on the Signal's regen cadence — its own hook so the
+  // cards' local-SQLite load and the summary's network read stay independent.
+  const { summary } = useSummary();
+
+  // Scroll-to for the summary's grounding affordance ("Based on the cards below ↓"): a real,
+  // honest "take me to the evidence" action without faking card→detail navigation (B-093).
+  const scrollRef = useRef<ScrollView>(null);
+  const cardsY = useRef(0);
+  const jumpToCards = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: cardsY.current, animated: true });
+  }, []);
 
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [cards, setCards] = useState<DashboardCard[]>([]);
@@ -130,14 +143,25 @@ export default function PatternsScreen() {
           </Pressable>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+        >
           {dashState === 'empty' ? (
             <DashboardEmptyState petName={petName} />
           ) : (
             <>
-              {/* Summary-led (§7): the AI summary's slot leads, safety cards immediately below. */}
-              <ComingSoonSummary petName={petName} />
-              {cards.map((card) => renderCard(card, petName))}
+              {/* Summary-led (§7): the AI summary leads, the safety cards immediately below. */}
+              <AiSummaryCard summary={summary} petName={petName} onJumpToCards={jumpToCards} />
+              <View
+                style={styles.cards}
+                onLayout={(e) => {
+                  cardsY.current = e.nativeEvent.layout.y;
+                }}
+              >
+                {cards.map((card) => renderCard(card, petName))}
+              </View>
             </>
           )}
           <View style={styles.bottomPad} />
@@ -262,6 +286,11 @@ const styles = StyleSheet.create({
   },
   scroll: {
     padding: theme.space3,
+    gap: theme.space3,
+  },
+  // Wraps the card list so its top y can be measured for the summary's "jump to cards"
+  // affordance; carries the inter-card gap the scroll container gave the cards before.
+  cards: {
     gap: theme.space3,
   },
   centered: {
