@@ -25,6 +25,7 @@ import {
   buildSummaryPacket,
   extractNumbers,
   shouldPhraseWithModel,
+  SUMMARY_MODEL_PHRASING_ENABLED,
   summaryTemplate,
   validateSummary,
   type SummaryFactPacket,
@@ -496,6 +497,64 @@ Deno.test('shouldPhraseWithModel — safety & quiet are template-only; only refl
     nowMs: NOW_MS,
   })!
   assert.equal(shouldPhraseWithModel(reflective), true)
+})
+
+Deno.test('v1 ships TEMPLATE-ONLY — the model phrasing kill-switch is off (re-review #2 decision)', () => {
+  // The summary is a descriptive count statement, phrased template-only like ③/④/⑤/⑥. The
+  // model machinery + validateSummary are retained + tested but gated off behind this flag.
+  assert.equal(SUMMARY_MODEL_PHRASING_ENABLED, false)
+})
+
+Deno.test('validateSummary — rejects the reflection-path leaks the re-review found (round 2)', () => {
+  // These shipped on the (now template-only) reflection model path; broadened screens catch
+  // them so the dormant guard is hardened for any future re-enable. allowedNumbers {1,4} from
+  // an improving reflection packet, so the vocabulary screens (not numbers) must do the work.
+  const p = buildSummaryPacket({
+    petName: 'Pixel',
+    findings: [reflectionFinding()], // "1 ... down from 4"
+    mealEvents: ratedChickenMeals(6),
+    symptomEvents: [],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+  })!
+  for (const t of [
+    'Pixel has turned a corner this week, with 1 episode of vomiting down from 4. Chicken led the meals.',
+    'Pixel is in a good place this week — 1 episode, down from 4. Chicken led the meals.',
+    'There is no need to worry; vomiting was 1 this week, down from 4. Chicken led the meals.',
+    'A brighter week for Pixel — 1 episode of vomiting, down from 4. Chicken led the meals.',
+    'The diet is helping Pixel; vomiting fell to 1 this week from 4. Chicken led the meals.',
+    'The new food agrees with Pixel; vomiting was 1 this week, down from 4. Chicken led the meals.',
+    'Since switching foods, vomiting dropped to 1 this week from 4. Chicken led the meals.',
+    'Pixel tucks into chicken; vomiting was 1 this week, down from 4 last week.',
+    'Pixel wolfs down chicken; vomiting was 1 this week, down from 4 last week.',
+    'Pixel happily eats chicken; vomiting was 1 this week, down from 4 last week.',
+    'Pixel is doing better this week — 1 episode, down from 4. Chicken led the meals.',
+  ]) {
+    assert.equal(validateSummary(t, p), false, `must reject reflection-path leak: "${t}"`)
+  }
+})
+
+Deno.test('buildSummaryPacket — never drops a safety clause to honour the cap (by construction)', () => {
+  // Five safety findings (more than the 4-sentence cap can hold) — all must survive, an
+  // over-long safety summary beats a dropped concern (Principle 3 > the layout cap).
+  const packet = buildSummaryPacket({
+    petName: 'Pixel',
+    findings: [
+      worseningFinding({ symptomType: 'vomit' }),
+      worseningFinding({ symptomType: 'diarrhea' }),
+      declineFinding({ trigger: 'refused_normal_food', refusedFoodLabel: 'Tiki Cat Tuna' }),
+      declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null }),
+      declineFinding({ trigger: 'refused_normal_food', refusedFoodLabel: 'Wellness Pate' }),
+    ],
+    mealEvents: ratedChickenMeals(8),
+    symptomEvents: [],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+  })
+  assert.ok(packet)
+  assert.equal(packet!.clauses.length, 5) // all five safety clauses kept, cap notwithstanding
+  assert.ok(packet!.clauses.some((c) => /loose stool/.test(c)))
+  assert.ok(packet!.clauses.some((c) => /Wellness Pate/.test(c)))
 })
 
 Deno.test('number-swap inversion on a safety packet is prevented by RESTRAINT, not by grounding (Claim 4b)', () => {

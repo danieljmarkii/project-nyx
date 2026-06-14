@@ -135,17 +135,17 @@ function sentenceCount(text: string): number {
 // → template-only, shouldPhraseWithModel) is the structural backstop; this list hardens the
 // one remaining model path (the non-safety reflection summary).
 const REASSURANCE_RE =
-  /\b(fine|okay|ok|healthy|health(?:ily)?|all clear|clean bill|nothing to (?:worry|flag|fear|report)|nothing (?:serious|concerning|of concern|amiss|wrong|to be concerned)|nothing (?:has |that )?stood out|probably fine|no (?:concerns?|issues?|problems?|worries|red flags?|cause for concern|news is good news)|don'?t worry|doing (?:great|well|fine|good|fab\w*)|all good|on the mend|mend|mending|thriving|flourish\w*|recover(?:s|ed|ing|y)?|much better|back to normal|right track|in (?:good|great|fine) (?:shape|health|form|spirits)|reassur\w*|rest easy|peace of mind|settled|steady|stable|comfortable|content|happy|encouraging|good (?:news|sign|to see)|looking (?:good|great|well|healthy)|looks? (?:good|great|fine|healthy)|as it should be|everything (?:in order|looks|is fine|is good|checks out)|in order|(?:strong|robust|great|good|healthy|hearty) appetite|(?:strong|good|hearty|enthusiastic) eater|eating (?:well|beautifully|great|nicely|happily|like a champ)|under control|no big deal|all is well|well overall)\b/i
+  /\b(fine|okay|ok|healthy|health(?:ily)?|all clear|clean bill|nothing to (?:worry|flag|fear|report)|nothing (?:serious|concerning|of concern|amiss|wrong|to be concerned)|nothing (?:has |that )?stood out|probably fine|no (?:concerns?|issues?|problems?|worries|red flags?|cause for concern|news is good news)|don'?t worry|doing (?:great|well|fine|good|fab\w*)|all good|on the mend|mend|mending|thriving|flourish\w*|recover(?:s|ed|ing|y)?|much better|back to normal|right track|in (?:good|great|fine) (?:shape|health|form|spirits)|reassur\w*|rest easy|peace of mind|settled|steady|stable|comfortable|content|happy|encouraging|good (?:news|sign|to see)|looking (?:good|great|well|healthy)|looks? (?:good|great|fine|healthy)|as it should be|everything (?:in order|looks|is fine|is good|checks out)|in order|(?:strong|robust|great|good|healthy|hearty) appetite|(?:strong|good|hearty|enthusiastic) eater|eating (?:well|beautifully|great|nicely|happily|like a champ)|under control|no big deal|all is well|well overall|improv\w*|\bbetter\b|turn(?:ed|ing)? (?:a )?corner|good place|brighter|no need to (?:worry|fret|stress))\b/i
 // Preference framing — intake is descriptive, NEVER a preference/like/favourite (§11 #1).
 // Broadened after the review (Claim 6): "choosy", "selective", "turns up their nose",
 // "drawn to", "craves", "gravitates", "goes for", "fan of" all slipped the original list.
 const PREFERENCE_RE =
-  /\b(picky|fussy|finicky|choos(?:y|ey)|select(?:ive)?|prefer(?:s|red|ence)?|favou?rite|likes?|loves?|enjoy(?:s|ed)?|fond of|keen on|partial to|fan of|drawn to|crav(?:e|es|ing)|gravitat\w*|turns? up (?:his|her|its|their|the)? ?nose|go(?:es|ing)? for|reach(?:es|ing)? for)\b/i
+  /\b(picky|fussy|finicky|choos(?:y|ey)|select(?:ive)?|prefer(?:s|red|ence)?|favou?rite|likes?|loves?|enjoy(?:s|ed)?|fond of|keen on|partial to|fan of|drawn to|crav(?:e|es|ing)|gravitat\w*|turns? up (?:his|her|its|their|the)? ?nose|go(?:es|ing)? for|reach(?:es|ing)? for|tucks? into|wolf(?:s|ed|ing)? down|gobble\w*|devour\w*|happily eat\w*|chow(?:s|ed|ing)? down|scarf\w*)\b/i
 // Causal claims — the summary is descriptive/associational, never causal (§4.3 / §7).
 // Broadened after the review (Claim 2 — the Eight-Sleep bug): "linked to", "tied to", "set
 // off by", "brought on by", "stems from", "sensitive to", "not tolerating", "making sick".
 const CAUSAL_RE =
-  /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic|ies)|intoleran(?:t|ce)|reacts? to|reaction to|leads? to|results? in|owing to|thanks to|link(?:s|ed)? to|connect(?:s|ed)? to|tied to|set off|sets off|brought on|bring(?:s|ing)? on|stem(?:s|med|ming)? from|lines? up with|in response to|attributable to|blam(?:e|ed|ing) (?:on|it)|culprit|sensitive to|sensitivity to|not agreeing|doesn'?t agree|tolerat\w*|disagree(?:s|d|ing)? with|mak(?:e|es|ing) \w+ sick|from (?:the |her |his |their |its )?(?:new )?(?:food|diet|treats?|kibble))\b/i
+  /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic|ies)|intoleran(?:t|ce)|reacts? to|reaction to|leads? to|results? in|owing to|thanks to|link(?:s|ed)? to|connect(?:s|ed)? to|tied to|set off|sets off|brought on|bring(?:s|ing)? on|stem(?:s|med|ming)? from|lines? up with|in response to|attributable to|blam(?:e|ed|ing) (?:on|it)|culprit|sensitive to|sensitivity to|not agreeing|doesn'?t agree|tolerat\w*|disagree(?:s|d|ing)? with|mak(?:e|es|ing) \w+ sick|agree(?:s|d)? with|help(?:s|ing|ed)|switch(?:es|ed|ing)?|from (?:the |her |his |their |its )?(?:new )?(?:food|diet|treats?|kibble))\b/i
 // Disease / diagnosis names — the FDA general-wellness charter: don't name a disease, don't
 // assert abnormality (§4.3). Both the CLINICAL terms and — added after the PR-4 review
 // (Claim 2) — the LAY vocabulary a consumer model actually reaches for ("tummy bug",
@@ -337,6 +337,10 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
     hasSymptomClause = true
     evidence.add(f.type === 'intake_decline' ? 'intake' : 'symptom')
   }
+  // Safety clauses are pushed first; this count lets the cap below never drop one (it only
+  // trims trailing intake) — the invariant holds by construction, not by relying on the
+  // engine's current ≤3-safety-findings emit count (adversarial review, latent cap finding).
+  const safetyClauseCount = clauses.length
 
   // 2. else a reflection (flat/improving descriptive count).
   if (!hasSymptomClause) {
@@ -383,8 +387,14 @@ export function buildSummaryPacket(args: BuildSummaryArgs): SummaryFactPacket | 
   // 5. Forward-looking tail so a lone clause still reads as a 2-sentence summary.
   if (clauses.length < 2) clauses.push(forwardTail(petName, hasSafety))
 
-  // Cap defensively (safety clauses are kept first, so this can only trim trailing intake).
-  const kept = clauses.slice(0, MAX_SUMMARY_SENTENCES)
+  // Cap to MAX_SUMMARY_SENTENCES, but NEVER drop a safety clause (Principle 3 > the layout
+  // cap): keep every safety clause, then fill the remaining slots with trailing intake. In
+  // the (unreachable) event safety clauses alone exceed the cap, they all still ship — an
+  // over-long safety summary beats a dropped concern.
+  const kept = [
+    ...clauses.slice(0, safetyClauseCount),
+    ...clauses.slice(safetyClauseCount, Math.max(safetyClauseCount, MAX_SUMMARY_SENTENCES)),
+  ]
 
   // Derive the allowed-number set FROM the kept clauses — the grounding contract.
   const allowed = new Set<number>()
@@ -454,21 +464,38 @@ export const SUMMARY_SYSTEM =
   '(7) If any draft sentence mentions the vet, KEEP that guidance in your summary. ' +
   'Call write_summary with your two-to-four-sentence summary.'
 
-// ── Restraint: which summaries the model is allowed to phrase ──────────────────────────
+// ── Restraint: whether/which summaries the model phrases ───────────────────────────────
 /**
- * The model phrases ONLY a non-safety, non-quiet (reflection-led) summary. SAFETY and QUIET
- * summaries ship the deterministic template, never the model — the §4.3 "restraint fallback"
- * (Bearable), and the structural backstop the PR-4 adversarial review showed `validateSummary`'s
- * keyword screens cannot stand in for alone:
- *   - QUIET: there is no safety signal to warm up, so every model sentence is pure downside —
- *     this is exactly where a reassurance-on-absence drift slips a keyword screen (Claim 1).
- *   - SAFETY: the concern copy must be deterministic (as detection.ts already templates
- *     worsening/decline). Templating it removes the model from the path where a number swap
- *     could invert a worsening trend to "improvement" (Claim 4b) or a causal/preference
- *     paraphrase could attach to a real concern (Claims 2/6).
- * The remaining model path — a flat/improving reflection + descriptive intake — is the one
- * place a phrasing drift is bounded to a non-safety quality wobble, and is additionally
- * guarded by the (broadened) vocabulary screens + the grounding number set.
+ * v1 KILL-SWITCH: the AI summary ships TEMPLATE-ONLY. The model is not called at all.
+ *
+ * Two adversarial-review rounds showed `validateSummary`'s keyword screens cannot, on their
+ * own, contain LLM drift on this surface: round 1 broke the safety/quiet paths (causal,
+ * disease, number-swap inversion, reassurance-on-absence); round 2, after those paths were
+ * made template-only, still broke the remaining reflection path (wellness verdicts like
+ * "turned a corner", causal "the diet is helping", preference "wolfs down" all slipped the
+ * broadened screens). The summary is a 2–3-clause DESCRIPTIVE COUNT whose deterministic
+ * template already reads cleanly — so, exactly as `phraseFinding` (index.ts) already does for
+ * every other count-statement finding (reflection ③ / worsening ④ / postprandial ⑤ /
+ * time-of-day ⑥), we phrase it template-only and close the model path entirely rather than
+ * playing keyword whack-a-mole. The model machinery + `validateSummary` are RETAINED, tested,
+ * and gated off behind this one flag, ready to re-enable once a fact-bound (non-keyword)
+ * grounding check exists OR the PM ratifies the residual.
+ *
+ * NOTE: this is a deviation from the kickoff's "phrase it with Haiku" directive — made under
+ * the non-negotiable clinical-guardrails (never reassure / never causal), the project's own
+ * template-only precedent for count statements, and the explicit recommendation of the
+ * mandated adversarial review. Flagged for PM ratify/override.
+ */
+export const SUMMARY_MODEL_PHRASING_ENABLED = false
+
+/**
+ * Whether a packet is ELIGIBLE for model phrasing by SAFETY POLICY (separate from the v1
+ * kill-switch above). SAFETY and QUIET summaries are never model-eligible: the concern copy
+ * must be deterministic (as detection.ts templates worsening/decline), and a quiet summary
+ * has no safety signal to warm up so every model sentence there is pure downside. Only a
+ * non-safety reflection summary is eligible. The Edge Function gates the model call on BOTH
+ * this AND `SUMMARY_MODEL_PHRASING_ENABLED`, so re-enabling the model never re-opens the
+ * safety/quiet paths.
  */
 export function shouldPhraseWithModel(packet: SummaryFactPacket): boolean {
   return !packet.hasSafety && !packet.quiet
