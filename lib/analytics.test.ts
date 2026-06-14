@@ -34,6 +34,7 @@ import {
   type AnalyticsMeal,
   type AnalyticsSymptom,
   type IntakeDeclineResult,
+  type RankedFood,
 } from './analytics';
 
 const DAY = 86_400_000;
@@ -163,13 +164,14 @@ describe('computeTopFoods', () => {
       meal({ ms: at(3), foodItemId: 'B', foodLabel: 'Bravo B' }),
       meal({ ms: at(4), foodItemId: 'B', foodLabel: 'Bravo B' }),
     ];
+    // No meals are rated in this fixture → finishedRate null (below the per-item floor).
     expect(computeTopFoods(rows)).toEqual([
-      { foodItemId: 'A', label: 'Acme A', foodType: 'meal', count: 3 },
-      { foodItemId: 'B', label: 'Bravo B', foodType: 'meal', count: 2 },
+      { foodItemId: 'A', label: 'Acme A', foodType: 'meal', count: 3, shareOfDiet: 0.6, finishedRate: null, ratedMeals: 0, isTreat: false },
+      { foodItemId: 'B', label: 'Bravo B', foodType: 'meal', count: 2, shareOfDiet: 0.4, finishedRate: null, ratedMeals: 0, isTreat: false },
     ]);
   });
 
-  it('includes treats but tags them via foodType (a treat can top the list honestly)', () => {
+  it('includes treats but flags them via isTreat (a treat can top the list honestly)', () => {
     const rows: AnalyticsMeal[] = [
       meal({ ms: at(0), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat' }),
       meal({ ms: at(1), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat' }),
@@ -179,8 +181,40 @@ describe('computeTopFoods', () => {
     const top = computeTopFoods(rows);
     expect(isNotEnoughData(top)).toBe(false);
     expect((top as Exclude<typeof top, { status: string }>)[0]).toEqual({
-      foodItemId: 'T', label: 'Temptations', foodType: 'treat', count: 3,
+      foodItemId: 'T', label: 'Temptations', foodType: 'treat', count: 3, shareOfDiet: 0.75, finishedRate: null, ratedMeals: 0, isTreat: true,
     });
+  });
+
+  it('computes a per-food finished-rate over rated, non-free-fed meals, floored (§11 #1/#5/#6)', () => {
+    const rows: AnalyticsMeal[] = [
+      // Food A (NOT free-fed): 5 rated meals, 3 finished (all/most/all) → 0.6.
+      meal({ ms: at(0), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'all' }),
+      meal({ ms: at(1), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'most' }),
+      meal({ ms: at(2), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'all' }),
+      meal({ ms: at(3), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'some' }),
+      meal({ ms: at(4), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'refused' }),
+      // Food C (FREE-FED): 4 rated 'all' — but intake isn't observed → finishedRate null (§11 #6).
+      meal({ ms: at(5), foodItemId: 'C', foodLabel: 'Free C', intakeRating: 'all' }),
+      meal({ ms: at(6), foodItemId: 'C', foodLabel: 'Free C', intakeRating: 'all' }),
+      meal({ ms: at(7), foodItemId: 'C', foodLabel: 'Free C', intakeRating: 'all' }),
+      meal({ ms: at(8), foodItemId: 'C', foodLabel: 'Free C', intakeRating: 'all' }),
+      // Food B (NOT free-fed): only 2 rated meals → below the per-item floor → null.
+      meal({ ms: at(9), foodItemId: 'B', foodLabel: 'Bravo B', intakeRating: 'all' }),
+      meal({ ms: at(10), foodItemId: 'B', foodLabel: 'Bravo B', intakeRating: 'refused' }),
+    ];
+    const top = computeTopFoods(rows, { freeFedFoodIds: new Set(['C']) }) as RankedFood[];
+    const a = top.find((f) => f.foodItemId === 'A')!;
+    const b = top.find((f) => f.foodItemId === 'B')!;
+    const c = top.find((f) => f.foodItemId === 'C')!;
+    // A: 5 rated, 3 finished → 0.6.
+    expect(a.finishedRate).toBeCloseTo(0.6, 5);
+    expect(a.ratedMeals).toBe(5);
+    // B: 2 rated < floor 4 → null (never a confident rate off 2 meals).
+    expect(b.finishedRate).toBeNull();
+    expect(b.ratedMeals).toBe(2);
+    // C: free-fed → every meal excluded → null, NOT a fake 100% (intake not observed).
+    expect(c.finishedRate).toBeNull();
+    expect(c.ratedMeals).toBe(0);
   });
 
   it('below the ranking floor → notEnoughData (no rank invented)', () => {
@@ -216,8 +250,8 @@ describe('computeTopProteins', () => {
       meal({ ms: at(5), primaryProtein: null }), // unidentified → dropped
     ];
     expect(computeTopProteins(rows)).toEqual([
-      { protein: 'chicken', count: 3 },
-      { protein: 'salmon', count: 1 },
+      { protein: 'chicken', count: 3, shareOfDiet: 0.75, finishedRate: null, ratedMeals: 0 },
+      { protein: 'salmon', count: 1, shareOfDiet: 0.25, finishedRate: null, ratedMeals: 0 },
     ]);
   });
 
@@ -243,7 +277,9 @@ describe('computeTopProteins', () => {
       meal({ ms: at(5), primaryProtein: 'chicken', foodType: 'treat' }),
     ];
     // The treat's chicken never enters the ranking — only the 4 beef meals.
-    expect(computeTopProteins(rows)).toEqual([{ protein: 'beef', count: 4 }]);
+    expect(computeTopProteins(rows)).toEqual([
+      { protein: 'beef', count: 4, shareOfDiet: 1, finishedRate: null, ratedMeals: 0 },
+    ]);
   });
 
   it('treats do not pad the protein floor', () => {

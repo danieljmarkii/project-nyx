@@ -21,7 +21,7 @@ import {
   type DashboardCard,
   type DashboardState,
 } from '../../lib/dashboardScreen';
-import { describeCountDelta, describeRateDelta, intakeNotObservedNote, pluralize } from '../../lib/dashboardCards';
+import { describeCountDelta, describeRateDelta, intakeNotObservedNote } from '../../lib/dashboardCards';
 import { MetricCard } from '../../components/dashboard/MetricCard';
 import { RankingCard } from '../../components/dashboard/RankingCard';
 import { FrequencyCalendarCard } from '../../components/dashboard/FrequencyCalendarCard';
@@ -260,14 +260,16 @@ function renderCard(card: DashboardCard, petName: string) {
     }
     case 'topFood': {
       const r = card.result;
+      // Bar = share of diet; right = "% finished" (intake), treats flagged, thin → hint (§11 #1).
       const entries = isNotEnoughData(r)
         ? []
         : r.map((f) => ({
             key: f.foodItemId,
             label: f.label,
-            value: `${f.count} ${pluralize(f.count, 'log')}`,
-            count: f.count,
-            tag: f.foodType === 'treat' ? 'treat' : undefined,
+            share: f.shareOfDiet,
+            shareLabel: `${Math.round(f.shareOfDiet * 100)}% of diet`,
+            finishedRate: f.finishedRate,
+            isTreat: f.isTreat,
           }));
       return (
         <RankingCard
@@ -282,9 +284,16 @@ function renderCard(card: DashboardCard, petName: string) {
     }
     case 'topProtein': {
       const r = card.result;
+      // Meal-based (treats excluded): share of meals + "% finished" per protein.
       const entries = isNotEnoughData(r)
         ? []
-        : r.map((p) => ({ key: p.protein, label: displayProtein(p.protein), value: `${p.count}×`, count: p.count }));
+        : r.map((p) => ({
+            key: p.protein,
+            label: displayProtein(p.protein),
+            share: p.shareOfDiet,
+            shareLabel: `${Math.round(p.shareOfDiet * 100)}% of meals`,
+            finishedRate: p.finishedRate,
+          }));
       return (
         <RankingCard
           key={card.key}
