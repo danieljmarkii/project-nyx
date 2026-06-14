@@ -1,7 +1,7 @@
 # Nyx — Analytics Dashboard Requirements
 
-**Status:** DRAFT — design session 2026-06-13; **PM design review 2026-06-14** (clickable mocks: `docs/mockups/analytics-dashboard-mockup.html` + `-v2.html`) resolved the **layout direction (summary-led)**, the **Home doorways / no-4th-tab**, **detail-screen range control**, the **meals-only finished-rate**, and **Meals & treats as a v1 card** — all folded into the sections below. The colour-as-wellness ruling (§13 #6) is **RESOLVED** (2026-06-14, at the PR 2 build); the only remaining gate is the user-facing name (§13 #1), needed at PR 3.
-**Working name:** "analytics dashboard" (internal). User-facing name is an open decision (§13) — leaning *"Nyx's health"* / *"Patterns"*; **never "Analytics"** (engineer jargon, fails `nyx-voice`).
+**Status:** DRAFT — design session 2026-06-13; **PM design review 2026-06-14** (clickable mocks: `docs/mockups/analytics-dashboard-mockup.html` + `-v2.html`) resolved the **layout direction (summary-led)**, the **Home doorways / no-4th-tab**, **detail-screen range control**, the **meals-only finished-rate**, and **Meals & treats as a v1 card** — all folded into the sections below. Both build gates are now **RESOLVED** (2026-06-14): the colour-as-wellness ruling (§13 #6, at the PR 2 build) and the user-facing name (§13 #1 = **"Patterns"**).
+**Working name:** "analytics dashboard" (internal). **User-facing name = "Patterns"** (§13 #1, PM 2026-06-14); **never "Analytics"** (engineer jargon, fails `nyx-voice`).
 **Anchor backlog item:** B-023 (this doc is the build-ready expansion of it). Composes with B-069, B-046, B-053, B-004.
 **Build phase:** Post-MVP. Sequenced **after Step 9 (vet report)** — see §14. This is design-ahead.
 
@@ -308,7 +308,7 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 
 | # | Decision | Lean / Resolution |
 |---|---|---|
-| 1 | **User-facing name** (not "Analytics") | **OPEN** — *"Nyx's patterns"* shown in the mocks; leaning that or *"Nyx's health."* PM call before build. |
+| 1 | **User-facing name** (not "Analytics") | **RESOLVED 2026-06-14 — "Patterns"** (PM). The surface is titled **Patterns**; the Home entry stays *"See all of Nyx's patterns →"*. Never "Analytics" (engineer jargon, fails `nyx-voice`). |
 | 2 | Default time range | **RESOLVED 2026-06-14:** **Month** default; Week / 3-Month toggle on the **detail screen only** — the dashboard stays a range-free glance (a global dashboard range control was rejected). |
 | 3 | AI summary model | **Haiku 4.5**; revisit if quality demands Sonnet |
 | 4 | AI summary: extend `generate-signal` vs. sibling `generate-summary` | Build-time call; reuse the pattern + cache table either way |
