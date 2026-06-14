@@ -53,7 +53,7 @@ export function SignalZone() {
         accessibilityLabel={`See all of ${petName}'s patterns`}
         style={styles.patternsLink}
       >
-        <Text style={styles.patternsLinkText}>See all of {petName}&apos;s patterns →</Text>
+        <Text style={styles.patternsLinkText}>See all of {petName}'s patterns →</Text>
       </Pressable>
     </Card>
   );

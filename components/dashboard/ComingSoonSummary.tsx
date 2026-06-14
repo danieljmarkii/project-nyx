@@ -31,8 +31,8 @@ export function ComingSoonSummary({ petName }: Props) {
           No clinical promise ("I'll tell you if Nyx is healthy" would cross the line),
           no upsell, no exclamation mark. */}
       <Text style={styles.body}>
-        Soon, I&apos;ll gather what I&apos;m noticing across {who}&apos;s patterns into a few plain
-        sentences, right here. For now, the cards below have the details.
+        Soon, I'll gather what I'm noticing across {who}'s patterns into a few plain sentences,
+        right here. For now, the cards below have the details.
       </Text>
     </Card>
   );

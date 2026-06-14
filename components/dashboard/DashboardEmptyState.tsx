@@ -15,10 +15,10 @@ export function DashboardEmptyState({ petName }: Props) {
   const name = petName.trim().length > 0 ? petName : 'your pet';
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>I&apos;m still getting to know {name}.</Text>
+      <Text style={styles.title}>I'm still getting to know {name}.</Text>
       <Text style={styles.body}>
-        Log a few meals and anything that seems off, and {name}&apos;s patterns will start to take
-        shape here — how often things happen, what {name} eats most, and what tends to go together.
+        Log a few meals and anything that seems off, and {name}'s patterns will start to take shape
+        here — how often things happen, what {name} eats most, and what tends to go together.
       </Text>
     </View>
   );

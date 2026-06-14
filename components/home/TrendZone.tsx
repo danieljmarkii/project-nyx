@@ -206,6 +206,8 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
     color: theme.colorAccent,
+    // Padding + the hitSlop={8} on the Pressable clear the 44pt tap-target floor.
+    paddingVertical: theme.space1,
   },
   chartHeadRow: {
     flexDirection: 'row',

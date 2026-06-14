@@ -14,7 +14,6 @@ import {
   getMealTreatComposition,
   isNotEnoughData,
   type AnalyticsWindow,
-  type IntakeRate,
 } from '../../lib/analytics';
 import {
   buildDashboardCards,
@@ -54,42 +53,47 @@ export default function PatternsScreen() {
   // Show the loading state only on the first read for a pet; later focuses refresh
   // silently so the surface doesn't flash empty on every return (the useSignal pattern).
   const loadedPetRef = useRef<string | null>(null);
+  // Monotonic load id: a newer load (pet switch, retry, re-focus) supersedes an
+  // in-flight one, so a slow pet-A read can never commit over pet-B's data after a
+  // switch (the multi-pet stale-overwrite race; cf. the cancelled-flag in useSignal,
+  // generalized here because there are two callers — the focus effect and retry).
+  const loadIdRef = useRef(0);
 
-  const load = useCallback(
-    async (showLoading: boolean) => {
-      const pet = usePetStore.getState().activePet;
-      if (!pet) return;
-      if (showLoading) setStatus('loading');
-      try {
-        const [symptomCounts, frequencyBuckets, intakeRate, topFoods, topProteins, composition] =
-          await Promise.all([
-            getSymptomCounts(pet.id, WINDOW),
-            getSymptomFrequencyByDay(pet.id, WINDOW),
-            getIntakeRate(pet.id, WINDOW),
-            getTopFoods(pet.id, WINDOW),
-            getTopProteins(pet.id, WINDOW),
-            getMealTreatComposition(pet.id, WINDOW),
-          ]);
-        setDashState(selectDashboardState({ symptomCounts, composition }));
-        setCards(
-          buildDashboardCards({
-            symptomCounts,
-            frequencyBuckets,
-            intakeRate,
-            topFoods,
-            topProteins,
-            composition,
-          }),
-        );
-        setStatus('ready');
-      } catch (e) {
-        // No silent failures (house rule): surface a warm retry, never a wrong number.
-        console.error('[patterns] load failed:', e);
-        setStatus('error');
-      }
-    },
-    [],
-  );
+  const load = useCallback(async (showLoading: boolean) => {
+    const pet = usePetStore.getState().activePet;
+    if (!pet) return;
+    const myId = ++loadIdRef.current;
+    if (showLoading) setStatus('loading');
+    try {
+      const [symptomCounts, frequencyBuckets, intakeRate, topFoods, topProteins, composition] =
+        await Promise.all([
+          getSymptomCounts(pet.id, WINDOW),
+          getSymptomFrequencyByDay(pet.id, WINDOW),
+          getIntakeRate(pet.id, WINDOW),
+          getTopFoods(pet.id, WINDOW),
+          getTopProteins(pet.id, WINDOW),
+          getMealTreatComposition(pet.id, WINDOW),
+        ]);
+      if (loadIdRef.current !== myId) return; // superseded by a newer load — drop these results
+      setDashState(selectDashboardState({ symptomCounts, composition }));
+      setCards(
+        buildDashboardCards({
+          symptomCounts,
+          frequencyBuckets,
+          intakeRate,
+          topFoods,
+          topProteins,
+          composition,
+        }),
+      );
+      setStatus('ready');
+    } catch (e) {
+      if (loadIdRef.current !== myId) return; // a newer load owns the screen now
+      // No silent failures (house rule): surface a warm retry, never a wrong number.
+      console.error('[patterns] load failed:', e);
+      setStatus('error');
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -114,7 +118,7 @@ export default function PatternsScreen() {
         </View>
       ) : status === 'error' ? (
         <View style={styles.centered}>
-          <Text style={styles.stateText}>I couldn&apos;t pull {petName}&apos;s patterns just now.</Text>
+          <Text style={styles.stateText}>I couldn't pull {petName}'s patterns just now.</Text>
           <Pressable
             onPress={() => load(true)}
             hitSlop={8}
@@ -188,18 +192,23 @@ function renderCard(card: DashboardCard, petName: string) {
       );
     case 'intakeRate': {
       const r = card.result;
-      const populated = !isNotEnoughData(r);
-      const rate = r as IntakeRate; // narrowed by `populated`
+      // Narrow via the sentinel guard (no `as`): read the rate only when it's real.
+      let value = '';
+      let note: string | undefined;
+      if (!isNotEnoughData(r)) {
+        value = `${Math.round(r.rate * 100)}%`;
+        note = r.intakeNotDirectlyObserved ? intakeNotObservedNote() : undefined;
+      }
       return (
         <MetricCard
           key={card.key}
           label="Meals finished"
-          value={populated ? `${Math.round(rate.rate * 100)}%` : ''}
+          value={value}
           polarity="positive"
           established={card.established}
           state={card.state}
           calibrationUnit="meal"
-          note={populated && rate.intakeNotDirectlyObserved ? intakeNotObservedNote() : undefined}
+          note={note}
           petName={petName}
         />
       );
@@ -270,7 +279,7 @@ const styles = StyleSheet.create({
   },
   retryBtn: {
     paddingHorizontal: theme.space3,
-    paddingVertical: 10,
+    paddingVertical: theme.space1,
     borderRadius: theme.radiusSmall,
     borderWidth: 1,
     borderColor: theme.colorBorder,
