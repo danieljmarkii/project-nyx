@@ -4,7 +4,6 @@ import {
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
@@ -68,7 +67,6 @@ function statusLabel(status: string): string {
 export default function ProfileScreen() {
   const { pets, activePet, updatePet } = usePetStore();
   const { user } = useAuthStore();
-  const router = useRouter();
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
@@ -429,21 +427,6 @@ export default function ProfileScreen() {
           <Divider style={styles.accountDivider} />
           <TouchableOpacity style={styles.accountRow} onPress={handleSignOut}>
             <Text style={styles.accountRowText}>Sign out</Text>
-          </TouchableOpacity>
-        </Card>
-
-        {/* TEMP — B-023 PR 2 on-device QA entry. Opens the dashboard card preview so
-            the new card set can be judged on a device for this PR. REMOVE when PR 3
-            ships the real dashboard screen + its Home doorways (app/insights/index.tsx). */}
-        <Card style={styles.sectionGap}>
-          <Text style={styles.sectionTitle}>Developer</Text>
-          <Divider style={styles.accountDivider} />
-          <TouchableOpacity
-            style={styles.accountRow}
-            onPress={() => router.push('/insights/showcase')}
-            accessibilityRole="button"
-          >
-            <Text style={styles.accountRowText}>Dashboard card preview</Text>
           </TouchableOpacity>
         </Card>
 

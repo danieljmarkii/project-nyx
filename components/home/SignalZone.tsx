@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Divider } from '../ui/Divider';
@@ -41,6 +42,19 @@ export function SignalZone() {
       ) : (
         <BuildingState petName={petName} />
       )}
+
+      {/* §8 doorway into the Patterns dashboard — a quiet footer affordance, present in
+          every Signal state so the deeper surface is discoverable from Home. Navigates
+          AWAY to a destination (Principle 3 — not a 4th Home zone, not a tab). */}
+      <Pressable
+        onPress={() => router.push('/insights')}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={`See all of ${petName}'s patterns`}
+        style={styles.patternsLink}
+      >
+        <Text style={styles.patternsLinkText}>See all of {petName}&apos;s patterns →</Text>
+      </Pressable>
     </Card>
   );
 }
@@ -106,6 +120,18 @@ function BuildingState({ petName }: { petName: string }) {
 const styles = StyleSheet.create({
   label: {
     marginBottom: theme.space2,
+  },
+  // §8 quiet doorway into the dashboard — a hairline-separated footer link.
+  patternsLink: {
+    borderTopWidth: 1,
+    borderTopColor: theme.colorBorder,
+    paddingTop: theme.space2,
+    marginTop: theme.space1,
+  },
+  patternsLinkText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
   },
   intro: {
     fontSize: theme.textMD,
