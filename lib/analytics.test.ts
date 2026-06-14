@@ -231,6 +231,33 @@ describe('computeTopProteins', () => {
       status: 'not_enough_data', samples: 2, needed: ANALYTICS_FLOORS.minMealsForRanking,
     });
   });
+
+  it('EXCLUDES treats from the ranking (meal-based for clinical relevance — B-023 mockup)', () => {
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'beef', foodType: 'meal' }),
+      meal({ ms: at(1), primaryProtein: 'beef', foodType: 'meal' }),
+      meal({ ms: at(2), primaryProtein: 'beef', foodType: 'meal' }),
+      meal({ ms: at(3), primaryProtein: 'beef', foodType: 'meal' }),
+      meal({ ms: at(4), primaryProtein: 'chicken', foodType: 'treat' }), // treat → excluded
+      meal({ ms: at(5), primaryProtein: 'chicken', foodType: 'treat' }),
+    ];
+    // The treat's chicken never enters the ranking — only the 4 beef meals.
+    expect(computeTopProteins(rows)).toEqual([{ protein: 'beef', count: 4 }]);
+  });
+
+  it('treats do not pad the protein floor', () => {
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'beef', foodType: 'meal' }),
+      meal({ ms: at(1), primaryProtein: 'beef', foodType: 'meal' }),
+      meal({ ms: at(2), primaryProtein: 'turkey', foodType: 'treat' }),
+      meal({ ms: at(3), primaryProtein: 'turkey', foodType: 'treat' }),
+      meal({ ms: at(4), primaryProtein: 'turkey', foodType: 'treat' }),
+    ];
+    // 2 beef MEALS identified (treats excluded) < floor 4 → sentinel, not a turkey rank.
+    expect(computeTopProteins(rows)).toEqual({
+      status: 'not_enough_data', samples: 2, needed: ANALYTICS_FLOORS.minMealsForRanking,
+    });
+  });
 });
 
 // ── Intake / finished-rate (MEALS ONLY) ─────────────────────────────────────────
@@ -398,6 +425,30 @@ describe('detectIntakeDecline', () => {
     const refusal = out.flags.find((f) => f.trigger === 'refused_normal_food');
     expect(refusal?.refusedFoodLabel).toBe('Acme Dinner');
     expect(refusal?.class).toBe('health_watch');
+  });
+
+  it('fires no matter HOW MANY times a normally-eaten food is refused in one day (adversarial regression)', () => {
+    // The adversarial review broke this: same-day re-logged refusals polluted `prior`,
+    // dragging priorMean below the floor, so refusing HARDER (3x) went SILENT while 1x
+    // fired. The watch must fire for any N>=1 — more refusal can never mean less concern.
+    const priorDays: AnalyticsMeal[] = [
+      meal({ ms: at(7), foodItemId: 'f1', foodLabel: 'Acme Dinner', intakeRating: 'all' }),
+      meal({ ms: at(6), foodItemId: 'f1', foodLabel: 'Acme Dinner', intakeRating: 'all' }),
+      meal({ ms: at(5), foodItemId: 'f1', foodLabel: 'Acme Dinner', intakeRating: 'all' }),
+    ];
+    const refusalsToday = (n: number): AnalyticsMeal[] =>
+      Array.from({ length: n }, (_, i) =>
+        meal({ ms: at(0, 2 + i * 2), foodItemId: 'f1', foodLabel: 'Acme Dinner', intakeRating: 'refused' }),
+      );
+    for (const n of [1, 2, 3, 5]) {
+      const out = detectIntakeDecline({
+        species: 'dog', nowMs: NOW, meals: [...priorDays, ...refusalsToday(n)], freeFedFoodIds: new Set(),
+      });
+      expect(out.status).toBe('watch'); // monotonic: never silent for a larger n
+      if (out.status === 'watch') {
+        expect(out.flags.some((f) => f.trigger === 'refused_normal_food')).toBe(true);
+      }
+    }
   });
 
   it('a logging GAP is never read as a decline (skips days with no rated meal)', () => {

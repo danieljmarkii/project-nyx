@@ -13,6 +13,12 @@
 // same file is importable from the RN/Metro client (no extension) and from Deno
 // (with the `.ts` extension) without any runtime-specific code.
 //
+// ⚠️ COUPLING: the Edge Function re-exports this by relative path
+// (supabase/functions/generate-signal/protein.ts → ../../../lib/protein.ts), which
+// Deno resolves at dev time and esbuild inlines into the deploy bundle. Do NOT
+// rename or move this file without updating that re-export, or the Edge Function
+// (and its deno tests) will fail to resolve the import.
+//
 // Why it exists: real `food_items.primary_protein` values are dirty and fragmented:
 // `chicken`, `Chicken`, `Chicken By-Product Meal`, `chicken by-product meal`, and
 // the literal string `"null"` are all stored for what is, for ranking/correlation

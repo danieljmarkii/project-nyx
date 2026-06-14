@@ -337,12 +337,18 @@ export interface RankedProtein {
 /** Pure: most-consumed primary protein, CANONICALIZED before ranking (so chicken /
  *  Chicken / "Chicken By-Product Meal" pool into one key, not three). Meals whose
  *  protein canonicalizes to null (junk/unknown/unidentified) are dropped. Floored on
- *  the number of protein-identified meals (§11 #5). */
+ *  the number of protein-identified meals (§11 #5).
+ *  TREATS ARE EXCLUDED — the protein card is meal-based for clinical relevance
+ *  (B-023 mockup): a treat's filler protein shouldn't dominate "what protein does
+ *  Nyx eat". Same treat-exclusion rule as getIntakeRate; contrast computeTopFoods,
+ *  which includes treats and tags them so a treat topping the FOOD list reads
+ *  honestly. */
 export function computeTopProteins(rows: AnalyticsMeal[], opts: RankOptions = {}): RankedProtein[] | NotEnoughData {
   const limit = opts.limit ?? 5;
   const byProtein = new Map<string, number>();
   let identified = 0;
   for (const m of rows) {
+    if (m.foodType === 'treat') continue; // meal-based ranking (see doc)
     const key = canonicalizeProtein(m.primaryProtein);
     if (key === null) continue;
     identified += 1;
@@ -564,6 +570,11 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
   // SKIPPED, never read as a decline — a logging gap is not anorexia.
   const isCat = input.species === 'cat';
   const consecutiveDays = isCat ? DECLINE.cat.consecutiveDaysBelowBaseline : DECLINE.consecutiveDaysBelowBaseline;
+  // Raw ms offset (not calendar-aligned) ON PURPOSE — this and the utcDateKey day
+  // loop below are a faithful mirror of detection.ts detector ②, and they are
+  // mutually consistent (a meal can't be both in baseline and a recent-day bucket).
+  // Don't "fix" this to a calendar window in isolation without doing the same on the
+  // server, or the two surfaces' baseline/recent split would drift.
   const recentCutoffMs = nowMs - consecutiveDays * MS_PER_DAY;
   const baselineMeals = windowMeals.filter((m) => m.ms < recentCutoffMs);
 
@@ -614,7 +625,21 @@ export function detectIntakeDecline(input: IntakeDeclineInput): IntakeDeclineRes
     const latest = sorted[sorted.length - 1];
     if (latest.ms < refusalRecencyStart) continue;
     if (latest.score > INTAKE_SCORE.refused) continue; // only an outright refusal trips this
-    const prior = sorted.slice(0, -1);
+    // `prior` = this food's history on days BEFORE the latest meal's day. We exclude
+    // the WHOLE latest calendar day (not a naive slice(0,-1)), so re-logged refusals
+    // of one food on one day read as ONE refusal, not a history of refusals. Without
+    // this, the earlier same-day refusals fall into `prior`, drag priorMean below
+    // normallyEatenScoreFloor, and SILENTLY SUPPRESS the watch the HARDER the pet
+    // refuses — an inverse-pseudoreplication false-negative caught by the adversarial
+    // review (a dog refusing its food 3× in a day went silent; 1× correctly fired).
+    // This deliberately DIVERGES from detection.ts detector ②, which still has the
+    // same latent bug on its refusal arm (slice(0,-1), no same-day collapse): the
+    // client leads here pending B-090 (port the fix to the Edge engine + redeploy).
+    // The divergence is safe-direction — the dashboard escalates; the Signal is
+    // unchanged, not worsened. (The DECLINE constants stay a byte-exact mirror; only
+    // this refusal-arm logic leads.)
+    const latestDayKey = utcDateKey(latest.ms);
+    const prior = sorted.filter((m) => utcDateKey(m.ms) !== latestDayKey);
     if (prior.length < DECLINE.normallyEatenMinSamples) continue;
     const priorMean = prior.reduce((s, m) => s + m.score, 0) / prior.length;
     if (priorMean < DECLINE.normallyEatenScoreFloor) continue;
@@ -669,7 +694,10 @@ async function readMealRows(petId: string, startMs: number, endMs: number): Prom
      FROM meals m
      JOIN events e ON e.id = m.event_id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
-     WHERE m.pet_id = ? AND e.deleted_at IS NULL
+     -- Scope + soft-delete + time all on the events table so this uses the
+     -- idx_events_pet_time partial index (matches getTimeline; meals.pet_id has no
+     -- local index). The meals→events FK guarantees the meal belongs to this pet.
+     WHERE e.pet_id = ? AND e.deleted_at IS NULL
        AND e.occurred_at >= ? AND e.occurred_at < ?`,
     [petId, new Date(startMs).toISOString(), new Date(endMs).toISOString()],
   );
@@ -697,6 +725,12 @@ async function readFreeFedFoodIds(petId: string): Promise<Set<string>> {
 }
 
 // ── Public DB-backed metrics (the names PR 2/3 call) ─────────────────────────────
+//
+// Error contract: these read-only wrappers PROPAGATE a local-DB error to the caller
+// (they do not swallow it — matching lib/db.ts's read functions). The PR 2/3 screen
+// owns the try/catch → empty/error state. This is deliberate fail-CLOSED for §11 #6:
+// if the free-fed set can't be resolved, getIntakeRate throws rather than show a rate
+// computed without the free-fed exclusion.
 
 export async function getSymptomCounts(
   petId: string,
@@ -774,8 +808,14 @@ export async function getIntakeDecline(
   species: Species,
   nowMs: number = Date.now(),
 ): Promise<IntakeDeclineResult> {
-  const startMs = nowMs - DECLINE.baselineWindowDays * MS_PER_DAY;
-  const endMs = (Math.floor(nowMs / MS_PER_DAY) + 1) * MS_PER_DAY;
+  // Day-align the read window (the B-084 lesson) so it is a SUPERSET of what the
+  // detector's internal baseline filter uses. detectIntakeDecline keeps the raw
+  // `nowMs - baselineWindowDays*MS_PER_DAY` filter (a faithful detection.ts mirror);
+  // reading from the start of the earliest calendar day guarantees we never
+  // under-fetch the meals that filter then selects.
+  const todayIndex = Math.floor(nowMs / MS_PER_DAY);
+  const startMs = (todayIndex - DECLINE.baselineWindowDays) * MS_PER_DAY;
+  const endMs = (todayIndex + 1) * MS_PER_DAY;
   const [meals, freeFedFoodIds] = await Promise.all([
     readMealRows(petId, startMs, endMs),
     readFreeFedFoodIds(petId),
