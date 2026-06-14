@@ -306,7 +306,7 @@ Deno.test('buildSummaryPacket — capped at four sentences, safety kept first', 
 
 // ── summaryTemplate passes validateSummary for EVERY shape (Pattern 8) ────────────────────
 
-Deno.test('summaryTemplate — every emittable shape passes its own validator and never reassures', () => {
+Deno.test('summaryTemplate — every emittable shape (with a typical food label) passes its own validator and never reassures', () => {
   const scenarios: SummaryFactPacket[] = [
     buildSummaryPacket({ petName: 'Pixel', findings: [worseningFinding()], mealEvents: ratedChickenMeals(6), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
     buildSummaryPacket({ petName: 'Pixel', findings: [declineFinding({ trigger: 'consecutive_low', daysBelowBaseline: 3, refusedFoodLabel: null })], mealEvents: ratedChickenMeals(8), symptomEvents: [], freeFedFoodIds: new Set(), nowMs: NOW_MS })!,
@@ -323,6 +323,28 @@ Deno.test('summaryTemplate — every emittable shape passes its own validator an
     assert.equal(/\b(because|caused?|due to)\b/i.test(text), false, `must not assert cause: "${text}"`)
     assert.equal(text.includes('!'), false, `no exclamation: "${text}"`)
   }
+})
+
+Deno.test('summaryTemplate — a screened FOOD NAME is inert in v1 but is a model re-enable gate (B-096)', () => {
+  // A real product name containing screened vocabulary ("Recovery") rides verbatim into the
+  // decline clause. The SHIPPED text is correct (it names the food the pet refused) and routes
+  // to the vet — and it ships UNVALIDATED, so this is inert today. But validateSummary WOULD
+  // reject it, so before model phrasing is ever re-enabled the food-name span must be exempted
+  // (B-096). This test pins both halves of that reality so the limitation can't be forgotten.
+  const packet = buildSummaryPacket({
+    petName: 'Pixel',
+    findings: [declineFinding({ trigger: 'refused_normal_food', refusedFoodLabel: 'Royal Canin Recovery' })],
+    mealEvents: ratedChickenMeals(6),
+    symptomEvents: [],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+  })!
+  const text = summaryTemplate(packet)
+  assert.match(text, /Royal Canin Recovery/) // the food's own name renders correctly
+  assert.match(text, /\bvet\b/i) // and the safety clause still routes to the vet
+  // The known limitation: validateSummary trips on "Recovery" — fine in v1 (template ships
+  // unvalidated), gated for re-enable.
+  assert.equal(validateSummary(text, packet), false)
 })
 
 Deno.test('summaryTemplate — a safety summary always routes to the vet', () => {

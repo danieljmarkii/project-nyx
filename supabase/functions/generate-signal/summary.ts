@@ -19,9 +19,14 @@
 //
 // THE GROUNDING ARCHITECTURE (why this is safe). The summary's allowed-number set is
 // derived FROM the deterministic clause text itself, so:
-//   (a) the deterministic template trivially passes validateSummary, and
+//   (a) the deterministic template passes validateSummary for a typical food label (and the
+//       template ships UNVALIDATED anyway — validateSummary runs only on MODEL output), and
 //   (b) the model may only re-use numbers that already appear in a true clause — anything
 //       it invents falls outside the set and is rejected to the template.
+// (Caveat, adversarial review: a food NAME containing screened vocabulary — "Royal Canin
+// Recovery", "Hill's Sensitive Stomach" — rides verbatim into the decline clause and would
+// trip validateSummary. Inert in v1 because the template ships unvalidated, but a re-enable
+// gate for model phrasing: sanitize/exempt the food-name span first. See B-096.)
 // The model never sees a raw event log and never composes from raw fields; it smooths a
 // list of already-true sentences. This is the WHOOP-weekly-narrative shape, the safest use
 // of an LLM for this job (research §4.3), and it keeps the summary on the right side of
@@ -510,8 +515,11 @@ export function shouldPhraseWithModel(packet: SummaryFactPacket): boolean {
  *     fabricated or recomputed figure).
  *   - any reassurance (incl. on absence), preference framing, causal claim, or disease name.
  *   - on a safety summary: the silent removal of the "talk to your vet" routing.
- * The deterministic template passes by construction (allowedNumbers is derived from it and
- * the clauses carry none of the banned vocabulary) — verified by a test.
+ * The deterministic template passes for a typical food label (allowedNumbers is derived from
+ * it and the clauses carry none of the banned vocabulary) — verified by a test. NOTE it is NOT
+ * an absolute invariant: a food NAME containing screened vocabulary ("…Recovery", "Sensitive
+ * Stomach") would make this return false. That is inert in v1 (the template ships unvalidated;
+ * index.ts calls this only on MODEL output), but is a re-enable gate for model phrasing — B-096.
  */
 export function validateSummary(text: string, packet: SummaryFactPacket): boolean {
   const t = (text ?? '').trim()
