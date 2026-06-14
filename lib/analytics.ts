@@ -431,68 +431,6 @@ export function computeIntakeRate(rows: AnalyticsMeal[], opts: IntakeRateOptions
   };
 }
 
-// ── B. Finished-rate SPARKLINE series (the card's own shape — B-098, §11 #1/#6) ──
-//
-// The "Meals finished" KPI must never render as a bare big number (B-098 convention):
-// a finished-rate-over-the-window shape rides alongside it. This is the card's SHAPE,
-// not the full B-099 over-time/range feature (which stays gated on the §13 #2
-// dashboard-range PM decision). It reuses qualifyingIntakeMeals, so it carries the same
-// meals-only / free-fed-excluded rules as the big number and can never disagree with it.
-
-/** Trailing weekly buckets in the finished-rate sparkline. 4 ≈ the month window — enough
- *  points for a shape without per-day noise. */
-export const INTAKE_SERIES_WEEKS = 4;
-
-/**
- * Pure: per-week finished-rate across the window — the intake card's own SHAPE so it is
- * never a bare big number (B-098), NOT a precise over-time read (that is B-099). The
- * window is tiled into `weeks` equal trailing buckets (oldest → newest); each point is
- * that week's finished-rate over the SAME qualifying set as computeIntakeRate.
- *
- * Honest about thin data, two ways:
- *   • Whole-window floor — below ANALYTICS_FLOORS.minRatedMealsForIntakeRate qualifying
- *     meals it returns `[]` (no line). SAME floor + SAME qualifying set as
- *     computeIntakeRate, so whenever the big number shows the calibration state the line
- *     is absent too — never a fabricated line below the floor.
- *   • Per-week — a week with NO qualifying meal contributes NO point (dropped, not
- *     plotted as a fabricated 0%). A 0% would read as "ate nothing that week" when really
- *     nothing was logged (§11 #6 — absence ≠ refusal). Contrast the symptom sparkline,
- *     which DOES plot zero days: a zero-vomit day is a real observation; a no-meal week
- *     is not. The series is therefore the rates of weeks that have data, in order.
- *
- * Descriptive only — carries NO verdict colour and NO decline routing (the floored
- * detectIntakeDecline owns decline). It is the shape of an already-true rate; the card
- * draws it in the neutral tone until a "vs baseline" delta lands (B-093).
- */
-export function computeIntakeRateSeries(
-  rows: AnalyticsMeal[],
-  opts: IntakeRateOptions,
-  range: WindowRange,
-  weeks: number = INTAKE_SERIES_WEEKS,
-): number[] {
-  const qualifying = qualifyingIntakeMeals(rows, opts.freeFedFoodIds);
-  if (weeks < 1 || qualifying.length < ANALYTICS_FLOORS.minRatedMealsForIntakeRate) return [];
-
-  // Tile the window into `weeks` trailing buckets. bucketDays = ceil(windowDays / weeks)
-  // so every in-window day lands in exactly one bucket (the oldest may run a day or two
-  // short) — immaterial to a RATE, which is a proportion and so bucket-width-independent.
-  const bucketDays = Math.ceil(range.windowDays / weeks);
-  const finished = new Array<number>(weeks).fill(0);
-  const rated = new Array<number>(weeks).fill(0);
-  for (const m of qualifying) {
-    const daysAgo = range.todayIndex - Math.floor(m.ms / MS_PER_DAY);
-    if (daysAgo < 0 || daysAgo >= range.windowDays) continue; // outside the window (defensive)
-    const bucket = weeks - 1 - Math.min(weeks - 1, Math.floor(daysAgo / bucketDays)); // oldest → newest
-    rated[bucket] += 1;
-    if (isFinishedMeal(m)) finished[bucket] += 1;
-  }
-  const series: number[] = [];
-  for (let i = 0; i < weeks; i++) {
-    if (rated[i] > 0) series.push(finished[i] / rated[i]);
-  }
-  return series;
-}
-
 // ── B. Meal vs treat composition (composition card — §11 #1) ─────────────────────
 
 export interface MealTreatComposition {
@@ -870,23 +808,37 @@ export async function getIntakeRate(
   return computeIntakeRate(rows, { freeFedFoodIds });
 }
 
+/** Current + prior finished-rate, for the intake card's "vs last {window}" read (B-098). */
+export interface IntakeRateComparison {
+  current: IntakeRate | NotEnoughData;
+  prior: IntakeRate | NotEnoughData;
+}
+
 /**
- * The finished-rate sparkline series for the intake card (B-098). Reads the same window
- * + free-fed set as getIntakeRate (so the line and the big number share one truth) and
- * delegates to the pure core. Returns `[]` below the floor (no fabricated line).
+ * The finished-rate for the current window AND the prior comparable window, so the card
+ * can show "down from 41% last month" (B-098; closes the B-093 prior-rate gap). ONE
+ * free-fed read is applied to BOTH windows: we don't store historical free-fed state,
+ * and a food free-fed now was almost certainly free-fed last month — applying the
+ * current exclusion to both keeps the two rates comparable (a small, documented
+ * approximation that errs toward consistency, never toward a fabricated rate). Each side
+ * floors independently, so a thin prior simply yields no comparison (the card omits the
+ * delta line), never a made-up baseline.
  */
-export async function getIntakeRateSeries(
+export async function getIntakeRateWithPrior(
   petId: string,
   window: AnalyticsWindow,
   nowMs: number = Date.now(),
-  weeks: number = INTAKE_SERIES_WEEKS,
-): Promise<number[]> {
+): Promise<IntakeRateComparison> {
   const range = calendarWindow(window, nowMs);
-  const [rows, freeFedFoodIds] = await Promise.all([
+  const [currentRows, priorRows, freeFedFoodIds] = await Promise.all([
     readMealRows(petId, range.currentStartMs, range.currentEndMs),
+    readMealRows(petId, range.priorStartMs, range.priorEndMs),
     readFreeFedFoodIds(petId),
   ]);
-  return computeIntakeRateSeries(rows, { freeFedFoodIds }, range, weeks);
+  return {
+    current: computeIntakeRate(currentRows, { freeFedFoodIds }),
+    prior: computeIntakeRate(priorRows, { freeFedFoodIds }),
+  };
 }
 
 export async function getMealTreatComposition(

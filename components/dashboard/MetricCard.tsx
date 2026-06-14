@@ -23,13 +23,20 @@ import {
 // the sample floor the card renders the "still learning the baseline" calibration
 // state (§10), never a fabricated number/chart.
 //
-// Convention (B-098): a POPULATED KPI card must carry a shape — pass `sparkData` (≥2
-// points). A bare big number is not shipped (the "Meals finished" 29% bug). The
-// empty/calibrating states legitimately have no line, so this is enforced by review +
-// the design principle, not the prop type; the populated branch simply expects a series.
+// Convention (B-098): a POPULATED KPI card must carry a shape — a sparkline (`sparkData`,
+// ≥2 points, for a count trend) OR a proportion bar (`progress`, for a rate like "Meals
+// finished"). A bare big number is not shipped (the 29% bug). Empty/calibrating states
+// legitimately have no shape, so this is enforced by review + the design principle, not
+// the prop type.
 //
 // The whole card is the tap target (a "doorway" → detail screen, §4.2) with a visible
 // chevron + 44pt floor + hitSlop — Oura's "tappable-but-unsignposted" weakness, fixed.
+
+/** Clamp a proportion into [0, 1]; a non-finite value reads as 0 (never a NaN width). */
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return n < 0 ? 0 : n > 1 ? 1 : n;
+}
 
 interface Props {
   /** Layer 1 — plain, muted label ("Vomiting", "Meals finished"). */
@@ -44,8 +51,11 @@ interface Props {
   delta?: number;
   /** Layer 4 — the warm delta phrase ("2 fewer than last month"). */
   deltaLabel?: string;
-  /** Layer 3 — sparkline series. <2 points → no sparkline (the state owns thin data). */
+  /** Layer 3 (count trend) — sparkline series. <2 points → no sparkline. */
   sparkData?: number[];
+  /** Layer 3 (rate) — a 0..1 proportion → a full-width fill bar under the number, the
+   *  rate card's shape (B-098). Mutually exclusive with sparkData in practice. */
+  progress?: number;
   /** calibrating / empty / populated (§10). Default populated. */
   state?: CardDisplayState;
   /** Singular noun for the calibration copy ("meal" → "3 more meals to log"). */
@@ -67,6 +77,7 @@ export function MetricCard({
   delta,
   deltaLabel,
   sparkData,
+  progress,
   state = { kind: 'populated' },
   calibrationUnit = 'sample',
   emptyMessage,
@@ -78,6 +89,7 @@ export function MetricCard({
   const tone = resolveDeltaTone({ polarity, delta: delta ?? 0, established });
   const toneColor = deltaToneColor(tone);
   const dir = deltaDirection(delta ?? 0);
+  const progressFraction = progress != null ? clamp01(progress) : null;
 
   const accessibilityLabel =
     state.kind === 'populated'
@@ -112,6 +124,16 @@ export function MetricCard({
               <Sparkline data={sparkData} tone={tone} />
             )}
           </View>
+
+          {/* Proportion bar — the rate card's shape (B-098): the % as a calm filled bar,
+              so "Meals finished" is never a bare number. Neutral fill (magnitude, not a
+              verdict); the verdict, if any, lives in the delta line below. */}
+          {progressFraction != null && (
+            <View style={styles.progressTrack} testID="metric-progress">
+              <View style={[styles.progressFill, { flex: progressFraction }]} />
+              <View style={{ flex: 1 - progressFraction }} />
+            </View>
+          )}
 
           {delta !== undefined && deltaLabel != null && (
             <View style={styles.deltaRow}>
@@ -163,6 +185,18 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightSemibold,
     color: theme.colorTextPrimary,
     letterSpacing: theme.trackingTight,
+  },
+  progressTrack: {
+    flexDirection: 'row',
+    height: 10,
+    borderRadius: theme.radiusFull,
+    backgroundColor: theme.colorChartEmpty,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    // Calm, on-brand fill (not the full interactive accent, not a verdict colour).
+    // Height comes from the row's cross-axis stretch.
+    backgroundColor: theme.colorAccentSoft,
   },
   deltaRow: {
     flexDirection: 'row',

@@ -237,6 +237,22 @@ export function describeCountDelta(current: number, prior: number, window: Analy
   return `${Math.abs(delta)} fewer than ${prev}`;
 }
 
+/**
+ * The "vs last {window}" line for the finished-rate (intake) card (B-098). Factual
+ * direction only — the tone (resolveDeltaTone) carries any verdict, and a POSITIVE
+ * metric's drop stays neutral per §13 #6 (the floored detectIntakeDecline owns
+ * escalation, not this descriptive card). Compared as whole percents so the words match
+ * the displayed number ("Down from 41% last month").
+ */
+export function describeRateDelta(currentRate: number, priorRate: number, window: AnalyticsWindow): string {
+  const prev = PRIOR_WINDOW_PHRASE[window];
+  const c = Math.round(currentRate * 100);
+  const p = Math.round(priorRate * 100);
+  if (c === p) return `Same as ${prev}`;
+  if (c > p) return `Up from ${p}% ${prev}`;
+  return `Down from ${p}% ${prev}`;
+}
+
 /** Direction of a delta, for the card's arrow affordance. */
 export type DeltaDirection = 'up' | 'down' | 'flat';
 export function deltaDirection(delta: number): DeltaDirection {

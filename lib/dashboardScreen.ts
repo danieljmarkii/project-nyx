@@ -81,10 +81,11 @@ export interface IntakeRateCard {
    *  number), so a thin rate can never carry a verdict. */
   established: boolean;
   state: CardDisplayState;
-  /** Per-week finished-rate shape (B-098) so this KPI is never a bare big number.
-   *  <2 points (a single week of data) → the card shows none; below the floor the
-   *  series is `[]` and the card is calibrating anyway. */
-  sparkData: number[];
+  /** Prior comparable window's finished-rate, for the "vs last {window}" delta (B-098).
+   *  notEnoughData → the card omits the delta line (never a fabricated baseline). The
+   *  proportion bar (the card's shape, so it's never a bare big number) is drawn from
+   *  the current `result.rate` in the screen. */
+  prior: IntakeRate | NotEnoughData;
 }
 
 export interface TopFoodCard {
@@ -139,8 +140,8 @@ export interface BuildDashboardInput {
   /** One bucket per calendar day in the window (analytics) — heat-grid + sparklines. */
   frequencyBuckets: DayFrequencyBucket[];
   intakeRate: IntakeRate | NotEnoughData;
-  /** Per-week finished-rate series (analytics) — the intake card's sparkline shape (B-098). */
-  intakeRateSeries: number[];
+  /** Prior comparable window's finished-rate — the intake card's "vs last {window}" delta (B-098). */
+  intakeRatePrior: IntakeRate | NotEnoughData;
   topFoods: RankedFood[] | NotEnoughData;
   topProteins: RankedProtein[] | NotEnoughData;
   composition: MealTreatComposition;
@@ -193,9 +194,9 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
     key: 'intakeRate',
     priority: 'intake',
     result: input.intakeRate,
+    prior: input.intakeRatePrior,
     established: !isNotEnoughData(input.intakeRate),
     state: selectCardState(input.intakeRate),
-    sparkData: input.intakeRateSeries,
   });
 
   // ── Descriptive (rankings + composition — never a verdict colour, §11 #1) ────

@@ -49,7 +49,7 @@ function baseInput(over: Partial<Parameters<typeof buildDashboardCards>[0]> = {}
     symptomCounts: [],
     frequencyBuckets: [],
     intakeRate: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
-    intakeRateSeries: [] as number[],
+    intakeRatePrior: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
     topFoods: NO_FOODS as RankedFood[] | ReturnType<typeof notEnoughData>,
     topProteins: NO_PROTEINS as RankedProtein[] | ReturnType<typeof notEnoughData>,
     composition: emptyComposition(),
@@ -135,17 +135,24 @@ describe('buildDashboardCards — n=1 establishment gate (PR-2 INSUFFICIENT note
     expect(card.state.kind).toBe('populated');
   });
 
-  it('carries the finished-rate series through as the intake sparkline shape (B-098)', () => {
+  it('carries the prior-window rate through for the "vs last month" delta (B-098)', () => {
     const rate: IntakeRate = {
-      rate: 0.8,
-      finishedMeals: 8,
-      ratedMeals: 10,
+      rate: 0.29,
+      finishedMeals: 2,
+      ratedMeals: 7,
       freeFedExcluded: 0,
       intakeNotDirectlyObserved: false,
     };
-    const cards = buildDashboardCards(baseInput({ intakeRate: rate, intakeRateSeries: [0.5, 1] }));
+    const prior: IntakeRate = {
+      rate: 0.41,
+      finishedMeals: 7,
+      ratedMeals: 17,
+      freeFedExcluded: 0,
+      intakeNotDirectlyObserved: false,
+    };
+    const cards = buildDashboardCards(baseInput({ intakeRate: rate, intakeRatePrior: prior }));
     const card = cards.find((c) => c.kind === 'intakeRate') as IntakeRateCard;
-    expect(card.sparkData).toEqual([0.5, 1]);
+    expect(card.prior).toBe(prior);
   });
 });
 
