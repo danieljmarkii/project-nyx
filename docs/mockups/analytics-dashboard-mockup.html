@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nyx — Analytics Dashboard Mockup v2 · B-023 / nyx-analytics-dashboard-requirements.md</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  /* ── Theme tokens, mirrored verbatim from constants/theme.ts (v1.2 "Linear Clean") ── */
+  :root{
+    --font-body:'Geist',-apple-system,system-ui,sans-serif;
+    --font-display:'Newsreader',Georgia,serif;
+    --accent:#00C2A8; --accent-light:#E0FBF7;
+    --neutral-dark:#0A0A0A; --neutral-mid:#262626; --neutral-light:#FAFAFA;
+    --surface:#FFFFFF; --surface-subtle:#F5F5F5;
+    --text-primary:#0A0A0A; --text-secondary:#525252; --text-tertiary:#737373; --text-disabled:#A3A3A3;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --symptom:#F43F5E; --symptom-light:#FFE4E6; --chart-empty:#F0F0F0;
+    /* "calm" = the falling-adverse tone: a settled slate, deliberately NOT green and
+       NOT the accent — a dropping vomit count is relief, never a gamified win (§11 #3). */
+    --calm:#475569; --calm-light:#EEF1F4;
+    /* treats get a distinct neutral hue from meals — descriptive only, no verdict */
+    --treat:#C084FC; --treat-light:#F3E8FF;
+    --s1:8px; --s2:16px; --s3:24px; --s4:32px;
+    --r-xs:4px; --r-sm:8px; --r-md:16px; --r-lg:24px; --r-full:999px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-body);background:#E7E9EE;color:var(--text-primary);-webkit-font-smoothing:antialiased;padding:40px 24px 72px;}
+
+  /* ── Page header ── */
+  .page-head{max-width:1240px;margin:0 auto 14px;}
+  .page-head h1{font-family:var(--font-display);font-weight:400;font-size:30px;letter-spacing:-0.3px;}
+  .page-head .v{font-size:13px;color:#fff;background:var(--accent);border-radius:var(--r-full);padding:2px 10px;font-weight:600;font-family:var(--font-body);vertical-align:middle;margin-left:8px;}
+  .page-head .sub{color:var(--text-secondary);font-size:14px;margin-top:8px;line-height:1.6;max-width:940px;}
+  .page-head .sub b{color:var(--text-primary);font-weight:600;}
+  .page-head code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xs);padding:1px 5px;}
+  .page-head .meta{color:var(--text-tertiary);font-size:12px;margin-top:12px;line-height:1.6;}
+  .changelog{max-width:1240px;margin:14px auto 0;background:var(--accent-light);border:1px solid #CFF3EE;border-radius:var(--r-md);padding:16px 20px;}
+  .changelog h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:#0E8F7E;margin-bottom:10px;}
+  .changelog ul{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:7px 28px;}
+  @media(max-width:780px){.changelog ul{grid-template-columns:1fr;}}
+  .changelog li{font-size:12.5px;color:var(--text-secondary);line-height:1.5;padding-left:22px;position:relative;}
+  .changelog li b{color:var(--text-primary);font-weight:600;}
+  .changelog li .n{position:absolute;left:0;top:0;font-weight:600;color:#0E8F7E;}
+
+  /* ── Frame section heads ── */
+  .lane-head{max-width:1240px;margin:40px auto 20px;display:flex;align-items:baseline;gap:12px;border-bottom:1px solid var(--border-strong);padding-bottom:11px;}
+  .lane-head .tag{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#fff;background:var(--neutral-dark);border-radius:var(--r-full);padding:3px 11px;font-weight:600;flex:none;}
+  .lane-head.f2 .tag,.lane-head.f2b .tag{background:var(--accent);}
+  .lane-head.f3 .tag{background:var(--calm);}
+  .lane-head h2{font-size:18px;font-weight:600;}
+  .lane-head .note{font-size:13px;color:var(--text-secondary);margin-left:auto;max-width:560px;line-height:1.5;text-align:right;}
+  .lane-head .note code{font-family:ui-monospace,monospace;font-size:12px;color:var(--text-tertiary);}
+
+  /* ── Frame layout: phone beside an annotation column ── */
+  .frame{max-width:1240px;margin:0 auto;display:flex;gap:48px;align-items:flex-start;}
+  @media(max-width:900px){.frame{flex-direction:column;align-items:center;gap:24px;}}
+  .phone-col{flex:none;display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .annot-col{flex:1;padding-top:30px;min-width:0;}
+  .frame-cap{font-size:12.5px;color:var(--text-tertiary);text-align:center;max-width:330px;line-height:1.5;}
+
+  /* ── Annotation callouts ── */
+  .annot{display:flex;gap:13px;padding:15px 0;border-bottom:1px solid var(--border);}
+  .annot:last-child{border-bottom:none;}
+  .annot .ico{flex:none;width:26px;height:26px;border-radius:var(--r-full);background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--text-secondary);margin-top:1px;}
+  .annot.new .ico{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .annot .ab{flex:1;min-width:0;}
+  .annot .at{font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .annot .ad{font-size:13px;color:var(--text-secondary);line-height:1.55;}
+  .annot .ad code{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--text-tertiary);}
+  .pill{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;font-weight:600;border-radius:var(--r-full);padding:2px 7px;flex:none;}
+  .pill.safety{color:var(--symptom);background:var(--symptom-light);}
+  .pill.voice{color:#0E8F7E;background:var(--accent-light);}
+  .pill.prin{color:var(--calm);background:var(--calm-light);}
+  .pill.open{color:#92600A;background:#FDF2DC;}
+  .pill.pm{color:#fff;background:var(--neutral-dark);}
+
+  /* ════════════ PHONE CHROME ════════════ */
+  .phone{width:330px;background:var(--surface);border-radius:36px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 18px 50px rgba(10,10,12,.22);overflow:hidden;border:1px solid #DADCE2;position:relative;}
+  .screen{display:flex;flex-direction:column;background:var(--neutral-light);position:relative;min-height:560px;}
+  .statusbar{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:11px;font-weight:600;background:var(--surface);flex:none;}
+  .statusbar .dots{letter-spacing:1px;}
+
+  /* ── Home identity strip (shipped B-076 — components/home/HomeHeader.tsx) ── */
+  .idstrip{background:var(--surface);border-bottom:1px solid var(--border);padding:11px var(--s2) 13px;flex:none;}
+  .wordmark{font-family:var(--font-display);font-weight:400;font-size:15px;letter-spacing:-0.3px;color:var(--text-tertiary);}
+  .id-row{display:flex;align-items:center;gap:11px;margin-top:7px;}
+  .avatar{width:38px;height:38px;border-radius:var(--r-full);background:linear-gradient(135deg,#CDE8E2,#9FD8CC);flex:none;display:flex;align-items:center;justify-content:center;font-size:19px;}
+  .id-text{flex:1;min-width:0;}
+  .id-name{font-family:var(--font-body);font-size:22px;font-weight:600;color:var(--text-primary);line-height:1.05;}
+  .id-sub{font-size:13px;color:var(--text-tertiary);margin-top:2px;}
+
+  .body{flex:1;padding:var(--s2) var(--s2) var(--s3);display:flex;flex-direction:column;gap:14px;}
+  .seclabel{font-size:11px;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.8px;}
+
+  /* ── Signal card (elevated dominant zone — components/home/SignalZone + Card[elevated]) ── */
+  .signal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s3) var(--s2) var(--s2);box-shadow:0 1px 3px rgba(10,10,12,.05),0 8px 24px rgba(10,10,12,.06);display:flex;flex-direction:column;gap:14px;}
+  .insight{display:flex;gap:var(--s2);}
+  .insight .rail{width:3px;border-radius:2px;background:var(--accent);opacity:.85;flex:none;}
+  .insight.safety .rail{background:var(--symptom);}
+  .insight .content{flex:1;display:flex;flex-direction:column;gap:var(--s1);}
+  .insight .lead{font-family:var(--font-display);font-weight:400;font-size:25px;line-height:1.3;letter-spacing:-.3px;color:var(--text-primary);}
+  .insight .metarow{display:flex;align-items:center;gap:var(--s1);flex-wrap:wrap;}
+  .insight .badge{font-size:11px;font-weight:500;color:var(--text-secondary);background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--r-full);padding:2px 9px;}
+  .insight .sample{font-size:11px;color:var(--text-tertiary);}
+  .insight .hint{font-size:11px;font-weight:500;color:var(--accent);margin-top:2px;}
+
+  /* ── Signal footer affordance → dashboard (§8). Not a 4th zone. ── */
+  .see-all{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:2px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;font-weight:500;color:var(--accent);cursor:pointer;user-select:none;}
+  .see-all .arr{font-size:14px;transition:transform .15s ease-out;}
+  .see-all:hover .arr{transform:translateX(3px);}
+
+  /* ── Zone cards (Today / Trend) — now visible doorways (v2 #1) ── */
+  .zone-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s2);cursor:pointer;}
+  .zone-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .zone-head .zl{font-size:11px;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.8px;}
+  /* the doorway cue the PM asked for — a quiet "opens something" affordance */
+  .zone-head .door{font-size:12px;font-weight:500;color:var(--accent);display:flex;align-items:center;gap:3px;}
+  .ev{display:flex;align-items:center;gap:10px;padding:9px 0;}
+  .ev + .ev{border-top:1px solid var(--border);}
+  .ev .ec{width:32px;height:32px;border-radius:var(--r-full);background:var(--accent-light);display:flex;align-items:center;justify-content:center;font-size:15px;flex:none;}
+  .ev .ec.treat{background:var(--treat-light);}
+  .ev .em{flex:1;min-width:0;}
+  .ev .el{font-size:15px;font-weight:500;color:var(--text-primary);}
+  .ev .es{font-size:13px;color:var(--text-secondary);margin-top:1px;}
+  .ev .et{font-size:13px;color:var(--text-secondary);}
+  .trend-sub{font-size:13px;color:var(--text-secondary);margin-bottom:12px;}
+  .progress-track{display:flex;height:6px;border-radius:3px;background:var(--chart-empty);overflow:hidden;margin-bottom:9px;}
+  .progress-fill{background:var(--accent);border-radius:3px;}
+  .compliance-note{font-size:13px;color:var(--text-secondary);}
+
+  /* ── Bottom tab bar (Home · History · Pet — NO 4th tab, §8) ── */
+  .tabbar{height:56px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex:none;}
+  .tabbar div{flex:1;display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;font-size:11px;font-weight:500;letter-spacing:.3px;color:var(--text-disabled);}
+  .tabbar div .tg{font-size:17px;line-height:1;}
+  .tabbar div.on{color:var(--neutral-dark);}
+
+  /* ════════════ DASHBOARD ════════════ */
+  /* navbar now carries a PERSISTENT share action top-right (v2 #8) */
+  .navbar{height:52px;display:flex;align-items:center;gap:12px;padding:0 var(--s2);background:var(--surface);border-bottom:1px solid var(--border);flex:none;}
+  .navbar .back{font-size:20px;color:var(--text-secondary);font-weight:400;}
+  .navbar .nt{font-size:17px;font-weight:600;letter-spacing:-.2px;flex:1;}
+  .nav-share{display:flex;align-items:center;gap:6px;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;padding:6px 4px;}
+  .nav-share svg{display:block;}
+  .dash-intro{padding:16px var(--s2) 4px;}
+  .dash-intro .di{font-size:13px;color:var(--text-tertiary);}
+  .dash-body{padding:12px var(--s2) var(--s2);display:flex;flex-direction:column;gap:13px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);position:relative;}
+  .card .doorway{position:absolute;top:16px;right:14px;font-size:16px;color:var(--text-disabled);}
+  .card-label{font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.7px;}
+
+  /* ── Coming-soon AI summary card (§7.1) — pinned top, reserves the AI summary slot ── */
+  .summary-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);display:flex;gap:13px;box-shadow:0 1px 3px rgba(10,10,12,.04);}
+  .summary-card .srail{width:3px;border-radius:2px;background:var(--accent);opacity:.8;flex:none;}
+  .summary-card .sc-body{flex:1;}
+  .summary-card .sc-eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:9px;}
+  .summary-card .sc-glyph{width:18px;height:18px;border-radius:var(--r-full);background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex:none;}
+  .summary-card .sc-glyph svg{display:block;}
+  .summary-card .sc-kicker{font-size:10.5px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);}
+  .summary-card .sc-lead{font-family:var(--font-display);font-weight:400;font-size:19px;line-height:1.4;letter-spacing:-.2px;color:var(--text-primary);}
+  .summary-card .sc-sub{font-size:13px;color:var(--text-secondary);line-height:1.5;margin-top:8px;}
+
+  /* ── Count card (four-layer KPI) §4.1 ── */
+  .kpi-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+  .kpi-left{min-width:0;}
+  .kpi-ban{font-size:46px;font-weight:600;letter-spacing:-1.5px;line-height:1;color:var(--text-primary);margin-top:10px;}
+  .kpi-ban .unit{font-size:15px;font-weight:500;color:var(--text-tertiary);letter-spacing:0;margin-left:6px;}
+  .kpi-spark{flex:none;width:96px;height:52px;display:flex;align-items:flex-end;}
+  .kpi-delta{display:inline-flex;align-items:center;gap:6px;margin-top:14px;font-size:13px;font-weight:500;}
+  .kpi-delta .arr{font-size:14px;}
+  .kpi-delta.calm{color:var(--calm);}
+  .kpi-delta.concern{color:var(--symptom);}
+  .kpi-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:9px;line-height:1.5;}
+  .kpi-annot .tap{color:var(--accent);font-weight:500;}
+
+  /* ── Frequency calendar heat-grid (§4.1 / §6) ── */
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;}
+  .cal-dow span{font-size:10px;color:var(--text-disabled);text-align:center;font-weight:500;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .cal-cell{aspect-ratio:1;border-radius:6px;background:var(--chart-empty);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-disabled);}
+  .cal-cell.future{background:transparent;color:#D4D4D8;}
+  .cal-cell.today{box-shadow:inset 0 0 0 1.5px var(--border-strong);color:var(--text-secondary);font-weight:600;}
+  .cal-cell.h1{background:#FBD0D7;color:#9F1239;}
+  .cal-cell.h2{background:#F78DA0;color:#fff;}
+  .cal-cell.h3{background:var(--symptom);color:#fff;}
+  .cal-legend{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text-tertiary);margin-top:13px;}
+  .cal-legend .sw{width:13px;height:13px;border-radius:4px;flex:none;}
+  .cal-annot{font-size:12.5px;color:var(--text-secondary);margin-top:13px;line-height:1.5;}
+
+  /* ── Meals & treats composition (v2 #2) ── */
+  .mt-bar{display:flex;height:30px;border-radius:var(--r-sm);overflow:hidden;margin-top:13px;gap:3px;}
+  .mt-bar .seg-meal{background:var(--accent);opacity:.85;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;}
+  .mt-bar .seg-treat{background:var(--treat);opacity:.8;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;}
+  .mt-key{display:flex;gap:18px;margin-top:12px;}
+  .mt-key .k{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-secondary);}
+  .mt-key .dot{width:9px;height:9px;border-radius:var(--r-full);flex:none;}
+  .mt-key .dot.meal{background:var(--accent);} .mt-key .dot.treat{background:var(--treat);}
+  .mt-key .kn{font-weight:600;color:var(--text-primary);}
+  .mt-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:13px;line-height:1.5;}
+
+  /* ── Ranking card (§6) ── */
+  .rank-list{margin-top:13px;display:flex;flex-direction:column;gap:2px;}
+  .rank-row{display:flex;align-items:center;gap:11px;padding:8px 0;}
+  .rank-row + .rank-row{border-top:1px solid var(--border);}
+  .rank-n{flex:none;width:18px;font-size:12px;font-weight:600;color:var(--text-disabled);text-align:center;}
+  .rank-name{flex:1;font-size:14.5px;font-weight:500;color:var(--text-primary);min-width:0;}
+  .rank-name .tagt{font-size:10px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--treat);background:var(--treat-light);border-radius:var(--r-full);padding:1px 7px;margin-left:6px;vertical-align:middle;}
+  .rank-bar-wrap{flex:none;width:78px;display:flex;align-items:center;gap:8px;}
+  .rank-bar{flex:1;height:5px;border-radius:3px;background:var(--chart-empty);overflow:hidden;}
+  .rank-bar i{display:block;height:100%;background:var(--accent);opacity:.55;border-radius:3px;}
+  .rank-bar i.t{background:var(--treat);}
+  .rank-count{font-size:12px;color:var(--text-secondary);font-weight:500;flex:none;min-width:34px;text-align:right;}
+  .rank-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:13px;line-height:1.5;}
+
+  /* ── Intake rate card — meals-only (v2 #7) ── */
+  .intake-ban{font-size:40px;font-weight:600;letter-spacing:-1px;line-height:1;margin-top:10px;color:var(--text-primary);}
+  .intake-sub{font-size:12.5px;color:var(--text-tertiary);margin-top:8px;}
+  .intake-annot{font-size:12.5px;color:var(--text-secondary);margin-top:11px;line-height:1.55;padding-top:11px;border-top:1px solid var(--border);}
+
+  /* ── Diet-trial progress card ── */
+  .trial-row{display:flex;align-items:baseline;justify-content:space-between;margin-top:11px;margin-bottom:11px;}
+  .trial-day{font-size:26px;font-weight:600;letter-spacing:-.5px;color:var(--text-primary);}
+  .trial-day .of{font-size:14px;font-weight:500;color:var(--text-tertiary);}
+  .trial-pct{font-size:12.5px;color:var(--text-secondary);}
+  .trial-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:11px;line-height:1.5;}
+
+  /* ════════════ CARD DETAIL SCREEN (v2 #4) ════════════ */
+  .seg{display:flex;background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--r-sm);padding:3px;margin:16px var(--s2) 0;}
+  .seg div{flex:1;text-align:center;font-size:13px;font-weight:500;color:var(--text-secondary);padding:7px;border-radius:6px;}
+  .seg div.on{background:var(--surface);color:var(--text-primary);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+  .detail-body{padding:var(--s2);display:flex;flex-direction:column;gap:6px;}
+  .detail-ban{font-size:40px;font-weight:600;letter-spacing:-1px;line-height:1;}
+  .detail-ban .unit{font-size:14px;font-weight:500;color:var(--text-tertiary);margin-left:6px;letter-spacing:0;}
+  .detail-delta{font-size:13px;font-weight:500;color:var(--calm);display:inline-flex;align-items:center;gap:5px;margin-top:4px;}
+  .linechart{margin:20px 0 8px;}
+  .baseline-read{background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--r-md);padding:14px var(--s2);font-size:13.5px;color:var(--text-primary);line-height:1.5;margin-top:8px;}
+  .baseline-read b{font-weight:600;}
+  .baseline-read .bl-key{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11.5px;color:var(--text-tertiary);}
+  .baseline-read .bl-key .ln{width:16px;height:0;border-top:2px dashed var(--text-disabled);flex:none;}
+  .detail-month-label{font-size:11px;color:var(--text-disabled);text-align:center;margin-top:2px;}
+
+  /* ════════════ SHEETS (frame 3) ════════════ */
+  .scrim{position:absolute;inset:0;background:rgba(10,10,10,.35);}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:var(--r-lg) var(--r-lg) 0 0;padding:12px var(--s2) var(--s3);box-shadow:0 -8px 40px rgba(10,10,12,.2);}
+  .grab{width:36px;height:4px;border-radius:var(--r-full);background:var(--border-strong);margin:0 auto 16px;}
+  .sheet-h{font-family:var(--font-display);font-size:21px;font-weight:500;letter-spacing:-.2px;margin-bottom:6px;}
+  .sheet-p{font-size:13.5px;color:var(--text-secondary);line-height:1.55;margin-bottom:16px;}
+  .range-opt{display:flex;align-items:center;gap:12px;border:1px solid var(--border);border-radius:var(--r-md);padding:13px var(--s2);margin-bottom:9px;}
+  .range-opt.sel{border-color:var(--accent);background:var(--accent-light);}
+  .range-opt .ro-radio{width:20px;height:20px;border-radius:var(--r-full);border:1.5px solid var(--border-strong);flex:none;display:flex;align-items:center;justify-content:center;}
+  .range-opt.sel .ro-radio{border-color:var(--accent);}
+  .range-opt.sel .ro-radio::after{content:'';width:11px;height:11px;border-radius:var(--r-full);background:var(--accent);}
+  .range-opt .ro-t{flex:1;}
+  .range-opt .ro-tt{font-size:14.5px;font-weight:500;}
+  .range-opt .ro-ts{font-size:12px;color:var(--text-tertiary);margin-top:2px;}
+  .privacy-note{display:flex;gap:9px;font-size:12px;color:var(--text-tertiary);line-height:1.5;margin:15px 2px 18px;}
+  .privacy-note .pn-ico{flex:none;margin-top:1px;}
+  .btn-primary{background:var(--accent);color:#fff;border-radius:var(--r-md);padding:15px;text-align:center;font-size:15px;font-weight:600;}
+  .btn-ghost{text-align:center;font-size:14px;font-weight:500;color:var(--text-secondary);padding:13px;margin-top:4px;}
+
+  /* iOS-style share sheet */
+  .share-sheet{position:absolute;left:8px;right:8px;bottom:8px;display:flex;flex-direction:column;gap:8px;}
+  .share-card{background:rgba(245,245,247,.96);backdrop-filter:blur(20px);border-radius:var(--r-md);overflow:hidden;}
+  .share-preview{display:flex;align-items:center;gap:12px;padding:15px var(--s2);border-bottom:1px solid rgba(0,0,0,.07);}
+  .share-preview .sp-thumb{width:42px;height:42px;border-radius:var(--r-sm);background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex:none;font-size:20px;}
+  .share-preview .sp-t{flex:1;min-width:0;}
+  .share-preview .sp-tt{font-size:14px;font-weight:600;color:var(--text-primary);}
+  .share-preview .sp-ts{font-size:12px;color:var(--text-tertiary);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .share-targets{display:flex;gap:18px;padding:16px var(--s2);overflow:hidden;}
+  .share-target{display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;}
+  .share-target .st-ico{width:52px;height:52px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff;}
+  .share-target .st-l{font-size:10.5px;color:var(--text-secondary);}
+  .share-action-row{padding:14px var(--s2);border-top:1px solid rgba(0,0,0,.07);font-size:15px;color:#0A84FF;display:flex;align-items:center;gap:11px;}
+  .share-cancel{background:var(--surface);border-radius:var(--r-md);padding:16px;text-align:center;font-size:16px;font-weight:600;color:#0A84FF;}
+
+  /* ════════════ LEGEND ════════════ */
+  .legend{max-width:1240px;margin:48px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:28px 30px;}
+  .legend h2{font-size:17px;font-weight:600;margin-bottom:6px;}
+  .legend .lead{font-size:13.5px;color:var(--text-secondary);line-height:1.6;margin-bottom:22px;max-width:960px;}
+  .legend h3{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);margin:26px 0 14px;}
+
+  .polarity{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  @media(max-width:780px){.polarity{grid-template-columns:1fr;}}
+  .pol{border:1px solid var(--border);border-radius:var(--r-md);padding:18px;}
+  .pol .pol-demo{display:flex;align-items:baseline;gap:10px;margin-bottom:13px;}
+  .pol .pol-num{font-size:30px;font-weight:600;letter-spacing:-1px;color:var(--text-primary);}
+  .pol .pol-d{font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:5px;}
+  .pol .pol-d.calm{color:var(--calm);} .pol .pol-d.concern{color:var(--symptom);} .pol .pol-d.neutral{color:var(--text-tertiary);}
+  .pol .pol-h{font-size:13.5px;font-weight:600;margin-bottom:5px;}
+  .pol .pol-b{font-size:12.5px;color:var(--text-secondary);line-height:1.55;}
+  .pol .pol-b b{color:var(--text-primary);}
+
+  table.inv{width:100%;border-collapse:collapse;font-size:13px;}
+  table.inv th,table.inv td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5;}
+  table.inv th{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-tertiary);font-weight:600;}
+  table.inv td:first-child{font-weight:600;color:var(--text-primary);white-space:nowrap;}
+  table.inv td.where{color:var(--text-secondary);}
+  table.inv td.where b{color:var(--text-primary);font-weight:600;}
+
+  /* PM reactions table */
+  table.react{width:100%;border-collapse:collapse;font-size:13px;}
+  table.react th,table.react td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5;}
+  table.react th{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-tertiary);font-weight:600;}
+  table.react td:first-child{font-weight:600;color:var(--text-primary);white-space:nowrap;width:42px;}
+  table.react .st{font-weight:600;white-space:nowrap;}
+  table.react .st.done{color:#0E8F7E;} table.react .st.open{color:#92600A;} table.react .st.kept{color:var(--text-tertiary);}
+  table.react td.r{color:var(--text-secondary);}
+  table.react td.r b{color:var(--text-primary);font-weight:600;}
+
+  .notes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px 26px;margin-top:6px;}
+  @media(max-width:780px){.notes-grid{grid-template-columns:1fr;}}
+  .dnote{font-size:13px;line-height:1.55;color:var(--text-secondary);padding-left:16px;position:relative;}
+  .dnote::before{content:'';position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;background:var(--accent);}
+  .dnote b{color:var(--text-primary);font-weight:600;}
+  .dnote .q{color:#92600A;font-weight:600;}
+
+  /* ════════════ STRINGS ════════════ */
+  .strings{max-width:1240px;margin:24px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:28px 30px;}
+  .strings h2{font-size:17px;font-weight:600;margin-bottom:4px;}
+  .strings .lead{font-size:13px;color:var(--text-secondary);margin-bottom:18px;line-height:1.6;max-width:960px;}
+  .strings .grp{margin-bottom:20px;}
+  .strings .grp h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin-bottom:10px;}
+  .strings .s{font-size:13.5px;line-height:1.6;color:var(--text-primary);padding-left:17px;position:relative;margin-bottom:9px;}
+  .strings .s::before{content:'';position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--border-strong);}
+  .strings .s .k{font-weight:600;color:var(--text-secondary);}
+  .strings .s em{color:var(--text-tertiary);font-style:normal;}
+
+  .foot{max-width:1240px;margin:26px auto 0;font-size:12px;color:var(--text-tertiary);line-height:1.6;}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Analytics dashboard — clickable mockup<span class="v">v2</span></h1>
+  <div class="sub">The owner-facing <b>patterns destination</b> (tier 2 of the intelligence ladder) and its bridge to the vet report. Built to <code>docs/nyx-analytics-dashboard-requirements.md</code> — §4.1–4.2, §5, §6, §7.1, §8, §9, §11. One pet: <b>Nyx</b>, a cat eight weeks into a salmon elimination trial for vomiting. <b>v2 revised from the PM design review (2026-06-14)</b> — see the change log below. Styled with the live app tokens (accent <code>#00C2A8</code>, Geist + Newsreader, 8pt grid).</div>
+  <div class="meta"><b>Mockup only — not built.</b> Designer-led, with Jordan + Sam (gated hard on <i>intake ≠ preference</i>). All copy self-audited against <code>nyx-voice</code> + the §11 invariants; strings at the foot. The <span style="color:var(--accent);font-weight:600">teal affordances are clickable</span>.</div>
+</div>
+
+<div class="changelog">
+  <h3>What changed in v2 — from the PM review</h3>
+  <ul>
+    <li><span class="n">1</span><b>Home doorways.</b> Trend → Dashboard and Today → History are now visible doorways; recommendation against a 4th tab (see notes).</li>
+    <li><span class="n">2</span><b>New “Meals &amp; treats” card.</b> At-a-glance composition over the month (descriptive, non-judgmental).</li>
+    <li><span class="n">4</span><b>New card-detail screen.</b> Week / Month / 3-Month control + single-series line + “vs baseline” read.</li>
+    <li><span class="n">7</span><b>Finished-rate is now meals-only.</b> Treats excluded — their ceiling finish-rate was masking meal refusal (the real signal).</li>
+    <li><span class="n">8</span><b>Share un-buried.</b> Now a persistent action in the nav header, no longer the bottom of a long scroll.</li>
+    <li><span class="n">3</span><b>4th tab? — decided: no, for v1.</b> Earn it via the in-home doorways; tab is B-004 if it under-discovers.</li>
+  </ul>
+</div>
+
+<!-- ════════════════════════ FRAME 1 — HOME ════════════════════════ -->
+<div class="lane-head f1" id="lane-home">
+  <span class="tag">Frame 1</span>
+  <h2>Home — the entry point</h2>
+  <div class="note">The shipped three zones. v2 makes <b>Trend a visible doorway → Dashboard</b> and <b>Today → History</b>, plus keeps the quiet Signal-footer CTA — discoverability without a 4th tab (§8 / Principle 3).</div>
+</div>
+
+<div class="frame">
+  <div class="phone-col">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="idstrip">
+        <div class="wordmark">Project Nyx</div>
+        <div class="id-row">
+          <div class="avatar">🐈</div>
+          <div class="id-text">
+            <div class="id-name">Nyx</div>
+            <div class="id-sub">Cat · 4 yrs · on a diet trial</div>
+          </div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="seclabel">Signal</div>
+        <div class="signal-card">
+          <div class="insight">
+            <div class="rail"></div>
+            <div class="content">
+              <div class="lead">Vomiting has eased since Nyx switched to salmon — 3 this month, down from 8.</div>
+              <div class="metarow"><span class="badge">Early pattern</span><span class="sample">4 weeks of logs</span></div>
+              <div class="hint">Why we're showing this</div>
+            </div>
+          </div>
+          <div class="see-all" onclick="goTo('lane-dash')">See all of Nyx's patterns <span class="arr">→</span></div>
+        </div>
+
+        <!-- Today → History (visible doorway, v2) -->
+        <div class="zone-card" onclick="goTo('lane-home')">
+          <div class="zone-head"><span class="zl">Today</span><span class="door">History ›</span></div>
+          <div class="ev">
+            <div class="ec">🥣</div>
+            <div class="em"><div class="el">Breakfast</div><div class="es">Tiki Cat Salmon Pâté · finished it all</div></div>
+            <div class="et">8:02 AM</div>
+          </div>
+          <div class="ev">
+            <div class="ec treat">🐟</div>
+            <div class="em"><div class="el">Treat</div><div class="es">Temptations</div></div>
+            <div class="et">2:15 PM</div>
+          </div>
+        </div>
+
+        <!-- Trend → Dashboard (visible doorway, v2 #1) -->
+        <div class="zone-card" onclick="goTo('lane-dash')">
+          <div class="zone-head"><span class="zl">Trend</span><span class="door">All patterns ›</span></div>
+          <div class="trend-sub">Day 18 of 56 — 17 of 18 days logged</div>
+          <div class="progress-track"><div class="progress-fill" style="flex:.32"></div><div style="flex:.68"></div></div>
+          <div class="compliance-note">94% meal compliance</div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="on"><span class="tg">⌂</span>Home</div>
+        <div><span class="tg">≡</span>History</div>
+        <div><span class="tg">◔</span>Pet</div>
+      </div>
+    </div></div>
+    <div class="frame-cap">Each zone now opens its deeper surface: Today → History, Trend → Dashboard. The bar stays Home · History · Pet.</div>
+  </div>
+
+  <div class="annot-col">
+    <div class="annot new">
+      <div class="ico">1</div>
+      <div class="ab">
+        <div class="at">Trend → Dashboard, Today → History <span class="pill prin">§8</span> <span class="pill pm">your #1</span></div>
+        <div class="ad">Your instinct was right and it gives a clean mental model: <b>Today</b> (what just happened) opens <b>History</b>; <b>Trend</b> (the pattern glimpse) opens the <b>Dashboard</b>. Both now wear a quiet doorway cue. The Signal footer keeps its worded CTA, so there are two natural ways in without turning Home into a menu.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">↳</div>
+      <div class="ab">
+        <div class="at">Sub-calls — settled <span class="pill voice">decided</span></div>
+        <div class="ad"><b>(a)</b> “Today” opens History <b>filtered to today, clearable</b> (PM, this review). <b>(b)</b> Two entries to the dashboard (Trend doorway + Signal CTA) kept — they serve different intents.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">3</div>
+      <div class="ab">
+        <div class="at">A 4th tab? — decided: no, for v1 <span class="pill voice">decided</span></div>
+        <div class="ad"><b>PM ratified the Designer rec: no 4th tab for v1.</b> A tab + the FAB reads as a feature menu and competes with “Home is <i>the</i> intelligence surface” (Principle 3); Calm/Oura earn every tab; a tab is a one-way door (permanent chrome) while an affordance is reversible. Discovery rides the doorways above; promote to a tab (B-004) only if it under-discovers.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ FRAME 2 — DASHBOARD ════════════════════════ -->
+<div class="lane-head f2" id="lane-dash">
+  <span class="tag">Frame 2</span>
+  <h2>The dashboard — seeded cards, safety first</h2>
+  <div class="note">Coming-soon summary pinned top (§7.1), then the §6 seeded set + the new Meals&nbsp;&amp;&nbsp;treats card. <b>Share is now a persistent nav-header action</b> (v2 #8). Range-free glance — the W/M/3M toggle lives on the card detail screen (Frame 2b).</div>
+</div>
+
+<div class="frame">
+  <div class="phone-col">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <!-- PERSISTENT SHARE ACTION (v2 #8) -->
+      <div class="navbar">
+        <span class="back">‹</span><span class="nt">Nyx's patterns</span>
+        <span class="nav-share" onclick="goTo('lane-share')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0-12l-4 4m4-4l4 4M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Share</span>
+      </div>
+      <div class="dash-intro"><div class="di">What I'm seeing this month</div></div>
+      <div class="dash-body">
+
+        <!-- ① COMING-SOON AI SUMMARY (§7.1) -->
+        <div class="summary-card">
+          <div class="srail"></div>
+          <div class="sc-body">
+            <div class="sc-eyebrow">
+              <span class="sc-glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 2.5l2.3 5.9 5.9 2.3-5.9 2.3L12 18.9l-2.3-5.9L3.8 10.7l5.9-2.3L12 2.5z" fill="#00C2A8" opacity="0.9"/></svg></span>
+              <span class="sc-kicker">Summary</span>
+            </div>
+            <div class="sc-lead">Soon, I'll pull what I'm noticing about Nyx into a few plain sentences, right here.</div>
+            <div class="sc-sub">For now, the cards below have the details.</div>
+          </div>
+        </div>
+
+        <!-- ② SYMPTOM COUNT — four-layer KPI, falling = CALM not green; taps to detail (Frame 2b) -->
+        <div class="card" onclick="goTo('lane-detail')">
+          <span class="doorway">›</span>
+          <div class="kpi-top">
+            <div class="kpi-left">
+              <div class="card-label">Vomiting · this month</div>
+              <div class="kpi-ban">3<span class="unit">episodes</span></div>
+            </div>
+            <div class="kpi-spark">
+              <svg width="96" height="46" viewBox="0 0 96 46" fill="none" preserveAspectRatio="none">
+                <polyline points="2,8 18,14 34,12 50,24 66,30 82,36 94,40" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.65"/>
+                <circle cx="94" cy="40" r="3" fill="#475569"/>
+              </svg>
+            </div>
+          </div>
+          <div class="kpi-delta calm"><span class="arr">↓</span> down from 8 last month</div>
+          <div class="kpi-annot">Across 28 days of logs. <span class="tap">Tap to switch week / month / 3-month →</span></div>
+        </div>
+
+        <!-- ③ FREQUENCY CALENDAR HEAT-GRID -->
+        <div class="card">
+          <div class="cal-head"><div class="card-label">Vomiting · how often</div><div class="card-label" style="color:var(--text-disabled)">June</div></div>
+          <div class="cal-dow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+          <div class="cal-grid">
+            <div class="cal-cell future"></div>
+            <div class="cal-cell h1">1</div><div class="cal-cell">2</div><div class="cal-cell">3</div><div class="cal-cell">4</div><div class="cal-cell">5</div><div class="cal-cell h1">6</div>
+            <div class="cal-cell">7</div><div class="cal-cell">8</div><div class="cal-cell h1">9</div><div class="cal-cell">10</div><div class="cal-cell">11</div><div class="cal-cell">12</div><div class="cal-cell today">13</div>
+            <div class="cal-cell future">14</div><div class="cal-cell future">15</div><div class="cal-cell future">16</div><div class="cal-cell future">17</div><div class="cal-cell future">18</div><div class="cal-cell future">19</div><div class="cal-cell future">20</div>
+            <div class="cal-cell future">21</div><div class="cal-cell future">22</div><div class="cal-cell future">23</div><div class="cal-cell future">24</div><div class="cal-cell future">25</div><div class="cal-cell future">26</div><div class="cal-cell future">27</div>
+            <div class="cal-cell future">28</div><div class="cal-cell future">29</div><div class="cal-cell future">30</div>
+          </div>
+          <div class="cal-legend">
+            <span>Fewer</span>
+            <span class="sw" style="background:var(--chart-empty)"></span>
+            <span class="sw" style="background:#FBD0D7"></span>
+            <span class="sw" style="background:#F78DA0"></span>
+            <span class="sw" style="background:var(--symptom)"></span>
+            <span>More</span>
+          </div>
+          <div class="cal-annot">3 days with vomiting this month — the most recent was Tuesday.</div>
+        </div>
+
+        <!-- ④ MEALS & TREATS — composition (v2 #2) -->
+        <div class="card">
+          <span class="doorway">›</span>
+          <div class="card-label">Meals &amp; treats · this month</div>
+          <div class="mt-bar">
+            <div class="seg-meal" style="flex:50">50</div>
+            <div class="seg-treat" style="flex:38">38</div>
+          </div>
+          <div class="mt-key">
+            <div class="k"><span class="dot meal"></span><span class="kn">50</span>&nbsp;meals</div>
+            <div class="k"><span class="dot treat"></span><span class="kn">38</span>&nbsp;treats</div>
+          </div>
+          <div class="mt-annot">This is what you logged for Nyx this month. If a stretch ever goes treats-only, I'll gently note it — it can be worth sharing with your vet.</div>
+        </div>
+
+        <!-- ⑤ TOP FOOD — ranking, treats tagged honestly -->
+        <div class="card">
+          <span class="doorway">›</span>
+          <div class="card-label">Top food · this month</div>
+          <div class="rank-list">
+            <div class="rank-row"><div class="rank-n">1</div><div class="rank-name">Tiki Cat Salmon Pâté</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:100%"></i></div><span class="rank-count">24</span></div></div>
+            <div class="rank-row"><div class="rank-n">2</div><div class="rank-name">Temptations <span class="tagt">treat</span></div><div class="rank-bar-wrap"><div class="rank-bar"><i class="t" style="width:88%"></i></div><span class="rank-count">21</span></div></div>
+            <div class="rank-row"><div class="rank-n">3</div><div class="rank-name">Weruva Salmon &amp; Pumpkin</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:38%"></i></div><span class="rank-count">9</span></div></div>
+          </div>
+          <div class="rank-annot">Salmon Pâté led her meals; Temptations led her treats. Both shown, so the picture is honest.</div>
+        </div>
+
+        <!-- ⑥ TOP PROTEIN — the card Nyx is uniquely positioned to show (meal-based, canonicalised) -->
+        <div class="card">
+          <span class="doorway">›</span>
+          <div class="card-label">Top protein · in her meals</div>
+          <div class="rank-list">
+            <div class="rank-row"><div class="rank-n">1</div><div class="rank-name">Salmon</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:100%"></i></div><span class="rank-count">33</span></div></div>
+            <div class="rank-row"><div class="rank-n">2</div><div class="rank-name">Chicken</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:18%"></i></div><span class="rank-count">6</span></div></div>
+            <div class="rank-row"><div class="rank-n">3</div><div class="rank-name">Turkey</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:12%"></i></div><span class="rank-count">4</span></div></div>
+          </div>
+          <div class="rank-annot">Salmon was Nyx's most-fed protein this month — in step with her elimination trial.</div>
+        </div>
+
+        <!-- ⑦ MEALS FINISHED — meals-only (v2 #7) -->
+        <div class="card">
+          <span class="doorway">›</span>
+          <div class="card-label">Meals finished · this month</div>
+          <div class="intake-ban">78%</div>
+          <div class="intake-sub">39 of 50 meals rated “most” or “all”</div>
+          <div class="intake-annot">Just meals — treats aren't counted here, since pets finish those readily and it would hide the real signal. A lasting drop in how much Nyx eats at mealtime is worth a word with your vet, and I'll keep watch.</div>
+        </div>
+
+        <!-- ⑧ DIET-TRIAL PROGRESS -->
+        <div class="card">
+          <div class="card-label">Diet trial · salmon elimination</div>
+          <div class="trial-row">
+            <div class="trial-day">Day 18 <span class="of">of 56</span></div>
+            <div class="trial-pct">32% in</div>
+          </div>
+          <div class="progress-track"><div class="progress-fill" style="flex:.32"></div><div style="flex:.68"></div></div>
+          <div class="trial-annot">Nyx is 18 days into her 8-week trial. Keeping it steady helps a pattern show.</div>
+        </div>
+
+      </div>
+    </div></div>
+    <div class="frame-cap">Share lives in the header now — visible from the first screen, not buried. Each card is a doorway (chevron) into its detail screen.</div>
+  </div>
+
+  <div class="annot-col">
+    <div class="annot new">
+      <div class="ico">8</div>
+      <div class="ab">
+        <div class="at">Share, un-buried <span class="pill prin">§9</span> <span class="pill pm">your #8</span></div>
+        <div class="ad">Moved to a <b>persistent action in the nav header</b> — visible the moment the dashboard opens, no scroll required. “Persistent action” is what §9 asks for; the header is the calmest place that satisfies it without a sticky bar competing for the bottom edge.</div>
+      </div>
+    </div>
+    <div class="annot new">
+      <div class="ico">2</div>
+      <div class="ab">
+        <div class="at">New: Meals &amp; treats <span class="pill voice">Sam</span> <span class="pill pm">your #2</span></div>
+        <div class="ad">Your “treats vs meals at a glance” idea, as a calm composition card. <b>Descriptive, never a verdict</b> — no “too many treats.” It quietly ties to the meal-type-collapse coverage signal (a treats-only stretch → “worth sharing with your vet,” framed as data coverage, not judgment). <b>PM ratified for v1</b> — new scope beyond §6, so spec + §14 PR-plan edits are proposed for the next spec pass.</div>
+      </div>
+    </div>
+    <div class="annot new">
+      <div class="ico">7</div>
+      <div class="ab">
+        <div class="at">Finished-rate is now meals-only <span class="pill safety">§11 #1 · Data Sci</span> <span class="pill pm">your #7</span></div>
+        <div class="ad">Your point about Nyx finishing treats is a real safety catch. Treats have a <b>ceiling finish-rate</b> — blending them in inflates the number and <b>masks a meal refusal</b>, which is the one thing that matters clinically (Sam's fussy-vs-sick risk). So 78% is <b>meals only</b>; the copy says why. Still no wellness colour — high intake never reassures.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">②</div>
+      <div class="ab">
+        <div class="at">The count card stays the star <span class="pill safety">§11 #3</span> <span class="pill pm">your #4</span></div>
+        <div class="ad">Glad you love it. Four layers; falling adverse reads <b style="color:var(--calm)">calm slate, never green</b>. It now also advertises its dynamic detail screen — “tap to switch week / month / 3-month” — which is Frame 2b.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">⑤⑥</div>
+      <div class="ab">
+        <div class="at">Top food &amp; protein <span class="pill pm">your #6 + note</span></div>
+        <div class="ad">Yes — we already extract &amp; canonicalise protein (<code>primary_protein</code> → <code>canonicalizeProtein</code>), so top-protein is real, not aspirational. Top-food now <b>tags treats</b> so a treat topping the list (Temptations) reads honestly, and protein is meal-based for clinical relevance.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ FRAME 2b — CARD DETAIL (dynamic range) ════════════════════════ -->
+<div class="lane-head f2b" id="lane-detail">
+  <span class="tag">Frame 2b</span>
+  <h2>Card detail — where dynamic range lives</h2>
+  <div class="note">Tapping any card opens its detail screen: the <b>Week / Month / 3-Month</b> control (§8 / §4.2), a single-series line (no gridlines), and the highest-leverage read — <b>“vs your baseline.”</b> Keeps the dashboard a calm glance while giving you the switching you asked for (#4).</div>
+</div>
+
+<div class="frame">
+  <div class="phone-col">
+    <div class="phone"><div class="screen" style="min-height:560px;">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="back">‹</span><span class="nt">Vomiting</span></div>
+      <div class="seg"><div>Week</div><div class="on">Month</div><div>3-Month</div></div>
+      <div class="detail-body">
+        <div class="detail-ban">3<span class="unit">episodes this month</span></div>
+        <div class="detail-delta"><span>↓</span> down from 8 last month</div>
+        <div class="linechart">
+          <svg width="100%" height="150" viewBox="0 0 298 150" fill="none" preserveAspectRatio="none">
+            <!-- faint baseline (recent average ~6) — dashed, no gridlines/axes -->
+            <line x1="0" y1="64" x2="298" y2="64" stroke="#A3A3A3" stroke-width="1.5" stroke-dasharray="4 5"/>
+            <!-- single descending series across recent months: 9,8,6,3 -->
+            <polyline points="14,28 108,40 202,64 288,104" fill="none" stroke="#475569" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+            <circle cx="14" cy="28" r="3.5" fill="#475569" opacity="0.5"/>
+            <circle cx="108" cy="40" r="3.5" fill="#475569" opacity="0.6"/>
+            <circle cx="202" cy="64" r="3.5" fill="#475569" opacity="0.7"/>
+            <circle cx="288" cy="104" r="4.5" fill="#475569"/>
+          </svg>
+          <div class="detail-month-label">Mar &nbsp;·&nbsp; Apr &nbsp;·&nbsp; May &nbsp;·&nbsp; Jun</div>
+        </div>
+        <div class="baseline-read">
+          <b>3 this month — below Nyx's recent average of 6 a month.</b> The last time vomiting was this low was before the trial began.
+          <div class="bl-key"><span class="ln"></span> recent average (6 / month)</div>
+        </div>
+      </div>
+    </div></div>
+    <div class="frame-cap">The vomiting card's detail screen. The range control + the “vs baseline” read are here, so the dashboard itself stays a glance.</div>
+  </div>
+
+  <div class="annot-col">
+    <div class="annot new">
+      <div class="ico">4</div>
+      <div class="ab">
+        <div class="at">Dynamic range — resolved on the detail screen <span class="pill prin">§8</span> <span class="pill pm">your #4</span></div>
+        <div class="ad">You wanted the card switchable across week / month / 3-month. §8's pattern puts that control <b>one tap away on the detail screen</b>, so the dashboard stays a calm 10-second glance instead of every card sprouting its own toggle. You get the switching; the surface stays quiet.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">↳</div>
+      <div class="ab">
+        <div class="at">Range stays on the detail screen <span class="pill voice">decided</span></div>
+        <div class="ad">PM confirmed the detail-screen control (as drawn) over a global dashboard toggle — the dashboard stays a range-free glance (§8). The rejected alternative was a single global control at the top of the dashboard governing all cards.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">★</div>
+      <div class="ab">
+        <div class="at">“vs your baseline” is the steal <span class="pill voice">§4.2</span></div>
+        <div class="ad">Research's highest-leverage pattern for non-technical owners: <b>“better/worse than YOUR baseline,”</b> a faint baseline band beats a dual-axis chart. The read stays honest — “below her recent average,” never “she's fine” (§11: no all-clear). Single series, no gridlines, no legend.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ FRAME 3 — SHARE WITH MY VET ════════════════════════ -->
+<div class="lane-head f3" id="lane-share">
+  <span class="tag">Frame 3</span>
+  <h2>Share with my vet — the tier 2 → tier 3 bridge</h2>
+  <div class="note">Reached from the persistent header action. Assembles the <b>Step 9 clinical report</b> (default range: since last visit, else 30 days) → server PDF, share token, 30-day expiry, opens without a vet account (§9). The warm cards do <b>not</b> leak onto the clinical export.</div>
+</div>
+
+<div class="frame" style="gap:36px;justify-content:center;flex-wrap:wrap;">
+  <div class="phone-col">
+    <div class="phone"><div class="screen" style="min-height:600px;">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="back">‹</span><span class="nt">Nyx's patterns</span><span class="nav-share" style="opacity:.5"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0-12l-4 4m4-4l4 4M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Share</span></div>
+      <div class="dash-body" style="opacity:.5;">
+        <div class="card"><div class="card-label">Vomiting · this month</div><div class="kpi-ban" style="font-size:38px;">3<span class="unit">episodes</span></div><div class="kpi-delta calm"><span class="arr">↓</span> down from 8 last month</div></div>
+        <div class="card"><div class="card-label">Top protein · in her meals</div><div class="rank-list"><div class="rank-row"><div class="rank-n">1</div><div class="rank-name">Salmon</div><span class="rank-count">33</span></div></div></div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sheet-h">Prepare Nyx's report</div>
+        <div class="sheet-p">I'll gather Nyx's meals, symptoms and patterns into a clean, one-page summary your vet can read in about a minute.</div>
+        <div class="range-opt sel">
+          <div class="ro-radio"></div>
+          <div class="ro-t"><div class="ro-tt">Since her last visit</div><div class="ro-ts">Apr 2 → today · 72 days</div></div>
+        </div>
+        <div class="range-opt">
+          <div class="ro-radio"></div>
+          <div class="ro-t"><div class="ro-tt">Last 30 days</div><div class="ro-ts">May 14 → today</div></div>
+        </div>
+        <div class="privacy-note">
+          <span class="pn-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#737373" stroke-width="1.6"/><path d="M8 11V8a4 4 0 018 0v3" stroke="#737373" stroke-width="1.6"/></svg></span>
+          <span>Your vet can open this without an account. The link works for 30 days, then expires.</span>
+        </div>
+        <div class="btn-primary">Create report</div>
+        <div class="btn-ghost">Not now</div>
+      </div>
+    </div></div>
+    <div class="frame-cap"><b>3a · The prep sheet.</b> Range defaults to “since last visit” (§9) — you liked these date controls.</div>
+  </div>
+
+  <div class="phone-col">
+    <div class="phone"><div class="screen" style="min-height:600px;">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="back">‹</span><span class="nt">Nyx's patterns</span><span class="nav-share" style="opacity:.4"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0-12l-4 4m4-4l4 4M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Share</span></div>
+      <div class="dash-body" style="opacity:.4;">
+        <div class="card"><div class="card-label">Vomiting · this month</div><div class="kpi-ban" style="font-size:38px;">3<span class="unit">episodes</span></div></div>
+      </div>
+      <div class="scrim" style="background:rgba(10,10,10,.28)"></div>
+      <div class="share-sheet">
+        <div class="share-card">
+          <div class="share-preview">
+            <div class="sp-thumb">📄</div>
+            <div class="sp-t">
+              <div class="sp-tt">Nyx — Health Summary</div>
+              <div class="sp-ts">nyx.app/report/3f9a…c2 · PDF</div>
+            </div>
+          </div>
+          <div class="share-targets">
+            <div class="share-target"><div class="st-ico" style="background:#34C759">✉︎</div><div class="st-l">Messages</div></div>
+            <div class="share-target"><div class="st-ico" style="background:#007AFF">✿</div><div class="st-l">AirDrop</div></div>
+            <div class="share-target"><div class="st-ico" style="background:#FF3B30">✉</div><div class="st-l">Mail</div></div>
+            <div class="share-target"><div class="st-ico" style="background:#5856D6">❒</div><div class="st-l">Copy Link</div></div>
+          </div>
+          <div class="share-action-row">📋&nbsp;&nbsp;Copy Link</div>
+        </div>
+        <div class="share-cancel">Cancel</div>
+      </div>
+    </div></div>
+    <div class="frame-cap"><b>3b · Native share sheet.</b> The Step 9 link <code>nyx.app/report/{token}</code> — first deliberately unauthenticated path to health data (rls-privacy-reviewer gate at build).</div>
+  </div>
+
+  <div class="annot-col" style="padding-top:8px;flex:1 1 300px;">
+    <div class="annot">
+      <div class="ico">A</div>
+      <div class="ab">
+        <div class="at">It produces tier 3, it isn't tier 3 <span class="pill prin">§2 · §9</span></div>
+        <div class="ad">The dashboard is the tier <i>above</i> the report. Share hands the owner's exploration off to the <b>Step 9 vet report</b> — server PDF, share token, 30-day expiry, RLS-enforced. Same engine, clinical consumer.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">B</div>
+      <div class="ab">
+        <div class="at">No warm copy leaks to the vet <span class="pill safety">Principle 6 · B-013</span></div>
+        <div class="ad">The owner's warm cards and any n=1 worry-reads stay <b>owner-only</b>. The bridge re-renders the underlying <i>facts</i> in clinical, scannable-in-60s form — it does not ship the dashboard's voice onto the export.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">C</div>
+      <div class="ab">
+        <div class="at">Sequencing <span class="pill open">build</span></div>
+        <div class="ad">This is <b>PR 5</b> and the only piece that needs Step 9 first (§14). The dashboard itself (PRs 1–4) is buildable now on the Step 10 engine + local SQLite — this frame is design-ahead of the live bridge.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ PM REACTIONS LEDGER ════════════════════════ -->
+<div class="legend">
+  <h2>Your reactions → what v2 did with each</h2>
+  <div class="lead">A straight ledger so nothing drops. “Done” = reflected in the pixels above; “Open” = needs your call; “Kept” = you loved it, untouched.</div>
+  <table class="react">
+    <tr><th>#</th><th>Your reaction</th><th>v2</th><th>Status</th></tr>
+    <tr><td>1</td><td class="r">Trend should open the dashboard; Today → History; want a clearer CTA</td><td class="r"><b>Trend → Dashboard</b> &amp; <b>Today → History</b> as visible doorways; Signal CTA kept</td><td class="st done">Done</td></tr>
+    <tr><td>2</td><td class="r">A food-over-time / treats-vs-meals at-a-glance view</td><td class="r">New <b>Meals &amp; treats</b> composition card (descriptive)</td><td class="st done">Done · v1 ✓</td></tr>
+    <tr><td>3</td><td class="r">Should this be a bottom-nav tab? Defer to designer</td><td class="r"><b>Decided: no 4th tab for v1</b>; doorways now, tab is B-004 if earned</td><td class="st done">Resolved ✓</td></tr>
+    <tr><td>4</td><td class="r">The vomiting card should be dynamic (week/month/…)</td><td class="r">New <b>detail screen</b> with W/M/3M control + baseline read (Frame 2b)</td><td class="st done">Done</td></tr>
+    <tr><td>5</td><td class="r">Love the calendar view</td><td class="r">Kept as-is</td><td class="st kept">Kept</td></tr>
+    <tr><td>6</td><td class="r">Love top food — unique value</td><td class="r">Kept; treats now tagged for honesty</td><td class="st kept">Kept+</td></tr>
+    <tr><td>7</td><td class="r">Percentage finished — but Nyx is treat-heavy &amp; finishes treats</td><td class="r"><b>Finished-rate is now meals-only</b> (treats excluded) — Data Sci safety fix</td><td class="st done">Done</td></tr>
+    <tr><td>8</td><td class="r">Love “share with vet”; hate that it's buried; love the date controls</td><td class="r"><b>Persistent nav-header action</b>; date controls kept</td><td class="st done">Done</td></tr>
+    <tr><td>—</td><td class="r">Do we extract protein already?</td><td class="r">Yes — <code>canonicalizeProtein</code> exists; top-protein is real</td><td class="st kept">Confirmed</td></tr>
+  </table>
+
+  <h3>The colour-polarity reference (unchanged — the load-bearing call)</h3>
+  <div class="polarity">
+    <div class="pol">
+      <div class="pol-demo"><span class="pol-num">8</span><span class="pol-d concern">↑ from 3</span></div>
+      <div class="pol-h">Adverse · rising</div>
+      <div class="pol-b">Vomiting climbing is the <b>wrong way</b> → concern tone (muted rose). Clear, <b>never alarm-red</b>.</div>
+    </div>
+    <div class="pol">
+      <div class="pol-demo"><span class="pol-num">3</span><span class="pol-d calm">↓ from 8</span></div>
+      <div class="pol-h">Adverse · falling <span style="font-weight:400;color:var(--text-tertiary);font-size:11px;">(in Frame 2)</span></div>
+      <div class="pol-b">Right way → a settled <b style="color:var(--calm)">calm slate</b>. <b>Not green, not the accent</b>: relief, <b>never a gamified win, never an all-clear.</b></div>
+    </div>
+    <div class="pol">
+      <div class="pol-demo"><span class="pol-num">78%</span><span class="pol-d neutral">— meals finished</span></div>
+      <div class="pol-h">Descriptive · no verdict</div>
+      <div class="pol-b">Intake, rankings &amp; the meals/treats split get <b>no good/bad colour.</b> Colour would imply a wellness judgement the data can't make.</div>
+    </div>
+  </div>
+
+  <h3>The §11 safety invariants, made visible</h3>
+  <table class="inv">
+    <tr><th>Invariant</th><th>Where you see it in v2</th></tr>
+    <tr><td>#1 · Intake is not preference</td><td class="where">Card ⑦ titled <b>“Meals finished,”</b> meals-only; copy “<b>treats aren't counted here…it would hide the real signal.</b>” A decline routes to a vet watch, never “picky.”</td></tr>
+    <tr><td>#2 · n=1 never reassures</td><td class="where">No card wears a reassuring colour off one sample. Falling vomits state count + direction and stop. The baseline read (2b) compares, never declares wellness.</td></tr>
+    <tr><td>#3 · Adverse counts honest, never gamified</td><td class="where">Card ② — falling vomits = <b>calm slate, not green</b>; muted sparkline, neutral number. No streaks/badges.</td></tr>
+    <tr><td>#4 · Associational only, non-causal cue</td><td class="where">No card asserts a cause. The Signal hedges (“since the switch,” “early pattern”). Meals&amp;treats notes coverage, not blame.</td></tr>
+    <tr><td>#5 · Minimum-sample floors</td><td class="where">Every rate shows its denominator (39 of 50; 24 of…). Below floor → the “still learning Nyx's baseline” state, never a fabricated rank.</td></tr>
+    <tr><td>#6 · Free-feeding honesty</td><td class="where">Top food is <b>“showed up in N meals,”</b> not “ate most.” Meals&amp;treats is what was <b>logged</b>, never read as what was eaten.</td></tr>
+  </table>
+
+  <h3>Decided in this review (2026-06-14)</h3>
+  <div class="notes-grid">
+    <div class="dnote"><b>#2 — Meals &amp; treats ships in v1.</b> In the seeded set, not a fast-follow. New scope beyond §6 → spec + §14 PR-plan edits proposed for the PM's next spec pass.</div>
+    <div class="dnote"><b>#3 — no 4th tab for v1.</b> Discoverability via the in-home doorways; promote to a tab (B-004) only if it under-discovers.</div>
+    <div class="dnote"><b>#4 — range lives on the card detail screen</b> (as drawn, §8). The dashboard stays a range-free glance; no global control.</div>
+    <div class="dnote"><b>#1a — “Today” opens History filtered to today, clearable.</b> Land on today's events with a one-tap clear to the full log.</div>
+  </div>
+  <h3>Still open — needs the team before build</h3>
+  <div class="notes-grid">
+    <div class="dnote"><span class="q">§13 #1 —</span> the user-facing name (“Nyx's patterns” shown; never “Analytics”).</div>
+    <div class="dnote"><span class="q">§13 #6 —</span> the colour-as-wellness ruling (Data Scientist + Dr. Chen) still gates the card component before build.</div>
+  </div>
+</div>
+
+<!-- ════════════════════════ STRINGS ════════════════════════ -->
+<div class="strings">
+  <h2>Candidate strings — nyx-voice ship-gate (blocking)</h2>
+  <div class="lead">Every owner-facing string, self-audited against nyx-voice Patterns 1–8 + the §11 invariants. New/changed in v2 are marked.</div>
+
+  <div class="grp">
+    <h3>Coming-soon AI summary (§7.1)</h3>
+    <div class="s"><span class="k">Lead:</span> “Soon, I'll pull what I'm noticing about Nyx into a few plain sentences, right here.”</div>
+    <div class="s"><span class="k">Sub:</span> “For now, the cards below have the details.”</div>
+  </div>
+  <div class="grp">
+    <h3>Symptom count, calendar &amp; detail (#4 new)</h3>
+    <div class="s"><span class="k">Count annotation:</span> “Across 28 days of logs. <em>Tap to switch week / month / 3-month →</em>” <em>(new — advertises the dynamic detail screen)</em></div>
+    <div class="s"><span class="k">Calendar:</span> “3 days with vomiting this month — the most recent was Tuesday.”</div>
+    <div class="s"><span class="k">Baseline read (new):</span> “3 this month — below Nyx's recent average of 6 a month. The last time vomiting was this low was before the trial began.” <em>(comparison, not an all-clear)</em></div>
+  </div>
+  <div class="grp">
+    <h3>Meals &amp; treats (#2 new) and finished-rate (#7 changed)</h3>
+    <div class="s"><span class="k">Meals &amp; treats:</span> “This is what you logged for Nyx this month. If a stretch ever goes treats-only, I'll gently note it — it can be worth sharing with your vet.” <em>(descriptive, non-judgmental, coverage-framed)</em></div>
+    <div class="s"><span class="k">Meals finished:</span> “Just meals — treats aren't counted here, since pets finish those readily and it would hide the real signal. A lasting drop in how much Nyx eats at mealtime is worth a word with your vet, and I'll keep watch.” <em>(meals-only; intake≠preference + watch-routing)</em></div>
+  </div>
+  <div class="grp">
+    <h3>Food, protein, trial &amp; the vet bridge</h3>
+    <div class="s"><span class="k">Top food:</span> “Salmon Pâté led her meals; Temptations led her treats. Both shown, so the picture is honest.”</div>
+    <div class="s"><span class="k">Top protein:</span> “Salmon was Nyx's most-fed protein this month — in step with her elimination trial.”</div>
+    <div class="s"><span class="k">Trial:</span> “Nyx is 18 days into her 8-week trial. Keeping it steady helps a pattern show.”</div>
+    <div class="s"><span class="k">Share / prep / privacy:</span> “Share” · “I'll gather Nyx's meals, symptoms and patterns into a clean, one-page summary your vet can read in about a minute.” · “Your vet can open this without an account. The link works for 30 days, then expires.”</div>
+  </div>
+  <div class="grp">
+    <h3>Home doorways (#1 new)</h3>
+    <div class="s"><span class="k">Trend doorway:</span> “All patterns ›” &nbsp;·&nbsp; <span class="k">Today doorway:</span> “History ›” &nbsp;·&nbsp; <span class="k">Signal footer:</span> “See all of Nyx's patterns →”</div>
+  </div>
+</div>
+
+<div class="foot">
+  Source of truth: <code>docs/nyx-analytics-dashboard-requirements.md</code>. Tokens mirrored from <code>constants/theme.ts</code>. Home zones mirror shipped <code>components/home/</code>. v2 incorporates the PM design review of 2026-06-14. Mockup only — not built; PR-by-PR plan in §14.
+</div>
+
+<script>
+  function goTo(id){
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.scrollIntoView({behavior:'smooth', block:'start'});
+    el.style.transition = 'background .2s ease-out';
+    var prev = el.style.background;
+    el.style.background = 'rgba(0,194,168,.12)';
+    setTimeout(function(){ el.style.background = prev; }, 900);
+  }
+</script>
+
+</body>
+</html>

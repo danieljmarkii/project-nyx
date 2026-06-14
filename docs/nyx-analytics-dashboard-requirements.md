@@ -1,6 +1,6 @@
 # Nyx — Analytics Dashboard Requirements
 
-**Status:** DRAFT — design session 2026-06-13. Awaiting PM review before any build.
+**Status:** DRAFT — design session 2026-06-13; **PM design review 2026-06-14** (clickable mocks: `docs/mockups/analytics-dashboard-mockup.html` + `-v2.html`) resolved the **layout direction (summary-led)**, the **Home doorways / no-4th-tab**, **detail-screen range control**, the **meals-only finished-rate**, and **Meals & treats as a v1 card** — all folded into the sections below. Two gates remain before build: the user-facing name (§13 #1) and the colour-as-wellness ruling (§13 #6).
 **Working name:** "analytics dashboard" (internal). User-facing name is an open decision (§13) — leaning *"Nyx's health"* / *"Patterns"*; **never "Analytics"** (engineer jargon, fails `nyx-voice`).
 **Anchor backlog item:** B-023 (this doc is the build-ready expansion of it). Composes with B-069, B-046, B-053, B-004.
 **Build phase:** Post-MVP. Sequenced **after Step 9 (vet report)** — see §14. This is design-ahead.
@@ -166,6 +166,7 @@ Sources: [Tableau Pulse insight types](https://help.tableau.com/current/online/e
 3. **Ranking card** — "Top food," "Top protein" (§6). A short ranked list with counts/rates, not a pie chart.
 4. **Frequency-calendar card** — month heat-grid for episodic symptoms ("how often").
 5. **Pattern card** — an established correlation or "watching" item (reuses Signal finding rendering; associational copy + confidence tier).
+6. **Composition card** *(added PM review 2026-06-14)* — a single proportion bar over a labelled split with counts (v1 instance: **meals vs treats** this month). Descriptive only — *what was logged*, never a verdict on the owner's feeding choices. One idea, no stacking beyond the two-part split.
 
 **Universal card rules:**
 - One idea per card. No dense grids.
@@ -188,7 +189,8 @@ Curated, in priority order. Safety-class cards always lead (Principle 3). Each m
 ### B. "What does Nyx eat & like?" — food & intake (descriptive, NOT preference)
 - **Top food** — most-logged / most-eaten food (your #3). Inarguable, descriptive. *(local: `meals` × `food_items`)*
 - **Top protein** — most-consumed `primary_protein` (your #3.1). The card Nyx is **uniquely positioned** to show. *(local, via `canonicalizeProtein`)*
-- **Intake / finished-rate** — share of meals rated `most`/`all` over N samples. *(local: `meals.intake_rating`)*
+- **Meals & treats composition** *(added PM review 2026-06-14, ships v1)* — the month's split of logged **meals vs treats**, as a proportion bar + counts (composition card, §5 #6). Descriptive (what was logged), never a judgment on the owner; it ties to the meal-type-collapse coverage signal when a stretch goes treats-only ("worth sharing with your vet," framed as coverage, never blame). *(local: `meals` × `food_items.food_type`)*
+- **Intake / finished-rate (MEALS ONLY)** — share of **meals** rated `most`/`all` over N samples. **Treats are excluded from the denominator** *(PM review 2026-06-14)*: pets finish treats at a ceiling rate, so blending them in inflates the number and **masks a meal refusal** — the clinically load-bearing decline signal (§11 #1). *(local: `meals.intake_rating` where `food_type != 'treat'`)*
 - **Guardrails (non-negotiable, §11):** this is *intake*, never relabeled "preference." A food Nyx has **started refusing** surfaces as a **health watch, not "picky."** Free-fed foods carry "intake not directly observed" and are never read as "didn't eat."
 
 ### C. "What's connected?" — patterns & links
@@ -203,6 +205,8 @@ Curated, in priority order. Safety-class cards always lead (Principle 3). Each m
 ## 7. The AI summary (the AI-forward centerpiece)
 
 **What it is:** a short, warm narrative at the **top of the dashboard** that synthesizes the already-computed cards into 2–4 sentences — "Here's what I'm seeing for Nyx this month." **Static narrative, NOT a chat** (the "keyhole effect" — chat is the wrong shape for "what changed"; and every chat-based health AI in the research is where the safety incidents cluster).
+
+**Layout decision — summary-led (PM, 2026-06-14).** The dashboard **leads with the AI summary at the top** (its `ComingSoonSummary` precursor until PR 4, §7.1), with the safety cards immediately below. Three top-of-dashboard treatments were mocked (`analytics-dashboard-mockup-v2.html`); two were rejected for v1: **hero-stat-led** (a single big safety number leads, Oura/Whoop-style — instantly answers "is she okay?" but privileges one metric and risks a gamified "score" against §11 #3) and **calm-uniform** (no hero, all cards equal, Bearable-style — calmest, but spends the AI summary, our differentiator). Summary-led wins because the AI summary is the thing Nyx is uniquely positioned to offer and §7 already names it the centerpiece. **Adopted refinement:** borrow the hero treatment's prominence for the **"vs your baseline" read** (§4.2) into the lead safety card, so the surface keeps the editorial-AI personality *and* the instant "is she okay?" answer.
 
 > **The governing principle: LLM as Phraser, never Analyst.** The model never computes a number, never ranks, never infers a cause, never decides whether a pattern exists. Code does all of that deterministically and hands the model a finished, already-true **fact packet**; the model's *only* job is to turn those facts into warm, plain copy. Every number it emits must trace to the packet — anything it can't trace, it can't say. This one line is what separates the safe players (Google Fitbit, Tableau Pulse, Dexcom) from the retractions (Google Health Overviews, Eight Sleep), it's the architecture Nyx already runs in Step 10, and it governs this entire section.
 
@@ -245,9 +249,10 @@ The AI summary is sequenced last (PR 4), but the dashboard ships before it (PR 3
 ## 8. Entry point & navigation
 
 - **From Home (honoring the PM's "tap from home" framing):** a quiet footer affordance on the Signal zone — *"See all of Nyx's patterns →"* — that **navigates to a dedicated destination**. **Not a 4th Home zone** (Principle 3 — Home stays a calm intelligence surface, not a dashboard). Optionally, each expanded Signal card gets an "explore →" deep-link into the relevant dashboard section.
-- **Not a 4th tab in MVP.** The bar is Home · History · Pet; a 4th tab + FAB reads as a feature menu and competes with "Home is the intelligence surface." Promote to a tab later if it earns it (that's B-004's conversation).
+- **Home doorways (PM, 2026-06-14):** beyond the Signal-footer CTA, each Home zone becomes a visible doorway to its deeper surface — the **Trend zone opens the dashboard** ("All patterns ›") and the **Today zone opens History, filtered to today (clearable)** ("History ›"). This is the discoverability answer the PM asked for — *instead of* a 4th tab — so the dashboard is reachable from the zone that already implies it.
+- **Not a 4th tab in MVP (PM-ratified 2026-06-14).** The bar stays Home · History · Pet; a 4th tab + FAB reads as a feature menu and competes with "Home is the intelligence surface" (Principle 3), and a tab is permanent chrome (one-way door) where an affordance is reversible. Promote to a tab later **only if the in-home doorways under-discover** (that's B-004's conversation).
 - **Per active pet** (multi-pet aware — carries the active pet from Home; switcher already exists).
-- **Card → detail screen** is the internal navigation (the "doorway" pattern). Time-range control lives on detail screens only.
+- **Card → detail screen** is the internal navigation (the "doorway" pattern). **Time-range control lives on detail screens only** — the dashboard itself stays a range-free glance (a global dashboard range control was considered and rejected, PM 2026-06-14).
 
 ---
 
@@ -278,7 +283,7 @@ Principle 5 territory — and the research gives us a strong, specific pattern.
 
 These govern every card and the summary. They are not negotiable and require no PM confirmation to enforce.
 
-1. **Intake is not preference.** Top food / top protein / finished-rate are *descriptive intake* metrics. Never relabel them "preference." A **declining-intake** trend routes to a **health watch**, never softened to "picky" (anorexia is a non-specific disease sign; the feline 48h hepatic-lipidosis window). Validated externally by the Google/Function "in-range = fine" false-reassurance failures.
+1. **Intake is not preference.** Top food / top protein / finished-rate are *descriptive intake* metrics. Never relabel them "preference." A **declining-intake** trend routes to a **health watch**, never softened to "picky" (anorexia is a non-specific disease sign; the feline 48h hepatic-lipidosis window). Validated externally by the Google/Function "in-range = fine" false-reassurance failures. **Finished-rate is meals-only (PM, 2026-06-14):** treats are excluded from the denominator — pets finish treats at a ceiling rate, so including them inflates the number and *masks a meal refusal* (the decline signal). Treats are surfaced separately (the Meals & treats composition card, §6), never folded into intake quality.
 2. **n=1 never reassures, scaled up.** A single observation never gets a reassuring color or read. Reassurance is permitted **only** from cross-incident, multi-sample, quantified findings (the AI summary's one allowance) — and **never on the absence** of a signal.
 3. **Adverse counts are honest, never gamified.** Color = good/bad *for the pet*. A falling vomit count is calm, not a green "win." No streaks/badges on adverse metrics.
 4. **Associational only, with an explicit non-causal cue.** Softening the verb is insufficient (research §4.3). No causal claims; no disease names (FDA line).
@@ -301,17 +306,20 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 
 ## 13. Open decisions for the build session
 
-| # | Decision | Lean |
+| # | Decision | Lean / Resolution |
 |---|---|---|
-| 1 | **User-facing name** (not "Analytics") | *"Nyx's health"* destination, via *"See all of Nyx's patterns"* |
-| 2 | Default time range | **Month**, with Week / 3-Month toggle on detail screens |
+| 1 | **User-facing name** (not "Analytics") | **OPEN** — *"Nyx's patterns"* shown in the mocks; leaning that or *"Nyx's health."* PM call before build. |
+| 2 | Default time range | **RESOLVED 2026-06-14:** **Month** default; Week / 3-Month toggle on the **detail screen only** — the dashboard stays a range-free glance (a global dashboard range control was rejected). |
 | 3 | AI summary model | **Haiku 4.5**; revisit if quality demands Sonnet |
 | 4 | AI summary: extend `generate-signal` vs. sibling `generate-summary` | Build-time call; reuse the pattern + cache table either way |
 | 5 | Chart library | **`react-native-gifted-charts`** (Expo-Go-safe) |
-| 6 | Color-as-wellness vs. n=1 guardrail (§11) | Color only on established multi-sample metrics — **Data Scientist + Dr. Chen to ratify** |
-| 7 | Entry point: Home affordance now, tab later? | Home affordance for MVP; tab is B-004 |
+| 6 | Color-as-wellness vs. n=1 guardrail (§11) | **OPEN** — Color only on established multi-sample metrics — **Data Scientist + Dr. Chen to ratify** before the card component (PR 2). |
+| 7 | Entry point: Home affordance now, tab later? | **RESOLVED 2026-06-14:** Home doorways (Trend→Dashboard, Today→History filtered) + Signal-footer CTA for v1; **no 4th tab**; tab is B-004 only if doorways under-discover (§8). |
 | 8 | Premium line (§12) | Defer to B-023d |
 | 9 | Are per-incident `event_ai_analysis` flags surfaced as a card? | Lean no for v1 (owner-facing already on the detail screen); revisit |
+| 10 | **Dashboard layout direction** | **RESOLVED 2026-06-14: summary-led** (Direction A). Hero-stat-led & calm-uniform mocked and rejected for v1; borrow the "vs baseline" prominence into the lead card (§7). |
+| 11 | **Meals & treats composition card in v1?** | **RESOLVED 2026-06-14: yes, v1** (§5 #6 / §6). New card type beyond the original §6 set. |
+| 12 | **Finished-rate: blended or meals-only?** | **RESOLVED 2026-06-14: meals-only** — treats excluded (ceiling finish-rate masks meal refusal, §11 #1). |
 
 ---
 
@@ -334,9 +342,9 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 - **Goal:** compute every dashboard metric deterministically from local SQLite.
 - **Depends on:** nothing (existing `lib/db.ts`).
 - **Files:** create `lib/analytics.ts` + `lib/analytics.test.ts`; port `canonicalizeProtein` → `lib/protein.ts`.
-- **Functions (pure, per-pet, each takes a window):** `getSymptomCounts`, `getSymptomFrequencyByDay` (calendar grid), `getTopFoods`, `getTopProteins`, `getIntakeRate`, `getDietTrialProgress`, `detectIntakeDecline` (→ a health-watch flag, never "picky").
-- **Key logic:** trailing **calendar** windows (Week / Month / 3-Month), not raw ms spans (the B-084 lesson); min-sample floors (reuse the Signal's) → below-floor returns a `notEnoughData` sentinel, never a fabricated rank; exclude free-fed foods from intake-rate denominators + carry "intake not directly observed"; canonicalize protein before ranking.
-- **AC:** counts/rankings match a hand-built fixture; below-floor → sentinel (no rank invented); `detectIntakeDecline` returns a watch flag and a test asserts it never returns a "preference"/"picky" framing; free-fed foods excluded from intake rates.
+- **Functions (pure, per-pet, each takes a window):** `getSymptomCounts`, `getSymptomFrequencyByDay` (calendar grid), `getTopFoods`, `getTopProteins`, `getIntakeRate` **(meals only — excludes `food_type='treat'`)**, `getMealTreatComposition` **(new, PM 2026-06-14 — meal vs treat counts for the §6 composition card)**, `getDietTrialProgress`, `detectIntakeDecline` (→ a health-watch flag, never "picky").
+- **Key logic:** trailing **calendar** windows (Week / Month / 3-Month), not raw ms spans (the B-084 lesson); min-sample floors (reuse the Signal's) → below-floor returns a `notEnoughData` sentinel, never a fabricated rank; exclude free-fed foods from intake-rate denominators + carry "intake not directly observed"; **exclude treats (`food_type='treat'`) from the finished-rate denominator** (§11 #1 — treats' ceiling finish-rate masks meal refusal); canonicalize protein before ranking.
+- **AC:** counts/rankings match a hand-built fixture; below-floor → sentinel (no rank invented); `detectIntakeDecline` returns a watch flag and a test asserts it never returns a "preference"/"picky" framing; free-fed foods excluded from intake rates; **a test asserts treats are excluded from `getIntakeRate` and that `getMealTreatComposition` counts them separately.**
 - **Tests:** jest unit (DoD: a `lib/` util ⇒ tests required).
 - **Review:** Data Scientist (floors, denominators, intake≠preference); **adversarial-reviewer** (decline-detection + ranking are statistically/clinically load-bearing).
 - **Schema:** none.
@@ -345,7 +353,7 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 ### PR 2 — Card components (the visual language)
 - **Goal:** the reusable, calm card set.
 - **Depends on:** PR 1; the §13 #6 color ruling (confirm resolved first).
-- **Files:** create `components/dashboard/MetricCard.tsx` (four layers: label / big number / sparkline / delta), `Sparkline.tsx` (`react-native-gifted-charts` wrapper), `RankingCard.tsx`, `FrequencyCalendarCard.tsx`, `MetricDetailScreen.tsx` (Week/Month/3-Month segmented control); co-located tests; add `react-native-gifted-charts` to `package.json`.
+- **Files:** create `components/dashboard/MetricCard.tsx` (four layers: label / big number / sparkline / delta), `Sparkline.tsx` (`react-native-gifted-charts` wrapper), `RankingCard.tsx`, `FrequencyCalendarCard.tsx`, `CompositionCard.tsx` **(new — meals vs treats proportion bar, §5 #6)**, `MetricDetailScreen.tsx` (Week/Month/3-Month segmented control; surfaces the "vs your baseline" read prominently per the §7 summary-led refinement); co-located tests; add `react-native-gifted-charts` to `package.json`.
 - **Key logic:** a `polarity: 'adverse' | 'neutral' | 'positive'` prop drives color — **inverted for adverse** (rising vomits = concern, falling = calm, never a green "win"); color applied **only to established multi-sample metrics** per the ruling; charts have no axes/gridlines/legend; plain-language annotation (no jargon); visibly tappable + 44pt/`hitSlop`; theme tokens only.
 - **AC:** four layers render; adverse-rising = concern color, adverse-falling = calm (not green); per-card empty + "still learning the baseline" calibration states; card looks tappable; passes the 10-second glance.
 - **Tests:** component tests for the polarity→color mapping + the empty/calibration-state selection (extract the selection as a pure fn and test it).
@@ -356,8 +364,8 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 ### PR 3 — Dashboard screen + Home entry + the "coming soon" AI-summary card
 - **Goal:** assemble the seeded dashboard, wire the entry point, and ship the designed AI-summary anticipatory state (§7.1).
 - **Depends on:** PR 2.
-- **Files:** create `app/insights/index.tsx` (route, per active pet), `components/dashboard/ComingSoonSummary.tsx`, `components/dashboard/DashboardEmptyState.tsx`; modify `components/home/SignalZone.tsx` (add a quiet "See all of Nyx's patterns →" footer affordance that navigates to the route — **not** a 4th Home zone); extract + test a pure `orderDashboardCards` (safety leads).
-- **Key logic:** seeded card set in priority order (safety first — §6), per active pet (multi-pet switcher-aware), cold-start + calibration states, the `ComingSoonSummary` pinned at the top in the AI summary's slot (§7.1 copy + rules).
+- **Files:** create `app/insights/index.tsx` (route, per active pet), `components/dashboard/ComingSoonSummary.tsx`, `components/dashboard/DashboardEmptyState.tsx`; modify `components/home/SignalZone.tsx` (quiet "See all of Nyx's patterns →" footer affordance) **and `components/home/TrendZone.tsx` (open the dashboard — "All patterns ›") + `components/home/TodayZone.tsx` (open History filtered to today — "History ›"), per the §8 Home-doorways decision**; extract + test a pure `orderDashboardCards` (safety leads).
+- **Key logic:** **summary-led layout** (§7) — `ComingSoonSummary` pinned at the top in the AI summary's slot (§7.1), then the seeded card set in priority order (safety first — §6, now including the **Meals & treats composition card**), per active pet (multi-pet switcher-aware), cold-start + calibration states.
 - **AC:** the Home affordance opens the dashboard scoped to the active pet (navigates away, not a zone); cards render in priority order, safety leads; honest empty/calibration states; the coming-soon card is warm and intentional (not a gray box), reserves the slot, makes **no** clinical promise, **no** upsell, **no** "!".
 - **Tests:** jest for `orderDashboardCards` + state selection; screen smoke test.
 - **Review:** Designer (lead, with Jordan + Sam); nyx-voice (coming-soon + empty-state copy); Trust & Safety (coming-soon over-promise check).
