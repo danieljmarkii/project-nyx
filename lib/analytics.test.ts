@@ -23,10 +23,12 @@ import {
   computeTopFoods,
   computeTopProteins,
   computeIntakeRate,
+  computeIntakeRateSeries,
   computeMealTreatComposition,
   getDietTrialProgress,
   detectIntakeDecline,
   getIntakeRate,
+  getIntakeRateSeries,
   getSymptomCounts,
   isNotEnoughData,
   ANALYTICS_FLOORS,
@@ -316,6 +318,54 @@ describe('computeIntakeRate', () => {
   });
 });
 
+// ── Finished-rate sparkline series (B-098 — the card's own shape) ─────────────────
+
+describe('computeIntakeRateSeries', () => {
+  const emptyFreeFed = new Set<string>();
+  const monthRange = calendarWindow('month', NOW); // 30 days, 4 buckets of 8 days
+
+  // bucket3 = daysAgo 0–7, bucket2 = 8–15, bucket1 = 16–23, bucket0 = 24–29.
+  // A clean two-week fixture: recent week all finished (1.0), an earlier week half (0.5).
+  const twoWeekRows: AnalyticsMeal[] = [
+    meal({ ms: at(0), foodItemId: 'a', intakeRating: 'most' }), // bucket3, finished
+    meal({ ms: at(1), foodItemId: 'b', intakeRating: 'all' }), // bucket3, finished
+    meal({ ms: at(16), foodItemId: 'c', intakeRating: 'all' }), // bucket1, finished
+    meal({ ms: at(17), foodItemId: 'd', intakeRating: 'refused' }), // bucket1, not finished
+  ];
+
+  it('returns one finished-rate point PER WEEK-WITH-DATA, oldest → newest', () => {
+    // bucket1 = 1/2 = 0.5 (older), bucket3 = 2/2 = 1.0 (newer); the two empty weeks
+    // (bucket0, bucket2) contribute NO point — never a fabricated 0%.
+    expect(computeIntakeRateSeries(twoWeekRows, { freeFedFoodIds: emptyFreeFed }, monthRange)).toEqual([0.5, 1]);
+  });
+
+  it('drops an empty week rather than plotting a fabricated 0% ("ate nothing")', () => {
+    // 4 weeks, data in only 2 of them → 2 points, not 4 (an empty week ≠ a 0% week).
+    expect(computeIntakeRateSeries(twoWeekRows, { freeFedFoodIds: emptyFreeFed }, monthRange)).toHaveLength(2);
+  });
+
+  it('EXCLUDES treats — a treat-only week never becomes a point (§11 #1)', () => {
+    const rows = [...twoWeekRows, meal({ ms: at(25), foodItemId: 't', intakeRating: 'all', foodType: 'treat' })];
+    // The treat sits alone in bucket0; excluded → still just the two real weeks.
+    expect(computeIntakeRateSeries(rows, { freeFedFoodIds: emptyFreeFed }, monthRange)).toEqual([0.5, 1]);
+  });
+
+  it('EXCLUDES free-fed meals — intake is not directly observed (§11 #6)', () => {
+    const rows = [...twoWeekRows, meal({ ms: at(25), foodItemId: 'free-1', intakeRating: 'refused' })];
+    // Free-fed 'refused' alone in bucket0; excluded → no fabricated 0% week, series unchanged.
+    expect(computeIntakeRateSeries(rows, { freeFedFoodIds: new Set(['free-1']) }, monthRange)).toEqual([0.5, 1]);
+  });
+
+  it('below the rated-meal floor → [] (no line, matching the big number\'s calibration state)', () => {
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), foodItemId: 'a', intakeRating: 'most' }),
+      meal({ ms: at(1), foodItemId: 'b', intakeRating: 'all' }),
+      meal({ ms: at(2), foodItemId: 'c', intakeRating: 'some' }),
+    ];
+    expect(computeIntakeRateSeries(rows, { freeFedFoodIds: emptyFreeFed }, monthRange)).toEqual([]);
+  });
+});
+
 // ── Meal vs treat composition ────────────────────────────────────────────────────
 
 describe('computeMealTreatComposition', () => {
@@ -527,6 +577,30 @@ describe('getIntakeRate (wrapper wiring)', () => {
     expect(out).toEqual({
       rate: 0.5, finishedMeals: 2, ratedMeals: 4, freeFedExcluded: 1, intakeNotDirectlyObserved: true,
     });
+  });
+});
+
+describe('getIntakeRateSeries (wrapper wiring)', () => {
+  it('reads the same window + free-fed set as the rate, excluding treats & free-fed from the shape', async () => {
+    mockGetAllAsync.mockResolvedValue([
+      // recent week (bucket3): two real meals, both finished → 1.0
+      { food_item_id: 'a', intake_rating: 'most', occurred_at: '2026-06-14T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'A' },
+      { food_item_id: 'b', intake_rating: 'all', occurred_at: '2026-06-13T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'B' },
+      // earlier week (bucket1, ~16–17d ago): one finished + one refused → 0.5
+      { food_item_id: 'c', intake_rating: 'all', occurred_at: '2026-05-29T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'C' },
+      { food_item_id: 'd', intake_rating: 'refused', occurred_at: '2026-05-28T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'D' },
+      // free-fed + treat, both recent & 'refused' — if either leaked in, bucket3 would drop below 1.0
+      { food_item_id: 'free-1', intake_rating: 'refused', occurred_at: '2026-06-14T09:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Free' },
+      { food_item_id: 't', intake_rating: 'refused', occurred_at: '2026-06-14T10:00:00Z', food_type: 'treat', primary_protein: null, brand: 'Acme', product_name: 'Treat' },
+    ]);
+    mockGetActiveArrangementsForPet.mockResolvedValue([
+      { id: 'arr-1', food_item_id: 'free-1', active_from: null, updated_at: '', brand: '', product_name: '', format: 'dry' },
+    ]);
+
+    const out = await getIntakeRateSeries('pet-1', 'month', NOW);
+    expect(mockGetActiveArrangementsForPet).toHaveBeenCalledWith('pet-1');
+    // [older week 0.5, recent week 1.0] — treat + free-fed excluded (else recent ≠ 1.0).
+    expect(out).toEqual([0.5, 1]);
   });
 });
 

@@ -81,6 +81,10 @@ export interface IntakeRateCard {
    *  number), so a thin rate can never carry a verdict. */
   established: boolean;
   state: CardDisplayState;
+  /** Per-week finished-rate shape (B-098) so this KPI is never a bare big number.
+   *  <2 points (a single week of data) → the card shows none; below the floor the
+   *  series is `[]` and the card is calibrating anyway. */
+  sparkData: number[];
 }
 
 export interface TopFoodCard {
@@ -135,6 +139,8 @@ export interface BuildDashboardInput {
   /** One bucket per calendar day in the window (analytics) — heat-grid + sparklines. */
   frequencyBuckets: DayFrequencyBucket[];
   intakeRate: IntakeRate | NotEnoughData;
+  /** Per-week finished-rate series (analytics) — the intake card's sparkline shape (B-098). */
+  intakeRateSeries: number[];
   topFoods: RankedFood[] | NotEnoughData;
   topProteins: RankedProtein[] | NotEnoughData;
   composition: MealTreatComposition;
@@ -189,6 +195,7 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
     result: input.intakeRate,
     established: !isNotEnoughData(input.intakeRate),
     state: selectCardState(input.intakeRate),
+    sparkData: input.intakeRateSeries,
   });
 
   // ── Descriptive (rankings + composition — never a verdict colour, §11 #1) ────

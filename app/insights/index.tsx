@@ -9,6 +9,7 @@ import {
   getSymptomCounts,
   getSymptomFrequencyByDay,
   getIntakeRate,
+  getIntakeRateSeries,
   getTopFoods,
   getTopProteins,
   getMealTreatComposition,
@@ -78,11 +79,12 @@ export default function PatternsScreen() {
     const myId = ++loadIdRef.current;
     if (showLoading) setStatus('loading');
     try {
-      const [symptomCounts, frequencyBuckets, intakeRate, topFoods, topProteins, composition] =
+      const [symptomCounts, frequencyBuckets, intakeRate, intakeRateSeries, topFoods, topProteins, composition] =
         await Promise.all([
           getSymptomCounts(pet.id, WINDOW),
           getSymptomFrequencyByDay(pet.id, WINDOW),
           getIntakeRate(pet.id, WINDOW),
+          getIntakeRateSeries(pet.id, WINDOW),
           getTopFoods(pet.id, WINDOW),
           getTopProteins(pet.id, WINDOW),
           getMealTreatComposition(pet.id, WINDOW),
@@ -94,6 +96,7 @@ export default function PatternsScreen() {
           symptomCounts,
           frequencyBuckets,
           intakeRate,
+          intakeRateSeries,
           topFoods,
           topProteins,
           composition,
@@ -231,6 +234,9 @@ function renderCard(card: DashboardCard, petName: string) {
           polarity="positive"
           established={card.established}
           state={card.state}
+          // The card's own shape (B-098) so "Meals finished" is never a bare big number.
+          // No "vs baseline" delta yet (B-093), so resolveDeltaTone keeps the line neutral.
+          sparkData={card.sparkData}
           calibrationUnit="meal"
           note={note}
           petName={petName}

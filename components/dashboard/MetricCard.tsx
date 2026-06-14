@@ -23,6 +23,11 @@ import {
 // the sample floor the card renders the "still learning the baseline" calibration
 // state (§10), never a fabricated number/chart.
 //
+// Convention (B-098): a POPULATED KPI card must carry a shape — pass `sparkData` (≥2
+// points). A bare big number is not shipped (the "Meals finished" 29% bug). The
+// empty/calibrating states legitimately have no line, so this is enforced by review +
+// the design principle, not the prop type; the populated branch simply expects a series.
+//
 // The whole card is the tap target (a "doorway" → detail screen, §4.2) with a visible
 // chevron + 44pt floor + hitSlop — Oura's "tappable-but-unsignposted" weakness, fixed.
 

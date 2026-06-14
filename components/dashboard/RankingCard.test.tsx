@@ -20,6 +20,18 @@ describe('RankingCard', () => {
     expect(getByText('treat')).toBeTruthy();
   });
 
+  it('lets a long food label breathe — wraps to two lines, never truncated to one (B-098)', () => {
+    const longName = 'Purina Friskies Party Mix Crunchy Chicken';
+    const { getByText } = render(
+      <RankingCard title="Top food" entries={[{ key: 'x', label: longName, value: '14 logs' }]} />,
+    );
+    const label = getByText(longName);
+    // Two lines, not one — the row breathes instead of clipping with an ellipsis.
+    expect(label.props.numberOfLines).toBe(2);
+    // The value never gets squeezed out by a long label (flexShrink 0).
+    expect(getByText('14 logs')).toBeTruthy();
+  });
+
   it('shows the calibration state below the ranking floor (no fabricated top-N)', () => {
     const state = selectCardState(notEnoughData(2, 4));
     const { getByText, queryByText } = render(

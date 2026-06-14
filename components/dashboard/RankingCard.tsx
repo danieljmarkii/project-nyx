@@ -68,7 +68,10 @@ export function RankingCard({
           {entries.map((entry, i) => (
             <View key={entry.key} style={styles.row}>
               <Text style={styles.rank}>{i + 1}</Text>
-              <Text style={styles.entryLabel} numberOfLines={1}>
+              {/* Let a long food name BREATHE — wrap to a second line rather than truncate
+                  ("Purina Friskies Party Mix…", B-098). The value + tag never shrink
+                  (flexShrink 0), so the label (flex 1) is the only thing that wraps. */}
+              <Text style={styles.entryLabel} numberOfLines={2}>
                 {entry.label}
               </Text>
               {entry.tag != null && <Text style={styles.tag}>{entry.tag}</Text>}
@@ -110,11 +113,14 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // Top-align so the rank, tag and value sit on the FIRST line when a long label
+    // wraps to two (the matched lineHeights below keep them on that line).
+    alignItems: 'flex-start',
     gap: theme.space2,
   },
   rank: {
     fontSize: theme.textSM,
+    lineHeight: 22,
     fontWeight: theme.weightSemibold,
     color: theme.colorTextDisabled,
     width: 16,
@@ -122,19 +128,24 @@ const styles = StyleSheet.create({
   entryLabel: {
     flex: 1,
     fontSize: theme.textMD,
+    lineHeight: 22,
     color: theme.colorTextPrimary,
   },
   tag: {
     fontSize: theme.textXS,
+    lineHeight: 22,
     fontWeight: theme.weightMedium,
     color: theme.colorTextTertiary,
     textTransform: 'uppercase',
     letterSpacing: theme.trackingWide,
+    flexShrink: 0,
   },
   entryValue: {
     fontSize: theme.textSM,
+    lineHeight: 22,
     fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
+    flexShrink: 0,
   },
   stateText: {
     fontSize: theme.textMD,

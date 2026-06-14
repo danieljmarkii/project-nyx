@@ -35,6 +35,7 @@ jest.mock('../../lib/analytics', () => {
     getSymptomCounts: jest.fn(),
     getSymptomFrequencyByDay: jest.fn(),
     getIntakeRate: jest.fn(),
+    getIntakeRateSeries: jest.fn(),
     getTopFoods: jest.fn(),
     getTopProteins: jest.fn(),
     getMealTreatComposition: jest.fn(),
@@ -76,6 +77,7 @@ describe('PatternsScreen', () => {
     A.getSymptomCounts.mockResolvedValue([]);
     A.getSymptomFrequencyByDay.mockResolvedValue([]);
     A.getIntakeRate.mockResolvedValue(notEnoughData(0, 4));
+    A.getIntakeRateSeries.mockResolvedValue([]);
     A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
     A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
     A.getMealTreatComposition.mockResolvedValue(emptyComposition());
@@ -99,6 +101,7 @@ describe('PatternsScreen', () => {
     A.getSymptomCounts.mockResolvedValue(counts);
     A.getSymptomFrequencyByDay.mockResolvedValue(buckets);
     A.getIntakeRate.mockResolvedValue(notEnoughData(2, 4));
+    A.getIntakeRateSeries.mockResolvedValue([]);
     A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
     A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
     A.getMealTreatComposition.mockResolvedValue(composition);
