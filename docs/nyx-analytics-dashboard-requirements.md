@@ -1,6 +1,6 @@
 # Nyx — Analytics Dashboard Requirements
 
-**Status:** DRAFT — design session 2026-06-13; **PM design review 2026-06-14** (clickable mocks: `docs/mockups/analytics-dashboard-mockup.html` + `-v2.html`) resolved the **layout direction (summary-led)**, the **Home doorways / no-4th-tab**, **detail-screen range control**, the **meals-only finished-rate**, and **Meals & treats as a v1 card** — all folded into the sections below. Two gates remain before build: the user-facing name (§13 #1) and the colour-as-wellness ruling (§13 #6).
+**Status:** DRAFT — design session 2026-06-13; **PM design review 2026-06-14** (clickable mocks: `docs/mockups/analytics-dashboard-mockup.html` + `-v2.html`) resolved the **layout direction (summary-led)**, the **Home doorways / no-4th-tab**, **detail-screen range control**, the **meals-only finished-rate**, and **Meals & treats as a v1 card** — all folded into the sections below. The colour-as-wellness ruling (§13 #6) is **RESOLVED** (2026-06-14, at the PR 2 build); the only remaining gate is the user-facing name (§13 #1), needed at PR 3.
 **Working name:** "analytics dashboard" (internal). User-facing name is an open decision (§13) — leaning *"Nyx's health"* / *"Patterns"*; **never "Analytics"** (engineer jargon, fails `nyx-voice`).
 **Anchor backlog item:** B-023 (this doc is the build-ready expansion of it). Composes with B-069, B-046, B-053, B-004.
 **Build phase:** Post-MVP. Sequenced **after Step 9 (vet report)** — see §14. This is design-ahead.
@@ -290,7 +290,7 @@ These govern every card and the summary. They are not negotiable and require no 
 5. **Minimum-sample floors on every ranking/rate.** "Top protein" off 3 meals is noise — gate on N (reuse the Signal's floors). Below floor → the calibration state (§10), not a card.
 6. **Free-feeding honesty.** A free-fed food means intake is not directly observed — never read absence as "didn't eat," never reassure on it (carries the B-040 §2 guardrail).
 
-**Persona conflict already surfaced (needs a Data Scientist + Dr. Chen ruling at build):** the universal consumer pattern of *semantic color = wellness* (green/yellow/red) tensions with invariant #2. Proposed resolution above (color only on established multi-sample metrics; single observations neutral) — ratify before building the card component.
+**Persona conflict RESOLVED (Data Scientist + Dr. Chen, 2026-06-14 — §13 #6):** the universal consumer pattern of *semantic color = wellness* (green/yellow/red) tensioned with invariant #2. **Ruling:** a verdict colour attaches only to an established, multi-sample metric; a single observation stays neutral in **both** directions; adverse inverts (a falling adverse count is calm/muted, never a green win, §11 #3); a positive metric's *drop* is not alarmed on the descriptive card (the floored decline detector owns decline). Encoded + unit-tested in `lib/dashboardCards.ts` (`resolveDeltaTone`), adversarial-reviewed.
 
 ---
 
@@ -313,7 +313,7 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 | 3 | AI summary model | **Haiku 4.5**; revisit if quality demands Sonnet |
 | 4 | AI summary: extend `generate-signal` vs. sibling `generate-summary` | Build-time call; reuse the pattern + cache table either way |
 | 5 | Chart library | **`react-native-gifted-charts`** (Expo-Go-safe) |
-| 6 | Color-as-wellness vs. n=1 guardrail (§11) | **OPEN** — Color only on established multi-sample metrics — **Data Scientist + Dr. Chen to ratify** before the card component (PR 2). |
+| 6 | Color-as-wellness vs. n=1 guardrail (§11) | **RESOLVED 2026-06-14 (Data Scientist + Dr. Chen ruling, ratified at B-023 PR 2 build).** A verdict colour (good/bad *for the pet*) attaches ONLY to an established, multi-sample metric (at/above the §11 #5 floor); a single observation is ALWAYS neutral — in **both** directions (n=1 never reassures *and* never alarms on noise). **Adverse** inverts: rising = concern; falling = calm/muted, **never a green "win"** (§11 #3). **Positive** rising = a quiet win colour; a positive metric's *drop* is **not alarmed** on the descriptive card — the clinically-floored decline detector owns decline routing — so it stays neutral. **Neutral** metrics never carry a verdict colour. Below the floor → the calibration state, never a fabricated read. Encoded + unit-tested in `lib/dashboardCards.ts` (`resolveDeltaTone`), adversarial-reviewed. |
 | 7 | Entry point: Home affordance now, tab later? | **RESOLVED 2026-06-14:** Home doorways (Trend→Dashboard, Today→History filtered) + Signal-footer CTA for v1; **no 4th tab**; tab is B-004 only if doorways under-discover (§8). |
 | 8 | Premium line (§12) | Defer to B-023d |
 | 9 | Are per-incident `event_ai_analysis` flags surfaced as a card? | Lean no for v1 (owner-facing already on the detail screen); revisit |
@@ -332,9 +332,9 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 - **PR 5 (vet bridge) is the only PR that requires Step 9 (the vet report) to exist.** Build it after Step 9 ships.
 - **Roadmap note:** the spec's overall "after Step 9" framing (§1) is a PM *resourcing* call (don't starve the vet report) — not a technical block on PRs 1–4. A build session can run PRs 1–4 ahead of Step 9 if the PM greenlights it.
 
-**Two prerequisites to settle before building (PM + experts, not the build session):**
-- **(§13 #6) the color-as-wellness ruling** — Data Scientist + Dr. Chen decide when color may imply "good/bad for the pet" (proposal: only on *established multi-sample* metrics; single observations stay neutral). **PR 2 needs this as an input.**
-- **`canonicalizeProtein` is server-only today** (`supabase/functions/generate-signal/protein.ts`). PR 1 needs it client-side for top-protein → port it to a shared `lib/protein.ts` (and have the Edge Function import the shared copy, to keep one source).
+**Prerequisites (both now settled):**
+- **(§13 #6) the color-as-wellness ruling — ✅ RESOLVED 2026-06-14** (Data Scientist + Dr. Chen, at PR 2 build): colour only on *established multi-sample* metrics; a single observation stays neutral in both directions; adverse inverts (falling adverse = calm/muted, never a green win); a positive metric's *drop* is not alarmed on the descriptive card (the floored decline detector owns decline). Encoded in `lib/dashboardCards.ts` (`resolveDeltaTone`). PR 2's input is satisfied.
+- **`canonicalizeProtein` client port — ✅ DONE in PR 1** (#155): ported from the Edge Function to a shared, dependency-free `lib/protein.ts`; the Edge Function re-exports it (one source). PR 1's `getTopProteins` and the Signal's correlation key now agree.
 
 ---
 
@@ -352,7 +352,7 @@ Principle 7 already lists "advanced correlation views" as a candidate premium fe
 
 ### PR 2 — Card components (the visual language)
 - **Goal:** the reusable, calm card set.
-- **Depends on:** PR 1; the §13 #6 color ruling (confirm resolved first).
+- **Depends on:** PR 1; the §13 #6 color ruling (✅ resolved 2026-06-14, this build).
 - **Files:** create `components/dashboard/MetricCard.tsx` (four layers: label / big number / sparkline / delta), `Sparkline.tsx` (`react-native-gifted-charts` wrapper), `RankingCard.tsx`, `FrequencyCalendarCard.tsx`, `CompositionCard.tsx` **(new — meals vs treats proportion bar, §5 #6)**, `MetricDetailScreen.tsx` (Week/Month/3-Month segmented control; surfaces the "vs your baseline" read prominently per the §7 summary-led refinement); co-located tests; add `react-native-gifted-charts` to `package.json`.
 - **Key logic:** a `polarity: 'adverse' | 'neutral' | 'positive'` prop drives color — **inverted for adverse** (rising vomits = concern, falling = calm, never a green "win"); color applied **only to established multi-sample metrics** per the ruling; charts have no axes/gridlines/legend; plain-language annotation (no jargon); visibly tappable + 44pt/`hitSlop`; theme tokens only.
 - **AC:** four layers render; adverse-rising = concern color, adverse-falling = calm (not green); per-card empty + "still learning the baseline" calibration states; card looks tappable; passes the 10-second glance.
