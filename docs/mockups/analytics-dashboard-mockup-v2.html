@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nyx — Analytics Dashboard · V2 (refined direction + alternatives)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+  /* ── Theme tokens, mirrored verbatim from constants/theme.ts (v1.2 "Linear Clean") ── */
+  :root{
+    --font-body:'Geist',-apple-system,system-ui,sans-serif;
+    --font-display:'Newsreader',Georgia,serif;
+    --accent:#00C2A8; --accent-dark:#0E8F7E; --accent-light:#E0FBF7;
+    --neutral-dark:#0A0A0A; --neutral-mid:#262626; --neutral-light:#FAFAFA;
+    --surface:#FFFFFF; --surface-subtle:#F5F5F5;
+    --text-primary:#0A0A0A; --text-secondary:#525252; --text-tertiary:#737373; --text-disabled:#A3A3A3;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --symptom:#F43F5E; --symptom-light:#FFE4E6; --chart-empty:#F0F0F0;
+    --calm:#475569; --calm-light:#EEF1F4;
+    --treat:#C084FC; --treat-dark:#9333EA; --treat-light:#F3E8FF;
+    --s1:8px; --s2:16px; --s3:24px; --s4:32px;
+    --r-xs:4px; --r-sm:8px; --r-md:16px; --r-lg:24px; --r-full:999px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font-body);background:#E7E9EE;color:var(--text-primary);-webkit-font-smoothing:antialiased;padding:40px 24px 72px;}
+
+  .page-head{max-width:1280px;margin:0 auto 16px;}
+  .page-head h1{font-family:var(--font-display);font-weight:400;font-size:31px;letter-spacing:-0.3px;}
+  .page-head .v{font-size:13px;color:#fff;background:var(--neutral-dark);border-radius:var(--r-full);padding:2px 11px;font-weight:600;font-family:var(--font-body);vertical-align:middle;margin-left:8px;}
+  .page-head .sub{color:var(--text-secondary);font-size:14px;margin-top:9px;line-height:1.6;max-width:980px;}
+  .page-head .sub b{color:var(--text-primary);font-weight:600;}
+  .page-head code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xs);padding:1px 5px;}
+  .page-head .meta{color:var(--text-tertiary);font-size:12px;margin-top:12px;line-height:1.6;}
+
+  /* part banners */
+  .part{max-width:1280px;margin:44px auto 4px;display:flex;align-items:center;gap:14px;}
+  .part .pn{font-family:var(--font-display);font-size:13px;font-weight:600;color:#fff;background:var(--accent);border-radius:var(--r-full);width:30px;height:30px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .part.two .pn{background:var(--neutral-dark);}
+  .part h2{font-size:21px;font-weight:600;letter-spacing:-.2px;}
+  .part .pd{font-size:13px;color:var(--text-secondary);margin-left:auto;max-width:560px;text-align:right;line-height:1.5;}
+  .part-rule{max-width:1280px;margin:10px auto 0;border:none;border-top:1px solid var(--border-strong);}
+
+  .lane-head{max-width:1280px;margin:30px auto 18px;display:flex;align-items:baseline;gap:12px;padding-bottom:9px;border-bottom:1px solid var(--border);}
+  .lane-head .tag{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--text-secondary);background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--r-full);padding:3px 11px;font-weight:600;flex:none;}
+  .lane-head h3{font-size:16px;font-weight:600;}
+  .lane-head .note{font-size:12.5px;color:var(--text-tertiary);margin-left:auto;max-width:540px;line-height:1.45;text-align:right;}
+
+  .frame{max-width:1280px;margin:0 auto;display:flex;gap:46px;align-items:flex-start;}
+  @media(max-width:900px){.frame{flex-direction:column;align-items:center;gap:24px;}}
+  .phone-col{flex:none;display:flex;flex-direction:column;align-items:center;gap:14px;}
+  .annot-col{flex:1;padding-top:28px;min-width:0;}
+  .frame-cap{font-size:12.5px;color:var(--text-tertiary);text-align:center;max-width:330px;line-height:1.5;}
+
+  .annot{display:flex;gap:13px;padding:14px 0;border-bottom:1px solid var(--border);}
+  .annot:last-child{border-bottom:none;}
+  .annot .ico{flex:none;width:26px;height:26px;border-radius:var(--r-full);background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--text-secondary);margin-top:1px;}
+  .annot.up .ico{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .annot .ab{flex:1;min-width:0;}
+  .annot .at{font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:3px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .annot .ad{font-size:13px;color:var(--text-secondary);line-height:1.55;}
+  .annot .ad code{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--text-tertiary);}
+  .pill{font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;font-weight:600;border-radius:var(--r-full);padding:2px 7px;flex:none;}
+  .pill.safety{color:var(--symptom);background:var(--symptom-light);}
+  .pill.voice{color:var(--accent-dark);background:var(--accent-light);}
+  .pill.prin{color:var(--calm);background:var(--calm-light);}
+  .pill.up{color:#fff;background:var(--accent);}
+
+  /* ════════════ PHONE CHROME ════════════ */
+  .phone{width:332px;background:var(--surface);border-radius:38px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 20px 54px rgba(10,10,12,.22);overflow:hidden;border:1px solid #DADCE2;position:relative;}
+  .phone.sm{width:272px;border-radius:32px;}
+  .screen{display:flex;flex-direction:column;background:var(--neutral-light);position:relative;min-height:560px;}
+  .statusbar{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 21px;font-size:11px;font-weight:600;background:var(--surface);flex:none;}
+  .statusbar .dots{letter-spacing:1px;}
+
+  /* line-icon helper — lucide-style, tinted via currentColor */
+  .g{display:block;width:100%;height:100%;}
+  .ic{display:flex;align-items:center;justify-content:center;}
+
+  /* identity strip */
+  .idstrip{background:var(--surface);border-bottom:1px solid var(--border);padding:12px var(--s2) 14px;flex:none;}
+  .wordmark{font-family:var(--font-display);font-weight:400;font-size:15px;letter-spacing:-0.3px;color:var(--text-tertiary);}
+  .id-row{display:flex;align-items:center;gap:12px;margin-top:8px;}
+  .avatar{width:40px;height:40px;border-radius:var(--r-full);background:linear-gradient(135deg,#CDE8E2,#7CCBBC);flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--font-body);font-weight:600;font-size:17px;letter-spacing:-.3px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);}
+  .id-text{flex:1;min-width:0;}
+  .id-name{font-family:var(--font-body);font-size:22px;font-weight:600;color:var(--text-primary);line-height:1.05;}
+  .id-sub{font-size:13px;color:var(--text-tertiary);margin-top:3px;}
+
+  .body{flex:1;padding:var(--s2) var(--s2) var(--s3);display:flex;flex-direction:column;gap:13px;}
+  .seclabel{font-size:11px;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.8px;}
+
+  /* signal card */
+  .signal-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s3) var(--s2) var(--s2);box-shadow:0 1px 3px rgba(10,10,12,.05),0 10px 26px rgba(10,10,12,.06);display:flex;flex-direction:column;gap:14px;}
+  .insight{display:flex;gap:var(--s2);}
+  .insight .rail{width:3px;border-radius:2px;background:var(--accent);opacity:.85;flex:none;}
+  .insight .content{flex:1;display:flex;flex-direction:column;gap:9px;}
+  .insight .lead{font-family:var(--font-display);font-weight:400;font-size:25px;line-height:1.3;letter-spacing:-.3px;color:var(--text-primary);}
+  .insight .metarow{display:flex;align-items:center;gap:var(--s1);flex-wrap:wrap;}
+  .insight .badge{font-size:11px;font-weight:500;color:var(--text-secondary);background:var(--surface-subtle);border:1px solid var(--border);border-radius:var(--r-full);padding:2px 9px;}
+  .insight .sample{font-size:11px;color:var(--text-tertiary);}
+  .insight .hint{font-size:11px;font-weight:500;color:var(--accent);margin-top:1px;}
+  .see-all{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:2px;padding-top:14px;border-top:1px solid var(--border);font-size:13px;font-weight:500;color:var(--accent);cursor:pointer;user-select:none;}
+
+  /* zone cards = doorways */
+  .zone-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s2);}
+  .zone-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;}
+  .zone-head .zl{font-size:11px;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.8px;}
+  .zone-head .door{font-size:12px;font-weight:500;color:var(--accent);display:flex;align-items:center;gap:3px;}
+  .ev{display:flex;align-items:center;gap:11px;padding:9px 0;}
+  .ev + .ev{border-top:1px solid var(--border);}
+  .ev .ec{width:34px;height:34px;border-radius:var(--r-full);background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex:none;color:var(--accent-dark);padding:8px;}
+  .ev .ec.treat{background:var(--treat-light);color:var(--treat-dark);}
+  .ev .em{flex:1;min-width:0;}
+  .ev .el{font-size:15px;font-weight:500;color:var(--text-primary);}
+  .ev .es{font-size:12.5px;color:var(--text-secondary);margin-top:1px;}
+  .ev .et{font-size:12.5px;color:var(--text-tertiary);}
+  .trend-sub{font-size:13px;color:var(--text-secondary);margin-bottom:12px;}
+  .progress-track{display:flex;height:7px;border-radius:4px;background:var(--chart-empty);overflow:hidden;margin-bottom:9px;}
+  .progress-fill{background:var(--accent);border-radius:4px;}
+  .compliance-note{font-size:13px;color:var(--text-secondary);}
+
+  .tabbar{height:58px;background:var(--surface);border-top:1px solid var(--border);display:flex;flex:none;}
+  .tabbar div{flex:1;display:flex;flex-direction:column;gap:4px;align-items:center;justify-content:center;font-size:11px;font-weight:500;letter-spacing:.3px;color:var(--text-disabled);}
+  .tabbar div .tg{width:19px;height:19px;}
+  .tabbar div.on{color:var(--neutral-dark);}
+
+  /* dashboard */
+  .navbar{height:54px;display:flex;align-items:center;gap:12px;padding:0 var(--s2);background:var(--surface);border-bottom:1px solid var(--border);flex:none;}
+  .navbar .back{width:18px;height:18px;color:var(--text-secondary);}
+  .navbar .nt{font-size:17px;font-weight:600;letter-spacing:-.2px;flex:1;}
+  .nav-share{display:flex;align-items:center;gap:6px;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;padding:6px 2px;}
+  .nav-share .si{width:15px;height:15px;}
+  .dash-intro{padding:16px var(--s2) 2px;}
+  .dash-intro .di{font-size:13px;color:var(--text-tertiary);}
+  .dash-body{padding:12px var(--s2) var(--s2);display:flex;flex-direction:column;gap:12px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);position:relative;box-shadow:0 1px 2px rgba(10,10,12,.03);}
+  .card .doorway{position:absolute;top:17px;right:15px;width:16px;height:16px;color:var(--text-disabled);}
+  .card-label{font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.7px;}
+
+  .summary-card{background:linear-gradient(180deg,#FBFEFD,var(--surface));border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2);display:flex;gap:13px;box-shadow:0 1px 3px rgba(10,10,12,.04);}
+  .summary-card .srail{width:3px;border-radius:2px;background:var(--accent);opacity:.8;flex:none;}
+  .summary-card .sc-body{flex:1;}
+  .summary-card .sc-eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:9px;}
+  .summary-card .sc-glyph{width:19px;height:19px;border-radius:var(--r-full);background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex:none;}
+  .summary-card .sc-kicker{font-size:10.5px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--text-tertiary);}
+  .summary-card .sc-lead{font-family:var(--font-display);font-weight:400;font-size:19px;line-height:1.4;letter-spacing:-.2px;color:var(--text-primary);}
+  .summary-card .sc-sub{font-size:13px;color:var(--text-secondary);line-height:1.5;margin-top:8px;}
+
+  .kpi-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+  .kpi-ban{font-size:48px;font-weight:600;letter-spacing:-2px;line-height:1;color:var(--text-primary);margin-top:11px;font-variant-numeric:tabular-nums;}
+  .kpi-ban .unit{font-size:15px;font-weight:500;color:var(--text-tertiary);letter-spacing:0;margin-left:7px;}
+  .kpi-spark{flex:none;width:100px;height:54px;display:flex;align-items:flex-end;}
+  .kpi-delta{display:inline-flex;align-items:center;gap:6px;margin-top:14px;font-size:13px;font-weight:500;}
+  .kpi-delta .arr{width:13px;height:13px;}
+  .kpi-delta.calm{color:var(--calm);}
+  .kpi-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:9px;line-height:1.5;}
+  .kpi-annot .tap{color:var(--accent);font-weight:500;}
+
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;}
+  .cal-dow span{font-size:10px;color:var(--text-disabled);text-align:center;font-weight:500;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .cal-cell{aspect-ratio:1;border-radius:7px;background:var(--chart-empty);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-disabled);}
+  .cal-cell.future{background:transparent;color:#D4D4D8;}
+  .cal-cell.today{box-shadow:inset 0 0 0 1.5px var(--border-strong);color:var(--text-secondary);font-weight:600;}
+  .cal-cell.h1{background:#FBD0D7;color:#9F1239;}
+  .cal-cell.h2{background:#F78DA0;color:#fff;}
+  .cal-cell.h3{background:var(--symptom);color:#fff;}
+  .cal-legend{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text-tertiary);margin-top:13px;}
+  .cal-legend .sw{width:13px;height:13px;border-radius:4px;flex:none;}
+  .cal-annot{font-size:12.5px;color:var(--text-secondary);margin-top:13px;line-height:1.5;}
+
+  .mt-bar{display:flex;height:32px;border-radius:var(--r-sm);overflow:hidden;margin-top:13px;gap:3px;}
+  .mt-bar .seg-meal{background:var(--accent);opacity:.9;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;}
+  .mt-bar .seg-treat{background:var(--treat);opacity:.85;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600;}
+  .mt-key{display:flex;gap:18px;margin-top:12px;}
+  .mt-key .k{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-secondary);}
+  .mt-key .dot{width:9px;height:9px;border-radius:var(--r-full);flex:none;}
+  .mt-key .dot.meal{background:var(--accent);} .mt-key .dot.treat{background:var(--treat);}
+  .mt-key .kn{font-weight:600;color:var(--text-primary);}
+  .mt-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:13px;line-height:1.5;}
+
+  .rank-list{margin-top:13px;display:flex;flex-direction:column;gap:2px;}
+  .rank-row{display:flex;align-items:center;gap:11px;padding:8px 0;}
+  .rank-row + .rank-row{border-top:1px solid var(--border);}
+  .rank-n{flex:none;width:18px;font-size:12px;font-weight:600;color:var(--text-disabled);text-align:center;}
+  .rank-name{flex:1;font-size:14.5px;font-weight:500;color:var(--text-primary);min-width:0;}
+  .rank-name .tagt{font-size:10px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:var(--treat-dark);background:var(--treat-light);border-radius:var(--r-full);padding:1px 7px;margin-left:6px;vertical-align:middle;}
+  .rank-bar-wrap{flex:none;width:80px;display:flex;align-items:center;gap:8px;}
+  .rank-bar{flex:1;height:5px;border-radius:3px;background:var(--chart-empty);overflow:hidden;}
+  .rank-bar i{display:block;height:100%;background:var(--accent);opacity:.6;border-radius:3px;}
+  .rank-bar i.t{background:var(--treat);}
+  .rank-count{font-size:12px;color:var(--text-secondary);font-weight:500;flex:none;min-width:34px;text-align:right;font-variant-numeric:tabular-nums;}
+  .rank-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:13px;line-height:1.5;}
+
+  .intake-ban{font-size:42px;font-weight:600;letter-spacing:-1.5px;line-height:1;margin-top:11px;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+  .intake-sub{font-size:12.5px;color:var(--text-tertiary);margin-top:8px;}
+  .intake-annot{font-size:12.5px;color:var(--text-secondary);margin-top:11px;line-height:1.55;padding-top:11px;border-top:1px solid var(--border);}
+
+  .trial-row{display:flex;align-items:baseline;justify-content:space-between;margin-top:11px;margin-bottom:11px;}
+  .trial-day{font-size:27px;font-weight:600;letter-spacing:-.5px;color:var(--text-primary);}
+  .trial-day .of{font-size:14px;font-weight:500;color:var(--text-tertiary);}
+  .trial-pct{font-size:12.5px;color:var(--text-secondary);}
+  .trial-annot{font-size:12.5px;color:var(--text-tertiary);margin-top:11px;line-height:1.5;}
+
+  /* ════════════ PART 2 — ALTERNATIVE DIRECTIONS ════════════ */
+  .dir-stage{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:26px;align-items:start;justify-items:center;}
+  @media(max-width:980px){.dir-stage{grid-template-columns:1fr;}}
+  .dir{display:flex;flex-direction:column;align-items:center;gap:14px;padding:14px 14px 16px;border-radius:var(--r-lg);border:1px solid transparent;}
+  .dir.rec{background:linear-gradient(180deg,#F3FCFA,#FBFEFD);border-color:#CFF3EE;}
+  .dir-tag{display:flex;align-items:center;gap:9px;align-self:stretch;}
+  .dir-tag .letter{width:26px;height:26px;border-radius:var(--r-full);background:var(--neutral-dark);color:#fff;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:center;flex:none;}
+  .dir.rec .dir-tag .letter{background:var(--accent);}
+  .dir-tag .dt{font-size:15px;font-weight:600;}
+  .dir-tag .rectag{margin-left:auto;font-size:9.5px;letter-spacing:.5px;text-transform:uppercase;font-weight:600;color:var(--accent-dark);background:var(--accent-light);border-radius:var(--r-full);padding:3px 9px;}
+  .dir-cap{align-self:stretch;font-size:12.5px;color:var(--text-secondary);line-height:1.55;}
+  .dir-cap .row{display:flex;gap:8px;padding:6px 0;}
+  .dir-cap .row .lbl{flex:none;width:64px;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-disabled);font-weight:600;padding-top:1px;}
+  .dir-cap .row .val{flex:1;}
+  .dir-cap .row .val b{color:var(--text-primary);font-weight:600;}
+  .dir-cap .warn{color:var(--symptom);} .dir-cap .good{color:var(--accent-dark);}
+
+  /* hero-led card (direction B) */
+  .hero-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s3) var(--s2) var(--s2);box-shadow:0 1px 3px rgba(10,10,12,.05),0 8px 22px rgba(10,10,12,.05);}
+  .hero-card .hl{font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.7px;}
+  .hero-card .hnum{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:8px;}
+  .hero-card .hn{font-size:64px;font-weight:600;letter-spacing:-3px;line-height:.92;font-variant-numeric:tabular-nums;}
+  .hero-card .hunit{font-size:14px;color:var(--text-tertiary);font-weight:500;margin-bottom:8px;}
+  .hero-card .hspark{width:120px;height:60px;}
+  .hero-card .hread{font-size:13.5px;color:var(--calm);font-weight:500;margin-top:14px;display:flex;align-items:center;gap:6px;}
+  .hero-card .hread .arr{width:14px;height:14px;}
+  .hero-card .hbase{font-size:12.5px;color:var(--text-tertiary);margin-top:7px;line-height:1.5;}
+  .summary-mini{display:flex;gap:10px;align-items:flex-start;padding:13px var(--s2);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);}
+  .summary-mini .smg{width:17px;height:17px;border-radius:var(--r-full);background:var(--accent-light);display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px;}
+  .summary-mini .smt{flex:1;font-size:13px;color:var(--text-secondary);line-height:1.5;}
+  .summary-mini .smt b{color:var(--text-primary);font-weight:600;}
+
+  /* calm-uniform card (direction C) */
+  .uni{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:14px var(--s2);}
+  .uni .ul{font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.7px;margin-bottom:7px;}
+  .uni .urow{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .uni .uv{font-size:22px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums;}
+  .uni .ud{font-size:12.5px;color:var(--calm);font-weight:500;}
+  .uni .us{font-size:12px;color:var(--text-tertiary);margin-top:6px;line-height:1.45;}
+  .uni .usummary{font-size:13.5px;color:var(--text-secondary);line-height:1.5;}
+  .uni .usummary b{color:var(--text-primary);font-weight:600;}
+
+  /* ════════════ LEGEND ════════════ */
+  .legend{max-width:1280px;margin:46px auto 0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:28px 30px;}
+  .legend h2{font-size:17px;font-weight:600;margin-bottom:6px;}
+  .legend .lead{font-size:13.5px;color:var(--text-secondary);line-height:1.6;margin-bottom:20px;max-width:980px;}
+  .legend h3{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);margin:24px 0 13px;}
+  table.cmp{width:100%;border-collapse:collapse;font-size:13px;}
+  table.cmp th,table.cmp td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5;}
+  table.cmp th{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-tertiary);font-weight:600;}
+  table.cmp td:first-child{font-weight:600;color:var(--text-primary);white-space:nowrap;}
+  table.cmp .a{color:var(--text-secondary);}
+  table.cmp .good{color:var(--accent-dark);} table.cmp .warn{color:var(--symptom);}
+  .rec{margin-top:20px;background:var(--accent-light);border:1px solid #CFF3EE;border-radius:var(--r-md);padding:16px 18px;font-size:13.5px;line-height:1.6;color:var(--text-primary);}
+  .rec b{color:var(--accent-dark);}
+  .up-list{display:grid;grid-template-columns:repeat(2,1fr);gap:11px 26px;margin-top:4px;}
+  @media(max-width:780px){.up-list{grid-template-columns:1fr;}}
+  .upn{font-size:13px;line-height:1.55;color:var(--text-secondary);padding-left:24px;position:relative;}
+  .upn::before{content:'✓';position:absolute;left:0;top:0;color:var(--accent-dark);font-weight:700;}
+  .upn b{color:var(--text-primary);font-weight:600;}
+  .open-note{font-size:13px;color:var(--text-secondary);line-height:1.6;margin-top:8px;padding-left:18px;position:relative;}
+  .open-note::before{content:'';position:absolute;left:0;top:7px;width:7px;height:7px;border-radius:2px;background:#92600A;}
+  .open-note b{color:#92600A;}
+
+  .foot{max-width:1280px;margin:24px auto 0;font-size:12px;color:var(--text-tertiary);line-height:1.6;}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Analytics dashboard <span class="v">V2</span></h1>
+  <div class="sub"><b>Part 1</b> takes the agreed direction to higher fidelity — real line icons in place of emoji, tighter hierarchy, the four locked decisions applied (Meals&nbsp;&amp;&nbsp;treats in v1, no 4th tab, range on the detail screen, Today→History filtered). <b>Part 2</b> puts <b>three different top-of-dashboard treatments side-by-side</b> — the highest-leverage design choice — so you can react to whole directions before we commit. Same content, same Nyx (cat, salmon elimination trial), same tokens (<code>#00C2A8</code>, Geist + Newsreader).</div>
+  <div class="meta"><b>Mockup only — not built.</b> Succeeds the earlier mock (<code>analytics-dashboard-mockup.html</code>), which stays intact for comparison. Detail + Share frames carry over from it unchanged. All copy holds to <code>nyx-voice</code> + the §11 invariants.</div>
+</div>
+
+<!-- ════════════════════════ PART 1 — REFINED DIRECTION ════════════════════════ -->
+<div class="part one"><div class="pn">1</div><h2>The refined direction</h2><div class="pd">The agreed direction, leveled up. This is also “Direction A” — the full expression of the summary-led top.</div></div>
+<hr class="part-rule" />
+
+<div class="lane-head">
+  <span class="tag">1 · Home</span>
+  <h3>Higher fidelity, decisions applied</h3>
+  <div class="note">Line icons, refined hierarchy, the Trend → Dashboard / Today → History doorways.</div>
+</div>
+
+<div class="frame">
+  <div class="phone-col">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="idstrip">
+        <div class="wordmark">Project Nyx</div>
+        <div class="id-row">
+          <div class="avatar">N</div>
+          <div class="id-text">
+            <div class="id-name">Nyx</div>
+            <div class="id-sub">Cat · 4 yrs · salmon trial, day 18</div>
+          </div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="seclabel">Signal</div>
+        <div class="signal-card">
+          <div class="insight">
+            <div class="rail"></div>
+            <div class="content">
+              <div class="lead">Vomiting has eased since Nyx switched to salmon — 3 this month, down from 8.</div>
+              <div class="metarow"><span class="badge">Early pattern</span><span class="sample">4 weeks of logs</span></div>
+              <div class="hint">Why we're showing this</div>
+            </div>
+          </div>
+          <div class="see-all" onclick="goTo('lane-dash')">See all of Nyx's patterns →</div>
+        </div>
+
+        <div class="zone-card">
+          <div class="zone-head"><span class="zl">Today</span><span class="door">History ›</span></div>
+          <div class="ev">
+            <div class="ec ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5h18"/><path d="M5 10.5a7 7 0 0014 0"/><path d="M10 17.4h4"/></svg></div>
+            <div class="em"><div class="el">Breakfast</div><div class="es">Tiki Cat Salmon Pâté · finished it all</div></div>
+            <div class="et">8:02 AM</div>
+          </div>
+          <div class="ev">
+            <div class="ec treat ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12Q10 6.5 15 12 10 17.5 4.5 12Z"/><path d="M15 12 19.8 8.8 19.8 15.2Z"/><circle cx="7.8" cy="11.2" r=".85" fill="currentColor" stroke="none"/></svg></div>
+            <div class="em"><div class="el">Treat</div><div class="es">Temptations</div></div>
+            <div class="et">2:15 PM</div>
+          </div>
+        </div>
+
+        <div class="zone-card">
+          <div class="zone-head"><span class="zl">Trend</span><span class="door">All patterns ›</span></div>
+          <div class="trend-sub">Day 18 of 56 — 17 of 18 days logged</div>
+          <div class="progress-track"><div class="progress-fill" style="flex:.32"></div><div style="flex:.68"></div></div>
+          <div class="compliance-note">94% meal compliance</div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="on"><span class="tg ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></span>Home</div>
+        <div><span class="tg ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 7h14M5 12h14M5 17h10"/></svg></span>History</div>
+        <div><span class="tg ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19a6.5 6.5 0 0113 0" stroke-linecap="round"/></svg></span>Pet</div>
+      </div>
+    </div></div>
+    <div class="frame-cap">Emoji → line icons; avatar is now the “N” monogram (matches the app's <code>PetAvatar</code> initials fallback).</div>
+  </div>
+
+  <div class="annot-col">
+    <div class="annot up">
+      <div class="ico">↑</div>
+      <div class="ab">
+        <div class="at">What “higher fidelity” changed <span class="pill up">refined</span></div>
+        <div class="ad">Line icons replace emoji (the single most “mockup-y” element); the avatar is a real monogram; tighter type, tabular numbers, and more intentional spacing/shadows. It reads as <b>built</b>, not sketched — without changing a single decision.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">✓</div>
+      <div class="ab">
+        <div class="at">Decisions, applied</div>
+        <div class="ad"><b>Trend → Dashboard</b> &amp; <b>Today → History</b> doorways (locked #1/#3); the bar stays three tabs. Everything you signed off in the last pass is carried in.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="lane-head">
+  <span class="tag">2 · Dashboard</span>
+  <h3>Direction A — summary-led, full &amp; refined</h3>
+  <div class="note">Coming-soon summary pinned top, seeded set safety-first, persistent Share, Meals &amp; treats in v1, meals-only intake.</div>
+</div>
+
+<div class="frame">
+  <div class="phone-col">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar">
+        <span class="back ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+        <span class="nt">Nyx's patterns</span>
+        <span class="nav-share" onclick="goTo('dir-stage')"><span class="si ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12l-4 4m4-4l4 4M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6"/></svg></span>Share</span>
+      </div>
+      <div class="dash-intro"><div class="di">What I'm seeing this month</div></div>
+      <div class="dash-body">
+
+        <div class="summary-card">
+          <div class="srail"></div>
+          <div class="sc-body">
+            <div class="sc-eyebrow">
+              <span class="sc-glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 2.5l2.3 5.9 5.9 2.3-5.9 2.3L12 18.9l-2.3-5.9L3.8 10.7l5.9-2.3L12 2.5z" fill="#00C2A8" opacity="0.9"/></svg></span>
+              <span class="sc-kicker">Summary</span>
+            </div>
+            <div class="sc-lead">Soon, I'll pull what I'm noticing about Nyx into a few plain sentences, right here.</div>
+            <div class="sc-sub">For now, the cards below have the details.</div>
+          </div>
+        </div>
+
+        <div class="card" onclick="goTo('lane-dash')">
+          <span class="doorway ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span>
+          <div class="kpi-top">
+            <div>
+              <div class="card-label">Vomiting · this month</div>
+              <div class="kpi-ban">3<span class="unit">episodes</span></div>
+            </div>
+            <div class="kpi-spark">
+              <svg width="100" height="48" viewBox="0 0 100 48" fill="none" preserveAspectRatio="none">
+                <polyline points="3,8 20,15 38,12 55,25 72,32 88,38 97,42" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.62"/>
+                <circle cx="97" cy="42" r="3" fill="#475569"/>
+              </svg>
+            </div>
+          </div>
+          <div class="kpi-delta calm"><span class="arr ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m0 0l-6-6m6 6l6-6"/></svg></span> down from 8 last month</div>
+          <div class="kpi-annot">Across 28 days of logs. <span class="tap">Tap to switch week / month / 3-month →</span></div>
+        </div>
+
+        <div class="card">
+          <div class="cal-head"><div class="card-label">Vomiting · how often</div><div class="card-label" style="color:var(--text-disabled)">June</div></div>
+          <div class="cal-dow"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+          <div class="cal-grid">
+            <div class="cal-cell future"></div>
+            <div class="cal-cell h1">1</div><div class="cal-cell">2</div><div class="cal-cell">3</div><div class="cal-cell">4</div><div class="cal-cell">5</div><div class="cal-cell h1">6</div>
+            <div class="cal-cell">7</div><div class="cal-cell">8</div><div class="cal-cell h1">9</div><div class="cal-cell">10</div><div class="cal-cell">11</div><div class="cal-cell">12</div><div class="cal-cell today">13</div>
+            <div class="cal-cell future">14</div><div class="cal-cell future">15</div><div class="cal-cell future">16</div><div class="cal-cell future">17</div><div class="cal-cell future">18</div><div class="cal-cell future">19</div><div class="cal-cell future">20</div>
+            <div class="cal-cell future">21</div><div class="cal-cell future">22</div><div class="cal-cell future">23</div><div class="cal-cell future">24</div><div class="cal-cell future">25</div><div class="cal-cell future">26</div><div class="cal-cell future">27</div>
+            <div class="cal-cell future">28</div><div class="cal-cell future">29</div><div class="cal-cell future">30</div>
+          </div>
+          <div class="cal-legend"><span>Fewer</span><span class="sw" style="background:var(--chart-empty)"></span><span class="sw" style="background:#FBD0D7"></span><span class="sw" style="background:#F78DA0"></span><span class="sw" style="background:var(--symptom)"></span><span>More</span></div>
+          <div class="cal-annot">3 days with vomiting this month — the most recent was Tuesday.</div>
+        </div>
+
+        <div class="card">
+          <span class="doorway ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span>
+          <div class="card-label">Meals &amp; treats · this month</div>
+          <div class="mt-bar"><div class="seg-meal" style="flex:50">50</div><div class="seg-treat" style="flex:38">38</div></div>
+          <div class="mt-key"><div class="k"><span class="dot meal"></span><span class="kn">50</span>&nbsp;meals</div><div class="k"><span class="dot treat"></span><span class="kn">38</span>&nbsp;treats</div></div>
+          <div class="mt-annot">This is what you logged for Nyx this month. If a stretch ever goes treats-only, I'll gently note it — it can be worth sharing with your vet.</div>
+        </div>
+
+        <div class="card">
+          <span class="doorway ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span>
+          <div class="card-label">Top food · this month</div>
+          <div class="rank-list">
+            <div class="rank-row"><div class="rank-n">1</div><div class="rank-name">Tiki Cat Salmon Pâté</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:100%"></i></div><span class="rank-count">24</span></div></div>
+            <div class="rank-row"><div class="rank-n">2</div><div class="rank-name">Temptations <span class="tagt">treat</span></div><div class="rank-bar-wrap"><div class="rank-bar"><i class="t" style="width:88%"></i></div><span class="rank-count">21</span></div></div>
+            <div class="rank-row"><div class="rank-n">3</div><div class="rank-name">Weruva Salmon &amp; Pumpkin</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:38%"></i></div><span class="rank-count">9</span></div></div>
+          </div>
+          <div class="rank-annot">Salmon Pâté led her meals; Temptations led her treats. Both shown, so the picture is honest.</div>
+        </div>
+
+        <div class="card">
+          <span class="doorway ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span>
+          <div class="card-label">Top protein · in her meals</div>
+          <div class="rank-list">
+            <div class="rank-row"><div class="rank-n">1</div><div class="rank-name">Salmon</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:100%"></i></div><span class="rank-count">33</span></div></div>
+            <div class="rank-row"><div class="rank-n">2</div><div class="rank-name">Chicken</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:18%"></i></div><span class="rank-count">6</span></div></div>
+            <div class="rank-row"><div class="rank-n">3</div><div class="rank-name">Turkey</div><div class="rank-bar-wrap"><div class="rank-bar"><i style="width:12%"></i></div><span class="rank-count">4</span></div></div>
+          </div>
+          <div class="rank-annot">Salmon was Nyx's most-fed protein this month — in step with her elimination trial.</div>
+        </div>
+
+        <div class="card">
+          <span class="doorway ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span>
+          <div class="card-label">Meals finished · this month</div>
+          <div class="intake-ban">78%</div>
+          <div class="intake-sub">39 of 50 meals rated “most” or “all”</div>
+          <div class="intake-annot">Just meals — treats aren't counted here, since pets finish those readily and it would hide the real signal. A lasting drop in how much Nyx eats at mealtime is worth a word with your vet, and I'll keep watch.</div>
+        </div>
+
+        <div class="card">
+          <div class="card-label">Diet trial · salmon elimination</div>
+          <div class="trial-row"><div class="trial-day">Day 18 <span class="of">of 56</span></div><div class="trial-pct">32% in</div></div>
+          <div class="progress-track"><div class="progress-fill" style="flex:.32"></div><div style="flex:.68"></div></div>
+          <div class="trial-annot">Nyx is 18 days into her 8-week trial. Keeping it steady helps a pattern show.</div>
+        </div>
+
+      </div>
+    </div></div>
+    <div class="frame-cap">Direction A in full. Part 2 compares this top against two alternatives.</div>
+  </div>
+
+  <div class="annot-col">
+    <div class="annot up">
+      <div class="ico">A</div>
+      <div class="ab">
+        <div class="at">This is “summary-led” <span class="pill prin">§7</span></div>
+        <div class="ad">The AI summary sits at the very top as the editorial centerpiece; the safety card leads the receipts right below it. This is the <b>current spec lean</b> — §7 calls the AI summary the AI-forward centerpiece. Part 2 shows what it looks like if a hero stat led instead, or if nothing led at all.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">✓</div>
+      <div class="ab">
+        <div class="at">Everything settled, in place</div>
+        <div class="ad">Persistent <b>Share</b> in the header; <b>Meals &amp; treats</b> card (v1); <b>meals-only</b> finished-rate; doorway chevrons into detail screens. Calendar &amp; top-food kept as you loved them, food now icon-tagged.</div>
+      </div>
+    </div>
+    <div class="annot">
+      <div class="ico">↪</div>
+      <div class="ab">
+        <div class="at">Detail + Share unchanged</div>
+        <div class="ad">The card-detail screen (W/M/3M + baseline) and the Share-with-vet flow carry over from the prior mock untouched — both were settled. They're not re-drawn here to keep the focus on the top-of-dashboard choice.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════ PART 2 — ALTERNATIVE DIRECTIONS ════════════════════════ -->
+<div class="part two" id="dir-stage-anchor"><div class="pn">2</div><h2>Three ways the top could read</h2><div class="pd">The biggest “feel” lever is how the hero + AI summary read. Same cards underneath — react to the whole direction.</div></div>
+<hr class="part-rule" />
+
+<div class="dir-stage" id="dir-stage" style="margin-top:24px;">
+
+  <!-- A — summary-led -->
+  <div class="dir rec">
+    <div class="dir-tag"><span class="letter">A</span><span class="dt">Summary-led</span><span class="rectag">Spec lean</span></div>
+    <div class="phone sm"><div class="screen" style="min-height:auto;">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="nt" style="font-size:15px;">Nyx's patterns</span><span class="nav-share"><span class="si ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12l-4 4m4-4l4 4M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6"/></svg></span>Share</span></div>
+      <div class="dash-body" style="padding-bottom:var(--s2);">
+        <div class="summary-card">
+          <div class="srail"></div>
+          <div class="sc-body">
+            <div class="sc-eyebrow"><span class="sc-glyph"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 2.5l2.3 5.9 5.9 2.3-5.9 2.3L12 18.9l-2.3-5.9L3.8 10.7l5.9-2.3L12 2.5z" fill="#00C2A8" opacity="0.9"/></svg></span><span class="sc-kicker">Summary</span></div>
+            <div class="sc-lead" style="font-size:17px;">Soon, I'll pull what I'm noticing about Nyx into a few plain sentences, right here.</div>
+            <div class="sc-sub">For now, the cards below have the details.</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-label">Vomiting · this month</div>
+          <div class="kpi-ban" style="font-size:38px;">3<span class="unit">episodes</span></div>
+          <div class="kpi-delta calm"><span class="arr ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m0 0l-6-6m6 6l6-6"/></svg></span> down from 8</div>
+        </div>
+      </div>
+    </div></div>
+    <div class="dir-cap">
+      <div class="row"><span class="lbl">Feel</span><span class="val">The intelligence <b>narrates</b>; the cards are the receipts.</span></div>
+      <div class="row"><span class="lbl">Like</span><span class="val">WHOOP weekly narrative · Tableau Pulse</span></div>
+      <div class="row"><span class="lbl">For</span><span class="val good">Leans into our moat — the AI summary as the centerpiece (§7).</span></div>
+      <div class="row"><span class="lbl">Against</span><span class="val warn">Until PR 4 ships, the top slot is the coming-soon card, not the real summary.</span></div>
+    </div>
+  </div>
+
+  <!-- B — hero-stat-led -->
+  <div class="dir">
+    <div class="dir-tag"><span class="letter">B</span><span class="dt">Hero-stat-led</span></div>
+    <div class="phone sm"><div class="screen" style="min-height:auto;">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="nt" style="font-size:15px;">Nyx's patterns</span><span class="nav-share"><span class="si ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12l-4 4m4-4l4 4M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6"/></svg></span>Share</span></div>
+      <div class="dash-body" style="padding-bottom:var(--s2);">
+        <div class="hero-card">
+          <div class="hl">Vomiting · this month</div>
+          <div class="hnum">
+            <div style="display:flex;align-items:flex-end;gap:6px;"><span class="hn">3</span><span class="hunit">episodes</span></div>
+            <div class="hspark"><svg width="120" height="60" viewBox="0 0 120 60" fill="none" preserveAspectRatio="none"><polyline points="3,10 24,19 45,15 66,31 87,40 108,47 117,50" fill="none" stroke="#475569" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/><circle cx="117" cy="50" r="3.4" fill="#475569"/></svg></div>
+          </div>
+          <div class="hread"><span class="arr ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14m0 0l-6-6m6 6l6-6"/></svg></span> down from 8 last month</div>
+          <div class="hbase">Below Nyx's recent average of 6 a month.</div>
+        </div>
+        <div class="summary-mini">
+          <span class="smg"><svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2.5l2.3 5.9 5.9 2.3-5.9 2.3L12 18.9l-2.3-5.9L3.8 10.7l5.9-2.3L12 2.5z" fill="#00C2A8" opacity="0.9"/></svg></span>
+          <span class="smt"><b>Soon:</b> a few plain sentences on what I'm noticing. For now, the cards have the details.</span>
+        </div>
+      </div>
+    </div></div>
+    <div class="dir-cap">
+      <div class="row"><span class="lbl">Feel</span><span class="val">The one number that answers <b>“is she okay?”</b> leads; everything supports.</span></div>
+      <div class="row"><span class="lbl">Like</span><span class="val">Oura / Whoop hero score</span></div>
+      <div class="row"><span class="lbl">For</span><span class="val good">Instantly answers the owner's real question; the summary still rides just below.</span></div>
+      <div class="row"><span class="lbl">Against</span><span class="val warn">Privileges one metric — what leads on a calm week? (Engine still picks, safety-first; never a gamified score — §11 #3.)</span></div>
+    </div>
+  </div>
+
+  <!-- C — calm uniform -->
+  <div class="dir">
+    <div class="dir-tag"><span class="letter">C</span><span class="dt">Calm uniform list</span></div>
+    <div class="phone sm"><div class="screen" style="min-height:auto;">
+      <div class="statusbar"><span>9:41</span><span class="dots">●●● ⌷</span></div>
+      <div class="navbar"><span class="nt" style="font-size:15px;">Nyx's patterns</span><span class="nav-share"><span class="si ic"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12l-4 4m4-4l4 4M5 13v6a2 2 0 002 2h10a2 2 0 002-2v-6"/></svg></span>Share</span></div>
+      <div class="dash-body" style="padding-bottom:var(--s2);gap:10px;">
+        <div class="uni"><div class="usummary"><b>This month:</b> vomiting eased, salmon led her meals, and she finished most of them. The cards below break it down.</div></div>
+        <div class="uni">
+          <div class="ul">Vomiting</div>
+          <div class="urow"><span class="uv">3</span><span class="ud">↓ from 8</span></div>
+          <div class="us">3 days this month · most recent Tuesday</div>
+        </div>
+        <div class="uni">
+          <div class="ul">Meals finished</div>
+          <div class="urow"><span class="uv">78%</span><span class="ud" style="color:var(--text-tertiary)">39 of 50</span></div>
+        </div>
+      </div>
+    </div></div>
+    <div class="dir-cap">
+      <div class="row"><span class="lbl">Feel</span><span class="val"><b>Show the data, don't dramatize it.</b> No hero, no elevated summary — all cards equal.</span></div>
+      <div class="row"><span class="lbl">Like</span><span class="val">Linear · Bearable (no-narrative)</span></div>
+      <div class="row"><span class="lbl">For</span><span class="val good">Calmest &amp; safest — nothing over-dramatized; the data speaks (Principle 3).</span></div>
+      <div class="row"><span class="lbl">Against</span><span class="val warn">Flattest — the safety lead rides order alone, not weight; gives up the AI summary as a differentiator.</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ════════════════════════ LEGEND ════════════════════════ -->
+<div class="legend">
+  <h2>The direction trade-off — and a recommendation</h2>
+  <div class="lead">All three carry the identical seeded cards, the inverted-colour polarity, and every §11 safety invariant. The only thing that changes is <b>what greets you at the top</b> — which sets the whole surface's personality.</div>
+  <table class="cmp">
+    <tr><th>Dimension</th><th>A · Summary-led</th><th>B · Hero-stat-led</th><th>C · Calm uniform</th></tr>
+    <tr><td>What leads</td><td class="a">The AI narrative</td><td class="a">The safety-critical number</td><td class="a">Nothing — even weight</td></tr>
+    <tr><td>Answers “is she okay?”</td><td class="a">Via the sentence</td><td class="a good">Instantly, by the number</td><td class="a">By reading the list</td></tr>
+    <tr><td>Our differentiator</td><td class="a good">Front-and-centre (the AI summary moat)</td><td class="a">Present, secondary</td><td class="a warn">De-emphasised</td></tr>
+    <tr><td>Calmness (Principle 3)</td><td class="a">Warm, editorial</td><td class="a">One bold stat, then calm</td><td class="a good">Maximally calm</td></tr>
+    <tr><td>Safety-lead visibility (§11)</td><td class="a">Summary + first card</td><td class="a good">The lead IS the hero</td><td class="a warn">Order only, not weight</td></tr>
+    <tr><td>Risk</td><td class="a warn">Coming-soon occupies the hero slot until PR 4</td><td class="a warn">“What leads on a calm week?” needs an answer</td><td class="a warn">Flat — under-surfaces the one thing that matters</td></tr>
+  </table>
+  <div class="rec">
+    <b>Designer lean → A (summary-led), with B as the strong contender.</b> A matches §7's intent — the AI summary is the thing Nyx is uniquely positioned to offer, and it keeps the safety card leading immediately below — so it's the most “us.” <b>B is genuinely compelling</b> for Jordan's literal question (“is she okay?”) and is worth a real look if we want the safety metric to dominate the glance; its open problem is what fills the hero on a week with no clear concern (the engine picks safety-first, but it must never become a gamified “score”). <b>C is the safe fallback</b> — the Bearable-style restraint we'd reach for if we ever worried the summary over-promises — but it spends our biggest differentiator to get there. My recommendation: <b>build A, borrow B's “vs baseline” prominence into the lead card.</b>
+  </div>
+
+  <h3>What Part 1 leveled up (fidelity, no decisions changed)</h3>
+  <div class="up-list">
+    <div class="upn"><b>Line icons</b> replace every emoji — meals, treats, tabs, chevrons, deltas.</div>
+    <div class="upn"><b>Monogram avatar</b> (“N”) matching the app's <code>PetAvatar</code> initials fallback.</div>
+    <div class="upn"><b>Tabular numbers</b> + tightened type scale on every big-number card.</div>
+    <div class="upn"><b>Refined spacing, shadows &amp; dividers</b> — reads built, not sketched.</div>
+    <div class="upn"><b>All four locked decisions</b> applied (Meals&amp;treats v1, no tab, detail-screen range, Today filtered).</div>
+    <div class="upn"><b>Food icon-tagging</b> so a treat topping the list stays honest.</div>
+  </div>
+
+  <h3>Still open — needs the team before build (unchanged)</h3>
+  <div class="open-note"><b>§13 #1 —</b> the user-facing name (“Nyx's patterns” shown; never “Analytics”).</div>
+  <div class="open-note"><b>§13 #6 —</b> the colour-as-wellness ruling (Data Scientist + Dr. Chen) still gates the card component.</div>
+  <div class="open-note"><b>This V2 —</b> which top-of-dashboard direction (A / B / C) we commit to.</div>
+</div>
+
+<div class="foot">
+  Source of truth: <code>docs/nyx-analytics-dashboard-requirements.md</code>. Tokens from <code>constants/theme.ts</code>. Succeeds <code>analytics-dashboard-mockup.html</code> (kept for comparison). Mockup only — not built.
+</div>
+
+<script>
+  function goTo(id){
+    var el = document.getElementById(id) || document.getElementById(id+'-anchor');
+    if(!el) return;
+    el.scrollIntoView({behavior:'smooth', block:'start'});
+    el.style.transition='background .2s ease-out'; var p=el.style.background;
+    el.style.background='rgba(0,194,168,.12)'; setTimeout(function(){el.style.background=p;},900);
+  }
+</script>
+
+</body>
+</html>
