@@ -10,6 +10,7 @@ import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { initDb, clearLocalData } from '../lib/db';
 import { notifySignedOut } from '../lib/sync';
 import { useSync } from '../hooks/useSync';
+import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
 import { CompletionMoment } from '../components/ui/CompletionMoment';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
@@ -31,6 +32,9 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(fontMap);
 
   useSync();
+  // B-085: keep user_profiles.timezone populated with the device zone so the
+  // detection engine's detector ⑥ can run (engine input only — never surfaced).
+  useSyncTimezone();
 
   useEffect(() => {
     initDb().catch(console.error);
