@@ -24,6 +24,7 @@
         "npm:expo-font@~14.0.12",
         "npm:expo-image-manipulator@~14.0.7",
         "npm:expo-image-picker@~17.0.11",
+        "npm:expo-linear-gradient@~15.0.8",
         "npm:expo-linking@~8.0.12",
         "npm:expo-network@~8.0.8",
         "npm:expo-router@~6.0.24",
