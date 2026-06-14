@@ -56,6 +56,7 @@ import {
   summaryTemplate,
   summaryModelPayload,
   validateSummary,
+  shouldPhraseWithModel,
   SUMMARY_TOOL,
   SUMMARY_SYSTEM,
   type CachedSummary,
@@ -167,6 +168,12 @@ async function phraseSummaryText(packet: SummaryFactPacket): Promise<CachedSumma
     evidence: packet.evidence,
     hasSafety: packet.hasSafety,
     quiet: packet.quiet,
+  }
+  // Restraint (PR-4 adversarial review): SAFETY and QUIET summaries ship the deterministic
+  // template — the model is never on a safety-relevant or pure-downside path. Only the
+  // non-safety reflection case is phrased by the model. See shouldPhraseWithModel.
+  if (!shouldPhraseWithModel(packet)) {
+    return { ...base, text: template, source: 'template' }
   }
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) {

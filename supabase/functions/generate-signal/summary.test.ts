@@ -24,6 +24,7 @@ import type {
 import {
   buildSummaryPacket,
   extractNumbers,
+  shouldPhraseWithModel,
   summaryTemplate,
   validateSummary,
   type SummaryFactPacket,
@@ -410,4 +411,101 @@ Deno.test('validateSummary — accepts a faithful model paraphrase that preserve
   const good =
     'Pixel has had vomiting on 5 of the last 7 days, up from 2 the week before — worth a vet visit soon. Chicken was Pixel\'s most-logged meal protein this month.'
   assert.equal(validateSummary(good, p), true)
+})
+
+// ── PR-4 adversarial-review regression vectors (the counterexamples that BROKE the first cut) ──
+
+Deno.test('validateSummary — rejects the lay/warm reassurance the review found (Claim 1)', () => {
+  const p = quietPacket()
+  for (const t of [
+    'It has been a quiet, settled month for Pixel. Nothing has stood out as a worry.',
+    'Pixel has a strong appetite and is a great eater. Keep logging for Pixel.',
+    'Pixel is eating beautifully and seems happy and content. Keep logging for Pixel.',
+    'Nothing concerning this month for Pixel, and no news is good news. Keep logging for Pixel.',
+    'Pixel got a clean bill this month with everything in order. Keep logging for Pixel.',
+    'An encouraging month for Pixel with nothing to flag. Keep logging for Pixel.',
+    'Pixel is looking good and doing well. Keep logging for Pixel.',
+    'No vomiting at all this month, which is good to see. Keep logging for Pixel.',
+  ]) {
+    assert.equal(validateSummary(t, p), false, `must reject reassurance: "${t}"`)
+  }
+})
+
+Deno.test('validateSummary — rejects causal paraphrases the review found (Claim 2)', () => {
+  const p = safetyPacket() // allows 5, 7, 2
+  for (const t of [
+    'Pixel has had vomiting on 5 of the last 7 days, which may be linked to the food — see your vet.',
+    'Pixel has had vomiting on 5 of the last 7 days, possibly from the new food — see your vet.',
+    'Pixel has had vomiting on 5 of the last 7 days; it could be tied to the new treats — see your vet.',
+    'Pixel seems sensitive to something, with vomiting on 5 of the last 7 days. See your vet.',
+    "Pixel isn't tolerating the new diet, with vomiting on 5 of the last 7 days. See your vet.",
+    'Vomiting on 5 of the last 7 days for Pixel, likely brought on by the switch. See your vet.',
+  ]) {
+    assert.equal(validateSummary(t, p), false, `must reject causal: "${t}"`)
+  }
+})
+
+Deno.test('validateSummary — rejects lay disease/diagnosis terms the review found (Claim 2)', () => {
+  const p = safetyPacket()
+  for (const t of [
+    'Pixel may have a tummy bug, with vomiting on 5 of the last 7 days. See your vet.',
+    'Could be a sensitive stomach — vomiting on 5 of the last 7 days. See your vet.',
+    'Looks like food poisoning; vomiting on 5 of the last 7 days. See your vet.',
+    'Maybe something they ate, with vomiting on 5 of the last 7 days. See your vet.',
+    'Possibly hairballs, with vomiting on 5 of the last 7 days. See your vet.',
+    'Pixel seems unwell, with vomiting on 5 of the last 7 days. See your vet.',
+  ]) {
+    assert.equal(validateSummary(t, p), false, `must reject disease: "${t}"`)
+  }
+})
+
+Deno.test('extractNumbers + validateSummary — spelled integers ≥ thirteen are caught (Claim 4a)', () => {
+  assert.equal(extractNumbers('thirteen days').has(13), true)
+  assert.equal(extractNumbers('about twenty meals').has(20), true)
+  assert.equal(extractNumbers('roughly a hundred logs').has(100), true)
+  const p = quietPacket() // allows {10}
+  assert.equal(
+    validateSummary('Pixel logged about thirteen meals this month. Keep logging for Pixel.', p),
+    false,
+  )
+})
+
+Deno.test('validateSummary — rejects preference evasions the review found (Claim 6)', () => {
+  const p = quietPacket()
+  for (const t of [
+    'Pixel can be a bit choosy, but chicken led the month. Keep logging for Pixel.',
+    'Pixel is a selective eater this month. Keep logging for Pixel.',
+    'Pixel turns up their nose at most things. Keep logging for Pixel.',
+    'Pixel really goes for chicken. Keep logging for Pixel.',
+    'Pixel seems drawn to the new treats. Keep logging for Pixel.',
+    'Pixel craves chicken lately. Keep logging for Pixel.',
+  ]) {
+    assert.equal(validateSummary(t, p), false, `must reject preference: "${t}"`)
+  }
+})
+
+Deno.test('shouldPhraseWithModel — safety & quiet are template-only; only reflection is phrased (Claims 1/2/4b restraint)', () => {
+  assert.equal(shouldPhraseWithModel(safetyPacket()), false)
+  assert.equal(shouldPhraseWithModel(quietPacket()), false)
+  const reflective = buildSummaryPacket({
+    petName: 'Pixel',
+    findings: [reflectionFinding()],
+    mealEvents: ratedChickenMeals(6),
+    symptomEvents: [],
+    freeFedFoodIds: new Set(),
+    nowMs: NOW_MS,
+  })!
+  assert.equal(shouldPhraseWithModel(reflective), true)
+})
+
+Deno.test('number-swap inversion on a safety packet is prevented by RESTRAINT, not by grounding (Claim 4b)', () => {
+  // The grounding number-set is fact-blind: a 5<->2 swap stays inside allowedNumbers, so
+  // validateSummary alone CANNOT detect that a worsening trend was inverted to "improvement".
+  const p = safetyPacket() // worsening "5 of the last 7 days, up from 2"; allows {5,7,2}
+  const inverted =
+    'Pixel has had vomiting on just 2 of the last 7 days, down from 5 the week before — mention it to your vet.'
+  assert.equal(validateSummary(inverted, p), true) // grounding is swap-blind by design...
+  // ...which is EXACTLY why a safety summary is NEVER sent to the model: it ships the
+  // deterministic template, so the model can never produce this inversion.
+  assert.equal(shouldPhraseWithModel(p), false)
 })

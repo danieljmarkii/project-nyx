@@ -86,18 +86,26 @@ export function monthWindowBounds(nowMs: number): { startMs: number; endMs: numb
 // number-WORDS the finding templates emit (e.g. templateIntakeDecline → "the last three
 // days" via phrasing.ts numWord).
 
+// Comprehensive cardinal map — NOT just the small words the templates emit, because the
+// MODEL can spell out any integer. A short map (zero..twelve) let "thirteen days" escape
+// grounding entirely (adversarial review, Claim 4a); this covers every spelled integer a
+// summary could plausibly carry, so an out-of-range spelled number resolves to a value that
+// then fails the allowed-set check rather than vanishing.
 const NUMBER_WORDS: Record<string, number> = {
-  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
-  seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50,
+  sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100, thousand: 1000, dozen: 12,
 }
 
-/** All numeric values appearing in `text` — digit runs (integer part) AND number-words
- *  zero..twelve. Returns a Set for membership checks. */
+/** All numeric values appearing in `text` — digit runs (integer part) AND spelled number-
+ *  words. Returns a Set for membership checks. A compound like "twenty-one" surfaces both 20
+ *  and 1; if neither is in the allowed set the summary is rejected, which is the safe
+ *  direction. Word-boundaried so "someone"/"once" never match "one", "tone" never "ten". */
 export function extractNumbers(text: string): Set<number> {
   const out = new Set<number>()
   const digits = text.match(/\d+/g)
   if (digits) for (const d of digits) out.add(parseInt(d, 10))
-  // Word-boundaried so "someone"/"once" never match "one", "tone" never matches "ten", etc.
   for (const [word, value] of Object.entries(NUMBER_WORDS)) {
     if (new RegExp(`\\b${word}\\b`, 'i').test(text)) out.add(value)
   }
@@ -117,23 +125,34 @@ function sentenceCount(text: string): number {
 // specific screens the kickoff names: preference framing (§11 #1 — intake is never
 // "preference") and disease names (the FDA general-wellness line — §4.3 / §7).
 
-// Reassurance vocabulary — broadened over the B-051 adversarial rounds. The summary may
-// NEVER reassure: not on a safety finding, and never on the ABSENCE of one ("absence ≠
-// wellness", the Google liver-test retraction, §7). The deterministic clauses contain none
-// of these, so the template always passes; a model reply that drifts here falls back.
+// Reassurance vocabulary. The summary may NEVER reassure: not on a safety finding, and never
+// on the ABSENCE of one ("absence ≠ wellness", the Google liver-test retraction, §7). The
+// deterministic clauses carry none of this, so the template always passes; a model reply that
+// drifts here falls back. SUBSTANTIALLY broadened after the PR-4 adversarial review found the
+// lay/warm vocabulary a consumer model actually reaches for slipping past the original list
+// (Claim 1): "settled", "steady", "great appetite", "nothing stood out", "good to see", etc.
+// Keyword screens are not paraphrase-proof — restraint on the high-stakes cases (safety/quiet
+// → template-only, shouldPhraseWithModel) is the structural backstop; this list hardens the
+// one remaining model path (the non-safety reflection summary).
 const REASSURANCE_RE =
-  /\b(fine|okay|ok|healthy|all clear|nothing to worry|nothing serious|probably fine|no concern|don't worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|back to normal|right track|in good shape|no issues?|no problems?|reassur\w*|rest easy|peace of mind)\b/i
+  /\b(fine|okay|ok|healthy|health(?:ily)?|all clear|clean bill|nothing to (?:worry|flag|fear|report)|nothing (?:serious|concerning|of concern|amiss|wrong|to be concerned)|nothing (?:has |that )?stood out|probably fine|no (?:concerns?|issues?|problems?|worries|red flags?|cause for concern|news is good news)|don'?t worry|doing (?:great|well|fine|good|fab\w*)|all good|on the mend|mend|mending|thriving|flourish\w*|recover(?:s|ed|ing|y)?|much better|back to normal|right track|in (?:good|great|fine) (?:shape|health|form|spirits)|reassur\w*|rest easy|peace of mind|settled|steady|stable|comfortable|content|happy|encouraging|good (?:news|sign|to see)|looking (?:good|great|well|healthy)|looks? (?:good|great|fine|healthy)|as it should be|everything (?:in order|looks|is fine|is good|checks out)|in order|(?:strong|robust|great|good|healthy|hearty) appetite|(?:strong|good|hearty|enthusiastic) eater|eating (?:well|beautifully|great|nicely|happily|like a champ)|under control|no big deal|all is well|well overall)\b/i
 // Preference framing — intake is descriptive, NEVER a preference/like/favourite (§11 #1).
+// Broadened after the review (Claim 6): "choosy", "selective", "turns up their nose",
+// "drawn to", "craves", "gravitates", "goes for", "fan of" all slipped the original list.
 const PREFERENCE_RE =
-  /\b(picky|fussy|finicky|prefer(?:s|red|ence)?|favou?rite|likes?|loves?|enjoys?|fond of|fussy eater)\b/i
+  /\b(picky|fussy|finicky|choos(?:y|ey)|select(?:ive)?|prefer(?:s|red|ence)?|favou?rite|likes?|loves?|enjoy(?:s|ed)?|fond of|keen on|partial to|fan of|drawn to|crav(?:e|es|ing)|gravitat\w*|turns? up (?:his|her|its|their|the)? ?nose|go(?:es|ing)? for|reach(?:es|ing)? for)\b/i
 // Causal claims — the summary is descriptive/associational, never causal (§4.3 / §7).
+// Broadened after the review (Claim 2 — the Eight-Sleep bug): "linked to", "tied to", "set
+// off by", "brought on by", "stems from", "sensitive to", "not tolerating", "making sick".
 const CAUSAL_RE =
-  /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic)|intoleran(?:t|ce)|reacts? to|leads? to|results? in|owing to|thanks to)\b/i
+  /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic|ies)|intoleran(?:t|ce)|reacts? to|reaction to|leads? to|results? in|owing to|thanks to|link(?:s|ed)? to|connect(?:s|ed)? to|tied to|set off|sets off|brought on|bring(?:s|ing)? on|stem(?:s|med|ming)? from|lines? up with|in response to|attributable to|blam(?:e|ed|ing) (?:on|it)|culprit|sensitive to|sensitivity to|not agreeing|doesn'?t agree|tolerat\w*|disagree(?:s|d|ing)? with|mak(?:e|es|ing) \w+ sick|from (?:the |her |his |their |its )?(?:new )?(?:food|diet|treats?|kibble))\b/i
 // Disease / diagnosis names — the FDA general-wellness charter: don't name a disease, don't
-// assert abnormality (§4.3). Broad but specific enough to avoid benign words; "condition"
-// is deliberately excluded (too common a benign word).
+// assert abnormality (§4.3). Both the CLINICAL terms and — added after the PR-4 review
+// (Claim 2) — the LAY vocabulary a consumer model actually reaches for ("tummy bug",
+// "sensitive stomach", "food poisoning", "something they ate", "hairball", "unwell").
+// "condition" is deliberately excluded (too common a benign word).
 const DISEASE_RE =
-  /\b(pancreatitis|gastritis|gastroenteritis|enteritis|colitis|ibd|inflammatory bowel|hepatic lipidosis|lipidosis|hepatitis|cholangitis|kidney disease|renal (?:disease|failure|insufficiency)|ckd|diabet\w*|hyperthyroid\w*|hypothyroid\w*|thyroid|cancer|tumou?r|lymphoma|neoplas\w*|carcinoma|ulcer\w*|obstruction|blockage|foreign body|megaesophagus|reflux|anaemia|anemia|addison\w*|cushing\w*|parvo\w*|giardia|parasit\w*|infection|infected|gastroparesis|disease|illness|disorder|syndrome|diagnos\w*)\b/i
+  /\b(pancreatitis|gastritis|gastroenteritis|enteritis|colitis|ibd|inflammatory bowel|hepatic lipidosis|lipidosis|hepatitis|cholangitis|kidney disease|renal (?:disease|failure|insufficiency)|ckd|diabet\w*|hyperthyroid\w*|hypothyroid\w*|thyroid|cancer|tumou?r|lymphoma|neoplas\w*|carcinoma|ulcer\w*|obstruction|blockage|foreign body|megaesophagus|reflux|anaemia|anemia|addison\w*|cushing\w*|parvo\w*|giardia|parasit\w*|infection|infected|gastroparesis|disease|illness|disorder|syndrome|diagnos\w*|(?:tummy|stomach|gut) (?:bug|upset|issues?|trouble|problems?)|(?:tummy|stomach) ache|upset (?:tummy|stomach)|sensitive (?:tummy|stomach)|food poisoning|gi (?:upset|issues?|problems?|trouble)|something (?:he|she|they|it) ate|hairball\w*|unwell|under the weather|off colou?r|\bsick\b|\bbug\b)\b/i
 
 // ── The fact packet ────────────────────────────────────────────────────────────────────
 
@@ -434,6 +453,26 @@ export const SUMMARY_SYSTEM =
   'preference, favourite, or something the pet "likes". ' +
   '(7) If any draft sentence mentions the vet, KEEP that guidance in your summary. ' +
   'Call write_summary with your two-to-four-sentence summary.'
+
+// ── Restraint: which summaries the model is allowed to phrase ──────────────────────────
+/**
+ * The model phrases ONLY a non-safety, non-quiet (reflection-led) summary. SAFETY and QUIET
+ * summaries ship the deterministic template, never the model — the §4.3 "restraint fallback"
+ * (Bearable), and the structural backstop the PR-4 adversarial review showed `validateSummary`'s
+ * keyword screens cannot stand in for alone:
+ *   - QUIET: there is no safety signal to warm up, so every model sentence is pure downside —
+ *     this is exactly where a reassurance-on-absence drift slips a keyword screen (Claim 1).
+ *   - SAFETY: the concern copy must be deterministic (as detection.ts already templates
+ *     worsening/decline). Templating it removes the model from the path where a number swap
+ *     could invert a worsening trend to "improvement" (Claim 4b) or a causal/preference
+ *     paraphrase could attach to a real concern (Claims 2/6).
+ * The remaining model path — a flat/improving reflection + descriptive intake — is the one
+ * place a phrasing drift is bounded to a non-safety quality wobble, and is additionally
+ * guarded by the (broadened) vocabulary screens + the grounding number set.
+ */
+export function shouldPhraseWithModel(packet: SummaryFactPacket): boolean {
+  return !packet.hasSafety && !packet.quiet
+}
 
 // ── Validation (defense-in-depth; clinical-guardrails Pattern 8) ───────────────────────
 
