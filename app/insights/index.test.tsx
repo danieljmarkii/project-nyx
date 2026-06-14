@@ -11,6 +11,12 @@
 jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null }));
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
+// The AI summary (PR 4) is cache-only network I/O via useSummary → lib/summary → supabase.
+// Mock the hook so this screen-wiring test stays on the local-SQLite card path (the summary's
+// own logic is tested in lib/summaryCopy.test.ts + supabase/functions/.../summary.test.ts).
+jest.mock('../../hooks/useSummary', () => ({
+  useSummary: () => ({ summary: null, displayState: 'building', petName: 'Nyx', isLoading: false }),
+}));
 
 jest.mock('expo-router', () => {
   const React = require('react');
@@ -66,7 +72,7 @@ beforeEach(() => {
 });
 
 describe('PatternsScreen', () => {
-  it('cold-start (no symptoms, no feedings) → the designed empty state, no coming-soon', async () => {
+  it('cold-start (no symptoms, no feedings) → the designed empty state, no summary slot', async () => {
     A.getSymptomCounts.mockResolvedValue([]);
     A.getSymptomFrequencyByDay.mockResolvedValue([]);
     A.getIntakeRate.mockResolvedValue(notEnoughData(0, 4));
@@ -78,11 +84,12 @@ describe('PatternsScreen', () => {
 
     // Match within a single text segment ({name} interpolation splits the node).
     await waitFor(() => expect(getByText(/still getting to know/i)).toBeTruthy());
-    // The coming-soon summary references "the cards below" — wrong with no cards, so absent.
-    expect(queryByText(/cards below have the details/i)).toBeNull();
+    // The summary slot (AiSummaryCard) is not rendered in the empty state — its building
+    // copy says "still gathering", which must be absent when the whole dashboard is empty.
+    expect(queryByText(/still gathering/i)).toBeNull();
   });
 
-  it('with data → summary-led: the coming-soon summary leads, the safety symptom card renders', async () => {
+  it('with data → summary-led: the AI summary slot leads, the safety symptom card renders', async () => {
     const counts: SymptomCount[] = [{ symptomType: 'vomit', current: 3, prior: 1, delta: 2 }];
     const buckets: DayFrequencyBucket[] = [
       { date: '2026-05-01', total: 1, byType: { vomit: 1 } },
@@ -98,7 +105,9 @@ describe('PatternsScreen', () => {
 
     const { getByText, getAllByText, queryByText } = render(<PatternsScreen />);
 
-    await waitFor(() => expect(getByText(/cards below have the details/i)).toBeTruthy());
+    // useSummary is mocked to the building state, so the slot leads with its "still
+    // gathering" copy (the summary's own ready/text rendering is covered in AiSummaryCard.test).
+    await waitFor(() => expect(getByText(/still gathering/i)).toBeTruthy());
     // Safety symptom count card: big number + honest delta phrase (no verdict word).
     expect(getByText('3')).toBeTruthy();
     expect(getByText(/2 more than last month/i)).toBeTruthy();
