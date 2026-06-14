@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Patterns — viz redesign (B-098)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --surface:#FFFFFF; --bg:#FAFAFA; --t1:#0A0A0A; --t2:#525252; --t3:#737373; --t4:#A3A3A3;
+    --border:#EAEAEA; --borderStrong:#D4D4D4; --accent:#00C2A8; --accentSoft:#86D9CC;
+    --symptom:#F43F5E; --chartEmpty:#F0F0F0;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:#E5E5E5;font-family:'Geist',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .stage{display:flex;gap:28px;padding:36px;align-items:flex-start;justify-content:center;}
+  .phone{width:402px;background:var(--bg);border-radius:40px;border:10px solid #111;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+  .nav{height:52px;display:flex;align-items:center;justify-content:center;position:relative;background:var(--bg);border-bottom:1px solid var(--border);}
+  .nav .back{position:absolute;left:14px;font-size:24px;color:var(--t1);}
+  .nav .title{font-weight:600;font-size:17px;color:var(--t1);}
+  .scroll{padding:20px;display:flex;flex-direction:column;gap:18px;}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .cardLabel{font-size:13px;font-weight:500;color:var(--t2);}
+  .eyebrow{font-size:11px;font-weight:500;color:var(--t2);text-transform:uppercase;letter-spacing:.8px;}
+
+  /* Summary */
+  .summary .body{font-size:15px;color:var(--t2);line-height:22px;margin-top:8px;}
+
+  /* Metric (Meals finished) */
+  .metric .value{font-size:30px;font-weight:600;color:var(--t1);letter-spacing:-.3px;margin-top:6px;}
+  .progressTrack{height:10px;border-radius:999px;background:var(--chartEmpty);overflow:hidden;margin-top:12px;display:flex;}
+  .progressFill{background:var(--accentSoft);border-radius:999px;}
+  .delta{display:flex;align-items:center;gap:5px;margin-top:10px;font-size:13px;font-weight:500;color:var(--t2);}
+
+  /* Ranking — bar list */
+  .rank .list{display:flex;flex-direction:column;gap:15px;margin-top:14px;}
+  .entry{display:flex;flex-direction:column;gap:7px;}
+  .entryHead{display:flex;align-items:flex-start;gap:12px;}
+  .entryLabel{flex:1;font-size:15px;line-height:20px;color:var(--t1);}
+  .tag{font-size:11px;font-weight:500;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;line-height:20px;}
+  .entryVal{font-size:13px;font-weight:600;color:var(--t2);line-height:20px;white-space:nowrap;}
+  .barTrack{height:6px;border-radius:999px;background:var(--chartEmpty);overflow:hidden;display:flex;}
+  .barFill{background:var(--accentSoft);}
+
+  /* Composition */
+  .comp .bar{display:flex;gap:3px;height:14px;margin-top:14px;}
+  .comp .seg{border-radius:999px;}
+  .comp .cap{font-size:13px;color:var(--t3);margin-top:14px;}
+  .comp .legend{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
+  .comp .lrow{display:flex;align-items:center;gap:8px;}
+  .comp .sw{width:10px;height:10px;border-radius:999px;}
+  .comp .lname{flex:1;font-size:13px;color:var(--t1);}
+  .comp .lval{font-size:13px;color:var(--t2);}
+
+  /* Frequency calendar */
+  .freq .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-top:14px;}
+  .freq .cell{aspect-ratio:1;border-radius:7px;background:var(--chartEmpty);}
+  .freq .cap{font-size:13px;color:var(--t3);margin-top:14px;}
+
+  .chev{color:var(--t4);font-size:18px;}
+  .head{display:flex;align-items:center;justify-content:space-between;}
+  .tagline{text-align:center;font-family:'Newsreader',serif;font-size:13px;color:var(--t3);max-width:402px;margin:14px auto 0;line-height:1.5;}
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div>
+      <div class="phone">
+        <div class="nav"><span class="back">‹</span><span class="title">Patterns</span></div>
+        <div class="scroll">
+
+          <!-- AI summary (building) -->
+          <div class="card summary">
+            <div class="eyebrow">Summary</div>
+            <div class="body">Soon I'll pull what I'm noticing across Nyx's patterns into a few plain sentences, right here. For now, the cards below have the details.</div>
+          </div>
+
+          <!-- Frequency calendar -->
+          <div class="card freq">
+            <div class="head"><span class="cardLabel">Vomiting</span><span class="chev">›</span></div>
+            <div class="grid" id="grid"></div>
+            <div class="cap">Logged on 6 days · May 16 – Jun 14</div>
+          </div>
+
+          <!-- Meals finished — NEW proportion bar + delta -->
+          <div class="card metric">
+            <div class="head"><span class="cardLabel">Meals finished</span></div>
+            <div class="value">29%</div>
+            <div class="progressTrack"><div class="progressFill" style="width:29%"></div></div>
+            <div class="delta">↓ Down from 41% last month</div>
+          </div>
+
+          <!-- Top food — NEW bar list -->
+          <div class="card rank">
+            <div class="head"><span class="cardLabel">Top food</span><span class="chev">›</span></div>
+            <div class="list">
+              <div class="entry">
+                <div class="entryHead"><span class="entryLabel">Purina Friskies Party Mix California Crunch</span><span class="tag">treat</span><span class="entryVal">31 logs</span></div>
+                <div class="barTrack"><div class="barFill" style="width:100%"></div></div>
+              </div>
+              <div class="entry">
+                <div class="entryHead"><span class="entryLabel">Purina whisker lickin's Chicken &amp; Seafood</span><span class="tag">treat</span><span class="entryVal">28 logs</span></div>
+                <div class="barTrack"><div class="barFill" style="width:90%"></div></div>
+              </div>
+              <div class="entry">
+                <div class="entryHead"><span class="entryLabel">Temptations Catnip Flavor</span><span class="tag">treat</span><span class="entryVal">24 logs</span></div>
+                <div class="barTrack"><div class="barFill" style="width:77%"></div></div>
+              </div>
+              <div class="entry">
+                <div class="entryHead"><span class="entryLabel">Temptations Seafood Medley</span><span class="tag">treat</span><span class="entryVal">15 logs</span></div>
+                <div class="barTrack"><div class="barFill" style="width:48%"></div></div>
+              </div>
+              <div class="entry">
+                <div class="entryHead"><span class="entryLabel">Wellness Kittles Chicken &amp; Cranberries</span><span class="tag">treat</span><span class="entryVal">14 logs</span></div>
+                <div class="barTrack"><div class="barFill" style="width:45%"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top protein — NEW bar list -->
+          <div class="card rank">
+            <div class="head"><span class="cardLabel">Top protein</span><span class="chev">›</span></div>
+            <div class="list">
+              <div class="entry">
+                <div class="entryHead"><span class="entryLabel">Chicken</span><span class="entryVal">34×</span></div>
+                <div class="barTrack"><div class="barFill" style="width:100%"></div></div>
+              </div>
+              <div class="entry">
+                <div class="entryHead"><span class="entryLabel">Tuna</span><span class="entryVal">21×</span></div>
+                <div class="barTrack"><div class="barFill" style="width:62%"></div></div>
+              </div>
+              <div class="entry">
+                <div class="entryHead"><span class="entryLabel">Salmon</span><span class="entryVal">12×</span></div>
+                <div class="barTrack"><div class="barFill" style="width:35%"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Meals & treats — the teal one the PM likes -->
+          <div class="card comp">
+            <div class="head"><span class="cardLabel">Meals &amp; treats</span><span class="chev">›</span></div>
+            <div class="bar">
+              <div class="seg" style="flex:24;background:var(--accent)"></div>
+              <div class="seg" style="flex:88;background:var(--accentSoft)"></div>
+            </div>
+            <div class="cap">112 feedings logged</div>
+            <div class="legend">
+              <div class="lrow"><span class="sw" style="background:var(--accent)"></span><span class="lname">Meals</span><span class="lval">24 logs · 21%</span></div>
+              <div class="lrow"><span class="sw" style="background:var(--accentSoft)"></span><span class="lname">Treats</span><span class="lval">88 logs · 79%</span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="tagline">B-098 redesign — bar-list rankings, a proportion bar for Meals finished, soft card depth, one calm teal magnitude language.</div>
+    </div>
+  </div>
+
+  <script>
+    // Paint the heat grid to match the screenshot's shape (35 cells, a few pink).
+    const heat = {1:.9,2:.45,3:.45, 8:.9, 13:.9, 20:.45, 22:.45,23:.45,24:.45,25:.45};
+    const grid = document.getElementById('grid');
+    for(let i=0;i<35;i++){
+      const c=document.createElement('div');c.className='cell';
+      if(heat[i]) c.style.background = `rgba(244,63,94,${heat[i]})`;
+      grid.appendChild(c);
+    }
+  </script>
+</body>
+</html>

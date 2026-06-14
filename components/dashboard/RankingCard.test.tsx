@@ -8,16 +8,25 @@ import { selectCardState } from '../../lib/dashboardCards';
 
 describe('RankingCard', () => {
   const entries = [
-    { key: 'a', label: 'Tiki Cat Tuna', value: '12 meals' },
-    { key: 'b', label: 'Temptations', value: '6 meals', tag: 'treat' },
+    { key: 'a', label: 'Tiki Cat Tuna', value: '12 meals', count: 12 },
+    { key: 'b', label: 'Temptations', value: '6 meals', count: 6, tag: 'treat' },
   ];
 
-  it('renders the ranked entries with their values and honest tags', () => {
-    const { getByText } = render(<RankingCard title="Top food" entries={entries} />);
+  it('renders the ranked entries with their values, honest tags, and a magnitude bar each', () => {
+    const { getByText, getAllByTestId } = render(<RankingCard title="Top food" entries={entries} />);
     expect(getByText('Top food')).toBeTruthy();
     expect(getByText('Tiki Cat Tuna')).toBeTruthy();
     expect(getByText('12 meals')).toBeTruthy();
     expect(getByText('treat')).toBeTruthy();
+    // Bar-list (B-098): one inline magnitude bar per entry, never a plain text column.
+    expect(getAllByTestId('rank-bar')).toHaveLength(2);
+  });
+
+  it('omits the bars when entries carry no count (graceful plain list)', () => {
+    const { queryAllByTestId } = render(
+      <RankingCard title="Top food" entries={[{ key: 'a', label: 'Tiki Cat Tuna', value: '12 meals' }]} />,
+    );
+    expect(queryAllByTestId('rank-bar')).toHaveLength(0);
   });
 
   it('lets a long food label breathe — wraps to two lines, never truncated to one (B-098)', () => {

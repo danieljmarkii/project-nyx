@@ -266,6 +266,7 @@ function renderCard(card: DashboardCard, petName: string) {
             key: f.foodItemId,
             label: f.label,
             value: `${f.count} ${pluralize(f.count, 'log')}`,
+            count: f.count,
             tag: f.foodType === 'treat' ? 'treat' : undefined,
           }));
       return (
@@ -283,7 +284,7 @@ function renderCard(card: DashboardCard, petName: string) {
       const r = card.result;
       const entries = isNotEnoughData(r)
         ? []
-        : r.map((p) => ({ key: p.protein, label: displayProtein(p.protein), value: `${p.count}×` }));
+        : r.map((p) => ({ key: p.protein, label: displayProtein(p.protein), value: `${p.count}×`, count: p.count }));
       return (
         <RankingCard
           key={card.key}

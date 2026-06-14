@@ -1,22 +1,27 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { theme, shadows } from '../../constants/theme';
 import { calibrationLine, type CardDisplayState } from '../../lib/dashboardCards';
 
-// RankingCard — "Top food", "Top protein" (§5 #3 / §6). A short ranked list with
-// counts, never a pie chart. This is DESCRIPTIVE INTAKE, not preference (§11 #1): it
-// answers "what does Nyx eat most", never "what does Nyx like" — so it carries NO
-// verdict colour (neutral) and no good/bad framing. A treat topping the FOOD list is
-// tagged honestly rather than hidden. Below the §11 #5 ranking floor the card shows
-// the calibration state, never a fabricated top-N.
+// RankingCard — "Top food", "Top protein" (§5 #3 / §6). A ranked BAR LIST: each row pairs
+// the label with an inline magnitude bar (width ∝ its share of the #1 entry) so the
+// ranking is read at a glance, not decoded from a column of numbers (the B-098 design
+// lift — the old plain numbered list read "bleh"). Still a ranked list with counts, never
+// a pie chart (§4.1). DESCRIPTIVE INTAKE, not preference (§11 #1): it answers "what does
+// Nyx eat most", never "what does Nyx like" — so it carries NO verdict colour. The bar is
+// the same calm accent tint as the composition + finished-rate bars (one magnitude
+// language across the dashboard). A treat topping the FOOD list is tagged honestly. Below
+// the §11 #5 ranking floor the card shows the calibration state, never a fabricated top-N.
 
 export interface RankingEntry {
   /** Stable key (food id / protein key). */
   key: string;
   /** Display label ("Tiki Cat Tuna", "chicken"). */
   label: string;
-  /** Pre-formatted right-side value ("12 meals", "8×"). */
+  /** Pre-formatted right-side value ("12 logs", "8×"). */
   value: string;
+  /** Raw magnitude for the inline bar (relative to the list max). Omit → no bar. */
+  count?: number;
   /** Optional honest tag (e.g. "treat" on a treat that tops the food list). */
   tag?: string;
 }
@@ -43,6 +48,10 @@ export function RankingCard({
   onPress,
   accessibilityHint,
 }: Props) {
+  // Normalize bars against the busiest entry so #1 fills the track and the rest read as
+  // a share of it (the standard bar-list ranking). A list with no counts → no bars.
+  const maxCount = entries.reduce((m, e) => (typeof e.count === 'number' && e.count > m ? e.count : m), 0);
+
   return (
     <Pressable
       onPress={onPress}
@@ -65,19 +74,28 @@ export function RankingCard({
         <Text style={styles.stateText}>{emptyMessage ?? 'Nothing logged yet.'}</Text>
       ) : (
         <View style={styles.list}>
-          {entries.map((entry, i) => (
-            <View key={entry.key} style={styles.row}>
-              <Text style={styles.rank}>{i + 1}</Text>
-              {/* Let a long food name BREATHE — wrap to a second line rather than truncate
-                  ("Purina Friskies Party Mix…", B-098). The value + tag never shrink
-                  (flexShrink 0), so the label (flex 1) is the only thing that wraps. */}
-              <Text style={styles.entryLabel} numberOfLines={2}>
-                {entry.label}
-              </Text>
-              {entry.tag != null && <Text style={styles.tag}>{entry.tag}</Text>}
-              <Text style={styles.entryValue}>{entry.value}</Text>
-            </View>
-          ))}
+          {entries.map((entry) => {
+            const fraction = maxCount > 0 && typeof entry.count === 'number' ? entry.count / maxCount : null;
+            return (
+              <View key={entry.key} style={styles.entry}>
+                <View style={styles.entryHead}>
+                  {/* Let a long food name BREATHE — wrap to a second line rather than
+                      truncate ("Purina Friskies Party Mix…"). Value + tag never shrink. */}
+                  <Text style={styles.entryLabel} numberOfLines={2}>
+                    {entry.label}
+                  </Text>
+                  {entry.tag != null && <Text style={styles.tag}>{entry.tag}</Text>}
+                  <Text style={styles.entryValue}>{entry.value}</Text>
+                </View>
+                {fraction != null && (
+                  <View style={styles.barTrack} testID="rank-bar">
+                    <View style={[styles.barFill, { flex: fraction }]} />
+                    <View style={{ flex: 1 - fraction }} />
+                  </View>
+                )}
+              </View>
+            );
+          })}
         </View>
       )}
     </Pressable>
@@ -93,6 +111,7 @@ const styles = StyleSheet.create({
     padding: theme.space3,
     minHeight: 44,
     gap: theme.space2,
+    ...shadows.sm,
   },
   pressed: {
     backgroundColor: theme.colorSurfaceSubtle,
@@ -111,29 +130,24 @@ const styles = StyleSheet.create({
   list: {
     gap: theme.space2,
   },
-  row: {
+  // Each entry is a two-row block: the head (label · tag · value) then its magnitude bar.
+  entry: {
+    gap: 6,
+  },
+  entryHead: {
     flexDirection: 'row',
-    // Top-align so the rank, tag and value sit on the FIRST line when a long label
-    // wraps to two (the matched lineHeights below keep them on that line).
     alignItems: 'flex-start',
     gap: theme.space2,
-  },
-  rank: {
-    fontSize: theme.textSM,
-    lineHeight: 22,
-    fontWeight: theme.weightSemibold,
-    color: theme.colorTextDisabled,
-    width: 16,
   },
   entryLabel: {
     flex: 1,
     fontSize: theme.textMD,
-    lineHeight: 22,
+    lineHeight: 20,
     color: theme.colorTextPrimary,
   },
   tag: {
     fontSize: theme.textXS,
-    lineHeight: 22,
+    lineHeight: 20,
     fontWeight: theme.weightMedium,
     color: theme.colorTextTertiary,
     textTransform: 'uppercase',
@@ -142,10 +156,20 @@ const styles = StyleSheet.create({
   },
   entryValue: {
     fontSize: theme.textSM,
-    lineHeight: 22,
-    fontWeight: theme.weightMedium,
+    lineHeight: 20,
+    fontWeight: theme.weightSemibold,
     color: theme.colorTextSecondary,
     flexShrink: 0,
+  },
+  barTrack: {
+    flexDirection: 'row',
+    height: 6,
+    borderRadius: theme.radiusFull,
+    backgroundColor: theme.colorChartEmpty,
+    overflow: 'hidden',
+  },
+  barFill: {
+    backgroundColor: theme.colorAccentSoft,
   },
   stateText: {
     fontSize: theme.textMD,

@@ -1,6 +1,6 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { ChevronRight, ArrowUp, ArrowDown } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
+import { theme, shadows } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
 import { deltaToneColor } from './cardTokens';
 import {
@@ -159,6 +159,7 @@ const styles = StyleSheet.create({
     padding: theme.space3,
     minHeight: 44,
     gap: theme.space1,
+    ...shadows.sm,
   },
   pressed: {
     backgroundColor: theme.colorSurfaceSubtle,
