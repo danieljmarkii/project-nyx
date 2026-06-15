@@ -22,6 +22,7 @@ jest.mock('expo-router', () => {
   const React = require('react');
   return {
     Stack: { Screen: () => null },
+    router: { push: jest.fn() },
     useFocusEffect: (cb: () => void | (() => void)) => {
       React.useEffect(() => cb(), []);
     },
@@ -41,7 +42,8 @@ jest.mock('../../lib/analytics', () => {
   };
 });
 
-import { render, waitFor } from '@testing-library/react-native';
+import { render, waitFor, fireEvent } from '@testing-library/react-native';
+import { router } from 'expo-router';
 import PatternsScreen from './index';
 import { usePetStore } from '../../store/petStore';
 import {
@@ -135,5 +137,29 @@ describe('PatternsScreen', () => {
     expect(getByTestId('metric-progress')).toBeTruthy();
     // The factual "vs last month" read (a drop on a positive metric → neutral, not alarmed).
     expect(getByText('Down from 41% last month')).toBeTruthy();
+  });
+
+  it('tapping a symptom count card opens its trend detail (B-093 doorway)', async () => {
+    const counts: SymptomCount[] = [{ symptomType: 'vomit', current: 3, prior: 1, delta: 2 }];
+    const buckets: DayFrequencyBucket[] = [
+      { date: '2026-05-01', total: 1, byType: { vomit: 1 } },
+      { date: '2026-05-02', total: 2, byType: { vomit: 2 } },
+    ];
+    A.getSymptomCounts.mockResolvedValue(counts);
+    A.getSymptomFrequencyByDay.mockResolvedValue(buckets);
+    A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(2, 4), prior: notEnoughData(0, 4) });
+    A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
+    A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
+    A.getMealTreatComposition.mockResolvedValue(emptyComposition());
+
+    const { getByLabelText } = render(<PatternsScreen />);
+    // The symptom COUNT card is the only tappable card (a button); its a11y label carries
+    // the value + delta. The frequency calendar and intake card stay display-only.
+    await waitFor(() => expect(getByLabelText(/Vomit: 3/)).toBeTruthy());
+    fireEvent.press(getByLabelText(/Vomit: 3/));
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/insights/[metric]',
+      params: { metric: 'vomit' },
+    });
   });
 });

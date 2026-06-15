@@ -1,10 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useFocusEffect } from 'expo-router';
+import { Stack, useFocusEffect, router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
-import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
   getSymptomCounts,
   getSymptomFrequencyByDay,
@@ -32,6 +31,7 @@ import {
   topProteinDefinition,
   compositionDefinition,
 } from '../../lib/dashboardCards';
+import { symptomLabel } from '../../lib/metricDetail';
 import { MetricCard } from '../../components/dashboard/MetricCard';
 import { RankingCard } from '../../components/dashboard/RankingCard';
 import { FrequencyCalendarCard } from '../../components/dashboard/FrequencyCalendarCard';
@@ -188,14 +188,6 @@ export default function PatternsScreen() {
   );
 }
 
-/** Plain, warm symptom label. Falls back for schema symptom types not in the quick-log
- *  map (e.g. scratch / skin_reaction), so a card never renders a raw event_type token. */
-function symptomLabel(type: string): string {
-  const known = EVENT_TYPES[type as EventTypeKey];
-  if (known) return known.label;
-  return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
-}
-
 /** Title-case a canonicalized (lowercase) protein for display ("chicken" → "Chicken"). */
 function displayProtein(protein: string): string {
   return protein.charAt(0).toUpperCase() + protein.slice(1);
@@ -203,26 +195,33 @@ function displayProtein(protein: string): string {
 
 // Maps an ordered descriptor to its PR-2 card. Display strings come from the tested
 // dashboardCards helpers; the safety-critical fields (established / state) ride on the
-// descriptor straight from buildDashboardCards. Cards are display-only in v1 (no
-// onPress) — the card→detail "doorway" (wiring MetricDetailScreen as /insights/[metric])
-// is the flagged follow-up; the PR-2 cards hide their chevron when not tappable.
+// descriptor straight from buildDashboardCards. The symptom COUNT card is a "doorway"
+// (§5 #2) — tapping it opens /insights/[metric], the Week/Month/3-Month trend detail
+// (B-093). The other cards stay display-only for now (a rate/ranking/composition detail
+// is its own follow-up — B-093 row); a card with no onPress hides its chevron.
 function renderCard(card: DashboardCard, petName?: string) {
   switch (card.kind) {
-    case 'symptomCount':
+    case 'symptomCount': {
+      const label = symptomLabel(card.symptomType);
       return (
         <MetricCard
           key={card.key}
-          label={symptomLabel(card.symptomType)}
+          label={label}
           value={String(card.current)}
           polarity="adverse"
           established={card.established}
           delta={card.delta}
           deltaLabel={describeCountDelta(card.current, card.prior, WINDOW)}
           sparkData={card.sparkData}
-          definition={symptomCountDefinition(symptomLabel(card.symptomType).toLowerCase(), petName)}
+          definition={symptomCountDefinition(label.toLowerCase(), petName)}
           petName={petName}
+          onPress={() =>
+            router.push({ pathname: '/insights/[metric]', params: { metric: card.symptomType } })
+          }
+          accessibilityHint={`Opens ${label}'s full trend`}
         />
       );
+    }
     case 'symptomFrequency':
       return (
         <FrequencyCalendarCard

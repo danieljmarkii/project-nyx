@@ -181,8 +181,9 @@ function petPossessive(petName?: string): string {
   return n && n.length > 0 ? `${n}'s` : "your pet's";
 }
 
-/** Pet name for copy, second-person fallback "your pet" (nyx-voice Pattern 1). */
-function petNameOrYours(petName?: string): string {
+/** Pet name for copy, second-person fallback "your pet" (nyx-voice Pattern 1). Exported
+ *  so sibling copy modules (lib/metricDetail.ts) share the ONE fallback and can't drift. */
+export function petNameOrYours(petName?: string): string {
   const n = petName?.trim();
   return n && n.length > 0 ? n : 'your pet';
 }
