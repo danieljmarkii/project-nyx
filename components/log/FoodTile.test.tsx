@@ -12,6 +12,16 @@ describe('FoodTile', () => {
     expect(getByText('Rotisserie Chicken')).toBeTruthy();
   });
 
+  // B-103: B-024 added 'jerky' to the food_format enum + the pickers but never
+  // to FORMAT_LABEL, so a jerky tile rendered the brand alone (no chip).
+  it('renders the jerky format as "<BRAND> · JERKY"', () => {
+    const { getByText } = render(
+      <FoodTile brand="Stewart" productName="Freeze-Dried Beef Liver" format="jerky" onPress={() => {}} />,
+    );
+    expect(getByText('STEWART · JERKY')).toBeTruthy();
+    expect(getByText('Freeze-Dried Beef Liver')).toBeTruthy();
+  });
+
   // Regression guard for the intentional empty-label branch: 'other' maps to ''
   // so the tile shows the brand alone, never "<BRAND> · " with a dangling dot.
   it('shows the brand alone when the format has no label (other)', () => {

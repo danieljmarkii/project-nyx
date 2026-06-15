@@ -14,6 +14,7 @@ const FORMAT_LABEL: Record<string, string> = {
   wet_canned: 'Wet',
   raw: 'Raw',
   freeze_dried: 'Freeze-dried',
+  jerky: 'Jerky', // B-103: B-024 added jerky to the enum + pickers but missed this map (renders "… · JERKY")
   fresh_cooked: 'Fresh',
   human_food: 'Human food', // renders as "… · HUMAN FOOD" (B-102)
   topper: 'Topper',

@@ -74,12 +74,15 @@ const FOOD_TYPES: { value: FoodType; label: string }[] = [
 
 // Map AI 'format' enum to the cache's format key (Edge Function emits the
 // canonical pet-nutrition enum; cache uses the picker-friendly variant).
+// Mirrors AI_FORMAT_TO_DB in extract-food-from-photo/index.ts — keep in sync.
 function mapAiFormat(ai: string | null | undefined): string {
   switch (ai) {
     case 'dry':          return 'dry_kibble';
     case 'wet':          return 'wet_canned';
     case 'raw':          return 'raw';
     case 'freeze_dried': return 'freeze_dried';
+    case 'jerky':        return 'jerky';       // B-103 — the Edge Function already maps jerky; the client had dropped it to 'other'
+    case 'human_food':   return 'human_food';  // B-102 PR 3 — snapped people-food container
     case 'treats':       return 'treat';
     case 'supplement':   return 'topper';
     default:             return 'other';
