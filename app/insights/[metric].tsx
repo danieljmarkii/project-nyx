@@ -14,11 +14,9 @@ import {
   buildSymptomDetailWindows,
   symptomLabel,
   type SymptomWindowInput,
-} from '../../lib/metricDetail';
-import {
-  MetricDetailScreen,
   type MetricDetailWindowData,
-} from '../../components/dashboard/MetricDetailScreen';
+} from '../../lib/metricDetail';
+import { MetricDetailScreen } from '../../components/dashboard/MetricDetailScreen';
 
 // The metric DETAIL screen — a Patterns card's "doorway" destination (§4.2 / §5 #2 / §8;
 // B-093). Reached by tapping a symptom COUNT card on the dashboard; `metric` is the symptom
@@ -99,8 +97,9 @@ export default function MetricDetailRoute() {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
       {/* Native header with an empty title so the symptom name isn't doubled (the body's
-          MetricDetailScreen carries it); the back button reads "Patterns" — the surface it
-          returns to — instead of the tab group's route name. */}
+          MetricDetailScreen carries it). headerBackTitle labels the back button "Patterns"
+          on iOS (the surface it returns to, rather than the tab group's route name); Android
+          shows the chevron alone — both correctly return up the same stack to Patterns. */}
       <Stack.Screen options={{ headerShown: true, headerTitle: '', headerBackTitle: 'Patterns' }} />
 
       {!activePet ? (
@@ -128,13 +127,16 @@ export default function MetricDetailRoute() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {/* initialWindow="month" is a SAFETY default, not cosmetic: a symptom that's
+              quiet in both 7-day week spans but active at the month scale must lead with its
+              burden, never a window-scoped "none logged" that reads as an all-clear. Pinned
+              by a regression test in [metric].test.tsx. */}
           <MetricDetailScreen
             title={title}
             polarity="adverse"
             windows={windows}
             petName={activePet.name}
             initialWindow="month"
-            calibrationUnit="day"
           />
         </ScrollView>
       )}

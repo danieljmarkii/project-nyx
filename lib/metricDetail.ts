@@ -28,8 +28,33 @@ import {
   WINDOW_WORD,
   CURRENT_WINDOW_PHRASE,
   PRIOR_WINDOW_PHRASE,
+  type CardDisplayState,
 } from './dashboardCards';
-import type { MetricDetailWindowData } from '../components/dashboard/MetricDetailScreen';
+
+/**
+ * One window's data for MetricDetailScreen — the pure data contract this module PRODUCES
+ * and the component consumes. It lives HERE (not in the component) so the dependency flows
+ * lib → component, never the reverse; MetricDetailScreen re-exports it for back-compat.
+ */
+export interface MetricDetailWindowData {
+  /** Pre-formatted big number for this window. */
+  value: string;
+  /** The chart series (daily counts across the current window). */
+  series: number[];
+  /** Multi-sample & at/above floor? Gates the verdict colour (§13 #6). */
+  established: boolean;
+  /** current − prior, for the delta tone + arrow. */
+  delta?: number;
+  /** Warm delta phrase ("2 fewer than last month"). */
+  deltaLabel?: string;
+  /** The prominent, warm "vs your baseline" sentence (nyx-voice; caller-computed). */
+  baselineRead: string;
+  /** Warm copy for the empty state (zero events this window). Used when `state` is
+   *  `{ kind: 'empty' }`; a calm default applies if omitted. */
+  emptyMessage?: string;
+  /** calibrating / empty / populated (§10). Default populated. */
+  state?: CardDisplayState;
+}
 
 /** Plain, warm symptom label — the SINGLE source, shared by the dashboard cards and the
  *  detail route so the two can't drift. Falls back to a title-cased token for schema
@@ -58,9 +83,12 @@ export interface SymptomDetailInput {
 /**
  * Build ONE window's MetricDetailWindowData for a symptom (adverse). The §11 decision tree:
  *
- *  • current=0, prior=0 → the warm EMPTY state ("No X logged this week"). SAFE because with
- *    no prior burden there is nothing to mis-reassure about — we're only on this screen
- *    because a DIFFERENT window had activity, and this window was genuinely quiet.
+ *  • current=0, prior=0 → the warm EMPTY state ("No X logged this week"). This means no
+ *    events in EITHER of THIS window's two adjacent spans — NOT that the symptom is globally
+ *    quiet (a symptom active 3 weeks ago is empty at the WEEK scale yet active at the MONTH
+ *    scale). The cross-window safety lives in the CALLER: the detail route opens on MONTH
+ *    (initialWindow="month"), so a still-active symptom leads with its burden and the other
+ *    tabs sit beside any window-scoped "none logged" — pinned by a regression test.
  *  • current=0, prior>0 → POPULATED "0", NOT the warm empty state — a drop-to-zero is shown
  *    in context with an explicit "a gap isn't the same as an all-clear", never a bare warm
  *    "none logged" that an owner could read as recovery (§11 #3 — the load-bearing case).
@@ -82,7 +110,8 @@ export function buildSymptomDetailWindow(
   const currentPhrase = CURRENT_WINDOW_PHRASE[window];
   const established = isEstablishedCount(current, prior);
 
-  // current=0, prior=0 → warm empty. No prior burden ⇒ no false all-clear risk.
+  // current=0, prior=0 → warm empty: no events in EITHER adjacent span for THIS window
+  // (not "globally quiet"). Cross-window safety = the route's month default (see header).
   if (current === 0 && prior === 0) {
     return {
       value: '0',

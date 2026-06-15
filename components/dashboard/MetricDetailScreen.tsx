@@ -8,10 +8,13 @@ import {
   deltaDirection,
   calibrationLine,
   type Polarity,
-  type CardDisplayState,
 } from '../../lib/dashboardCards';
 import type { AnalyticsWindow } from '../../lib/analytics';
 import { ArrowUp, ArrowDown } from 'lucide-react-native';
+// The per-window data contract lives in the pure lib layer (lib → component); re-exported
+// here so existing importers (this component's test, the detail route) keep their import.
+import type { MetricDetailWindowData } from '../../lib/metricDetail';
+export type { MetricDetailWindowData } from '../../lib/metricDetail';
 
 // MetricDetailScreen — a card's "doorway" destination (§4.2 / §8). One metric across a
 // Week / Month / 3-Month segmented control (the time range lives HERE, never on the
@@ -36,26 +39,6 @@ const WINDOW_UI_LABEL: Record<AnalyticsWindow, string> = {
 // width is derived per-render from the live window (useWindowDimensions) so it survives
 // rotation rather than being frozen at module load.
 const CHART_HEIGHT = 120;
-
-export interface MetricDetailWindowData {
-  /** Pre-formatted big number for this window. */
-  value: string;
-  /** The chart series. */
-  series: number[];
-  /** Multi-sample & at/above floor? Gates the verdict colour (§13 #6). */
-  established: boolean;
-  /** current − prior, for the delta tone + arrow. */
-  delta?: number;
-  /** Warm delta phrase ("2 fewer than last month"). */
-  deltaLabel?: string;
-  /** The prominent, warm "vs your baseline" sentence (nyx-voice; caller-computed). */
-  baselineRead: string;
-  /** Warm copy for the empty state (zero events this window). Used when `state` is
-   *  `{ kind: 'empty' }`; a calm default applies if omitted. */
-  emptyMessage?: string;
-  /** calibrating / empty / populated (§10). Default populated. */
-  state?: CardDisplayState;
-}
 
 interface Props {
   title: string;

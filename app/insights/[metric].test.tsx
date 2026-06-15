@@ -85,4 +85,33 @@ describe('MetricDetailRoute', () => {
     expect(getByText('A busier week than usual for Nyx — worth keeping an eye on.')).toBeTruthy();
     expect(getByText('2')).toBeTruthy();
   });
+
+  // SAFETY INVARIANT (adversarial review): a symptom active ~3 weeks ago is empty at the
+  // WEEK scale but active at the MONTH scale. The route MUST open on Month so the owner
+  // leads with the burden, never a window-scoped "No vomit logged this week." that reads as
+  // an all-clear. This pins initialWindow="month" so the default can't be flipped unnoticed.
+  it('opens on Month with the burden, not a week "all-clear", for a quiet-this-week / active-this-month symptom', async () => {
+    const byWindow: Record<AnalyticsWindow, SymptomCount[]> = {
+      week: [], // nothing in either 7-day week span
+      month: [{ symptomType: 'vomit', current: 6, prior: 0, delta: 6 }],
+      '3month': [{ symptomType: 'vomit', current: 6, prior: 0, delta: 6 }],
+    };
+    A.getSymptomCounts.mockImplementation((_petId: string, w: AnalyticsWindow) =>
+      Promise.resolve(byWindow[w]),
+    );
+    A.getSymptomFrequencyByDay.mockImplementation((_petId: string, w: AnalyticsWindow) =>
+      Promise.resolve(w === 'week' ? [] : BUCKETS),
+    );
+
+    const { getByText, getByRole, queryByText } = render(<MetricDetailRoute />);
+    // On open (Month): the rising read + the burden number — NOT the week empty state.
+    await waitFor(() =>
+      expect(getByText('A busier month than usual for Nyx — worth keeping an eye on.')).toBeTruthy(),
+    );
+    expect(getByText('6')).toBeTruthy();
+    expect(queryByText('No vomit logged this week.')).toBeNull();
+    // The week empty state is honest + correctly scoped — only on explicit selection.
+    fireEvent.press(getByRole('tab', { name: 'Week' }));
+    expect(getByText('No vomit logged this week.')).toBeTruthy();
+  });
 });

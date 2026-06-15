@@ -38,6 +38,16 @@ const REASSURING = [
   'looking good',
   "she's fine",
   "he's fine",
+  // Likely future copy drifts that read as a recovery verdict on an adverse fall — the
+  // denylist is only as good as its imagination, so pre-empt the obvious ones (adversarial
+  // review): a maintainer "warming up" the falling read must trip the sweep, not slip past.
+  'settling',
+  'settled',
+  'easing',
+  'on the mend',
+  'turning a corner',
+  'trending down',
+  'good news',
 ];
 
 function assertNoReassurance(text: string) {
