@@ -327,12 +327,13 @@ export interface RankedFood {
   count: number;
   /** count / total logged identifiable foods, [0,1] — "share of diet" (drives the bar). */
   shareOfDiet: number;
-  /** This food's finished-rate (itemFinishedRate): null below the floor / fully free-fed.
-   *  Shown by the card ONLY for non-treats (a treat's rate is a ceiling, §11 #1). */
+  /** This food's finished-rate (itemFinishedRate): null below the floor, fully free-fed,
+   *  OR a classified treat — a treat's ceiling rate is nulled AT THE SOURCE so no consumer
+   *  can render "treats 100% finished → loved" (§11 #1). */
   finishedRate: number | null;
   /** Rated, non-free-fed meals behind finishedRate. */
   ratedMeals: number;
-  /** food_type === 'treat' — finishedRate is a ceiling, NOT an intake signal (§11 #1). */
+  /** Any logged row classified `food_type='treat'` — finishedRate is null (ceiling, §11 #1). */
   isTreat: boolean;
 }
 
@@ -366,6 +367,11 @@ export function computeTopFoods(rows: AnalyticsMeal[], opts: RankOptions = {}): 
   const total = candidates.length;
   const ranked: RankedFood[] = [];
   for (const [id, meals] of byFood) {
+    // treat-if-ANY row (order-independent) so a mixed/legacy classification errs toward
+    // the ceiling-safe direction, not whichever row the DB returned first (adversarial
+    // review LOW #2). NOTE: an entirely UNclassified treat (food_type null on every row)
+    // still can't be known as a treat — that's a food-classification limit, not B-098.
+    const isTreat = meals.some((m) => m.foodType === 'treat');
     const fr = itemFinishedRate(meals, freeFed);
     ranked.push({
       foodItemId: id,
@@ -373,9 +379,12 @@ export function computeTopFoods(rows: AnalyticsMeal[], opts: RankOptions = {}): 
       foodType: meals[0].foodType,
       count: meals.length,
       shareOfDiet: meals.length / total,
-      finishedRate: fr.rate,
+      // A classified treat carries NO finish-rate AT THE SOURCE (not merely hidden by the
+      // card): a treat's ceiling rate must never be able to render as "100% finished →
+      // loved", even via a consumer that ignores isTreat (adversarial review LOW #1, §11 #1).
+      finishedRate: isTreat ? null : fr.rate,
       ratedMeals: fr.ratedMeals,
-      isTreat: meals[0].foodType === 'treat',
+      isTreat,
     });
   }
   return ranked

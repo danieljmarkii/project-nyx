@@ -217,6 +217,29 @@ describe('computeTopFoods', () => {
     expect(c.ratedMeals).toBe(0);
   });
 
+  it('a classified treat carries NO finish-rate, even well-eaten (ceiling nulled at source, §11 #1)', () => {
+    const rows: AnalyticsMeal[] = [
+      // A treat eaten well 4× → its rate would be a 100% ceiling → must be null at the source.
+      meal({ ms: at(0), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat', intakeRating: 'all' }),
+      meal({ ms: at(1), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat', intakeRating: 'all' }),
+      meal({ ms: at(2), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat', intakeRating: 'most' }),
+      meal({ ms: at(3), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat', intakeRating: 'all' }),
+      // A food id with a MIXED-classification row set → treat-if-any (order-independent).
+      meal({ ms: at(4), foodItemId: 'M', foodLabel: 'Mixed', foodType: 'meal', intakeRating: 'all' }),
+      meal({ ms: at(5), foodItemId: 'M', foodLabel: 'Mixed', foodType: 'treat', intakeRating: 'all' }),
+      meal({ ms: at(6), foodItemId: 'M', foodLabel: 'Mixed', foodType: 'meal', intakeRating: 'all' }),
+      meal({ ms: at(7), foodItemId: 'M', foodLabel: 'Mixed', foodType: 'meal', intakeRating: 'all' }),
+    ];
+    const top = computeTopFoods(rows) as RankedFood[];
+    const t = top.find((f) => f.foodItemId === 'T')!;
+    const m = top.find((f) => f.foodItemId === 'M')!;
+    expect(t.isTreat).toBe(true);
+    expect(t.finishedRate).toBeNull(); // never renders "100% finished" for a treat
+    // Any treat-classified row flips the food treat-safe, regardless of DB row order.
+    expect(m.isTreat).toBe(true);
+    expect(m.finishedRate).toBeNull();
+  });
+
   it('below the ranking floor → notEnoughData (no rank invented)', () => {
     const rows: AnalyticsMeal[] = [
       meal({ ms: at(0), foodItemId: 'A', foodLabel: 'Acme A' }),

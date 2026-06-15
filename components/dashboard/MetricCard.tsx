@@ -154,12 +154,10 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusMedium,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
     padding: theme.space3,
     minHeight: 44,
     gap: theme.space1,
-    ...shadows.sm,
+    ...shadows.md,
   },
   pressed: {
     backgroundColor: theme.colorSurfaceSubtle,
