@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { HEAT_COLOR, HEAT_EMPTY_COLOR, HEAT_OPACITY_STEPS, heatOpacity } from './cardTokens';
+import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { pluralize } from '../../lib/dashboardCards';
 import type { DayFrequencyBucket } from '../../lib/analytics';
 
@@ -38,6 +40,9 @@ interface Props {
   symptomType?: string;
   /** Warm copy when nothing was logged ("No vomiting logged this month."). */
   emptyMessage?: string;
+  /** One-line "what does this measure?" definition (B-100). When set, a tap-to-reveal
+   *  (i) shows in the header (pairs with the heat legend to decode the grid). */
+  definition?: string;
   onPress?: () => void;
   accessibilityHint?: string;
 }
@@ -102,9 +107,11 @@ export function FrequencyCalendarCard({
   buckets,
   symptomType,
   emptyMessage,
+  definition,
   onPress,
   accessibilityHint,
 }: Props) {
+  const [defOpen, setDefOpen] = useState(false);
   const { rows, max, daysWithEvents } = buildHeatRows(buckets, symptomType);
   const isEmpty = daysWithEvents === 0;
 
@@ -124,7 +131,16 @@ export function FrequencyCalendarCard({
     >
       <View style={styles.headerRow}>
         <Text style={styles.title}>{title}</Text>
-        {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
+        <View style={styles.headerActions}>
+          {definition != null && (
+            <MetricInfoButton
+              open={defOpen}
+              onToggle={() => setDefOpen((v) => !v)}
+              metricLabel={title}
+            />
+          )}
+          {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
+        </View>
       </View>
 
       {isEmpty ? (
@@ -183,6 +199,9 @@ export function FrequencyCalendarCard({
           </Text>
         </>
       )}
+
+      {/* B-100 definition reveal — decodes "which days" + the darker = more shade scale. */}
+      {definition != null && defOpen && <MetricDefinition text={definition} />}
     </Pressable>
   );
 }
@@ -203,6 +222,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  // Right-side actions group — the info (i) + the future card→detail chevron sit together.
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
   },
   title: {
     fontSize: theme.textSM,

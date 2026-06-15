@@ -7,10 +7,10 @@ jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null }));
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import { MetricCard } from './MetricCard';
 import { notEnoughData } from '../../lib/analytics';
-import { selectCardState } from '../../lib/dashboardCards';
+import { selectCardState, intakeRateDefinition } from '../../lib/dashboardCards';
 
 describe('MetricCard', () => {
   it('renders the four layers when populated', () => {
@@ -79,5 +79,33 @@ describe('MetricCard', () => {
       <MetricCard label="Meals finished" value="80%" note="Free-fed meals aren't counted here." />,
     );
     expect(getByText("Free-fed meals aren't counted here.")).toBeTruthy();
+  });
+
+  it('reveals the metric definition on tapping the info affordance, and hides it again (B-100)', () => {
+    const def = intakeRateDefinition('Nyx'); // the canonical helper output, no drift
+    const { getByTestId, queryByText } = render(
+      <MetricCard label="Meals finished" value="29%" progress={0.29} definition={def} />,
+    );
+    // Hidden until tapped — unobtrusive by default.
+    expect(queryByText(def)).toBeNull();
+    fireEvent.press(getByTestId('metric-info-button'));
+    expect(queryByText(def)).not.toBeNull();
+    fireEvent.press(getByTestId('metric-info-button'));
+    expect(queryByText(def)).toBeNull();
+  });
+
+  it('shows no info affordance when no definition is provided', () => {
+    const { queryByTestId } = render(<MetricCard label="Vomiting" value="3" sparkData={[1, 2, 3]} />);
+    expect(queryByTestId('metric-info-button')).toBeNull();
+  });
+
+  it('offers the definition even in the calibration state (explains what is still learning)', () => {
+    const state = selectCardState(notEnoughData(1, 4));
+    const def = intakeRateDefinition('Nyx');
+    const { getByTestId, getByText } = render(
+      <MetricCard label="Meals finished" value="" state={state} calibrationUnit="meal" petName="Nyx" definition={def} />,
+    );
+    fireEvent.press(getByTestId('metric-info-button'));
+    expect(getByText(def)).toBeTruthy();
   });
 });

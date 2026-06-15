@@ -21,7 +21,17 @@ import {
   type DashboardCard,
   type DashboardState,
 } from '../../lib/dashboardScreen';
-import { describeCountDelta, describeRateDelta, intakeNotObservedNote } from '../../lib/dashboardCards';
+import {
+  describeCountDelta,
+  describeRateDelta,
+  intakeNotObservedNote,
+  intakeRateDefinition,
+  symptomCountDefinition,
+  symptomFrequencyDefinition,
+  topFoodDefinition,
+  topProteinDefinition,
+  compositionDefinition,
+} from '../../lib/dashboardCards';
 import { MetricCard } from '../../components/dashboard/MetricCard';
 import { RankingCard } from '../../components/dashboard/RankingCard';
 import { FrequencyCalendarCard } from '../../components/dashboard/FrequencyCalendarCard';
@@ -165,7 +175,9 @@ export default function PatternsScreen() {
                   cardsY.current = e.nativeEvent.layout.y;
                 }}
               >
-                {cards.map((card) => renderCard(card, petName))}
+                {/* Pass the RAW name (not the 'your pet'-resolved petName) so each card's
+                    definition/calibration copy owns its OWN nyx-voice fallback. */}
+                {cards.map((card) => renderCard(card, activePet?.name))}
               </View>
             </>
           )}
@@ -194,7 +206,7 @@ function displayProtein(protein: string): string {
 // descriptor straight from buildDashboardCards. Cards are display-only in v1 (no
 // onPress) — the card→detail "doorway" (wiring MetricDetailScreen as /insights/[metric])
 // is the flagged follow-up; the PR-2 cards hide their chevron when not tappable.
-function renderCard(card: DashboardCard, petName: string) {
+function renderCard(card: DashboardCard, petName?: string) {
   switch (card.kind) {
     case 'symptomCount':
       return (
@@ -207,6 +219,7 @@ function renderCard(card: DashboardCard, petName: string) {
           delta={card.delta}
           deltaLabel={describeCountDelta(card.current, card.prior, WINDOW)}
           sparkData={card.sparkData}
+          definition={symptomCountDefinition(symptomLabel(card.symptomType).toLowerCase(), petName)}
           petName={petName}
         />
       );
@@ -217,6 +230,7 @@ function renderCard(card: DashboardCard, petName: string) {
           title={symptomLabel(card.symptomType)}
           buckets={card.buckets}
           symptomType={card.symptomType}
+          definition={symptomFrequencyDefinition(symptomLabel(card.symptomType).toLowerCase(), petName)}
         />
       );
     case 'intakeRate': {
@@ -254,6 +268,7 @@ function renderCard(card: DashboardCard, petName: string) {
           deltaLabel={deltaLabel}
           calibrationUnit="meal"
           note={note}
+          definition={intakeRateDefinition(petName)}
           petName={petName}
         />
       );
@@ -278,6 +293,7 @@ function renderCard(card: DashboardCard, petName: string) {
           entries={entries}
           state={card.state}
           calibrationUnit="meal"
+          definition={topFoodDefinition(petName)}
           petName={petName}
         />
       );
@@ -301,12 +317,19 @@ function renderCard(card: DashboardCard, petName: string) {
           entries={entries}
           state={card.state}
           calibrationUnit="meal"
+          definition={topProteinDefinition(petName)}
           petName={petName}
         />
       );
     }
     case 'composition':
-      return <CompositionCard key={card.key} composition={card.composition} />;
+      return (
+        <CompositionCard
+          key={card.key}
+          composition={card.composition}
+          definition={compositionDefinition(petName)}
+        />
+      );
   }
 }
 

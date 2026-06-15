@@ -1,10 +1,10 @@
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import { RankingCard } from './RankingCard';
 import { notEnoughData } from '../../lib/analytics';
-import { selectCardState } from '../../lib/dashboardCards';
+import { selectCardState, topFoodDefinition } from '../../lib/dashboardCards';
 
 describe('RankingCard', () => {
   const entries = [
@@ -75,5 +75,15 @@ describe('RankingCard', () => {
       <RankingCard title="Top food" entries={[]} emptyMessage="No meals logged yet." />,
     );
     expect(getByText('No meals logged yet.')).toBeTruthy();
+  });
+
+  it('reveals the metric definition on tapping the info affordance (B-100)', () => {
+    const def = topFoodDefinition('Nyx'); // the canonical helper output, no drift
+    const { getByTestId, queryByText } = render(
+      <RankingCard title="Top food" entries={entries} definition={def} />,
+    );
+    expect(queryByText(def)).toBeNull();
+    fireEvent.press(getByTestId('metric-info-button'));
+    expect(queryByText(def)).not.toBeNull();
   });
 });

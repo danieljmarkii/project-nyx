@@ -14,6 +14,12 @@ import {
   deltaDirection,
   pluralize,
   intakeNotObservedNote,
+  intakeRateDefinition,
+  symptomCountDefinition,
+  symptomFrequencyDefinition,
+  topFoodDefinition,
+  topProteinDefinition,
+  compositionDefinition,
   type Polarity,
 } from './dashboardCards';
 import { notEnoughData } from './analytics';
@@ -198,5 +204,100 @@ describe('intakeNotObservedNote — §11 #6 free-feeding honesty', () => {
     expect(note).toMatch(/free-fed/i);
     expect(note).not.toContain('!');
     expect(note).not.toMatch(/didn't eat|did not eat/i);
+  });
+});
+
+// ── Metric definitions (B-100) — the info-affordance copy ─────────────────────────
+//
+// The load-bearing assertion is §11 #1: the INTAKE definitions ("Meals finished" and
+// the ranking "% finished") describe HOW MUCH GOT EATEN and must NEVER relabel intake
+// as a "preference"/"favourite" (intake is not preference). Plus the universal voice
+// rules: no "!" (Pattern 4) and the pet name / second-person fallback (Pattern 1).
+
+/** Vocabulary that would (mis)frame an intake metric as a like/dislike — §11 #1. */
+const PREFERENCE_WORDS = /preference|prefer|favou?rite|\blikes?\b|\bloves?\b|enjoys?/i;
+
+describe('metric definitions (B-100)', () => {
+  // Both the named-pet AND the no-name (fallback) variant of every definition — so the
+  // voice sweep below can't miss an "!" that only appears on the fallback path.
+  const all = [
+    intakeRateDefinition('Nyx'), intakeRateDefinition(),
+    symptomCountDefinition('vomiting', 'Nyx'), symptomCountDefinition('vomiting'),
+    symptomFrequencyDefinition('vomiting', 'Nyx'), symptomFrequencyDefinition('vomiting'),
+    topFoodDefinition('Nyx'), topFoodDefinition(),
+    topProteinDefinition('Nyx'), topProteinDefinition(),
+    compositionDefinition('Nyx'), compositionDefinition(),
+  ];
+
+  it('every definition (named + no-name fallback) stays warm — no exclamation mark (Pattern 4)', () => {
+    for (const d of all) expect(d).not.toContain('!');
+  });
+
+  describe('intakeRateDefinition — "Meals finished" (§11 #1/#6)', () => {
+    const def = intakeRateDefinition('Nyx');
+    it('names the exact rule: most/all eaten, treats out, free-fed out', () => {
+      expect(def).toMatch(/most or all/i);
+      expect(def).toMatch(/treats/i);
+      expect(def).toMatch(/free-fed/i);
+    });
+    it('frames it as intake, NEVER as a preference/favourite (intake is not preference)', () => {
+      expect(def).not.toMatch(PREFERENCE_WORDS);
+    });
+    it('threads the pet name, falling back to second-person "your pet\'s"', () => {
+      expect(intakeRateDefinition('Nyx')).toContain("Nyx's");
+      expect(intakeRateDefinition()).toContain("your pet's");
+    });
+    it('does not double the possessive if the caller hands in the "your pet" fallback', () => {
+      // Belt-and-suspenders: the screen now passes the RAW name (helpers own the fallback),
+      // but a caller passing "your pet" must still read "your pet's", never "your pet's's".
+      const def = intakeRateDefinition('your pet');
+      expect(def).toContain("your pet's");
+      expect(def).not.toContain("pet's's");
+    });
+  });
+
+  describe('the ranking "% finished" definitions are intake, not preference (§11 #1)', () => {
+    it('topFood describes the share bar + how much got eaten, no preference word', () => {
+      const def = topFoodDefinition('Nyx');
+      expect(def).toMatch(/share of the diet/i);
+      expect(def).toMatch(/eaten/i);
+      expect(def).not.toMatch(PREFERENCE_WORDS);
+    });
+    it('topFood notes the treat exception so it matches a treat-topped row (no over-claim)', () => {
+      // A treat can top the food list and shows a "treat" tag, not a rate (§11 #1 — a
+      // ceiling finish-rate is not an intake signal); the definition must not imply
+      // "% finished" is always present.
+      expect(topFoodDefinition('Nyx')).toMatch(/treats? show/i);
+    });
+    it('topProtein is meals-only and carries no preference word', () => {
+      const def = topProteinDefinition('Nyx');
+      expect(def).toMatch(/meals only/i);
+      expect(def).not.toMatch(PREFERENCE_WORDS);
+    });
+  });
+
+  describe('symptom definitions', () => {
+    it('the count points back to the History timeline (a verifiable raw count)', () => {
+      const def = symptomCountDefinition('vomiting', 'Nyx');
+      expect(def).toMatch(/vomiting/);
+      expect(def).toMatch(/Nyx/);
+      expect(def).toMatch(/History/);
+    });
+    it('the frequency calendar decodes "which days" + the darker = more scale', () => {
+      const def = symptomFrequencyDefinition('vomiting', 'Nyx');
+      expect(def).toMatch(/which days/i);
+      expect(def).toMatch(/darker/i);
+    });
+    it('falls back to "your pet" with no name (Pattern 1)', () => {
+      expect(symptomCountDefinition('vomiting')).toContain('your pet');
+    });
+  });
+
+  describe('compositionDefinition — descriptive, never a verdict on feeding (§11 #1)', () => {
+    const def = compositionDefinition('Nyx');
+    it('frames the split as what was logged, not a judgement on how the owner feeds', () => {
+      expect(def).toMatch(/not a verdict/i);
+      expect(def).not.toMatch(PREFERENCE_WORDS);
+    });
   });
 });
