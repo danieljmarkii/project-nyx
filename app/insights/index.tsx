@@ -8,7 +8,7 @@ import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
   getSymptomCounts,
   getSymptomFrequencyByDay,
-  getIntakeRate,
+  getIntakeRateWithPrior,
   getTopFoods,
   getTopProteins,
   getMealTreatComposition,
@@ -21,7 +21,7 @@ import {
   type DashboardCard,
   type DashboardState,
 } from '../../lib/dashboardScreen';
-import { describeCountDelta, intakeNotObservedNote, pluralize } from '../../lib/dashboardCards';
+import { describeCountDelta, describeRateDelta, intakeNotObservedNote } from '../../lib/dashboardCards';
 import { MetricCard } from '../../components/dashboard/MetricCard';
 import { RankingCard } from '../../components/dashboard/RankingCard';
 import { FrequencyCalendarCard } from '../../components/dashboard/FrequencyCalendarCard';
@@ -78,11 +78,11 @@ export default function PatternsScreen() {
     const myId = ++loadIdRef.current;
     if (showLoading) setStatus('loading');
     try {
-      const [symptomCounts, frequencyBuckets, intakeRate, topFoods, topProteins, composition] =
+      const [symptomCounts, frequencyBuckets, intakeComparison, topFoods, topProteins, composition] =
         await Promise.all([
           getSymptomCounts(pet.id, WINDOW),
           getSymptomFrequencyByDay(pet.id, WINDOW),
-          getIntakeRate(pet.id, WINDOW),
+          getIntakeRateWithPrior(pet.id, WINDOW),
           getTopFoods(pet.id, WINDOW),
           getTopProteins(pet.id, WINDOW),
           getMealTreatComposition(pet.id, WINDOW),
@@ -93,7 +93,8 @@ export default function PatternsScreen() {
         buildDashboardCards({
           symptomCounts,
           frequencyBuckets,
-          intakeRate,
+          intakeRate: intakeComparison.current,
+          intakeRatePrior: intakeComparison.prior,
           topFoods,
           topProteins,
           composition,
@@ -119,7 +120,11 @@ export default function PatternsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right', 'bottom']}>
-      <Stack.Screen options={{ title: 'Patterns', headerShown: true }} />
+      {/* Arrow-only back button — the default label inherits the tab group's route
+          name ("(tabs)"), which reads as a bug; 'minimal' shows just the chevron. */}
+      <Stack.Screen
+        options={{ title: 'Patterns', headerShown: true, headerBackButtonDisplayMode: 'minimal' }}
+      />
 
       {!activePet ? (
         <View style={styles.centered}>
@@ -218,10 +223,23 @@ function renderCard(card: DashboardCard, petName: string) {
       const r = card.result;
       // Narrow via the sentinel guard (no `as`): read the rate only when it's real.
       let value = '';
+      let progress: number | undefined;
       let note: string | undefined;
+      let delta: number | undefined;
+      let deltaLabel: string | undefined;
       if (!isNotEnoughData(r)) {
         value = `${Math.round(r.rate * 100)}%`;
+        progress = r.rate; // the proportion bar — the card's shape (B-098), never a bare number
         note = r.intakeNotDirectlyObserved ? intakeNotObservedNote() : undefined;
+        // "vs last month" only when the PRIOR window is itself established (never a
+        // fabricated baseline). delta is whole percentage points so its sign matches the
+        // phrase exactly; MetricCard resolves the tone — a positive-metric DROP stays
+        // neutral (§13 #6), the floored decline detector owns escalation, not this card.
+        const p = card.prior;
+        if (!isNotEnoughData(p)) {
+          delta = Math.round(r.rate * 100) - Math.round(p.rate * 100);
+          deltaLabel = describeRateDelta(r.rate, p.rate, WINDOW);
+        }
       }
       return (
         <MetricCard
@@ -231,6 +249,9 @@ function renderCard(card: DashboardCard, petName: string) {
           polarity="positive"
           established={card.established}
           state={card.state}
+          progress={progress}
+          delta={delta}
+          deltaLabel={deltaLabel}
           calibrationUnit="meal"
           note={note}
           petName={petName}
@@ -239,13 +260,16 @@ function renderCard(card: DashboardCard, petName: string) {
     }
     case 'topFood': {
       const r = card.result;
+      // Bar = share of diet; right = "% finished" (intake), treats flagged, thin → hint (§11 #1).
       const entries = isNotEnoughData(r)
         ? []
         : r.map((f) => ({
             key: f.foodItemId,
             label: f.label,
-            value: `${f.count} ${pluralize(f.count, 'log')}`,
-            tag: f.foodType === 'treat' ? 'treat' : undefined,
+            share: f.shareOfDiet,
+            shareLabel: `${Math.round(f.shareOfDiet * 100)}% of diet`,
+            finishedRate: f.finishedRate,
+            isTreat: f.isTreat,
           }));
       return (
         <RankingCard
@@ -260,9 +284,16 @@ function renderCard(card: DashboardCard, petName: string) {
     }
     case 'topProtein': {
       const r = card.result;
+      // Meal-based (treats excluded): share of meals + "% finished" per protein.
       const entries = isNotEnoughData(r)
         ? []
-        : r.map((p) => ({ key: p.protein, label: displayProtein(p.protein), value: `${p.count}×` }));
+        : r.map((p) => ({
+            key: p.protein,
+            label: displayProtein(p.protein),
+            share: p.shareOfDiet,
+            shareLabel: `${Math.round(p.shareOfDiet * 100)}% of meals`,
+            finishedRate: p.finishedRate,
+          }));
       return (
         <RankingCard
           key={card.key}

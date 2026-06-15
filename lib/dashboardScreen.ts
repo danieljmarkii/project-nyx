@@ -81,6 +81,11 @@ export interface IntakeRateCard {
    *  number), so a thin rate can never carry a verdict. */
   established: boolean;
   state: CardDisplayState;
+  /** Prior comparable window's finished-rate, for the "vs last {window}" delta (B-098).
+   *  notEnoughData → the card omits the delta line (never a fabricated baseline). The
+   *  proportion bar (the card's shape, so it's never a bare big number) is drawn from
+   *  the current `result.rate` in the screen. */
+  prior: IntakeRate | NotEnoughData;
 }
 
 export interface TopFoodCard {
@@ -135,6 +140,8 @@ export interface BuildDashboardInput {
   /** One bucket per calendar day in the window (analytics) — heat-grid + sparklines. */
   frequencyBuckets: DayFrequencyBucket[];
   intakeRate: IntakeRate | NotEnoughData;
+  /** Prior comparable window's finished-rate — the intake card's "vs last {window}" delta (B-098). */
+  intakeRatePrior: IntakeRate | NotEnoughData;
   topFoods: RankedFood[] | NotEnoughData;
   topProteins: RankedProtein[] | NotEnoughData;
   composition: MealTreatComposition;
@@ -187,6 +194,7 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
     key: 'intakeRate',
     priority: 'intake',
     result: input.intakeRate,
+    prior: input.intakeRatePrior,
     established: !isNotEnoughData(input.intakeRate),
     state: selectCardState(input.intakeRate),
   });

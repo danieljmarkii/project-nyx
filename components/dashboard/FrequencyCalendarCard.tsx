@@ -1,7 +1,7 @@
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { theme } from '../../constants/theme';
-import { HEAT_COLOR, HEAT_EMPTY_COLOR, heatOpacity } from './cardTokens';
+import { theme, shadows } from '../../constants/theme';
+import { HEAT_COLOR, HEAT_EMPTY_COLOR, HEAT_OPACITY_STEPS, heatOpacity } from './cardTokens';
 import { pluralize } from '../../lib/dashboardCards';
 import type { DayFrequencyBucket } from '../../lib/analytics';
 
@@ -14,6 +14,20 @@ import type { DayFrequencyBucket } from '../../lib/analytics';
 // month of empty squares is "none logged", not "Nyx is well" (§11 #2).
 
 const DAYS_PER_WEEK = 7;
+// Column headers, Sun-first to match weekdayOf (getUTCDay 0=Sun) + the lead padding.
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
+
+/** Day-of-month numeral colour for a heat cell — readable on BOTH a light empty square
+ *  and a saturated symptom square (white on the dark steps, ink on the light ones). */
+function dayNumberColor(count: number, max: number): string {
+  if (count <= 0) return theme.colorTextTertiary; // empty day — muted, keeps the grid calm
+  return heatOpacity(count, max) >= 0.7 ? theme.colorSurface : theme.colorTextPrimary;
+}
+
+/** Day-of-month from a 'YYYY-MM-DD' bucket key (blank pad cells have no date). */
+function dayOfMonth(cell: Cell): number | null {
+  return cell.blank ? null : Number(cell.key.slice(8, 10));
+}
 
 interface Props {
   /** "Vomiting", "Loose stool" — the symptom this grid is about. */
@@ -117,25 +131,52 @@ export function FrequencyCalendarCard({
         <Text style={styles.stateText}>{emptyMessage ?? `No ${title.toLowerCase()} logged ${range}.`}</Text>
       ) : (
         <>
+          {/* Weekday header orients the columns; the date numeral on each SYMPTOM day
+              answers the vet's "which day?" without numbering all 30 (keeps it calm). */}
+          <View style={styles.weekdayHeader}>
+            {WEEKDAY_LABELS.map((d, i) => (
+              <Text key={i} style={styles.weekdayLabel}>
+                {d}
+              </Text>
+            ))}
+          </View>
           <View style={styles.grid}>
             {rows.map((row) => (
               <View key={row[0].key} style={styles.weekRow}>
-                {row.map((cell) => (
-                  <View
-                    key={cell.key}
-                    style={[
-                      styles.cell,
-                      cell.blank
-                        ? styles.cellBlank
-                        : {
-                            backgroundColor: cell.count > 0 ? HEAT_COLOR : HEAT_EMPTY_COLOR,
-                            opacity: cell.count > 0 ? heatOpacity(cell.count, max) : 1,
-                          },
-                    ]}
-                  />
-                ))}
+                {row.map((cell) => {
+                  const dom = dayOfMonth(cell);
+                  return (
+                    <View key={cell.key} style={styles.cell}>
+                      {!cell.blank && (
+                        <View
+                          style={[
+                            StyleSheet.absoluteFill,
+                            styles.cellFill,
+                            {
+                              backgroundColor: cell.count > 0 ? HEAT_COLOR : HEAT_EMPTY_COLOR,
+                              opacity: cell.count > 0 ? heatOpacity(cell.count, max) : 1,
+                            },
+                          ]}
+                        />
+                      )}
+                      {cell.count > 0 && dom != null && (
+                        <Text style={[styles.dayNum, { color: dayNumberColor(cell.count, max) }]}>
+                          {dom}
+                        </Text>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
             ))}
+          </View>
+          {/* Shade legend — decodes darker = more episodes that day (the GitHub pattern). */}
+          <View style={styles.legendRow}>
+            <Text style={styles.legendLabel}>Fewer</Text>
+            {HEAT_OPACITY_STEPS.map((op, i) => (
+              <View key={i} style={[styles.legendSwatch, { backgroundColor: HEAT_COLOR, opacity: op }]} />
+            ))}
+            <Text style={styles.legendLabel}>More</Text>
           </View>
           <Text style={styles.caption}>
             Logged on {daysWithEvents} {pluralize(daysWithEvents, 'day')} · {range}
@@ -150,11 +191,10 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusMedium,
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
     padding: theme.space3,
     minHeight: 44,
     gap: theme.space2,
+    ...shadows.md,
   },
   pressed: {
     backgroundColor: theme.colorSurfaceSubtle,
@@ -170,6 +210,16 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     flexShrink: 1,
   },
+  weekdayHeader: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  weekdayLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: theme.textXS,
+    color: theme.colorTextDisabled,
+  },
   grid: {
     gap: 4,
   },
@@ -181,9 +231,31 @@ const styles = StyleSheet.create({
     flex: 1,
     aspectRatio: 1,
     borderRadius: theme.radiusXS,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cellBlank: {
-    backgroundColor: 'transparent',
+  cellFill: {
+    borderRadius: theme.radiusXS,
+  },
+  dayNum: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 5,
+  },
+  legendSwatch: {
+    width: 12,
+    height: 12,
+    borderRadius: theme.radiusXS,
+  },
+  legendLabel: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
   },
   caption: {
     fontSize: theme.textXS,

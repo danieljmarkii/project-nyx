@@ -49,6 +49,7 @@ function baseInput(over: Partial<Parameters<typeof buildDashboardCards>[0]> = {}
     symptomCounts: [],
     frequencyBuckets: [],
     intakeRate: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
+    intakeRatePrior: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
     topFoods: NO_FOODS as RankedFood[] | ReturnType<typeof notEnoughData>,
     topProteins: NO_PROTEINS as RankedProtein[] | ReturnType<typeof notEnoughData>,
     composition: emptyComposition(),
@@ -132,6 +133,26 @@ describe('buildDashboardCards — n=1 establishment gate (PR-2 INSUFFICIENT note
     const card = cards.find((c) => c.kind === 'intakeRate') as IntakeRateCard;
     expect(card.established).toBe(true);
     expect(card.state.kind).toBe('populated');
+  });
+
+  it('carries the prior-window rate through for the "vs last month" delta (B-098)', () => {
+    const rate: IntakeRate = {
+      rate: 0.29,
+      finishedMeals: 2,
+      ratedMeals: 7,
+      freeFedExcluded: 0,
+      intakeNotDirectlyObserved: false,
+    };
+    const prior: IntakeRate = {
+      rate: 0.41,
+      finishedMeals: 7,
+      ratedMeals: 17,
+      freeFedExcluded: 0,
+      intakeNotDirectlyObserved: false,
+    };
+    const cards = buildDashboardCards(baseInput({ intakeRate: rate, intakeRatePrior: prior }));
+    const card = cards.find((c) => c.kind === 'intakeRate') as IntakeRateCard;
+    expect(card.prior).toBe(prior);
   });
 });
 

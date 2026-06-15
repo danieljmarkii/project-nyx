@@ -12,7 +12,7 @@ const bucket = (date: string, total: number): DayFrequencyBucket => ({
 });
 
 describe('FrequencyCalendarCard', () => {
-  it('summarises how many days had the symptom (honest occurrence, no legend)', () => {
+  it('numbers each symptom day + shows the weekday header and shade legend (B-097)', () => {
     const buckets = [
       bucket('2026-06-07', 0),
       bucket('2026-06-08', 2),
@@ -25,6 +25,13 @@ describe('FrequencyCalendarCard', () => {
     const { getByText } = render(<FrequencyCalendarCard title="Vomiting" buckets={buckets} />);
     expect(getByText('Vomiting')).toBeTruthy();
     expect(getByText(/Logged on 2 days/)).toBeTruthy();
+    // Each symptom day carries its date numeral — the owner can answer "which day?".
+    expect(getByText('8')).toBeTruthy();
+    expect(getByText('10')).toBeTruthy();
+    // Weekday header (unique letters) + the shade legend decode the grid.
+    expect(getByText('W')).toBeTruthy();
+    expect(getByText('Fewer')).toBeTruthy();
+    expect(getByText('More')).toBeTruthy();
   });
 
   it('shows a warm "none logged" empty state, never an all-clear', () => {

@@ -290,6 +290,33 @@ export function computeSymptomFrequencyByDay(
   return buckets;
 }
 
+// ── B. Per-item finished-rate (the ranking-card bar's intake signal — §11 #1/#5/#6) ──
+//
+// For a SINGLE food or protein: the share of ITS rated, non-free-fed meals that were
+// finished (most/all). Treats are NOT excluded here (unlike the overall meals-only rate)
+// — this rates the item itself; a treat's rate is a ceiling, so the CARD shows the treat
+// tag instead of the number (never "treats 100% finished" → "loved", §11 #1). Floored at
+// minRatedMealsForIntakeRate: below it the rate is null (the card shows a "needs a few
+// more" hint, never a confident rate off 1–2 meals — a food a pet is starting to refuse
+// must not read as a low "preference"). A food whose every logged meal is free-fed has no
+// observed intake → null (§11 #6). A LOW rate is descriptive + neutral; a real "started
+// refusing" is the floored decline detector's job, not this card.
+
+export interface ItemFinishedRate {
+  /** finished/rated in [0,1], or null below the floor / when intake isn't observed. */
+  rate: number | null;
+  /** Rated, non-free-fed meals behind the rate (the floor denominator). */
+  ratedMeals: number;
+}
+
+function itemFinishedRate(meals: AnalyticsMeal[], freeFed: ReadonlySet<string>): ItemFinishedRate {
+  const rated = meals.filter((m) => m.intakeRating != null && !isFreeFedMeal(m, freeFed));
+  if (rated.length < ANALYTICS_FLOORS.minRatedMealsForIntakeRate) {
+    return { rate: null, ratedMeals: rated.length };
+  }
+  return { rate: rated.filter(isFinishedMeal).length / rated.length, ratedMeals: rated.length };
+}
+
 // ── B. Top foods (ranking card) ─────────────────────────────────────────────────
 
 export interface RankedFood {
@@ -298,31 +325,69 @@ export interface RankedFood {
   /** food_type so the card can tag a treat topping the list (reads honestly). */
   foodType: string | null;
   count: number;
+  /** count / total logged identifiable foods, [0,1] — "share of diet" (drives the bar). */
+  shareOfDiet: number;
+  /** This food's finished-rate (itemFinishedRate): null below the floor, fully free-fed,
+   *  OR a classified treat — a treat's ceiling rate is nulled AT THE SOURCE so no consumer
+   *  can render "treats 100% finished → loved" (§11 #1). */
+  finishedRate: number | null;
+  /** Rated, non-free-fed meals behind finishedRate. */
+  ratedMeals: number;
+  /** Any logged row classified `food_type='treat'` — finishedRate is null (ceiling, §11 #1). */
+  isTreat: boolean;
 }
 
 export interface RankOptions {
   /** Max entries returned (default 5). The floor is independent of the cap. */
   limit?: number;
+  /** Foods currently free-fed for this pet — excluded from each item's finished-rate
+   *  denominator (§11 #6). Absent ⇒ none free-fed (pure-core tests pass it explicitly). */
+  freeFedFoodIds?: ReadonlySet<string>;
 }
 
-/** Pure: most-LOGGED foods, ranked by meal count desc. Descriptive "what's logged
- *  most" — treats are included (and tagged via foodType) so a frequently-given treat
- *  reads honestly; the meal/treat split lives in getMealTreatComposition. Floored on
- *  the number of identifiable foods (§11 #5). */
+/** Pure: most-LOGGED foods, ranked by meal count desc. Descriptive "what's logged most"
+ *  — treats are included (and flagged via isTreat) so a frequently-given treat reads
+ *  honestly; the meal/treat split lives in getMealTreatComposition. Floored on the number
+ *  of identifiable foods (§11 #5). Each entry carries its share of the diet (the bar) and
+ *  its own finished-rate (§11 #1 — intake, never "preference"; floored; treat = ceiling). */
 export function computeTopFoods(rows: AnalyticsMeal[], opts: RankOptions = {}): RankedFood[] | NotEnoughData {
   const limit = opts.limit ?? 5;
+  const freeFed = opts.freeFedFoodIds ?? new Set<string>();
   const candidates = rows.filter((m) => m.foodItemId !== null && !!m.foodLabel);
   if (candidates.length < ANALYTICS_FLOORS.minMealsForRanking) {
     return notEnoughData(candidates.length, ANALYTICS_FLOORS.minMealsForRanking);
   }
-  const byFood = new Map<string, RankedFood>();
+  const byFood = new Map<string, AnalyticsMeal[]>();
   for (const m of candidates) {
     const id = m.foodItemId as string;
-    const entry = byFood.get(id);
-    if (entry) entry.count += 1;
-    else byFood.set(id, { foodItemId: id, label: m.foodLabel as string, foodType: m.foodType, count: 1 });
+    const arr = byFood.get(id);
+    if (arr) arr.push(m);
+    else byFood.set(id, [m]);
   }
-  return [...byFood.values()]
+  const total = candidates.length;
+  const ranked: RankedFood[] = [];
+  for (const [id, meals] of byFood) {
+    // treat-if-ANY row (order-independent) so a mixed/legacy classification errs toward
+    // the ceiling-safe direction, not whichever row the DB returned first (adversarial
+    // review LOW #2). NOTE: an entirely UNclassified treat (food_type null on every row)
+    // still can't be known as a treat — that's a food-classification limit, not B-098.
+    const isTreat = meals.some((m) => m.foodType === 'treat');
+    const fr = itemFinishedRate(meals, freeFed);
+    ranked.push({
+      foodItemId: id,
+      label: meals[0].foodLabel as string,
+      foodType: meals[0].foodType,
+      count: meals.length,
+      shareOfDiet: meals.length / total,
+      // A classified treat carries NO finish-rate AT THE SOURCE (not merely hidden by the
+      // card): a treat's ceiling rate must never be able to render as "100% finished →
+      // loved", even via a consumer that ignores isTreat (adversarial review LOW #1, §11 #1).
+      finishedRate: isTreat ? null : fr.rate,
+      ratedMeals: fr.ratedMeals,
+      isTreat,
+    });
+  }
+  return ranked
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
     .slice(0, limit);
 }
@@ -332,6 +397,13 @@ export function computeTopFoods(rows: AnalyticsMeal[], opts: RankOptions = {}): 
 export interface RankedProtein {
   protein: string;
   count: number;
+  /** count / total protein-identified meals, [0,1] — "share of meals" (drives the bar). */
+  shareOfDiet: number;
+  /** This protein's finished-rate (itemFinishedRate): null below the floor / fully
+   *  free-fed. Meal-based (treats are excluded from the protein card entirely). */
+  finishedRate: number | null;
+  /** Rated, non-free-fed meals behind finishedRate. */
+  ratedMeals: number;
 }
 
 /** Pure: most-consumed primary protein, CANONICALIZED before ranking (so chicken /
@@ -341,24 +413,37 @@ export interface RankedProtein {
  *  TREATS ARE EXCLUDED — the protein card is meal-based for clinical relevance
  *  (B-023 mockup): a treat's filler protein shouldn't dominate "what protein does
  *  Nyx eat". Same treat-exclusion rule as getIntakeRate; contrast computeTopFoods,
- *  which includes treats and tags them so a treat topping the FOOD list reads
- *  honestly. */
+ *  which includes treats and flags them so a treat topping the FOOD list reads honestly.
+ *  Each entry carries its share of meals (the bar) + its own finished-rate (§11 #1). */
 export function computeTopProteins(rows: AnalyticsMeal[], opts: RankOptions = {}): RankedProtein[] | NotEnoughData {
   const limit = opts.limit ?? 5;
-  const byProtein = new Map<string, number>();
+  const freeFed = opts.freeFedFoodIds ?? new Set<string>();
+  const byProtein = new Map<string, AnalyticsMeal[]>();
   let identified = 0;
   for (const m of rows) {
     if (m.foodType === 'treat') continue; // meal-based ranking (see doc)
     const key = canonicalizeProtein(m.primaryProtein);
     if (key === null) continue;
     identified += 1;
-    byProtein.set(key, (byProtein.get(key) ?? 0) + 1);
+    const arr = byProtein.get(key);
+    if (arr) arr.push(m);
+    else byProtein.set(key, [m]);
   }
   if (identified < ANALYTICS_FLOORS.minMealsForRanking) {
     return notEnoughData(identified, ANALYTICS_FLOORS.minMealsForRanking);
   }
-  return [...byProtein.entries()]
-    .map(([protein, count]) => ({ protein, count }))
+  const ranked: RankedProtein[] = [];
+  for (const [protein, meals] of byProtein) {
+    const fr = itemFinishedRate(meals, freeFed);
+    ranked.push({
+      protein,
+      count: meals.length,
+      shareOfDiet: meals.length / identified,
+      finishedRate: fr.rate,
+      ratedMeals: fr.ratedMeals,
+    });
+  }
+  return ranked
     .sort((a, b) => b.count - a.count || a.protein.localeCompare(b.protein))
     .slice(0, limit);
 }
@@ -383,6 +468,29 @@ export interface IntakeRateOptions {
   freeFedFoodIds: ReadonlySet<string>;
 }
 
+/** True when a meal's food is currently free-fed for this pet — its intake isn't
+ *  directly observed, so it is excluded from every intake-rate denominator (§11 #6). */
+function isFreeFedMeal(m: AnalyticsMeal, freeFed: ReadonlySet<string>): boolean {
+  return m.foodItemId !== null && freeFed.has(m.foodItemId);
+}
+
+/** A meal counts as "finished" at most/all (score ≥ FINISHED_SCORE). ONE definition,
+ *  shared by the rate, its sparkline series, and the decline detector's good-meal idea. */
+function isFinishedMeal(m: AnalyticsMeal): boolean {
+  return (INTAKE_SCORE[m.intakeRating as string] ?? 0) >= FINISHED_SCORE;
+}
+
+/** Rated, non-treat, non-free-fed meals — the ONE definition of an intake-rate
+ *  "qualifying meal" (§11 #1 treats-out, §11 #6 free-fed-out), shared by BOTH the
+ *  finished-rate big number (computeIntakeRate) and its sparkline shape
+ *  (computeIntakeRateSeries) so the two can never apply different rules and tell
+ *  different stories. */
+function qualifyingIntakeMeals(rows: AnalyticsMeal[], freeFed: ReadonlySet<string>): AnalyticsMeal[] {
+  return rows.filter(
+    (m) => m.foodType !== 'treat' && m.intakeRating != null && !isFreeFedMeal(m, freeFed),
+  );
+}
+
 /**
  * Pure: share of MEALS the pet finished (`most`/`all`). The denominator is rated
  * meals with `food_type != 'treat'` (§11 #1 — treats finish at a ceiling rate and
@@ -392,14 +500,13 @@ export interface IntakeRateOptions {
  */
 export function computeIntakeRate(rows: AnalyticsMeal[], opts: IntakeRateOptions): IntakeRate | NotEnoughData {
   const ratedNonTreat = rows.filter((m) => m.foodType !== 'treat' && m.intakeRating != null);
-  const isFreeFed = (m: AnalyticsMeal): boolean => m.foodItemId !== null && opts.freeFedFoodIds.has(m.foodItemId);
-  const freeFedExcluded = ratedNonTreat.filter(isFreeFed).length;
-  const denominator = ratedNonTreat.filter((m) => !isFreeFed(m));
+  const freeFedExcluded = ratedNonTreat.filter((m) => isFreeFedMeal(m, opts.freeFedFoodIds)).length;
+  const denominator = qualifyingIntakeMeals(rows, opts.freeFedFoodIds);
 
   if (denominator.length < ANALYTICS_FLOORS.minRatedMealsForIntakeRate) {
     return notEnoughData(denominator.length, ANALYTICS_FLOORS.minRatedMealsForIntakeRate);
   }
-  const finished = denominator.filter((m) => (INTAKE_SCORE[m.intakeRating as string] ?? 0) >= FINISHED_SCORE).length;
+  const finished = denominator.filter(isFinishedMeal).length;
   return {
     rate: finished / denominator.length,
     finishedMeals: finished,
@@ -758,8 +865,11 @@ export async function getTopFoods(
   opts: RankOptions = {},
 ): Promise<RankedFood[] | NotEnoughData> {
   const range = calendarWindow(window, nowMs);
-  const rows = await readMealRows(petId, range.currentStartMs, range.currentEndMs);
-  return computeTopFoods(rows, opts);
+  const [rows, freeFedFoodIds] = await Promise.all([
+    readMealRows(petId, range.currentStartMs, range.currentEndMs),
+    readFreeFedFoodIds(petId),
+  ]);
+  return computeTopFoods(rows, { ...opts, freeFedFoodIds: opts.freeFedFoodIds ?? freeFedFoodIds });
 }
 
 export async function getTopProteins(
@@ -769,8 +879,11 @@ export async function getTopProteins(
   opts: RankOptions = {},
 ): Promise<RankedProtein[] | NotEnoughData> {
   const range = calendarWindow(window, nowMs);
-  const rows = await readMealRows(petId, range.currentStartMs, range.currentEndMs);
-  return computeTopProteins(rows, opts);
+  const [rows, freeFedFoodIds] = await Promise.all([
+    readMealRows(petId, range.currentStartMs, range.currentEndMs),
+    readFreeFedFoodIds(petId),
+  ]);
+  return computeTopProteins(rows, { ...opts, freeFedFoodIds: opts.freeFedFoodIds ?? freeFedFoodIds });
 }
 
 export async function getIntakeRate(
@@ -784,6 +897,39 @@ export async function getIntakeRate(
     readFreeFedFoodIds(petId),
   ]);
   return computeIntakeRate(rows, { freeFedFoodIds });
+}
+
+/** Current + prior finished-rate, for the intake card's "vs last {window}" read (B-098). */
+export interface IntakeRateComparison {
+  current: IntakeRate | NotEnoughData;
+  prior: IntakeRate | NotEnoughData;
+}
+
+/**
+ * The finished-rate for the current window AND the prior comparable window, so the card
+ * can show "down from 41% last month" (B-098; closes the B-093 prior-rate gap). ONE
+ * free-fed read is applied to BOTH windows: we don't store historical free-fed state,
+ * and a food free-fed now was almost certainly free-fed last month — applying the
+ * current exclusion to both keeps the two rates comparable (a small, documented
+ * approximation that errs toward consistency, never toward a fabricated rate). Each side
+ * floors independently, so a thin prior simply yields no comparison (the card omits the
+ * delta line), never a made-up baseline.
+ */
+export async function getIntakeRateWithPrior(
+  petId: string,
+  window: AnalyticsWindow,
+  nowMs: number = Date.now(),
+): Promise<IntakeRateComparison> {
+  const range = calendarWindow(window, nowMs);
+  const [currentRows, priorRows, freeFedFoodIds] = await Promise.all([
+    readMealRows(petId, range.currentStartMs, range.currentEndMs),
+    readMealRows(petId, range.priorStartMs, range.priorEndMs),
+    readFreeFedFoodIds(petId),
+  ]);
+  return {
+    current: computeIntakeRate(currentRows, { freeFedFoodIds }),
+    prior: computeIntakeRate(priorRows, { freeFedFoodIds }),
+  };
 }
 
 export async function getMealTreatComposition(

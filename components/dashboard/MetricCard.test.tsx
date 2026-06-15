@@ -36,6 +36,24 @@ describe('MetricCard', () => {
     expect(queryByTestId('sparkline')).toBeNull();
   });
 
+  it('renders a proportion bar (not a line) for a rate card, with the vs-prior delta (B-098)', () => {
+    const { getByText, getByTestId, queryByTestId } = render(
+      <MetricCard
+        label="Meals finished"
+        value="29%"
+        polarity="positive"
+        established
+        progress={0.29}
+        delta={-12}
+        deltaLabel="Down from 41% last month"
+      />,
+    );
+    expect(getByText('29%')).toBeTruthy();
+    expect(getByTestId('metric-progress')).toBeTruthy(); // the shape — never a bare number
+    expect(queryByTestId('sparkline')).toBeNull(); // a rate uses the bar, not a sparkline
+    expect(getByText('Down from 41% last month')).toBeTruthy();
+  });
+
   it('renders the calibration state from a notEnoughData result, not a number', () => {
     const state = selectCardState(notEnoughData(1, 4));
     const { getByText } = render(

@@ -28,7 +28,8 @@ interface Props {
 export function AiSummaryCard({ summary, petName, onJumpToCards }: Props) {
   const who = petName.trim().length > 0 ? petName : 'your pet';
   return (
-    <Card>
+    // `elevated` = borderless + shadow, matching the seeded dashboard cards (B-098 depth).
+    <Card elevated>
       <View style={styles.headerRow}>
         <Text style={styles.eyebrow}>Summary</Text>
       </View>

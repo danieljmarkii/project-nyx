@@ -27,12 +27,14 @@ import {
   getDietTrialProgress,
   detectIntakeDecline,
   getIntakeRate,
+  getIntakeRateWithPrior,
   getSymptomCounts,
   isNotEnoughData,
   ANALYTICS_FLOORS,
   type AnalyticsMeal,
   type AnalyticsSymptom,
   type IntakeDeclineResult,
+  type RankedFood,
 } from './analytics';
 
 const DAY = 86_400_000;
@@ -162,13 +164,14 @@ describe('computeTopFoods', () => {
       meal({ ms: at(3), foodItemId: 'B', foodLabel: 'Bravo B' }),
       meal({ ms: at(4), foodItemId: 'B', foodLabel: 'Bravo B' }),
     ];
+    // No meals are rated in this fixture → finishedRate null (below the per-item floor).
     expect(computeTopFoods(rows)).toEqual([
-      { foodItemId: 'A', label: 'Acme A', foodType: 'meal', count: 3 },
-      { foodItemId: 'B', label: 'Bravo B', foodType: 'meal', count: 2 },
+      { foodItemId: 'A', label: 'Acme A', foodType: 'meal', count: 3, shareOfDiet: 0.6, finishedRate: null, ratedMeals: 0, isTreat: false },
+      { foodItemId: 'B', label: 'Bravo B', foodType: 'meal', count: 2, shareOfDiet: 0.4, finishedRate: null, ratedMeals: 0, isTreat: false },
     ]);
   });
 
-  it('includes treats but tags them via foodType (a treat can top the list honestly)', () => {
+  it('includes treats but flags them via isTreat (a treat can top the list honestly)', () => {
     const rows: AnalyticsMeal[] = [
       meal({ ms: at(0), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat' }),
       meal({ ms: at(1), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat' }),
@@ -178,8 +181,63 @@ describe('computeTopFoods', () => {
     const top = computeTopFoods(rows);
     expect(isNotEnoughData(top)).toBe(false);
     expect((top as Exclude<typeof top, { status: string }>)[0]).toEqual({
-      foodItemId: 'T', label: 'Temptations', foodType: 'treat', count: 3,
+      foodItemId: 'T', label: 'Temptations', foodType: 'treat', count: 3, shareOfDiet: 0.75, finishedRate: null, ratedMeals: 0, isTreat: true,
     });
+  });
+
+  it('computes a per-food finished-rate over rated, non-free-fed meals, floored (§11 #1/#5/#6)', () => {
+    const rows: AnalyticsMeal[] = [
+      // Food A (NOT free-fed): 5 rated meals, 3 finished (all/most/all) → 0.6.
+      meal({ ms: at(0), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'all' }),
+      meal({ ms: at(1), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'most' }),
+      meal({ ms: at(2), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'all' }),
+      meal({ ms: at(3), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'some' }),
+      meal({ ms: at(4), foodItemId: 'A', foodLabel: 'Acme A', intakeRating: 'refused' }),
+      // Food C (FREE-FED): 4 rated 'all' — but intake isn't observed → finishedRate null (§11 #6).
+      meal({ ms: at(5), foodItemId: 'C', foodLabel: 'Free C', intakeRating: 'all' }),
+      meal({ ms: at(6), foodItemId: 'C', foodLabel: 'Free C', intakeRating: 'all' }),
+      meal({ ms: at(7), foodItemId: 'C', foodLabel: 'Free C', intakeRating: 'all' }),
+      meal({ ms: at(8), foodItemId: 'C', foodLabel: 'Free C', intakeRating: 'all' }),
+      // Food B (NOT free-fed): only 2 rated meals → below the per-item floor → null.
+      meal({ ms: at(9), foodItemId: 'B', foodLabel: 'Bravo B', intakeRating: 'all' }),
+      meal({ ms: at(10), foodItemId: 'B', foodLabel: 'Bravo B', intakeRating: 'refused' }),
+    ];
+    const top = computeTopFoods(rows, { freeFedFoodIds: new Set(['C']) }) as RankedFood[];
+    const a = top.find((f) => f.foodItemId === 'A')!;
+    const b = top.find((f) => f.foodItemId === 'B')!;
+    const c = top.find((f) => f.foodItemId === 'C')!;
+    // A: 5 rated, 3 finished → 0.6.
+    expect(a.finishedRate).toBeCloseTo(0.6, 5);
+    expect(a.ratedMeals).toBe(5);
+    // B: 2 rated < floor 4 → null (never a confident rate off 2 meals).
+    expect(b.finishedRate).toBeNull();
+    expect(b.ratedMeals).toBe(2);
+    // C: free-fed → every meal excluded → null, NOT a fake 100% (intake not observed).
+    expect(c.finishedRate).toBeNull();
+    expect(c.ratedMeals).toBe(0);
+  });
+
+  it('a classified treat carries NO finish-rate, even well-eaten (ceiling nulled at source, §11 #1)', () => {
+    const rows: AnalyticsMeal[] = [
+      // A treat eaten well 4× → its rate would be a 100% ceiling → must be null at the source.
+      meal({ ms: at(0), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat', intakeRating: 'all' }),
+      meal({ ms: at(1), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat', intakeRating: 'all' }),
+      meal({ ms: at(2), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat', intakeRating: 'most' }),
+      meal({ ms: at(3), foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat', intakeRating: 'all' }),
+      // A food id with a MIXED-classification row set → treat-if-any (order-independent).
+      meal({ ms: at(4), foodItemId: 'M', foodLabel: 'Mixed', foodType: 'meal', intakeRating: 'all' }),
+      meal({ ms: at(5), foodItemId: 'M', foodLabel: 'Mixed', foodType: 'treat', intakeRating: 'all' }),
+      meal({ ms: at(6), foodItemId: 'M', foodLabel: 'Mixed', foodType: 'meal', intakeRating: 'all' }),
+      meal({ ms: at(7), foodItemId: 'M', foodLabel: 'Mixed', foodType: 'meal', intakeRating: 'all' }),
+    ];
+    const top = computeTopFoods(rows) as RankedFood[];
+    const t = top.find((f) => f.foodItemId === 'T')!;
+    const m = top.find((f) => f.foodItemId === 'M')!;
+    expect(t.isTreat).toBe(true);
+    expect(t.finishedRate).toBeNull(); // never renders "100% finished" for a treat
+    // Any treat-classified row flips the food treat-safe, regardless of DB row order.
+    expect(m.isTreat).toBe(true);
+    expect(m.finishedRate).toBeNull();
   });
 
   it('below the ranking floor → notEnoughData (no rank invented)', () => {
@@ -215,8 +273,8 @@ describe('computeTopProteins', () => {
       meal({ ms: at(5), primaryProtein: null }), // unidentified → dropped
     ];
     expect(computeTopProteins(rows)).toEqual([
-      { protein: 'chicken', count: 3 },
-      { protein: 'salmon', count: 1 },
+      { protein: 'chicken', count: 3, shareOfDiet: 0.75, finishedRate: null, ratedMeals: 0 },
+      { protein: 'salmon', count: 1, shareOfDiet: 0.25, finishedRate: null, ratedMeals: 0 },
     ]);
   });
 
@@ -242,7 +300,9 @@ describe('computeTopProteins', () => {
       meal({ ms: at(5), primaryProtein: 'chicken', foodType: 'treat' }),
     ];
     // The treat's chicken never enters the ranking — only the 4 beef meals.
-    expect(computeTopProteins(rows)).toEqual([{ protein: 'beef', count: 4 }]);
+    expect(computeTopProteins(rows)).toEqual([
+      { protein: 'beef', count: 4, shareOfDiet: 1, finishedRate: null, ratedMeals: 0 },
+    ]);
   });
 
   it('treats do not pad the protein floor', () => {
@@ -527,6 +587,36 @@ describe('getIntakeRate (wrapper wiring)', () => {
     expect(out).toEqual({
       rate: 0.5, finishedMeals: 2, ratedMeals: 4, freeFedExcluded: 1, intakeNotDirectlyObserved: true,
     });
+  });
+});
+
+describe('getIntakeRateWithPrior (wrapper wiring)', () => {
+  it('reads BOTH windows, applies the current free-fed exclusion to each, returns the two rates', async () => {
+    mockGetAllAsync.mockReset();
+    mockGetAllAsync
+      // current window read: 2 of 4 finished → 0.5; one free-fed meal excluded
+      .mockResolvedValueOnce([
+        { food_item_id: 'a', intake_rating: 'most', occurred_at: '2026-06-14T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'A' },
+        { food_item_id: 'b', intake_rating: 'all', occurred_at: '2026-06-13T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'B' },
+        { food_item_id: 'c', intake_rating: 'some', occurred_at: '2026-06-12T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'C' },
+        { food_item_id: 'd', intake_rating: 'refused', occurred_at: '2026-06-11T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'D' },
+        { food_item_id: 'free-1', intake_rating: 'all', occurred_at: '2026-06-14T09:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Free' },
+      ])
+      // prior window read: 1 of 4 finished → 0.25
+      .mockResolvedValueOnce([
+        { food_item_id: 'a', intake_rating: 'most', occurred_at: '2026-05-20T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'A' },
+        { food_item_id: 'b', intake_rating: 'refused', occurred_at: '2026-05-19T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'B' },
+        { food_item_id: 'c', intake_rating: 'refused', occurred_at: '2026-05-18T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'C' },
+        { food_item_id: 'd', intake_rating: 'some', occurred_at: '2026-05-17T08:00:00Z', food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'D' },
+      ]);
+    mockGetActiveArrangementsForPet.mockResolvedValue([
+      { id: 'arr-1', food_item_id: 'free-1', active_from: null, updated_at: '', brand: '', product_name: '', format: 'dry' },
+    ]);
+
+    const out = await getIntakeRateWithPrior('pet-1', 'month', NOW);
+    expect(mockGetActiveArrangementsForPet).toHaveBeenCalledWith('pet-1');
+    expect(out.current).toEqual({ rate: 0.5, finishedMeals: 2, ratedMeals: 4, freeFedExcluded: 1, intakeNotDirectlyObserved: true });
+    expect(out.prior).toEqual({ rate: 0.25, finishedMeals: 1, ratedMeals: 4, freeFedExcluded: 0, intakeNotDirectlyObserved: false });
   });
 });
 

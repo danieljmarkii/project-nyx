@@ -39,6 +39,8 @@ export const theme = {
   // ── Colors (Design System v1.2 "Linear Clean") ────────────────────────────
   // One accent — interactive elements + primary trend line only. Never decorative.
   colorAccent: '#00C2A8',
+  colorAccentSoft: '#86D9CC',     // mid teal — a calm, on-brand fill that is NOT a verdict
+                                  // (e.g. the treats segment of the Meals & treats card)
   colorAccentLight: '#E0FBF7',    // tinted surface behind accent elements
 
   // Neutrals

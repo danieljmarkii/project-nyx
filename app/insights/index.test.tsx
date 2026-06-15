@@ -34,7 +34,7 @@ jest.mock('../../lib/analytics', () => {
     ...actual,
     getSymptomCounts: jest.fn(),
     getSymptomFrequencyByDay: jest.fn(),
-    getIntakeRate: jest.fn(),
+    getIntakeRateWithPrior: jest.fn(),
     getTopFoods: jest.fn(),
     getTopProteins: jest.fn(),
     getMealTreatComposition: jest.fn(),
@@ -75,7 +75,7 @@ describe('PatternsScreen', () => {
   it('cold-start (no symptoms, no feedings) → the designed empty state, no summary slot', async () => {
     A.getSymptomCounts.mockResolvedValue([]);
     A.getSymptomFrequencyByDay.mockResolvedValue([]);
-    A.getIntakeRate.mockResolvedValue(notEnoughData(0, 4));
+    A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(0, 4), prior: notEnoughData(0, 4) });
     A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
     A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
     A.getMealTreatComposition.mockResolvedValue(emptyComposition());
@@ -98,7 +98,7 @@ describe('PatternsScreen', () => {
     const composition: MealTreatComposition = { meal: 8, treat: 2, other: 0, unclassified: 0, total: 10 };
     A.getSymptomCounts.mockResolvedValue(counts);
     A.getSymptomFrequencyByDay.mockResolvedValue(buckets);
-    A.getIntakeRate.mockResolvedValue(notEnoughData(2, 4));
+    A.getIntakeRateWithPrior.mockResolvedValue({ current: notEnoughData(2, 4), prior: notEnoughData(0, 4) });
     A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
     A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
     A.getMealTreatComposition.mockResolvedValue(composition);
@@ -115,5 +115,25 @@ describe('PatternsScreen', () => {
     expect(getAllByText('Vomit').length).toBeGreaterThanOrEqual(1);
     // Not the cold-start state.
     expect(queryByText(/still getting to know/i)).toBeNull();
+  });
+
+  it('intake card: the rate, a proportion bar, and the "vs last month" delta (B-098 "Both")', async () => {
+    A.getSymptomCounts.mockResolvedValue([]); // no symptom cards → the only MetricCard is intake
+    A.getSymptomFrequencyByDay.mockResolvedValue([]);
+    A.getIntakeRateWithPrior.mockResolvedValue({
+      current: { rate: 0.29, finishedMeals: 2, ratedMeals: 7, freeFedExcluded: 0, intakeNotDirectlyObserved: false },
+      prior: { rate: 0.41, finishedMeals: 7, ratedMeals: 17, freeFedExcluded: 0, intakeNotDirectlyObserved: false },
+    });
+    A.getTopFoods.mockResolvedValue(notEnoughData(0, 4));
+    A.getTopProteins.mockResolvedValue(notEnoughData(0, 4));
+    A.getMealTreatComposition.mockResolvedValue({ meal: 7, treat: 20, other: 0, unclassified: 0, total: 27 });
+
+    const { getByText, getByTestId } = render(<PatternsScreen />);
+
+    await waitFor(() => expect(getByText('29%')).toBeTruthy());
+    // The shape (proportion bar) — never a bare big number.
+    expect(getByTestId('metric-progress')).toBeTruthy();
+    // The factual "vs last month" read (a drop on a positive metric → neutral, not alarmed).
+    expect(getByText('Down from 41% last month')).toBeTruthy();
   });
 });
