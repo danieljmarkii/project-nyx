@@ -15,6 +15,7 @@ const FORMAT_LABEL: Record<string, string> = {
   raw: 'Raw',
   freeze_dried: 'Freeze-dried',
   fresh_cooked: 'Fresh',
+  human_food: 'Human food', // renders as "… · HUMAN FOOD" (B-102)
   topper: 'Topper',
   treat: 'Treat',
   // 'other' intentionally maps to '' — no chip when the format is unspecified.

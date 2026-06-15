@@ -11,8 +11,14 @@ import { theme } from '../../constants/theme';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 
-type FoodFormat = 'dry_kibble' | 'wet_canned' | 'raw' | 'freeze_dried' | 'jerky' | 'fresh_cooked' | 'topper' | 'treat' | 'other';
+type FoodFormat = 'dry_kibble' | 'wet_canned' | 'raw' | 'freeze_dried' | 'jerky' | 'fresh_cooked' | 'human_food' | 'topper' | 'treat' | 'other';
 
+// Onboarding offers only the staple-diet subset of food_format. It asks for a
+// pet's MAIN food, so 'treat', 'jerky', 'topper', and 'human_food' (B-102) are
+// intentionally omitted here — a staple is rarely a treat or people-food. All
+// stay selectable on the food-capture and food-detail screens, which is also
+// where an existing food is re-classified to 'human_food' (requirements §6/D8).
+// (Future B-068 collapses these duplicated format lists into one source.)
 const FORMAT_OPTIONS: { value: FoodFormat; label: string }[] = [
   { value: 'dry_kibble', label: 'Dry kibble' },
   { value: 'wet_canned', label: 'Wet / canned' },
