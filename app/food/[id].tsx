@@ -32,6 +32,10 @@ const FOOD_FORMATS = [
   { value: 'freeze_dried', label: 'Freeze-dried' },
   { value: 'jerky', label: 'Jerky' },
   { value: 'fresh_cooked', label: 'Fresh cooked' },
+  // B-102: people-food given to a pet (deli meat, rotisserie chicken). This
+  // screen is the re-classification surface for existing rows (requirements
+  // D8), so the chip must live here too. After 'fresh_cooked' per migration 019.
+  { value: 'human_food', label: 'Human food' },
   { value: 'topper', label: 'Topper' },
   { value: 'treat', label: 'Treat' },
   { value: 'other', label: 'Other' },
