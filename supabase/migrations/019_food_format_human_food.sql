@@ -1,0 +1,40 @@
+-- ============================================================
+-- food_format — add 'human_food' physical-form value
+-- See: docs/backlog.md B-102; docs/human-food-format-requirements.md §4
+-- ============================================================
+-- People-food given to a pet (turkey deli meat, Costco rotisserie
+-- chicken, a piece of cheese, plain boiled chicken) has no honest
+-- format value today. The closest, 'fresh_cooked', over-implies a
+-- home-prepared bland diet; 'other' carries no information. Adding
+-- 'human_food' lets the Format chip describe it accurately, and lets
+-- the engine read it as an "off-commercial-diet" provenance signal
+-- (requirements D1/D7) — a clinically meaningful, high-frequency class
+-- of feeding that is otherwise invisible to the vet report and the
+-- correlation engine.
+--
+-- This is orthogonal to food_type='treat' (B-011): human food is
+-- almost always a treat by *type*, human_food by *format*. One bucket,
+-- not a home-cooked-vs-processed split (D2) — specificity is carried by
+-- the free-text product_name ("Turkey deli meat" vs "Rotisserie
+-- Chicken"). Purely additive — it does NOT reshape the enum (that
+-- destructive reshape is B-017, which will carry 'human_food' forward
+-- when it lands, exactly as it carries 'jerky').
+--
+-- Placed AFTER 'fresh_cooked' — its nearest semantic neighbor and
+-- picker chip position.
+-- Note: ALTER TYPE ... ADD VALUE adds the label only; a freshly
+-- added value is unusable until the enclosing transaction commits,
+-- so this statement must not share a transaction with code that
+-- writes 'human_food'. It stands alone here, so that's safe.
+--
+-- Migration Safety Pre-flight:
+--   Destructive:  n  (additive enum value only; no column/data change)
+--   Rollback:     Postgres cannot DROP an enum value. Leaving 'human_food'
+--                 unused is harmless. A true reversal requires the
+--                 full type-recreation dance (create food_format_v2
+--                 without 'human_food', ALTER COLUMN ... USING, DROP TYPE,
+--                 RENAME) and is only worthwhile if rows already use it.
+--   Backfill:     N/A — no existing rows change.
+-- ============================================================
+
+ALTER TYPE food_format ADD VALUE IF NOT EXISTS 'human_food' AFTER 'fresh_cooked';
