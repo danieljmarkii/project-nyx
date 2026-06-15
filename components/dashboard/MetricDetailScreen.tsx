@@ -19,10 +19,11 @@ import { ArrowUp, ArrowDown } from 'lucide-react-native';
 // baseline" read LEADS — the highest-leverage pattern for non-technical owners (§4.2)
 // — with the big number, a no-axes line, and the delta supporting it.
 //
-// Presentational by design: the caller (PR 3) computes each window's data from the
-// analytics layer and passes it in; this component only renders + owns the segmented
-// control's local selection. Below the sample floor a window shows the calibration
-// state (§10), never a fabricated line.
+// Presentational by design: the caller (the /insights/[metric] route, via the pure
+// lib/metricDetail assembler — B-093) computes each window's data from the analytics
+// layer and passes it in; this component only renders + owns the segmented control's
+// local selection. Below the sample floor a window shows the calibration state (§10),
+// never a fabricated line.
 
 const WINDOW_ORDER: AnalyticsWindow[] = ['week', 'month', '3month'];
 const WINDOW_UI_LABEL: Record<AnalyticsWindow, string> = {
