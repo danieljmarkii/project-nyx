@@ -181,6 +181,12 @@ function petPossessive(petName?: string): string {
   return n && n.length > 0 ? `${n}'s` : "your pet's";
 }
 
+/** Pet name for copy, second-person fallback "your pet" (nyx-voice Pattern 1). */
+function petNameOrYours(petName?: string): string {
+  const n = petName?.trim();
+  return n && n.length > 0 ? n : 'your pet';
+}
+
 export function pluralize(n: number, singular: string, plural?: string): string {
   return Math.abs(n) === 1 ? singular : plural ?? `${singular}s`;
 }
@@ -269,4 +275,54 @@ export function deltaDirection(delta: number): DeltaDirection {
  */
 export function intakeNotObservedNote(): string {
   return "Free-fed meals aren't counted here — I can't see every bite from a bowl that's always down.";
+}
+
+// ── Metric definitions (B-100) — the one-line "what does this measure?" copy ──────
+//
+// Surfaced by the info affordance on each computed-metric card (components/dashboard/
+// MetricInfo.tsx) so a defined metric carries its definition at hand — Jordan tapped
+// "Meals finished" expecting "what counts as finished?" and got nothing. nyx-voice:
+// plain language (Pattern 5), specific about the rule (Pattern 2), no "!" (Pattern 4),
+// pet by name / second-person owner (Pattern 1). LOAD-BEARING for §11 #1: the intake
+// metrics ("Meals finished", the ranking "% finished") are defined as HOW MUCH GOT
+// EATEN — never as a "favourite"/"preference" (intake is not preference). Kept here,
+// pure, next to the other card copy so the wording is unit-tested and lives in one place
+// rather than scattered inline across the card components.
+
+/** "Meals finished" — the meals-only finished-rate (§11 #1/#6). Names the exact rule
+ *  the number follows: most/all eaten, treats out, free-fed out (the three things the
+ *  owner can't infer from the bare percentage). */
+export function intakeRateDefinition(petName?: string): string {
+  return `The share of ${petPossessive(petName)} meals you marked as most or all eaten. Treats and free-fed meals aren't counted.`;
+}
+
+/** A symptom count card — a raw "how many times you logged this", and that it lines up
+ *  with the History timeline the owner can scroll (not an episode-collapsed statistic). */
+export function symptomCountDefinition(symptomLower: string, petName?: string): string {
+  return `How many times you logged ${symptomLower} for ${petNameOrYours(petName)} this month — it matches your History timeline.`;
+}
+
+/** The symptom frequency calendar — which days had the symptom, and what a darker
+ *  square means (pairs with the heat legend). */
+export function symptomFrequencyDefinition(symptomLower: string, petName?: string): string {
+  return `Which days you logged ${symptomLower} for ${petNameOrYours(petName)} this month. A darker square means more that day.`;
+}
+
+/** "Top food" — explains BOTH computed parts: the bar (share of the diet) and the
+ *  right-side "% finished" (intake — how much got eaten, §11 #1, never a "favourite").
+ *  Notes the treat exception so the definition matches a treat-topped row, which shows a
+ *  tag rather than a rate (a treat's ceiling finish-rate is not an intake signal). */
+export function topFoodDefinition(petName?: string): string {
+  return `Your most-logged foods for ${petNameOrYours(petName)} this month. The bar is each food's share of the diet; "% finished" is how much of it got eaten — treats show a tag instead.`;
+}
+
+/** "Top protein" — meal-based (treats excluded), with the same bar/"% finished" split. */
+export function topProteinDefinition(petName?: string): string {
+  return `Your most-logged proteins for ${petNameOrYours(petName)}, from meals only. The bar is each protein's share of meals; "% finished" is how much got eaten.`;
+}
+
+/** "Meals & treats" — descriptive split of what was logged, never a verdict on how the
+ *  owner feeds (§11 #1 — the card's documented intent). */
+export function compositionDefinition(petName?: string): string {
+  return `The mix of meals and treats you logged for ${petNameOrYours(petName)} this month — just what was logged, not a verdict on how you feed.`;
 }

@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
+import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { pluralize } from '../../lib/dashboardCards';
 import type { MealTreatComposition } from '../../lib/analytics';
 
@@ -27,6 +29,9 @@ interface Props {
   composition: MealTreatComposition;
   title?: string;
   emptyMessage?: string;
+  /** One-line "what does this measure?" definition (B-100). When set, a tap-to-reveal
+   *  (i) shows in the header. */
+  definition?: string;
   onPress?: () => void;
   accessibilityHint?: string;
 }
@@ -45,9 +50,11 @@ export function CompositionCard({
   composition,
   title = 'Meals & treats',
   emptyMessage,
+  definition,
   onPress,
   accessibilityHint,
 }: Props) {
+  const [defOpen, setDefOpen] = useState(false);
   const { meal, treat, total } = composition;
   // Fold the rarely-populated 'other' + legacy-unclassified rows into one quiet
   // "other" segment so the card stays a clean two-to-three part split.
@@ -71,7 +78,16 @@ export function CompositionCard({
     >
       <View style={styles.headerRow}>
         <Text style={styles.title}>{title}</Text>
-        {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
+        <View style={styles.headerActions}>
+          {definition != null && (
+            <MetricInfoButton
+              open={defOpen}
+              onToggle={() => setDefOpen((v) => !v)}
+              metricLabel={title}
+            />
+          )}
+          {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
+        </View>
       </View>
 
       {isEmpty ? (
@@ -108,6 +124,9 @@ export function CompositionCard({
           </View>
         </View>
       )}
+
+      {/* B-100 definition reveal — descriptive split, never a verdict on feeding (§11 #1). */}
+      {definition != null && defOpen && <MetricDefinition text={definition} />}
     </Pressable>
   );
 }
@@ -128,6 +147,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  // Right-side actions group — the info (i) + the future card→detail chevron sit together.
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
   },
   title: {
     fontSize: theme.textSM,

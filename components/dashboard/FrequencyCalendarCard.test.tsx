@@ -1,8 +1,9 @@
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import { FrequencyCalendarCard, buildHeatRows } from './FrequencyCalendarCard';
+import { symptomFrequencyDefinition } from '../../lib/dashboardCards';
 import type { DayFrequencyBucket } from '../../lib/analytics';
 
 const bucket = (date: string, total: number): DayFrequencyBucket => ({
@@ -40,6 +41,17 @@ describe('FrequencyCalendarCard', () => {
       <FrequencyCalendarCard title="Vomiting" buckets={buckets} emptyMessage="No vomiting logged this month." />,
     );
     expect(getByText('No vomiting logged this month.')).toBeTruthy();
+  });
+
+  it('reveals the metric definition on tapping the info affordance (B-100)', () => {
+    const buckets = [bucket('2026-06-12', 0), bucket('2026-06-13', 0)];
+    const def = symptomFrequencyDefinition('vomiting', 'Nyx'); // canonical helper output
+    const { getByTestId, queryByText } = render(
+      <FrequencyCalendarCard title="Vomiting" buckets={buckets} definition={def} />,
+    );
+    expect(queryByText(def)).toBeNull();
+    fireEvent.press(getByTestId('metric-info-button'));
+    expect(queryByText(def)).not.toBeNull();
   });
 });
 

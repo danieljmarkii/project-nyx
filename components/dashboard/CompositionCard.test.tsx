@@ -1,9 +1,10 @@
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
-import { render } from '@testing-library/react-native';
+import { render, fireEvent } from '@testing-library/react-native';
 import { CompositionCard } from './CompositionCard';
 import { theme } from '../../constants/theme';
+import { compositionDefinition } from '../../lib/dashboardCards';
 import type { MealTreatComposition } from '../../lib/analytics';
 
 /** Background colour of a segment/swatch View, robust to StyleSheet IDs vs objects. */
@@ -52,5 +53,16 @@ describe('CompositionCard', () => {
     const composition: MealTreatComposition = { meal: 0, treat: 0, other: 0, unclassified: 0, total: 0 };
     const { getByText } = render(<CompositionCard composition={composition} />);
     expect(getByText("No meals or treats logged yet — they'll show up here as you log.")).toBeTruthy();
+  });
+
+  it('reveals the metric definition on tapping the info affordance (B-100)', () => {
+    const composition: MealTreatComposition = { meal: 18, treat: 6, other: 0, unclassified: 0, total: 24 };
+    const def = compositionDefinition('Nyx'); // the canonical helper output, no drift
+    const { getByTestId, queryByText } = render(
+      <CompositionCard composition={composition} definition={def} />,
+    );
+    expect(queryByText(def)).toBeNull();
+    fireEvent.press(getByTestId('metric-info-button'));
+    expect(queryByText(def)).not.toBeNull();
   });
 });

@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { ChevronRight, ArrowUp, ArrowDown } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { Sparkline } from './Sparkline';
+import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { deltaToneColor } from './cardTokens';
 import {
   resolveDeltaTone,
@@ -64,6 +66,10 @@ interface Props {
   emptyMessage?: string;
   /** Honest marker beneath the card (e.g. the §11 #6 free-feeding note). */
   note?: string;
+  /** One-line "what does this measure?" definition (B-100). When set, a tap-to-reveal
+   *  (i) shows in the header — for the computed metrics whose rule isn't obvious from
+   *  the number ("Meals finished" = most/all eaten, treats & free-fed excluded). */
+  definition?: string;
   petName?: string;
   onPress?: () => void;
   accessibilityHint?: string;
@@ -82,10 +88,12 @@ export function MetricCard({
   calibrationUnit = 'sample',
   emptyMessage,
   note,
+  definition,
   petName,
   onPress,
   accessibilityHint,
 }: Props) {
+  const [defOpen, setDefOpen] = useState(false);
   const tone = resolveDeltaTone({ polarity, delta: delta ?? 0, established });
   const toneColor = deltaToneColor(tone);
   const dir = deltaDirection(delta ?? 0);
@@ -107,7 +115,16 @@ export function MetricCard({
     >
       <View style={styles.headerRow}>
         <Text style={styles.label}>{label}</Text>
-        {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
+        <View style={styles.headerActions}>
+          {definition != null && (
+            <MetricInfoButton
+              open={defOpen}
+              onToggle={() => setDefOpen((v) => !v)}
+              metricLabel={label}
+            />
+          )}
+          {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
+        </View>
       </View>
 
       {state.kind === 'calibrating' ? (
@@ -146,6 +163,10 @@ export function MetricCard({
       )}
 
       {note != null && <Text style={styles.note}>{note}</Text>}
+
+      {/* The B-100 definition reveal — calm footer callout, shown only on tap, in any
+          data state (it explains the metric whether or not there's a number yet). */}
+      {definition != null && defOpen && <MetricDefinition text={definition} />}
     </Pressable>
   );
 }
@@ -166,6 +187,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  // Right-side actions group — the info (i) and the future card→detail chevron sit
+  // together so the label keeps the left edge (space-between) with either or both present.
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
   },
   label: {
     fontSize: theme.textSM,

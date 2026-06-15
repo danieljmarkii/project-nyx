@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
+import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { calibrationLine, type CardDisplayState } from '../../lib/dashboardCards';
 
 // RankingCard — "Top food", "Top protein" (§5 #3 / §6). A ranked BAR LIST: each row pairs
@@ -39,6 +41,9 @@ interface Props {
   state?: CardDisplayState;
   calibrationUnit?: string;
   emptyMessage?: string;
+  /** One-line "what does this measure?" definition (B-100) — explains the share bar +
+   *  the "% finished" intake read. When set, a tap-to-reveal (i) shows in the header. */
+  definition?: string;
   petName?: string;
   onPress?: () => void;
   accessibilityHint?: string;
@@ -65,10 +70,12 @@ export function RankingCard({
   state = { kind: 'populated' },
   calibrationUnit = 'meal',
   emptyMessage,
+  definition,
   petName,
   onPress,
   accessibilityHint,
 }: Props) {
+  const [defOpen, setDefOpen] = useState(false);
   // Normalize bars against the busiest entry so #1 fills the track and the rest read as a
   // share of it (the standard bar-list ranking; the LABEL stays the absolute share %).
   const maxShare = entries.reduce((m, e) => (e.share > m ? e.share : m), 0);
@@ -84,7 +91,16 @@ export function RankingCard({
     >
       <View style={styles.headerRow}>
         <Text style={styles.title}>{title}</Text>
-        {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
+        <View style={styles.headerActions}>
+          {definition != null && (
+            <MetricInfoButton
+              open={defOpen}
+              onToggle={() => setDefOpen((v) => !v)}
+              metricLabel={title}
+            />
+          )}
+          {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
+        </View>
       </View>
 
       {state.kind === 'calibrating' ? (
@@ -118,6 +134,9 @@ export function RankingCard({
           })}
         </View>
       )}
+
+      {/* B-100 definition reveal — explains the share bar + "% finished" (intake, §11 #1). */}
+      {definition != null && defOpen && <MetricDefinition text={definition} />}
     </Pressable>
   );
 }
@@ -138,6 +157,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  // Right-side actions group — the info (i) + the future card→detail chevron sit together.
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
   },
   title: {
     fontSize: theme.textSM,
