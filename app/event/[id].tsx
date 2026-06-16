@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { File } from 'expo-file-system';
 import { theme } from '../../constants/theme';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import {
@@ -49,6 +50,22 @@ function formatRelative(iso: string): string {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+// A captured photo's `local_uri` points into the OS cache directory (where
+// expo-image-picker drops its output) and is never copied to persistent
+// storage. iOS reclaims that directory under storage pressure, leaving a stale
+// path whose file no longer exists — which would render the hero <Image> blank.
+// Treat a missing local file the same as a hydrated row (no on-device file) so
+// rendering falls back to the signed Storage URL, which is always uploaded.
+function localFileExists(uri: string): boolean {
+  try {
+    return new File(uri).exists;
+  } catch {
+    // Not a managed path (e.g. content:// URI) — assume unavailable and let the
+    // signed-URL fallback take over.
+    return false;
+  }
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], {
     weekday: 'long', month: 'long', day: 'numeric',
@@ -83,7 +100,11 @@ export default function EventDetailScreen() {
 
       const att = await getEventAttachment(id);
       if (att) {
-        setAttachment({ id: att.id, local_uri: att.local_uri, storage_path: att.storage_path });
+        // Blank a stale local path (cache evicted) so it's indistinguishable
+        // from a hydrated '' row — both route to the signed-URL fallback below.
+        const usableLocalUri =
+          att.local_uri.length > 0 && localFileExists(att.local_uri) ? att.local_uri : '';
+        setAttachment({ id: att.id, local_uri: usableLocalUri, storage_path: att.storage_path });
         // Fallback to signed URL when the local file isn't available on this device
         getSignedUrl('nyx-event-attachments', att.storage_path).then(setRemoteUrl).catch(() => {});
       } else {
