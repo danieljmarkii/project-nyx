@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   sentence: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
   // AI Signal headline — Newsreader display at 26 / 1.3, tracking −0.3, weight
   // 400 (the only Newsreader face loaded; never set fontWeight here or RN will

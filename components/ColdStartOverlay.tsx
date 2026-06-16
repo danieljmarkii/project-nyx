@@ -63,6 +63,6 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
 });

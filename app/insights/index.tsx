@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
   retryBtn: {
     paddingHorizontal: theme.space3,

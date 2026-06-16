@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
   nudge: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     flex: 1,
   },
   nudgeArrow: {

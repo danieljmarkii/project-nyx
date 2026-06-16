@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
   photoStepSub: {
     fontSize: 15,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     marginTop: -theme.space2,
   },
   addPhotoArea: {
