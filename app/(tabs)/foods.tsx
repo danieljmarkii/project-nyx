@@ -11,7 +11,12 @@ import {
   foodFavoriteNote, type ReliableFavorite,
 } from '../../lib/food';
 import { getReliableFavorites } from '../../lib/foodFavorites';
+import { getSignedUrls } from '../../lib/storage';
 import { usePetStore } from '../../store/petStore';
+
+// The thumbnail props a row needs (B-004 PR 6), resolved per-food by `thumbFor`
+// in the screen and spread onto FoodRow by both the group list and the shelf.
+type ThumbProps = { hasPhoto: boolean; photoUrl: string | null; photoLoading: boolean };
 
 // Standalone Foods tab (B-004) — the food library graduates from a FAB-only
 // picker into a first-class destination you browse and manage. The catalog is
@@ -52,6 +57,52 @@ export default function FoodsScreen() {
   // group below). Empty when nothing clears the bar — the shelf simply doesn't render.
   const [favorites, setFavorites] = useState<ReliableFavorite[]>([]);
 
+  // Row thumbnails (B-004 PR 6). The nyx-food-photos bucket is private, so each
+  // photo_path needs a signed URL; we batch-sign the whole visible set in ONE
+  // request (lib/storage.getSignedUrls) rather than N per-row round-trips. Cached
+  // by path in a ref so re-focusing the tab doesn't re-sign paths we already hold
+  // — paths are stable and signed URLs outlive a browse session. `photosLoading`
+  // distinguishes a row whose URL is still resolving (quiet neutral slot) from one
+  // that has no photo at all (placeholder); the Map drives the resolved <Image>.
+  const [photoUrls, setPhotoUrls] = useState<Map<string, string>>(new Map());
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const photoUrlsRef = useRef<Map<string, string>>(new Map());
+  // In-flight signing count, so `photosLoading` reflects whether ANY resolve is
+  // running — not just the most recent. With a bare boolean, a fast call's `finally`
+  // would clear loading while a slower concurrent call (rapid tab/pet switch) was
+  // still signing, dropping its rows to the placeholder instead of the pending tile.
+  // The flag flips off only when the last concurrent resolve settles.
+  const inflightRef = useRef(0);
+
+  // Sign only the distinct paths we don't already hold, then merge. Never throws
+  // (getSignedUrls swallows failures), and a path that fails to sign is simply
+  // absent from the map → that row keeps its placeholder. Thumbnails are a
+  // progressive enhancement, so this runs without blocking the catalog render.
+  const resolveThumbnails = useCallback(async (foods: PickerFood[]) => {
+    const missing = Array.from(
+      new Set(foods.map((f) => f.photo_path).filter((p): p is string => p != null)),
+    ).filter((p) => !photoUrlsRef.current.has(p));
+    if (missing.length === 0) return;
+    inflightRef.current += 1;
+    setPhotosLoading(true);
+    try {
+      // 24h TTL: the ref caches signed URLs for the whole browse session, so a
+      // short (1h) token would expire under the cache and strand a long-open tab
+      // on broken images with no re-sign (the path is already "known"). A day
+      // outlives any realistic foreground session. Matches the AI Signal cache TTL.
+      const resolved = await getSignedUrls('nyx-food-photos', missing, 60 * 60 * 24);
+      // Merge onto the LATEST ref (re-read after the await), not a pre-await
+      // snapshot, so a concurrent resolve's writes aren't clobbered.
+      const next = new Map(photoUrlsRef.current);
+      resolved.forEach((url, p) => next.set(p, url));
+      photoUrlsRef.current = next;
+      setPhotoUrls(next);
+    } finally {
+      inflightRef.current -= 1;
+      if (inflightRef.current === 0) setPhotosLoading(false);
+    }
+  }, []);
+
   // Single load used by both the focus effect and the error-retry button. No
   // cancel guard is needed: a tab screen stays mounted across tab switches, and
   // the read is idempotent (last load wins on the same global catalog).
@@ -61,6 +112,10 @@ export default function FoodsScreen() {
       setLibrary(foods);
       setLoadError(false);
       setLoaded(true);
+      // Resolve row thumbnails for the freshly-loaded catalog (B-004 PR 6).
+      // Fire-and-forget: it owns its own loading/error state and must not delay
+      // the per-pet annotations below (getSignedUrls never throws).
+      resolveThumbnails(foods);
     } catch (err) {
       // No silent failures in the data path (house rule). Surface a retry rather
       // than stranding the owner on a blank tab with no feedback or recovery.
@@ -87,7 +142,7 @@ export default function FoodsScreen() {
       setIntakeStats(new Map());
       setFavorites([]);
     }
-  }, [activePetId, activePetSpecies]);
+  }, [activePetId, activePetSpecies, resolveThumbnails]);
 
   // Reload on every focus so foods added, edited, or deleted from the capture
   // flow or the detail screen are reflected when the tab comes back into view —
@@ -101,6 +156,19 @@ export default function FoodsScreen() {
     (f: PickerFood): string | null =>
       foodIntakeNote(intakeStats.get(foodIntakeKey(f.brand, f.product_name)), intakeNow.current),
     [intakeStats],
+  );
+
+  // Resolve a row's thumbnail props (B-004 PR 6). hasPhoto drives the pending-vs-
+  // placeholder branch in FoodRow; photoUrl is null until that path signs (or if
+  // it never does — offline / deleted object — in which case the row shows the
+  // placeholder, never a broken image).
+  const thumbFor = useCallback(
+    (f: PickerFood) => ({
+      hasPhoto: f.photo_path != null,
+      photoUrl: f.photo_path ? (photoUrls.get(f.photo_path) ?? null) : null,
+      photoLoading: photosLoading,
+    }),
+    [photoUrls, photosLoading],
   );
 
   const grouped = groupFoodsByType(library);
@@ -153,15 +221,16 @@ export default function FoodsScreen() {
           showsVerticalScrollIndicator={false}
         >
           {favoriteRows.length > 0 ? (
-            <FavoritesShelf rows={favoriteRows} petName={activePetName} />
+            <FavoritesShelf rows={favoriteRows} petName={activePetName} thumbFor={thumbFor} />
           ) : null}
-          <FoodGroup label="Meals" foods={grouped.meals} noteFor={noteFor} />
-          <FoodGroup label="Treats" foods={grouped.treats} noteFor={noteFor} />
+          <FoodGroup label="Meals" foods={grouped.meals} noteFor={noteFor} thumbFor={thumbFor} />
+          <FoodGroup label="Treats" foods={grouped.treats} noteFor={noteFor} thumbFor={thumbFor} />
           <FoodGroup
             label="Unclassified"
             foods={grouped.other}
             hint="Tap a food to set whether it's a meal or a treat."
             noteFor={noteFor}
+            thumbFor={thumbFor}
           />
         </ScrollView>
       )}
@@ -179,10 +248,11 @@ export default function FoodsScreen() {
 // catalog rows below (a favorite also appears in its type group; the shelf is a
 // promotion, not a second list).
 function FavoritesShelf({
-  rows, petName,
+  rows, petName, thumbFor,
 }: {
   rows: { fav: ReliableFavorite; food: PickerFood }[];
   petName: string | null;
+  thumbFor: (f: PickerFood) => ThumbProps;
 }) {
   return (
     <View style={styles.group}>
@@ -198,6 +268,7 @@ function FavoritesShelf({
               productName={food.product_name}
               format={food.format}
               favoriteNote={foodFavoriteNote(fav)}
+              {...thumbFor(food)}
               onPress={() => router.push(`/food/${food.id}`)}
             />
           </View>
@@ -217,7 +288,7 @@ function FavoritesShelf({
 // canonicalizeBrand. The brand-label + card-of-rows pairing reuses the same
 // Linear/Oura grouped-list idiom as the section header itself.
 function FoodGroup({
-  label, foods, hint, noteFor,
+  label, foods, hint, noteFor, thumbFor,
 }: {
   label: string;
   foods: PickerFood[];
@@ -225,6 +296,8 @@ function FoodGroup({
   // Per-row intake annotation resolver (B-004 PR 4), passed down from the screen
   // so the group stays presentational and the per-pet logic lives in one place.
   noteFor: (f: PickerFood) => string | null;
+  // Per-row thumbnail resolver (B-004 PR 6), same pattern as noteFor.
+  thumbFor: (f: PickerFood) => ThumbProps;
 }) {
   if (foods.length === 0) return null;
   // Foods arrive alpha-by-brand+product from getLibraryFoods, so the brand
@@ -253,6 +326,7 @@ function FoodGroup({
                     productName={f.product_name}
                     format={f.format}
                     intakeNote={noteFor(f)}
+                    {...thumbFor(f)}
                     onPress={() => router.push(`/food/${f.id}`)}
                   />
                 </View>

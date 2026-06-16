@@ -117,3 +117,39 @@ export async function getSignedUrl(
   }
   return data.signedUrl;
 }
+
+// Batch-sign many storage paths in ONE request — the right primitive for a LIST
+// surface (the Foods-tab thumbnails, B-004 PR 6). Signing each path with its own
+// getSignedUrl would fire N network round-trips per focus — the many-request
+// churn the May-2026 picker-grid-thumbnail note retired thumbnails over. Returns
+// a path→signedUrl Map containing only the paths that signed cleanly; a path that
+// errors (deleted object, RLS) is simply omitted, so the caller renders its
+// placeholder rather than a torn image. Never throws and never returns null —
+// thumbnails are a progressive enhancement over the always-present text rows, so
+// a signing failure (offline, expired session) degrades to placeholders, never
+// blanks the list. Empty input resolves to an empty Map with no network call.
+export async function getSignedUrls(
+  bucket: string,
+  paths: string[],
+  expiresInSec: number = 60 * 60,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (paths.length === 0) return out;
+  try {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrls(paths, expiresInSec);
+    if (error || !data) {
+      console.warn('[storage] batch signed URLs failed:', bucket, error?.message);
+      return out;
+    }
+    for (const row of data) {
+      // createSignedUrls returns a per-path { path, signedUrl, error } row; keep
+      // only the ones that signed (path present, no per-row error, url non-empty).
+      if (row.path && !row.error && row.signedUrl) out.set(row.path, row.signedUrl);
+    }
+  } catch (e) {
+    console.warn('[storage] batch signed URLs threw:', bucket, e);
+  }
+  return out;
+}

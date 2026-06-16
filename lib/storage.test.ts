@@ -44,14 +44,27 @@ jest.mock('expo-file-system', () => {
 });
 
 // storage.ts imports these at module scope; neutralize their side effects so the
-// module loads under jest (./supabase otherwise fail-fasts on missing env).
-jest.mock('./supabase', () => ({ supabase: {} }));
+// module loads under jest (./supabase otherwise fail-fasts on missing env). The
+// storage shim is driven by mockStorageControl so getSignedUrls' batch-signing
+// can be exercised (mock-prefixed for jest's hoist-out-of-scope rule).
+const mockStorageControl = {
+  createSignedUrls: jest.fn(),
+};
+jest.mock('./supabase', () => ({
+  supabase: {
+    storage: {
+      from: () => ({
+        createSignedUrls: (...args: unknown[]) => mockStorageControl.createSignedUrls(...args),
+      }),
+    },
+  },
+}));
 jest.mock('expo-image-manipulator', () => ({
   manipulateAsync: jest.fn(),
   SaveFormat: { JPEG: 'jpeg' },
 }));
 
-import { persistCapture } from './storage';
+import { persistCapture, getSignedUrls } from './storage';
 
 describe('persistCapture (B-104)', () => {
   let warnSpy: jest.SpyInstance;
@@ -104,5 +117,71 @@ describe('persistCapture (B-104)', () => {
     expect(persistCapture(contentUri, 'att-5.jpg')).toBe(contentUri);
     expect(mockFsControl.copy).not.toHaveBeenCalled();
     expect(mockFsControl.create).not.toHaveBeenCalled();
+  });
+});
+
+// B-004 PR 6 — getSignedUrls batch-signs the Foods-tab row thumbnails in one
+// request. The load-bearing properties: it signs the whole set in a SINGLE call
+// (not N round-trips), it OMITS any path that fails to sign (so the row shows a
+// placeholder, never a torn image), and it NEVER throws (thumbnails degrade to
+// placeholders rather than blanking the always-present text rows).
+describe('getSignedUrls (B-004 PR 6 — Foods-tab thumbnails)', () => {
+  let warnSpy: jest.SpyInstance;
+  beforeEach(() => {
+    mockStorageControl.createSignedUrls.mockReset();
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warnSpy.mockRestore());
+
+  it('signs the whole set in ONE request and returns a path→url map', async () => {
+    mockStorageControl.createSignedUrls.mockResolvedValue({
+      data: [
+        { path: 'a/0-front.jpg', signedUrl: 'https://signed/a', error: null },
+        { path: 'b/0-front.jpg', signedUrl: 'https://signed/b', error: null },
+      ],
+      error: null,
+    });
+    const map = await getSignedUrls('nyx-food-photos', ['a/0-front.jpg', 'b/0-front.jpg']);
+    // One batch call, not one per path.
+    expect(mockStorageControl.createSignedUrls).toHaveBeenCalledTimes(1);
+    expect(mockStorageControl.createSignedUrls).toHaveBeenCalledWith(
+      ['a/0-front.jpg', 'b/0-front.jpg'],
+      60 * 60,
+    );
+    expect(map.get('a/0-front.jpg')).toBe('https://signed/a');
+    expect(map.get('b/0-front.jpg')).toBe('https://signed/b');
+  });
+
+  it('omits a path that failed to sign (deleted object / RLS) — no broken image', async () => {
+    mockStorageControl.createSignedUrls.mockResolvedValue({
+      data: [
+        { path: 'ok.jpg', signedUrl: 'https://signed/ok', error: null },
+        { path: 'gone.jpg', signedUrl: '', error: 'Object not found' },
+      ],
+      error: null,
+    });
+    const map = await getSignedUrls('nyx-food-photos', ['ok.jpg', 'gone.jpg']);
+    expect(map.get('ok.jpg')).toBe('https://signed/ok');
+    // Absent (not a falsy entry) so the caller renders the placeholder.
+    expect(map.has('gone.jpg')).toBe(false);
+  });
+
+  it('returns an empty map WITHOUT a network call for empty input', async () => {
+    const map = await getSignedUrls('nyx-food-photos', []);
+    expect(map.size).toBe(0);
+    expect(mockStorageControl.createSignedUrls).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty map (never throws) when the API returns an error', async () => {
+    mockStorageControl.createSignedUrls.mockResolvedValue({ data: null, error: new Error('network') });
+    const map = await getSignedUrls('nyx-food-photos', ['a.jpg']);
+    expect(map.size).toBe(0);
+  });
+
+  it('returns an empty map (never throws) when the call itself rejects', async () => {
+    mockStorageControl.createSignedUrls.mockRejectedValue(new Error('boom'));
+    await expect(getSignedUrls('nyx-food-photos', ['a.jpg'])).resolves.toBeInstanceOf(Map);
+    const map = await getSignedUrls('nyx-food-photos', ['a.jpg']);
+    expect(map.size).toBe(0);
   });
 });

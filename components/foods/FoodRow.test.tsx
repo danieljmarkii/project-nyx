@@ -102,4 +102,56 @@ describe('FoodRow', () => {
     expect(getByText('TIKI CAT · WET')).toBeTruthy();
     expect(getByLabelText('Tiki Cat Ahi Tuna, Finished 9 of 11 meals')).toBeTruthy();
   });
+
+  // Thumbnail state machine (B-004 PR 6). The leading slot is fixed-size and never
+  // a broken hole — it resolves to exactly one of: the photo, a quiet pending
+  // tile, or the "no photo" placeholder. The slot is decorative (the row's a11y
+  // label still names the food), so these are asserted by testID, not a11y.
+  it('renders the photo thumbnail when a signed URL is provided', () => {
+    const { getByTestId } = render(
+      <FoodRow brand="Tiki Cat" productName="Ahi Tuna" format="wet_canned"
+        hasPhoto photoUrl="https://signed/ahi.jpg" onPress={() => {}} />,
+    );
+    expect(getByTestId('food-thumb-photo').props.source).toEqual({ uri: 'https://signed/ahi.jpg' });
+  });
+
+  it('shows the quiet pending slot (no photo, no placeholder) while the URL resolves', () => {
+    const { getByTestId, queryByTestId } = render(
+      <FoodRow brand="Tiki Cat" productName="Ahi Tuna" format="wet_canned"
+        hasPhoto photoLoading onPress={() => {}} />,
+    );
+    expect(getByTestId('food-thumb-pending')).toBeTruthy();
+    expect(queryByTestId('food-thumb-photo')).toBeNull();
+    expect(queryByTestId('food-thumb-placeholder')).toBeNull();
+  });
+
+  it('shows the no-photo placeholder for a food with no photo', () => {
+    const { getByTestId, queryByTestId } = render(
+      <FoodRow brand="Royal Canin" productName="Hydrolyzed Protein" format="dry_kibble"
+        hasPhoto={false} onPress={() => {}} />,
+    );
+    expect(getByTestId('food-thumb-placeholder')).toBeTruthy();
+    expect(queryByTestId('food-thumb-photo')).toBeNull();
+  });
+
+  // hasPhoto true but resolution finished WITHOUT a URL (offline / deleted object)
+  // → the placeholder, never a stuck pending slot or a broken image.
+  it('falls back to the placeholder when a photo path never resolves', () => {
+    const { getByTestId, queryByTestId } = render(
+      <FoodRow brand="Acme" productName="Beef Stew" format="wet_canned"
+        hasPhoto photoLoading={false} onPress={() => {}} />,
+    );
+    expect(getByTestId('food-thumb-placeholder')).toBeTruthy();
+    expect(queryByTestId('food-thumb-pending')).toBeNull();
+  });
+
+  it('falls back to the placeholder when the image fails to load (torn/expired URL)', () => {
+    const { getByTestId, queryByTestId } = render(
+      <FoodRow brand="Acme" productName="Beef Stew" format="wet_canned"
+        hasPhoto photoUrl="https://signed/broken.jpg" onPress={() => {}} />,
+    );
+    fireEvent(getByTestId('food-thumb-photo'), 'error');
+    expect(queryByTestId('food-thumb-photo')).toBeNull();
+    expect(getByTestId('food-thumb-placeholder')).toBeTruthy();
+  });
 });

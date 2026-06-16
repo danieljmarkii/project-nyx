@@ -1,4 +1,6 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { ImageOff } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { FORMAT_LABEL } from '../log/FoodTile';
 
@@ -27,6 +29,20 @@ interface Props {
   // muted last-logged line (it's the shelf row's point) but kept calm and factual —
   // the visible denominator, not a loud "loved!" badge (intake-is-not-preference).
   favoriteNote?: string | null;
+  // Leading thumbnail (B-004 PR 6). The Foods tab gives every row a fixed-size
+  // photo slot so the surface reads as one calm column — never the "uneven
+  // empty/photo state machine" that retired thumbnails from the picker GRID (a
+  // dense 2-up). The slot is consistent in every state and is NEVER a broken hole:
+  //   • photoUrl present          → the photo
+  //   • hasPhoto + photoLoading   → a quiet neutral tile while the signed URL resolves
+  //   • otherwise (no photo/fail) → a calm "no photo" placeholder glyph
+  // The screen resolves signed URLs in one batch (lib/storage.getSignedUrls) and
+  // passes the result down; the row stays presentational. The thumbnail is
+  // decorative — the row's accessibilityLabel already names the food — so it adds
+  // no separate a11y node.
+  hasPhoto?: boolean;
+  photoUrl?: string | null;
+  photoLoading?: boolean;
 }
 
 // Full-width library row for the standalone Foods tab (B-004). Distinct from the
@@ -36,7 +52,10 @@ interface Props {
 // opens the food's detail screen (where you edit/classify it). There is no
 // one-tap-log here — logging stays on the FAB picker path. The metadata line
 // (BRAND · FORMAT) mirrors FoodTile's, sourced from the shared FORMAT_LABEL.
-export function FoodRow({ brand, productName, format, onPress, hideBrand = false, intakeNote, favoriteNote }: Props) {
+export function FoodRow({
+  brand, productName, format, onPress, hideBrand = false, intakeNote, favoriteNote,
+  hasPhoto, photoUrl, photoLoading,
+}: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const formatMeta = typeLabel.toUpperCase();
   const metaLine = hideBrand
@@ -56,6 +75,14 @@ export function FoodRow({ brand, productName, format, onPress, hideBrand = false
       accessibilityRole="button"
       accessibilityLabel={spokenNotes ? `${brand} ${productName}, ${spokenNotes}` : `${brand} ${productName}`}
     >
+      {/* key on the URL so a re-signed URL (after expiry) remounts and clears a
+          stale broken-image flag. */}
+      <FoodThumbnail
+        key={photoUrl ?? 'none'}
+        hasPhoto={hasPhoto}
+        photoUrl={photoUrl}
+        photoLoading={photoLoading}
+      />
       <View style={styles.text}>
         {metaLine ? (
           <Text style={styles.meta} numberOfLines={1}>
@@ -81,6 +108,49 @@ export function FoodRow({ brand, productName, format, onPress, hideBrand = false
   );
 }
 
+// The leading photo slot (B-004 PR 6). One fixed-size square per row in EVERY
+// state, so a photoless food never leaves a gaping hole next to a photo'd one —
+// the inconsistency the May-2026 note retired the picker-grid thumbnails over.
+// Local `failed` flag falls a broken/expired URL back to the placeholder rather
+// than rendering a torn image; FoodRow keys this component on the URL so a fresh
+// (re-signed) URL remounts and clears it.
+function FoodThumbnail({
+  hasPhoto, photoUrl, photoLoading,
+}: Pick<Props, 'hasPhoto' | 'photoUrl' | 'photoLoading'>) {
+  const [failed, setFailed] = useState(false);
+
+  // accessible={false} on every branch keeps the slot out of the screen-reader
+  // tree — the row's TouchableOpacity already carries the full spoken label, so
+  // the thumbnail is purely decorative (explicit for Android TalkBack, which can
+  // otherwise focus a bare Image/View; iOS already skips non-interactive images).
+  if (photoUrl && !failed) {
+    return (
+      <Image
+        testID="food-thumb-photo"
+        accessible={false}
+        source={{ uri: photoUrl }}
+        style={styles.thumb}
+        resizeMode="cover"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  // Pending: a photo exists but its signed URL is still resolving. A quiet neutral
+  // tile, NOT a spinner — a churning indicator in a scrolling list is exactly the
+  // noise the grid thumbnails were retired for. Resolves to the image shortly.
+  if (hasPhoto && photoLoading) {
+    return <View testID="food-thumb-pending" accessible={false} style={[styles.thumb, styles.thumbBlank]} />;
+  }
+  // No photo (a typed/manual food or an older row) or the URL was unavailable
+  // (offline, expired, deleted object) → a calm, intentional "no photo" placeholder.
+  // Lucide ImageOff on the current icon system — not the legacy 📷 emoji.
+  return (
+    <View testID="food-thumb-placeholder" accessible={false} style={[styles.thumb, styles.thumbBlank, styles.thumbPlaceholder]}>
+      <ImageOff size={20} color={theme.colorTextDisabled} strokeWidth={1.75} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
@@ -91,6 +161,24 @@ const styles = StyleSheet.create({
     // ≥44pt tap target; the whole row navigates (the chevron is decorative).
     minHeight: 64,
     backgroundColor: theme.colorSurface,
+  },
+  // Leading photo slot — fixed size in every state so rows stay column-aligned
+  // whether or not a food has a photo. colorNeutralLight backs the Image so there's
+  // no white flash before pixels paint.
+  thumb: {
+    width: 44,
+    height: 44,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorNeutralLight,
+  },
+  thumbBlank: {
+    backgroundColor: theme.colorSurfaceSubtle,
+  },
+  thumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
   },
   text: {
     flex: 1,
