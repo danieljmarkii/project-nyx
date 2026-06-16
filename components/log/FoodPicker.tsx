@@ -6,6 +6,7 @@ import { useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
+import { groupFoodsByType, toFoodRows } from '../../lib/food';
 import {
   getActiveArrangementsForPets, confirmArrangementFresh, endFreeChoice,
   groupArrangementsByFood, arrangementPetsLine, petNameList, FoodArrangementGroup,
@@ -153,32 +154,12 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
     );
   }, [library, search]);
 
-  // Group the (filtered) library by food_type. B-011: treats and meals are
-  // distinct mental models — surfacing them as separate sections lets the
-  // owner scan "treats" or "meals" without parsing every tile. Rows the user
-  // hasn't classified yet (NULL) plus the explicit 'other' bucket collapse
-  // into a third section so nothing is hidden from the picker.
-  const groupedLibrary = useMemo(() => {
-    const meals: PickerFood[] = [];
-    const treats: PickerFood[] = [];
-    const other: PickerFood[] = [];
-    for (const f of filteredLibrary) {
-      if (f.food_type === 'meal') meals.push(f);
-      else if (f.food_type === 'treat') treats.push(f);
-      else other.push(f);
-    }
-    return { meals, treats, other };
-  }, [filteredLibrary]);
-
-  // Render any group in fixed-size pairs so each row is a 2-col grid with
-  // matching tile heights (driven by the tallest tile in the row).
-  function toRows(foods: PickerFood[]): PickerFood[][] {
-    const rows: PickerFood[][] = [];
-    for (let i = 0; i < foods.length; i += 2) {
-      rows.push(foods.slice(i, i + 2));
-    }
-    return rows;
-  }
+  // Group the (filtered) library by food_type via the shared helper (lib/food,
+  // tested there + reused by the standalone Foods tab). B-011: treats and meals
+  // are distinct mental models — separate sections let the owner scan one
+  // without parsing the other; unclassified (NULL) + 'other' collapse into a
+  // third bucket so nothing is hidden from the picker.
+  const groupedLibrary = useMemo(() => groupFoodsByType(filteredLibrary), [filteredLibrary]);
 
   return (
     <ScrollView
@@ -351,11 +332,11 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
         ) : (
           <View style={styles.groups}>
             <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
-              onPickFood={onPickFood} onOpenDetail={onOpenDetail} toRows={toRows} />
+              onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
             <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
-              onPickFood={onPickFood} onOpenDetail={onOpenDetail} toRows={toRows} />
+              onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
             <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
-              onPickFood={onPickFood} onOpenDetail={onOpenDetail} toRows={toRows}
+              onPickFood={onPickFood} onOpenDetail={onOpenDetail}
               hint="Long-press a tile to classify it." />
           </View>
         )}
@@ -367,17 +348,16 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
 // Renders a single grouped section of the library. Hidden when the group is
 // empty so the picker doesn't show a "Treats" header with nothing under it.
 function LibraryGroup({
-  label, foods, onPickFood, onOpenDetail, toRows, hint,
+  label, foods, onPickFood, onOpenDetail, hint,
 }: {
   label: string;
   foods: PickerFood[];
   onPickFood: (food: PickerFood) => void;
   onOpenDetail?: (food: PickerFood) => void;
-  toRows: (foods: PickerFood[]) => PickerFood[][];
   hint?: string;
 }) {
   if (foods.length === 0) return null;
-  const rows = toRows(foods);
+  const rows = toFoodRows(foods);
   return (
     <View style={styles.group}>
       <Text style={styles.groupLabel}>{label}</Text>
