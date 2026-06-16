@@ -68,6 +68,13 @@ interface ClaudeResponse {
 // All non-brand/product_name fields are nullable — Claude must return null
 // rather than guess when a field is not clearly visible in the photos.
 
+// The format values Claude may emit. Single source of truth for the tool enum
+// below; AI_FORMAT_TO_DB must carry a mapping for every value here (locked by
+// index.test.ts) so the two can't drift the way `jerky` once did (B-103).
+export const FORMAT_ENUM = [
+  'dry', 'wet', 'raw', 'freeze_dried', 'jerky', 'human_food', 'treats', 'supplement', 'other',
+] as const
+
 const EXTRACTION_TOOL = {
   name: 'extract_food_data',
   description:
@@ -86,8 +93,10 @@ const EXTRACTION_TOOL = {
       },
       format: {
         type: 'string',
-        enum: ['dry', 'wet', 'raw', 'freeze_dried', 'jerky', 'treats', 'supplement', 'other'],
-        description: 'Physical format of the food. Use "jerky" for dried meat-strip treats (distinct from "freeze_dried").',
+        enum: FORMAT_ENUM,
+        description:
+          'Physical format of the food. Use "jerky" for dried meat-strip treats (distinct from "freeze_dried"). ' +
+          'Use "human_food" for people-food given to a pet (e.g. deli meat, rotisserie chicken, cheese) rather than commercial pet food.',
       },
       primary_protein: {
         type: 'string',
@@ -184,6 +193,7 @@ const AI_FORMAT_TO_DB: Record<string, string> = {
   raw:          'raw',
   freeze_dried: 'freeze_dried',
   jerky:        'jerky',
+  human_food:   'human_food', // B-102 PR 3 — people-food container (deli meat, rotisserie chicken)
   treats:       'treat',
   supplement:   'topper',
   other:        'other',

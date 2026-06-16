@@ -5,12 +5,17 @@
 // translates raw Claude API output into the shape written to food_items.
 // Storage I/O and the HTTP handler are integration concerns tested manually.
 
-import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import {
+  assertEquals,
+  assertStrictEquals,
+  assertNotStrictEquals,
+} from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   parseToolResult,
   normaliseConfidence,
   mapFormatToDb,
   blobToBase64,
+  FORMAT_ENUM,
   type ExtractionResult,
 } from './index.ts'
 
@@ -23,6 +28,7 @@ Deno.test('mapFormatToDb — translates AI enum to food_format', () => {
   assertStrictEquals(mapFormatToDb('supplement'), 'topper')
   assertStrictEquals(mapFormatToDb('jerky'), 'jerky')
   assertStrictEquals(mapFormatToDb('raw'), 'raw')
+  assertStrictEquals(mapFormatToDb('human_food'), 'human_food') // B-102 PR 3
   assertStrictEquals(mapFormatToDb('other'), 'other')
 })
 
@@ -32,6 +38,25 @@ Deno.test('mapFormatToDb — null in, null out', () => {
 
 Deno.test('mapFormatToDb — unknown value falls back to other', () => {
   assertStrictEquals(mapFormatToDb('hallucinated_format'), 'other')
+})
+
+Deno.test('FORMAT_ENUM — advertises human_food to the vision model (B-102 PR 3)', () => {
+  // Without this, a snapped people-food container (deli meat, rotisserie
+  // chicken) can only come back as 'other' — the gap PR 3 closes.
+  assertEquals(FORMAT_ENUM.includes('human_food'), true)
+})
+
+Deno.test('mapFormatToDb — every advertised format maps to a real DB enum (no silent drift)', () => {
+  // Guards the jerky-class drift (B-024 → B-103): a value added to the tool
+  // enum without a matching AI_FORMAT_TO_DB entry would silently fall back to
+  // 'other'. Only 'other' itself is allowed to map to 'other'.
+  for (const v of FORMAT_ENUM) {
+    if (v === 'other') {
+      assertStrictEquals(mapFormatToDb(v), 'other')
+    } else {
+      assertNotStrictEquals(mapFormatToDb(v), 'other')
+    }
+  }
 })
 
 // ── normaliseConfidence ───────────────────────────────────────────────────────
@@ -172,6 +197,22 @@ Deno.test('parseToolResult — optional fields default to null when absent', () 
   // Confidence fields absent in response → 0 after normalisation
   assertStrictEquals(result.confidence.format, 0)
   assertStrictEquals(result.confidence.upc_barcode, 0)
+})
+
+Deno.test('human_food round-trips from tool output to the DB enum (B-102 PR 3)', () => {
+  // The hero example from docs/human-food-format-requirements.md: a Costco
+  // rotisserie chicken container, snapped, must land as format='human_food'
+  // (not 'other') so the vet report + engine can see off-commercial-diet days.
+  const response = makeToolUseResponse({
+    brand: 'Costco',
+    product_name: 'Rotisserie Chicken',
+    format: 'human_food',
+    confidence: { brand: 0.9, product_name: 0.9, format: 0.8 },
+  })
+
+  const result = parseToolResult(response) as ExtractionResult
+  assertStrictEquals(result.format, 'human_food')
+  assertStrictEquals(mapFormatToDb(result.format), 'human_food')
 })
 
 Deno.test('parseToolResult — confidence values are clamped', () => {
