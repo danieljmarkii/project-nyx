@@ -78,6 +78,36 @@ export type IntakeRating = 'refused' | 'picked' | 'some' | 'most' | 'all'
 export type Species = 'dog' | 'cat' | 'other'
 
 /**
+ * food_items.format — the physical-form enum (migration 001 + 014 jerky + 019 human_food).
+ * Detection ignored this axis entirely until B-102 PR 5 (it keys off `food_type` + protein —
+ * requirements §5). The human-food provenance covariate (computeHumanFoodProvenance) is the
+ * first and ONLY consumer, and it acts on exactly one value (HUMAN_FOOD_FORMAT). The full
+ * union is mirrored here for documentation + house style (matches `foodType`'s explicit
+ * union); a DB value not listed here is simply "not human_food" to the engine, so the engine
+ * stays correct even if this union drifts behind a future enum addition.
+ */
+export type FoodFormat =
+  | 'dry_kibble'
+  | 'wet_canned'
+  | 'raw'
+  | 'freeze_dried'
+  | 'jerky'
+  | 'fresh_cooked'
+  | 'human_food'
+  | 'topper'
+  | 'treat'
+  | 'other'
+
+/**
+ * The one format value the engine recognizes (B-102 PR 5). People-food given to a pet —
+ * deli meat, rotisserie chicken, a piece of cheese — carries format='human_food'
+ * (requirements §1/§4). It is the "off-commercial-diet" provenance marker; the single
+ * literal lives here so detection and its tests reference one source. See
+ * computeHumanFoodProvenance.
+ */
+export const HUMAN_FOOD_FORMAT = 'human_food' as const
+
+/**
  * How confident we are that THIS pet actually ate a given food (B-040's attribution axis).
  * 'high' = directly attributable (hand-fed meal, a treat, witnessed eating). 'low' = a
  * shared / free-fed bowl in a multi-pet home where another pet could have eaten it.
@@ -145,6 +175,16 @@ export interface MealEvent {
   intakeRating: IntakeRating | null
   /** food_items.food_type — only 'meal' contributes to the intake baseline (migration 010/011). */
   foodType: 'meal' | 'treat' | 'other' | null
+  /**
+   * food_items.format physical-form value (B-102 PR 5). Detectors ①–⑥ and the coverage
+   * diagnostics IGNORE this field — populating it is byte-identical to today's behavior for
+   * every existing detector. Its only consumer is the human-food provenance covariate
+   * (computeHumanFoodProvenance), which reads format==='human_food' as an off-commercial-diet
+   * day marker. Absent/null ⇒ unknown format, treated as NOT human-food — a faithful,
+   * never-reassure default: the missing marker is never evidence the pet ate only commercial
+   * food (absence ≠ wellness, §9).
+   */
+  format?: FoodFormat | null
   /** Optional display label for the food, used in evidence/phrasing payloads. */
   foodLabel?: string | null
   /**
@@ -831,6 +871,12 @@ export interface DetectionConfig {
     /** (b) churn: require at least this many symptom episodes in-window (else it's unsolicited diet advice). */
     minSymptomEpisodes: number
   }
+  // B-102 PR 5 — human-food provenance covariate (off-commercial-diet days). Descriptive
+  // only; no floor (this is a covariate, not a card — a future consumer owns any threshold).
+  humanFood: {
+    /** Analysis window in days (trailing UTC calendar days from `now`), matching ⑤/⑥. */
+    windowDays: number
+  }
 }
 
 /** §7 table, adopted as the v1 starting defaults (PM 2026-05-30); tune on real data, not a re-decision. */
@@ -951,6 +997,12 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     churnWindowDays: 14,
     minNovelFoods: 3,
     minSymptomEpisodes: 2,
+  },
+  // B-102 PR 5 — human-food provenance covariate window. 60 days matches the descriptive
+  // lane (⑤/⑥) so "off-commercial-diet days" are bounded to the pet's current era. Tune on
+  // real data, not a re-decision.
+  humanFood: {
+    windowDays: 60,
   },
 }
 
@@ -2493,6 +2545,123 @@ export function detectCoverage(
   return rankCoverageDiagnostics(suppressDietStructure(diagnostics))
 }
 
+// ── Human-food provenance covariate (B-102 PR 5 — off-commercial-diet signal) ──
+//
+// NET-NEW. Detection has, until now, ignored food `format` entirely (it keys off `food_type`
+// + protein — requirements §5). This is the one piece of B-102 that teaches the engine to
+// read `format` at all. It computes a DESCRIPTIVE covariate — "on how many of the logged days
+// did the pet eat off-commercial-diet (human) food?" — the substrate a FUTURE detector or the
+// Step-9 vet report can use to ask "did human-food days track with symptoms / weight?"
+// (requirements §7, D7).
+//
+// Deliberate scope (requirements §7 / B-102 PR 5 — read before extending):
+//   • NOT a Finding. It emits no card, is NOT in DETECTOR_REGISTRY, and never reaches
+//     detectSignals / rankFindings / the curated set. Surfacing a human-food card is a
+//     SEPARATE, later detection-spec decision — do not wire this into a card here.
+//   • NOT causal, NOT a verdict. It counts logged days; it never says human food made the pet
+//     sick. A human-food day can later CONTRIBUTE to a correlation but never SIGN one on its
+//     own (§7) — and that wiring is explicitly out of this PR.
+//   • NEVER a wellness / absence claim. Zero human-food days is a logged FACT, not an
+//     all-clear (absence ≠ wellness, §9). This function renders no copy, so it cannot
+//     reassure; and it ATTACHES THE HONEST DENOMINATOR (loggedFeedingDays) so the eventual
+//     consumer cannot state "N human-food days" without "of M logged days", and cannot read a
+//     low/zero count as good news.
+//
+// Provenance is diet-wide: a human_food feeding counts whether it was logged as a meal, a
+// treat, or other ("almost always a treat" — requirements D8; the WSAVA intake chip still
+// gates on food_type='meal', unchanged). DAYS are de-duplicated (three deli-meat treats on one
+// day = one human-food day); the raw feeding COUNT rides separately as evidence.
+//
+// Windowing mirrors detectMealTypeCollapse EXACTLY: the trailing `humanFood.windowDays` UTC
+// CALENDAR days (a bucket floor, NOT a raw ms span). This guarantees the numerator (human-food
+// days) can never exceed the denominator (logged days) the copy would state — the "11 of the
+// last 10 days" class of bug the B-080 adversarial review caught. KNOWN RESIDUAL (B-084,
+// engine-wide): a "day" is a UTC calendar day, not the owner's local day, so a feeding near a
+// window/day edge can shift ≤1 day. It is BENIGN here — this function makes no
+// fire/suppress/reassure decision; that judgment (and its never-reassure guardrail) belongs to
+// the future consumer. SOFT-DELETES are excluded upstream by the DetectionInput contract, like
+// every other detector.
+
+export interface HumanFoodProvenance {
+  /**
+   * In-window UTC calendar day-keys (YYYY-MM-DD, ascending) on which ≥1 human_food feeding was
+   * logged — THE covariate. A future consumer intersects these with symptom days to ask "did
+   * human-food days track with symptoms?". De-duplicated per day; `.length` is the
+   * human-food-day count.
+   */
+  humanFoodDayKeys: string[]
+  /**
+   * Total human_food feedings logged in-window (re-logs NOT collapsed) — evidence detail that
+   * separates "1 day, 5 feedings" from "5 days, 1 each". Never the claim on its own.
+   */
+  humanFoodFeedings: number
+  /**
+   * Distinct in-window UTC days carrying ANY logged feeding — the HONEST DENOMINATOR. Present
+   * so a consumer can never state "N human-food days" without "of M logged days", and so a low
+   * or zero numerator reads as a fact over real coverage, never as a wellness/all-clear claim.
+   */
+  loggedFeedingDays: number
+  /** The analysis window in days (trailing UTC calendar days from `now`). */
+  windowDays: number
+}
+
+/**
+ * Compute the human-food provenance covariate (B-102 PR 5). Pure, descriptive, and
+ * deliberately NOT a detector — see the section header for the scope guardrails. Returns null
+ * only when `input.now` is unparseable (the engine's "can't window" convention, matching
+ * computeWindowedStats); otherwise returns the covariate, which may legitimately be all-zero
+ * (a logged fact, never reassurance).
+ */
+export function computeHumanFoodProvenance(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): HumanFoodProvenance | null {
+  const cfg = config.humanFood
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+
+  // Misconfiguration guard (adversarial review): a window < 1 day is meaningless. Clamp to a
+  // 1-day ("today") window rather than throw — detection degrades gracefully, never blanks the
+  // Signal (the engine convention) — and floor a fractional value to a whole number of days.
+  // Today the config is the hardcoded 60, so this is a no-op; it exists so a FUTURE consumer
+  // that wires `windowDays` from data/UI can't get a SILENT all-empty covariate from a 0/negative
+  // value (which a careless caller could mis-frame as "no human food ever"). The clamped value is
+  // echoed in `windowDays` below so the payload never claims a window it didn't apply.
+  const windowDays = Math.max(1, Math.floor(cfg.windowDays))
+
+  // Trailing W UTC CALENDAR days, inclusive of today (bucket floor, not a raw ms span) —
+  // identical to detectMealTypeCollapse, so the numerator can never exceed the denominator.
+  const todayBucket = Math.floor(nowMs / MS_PER_DAY)
+  const earliestBucket = todayBucket - (windowDays - 1)
+
+  const loggedDayBuckets = new Set<number>()
+  const humanFoodDayBuckets = new Set<number>()
+  let humanFoodFeedings = 0
+  for (const m of input.mealEvents) {
+    const ms = Date.parse(m.occurredAt)
+    if (!Number.isFinite(ms)) continue // an un-dateable row can't be placed on a day
+    if (ms > nowMs) continue // drop clock-skew future rows (mirrors detectMealTypeCollapse)
+    const bucket = Math.floor(ms / MS_PER_DAY)
+    if (bucket < earliestBucket) continue // earlier than the window
+    loggedDayBuckets.add(bucket)
+    if (m.format === HUMAN_FOOD_FORMAT) {
+      humanFoodFeedings++
+      humanFoodDayBuckets.add(bucket) // a Set → one human-food day no matter how many feedings
+    }
+  }
+
+  const humanFoodDayKeys = Array.from(humanFoodDayBuckets)
+    .sort((a, b) => a - b)
+    .map((bucket) => utcDateKey(bucket * MS_PER_DAY))
+
+  return {
+    humanFoodDayKeys,
+    humanFoodFeedings,
+    loggedFeedingDays: loggedDayBuckets.size,
+    windowDays, // the effective (clamped/floored) window actually applied
+  }
+}
+
 // ── Detector registry (§4) ──────────────────────────────────────────────────
 
 export interface Detector {
@@ -2504,6 +2673,10 @@ export interface Detector {
  * Pluggable detector registry — the extensibility spine (§4). New insight types
  * (trend, preference, weight, …) register here; the engine and ranking need no
  * change. Order here does NOT determine output order — ranking does (§5).
+ *
+ * NOTE: the human-food provenance covariate (computeHumanFoodProvenance, B-102 PR 5) is
+ * deliberately NOT registered here. It is a descriptive covariate, not a Finding, and must
+ * never reach the card surface ("make it available, no insight card" — requirements §7).
  */
 export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'food_symptom_correlation', detect: detectCorrelations },

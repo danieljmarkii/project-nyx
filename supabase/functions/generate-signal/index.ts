@@ -37,6 +37,7 @@ import {
   type FeedingArrangement,
   type SymptomType,
   type IntakeRating,
+  type FoodFormat,
   type Species,
   type OccurredAtConfidence,
   type DetectionInput,
@@ -241,6 +242,9 @@ interface SymptomRow {
 type FoodItemJoin = {
   primary_protein: string | null
   food_type: string | null
+  // B-102 PR 5: physical-form enum. Read so detection can derive the human-food provenance
+  // covariate (computeHumanFoodProvenance); ignored by every existing detector.
+  format: string | null
   brand: string
   product_name: string
 }
@@ -314,6 +318,11 @@ function mapMealRows(rows: MealEventRow[]): MealEvent[] {
       primaryProtein: fi?.primary_protein ?? null,
       intakeRating: (meal?.intake_rating ?? null) as IntakeRating | null,
       foodType: (fi?.food_type ?? null) as 'meal' | 'treat' | 'other' | null,
+      // B-102 PR 5: feeds the human-food provenance covariate. Not yet surfaced anywhere
+      // (no card — requirements §7); detectors ①–⑥ ignore it, so this is inert to the live
+      // Signal today. The covariate (computeHumanFoodProvenance) is exported + tested for a
+      // future detector / the Step-9 vet report to consume.
+      format: (fi?.format ?? null) as FoodFormat | null,
       foodLabel: fi ? `${fi.brand} ${fi.product_name}`.trim() : null,
       // attributionConfidence omitted → 'high' (today's per-pet logging
       // semantics). B-040 will supply 'low' for shared / free-fed bowls.
@@ -369,7 +378,7 @@ Deno.serve(async (req: Request) => {
       supabase
         .from('events')
         .select(
-          'id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, food_items(primary_protein, food_type, brand, product_name))',
+          'id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, food_items(primary_protein, food_type, format, brand, product_name))',
         )
         .eq('pet_id', petId)
         .eq('event_type', 'meal')
