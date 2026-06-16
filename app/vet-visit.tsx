@@ -11,7 +11,7 @@ import { theme } from '../constants/theme';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { getDb } from '../lib/db';
-import { uploadPhoto } from '../lib/storage';
+import { uploadPhoto, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { syncPendingVetVisits } from '../lib/sync';
 import { uuid, exifDateToISO } from '../lib/utils';
@@ -131,11 +131,17 @@ export default function VetVisitModal() {
     if (photoUri) {
       const attId = uuid();
       const storagePath = `${pet.id}/${visitId}/${attId}.jpg`;
+      // B-104 — persist the capture off the OS cache directory (reclaimed under
+      // storage pressure) into the app-owned document directory, and store THAT
+      // as local_uri so it survives. Done at save time (not pick time) so a
+      // cancelled or replaced photo never leaves an orphan. Upload still reads
+      // the original capture; both point at identical bytes.
+      const localUri = persistCapture(photoUri, `${attId}.jpg`);
       await db.runAsync(
         `INSERT INTO vet_visit_attachments
            (id, vet_visit_id, pet_id, local_uri, storage_path, mime_type, taken_at, synced, created_at)
          VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
-        [attId, visitId, pet.id, photoUri, storagePath, photoTakenAt ?? null, now]
+        [attId, visitId, pet.id, localUri, storagePath, photoTakenAt ?? null, now]
       );
       uploadPhoto('nyx-vet-attachments', storagePath, photoUri)
         .then(async () => {

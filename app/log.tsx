@@ -22,7 +22,7 @@ import { getDb, PickerFood } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
-import { uploadPhoto, compressForUpload } from '../lib/storage';
+import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
@@ -322,11 +322,16 @@ export default function LogModal() {
     if (attachmentUri) {
       const attId = uuid();
       const storagePath = `${pet.id}/${eventId}/${attId}.jpg`;
+      // B-104 — persist the capture off the OS cache directory (reclaimed under
+      // storage pressure) into the app-owned document directory, and store THAT
+      // as local_uri so it survives. Compression/upload below still read the
+      // original capture; both point at identical bytes.
+      const localUri = persistCapture(attachmentUri, `${attId}.jpg`);
       await db.runAsync(
         `INSERT INTO event_attachments
            (id, event_id, pet_id, local_uri, storage_path, mime_type, taken_at, synced, created_at)
          VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
-        [attId, eventId, pet.id, attachmentUri, storagePath, attachmentTakenAt ?? null, now]
+        [attId, eventId, pet.id, localUri, storagePath, attachmentTakenAt ?? null, now]
       );
       const isVomit = selectedType === 'vomit';
       // Compress before upload (longest edge ≤1600px, JPEG q75) so the file

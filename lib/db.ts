@@ -242,8 +242,10 @@ export async function initDb(): Promise<void> {
 // the prior account's data to whoever signs in next. Safe to clear because
 // hydration re-pulls everything on the next login.
 //
-// Best-effort deletes the on-device attachment files first (the captured
-// originals in the app sandbox), then clears the synced tables in FK-safe order.
+// Best-effort deletes the on-device attachment files first — the captured
+// originals now persisted in the app's document directory (B-104); the delete is
+// path-agnostic so it cleans them up by local_uri regardless of directory — then
+// clears the synced tables in FK-safe order.
 // Globally-scoped food_items_cache is cleared too (re-hydrated by
 // refreshFoodCache) so a different account starts from a clean view. Errors are
 // swallowed per-step — a wipe that half-fails must not block sign-out, and the
@@ -539,7 +541,26 @@ export async function getEventAttachment(eventId: string): Promise<{
 
 export async function deleteEventAttachmentLocal(attachmentId: string): Promise<void> {
   const db = getDb();
+  // Read the file path before dropping the row so we can remove the persisted
+  // on-device copy too. B-104 moved captures into the document directory (which
+  // the system never reclaims), so detaching a photo must delete the file or it
+  // leaks — and a "removed" health photo should not linger on disk (Trust &
+  // Safety). Best-effort: a hydrated '' or already-missing file is fine. Row is
+  // dropped before the file delete; a process kill in between leaves a stray
+  // uuid-named file (no clinical impact, no re-query path) — acceptable residual.
+  const row = await db.getFirstAsync<{ local_uri: string | null }>(
+    'SELECT local_uri FROM event_attachments WHERE id = ?',
+    [attachmentId],
+  );
   await db.runAsync('DELETE FROM event_attachments WHERE id = ?', [attachmentId]);
+  if (row?.local_uri) {
+    try {
+      const file = new File(row.local_uri);
+      if (file.exists) file.delete();
+    } catch {
+      // File already gone / not a managed path (e.g. content:// URI) — nothing to clean up.
+    }
+  }
 }
 
 export interface PickerFood {
