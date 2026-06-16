@@ -20,6 +20,13 @@ interface Props {
   // clean (the catalog is pet-independent; only this note keys off the active
   // pet). Appended to the accessibilityLabel so a screen reader hears it too.
   intakeNote?: string | null;
+  // Reliable-favorites shelf line (B-004 PR 5) — the denominator-bearing finished
+  // rate ("Finished 9 of 11 meals") built by lib/food.foodFavoriteNote. Only the
+  // shelf passes it; the type-grouped list below passes intakeNote instead, so the
+  // two don't co-occur in practice. Rendered with a touch more weight than the
+  // muted last-logged line (it's the shelf row's point) but kept calm and factual —
+  // the visible denominator, not a loud "loved!" badge (intake-is-not-preference).
+  favoriteNote?: string | null;
 }
 
 // Full-width library row for the standalone Foods tab (B-004). Distinct from the
@@ -29,7 +36,7 @@ interface Props {
 // opens the food's detail screen (where you edit/classify it). There is no
 // one-tap-log here — logging stays on the FAB picker path. The metadata line
 // (BRAND · FORMAT) mirrors FoodTile's, sourced from the shared FORMAT_LABEL.
-export function FoodRow({ brand, productName, format, onPress, hideBrand = false, intakeNote }: Props) {
+export function FoodRow({ brand, productName, format, onPress, hideBrand = false, intakeNote, favoriteNote }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const formatMeta = typeLabel.toUpperCase();
   const metaLine = hideBrand
@@ -37,6 +44,9 @@ export function FoodRow({ brand, productName, format, onPress, hideBrand = false
     : typeLabel
       ? `${brand.toUpperCase()} · ${formatMeta}`
       : brand.toUpperCase();
+  // Append whichever annotation lines are present to the spoken label, so a screen
+  // reader hears the favorite rate / last-logged note, not just the name.
+  const spokenNotes = [favoriteNote, intakeNote].filter(Boolean).join(', ');
 
   return (
     <TouchableOpacity
@@ -44,7 +54,7 @@ export function FoodRow({ brand, productName, format, onPress, hideBrand = false
       onPress={onPress}
       activeOpacity={0.7}
       accessibilityRole="button"
-      accessibilityLabel={intakeNote ? `${brand} ${productName}, ${intakeNote}` : `${brand} ${productName}`}
+      accessibilityLabel={spokenNotes ? `${brand} ${productName}, ${spokenNotes}` : `${brand} ${productName}`}
     >
       <View style={styles.text}>
         {metaLine ? (
@@ -55,6 +65,11 @@ export function FoodRow({ brand, productName, format, onPress, hideBrand = false
         <Text style={styles.product} numberOfLines={2}>
           {productName}
         </Text>
+        {favoriteNote ? (
+          <Text style={styles.favorite} numberOfLines={1}>
+            {favoriteNote}
+          </Text>
+        ) : null}
         {intakeNote ? (
           <Text style={styles.intake} numberOfLines={1}>
             {intakeNote}
@@ -98,6 +113,14 @@ const styles = StyleSheet.create({
   // name, so the two meta lines don't read as the same thing.
   intake: {
     fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+  },
+  // Reliable-favorite line (the shelf row's salient point). A touch more weight
+  // than the last-logged intake line, but the same calm secondary color — the
+  // visible denominator carries the meaning, not a loud accent (intake ≠ preference).
+  favorite: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
   },
   chevron: {
