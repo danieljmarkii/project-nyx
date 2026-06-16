@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
   chartPlaceholder: {
     height: MAX_BAR_HEIGHT + 24,

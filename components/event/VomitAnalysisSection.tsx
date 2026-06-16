@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
   readText: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
   linkText: {
     fontSize: theme.textSM,

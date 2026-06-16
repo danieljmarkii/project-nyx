@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
   intro: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     marginBottom: theme.space2,
   },
   // The single corrective action under a coverage diagnostic (B-053) — calm and

@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   buildingBody: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
   grounding: {
     marginTop: theme.space2,

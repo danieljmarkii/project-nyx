@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
   calibration: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     marginTop: theme.space1,
   },
 });

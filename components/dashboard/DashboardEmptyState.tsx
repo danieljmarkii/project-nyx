@@ -40,7 +40,7 @@ const styles = StyleSheet.create({
   body: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     textAlign: 'center',
   },
 });

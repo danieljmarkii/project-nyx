@@ -545,7 +545,7 @@ const styles = StyleSheet.create({
   notes: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
   footer: {
     paddingHorizontal: theme.space3,
