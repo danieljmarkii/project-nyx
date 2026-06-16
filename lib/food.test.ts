@@ -2,8 +2,11 @@
 // exact bucketing + row-chunking behaviour the quick-log picker relied on inline
 // before the extraction, so the refactor stays byte-for-byte behaviour-preserving
 // and the standalone Foods tab inherits the same contract.
-import { groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand } from './food';
-import type { PickerFood } from './db';
+import {
+  groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand,
+  foodIntakeKey, indexIntakeStats, relativeDayLabel, foodIntakeNote,
+} from './food';
+import type { FoodIntakeStat, PickerFood } from './db';
 
 // Minimal PickerFood fixture — only id + food_type drive these helpers; the rest
 // are filled so the shape type-checks. `id` doubles as a label for readable
@@ -206,5 +209,113 @@ describe('groupFoodsByBrand', () => {
     const snapshot = [...input];
     groupFoodsByBrand(input);
     expect(input).toEqual(snapshot);
+  });
+});
+
+// ── Per-pet intake annotation (B-004 PR 4) ─────────────────────────────────────
+
+describe('foodIntakeKey + indexIntakeStats', () => {
+  const stat = (over: Partial<FoodIntakeStat> = {}): FoodIntakeStat => ({
+    brand_key: 'fancy feast',
+    product_key: 'chicken paté',
+    meal_count: 3,
+    last_fed_at: '2026-06-14T12:00:00.000Z',
+    ...over,
+  });
+
+  it('case-folds brand+product into the key the query groups on', () => {
+    expect(foodIntakeKey('Fancy Feast', 'Chicken Paté')).toBe(foodIntakeKey('fancy feast', 'chicken paté'));
+  });
+
+  it('separator-joins so component boundaries cannot collide', () => {
+    // "ab" + "c" must not collide with "a" + "bc" (a space delimiter would).
+    expect(foodIntakeKey('ab', 'c')).not.toBe(foodIntakeKey('a', 'bc'));
+  });
+
+  it('indexes stats so a library row finds its stat by foodIntakeKey', () => {
+    const map = indexIntakeStats([
+      stat({ brand_key: 'fancy feast', product_key: 'chicken' }),
+      stat({ brand_key: 'royal canin', product_key: 'gastrointestinal' }),
+    ]);
+    // Looked up with the original-cased row brand/product — the key folds to match.
+    expect(map.get(foodIntakeKey('Fancy Feast', 'Chicken'))?.product_key).toBe('chicken');
+    expect(map.get(foodIntakeKey('Royal Canin', 'Gastrointestinal'))?.product_key).toBe('gastrointestinal');
+    expect(map.get(foodIntakeKey('Unknown', 'Food'))).toBeUndefined();
+  });
+});
+
+describe('relativeDayLabel', () => {
+  // Anchor "now" to a fixed local wall-clock moment and build each "then" by
+  // subtracting whole local days from it, so the calendar-day math is exact in
+  // any runner timezone (both sides bucket on local midnight). Hour 12 keeps the
+  // UTC round-trip from shifting the local date.
+  const now = new Date(2026, 5, 16, 9, 30, 0).getTime(); // 2026-06-16 09:30 local
+  const daysAgoIso = (n: number): string => {
+    const d = new Date(2026, 5, 16, 12);
+    d.setDate(d.getDate() - n);
+    return d.toISOString();
+  };
+
+  it('labels same-day and adjacent days warmly', () => {
+    expect(relativeDayLabel(daysAgoIso(0), now)).toBe('today');
+    expect(relativeDayLabel(daysAgoIso(1), now)).toBe('yesterday');
+  });
+
+  it('counts exact days up to a week', () => {
+    expect(relativeDayLabel(daysAgoIso(2), now)).toBe('2 days ago');
+    expect(relativeDayLabel(daysAgoIso(6), now)).toBe('6 days ago');
+  });
+
+  it('rolls up to weeks, then months, at honest boundaries', () => {
+    expect(relativeDayLabel(daysAgoIso(7), now)).toBe('last week');
+    expect(relativeDayLabel(daysAgoIso(13), now)).toBe('last week');
+    expect(relativeDayLabel(daysAgoIso(14), now)).toBe('2 weeks ago');
+    expect(relativeDayLabel(daysAgoIso(29), now)).toBe('4 weeks ago');
+    expect(relativeDayLabel(daysAgoIso(30), now)).toBe('last month');
+    expect(relativeDayLabel(daysAgoIso(59), now)).toBe('last month');
+    expect(relativeDayLabel(daysAgoIso(60), now)).toBe('2 months ago');
+    expect(relativeDayLabel(daysAgoIso(364), now)).toBe('12 months ago');
+    expect(relativeDayLabel(daysAgoIso(365), now)).toBe('over a year ago');
+  });
+
+  it('clamps a future timestamp (clock skew) to "today" — never "in N days"', () => {
+    expect(relativeDayLabel(daysAgoIso(-3), now)).toBe('today');
+  });
+
+  it('returns an empty string for an unparseable timestamp', () => {
+    expect(relativeDayLabel('not-a-date', now)).toBe('');
+  });
+});
+
+describe('foodIntakeNote', () => {
+  const now = new Date(2026, 5, 16, 9, 0, 0).getTime();
+  const at = (daysAgo: number): string => {
+    const d = new Date(2026, 5, 16, 12);
+    d.setDate(d.getDate() - daysAgo);
+    return d.toISOString();
+  };
+  const stat = (meal_count: number, daysAgo: number): FoodIntakeStat => ({
+    brand_key: 'b', product_key: 'p', meal_count, last_fed_at: at(daysAgo),
+  });
+
+  it('returns null when the pet has no logged meals of the food', () => {
+    expect(foodIntakeNote(undefined, now)).toBeNull();
+    expect(foodIntakeNote(stat(0, 1), now)).toBeNull(); // defensive: count 0
+  });
+
+  it('returns null (no dangling "Last logged ") for an unreadable timestamp', () => {
+    expect(foodIntakeNote({ brand_key: 'b', product_key: 'p', meal_count: 3, last_fed_at: 'not-a-date' }, now)).toBeNull();
+  });
+
+  it('says "logged", not "fed" — recency alone for a single meal, never "· 1 times"', () => {
+    // "Logged" not "fed/ate": a refused offering is still a logged meal, so the
+    // line can never read as reassurance the pet ate (intake-is-not-preference).
+    expect(foodIntakeNote(stat(1, 0), now)).toBe('Last logged today');
+    expect(foodIntakeNote(stat(1, 1), now)).toBe('Last logged yesterday');
+  });
+
+  it('appends the count for repeat logged meals', () => {
+    expect(foodIntakeNote(stat(12, 3), now)).toBe('Last logged 3 days ago · 12 times');
+    expect(foodIntakeNote(stat(2, 1), now)).toBe('Last logged yesterday · 2 times');
   });
 });

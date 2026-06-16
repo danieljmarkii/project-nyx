@@ -4,7 +4,7 @@
 // no DB, no I/O, no React — just the food_type bucketing (B-011) and the 2-up
 // row chunking the grid renders. The `import type` keeps this module free of any
 // runtime dependency on lib/db, so it unit-tests without the expo-sqlite stack.
-import type { PickerFood } from './db';
+import type { FoodIntakeStat, PickerFood } from './db';
 
 export interface GroupedFoods {
   meals: PickerFood[];
@@ -103,4 +103,73 @@ export function groupFoodsByBrand(foods: PickerFood[]): BrandGroup[] {
     }
   }
   return [...groups.values()];
+}
+
+// ── Per-pet intake annotation (B-004 PR 4) ─────────────────────────────────────
+// The Foods tab shows the global catalog, but each row carries a per-active-pet
+// note of the pet's *logged* history with the food — a factual recency + count
+// line, never a preference or wellness read (intake-is-not-preference). "Logged",
+// not "fed/ate": a meal is an offering, counted even when refused, so a rising
+// count reads as logging diligence, not feeding success — it can't soften a
+// decline. The positive "reliable favorite" rate is PR 5 (Data sign-off); decline
+// routing is the AI Signal's. This layer only says "last logged … · N times".
+
+// Case-fold brand+product into the key getFoodIntakeStats groups on, so a library
+// row finds its stat across the duplicate-capture ids that share a brand+product.
+// Joined on an ASCII unit-separator (U+001F) — a control char that can't occur in
+// a food label, so "ab"+"c" can't collide with "a"+"bc" the way a space delimiter
+// would (both brands and products contain spaces). Mirrors the SQL's
+// LOWER(brand)/LOWER(product_name). Pure; no I/O.
+export function foodIntakeKey(brand: string, productName: string): string {
+  return `${brand.toLowerCase()}\u001F${productName.toLowerCase()}`;
+}
+
+// Index a pet's intake stats by foodIntakeKey for O(1) per-row lookup. The stat's
+// own brand_key/product_key are already case-folded by the query, so they form
+// the identical key foodIntakeKey(brand, product) produces from a library row.
+export function indexIntakeStats(stats: FoodIntakeStat[]): Map<string, FoodIntakeStat> {
+  const map = new Map<string, FoodIntakeStat>();
+  for (const s of stats) {
+    map.set(`${s.brand_key}\u001F${s.product_key}`, s);
+  }
+  return map;
+}
+
+// Warm, day-granular "time ago" for a feeding — today / yesterday / N days /
+// weeks / months. Computed on LOCAL calendar days so "today"/"yesterday" align
+// with the owner's clock (occurred_at is UTC). A future timestamp (cross-device
+// clock skew) clamps to "today" — never "in 3 days". Honest buckets over false
+// precision: past ~4 weeks it rounds to months. Pure.
+export function relativeDayLabel(iso: string, now: number): string {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return '';
+  const nowD = new Date(now);
+  const thenMidnight = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
+  const nowMidnight = new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()).getTime();
+  const d = Math.round((nowMidnight - thenMidnight) / 86_400_000);
+  if (d <= 0) return 'today';
+  if (d === 1) return 'yesterday';
+  if (d <= 6) return `${d} days ago`;
+  if (d <= 13) return 'last week';
+  if (d <= 29) return `${Math.round(d / 7)} weeks ago`;
+  if (d <= 59) return 'last month';
+  if (d <= 364) return `${Math.round(d / 30)} months ago`;
+  return 'over a year ago';
+}
+
+// The Foods-row annotation for a pet's history with one food, or null when the
+// pet has no logged meals of it (or the timestamp is unreadable) — the row then
+// stays clean (matching History's NULL-intake-renders-nothing convention, and
+// keeping the browse surface quiet rather than stamping every untried food with
+// an empty-state line). Says "logged", never "fed/ate": a meal is an OFFERING,
+// counted even when refused, so the line can never read as reassurance that the
+// pet ate — and a rising count reads as logging diligence, not feeding success
+// (intake-is-not-preference; decline is the Signal's to surface, not a browse
+// row's). count ≥ 2 appends "· N times"; a single meal shows recency alone.
+export function foodIntakeNote(stat: FoodIntakeStat | undefined, now: number): string | null {
+  if (!stat || stat.meal_count < 1) return null;
+  const when = relativeDayLabel(stat.last_fed_at, now);
+  if (!when) return null; // unreadable timestamp — no honest recency to show
+  const recency = `Last logged ${when}`;
+  return stat.meal_count >= 2 ? `${recency} · ${stat.meal_count} times` : recency;
 }

@@ -1,12 +1,13 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FoodRow } from '../../components/foods/FoodRow';
-import { getLibraryFoods, PickerFood } from '../../lib/db';
-import { groupFoodsByType, groupFoodsByBrand } from '../../lib/food';
+import { getLibraryFoods, getFoodIntakeStats, PickerFood, FoodIntakeStat } from '../../lib/db';
+import { groupFoodsByType, groupFoodsByBrand, foodIntakeKey, foodIntakeNote, indexIntakeStats } from '../../lib/food';
+import { usePetStore } from '../../store/petStore';
 
 // Standalone Foods tab (B-004) — the food library graduates from a FAB-only
 // picker into a first-class destination you browse and manage. The catalog is
@@ -27,6 +28,15 @@ export default function FoodsScreen() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
+  // Per-pet intake annotations (B-004 PR 4). The catalog above is pet-independent
+  // (the whole rationale for a top-level Foods tab); these notes are the one
+  // per-active-pet layer — a row's feeding history for whoever is the active pet.
+  // Indexed by foodIntakeKey for O(1) row lookup; `now` is frozen per load so the
+  // relative "today / 3 days ago" labels don't drift mid-render.
+  const activePetId = usePetStore((s) => s.activePet?.id ?? null);
+  const [intakeStats, setIntakeStats] = useState<Map<string, FoodIntakeStat>>(new Map());
+  const intakeNow = useRef(Date.now());
+
   // Single load used by both the focus effect and the error-retry button. No
   // cancel guard is needed: a tab screen stays mounted across tab switches, and
   // the read is idempotent (last load wins on the same global catalog).
@@ -42,13 +52,34 @@ export default function FoodsScreen() {
       console.warn('[foods] library load failed:', err);
       setLoadError(true);
       setLoaded(true);
+      return; // catalog is the primary content — skip annotations if it failed
     }
-  }, []);
+    // Intake annotations are an enhancement layer: a failure here must NOT blank
+    // the catalog, so it has its own guard and just leaves rows un-annotated.
+    try {
+      if (!activePetId) { setIntakeStats(new Map()); return; }
+      const stats = await getFoodIntakeStats(activePetId);
+      intakeNow.current = Date.now();
+      setIntakeStats(indexIntakeStats(stats));
+    } catch (err) {
+      console.warn('[foods] intake annotations load failed:', err);
+      setIntakeStats(new Map());
+    }
+  }, [activePetId]);
 
   // Reload on every focus so foods added, edited, or deleted from the capture
   // flow or the detail screen are reflected when the tab comes back into view —
   // the tab persists across switches, so a mount-only effect would go stale.
+  // Keying load on activePetId also refreshes annotations when the active pet
+  // changes while focused (useFocusEffect re-runs when its callback changes).
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Resolve a row's per-pet note: pure lookup + format. null leaves the row clean.
+  const noteFor = useCallback(
+    (f: PickerFood): string | null =>
+      foodIntakeNote(intakeStats.get(foodIntakeKey(f.brand, f.product_name)), intakeNow.current),
+    [intakeStats],
+  );
 
   const grouped = groupFoodsByType(library);
   // The error state wins only when there's nothing to show. A failed *reload*
@@ -90,12 +121,13 @@ export default function FoodsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <FoodGroup label="Meals" foods={grouped.meals} />
-          <FoodGroup label="Treats" foods={grouped.treats} />
+          <FoodGroup label="Meals" foods={grouped.meals} noteFor={noteFor} />
+          <FoodGroup label="Treats" foods={grouped.treats} noteFor={noteFor} />
           <FoodGroup
             label="Unclassified"
             foods={grouped.other}
             hint="Tap a food to set whether it's a meal or a treat."
+            noteFor={noteFor}
           />
         </ScrollView>
       )}
@@ -113,11 +145,14 @@ export default function FoodsScreen() {
 // canonicalizeBrand. The brand-label + card-of-rows pairing reuses the same
 // Linear/Oura grouped-list idiom as the section header itself.
 function FoodGroup({
-  label, foods, hint,
+  label, foods, hint, noteFor,
 }: {
   label: string;
   foods: PickerFood[];
   hint?: string;
+  // Per-row intake annotation resolver (B-004 PR 4), passed down from the screen
+  // so the group stays presentational and the per-pet logic lives in one place.
+  noteFor: (f: PickerFood) => string | null;
 }) {
   if (foods.length === 0) return null;
   // Foods arrive alpha-by-brand+product from getLibraryFoods, so the brand
@@ -145,6 +180,7 @@ function FoodGroup({
                     brand={f.brand}
                     productName={f.product_name}
                     format={f.format}
+                    intakeNote={noteFor(f)}
                     onPress={() => router.push(`/food/${f.id}`)}
                   />
                 </View>

@@ -572,6 +572,19 @@ export interface PickerFood {
   photo_path: string | null;
 }
 
+// Per-(brand+product) logged-meal history for ONE pet — how many meals of a food
+// the pet has logged and when it was last logged. Keyed on case-folded
+// brand+product (LOWER), the SAME collapse getLibraryFoods groups library rows
+// on, so a single row maps to its stat even though duplicate captures of the same
+// package are distinct food_items_cache ids and a meal may reference any of them.
+// Powers the Foods-tab per-pet intake annotation (B-004 PR 4).
+export interface FoodIntakeStat {
+  brand_key: string;   // LOWER(brand) — grouping key, never displayed
+  product_key: string; // LOWER(product_name)
+  meal_count: number;  // logged, non-deleted meals of this food for the pet (≥1)
+  last_fed_at: string; // MAX(occurred_at) — most recent logged meal, ISO/UTC
+}
+
 // The pet's most-recently-eaten distinct foods, newest first — ordered by this
 // pet's actual last meal of each food (MAX(occurred_at)), NOT food_items_cache's
 // `last_used_at`. The latter is global across all pets in the household and is a
@@ -617,6 +630,36 @@ export async function getLibraryFoods(): Promise<PickerFood[]> {
      FROM food_items_cache
      GROUP BY LOWER(brand), LOWER(product_name)
      ORDER BY brand COLLATE NOCASE ASC, product_name COLLATE NOCASE ASC`,
+  );
+}
+
+// Logged-meal history per food for one pet — count + most recent — so the Foods
+// tab can annotate each library row with the pet's logged history with it. The
+// catalog is global (pet-independent); this annotation is per-pet, joining through
+// meals (which carry pet_id) and counting only the given pet's non-deleted meals.
+// Grouped on case-folded brand+product to match the library row's own collapse
+// (getLibraryFoods) and to sum across duplicate-capture ids — like getLibraryFoods
+// it is format-blind (two same-brand+product rows of differing `format` pool into
+// one annotation), so the count always matches the single row the user sees.
+//
+// Intake-is-not-preference: these are raw factual counts + recency, NOT a
+// preference or wellness read — no "favorite", no "picky", no rate needing
+// statistical sign-off (that's PR 5's positive rate-over-N favorites shelf; the
+// AI Signal's detector ② owns decline routing). This only states what was logged.
+export async function getFoodIntakeStats(petId: string): Promise<FoodIntakeStat[]> {
+  const db = getDb();
+  return db.getAllAsync<FoodIntakeStat>(
+    `SELECT LOWER(f.brand)        AS brand_key,
+            LOWER(f.product_name) AS product_key,
+            COUNT(*)              AS meal_count,
+            MAX(e.occurred_at)    AS last_fed_at
+     FROM meals m
+     JOIN events e ON e.id = m.event_id
+     JOIN food_items_cache f ON f.id = m.food_item_id
+     WHERE m.pet_id = ?
+       AND e.deleted_at IS NULL
+     GROUP BY LOWER(f.brand), LOWER(f.product_name)`,
+    [petId],
   );
 }
 
