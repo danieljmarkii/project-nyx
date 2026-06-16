@@ -28,7 +28,9 @@ import {
   detectIntakeDecline,
   getIntakeRate,
   getIntakeRateWithPrior,
+  getMealTreatComposition,
   getSymptomCounts,
+  getTopFoods,
   isNotEnoughData,
   ANALYTICS_FLOORS,
   type AnalyticsMeal,
@@ -633,5 +635,51 @@ describe('getSymptomCounts (wrapper wiring)', () => {
     expect(params[0]).toBe('pet-1');
     expect(typeof params[1]).toBe('string');
     expect(typeof params[2]).toBe('string');
+  });
+});
+
+// ── B-102 PR 4: "Human food" format parity (routes by food_type, never format) ────
+//
+// "Human food" (deli meat, Costco rotisserie chicken) is a `food_format` value
+// (B-102 PR 1, migration 019) — but the dashboard groups by `food_type` (meal/treat)
+// + food_item and NEVER reads `format`: readMealRows doesn't even SELECT it, and the
+// AnalyticsMeal shape the pure cores consume carries no format field. So a human_food
+// item logged as a treat already flows through top-foods + meals/treats composition
+// exactly like any other treat — PR 4 is verify-and-lock, not new grouping code
+// (requirements §5 / §11 PR-4 / §12). This regression test pins that: a future change
+// that taught the dashboard to enumerate formats and dropped `human_food` would fail
+// here. Run at the DB-wrapper level on purpose — it's the only layer where `format`
+// exists in the data, so it's the only place "format is inert" can be proven.
+describe('B-102 — human_food format parity (routes by food_type, never format)', () => {
+  it('a human_food/treat item flows through top-foods + composition; its format is inert', async () => {
+    const isoAt = (dayOffset: number, hour = 8) => new Date(at(dayOffset, hour)).toISOString();
+    // The joined food_items_cache row carries format='human_food' (Costco rotisserie
+    // chicken, logged as a treat). The analytics read path ignores `format` and routes
+    // by `food_type`. Four kibble meals clear the ranking floor so the treat is ranked
+    // alongside a real food rather than swallowed by notEnoughData.
+    mockGetAllAsync.mockResolvedValue([
+      { food_item_id: 'hf', intake_rating: 'all', occurred_at: isoAt(0), food_type: 'treat', primary_protein: null, brand: 'Costco', product_name: 'Rotisserie Chicken', format: 'human_food' },
+      { food_item_id: 'kib', intake_rating: 'all', occurred_at: isoAt(1), food_type: 'meal', primary_protein: 'chicken', brand: 'Acme', product_name: 'Dinner', format: 'dry_kibble' },
+      { food_item_id: 'kib', intake_rating: 'most', occurred_at: isoAt(2), food_type: 'meal', primary_protein: 'chicken', brand: 'Acme', product_name: 'Dinner', format: 'dry_kibble' },
+      { food_item_id: 'kib', intake_rating: 'all', occurred_at: isoAt(3), food_type: 'meal', primary_protein: 'chicken', brand: 'Acme', product_name: 'Dinner', format: 'dry_kibble' },
+      { food_item_id: 'kib', intake_rating: 'all', occurred_at: isoAt(4), food_type: 'meal', primary_protein: 'chicken', brand: 'Acme', product_name: 'Dinner', format: 'dry_kibble' },
+    ]);
+
+    // Top foods: the human_food row is RANKED, tagged a treat (food_type), and its
+    // ceiling finish-rate is nulled (§11 #1) — not dropped or mis-bucketed because its
+    // FORMAT is the new human_food value.
+    const top = (await getTopFoods('pet-1', 'month', NOW)) as RankedFood[];
+    expect(isNotEnoughData(top)).toBe(false);
+    expect(top.find((f) => f.foodItemId === 'hf')).toMatchObject({
+      foodItemId: 'hf', label: 'Costco Rotisserie Chicken', foodType: 'treat', count: 1, isTreat: true, finishedRate: null,
+    });
+    // The ordinary kibble meal is untouched by the human_food row's presence.
+    expect(top.find((f) => f.foodItemId === 'kib')).toMatchObject({ foodType: 'meal', count: 4, isTreat: false });
+
+    // Meals & treats composition: the human_food row is counted as a TREAT (via
+    // food_type), separately from the four meals — never folded into the meal count.
+    expect(await getMealTreatComposition('pet-1', 'month', NOW)).toEqual({
+      meal: 4, treat: 1, other: 0, unclassified: 0, total: 5,
+    });
   });
 });
