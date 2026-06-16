@@ -2620,10 +2620,19 @@ export function computeHumanFoodProvenance(
   const nowMs = Date.parse(input.now)
   if (!Number.isFinite(nowMs)) return null
 
+  // Misconfiguration guard (adversarial review): a window < 1 day is meaningless. Clamp to a
+  // 1-day ("today") window rather than throw — detection degrades gracefully, never blanks the
+  // Signal (the engine convention) — and floor a fractional value to a whole number of days.
+  // Today the config is the hardcoded 60, so this is a no-op; it exists so a FUTURE consumer
+  // that wires `windowDays` from data/UI can't get a SILENT all-empty covariate from a 0/negative
+  // value (which a careless caller could mis-frame as "no human food ever"). The clamped value is
+  // echoed in `windowDays` below so the payload never claims a window it didn't apply.
+  const windowDays = Math.max(1, Math.floor(cfg.windowDays))
+
   // Trailing W UTC CALENDAR days, inclusive of today (bucket floor, not a raw ms span) —
   // identical to detectMealTypeCollapse, so the numerator can never exceed the denominator.
   const todayBucket = Math.floor(nowMs / MS_PER_DAY)
-  const earliestBucket = todayBucket - (cfg.windowDays - 1)
+  const earliestBucket = todayBucket - (windowDays - 1)
 
   const loggedDayBuckets = new Set<number>()
   const humanFoodDayBuckets = new Set<number>()
@@ -2649,7 +2658,7 @@ export function computeHumanFoodProvenance(
     humanFoodDayKeys,
     humanFoodFeedings,
     loggedFeedingDays: loggedDayBuckets.size,
-    windowDays: cfg.windowDays,
+    windowDays, // the effective (clamped/floored) window actually applied
   }
 }
 

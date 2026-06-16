@@ -2392,3 +2392,50 @@ Deno.test('computeHumanFoodProvenance — INERT to detectSignals: tagging meals 
   const prov = computeHumanFoodProvenance(withFmt) as HumanFoodProvenance
   assert.deepEqual(prov.humanFoodDayKeys, ['2026-05-02', '2026-05-04', '2026-05-06'])
 })
+
+Deno.test('computeHumanFoodProvenance — non-midnight `now` + boundary feedings: numerator never exceeds denominator (the "11 of 10" guard, regression-locked)', () => {
+  // Adversarial-review gap 2: the shipped suite asserted numerator ≤ denominator only on a
+  // midnight-ish fixture. This pins the invariant on a NON-midnight `now` with feedings on the
+  // window-boundary day and a sub-day future row — the exact shape the sibling
+  // detectMealTypeCollapse "11 of the last 10 days" bug lived in.
+  const cfg = { ...DEFAULT_CONFIG, humanFood: { windowDays: 5 } }
+  // now = May 30 17:30 → window floor = May 26 (todayBucket - 4).
+  const customNow = at(30, 17, 30)
+  const mealEvents = [
+    humanFoodMeal(26, 9), // boundary day, in-window → counted
+    humanFoodMeal(25, 23), // May 25 23:00 — one bucket before the window → excluded
+    humanFoodMeal(30, 9), // today, before `now` → counted
+    humanFoodMeal(30, 20), // today but 20:00 > now 17:30 → sub-day future → excluded
+    proteinMeal(27, 'chicken'),
+    proteinMeal(29, 'chicken'),
+  ]
+  const prov = computeHumanFoodProvenance(input({ now: customNow, mealEvents }), cfg) as HumanFoodProvenance
+  assert.deepEqual(prov.humanFoodDayKeys, ['2026-05-26', '2026-05-30'])
+  assert.equal(prov.humanFoodFeedings, 2)
+  assert.equal(prov.loggedFeedingDays, 4, 'May 26, 27, 29, 30 in-window (May 25 excluded)')
+  assert.equal(prov.windowDays, 5)
+  // The "11 of 10"-class invariants, on a non-midnight now:
+  assert.ok(prov.humanFoodDayKeys.length <= prov.loggedFeedingDays, 'numerator ≤ denominator')
+  assert.ok(prov.humanFoodDayKeys.length <= prov.windowDays, 'numerator ≤ windowDays')
+})
+
+Deno.test('computeHumanFoodProvenance — degenerate windowDays (≤0, fractional) is clamped to a real window, never a silent empty', () => {
+  // Adversarial-review gap 1: a window < 1 day is a misconfiguration. It must clamp to a 1-day
+  // ("today") window — NOT silently report "no human food ever" over a 0-day span — and the
+  // payload must echo the EFFECTIVE window, never the bad input. Unreachable today (config is the
+  // hardcoded 60); this guards a FUTURE consumer that wires windowDays from data/UI.
+  const mealEvents = [humanFoodMeal(30, 9), humanFoodMeal(20), proteinMeal(30, 'chicken')]
+  for (const bad of [0, -5]) {
+    const cfg = { ...DEFAULT_CONFIG, humanFood: { windowDays: bad } }
+    const prov = computeHumanFoodProvenance(input({ mealEvents }), cfg) as HumanFoodProvenance
+    assert.equal(prov.windowDays, 1, `windowDays ${bad} → clamped to 1 (honest, not echoed back)`)
+    assert.deepEqual(prov.humanFoodDayKeys, ['2026-05-30'], 'today\'s human food still surfaces — not a silent empty')
+    assert.equal(prov.humanFoodFeedings, 1)
+    assert.equal(prov.loggedFeedingDays, 1)
+  }
+  // Fractional windows floor to whole days (5.9 → 5).
+  const fracCfg = { ...DEFAULT_CONFIG, humanFood: { windowDays: 5.9 } }
+  const frac = computeHumanFoodProvenance(input({ mealEvents: [humanFoodMeal(28), humanFoodMeal(20)] }), fracCfg) as HumanFoodProvenance
+  assert.equal(frac.windowDays, 5)
+  assert.deepEqual(frac.humanFoodDayKeys, ['2026-05-28'], 'May 28 in a floored-5-day window; May 20 out')
+})
