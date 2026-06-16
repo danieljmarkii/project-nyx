@@ -24,6 +24,8 @@ import {
   fisherExactRightTail,
   mcNemarExactRightTail,
   intakeScore,
+  computeHumanFoodProvenance,
+  HUMAN_FOOD_FORMAT,
   DEFAULT_CONFIG,
   type CorrelationFinding,
   type IntakeDeclineFinding,
@@ -44,6 +46,7 @@ import {
   type RateMealsDiagnostic,
   type StapleWashoutDiagnostic,
   type MealTypeCollapseDiagnostic,
+  type HumanFoodProvenance,
 } from './detection.ts'
 
 // ── Fixture helpers ───────────────────────────────────────────────────────────
@@ -2259,4 +2262,133 @@ Deno.test('detectCoverage — diet_churn: a food with an unparseable timestamp r
   ]
   const symptomEvents = [symptom('vomit', at(18, 9)), symptom('vomit', at(20, 9))]
   assert.equal(findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'diet_churn'), undefined)
+})
+
+// ── computeHumanFoodProvenance (B-102 PR 5 — off-commercial-diet covariate) ───
+//
+// NET-NEW clinical work (requirements §7): the engine reads `format` for the first time.
+// These tests pin the covariate's HONESTY (denominator attached, numerator ≤ denominator,
+// no re-log inflation), its INERTNESS to the live Signal surface (format changes nothing in
+// detectSignals — no card), and the never-reassure-on-absence posture (zero is a fact over
+// real coverage, returned as data, never as an all-clear).
+
+/** A human_food-format feeding (B-102 PR 5). foodType defaults to 'treat' (people food is usually a treat). */
+const humanFoodMeal = (day: number, hour = 13, over: Partial<MealEvent> = {}): MealEvent =>
+  meal({ occurredAt: at(day, hour), format: HUMAN_FOOD_FORMAT, foodType: 'treat', ...over })
+
+Deno.test('HUMAN_FOOD_FORMAT — the literal matches the migration-019 enum value', () => {
+  assert.equal(HUMAN_FOOD_FORMAT, 'human_food')
+})
+
+Deno.test('computeHumanFoodProvenance — counts human-food DAYS over the logged-day denominator', () => {
+  const mealEvents = [
+    // human food on three distinct days, added OUT of order to prove ascending sort…
+    humanFoodMeal(24),
+    humanFoodMeal(20),
+    humanFoodMeal(22),
+    // …plus commercial meals on other days (the denominator, not the numerator).
+    proteinMeal(21, 'chicken'),
+    proteinMeal(23, 'chicken'),
+    proteinMeal(25, 'chicken'),
+  ]
+  const prov = computeHumanFoodProvenance(input({ mealEvents })) as HumanFoodProvenance
+  assert.notEqual(prov, null)
+  assert.deepEqual(prov.humanFoodDayKeys, ['2026-05-20', '2026-05-22', '2026-05-24'])
+  assert.equal(prov.humanFoodFeedings, 3)
+  assert.equal(prov.loggedFeedingDays, 6, 'six distinct logged days (3 human-food + 3 commercial)')
+  assert.equal(prov.windowDays, DEFAULT_CONFIG.humanFood.windowDays)
+  // The honesty invariant: the numerator can never exceed the denominator.
+  assert.ok(prov.humanFoodDayKeys.length <= prov.loggedFeedingDays)
+})
+
+Deno.test('computeHumanFoodProvenance — re-logs collapse to ONE day; feedings counted raw (no inflation)', () => {
+  // Three deli-meat treats on a single day must read as ONE human-food day, not three —
+  // the same re-log-inflation guard the symptom episode collapsing applies.
+  const mealEvents = [humanFoodMeal(20, 8), humanFoodMeal(20, 13), humanFoodMeal(20, 18)]
+  const prov = computeHumanFoodProvenance(input({ mealEvents })) as HumanFoodProvenance
+  assert.deepEqual(prov.humanFoodDayKeys, ['2026-05-20'])
+  assert.equal(prov.humanFoodFeedings, 3, 'raw feeding count is preserved as evidence')
+  assert.equal(prov.loggedFeedingDays, 1)
+})
+
+Deno.test('computeHumanFoodProvenance — provenance is diet-wide (meal / treat / other all count)', () => {
+  // Human food given as a meal, a treat, or other ALL count — provenance, not intake (D8).
+  const mealEvents = [
+    humanFoodMeal(20, 13, { foodType: 'meal' }),
+    humanFoodMeal(21, 13, { foodType: 'treat' }),
+    humanFoodMeal(22, 13, { foodType: 'other' }),
+  ]
+  const prov = computeHumanFoodProvenance(input({ mealEvents })) as HumanFoodProvenance
+  assert.equal(prov.humanFoodDayKeys.length, 3)
+  assert.equal(prov.humanFoodFeedings, 3)
+})
+
+Deno.test('computeHumanFoodProvenance — ABSENCE returns a covariate (NOT null), zero numerator over real coverage', () => {
+  // No human food, but the pet is eating commercial meals. The covariate must be returned
+  // (not null, not suppressed) with an EMPTY numerator and a real denominator — a logged
+  // fact, never an all-clear. Reassurance-on-absence is structurally impossible (no copy).
+  const mealEvents = [proteinMeal(20, 'chicken'), proteinMeal(21, 'chicken'), proteinMeal(22, 'beef')]
+  const prov = computeHumanFoodProvenance(input({ mealEvents })) as HumanFoodProvenance
+  assert.notEqual(prov, null)
+  assert.deepEqual(prov.humanFoodDayKeys, [])
+  assert.equal(prov.humanFoodFeedings, 0)
+  assert.equal(prov.loggedFeedingDays, 3, 'denominator reflects real logging coverage, not 0')
+})
+
+Deno.test('computeHumanFoodProvenance — a feeding OUTSIDE the window is excluded', () => {
+  // windowDays 5, now = May 30 12:00 → window floor = May 26. A human-food day on May 28 is
+  // in; one on May 20 is out (and must not appear in the numerator OR the denominator).
+  const cfg = { ...DEFAULT_CONFIG, humanFood: { windowDays: 5 } }
+  const mealEvents = [humanFoodMeal(28), humanFoodMeal(20), proteinMeal(27, 'chicken')]
+  const prov = computeHumanFoodProvenance(input({ mealEvents }), cfg) as HumanFoodProvenance
+  assert.deepEqual(prov.humanFoodDayKeys, ['2026-05-28'])
+  assert.equal(prov.humanFoodFeedings, 1)
+  assert.equal(prov.loggedFeedingDays, 2, 'only May 27 + May 28 are in-window; May 20 is excluded')
+  assert.equal(prov.windowDays, 5)
+})
+
+Deno.test('computeHumanFoodProvenance — future-dated (clock-skew) and undateable rows are dropped', () => {
+  const mealEvents = [
+    humanFoodMeal(20), // in-window, past → counted
+    humanFoodMeal(31), // May 31 > now (May 30) → future, dropped
+    meal({ occurredAt: 'not-a-date', format: HUMAN_FOOD_FORMAT, foodType: 'treat' }), // undateable → dropped
+  ]
+  const prov = computeHumanFoodProvenance(input({ mealEvents })) as HumanFoodProvenance
+  assert.deepEqual(prov.humanFoodDayKeys, ['2026-05-20'])
+  assert.equal(prov.humanFoodFeedings, 1)
+  assert.equal(prov.loggedFeedingDays, 1, 'neither the future nor the undateable row joins the denominator')
+})
+
+Deno.test('computeHumanFoodProvenance — unparseable `now` returns null (cannot window)', () => {
+  const prov = computeHumanFoodProvenance(input({ now: 'not-a-date', mealEvents: [humanFoodMeal(20)] }))
+  assert.equal(prov, null)
+})
+
+Deno.test('computeHumanFoodProvenance — INERT to detectSignals: tagging meals human_food changes no finding', () => {
+  // The composition-safety regression (requirements §7: "no insight card"). Hold foodType,
+  // protein, timing, attribution constant and flip ONLY `format`. detectSignals must be
+  // byte-identical — the covariate is read by computeHumanFoodProvenance and NOWHERE else.
+  const stapleChicken = staple(1, 10, 'chicken', 9)
+  const beefDays = [2, 4, 6]
+  const beefNoFmt = beefDays.map((d) => pMeal(d, 'beef', 10))
+  // Same meals, foodType still defaults to 'meal' — ONLY `format` differs.
+  const beefHumanFmt = beefDays.map((d) => meal({ occurredAt: at(d, 10), primaryProtein: 'beef', format: HUMAN_FOOD_FORMAT }))
+  const symptomEvents = [symptom('vomit', at(2, 11)), symptom('vomit', at(4, 11)), symptom('vomit', at(6, 11))]
+
+  const withoutFmt = input({ mealEvents: [...stapleChicken, ...beefNoFmt], symptomEvents })
+  const withFmt = input({ mealEvents: [...stapleChicken, ...beefHumanFmt], symptomEvents })
+
+  const rankedWithout = detectSignals(withoutFmt)
+  const rankedWith = detectSignals(withFmt)
+  assert.ok(rankedWithout.length >= 1, 'fixture must produce at least one finding to make the test meaningful')
+  assert.deepEqual(rankedWith, rankedWithout, 'format must be inert to every detector')
+
+  // No finding type may ever be a human-food card (there is no such type — belt + braces).
+  for (const r of rankedWith) {
+    assert.ok(!String(r.finding.type).includes('human_food'), 'no human-food finding may reach the card surface')
+  }
+
+  // …yet the covariate DID read `format` on the very same input — available, just not a card.
+  const prov = computeHumanFoodProvenance(withFmt) as HumanFoodProvenance
+  assert.deepEqual(prov.humanFoodDayKeys, ['2026-05-02', '2026-05-04', '2026-05-06'])
 })
