@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
   stateText: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
   note: {
     fontSize: theme.textXS,

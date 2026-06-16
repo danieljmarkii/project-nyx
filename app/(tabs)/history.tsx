@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: theme.colorTextSecondary,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
   },
   listEmpty: {
     flexGrow: 1,

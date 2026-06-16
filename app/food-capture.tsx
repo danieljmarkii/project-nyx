@@ -853,7 +853,7 @@ const styles = StyleSheet.create({
   introBody: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     marginBottom: theme.space2,
   },
 

@@ -20,6 +20,7 @@ export const theme = {
   text2XL: 28,   // display (pet name, hero number)
   textSignal: 26, // AI Signal headline (display face) — consumed by PR 2
   lineHeightSignal: 34, // AI Signal headline leading (26 × ~1.3, per type-signal preview)
+  lineHeightBody: 22, // body/paragraph leading — app-wide default for multi-line copy
 
   // ── Font weights ──────────────────────────────────────────────────────────
   weightRegular: '400' as const,

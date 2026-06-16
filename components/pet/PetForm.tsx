@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
-    lineHeight: 22,
+    lineHeight: theme.lineHeightBody,
     marginBottom: theme.space4,
   },
   fieldLabel: {
