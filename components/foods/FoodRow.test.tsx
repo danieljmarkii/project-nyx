@@ -56,4 +56,31 @@ describe('FoodRow', () => {
     expect(queryByText('FANCY FEAST')).toBeNull();
     expect(queryByText(/·/)).toBeNull();
   });
+
+  // Per-pet intake annotation (B-004 PR 4): the note line renders below the
+  // product name and is folded into the a11y label so a screen reader hears it.
+  it('renders the per-pet intake note and appends it to the a11y label', () => {
+    const { getByText, getByLabelText } = render(
+      <FoodRow
+        brand="Fancy Feast"
+        productName="Chicken Pâté"
+        format="wet_canned"
+        hideBrand
+        intakeNote="Last logged 3 days ago · 12 times"
+        onPress={() => {}}
+      />,
+    );
+    expect(getByText('Last logged 3 days ago · 12 times')).toBeTruthy();
+    expect(getByLabelText('Fancy Feast Chicken Pâté, Last logged 3 days ago · 12 times')).toBeTruthy();
+  });
+
+  // No note (pet has never been logged this food) → no extra line, and the a11y
+  // label stays the plain "<brand> <product>" — the row reads clean.
+  it('renders no intake line and a plain a11y label when no note is given', () => {
+    const { queryByText, getByLabelText } = render(
+      <FoodRow brand="Fancy Feast" productName="Chicken Pâté" format="wet_canned" hideBrand onPress={() => {}} />,
+    );
+    expect(queryByText(/Last logged/)).toBeNull();
+    expect(getByLabelText('Fancy Feast Chicken Pâté')).toBeTruthy();
+  });
 });

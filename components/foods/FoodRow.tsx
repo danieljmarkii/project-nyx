@@ -14,6 +14,12 @@ interface Props {
   // so a screen reader still announces the full "<brand> <product>". Defaults to
   // showing the brand, keeping the row's standalone contract (and tests) intact.
   hideBrand?: boolean;
+  // Per-active-pet intake annotation (B-004 PR 4) — a factual recency + count
+  // line ("Last logged 3 days ago · 12 times") built by lib/food.foodIntakeNote.
+  // null/undefined when this pet has no logged meals of the food, leaving the row
+  // clean (the catalog is pet-independent; only this note keys off the active
+  // pet). Appended to the accessibilityLabel so a screen reader hears it too.
+  intakeNote?: string | null;
 }
 
 // Full-width library row for the standalone Foods tab (B-004). Distinct from the
@@ -23,7 +29,7 @@ interface Props {
 // opens the food's detail screen (where you edit/classify it). There is no
 // one-tap-log here — logging stays on the FAB picker path. The metadata line
 // (BRAND · FORMAT) mirrors FoodTile's, sourced from the shared FORMAT_LABEL.
-export function FoodRow({ brand, productName, format, onPress, hideBrand = false }: Props) {
+export function FoodRow({ brand, productName, format, onPress, hideBrand = false, intakeNote }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const formatMeta = typeLabel.toUpperCase();
   const metaLine = hideBrand
@@ -38,7 +44,7 @@ export function FoodRow({ brand, productName, format, onPress, hideBrand = false
       onPress={onPress}
       activeOpacity={0.7}
       accessibilityRole="button"
-      accessibilityLabel={`${brand} ${productName}`}
+      accessibilityLabel={intakeNote ? `${brand} ${productName}, ${intakeNote}` : `${brand} ${productName}`}
     >
       <View style={styles.text}>
         {metaLine ? (
@@ -49,6 +55,11 @@ export function FoodRow({ brand, productName, format, onPress, hideBrand = false
         <Text style={styles.product} numberOfLines={2}>
           {productName}
         </Text>
+        {intakeNote ? (
+          <Text style={styles.intake} numberOfLines={1}>
+            {intakeNote}
+          </Text>
+        ) : null}
       </View>
       <Text style={styles.chevron}>›</Text>
     </TouchableOpacity>
@@ -81,6 +92,13 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
     lineHeight: 20,
+  },
+  // Per-pet intake annotation, below the product name. Sentence-case secondary
+  // text — distinct from the all-caps tracked tertiary format eyebrow above the
+  // name, so the two meta lines don't read as the same thing.
+  intake: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
   },
   chevron: {
     fontSize: theme.textLG,
