@@ -173,3 +173,193 @@ export function foodIntakeNote(stat: FoodIntakeStat | undefined, now: number): s
   const recency = `Last logged ${when}`;
   return stat.meal_count >= 2 ? `${recency} · ${stat.meal_count} times` : recency;
 }
+
+// ── Reliable-favorites shelf (B-004 PR 5) ──────────────────────────────────────
+// A POSITIVE-ONLY, rate-over-N promotion: the foods this pet RELIABLY FINISHES,
+// with the denominator shown on the card. This is the one Foods-tab surface that
+// reads a *rate* (PR 4 deliberately deferred all rate framing to here), so it is
+// held to the analytics.ts finished-rate discipline (§11 #1/#5/#6) PLUS a recency
+// guard — because "favorite" is a present-tense claim and NO Nyx surface may
+// reassure over an active decline (intake-is-not-preference; absence/decline is
+// never wellness). The pure core below is what the jest fixtures and the
+// adversarial review hit; the DB read is the thin wrapper in lib/foodFavorites.
+//
+// A food is a reliable favorite only when ALL hold:
+//   • MEALS only — any capture of the brand+product classified `food_type='treat'`
+//     taints the whole group OUT (a treat finishes at a ceiling; "treats 100%
+//     finished → loved" is exactly the soft-preference read the invariant forbids).
+//     Order-independent treat-if-ANY, mirroring computeTopFoods so a mixed/legacy
+//     classification errs ceiling-safe, not toward whichever row the DB returned.
+//   • Intake DIRECTLY OBSERVED — meals of a currently free-fed food are excluded
+//     (§11 #6: a free-fed bowl's rating is unreliable; its absence isn't a refusal).
+//   • RATED — only meals the owner gave an intake rating count (you cannot call a
+//     meal "finished" if it was never rated). Unrated meals leave the denominator.
+//   • ENOUGH samples — rated meals ≥ FAVORITE_MIN_RATED_MEALS. One good meal is not
+//     a pattern; a favorite is a *claim*, so the floor sits one notch above the
+//     analytics neutral-rate floor of 4.
+//   • HIGH rate — finished(most/all)/rated ≥ FAVORITE_MIN_RATE. Positive-only by
+//     construction: a low rate is NEVER surfaced (there is deliberately no "foods
+//     Nyx refuses" inverse — that routing is the decline detector's, never a
+//     browse row's).
+//   • STILL reliable NOW — the most-recent rated meal was finished. A food finished
+//     18/20 all-time but refused at its latest meal is in possible decline and is
+//     SUPPRESSED here (the AI Signal's detector ② owns that refusal), so the shelf
+//     can never call a food a "favorite" in the same breath the pet is refusing it.
+//     Over-suppression is the SAFE direction — it hides a nicety, never reassures.
+
+/** Min rated, directly-observed meals before a "favorite" is a claim and not noise.
+ *  One above analytics' neutral-rate floor (minRatedMealsForIntakeRate = 4): a
+ *  favorite asserts more than a neutral rate, so it earns a higher bar. */
+export const FAVORITE_MIN_RATED_MEALS = 5;
+/** Min finished-rate to read as "reliably finishes". Positive-only ceiling band. */
+export const FAVORITE_MIN_RATE = 0.8;
+/** Cap so the shelf stays a curated strip, not a second full catalog — lower-ranked
+ *  favorites still appear in the type-grouped list below. */
+export const FAVORITE_SHELF_LIMIT = 6;
+
+/** WSAVA ratings that count a meal as "finished". Mirrors analytics' FINISHED_SCORE
+ *  (most | all); any other/absent rating is not finished. */
+const FINISHED_RATINGS: ReadonlySet<string> = new Set(['most', 'all']);
+
+/** One non-deleted meal of a cached food, reduced to what the favorites core needs.
+ *  Built by the lib/foodFavorites DB wrapper; the core does ALL the favorite logic. */
+export interface FavoriteMealRow {
+  foodItemId: string;
+  brand: string;
+  productName: string;
+  /** food_items_cache.food_type: 'meal' | 'treat' | 'other' | null. */
+  foodType: string | null;
+  /** WSAVA rating string, or null when the meal was logged without an intake rating. */
+  intakeRating: string | null;
+  /** occurred_at as epoch ms — the recency guard needs ordering. Non-finite dropped. */
+  ms: number;
+}
+
+export interface ReliableFavorite {
+  /** foodIntakeKey(brand, productName) — matches a library row + is a stable list key. */
+  key: string;
+  /** First-seen original spelling, for display (the key is the case-folded form). */
+  brand: string;
+  productName: string;
+  /** finished/rated, in [FAVORITE_MIN_RATE, 1]. */
+  rate: number;
+  finishedMeals: number;
+  /** Rated, non-treat, non-free-fed meals — the denominator shown on the card. */
+  ratedMeals: number;
+}
+
+export interface FavoriteOptions {
+  /** Foods currently free-fed for this pet — their meals are excluded (§11 #6).
+   *  Pass an empty set when none are free-fed (the core never assumes a default). */
+  freeFedFoodIds: ReadonlySet<string>;
+  /** Override the sample floor (tests). Default FAVORITE_MIN_RATED_MEALS. */
+  minRatedMeals?: number;
+  /** Override the rate bar (tests). Default FAVORITE_MIN_RATE. */
+  minRate?: number;
+  /** Max favorites returned. Default FAVORITE_SHELF_LIMIT. */
+  limit?: number;
+}
+
+interface FavoriteGroup {
+  brand: string;
+  productName: string;
+  rows: FavoriteMealRow[];
+  /** True once ANY capture of this brand+product is classified a treat. */
+  treatTainted: boolean;
+}
+
+/**
+ * Pure: the pet's reliable-favorite foods — positive-only, rate-over-N, recency-
+ * guarded (see the block comment above for the full contract). Returns at most
+ * `limit` favorites, ranked by rate desc, then denominator desc, then label, so the
+ * shelf is deterministic. An empty array means "no food clears the bar yet" — the
+ * shelf simply doesn't render (a thin/declining library never produces a favorite,
+ * and there is no inverse "refuses" output by construction).
+ */
+export function selectReliableFavorites(
+  rows: FavoriteMealRow[],
+  opts: FavoriteOptions,
+): ReliableFavorite[] {
+  const minRatedMeals = opts.minRatedMeals ?? FAVORITE_MIN_RATED_MEALS;
+  const minRate = opts.minRate ?? FAVORITE_MIN_RATE;
+  const limit = opts.limit ?? FAVORITE_SHELF_LIMIT;
+  const freeFed = opts.freeFedFoodIds;
+
+  // Group every meal by case-folded brand+product (the SAME collapse the library
+  // row uses, via foodIntakeKey), so duplicate captures of one package pool into
+  // one favorite. Carry the first-seen original spelling for display.
+  const groups = new Map<string, FavoriteGroup>();
+  for (const r of rows) {
+    const key = foodIntakeKey(r.brand, r.productName);
+    let g = groups.get(key);
+    if (!g) {
+      g = { brand: r.brand, productName: r.productName, rows: [], treatTainted: false };
+      groups.set(key, g);
+    }
+    if (r.foodType === 'treat') g.treatTainted = true;
+    g.rows.push(r);
+  }
+
+  const favorites: ReliableFavorite[] = [];
+  for (const [key, g] of groups) {
+    if (g.treatTainted) continue; // ceiling-unsafe — never a meal favorite
+    // Qualifying = rated, directly-observed (non-free-fed), parseable-time meals.
+    const qualifying = g.rows.filter(
+      (r) => r.intakeRating != null && !freeFed.has(r.foodItemId) && Number.isFinite(r.ms),
+    );
+    if (qualifying.length < minRatedMeals) continue; // §11 #5 floor
+    const finishedMeals = qualifying.filter(
+      (r) => FINISHED_RATINGS.has(r.intakeRating as string),
+    ).length;
+    const rate = finishedMeals / qualifying.length;
+    if (rate < minRate) continue; // positive-only — a low rate is never surfaced
+    // Recency guard: the latest rated meal(s) must be finished. On a timestamp tie
+    // ALL meals at the max ms must be finished, so ambiguity errs toward suppression
+    // (the safe direction). Operates on the qualifying set only — an unrated or
+    // free-fed later meal is not a refusal signal (a logging gap ≠ anorexia).
+    const maxMs = qualifying.reduce((m, r) => (r.ms > m ? r.ms : m), -Infinity);
+    const latestFinished = qualifying
+      .filter((r) => r.ms === maxMs)
+      .every((r) => FINISHED_RATINGS.has(r.intakeRating as string));
+    if (!latestFinished) continue;
+    favorites.push({
+      key,
+      brand: g.brand,
+      productName: g.productName,
+      rate,
+      finishedMeals,
+      ratedMeals: qualifying.length,
+    });
+  }
+
+  return favorites
+    .sort(
+      (a, b) =>
+        b.rate - a.rate ||
+        b.ratedMeals - a.ratedMeals ||
+        a.brand.localeCompare(b.brand) ||
+        a.productName.localeCompare(b.productName),
+    )
+    .slice(0, limit);
+}
+
+// The shelf-row line for a reliable favorite — the denominator is ALWAYS shown
+// (the rate's receipts, never a bare "82%" that could read as a preference score).
+// "Meals" here = rated, directly-observed meals, the honest base of the rate; the
+// floor guarantees ratedMeals ≥ 5, so the phrasing is always plural. Pure.
+export function foodFavoriteNote(fav: ReliableFavorite): string {
+  return `Finished ${fav.finishedMeals} of ${fav.ratedMeals} meals`;
+}
+
+// Pure: should the ENTIRE favorites shelf be suppressed, given the pet's intake-
+// decline verdict? ONLY an active `'watch'` suppresses — `'none'` and
+// `'not_enough_data'` do NOT. This pins the cross-surface arm of the safety
+// invariant from BOTH sides: an active decline watch ALWAYS hides the shelf (no
+// surface reassures over a decline), while thin/absent decline data must NEVER hide
+// it (absence of a decline signal ≠ a decline — that would wrongly blank the shelf
+// whenever the baseline is too thin to assess). Kept pure + named so the gate is a
+// tested unit, not an inline branch buried in the I/O wrapper. `declineStatus` is
+// the IntakeDeclineResult.status the wrapper reads from getIntakeDecline.
+export function shouldSuppressFavorites(declineStatus: string): boolean {
+  return declineStatus === 'watch';
+}

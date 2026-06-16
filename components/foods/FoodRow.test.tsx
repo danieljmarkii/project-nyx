@@ -83,4 +83,23 @@ describe('FoodRow', () => {
     expect(queryByText(/Last logged/)).toBeNull();
     expect(getByLabelText('Fancy Feast Chicken Pâté')).toBeTruthy();
   });
+
+  // Reliable-favorites shelf (B-004 PR 5): the favorite line — the denominator-
+  // bearing finished rate — renders below the product name and is folded into the
+  // a11y label. The shelf shows the brand per row (favorites span brands), so the
+  // meta line carries the brand here.
+  it('renders the favorite note and appends it to the a11y label', () => {
+    const { getByText, getByLabelText } = render(
+      <FoodRow
+        brand="Tiki Cat"
+        productName="Ahi Tuna"
+        format="wet_canned"
+        favoriteNote="Finished 9 of 11 meals"
+        onPress={() => {}}
+      />,
+    );
+    expect(getByText('Finished 9 of 11 meals')).toBeTruthy();
+    expect(getByText('TIKI CAT · WET')).toBeTruthy();
+    expect(getByLabelText('Tiki Cat Ahi Tuna, Finished 9 of 11 meals')).toBeTruthy();
+  });
 });

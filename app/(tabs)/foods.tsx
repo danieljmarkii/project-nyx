@@ -6,7 +6,11 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FoodRow } from '../../components/foods/FoodRow';
 import { getLibraryFoods, getFoodIntakeStats, PickerFood, FoodIntakeStat } from '../../lib/db';
-import { groupFoodsByType, groupFoodsByBrand, foodIntakeKey, foodIntakeNote, indexIntakeStats } from '../../lib/food';
+import {
+  groupFoodsByType, groupFoodsByBrand, foodIntakeKey, foodIntakeNote, indexIntakeStats,
+  foodFavoriteNote, type ReliableFavorite,
+} from '../../lib/food';
+import { getReliableFavorites } from '../../lib/foodFavorites';
 import { usePetStore } from '../../store/petStore';
 
 // Standalone Foods tab (B-004) — the food library graduates from a FAB-only
@@ -34,8 +38,19 @@ export default function FoodsScreen() {
   // Indexed by foodIntakeKey for O(1) row lookup; `now` is frozen per load so the
   // relative "today / 3 days ago" labels don't drift mid-render.
   const activePetId = usePetStore((s) => s.activePet?.id ?? null);
+  const activePetName = usePetStore((s) => s.activePet?.name ?? null);
+  // Species drives the favorites' decline-gate thresholds (the feline single-day
+  // path); read here so lib/ stays free of the pet store.
+  const activePetSpecies = usePetStore((s) => s.activePet?.species ?? null);
   const [intakeStats, setIntakeStats] = useState<Map<string, FoodIntakeStat>>(new Map());
   const intakeNow = useRef(Date.now());
+
+  // Reliable-favorites shelf (B-004 PR 5) — the positive-only, rate-over-N foods
+  // the active pet reliably finishes (lib/foodFavorites → the pure selector). Like
+  // the intake annotations it keys off the active pet, and it is a curated shelf
+  // above the catalog, not a second list (a food on it also appears in its type
+  // group below). Empty when nothing clears the bar — the shelf simply doesn't render.
+  const [favorites, setFavorites] = useState<ReliableFavorite[]>([]);
 
   // Single load used by both the focus effect and the error-retry button. No
   // cancel guard is needed: a tab screen stays mounted across tab switches, and
@@ -54,18 +69,25 @@ export default function FoodsScreen() {
       setLoaded(true);
       return; // catalog is the primary content — skip annotations if it failed
     }
-    // Intake annotations are an enhancement layer: a failure here must NOT blank
-    // the catalog, so it has its own guard and just leaves rows un-annotated.
+    // Per-pet enhancement layers (intake annotations + favorites shelf): a failure
+    // here must NOT blank the catalog, so it has its own guard and just leaves the
+    // rows un-annotated and the shelf empty. Both read this pet's logged meals, so
+    // they load together.
     try {
-      if (!activePetId) { setIntakeStats(new Map()); return; }
-      const stats = await getFoodIntakeStats(activePetId);
+      if (!activePetId) { setIntakeStats(new Map()); setFavorites([]); return; }
+      const [stats, favs] = await Promise.all([
+        getFoodIntakeStats(activePetId),
+        getReliableFavorites(activePetId, activePetSpecies ?? 'other'),
+      ]);
       intakeNow.current = Date.now();
       setIntakeStats(indexIntakeStats(stats));
+      setFavorites(favs);
     } catch (err) {
-      console.warn('[foods] intake annotations load failed:', err);
+      console.warn('[foods] per-pet annotations load failed:', err);
       setIntakeStats(new Map());
+      setFavorites([]);
     }
-  }, [activePetId]);
+  }, [activePetId, activePetSpecies]);
 
   // Reload on every focus so foods added, edited, or deleted from the capture
   // flow or the detail screen are reflected when the tab comes back into view —
@@ -82,6 +104,15 @@ export default function FoodsScreen() {
   );
 
   const grouped = groupFoodsByType(library);
+  // Map each favorite (keyed on case-folded brand+product) back to its library row,
+  // so the shelf reuses FoodRow + opens the SAME detail screen, and skips any
+  // favorite whose food isn't in the current catalog (defensive — a favorite always
+  // traces to a logged, cached food, so this normally resolves every entry).
+  const libraryByKey = new Map(library.map((f) => [foodIntakeKey(f.brand, f.product_name), f]));
+  const favoriteRows = favorites
+    .map((fav) => ({ fav, food: libraryByKey.get(fav.key) }))
+    .filter((x): x is { fav: ReliableFavorite; food: PickerFood } => x.food != null);
+
   // The error state wins only when there's nothing to show. A failed *reload*
   // that still has a populated list keeps the (stale-but-present) rows — matching
   // History's "leave prior state intact" behavior — rather than yanking the
@@ -121,6 +152,9 @@ export default function FoodsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {favoriteRows.length > 0 ? (
+            <FavoritesShelf rows={favoriteRows} petName={activePetName} />
+          ) : null}
           <FoodGroup label="Meals" foods={grouped.meals} noteFor={noteFor} />
           <FoodGroup label="Treats" foods={grouped.treats} noteFor={noteFor} />
           <FoodGroup
@@ -132,6 +166,44 @@ export default function FoodsScreen() {
         </ScrollView>
       )}
     </SafeAreaView>
+  );
+}
+
+// The reliable-favorites shelf (B-004 PR 5) — a curated strip above the catalog of
+// the foods this pet reliably finishes. Positive-only and rate-over-N: each row
+// carries the VISIBLE denominator ("Finished 9 of 11 meals"), never a bare score,
+// and the entire shelf is suppressed upstream (getReliableFavorites) during an
+// intake-decline watch, so it can never read as reassurance over a decline
+// (intake-is-not-preference). Brands show per row — favorites span brands, so
+// there's no brand grouping here — and a tap opens the same detail screen as the
+// catalog rows below (a favorite also appears in its type group; the shelf is a
+// promotion, not a second list).
+function FavoritesShelf({
+  rows, petName,
+}: {
+  rows: { fav: ReliableFavorite; food: PickerFood }[];
+  petName: string | null;
+}) {
+  return (
+    <View style={styles.group}>
+      <SectionLabel label="Reliable favorites" />
+      <Text style={styles.groupHint}>
+        {petName ? `Foods ${petName} finishes most of the time.` : 'Foods your pet finishes most of the time.'}
+      </Text>
+      <View style={styles.card}>
+        {rows.map(({ fav, food }, i) => (
+          <View key={fav.key} style={i > 0 ? styles.rowDivider : undefined}>
+            <FoodRow
+              brand={food.brand}
+              productName={food.product_name}
+              format={food.format}
+              favoriteNote={foodFavoriteNote(fav)}
+              onPress={() => router.push(`/food/${food.id}`)}
+            />
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 

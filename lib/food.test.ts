@@ -5,6 +5,9 @@
 import {
   groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand,
   foodIntakeKey, indexIntakeStats, relativeDayLabel, foodIntakeNote,
+  selectReliableFavorites, foodFavoriteNote, shouldSuppressFavorites,
+  FAVORITE_MIN_RATED_MEALS, FAVORITE_MIN_RATE, FAVORITE_SHELF_LIMIT,
+  type FavoriteMealRow,
 } from './food';
 import type { FoodIntakeStat, PickerFood } from './db';
 
@@ -317,5 +320,252 @@ describe('foodIntakeNote', () => {
   it('appends the count for repeat logged meals', () => {
     expect(foodIntakeNote(stat(12, 3), now)).toBe('Last logged 3 days ago · 12 times');
     expect(foodIntakeNote(stat(2, 1), now)).toBe('Last logged yesterday · 2 times');
+  });
+});
+
+// ── Reliable-favorites shelf (B-004 PR 5) ──────────────────────────────────────
+// The one Foods-tab surface that reads a RATE, so it carries the analytics
+// finished-rate invariants (§11 #1/#5/#6) PLUS a recency guard. These fixtures are
+// what the adversarial review hits; the decline-mask case is the headline.
+
+describe('selectReliableFavorites', () => {
+  const NO_FREE_FED: ReadonlySet<string> = new Set<string>();
+
+  // One meal row — defaults to a finished ('all') meal of a meal-type food;
+  // override anything per case. Default ms keeps single rows deterministic.
+  const meal = (over: Partial<FavoriteMealRow> = {}): FavoriteMealRow => ({
+    foodItemId: 'f1',
+    brand: 'Tiki Cat',
+    productName: 'Ahi Tuna',
+    foodType: 'meal',
+    intakeRating: 'all',
+    ms: 1000,
+    ...over,
+  });
+
+  // N meals of one food carrying the given ratings, timestamped oldest→newest so
+  // the LAST rating is the most-recent meal — the recency guard's input.
+  const series = (
+    ratings: (string | null)[],
+    over: Partial<FavoriteMealRow> = {},
+  ): FavoriteMealRow[] =>
+    ratings.map((intakeRating, i) => meal({ ...over, intakeRating, ms: (i + 1) * 1000 }));
+
+  it('exposes the documented thresholds (pin the bar against silent drift)', () => {
+    expect(FAVORITE_MIN_RATED_MEALS).toBe(5);
+    expect(FAVORITE_MIN_RATE).toBe(0.8);
+  });
+
+  it('promotes a food finished every rated meal (5 of 5)', () => {
+    const favs = selectReliableFavorites(
+      series(['all', 'all', 'most', 'all', 'all']),
+      { freeFedFoodIds: NO_FREE_FED },
+    );
+    expect(favs).toHaveLength(1);
+    expect(favs[0]).toMatchObject({ finishedMeals: 5, ratedMeals: 5, rate: 1 });
+    expect(favs[0].key).toBe(foodIntakeKey('Tiki Cat', 'Ahi Tuna'));
+  });
+
+  it('promotes at exactly the 80% bar (4 of 5 finished, newest finished)', () => {
+    const favs = selectReliableFavorites(
+      series(['all', 'some', 'most', 'all', 'all']),
+      { freeFedFoodIds: NO_FREE_FED },
+    );
+    expect(favs).toHaveLength(1);
+    expect(favs[0]).toMatchObject({ finishedMeals: 4, ratedMeals: 5 });
+    expect(favs[0].rate).toBeCloseTo(0.8);
+  });
+
+  it('drops a food below the rate bar (3 of 5 finished, 60%)', () => {
+    const favs = selectReliableFavorites(
+      series(['all', 'some', 'some', 'all', 'all']),
+      { freeFedFoodIds: NO_FREE_FED },
+    );
+    expect(favs).toEqual([]);
+  });
+
+  it('drops a food below the sample floor even at 100% (only 4 rated meals)', () => {
+    const favs = selectReliableFavorites(
+      series(['all', 'all', 'all', 'all']),
+      { freeFedFoodIds: NO_FREE_FED },
+    );
+    expect(favs).toEqual([]);
+  });
+
+  // ── §11 #1: treats finish at a ceiling — never a meal favorite ───────────────
+  it('excludes a food if ANY capture is classified a treat (ceiling-unsafe, order-independent)', () => {
+    const rows = [
+      ...series(['all', 'all', 'all', 'all', 'all']),
+      meal({ foodType: 'treat', intakeRating: 'all', ms: 6000 }), // one treat-typed capture
+    ];
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })).toEqual([]);
+  });
+
+  it('cannot exclude an UNclassified treat (food_type null) — a known classification limit', () => {
+    // Documented limitation inherited from computeTopFoods: a treat the user never
+    // classified is indistinguishable from a meal here, so a high-finish unclassified
+    // item CAN surface. The fix is food classification, not this selector — asserted
+    // so the behavior is intentional, not an accident.
+    const favs = selectReliableFavorites(
+      series(['all', 'all', 'all', 'all', 'all'], { foodType: null }),
+      { freeFedFoodIds: NO_FREE_FED },
+    );
+    expect(favs).toHaveLength(1);
+  });
+
+  // ── §11 #6: free-fed intake isn't directly observed ──────────────────────────
+  it('excludes free-fed meals from the denominator', () => {
+    const portionFed = series(['all', 'all', 'all', 'all', 'all'], { foodItemId: 'f1', brand: 'A', productName: 'a' });
+    const freeFed = series(['all', 'all', 'all', 'all', 'all'], { foodItemId: 'f2', brand: 'B', productName: 'b' });
+    const favs = selectReliableFavorites([...portionFed, ...freeFed], { freeFedFoodIds: new Set(['f2']) });
+    expect(favs.map((f) => f.brand)).toEqual(['A']); // B is free-fed → no observed rate
+  });
+
+  it('drops a food below the floor once its free-fed captures are excluded', () => {
+    // Same brand+product, two capture ids: f1 observed (4), f2 free-fed (3). After
+    // the §11 #6 exclusion only 4 rated meals remain → below the floor of 5.
+    const rows = [
+      ...series(['all', 'all', 'all', 'all'], { foodItemId: 'f1' }),
+      ...series(['all', 'all', 'all'], { foodItemId: 'f2' }),
+    ];
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: new Set(['f2']) })).toEqual([]);
+  });
+
+  // ── Rated-only denominator ───────────────────────────────────────────────────
+  it('excludes unrated meals from the denominator (an unrated latest meal is not a refusal)', () => {
+    // 5 finished + 3 unrated (logged without an intake tap). Denominator is 5, not 8;
+    // the unrated latest meals don't trip the recency guard (a logging gap ≠ anorexia).
+    const favs = selectReliableFavorites(
+      series(['all', 'all', 'all', 'all', 'all', null, null, null]),
+      { freeFedFoodIds: NO_FREE_FED },
+    );
+    expect(favs[0]).toMatchObject({ finishedMeals: 5, ratedMeals: 5, rate: 1 });
+  });
+
+  it('drops meals with an unparseable timestamp from the qualifying set', () => {
+    const rows = [...series(['all', 'all', 'all', 'all', 'all']), meal({ intakeRating: 'all', ms: NaN })];
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })[0].ratedMeals).toBe(5);
+  });
+
+  // ── The recency guard — the decline mask (the headline case) ─────────────────
+  it('SUPPRESSES a food refused at its most-recent meal, despite a high all-time rate', () => {
+    // 9 of 10 finished all-time (90% ≥ bar, well above floor) — but the LATEST rated
+    // meal is a refusal. Promoting it would reassure over a possible decline, which
+    // the AI Signal's detector ② owns; the shelf must stay silent (no surface may
+    // reassure over a decline — intake-is-not-preference; absence ≠ wellness).
+    const ratings = ['all', 'all', 'all', 'all', 'all', 'all', 'all', 'all', 'all', 'refused'];
+    expect(selectReliableFavorites(series(ratings), { freeFedFoodIds: NO_FREE_FED })).toEqual([]);
+  });
+
+  it('suppresses when the latest rated meal is merely "some" (strict present-tense reliability)', () => {
+    // 5 of 6 finished (83% ≥ bar) but the newest meal was not finished → not reliable
+    // right now. Over-suppression is the safe direction (hides a nicety, never reassures).
+    expect(selectReliableFavorites(series(['all', 'all', 'all', 'all', 'all', 'some']), { freeFedFoodIds: NO_FREE_FED }))
+      .toEqual([]);
+  });
+
+  it('promotes when the latest rated meal is finished despite an earlier miss', () => {
+    const favs = selectReliableFavorites(series(['some', 'all', 'all', 'all', 'all', 'all']), { freeFedFoodIds: NO_FREE_FED });
+    expect(favs).toHaveLength(1);
+    expect(favs[0]).toMatchObject({ finishedMeals: 5, ratedMeals: 6 });
+  });
+
+  it('suppresses on a timestamp tie if any meal at the latest ms is not finished', () => {
+    const rows = [
+      ...series(['all', 'all', 'all', 'all']), // ms 1000..4000
+      meal({ intakeRating: 'all', ms: 5000 }),
+      meal({ intakeRating: 'refused', ms: 5000 }), // tie at the max ms, a refusal
+    ];
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })).toEqual([]);
+  });
+
+  // ── Grouping ─────────────────────────────────────────────────────────────────
+  it('pools duplicate captures of one brand+product into a single favorite', () => {
+    const rows = [
+      ...series(['all', 'all', 'all'], { foodItemId: 'cap1' }),
+      ...series(['all', 'all'], { foodItemId: 'cap2' }),
+    ];
+    const favs = selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED });
+    expect(favs).toHaveLength(1);
+    expect(favs[0]).toMatchObject({ ratedMeals: 5, finishedMeals: 5 });
+  });
+
+  it('folds case/spelling variants of one brand+product, keeping the first-seen spelling', () => {
+    const rows = [
+      ...series(['all', 'all', 'all'], { brand: 'Tiki Cat', productName: 'Ahi Tuna', foodItemId: 'c1' }),
+      ...series(['all', 'all'], { brand: 'TIKI CAT', productName: 'ahi tuna', foodItemId: 'c2' }),
+    ];
+    const favs = selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED });
+    expect(favs).toHaveLength(1);
+    expect(favs[0].ratedMeals).toBe(5);
+    expect(favs[0].brand).toBe('Tiki Cat');
+  });
+
+  // ── Positive-only + ranking ──────────────────────────────────────────────────
+  it('is positive-only — a mostly-refused food yields NO row, never a negative one', () => {
+    expect(selectReliableFavorites(series(['refused', 'refused', 'picked', 'some', 'refused']), { freeFedFoodIds: NO_FREE_FED }))
+      .toEqual([]);
+  });
+
+  it('ranks by rate desc, then denominator desc, then label', () => {
+    const a = series(['all', 'all', 'all', 'all', 'all'], { brand: 'A', productName: 'a', foodItemId: 'a' }); // 1.0
+    const b = series(['all', 'some', 'all', 'all', 'all'], { brand: 'B', productName: 'b', foodItemId: 'b' }); // 0.8
+    const c = series(['all', 'all', 'all', 'all', 'all', 'all', 'some', 'all'], { brand: 'C', productName: 'c', foodItemId: 'c' }); // 0.875
+    const favs = selectReliableFavorites([...b, ...a, ...c], { freeFedFoodIds: NO_FREE_FED });
+    expect(favs.map((f) => f.brand)).toEqual(['A', 'C', 'B']);
+  });
+
+  it('breaks a rate tie by the larger denominator (more evidence first)', () => {
+    const small = series(['all', 'all', 'all', 'all', 'all'], { brand: 'Small', productName: 's', foodItemId: 's' });
+    const big = series(['all', 'all', 'all', 'all', 'all', 'all', 'all', 'all'], { brand: 'Big', productName: 'b', foodItemId: 'b' });
+    expect(selectReliableFavorites([...small, ...big], { freeFedFoodIds: NO_FREE_FED }).map((f) => f.brand))
+      .toEqual(['Big', 'Small']);
+  });
+
+  it('caps the shelf at the limit', () => {
+    const rows: FavoriteMealRow[] = [];
+    for (let i = 0; i < FAVORITE_SHELF_LIMIT + 2; i++) {
+      rows.push(...series(['all', 'all', 'all', 'all', 'all'], { brand: `B${i}`, productName: `p${i}`, foodItemId: `f${i}` }));
+    }
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })).toHaveLength(FAVORITE_SHELF_LIMIT);
+  });
+
+  it('honors overridden floor and rate thresholds (options plumb through)', () => {
+    const rows = series(['all', 'all', 'all']); // 3/3
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED })).toEqual([]); // default floor 5
+    expect(selectReliableFavorites(rows, { freeFedFoodIds: NO_FREE_FED, minRatedMeals: 3 })).toHaveLength(1);
+  });
+
+  it('returns an empty array for no meals', () => {
+    expect(selectReliableFavorites([], { freeFedFoodIds: NO_FREE_FED })).toEqual([]);
+  });
+});
+
+describe('foodFavoriteNote', () => {
+  const fav = (finishedMeals: number, ratedMeals: number) => ({
+    key: 'k', brand: 'B', productName: 'p', rate: finishedMeals / ratedMeals, finishedMeals, ratedMeals,
+  });
+
+  it('always shows the denominator (the rate receipts, never a bare percentage)', () => {
+    expect(foodFavoriteNote(fav(9, 10))).toBe('Finished 9 of 10 meals');
+  });
+
+  it('reads naturally at a perfect rate', () => {
+    expect(foodFavoriteNote(fav(7, 7))).toBe('Finished 7 of 7 meals');
+  });
+});
+
+describe('shouldSuppressFavorites', () => {
+  it('suppresses the whole shelf on an active decline watch', () => {
+    expect(shouldSuppressFavorites('watch')).toBe(true);
+  });
+
+  it('does NOT suppress on no watch or thin data (absence of a decline ≠ a decline)', () => {
+    // The safety contract from the other side: a quiet detector or a baseline too
+    // thin to assess must never blank the shelf — only an ACTIVE watch does. Guards
+    // against a future change that wrongly hides favorites whenever decline is
+    // unknown (which would itself be a silent, confusing data-loss for the owner).
+    expect(shouldSuppressFavorites('none')).toBe(false);
+    expect(shouldSuppressFavorites('not_enough_data')).toBe(false);
   });
 });
