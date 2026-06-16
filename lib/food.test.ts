@@ -5,7 +5,7 @@
 import {
   groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand,
   foodIntakeKey, indexIntakeStats, relativeDayLabel, foodIntakeNote,
-  selectReliableFavorites, foodFavoriteNote,
+  selectReliableFavorites, foodFavoriteNote, shouldSuppressFavorites,
   FAVORITE_MIN_RATED_MEALS, FAVORITE_MIN_RATE, FAVORITE_SHELF_LIMIT,
   type FavoriteMealRow,
 } from './food';
@@ -552,5 +552,20 @@ describe('foodFavoriteNote', () => {
 
   it('reads naturally at a perfect rate', () => {
     expect(foodFavoriteNote(fav(7, 7))).toBe('Finished 7 of 7 meals');
+  });
+});
+
+describe('shouldSuppressFavorites', () => {
+  it('suppresses the whole shelf on an active decline watch', () => {
+    expect(shouldSuppressFavorites('watch')).toBe(true);
+  });
+
+  it('does NOT suppress on no watch or thin data (absence of a decline ≠ a decline)', () => {
+    // The safety contract from the other side: a quiet detector or a baseline too
+    // thin to assess must never blank the shelf — only an ACTIVE watch does. Guards
+    // against a future change that wrongly hides favorites whenever decline is
+    // unknown (which would itself be a silent, confusing data-loss for the owner).
+    expect(shouldSuppressFavorites('none')).toBe(false);
+    expect(shouldSuppressFavorites('not_enough_data')).toBe(false);
   });
 });

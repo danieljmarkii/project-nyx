@@ -350,3 +350,16 @@ export function selectReliableFavorites(
 export function foodFavoriteNote(fav: ReliableFavorite): string {
   return `Finished ${fav.finishedMeals} of ${fav.ratedMeals} meals`;
 }
+
+// Pure: should the ENTIRE favorites shelf be suppressed, given the pet's intake-
+// decline verdict? ONLY an active `'watch'` suppresses — `'none'` and
+// `'not_enough_data'` do NOT. This pins the cross-surface arm of the safety
+// invariant from BOTH sides: an active decline watch ALWAYS hides the shelf (no
+// surface reassures over a decline), while thin/absent decline data must NEVER hide
+// it (absence of a decline signal ≠ a decline — that would wrongly blank the shelf
+// whenever the baseline is too thin to assess). Kept pure + named so the gate is a
+// tested unit, not an inline branch buried in the I/O wrapper. `declineStatus` is
+// the IntakeDeclineResult.status the wrapper reads from getIntakeDecline.
+export function shouldSuppressFavorites(declineStatus: string): boolean {
+  return declineStatus === 'watch';
+}

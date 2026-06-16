@@ -14,13 +14,16 @@
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
 import { getIntakeDecline, type Species } from './analytics';
-import { selectReliableFavorites, type FavoriteMealRow, type ReliableFavorite } from './food';
+import { selectReliableFavorites, shouldSuppressFavorites, type FavoriteMealRow, type ReliableFavorite } from './food';
 
 // One row per non-deleted meal of a CACHED (identifiable) food for this pet — a
 // meal with no food_item_id can't be a "favorite food", so the inner JOIN drops it.
-// Scope + soft-delete live on the events table (the meals→events FK guarantees the
-// meal belongs to this pet); we read rating + occurred_at per meal and let the pure
-// core do the grouping and every exclusion, so the SQL stays a dumb projection.
+// `meals` has NO deleted_at column: a meal is soft-deleted by soft-deleting its
+// parent EVENT, so `e.deleted_at IS NULL` is the complete soft-delete filter (don't
+// add a meals.deleted_at check — there's no such column, and it would silently
+// no-op). Scope is on m.pet_id (the meals→events FK guarantees the event is this
+// pet's); we read rating + occurred_at per meal and let the pure core do the
+// grouping and every exclusion, so the SQL stays a dumb projection.
 interface FavoriteRow {
   food_item_id: string;
   brand: string;
@@ -50,8 +53,10 @@ interface FavoriteRow {
  */
 export async function getReliableFavorites(petId: string, species: Species): Promise<ReliableFavorite[]> {
   const db = getDb();
-  // All reads in parallel — the common (no-watch) path pays one round-trip, not two.
-  // The favorites query is wasted only on the rare active-watch load, which is cheap.
+  // All reads in parallel — the common (no-watch) path pays one round-trip, not
+  // three. On the rare active-watch load BOTH the favorites query and the
+  // arrangements read are discarded (the early return below); they're local
+  // SQLite reads, so optimizing the common case wins over saving them.
   const [decline, rows, arrangements] = await Promise.all([
     getIntakeDecline(petId, species),
     db.getAllAsync<FavoriteRow>(
@@ -67,8 +72,10 @@ export async function getReliableFavorites(petId: string, species: Species): Pro
     getActiveArrangementsForPet(petId),
   ]);
 
-  // Active decline watch → the whole shelf stays quiet (see the doc above).
-  if (decline.status === 'watch') return [];
+  // Active decline watch → the whole shelf stays quiet (see the doc above). The
+  // gate predicate is pure + unit-tested (lib/food shouldSuppressFavorites) so the
+  // "only a watch suppresses; thin data never does" contract isn't an untested branch.
+  if (shouldSuppressFavorites(decline.status)) return [];
 
   const mealRows: FavoriteMealRow[] = rows.map((r) => ({
     foodItemId: r.food_item_id,
