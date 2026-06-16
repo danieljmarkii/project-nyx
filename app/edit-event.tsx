@@ -14,7 +14,7 @@ import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
-import { uploadPhoto } from '../lib/storage';
+import { uploadPhoto, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
 import { uuid, formatExifAttribution, formatTime, deriveOccurredAt } from '../lib/utils';
@@ -286,19 +286,29 @@ export default function EditEventModal() {
           const attId = uuid();
           const storagePath = `${petResult.pet_id}/${id}/${attId}.jpg`;
           const now = new Date().toISOString();
+          // B-104 — persist the capture off the OS cache directory (reclaimed
+          // under storage pressure) into the app-owned document directory, and
+          // store THAT as local_uri so it survives. Upload still reads the
+          // original capture; both point at identical bytes.
+          const localUri = persistCapture(newAttachmentUri, `${attId}.jpg`);
           await db.runAsync(
             `INSERT OR REPLACE INTO event_attachments
                (id, event_id, pet_id, local_uri, storage_path, mime_type, synced, created_at)
              VALUES (?, ?, ?, ?, ?, 'image/jpeg', 0, ?)`,
-            [attId, id, petResult.pet_id, newAttachmentUri, storagePath, now],
+            [attId, id, petResult.pet_id, localUri, storagePath, now],
           );
           // Fire-and-forget: if upload fails offline, the synced=0 row is retried by background sync
           uploadPhoto('nyx-event-attachments', storagePath, newAttachmentUri)
             .then(async () => {
-              await supabase.from('event_attachments').upsert(
+              const { error } = await supabase.from('event_attachments').upsert(
                 { id: attId, event_id: id, pet_id: petResult.pet_id, storage_path: storagePath, mime_type: 'image/jpeg' },
                 { onConflict: 'id' },
               );
+              // Only mark synced when the row actually landed — supabase-js returns
+              // the error rather than throwing, so an unchecked upsert would flag a
+              // row synced that never reached Supabase (supabase-sync Pattern 1;
+              // already guarded in log.tsx / event/[id].tsx / vet-visit.tsx).
+              if (error) { console.warn('[edit-event] attachment upsert failed:', error.message); return; }
               await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
             })
             .catch(console.error);

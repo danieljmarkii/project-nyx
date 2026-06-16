@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import { supabase } from './supabase';
 
@@ -24,6 +24,52 @@ export async function compressForUpload(
     { compress: 0.75, format: SaveFormat.JPEG },
   );
   return result.uri;
+}
+
+
+// Captured photos arrive (from expo-image-picker / expo-image-manipulator) as
+// files in the OS *cache* directory, which the system reclaims under storage
+// pressure — and on app offload / OS update. A `local_uri` stored from there
+// goes stale: the SQLite row survives but the file is gone, blanking the
+// on-device hero and forcing a signed-URL network round-trip (with a valid
+// session) just to show the device's own photo — or showing nothing at all when
+// offline. Copy the capture into the app's *document* directory (a stable,
+// app-owned location the system never reclaims) at attach time and persist THAT
+// path instead. (B-104.) These files are cleaned up by local_uri in the
+// sign-out wipe (lib/db.ts clearLocalData) and on per-photo remove
+// (deleteEventAttachmentLocal).
+const ATTACHMENT_DIR = 'attachments';
+
+// Copy a freshly-captured photo off the OS cache directory into persistent,
+// app-owned storage. Returns the new document-directory URI on success, or the
+// original `sourceUri` unchanged if the copy fails — persistence is best-effort
+// and must never block attaching a photo (on failure the photo still uploads and
+// renders this session; it just isn't durable against a cache eviction).
+// `fileName` must be globally unique (callers pass the attachment uuid) so files
+// never collide across events/pets.
+export function persistCapture(sourceUri: string, fileName: string): string {
+  // expo-image-picker / expo-image-manipulator return a file:// path on both
+  // platforms, but guard explicitly: copying a non-file source (e.g. an Android
+  // content:// URI) can silently produce a 0-byte file — which would store a
+  // document-dir path to an empty image and blank the hero. For anything but
+  // file://, skip persistence and return the source unchanged (the safe
+  // status-quo path; the file still uploads + renders this session).
+  if (!sourceUri.startsWith('file://')) return sourceUri;
+  try {
+    const dir = new Directory(Paths.document, ATTACHMENT_DIR);
+    // idempotent so the second-and-later captures don't throw on the existing
+    // directory; intermediates is belt-and-suspenders (document/ always exists).
+    dir.create({ intermediates: true, idempotent: true });
+    const dest = new File(dir, fileName);
+    // copy() throws if the destination already exists — clear a stale file from
+    // a prior failed attempt at the same uuid (vanishingly rare, but cheap).
+    if (dest.exists) dest.delete();
+    new File(sourceUri).copy(dest);
+    return dest.uri;
+  } catch (e) {
+    console.warn('[storage] persistCapture failed, using source uri:', e);
+    return sourceUri;
+  }
 }
 
 

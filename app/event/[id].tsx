@@ -20,7 +20,7 @@ import {
   updateMealIntake,
   TimelineRow,
 } from '../../lib/db';
-import { uploadPhoto, getSignedUrl, compressForUpload } from '../../lib/storage';
+import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { triggerVomitAnalysis } from '../../lib/analysis';
@@ -249,12 +249,17 @@ export default function EventDetailScreen() {
       : await ImagePicker.launchImageLibraryAsync(opts);
     if (result.canceled || !result.assets[0]) return;
 
-    const localUri = result.assets[0].uri;
+    const captureUri = result.assets[0].uri;
     const attId = uuid();
     const storagePath = `${event.pet_id}/${event.id}/${attId}.jpg`;
     const now = new Date().toISOString();
     setUploadingPhoto(true);
     try {
+      // B-104 — copy the capture off the OS cache directory (reclaimed under
+      // storage pressure) into the app-owned document directory, and store THAT
+      // as local_uri so the on-device copy survives. Compression/upload still
+      // read the original capture; both point at identical bytes.
+      const localUri = persistCapture(captureUri, `${attId}.jpg`);
       const db = getDb();
       await db.runAsync(
         `INSERT OR REPLACE INTO event_attachments
@@ -266,7 +271,7 @@ export default function EventDetailScreen() {
       // Compress before upload (≤1600px, q75) so the file stays under Claude's
       // 5 MB cap — also the recovery path for a historic event whose original
       // full-size photo is too large to analyze.
-      const uploadUri = await compressForUpload(localUri);
+      const uploadUri = await compressForUpload(captureUri);
       // Fire-and-forget upload; sync retries on reconnect if it fails
       uploadPhoto('nyx-event-attachments', storagePath, uploadUri)
         .then(async () => {
