@@ -2,7 +2,7 @@
 // exact bucketing + row-chunking behaviour the quick-log picker relied on inline
 // before the extraction, so the refactor stays byte-for-byte behaviour-preserving
 // and the standalone Foods tab inherits the same contract.
-import { groupFoodsByType, toFoodRows } from './food';
+import { groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand } from './food';
 import type { PickerFood } from './db';
 
 // Minimal PickerFood fixture — only id + food_type drive these helpers; the rest
@@ -94,5 +94,117 @@ describe('toFoodRows', () => {
     const order = ['a', 'b', 'c', 'd', 'e'];
     const rows = toFoodRows(order.map((id) => food(id, null)));
     expect(ids(rows.flat())).toEqual(order);
+  });
+});
+
+// Brand fixture — id doubles as the product name (readable assertions); brand
+// is what these helpers key on.
+const branded = (id: string, brand: string): PickerFood => ({
+  id,
+  brand,
+  product_name: id,
+  format: 'wet_canned',
+  food_type: 'meal',
+  photo_path: null,
+});
+
+describe('canonicalizeBrand', () => {
+  it('folds case so spellings of one brand share a key', () => {
+    expect(canonicalizeBrand('FANCY FEAST')).toBe('fancy feast');
+    expect(canonicalizeBrand('Fancy Feast')).toBe('fancy feast');
+    expect(canonicalizeBrand('fancy feast')).toBe('fancy feast');
+  });
+
+  it('trims and collapses internal whitespace', () => {
+    expect(canonicalizeBrand('  Fancy   Feast ')).toBe('fancy feast');
+    expect(canonicalizeBrand('Fancy\tFeast')).toBe('fancy feast');
+    // Non-breaking space (NFKC folds it to a normal space, then collapse).
+    expect(canonicalizeBrand('Fancy Feast')).toBe('fancy feast');
+  });
+
+  it('strips trademark / registered / copyright glyphs', () => {
+    expect(canonicalizeBrand('Fancy Feast®')).toBe('fancy feast');
+    // ™ and ℠ expand to "TM"/"SM" under NFKC — must be dropped before that,
+    // not left to corrupt the key.
+    expect(canonicalizeBrand('Fancy Feast™')).toBe('fancy feast');
+    expect(canonicalizeBrand('Brand℠')).toBe('brand');
+    expect(canonicalizeBrand('Brand©')).toBe('brand');
+  });
+
+  it('folds curly and straight apostrophes together', () => {
+    expect(canonicalizeBrand('Hill’s')).toBe("hill's");
+    expect(canonicalizeBrand("Hill's")).toBe("hill's");
+    expect(canonicalizeBrand('Hill’s')).toBe(canonicalizeBrand("Hill's"));
+  });
+
+  it('is conservative — never merges genuinely different brands', () => {
+    // No word-dropping or punctuation-stripping that would over-collapse.
+    expect(canonicalizeBrand('Wellness')).not.toBe(canonicalizeBrand('Wellness Core'));
+    expect(canonicalizeBrand('Friskies')).not.toBe(canonicalizeBrand('Friskies Farm Favorites'));
+    expect(canonicalizeBrand('Blue')).not.toBe(canonicalizeBrand('Blue Buffalo'));
+  });
+
+  it('is idempotent', () => {
+    const once = canonicalizeBrand('  Fancy Feast® ');
+    expect(canonicalizeBrand(once)).toBe(once);
+  });
+
+  it('reduces a blank or whitespace-only brand to an empty key', () => {
+    expect(canonicalizeBrand('')).toBe('');
+    expect(canonicalizeBrand('   ')).toBe('');
+  });
+});
+
+describe('groupFoodsByBrand', () => {
+  const groupIds = (groups: ReturnType<typeof groupFoodsByBrand>) =>
+    groups.map((g) => ({ brand: g.brand, foods: ids(g.foods) }));
+
+  it('collapses spelling variants into one group, keeping the first-seen label', () => {
+    const groups = groupFoodsByBrand([
+      branded('chicken', 'Fancy Feast'),
+      branded('salmon', 'fancy feast'),
+      branded('tuna', 'Fancy Feast®'),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].brand).toBe('Fancy Feast'); // first-seen original spelling
+    expect(ids(groups[0].foods)).toEqual(['chicken', 'salmon', 'tuna']);
+  });
+
+  it('keeps genuinely different brands as separate groups, in first-seen order', () => {
+    const groups = groupFoodsByBrand([
+      branded('a', 'Fancy Feast'),
+      branded('b', 'Royal Canin'),
+      branded('c', 'Fancy Feast'),
+    ]);
+    expect(groupIds(groups)).toEqual([
+      { brand: 'Fancy Feast', foods: ['a', 'c'] },
+      { brand: 'Royal Canin', foods: ['b'] },
+    ]);
+  });
+
+  it('collapses non-adjacent variants into a single group', () => {
+    // Interleaved spellings must still land in one group — the helper keys by the
+    // canonical brand, it does not rely on the caller pre-sorting variants together.
+    const groups = groupFoodsByBrand([
+      branded('a', 'Fancy Feast'),
+      branded('b', 'Royal Canin'),
+      branded('c', 'FANCY FEAST'),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groupIds(groups)).toEqual([
+      { brand: 'Fancy Feast', foods: ['a', 'c'] },
+      { brand: 'Royal Canin', foods: ['b'] },
+    ]);
+  });
+
+  it('returns no groups for an empty list', () => {
+    expect(groupFoodsByBrand([])).toEqual([]);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [branded('a', 'Fancy Feast'), branded('b', 'Royal Canin')];
+    const snapshot = [...input];
+    groupFoodsByBrand(input);
+    expect(input).toEqual(snapshot);
   });
 });
