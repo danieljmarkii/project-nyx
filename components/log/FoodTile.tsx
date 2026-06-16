@@ -9,7 +9,10 @@ interface Props {
   onLongPress?: () => void;
 }
 
-const FORMAT_LABEL: Record<string, string> = {
+// Exported so the standalone Foods-tab row (components/foods/FoodRow) renders
+// the format chip from the SAME map — one source, so a future enum addition
+// can't drift one surface's labels from the other (the B-103 class of bug).
+export const FORMAT_LABEL: Record<string, string> = {
   dry_kibble: 'Dry',
   wet_canned: 'Wet',
   raw: 'Raw',

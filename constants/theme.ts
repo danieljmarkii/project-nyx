@@ -16,7 +16,8 @@ export const theme = {
   textSM: 13,    // captions, secondary detail
   textMD: 15,    // body, list items, buttons
   textLG: 17,    // modal headers, subheadings
-  textXL: 22,    // page headings
+  textXL: 22,    // page headings (in-screen section headers)
+  textPageTitle: 24, // tab page titles (History, Foods) — sits between textXL/text2XL
   text2XL: 28,   // display (pet name, hero number)
   textSignal: 26, // AI Signal headline (display face) — consumed by PR 2
   lineHeightSignal: 34, // AI Signal headline leading (26 × ~1.3, per type-signal preview)
