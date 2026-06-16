@@ -6,7 +6,7 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FoodRow } from '../../components/foods/FoodRow';
 import { getLibraryFoods, PickerFood } from '../../lib/db';
-import { groupFoodsByType } from '../../lib/food';
+import { groupFoodsByType, groupFoodsByBrand } from '../../lib/food';
 
 // Standalone Foods tab (B-004) — the food library graduates from a FAB-only
 // picker into a first-class destination you browse and manage. The catalog is
@@ -14,10 +14,12 @@ import { groupFoodsByType } from '../../lib/food';
 // whole library regardless of the active pet, which is exactly why it can't be
 // nested under the Pet tab (design-principles Navigation §). Full-width rows
 // (one food per row), grouped by food_type via the shared lib/food helper — the
-// same bucketing the quick-log picker uses, from one tested source. A tap opens
-// the food's detail screen; logging stays on the FAB picker path. (The picker's
-// 2-up toFoodRows chunker is deliberately not used here — these are full-width
-// rows, one food per line, not a 2-col grid.)
+// same bucketing the quick-log picker uses, from one tested source. Within each
+// type section, rows cluster by brand (B-004 PR 3) so a single brand's variants
+// — the "wall of Fancy Feast" — collapse under one header instead of repeating
+// the brand on every row. A tap opens the food's detail screen; logging stays on
+// the FAB picker path. (The picker's 2-up toFoodRows chunker is deliberately not
+// used here — these are full-width rows, one food per line, not a 2-col grid.)
 export default function FoodsScreen() {
   const [library, setLibrary] = useState<PickerFood[]>([]);
   // Gate the empty state on a completed load so the first paint (before the
@@ -101,10 +103,15 @@ export default function FoodsScreen() {
   );
 }
 
-// One grouped section of the library. Hidden when empty so an owner with only
-// meals never sees a "Treats" header with nothing under it (B-011 grouping).
-// Rows sit in a single white card with hairline dividers between them — the
-// Linear/Oura grouped-list idiom — on the tab's light page background.
+// One grouped section of the library (Meals / Treats / Unclassified). Hidden
+// when empty so an owner with only meals never sees a "Treats" header with
+// nothing under it (B-011 grouping). Within the section, foods cluster by brand
+// (B-004 PR 3): each brand is a quiet header above its own white card of rows,
+// so a single brand's many flavors collapse under one label — the picky-cat
+// "wall of Fancy Feast" — instead of repeating the brand on every row. Variant
+// spellings (case, spacing, ™/®, apostrophe style) fold together via
+// canonicalizeBrand. The brand-label + card-of-rows pairing reuses the same
+// Linear/Oura grouped-list idiom as the section header itself.
 function FoodGroup({
   label, foods, hint,
 }: {
@@ -113,19 +120,36 @@ function FoodGroup({
   hint?: string;
 }) {
   if (foods.length === 0) return null;
+  // Foods arrive alpha-by-brand+product from getLibraryFoods, so the brand
+  // groups (and the rows within each) read alphabetically.
+  const brandGroups = groupFoodsByBrand(foods);
   return (
     <View style={styles.group}>
       <SectionLabel label={label} />
       {hint ? <Text style={styles.groupHint}>{hint}</Text> : null}
-      <View style={styles.card}>
-        {foods.map((f, i) => (
-          <View key={f.id} style={i > 0 ? styles.rowDivider : undefined}>
-            <FoodRow
-              brand={f.brand}
-              productName={f.product_name}
-              format={f.format}
-              onPress={() => router.push(`/food/${f.id}`)}
-            />
+      <View style={styles.brandGroups}>
+        {brandGroups.map((bg) => (
+          <View key={bg.key} style={styles.brandGroup}>
+            {/* A brand can be blank in the catalog (rare); skip the header
+                rather than render an empty label, but still show the card. */}
+            {bg.brand.trim() ? (
+              <Text style={styles.brandLabel} numberOfLines={1} accessibilityRole="header">
+                {bg.brand}
+              </Text>
+            ) : null}
+            <View style={styles.card}>
+              {bg.foods.map((f, i) => (
+                <View key={f.id} style={i > 0 ? styles.rowDivider : undefined}>
+                  <FoodRow
+                    hideBrand
+                    brand={f.brand}
+                    productName={f.product_name}
+                    format={f.format}
+                    onPress={() => router.push(`/food/${f.id}`)}
+                  />
+                </View>
+              ))}
+            </View>
           </View>
         ))}
       </View>
@@ -168,6 +192,23 @@ const styles = StyleSheet.create({
   groupHint: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // Brand sub-groups within a type section. A touch more air between brands
+  // (space2) than between a brand's label and its card (space1), so each
+  // brand reads as one unit under the section's all-caps eyebrow.
+  brandGroups: {
+    gap: theme.space2,
+  },
+  brandGroup: {
+    gap: theme.space1,
+  },
+  // The brand header above each card. Sentence-case + darker than the all-caps
+  // section eyebrow so the eye lands on the brand (the meaningful grouping)
+  // while the type label stays a quiet coarse bucket above it.
+  brandLabel: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
   card: {
     backgroundColor: theme.colorSurface,

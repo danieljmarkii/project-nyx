@@ -43,3 +43,64 @@ export function toFoodRows(foods: PickerFood[]): PickerFood[][] {
   }
   return rows;
 }
+
+export interface BrandGroup {
+  // Canonical grouping key (the canonicalizeBrand output). Stable React list
+  // key; never shown to the user.
+  key: string;
+  // Display label — the first-seen original brand spelling for this key, so the
+  // header reads as the owner wrote it, not the normalized form.
+  brand: string;
+  foods: PickerFood[];
+}
+
+// Trademark glyphs ("Fancy Feast®"). Stripped BEFORE NFKC normalization —
+// NFKC expands ™→"TM" and ℠→"SM", which would survive a symbol-only strip and
+// corrupt the key, so we drop the raw glyphs first.
+const BRAND_TRADEMARK_RE = /[®™©℠]/g;
+// Apostrophe variants folded to a straight quote so "Hill's" (curly) groups
+// with "Hill's" (straight). Curly/back/acute/modifier-letter forms all map to '.
+const BRAND_APOSTROPHE_RE = /[’‘‛`´ʼ]/g;
+
+// Fold a brand string to a grouping key so trivial spelling differences collapse
+// to one brand (B-004 PR 3). A single owner's library routinely holds the SAME
+// brand spelled a few ways — AI extraction, manual entry, and packaging disagree
+// on case, spacing, trademark glyphs, and apostrophe style ("Fancy Feast",
+// "fancy feast", "Fancy Feast®", "Hill's" vs "Hill’s"). Folding those lets the
+// variants sit under a single brand header instead of scattering down the tab.
+//
+// Deliberately CONSERVATIVE: it normalizes only formatting noise — it never
+// strips apostrophes or other punctuation and never drops words, so two
+// genuinely different brands ("Wellness" vs "Wellness Core") are never merged.
+// The key is for grouping only and is never displayed; the UI shows the
+// first-seen original spelling. Pure; no I/O.
+export function canonicalizeBrand(brand: string): string {
+  return brand
+    .replace(BRAND_TRADEMARK_RE, '')
+    .normalize('NFKC')
+    .replace(BRAND_APOSTROPHE_RE, "'")
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Collapse a list of foods into per-brand groups, folding trivial spelling
+// variants of the same brand together via canonicalizeBrand. Group order and
+// food-within-group order follow first appearance, so a caller passing the
+// alpha-sorted library (getLibraryFoods orders by brand then product) gets
+// alpha-by-brand groups with alpha products inside each. Robust to non-adjacent
+// variants — keying a Map by the canonical brand means interleaved spellings
+// still land in one group. Empty in → empty out; the input is not mutated.
+export function groupFoodsByBrand(foods: PickerFood[]): BrandGroup[] {
+  const groups = new Map<string, BrandGroup>();
+  for (const f of foods) {
+    const key = canonicalizeBrand(f.brand);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.foods.push(f);
+    } else {
+      groups.set(key, { key, brand: f.brand, foods: [f] });
+    }
+  }
+  return [...groups.values()];
+}

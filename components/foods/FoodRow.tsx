@@ -7,6 +7,13 @@ interface Props {
   productName: string;
   format: string;
   onPress: () => void;
+  // When the row sits under a brand header (Foods-tab brand grouping, B-004
+  // PR 3), the brand is already shown once above the group — so drop it from the
+  // meta line and let the format stand alone ("WET"), or show nothing when the
+  // format is unspecified. The brand stays in the accessibilityLabel either way,
+  // so a screen reader still announces the full "<brand> <product>". Defaults to
+  // showing the brand, keeping the row's standalone contract (and tests) intact.
+  hideBrand?: boolean;
 }
 
 // Full-width library row for the standalone Foods tab (B-004). Distinct from the
@@ -16,11 +23,14 @@ interface Props {
 // opens the food's detail screen (where you edit/classify it). There is no
 // one-tap-log here — logging stays on the FAB picker path. The metadata line
 // (BRAND · FORMAT) mirrors FoodTile's, sourced from the shared FORMAT_LABEL.
-export function FoodRow({ brand, productName, format, onPress }: Props) {
+export function FoodRow({ brand, productName, format, onPress, hideBrand = false }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
-  const metaLine = typeLabel
-    ? `${brand.toUpperCase()} · ${typeLabel.toUpperCase()}`
-    : brand.toUpperCase();
+  const formatMeta = typeLabel.toUpperCase();
+  const metaLine = hideBrand
+    ? formatMeta
+    : typeLabel
+      ? `${brand.toUpperCase()} · ${formatMeta}`
+      : brand.toUpperCase();
 
   return (
     <TouchableOpacity
@@ -31,9 +41,11 @@ export function FoodRow({ brand, productName, format, onPress }: Props) {
       accessibilityLabel={`${brand} ${productName}`}
     >
       <View style={styles.text}>
-        <Text style={styles.meta} numberOfLines={1}>
-          {metaLine}
-        </Text>
+        {metaLine ? (
+          <Text style={styles.meta} numberOfLines={1}>
+            {metaLine}
+          </Text>
+        ) : null}
         <Text style={styles.product} numberOfLines={2}>
           {productName}
         </Text>
