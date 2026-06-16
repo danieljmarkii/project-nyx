@@ -1,5 +1,5 @@
 # Project Nyx — Design Principles
-**Version:** 1.0 | **Status:** Stable | **Last Updated:** May 2026
+**Version:** 1.0 | **Status:** Stable | **Last Updated:** June 2026
 
 ---
 
@@ -198,7 +198,9 @@ The single most important screen in the product. Principles:
 
 ### Navigation
 
-Flat. Three tabs maximum at MVP: Home · Log History · Pet Profile. The quick-log is not a tab — it is always accessible via a persistent action regardless of which tab is active.
+Flat, and disciplined by **kind of surface, not by count**. A navigation tab is reserved for a **top-level destination** — a place you return to and *act within* (browse, manage, review). At launch that is **Home · History · Foods · Pet**. A **pull-view of computed insight** is *not* a tab — it opens as a **doorway** from wherever it is relevant (the analytics "Patterns" dashboard and Nyx Ask both follow this rule). The quick-log is likewise not a tab — it is always accessible via the persistent **+** action regardless of which tab is active.
+
+> _Revised June 2026 (PM-approved, 2026-06-16). The original rule was "three tabs maximum at MVP: Home · Log History · Pet Profile." As the app grows past MVP, the arbitrary numeric cap is retired in favor of the categorical destination-vs-doorway rule above — it keeps navigation flat and honest without freezing the count. This is what lets the **Foods library** (B-004) become a fourth tab: it is a genuine destination you browse and manage, and because the food catalog is globally scoped (not pet-scoped) it would be misrepresented if nested under the Pet tab. Insight surfaces (analytics, Ask) stay doorways._
 
 ### Onboarding
 
