@@ -40,4 +40,19 @@ describe('FoodTile', () => {
     fireEvent.press(getByText('Rotisserie Chicken'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  // Accessibility parity with the Foods-tab FoodRow (B-004 PR 7): the whole tile
+  // is ONE button labeled with the food's plain "<brand> <product>" — so a screen
+  // reader announces "Fancy Feast Salmon Pâté" as a single control rather than
+  // reading the styled all-caps "FANCY FEAST · WET" eyebrow and the product name
+  // as two separate fragments. The hint names the picker's action (a tap LOGS,
+  // unlike FoodRow's navigate-to-detail tap).
+  it('exposes the food as a single button labeled with brand + product, hinting the log action', () => {
+    const { getByLabelText } = render(
+      <FoodTile brand="Fancy Feast" productName="Salmon Pâté" format="wet_canned" onPress={() => {}} />,
+    );
+    const tile = getByLabelText('Fancy Feast Salmon Pâté');
+    expect(tile.props.accessibilityRole).toBe('button');
+    expect(tile.props.accessibilityHint).toBe('Logs a meal');
+  });
 });

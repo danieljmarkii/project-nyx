@@ -32,6 +32,14 @@ export const FORMAT_LABEL: Record<string, string> = {
 // ("FANCY FEAST · WET") so the body of the tile is entirely about the food.
 // Tap anywhere → meal logs immediately. Tile is the full tap target
 // (≥44pt by virtue of minHeight).
+//
+// Accessibility (B-004 PR 7): the whole tile is ONE button labeled with the
+// food's plain name ("Fancy Feast Salmon Pâté") plus a "Logs a meal" hint — at
+// parity with the Foods-tab FoodRow, so a screen reader announces the food as a
+// single log control instead of spelling out the styled, all-caps "FANCY FEAST ·
+// WET" eyebrow and the product name as two separate fragments. The hint names the
+// action because here a tap LOGS (the picker is the quick-log surface), whereas a
+// FoodRow tap navigates to detail.
 export function FoodTile({ brand, productName, format, onPress, onLongPress }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const metaLine = typeLabel
@@ -45,6 +53,9 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress }: P
       onLongPress={onLongPress}
       delayLongPress={350}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${brand} ${productName}`}
+      accessibilityHint="Logs a meal"
     >
       <Text style={styles.meta} numberOfLines={1}>
         {metaLine}
