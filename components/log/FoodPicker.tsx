@@ -347,6 +347,24 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
 
 // Renders a single grouped section of the library. Hidden when the group is
 // empty so the picker doesn't show a "Treats" header with nothing under it.
+//
+// PICKER LAYOUT — deliberately 2-up FoodTiles, NOT the Foods-tab full-width
+// FoodRow. B-004 PR 7 re-opened "should the in-log picker match the Foods tab's
+// full-width rows?" and resolved KEEP 2-UP (Designer + Jordan, no dissent):
+//   • Destination vs. action — the Foods tab is a browse/manage *destination*
+//     (rich rows: thumbnail, intake history, chevron→detail); the picker is the
+//     quick-log *action* surface where a tap LOGS. FoodRow's chevron would lie
+//     here, and its intake/favorite annotations don't belong next to a one-tap-log
+//     control (intake-is-not-preference). This is the #174 Navigation principle.
+//   • Density / the 10-second test (§10 AC) — 2-up shows ~2× candidates per screen
+//     and the Recent strip already fronts frequent foods; taller rows mean more
+//     scrolling on the hot path, worst for Jordan's small, brand-diverse library.
+//   • The §4.1 "Tile rendering note" already retired photo thumbnails from this
+//     grid as "a chaotic surface" — FoodRow's per-row photo slot is exactly that.
+// So FoodTile and FoodRow are intentionally two components for two jobs; do NOT
+// "unify" them onto the hot path. (Brand grouping for the picky-cat wall-of-Fancy-
+// Feast scan is the one open parity idea — a Sam-win / mild-Jordan-loss product
+// call, tracked as B-109, not shipped here.)
 function LibraryGroup({
   label, foods, onPickFood, onOpenDetail, hint,
 }: {
