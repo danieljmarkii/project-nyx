@@ -269,9 +269,14 @@ describe('metric definitions (B-100)', () => {
       // "% finished" is always present.
       expect(topFoodDefinition('Nyx')).toMatch(/treats? show/i);
     });
-    it('topProtein is meals-only and carries no preference word', () => {
+    it('topProtein covers exposure (meals + treats) and notes the treat tag — no preference word (B-111)', () => {
+      // Post-B-111 the protein card ranks protein EXPOSURE incl. treats (flagged), so the
+      // definition spans meals + treats and notes the treat tag (mirrors topFood), while still
+      // never implying "preference"/"favourite" (§11 #1 — this card is intake, not preference).
       const def = topProteinDefinition('Nyx');
-      expect(def).toMatch(/meals only/i);
+      expect(def).toMatch(/meals and treats/i);
+      expect(def).toMatch(/treats? show/i);
+      expect(def).toMatch(/eaten/i);
       expect(def).not.toMatch(PREFERENCE_WORDS);
     });
   });

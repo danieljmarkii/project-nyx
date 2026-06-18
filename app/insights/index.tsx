@@ -299,15 +299,18 @@ function renderCard(card: DashboardCard, petName?: string) {
     }
     case 'topProtein': {
       const r = card.result;
-      // Meal-based (treats excluded): share of meals + "% finished" per protein.
+      // Protein EXPOSURE (treats included, flagged — B-111): share of servings + "% finished"
+      // per protein. A treat-sourced protein shows a "treat" tag instead of a rate (RightMeta),
+      // so a diet-trial confounder (e.g. chicken via treats) is visible, not silently dropped.
       const entries = isNotEnoughData(r)
         ? []
         : r.map((p) => ({
             key: p.protein,
             label: displayProtein(p.protein),
             share: p.shareOfDiet,
-            shareLabel: `${Math.round(p.shareOfDiet * 100)}% of meals`,
+            shareLabel: `${Math.round(p.shareOfDiet * 100)}% of servings`,
             finishedRate: p.finishedRate,
+            isTreat: p.isTreat,
           }));
       return (
         <RankingCard

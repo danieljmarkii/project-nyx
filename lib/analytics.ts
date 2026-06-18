@@ -396,35 +396,63 @@ export function computeTopFoods(rows: AnalyticsMeal[], opts: RankOptions = {}): 
 
 export interface RankedProtein {
   protein: string;
+  /** Total protein-EXPOSURE feedings (meals + treats) carrying this protein in the window.
+   *  Treats ARE counted (B-111): a chicken treat is real chicken exposure, not noise. */
   count: number;
-  /** count / total protein-identified meals, [0,1] — "share of meals" (drives the bar). */
+  /** count / total protein-identified feedings, [0,1] — "share of servings" (drives the bar). */
   shareOfDiet: number;
-  /** This protein's finished-rate (itemFinishedRate): null below the floor / fully
-   *  free-fed. Meal-based (treats are excluded from the protein card entirely). */
+  /** Meal INTAKE quality: finished-rate over this protein's NON-TREAT meals only (§11 #1 —
+   *  a treat's ceiling finish-rate must never inflate it / mask a meal refusal). null below
+   *  the per-item floor, fully free-fed, OR a treat-sourced protein (no meal to rate). */
   finishedRate: number | null;
-  /** Rated, non-free-fed meals behind finishedRate. */
+  /** Rated, non-free-fed, NON-TREAT meals behind finishedRate. */
   ratedMeals: number;
+  /** This protein reaches the pet ONLY via treats (treat-sourced) — finishedRate is null and
+   *  the card shows a "treat" tag instead of a rate (mirrors RankedFood.isTreat). The #1
+   *  diet-trial confounder made visible (B-111): a novel-protein elimination trial sabotaged
+   *  by an old-protein treat now surfaces here, flagged, instead of vanishing. */
+  isTreat: boolean;
 }
 
-/** Pure: most-consumed primary protein, CANONICALIZED before ranking (so chicken /
- *  Chicken / "Chicken By-Product Meal" pool into one key, not three). Meals whose
- *  protein canonicalizes to null (junk/unknown/unidentified) are dropped. Floored on
- *  the number of protein-identified meals (§11 #5).
- *  TREATS ARE EXCLUDED — the protein card is meal-based for clinical relevance
- *  (B-023 mockup): a treat's filler protein shouldn't dominate "what protein does
- *  Nyx eat". Same treat-exclusion rule as getIntakeRate; contrast computeTopFoods,
- *  which includes treats and flags them so a treat topping the FOOD list reads honestly.
- *  Each entry carries its share of meals (the bar) + its own finished-rate (§11 #1). */
+/** Pure: most-consumed primary protein by EXPOSURE, CANONICALIZED before ranking (so chicken /
+ *  Chicken / "Chicken By-Product Meal" pool into one key, not three). Feedings whose protein
+ *  canonicalizes to null (junk/unknown/unidentified) are dropped. Floored on the number of
+ *  protein-identified feedings (§11 #5).
+ *
+ *  TREATS ARE INCLUDED, FLAGGED isTreat (B-111, 2026-06-18 — reverses the prior treats-out
+ *  rule for THIS card). The §11 #1 "treats out" rule exists for the finished-RATE (treats
+ *  finish at a ceiling, masking a meal refusal) — but this card ranks by COUNT = protein
+ *  EXPOSURE, where a treat's protein is a genuine, clinically load-bearing exposure: a chicken
+ *  treat is the #1 diet-trial confounder (a novel-protein elimination trial sabotaged by an
+ *  old-protein treat is exactly what the vet needs to see), and dropping it made that exposure
+ *  invisible. So EXPOSURE (count / share / floor) includes treats; INTAKE (finishedRate) stays
+ *  meals-only, preserving §11 #1. Mirrors computeTopFoods' include-and-flag stance.
+ *
+ *  isTreat predicate DELIBERATELY DIFFERS from computeTopFoods' treat-if-ANY: a food_item has
+ *  ONE food_type (a mixed row-set is a misclassification, so treat-if-any errs ceiling-safe),
+ *  but a PROTEIN legitimately aggregates several foods — "chicken" from kibble + treats is a
+ *  MEAL protein, not a treat. So a protein is treat-sourced only when EVERY exposure is a treat
+ *  (no meal to rate). A real meal protein therefore keeps its honest finish-rate; only
+ *  purely-treat exposure flags. Each entry carries its share of servings (the bar) + its meal
+ *  finished-rate (§11 #1).
+ *
+ *  EXPOSURE IS A RAW FEEDING COUNT, not episode-collapsed — the SAME deliberate stance as
+ *  computeSymptomCounts (a descriptive card answers "how many were logged" and should match the
+ *  History timeline the owner can scroll; episode-collapse is a correlation-engine refinement,
+ *  not a descriptive count). Caveat (B-111 adversarial review CE-H): many SAME-timestamp treat
+ *  re-logs (a multi-piece handful logged per-piece) can therefore inflate a treat protein's
+ *  rank/share. Bounded — descriptive card, no verdict colour, finishedRate stays null, isTreat
+ *  flagged — but this card bridges to the vet report, so whether to dedup exact-timestamp treat
+ *  re-logs is a flagged follow-up for the PM/Data-Scientist (B-115), NOT a silent omission. */
 export function computeTopProteins(rows: AnalyticsMeal[], opts: RankOptions = {}): RankedProtein[] | NotEnoughData {
   const limit = opts.limit ?? 5;
   const freeFed = opts.freeFedFoodIds ?? new Set<string>();
   const byProtein = new Map<string, AnalyticsMeal[]>();
   let identified = 0;
   for (const m of rows) {
-    if (m.foodType === 'treat') continue; // meal-based ranking (see doc)
     const key = canonicalizeProtein(m.primaryProtein);
     if (key === null) continue;
-    identified += 1;
+    identified += 1; // treats count as protein EXPOSURE (B-111) — no longer dropped
     const arr = byProtein.get(key);
     if (arr) arr.push(m);
     else byProtein.set(key, [m]);
@@ -433,14 +461,22 @@ export function computeTopProteins(rows: AnalyticsMeal[], opts: RankOptions = {}
     return notEnoughData(identified, ANALYTICS_FLOORS.minMealsForRanking);
   }
   const ranked: RankedProtein[] = [];
-  for (const [protein, meals] of byProtein) {
-    const fr = itemFinishedRate(meals, freeFed);
+  for (const [protein, feedings] of byProtein) {
+    // Treat-sourced ⟺ NO non-treat meal carries this protein (see doc — differs from
+    // computeTopFoods' treat-if-any: a protein is a legitimate multi-food aggregation).
+    const mealRows = feedings.filter((m) => m.foodType !== 'treat');
+    const isTreat = mealRows.length === 0;
+    // Finished-rate over NON-TREAT meals only (§11 #1): a treat's ceiling rate never inflates
+    // it; a treat-only protein has no meal to rate → null AT THE SOURCE (mirrors computeTopFoods,
+    // so no consumer can render "treats 100% finished → loved").
+    const fr = itemFinishedRate(mealRows, freeFed);
     ranked.push({
       protein,
-      count: meals.length,
-      shareOfDiet: meals.length / identified,
-      finishedRate: fr.rate,
+      count: feedings.length,
+      shareOfDiet: feedings.length / identified,
+      finishedRate: isTreat ? null : fr.rate,
       ratedMeals: fr.ratedMeals,
+      isTreat,
     });
   }
   return ranked
