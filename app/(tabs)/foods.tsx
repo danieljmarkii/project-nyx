@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import { theme } from '../../constants/theme';
-import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FoodRow } from '../../components/foods/FoodRow';
 import { getLibraryFoods, getFoodIntakeStats, PickerFood, FoodIntakeStat } from '../../lib/db';
 import {
@@ -256,10 +255,12 @@ function FavoritesShelf({
 }) {
   return (
     <View style={styles.group}>
-      <SectionLabel label="Reliable favorites" />
-      <Text style={styles.groupHint}>
-        {petName ? `Foods ${petName} finishes most of the time.` : 'Foods your pet finishes most of the time.'}
-      </Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Reliable favorites</Text>
+        <Text style={styles.groupHint}>
+          {petName ? `Foods ${petName} finishes most of the time.` : 'Foods your pet finishes most of the time.'}
+        </Text>
+      </View>
       <View style={styles.card}>
         {rows.map(({ fav, food }, i) => (
           <View key={fav.key} style={i > 0 ? styles.rowDivider : undefined}>
@@ -305,8 +306,10 @@ function FoodGroup({
   const brandGroups = groupFoodsByBrand(foods);
   return (
     <View style={styles.group}>
-      <SectionLabel label={label} />
-      {hint ? <Text style={styles.groupHint}>{hint}</Text> : null}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{label}</Text>
+        {hint ? <Text style={styles.groupHint}>{hint}</Text> : null}
+      </View>
       <View style={styles.brandGroups}>
         {brandGroups.map((bg) => (
           <View key={bg.key} style={styles.brandGroup}>
@@ -369,7 +372,21 @@ const styles = StyleSheet.create({
     gap: theme.space3,
   },
   group: {
-    gap: theme.space1,
+    gap: theme.space2,
+  },
+  // Section header block — Meals / Treats / Unclassified / Reliable favorites. The
+  // section (the coarse meal-vs-treat grouping) is the DOMINANT label on this
+  // browse surface, so it uses the type scale's in-screen heading token (textXL),
+  // sentence case — not the all-caps textXS eyebrow (SectionLabel) the log-path
+  // zones use. Fixes the inverted hierarchy where the brand sub-header (textSM,
+  // dark) was out-weighing the tiny all-caps section label it sat under.
+  sectionHeader: {
+    gap: 2,
+  },
+  sectionTitle: {
+    fontSize: theme.textXL,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorNeutralDark,
   },
   groupHint: {
     fontSize: theme.textXS,
