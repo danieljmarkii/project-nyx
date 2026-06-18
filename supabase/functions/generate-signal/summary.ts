@@ -197,12 +197,18 @@ export interface CachedSummary {
 
 // ── Descriptive intake aggregates (server-side mirror of the PR-1 cards) ───────────────
 // Computed over the in-window meals the detection engine already loaded — NOT a second DB
-// read. Each mirrors lib/analytics.ts exactly (same floors, same treat/free-fed exclusions,
-// same canonicalization) so the summary's numbers match the cards it sits above.
+// read. These mirror lib/analytics.ts (same floors, same free-fed exclusions, same
+// canonicalization) so the summary's numbers match the cards it sits above — with ONE
+// deliberate exception called out below: the protein CLAUSE stays meals-only.
 
-/** Most-logged MEAL protein this month, canonicalized. Treats excluded (a treat's filler
- *  protein shouldn't dominate "what protein does Nyx eat" — §6.B / mirrors
- *  computeTopProteins). Below MIN_MEALS_FOR_RANKING identified meals → null. */
+/** Most-logged MEAL protein this month, canonicalized. Treats excluded ON PURPOSE here —
+ *  the summary makes the narrower "most-logged MEAL protein" claim ("what protein does Nyx
+ *  eat"), so a treat's filler protein must not dominate the sentence. This DELIBERATELY
+ *  DIVERGES from computeTopProteins, which (post-B-111, 2026-06-18) ranks protein EXPOSURE
+ *  incl. treats (flagged) on the card. Do NOT "align" this by dropping the treat filter — it
+ *  would change a clinically-reviewed AI-summary claim. The card↔summary grounding nuance
+ *  (card #1 may be a treat-sourced protein the clause omits) is a flagged Open Question for
+ *  the PM, not a silent fix. Below MIN_MEALS_FOR_RANKING identified meals → null. */
 function topMealProtein(meals: MealEvent[]): { protein: string; count: number } | null {
   const byProtein = new Map<string, number>()
   let identified = 0
