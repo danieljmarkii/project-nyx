@@ -597,39 +597,46 @@ export default function FoodCaptureScreen() {
               />
             ))}
           </View>
-          <TouchableOpacity
-            style={styles.mealTimeRow}
-            onPress={() => setShowMealTimePicker((v) => !v)}
-            activeOpacity={0.7}
-            hitSlop={12}
-          >
-            <Text style={styles.mealTimeText}>
-              {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              {mealOccurredAtSource === 'exif' ? (
-                <Text style={styles.mealTimeAttribution}>
-                  {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
+          {/* Meal time is meaningful only when this capture also logs a meal.
+              In B-110 add-only mode (no `fromLog`) no meal is written, so the
+              time picker would set a value nothing consumes — hide it. */}
+          {cameFromMealLog && (
+            <>
+              <TouchableOpacity
+                style={styles.mealTimeRow}
+                onPress={() => setShowMealTimePicker((v) => !v)}
+                activeOpacity={0.7}
+                hitSlop={12}
+              >
+                <Text style={styles.mealTimeText}>
+                  {mealOccurredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {mealOccurredAtSource === 'exif' ? (
+                    <Text style={styles.mealTimeAttribution}>
+                      {'  ·  '}{formatExifAttribution(mealOccurredAt.toISOString())}
+                    </Text>
+                  ) : null}
                 </Text>
-              ) : null}
-            </Text>
-            <Text style={styles.mealTimeChange}>Change</Text>
-          </TouchableOpacity>
-          {showMealTimePicker && (
-            <DateTimePicker
-              value={mealOccurredAt}
-              mode="datetime"
-              display={Platform.OS === 'ios' ? 'inline' : 'default'}
-              maximumDate={new Date()}
-              onChange={(_e, date) => {
-                if (Platform.OS === 'android') setShowMealTimePicker(false);
-                if (!date) return;
-                // Provenance flips only on an actual value change so a peek-tap
-                // doesn't silently drop the EXIF attribution.
-                if (mealOccurredAtSource === 'exif' && date.getTime() !== mealOccurredAt.getTime()) {
-                  setMealOccurredAtSource('manual');
-                }
-                setMealOccurredAt(date);
-              }}
-            />
+                <Text style={styles.mealTimeChange}>Change</Text>
+              </TouchableOpacity>
+              {showMealTimePicker && (
+                <DateTimePicker
+                  value={mealOccurredAt}
+                  mode="datetime"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  maximumDate={new Date()}
+                  onChange={(_e, date) => {
+                    if (Platform.OS === 'android') setShowMealTimePicker(false);
+                    if (!date) return;
+                    // Provenance flips only on an actual value change so a peek-tap
+                    // doesn't silently drop the EXIF attribution.
+                    if (mealOccurredAtSource === 'exif' && date.getTime() !== mealOccurredAt.getTime()) {
+                      setMealOccurredAtSource('manual');
+                    }
+                    setMealOccurredAt(date);
+                  }}
+                />
+              )}
+            </>
           )}
           <TouchableOpacity
             style={styles.primaryBtn}
@@ -1093,7 +1100,7 @@ const styles = StyleSheet.create({
   },
   loggedText: {
     fontSize: 20,
-    fontWeight: theme.fontWeightMedium,
+    fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
   },
 });
