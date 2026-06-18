@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
+import { LIBRARY_FOODS_QUERY } from './foodQueries';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -622,15 +623,12 @@ export async function getRecentFoods(
   );
 }
 
-// Full catalog, deduplicated by brand+product_name, alpha by brand.
+// Full catalog, deduplicated by brand+product_name, alpha by brand. The query
+// (incl. the B-108 MAX(photo_path) photo-dedup) lives in ./foodQueries so it can
+// be exercised against an in-memory SQLite in jest without the expo-sqlite stack.
 export async function getLibraryFoods(): Promise<PickerFood[]> {
   const db = getDb();
-  return db.getAllAsync<PickerFood>(
-    `SELECT id, brand, product_name, format, food_type, photo_path
-     FROM food_items_cache
-     GROUP BY LOWER(brand), LOWER(product_name)
-     ORDER BY brand COLLATE NOCASE ASC, product_name COLLATE NOCASE ASC`,
-  );
+  return db.getAllAsync<PickerFood>(LIBRARY_FOODS_QUERY);
 }
 
 // Logged-meal history per food for one pet — count + most recent — so the Foods
