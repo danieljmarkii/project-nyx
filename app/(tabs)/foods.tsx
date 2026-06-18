@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
+import { Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { FoodRow } from '../../components/foods/FoodRow';
 import { getLibraryFoods, getFoodIntakeStats, PickerFood, FoodIntakeStat } from '../../lib/db';
@@ -191,6 +192,22 @@ export default function FoodsScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.title}>Foods</Text>
+        {/* Add-food entry point (B-110). The FAB → Meal → "Snap a new food"
+            path always LOGS a meal; a browse/manage destination needs a way to
+            add a food to the library without logging one. Opens the capture
+            flow with no `fromLog` flag, so it commits the food_items row but
+            skips insertMeal (the capture screen already branches on that). */}
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => router.push('/food-capture')}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Add food"
+          hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
+        >
+          <Plus size={18} color={theme.colorAccent} strokeWidth={2} />
+          <Text style={styles.addBtnText}>Add food</Text>
+        </TouchableOpacity>
       </View>
 
       {showError ? (
@@ -210,7 +227,8 @@ export default function FoodsScreen() {
         <View style={styles.centered}>
           <Text style={styles.stateTitle}>No foods yet</Text>
           <Text style={styles.stateBody}>
-            Snap a food when you log a meal and it'll show up here, ready to reuse.
+            Tap Add food to start your library, or snap one when you log a meal —
+            either way it shows up here, ready to reuse.
           </Text>
         </View>
       ) : (
@@ -347,9 +365,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colorNeutralLight,
   },
-  // White header surface with a single bottom border — mirrors the History tab
-  // so the four tabs share one page-title treatment.
+  // White header surface with a single bottom border — shares the History tab's
+  // page-title treatment (same surface, border, padding, title token). Laid out
+  // as a row so the "Add food" action (B-110) sits opposite the title; the title
+  // styling itself is unchanged, so the tabs still read as one family.
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: theme.colorSurface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
@@ -361,6 +384,21 @@ const styles = StyleSheet.create({
     fontSize: theme.textPageTitle,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+  },
+  // "Add food" header action (B-110) — the no-meal entry into the capture flow.
+  // Accent text + Plus. No explicit height/padding so the row stays title-driven
+  // and the header height still matches the History tab; the 44pt tap floor is
+  // carried by hitSlop on the touchable instead — the same way this app's other
+  // compact header controls do it (e.g. food-capture's back/close buttons).
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  addBtnText: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
   },
   scroll: {
     flex: 1,
