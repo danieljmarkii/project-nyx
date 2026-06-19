@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
@@ -6,11 +6,27 @@ import {
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { theme } from '../../constants/theme';
+import { useAuthStore } from '../../store/authStore';
+
+const ACCOUNT_DELETED_MSG = 'Your account and everything in it has been deleted.';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Post-deletion confirmation (B-039 FR-12). Capture the one-shot flag at first
+  // mount — login mounts fresh after the SIGNED_OUT route replace — then clear it
+  // from the store so a later remount (e.g. a normal sign-out) won't resurface it.
+  const justDeletedAccount = useAuthStore((s) => s.justDeletedAccount);
+  const setJustDeletedAccount = useAuthStore((s) => s.setJustDeletedAccount);
+  const [showDeletedConfirmation] = useState(justDeletedAccount);
+  useEffect(() => {
+    if (justDeletedAccount) setJustDeletedAccount(false);
+    // Run once on mount: capture-then-clear. Re-running on flag change would clear
+    // it before the first paint shows the banner.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleLogin() {
     if (!email || !password) return;
@@ -32,6 +48,12 @@ export default function LoginScreen() {
       <View style={styles.inner}>
         <Text style={styles.wordmark}>Nyx</Text>
         <Text style={styles.subtitle}>Health tracking for the pets you love.</Text>
+
+        {showDeletedConfirmation && (
+          <View style={styles.deletedBanner}>
+            <Text style={styles.deletedBannerText}>{ACCOUNT_DELETED_MSG}</Text>
+          </View>
+        )}
 
         <TextInput
           style={styles.input}
@@ -90,6 +112,19 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
     marginBottom: theme.space4,
+  },
+  deletedBanner: {
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderRadius: theme.radiusSmall,
+    paddingVertical: theme.space2,
+    paddingHorizontal: theme.space2,
+    marginBottom: theme.space3,
+  },
+  deletedBannerText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
+    textAlign: 'center',
   },
   input: {
     borderWidth: 1,
