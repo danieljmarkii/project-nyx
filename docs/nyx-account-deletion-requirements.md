@@ -60,7 +60,7 @@ Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing bloc
 - An **offline guard** so the action never reports false success without a connection.
 
 ### Out of scope (v1 — tracked separately, see §10)
-- Re-authentication before deletion (hardening — B-118).
+- Re-authentication before deletion (hardening — B-119).
 - Apple Sign-In token revocation (B-119) — required by Apple *only once Apple Sign-In ships*.
 - Periodic orphaned-Storage sweep (defense-in-depth — B-120).
 - A grace period / "deactivate instead" / undo window — v1 is immediate, honest, irreversible (Apple permits a *disclosed* delay; we choose not to retain).
@@ -144,15 +144,15 @@ Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing bloc
 ## 9. Open questions / PM decisions consolidated
 - **[RESOLVED 2026-06-19] Cascade strategy = hard-delete.** Resolves the long-open GDPR-cascade Open Question. Rationale: ~all data is pet-health, not classic PII, so anonymization buys nothing legally and would need a migration; hard-delete is the cleaner Art. 17 story and the schema already cascades. Documented exception to the soft-delete-only constraint. Team rec unanimous (Trust & Safety lead).
 - **[DEFAULT — override welcome] Food catalog treatment (FR-4).** Keep `food_items` + `nyx-food-photos` (attribution nulled). Consistent with the existing `created_by_user_id → SET NULL` and the "global catalog" architecture. Building proceeds on this default unless the PM rules otherwise.
-- **[DEFAULT] Confirmation friction (FR-9).** Type-to-confirm `DELETE`; full re-auth deferred to B-118.
+- **[DEFAULT] Confirmation friction (FR-9).** Type-to-confirm `DELETE`; full re-auth deferred to B-119.
 - **[DEFAULT] No grace period.** v1 is immediate and irreversible; no deactivate-instead, no undo window.
 
 ---
 
 ## 10. Out of scope / future (composes-with)
-- **B-118** — re-authentication before account deletion (hardening; defends the unlocked-stolen-phone threat type-to-confirm doesn't).
-- **B-119** — Apple Sign-In token revocation on deletion (`POST /auth/revoke`); **Apple-required once Apple Sign-In ships** — gate it to that work.
-- **B-120** — periodic orphaned-Storage sweep (defense-in-depth for objects left by a partial purge).
+- **B-119** — re-authentication before account deletion (hardening; defends the unlocked-stolen-phone threat type-to-confirm doesn't).
+- **B-120** — Apple Sign-In token revocation on deletion (`POST /auth/revoke`); **Apple-required once Apple Sign-In ships** — gate it to that work.
+- **B-121** — periodic orphaned-Storage sweep (defense-in-depth for objects left by a partial purge).
 - **B-041** — data export (GDPR Art. 20); inverse operation, shares the service-role Edge Function architecture.
 - **B-002** — pre-prod readiness checklist; this is one of its line items.
 
@@ -190,5 +190,5 @@ No schema migration. Two PRs, backend first so the function is deployed and curl
 - **B-041** — data export; inverse op, shared architecture, separate item, *not* an App Store gate.
 - **B-002** — pre-prod checklist; B-039 is a line item.
 - **B-054** — multi-device sync shipped the FR-9 logout-wipe this reuses, and the second-device-token edge case.
-- **B-118 / B-119 / B-120** — deferred hardening spun out of this plan (re-auth, Apple token revocation, orphaned-Storage sweep).
+- **B-119 / B-120 / B-121** — deferred hardening spun out of this plan (re-auth, Apple token revocation, orphaned-Storage sweep).
 - **GDPR-cascade Open Question** (CLAUDE.md) — resolved by §9 (hard-delete).
