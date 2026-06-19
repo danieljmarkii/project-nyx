@@ -12,6 +12,7 @@ import { wipeLocalSession } from '../lib/session';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
+import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
 import { CompletionMoment } from '../components/ui/CompletionMoment';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
 
@@ -104,6 +105,7 @@ export default function RootLayout() {
         <Stack.Screen name="report" />
       </Stack>
       <MealCompletionCard />
+      <MedicationCompletionCard />
       <CompletionMoment />
       <ColdStartOverlay />
     </>

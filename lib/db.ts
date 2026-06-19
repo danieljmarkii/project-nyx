@@ -3,6 +3,8 @@ import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
 import { LIBRARY_FOODS_QUERY } from './foodQueries';
 import { MEDICATION_SCHEMA_SQL } from './medications';
+import { LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
+import { uuid } from './utils';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -702,4 +704,108 @@ export async function getMealForEvent(eventId: string): Promise<{
      WHERE m.event_id = ?`,
     [eventId],
   );
+}
+
+// ── Medication library reads + writes (B-117 PR 3) ───────────────────────────
+// The medication twin of PickerFood + getRecentFoods/getLibraryFoods. The drug
+// library (medication_items_cache) is the food_items_cache analog: a globally
+// shared, pull-refreshed read-through cache with NO `synced` flag — a locally
+// added item reaches Supabase via presyncMedicationItems when the first dose
+// that references it syncs (lib/sync.ts), not via a queue of its own.
+
+export interface PickerMedication {
+  id: string;
+  generic_name: string;
+  brand_name: string | null;
+  strength: string | null;
+  form: string | null;
+  default_route: string | null;
+}
+
+// This pet's most-recently-given distinct drugs, newest first (the picker's
+// "Recent" shelf). Mirrors getRecentFoods: pass `daysBack` to bound the window,
+// or `null` for no time bound. SQL lives in ./medicationQueries so it can be
+// exercised against an in-memory SQLite in jest.
+export async function getRecentMedications(
+  petId: string,
+  daysBack: number | null,
+  limit: number,
+): Promise<PickerMedication[]> {
+  const db = getDb();
+  // Params are pushed in the same order their `?` placeholders appear:
+  // pet_id, then the optional window cutoff, then the limit.
+  const params: (string | number)[] = [petId];
+  if (daysBack != null) {
+    params.push(new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString());
+  }
+  params.push(limit);
+  return db.getAllAsync<PickerMedication>(recentMedicationsQuery(daysBack != null), params);
+}
+
+// The full drug library (every medication_items_cache row), alpha by drug then
+// brand. Static SQL extracted to ./medicationQueries for the same testability
+// reason as getLibraryFoods.
+export async function getLibraryMedications(): Promise<PickerMedication[]> {
+  const db = getDb();
+  return db.getAllAsync<PickerMedication>(LIBRARY_MEDICATIONS_QUERY);
+}
+
+export interface AddMedicationItemParams {
+  genericName: string;
+  brandName?: string | null;
+  strength?: string | null;
+  form?: string | null;
+  defaultRoute?: string | null;
+}
+
+// Create a drug in the local library (text-first add, PR 3 — the manual-entry
+// fallback that §5.2 says is always present, ahead of the PR 5 photo-capture
+// path). Writes medication_items_cache only; there is no `synced` flag here —
+// the row is pushed by presyncMedicationItems the first time a dose referencing
+// it syncs. is_critical is NOT set by the owner (clinical, derived later — §10),
+// so it keeps the schema default (0/false); is_prescription likewise defaults to
+// 1/true. Returns the new row in PickerMedication shape so the caller can log the
+// first dose against it immediately (the add-then-log path).
+export async function addMedicationItem(params: AddMedicationItemParams): Promise<PickerMedication> {
+  const db = getDb();
+  const id = uuid();
+  const item: PickerMedication = {
+    id,
+    generic_name: params.genericName,
+    brand_name: params.brandName?.trim() || null,
+    strength: params.strength?.trim() || null,
+    form: params.form ?? null,
+    default_route: params.defaultRoute ?? null,
+  };
+  await db.runAsync(
+    `INSERT INTO medication_items_cache
+       (id, generic_name, brand_name, strength, form, default_route,
+        is_prescription, is_critical, photo_path, notes, cached_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, ?)`,
+    [id, item.generic_name, item.brand_name, item.strength, item.form,
+     item.default_route, new Date().toISOString()],
+  );
+  return item;
+}
+
+// Set/clear the adherence rating on a logged dose (the completion-card chip edit
+// and the PR 8 retroactive edit). Marks the dose unsynced so the next flush
+// propagates it. Stamps ISO/UTC updated_at (B-055) so a cross-device correction
+// wins by real last-write-wins, not the synced-flag proxy — adherence is the
+// clinically load-bearing field, exactly like meals.intake_rating. Throws on a
+// zero-row UPDATE (no dose for this event) for the same reason updateMealIntake
+// does: SQLite silently affects zero rows, which would let the UI claim success
+// while persisting nothing.
+export async function updateDoseAdherence(
+  eventId: string,
+  adherence: 'given' | 'partial' | 'missed' | 'refused' | null,
+): Promise<void> {
+  const db = getDb();
+  const res = await db.runAsync(
+    'UPDATE medication_administrations SET adherence = ?, updated_at = ?, synced = 0 WHERE event_id = ?',
+    [adherence, new Date().toISOString(), eventId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`No medication_administration row for event ${eventId}`);
+  }
 }
