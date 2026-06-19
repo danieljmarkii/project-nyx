@@ -37,6 +37,7 @@ import {
   type AnalyticsSymptom,
   type IntakeDeclineResult,
   type RankedFood,
+  type RankedProtein,
 } from './analytics';
 
 const DAY = 86_400_000;
@@ -275,12 +276,12 @@ describe('computeTopProteins', () => {
       meal({ ms: at(5), primaryProtein: null }), // unidentified → dropped
     ];
     expect(computeTopProteins(rows)).toEqual([
-      { protein: 'chicken', count: 3, shareOfDiet: 0.75, finishedRate: null, ratedMeals: 0 },
-      { protein: 'salmon', count: 1, shareOfDiet: 0.25, finishedRate: null, ratedMeals: 0 },
+      { protein: 'chicken', count: 3, shareOfDiet: 0.75, finishedRate: null, ratedMeals: 0, isTreat: false },
+      { protein: 'salmon', count: 1, shareOfDiet: 0.25, finishedRate: null, ratedMeals: 0, isTreat: false },
     ]);
   });
 
-  it('floors on identified meals (junk/null do not count toward the floor)', () => {
+  it('floors on identified feedings (junk/null do not count toward the floor)', () => {
     const rows: AnalyticsMeal[] = [
       meal({ ms: at(0), primaryProtein: 'beef' }),
       meal({ ms: at(1), primaryProtein: 'beef' }),
@@ -292,33 +293,76 @@ describe('computeTopProteins', () => {
     });
   });
 
-  it('EXCLUDES treats from the ranking (meal-based for clinical relevance — B-023 mockup)', () => {
+  it('INCLUDES treats as protein exposure, flagged isTreat — the #1 diet-trial confounder made visible (B-111)', () => {
+    // A novel-protein (duck) elimination trial sabotaged by chicken treats: duck is the meal
+    // protein; chicken reaches the pet ONLY via treats. Pre-B-111 the chicken exposure vanished
+    // from this card entirely — exactly the confounder a vet needs to see. Now it surfaces, flagged.
     const rows: AnalyticsMeal[] = [
-      meal({ ms: at(0), primaryProtein: 'beef', foodType: 'meal' }),
-      meal({ ms: at(1), primaryProtein: 'beef', foodType: 'meal' }),
-      meal({ ms: at(2), primaryProtein: 'beef', foodType: 'meal' }),
-      meal({ ms: at(3), primaryProtein: 'beef', foodType: 'meal' }),
-      meal({ ms: at(4), primaryProtein: 'chicken', foodType: 'treat' }), // treat → excluded
+      meal({ ms: at(0), primaryProtein: 'duck', foodType: 'meal' }),
+      meal({ ms: at(1), primaryProtein: 'duck', foodType: 'meal' }),
+      meal({ ms: at(2), primaryProtein: 'duck', foodType: 'meal' }),
+      meal({ ms: at(3), primaryProtein: 'duck', foodType: 'meal' }),
+      meal({ ms: at(4), primaryProtein: 'chicken', foodType: 'treat' }),
       meal({ ms: at(5), primaryProtein: 'chicken', foodType: 'treat' }),
+      meal({ ms: at(6), primaryProtein: 'chicken', foodType: 'treat' }),
     ];
-    // The treat's chicken never enters the ranking — only the 4 beef meals.
+    // 7 protein exposures total. chicken (3, treat-sourced) is VISIBLE + flagged; duck (4, meal).
     expect(computeTopProteins(rows)).toEqual([
-      { protein: 'beef', count: 4, shareOfDiet: 1, finishedRate: null, ratedMeals: 0 },
+      { protein: 'duck', count: 4, shareOfDiet: 4 / 7, finishedRate: null, ratedMeals: 0, isTreat: false },
+      { protein: 'chicken', count: 3, shareOfDiet: 3 / 7, finishedRate: null, ratedMeals: 0, isTreat: true },
     ]);
   });
 
-  it('treats do not pad the protein floor', () => {
+  it('a MIXED protein (meals + treats) is a MEAL protein: not flagged, finish-rate over meals only (§11 #1)', () => {
+    // 'chicken' from 4 rated meals (3 finished → 0.75) PLUS 2 chicken treats eaten to a ceiling.
+    // The treats count as exposure but must NOT inflate the finish-rate (else 5/6, masking the
+    // 'some' meal) — the load-bearing §11 #1 guard for this card.
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'chicken', foodType: 'meal', intakeRating: 'all' }),
+      meal({ ms: at(1), primaryProtein: 'chicken', foodType: 'meal', intakeRating: 'most' }),
+      meal({ ms: at(2), primaryProtein: 'chicken', foodType: 'meal', intakeRating: 'all' }),
+      meal({ ms: at(3), primaryProtein: 'chicken', foodType: 'meal', intakeRating: 'some' }), // not finished
+      meal({ ms: at(4), primaryProtein: 'chicken', foodType: 'treat', intakeRating: 'all' }), // ceiling — excluded
+      meal({ ms: at(5), primaryProtein: 'chicken', foodType: 'treat', intakeRating: 'all' }),
+    ];
+    const out = computeTopProteins(rows) as RankedProtein[];
+    expect(out).toHaveLength(1);
+    const chicken = out[0];
+    expect(chicken.isTreat).toBe(false); // has real meal exposure → a meal protein, not treat-sourced
+    expect(chicken.count).toBe(6); // exposure includes the 2 treats
+    expect(chicken.ratedMeals).toBe(4); // ONLY the 4 meals are rated for the rate
+    expect(chicken.finishedRate).toBeCloseTo(0.75, 5); // 3/4 meals — the treats' ceiling is excluded
+  });
+
+  it('excludes free-fed meals from a protein finish-rate (§11 #6 still holds post-B-111)', () => {
+    // 'chicken' from 5 rated meals, but food 'ff' is free-fed → its intake is not observed.
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'chicken', foodItemId: 'a', intakeRating: 'all' }),
+      meal({ ms: at(1), primaryProtein: 'chicken', foodItemId: 'a', intakeRating: 'all' }),
+      meal({ ms: at(2), primaryProtein: 'chicken', foodItemId: 'a', intakeRating: 'most' }),
+      meal({ ms: at(3), primaryProtein: 'chicken', foodItemId: 'a', intakeRating: 'some' }),
+      meal({ ms: at(4), primaryProtein: 'chicken', foodItemId: 'ff', intakeRating: 'all' }), // free-fed
+    ];
+    const out = computeTopProteins(rows, { freeFedFoodIds: new Set(['ff']) }) as RankedProtein[];
+    expect(out[0].count).toBe(5); // exposure counts all 5 feedings
+    expect(out[0].ratedMeals).toBe(4); // the free-fed meal is excluded from the rate denominator
+    expect(out[0].finishedRate).toBeCloseTo(0.75, 5); // 3 finished / 4 observed
+  });
+
+  it('treats DO count toward the ranking floor — they are protein exposure (B-111)', () => {
+    // 2 beef meals + 2 turkey treats = 4 protein exposures → AT the floor → ranks. Pre-B-111
+    // this was a sentinel (only 2 MEALS counted), which kept a treat-heavy logger's confounder
+    // invisible — the opposite of the goal.
     const rows: AnalyticsMeal[] = [
       meal({ ms: at(0), primaryProtein: 'beef', foodType: 'meal' }),
       meal({ ms: at(1), primaryProtein: 'beef', foodType: 'meal' }),
       meal({ ms: at(2), primaryProtein: 'turkey', foodType: 'treat' }),
       meal({ ms: at(3), primaryProtein: 'turkey', foodType: 'treat' }),
-      meal({ ms: at(4), primaryProtein: 'turkey', foodType: 'treat' }),
     ];
-    // 2 beef MEALS identified (treats excluded) < floor 4 → sentinel, not a turkey rank.
-    expect(computeTopProteins(rows)).toEqual({
-      status: 'not_enough_data', samples: 2, needed: ANALYTICS_FLOORS.minMealsForRanking,
-    });
+    expect(computeTopProteins(rows)).toEqual([
+      { protein: 'beef', count: 2, shareOfDiet: 0.5, finishedRate: null, ratedMeals: 0, isTreat: false },
+      { protein: 'turkey', count: 2, shareOfDiet: 0.5, finishedRate: null, ratedMeals: 0, isTreat: true },
+    ]);
   });
 });
 

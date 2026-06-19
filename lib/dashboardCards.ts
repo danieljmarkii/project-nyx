@@ -317,9 +317,11 @@ export function topFoodDefinition(petName?: string): string {
   return `Your most-logged foods for ${petNameOrYours(petName)} this month. The bar is each food's share of the diet; "% finished" is how much of it got eaten — treats show a tag instead.`;
 }
 
-/** "Top protein" — meal-based (treats excluded), with the same bar/"% finished" split. */
+/** "Top protein" — protein EXPOSURE (meals + treats, B-111), with the same bar/"% finished"
+ *  split. A treat-sourced protein shows a tag rather than a rate (a treat's ceiling finish-rate
+ *  is not an intake signal, §11 #1) — so a diet-trial confounder fed via treats stays visible. */
 export function topProteinDefinition(petName?: string): string {
-  return `Your most-logged proteins for ${petNameOrYours(petName)}, from meals only. The bar is each protein's share of meals; "% finished" is how much got eaten.`;
+  return `Your most-logged proteins for ${petNameOrYours(petName)} this month, across meals and treats. The bar is each protein's share of servings; "% finished" is how much got eaten — treats show a tag instead.`;
 }
 
 /** "Meals & treats" — descriptive split of what was logged, never a verdict on how the
