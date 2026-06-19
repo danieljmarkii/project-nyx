@@ -8,9 +8,10 @@ export type EventIconSize = 16 | 20 | 24;
 
 // Resolve an event_type to its Lucide glyph. Pure + render-free so the fallback
 // branch is unit-testable without pulling react-native-svg into jest. Unknown /
-// UI-unexposed types (skin_reaction, weight_check, medication, scratch, or a
-// stale imported row) get CircleHelp — deliberately NOT Circle, which is the
-// real glyph for stool_normal, so an unknown type can't masquerade as a stool.
+// UI-unexposed types (skin_reaction, weight_check, scratch, or a stale imported
+// row) get CircleHelp — deliberately NOT Circle, which is the real glyph for
+// stool_normal, so an unknown type can't masquerade as a stool. (medication is
+// now exposed in the quick-log UI — it resolves to Pill via EVENT_TYPES.)
 export function iconForType(type: EventTypeKey | string): LucideIcon {
   return EVENT_TYPES[type as EventTypeKey]?.icon ?? CircleHelp;
 }

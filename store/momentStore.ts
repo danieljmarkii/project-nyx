@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
+import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -20,7 +21,12 @@ import type { IntakeRating } from '../components/log/IntakeChipRow';
 //     toast so a meal log is ONE warm surface, not a full-screen beat chased by a
 //     separate toast (B-064). Rendered by <MealCompletionCard/>.
 //
-// The meal card is the only interactive presentation; the beat is terminal.
+//   - 'medication' — the dose sibling of 'meal' (B-117 PR 3): the same warmed
+//     bottom card carrying the adherence chip row (given / partial / missed /
+//     refused) as the confirm-over-entry follow-up to a one-tap dose log.
+//     Rendered by <MedicationCompletionCard/>.
+//
+// The meal/medication cards are the interactive presentations; the beat is terminal.
 // "Intake is not preference" is preserved end to end — intake stays optional,
 // default-null, never pre-stamped, captured at peak recall. B-064 changed the
 // carrier surface, NOT the capture; B-014's three Designer conditions carry over
@@ -52,7 +58,21 @@ export interface MealPayload {
   intakeRating: IntakeRating | null;
 }
 
-export type MomentPayload = BeatPayload | MealPayload;
+export interface MedicationPayload {
+  kind: 'medication';
+  eventId: string;
+  // ISO UTC of the logged dose's occurred_at.
+  occurredAt: string;
+  // Drug name (generic_name) for the "Gave {drug}" line — a one-glance reminder
+  // of what was logged.
+  drugName: string;
+  // In-flight adherence. Unlike intake (which starts null), a one-tap dose log
+  // starts 'given' — the owner's affirmative tap = "I gave this dose." Updated
+  // optimistically via patchAdherence when the owner downgrades on the card.
+  adherence: DoseAdherence | null;
+}
+
+export type MomentPayload = BeatPayload | MealPayload | MedicationPayload;
 
 interface ShowOpts {
   delayMs?: number;
@@ -66,6 +86,8 @@ interface MomentState {
   show: (payload: { tone: MomentTone; title?: string }, opts?: ShowOpts) => void;
   // Warmed bottom card carrying intake + "Change time" (meal / treat logs, B-064).
   showMeal: (payload: Omit<MealPayload, 'kind'>, opts?: ShowOpts) => void;
+  // Warmed bottom card carrying the adherence chip row (dose logs, B-117 PR 3).
+  showMedication: (payload: Omit<MedicationPayload, 'kind'>, opts?: ShowOpts) => void;
   hide: () => void;
   // Mutates the in-flight MEAL card's occurredAt after a "Change time" edit so
   // the card reflects the new time before dismissing. No-op on a beat payload.
@@ -73,6 +95,9 @@ interface MomentState {
   // Mutates the in-flight MEAL card's intakeRating after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on a beat payload.
   patchIntakeRating: (rating: IntakeRating | null) => void;
+  // Mutates the in-flight MEDICATION card's adherence after a chip tap. Pair with
+  // rescheduleHide() for a visible confirmation window. No-op on other payloads.
+  patchAdherence: (adherence: DoseAdherence | null) => void;
   // Reschedules the hide timer to fire `durationMs` from now — used to hold the
   // meal card open ~1.5s after a chip tap so the selection is confirmed visibly.
   rescheduleHide: (durationMs: number) => void;
@@ -86,6 +111,9 @@ const BEAT_DURATION_MS = 1400;
 // read the five WSAVA labels and tap deliberately before it auto-dismisses
 // (mirrors the retired toast's 5s window).
 const MEAL_DURATION_MS = 5000;
+// Medication-card dwell: same rationale as the meal card — interactive (the
+// adherence chip row needs reading + a deliberate tap before auto-dismiss).
+const MEDICATION_DURATION_MS = 5000;
 
 // Module-scoped so a rapid second log cleanly cancels the prior timers rather
 // than racing two hides.
@@ -131,6 +159,8 @@ export const useMomentStore = create<MomentState>((set) => ({
     present(set, { kind: 'beat', tone: payload.tone, title: payload.title ?? 'Logged' }, opts, BEAT_DURATION_MS),
   showMeal: (payload, opts) =>
     present(set, { kind: 'meal', ...payload }, opts, MEAL_DURATION_MS),
+  showMedication: (payload, opts) =>
+    present(set, { kind: 'medication', ...payload }, opts, MEDICATION_DURATION_MS),
   hide: () => {
     clearTimers();
     set({ visible: false });
@@ -145,6 +175,12 @@ export const useMomentStore = create<MomentState>((set) => ({
     set((state) =>
       state.payload?.kind === 'meal'
         ? { payload: { ...state.payload, intakeRating } }
+        : {}
+    ),
+  patchAdherence: (adherence) =>
+    set((state) =>
+      state.payload?.kind === 'medication'
+        ? { payload: { ...state.payload, adherence } }
         : {}
     ),
   rescheduleHide: (durationMs) => {

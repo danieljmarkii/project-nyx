@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { FoodPicker } from '../components/log/FoodPicker';
+import { MedicationPicker } from '../components/log/MedicationPicker';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
@@ -18,16 +19,17 @@ import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
 import { useMomentStore } from '../store/momentStore';
-import { getDb, PickerFood } from '../lib/db';
+import { getDb, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
+import { insertMedicationDose } from '../lib/medicationDose';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'symptom' | 'simple' | 'stool-type';
+type Step = 'type' | 'food' | 'medication' | 'symptom' | 'simple' | 'stool-type';
 
 // B-010 — the time fields a logged event carries. occurred_at is always a
 // single derived point; confidence + window bounds describe its certainty.
@@ -54,6 +56,7 @@ export default function LogModal() {
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
   const showMoment = useMomentStore((s) => s.show);
   const showMealMoment = useMomentStore((s) => s.showMeal);
+  const showMedicationMoment = useMomentStore((s) => s.showMedication);
   const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
 
   const [step, setStep] = useState<Step>('type');
@@ -113,6 +116,11 @@ export default function LogModal() {
     if (typeParam === 'meal') {
       setSelectedType('meal');
       setStep('food');
+    } else if (typeParam === 'medication') {
+      // Medication has hasFood:false but needs its own picker, not the simple
+      // step — special-cased like stool_normal (handleTypeSelect mirrors this).
+      setSelectedType('medication');
+      setStep('medication');
     } else if (typeParam in EVENT_TYPES) {
       const t = typeParam as EventTypeKey;
       setSelectedType(t);
@@ -124,6 +132,7 @@ export default function LogModal() {
     setSelectedType(type);
     const config = EVENT_TYPES[type];
     if (config.hasFood) setStep('food');
+    else if (type === 'medication') setStep('medication');
     else if (type === 'stool_normal') setStep('stool-type');
     else setStep('simple');
   }
@@ -230,6 +239,61 @@ export default function LogModal() {
         { delayMs: 450 },
       );
     }
+  }
+
+  // One-tap dose log from the medication picker — the medication twin of
+  // handlePickFood (B-117 PR 3). insertMedicationDose owns the event + dose-child
+  // write and the sync push; here we mirror the meal path's caller concerns: the
+  // optimistic store update (prependEvent) and the completion card. Pet identity
+  // is read at write time (the queue-then-switch edge, multi-pet spec §6).
+  async function handlePickMedication(med: PickerMedication) {
+    const pet = usePetStore.getState().activePet;
+    if (!pet) return;
+    let result: Awaited<ReturnType<typeof insertMedicationDose>>;
+    try {
+      result = await insertMedicationDose({
+        petId: pet.id,
+        medicationItemId: med.id,
+        medicationId: null,   // no regimen in PR 3 → an ad-hoc one-off dose
+        adherence: 'given',   // the affirmative one-tap = "I gave this dose"
+        doseAmount: null,     // honest-null; PR 7's regimen captures the real dose
+        occurredAt: new Date(),
+      });
+    } catch (e) {
+      console.error('[log] medication dose write failed:', e);
+      Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
+      return;
+    }
+    // A medication event carries no food/severity/intake fields — it renders in
+    // the timeline as icon + "Medication" + time (EventRow handles it like any
+    // non-meal event).
+    prependEvent({
+      id: result.eventId,
+      pet_id: pet.id,
+      event_type: 'medication',
+      occurred_at: result.occurredAtIso,
+      occurred_at_confidence: 'witnessed',
+      severity: null,
+      notes: null,
+      source: 'manual',
+      deleted_at: null,
+      created_at: result.now,
+      updated_at: result.now,
+    });
+    // Dismiss the modal, then play the dose completion card at the root layer
+    // (delayMs clears the dismissing modal so the card isn't briefly occluded on
+    // iOS — same reason the meal card is deferred). The card carries the adherence
+    // chips defaulted to 'given' as the confirm-over-entry follow-up (§5.1).
+    router.back();
+    showMedicationMoment(
+      {
+        eventId: result.eventId,
+        occurredAt: result.occurredAtIso,
+        drugName: med.generic_name,
+        adherence: 'given',
+      },
+      { delayMs: 450 },
+    );
   }
 
   async function handleConfirm(override?: {
@@ -389,7 +453,7 @@ export default function LogModal() {
 
   function handleBack() {
     if (step === 'type') { router.back(); return; }
-    if (step === 'food' || step === 'symptom' || step === 'simple' || step === 'stool-type') {
+    if (step === 'food' || step === 'medication' || step === 'symptom' || step === 'simple' || step === 'stool-type') {
       setSelectedType(null);
       setSeverity(null);
       // Reset B-010 confidence state so the next event starts witnessed.
@@ -587,6 +651,28 @@ export default function LogModal() {
             // Long-press on a tile opens the editable detail screen. The
             // one-tap log path is preserved on regular tap.
             onOpenDetail={(food) => router.push(`/food/${food.id}`)}
+          />
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // ── Medication picker (Recent / Library / + Add medication) ────────────────
+
+  if (step === 'medication') {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
+            <Text style={styles.backBtnText}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>What did {petName} take?</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        {activePet && (
+          <MedicationPicker
+            petId={activePet.id}
+            onPickMedication={handlePickMedication}
           />
         )}
       </SafeAreaView>
