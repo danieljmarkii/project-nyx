@@ -57,6 +57,9 @@ export const theme = {
   colorTextSecondary: '#525252',
   colorTextTertiary: '#737373',
   colorTextDisabled: '#A3A3A3',
+  colorTextOnDark: '#FFFFFF',                 // text/icons on a dark button or photo scrim
+  colorTextOnDarkMuted: 'rgba(255,255,255,0.92)', // secondary text on a dark scrim
+  colorScrimDark: 'rgba(0,0,0,0.55)',         // gradient/overlay scrim over a photo hero
 
   // Borders
   colorBorder: '#EAEAEA',

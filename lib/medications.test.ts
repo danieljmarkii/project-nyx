@@ -14,6 +14,8 @@ import {
   medicationItemRowToRemote,
   medicationRowToRemote,
   administrationRowToRemote,
+  initialStrengthConfirmed,
+  canSaveMedicationCapture,
   MEDICATION_SCHEMA_SQL,
   type LocalMedicationItem,
   type LocalMedication,
@@ -219,5 +221,42 @@ describe('MEDICATION_SCHEMA_SQL — production local DDL', () => {
     expect(names).toContain('idx_medication_administrations_unsynced');
     expect(names).toContain('idx_medications_active');
     db.close();
+  });
+});
+
+// The §6.5 dose-confirm gate as a TEST, not just component wiring (clinical-
+// guardrails Pattern 8). These two predicates are the whole safety contract:
+// an AI-extracted strength cannot reach a saved medication without the owner
+// verifying it against the label.
+describe('initialStrengthConfirmed — gate seed (§6.5)', () => {
+  it('starts CLOSED for a present AI strength (must be verified)', () => {
+    expect(initialStrengthConfirmed('5 mg')).toBe(false);
+    expect(initialStrengthConfirmed('0.5 mg')).toBe(false);
+    expect(initialStrengthConfirmed('16 mg/mL')).toBe(false);
+  });
+
+  it('starts OPEN when there is no AI strength to mistrust', () => {
+    // A missing strength is the explicitly-safe state (§6.5) — nothing to verify.
+    expect(initialStrengthConfirmed('')).toBe(true);
+    expect(initialStrengthConfirmed('   ')).toBe(true);
+    expect(initialStrengthConfirmed(null)).toBe(true);
+    expect(initialStrengthConfirmed(undefined)).toBe(true);
+  });
+});
+
+describe('canSaveMedicationCapture — the gate (§6.5)', () => {
+  it('blocks save while an AI strength is unverified, on EVERY screen', () => {
+    // The load-bearing assertion: no path (confirm OR edit) can save until the
+    // strength is confirmed. A future confirm→edit route cannot smuggle one past.
+    expect(canSaveMedicationCapture({ genericName: 'prednisolone', strengthConfirmed: false })).toBe(false);
+  });
+
+  it('allows save once the strength is verified (edited or ticked)', () => {
+    expect(canSaveMedicationCapture({ genericName: 'prednisolone', strengthConfirmed: true })).toBe(true);
+  });
+
+  it('requires a non-empty medication name regardless of the gate', () => {
+    expect(canSaveMedicationCapture({ genericName: '', strengthConfirmed: true })).toBe(false);
+    expect(canSaveMedicationCapture({ genericName: '   ', strengthConfirmed: true })).toBe(false);
   });
 });

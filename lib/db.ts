@@ -750,43 +750,12 @@ export async function getLibraryMedications(): Promise<PickerMedication[]> {
   return db.getAllAsync<PickerMedication>(LIBRARY_MEDICATIONS_QUERY);
 }
 
-export interface AddMedicationItemParams {
-  genericName: string;
-  brandName?: string | null;
-  strength?: string | null;
-  form?: string | null;
-  defaultRoute?: string | null;
-}
-
-// Create a drug in the local library (text-first add, PR 3 — the manual-entry
-// fallback that §5.2 says is always present, ahead of the PR 5 photo-capture
-// path). Writes medication_items_cache only; there is no `synced` flag here —
-// the row is pushed by presyncMedicationItems the first time a dose referencing
-// it syncs. is_critical is NOT set by the owner (clinical, derived later — §10),
-// so it keeps the schema default (0/false); is_prescription likewise defaults to
-// 1/true. Returns the new row in PickerMedication shape so the caller can log the
-// first dose against it immediately (the add-then-log path).
-export async function addMedicationItem(params: AddMedicationItemParams): Promise<PickerMedication> {
-  const db = getDb();
-  const id = uuid();
-  const item: PickerMedication = {
-    id,
-    generic_name: params.genericName,
-    brand_name: params.brandName?.trim() || null,
-    strength: params.strength?.trim() || null,
-    form: params.form ?? null,
-    default_route: params.defaultRoute ?? null,
-  };
-  await db.runAsync(
-    `INSERT INTO medication_items_cache
-       (id, generic_name, brand_name, strength, form, default_route,
-        is_prescription, is_critical, photo_path, notes, cached_at)
-     VALUES (?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, ?)`,
-    [id, item.generic_name, item.brand_name, item.strength, item.form,
-     item.default_route, new Date().toISOString()],
-  );
-  return item;
-}
+// NOTE: the text-first addMedicationItem() helper (B-117 PR 3) was retired in
+// PR 5 along with AddMedicationModal. Adding a drug now goes through
+// app/medication-capture.tsx (photo-first, with an inline manual fallback), which
+// writes medication_items_cache (ON CONFLICT DO UPDATE) and the remote
+// medication_items row directly — the food-capture pattern — so a separate
+// local-only insert helper is no longer needed.
 
 // Set/clear the adherence rating on a logged dose (the completion-card chip edit
 // and the PR 8 retroactive edit). Marks the dose unsynced so the next flush
