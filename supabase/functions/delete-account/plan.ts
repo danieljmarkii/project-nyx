@@ -63,6 +63,15 @@ export interface OwnedStoragePaths {
   // drug row), so index.ts FLATTENS every owned row's array into this one flat list
   // before handing it over — keeping the pure module's per-bucket shape uniform.
   medicationPhotoPaths: ReadonlyArray<string | null | undefined>
+  // The deleting user's OWN auth uid (the verified-JWT userId index.ts scoped every
+  // read by). It is the prefix-scope key for `medicationPhotoPaths` (see
+  // scopeMedicationPaths / B-128): unlike the pet-scoped buckets, `medication_items`
+  // is a GLOBAL, any-user-writable catalog whose `photo_paths` TEXT[] is unconstrained
+  // (its RLS gates which ROW you write, not the column CONTENTS — migration 020), so a
+  // crafted row could reference another user's `{victimUid}/…` path — and THIS purge
+  // runs as the service role, bypassing the per-user-prefix Storage RLS (021) that
+  // would otherwise reject it.
+  ownerUserId: string
 }
 
 export interface BucketPurge {
@@ -88,6 +97,41 @@ export function cleanPaths(raw: ReadonlyArray<string | null | undefined>): strin
   return out
 }
 
+// B-128 — cross-tenant delete guard for medication-label photos.
+//
+// `medication_items` is a GLOBAL, any-user-writable catalog: every authenticated
+// user inserts their OWN rows (creator-locked), and its `photo_paths` TEXT[] has NO
+// DB constraint tying a value to the creator's `{uid}/…` prefix — the
+// `medication_items_update` RLS gates WHICH row you write, not the CONTENTS of that
+// column (migration 020). The per-user-prefix Storage RLS (migration 021) stops a
+// user UPLOADING into another user's prefix, but NOT a crafted ROW from REFERENCING
+// another user's path string. This deletion purge runs as the SERVICE ROLE — it
+// bypasses RLS and removes the literal stored strings — so without this guard a
+// malicious row holding `{victimUid}/…/label.jpg` would turn the attacker's OWN
+// account deletion into a cross-tenant DELETE of the victim's label photo.
+//
+// Defuse the primitive at the consumer: keep only the medication paths under the
+// deleting user's OWN `{uid}/` prefix — exactly what `buildMedicationPhotoPath`
+// (lib/storage.ts) produces for every legitimate client write, and what RLS 021
+// enforces for every legitimate upload. The trailing '/' is load-bearing: it stops a
+// uid that is a string-prefix of another (`user-1` must not match `user-12/…`) from
+// passing. A blank `ownerUserId` fails CLOSED (drops everything) rather than letting
+// the prefix collapse to '/' and match every path — index.ts always supplies the
+// verified-JWT uid, so this is defense-in-depth.
+//
+// Scoped to medication paths ONLY: the pet/event/vet buckets come from pet-scoped
+// rows and use no per-user-prefix convention, so do NOT extend this filter to them —
+// it would drop their legitimate, un-prefixed keys. (Returns the nullable shape so it
+// composes directly into cleanPaths, which does the dedupe/blank drop.)
+export function scopeMedicationPaths(
+  paths: ReadonlyArray<string | null | undefined>,
+  ownerUserId: string,
+): Array<string | null | undefined> {
+  if (!ownerUserId || ownerUserId.trim().length === 0) return []
+  const prefix = `${ownerUserId}/`
+  return paths.filter((p): p is string => typeof p === 'string' && p.startsWith(prefix))
+}
+
 // Map each owned path-list to its bucket, dropping any bucket with nothing to
 // remove. The output can ONLY ever contain the five STORAGE_BUCKETS above —
 // `nyx-food-photos` is unreachable here by construction (there is no food input),
@@ -98,7 +142,13 @@ export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
     { bucket: STORAGE_BUCKETS.eventAttachments, paths: cleanPaths(input.eventAttachmentPaths) },
     { bucket: STORAGE_BUCKETS.vetAttachments, paths: cleanPaths(input.vetAttachmentPaths) },
     { bucket: STORAGE_BUCKETS.vetReports, paths: cleanPaths(input.vetReportPaths) },
-    { bucket: STORAGE_BUCKETS.medicationPhotos, paths: cleanPaths(input.medicationPhotoPaths) },
+    // medicationPhotos is the ONE bucket sourced from a globally-writable catalog, so
+    // its paths are prefix-scoped to the deleting user's own `{uid}/` before cleaning
+    // — a crafted cross-tenant path never reaches the service-role purge (B-128).
+    {
+      bucket: STORAGE_BUCKETS.medicationPhotos,
+      paths: cleanPaths(scopeMedicationPaths(input.medicationPhotoPaths, input.ownerUserId)),
+    },
   ]
   return candidates.filter((c) => c.paths.length > 0)
 }

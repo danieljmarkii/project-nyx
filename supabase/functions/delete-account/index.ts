@@ -42,6 +42,15 @@ const CORS_HEADERS = {
 // tables; creator-locked for `medication_items`). Paths come only from owned rows,
 // never from client input, and this runs BEFORE any delete because the cascade will
 // destroy (or, for the catalog, NULL the attribution on) the rows that hold these paths.
+//
+// ⚠ One caveat on "never from client input": for `medication_items` the path VALUES
+// inside an owned row ARE attacker-influenceable — it is a globally-writable catalog
+// with an unconstrained `photo_paths` TEXT[] (its RLS gates which ROW you write, not
+// the column CONTENTS), so a crafted owned row could reference another user's path
+// string. We pass `ownerUserId` (the verified-JWT uid) through to plan.ts, which
+// re-scopes the medication paths to the deleting user's own `{uid}/` prefix before
+// the service-role purge touches them — neutralizing the cross-tenant delete primitive
+// (B-128). The pet/event/vet paths need no such guard: they come from pet-scoped rows.
 async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): Promise<OwnedStoragePaths> {
   // Two independent top-level reads, in parallel: the user's pets (their own photos
   // PLUS the ownership scope for the child tables below) and the medication_items
@@ -79,7 +88,7 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
   // a wasted round-trip) and return just the — possibly empty — pet photos. The
   // medication label photos are NOT pet-scoped, so they still ride this early return.
   if (petIds.length === 0) {
-    return { petPhotoPaths, eventAttachmentPaths: [], vetAttachmentPaths: [], vetReportPaths: [], medicationPhotoPaths }
+    return { petPhotoPaths, eventAttachmentPaths: [], vetAttachmentPaths: [], vetReportPaths: [], medicationPhotoPaths, ownerUserId: userId }
   }
 
   const [eventAttRes, vetAttRes, vetReportRes] = await Promise.all([
@@ -106,6 +115,7 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
     vetAttachmentPaths: (vetAttRes.data ?? []).map((r) => r.storage_path as string),
     vetReportPaths,
     medicationPhotoPaths,
+    ownerUserId: userId,
   }
 }
 
