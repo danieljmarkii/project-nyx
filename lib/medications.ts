@@ -397,3 +397,193 @@ export function hasMedicationItemChanges(a: MedicationItemEdit, b: MedicationIte
 export function canSaveMedicationItemEdit(edit: { generic_name: string }): boolean {
   return edit.generic_name.trim().length > 0;
 }
+
+// ── PR 7 regimen compliance (pet-profile "Current medications" card, §5.4) ─────
+// The medication analog of the diet-trial compliance % in app/(tabs)/profile.tsx,
+// extracted here as PURE, clock-free logic because it is CLINICALLY LOAD-BEARING:
+// an adherence read feeds the owner's sense of whether their pet is being treated,
+// and the §6 invariants forbid it from ever reassuring on absence. Pinning it in a
+// unit test (not a screen) is the clinical-guardrails Pattern 8 stance — the
+// never-reassure / never-"fussy" rules are assertions, not comments.
+//
+// Two safety decisions are baked in here, NOT in the spec's loose "doses logged ÷
+// expected" phrasing (which, read literally, would count a logged *missed* dose as
+// adherence and violate §6.1):
+//
+//   1. The numerator is ADMINISTERED doses (adherence='given') ONLY — never the
+//      raw count of logged rows. A 'missed'/'refused'/'partial'/unrated dose is
+//      NOT adherence. This makes the % under-read when an owner gives but doesn't
+//      log a dose — the SAFE direction (§6.1: absence of a logged dose ≠ wellness;
+//      we never assume an unlogged dose was given, and never over-reassure).
+//   2. The denominator is EXPECTED doses (doses_per_day × elapsed days, §5.4), so a
+//      scheduled regimen with zero logged doses is "not tracked" (percent=null),
+//      never "0% = compliant" and never "100% = all good".
+//
+// PRN/as-needed regimens (doses_per_day = NULL) have no adherence target, so they
+// report a dose COUNT and never a %.
+
+export type DoseAdherence = 'given' | 'partial' | 'missed' | 'refused';
+
+// Per-regimen counts of its dose-event children, bucketed by adherence. `unrated`
+// is a logged dose with NULL adherence (rare — the one-tap path defaults 'given' —
+// but a real state the wire mapper preserves; it counts as logged, never as given).
+export interface AdherenceTally {
+  given: number;
+  partial: number;
+  missed: number;
+  refused: number;
+  unrated: number;
+}
+
+export interface RegimenComplianceInput {
+  // medications.doses_per_day — NULL = PRN/as-needed (no compliance target).
+  dosesPerDay: number | null;
+  // Whole days the regimen has been running, ≥1 (caller derives from started_at,
+  // mirroring the diet-trial card). Kept as a number so this stays clock-free.
+  daysElapsed: number;
+  tally: AdherenceTally;
+}
+
+export interface RegimenCompliance {
+  isPrn: boolean;
+  expectedDoses: number;     // doses_per_day × daysElapsed; 0 when PRN
+  administeredDoses: number; // adherence='given' only (the conservative numerator)
+  flaggedDoses: number;      // partial + missed + refused (the §6.2 attention bucket)
+  loggedDoses: number;       // every administration considered (given+flagged+unrated)
+  // null = not computable as a %: PRN, OR a scheduled regimen with nothing logged
+  // yet. A null percent must render as "not tracked", NEVER as "compliant" (§6.1).
+  percent: number | null;
+}
+
+export function computeRegimenCompliance(input: RegimenComplianceInput): RegimenCompliance {
+  const { dosesPerDay, daysElapsed, tally } = input;
+  const isPrn = dosesPerDay == null;
+
+  const administeredDoses = tally.given;
+  const flaggedDoses = tally.partial + tally.missed + tally.refused;
+  const loggedDoses = administeredDoses + flaggedDoses + tally.unrated;
+
+  const safeDays = Math.max(1, Math.floor(daysElapsed));
+  const expectedDoses = isPrn ? 0 : Math.round((dosesPerDay as number) * safeDays);
+
+  let percent: number | null = null;
+  // Only a scheduled regimen with at least one logged dose gets a %. Zero logged
+  // doses → null → "not tracked" (never "0% = compliant"); PRN → null → show a count.
+  if (!isPrn && expectedDoses > 0 && loggedDoses > 0) {
+    percent = Math.round((administeredDoses / expectedDoses) * 100);
+    // Clamp: an owner can log more 'given' doses than the elapsed-days estimate
+    // expects (extra doses, same-day catch-up); a >100% adherence reads as nonsense.
+    percent = Math.max(0, Math.min(100, percent));
+  }
+
+  return { isPrn, expectedDoses, administeredDoses, flaggedDoses, loggedDoses, percent };
+}
+
+// Headline adherence line for a regimen card. FACTUAL only — counts and a plain
+// "given", never an evaluation ("great", "on track", "doing well"): a wellness
+// verdict on adherence is the forbidden n=1 reassurance (§6.1). nyx-voice: no
+// exclamation marks, specific over generic.
+export function regimenComplianceLine(c: RegimenCompliance): string {
+  if (c.isPrn) {
+    if (c.loggedDoses === 0) return 'No doses logged yet';
+    return c.loggedDoses === 1 ? '1 dose logged' : `${c.loggedDoses} doses logged`;
+  }
+  if (c.percent == null) {
+    // Scheduled regimen, nothing logged. "Not tracked", never "compliant"/"0% fine".
+    return 'No doses logged yet';
+  }
+  // Over-logged (more given doses than the elapsed-days estimate expects — extra
+  // taps, same-day catch-up, or a genuine double-dose): "5 of 2 doses" reads broken,
+  // so drop the "of N". This is NOT a double-dose flag — detecting that needs
+  // per-dose interval timing this card's count-only tally doesn't carry (spec §6.4,
+  // deferred to a timestamp-bearing PR). The clamp keeps percent at 100, never 250.
+  if (c.administeredDoses > c.expectedDoses) {
+    const n = c.administeredDoses;
+    return `${c.percent}% given · ${n} ${n === 1 ? 'dose' : 'doses'} logged`;
+  }
+  return `${c.percent}% given · ${c.administeredDoses} of ${c.expectedDoses} doses`;
+}
+
+// The attention line when doses were logged as anything other than cleanly given.
+// Returns null when there is nothing to flag. Splits the two clinically-distinct
+// buckets per §6.2: refused/partial is a possible DISEASE signal (a pet too
+// nauseated or in too much pain to take a pill) → it points to the vet and is NEVER
+// softened to "fussy"/"picky"/"stubborn"; a pure owner-skip ('missed') is an
+// adherence gap, surfaced plainly without escalation (critical-drug escalation is
+// PR 9's curated-match job, not this card's). One calm line, clinical-guardrails.
+export function regimenFlagLine(tally: AdherenceTally): string | null {
+  const notTaken = tally.refused + tally.partial; // pet didn't (fully) take it
+  const missed = tally.missed;                    // owner skipped
+  const parts: string[] = [];
+  if (notTaken > 0) {
+    parts.push(`${notTaken} ${notTaken === 1 ? 'dose' : 'doses'} not fully taken`);
+  }
+  if (missed > 0) {
+    parts.push(`${missed} missed`);
+  }
+  if (parts.length === 0) return null;
+  // refused/partial leans on a health signal → route to the vet, never to "fussy".
+  const tail = notTaken > 0 ? ' — worth a word with your vet' : '';
+  return parts.join(', ') + tail;
+}
+
+// ── PR 7 regimen-setup payload (AddMedicationModal → medications insert/update) ──
+// Pure builder + validity check for the regimen write, mirroring the food-model's
+// "configure the structured fields ONCE" stance (§3). Extracted so the trimming /
+// null-coercion of the many optional fields is testable and one screen can't drift
+// from another. NOTE: this builds the COLUMN payload only; pet_id is added by the
+// caller from the ACTIVE pet (never from free input) and the write is RLS-gated by
+// medications_owner (B-123 — caller-ownership is re-validated by RLS on every
+// INSERT/UPDATE; PR 7 has no service-role write path to confuse).
+
+export interface RegimenFormValues {
+  drugName: string;
+  medicationItemId: string | null; // linked library drug, or null for free-text
+  doseAmount: string;
+  route: string | null;
+  dosesPerDay: number | null;      // null = PRN/as-needed
+  scheduleNotes: string;
+  indication: string;
+  prescribedBy: string;
+  startedAt: string;               // 'YYYY-MM-DD'
+  targetDurationDays: number | null;
+}
+
+// The medications columns a regimen write sets. Deliberately omits status/ended_at
+// (lifecycle, set by the create default 'active' and the End action) and the
+// server-managed id/created_at/updated_at.
+export interface RegimenWritePayload {
+  medication_item_id: string | null;
+  drug_name: string;
+  dose_amount: string | null;
+  route: string | null;
+  doses_per_day: number | null;
+  schedule_notes: string | null;
+  indication: string | null;
+  prescribed_by: string | null;
+  started_at: string;
+  target_duration_days: number | null;
+}
+
+export function buildRegimenPayload(v: RegimenFormValues): RegimenWritePayload {
+  return {
+    // medication_item_id only when the typed name still matches the linked library
+    // drug (the modal unlinks on edit), so a free-text name never carries a stale id.
+    medication_item_id: v.medicationItemId,
+    drug_name: v.drugName.trim(),
+    dose_amount: trimOrNull(v.doseAmount),
+    route: v.route,
+    doses_per_day: v.dosesPerDay,
+    schedule_notes: trimOrNull(v.scheduleNotes),
+    indication: trimOrNull(v.indication),
+    prescribed_by: trimOrNull(v.prescribedBy),
+    started_at: v.startedAt,
+    target_duration_days: v.targetDurationDays,
+  };
+}
+
+// drug_name is the required display/report key (medications.drug_name is NOT NULL,
+// and the vet report §7 must always name the drug). Everything else is optional.
+export function canSaveRegimen(v: { drugName: string }): boolean {
+  return v.drugName.trim().length > 0;
+}
