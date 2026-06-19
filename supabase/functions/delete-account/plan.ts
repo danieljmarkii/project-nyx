@@ -10,16 +10,27 @@
 // what makes the scoping and ordering invariants testable offline (AC-11).
 
 // ── Storage buckets ───────────────────────────────────────────────────────────
-// The four buckets whose objects are pet-health PII tied to THIS user's pets and
-// must be erased (FR-3). `nyx-vet-reports` is forward-looking — the bucket lands
-// with Step 9; today there are no `vet_reports` rows so it is simply never
-// touched, and once it exists the best-effort purge in index.ts tolerates its
-// absence (FR-3's "tolerate its absence today").
+// The buckets whose objects are THIS user's PII and must be erased (FR-3). The
+// first four are pet-health objects scoped through the user's pets. `medicationPhotos`
+// is the deliberate exception (B-127): drug-LABEL photos are scoped by the
+// `medication_items` the user CREATED (`created_by_user_id`), NOT by pet, because the
+// drug catalog is global and has no `pet_id` (it mirrors `food_items`). A prescription
+// label carries owner/pet/clinic names — per-user PII, the very reason migration 021
+// gave the bucket per-user-prefix RLS — so it is PURGED here, unlike the global
+// food-label photos which are PRESERVED (the `medication_items` CATALOG ROW itself
+// survives via `created_by_user_id → SET NULL`; only its label photo is erased).
+// `nyx-vet-reports` is forward-looking — the bucket lands with Step 9; today there
+// are no `vet_reports` rows so it is simply never touched, and once it exists the
+// best-effort purge in index.ts tolerates its absence (FR-3's "tolerate its absence
+// today"). The same tolerance covers `nyx-medication-photos` before its dashboard
+// creation / first PR-5 upload — until then there are no `photo_paths`, so the
+// bucket is never even reached.
 export const STORAGE_BUCKETS = {
   petPhotos: 'nyx-pet-photos',
   eventAttachments: 'nyx-event-attachments',
   vetAttachments: 'nyx-vet-attachments',
   vetReports: 'nyx-vet-reports',
+  medicationPhotos: 'nyx-medication-photos',
 } as const
 
 // Deliberately NOT purged (FR-4). Food-label photos belong to the GLOBAL
@@ -38,15 +49,20 @@ export const STORAGE_REMOVE_CHUNK = 100
 
 // ── Path collection / scoping ─────────────────────────────────────────────────
 
-// Raw storage paths read from the user's OWNED rows (scoped in index.ts strictly
-// by `pets.user_id = userId`, never from client input — FR-3). Each list arrives
-// straight from the DB and may contain nulls (a pet with no photo), blanks, or
-// duplicates; cleaning happens here.
+// Raw storage paths read from the user's OWNED rows (scoped in index.ts by
+// `pets.user_id = userId` for the pet-health buckets, and by
+// `medication_items.created_by_user_id = userId` for the drug-label photos — never
+// from client input, FR-3). Each list arrives straight from the DB and may contain
+// nulls (a pet with no photo), blanks, or duplicates; cleaning happens here.
 export interface OwnedStoragePaths {
   petPhotoPaths: ReadonlyArray<string | null | undefined>
   eventAttachmentPaths: ReadonlyArray<string | null | undefined>
   vetAttachmentPaths: ReadonlyArray<string | null | undefined>
   vetReportPaths: ReadonlyArray<string | null | undefined>
+  // Drug-label photos. `medication_items.photo_paths` is a `TEXT[]` (one array per
+  // drug row), so index.ts FLATTENS every owned row's array into this one flat list
+  // before handing it over — keeping the pure module's per-bucket shape uniform.
+  medicationPhotoPaths: ReadonlyArray<string | null | undefined>
 }
 
 export interface BucketPurge {
@@ -73,7 +89,7 @@ export function cleanPaths(raw: ReadonlyArray<string | null | undefined>): strin
 }
 
 // Map each owned path-list to its bucket, dropping any bucket with nothing to
-// remove. The output can ONLY ever contain the four STORAGE_BUCKETS above —
+// remove. The output can ONLY ever contain the five STORAGE_BUCKETS above —
 // `nyx-food-photos` is unreachable here by construction (there is no food input),
 // which is the FR-4 guarantee expressed in code rather than as a hopeful comment.
 export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
@@ -82,6 +98,7 @@ export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
     { bucket: STORAGE_BUCKETS.eventAttachments, paths: cleanPaths(input.eventAttachmentPaths) },
     { bucket: STORAGE_BUCKETS.vetAttachments, paths: cleanPaths(input.vetAttachmentPaths) },
     { bucket: STORAGE_BUCKETS.vetReports, paths: cleanPaths(input.vetReportPaths) },
+    { bucket: STORAGE_BUCKETS.medicationPhotos, paths: cleanPaths(input.medicationPhotoPaths) },
   ]
   return candidates.filter((c) => c.paths.length > 0)
 }
