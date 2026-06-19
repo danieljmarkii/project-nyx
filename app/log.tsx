@@ -673,6 +673,7 @@ export default function LogModal() {
           <MedicationPicker
             petId={activePet.id}
             onPickMedication={handlePickMedication}
+            onAddNew={() => router.push('/medication-capture?fromLog=1')}
           />
         )}
       </SafeAreaView>

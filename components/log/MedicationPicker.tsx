@@ -3,18 +3,19 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Plus } from 'lucide-react-native';
+import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentMedications, getLibraryMedications, PickerMedication } from '../../lib/db';
-import { AddMedicationModal } from './AddMedicationModal';
 
 // The medication twin of FoodPicker (spec §9), deliberately leaner: a drug
 // library has no "always available" free-choice facts and no wall-of-Fancy-Feast
-// brand grouping, so this is Recent + a searchable Library + the text-first "Add
-// medication" CTA. Tap a tile → onPickMedication logs a dose in one tap. The two
-// pickers share their structure (Add CTA on top → Recent strip → Library) so they
-// read as one family.
+// brand grouping, so this is Recent + a searchable Library + the photo-first "Add
+// a medication" CTA (B-117 PR 5 — the CTA opens app/medication-capture, which
+// snaps the label and falls back to manual entry, exactly like FoodPicker's
+// onAddNew → food-capture). Tap a tile → onPickMedication logs a dose in one tap.
+// The two pickers share their structure (Add CTA on top → Recent strip → Library)
+// so they read as one family.
 
 const RECENT_DAYS = 14;
 const RECENT_LIMIT = 5;
@@ -24,13 +25,15 @@ interface Props {
   petId: string;
   // Fires when the user taps a Recent or Library tile — one-tap dose log.
   onPickMedication: (med: PickerMedication) => void;
+  // Fires when the user taps "Add a medication" — opens the photo-capture flow
+  // (app/medication-capture). Mirrors FoodPicker's onAddNew.
+  onAddNew: () => void;
 }
 
-export function MedicationPicker({ petId, onPickMedication }: Props) {
+export function MedicationPicker({ petId, onPickMedication, onAddNew }: Props) {
   const [recent, setRecent] = useState<PickerMedication[]>([]);
   const [library, setLibrary] = useState<PickerMedication[]>([]);
   const [search, setSearch] = useState('');
-  const [addOpen, setAddOpen] = useState(false);
 
   // Reload on every focus so a drug added (or logged) elsewhere is reflected when
   // the picker comes back into view (router.back() doesn't remount it).
@@ -67,39 +70,27 @@ export function MedicationPicker({ petId, onPickMedication }: Props) {
     );
   }, [library, search]);
 
-  // A just-added drug logs its first dose immediately (add-then-log), the same
-  // one-tap path as picking an existing one. Close the add sheet FIRST (while
-  // this picker is still mounted), THEN log the dose: handlePickMedication's
-  // router.back() dismisses /log on success, so closing here avoids a setState on
-  // an unmounting picker, and a dose-write failure surfaces its alert on the live
-  // picker rather than on the dismissed sheet.
-  const handleAdded = useCallback((item: PickerMedication) => {
-    setAddOpen(false);
-    onPickMedication(item);
-  }, [onPickMedication]);
-
   return (
-    <>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
         <View style={styles.zone}>
           <TouchableOpacity
             style={styles.addCta}
-            onPress={() => setAddOpen(true)}
+            onPress={onAddNew}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Add a medication"
           >
             <View style={styles.addCtaIcon}>
-              <Plus size={20} color={theme.colorAccent} strokeWidth={2} />
+              <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
             </View>
             <View style={styles.addCtaText}>
               <Text style={styles.addCtaTitle}>Add a medication</Text>
-              <Text style={styles.addCtaHint}>Enter the name, strength, and form</Text>
+              <Text style={styles.addCtaHint}>Snap the label, or enter it by hand</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -154,14 +145,7 @@ export function MedicationPicker({ petId, onPickMedication }: Props) {
             </View>
           )}
         </View>
-      </ScrollView>
-
-      <AddMedicationModal
-        visible={addOpen}
-        onClose={() => setAddOpen(false)}
-        onAdded={handleAdded}
-      />
-    </>
+    </ScrollView>
   );
 }
 

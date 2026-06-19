@@ -265,3 +265,30 @@ export function administrationRowToRemote(
     updated_at: row.updated_at,
   };
 }
+
+// ── PR 5 capture confirm gate (§6.5 — never silently trust an AI-extracted dose) ─
+// Pure predicates behind app/medication-capture.tsx's dose-confirm-required gate.
+// Extracted here ON PURPOSE so the safety invariant is pinned by a unit test
+// (clinical-guardrails Pattern 8 — "the invariant is a test, not a comment"),
+// not by which setStep() the navigation happens to call. The screen wires these
+// into applyExtraction (the seed) and BOTH the confirm and edit screens' canSave,
+// so no screen can save an unverified AI strength and a future confirm→edit route
+// can't silently smuggle one past the gate.
+
+// The seed for `strengthConfirmed` when an AI extraction arrives. A PRESENT
+// (non-empty) AI strength must be verified by the owner before save, so the gate
+// starts CLOSED (false). No AI strength = nothing to mistrust = gate OPEN (true);
+// a missing strength is safe, a wrong one is not (spec §6.5).
+export function initialStrengthConfirmed(aiStrength: string | null | undefined): boolean {
+  return (aiStrength ?? '').trim().length === 0;
+}
+
+// Whether a captured medication may be saved. generic name is the required
+// display key; strengthConfirmed is the §6.5 gate — an unverified AI strength
+// blocks save on EVERY screen, by construction.
+export function canSaveMedicationCapture(params: {
+  genericName: string;
+  strengthConfirmed: boolean;
+}): boolean {
+  return params.genericName.trim().length > 0 && params.strengthConfirmed;
+}
