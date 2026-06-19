@@ -36,7 +36,10 @@ import { useEventStore } from '../store/eventStore';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { insertMedicationDose } from '../lib/medicationDose';
-import { initialStrengthConfirmed, canSaveMedicationCapture } from '../lib/medications';
+import {
+  initialStrengthConfirmed, canSaveMedicationCapture,
+  MEDICATION_FORM_OPTIONS, MEDICATION_ROUTE_OPTIONS,
+} from '../lib/medications';
 import {
   uploadPhoto, compressForUpload, buildMedicationPhotoPath, MEDICATION_PHOTOS_BUCKET,
 } from '../lib/storage';
@@ -51,32 +54,12 @@ interface CapturedPhoto {
   height?: number;
 }
 
-// The medication_form / medication_route enum members (migration 020). Rendered
-// as horizontally-scrollable chips on confirm + edit, so any AI-returned value is
-// selectable. Values are the exact DB enum members — no mapping step.
-const FORM_OPTIONS: { value: string; label: string }[] = [
-  { value: 'tablet',      label: 'Tablet' },
-  { value: 'capsule',     label: 'Capsule' },
-  { value: 'liquid',      label: 'Liquid' },
-  { value: 'chewable',    label: 'Chewable' },
-  { value: 'transdermal', label: 'Transdermal' },
-  { value: 'injection',   label: 'Injection' },
-  { value: 'drops',       label: 'Drops' },
-  { value: 'ointment',    label: 'Ointment' },
-  { value: 'powder',      label: 'Powder' },
-  { value: 'other',       label: 'Other' },
-];
-
-const ROUTE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'oral',       label: 'Oral' },
-  { value: 'topical',    label: 'Topical' },
-  { value: 'otic',       label: 'Ear' },
-  { value: 'ophthalmic', label: 'Eye' },
-  { value: 'injectable', label: 'Injectable' },
-  { value: 'inhaled',    label: 'Inhaled' },
-  { value: 'rectal',     label: 'Rectal' },
-  { value: 'other',      label: 'Other' },
-];
+// Form/route option lists live in lib/medications (MEDICATION_FORM_OPTIONS /
+// MEDICATION_ROUTE_OPTIONS) — one source of truth shared with the PR 6 detail
+// screen, since the values must match the migration 020 DB enums exactly and the
+// two screens must never drift.
+const FORM_OPTIONS = MEDICATION_FORM_OPTIONS;
+const ROUTE_OPTIONS = MEDICATION_ROUTE_OPTIONS;
 
 interface MedicationExtraction {
   generic_name?: string;
