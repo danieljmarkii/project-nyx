@@ -16,9 +16,14 @@ import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
+import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DeleteAccountSheet } from '../../components/profile/DeleteAccountSheet';
 import { Pet } from '../../store/petStore';
+import {
+  MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
+  regimenFlagLine, type AdherenceTally, type RegimenCompliance,
+} from '../../lib/medications';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
 
@@ -34,6 +39,61 @@ interface DietTrialDisplay extends DietTrialRow {
   daysElapsed: number;
   daysLogged: number;
   compliance: number;
+}
+
+interface RegimenDisplay extends Regimen {
+  daysElapsed: number;
+  tally: AdherenceTally;
+  compliance: RegimenCompliance;
+  complianceLine: string;
+  flagLine: string | null;
+}
+
+const EMPTY_TALLY = (): AdherenceTally => ({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 });
+
+// Fold a regimen row + its dose tally into the display shape (compliance numbers +
+// the two clinical-guardrails copy lines). Kept pure so onAdded/onUpdated can rebuild
+// a single row optimistically without a refetch flash, exactly like the diet-trial
+// derivation but reusing the unit-tested compute/copy helpers.
+function buildRegimenDisplay(reg: Regimen, tally: AdherenceTally): RegimenDisplay {
+  const daysElapsed = regimenDaysElapsed(reg.started_at);
+  const compliance = computeRegimenCompliance({
+    dosesPerDay: reg.doses_per_day, daysElapsed, tally,
+  });
+  return {
+    ...reg,
+    daysElapsed,
+    tally,
+    compliance,
+    complianceLine: regimenComplianceLine(compliance),
+    flagLine: regimenFlagLine(tally),
+  };
+}
+
+function frequencyLabel(dosesPerDay: number | null): string {
+  if (dosesPerDay == null) return 'As needed';
+  switch (dosesPerDay) {
+    case 1: return 'Once a day';
+    case 2: return 'Twice a day';
+    case 3: return '3× a day';
+    case 4: return '4× a day';
+    default: return `${dosesPerDay}× a day`;
+  }
+}
+
+function routeLabel(route: string | null): string | null {
+  if (!route) return null;
+  return MEDICATION_ROUTE_OPTIONS.find((o) => o.value === route)?.label ?? null;
+}
+
+// Whole days the regimen has run, ≥1 — the same local-midnight span the diet-trial
+// card uses, so the two compliance reads agree on "what counts as a day".
+function regimenDaysElapsed(startedAt: string): number {
+  const start = new Date(startedAt);
+  start.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 }
 
 function calculateAge(dob: string | null): string {
@@ -79,6 +139,11 @@ export default function ProfileScreen() {
 
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [conditionsLoading, setConditionsLoading] = useState(true);
+
+  const [medications, setMedications] = useState<RegimenDisplay[]>([]);
+  const [medicationsLoading, setMedicationsLoading] = useState(true);
+  const [medicationModalVisible, setMedicationModalVisible] = useState(false);
+  const [editingRegimen, setEditingRegimen] = useState<Regimen | undefined>(undefined);
 
   const [dietTrial, setDietTrial] = useState<DietTrialDisplay | null>(null);
   const [trialLoading, setTrialLoading] = useState(true);
@@ -152,10 +217,76 @@ export default function ProfileScreen() {
     }
   }, [activePet?.id]);
 
+  const loadMedications = useCallback(async () => {
+    if (!activePet) return;
+    setMedicationsLoading(true);
+    try {
+      // Active regimens for THIS pet only (RLS double-scopes; the .eq is the
+      // intent). The card is a per-pet surface, so multi-pet households never see
+      // another pet's medications here.
+      const { data: regimenRows, error: regimenError } = await supabase
+        .from('medications')
+        .select(
+          'id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
+          'schedule_notes, indication, prescribed_by, started_at, target_duration_days, status, ended_at',
+        )
+        .eq('pet_id', activePet.id)
+        .eq('status', 'active')
+        .order('started_at', { ascending: false });
+
+      if (regimenError) throw regimenError;
+      const regimens = (regimenRows as unknown as Regimen[]) ?? [];
+      if (regimens.length === 0) { setMedications([]); return; }
+
+      // Dose children for these regimens. The parent event's deleted_at is pulled
+      // via a plain to-one embed (the same `food_items(...)` shape loadDietTrial
+      // uses — proven in this codebase) and soft-deleted doses are dropped
+      // client-side, rather than via a `!inner`-embedded filter with no precedent
+      // here. .in(medication_id) drops ad-hoc doses (NULL medication_id) — only
+      // doses tied to a regimen count toward that regimen's compliance.
+      const ids = regimens.map((r) => r.id);
+      const { data: doseRows, error: doseError } = await supabase
+        .from('medication_administrations')
+        .select('medication_id, adherence, events(deleted_at)')
+        .eq('pet_id', activePet.id)
+        .in('medication_id', ids);
+
+      if (doseError) throw doseError;
+
+      type DoseRow = {
+        medication_id: string;
+        adherence: string | null;
+        // to-one embed: supabase-js may surface it as an object or a 1-element array
+        events: { deleted_at: string | null } | { deleted_at: string | null }[] | null;
+      };
+      const tallies = new Map<string, AdherenceTally>(ids.map((id) => [id, EMPTY_TALLY()]));
+      for (const d of (doseRows as unknown as DoseRow[]) ?? []) {
+        const ev = Array.isArray(d.events) ? d.events[0] : d.events;
+        if (ev?.deleted_at) continue; // soft-deleted dose — its parent event is gone; don't count it
+        const t = tallies.get(d.medication_id);
+        if (!t) continue;
+        switch (d.adherence) {
+          case 'given': t.given++; break;
+          case 'partial': t.partial++; break;
+          case 'missed': t.missed++; break;
+          case 'refused': t.refused++; break;
+          default: t.unrated++; break; // NULL = logged-but-unrated (never counted as given)
+        }
+      }
+
+      setMedications(regimens.map((reg) => buildRegimenDisplay(reg, tallies.get(reg.id) ?? EMPTY_TALLY())));
+    } catch (e) {
+      console.error('[Profile] load medications failed:', e);
+    } finally {
+      setMedicationsLoading(false);
+    }
+  }, [activePet?.id]);
+
   useEffect(() => {
     loadConditions();
+    loadMedications();
     loadDietTrial();
-  }, [loadConditions, loadDietTrial]);
+  }, [loadConditions, loadMedications, loadDietTrial]);
 
   async function handlePickPhoto() {
     Alert.alert('Profile photo', 'Choose a source', [
@@ -238,6 +369,54 @@ export default function ProfileScreen() {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Mark resolved', onPress: () => handleResolveCondition(condition.id) },
+      ],
+    );
+  }
+
+  function openAddMedication() {
+    setEditingRegimen(undefined);
+    setMedicationModalVisible(true);
+  }
+
+  function openEditRegimen(reg: RegimenDisplay) {
+    // Pass just the Regimen fields the modal seeds from (drop the derived display).
+    setEditingRegimen({
+      id: reg.id, pet_id: reg.pet_id, medication_item_id: reg.medication_item_id,
+      drug_name: reg.drug_name, dose_amount: reg.dose_amount, route: reg.route,
+      doses_per_day: reg.doses_per_day, schedule_notes: reg.schedule_notes,
+      indication: reg.indication, prescribed_by: reg.prescribed_by,
+      started_at: reg.started_at, target_duration_days: reg.target_duration_days,
+      status: reg.status, ended_at: reg.ended_at,
+    });
+    setMedicationModalVisible(true);
+  }
+
+  async function handleEndRegimen(id: string) {
+    try {
+      // RLS (medications_owner) re-validates this regimen belongs to the caller's
+      // pet; .select() turns a silent 0-row block into a thrown error, not a false
+      // success. A regimen is "ended", never soft-deleted (migration 020).
+      const { data, error } = await supabase
+        .from('medications')
+        .update({ status: 'completed', ended_at: new Date().toISOString().split('T')[0] })
+        .eq('id', id)
+        .select('id');
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error('No row updated (not owned?)');
+      setMedications((prev) => prev.filter((m) => m.id !== id));
+    } catch (e) {
+      console.error('[Profile] end regimen failed:', e);
+      Alert.alert('Could not update', 'Something went wrong. Try again.');
+    }
+  }
+
+  function confirmEndRegimen(reg: RegimenDisplay) {
+    Alert.alert(
+      'End medication',
+      `Mark ${reg.drug_name} as finished? Its logged doses stay on the timeline and in vet reports.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'End medication', onPress: () => handleEndRegimen(reg.id) },
       ],
     );
   }
@@ -394,6 +573,68 @@ export default function ProfileScreen() {
           )}
         </Card>
 
+        {/* ── Current medications ── */}
+        <Card style={styles.sectionGap}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Current medications</Text>
+            <TouchableOpacity onPress={openAddMedication} hitSlop={8}>
+              <Text style={styles.sectionAction}>+ Add</Text>
+            </TouchableOpacity>
+          </View>
+
+          {medicationsLoading ? (
+            <ActivityIndicator style={styles.sectionLoader} color={theme.colorTextSecondary} />
+          ) : medications.length === 0 ? (
+            <Text style={styles.emptyConditionsText}>
+              No active medications. Tap + Add to set up a regimen — then logging a dose is one tap.
+            </Text>
+          ) : (
+            medications.map((reg) => {
+              const meta = [reg.dose_amount, routeLabel(reg.route), frequencyLabel(reg.doses_per_day)]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <View key={reg.id} style={styles.medRow}>
+                  <Divider style={styles.conditionDivider} />
+                  <Text style={styles.medName}>{reg.drug_name}</Text>
+                  {meta ? <Text style={styles.medMeta}>{meta}</Text> : null}
+                  <Text style={styles.medDays}>
+                    {/* "Day X of Y" only while the course is within its planned
+                        window; once it's run past target_duration (still active —
+                        owner hasn't ended it) the "of Y" is nonsense ("Day 30 of
+                        7"), so fall back to the ongoing "Started …" format. */}
+                    {reg.target_duration_days != null && reg.daysElapsed <= reg.target_duration_days
+                      ? `Day ${reg.daysElapsed} of ${reg.target_duration_days}`
+                      : `Started ${new Date(reg.started_at).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })}`}
+                  </Text>
+                  {reg.compliance.percent != null && (
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressBar, { width: `${reg.compliance.percent}%` }]} />
+                    </View>
+                  )}
+                  <Text style={styles.trialCompliance}>{reg.complianceLine}</Text>
+                  {reg.flagLine && (
+                    <View style={styles.medFlag}>
+                      <Text style={styles.medFlagText}>{reg.flagLine}</Text>
+                    </View>
+                  )}
+                  {reg.indication ? <Text style={styles.medContext}>For {reg.indication}</Text> : null}
+                  {reg.prescribed_by ? <Text style={styles.medContext}>Prescribed by {reg.prescribed_by}</Text> : null}
+                  <View style={styles.conditionActions}>
+                    <TouchableOpacity onPress={() => openEditRegimen(reg)} hitSlop={8}>
+                      <Text style={styles.conditionActionText}>Edit</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.conditionActionDivider}>·</Text>
+                    <TouchableOpacity onPress={() => confirmEndRegimen(reg)} hitSlop={8}>
+                      <Text style={styles.conditionActionText}>End</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </Card>
+
         {/* ── Diet trial card ── */}
         {!trialLoading && dietTrial && (
           <Card style={styles.sectionGap}>
@@ -487,6 +728,24 @@ export default function ProfileScreen() {
         onAdded={(c) => setConditions((prev) => [c, ...prev])}
         onUpdated={(c) =>
           setConditions((prev) => prev.map((x) => (x.id === c.id ? c : x)))
+        }
+      />
+
+      <AddMedicationModal
+        visible={medicationModalVisible}
+        petId={activePet.id}
+        existingRegimen={editingRegimen}
+        onClose={() => { setMedicationModalVisible(false); setEditingRegimen(undefined); }}
+        // A new regimen has no doses yet (empty tally → "No doses logged yet").
+        onAdded={(reg) =>
+          setMedications((prev) => [buildRegimenDisplay(reg, EMPTY_TALLY()), ...prev])
+        }
+        // An edit can change doses_per_day (the expected denominator), so recompute
+        // with the regimen's EXISTING tally rather than discarding its logged doses.
+        onUpdated={(reg) =>
+          setMedications((prev) =>
+            prev.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
+          )
         }
       />
     </SafeAreaView>
@@ -703,6 +962,45 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   trialVet: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+
+  // ── Current medications (rows mirror the conditions list + the diet-trial bar) ──
+  medRow: {
+    gap: 4,
+  },
+  medName: {
+    fontSize: theme.textLG,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
+  },
+  medMeta: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
+  medDays: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    marginTop: 2,
+  },
+  // Calm-but-clear attention treatment for a missed/refused dose — a soft rose
+  // tint (the app's symptom family), never a solid-red alarm. clinical-guardrails:
+  // visible enough not to be lost, gentle enough not to alarm an owner whose pet
+  // may just have spat out one pill.
+  medFlag: {
+    backgroundColor: theme.colorEventSymptomLight,
+    borderRadius: theme.radiusSmall,
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+    marginTop: 2,
+  },
+  medFlagText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    lineHeight: 19,
+  },
+  medContext: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },

@@ -19,12 +19,24 @@ import {
   buildMedicationItemUpdate,
   hasMedicationItemChanges,
   canSaveMedicationItemEdit,
+  computeRegimenCompliance,
+  regimenComplianceLine,
+  regimenFlagLine,
+  buildRegimenPayload,
+  canSaveRegimen,
   MEDICATION_SCHEMA_SQL,
   type LocalMedicationItem,
   type LocalMedication,
   type LocalMedicationAdministration,
   type MedicationItemEdit,
+  type AdherenceTally,
+  type RegimenFormValues,
 } from './medications';
+
+// No-flag tally helper — every dose cleanly given unless a test says otherwise.
+function tally(over: Partial<AdherenceTally> = {}): AdherenceTally {
+  return { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0, ...over };
+}
 
 describe('medicationItemRowToRemote — FK pre-sync payload (Pattern 6)', () => {
   const base: LocalMedicationItem = {
@@ -361,5 +373,208 @@ describe('canSaveMedicationItemEdit', () => {
     expect(canSaveMedicationItemEdit({ generic_name: 'Pred' })).toBe(true);
     expect(canSaveMedicationItemEdit({ generic_name: '' })).toBe(false);
     expect(canSaveMedicationItemEdit({ generic_name: '   ' })).toBe(false);
+  });
+});
+
+// ── PR 7 regimen compliance — the clinically load-bearing adherence read (§5.4/§6) ─
+// These assertions ARE the safety contract (clinical-guardrails Pattern 8): the %
+// never counts a missed/refused dose as adherence, and an empty regimen never reads
+// as "compliant".
+describe('computeRegimenCompliance', () => {
+  it('computes given ÷ expected for a clean scheduled regimen', () => {
+    // 2×/day for 7 days = 14 expected; 14 given → 100%.
+    const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 7, tally: tally({ given: 14 }) });
+    expect(c.expectedDoses).toBe(14);
+    expect(c.administeredDoses).toBe(14);
+    expect(c.percent).toBe(100);
+    expect(c.flaggedDoses).toBe(0);
+  });
+
+  it('NEVER counts missed/refused/partial as administered (the §6.1 guard)', () => {
+    // 6 expected; owner logged 3 missed + 1 refused + 0 given. Administered=0 → 0%,
+    // NOT 4/6=67%. A logged non-administration is not adherence.
+    const c = computeRegimenCompliance({
+      dosesPerDay: 2, daysElapsed: 3, tally: tally({ missed: 3, refused: 1 }),
+    });
+    expect(c.expectedDoses).toBe(6);
+    expect(c.administeredDoses).toBe(0);
+    expect(c.flaggedDoses).toBe(4);
+    expect(c.percent).toBe(0);
+  });
+
+  it('returns percent=null for a scheduled regimen with NOTHING logged (not "0%/compliant")', () => {
+    const c = computeRegimenCompliance({ dosesPerDay: 1, daysElapsed: 4, tally: tally() });
+    expect(c.loggedDoses).toBe(0);
+    expect(c.percent).toBeNull(); // renders "No doses logged yet", never reassurance
+  });
+
+  it('treats a PRN regimen (null doses_per_day) as a count, never a %', () => {
+    const c = computeRegimenCompliance({ dosesPerDay: null, daysElapsed: 10, tally: tally({ given: 3 }) });
+    expect(c.isPrn).toBe(true);
+    expect(c.expectedDoses).toBe(0);
+    expect(c.percent).toBeNull();
+    expect(c.loggedDoses).toBe(3);
+  });
+
+  it('does not count an unrated (NULL adherence) dose as given', () => {
+    // 1 given + 2 unrated of 6 expected → administered=1 → 17%, the safe under-read.
+    const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 3, tally: tally({ given: 1, unrated: 2 }) });
+    expect(c.administeredDoses).toBe(1);
+    expect(c.loggedDoses).toBe(3);
+    expect(c.percent).toBe(17);
+  });
+
+  it('clamps an over-logged regimen to 100% (extra doses can exceed the elapsed estimate)', () => {
+    const c = computeRegimenCompliance({ dosesPerDay: 1, daysElapsed: 2, tally: tally({ given: 5 }) });
+    expect(c.expectedDoses).toBe(2);
+    expect(c.percent).toBe(100); // not 250%
+  });
+
+  it('floors fractional elapsed days and never divides by zero', () => {
+    const c = computeRegimenCompliance({ dosesPerDay: 1, daysElapsed: 0, tally: tally({ given: 1 }) });
+    expect(c.expectedDoses).toBe(1); // daysElapsed floored to ≥1
+    expect(c.percent).toBe(100);
+  });
+
+  it('supports a fractional schedule (every-other-day = 0.5/day)', () => {
+    const c = computeRegimenCompliance({ dosesPerDay: 0.5, daysElapsed: 8, tally: tally({ given: 4 }) });
+    expect(c.expectedDoses).toBe(4); // 0.5 × 8
+    expect(c.percent).toBe(100);
+  });
+});
+
+describe('regimenComplianceLine — copy never reassures on absence (§6.1)', () => {
+  const FORBIDDEN = /great|good|well|perfect|all set|on track|healthy|fine|compliant/i;
+
+  it('reads "No doses logged yet" for an empty scheduled regimen — never "compliant"', () => {
+    const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 5, tally: tally() });
+    const line = regimenComplianceLine(c);
+    expect(line).toBe('No doses logged yet');
+    expect(line).not.toMatch(FORBIDDEN);
+  });
+
+  it('reads a factual %/count line for a logged regimen, with no evaluation', () => {
+    const c = computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 7, tally: tally({ given: 14 }) });
+    expect(regimenComplianceLine(c)).toBe('100% given · 14 of 14 doses');
+    expect(regimenComplianceLine(c)).not.toMatch(FORBIDDEN);
+  });
+
+  it('drops the "of N" when over-logged so it never reads "5 of 2 doses" (CX-D display)', () => {
+    // 5 given of 2 expected → 100% (clamped) but "5 of 2" reads broken; show a
+    // plain count instead. NOT a double-dose flag (that needs interval timing, §6.4).
+    const c = computeRegimenCompliance({ dosesPerDay: 1, daysElapsed: 2, tally: tally({ given: 5 }) });
+    expect(c.percent).toBe(100);
+    expect(regimenComplianceLine(c)).toBe('100% given · 5 doses logged');
+  });
+
+  it('reads a plain dose count for PRN, singular and plural', () => {
+    expect(regimenComplianceLine(computeRegimenCompliance({ dosesPerDay: null, daysElapsed: 3, tally: tally({ given: 1 }) })))
+      .toBe('1 dose logged');
+    expect(regimenComplianceLine(computeRegimenCompliance({ dosesPerDay: null, daysElapsed: 3, tally: tally({ given: 4 }) })))
+      .toBe('4 doses logged');
+    expect(regimenComplianceLine(computeRegimenCompliance({ dosesPerDay: null, daysElapsed: 3, tally: tally() })))
+      .toBe('No doses logged yet');
+  });
+
+  it('never emits an exclamation mark (nyx-voice)', () => {
+    const samples = [
+      computeRegimenCompliance({ dosesPerDay: 2, daysElapsed: 7, tally: tally({ given: 14 }) }),
+      computeRegimenCompliance({ dosesPerDay: 1, daysElapsed: 4, tally: tally() }),
+      computeRegimenCompliance({ dosesPerDay: null, daysElapsed: 3, tally: tally({ given: 2 }) }),
+    ];
+    samples.forEach((c) => expect(regimenComplianceLine(c)).not.toContain('!'));
+  });
+});
+
+describe('regimenFlagLine — refusal is a health signal, never "fussy" (§6.2)', () => {
+  const FUSSY = /fussy|picky|stubborn|naughty|lazy|difficult/i;
+
+  it('returns null when every dose was cleanly given', () => {
+    expect(regimenFlagLine(tally({ given: 10 }))).toBeNull();
+  });
+
+  it('points a refused dose to the vet and never softens it to "fussy"', () => {
+    const line = regimenFlagLine(tally({ refused: 1 }))!;
+    expect(line).toMatch(/not fully taken/);
+    expect(line).toMatch(/vet/);
+    expect(line).not.toMatch(FUSSY);
+    expect(line).not.toContain('!');
+  });
+
+  it('treats partial like refused (a disease-leaning signal), routed to the vet', () => {
+    const line = regimenFlagLine(tally({ partial: 2 }))!;
+    expect(line).toMatch(/2 doses not fully taken/);
+    expect(line).toMatch(/vet/);
+  });
+
+  it('surfaces a pure owner-skip ("missed") plainly, WITHOUT vet escalation', () => {
+    const line = regimenFlagLine(tally({ missed: 3 }))!;
+    expect(line).toBe('3 missed');
+    expect(line).not.toMatch(/vet/); // a missed dose is an adherence gap, not a disease signal
+  });
+
+  it('combines both buckets and keeps the vet tail for the health-signal half', () => {
+    const line = regimenFlagLine(tally({ refused: 1, missed: 2 }))!;
+    expect(line).toMatch(/1 dose not fully taken/);
+    expect(line).toMatch(/2 missed/);
+    expect(line).toMatch(/worth a word with your vet/);
+    expect(line).not.toMatch(FUSSY);
+  });
+});
+
+describe('buildRegimenPayload / canSaveRegimen — regimen-setup write', () => {
+  const form: RegimenFormValues = {
+    drugName: '  Prednisolone ',
+    medicationItemId: 'item-1',
+    doseAmount: ' 1 tablet ',
+    route: 'oral',
+    dosesPerDay: 2,
+    scheduleNotes: '  8am & 8pm ',
+    indication: ' Allergies ',
+    prescribedBy: '  Dr. Chen ',
+    startedAt: '2026-06-19',
+    targetDurationDays: 7,
+  };
+
+  it('trims the required name and nulls blank optionals; never carries pet_id/status/id', () => {
+    const out = buildRegimenPayload(form);
+    expect(out.drug_name).toBe('Prednisolone');
+    expect(out.dose_amount).toBe('1 tablet');
+    expect(out.schedule_notes).toBe('8am & 8pm');
+    expect(out.indication).toBe('Allergies');
+    expect(out.prescribed_by).toBe('Dr. Chen');
+    // The caller adds pet_id from the ACTIVE pet (never free input) and the create
+    // default sets status — the payload itself must not smuggle them.
+    const keys = Object.keys(out);
+    ['pet_id', 'status', 'ended_at', 'id', 'created_at', 'updated_at'].forEach((k) =>
+      expect(keys).not.toContain(k),
+    );
+  });
+
+  it('nulls blank optional fields rather than writing empty strings', () => {
+    const out = buildRegimenPayload({
+      ...form, doseAmount: '   ', scheduleNotes: '', indication: '', prescribedBy: '  ',
+    });
+    expect(out.dose_amount).toBeNull();
+    expect(out.schedule_notes).toBeNull();
+    expect(out.indication).toBeNull();
+    expect(out.prescribed_by).toBeNull();
+  });
+
+  it('passes a PRN (null doses_per_day), ongoing (null duration), free-text (null item) regimen through', () => {
+    const out = buildRegimenPayload({
+      ...form, medicationItemId: null, dosesPerDay: null, targetDurationDays: null, route: null,
+    });
+    expect(out.medication_item_id).toBeNull();
+    expect(out.doses_per_day).toBeNull();
+    expect(out.target_duration_days).toBeNull();
+    expect(out.route).toBeNull();
+    expect(out.drug_name).toBe('Prednisolone'); // denormalized name always present
+  });
+
+  it('requires a non-empty drug name (medications.drug_name is NOT NULL)', () => {
+    expect(canSaveRegimen({ drugName: 'Apoquel' })).toBe(true);
+    expect(canSaveRegimen({ drugName: '' })).toBe(false);
+    expect(canSaveRegimen({ drugName: '   ' })).toBe(false);
   });
 });
