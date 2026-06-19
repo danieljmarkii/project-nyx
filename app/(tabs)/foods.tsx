@@ -419,7 +419,9 @@ const styles = StyleSheet.create({
   // zones use. Fixes the inverted hierarchy where the brand sub-header (textSM,
   // dark) was out-weighing the tiny all-caps section label it sat under.
   sectionHeader: {
-    gap: 2,
+    // Shared micro-gap token (B-113) — the picker's harmonized sectionHeader uses
+    // the identical value, so the two surfaces' section→hint spacing can't drift.
+    gap: theme.spaceMicro,
   },
   sectionTitle: {
     fontSize: theme.textXL,

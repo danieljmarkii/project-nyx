@@ -32,6 +32,29 @@ describe('FoodTile', () => {
     expect(queryByText(/·/)).toBeNull();
   });
 
+  // Under a brand header (picker brand grouping, B-113 / B-109) the tile drops the
+  // brand from the eyebrow and shows the format alone — but the brand stays in the
+  // accessibilityLabel, exactly like the Foods-tab FoodRow's hideBrand.
+  it('hideBrand shows the format alone and keeps brand in the a11y label', () => {
+    const { getByText, queryByText, getByLabelText } = render(
+      <FoodTile brand="Fancy Feast" productName="Chicken Pâté" format="wet_canned" hideBrand onPress={() => {}} />,
+    );
+    expect(getByText('WET')).toBeTruthy();
+    expect(queryByText(/FANCY FEAST/)).toBeNull();
+    expect(getByLabelText('Fancy Feast Chicken Pâté')).toBeTruthy();
+  });
+
+  // hideBrand with an unlabeled format ('other') leaves only the product name —
+  // no empty/dangling eyebrow line.
+  it('hideBrand with no format label renders only the product name', () => {
+    const { getByText, queryByText } = render(
+      <FoodTile brand="Fancy Feast" productName="Mystery Mix" format="other" hideBrand onPress={() => {}} />,
+    );
+    expect(getByText('Mystery Mix')).toBeTruthy();
+    expect(queryByText('FANCY FEAST')).toBeNull();
+    expect(queryByText(/·/)).toBeNull();
+  });
+
   it('fires onPress when the tile is tapped', () => {
     const onPress = jest.fn();
     const { getByText } = render(

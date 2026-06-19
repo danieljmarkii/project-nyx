@@ -6,7 +6,7 @@ import { useFocusEffect } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
-import { groupFoodsByType, toFoodRows } from '../../lib/food';
+import { groupFoodsByType, toFoodRows, splitBrandGroupsForPicker } from '../../lib/food';
 import {
   getActiveArrangementsForPets, confirmArrangementFresh, endFreeChoice,
   groupArrangementsByFood, arrangementPetsLine, petNameList, FoodArrangementGroup,
@@ -310,8 +310,12 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
         )}
       </View>
 
+      {/* No "LIBRARY" zone label here (B-113 Option C): the per-type section
+          titles below ("Meals"/"Treats") ARE the headers, matching the Foods tab's
+          two-level structure (section → brand → items). A small all-caps "LIBRARY"
+          eyebrow above a prominent "Meals" title would re-create the inverted
+          hierarchy the Foods tab just fixed. The search field opens the zone. */}
       <View style={styles.zone}>
-        <SectionLabel label="Library" />
         <TextInput
           style={styles.search}
           placeholder="Search brand or product"
@@ -345,26 +349,27 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
   );
 }
 
-// Renders a single grouped section of the library. Hidden when the group is
-// empty so the picker doesn't show a "Treats" header with nothing under it.
+// Renders one type section of the library (Meals / Treats / Unclassified). Hidden
+// when the section is empty so the picker never shows a "Treats" header with
+// nothing under it.
 //
-// PICKER LAYOUT — deliberately 2-up FoodTiles, NOT the Foods-tab full-width
-// FoodRow. B-004 PR 7 re-opened "should the in-log picker match the Foods tab's
-// full-width rows?" and resolved KEEP 2-UP (Designer + Jordan, no dissent):
-//   • Destination vs. action — the Foods tab is a browse/manage *destination*
-//     (rich rows: thumbnail, intake history, chevron→detail); the picker is the
-//     quick-log *action* surface where a tap LOGS. FoodRow's chevron would lie
-//     here, and its intake/favorite annotations don't belong next to a one-tap-log
-//     control (intake-is-not-preference). This is the #174 Navigation principle.
-//   • Density / the 10-second test (§10 AC) — 2-up shows ~2× candidates per screen
-//     and the Recent strip already fronts frequent foods; taller rows mean more
-//     scrolling on the hot path, worst for Jordan's small, brand-diverse library.
-//   • The §4.1 "Tile rendering note" already retired photo thumbnails from this
-//     grid as "a chaotic surface" — FoodRow's per-row photo slot is exactly that.
-// So FoodTile and FoodRow are intentionally two components for two jobs; do NOT
-// "unify" them onto the hot path. (Brand grouping for the picky-cat wall-of-Fancy-
-// Feast scan is the one open parity idea — a Sam-win / mild-Jordan-loss product
-// call, tracked as B-109, not shipped here.)
+// B-113 Option C — the picker shares the Foods tab's *organizing structure*
+// (type section title → brand grouping → items) so the two surfaces read as one
+// family, while the *unit* stays deliberately different: 2-up tap-to-LOG FoodTiles
+// here, full-width tap-to-OPEN FoodRows there. The tile is still the right unit on
+// the hot path — it shows ~2× the candidates per screen, carries no chevron (which
+// would lie: a tap logs) and no intake/favorite annotation (which mustn't sit by a
+// one-tap-log control — intake-is-not-preference), and stays text-only (§4.1 retired
+// photo thumbnails from this grid). So FoodTile and FoodRow remain two components
+// for two jobs; do NOT unify them onto the hot path.
+//
+// Brand grouping (B-109) is the shared structure, applied with the picker-only
+// ≥2-variant rule (splitBrandGroupsForPicker): a brand earns a header only when it
+// collapses ≥2 variants (the picky-cat wall of Fancy Feast); single-variant brands
+// stay one flat 2-up grid with the brand in the tile eyebrow — so a diet-trial
+// owner's all-distinct library renders ~as before (no header per food, no
+// 10-second-test regression). The Foods tab headers every brand; the picker does
+// not, by design.
 function LibraryGroup({
   label, foods, onPickFood, onOpenDetail, hint,
 }: {
@@ -375,28 +380,67 @@ function LibraryGroup({
   hint?: string;
 }) {
   if (foods.length === 0) return null;
-  const rows = toFoodRows(foods);
+  const { brandGroups, singles } = splitBrandGroupsForPicker(foods);
   return (
     <View style={styles.group}>
-      <Text style={styles.groupLabel}>{label}</Text>
-      {hint && <Text style={styles.groupHint}>{hint}</Text>}
-      <View style={styles.grid}>
-        {rows.map((row, idx) => (
-          <View key={idx} style={styles.gridRow}>
-            {row.map((f) => (
-              <FoodTile
-                key={f.id}
-                brand={f.brand}
-                productName={f.product_name}
-                format={f.format}
-                onPress={() => onPickFood(f)}
-                onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
-              />
-            ))}
-            {row.length === 1 && <View style={styles.gridSpacer} />}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{label}</Text>
+        {hint ? <Text style={styles.groupHint}>{hint}</Text> : null}
+      </View>
+      <View style={styles.brandGroups}>
+        {brandGroups.map((bg) => (
+          <View key={bg.key} style={styles.brandGroup}>
+            {/* A brand can be blank in the catalog (rare); skip the header rather
+                than render an empty label, but still show its tiles. */}
+            {bg.brand.trim() ? (
+              <Text style={styles.brandLabel} numberOfLines={1} accessibilityRole="header">
+                {bg.brand}
+              </Text>
+            ) : null}
+            <TileGrid foods={bg.foods} hideBrand onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
           </View>
         ))}
+        {/* Single-variant brands: one flat grid, brand kept in each tile's eyebrow. */}
+        {singles.length > 0 ? (
+          <TileGrid foods={singles} onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
+        ) : null}
       </View>
+    </View>
+  );
+}
+
+// The 2-up tile grid shared by every brand group and the singles list. Chunks the
+// foods into 2-col rows (toFoodRows) so tiles in a row share a height; a trailing
+// odd tile gets a spacer to keep the last row left-aligned.
+function TileGrid({
+  foods, hideBrand = false, onPickFood, onOpenDetail,
+}: {
+  foods: PickerFood[];
+  hideBrand?: boolean;
+  onPickFood: (food: PickerFood) => void;
+  onOpenDetail?: (food: PickerFood) => void;
+}) {
+  return (
+    <View style={styles.grid}>
+      {/* Key on the row's first food id (rows are never empty) rather than the
+          index, so a search filter that changes the list can't make React reuse a
+          row view and miss a re-layout. */}
+      {toFoodRows(foods).map((row) => (
+        <View key={row[0].id} style={styles.gridRow}>
+          {row.map((f) => (
+            <FoodTile
+              key={f.id}
+              brand={f.brand}
+              productName={f.product_name}
+              format={f.format}
+              hideBrand={hideBrand}
+              onPress={() => onPickFood(f)}
+              onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
+            />
+          ))}
+          {row.length === 1 && <View style={styles.gridSpacer} />}
+        </View>
+      ))}
     </View>
   );
 }
@@ -519,22 +563,41 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   groups: {
-    gap: theme.space2,
+    gap: theme.space3,
   },
   group: {
-    gap: theme.space1,
+    gap: theme.space2,
   },
-  groupLabel: {
-    fontSize: theme.textSM,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-    letterSpacing: theme.trackingWide,
-    textTransform: 'uppercase',
+  // Type section header (Meals / Treats / Unclassified) — harmonized with the
+  // Foods tab's sectionTitle treatment (B-113 Option C): sentence-case textXL, so
+  // the section out-weighs the brand sub-header beneath it. A small all-caps label
+  // here would invert the hierarchy (the bug the Foods tab fixed), so the picker
+  // uses the SAME prominent title the browse tab does.
+  sectionHeader: {
+    gap: theme.spaceMicro,
+  },
+  sectionTitle: {
+    fontSize: theme.textXL,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorNeutralDark,
   },
   groupHint: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
-    marginBottom: theme.space1,
+  },
+  // Brand sub-groups within a type section (B-109) — mirrors the Foods tab so the
+  // two surfaces cluster a brand's variants identically. A touch of air between
+  // brands (space2), tighter between a brand label and its tiles (space1).
+  brandGroups: {
+    gap: theme.space2,
+  },
+  brandGroup: {
+    gap: theme.space1,
+  },
+  brandLabel: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
   },
   grid: {
     gap: theme.space2,

@@ -7,6 +7,14 @@ interface Props {
   format: string;
   onPress: () => void;
   onLongPress?: () => void;
+  // When the tile sits under a brand header (picker brand grouping, B-113 / B-109),
+  // the brand is already shown once above the group — so drop it from the eyebrow
+  // and let the format stand alone ("WET"), or show nothing when the format is
+  // unspecified. The brand stays in the accessibilityLabel either way, so a screen
+  // reader still announces the full "<brand> <product>". Mirrors FoodRow's hideBrand
+  // exactly, so the two surfaces handle a brand-grouped item identically. Defaults
+  // to showing the brand (the flat Recent strip + single-variant tiles).
+  hideBrand?: boolean;
 }
 
 // Exported so the standalone Foods-tab row (components/foods/FoodRow) renders
@@ -40,11 +48,17 @@ export const FORMAT_LABEL: Record<string, string> = {
 // WET" eyebrow and the product name as two separate fragments. The hint names the
 // action because here a tap LOGS (the picker is the quick-log surface), whereas a
 // FoodRow tap navigates to detail.
-export function FoodTile({ brand, productName, format, onPress, onLongPress }: Props) {
+export function FoodTile({ brand, productName, format, onPress, onLongPress, hideBrand = false }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
-  const metaLine = typeLabel
-    ? `${brand.toUpperCase()} · ${typeLabel.toUpperCase()}`
-    : brand.toUpperCase();
+  const formatMeta = typeLabel.toUpperCase();
+  // Under a brand header the brand is redundant — show the format alone (or
+  // nothing when unspecified). Otherwise the brand leads, with the format chip
+  // when there is one. Identical shape to FoodRow's meta line.
+  const metaLine = hideBrand
+    ? formatMeta
+    : typeLabel
+      ? `${brand.toUpperCase()} · ${formatMeta}`
+      : brand.toUpperCase();
 
   return (
     <TouchableOpacity
@@ -57,9 +71,13 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress }: P
       accessibilityLabel={`${brand} ${productName}`}
       accessibilityHint="Logs a meal"
     >
-      <Text style={styles.meta} numberOfLines={1}>
-        {metaLine}
-      </Text>
+      {/* Guarded so a hideBrand tile with an unlabeled format ('other') doesn't
+          render an empty eyebrow line above the product name. */}
+      {metaLine ? (
+        <Text style={styles.meta} numberOfLines={1}>
+          {metaLine}
+        </Text>
+      ) : null}
       <Text style={styles.product} numberOfLines={2}>
         {productName}
       </Text>
