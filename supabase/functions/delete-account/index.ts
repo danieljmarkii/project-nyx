@@ -6,7 +6,11 @@
 // `auth.users` row, which fires the existing `ON DELETE CASCADE` FK graph — every
 // pet-data table cascades from `auth.users`/`pets` — so there is NO table-by-table
 // delete loop and NO new schema. `food_items` + `nyx-food-photos` survive (global
-// catalog; `created_by_user_id → SET NULL`).
+// catalog; `created_by_user_id → SET NULL`). `medication_items` ROWS survive the
+// same way, but their drug-LABEL photos do NOT — a prescription label is per-user
+// PII (clinic/owner/pet names), so `nyx-medication-photos` joins the PURGE list
+// (B-127), the one asymmetry from the food catalog: the catalog row outlives the
+// account, its label photo does not.
 //
 // Dual client, mirroring analyze-vomit: a `userClient` (caller JWT) used ONLY to
 // verify identity, and an `adminClient` (service role) for the privileged Storage
@@ -28,29 +32,54 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Gather every Storage object owned by this user, scoped STRICTLY through
-// `pets.user_id = userId` (FR-3). The admin client bypasses RLS, so these WHERE
-// clauses ARE the entire access boundary — they replicate, by hand, the
-// pet-ownership RLS policy ("pet_id IN (SELECT id FROM pets WHERE user_id = …)")
-// that protects these tables for ordinary reads. Paths come only from owned rows,
-// never from client input, and this runs BEFORE any delete because the cascade
-// will destroy the rows that hold these paths.
+// Gather every Storage object owned by this user (FR-3), via TWO distinct ownership
+// scopes: `pets.user_id = userId` for the pet-health objects (pet photos + event/vet
+// attachments + vet-report PDFs), and `medication_items.created_by_user_id = userId`
+// for the drug-label photos — the global drug catalog has no `pet_id`, so the creator
+// IS the ownership key there (B-127). The admin client bypasses RLS, so these WHERE
+// clauses ARE the entire access boundary — they replicate, by hand, the RLS policies
+// that protect these tables for ordinary reads (pet-ownership for the pet-scoped
+// tables; creator-locked for `medication_items`). Paths come only from owned rows,
+// never from client input, and this runs BEFORE any delete because the cascade will
+// destroy (or, for the catalog, NULL the attribution on) the rows that hold these paths.
 async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): Promise<OwnedStoragePaths> {
-  // The user's pets: their own photos, and the ownership scope for the child
-  // tables below.
-  const { data: pets, error: petsErr } = await adminClient
-    .from('pets')
-    .select('id, photo_path')
-    .eq('user_id', userId)
-  if (petsErr) throw new Error(`Failed to read pets: ${petsErr.message}`)
+  // Two independent top-level reads, in parallel: the user's pets (their own photos
+  // PLUS the ownership scope for the child tables below) and the medication_items
+  // the user created.
+  //
+  // medication_items is scoped by `created_by_user_id`, NOT `pet_id` — the global
+  // drug catalog has no `pet_id` (it mirrors food_items; B-127). Two consequences:
+  // (1) a user with ZERO pets can still have contributed drug rows whose label
+  // photos are their PII, so this gather must NOT sit behind the `petIds === 0`
+  // early return; (2) it must run BEFORE the auth-user delete — it already does, as
+  // FR-6 collects every path first — because that delete fires
+  // `created_by_user_id → SET NULL`, which would orphan these photos with no row
+  // left to find them by.
+  const [petsRes, medItemsRes] = await Promise.all([
+    adminClient.from('pets').select('id, photo_path').eq('user_id', userId),
+    adminClient.from('medication_items').select('photo_paths').eq('created_by_user_id', userId),
+  ])
+  if (petsRes.error) throw new Error(`Failed to read pets: ${petsRes.error.message}`)
+  // medication_items exists today (migration 020, applied to live DB) — unlike the
+  // forward-looking vet_reports below, a read error here is a REAL failure. Throw so
+  // the whole run aborts and retries (idempotent, FR-6) rather than silently skipping
+  // the prescription-label purge and leaking PII.
+  if (medItemsRes.error) throw new Error(`Failed to read medication_items: ${medItemsRes.error.message}`)
 
-  const petIds = (pets ?? []).map((p) => p.id as string)
-  const petPhotoPaths = (pets ?? []).map((p) => p.photo_path as string | null)
+  const petIds = (petsRes.data ?? []).map((p) => p.id as string)
+  const petPhotoPaths = (petsRes.data ?? []).map((p) => p.photo_path as string | null)
+  // photo_paths is a TEXT[] per drug row — flatten every owned row's array into the
+  // single flat list the pure plan consumes. It is NOT NULL DEFAULT '{}' at the DB
+  // level, but guard against a null defensively; cleanPaths drops blanks/dupes.
+  const medicationPhotoPaths = (medItemsRes.data ?? []).flatMap(
+    (m) => (m.photo_paths as (string | null)[] | null) ?? [],
+  )
 
   // No pets ⇒ no pet-scoped objects. Skip the child queries (an empty `.in()` is
-  // a wasted round-trip) and return just the — possibly empty — pet photos.
+  // a wasted round-trip) and return just the — possibly empty — pet photos. The
+  // medication label photos are NOT pet-scoped, so they still ride this early return.
   if (petIds.length === 0) {
-    return { petPhotoPaths, eventAttachmentPaths: [], vetAttachmentPaths: [], vetReportPaths: [] }
+    return { petPhotoPaths, eventAttachmentPaths: [], vetAttachmentPaths: [], vetReportPaths: [], medicationPhotoPaths }
   }
 
   const [eventAttRes, vetAttRes, vetReportRes] = await Promise.all([
@@ -76,6 +105,7 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
     eventAttachmentPaths: (eventAttRes.data ?? []).map((r) => r.storage_path as string),
     vetAttachmentPaths: (vetAttRes.data ?? []).map((r) => r.storage_path as string),
     vetReportPaths,
+    medicationPhotoPaths,
   }
 }
 

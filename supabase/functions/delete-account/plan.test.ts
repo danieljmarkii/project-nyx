@@ -25,6 +25,7 @@ const emptyOwned: OwnedStoragePaths = {
   eventAttachmentPaths: [],
   vetAttachmentPaths: [],
   vetReportPaths: [],
+  medicationPhotoPaths: [],
 }
 
 const owned = (over: Partial<OwnedStoragePaths>): OwnedStoragePaths => ({ ...emptyOwned, ...over })
@@ -59,12 +60,16 @@ Deno.test('collectStoragePaths — maps each owned list to its correct bucket', 
     eventAttachmentPaths: ['ev/a1.jpg', 'ev/a2.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetReportPaths: ['rep/r1.pdf'],
+    // {user_id}/{medication_item_id}/{slot}.jpg — the per-user-prefix convention
+    // from migration 021 (buildMedicationPhotoPath).
+    medicationPhotoPaths: ['user-1/med-9/label.jpg'],
   }))
   const byBucket = Object.fromEntries(purges.map((p) => [p.bucket, p.paths]))
   assertEquals(byBucket[STORAGE_BUCKETS.petPhotos], ['pets/p1.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.eventAttachments], ['ev/a1.jpg', 'ev/a2.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetAttachments], ['vet/v1.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetReports], ['rep/r1.pdf'])
+  assertEquals(byBucket[STORAGE_BUCKETS.medicationPhotos], ['user-1/med-9/label.jpg'])
 })
 
 Deno.test('collectStoragePaths — omits buckets that have no objects', () => {
@@ -90,19 +95,43 @@ Deno.test('collectStoragePaths — FR-4: never emits a preserved (food) bucket',
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetReportPaths: ['rep/r1.pdf'],
+    medicationPhotoPaths: ['user-1/med-9/label.jpg'],
   }))
   for (const preserved of PRESERVED_BUCKETS) {
     assertEquals(purges.some((p) => p.bucket === preserved), false)
   }
 })
 
-Deno.test('collectStoragePaths — output buckets are always a subset of the four purgeable buckets', () => {
+Deno.test('collectStoragePaths — B-127: a medication-label path lands in the nyx-medication-photos purge', () => {
+  // The whole point of B-127: a drug-label photo is per-user PII and must be PURGED,
+  // not preserved — it rides the same path-collection lane as pet photos.
+  const purges = collectStoragePaths(owned({ medicationPhotoPaths: ['user-1/med-9/label.jpg'] }))
+  assertEquals(purges.length, 1)
+  assertEquals(purges[0].bucket, STORAGE_BUCKETS.medicationPhotos)
+  assertEquals(purges[0].bucket, 'nyx-medication-photos')
+  assertEquals(purges[0].paths, ['user-1/med-9/label.jpg'])
+})
+
+Deno.test('PRESERVED_BUCKETS — B-127: nyx-medication-photos is PURGED, never preserved', () => {
+  // Pins the B-124/B-127 decision: med-label photos are PII (per-user-prefix RLS,
+  // migration 021), so the bucket sits in STORAGE_BUCKETS, NOT PRESERVED_BUCKETS —
+  // the opposite of nyx-food-photos. A regression that "harmonized" it back to the
+  // food precedent (preserve-on-delete) would leak prescription labels past a
+  // hard-delete; this fails loudly if anyone does.
+  // Not in the preserved list (refactor-safe via the constant)…
+  assertEquals((PRESERVED_BUCKETS as readonly string[]).includes(STORAGE_BUCKETS.medicationPhotos), false)
+  // …and IS a purgeable bucket, pinned to the exact literal name the decision is about.
+  assert((Object.values(STORAGE_BUCKETS) as string[]).includes('nyx-medication-photos'))
+})
+
+Deno.test('collectStoragePaths — output buckets are always a subset of the five purgeable buckets', () => {
   const allowed = new Set<string>(Object.values(STORAGE_BUCKETS))
   const purges = collectStoragePaths(owned({
     petPhotoPaths: ['pets/p1.jpg'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetReportPaths: ['rep/r1.pdf'],
+    medicationPhotoPaths: ['user-1/med-9/label.jpg'],
   }))
   for (const p of purges) assert(allowed.has(p.bucket), `unexpected bucket ${p.bucket}`)
 })
@@ -144,6 +173,21 @@ Deno.test('buildDeletionPlan — single non-empty bucket: purge then auth delete
   const plan = buildDeletionPlan(owned({ petPhotoPaths: ['pets/p1.jpg'] }))
   assertEquals(plan.length, 2)
   assertEquals(plan[0], { kind: 'purge-bucket', bucket: STORAGE_BUCKETS.petPhotos, paths: ['pets/p1.jpg'] })
+  assert(isAuthDelete(plan[1]))
+})
+
+Deno.test('buildDeletionPlan — B-127: a medication photo is purged BEFORE the terminal auth delete', () => {
+  // End-to-end ordering for the new bucket: the SET NULL on created_by_user_id fires
+  // with the auth-user delete, so the label-photo purge must precede it (FR-6) or the
+  // photo is orphaned with no row to find it by. A med-only account still purges then
+  // deletes, exactly like a pet-only one.
+  const plan = buildDeletionPlan(owned({ medicationPhotoPaths: ['user-1/med-9/label.jpg'] }))
+  assertEquals(plan.length, 2)
+  assertEquals(plan[0], {
+    kind: 'purge-bucket',
+    bucket: STORAGE_BUCKETS.medicationPhotos,
+    paths: ['user-1/med-9/label.jpg'],
+  })
   assert(isAuthDelete(plan[1]))
 })
 
