@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useIsOnline } from '../../hooks/useIsOnline';
 import { getIsOnline } from '../../lib/network';
+import { wipeLocalSession } from '../../lib/session';
 import {
   DELETE_CONFIRM_PHRASE,
   canConfirmAccountDeletion,
@@ -68,10 +69,13 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
       // to fire the SIGNED_OUT wipe + route to auth without a doomed server
       // round-trip. Leave inFlight set — the route swap unmounts this sheet.
       useAuthStore.getState().setJustDeletedAccount(true);
-      await supabase.auth.signOut({ scope: 'local' }).catch((e) => {
+      await supabase.auth.signOut({ scope: 'local' }).catch(async (e) => {
         console.warn('[DeleteAccountSheet] local signOut after delete failed:', e);
-        // The account is already deleted server-side; force the user to auth so
-        // they aren't stranded in a logged-in-looking shell with a dead token.
+        // signOut normally emits SIGNED_OUT, whose handler runs the FR-9 wipe and
+        // routes to auth. If it threw, that may not have fired — so run the same
+        // teardown here (idempotent if it did) so a deleted account never leaves
+        // pet-health data on the device, then route to auth ourselves.
+        await wipeLocalSession();
         router.replace('/(auth)/login');
       });
       return;
@@ -147,6 +151,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorScrim,
   },
   card: {
+    // 14 / +18 below mirror ArchivePetSheet so the two floating confirm sheets
+    // share identical insets (off-grid by intent; tokenizing the archetype across
+    // both sheets is a separate cleanup).
     marginHorizontal: 14,
     backgroundColor: theme.colorSurface,
     borderRadius: theme.radiusLarge,

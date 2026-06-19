@@ -6,9 +6,9 @@ import * as SplashScreen from 'expo-splash-screen';
 import { fontMap } from '../lib/fonts';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
-import { initDb, clearLocalData } from '../lib/db';
-import { notifySignedOut } from '../lib/sync';
+import { usePetStore } from '../store/petStore';
+import { initDb } from '../lib/db';
+import { wipeLocalSession } from '../lib/session';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
@@ -56,14 +56,11 @@ export default function RootLayout() {
       // refresh can never destroy local data. Awaited so the wipe completes
       // before any subsequent sign-in starts re-hydrating.
       if (event === 'SIGNED_OUT') {
-        // Abort any in-flight hydration BEFORE wiping, so a sync mid-cycle can't
-        // re-populate the store after clearLocalData runs.
-        notifySignedOut();
-        await clearLocalData().catch((e) => console.warn('[auth] local wipe failed:', e));
-        // Device-local active-pet selection is account state too — wipe it and
-        // the in-memory pet list so the next sign-in starts clean (FR-9 parity).
-        await clearPersistedActivePetId();
-        usePetStore.getState().reset();
+        // FR-9 local teardown, extracted to lib/session so the post-deletion
+        // fallback (DeleteAccountSheet) runs the identical sequence — one source
+        // of truth for the wipe. Awaited so it completes before any subsequent
+        // sign-in starts re-hydrating.
+        await wipeLocalSession();
       }
       setSession(session);
       if (!session) {
