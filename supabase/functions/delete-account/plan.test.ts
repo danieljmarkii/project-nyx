@@ -10,6 +10,7 @@
 import { assert, assertEquals, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   cleanPaths,
+  scopeMedicationPaths,
   collectStoragePaths,
   buildDeletionPlan,
   chunk,
@@ -20,12 +21,17 @@ import {
   type DeletionStep,
 } from './plan.ts'
 
+// emptyOwned's ownerUserId is 'user-1', matching the `user-1/med-9/label.jpg`
+// fixtures below, so the B-128 prefix guard (scopeMedicationPaths) passes those
+// legitimate, owner-prefixed paths through untouched. The cross-tenant cases set a
+// different ownerUserId explicitly via owned({ ... }).
 const emptyOwned: OwnedStoragePaths = {
   petPhotoPaths: [],
   eventAttachmentPaths: [],
   vetAttachmentPaths: [],
   vetReportPaths: [],
   medicationPhotoPaths: [],
+  ownerUserId: 'user-1',
 }
 
 const owned = (over: Partial<OwnedStoragePaths>): OwnedStoragePaths => ({ ...emptyOwned, ...over })
@@ -50,6 +56,51 @@ Deno.test('cleanPaths — never mutates a real key (no trimming of valid paths)'
 
 Deno.test('cleanPaths — all-empty input yields []', () => {
   assertEquals(cleanPaths([null, undefined, '', '  ']), [])
+})
+
+// ── scopeMedicationPaths (B-128 cross-tenant prefix guard) ────────────────────
+
+Deno.test('scopeMedicationPaths — keeps only paths under the owner\'s own {uid}/ prefix', () => {
+  assertEquals(
+    scopeMedicationPaths(
+      ['owner/med-1/0-label.jpg', 'victim/med-2/0-label.jpg', 'owner/med-3/0-label.jpg'],
+      'owner',
+    ),
+    ['owner/med-1/0-label.jpg', 'owner/med-3/0-label.jpg'],
+  )
+})
+
+Deno.test('scopeMedicationPaths — B-128: a crafted cross-uid path is dropped', () => {
+  // The attack: an attacker-owned medication_items row whose photo_paths references
+  // the VICTIM's prefix. The service-role purge must never touch it.
+  assertEquals(scopeMedicationPaths(['victim-uid/med-9/0-label.jpg'], 'attacker-uid'), [])
+})
+
+Deno.test('scopeMedicationPaths — the trailing / stops a uid that is a string-prefix of another', () => {
+  // ownerUserId 'user-1' must NOT match 'user-12/…' — without the '/' separator a
+  // naive startsWith would let user-1 delete user-12's label photos.
+  assertEquals(scopeMedicationPaths(['user-12/med/0-label.jpg'], 'user-1'), [])
+  assertEquals(scopeMedicationPaths(['user-1/med/0-label.jpg'], 'user-1'), ['user-1/med/0-label.jpg'])
+})
+
+Deno.test('scopeMedicationPaths — a bare-uid path (no trailing slot) is dropped', () => {
+  // A path that is exactly the uid with no `/` is not a real object key under the
+  // user's folder; the prefix requires the separator, so it never matches.
+  assertEquals(scopeMedicationPaths(['owner'], 'owner'), [])
+})
+
+Deno.test('scopeMedicationPaths — a blank owner uid fails CLOSED (drops everything)', () => {
+  // Defense-in-depth: never let an empty owner collapse the prefix to '/' and match
+  // every path. index.ts always supplies the verified-JWT uid, so this is a guard.
+  assertEquals(scopeMedicationPaths(['anything/x.jpg'], ''), [])
+  assertEquals(scopeMedicationPaths(['anything/x.jpg'], '   '), [])
+})
+
+Deno.test('scopeMedicationPaths — drops nulls/blanks alongside cross-uid paths', () => {
+  assertEquals(
+    scopeMedicationPaths(['owner/a.jpg', null, undefined, '', 'victim/b.jpg'], 'owner'),
+    ['owner/a.jpg'],
+  )
 })
 
 // ── collectStoragePaths ───────────────────────────────────────────────────────
@@ -110,6 +161,27 @@ Deno.test('collectStoragePaths — B-127: a medication-label path lands in the n
   assertEquals(purges[0].bucket, STORAGE_BUCKETS.medicationPhotos)
   assertEquals(purges[0].bucket, 'nyx-medication-photos')
   assertEquals(purges[0].paths, ['user-1/med-9/label.jpg'])
+})
+
+Deno.test('collectStoragePaths — B-128: a cross-tenant medication path never reaches a purge', () => {
+  // End-to-end through the path collector: a crafted path under ANOTHER user's prefix
+  // is filtered out BEFORE the service-role purge step is built, so account deletion
+  // can only ever remove the deleting user's OWN label photos.
+  const purges = collectStoragePaths(owned({
+    ownerUserId: 'owner-uid',
+    medicationPhotoPaths: ['owner-uid/med-1/0-label.jpg', 'victim-uid/med-9/0-label.jpg'],
+  }))
+  const med = purges.find((p) => p.bucket === STORAGE_BUCKETS.medicationPhotos)
+  assert(med, "expected a medication-photos purge for the owner's own path")
+  assertEquals(med.paths, ['owner-uid/med-1/0-label.jpg'])
+})
+
+Deno.test('collectStoragePaths — B-128: an all-cross-tenant medication list yields NO medication purge', () => {
+  const purges = collectStoragePaths(owned({
+    ownerUserId: 'owner-uid',
+    medicationPhotoPaths: ['victim-uid/med-9/0-label.jpg'],
+  }))
+  assertEquals(purges.some((p) => p.bucket === STORAGE_BUCKETS.medicationPhotos), false)
 })
 
 Deno.test('PRESERVED_BUCKETS — B-127: nyx-medication-photos is PURGED, never preserved', () => {
@@ -189,6 +261,17 @@ Deno.test('buildDeletionPlan — B-127: a medication photo is purged BEFORE the 
     paths: ['user-1/med-9/label.jpg'],
   })
   assert(isAuthDelete(plan[1]))
+})
+
+Deno.test('buildDeletionPlan — B-128: a crafted cross-tenant medication path is never purged', () => {
+  // The whole cross-tenant delete primitive, end-to-end: an attacker-owned row whose
+  // only photo_paths value points at a VICTIM's prefix produces NO purge step — just
+  // the terminal auth delete. The attacker can only ever delete their own account.
+  const plan = buildDeletionPlan(owned({
+    ownerUserId: 'attacker-uid',
+    medicationPhotoPaths: ['victim-uid/med-9/0-label.jpg'],
+  }))
+  assertEquals(plan, [{ kind: 'delete-auth-user' }])
 })
 
 Deno.test('buildDeletionPlan — empty account still deletes the auth user (and nothing else)', () => {
