@@ -234,10 +234,21 @@ export function reconcileBatch<T extends RemoteRow>(
 // first login an *incremental* pull from the prior account's watermark — silently
 // skipping all of the new account's history older than that mark. Clearing it
 // forces a correct full cold-start pull (watermark = null) after every wipe.
+//
+// medication_items_cache (B-117) is the drug-catalog analog of food_items_cache:
+// the global (non-private) read-through cache, cleared for the same reason and
+// re-hydrated by refreshMedicationCache on the next login.
 export const LOCAL_WIPE_TABLES = [
   'meals',
   'event_attachments',
   'vet_visit_attachments',
+  // B-117 medication mirror (children-first). medication_administrations
+  // FK→events ON DELETE CASCADE locally, so it MUST precede events. medications
+  // and medication_items_cache carry no local FK, but are grouped here so the
+  // medication set stays contiguous and still lands before its parent tables.
+  'medication_administrations',
+  'medications',
+  'medication_items_cache',
   'events',
   'vet_visits',
   // feeding_arrangements (B-040 R1) — a pet-child standing-fact table mirrored

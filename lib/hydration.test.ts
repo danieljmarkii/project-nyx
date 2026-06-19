@@ -304,6 +304,9 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
     expect(order('meals')).toBeLessThan(order('events'));
     expect(order('event_attachments')).toBeLessThan(order('events'));
     expect(order('vet_visit_attachments')).toBeLessThan(order('vet_visits'));
+    // B-117 — medication_administrations FK→events ON DELETE CASCADE locally, so
+    // it must be wiped before events trip the constraint.
+    expect(order('medication_administrations')).toBeLessThan(order('events'));
   });
 
   it('covers exactly the account-scoped hydration target set plus the food cache and watermarks', () => {
@@ -314,6 +317,10 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
         'feeding_arrangements',
         'food_items_cache',
         'meals',
+        // B-117 medication mirror tables.
+        'medication_administrations',
+        'medications',
+        'medication_items_cache',
         'sync_watermarks',
         'vet_visit_attachments',
         'vet_visits',

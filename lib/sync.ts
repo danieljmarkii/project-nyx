@@ -8,6 +8,14 @@ import {
   mealsToDeleteByAbsence,
   type LocalRowMeta,
 } from './hydration';
+import {
+  medicationItemRowToRemote,
+  medicationRowToRemote,
+  administrationRowToRemote,
+  type LocalMedicationItem,
+  type LocalMedication,
+  type LocalMedicationAdministration,
+} from './medications';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -408,6 +416,56 @@ export async function refreshFoodCache(): Promise<void> {
   }
 }
 
+// Refresh the global medication_items library cache (B-117). The drug-catalog
+// twin of refreshFoodCache: a pull-only sync of the global catalog (no `synced`
+// flag, no watermark — it's a shared read-through cache, not a per-device queue).
+// ON CONFLICT DO UPDATE (never INSERT OR REPLACE) so a future local-only column
+// is never silently nulled — the exact footgun refreshFoodCache documents for
+// last_used_at. Booleans are coerced BOOLEAN→INTEGER for SQLite; photo_path takes
+// photo_paths[0] like food. Inherits refreshFoodCache's single-select shape (and
+// thus its implicit PostgREST 1000-row cap — fine for the catalog's scale; if that
+// ever bites, paginate both caches together).
+export async function refreshMedicationCache(): Promise<void> {
+  const db = getDb();
+
+  const { data, error } = await supabase
+    .from('medication_items')
+    .select('id, generic_name, brand_name, strength, form, default_route, is_prescription, is_critical, photo_paths, notes');
+
+  // Log on failure (don't silently swallow — CLAUDE.md "no silent failures in
+  // sync"). A null data is a non-error empty catalog; only `error` is worth a warn.
+  if (error || !data) {
+    if (error) console.warn('[sync] refreshMedicationCache failed:', error.message);
+    return;
+  }
+
+  const now = new Date().toISOString();
+  for (const item of data) {
+    const photoPath = Array.isArray(item.photo_paths) && item.photo_paths.length > 0
+      ? item.photo_paths[0]
+      : null;
+    await db.runAsync(
+      `INSERT INTO medication_items_cache
+        (id, generic_name, brand_name, strength, form, default_route, is_prescription, is_critical, photo_path, notes, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         generic_name = excluded.generic_name,
+         brand_name = excluded.brand_name,
+         strength = excluded.strength,
+         form = excluded.form,
+         default_route = excluded.default_route,
+         is_prescription = excluded.is_prescription,
+         is_critical = excluded.is_critical,
+         photo_path = excluded.photo_path,
+         notes = excluded.notes,
+         cached_at = excluded.cached_at`,
+      [item.id, item.generic_name, item.brand_name ?? null, item.strength ?? null,
+       item.form ?? null, item.default_route ?? null,
+       item.is_prescription ? 1 : 0, item.is_critical ? 1 : 0, photoPath, item.notes ?? null, now]
+    );
+  }
+}
+
 // Flush unsynced free-feeding arrangements to Supabase (B-040 R1). A standing
 // fact set/ended from the food-detail toggle (lib/feedingArrangements.ts).
 // Mirrors the syncPendingMeals shape: refresh the JWT (Pattern 4), pre-sync the
@@ -482,6 +540,105 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
   await db.execAsync(`UPDATE feeding_arrangements SET synced = 1 WHERE id IN (${ids})`);
 }
 
+// Pattern 6 — ensure every referenced medication_items row exists server-side
+// before a medications / medication_administrations upsert references it, or the
+// FK rejects the row and the queue retries forever (the meals→food_items pre-sync,
+// for drugs). ignoreDuplicates so it never clobbers a richer server row
+// (photo_paths / ai_extraction_* written by the PR 5 capture path); the booleans
+// are coerced INTEGER→BOOLEAN by medicationItemRowToRemote. Best-effort: a failure
+// is logged, not thrown — the dependent upsert still tries (and, if the item truly
+// isn't there, fails its own FK check and stays queued, Pattern 1).
+async function presyncMedicationItems(db: Db, userId: string, itemIds: string[]): Promise<void> {
+  if (itemIds.length === 0) return;
+  const placeholders = itemIds.map(() => '?').join(',');
+  const localItems = await db.getAllAsync<LocalMedicationItem>(
+    `SELECT id, generic_name, brand_name, strength, form, default_route,
+            is_prescription, is_critical
+     FROM medication_items_cache WHERE id IN (${placeholders})`,
+    itemIds,
+  );
+  if (localItems.length === 0) return;
+  const { error } = await supabase.from('medication_items').upsert(
+    localItems.map((item) => medicationItemRowToRemote(item, userId)),
+    { onConflict: 'id', ignoreDuplicates: true },
+  );
+  if (error) {
+    console.warn('[sync] medication_items pre-sync failed:', error.message);
+  }
+}
+
+// Flush unsynced medication regimens (B-117). Mirrors syncPendingFeedingArrangements:
+// refresh the JWT (Pattern 4), pre-sync the referenced medication_items so the FK
+// can't reject the row (Pattern 6 — the drug may have been captured offline),
+// upsert last-write-wins (Pattern 5), and only flip synced=1 when the row actually
+// landed (Pattern 1). RLS gates the write to the owning account. A regimen ends via
+// `status`/`ended_at`, never a DELETE.
+export async function syncPendingMedications(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+
+  const unsynced = await db.getAllAsync<LocalMedication>(
+    'SELECT * FROM medications WHERE synced = 0 LIMIT 100',
+  );
+  if (unsynced.length === 0) return;
+
+  const itemIds = [...new Set(unsynced.map((m) => m.medication_item_id).filter(Boolean))] as string[];
+  await presyncMedicationItems(db, session.user.id, itemIds);
+
+  const { error } = await supabase.from('medications').upsert(
+    unsynced.map(medicationRowToRemote),
+    { onConflict: 'id' },
+  );
+  if (error) {
+    console.error('[sync] medications upsert failed:', error.message);
+    return;
+  }
+
+  const ids = unsynced.map((m) => `'${m.id}'`).join(',');
+  await db.execAsync(`UPDATE medications SET synced = 1 WHERE id IN (${ids})`);
+}
+
+// Flush unsynced medication dose-event children (B-117). Mirrors syncPendingMeals
+// exactly: the parent `events` row (event_type='medication') and the `medications`
+// regimen are both pushed earlier in the SAME syncNow cycle, so their FK targets
+// exist server-side by the time this runs. Like meals→events, we lean on that
+// call-order for the parents that have a standalone push (events, medications) and
+// only PRE-SYNC the dependency with no standalone push (medication_items — the
+// food_items analog, created offline at capture). If a parent's push failed this
+// cycle, this dose's upsert FK-fails too and stays queued (Pattern 1); both retry
+// next cycle, so a dose never lands orphaned. (The regimen's ON DELETE SET NULL
+// governs only the separate case of a historical dose surviving a LATER regimen
+// deletion — migration 020 — NOT insert ordering: an insert referencing a missing
+// regimen is rejected, not nulled.)
+export async function syncPendingMedicationAdministrations(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+
+  const unsynced = await db.getAllAsync<LocalMedicationAdministration>(
+    'SELECT * FROM medication_administrations WHERE synced = 0 LIMIT 100',
+  );
+  if (unsynced.length === 0) return;
+
+  const itemIds = [...new Set(unsynced.map((a) => a.medication_item_id).filter(Boolean))] as string[];
+  await presyncMedicationItems(db, session.user.id, itemIds);
+
+  const { error } = await supabase.from('medication_administrations').upsert(
+    unsynced.map(administrationRowToRemote),
+    { onConflict: 'id' },
+  );
+  if (error) {
+    console.error('[sync] medication_administrations upsert failed:', error.message);
+    return;
+  }
+
+  const ids = unsynced.map((a) => `'${a.id}'`).join(',');
+  await db.execAsync(`UPDATE medication_administrations SET synced = 1 WHERE id IN (${ids})`);
+}
+
 // ============================================================
 // Down-sync / hydration (B-054 Phase 1 + Phase 3)
 // ============================================================
@@ -546,6 +703,18 @@ interface RemoteFeedingArrangement {
   id: string; pet_id: string; food_item_id: string; method: string | null;
   active_from: string | null; active_until: string | null; is_shared: boolean | null;
   notes: string | null; deleted_at: string | null; created_at: string; updated_at: string;
+}
+interface RemoteMedication {
+  id: string; pet_id: string; medication_item_id: string | null; drug_name: string;
+  dose_amount: string | null; route: string | null; doses_per_day: number | null;
+  schedule_notes: string | null; indication: string | null; prescribed_by: string | null;
+  started_at: string; target_duration_days: number | null; status: string;
+  ended_at: string | null; notes: string | null; created_at: string; updated_at: string;
+}
+interface RemoteMedicationAdministration {
+  id: string; event_id: string; pet_id: string; medication_id: string | null;
+  medication_item_id: string | null; adherence: string | null; dose_amount: string | null;
+  notes: string | null; created_at: string; updated_at: string;
 }
 
 async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
@@ -796,6 +965,100 @@ async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise
   if (wm) await setWatermark('feeding_arrangements', wm);
 }
 
+async function hydrateMedications(db: Db, stale: () => boolean): Promise<void> {
+  // B-117 — a pet-child LWW table reconciled exactly like vet_visits /
+  // feeding_arrangements: incremental on updated_at with the commit-skew overlap,
+  // replace only when the remote row is strictly newer (a pending local edit isn't
+  // clobbered; push-before-pull ships it up first regardless). A regimen ends via
+  // `status`/`ended_at`, not a deleted_at, so those ride the normal column update.
+  // The `WHERE medications.synced = 1` backstop guarantees a hydrate write can
+  // never overwrite an unpushed local edit. No FK to events/meals locally, so its
+  // order in the cycle is free.
+  const since = await getWatermark('medications');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteMedication>(
+    'medications',
+    'id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day, ' +
+      'schedule_notes, indication, prescribed_by, started_at, target_duration_days, ' +
+      'status, ended_at, notes, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(db, 'medications', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const m of toWrite) {
+    await db.runAsync(
+      `INSERT INTO medications
+        (id, pet_id, medication_item_id, drug_name, dose_amount, route, doses_per_day,
+         schedule_notes, indication, prescribed_by, started_at, target_duration_days,
+         status, ended_at, notes, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         pet_id=excluded.pet_id, medication_item_id=excluded.medication_item_id,
+         drug_name=excluded.drug_name, dose_amount=excluded.dose_amount, route=excluded.route,
+         doses_per_day=excluded.doses_per_day, schedule_notes=excluded.schedule_notes,
+         indication=excluded.indication, prescribed_by=excluded.prescribed_by,
+         started_at=excluded.started_at, target_duration_days=excluded.target_duration_days,
+         status=excluded.status, ended_at=excluded.ended_at, notes=excluded.notes,
+         created_at=excluded.created_at, updated_at=excluded.updated_at, synced=1
+       WHERE medications.synced = 1`,
+      [
+        m.id, m.pet_id, m.medication_item_id ?? null, m.drug_name, m.dose_amount ?? null,
+        m.route ?? null, m.doses_per_day ?? null, m.schedule_notes ?? null, m.indication ?? null,
+        m.prescribed_by ?? null, m.started_at, m.target_duration_days ?? null,
+        m.status, m.ended_at ?? null, m.notes ?? null, m.created_at, m.updated_at,
+      ],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('medications', wm);
+}
+
+async function hydrateMedicationAdministrations(db: Db, stale: () => boolean): Promise<void> {
+  // B-117 — the dose-event child, reconciled like meals: incremental LWW on
+  // updated_at with overlap. Runs AFTER hydrateEvents so the FK-bearing parent
+  // event (medication_administrations.event_id → events ON DELETE CASCADE) exists
+  // locally before the child lands (the meals ordering rule / FR-2). identity
+  // columns (event_id, pet_id) are immutable and left untouched by DO UPDATE.
+  // No absence pass: unlike meals (hard-DELETEd by the food cascade), a dose is
+  // only ever SOFT-deleted via its parent event's deleted_at, which propagates
+  // through hydrateEvents — so there is no hard-delete a pull can't observe.
+  const since = await getWatermark('medication_administrations');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteMedicationAdministration>(
+    'medication_administrations',
+    'id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, notes, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(db, 'medication_administrations', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const a of toWrite) {
+    await db.runAsync(
+      `INSERT INTO medication_administrations
+        (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, notes, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         medication_id=excluded.medication_id, medication_item_id=excluded.medication_item_id,
+         adherence=excluded.adherence, dose_amount=excluded.dose_amount, notes=excluded.notes,
+         updated_at=excluded.updated_at, synced=1
+       WHERE medication_administrations.synced = 1`,
+      [
+        a.id, a.event_id, a.pet_id, a.medication_id ?? null, a.medication_item_id ?? null,
+        a.adherence ?? null, a.dose_amount ?? null, a.notes ?? null, a.created_at, a.updated_at,
+      ],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('medication_administrations', wm);
+}
+
 // FR-8 — hard-deleted-meal absence reconciliation (PM ruling: absence-reconcile,
 // not a tombstone schema). The food-deletion cascade hard-`DELETE`s meals
 // server-side, and a pull (incremental or full) can't observe a row that no
@@ -891,6 +1154,12 @@ export async function hydrateFromCloud(): Promise<void> {
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
   if (stale()) return;
   await runHydrationStep('feeding_arrangements', () => hydrateFeedingArrangements(db, stale));
+  if (stale()) return;
+  // B-117: medications has no local FK; medication_administrations.event_id →
+  // events (CASCADE), so it must follow hydrateEvents (run first, above).
+  await runHydrationStep('medications', () => hydrateMedications(db, stale));
+  if (stale()) return;
+  await runHydrationStep('medication_administrations', () => hydrateMedicationAdministrations(db, stale));
 }
 
 // One full sync cycle: push local writes UP, then pull remote rows DOWN
@@ -905,15 +1174,21 @@ export async function syncNow(): Promise<void> {
   if (syncCycleInFlight) return;
   syncCycleInFlight = true;
   try {
-    // Push up.
+    // Push up. FK order matters: events before medication_administrations (the
+    // dose child FK→events), regimens before administrations, and medication_items
+    // pre-synced inside each medication writer (Pattern 6) → items → events →
+    // regimens → administrations overall.
     await syncPendingEvents();
     await syncPendingMeals();
     await syncPendingAttachments();
     await syncPendingVetVisits();
     await syncPendingFeedingArrangements();
+    await syncPendingMedications();
+    await syncPendingMedicationAdministrations();
     // Pull down.
     await hydrateFromCloud();
     await refreshFoodCache();
+    await refreshMedicationCache();
   } finally {
     syncCycleInFlight = false;
   }

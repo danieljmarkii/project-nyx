@@ -2,6 +2,7 @@ import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
 import { LIBRARY_FOODS_QUERY } from './foodQueries';
+import { MEDICATION_SCHEMA_SQL } from './medications';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -153,6 +154,15 @@ export async function initDb(): Promise<void> {
       watermark     TEXT NOT NULL
     );
   `);
+
+  // B-117 medication local mirror (migration 020). Run as its own execAsync from
+  // the lib/medications.ts string constant rather than inlined above — the only
+  // reason it's extracted is so medications.test.ts can exercise this exact DDL
+  // against an in-memory node:sqlite (the FK CASCADE / UNIQUE(event_id) behaviours
+  // are otherwise unverified until on-device). Runs AFTER the block above so its
+  // `events(id)` FK target already exists; PRAGMA foreign_keys persists on the
+  // connection (getDb returns one shared handle).
+  await database.execAsync(MEDICATION_SCHEMA_SQL);
 
   // Add photo_path to food_items_cache if upgrading from earlier schema
   try {
