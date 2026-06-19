@@ -84,6 +84,10 @@ export const theme = {
   colorMomentConfirm: '#00C2A8',
 
   // ── Spacing — 8pt grid ────────────────────────────────────────────────────
+  // Sub-grid micro-gap (2pt): the typographic space between a label and the
+  // sub-label that hugs it (section title → hint line). Deliberately below the
+  // 8pt layout grid — it's type leading, not layout rhythm.
+  spaceMicro: 2,
   space1: 8,
   space2: 16,
   space3: 24,
