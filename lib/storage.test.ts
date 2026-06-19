@@ -64,7 +64,7 @@ jest.mock('expo-image-manipulator', () => ({
   SaveFormat: { JPEG: 'jpeg' },
 }));
 
-import { persistCapture, getSignedUrls } from './storage';
+import { persistCapture, getSignedUrls, buildMedicationPhotoPath } from './storage';
 
 describe('persistCapture (B-104)', () => {
   let warnSpy: jest.SpyInstance;
@@ -183,5 +183,46 @@ describe('getSignedUrls (B-004 PR 6 — Foods-tab thumbnails)', () => {
     await expect(getSignedUrls('nyx-food-photos', ['a.jpg'])).resolves.toBeInstanceOf(Map);
     const map = await getSignedUrls('nyx-food-photos', ['a.jpg']);
     expect(map.size).toBe(0);
+  });
+});
+
+// B-117 PR 4 / B-124 — buildMedicationPhotoPath centralises the per-user RLS
+// prefix for the nyx-medication-photos bucket. The load-bearing property: the
+// path MUST start with `${userId}/`, because the bucket's RLS (migration 021)
+// gates every read/write on (storage.foldername(name))[1] = auth.uid(). A path
+// without that prefix is silently rejected, so the helper both enforces the
+// prefix and fails fast when the prefix segment would be empty.
+describe('buildMedicationPhotoPath (B-124 per-user RLS prefix)', () => {
+  it('puts the user id FIRST so it is the RLS foldername[1] segment', () => {
+    const path = buildMedicationPhotoPath('user-abc', 'item-123', '0-label');
+    expect(path).toBe('user-abc/item-123/0-label.jpg');
+    // The security-critical invariant, asserted directly: first path segment === uid.
+    expect(path.split('/')[0]).toBe('user-abc');
+  });
+
+  it('defaults the slot to 0-label (the front/label photo)', () => {
+    expect(buildMedicationPhotoPath('u', 'i')).toBe('u/i/0-label.jpg');
+  });
+
+  it('supports additional slots (e.g. back of the label)', () => {
+    expect(buildMedicationPhotoPath('u', 'i', '1-back')).toBe('u/i/1-back.jpg');
+  });
+
+  it('throws on an empty userId (an empty RLS prefix segment is silently rejected)', () => {
+    expect(() => buildMedicationPhotoPath('', 'item-123')).toThrow(/userId is required/);
+    expect(() => buildMedicationPhotoPath('   ', 'item-123')).toThrow(/userId is required/);
+  });
+
+  it('throws on an empty medicationItemId', () => {
+    expect(() => buildMedicationPhotoPath('user-abc', '')).toThrow(/medicationItemId is required/);
+  });
+
+  it('rejects a segment that would break out of its slot (/, \\, ..)', () => {
+    // The chokepoint guard: a '/' or '..' in any segment could inject an extra
+    // path part or traverse — rejected even though RLS would still pin a hostile
+    // key to its first segment (defense in depth for a future user-typed slot).
+    expect(() => buildMedicationPhotoPath('u', 'i', '../other-uid/evil')).toThrow(/illegal path segment/);
+    expect(() => buildMedicationPhotoPath('u', 'i/extra')).toThrow(/illegal path segment/);
+    expect(() => buildMedicationPhotoPath('u', 'i', 'a\\b')).toThrow(/illegal path segment/);
   });
 });
