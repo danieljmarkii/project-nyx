@@ -674,6 +674,9 @@ export default function LogModal() {
             petId={activePet.id}
             onPickMedication={handlePickMedication}
             onAddNew={() => router.push('/medication-capture?fromLog=1')}
+            // Long-press a tile opens the editable detail screen (B-117 PR 6).
+            // One-tap dose-log stays on regular tap.
+            onOpenDetail={(med) => router.push(`/medication/${med.id}`)}
           />
         )}
       </SafeAreaView>

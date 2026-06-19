@@ -28,9 +28,13 @@ interface Props {
   // Fires when the user taps "Add a medication" — opens the photo-capture flow
   // (app/medication-capture). Mirrors FoodPicker's onAddNew.
   onAddNew: () => void;
+  // Long-press on a tile — opens the medication detail/edit screen (B-117 PR 6).
+  // Kept separate from onPickMedication so the one-tap dose-log path stays clean,
+  // exactly like FoodPicker's onOpenDetail.
+  onOpenDetail?: (med: PickerMedication) => void;
 }
 
-export function MedicationPicker({ petId, onPickMedication, onAddNew }: Props) {
+export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDetail }: Props) {
   const [recent, setRecent] = useState<PickerMedication[]>([]);
   const [library, setLibrary] = useState<PickerMedication[]>([]);
   const [search, setSearch] = useState('');
@@ -105,7 +109,11 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew }: Props) {
             >
               {recent.map((m) => (
                 <View key={m.id} style={styles.recentTile}>
-                  <MedTile med={m} onPress={() => onPickMedication(m)} />
+                  <MedTile
+                    med={m}
+                    onPress={() => onPickMedication(m)}
+                    onLongPress={onOpenDetail ? () => onOpenDetail(m) : undefined}
+                  />
                 </View>
               ))}
             </ScrollView>
@@ -137,7 +145,12 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew }: Props) {
               {chunkPairs(filteredLibrary).map((row) => (
                 <View key={row[0].id} style={styles.gridRow}>
                   {row.map((m) => (
-                    <MedTile key={m.id} med={m} onPress={() => onPickMedication(m)} />
+                    <MedTile
+                      key={m.id}
+                      med={m}
+                      onPress={() => onPickMedication(m)}
+                      onLongPress={onOpenDetail ? () => onOpenDetail(m) : undefined}
+                    />
                   ))}
                   {row.length === 1 && <View style={styles.gridSpacer} />}
                 </View>
@@ -153,7 +166,13 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew }: Props) {
 // brand · strength · form on a quiet tertiary eyebrow. Mirrors FoodTile: the whole
 // tile is one button that LOGS on tap (≥44pt via minHeight), labelled with the
 // drug's plain name for screen readers.
-function MedTile({ med, onPress }: { med: PickerMedication; onPress: () => void }) {
+function MedTile({
+  med, onPress, onLongPress,
+}: {
+  med: PickerMedication;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
   const metaLine = [med.brand_name, med.strength, formatForm(med.form)]
     .filter(Boolean)
     .join(' · ')
@@ -162,10 +181,11 @@ function MedTile({ med, onPress }: { med: PickerMedication; onPress: () => void 
     <TouchableOpacity
       style={styles.tile}
       onPress={onPress}
+      onLongPress={onLongPress}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={med.generic_name}
-      accessibilityHint="Logs a dose"
+      accessibilityHint={onLongPress ? 'Logs a dose. Long-press to edit.' : 'Logs a dose'}
     >
       {metaLine ? (
         <Text style={styles.tileMeta} numberOfLines={1}>{metaLine}</Text>

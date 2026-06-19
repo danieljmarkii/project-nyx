@@ -292,3 +292,108 @@ export function canSaveMedicationCapture(params: {
 }): boolean {
   return params.genericName.trim().length > 0 && params.strengthConfirmed;
 }
+
+// ── Shared form/route option lists (the medication_form / medication_route enum
+// members, migration 020) ─────────────────────────────────────────────────────
+// Single source of truth for both the capture confirm screen (app/medication-
+// capture.tsx) and the PR 6 detail/edit screen (app/medication/[id].tsx). Kept
+// here — not duplicated per screen — because the VALUES must match the DB enums
+// exactly; one list can't drift from the other. Plain {value,label} data, no
+// imports, so lib/medications.ts stays I/O-free and unit-testable.
+export const MEDICATION_FORM_OPTIONS: { value: string; label: string }[] = [
+  { value: 'tablet',      label: 'Tablet' },
+  { value: 'capsule',     label: 'Capsule' },
+  { value: 'liquid',      label: 'Liquid' },
+  { value: 'chewable',    label: 'Chewable' },
+  { value: 'transdermal', label: 'Transdermal' },
+  { value: 'injection',   label: 'Injection' },
+  { value: 'drops',       label: 'Drops' },
+  { value: 'ointment',    label: 'Ointment' },
+  { value: 'powder',      label: 'Powder' },
+  { value: 'other',       label: 'Other' },
+];
+
+export const MEDICATION_ROUTE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'oral',       label: 'Oral' },
+  { value: 'topical',    label: 'Topical' },
+  { value: 'otic',       label: 'Ear' },
+  { value: 'ophthalmic', label: 'Eye' },
+  { value: 'injectable', label: 'Injectable' },
+  { value: 'inhaled',    label: 'Inhaled' },
+  { value: 'rectal',     label: 'Rectal' },
+  { value: 'other',      label: 'Other' },
+];
+
+// ── PR 6 detail/edit allow-list (app/medication/[id].tsx) ──────────────────────
+// The medication_items columns the owner may edit on the detail screen, and the
+// pure builder for the UPDATE payload. Extracted here — NOT inlined in the screen
+// — so the ownership / privacy boundary is a TEST, not a comment (the same
+// "invariant is a test" stance as initialStrengthConfirmed above, and
+// clinical-guardrails Pattern 8). The builder's key set IS the allow-list:
+//
+//  • B-131 — `created_by_user_id` (and any ownership field) is NEVER writable.
+//    migration 020's medication_items_update is `USING (auth.uid() =
+//    created_by_user_id)` with NO `WITH CHECK`, so Postgres does not constrain the
+//    post-update row — the ONLY thing preventing a row from being "given away" by
+//    rewriting created_by_user_id is that the client never sends it. This builder
+//    is that guarantee (pinned by medications.test.ts).
+//  • B-122 — `notes` is globally-readable catalog free-text that outlives a B-039
+//    hard delete, so it is deliberately NOT editable here (no pet/owner identity
+//    into the shared catalog; identifying notes belong on the pet-scoped,
+//    RLS-protected medications/medication_administrations rows).
+//  • is_critical — owner-set critical classification is OUT OF SCOPE for v1 (spec
+//    §10 / open sub-decision S2): it is a clinical, curated-match judgement that
+//    gates the §6.3 missed-critical-dose escalation, derived at PR 9, never an
+//    owner toggle. Omitted from the allow-list on purpose.
+//  • photo_paths / ai_extraction_* — capture-path provenance; the photo is
+//    replaced through a separate, explicit write, never this descriptive update.
+export interface MedicationItemEdit {
+  generic_name: string;
+  brand_name: string | null;
+  strength: string | null;
+  form: string | null;
+  default_route: string | null;
+  is_prescription: boolean;
+}
+
+function trimOrNull(s: string | null): string | null {
+  const t = (s ?? '').trim();
+  return t.length > 0 ? t : null;
+}
+
+export function buildMedicationItemUpdate(edit: MedicationItemEdit): MedicationItemEdit {
+  return {
+    generic_name: edit.generic_name.trim(),
+    brand_name: trimOrNull(edit.brand_name),
+    strength: trimOrNull(edit.strength),
+    form: edit.form,
+    default_route: edit.default_route,
+    is_prescription: edit.is_prescription,
+  };
+}
+
+// Did anything the detail screen can edit actually change? Lets Save short-circuit
+// to a plain back-navigation when nothing did (no needless write — mirrors
+// food/[id].tsx). Compares the NORMALIZED payloads so a whitespace-only edit
+// correctly reads as no change.
+export function hasMedicationItemChanges(a: MedicationItemEdit, b: MedicationItemEdit): boolean {
+  const na = buildMedicationItemUpdate(a);
+  const nb = buildMedicationItemUpdate(b);
+  return (
+    na.generic_name !== nb.generic_name ||
+    na.brand_name !== nb.brand_name ||
+    na.strength !== nb.strength ||
+    na.form !== nb.form ||
+    na.default_route !== nb.default_route ||
+    na.is_prescription !== nb.is_prescription
+  );
+}
+
+// Save-button enabled state for the detail edit. generic_name is the required
+// display key; strength needs NO confirm gate here (unlike capture §6.5) — a
+// human typing a value on the edit screen IS the verification, and the detail
+// screen has no AI re-extraction path that could smuggle an unverified strength
+// past it.
+export function canSaveMedicationItemEdit(edit: { generic_name: string }): boolean {
+  return edit.generic_name.trim().length > 0;
+}

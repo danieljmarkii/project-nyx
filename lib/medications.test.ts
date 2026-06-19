@@ -16,10 +16,14 @@ import {
   administrationRowToRemote,
   initialStrengthConfirmed,
   canSaveMedicationCapture,
+  buildMedicationItemUpdate,
+  hasMedicationItemChanges,
+  canSaveMedicationItemEdit,
   MEDICATION_SCHEMA_SQL,
   type LocalMedicationItem,
   type LocalMedication,
   type LocalMedicationAdministration,
+  type MedicationItemEdit,
 } from './medications';
 
 describe('medicationItemRowToRemote — FK pre-sync payload (Pattern 6)', () => {
@@ -258,5 +262,104 @@ describe('canSaveMedicationCapture — the gate (§6.5)', () => {
   it('requires a non-empty medication name regardless of the gate', () => {
     expect(canSaveMedicationCapture({ genericName: '', strengthConfirmed: true })).toBe(false);
     expect(canSaveMedicationCapture({ genericName: '   ', strengthConfirmed: true })).toBe(false);
+  });
+});
+
+// ── PR 6 detail/edit allow-list (app/medication/[id].tsx) ──────────────────────
+// The B-131 / B-122 / §10 boundary as a TEST, not a comment: the UPDATE payload
+// the detail screen sends can NEVER carry an ownership field, the globally-readable
+// `notes` sink, or the clinical is_critical flag — by construction of the builder.
+describe('buildMedicationItemUpdate — owner-editable allow-list', () => {
+  const edit: MedicationItemEdit = {
+    generic_name: '  Prednisolone  ',
+    brand_name: '  Apoquel ',
+    strength: ' 5 mg ',
+    form: 'tablet',
+    default_route: 'oral',
+    is_prescription: true,
+  };
+
+  it('exposes EXACTLY the six owner-editable columns', () => {
+    expect(Object.keys(buildMedicationItemUpdate(edit)).sort()).toEqual(
+      ['brand_name', 'default_route', 'form', 'generic_name', 'is_prescription', 'strength'].sort(),
+    );
+  });
+
+  // The load-bearing guard. medication_items_update has USING but no WITH CHECK
+  // (migration 020), so the client never sending these keys is the ONLY thing
+  // that keeps a row from being given away (created_by_user_id, B-131), keeps
+  // pet/owner PII out of the world-readable catalog (notes, B-122), and keeps the
+  // clinical critical flag out of owner hands (is_critical, §10/S2).
+  it.each([
+    'created_by_user_id',
+    'id',
+    'notes',
+    'is_critical',
+    'photo_paths',
+    'ai_extraction_status',
+    'ai_extraction_error',
+    'ai_extraction_confidence',
+    'pet_id',
+    'created_at',
+    'updated_at',
+  ])('never includes the forbidden key %s', (key) => {
+    expect(Object.keys(buildMedicationItemUpdate(edit))).not.toContain(key);
+  });
+
+  it('trims the required generic name and nulls blank optional fields', () => {
+    const out = buildMedicationItemUpdate({ ...edit, brand_name: '   ', strength: '' });
+    expect(out.generic_name).toBe('Prednisolone');
+    expect(out.brand_name).toBeNull();
+    expect(out.strength).toBeNull();
+  });
+
+  it('preserves trimmed optional values and the form/route/Rx selections', () => {
+    const out = buildMedicationItemUpdate(edit);
+    expect(out.brand_name).toBe('Apoquel');
+    expect(out.strength).toBe('5 mg');
+    expect(out.form).toBe('tablet');
+    expect(out.default_route).toBe('oral');
+    expect(out.is_prescription).toBe(true);
+  });
+
+  it('carries a null form/route through (unset is a legitimate state)', () => {
+    const out = buildMedicationItemUpdate({ ...edit, form: null, default_route: null });
+    expect(out.form).toBeNull();
+    expect(out.default_route).toBeNull();
+  });
+});
+
+describe('hasMedicationItemChanges — Save short-circuit', () => {
+  const base: MedicationItemEdit = {
+    generic_name: 'Prednisolone', brand_name: 'Apoquel', strength: '5 mg',
+    form: 'tablet', default_route: 'oral', is_prescription: true,
+  };
+
+  it('returns false when nothing changed', () => {
+    expect(hasMedicationItemChanges(base, { ...base })).toBe(false);
+  });
+
+  it('ignores whitespace-only differences (normalized compare)', () => {
+    expect(hasMedicationItemChanges(base, { ...base, strength: ' 5 mg ', generic_name: 'Prednisolone ' })).toBe(false);
+  });
+
+  it('treats a blanked optional and a null optional as the same (no spurious write)', () => {
+    expect(hasMedicationItemChanges({ ...base, brand_name: null }, { ...base, brand_name: '   ' })).toBe(false);
+  });
+
+  it('detects a real change in any editable field', () => {
+    expect(hasMedicationItemChanges(base, { ...base, strength: '10 mg' })).toBe(true);
+    expect(hasMedicationItemChanges(base, { ...base, is_prescription: false })).toBe(true);
+    expect(hasMedicationItemChanges(base, { ...base, form: 'liquid' })).toBe(true);
+    expect(hasMedicationItemChanges(base, { ...base, default_route: 'topical' })).toBe(true);
+    expect(hasMedicationItemChanges(base, { ...base, brand_name: 'Atopica' })).toBe(true);
+  });
+});
+
+describe('canSaveMedicationItemEdit', () => {
+  it('requires a non-empty generic name (the display key)', () => {
+    expect(canSaveMedicationItemEdit({ generic_name: 'Pred' })).toBe(true);
+    expect(canSaveMedicationItemEdit({ generic_name: '' })).toBe(false);
+    expect(canSaveMedicationItemEdit({ generic_name: '   ' })).toBe(false);
   });
 });
