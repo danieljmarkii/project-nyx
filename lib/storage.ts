@@ -27,6 +27,48 @@ export async function compressForUpload(
 }
 
 
+// ── nyx-medication-photos (B-117 PR 4 / B-124) ──────────────────────────────
+// Drug-label photos live in their OWN private bucket with PER-USER-PREFIX RLS
+// (migration 021), NOT the food/event/vet "any authenticated user reads the whole
+// bucket" model — a prescription label carries owner/pet/clinic PII, so the
+// storage layer itself scopes every read/write to the uploader.
+//
+// The leading `${userId}/` segment is the SECURITY boundary: the RLS predicate is
+// `(storage.foldername(name))[1] = auth.uid()::text`, so a path without that exact
+// prefix is silently rejected (upload 42501 / read 400). Centralising it in this
+// one helper is the point — PR 5's capture screen calls this and cannot construct
+// a non-compliant path. `userId` is `supabase.auth` user.id; `medicationItemId`
+// is the medication_items uuid the photo belongs to.
+export const MEDICATION_PHOTOS_BUCKET = 'nyx-medication-photos';
+
+export function buildMedicationPhotoPath(
+  userId: string,
+  medicationItemId: string,
+  // Slot label within the item, e.g. '0-label' / '1-back'. Mirrors the food
+  // bucket's `${slotIndex}-${slot}` convention. `.jpg` is appended because every
+  // upload goes through compressForUpload, which always emits JPEG.
+  slot: string = '0-label',
+): string {
+  // Fail fast on a missing prefix segment: an empty userId would yield a leading
+  // '/' and an empty first foldername, which RLS rejects — and a silent
+  // RLS-rejected upload is exactly the class of bug this helper exists to prevent.
+  if (!userId?.trim()) throw new Error('buildMedicationPhotoPath: userId is required (RLS prefix)');
+  if (!medicationItemId?.trim()) throw new Error('buildMedicationPhotoPath: medicationItemId is required');
+  // This helper is the single chokepoint for the bucket's path convention, so it
+  // rejects any segment that could break out of its slot: a '/' injects an extra
+  // path segment (which could shift what foldername[1] returns), and '..' is
+  // traversal. The ids are server-generated UUIDs today — RLS still pins a hostile
+  // key to its first segment — but guarding here keeps a future user-typed `slot`
+  // from ever producing a surprising key. (rls-privacy-reviewer, PR 4.)
+  for (const seg of [userId, medicationItemId, slot]) {
+    if (seg.includes('/') || seg.includes('\\') || seg.includes('..')) {
+      throw new Error(`buildMedicationPhotoPath: illegal path segment ${JSON.stringify(seg)}`);
+    }
+  }
+  return `${userId}/${medicationItemId}/${slot}.jpg`;
+}
+
+
 // Captured photos arrive (from expo-image-picker / expo-image-manipulator) as
 // files in the OS *cache* directory, which the system reclaims under storage
 // pressure — and on app offload / OS update. A `local_uri` stored from there
