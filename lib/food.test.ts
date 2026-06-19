@@ -4,6 +4,7 @@
 // and the standalone Foods tab inherits the same contract.
 import {
   groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand,
+  splitBrandGroupsForPicker,
   foodIntakeKey, indexIntakeStats, relativeDayLabel, foodIntakeNote,
   selectReliableFavorites, foodFavoriteNote, shouldSuppressFavorites,
   FAVORITE_MIN_RATED_MEALS, FAVORITE_MIN_RATE, FAVORITE_SHELF_LIMIT,
@@ -211,6 +212,80 @@ describe('groupFoodsByBrand', () => {
     const input = [branded('a', 'Fancy Feast'), branded('b', 'Royal Canin')];
     const snapshot = [...input];
     groupFoodsByBrand(input);
+    expect(input).toEqual(snapshot);
+  });
+});
+
+describe('splitBrandGroupsForPicker', () => {
+  const layoutIds = (l: ReturnType<typeof splitBrandGroupsForPicker>) => ({
+    brandGroups: l.brandGroups.map((g) => ({ brand: g.brand, foods: ids(g.foods) })),
+    singles: ids(l.singles),
+  });
+
+  // The diet-trial owner: every brand has exactly one food. Nothing gets a header
+  // (that would be a header per food — the 10-second-test regression B-113 guards
+  // against); all foods fall into one flat list that the grid packs 2-up.
+  it('puts an all-singletons library into one flat list with no brand groups', () => {
+    const layout = splitBrandGroupsForPicker([
+      branded('rc', 'Royal Canin'),
+      branded('hill', "Hill's"),
+      branded('treat', 'Greenies'),
+    ]);
+    expect(layout.brandGroups).toEqual([]);
+    expect(layout.singles).toEqual(['rc', 'hill', 'treat'].map((id) =>
+      expect.objectContaining({ id })));
+  });
+
+  // The picky-cat owner: one brand with many flavors collapses under a header; the
+  // lone other brand stays a flat single. Group order follows groupFoodsByBrand.
+  it('groups a ≥2-variant brand under a header and flattens the rest', () => {
+    const layout = splitBrandGroupsForPicker([
+      branded('ff1', 'Fancy Feast'),
+      branded('ff2', 'Fancy Feast'),
+      branded('ff3', 'Fancy Feast'),
+      branded('tiki', 'Tiki Cat'),
+    ]);
+    expect(layoutIds(layout)).toEqual({
+      brandGroups: [{ brand: 'Fancy Feast', foods: ['ff1', 'ff2', 'ff3'] }],
+      singles: ['tiki'],
+    });
+  });
+
+  // Spelling variants fold together via canonicalizeBrand, so "Hill's" (curly) +
+  // "Hill's" (straight) count as 2 variants of ONE brand → a header, not 2 singles.
+  it('counts folded spelling variants toward the ≥2 threshold', () => {
+    const layout = splitBrandGroupsForPicker([
+      branded('a', "Hill's"),
+      branded('b', 'Hill’s'),
+    ]);
+    expect(layout.brandGroups).toHaveLength(1);
+    expect(layout.brandGroups[0].brand).toBe("Hill's"); // first-seen spelling
+    expect(ids(layout.brandGroups[0].foods)).toEqual(['a', 'b']);
+    expect(layout.singles).toEqual([]);
+  });
+
+  // A higher floor (e.g. 3) keeps a 2-variant brand flat — the threshold is the knob.
+  it('honors a custom minGroupSize', () => {
+    const layout = splitBrandGroupsForPicker(
+      [branded('a', 'Fancy Feast'), branded('b', 'Fancy Feast')],
+      3,
+    );
+    expect(layout.brandGroups).toEqual([]);
+    expect(ids(layout.singles)).toEqual(['a', 'b']);
+  });
+
+  it('returns empty groups and empty singles for an empty list', () => {
+    expect(splitBrandGroupsForPicker([])).toEqual({ brandGroups: [], singles: [] });
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [
+      branded('a', 'Fancy Feast'),
+      branded('b', 'Fancy Feast'),
+      branded('c', 'Tiki Cat'),
+    ];
+    const snapshot = [...input];
+    splitBrandGroupsForPicker(input);
     expect(input).toEqual(snapshot);
   });
 });

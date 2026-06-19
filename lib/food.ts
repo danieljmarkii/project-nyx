@@ -105,6 +105,47 @@ export function groupFoodsByBrand(foods: PickerFood[]): BrandGroup[] {
   return [...groups.values()];
 }
 
+export interface PickerBrandLayout {
+  /** Brands with ≥ minGroupSize variants, each rendered under its own brand header.
+   *  Input order is preserved (groupFoodsByBrand's first-appearance order), not
+   *  re-sorted here — the library reads alpha brand-then-product because
+   *  getLibraryFoods delivers it sorted, so callers passing an unsorted list get
+   *  that list's order. */
+  brandGroups: BrandGroup[];
+  /** Foods whose brand has a single variant, flattened into ONE ungrouped list
+   *  (the tile keeps the brand in its eyebrow). Same caller-provided order. */
+  singles: PickerFood[];
+}
+
+// Split a type-section's foods for the quick-log PICKER: cluster a brand under a
+// header only when it has ≥2 variants (the "wall of Fancy Feast" collapse, B-109),
+// and drop every single-variant brand into one flat ungrouped list. This is the
+// B-113 Option C rule — it harmonizes the picker with the Foods tab's brand
+// grouping WITHOUT regressing the hot log path:
+//   • A diet-trial owner's library is mostly one-variant brands (Royal Canin ×1,
+//     Hill's ×1, a treat ×1). Headering each would add a header per food — MORE
+//     chrome and scrolling on the 10-second path, the exact regression B-113 guards
+//     against. Those collapse to a single flat grid, so that owner sees ~today's
+//     surface (no headers), while a picky-cat owner's 12-flavor brand still folds
+//     under one header.
+//   • Flattening the singletons also lets them pack 2-up. Rendering each
+//     single-variant BrandGroup on its own would chunk one tile per row (a ragged
+//     one-per-line column); pooling them feeds toFoodRows one list → a full grid.
+// The Foods tab deliberately does NOT use this (it headers every brand, singletons
+// included — it's a browse destination, not the hot path). Pure; input not mutated.
+export function splitBrandGroupsForPicker(
+  foods: PickerFood[],
+  minGroupSize = 2,
+): PickerBrandLayout {
+  const brandGroups: BrandGroup[] = [];
+  const singles: PickerFood[] = [];
+  for (const g of groupFoodsByBrand(foods)) {
+    if (g.foods.length >= minGroupSize) brandGroups.push(g);
+    else singles.push(...g.foods);
+  }
+  return { brandGroups, singles };
+}
+
 // ── Per-pet intake annotation (B-004 PR 4) ─────────────────────────────────────
 // The Foods tab shows the global catalog, but each row carries a per-active-pet
 // note of the pet's *logged* history with the food — a factual recency + count
