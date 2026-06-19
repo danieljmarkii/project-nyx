@@ -3,6 +3,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import * as Network from 'expo-network';
 import { syncNow } from '../lib/sync';
 import { getSyncStatus, isLocalDataEmpty } from '../lib/db';
+import { isOnlineFromState } from '../lib/network';
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore } from '../store/syncStore';
 
@@ -74,11 +75,11 @@ export function useSync() {
       appState.current = nextState;
     });
 
-    // Flush the queue the moment connectivity is restored.
+    // Flush the queue the moment connectivity is restored. isOnlineFromState is
+    // the shared mapper (lib/network) — same "null reachability = still online"
+    // rule the account-deletion offline guard uses, kept in one place.
     const networkSub = Network.addNetworkStateListener((state) => {
-      // isInternetReachable can be null while the check is in progress — treat
-      // null as "still online" to avoid false-positive offline transitions.
-      const isOnline = !!(state.isConnected && state.isInternetReachable !== false);
+      const isOnline = isOnlineFromState(state);
       if (!wasOnline.current && isOnline) {
         safeRunSync();
       }

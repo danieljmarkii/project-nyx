@@ -17,6 +17,7 @@ import { useAuthStore } from '../../store/authStore';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
+import { DeleteAccountSheet } from '../../components/profile/DeleteAccountSheet';
 import { Pet } from '../../store/petStore';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
@@ -74,6 +75,7 @@ export default function ProfileScreen() {
   // Snapshot of the pet the archive sheet was opened FOR (identity rule, see
   // ArchivePetSheet). Doubles as the sheet's visibility flag.
   const [archivingPet, setArchivingPet] = useState<Pet | null>(null);
+  const [deleteSheetVisible, setDeleteSheetVisible] = useState(false);
 
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [conditionsLoading, setConditionsLoading] = useState(true);
@@ -425,8 +427,20 @@ export default function ProfileScreen() {
         <Card style={styles.sectionGap}>
           <Text style={styles.sectionTitle}>Account</Text>
           <Divider style={styles.accountDivider} />
-          <TouchableOpacity style={styles.accountRow} onPress={handleSignOut}>
+          <TouchableOpacity style={styles.accountRow} onPress={handleSignOut} hitSlop={8}>
             <Text style={styles.accountRowText}>Sign out</Text>
+          </TouchableOpacity>
+          <Divider style={styles.accountDivider} />
+          {/* Delete account (B-039 FR-8): destructive-styled, routed to the
+              heavier type-to-confirm flow — NOT Sign out's lightweight Alert,
+              because the consequence is irreversible. */}
+          <TouchableOpacity
+            style={styles.deleteAccountRow}
+            onPress={() => setDeleteSheetVisible(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+          >
+            <Text style={styles.deleteAccountRowText}>Delete account</Text>
           </TouchableOpacity>
         </Card>
 
@@ -453,6 +467,12 @@ export default function ProfileScreen() {
           onClose={() => setArchivingPet(null)}
         />
       )}
+
+      <DeleteAccountSheet
+        visible={deleteSheetVisible}
+        petNames={pets.map((p) => p.name)}
+        onClose={() => setDeleteSheetVisible(false)}
+      />
 
       <EditPetModal
         visible={editModalVisible}
@@ -693,10 +713,20 @@ const styles = StyleSheet.create({
   },
   accountRow: {
     paddingVertical: 6,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   accountRowText: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
+  },
+  deleteAccountRow: {
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  deleteAccountRowText: {
+    fontSize: theme.textMD,
+    color: theme.colorDestructive,
   },
 
   // ── Archive ──
