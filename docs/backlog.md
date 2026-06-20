@@ -25,6 +25,20 @@ A running list of items intentionally deferred from the current build sequence. 
 
 **Tags.** A row may carry an inline `#feedback` tag at the front of its Title. These were raised by a strategic-review pass (Claude, 2026-06-20) — a deliberate step back from the build to check direction and workflow, not surfaced mid-build. Grep `#feedback` for the whole batch (B-137–B-143). Where a feedback point mapped onto an existing row it was tagged in place, **not duplicated** (see B-082, B-118).
 
+**`#feedback` — ICE snapshot (2026-06-20, product-team pass).** `ICE = Impact × Confidence × (11 − Effort)`, each 1–10 (Effort: 10 = biggest lift). Raw rank surfaces quick wins; **strategic sequencing overrides it for B-137/B-138** — they're the critical path to a shippable MVP. PM owns final order.
+
+| Rank | Item | I | C | Eff | ICE | Team note |
+|---|---|---|---|---|---|---|
+| 1 | B-118 · delete `smart-worker` | 5 | 9 | 1 | 450 | Trust & Safety: RLS-bypass path, zero use → delete now (PM dashboard) |
+| 2 | B-139 · freeze + wedge gate | 7 | 6 | 2 | 378 | cheap governance; PM call: hard vs soft freeze |
+| 3 | **B-137 · close the loop (vet report)** | 10 | 7 | 6 | 350 | **strategic #1** despite raw rank. Eng: HTML→PDF can't run Chromium in Deno — pick a JS PDF lib or external render service |
+| 4 | B-082 · MCP deploy+migrate path | 6 | 7 | 3 | 336 | Eng: drains the recurring PM action-item queue |
+| 5 | B-140 · tier the DoD | 6 | 6 | 3 | 288 | do before the next cosmetic build; Data/Dr. Chen: default heavyweight on doubt |
+| 6 | B-141 · slim STATUS + backlog | 5 | 8 | 4 | 280 | compounding hygiene; Product Owner's lane |
+| 7 | B-138 · real wedge validation | 9 | 5 | 5 | 270 | start recruiting now; vet cold-read gated on B-137; C low = recruiting is outside our control |
+| 7 | B-143 · branch hygiene | 3 | 9 | 1 | 270 | toggle auto-delete-on-merge |
+| 9 | B-142 · doc-mandate reconcile | 5 | 6 | 3 | 240 | PM call: create the files vs drop the rule |
+
 ---
 
 ## Open
