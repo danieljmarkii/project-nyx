@@ -7,6 +7,10 @@ import {
   sampleLine,
   evidenceText,
   coverageCopy,
+  selectCrossPetSafetyFinding,
+  bannerCopy,
+  validateBannerPhrasing,
+  type BannerSafetyFinding,
 } from './signalCopy';
 import type {
   CachedFinding,
@@ -549,5 +553,193 @@ describe('time-of-day clustering (⑥, B-079) — client copy', () => {
 
   it('ranks as a cap-subject insight, never on the safety rail', () => {
     expect(timeofday().priorityClass).toBe('insight');
+  });
+});
+
+// ── Cross-pet safety banner (multi-pet §4, mock A3) ───────────────────────────
+// This is a clinical escalation surface — the selection/ranking is adversarial-
+// review-mandatory (§4). These assertions encode the contract the reviewer attacks.
+
+// Banner-specific alarm vocabulary (mirror of BANNER_ALARM_RE in signalCopy.ts).
+const ALARM_RE =
+  /\b(emergency|urgent(?:ly)?|immediately|right away|danger(?:ous)?|critical|severe|asap|rush|alarm(?:ing)?)\b/i;
+
+type AnyFinding = Parameters<typeof cached>[0];
+const candidate = (id: string, findings: AnyFinding[]) => ({
+  pet: { id, name: id },
+  findings: findings.map((f, i) => cached(f, i)),
+});
+
+// Every banner copy variant, for the guardrail sweep.
+const ALL_BANNER_FINDINGS: BannerSafetyFinding[] = [
+  intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'salmon pâté' }),
+  intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: null }),
+  intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 1 }),
+  intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 4 }),
+  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction'] as const).flatMap(
+    (symptomType) => [
+      worsening({ trigger: 'more_episodes', symptomType }),
+      worsening({ trigger: 'more_days', symptomType }),
+    ],
+  ),
+];
+
+describe('selectCrossPetSafetyFinding', () => {
+  it('returns null with no candidates', () => {
+    expect(selectCrossPetSafetyFinding([])).toBeNull();
+  });
+
+  it('returns null when no candidate has a safety finding — non-safety classes never cross over (§4)', () => {
+    // The whole point: reflections, correlations and descriptive timing lanes must
+    // NOT raise a cross-pet banner, even when they are a pet's only findings.
+    const onlyInsights = candidate('A', [
+      correlation(),
+      reflection(),
+      postprandial(),
+      timeofday(),
+    ]);
+    expect(selectCrossPetSafetyFinding([onlyInsights])).toBeNull();
+  });
+
+  it('selects a single intake_decline candidate', () => {
+    const sel = selectCrossPetSafetyFinding([candidate('A', [intakeDecline()])]);
+    expect(sel?.pet.id).toBe('A');
+    expect(sel?.finding.type).toBe('intake_decline');
+  });
+
+  it('selects a single symptom_worsening candidate', () => {
+    const sel = selectCrossPetSafetyFinding([candidate('A', [worsening()])]);
+    expect(sel?.finding.type).toBe('symptom_worsening');
+  });
+
+  it('within one pet with BOTH safety findings, picks intake_decline over worsening (§4 ranking)', () => {
+    // worsening passed FIRST (rank 0) — class priority must still pick intake_decline,
+    // never the lower-priority finding just because it leads the pet's own stack.
+    const both = candidate('A', [worsening(), intakeDecline()]);
+    expect(selectCrossPetSafetyFinding([both])?.finding.type).toBe('intake_decline');
+  });
+
+  it('across two pets, intake_decline outranks worsening regardless of list order (§4)', () => {
+    const declinePet = candidate('decline', [intakeDecline()]);
+    const worsenPet = candidate('worsen', [worsening()]);
+    expect(selectCrossPetSafetyFinding([worsenPet, declinePet])?.pet.id).toBe('decline');
+    expect(selectCrossPetSafetyFinding([declinePet, worsenPet])?.pet.id).toBe('decline');
+  });
+
+  it('never stacks — returns exactly one finding even when several pets qualify', () => {
+    const sel = selectCrossPetSafetyFinding([
+      candidate('A', [worsening()]),
+      candidate('B', [intakeDecline()]),
+      candidate('C', [worsening()]),
+    ]);
+    // The return type is a single SelectedBanner, not an array — one banner, by type.
+    expect(sel?.pet.id).toBe('B');
+  });
+
+  it('breaks same-class ties by candidate order (oldest-first), deterministically', () => {
+    const a = candidate('A', [intakeDecline({ daysBelowBaseline: 2 })]);
+    const b = candidate('B', [intakeDecline({ daysBelowBaseline: 9 })]);
+    expect(selectCrossPetSafetyFinding([a, b])?.pet.id).toBe('A');
+    expect(selectCrossPetSafetyFinding([b, a])?.pet.id).toBe('B');
+  });
+
+  it('selects the safety finding when it is mixed with non-safety findings', () => {
+    const mixed = candidate('A', [correlation(), intakeDecline(), reflection()]);
+    expect(selectCrossPetSafetyFinding([mixed])?.finding.type).toBe('intake_decline');
+  });
+
+  it('a pet with only non-safety findings is skipped, but another with a safety finding still wins', () => {
+    const noisy = candidate('noisy', [correlation(), reflection(), timeofday()]);
+    const real = candidate('real', [worsening()]);
+    expect(selectCrossPetSafetyFinding([noisy, real])?.pet.id).toBe('real');
+  });
+});
+
+describe('bannerCopy', () => {
+  it('intake_decline / refused — names the food and starts with the pet name', () => {
+    const c = bannerCopy(
+      intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'tuna pâté' }),
+      'Juniper',
+    );
+    expect(c.text.startsWith('Juniper')).toBe(true);
+    expect(c.text).toContain('tuna pâté');
+    expect(c.text).toMatch(/worth a look/);
+  });
+
+  it('intake_decline / refused with no label — falls back to a non-empty meal phrase', () => {
+    const c = bannerCopy(
+      intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: null }),
+      'Juniper',
+    );
+    expect(c.text).toContain('a meal they usually finish');
+  });
+
+  it('intake_decline / consecutive_low — says "today" for one day, "for N days" otherwise', () => {
+    expect(bannerCopy(intakeDecline({ daysBelowBaseline: 1 }), 'Pixel').text).toContain('today');
+    expect(bannerCopy(intakeDecline({ daysBelowBaseline: 3 }), 'Pixel').text).toContain('for 3 days');
+  });
+
+  it('symptom_worsening — names the symptom and the axis that rose (days vs episodes)', () => {
+    const days = bannerCopy(worsening({ trigger: 'more_days', symptomType: 'vomit' }), 'Pixel').text;
+    expect(days).toContain('vomiting on more days this week than last');
+    const eps = bannerCopy(worsening({ trigger: 'more_episodes', symptomType: 'itch' }), 'Pixel').text;
+    expect(eps).toContain('more itching this week than last');
+  });
+
+  it('text === petName + rest for every variant (the bold-name render invariant)', () => {
+    for (const f of ALL_BANNER_FINDINGS) {
+      const c = bannerCopy(f, 'Pixel');
+      expect(c.text).toBe(`Pixel${c.rest}`);
+      expect(c.text.startsWith('Pixel')).toBe(true);
+    }
+  });
+
+  it('every variant is guardrail-clean: never reassures, never "picky", never causal, never alarms, never shouts (§4)', () => {
+    // The adversarial-as-test: the banner can ONLY escalate attention. If any
+    // variant ever drifts into reassurance / cause / alarm, this fails loudly.
+    for (const f of ALL_BANNER_FINDINGS) {
+      const { text } = bannerCopy(f, 'Pixel');
+      expect(text.includes('!')).toBe(false);
+      expect(REASSURANCE_RE.test(text)).toBe(false);
+      expect(DISMISSIVE_RE.test(text)).toBe(false);
+      expect(CAUSAL_RE.test(text)).toBe(false);
+      expect(ALARM_RE.test(text)).toBe(false);
+      // And it passes the runtime guardrail screen the hook applies.
+      expect(validateBannerPhrasing(text)).toBe(true);
+    }
+  });
+});
+
+describe('validateBannerPhrasing', () => {
+  it('accepts a clean, calm banner sentence', () => {
+    expect(validateBannerPhrasing('Juniper has eaten less than usual for 3 days — worth a look.')).toBe(true);
+  });
+
+  it('rejects an exclamation mark (no manufactured alarm)', () => {
+    expect(validateBannerPhrasing('Juniper has eaten less than usual — worth a look!')).toBe(false);
+  });
+
+  it('rejects reassurance on this safety surface (absence ≠ wellness)', () => {
+    expect(validateBannerPhrasing('Juniper is probably fine — worth a look.')).toBe(false);
+    expect(validateBannerPhrasing('Juniper is doing well this week.')).toBe(false);
+  });
+
+  it('rejects "picky"/"fussy" framing of an intake decline', () => {
+    expect(validateBannerPhrasing('Juniper is just being picky lately.')).toBe(false);
+  });
+
+  it('rejects a causal claim', () => {
+    expect(validateBannerPhrasing("Juniper's vomiting is caused by the new food.")).toBe(false);
+    expect(validateBannerPhrasing('Juniper threw up because of dinner.')).toBe(false);
+  });
+
+  it('rejects alarm/urgency vocabulary (§4: never alarm)', () => {
+    expect(validateBannerPhrasing('Juniper — emergency, see a vet immediately.')).toBe(false);
+    expect(validateBannerPhrasing('Juniper needs urgent care right away.')).toBe(false);
+  });
+
+  it('rejects too-short and too-long strings', () => {
+    expect(validateBannerPhrasing('hi')).toBe(false);
+    expect(validateBannerPhrasing('a'.repeat(201))).toBe(false);
   });
 });
