@@ -262,6 +262,36 @@ export async function regenerateSignal(petId: string): Promise<{ error: string |
   }
 }
 
+// ── All-active-pets freshness + cross-pet read (multi-pet §4) ─────────────────
+// The home Signal regen must cover EVERY active pet, not just the one whose home
+// is open, so the cross-pet safety banner has a fresh cache to read. The active
+// pet is covered by useSignal; this covers the rest. For each pet: read its cached
+// signal (the banner needs the findings) and, if the cache is stale/missing, kick
+// an OFF-PATH daily-expiry regen — exactly like the active pet's path, never a live
+// call on the render. The banner uses whatever is cached NOW; a stale/missing cache
+// for another pet renders nothing (acceptable v1 degradation, §4) and the kicked
+// regen makes the next visit fresh. The after-log debounce stays per-logged-pet
+// (triggerSignalRegenDebounced, below) — unchanged. Never throws.
+export async function readSignalsAndRefresh(
+  petIds: string[],
+): Promise<Map<string, CachedFinding[]>> {
+  const byPet = new Map<string, CachedFinding[]>();
+  for (const petId of petIds) {
+    try {
+      const row = await readSignalCache(petId);
+      if (isSignalCacheStale(row)) {
+        regenerateSignal(petId).catch(() => {});
+      }
+      byPet.set(petId, row?.findings ?? []);
+    } catch {
+      // Unreadable cache (offline / never generated) → no findings → no banner for
+      // this pet. Silence, never an all-clear.
+      byPet.set(petId, []);
+    }
+  }
+  return byPet;
+}
+
 // ── Debounced-after-log regen ─────────────────────────────────────────────────
 // Called from the log flow after an event/meal is saved (spec §2 freshness rule).
 // A debounce collapses rapid logs (a meal + the symptom that followed, logged in

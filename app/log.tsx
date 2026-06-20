@@ -264,9 +264,10 @@ export default function LogModal() {
       Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
       return;
     }
-    // A medication event carries no food/severity/intake fields — it renders in
-    // the timeline as icon + "Medication" + time (EventRow handles it like any
-    // non-meal event).
+    // Carry the dose's drug name + adherence into the store event so it renders in
+    // the timeline (History) immediately with the drug + adherence chip, without
+    // waiting for a reload (B-117 PR 8). A later adherence edit on the completion
+    // card / detail screen re-reads ground truth on the next focus.
     prependEvent({
       id: result.eventId,
       pet_id: pet.id,
@@ -279,6 +280,10 @@ export default function LogModal() {
       deleted_at: null,
       created_at: result.now,
       updated_at: result.now,
+      medication_item_id: med.id,
+      adherence: 'given',
+      drug_generic_name: med.generic_name,
+      drug_brand_name: med.brand_name,
     });
     // Dismiss the modal, then play the dose completion card at the root layer
     // (delayMs clears the dismissing modal so the card isn't briefly occluded on

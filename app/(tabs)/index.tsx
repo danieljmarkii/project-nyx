@@ -5,6 +5,7 @@ import { useEvents } from '../../hooks/useEvents';
 import { useSyncStore } from '../../store/syncStore';
 import { theme } from '../../constants/theme';
 import { HomeHeader } from '../../components/home/HomeHeader';
+import { CrossPetSafetyBanner } from '../../components/home/CrossPetSafetyBanner';
 import { SignalZone } from '../../components/home/SignalZone';
 import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
@@ -32,6 +33,10 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+        {/* Cross-pet safety banner (multi-pet §4) — ABOVE the Signal because it
+            belongs to a DIFFERENT pet; renders nothing for single-pet households
+            or when no other pet has a cached safety finding. */}
+        <CrossPetSafetyBanner />
         <SignalZone />
         <TodayZone />
         <TrendZone />
