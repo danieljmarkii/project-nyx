@@ -83,6 +83,11 @@ export const usePetStore = create<PetState>((set, get) => ({
   pets: [],
   activePet: null,
   isOnboarded: false,
+  // INVARIANT: `pets` holds only NON-archived pets. Every loader filters
+  // `is_active = true` (usePet) and archiving calls removePet, so an archived pet
+  // never enters the list. The cross-pet safety banner (multi-pet §4) relies on
+  // this — it treats every pet in the list as banner-eligible, so an archived pet
+  // leaking in here would wrongly raise a banner. Keep archived pets out of `pets`.
   setPets: (pets, preferredId = null) =>
     set((state) => ({
       pets,

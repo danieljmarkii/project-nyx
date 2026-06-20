@@ -5,11 +5,18 @@ import { usePetStore } from '../store/petStore';
 import {
   readSignalCache,
   isSignalCacheStale,
+  readSignalsAndRefresh,
   regenerateSignal,
   type CachedFinding,
   type CoverageDiagnostic,
 } from '../lib/signal';
-import { deriveDisplayState, type DisplayState } from '../lib/signalCopy';
+import {
+  bannerCopy,
+  deriveDisplayState,
+  selectCrossPetSafetyFinding,
+  validateBannerPhrasing,
+  type DisplayState,
+} from '../lib/signalCopy';
 
 export interface SignalState {
   findings: CachedFinding[];
@@ -145,4 +152,87 @@ export function useSignal(): SignalState {
     localCtx.hasSubstantialHistory,
   );
   return { findings, coverage, displayState, signalText, petName, isLoading };
+}
+
+export interface CrossPetBanner {
+  petId: string;
+  petName: string;
+  photoPath: string | null;
+  /** Full sentence — the accessibility label. */
+  text: string;
+  /** Sentence minus the leading pet name — rendered after the bold name (mock A3). */
+  rest: string;
+}
+
+// Cross-pet safety banner (multi-pet §4, mock A3). On the active pet's home,
+// surfaces ONE calm banner when ANOTHER (non-active, non-archived) pet has a
+// safety-class finding cached. CACHE-ONLY read, like the Signal itself (no live
+// call on open); it also kicks the all-active-pets daily-expiry regen so the
+// OTHER pets stay fresh (the active pet is covered by useSignal). Returns the
+// banner to render, or null. By construction it can only escalate attention,
+// never reassure: a stale/missing cache renders nothing (absence ≠ wellness).
+export function useCrossPetSafetyBanner(): CrossPetBanner | null {
+  const { pets, activePet } = usePetStore();
+  const [banner, setBanner] = useState<CrossPetBanner | null>(null);
+  const activePetId = activePet?.id ?? null;
+  // Stable effect dep: the set of NON-active pet ids. Re-runs when the household
+  // changes (add / archive / un-archive / switch), not on every unrelated store
+  // write. The pet OBJECTS are pulled fresh from the store inside the effect so a
+  // name/photo edit can't go stale behind this id signature.
+  const otherPetsKey = pets
+    .filter((p) => p.id !== activePetId)
+    .map((p) => p.id)
+    .join(',');
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      const others = usePetStore.getState().pets.filter((p) => p.id !== activePetId);
+      // Single-pet households (and the no-active-pet onboarding moment) never see a
+      // banner — zero reads, zero chrome (spec §0 / QA case 8).
+      if (others.length === 0) {
+        setBanner(null);
+        return;
+      }
+
+      (async () => {
+        try {
+          // Read each other pet's cache + kick a stale regen for freshness (§4).
+          const byPet = await readSignalsAndRefresh(others.map((p) => p.id));
+          if (cancelled) return;
+          const candidates = others.map((pet) => ({ pet, findings: byPet.get(pet.id) ?? [] }));
+          const selected = selectCrossPetSafetyFinding(candidates);
+          if (!selected) {
+            setBanner(null);
+            return;
+          }
+          const copy = bannerCopy(selected.finding, selected.pet.name);
+          // Defense-in-depth (§4): suppress on any guardrail drift — fail safe to
+          // silence, never a bad escalation, never a reassurance.
+          if (!validateBannerPhrasing(copy.text)) {
+            setBanner(null);
+            return;
+          }
+          setBanner({
+            petId: selected.pet.id,
+            petName: selected.pet.name,
+            photoPath: selected.pet.photo_path,
+            text: copy.text,
+            rest: copy.rest,
+          });
+        } catch {
+          // readSignalsAndRefresh is built not to throw, but if anything here does,
+          // fail safe to NO banner (silence never reassures) rather than leaving an
+          // unhandled rejection (CLAUDE.md: explicit async error handling).
+          if (!cancelled) setBanner(null);
+        }
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [activePetId, otherPetsKey]),
+  );
+
+  return banner;
 }
