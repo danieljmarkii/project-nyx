@@ -405,16 +405,30 @@ export function bannerCopy(finding: BannerSafetyFinding, petName: string): Banne
   return { text: `${petName}${rest}`, rest };
 }
 
+// A long free-text food label (the meal-log stores brand + product in TEXT
+// columns) must not blow validateBannerPhrasing's length cap and silently suppress
+// a REAL safety finding — so cap the rendered label, keeping the banner visible.
+function truncateFoodLabel(label: string | null): string | null {
+  const f = label?.trim();
+  if (!f) return null;
+  const MAX = 40;
+  return f.length > MAX ? `${f.slice(0, MAX - 1).trimEnd()}…` : f;
+}
+
 // The sentence AFTER the pet name. The name is prepended by bannerCopy, so the
 // rest never repeats it — it refers to the pet as "they" where needed (matching
 // the Signal evidence copy), so the leading name can render bold once (mock A3).
 function bannerRest(finding: BannerSafetyFinding): string {
   if (finding.type === 'intake_decline') {
     if (finding.trigger === 'refused_normal_food') {
-      const food = finding.refusedFoodLabel ?? 'a meal they usually finish';
+      const food = truncateFoodLabel(finding.refusedFoodLabel);
       // Names the refused food (intake, not a timing-only finding — naming it is
-      // intended and clinically appropriate, as in the Signal template).
-      return ` turned down ${food}, which they usually finish — worth a look.`;
+      // intended and clinically appropriate, as in the Signal template). With no
+      // label, drop the trailing clause so the sentence doesn't read "a meal they
+      // usually finish, which they usually finish" (code-review fix).
+      return food
+        ? ` turned down ${food}, which they usually finish — worth a look.`
+        : ` turned down a meal they usually finish — worth a look.`;
     }
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;

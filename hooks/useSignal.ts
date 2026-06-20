@@ -196,29 +196,36 @@ export function useCrossPetSafetyBanner(): CrossPetBanner | null {
       }
 
       (async () => {
-        // Read each other pet's cache + kick a stale regen for freshness (§4).
-        const byPet = await readSignalsAndRefresh(others.map((p) => p.id));
-        if (cancelled) return;
-        const candidates = others.map((pet) => ({ pet, findings: byPet.get(pet.id) ?? [] }));
-        const selected = selectCrossPetSafetyFinding(candidates);
-        if (!selected) {
-          setBanner(null);
-          return;
+        try {
+          // Read each other pet's cache + kick a stale regen for freshness (§4).
+          const byPet = await readSignalsAndRefresh(others.map((p) => p.id));
+          if (cancelled) return;
+          const candidates = others.map((pet) => ({ pet, findings: byPet.get(pet.id) ?? [] }));
+          const selected = selectCrossPetSafetyFinding(candidates);
+          if (!selected) {
+            setBanner(null);
+            return;
+          }
+          const copy = bannerCopy(selected.finding, selected.pet.name);
+          // Defense-in-depth (§4): suppress on any guardrail drift — fail safe to
+          // silence, never a bad escalation, never a reassurance.
+          if (!validateBannerPhrasing(copy.text)) {
+            setBanner(null);
+            return;
+          }
+          setBanner({
+            petId: selected.pet.id,
+            petName: selected.pet.name,
+            photoPath: selected.pet.photo_path,
+            text: copy.text,
+            rest: copy.rest,
+          });
+        } catch {
+          // readSignalsAndRefresh is built not to throw, but if anything here does,
+          // fail safe to NO banner (silence never reassures) rather than leaving an
+          // unhandled rejection (CLAUDE.md: explicit async error handling).
+          if (!cancelled) setBanner(null);
         }
-        const copy = bannerCopy(selected.finding, selected.pet.name);
-        // Defense-in-depth (§4): suppress on any guardrail drift — fail safe to
-        // silence, never a bad escalation, never a reassurance.
-        if (!validateBannerPhrasing(copy.text)) {
-          setBanner(null);
-          return;
-        }
-        setBanner({
-          petId: selected.pet.id,
-          petName: selected.pet.name,
-          photoPath: selected.pet.photo_path,
-          text: copy.text,
-          rest: copy.rest,
-        });
       })();
 
       return () => {

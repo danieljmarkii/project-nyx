@@ -666,12 +666,29 @@ describe('bannerCopy', () => {
     expect(c.text).toMatch(/worth a look/);
   });
 
-  it('intake_decline / refused with no label — falls back to a non-empty meal phrase', () => {
+  it('intake_decline / refused with no label — reads naturally, no doubled clause (code-review fix)', () => {
     const c = bannerCopy(
       intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: null }),
       'Juniper',
     );
-    expect(c.text).toContain('a meal they usually finish');
+    expect(c.text).toBe('Juniper turned down a meal they usually finish — worth a look.');
+    // The trailing ", which they usually finish" clause is dropped in the no-label
+    // case so "usually finish" never appears twice.
+    expect(c.text).not.toContain('finish, which');
+    expect(c.text.match(/usually finish/g)?.length).toBe(1);
+  });
+
+  it('intake_decline / refused with a very long label — truncates so a real banner is never silently suppressed', () => {
+    const longLabel =
+      'Super Premium Grain-Free Wild-Caught Pacific Salmon & Sweet Potato Recipe Pâté (Limited Ingredient)';
+    const c = bannerCopy(
+      intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: longLabel }),
+      'Juniper',
+    );
+    expect(c.text).toContain('…'); // label was truncated
+    // The whole point: the finding is real, so the banner must still pass the
+    // length-capped guardrail (it must NOT fail-safe to silence on a long label).
+    expect(validateBannerPhrasing(c.text)).toBe(true);
   });
 
   it('intake_decline / consecutive_low — says "today" for one day, "for N days" otherwise', () => {

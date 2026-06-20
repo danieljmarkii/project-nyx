@@ -21,7 +21,6 @@ export function CrossPetSafetyBanner() {
   return (
     <Pressable
       onPress={() => selectPet(banner.petId)}
-      hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={banner.text}
       accessibilityHint={`Switches to ${banner.petName}`}
@@ -52,14 +51,16 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     paddingVertical: theme.space1,
     paddingHorizontal: theme.space2,
-    // The whole row is the switch tap-target — the 44pt floor (3am-stumbling rule).
+    // The whole row is the switch tap-target. minHeight clears the 44pt floor
+    // (3am-stumbling rule) on its own, so no hitSlop is needed (it would only
+    // overshoot into the surrounding padding).
     minHeight: 44,
   },
   text: {
     flex: 1,
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
-    lineHeight: 18,
+    lineHeight: theme.lineHeightSM,
   },
   petName: {
     fontWeight: theme.weightSemibold,
