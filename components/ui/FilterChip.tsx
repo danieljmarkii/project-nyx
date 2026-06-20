@@ -20,6 +20,10 @@ export function FilterChip({ label, active, onPress, variant = 'default' }: Prop
       style={[set.base, active && set.activeContainer]}
       onPress={onPress}
       activeOpacity={0.7}
+      // Chips are ~32pt tall; expand the tap zone vertically to the 44pt floor
+      // (Designer anti-pattern: sub-44pt targets need hitSlop). Vertical-only so
+      // adjacent chips in a horizontal row never share a tap zone.
+      hitSlop={{ top: 6, bottom: 6 }}
     >
       <Text style={[set.label, active && set.activeLabel]}>{label}</Text>
     </TouchableOpacity>
