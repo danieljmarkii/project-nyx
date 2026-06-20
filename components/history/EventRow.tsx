@@ -4,6 +4,7 @@ import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventT
 import { EventIcon } from '../event/EventIcon';
 import { theme } from '../../constants/theme';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
+import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
 import { describeOccurredAt } from '../../lib/utils';
 
 interface Props {
@@ -39,6 +40,16 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   const foodLabel = event.food_brand && event.food_product_name
     ? `${event.food_brand} · ${event.food_product_name}`
     : event.food_product_name ?? event.food_brand ?? null;
+
+  // Medication dose (B-117 PR 8): the drug name (generic, brand appended when it
+  // adds info) + the read-only adherence chip — the dose twin of foodLabel + the
+  // intake badge. AdherenceChipRow renders nothing for a NULL rating, so an unrated
+  // dose stays as quiet as an unrated meal.
+  const drugLabel = event.drug_generic_name
+    ? event.drug_brand_name
+      ? `${event.drug_generic_name} · ${event.drug_brand_name}`
+      : event.drug_generic_name
+    : event.drug_brand_name ?? null;
 
   // B-010 — read-only confidence marker so the timeline stops implying false
   // precision on found/estimated events. Witnessed and legacy (null) rows keep
@@ -84,6 +95,15 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
             {/* Read-only intake badge — IntakeChipRow returns null when value
                 is null, so unrated meals stay visually quiet. */}
             <IntakeChipRow value={(event.intake_rating ?? null) as IntakeRating | null} />
+          </View>
+        ) : null}
+
+        {drugLabel ? (
+          <View style={styles.foodLine}>
+            <Text style={styles.foodName} numberOfLines={1}>{drugLabel}</Text>
+            {/* Read-only adherence badge — concern states (partial/missed/refused)
+                light rose, 'given' lights accent; NULL renders nothing. */}
+            <AdherenceChipRow value={(event.adherence ?? null) as DoseAdherence | null} />
           </View>
         ) : null}
 

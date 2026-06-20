@@ -24,6 +24,13 @@ export interface NyxEvent {
   quantity?: string | null;
   // WSAVA 5-point owner-reported intake (B-014). NULL = unrated.
   intake_rating?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null;
+  // Medication (dose) join — populated only for event_type='medication' rows
+  // (B-117 PR 8). Drug name from the library item; adherence is the offered-vs-given
+  // rating (the intake_rating analog). NULL on non-medication events.
+  medication_item_id?: string | null;
+  adherence?: 'given' | 'partial' | 'missed' | 'refused' | null;
+  drug_generic_name?: string | null;
+  drug_brand_name?: string | null;
 }
 
 interface EventState {
