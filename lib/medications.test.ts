@@ -24,6 +24,13 @@ import {
   regimenFlagLine,
   buildRegimenPayload,
   canSaveRegimen,
+  doubleDoseWindowHours,
+  detectDoubleDose,
+  formatDoseGap,
+  doubleDoseNote,
+  DEFAULT_DOUBLE_DOSE_WINDOW_HOURS,
+  DOUBLE_DOSE_WINDOW_CAP_HOURS,
+  DOUBLE_DOSE_WINDOW_FLOOR_HOURS,
   MEDICATION_SCHEMA_SQL,
   type LocalMedicationItem,
   type LocalMedication,
@@ -31,6 +38,7 @@ import {
   type MedicationItemEdit,
   type AdherenceTally,
   type RegimenFormValues,
+  type NearbyDose,
 } from './medications';
 
 // No-flag tally helper — every dose cleanly given unless a test says otherwise.
@@ -576,5 +584,146 @@ describe('buildRegimenPayload / canSaveRegimen — regimen-setup write', () => {
     expect(canSaveRegimen({ drugName: 'Apoquel' })).toBe(true);
     expect(canSaveRegimen({ drugName: '' })).toBe(false);
     expect(canSaveRegimen({ drugName: '   ' })).toBe(false);
+  });
+});
+
+// ── B-135 double-dose detection (§6.4) ───────────────────────────────────────
+// The safety invariant ("two given doses too close together is a flag, never
+// silently normalized") lives here as assertions, not as a comment on a screen.
+
+describe('doubleDoseWindowHours — schedule-relative, CAPPED + FLOORED (adversarial fix)', () => {
+  it('caps common frequencies at the clinical CAP (a normal early scheduled dose must not fire)', () => {
+    // Half the interval would be 12/6/4/3h — all over-fire on compressed dosing.
+    // The cap pins them to 2h, below the tightest legitimately-early gap (~3h).
+    expect(doubleDoseWindowHours(1)).toBe(DOUBLE_DOSE_WINDOW_CAP_HOURS); // q24h: half 12h → 2h
+    expect(doubleDoseWindowHours(2)).toBe(DOUBLE_DOSE_WINDOW_CAP_HOURS); // q12h: half 6h  → 2h
+    expect(doubleDoseWindowHours(3)).toBe(DOUBLE_DOSE_WINDOW_CAP_HOURS); // q8h:  half 4h  → 2h
+    expect(doubleDoseWindowHours(4)).toBe(DOUBLE_DOSE_WINDOW_CAP_HOURS); // q6h:  half 3h  → 2h
+  });
+
+  it('only narrows below the cap for ultra-dense schedules, and never below the floor', () => {
+    expect(doubleDoseWindowHours(8)).toBe(1.5);                          // q3h: half 1.5h (cap doesn't bind)
+    expect(doubleDoseWindowHours(12)).toBe(DOUBLE_DOSE_WINDOW_FLOOR_HOURS); // q2h: half 1h = floor
+    expect(doubleDoseWindowHours(48)).toBe(DOUBLE_DOSE_WINDOW_FLOOR_HOURS); // absurd: half 0.25h → floored to 1h
+  });
+
+  it('falls back to the default (the cap) when there is no schedule to derive one from', () => {
+    expect(DEFAULT_DOUBLE_DOSE_WINDOW_HOURS).toBe(DOUBLE_DOSE_WINDOW_CAP_HOURS);
+    expect(doubleDoseWindowHours(null)).toBe(DEFAULT_DOUBLE_DOSE_WINDOW_HOURS);      // PRN
+    expect(doubleDoseWindowHours(undefined)).toBe(DEFAULT_DOUBLE_DOSE_WINDOW_HOURS); // no regimen
+    expect(doubleDoseWindowHours(0)).toBe(DEFAULT_DOUBLE_DOSE_WINDOW_HOURS);         // nonsense
+    expect(doubleDoseWindowHours(-2)).toBe(DEFAULT_DOUBLE_DOSE_WINDOW_HOURS);        // nonsense
+  });
+
+  // Regression for the adversarial over-fire counterexamples: a legitimate, on-schedule
+  // early dose on a compressed day must NOT flag with the capped window.
+  it('does NOT flag a compressed-but-legitimate scheduled dose (the alarm-fatigue fix)', () => {
+    const focal = '2026-06-20T08:00:00.000Z';
+    // q8h front-loaded to 8:00am then 11:30am = 3.5h apart; window now 2h → no flag.
+    expect(detectDoubleDose({
+      focalOccurredAt: focal, focalAdherence: 'given', windowHours: doubleDoseWindowHours(3),
+      others: [{ eventId: 'tid', occurredAt: '2026-06-20T11:30:00.000Z', adherence: 'given' }],
+    }).conflict).toBe(false);
+    // q12h "with breakfast / with lunch on a disrupted day" 8:00am + 1:30pm = 5.5h; no flag.
+    expect(detectDoubleDose({
+      focalOccurredAt: focal, focalAdherence: 'given', windowHours: doubleDoseWindowHours(2),
+      others: [{ eventId: 'bid', occurredAt: '2026-06-20T13:30:00.000Z', adherence: 'given' }],
+    }).conflict).toBe(false);
+  });
+
+  it('still flags an obvious close repeat on any schedule (the signal it must keep)', () => {
+    const focal = '2026-06-20T08:00:00.000Z';
+    // Same q12h drug, but a real repeat 45 min later → inside the 2h window → flag.
+    expect(detectDoubleDose({
+      focalOccurredAt: focal, focalAdherence: 'given', windowHours: doubleDoseWindowHours(2),
+      others: [{ eventId: 'repeat', occurredAt: '2026-06-20T08:45:00.000Z', adherence: 'given' }],
+    }).conflict).toBe(true);
+  });
+});
+
+describe('detectDoubleDose — two given doses of the same drug within the window', () => {
+  const focal = '2026-06-20T08:00:00.000Z';
+
+  it('flags a given dose logged inside the window and reports the gap', () => {
+    const others: NearbyDose[] = [
+      { eventId: 'repeat', occurredAt: '2026-06-20T09:00:00.000Z', adherence: 'given' }, // +1h
+    ];
+    const r = detectDoubleDose({ focalOccurredAt: focal, focalAdherence: 'given', others, windowHours: 6 });
+    expect(r.conflict).toBe(true);
+    expect(r.otherEventId).toBe('repeat');
+    expect(r.gapMinutes).toBe(60);
+  });
+
+  it('does NOT flag a dose outside the window', () => {
+    const others: NearbyDose[] = [
+      { eventId: 'far', occurredAt: '2026-06-20T15:00:00.000Z', adherence: 'given' }, // +7h, window 6h
+    ];
+    expect(detectDoubleDose({ focalOccurredAt: focal, focalAdherence: 'given', others, windowHours: 6 }).conflict).toBe(false);
+  });
+
+  it('is inclusive at the window boundary', () => {
+    const others: NearbyDose[] = [
+      { eventId: 'edge', occurredAt: '2026-06-20T14:00:00.000Z', adherence: 'given' }, // exactly +6h
+    ];
+    expect(detectDoubleDose({ focalOccurredAt: focal, focalAdherence: 'given', others, windowHours: 6 }).conflict).toBe(true);
+  });
+
+  it('only fires when the FOCAL dose is given (downgrading it must clear the flag)', () => {
+    const others: NearbyDose[] = [
+      { eventId: 'repeat', occurredAt: '2026-06-20T09:00:00.000Z', adherence: 'given' },
+    ];
+    for (const focalAdherence of ['missed', 'refused', 'partial', null]) {
+      expect(detectDoubleDose({ focalOccurredAt: focal, focalAdherence, others, windowHours: 6 }).conflict).toBe(false);
+    }
+  });
+
+  it('ignores nearby non-given doses (a missed/refused dose is not an over-dose)', () => {
+    const others: NearbyDose[] = [
+      { eventId: 'missed', occurredAt: '2026-06-20T08:30:00.000Z', adherence: 'missed' },
+      { eventId: 'refused', occurredAt: '2026-06-20T09:00:00.000Z', adherence: 'refused' },
+      { eventId: 'unrated', occurredAt: '2026-06-20T09:30:00.000Z', adherence: null },
+    ];
+    expect(detectDoubleDose({ focalOccurredAt: focal, focalAdherence: 'given', others, windowHours: 6 }).conflict).toBe(false);
+  });
+
+  it('returns the CLOSEST conflicting given dose when several are in range', () => {
+    const others: NearbyDose[] = [
+      { eventId: 'three-hours', occurredAt: '2026-06-20T11:00:00.000Z', adherence: 'given' }, // +3h
+      { eventId: 'thirty-min', occurredAt: '2026-06-20T08:30:00.000Z', adherence: 'given' },  // +30m (closest)
+      { eventId: 'two-hours', occurredAt: '2026-06-20T06:00:00.000Z', adherence: 'given' },    // -2h
+    ];
+    const r = detectDoubleDose({ focalOccurredAt: focal, focalAdherence: 'given', others, windowHours: 6 });
+    expect(r.otherEventId).toBe('thirty-min');
+    expect(r.gapMinutes).toBe(30);
+  });
+
+  it('handles an empty neighbour set and malformed timestamps without throwing', () => {
+    expect(detectDoubleDose({ focalOccurredAt: focal, focalAdherence: 'given', others: [], windowHours: 6 }).conflict).toBe(false);
+    const bad: NearbyDose[] = [{ eventId: 'bad', occurredAt: 'not-a-date', adherence: 'given' }];
+    expect(detectDoubleDose({ focalOccurredAt: focal, focalAdherence: 'given', others: bad, windowHours: 6 }).conflict).toBe(false);
+    expect(detectDoubleDose({ focalOccurredAt: 'not-a-date', focalAdherence: 'given', others: [], windowHours: 6 }).conflict).toBe(false);
+  });
+});
+
+describe('formatDoseGap + doubleDoseNote — calm, specific, no alarm (nyx-voice)', () => {
+  it('formats the gap approximately and in plain words', () => {
+    expect(formatDoseGap(0)).toBe('a moment');
+    expect(formatDoseGap(1)).toBe('a minute');
+    expect(formatDoseGap(45)).toBe('45 minutes');
+    expect(formatDoseGap(60)).toBe('about an hour');
+    expect(formatDoseGap(180)).toBe('about 3 hours');
+  });
+
+  it('builds a specific, non-accusatory note that names the gap and the drug', () => {
+    const note = doubleDoseNote({ drugName: 'prednisolone', gapMinutes: 120 });
+    expect(note).toContain('about 2 hours');
+    expect(note).toContain('prednisolone');
+    expect(note).not.toContain('!'); // never an alarm (§6.4 / Principle 4)
+  });
+
+  it('degrades gracefully when the drug name is unknown', () => {
+    const note = doubleDoseNote({ drugName: null, gapMinutes: 30 });
+    expect(note).toContain('another dose');
+    expect(note).not.toContain('!');
   });
 });

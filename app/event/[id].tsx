@@ -15,18 +15,23 @@ import {
   getEventAttachment,
   getEventSource,
   getMealForEvent,
+  getDoseForEvent,
+  getDoubleDoseFlag,
   softDeleteEvent,
   deleteEventAttachmentLocal,
   updateMealIntake,
+  updateDoseAdherence,
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture } from '../../lib/storage';
 import { supabase } from '../../lib/supabase';
-import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
+import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
+import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceChipRow';
+import { doubleDoseNote, DoubleDoseResult } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { Header, PhotoViewer } from '../../components/ui';
 
@@ -82,6 +87,17 @@ export default function EventDetailScreen() {
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
+  // Medication (dose) detail — B-117 PR 8. `dose` carries the drug-library display
+  // fields; `adherence` is the mutable rating (the intakeRating analog); `doubleDose`
+  // is the §6.4 same-drug-too-close check, recomputed after a retroactive edit.
+  const [dose, setDose] = useState<{
+    genericName: string | null;
+    brandName: string | null;
+    strength: string | null;
+    medicationItemId: string | null;
+  } | null>(null);
+  const [adherence, setAdherence] = useState<DoseAdherence | null>(null);
+  const [doubleDose, setDoubleDose] = useState<DoubleDoseResult | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -93,6 +109,9 @@ export default function EventDetailScreen() {
     // doesn't briefly flash A's food label / rating until B's queries return.
     setFoodLabel(null);
     setIntakeRating(null);
+    setDose(null);
+    setAdherence(null);
+    setDoubleDose(null);
     try {
       const row = await getEventById(id);
       setEvent(row);
@@ -124,6 +143,37 @@ export default function EventDetailScreen() {
         }
       }
 
+      if (row.event_type === 'medication') {
+        const d = await getDoseForEvent(id);
+        if (d) {
+          setDose({
+            genericName: d.drug_generic_name,
+            brandName: d.drug_brand_name,
+            strength: d.drug_strength,
+            medicationItemId: d.medication_item_id,
+          });
+          const a = d.adherence;
+          const adh: DoseAdherence | null =
+            a === 'given' || a === 'partial' || a === 'missed' || a === 'refused' ? a : null;
+          setAdherence(adh);
+          // B-135 (§6.4) — surface a calm check if this given dose sits too close to
+          // another given dose of the same drug. Computed from per-dose occurred_at.
+          // Own try/catch so a check failure doesn't abort the dose load or mislabel
+          // as a generic load error — the note simply won't show.
+          try {
+            setDoubleDose(await getDoubleDoseFlag({
+              eventId: id,
+              petId: row.pet_id,
+              medicationItemId: d.medication_item_id,
+              occurredAt: row.occurred_at,
+              adherence: adh,
+            }));
+          } catch (e) {
+            console.warn('[event-detail] double-dose check failed:', e);
+          }
+        }
+      }
+
       getEventSource(id).then(setOccurredAtSource).catch(() => {});
     } catch (e) {
       console.error('[event-detail] load failed:', e);
@@ -147,6 +197,37 @@ export default function EventDetailScreen() {
       setIntakeRating(prev);
       Alert.alert('Could not save', 'Try again in a moment.');
     }
+  }
+
+  // Retroactive adherence edit (B-117 PR 8) — the dose twin of handleIntakeChange.
+  // Single-select with no clear-to-null (a logged dose always has a state), so a tap
+  // on the active chip is a no-op. After persisting, re-run the double-dose check:
+  // downgrading away from 'given' clears it; changing back to 'given' can re-surface
+  // it (§6.4 must track the live adherence, never go stale on an edit).
+  async function handleAdherenceChange(next: DoseAdherence) {
+    if (!event || !dose) return;
+    const prev = adherence;
+    if (next === prev) return;
+    setAdherence(next);
+    try {
+      await updateDoseAdherence(event.id, next);
+      syncPendingMedicationAdministrations().catch(console.error);
+    } catch (e) {
+      console.error('[event-detail] failed to update adherence:', e);
+      setAdherence(prev);
+      Alert.alert('Could not save', 'Try again in a moment.');
+      return;
+    }
+    // The write succeeded — recompute the §6.4 check INDEPENDENTLY. A failure here is
+    // a display miss (a possibly-stale note), never data loss, so it must not revert
+    // the persisted adherence; eat it rather than rolling back a good write.
+    getDoubleDoseFlag({
+      eventId: event.id,
+      petId: event.pet_id,
+      medicationItemId: dose.medicationItemId,
+      occurredAt: event.occurred_at,
+      adherence: next,
+    }).then(setDoubleDose).catch((e) => console.warn('[event-detail] double-dose recheck failed:', e));
   }
 
   function handleEdit() {
@@ -334,6 +415,14 @@ export default function EventDetailScreen() {
   // on-device review. If a meal happens to have a photo, the hero still renders.
   const isMeal = event.event_type === 'meal';
   const showEmptyHero = !photoUri && !isMeal;
+  // Medication dose display (B-117 PR 8). Generic name leads (the clinical
+  // identifier); brand + strength form the secondary line. Falls back to the bare
+  // type label if the drug's library row hasn't hydrated on this device.
+  const isMedication = event.event_type === 'medication';
+  const drugPrimary = dose?.genericName ?? label;
+  const drugSecondary = dose
+    ? [dose.brandName, dose.strength].filter(Boolean).join(' · ') || null
+    : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -416,6 +505,34 @@ export default function EventDetailScreen() {
                 label={null}
               />
             </View>
+          ) : null}
+
+          {isMedication && dose ? (
+            <>
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>MEDICATION</Text>
+                <Text style={styles.foodProduct}>{drugPrimary}</Text>
+                {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+              </View>
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>ADHERENCE</Text>
+                <AdherenceChipRow
+                  value={adherence}
+                  onChange={handleAdherenceChange}
+                  label={null}
+                />
+              </View>
+              {/* B-135 (§6.4) — a calm, non-alarming double-dose check. Never an
+                  alarm: it points the owner to look, and the Edit/Remove actions
+                  below are how they fix a mistaken log. */}
+              {doubleDose?.conflict ? (
+                <View style={styles.doubleDoseNote}>
+                  <Text style={styles.doubleDoseText}>
+                    {doubleDoseNote({ drugName: dose.genericName, gapMinutes: doubleDose.gapMinutes ?? 0 })}
+                  </Text>
+                </View>
+              ) : null}
+            </>
           ) : null}
 
           {event.notes ? (
@@ -547,6 +664,20 @@ const styles = StyleSheet.create({
     color: theme.colorTextPrimary,
     lineHeight: theme.lineHeightBody,
   },
+  // Calm informational box for the §6.4 double-dose check — matches the
+  // read-only banner treatment (neutral surface, secondary text), deliberately
+  // NOT the rose symptom tint: a gentle heads-up, never an alarm (Principle 4).
+  doubleDoseNote: {
+    marginTop: theme.space3,
+    backgroundColor: theme.colorNeutralLight,
+    borderRadius: theme.radiusSmall,
+    padding: theme.space2,
+  },
+  doubleDoseText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
+  },
   footer: {
     paddingHorizontal: theme.space3,
     paddingTop: theme.space2,
@@ -564,7 +695,7 @@ const styles = StyleSheet.create({
   editButtonText: {
     fontSize: theme.textMD,
     fontWeight: theme.fontWeightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
   removeButton: {
     marginTop: theme.space1,

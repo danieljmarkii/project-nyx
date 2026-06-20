@@ -587,3 +587,126 @@ export function buildRegimenPayload(v: RegimenFormValues): RegimenWritePayload {
 export function canSaveRegimen(v: { drugName: string }): boolean {
   return v.drugName.trim().length > 0;
 }
+
+// ── PR 8 double-dose detection (§6.4 "a double-dose is a flag, not normalized") ──
+// B-135. The PR 7 compliance card counts adherence BUCKETS only (AdherenceTally, no
+// per-dose times), so it structurally can't see two doses landing too close together;
+// PR 8 is the first surface with the per-dose events.occurred_at this needs. Pure and
+// clock-free so the safety invariant ("never silently normalize a double dose") is
+// pinned by a unit test, not by which screen happens to compute it (the
+// clinical-guardrails Pattern 8 stance — the invariant is a test, not a comment).
+//
+// Two design decisions, both clinically load-bearing:
+//   1. The match key is the DRUG (medication_item_id), NOT the regimen. One-tap doses
+//      are ad-hoc (medication_id NULL) today, so same-drug is the only reliable group —
+//      and two given doses of the same drug close together is the real concern whether
+//      or not a regimen was ever set up. (Regimen-keyed matching is a PR 9 refinement,
+//      once dose-logging links a regimen.)
+//   2. Only two 'given' doses count. A missed/refused/partial/unrated dose near a given
+//      one is NOT an over-dose, and downgrading the focal dose on the detail screen must
+//      clear the flag — so the focal dose must be 'given' for the check to fire.
+
+// Conservative bounds on the window. The adversarial review of the first cut
+// (half-the-interval, uncapped) BROKE it on over-firing: real owners cluster q8h/q12h
+// doses into waking hours (a "with breakfast / with dinner" BID pair is often 5–7h
+// apart, not 12h), so a legitimate, on-schedule early dose lands inside half the
+// interval and trips the flag — the alarm-fatigue failure that trains owners to
+// ignore the very signal it exists to raise. The reviewer's recommended shape is
+// schedule-relative with a clinical CAP and FLOOR, applied here:
+//   • CAP (2h) sits below the tightest legitimately-early scheduled gap we saw
+//     (~3h on a compressed q6h day), so a normal early dose never fires.
+//   • FLOOR (1h) keeps an ultra-dense (>q6h) schedule from narrowing so far it
+//     misses a clear repeat.
+// The deliberate, DOCUMENTED tradeoff: a wide-gap double on a SPARSE schedule (a
+// once-daily drug given twice ~6h apart) is NOT flagged — catching it needs a window
+// wide enough to re-introduce the over-fire on tighter schedules, which requires
+// reliable per-regimen schedule data (PR 9's regimen-linked doses + a Dr. Chen
+// window-shape call; logged on B-135). Under-firing is the SAFE direction here: it is
+// silence, never a false "all clear" (§6.1 — absence of a flag is never reassurance).
+export const DOUBLE_DOSE_WINDOW_CAP_HOURS = 2;
+export const DOUBLE_DOSE_WINDOW_FLOOR_HOURS = 1;
+// The window with no schedule to derive one from (PRN, or no active regimen hydrated
+// locally yet) — the conservative cap. A named constant so Dr. Chen / the PM can tune
+// it without hunting through the detector.
+export const DEFAULT_DOUBLE_DOSE_WINDOW_HOURS = DOUBLE_DOSE_WINDOW_CAP_HOURS;
+
+// Derive the "too close" window (hours) from a regimen's doses_per_day: HALF the
+// scheduled interval (24/dpd), clamped to [FLOOR, CAP] (see above). For common
+// schedules the cap binds (q24h/q12h/q8h/q6h → 2h); only an ultra-dense schedule
+// narrows it (q3h → 1.5h, q2h → 1h). PRN / unknown / non-positive dpd → the default.
+export function doubleDoseWindowHours(dosesPerDay: number | null | undefined): number {
+  if (dosesPerDay == null || dosesPerDay <= 0) return DEFAULT_DOUBLE_DOSE_WINDOW_HOURS;
+  const halfInterval = 24 / dosesPerDay / 2;
+  return Math.min(DOUBLE_DOSE_WINDOW_CAP_HOURS, Math.max(DOUBLE_DOSE_WINDOW_FLOOR_HOURS, halfInterval));
+}
+
+// One nearby same-drug dose, as fed to detectDoubleDose. The caller's query already
+// scopes these to same-drug / same-pet / non-deleted / focal-excluded; adherence is
+// carried so the given-only rule is enforced (and testable) in the pure function.
+export interface NearbyDose {
+  eventId: string;
+  occurredAt: string; // ISO/UTC
+  adherence: string | null;
+}
+
+export interface DoubleDoseResult {
+  conflict: boolean;
+  // The CLOSEST conflicting other given-dose (for an optional "view it" link), and
+  // the absolute gap to it — both null when there is no conflict.
+  otherEventId: string | null;
+  gapMinutes: number | null;
+}
+
+const NO_DOUBLE_DOSE: DoubleDoseResult = { conflict: false, otherEventId: null, gapMinutes: null };
+
+// Is the focal dose part of a same-drug given/given pair within windowHours? Fires
+// only when the FOCAL dose is 'given' and at least one OTHER dose is 'given' within
+// the window; returns the closest such dose. The boundary is inclusive (gap == window
+// counts). `others` should already be same-drug / non-deleted / focal-excluded; the
+// adherence re-check here is the defensive backstop and the testable "a nearby missed
+// dose is not a double" guarantee.
+export function detectDoubleDose(params: {
+  focalOccurredAt: string;
+  focalAdherence: string | null;
+  others: NearbyDose[];
+  windowHours: number;
+}): DoubleDoseResult {
+  const { focalOccurredAt, focalAdherence, others, windowHours } = params;
+  if (focalAdherence !== 'given') return NO_DOUBLE_DOSE;
+  const focalMs = new Date(focalOccurredAt).getTime();
+  if (Number.isNaN(focalMs)) return NO_DOUBLE_DOSE;
+  const windowMs = windowHours * 60 * 60 * 1000;
+
+  let closest: { eventId: string; gapMs: number } | null = null;
+  for (const o of others) {
+    if (o.adherence !== 'given') continue;
+    const oMs = new Date(o.occurredAt).getTime();
+    if (Number.isNaN(oMs)) continue;
+    const gapMs = Math.abs(oMs - focalMs);
+    if (gapMs > windowMs) continue;
+    if (!closest || gapMs < closest.gapMs) closest = { eventId: o.eventId, gapMs };
+  }
+  if (!closest) return NO_DOUBLE_DOSE;
+  return { conflict: true, otherEventId: closest.eventId, gapMinutes: Math.round(closest.gapMs / 60000) };
+}
+
+// Human, approximate gap for the double-dose note — "about 2 hours", never false
+// precision. nyx-voice: plain words, no exclamation.
+export function formatDoseGap(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 1) return 'a moment';
+  if (m < 60) return m === 1 ? 'a minute' : `${m} minutes`;
+  const hours = Math.round(m / 60);
+  return hours === 1 ? 'about an hour' : `about ${hours} hours`;
+}
+
+// The calm double-dose check copy (§6.4: a flag, never an alarm). Specific (the gap
+// + the drug), warm, no exclamation, never accusatory ("you over-dosed!"): it points
+// the owner to look, and the detail screen's own adherence-edit + Remove actions are
+// how they fix a mistaken log. clinical-guardrails + nyx-voice.
+export function doubleDoseNote(params: { drugName: string | null; gapMinutes: number }): string {
+  const gap = formatDoseGap(params.gapMinutes);
+  const drug = (params.drugName ?? '').trim();
+  const other = drug.length > 0 ? `another ${drug} dose` : 'another dose';
+  return `Logged within ${gap} of ${other} — worth double-checking it wasn't a repeat.`;
+}
