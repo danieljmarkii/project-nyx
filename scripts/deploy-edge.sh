@@ -105,13 +105,19 @@ DENO="$(command -v deno >/dev/null 2>&1 && command -v deno || echo "$BIN/deno")"
 if [ "$RUN_TESTS" = 1 ] && ls "$FUNC_DIR"/*.test.ts >/dev/null 2>&1; then
   log "Verifying: deno test $FUNC_DIR"
   test_log="$(mktemp)"
+  trap '[ -n "${test_log:-}" ] && rm -f "$test_log"' EXIT
   if timeout 180 "$DENO" test "$FUNC_DIR/" >"$test_log" 2>&1; then
-    ok "tests passed ($(grep -oE '[0-9]+ passed' "$test_log" | tail -1))"
+    # `|| true` keeps the count-extraction from tripping set -e/pipefail if a
+    # suite somehow prints no "N passed" line.
+    ok "tests passed ($(grep -oE '[0-9]+ passed' "$test_log" | tail -1 || true))"
   else
     rc=$?
     tail -8 "$test_log" | sed 's/^/    /'
-    if grep -qE '\| [1-9][0-9]* failed' "$test_log"; then
-      echo "error: deno tests FAILED — fix before deploying" >&2; rm -f "$test_log"; exit 1
+    # Match both the Deno 2.x summary ("... | N failed |") and the Deno 1.x form
+    # ("test result: FAILED.") so a REAL failure always hard-fails — never slips
+    # into the warn branch if the npm deno package ever pins an older major.
+    if grep -qE '\| [1-9][0-9]* failed' "$test_log" || grep -qiE 'FAILED\.' "$test_log"; then
+      echo "error: deno tests FAILED — fix before deploying" >&2; exit 1
     elif [ "$rc" = 124 ]; then
       warn "deno test timed out — remote test deps unreachable in this sandbox."
       warn "Run 'deno test $FUNC_DIR/' in a networked env to verify behaviour."
@@ -120,7 +126,6 @@ if [ "$RUN_TESTS" = 1 ] && ls "$FUNC_DIR"/*.test.ts >/dev/null 2>&1; then
       warn "Run 'deno test $FUNC_DIR/' in a networked env to verify behaviour."
     fi
   fi
-  rm -f "$test_log"
 else
   [ "$RUN_TESTS" = 1 ] && warn "no *.test.ts in $FUNC_DIR — skipping behaviour verification"
 fi
@@ -172,10 +177,13 @@ $(printf '\033[1m✅ Deploy-ready bundle\033[0m')
 
 $(printf '\033[1mDeploy (recommended — Supabase MCP, no token needed):\033[0m')
    Have the agent call deploy_edge_function with:
-     project_id : aigchluqluzuhtbfllgh
-     name       : $FUNCTION
-     verify_jwt : true            (preserve — this function requires a JWT)
-     files      : [{ name: "index.ts", content: <contents of $OUT> }]
+     project_id      : aigchluqluzuhtbfllgh
+     name            : $FUNCTION
+     entrypoint_path : index.ts
+     verify_jwt      : true        (PRESERVE the function's existing setting —
+                                    all 5 current functions are true; for a NEW
+                                    function check list_edge_functions first)
+     files           : [{ name: "index.ts", content: <contents of $OUT> }]
    Then confirm: list_edge_functions shows a version bump + ACTIVE, and a live
    boot smoke-test (anon call with a bogus petId) returns a clean 4xx, not a
    WORKER_ERROR. Read the deployed source back and diff its sha256 against the
