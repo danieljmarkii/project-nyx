@@ -2,7 +2,13 @@ import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
 import { LIBRARY_FOODS_QUERY } from './foodQueries';
-import { MEDICATION_SCHEMA_SQL } from './medications';
+import {
+  MEDICATION_SCHEMA_SQL,
+  doubleDoseWindowHours,
+  detectDoubleDose,
+  type NearbyDose,
+  type DoubleDoseResult,
+} from './medications';
 import { LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
 import { uuid } from './utils';
 
@@ -357,6 +363,16 @@ export interface TimelineRow {
   food_product_name: string | null;
   food_type: string | null;
   intake_rating: string | null;
+  // Medication (dose) join — populated only for event_type='medication' rows via
+  // the medication_administrations + medication_items_cache LEFT JOINs (B-117 PR 8).
+  // The drug display name comes from the library item (generic/brand); adherence is
+  // the dose's offered-vs-given rating (the meals.intake_rating analog). The regimen
+  // link + actual dose_amount aren't needed for the timeline; the detail screen reads
+  // them via getDoseForEvent.
+  medication_item_id: string | null;
+  adherence: string | null;
+  drug_generic_name: string | null;
+  drug_brand_name: string | null;
 }
 
 export async function getTimeline(
@@ -385,10 +401,14 @@ export async function getTimeline(
             e.severity, e.notes,
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
-            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
+            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            ma.medication_item_id, ma.adherence,
+            mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+     LEFT JOIN medication_administrations ma ON ma.event_id = e.id
+     LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
      WHERE e.pet_id = ? AND e.deleted_at IS NULL
      ${typeClause} ${dateClause}
      ORDER BY e.occurred_at DESC
@@ -405,10 +425,14 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             e.severity, e.notes,
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
-            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
+            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            ma.medication_item_id, ma.adherence,
+            mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+     LEFT JOIN medication_administrations ma ON ma.event_id = e.id
+     LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
      WHERE e.id = ? AND e.deleted_at IS NULL`,
     [eventId],
   );
@@ -777,4 +801,97 @@ export async function updateDoseAdherence(
   if (res.changes === 0) {
     throw new Error(`No medication_administration row for event ${eventId}`);
   }
+}
+
+// The medication analog of getMealForEvent — the dose child + its drug-library
+// display fields, for the event-detail screen (B-117 PR 8). NULL when the event has
+// no administration row (a non-medication event, or a dose whose child hasn't
+// hydrated yet). adherence is the offered-vs-given rating; the drug name comes from
+// the medication_items_cache library item (generic primary, brand/strength below).
+export async function getDoseForEvent(eventId: string): Promise<{
+  medication_item_id: string | null;
+  medication_id: string | null;
+  adherence: string | null;
+  dose_amount: string | null;
+  drug_generic_name: string | null;
+  drug_brand_name: string | null;
+  drug_strength: string | null;
+} | null> {
+  const db = getDb();
+  return db.getFirstAsync<{
+    medication_item_id: string | null;
+    medication_id: string | null;
+    adherence: string | null;
+    dose_amount: string | null;
+    drug_generic_name: string | null;
+    drug_brand_name: string | null;
+    drug_strength: string | null;
+  }>(
+    `SELECT ma.medication_item_id, ma.medication_id, ma.adherence, ma.dose_amount,
+            mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
+            mi.strength AS drug_strength
+     FROM medication_administrations ma
+     LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+     WHERE ma.event_id = ?`,
+    [eventId],
+  );
+}
+
+// B-135 (§6.4) — is this given dose part of a same-drug given/given pair logged too
+// close together? Derives the interval from the drug's active regimen (doses_per_day,
+// HALF the schedule) when one has hydrated locally, else the conservative default;
+// pulls the same-drug given doses within that window (excluding this event + soft-
+// deleted ones) and runs the pure detectDoubleDose. Returns "no conflict" cheaply
+// when the dose isn't given or has no library drug to group on. The load-bearing
+// logic (window + match) is unit-tested in lib/medications.ts; this is thin DB glue.
+export async function getDoubleDoseFlag(params: {
+  eventId: string;
+  petId: string;
+  medicationItemId: string | null;
+  occurredAt: string;
+  adherence: string | null;
+}): Promise<DoubleDoseResult> {
+  const NONE: DoubleDoseResult = { conflict: false, otherEventId: null, gapMinutes: null };
+  const { eventId, petId, medicationItemId, occurredAt, adherence } = params;
+  // Only a given dose with a library drug to group on can be a double (a NULL
+  // medication_item_id has no sibling doses to match against).
+  if (adherence !== 'given' || !medicationItemId) return NONE;
+  const focalMs = new Date(occurredAt).getTime();
+  if (Number.isNaN(focalMs)) return NONE;
+
+  const db = getDb();
+  // Interval from the most recent active regimen for this drug, if one has hydrated
+  // locally. doses_per_day NULL (PRN) or no regimen → the default via doubleDoseWindowHours.
+  const regimen = await db.getFirstAsync<{ doses_per_day: number | null }>(
+    `SELECT doses_per_day FROM medications
+     WHERE pet_id = ? AND medication_item_id = ? AND status = 'active'
+     ORDER BY started_at DESC LIMIT 1`,
+    [petId, medicationItemId],
+  );
+  const windowHours = doubleDoseWindowHours(regimen?.doses_per_day ?? null);
+
+  // Same-drug given doses within ±window of this one (excluding it + soft-deleted).
+  // The SQL bounds are a PREFILTER only — detectDoubleDose applies the authoritative
+  // ms-based window below. Buffer the bounds (B-055 class): hydrated rows store
+  // occurred_at in offset form (`+00:00`) while these bounds are built with
+  // toISOString() (`Z`), so a lexical TEXT compare can drop a dose sitting on the
+  // exact boundary second. Widening by a minute guarantees a real in-window dose is
+  // never excluded; over-fetching a neighbour or two is harmless (the pure check drops it).
+  const windowMs = windowHours * 60 * 60 * 1000;
+  const bufferMs = 60 * 1000;
+  const since = new Date(focalMs - windowMs - bufferMs).toISOString();
+  const until = new Date(focalMs + windowMs + bufferMs).toISOString();
+  const others = await db.getAllAsync<NearbyDose>(
+    `SELECT ma.event_id AS eventId, e.occurred_at AS occurredAt, ma.adherence
+     FROM medication_administrations ma
+     JOIN events e ON e.id = ma.event_id
+     WHERE ma.pet_id = ? AND ma.medication_item_id = ?
+       AND ma.event_id != ?
+       AND ma.adherence = 'given'
+       AND e.deleted_at IS NULL
+       AND e.occurred_at >= ? AND e.occurred_at <= ?`,
+    [petId, medicationItemId, eventId, since, until],
+  );
+
+  return detectDoubleDose({ focalOccurredAt: occurredAt, focalAdherence: adherence, others, windowHours });
 }

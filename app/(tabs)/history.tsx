@@ -88,6 +88,10 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     food_type: row.food_type,
     quantity: row.quantity,
     intake_rating: row.intake_rating as NyxEvent['intake_rating'],
+    medication_item_id: row.medication_item_id,
+    adherence: row.adherence as NyxEvent['adherence'],
+    drug_generic_name: row.drug_generic_name,
+    drug_brand_name: row.drug_brand_name,
   };
 }
 
