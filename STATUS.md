@@ -18,7 +18,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 **Architecture:** deterministic detection + LLM phrasing — the server computes & ranks a *true* finding in `detection.ts`; Haiku 4.5 only renders copy, with a deterministic template fallback. `phrasing.ts` = pure phrasing/curation/guardrails (offline unit-tested); `index.ts` = I/O shell. `validatePhrasing` rejects model drift (no `!`; never-reassure / never-"picky" on safety; associational-only on correlation).
 
-**Signal engine — detectors live (deployed `generate-signal` v14):** ① case-crossover, ② intake-decline, ③ reflection (presence/counts; a *declining* trend routes to safety), ④ symptom-worsening lane (B-077), ⑤ post-prandial timing (B-078), ⑥ time-of-day clustering (B-079); + no-signal coverage diagnostics (B-053). Open follow-ups: **B-052** write-time protein normalization (read-time half shipped #92); **B-070** (P0) dominant-staple refinement + treats-vs-meals denominator; **B-067** reflection/Trend dedup; **B-080** diet-structure placement (blocks descriptive Phase 3, PM call).
+**Signal engine — detectors live (deployed `generate-signal` v19):** ① case-crossover, ② intake-decline, ③ reflection (presence/counts; a *declining* trend routes to safety), ④ symptom-worsening lane (B-077), ⑤ post-prandial timing (B-078), ⑥ time-of-day clustering (B-079); + no-signal coverage diagnostics (B-053); + **medication confounders** (B-117 PR 9 #207 — a drug on-board in a symptom window enters `detectCorrelations` as a confounder: case-enriched → suppress, concordant → cap at Early). Open follow-ups: **B-052** write-time protein normalization (read-time half shipped #92); **B-070** (P0) dominant-staple refinement + treats-vs-meals denominator; **B-067** reflection/Trend dedup; **B-080** diet-structure placement (blocks descriptive Phase 3, PM call).
 
 **On-device QA gap:** empty / `no_pattern` + reflection paths verified on device; the **LIVE safety-card path is still unverified on device** (cat Nyx's real data legitimately yields zero safety findings — chicken is a ~3×/day staple → case-crossover correctly washes it out; intake healthy → flag correctly quiet).
 
@@ -31,7 +31,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 ### B-054 Multi-device down-sync (hydration) — v1 COMPLETE
 Spec `docs/multi-device-sync-requirements.md`. Phases 0–3 + §6 cold-start UI all merged (#82–#86); migration 016 (`meals.updated_at`) applied live. Server-time LWW, incremental per-table watermark hydration, meal-ghost absence-reconcile. **Remaining: the physical AC-6 logout-wipe on-device gate** (Trust & Safety; code passes). Phase 4 (Realtime) is post-v1/optional. Residual assumption logged B-058.
 
-### B-117 Medication logging — Phases A–C done; Phase D next
+### B-117 Medication logging — Phases A–C done; Phase D in flight (PR 9 shipped; PR 10 gated on Step 9)
 Spec `docs/nyx-medication-logging-requirements.md` (§12 = 10-PR plan). Model = **regimen + dose-events** (mirrors food: `medication_items`≈`food_items`, `medications`≈`diet_trials`, `medication_administrations`≈`meals`+`intake_rating`). Net-new additive schema (migration 020 applied live; 021 med-photos RLS applied; `nyx-medication-photos` bucket created PRIVATE). Configure regimen once → one-tap dose log. Safety: adherence inherits both invariants (n=1 never reassures; refusal→health flag; missed critical-drug→escalate; AI-extracted dose never silently trusted).
 
 | Phase | PRs | Status |
@@ -39,7 +39,7 @@ Spec `docs/nyx-medication-logging-requirements.md` (§12 = 10-PR plan). Model = 
 | A — Foundation | 1–3 | ✅ schema (#192) · local mirror+sync (#194) · text-first quick-log (#196) |
 | B — Photo + library | 4–6 | ✅ bucket+RLS (#197) · capture + `extract-medication-from-photo` + dose-confirm (#199) · picker detail/edit (#201) |
 | C — Regimen + surfaces | 7–8 | ✅ "Current medications" card + compliance % (#202) · timeline + retroactive adherence + double-dose B-135 (#204) |
-| D — Clinical consumers | 9–10 | ⬜ **PR 9 Signal confounder pass** (`detection.ts` `medicationWindows`, **adversarial-mandatory**) · PR 10 vet-report section (gated on Step 9) |
+| D — Clinical consumers | 9–10 | ✅ PR 9 Signal confounder pass (#207 — `detection.ts` `medicationWindows`; case-enriched drug → suppress, concordant → cap at Early; adversarial PASS, fixed a Bonferroni family-shrink; residuals B-138; deployed v19) · ⬜ PR 10 vet-report section (gated on Step 9) |
 
 Carry-forwards: B-122/123 satisfied; B-131 honored; B-128(b) defense-at-rest trigger (own schema PR); open sub-decisions B-132 (library delete), B-133 (`is_critical` owner toggle — PM call).
 
@@ -99,7 +99,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 - [ ] **B-118** — delete the leftover `smart-worker` Edge Function from the dashboard (stock template, no callers, carries a `secret`-auth path that bypasses RLS).
 - [ ] **B-044** — finish auditing migration drift (verify `food_items.photo_path` singular vs `photo_paths` plural; full repo-migrations-vs-live-DB reconciliation).
 - [ ] **B-128(b)** — defense-at-rest `BEFORE INSERT/UPDATE` trigger on `medication_items` (own schema PR; run the backfill pre-check first). Not urgent — the consumer-side guard is live via #200.
-- [ ] **Re-deploy `generate-signal` from merged `main`** for provenance (live v14 was deployed from-branch; low urgency — the live bytes are the merged code).
+- [ ] **Re-deploy `generate-signal` from merged `main`** for provenance (live v19 was deployed from-branch; low urgency — the live bytes are the merged code).
 - [ ] **Revoke the Supabase personal access token** (`nyx-cli-deploy`, 2026-06-07) — account-level, lives in a session transcript.
 - [ ] **Supabase CLI dev-dependency** — fold `supabase@^2.102.0` (on branch `claude/epic-volta-H8d6o`) into a PR so it survives merge.
 - [ ] _(awareness, no action)_ **B-074** — the free-fed exclusion fails safe but a single stray free-fed day landing on a selected control day can silence a real correlate.
@@ -130,6 +130,7 @@ eas build --platform ios --profile production --auto-submit
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
+- 2026-06-20 — B-117 PR 9: Signal medication confounder pass (§8) — meds enter the engine as confounders — #207
 - 2026-06-20 — History filters: scope menu + unified type lens — #205
 - 2026-06-20 — Multi-pet PR 6: cross-pet safety banner + all-active-pets signal freshness (B-086) — #203
 - 2026-06-20 — B-117 PR 8: medication timeline + retroactive adherence + double-dose (B-135) — #204
