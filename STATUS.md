@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **B-141: slimmed STATUS + backlog.** Both canonical state files had outgrown their own "scannable / one-line Why" contracts (STATUS 225 KB, backlog 266 KB) and accreted ~67 K tokens of session narrative + ~40 Done rows carrying full build play-by-plays. Pruned to live state only; history left in git + PR descriptions (#72–#205). Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP** (#208; process/tooling, NO schema). `scripts/deploy-edge.sh` (esbuild-bundle → offline verify → MCP `deploy_edge_function`) + `docs/edge-deploy-runbook.md`; dashboard-paste handoff retired in CLAUDE.md/dev-handoff. Drift diff: 5/5 fns ACTIVE; migration history sparse (5 tracked vs 22 on-disk = dashboard-paste legacy → backfill call B-142). Merged current `main` (B-141 slim + B-117 PR 9). Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
@@ -100,7 +100,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 - [ ] **B-044** — finish auditing migration drift (verify `food_items.photo_path` singular vs `photo_paths` plural; full repo-migrations-vs-live-DB reconciliation).
 - [ ] **B-128(b)** — defense-at-rest `BEFORE INSERT/UPDATE` trigger on `medication_items` (own schema PR; run the backfill pre-check first). Not urgent — the consumer-side guard is live via #200.
 - [ ] **Re-deploy `generate-signal` from merged `main`** for provenance (live v19 was deployed from-branch; low urgency — the live bytes are the merged code).
-- [ ] **Revoke the Supabase personal access token** (`nyx-cli-deploy`, 2026-06-07) — account-level, lives in a session transcript.
+- [ ] **Revoke the Supabase personal access token** (`nyx-cli-deploy`, 2026-06-07) — account-level, lives in a session transcript. Now obsolete: B-082 (#208) made backend deploys a token-free MCP path, so nothing uses it.
 - [ ] **Supabase CLI dev-dependency** — fold `supabase@^2.102.0` (on branch `claude/epic-volta-H8d6o`) into a PR so it survives merge.
 - [ ] _(awareness, no action)_ **B-074** — the free-fed exclusion fails safe but a single stray free-fed day landing on a selected control day can silence a real correlate.
 
@@ -130,6 +130,7 @@ eas build --platform ios --profile production --auto-submit
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
+- 2026-06-20 — B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP (`scripts/deploy-edge.sh` + `docs/edge-deploy-runbook.md`) — #208
 - 2026-06-20 — B-117 PR 9: Signal medication confounder pass (§8) — meds enter the engine as confounders — #207
 - 2026-06-20 — History filters: scope menu + unified type lens — #205
 - 2026-06-20 — Multi-pet PR 6: cross-pet safety banner + all-active-pets signal freshness (B-086) — #203

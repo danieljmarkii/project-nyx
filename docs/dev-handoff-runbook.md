@@ -108,12 +108,12 @@ npm test
 ```
 Confirms automated tests pass locally. Do not push a chunk-completing PR with failing or skipped tests — fix or mark `tests: N/A` in the DoD with the Engineer's exemption rationale.
 
-**When a Supabase migration is included in the push**, add to the handoff:
-> Run `supabase/migrations/<filename>.sql` in the Supabase SQL Editor (dashboard → SQL Editor → New query → paste → Run). This applies the schema change to the live database — migrations are not run automatically.
+**Backend deploys (Edge Functions + migrations) no longer belong in the phone handoff.** As of B-082 (2026-06-20) they run from the cloud session via the Supabase MCP — the agent applies the migration / deploys the function directly, so there is no "paste this into the dashboard" PM action item to emit. The full procedure is **`docs/edge-deploy-runbook.md`**. In brief:
 
-**When an Edge Function is included**, add both deploy paths and let the PM pick:
-> **Option A (CLI, preferred):** `supabase functions deploy <function-name>` in the Codespace terminal. Requires one-time `supabase login` + `supabase link --project-ref aigchluqluzuhtbfllgh` setup; the Supabase CLI is not yet installed in the Codespace as of v1.18.
-> **Option B (dashboard paste, current default):** Supabase Dashboard → Edge Functions → `<function-name>` → paste the contents of `supabase/functions/<function-name>/index.ts` into the editor → Deploy. Used because Supabase CLI install in Codespaces has been flaky for the PM. Track Supabase CLI install as a one-time setup task in the next session that touches Edge Functions.
+- **Edge Function:** `scripts/deploy-edge.sh <name>` to bundle + verify, then the agent deploys the bundle via MCP `deploy_edge_function` and confirms the version bump + a boot smoke-test.
+- **Migration:** the agent applies it via MCP `apply_migration` then runs `get_advisors`. Migration discipline is unchanged (own PR, Migration Safety Pre-flight, migrate-before-deploy; `apply_migration` is a live write).
+
+_Dashboard-paste remains a manual fallback only if the MCP is unavailable in a session — see the runbook._
 
 ---
 
