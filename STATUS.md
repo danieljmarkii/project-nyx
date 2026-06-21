@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP** (#208; process/tooling, NO schema). `scripts/deploy-edge.sh` (esbuild-bundle → offline verify → MCP `deploy_edge_function`) + `docs/edge-deploy-runbook.md`; dashboard-paste handoff retired in CLAUDE.md/dev-handoff. Drift diff: 5/5 fns ACTIVE; migration history sparse (5 tracked vs 22 on-disk = dashboard-paste legacy → backfill call B-142). Merged current `main` (B-141 slim + B-117 PR 9). Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **B-070: `staple_washout` fires on ≥80% protein DOMINANCE (over meals+treats), with an honest treats-vs-meals copy register** (PR #211, draft; engine-only, NO schema). Catches the real wedge case (Nyx: chicken via treats, tuna-led meals) that v1's sole-protein test missed; copy never claims "every meal" on a treat-borne staple. adversarial-reviewer **PASS** (executed counterexamples; the false-"every meal" path is unreachable as rendered copy), code-reviewer PASS (one stale-cache type-lie fixed). 232 deno + 660 jest + tsc green. **DEPLOY PENDING** — bundle built+verified (`scripts/deploy-edge.sh`, sha a4759d20…) but NOT yet live: the MCP `deploy_edge_function` needs the 80 KB bundle inline, and hand-transcribing load-bearing guardrail regexes/prompts byte-exact (no rollback) is unsafe — **B-082-path finding, PM decision on deploy mechanism (see Action Items).** Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
@@ -18,7 +18,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 **Architecture:** deterministic detection + LLM phrasing — the server computes & ranks a *true* finding in `detection.ts`; Haiku 4.5 only renders copy, with a deterministic template fallback. `phrasing.ts` = pure phrasing/curation/guardrails (offline unit-tested); `index.ts` = I/O shell. `validatePhrasing` rejects model drift (no `!`; never-reassure / never-"picky" on safety; associational-only on correlation).
 
-**Signal engine — detectors live (deployed `generate-signal` v19):** ① case-crossover, ② intake-decline, ③ reflection (presence/counts; a *declining* trend routes to safety), ④ symptom-worsening lane (B-077), ⑤ post-prandial timing (B-078), ⑥ time-of-day clustering (B-079); + no-signal coverage diagnostics (B-053); + **medication confounders** (B-117 PR 9 #207 — a drug on-board in a symptom window enters `detectCorrelations` as a confounder: case-enriched → suppress, concordant → cap at Early). Open follow-ups: **B-052** write-time protein normalization (read-time half shipped #92); **B-070** (P0) dominant-staple refinement + treats-vs-meals denominator; **B-067** reflection/Trend dedup; **B-080** diet-structure placement (blocks descriptive Phase 3, PM call).
+**Signal engine — detectors live (deployed `generate-signal` v19):** ① case-crossover, ② intake-decline, ③ reflection (presence/counts; a *declining* trend routes to safety), ④ symptom-worsening lane (B-077), ⑤ post-prandial timing (B-078), ⑥ time-of-day clustering (B-079); + no-signal coverage diagnostics (B-053); + **medication confounders** (B-117 PR 9 #207 — a drug on-board in a symptom window enters `detectCorrelations` as a confounder: case-enriched → suppress, concordant → cap at Early). Open follow-ups: **B-052** write-time protein normalization (read-time half shipped #92); **B-070** (P0) dominant-staple refinement + treats-vs-meals denominator — **built, PR #211 draft, adversarial PASS; pending live deploy** (see Action Items); **B-067** reflection/Trend dedup; **B-080** diet-structure placement (blocks descriptive Phase 3, PM call).
 
 **On-device QA gap:** empty / `no_pattern` + reflection paths verified on device; the **LIVE safety-card path is still unverified on device** (cat Nyx's real data legitimately yields zero safety findings — chicken is a ~3×/day staple → case-crossover correctly washes it out; intake healthy → flag correctly quiet).
 
@@ -88,6 +88,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 - [ ] **Whole-system aesthetic on-device QA** — walk the app vs `docs/design-system/_system/.../index.html` for the holistic Calm/Linear/Oura pass (deferred to end-of-system; all 4 design PRs merged).
 
 **Decisions**
+- [ ] **B-070 deploy mechanism (P0 — blocks B-070 going live).** The verified `generate-signal` bundle is ready (`.edge-build/generate-signal/index.ts`, sha `a4759d20…`, v20-to-be) but NOT deployed: the MCP `deploy_edge_function` takes the 80 KB bundle as inline model-authored text, and a byte error in its load-bearing guardrail regexes / Haiku prompts would silently weaken a never-reassure check with no one-call rollback. **First-real-use-of-B-082 finding: the inline-MCP path is impractical/unsafe for a large clinically-load-bearing function.** Pick the deploy mechanism: (a) dashboard-paste this once (trivial, but re-opens the very handoff B-082 retired); (b) provision a `SUPABASE_ACCESS_TOKEN` cloud-env secret → `supabase functions deploy` reads the file directly (retires dashboard-paste for real; the runbook's "optional future convenience"); (c) accept the inline-MCP risk + read-back-sha verify. Eng rec: (b).
 - [ ] **B-099** — reopen spec §13 #2 (over-time views + dashboard 7d/30d range) before building B-099.
 - [ ] **B-080** — placement of diet-structure observations (Signal band-2 vs B-053 coverage lane); blocks descriptive Phase 3.
 - [ ] **B-023 colour** — reconcile Home `TrendZone` (colours a falling symptom "improving" in the accent, `TrendZone.tsx:66/79`) to the §11 #3 ruling, or accept the cross-tier difference.
@@ -129,6 +130,7 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-21 — B-070: `staple_washout` ≥80%-dominance + honest treats-vs-meals copy register (engine-only; adversarial PASS; deploy pending — B-082-path finding) — #211 (draft)
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
 - 2026-06-20 — B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP (`scripts/deploy-edge.sh` + `docs/edge-deploy-runbook.md`) — #208
 - 2026-06-20 — B-117 PR 9: Signal medication confounder pass (§8) — meds enter the engine as confounders — #207
