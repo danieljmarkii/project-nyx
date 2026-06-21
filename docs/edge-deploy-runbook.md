@@ -183,7 +183,7 @@ for all DDL so it's recorded in migration history.
 Diff of live state (MCP) vs. `supabase/{migrations,functions}/` on disk:
 
 - **Edge Functions — in sync.** All 5 on-disk functions are deployed + `ACTIVE`
-  (`generate-signal` v18, `extract-food-from-photo` v9, `extract-medication-from-photo`
+  (`generate-signal` v19, `extract-food-from-photo` v9, `extract-medication-from-photo`
   v1, `analyze-vomit` v4, `delete-account` v3).
 - **Migrations — history table is sparse, and that's expected.**
   `list_migrations` returns only **5** rows, but **22** migration files exist on
