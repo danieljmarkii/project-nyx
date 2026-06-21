@@ -249,6 +249,7 @@ describe('coverageCopy (B-053)', () => {
     actionability: 'explanation',
     protein: 'chicken',
     symptomEpisodes: 3,
+    stapleSource: 'meals',
     ...over,
   });
 
@@ -274,8 +275,52 @@ describe('coverageCopy (B-053)', () => {
     expect(REASSURANCE_RE.test(why)).toBe(false); // coverage, never wellness
   });
 
+  // B-070: the copy register must match where the staple actually shows up. The headline
+  // danger is a FALSE "every meal" claim on a treat-borne staple — it can misdirect an
+  // elimination-diet talk (the owner switches the meal protein while the chicken keeps
+  // arriving as treats). All three registers stay explanation-only and never causal/reassuring.
+  it('staple_washout (B-070): meal-borne staple may say "in most meals"', () => {
+    const { why } = coverageCopy(stapleWashout({ protein: 'chicken', stapleSource: 'meals' }), 'Nyx');
+    expect(why).toContain('in most meals');
+  });
+
+  it('staple_washout (B-070): a TREAT-borne staple never claims "every/most meals" — names the treats', () => {
+    const { why, action } = coverageCopy(stapleWashout({ protein: 'chicken', stapleSource: 'treats' }), 'Nyx');
+    expect(why).toContain('chicken');
+    expect(why.toLowerCase()).toContain('treats'); // the honest texture
+    // The crux of B-070: the treat-borne register must NOT assert the chicken is in her meals.
+    expect(why).not.toContain('in most meals');
+    expect(why).not.toContain('every meal');
+    expect(action).toBeNull(); // "cut the treats" would be a diet-varying ask — never
+    expect(CAUSAL_RE.test(why)).toBe(false);
+    expect(REASSURANCE_RE.test(why)).toBe(false);
+  });
+
+  it('staple_washout (B-070): a mixed-source staple uses the neutral day-based register', () => {
+    const { why } = coverageCopy(stapleWashout({ protein: 'chicken', stapleSource: 'mixed' }), 'Nyx');
+    expect(why).toContain('most days');
+    expect(why).not.toContain('in most meals');
+    expect(why).not.toContain('every meal');
+  });
+
+  it('staple_washout (B-070): a pre-B-070 cached row (no stapleSource) falls to the safe register', () => {
+    // A staple_washout cached before B-070 shipped has no stapleSource (client field is
+    // optional; 24h TTL bounds the window). It must default to the safe day-based register,
+    // NEVER the false "every meal" claim — the worst thing to surface on stale data.
+    const { why } = coverageCopy(stapleWashout({ protein: 'chicken', stapleSource: undefined }), 'Nyx');
+    expect(why).toContain('most days');
+    expect(why).not.toContain('in most meals');
+    expect(why).not.toContain('every meal');
+    expect(REASSURANCE_RE.test(why)).toBe(false);
+  });
+
   it('never reads as an all-clear for either diagnostic (§9 — coverage, not wellness)', () => {
-    for (const d of [rateMeals(), stapleWashout()]) {
+    for (const d of [
+      rateMeals(),
+      stapleWashout({ stapleSource: 'meals' }),
+      stapleWashout({ stapleSource: 'treats' }),
+      stapleWashout({ stapleSource: 'mixed' }),
+    ]) {
       const { why, action } = coverageCopy(d, 'Pixel');
       for (const s of [why, action].filter((x): x is string => x !== null)) {
         expect(REASSURANCE_RE.test(s)).toBe(false);
