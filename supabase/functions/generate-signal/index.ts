@@ -28,6 +28,7 @@ import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-
 import {
   detectSignals,
   detectCoverage,
+  doseToMedicationWindow,
   DEFAULT_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
   type Finding,
@@ -35,6 +36,7 @@ import {
   type SymptomEvent,
   type MealEvent,
   type FeedingArrangement,
+  type MedicationWindow,
   type SymptomType,
   type IntakeRating,
   type FoodFormat,
@@ -304,6 +306,59 @@ function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[] {
   })
 }
 
+// ── Medication confounder windows (B-117 PR 9, §8) ────────────────────────────
+// Two DB shapes resolve to one MedicationWindow span set (see detection.ts):
+//   • a `medications` regimen row → a continuous span [started_at, ended_at].
+//   • an administered `medication` dose event → a POINT at occurred_at.
+// Both run with the caller's JWT, so medications_owner / medication_administrations_owner
+// RLS scope them to the owner's pets — no service role, like every other read here.
+
+interface RegimenRow {
+  medication_item_id: string | null
+  started_at: string | null // DATE; parses to that day's UTC midnight = start-of-day (correct span start)
+  ended_at: string | null // DATE; the drug is on board through the WHOLE day → end-of-day-inclusive below
+}
+
+type MedAdminJoin = { medication_item_id: string | null; adherence: string | null }
+interface MedDoseEventRow {
+  occurred_at: string
+  medication_administrations: MedAdminJoin | MedAdminJoin[] | null
+}
+
+// A regimen's DATE end is inclusive of the whole ended_at day (the pet took it that day), so
+// push activeUntil to that day's END — mirrors classifyArrangements' free-feeding +1-day. Done
+// HERE (not in the engine) because dose windows are precise instants the engine must NOT widen;
+// keeping the DATE-vs-timestamp knowledge in the caller lets classifyMedicationWindows stay a
+// pure instant-span parser. An unparseable end is passed through raw → the engine drops it.
+function regimenEndIso(endedAt: string | null): string | null {
+  if (endedAt == null) return null // still active → on board through now (engine: +Infinity)
+  const ms = Date.parse(endedAt)
+  if (Number.isNaN(ms)) return endedAt
+  return new Date(ms + MS_PER_DAY).toISOString()
+}
+
+function mapMedicationWindows(regimens: RegimenRow[], doseEvents: MedDoseEventRow[]): MedicationWindow[] {
+  const windows: MedicationWindow[] = regimens.map((r) => ({
+    medicationItemId: r.medication_item_id,
+    activeFrom: r.started_at,
+    activeUntil: regimenEndIso(r.ended_at),
+  }))
+  for (const e of doseEvents) {
+    const admin = first(e.medication_administrations)
+    if (!admin) continue // a medication event with no child (shouldn't happen — 1:1); nothing to place
+    // doseToMedicationWindow DROPS missed/refused (drug not given → not on board) and returns a
+    // point window for given/partial/null. The clinically load-bearing filter lives in that
+    // pure, tested helper, never inline here.
+    const w = doseToMedicationWindow({
+      medicationItemId: admin.medication_item_id,
+      occurredAt: e.occurred_at,
+      adherence: admin.adherence,
+    })
+    if (w) windows.push(w)
+  }
+  return windows
+}
+
 function mapMealRows(rows: MealEventRow[]): MealEvent[] {
   return rows.map((r) => {
     const meal = first(r.meals)
@@ -366,7 +421,8 @@ Deno.serve(async (req: Request) => {
     // 1. Load pet, symptom events, meal events, active diet trial — all
     //    ownership-scoped by RLS via the caller's JWT. Soft-deleted rows are
     //    excluded here (the detection module's documented contract).
-    const [petRes, symptomsRes, mealsRes, trialRes, arrangementsRes, profileRes] = await Promise.all([
+    const [petRes, symptomsRes, mealsRes, trialRes, arrangementsRes, profileRes, regimensRes, doseEventsRes] =
+      await Promise.all([
       supabase.from('pets').select('name, species').eq('id', petId).maybeSingle(),
       supabase
         .from('events')
@@ -398,6 +454,23 @@ Deno.serve(async (req: Request) => {
       // owner's own row (auth.uid() = id), so this returns the pet owner's profile. Absent
       // / unreadable ⇒ undefined ⇒ ⑥ stays silent (never guess UTC — §4.2).
       supabase.from('user_profiles').select('timezone').maybeSingle(),
+      // Medication regimens (B-117 PR 9, §8) — exposure spans [started_at, ended_at]. No
+      // deleted_at (a regimen is "ended", not soft-deleted) and no lookback filter: an old
+      // completed course is a valid historical confounder, and the [from,until] overlap with
+      // the bounded symptom set is resolved inside detection. Status is irrelevant to the
+      // span — started_at + ended_at fully define it (active → null end → through now).
+      supabase.from('medications').select('medication_item_id, started_at, ended_at').eq('pet_id', petId),
+      // Administered medication dose events (B-117 PR 9) — point exposures at occurred_at, the
+      // dominant signal today since logged doses are regimen-unlinked (B-135). Same shape as the
+      // meals join; soft-deleted + out-of-lookback rows excluded here (the engine's contract).
+      // missed/refused doses are filtered in mapMedicationWindows (doseToMedicationWindow).
+      supabase
+        .from('events')
+        .select('occurred_at, medication_administrations(medication_item_id, adherence)')
+        .eq('pet_id', petId)
+        .eq('event_type', 'medication')
+        .is('deleted_at', null)
+        .gte('occurred_at', lookbackIso),
     ])
 
     const pet = petRes.data as { name: string; species: string } | null
@@ -421,6 +494,12 @@ Deno.serve(async (req: Request) => {
     // B-079 (⑥): the owner's IANA timezone. A non-string / empty value ⇒ undefined ⇒ ⑥ silent.
     const profile = profileRes.data as { timezone: string | null } | null
     const timezone = profile?.timezone || undefined
+    // B-117 PR 9 (§8): medication confounder windows — regimen spans + administered dose points.
+    // Empty (no meds logged) ⇒ detectCorrelations behaves exactly as before.
+    const medicationWindows = mapMedicationWindows(
+      (regimensRes.data ?? []) as RegimenRow[],
+      (doseEventsRes.data ?? []) as MedDoseEventRow[],
+    )
 
     // 2. Detect — the pure engine ranks already-true findings (safety leads).
     const input: DetectionInput = {
@@ -428,6 +507,7 @@ Deno.serve(async (req: Request) => {
       symptomEvents,
       mealEvents,
       feedingArrangements,
+      medicationWindows,
       timezone,
       now: new Date(nowMs).toISOString(),
     }

@@ -254,6 +254,88 @@ export interface FeedingArrangement {
   attributionConfidence?: AttributionConfidence | null
 }
 
+/**
+ * A medication exposure window (B-117 PR 9, spec §8) — "was a drug plausibly ON BOARD
+ * during this span?". Medications enter the correlation engine as CONTEXT/CONFOUNDERS,
+ * never as correlates: the unit of analysis is still the food→symptom association; a drug
+ * never becomes a finding. The point is to stop the §1 false attribution — a "chicken →
+ * vomit" card that is really "antibiotic → nausea", which makes a diet trial "fail" for the
+ * wrong reason.
+ *
+ * Like B-040 free-feeding, two physical shapes both reduce to this ONE span type, and the
+ * caller (generate-signal/index.ts) resolves both:
+ *   • a REGIMEN (a `medications` row) → a continuous span [started_at, ended_at] — the drug
+ *     is on board for the whole course, BETWEEN doses, robust to un-logged doses (a missing
+ *     dose log ≠ the drug was off — conservative-on-certainty). DATE columns: the caller
+ *     passes started_at as the day's start and ended_at as END-OF-DAY-inclusive, so the
+ *     engine sees precise instants and never has to guess DATE-vs-timestamp (this is why
+ *     classifyMedicationWindows, unlike classifyArrangements, does NOT add a day itself).
+ *   • a DOSE (an administered `medication_administrations` event) → a POINT [occurred_at,
+ *     occurred_at]. A point behaves exactly like a meal exposure: it is "in window" iff the
+ *     dose was given within the symptom's own correlation window before onset. This is the
+ *     dominant signal TODAY, since logged doses are regimen-unlinked (B-135). Build it via
+ *     doseToMedicationWindow, which DROPS missed/refused doses (the drug was NOT given — see
+ *     that helper). ACCEPTED RESIDUAL (B-138, adversarial review): a once-daily LONG-ACTING,
+ *     regimen-unlinked drug dosed > W hours before onset is invisible to the point model (it
+ *     UNDER-detects the confounder → a false food correlation can slip through). Safe direction
+ *     — never reassurance, degrades to today's no-medication behavior; the regimen SPAN is the
+ *     robust fix once a regimen exists. A dose-persistence/tail is the alternative (a Dr. Chen
+ *     window-shape call, composes with the B-135 revisit).
+ *
+ * `medicationItemId` is carried per the spec ("correlation keys on the stable
+ * medication_item_id", which sidesteps the B-052 free-text canonicalization problem). v1
+ * SUPPRESSION is deliberately IDENTITY-AGNOSTIC — ANY drug on board confounds, because we
+ * have no curated drug→side-effect data to say a given drug is GI-irrelevant (a curated
+ * catalog is an explicit future refactor, spec §10). The id is retained for a future
+ * per-drug caveat ("the antibiotic may be a factor") and as the audit key; the v1 logic
+ * never branches on it. CONTRACT: the caller passes non-soft-deleted events only; absent/
+ * empty ⇒ detection behaves EXACTLY as before (byte-identical — detectors ②–⑥ ignore it,
+ * and detectCorrelations short-circuits on an empty set).
+ */
+export interface MedicationWindow {
+  /** Stable drug identity (medication_item_id), or null for an unlinked ad-hoc dose. Audit/future-caveat only — v1 suppression is identity-agnostic. */
+  medicationItemId: string | null
+  /** Inclusive span start (ISO-8601 UTC). Null = unbounded past (on board since before lookback). For a dose: the dose time. */
+  activeFrom: string | null
+  /** Inclusive span end (ISO-8601 UTC). Null = still on board (through now). For a dose: the same instant as activeFrom (a point). */
+  activeUntil: string | null
+}
+
+/** A logged dose reduced to what doseToMedicationWindow needs (the caller's DB-row projection). */
+export interface DoseEventInput {
+  medicationItemId: string | null
+  /** ISO-8601 UTC administration time (the parent event's occurred_at). */
+  occurredAt: string
+  /** dose_adherence value; null defaults to administered ('given', per the §5.1 capture default). */
+  adherence: string | null
+}
+
+/**
+ * Resolve a logged dose to a medication exposure POINT, or null when the dose was NOT
+ * administered. This is the one clinically load-bearing transform in the medication
+ * mapping, so it is a pure, exported, unit-tested function rather than inline I/O:
+ *
+ *   • given / partial / null  → the drug WAS on board → a point window at the dose time.
+ *     (null defaults to administered: the capture UI defaults adherence to 'given', and a
+ *     logged dose with no rating is a logged administration, not an absence.)
+ *   • missed / refused        → the drug was NOT given → null, NEVER an exposure window.
+ *     Modelling a non-administration as drug-presence would let a FORGOTTEN antibiotic
+ *     suppress a real food finding — a false negative we would never see. (refused is also
+ *     a disease signal handled elsewhere, §6.2; here it simply means "not on board".)
+ *
+ * An unparseable time still yields a window (activeFrom/Until = the raw string);
+ * classifyMedicationWindows drops it downstream, so the same Date.parse guard isn't
+ * duplicated here.
+ */
+export function doseToMedicationWindow(dose: DoseEventInput): MedicationWindow | null {
+  if (dose.adherence === 'missed' || dose.adherence === 'refused') return null
+  return {
+    medicationItemId: dose.medicationItemId,
+    activeFrom: dose.occurredAt,
+    activeUntil: dose.occurredAt,
+  }
+}
+
 export interface DetectionInput {
   pet: PetContext
   /**
@@ -274,6 +356,17 @@ export interface DetectionInput {
    * confounder) per detectCorrelations. See FeedingArrangement.
    */
   feedingArrangements?: FeedingArrangement[]
+  /**
+   * Medication exposure windows for this pet (B-117 PR 9, §8) — regimen spans + administered
+   * dose points, see MedicationWindow. They are CONFOUNDERS on the food→symptom correlation,
+   * not correlates: a drug case-enriched across a symptom's matched pairs SUPPRESSES that
+   * symptom's food correlations (the §1 "antibiotic, not chicken" case); a drug merely PRESENT
+   * but concordant (chronic steady-state) caps the tier at Early (§8 "caveated"). Optional —
+   * absent/empty means no medication context and detectCorrelations behaves exactly as before.
+   * Only detectCorrelations reads this; ②–⑥ ignore it (like feedingArrangements). CONTRACT: the
+   * caller passes non-soft-deleted events and EXCLUDES missed/refused doses (doseToMedicationWindow).
+   */
+  medicationWindows?: MedicationWindow[]
   /**
    * Pet owner's IANA timezone (e.g. 'America/New_York'), from user_profiles.timezone —
    * Phase 2 (⑥ time-of-day clustering) ONLY. Timestamps are stored UTC; "4–7am" only means
@@ -1189,6 +1282,40 @@ function classifyArrangements(arrangements: FeedingArrangement[]): StandingExpos
   return out
 }
 
+/** A medication exposure window reduced to a parsed [fromMs, untilMs] span (B-117 PR 9). */
+interface MedSpan {
+  fromMs: number
+  untilMs: number
+}
+
+/**
+ * Reduce medication windows (regimen spans + dose points) to parsed ms spans (B-117 PR 9).
+ * Unlike classifyArrangements, this does NOT add a day to `untilMs`: the caller already
+ * normalizes regimen DATE ends to end-of-day instants, and a dose window is a precise POINT
+ * (untilMs === fromMs) that must stay a point. A span with an unparseable edge is dropped (a
+ * garbage window must never silently confound every finding); an INVERTED span (until < from)
+ * is dropped, but an equal-edge POINT is kept — that IS a dose. Null from → -Infinity
+ * (on board since before lookback); null until → +Infinity (still on board / through now).
+ */
+function classifyMedicationWindows(windows: MedicationWindow[]): MedSpan[] {
+  const out: MedSpan[] = []
+  for (const w of windows) {
+    const fromMs = w.activeFrom == null ? -Infinity : Date.parse(w.activeFrom)
+    if (Number.isNaN(fromMs)) continue
+    let untilMs: number
+    if (w.activeUntil == null) {
+      untilMs = Infinity
+    } else {
+      const parsed = Date.parse(w.activeUntil)
+      if (Number.isNaN(parsed)) continue
+      untilMs = parsed
+    }
+    if (untilMs < fromMs) continue // inverted span exposes nothing; a point (==) is a valid dose
+    out.push({ fromMs, untilMs })
+  }
+  return out
+}
+
 export function detectCorrelations(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
@@ -1210,6 +1337,16 @@ export function detectCorrelations(
   // A free-fed-only protein (never logged as a discrete meal) is never in `proteins` to
   // begin with; a free-fed protein that ALSO has discrete logs is removed by (a).
   const standing = classifyArrangements(input.feedingArrangements ?? [])
+  // Medication exposure spans (B-117 PR 9, §8). A drug ON BOARD in a symptom window is a
+  // CONFOUNDER — it never becomes a finding. Two effects, applied per symptom type below:
+  //   • CASE-ENRICHED (the drug clears the SAME case-crossover bar a protein must to be an
+  //     Early correlate — present in materially more case windows than control) → SUPPRESS
+  //     that symptom's food correlations. This is the §1 antibiotic-not-chicken case.
+  //   • PRESENT but CONCORDANT (chronic steady-state, in both arms equally → the self-matching
+  //     controls for it) → does NOT suppress, but caps the tier at Early (§8 "caveated"; mirrors
+  //     a free-fed standing exposure capping Established).
+  // Empty ⇒ medActive is always false ⇒ byte-identical to pre-B-117 behavior.
+  const medSpans = classifyMedicationWindows(input.medicationWindows ?? [])
 
   const proteins = Array.from(new Set(meals.map((m) => m.protein)))
   // Need contrast: a single constant diet can't be correlated against anything.
@@ -1255,7 +1392,18 @@ export function detectCorrelations(
         if (s.protein !== null) standingProteins.add(s.protein)
       }
     }
-    return { exposures, mealCount, standingInWindow, standingProteins }
+    // Was ANY medication on board in this window (B-117 PR 9)? Inclusive interval overlap of
+    // the med span [fromMs, untilMs] with the exposure window [windowStart, anchorMs] — `<=`
+    // on both edges so a dose POINT (fromMs === untilMs) at exactly windowStart/anchorMs counts,
+    // matching the meal exposure boundary. Identity-agnostic: any drug present sets the flag.
+    let medActive = false
+    for (const m of medSpans) {
+      if (m.fromMs <= anchorMs && windowStart <= m.untilMs) {
+        medActive = true
+        break
+      }
+    }
+    return { exposures, mealCount, standingInWindow, standingProteins, medActive }
   }
 
   interface Candidate {
@@ -1277,9 +1425,25 @@ export function detectCorrelations(
      * exposure being present at all.
      */
     standingConfounder: boolean
+    /**
+     * A medication was on board for ≥1 of this symptom's matched pairs but is NOT
+     * case-enriched (B-117 PR 9, §8). A present-but-concordant drug is controlled by the
+     * self-matching, so it does NOT suppress the finding, but — like a free-fed standing
+     * exposure — it is an uncontrolled variable that caps the tier at Early ("caveated").
+     * The CASE-ENRICHED case never reaches here: it suppresses the whole symptom type
+     * before candidates are built.
+     */
+    medicationPresent: boolean
     symptomEventCount: number
   }
   const candidates: Candidate[] = []
+  // Would-be candidates withdrawn by the medication confounder pass (B-117 PR 9). These
+  // were FULLY tested (a real matched set was built, the pseudo-exposure test ran) and then
+  // withdrawn for a confound — so they still consumed a comparison and must still count
+  // toward the Bonferroni family below. Without this, suppressing one symptom type shrinks
+  // `candidates.length` and inflates an UNRELATED symptom's finding Early→Established
+  // (adversarial review, B-117 PR 9 — a real tier wart, though never a false reassurance).
+  let suppressedFamilyCount = 0
 
   for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
     const windowHours =
@@ -1309,6 +1473,10 @@ export function detectCorrelations(
       ctrlExp: Map<string, AttributionConfidence>
       /** A free-fed standing exposure was in the case OR control window (B-040 confounder). */
       standing: boolean
+      /** A medication was on board in the CASE window (B-117 PR 9 confounder analysis). */
+      medInCase: boolean
+      /** A medication was on board in the matched CONTROL window (B-117 PR 9). */
+      medInControl: boolean
     }[] = []
     // Proteins under an active free-fed arrangement that was in-window for ≥1 matched
     // pair (case OR control) of this symptom. These are excluded from candidacy — a
@@ -1328,6 +1496,7 @@ export function detectCorrelations(
         exposures: Map<string, AttributionConfidence>
         standingInWindow: boolean
         standingProteins: Set<string>
+        medActive: boolean
       } | null = null
       let bestDist = Infinity
       for (const d of mealDays) {
@@ -1351,6 +1520,8 @@ export function detectCorrelations(
         caseExp: caseWin.exposures,
         ctrlExp: bestCtrl.exposures,
         standing: caseWin.standingInWindow || bestCtrl.standingInWindow,
+        medInCase: caseWin.medActive,
+        medInControl: bestCtrl.medActive,
       })
     }
 
@@ -1361,6 +1532,57 @@ export function detectCorrelations(
     // (§3 engine rule). One uncontrolled standing exposure is enough; we are
     // conservative-on-certainty, matching the rest of the engine.
     const standingConfounder = pairs.some((p) => p.standing)
+
+    // ── Medication confounder analysis (B-117 PR 9, §8) ──────────────────────────────
+    // Treat "a drug was on board" as a PSEUDO-EXPOSURE and run it through the SAME
+    // case-crossover arithmetic a protein faces. The drug confounds this symptom's food
+    // correlations when it is CASE-ENRICHED — present in materially more case windows than
+    // control windows, clearing the EXACT bar (earlyMinDiscordantCaseOnly, earlyMinRiskDifference,
+    // b>c) a protein must clear to be an Early correlate. When it does, we cannot statistically
+    // separate "drug causes the symptom" from "food causes the symptom" (they are collinear in
+    // the matched set), and a systemic drug plausibly shifts the response to ALL foods — so the
+    // honest, never-false-attribution output is to SUPPRESS every food→symptom correlation for
+    // this symptom type. This is the §1 "antibiotic, not chicken" harm.
+    //
+    // Why case-enrichment, not mere presence: a CHRONIC steady-state drug is on board in BOTH
+    // arms of every pair → medB ≈ medC ≈ 0 → not case-enriched → it does NOT suppress (the
+    // self-matching already controls for it — otherwise we'd gut the flagship wedge for exactly
+    // the chronically-ill pets who need it most). Only a drug whose on/off TRANSITION falls
+    // inside the analysis window (an acute course overlapping the symptom cluster, whose
+    // symptom-free controls are systematically off-drug) becomes case-enriched. The few
+    // boundary pairs a recently-started chronic drug produces are diluted by the riskDifference
+    // floor across the matched set, so they do not trip suppression.
+    //
+    // SUPPRESSION NEVER REASSURES: it removes cards; the symptom stays tracked, the intake-
+    // decline (②) and worsening (④) SAFETY detectors fire independently, the ③ reflection still
+    // counts episodes, and an empty correlation set renders building/no_pattern — never "all
+    // clear" (§9). A present-but-concordant drug instead caps the tier at Early (medicationPresent
+    // below; §8 "caveated") rather than certifying an Established association under an
+    // uncontrolled variable — exactly how a free-fed standing exposure caps.
+    let medCaseExposed = 0
+    let medControlExposed = 0
+    let medB = 0
+    let medC = 0
+    for (const p of pairs) {
+      if (p.medInCase) medCaseExposed++
+      if (p.medInControl) medControlExposed++
+      if (p.medInCase && !p.medInControl) medB++
+      else if (!p.medInCase && p.medInControl) medC++
+    }
+    const medicationPresent = medCaseExposed > 0 || medControlExposed > 0
+    const medRiskDifference = (medCaseExposed - medControlExposed) / pairs.length
+    const medicationConfounds =
+      medB >= cfg.earlyMinDiscordantCaseOnly &&
+      medB > medC &&
+      medRiskDifference >= cfg.earlyMinRiskDifference
+    if (medicationConfounds) {
+      // Suppress this symptom type's food correlations entirely — but FIRST record the
+      // candidates we are withdrawing so they still count toward the multiple-comparison
+      // family (they exactly match the protein loop below: every non-free-fed protein).
+      // Keeps correctedAlpha STABLE so suppression can never promote an unrelated finding's tier.
+      suppressedFamilyCount += proteins.filter((p) => !freeFedProteins.has(p)).length
+      continue
+    }
 
     for (const protein of proteins) {
       // A free-fed protein is background context, never a clean correlate on its own
@@ -1394,6 +1616,7 @@ export function detectCorrelations(
         c,
         attributionFloor,
         standingConfounder,
+        medicationPresent,
         symptomEventCount,
       })
     }
@@ -1403,12 +1626,23 @@ export function detectCorrelations(
 
   // Multiple-comparison correction: Bonferroni over the family of (protein × symptom)
   // pairs we evaluated — every protein with a built matched set counts (conservative).
-  const correctedAlpha = cfg.familywiseAlpha / candidates.length
+  // `suppressedFamilyCount` keeps medication-withdrawn candidates in the family (B-117 PR 9):
+  // they were tested then withheld for a confound, so they still consumed a comparison —
+  // otherwise suppression would silently inflate an unrelated finding's tier.
+  const correctedAlpha = cfg.familywiseAlpha / (candidates.length + suppressedFamilyCount)
 
   const findings: CorrelationFinding[] = []
   for (const cand of candidates) {
-    const { matchedPairs, caseExposed, controlExposed, b, c, attributionFloor, standingConfounder } =
-      cand
+    const {
+      matchedPairs,
+      caseExposed,
+      controlExposed,
+      b,
+      c,
+      attributionFloor,
+      standingConfounder,
+      medicationPresent,
+    } = cand
     const riskDifference = caseExposed / matchedPairs - controlExposed / matchedPairs
 
     // Positive, case-direction enrichment only, with a coincidence guard on discordants.
@@ -1419,11 +1653,15 @@ export function detectCorrelations(
     const pValue = mcNemarExactRightTail(b, c)
 
     // Established requires the higher sample floor AND corrected significance AND clean
-    // attribution AND no uncontrolled standing exposure in-window. A 'low' (shared-bowl)
-    // attribution OR a free-fed standing confounder (B-040) caps the finding at Early.
+    // attribution AND no uncontrolled confounder in-window. A 'low' (shared-bowl)
+    // attribution, a free-fed standing confounder (B-040), OR a present-but-concordant
+    // medication on board (B-117 PR 9, §8 "caveated") each cap the finding at Early — an
+    // uncontrolled variable means we cannot certify a clean Established association. (A
+    // CASE-ENRICHED medication never reaches here; it suppressed the symptom type above.)
     const tier: EvidenceTier =
       attributionFloor === 'high' &&
       !standingConfounder &&
+      !medicationPresent &&
       matchedPairs >= cfg.establishedMinMatchedPairs &&
       pValue <= correctedAlpha
         ? 'established'
