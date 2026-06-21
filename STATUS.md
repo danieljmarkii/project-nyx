@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **Restored the research dossier + competitive-landscape docs** (#210; docs hygiene, NO schema, NO build change). Both were in CLAUDE.md's "Read These" table but had never been committed, so every fresh remote clone flagged them missing; restored as `docs/nyx-research-v1_0.md` + `docs/nyx-competitive-landscape-v1_0.md` (versioned-artifact naming, avoids the `docs/research/` briefs-folder clash) and repointed the two table rows. Also refreshed the spec's drifted Project Structure tree (5 real Edge Functions; killed the never-built `generate-report/`). Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **Vet-report (Step 9) discovery kickoff prompt** added as `docs/vet-report-discovery-PROMPT.md` (process/meta; NO schema, NO build change). A paste-ready prompt for a future product-discovery session, reviewed by the product team and PM-ratified: audience treatment is a strawman axis (not pre-decided), one prioritized session, and a synthetic round whose ranked real-vet-validation debt gates the requirements spec. Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
@@ -22,7 +22,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 **On-device QA gap:** empty / `no_pattern` + reflection paths verified on device; the **LIVE safety-card path is still unverified on device** (cat Nyx's real data legitimately yields zero safety findings — chicken is a ~3×/day staple → case-crossover correctly washes it out; intake healthy → flag correctly quiet).
 
-**After Step 10:** Step 9 (vet report PDF) resumes — interrupted by PM for B-045 dogfooding value; **blocked on the PDF-library open question**.
+**After Step 10:** Step 9 (vet report PDF) resumes — interrupted by PM for B-045 dogfooding value; **blocked on the PDF-library open question**. A product-discovery round is teed up to run first — paste `docs/vet-report-discovery-PROMPT.md` (shipped via #212); its delivery/format finding may reshape the PDF-library question.
 
 ---
 
@@ -129,6 +129,7 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-21 — Vet-report (Step 9) discovery kickoff prompt — `docs/vet-report-discovery-PROMPT.md` (process/meta; team-reviewed, PM-ratified scope) — shipped via #212
 - 2026-06-21 — Restore never-committed research + competitive-landscape docs (CLAUDE.md refs fixed) + refresh spec Project Structure tree — #210
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
 - 2026-06-20 — B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP (`scripts/deploy-edge.sh` + `docs/edge-deploy-runbook.md`) — #208
