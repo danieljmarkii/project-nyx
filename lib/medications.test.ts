@@ -20,6 +20,7 @@ import {
   hasMedicationItemChanges,
   canSaveMedicationItemEdit,
   computeRegimenCompliance,
+  attributeDosesToRegimens,
   regimenComplianceLine,
   regimenFlagLine,
   buildRegimenPayload,
@@ -37,6 +38,8 @@ import {
   type LocalMedicationAdministration,
   type MedicationItemEdit,
   type AdherenceTally,
+  type RegimenWindow,
+  type AttributableDose,
   type RegimenFormValues,
   type NearbyDose,
 } from './medications';
@@ -397,6 +400,71 @@ describe('canSaveMedicationItemEdit', () => {
 // These assertions ARE the safety contract (clinical-guardrails Pattern 8): the %
 // never counts a missed/refused dose as adherence, and an empty regimen never reads
 // as "compliant".
+describe('attributeDosesToRegimens — dose→regimen counting (B-135 item+window match)', () => {
+  const reg = (over: Partial<RegimenWindow> = {}): RegimenWindow => ({
+    id: 'reg-1', medication_item_id: 'item-pred', started_at: '2026-06-10', ended_at: null, ...over,
+  });
+  const dose = (over: Partial<AttributableDose> = {}): AttributableDose => ({
+    medication_item_id: 'item-pred', adherence: 'given', deleted_at: null,
+    occurred_at: '2026-06-12T08:00:00+00:00', ...over,
+  });
+
+  it('counts doses by medication_item_id even when medication_id is NULL (the bug)', () => {
+    // The whole point: one-tap doses are regimen-unlinked (medication_id NULL); the
+    // helper never looks at medication_id, so they still count toward the regimen.
+    const t = attributeDosesToRegimens([reg()], [dose(), dose(), dose({ adherence: 'refused' })]);
+    expect(t.get('reg-1')).toEqual({ given: 2, partial: 0, missed: 0, refused: 1, unrated: 0 });
+  });
+
+  it('does not count a dose before the regimen started or after it ended', () => {
+    const ended = reg({ id: 'r', started_at: '2026-06-10', ended_at: '2026-06-15' });
+    const t = attributeDosesToRegimens([ended], [
+      dose({ occurred_at: '2026-06-09T23:00:00+00:00' }), // before start
+      dose({ occurred_at: '2026-06-12T08:00:00+00:00' }), // in window
+      dose({ occurred_at: '2026-06-16T08:00:00+00:00' }), // after end
+    ]);
+    expect(t.get('r')?.given).toBe(1);
+  });
+
+  it('counts a dose logged on the start date (date vs timestamp boundary)', () => {
+    const t = attributeDosesToRegimens(
+      [reg({ id: 'r', started_at: '2026-06-12' })],
+      [dose({ occurred_at: '2026-06-12T08:00:00+00:00' })],
+    );
+    expect(t.get('r')?.given).toBe(1);
+  });
+
+  it('ignores soft-deleted doses and ad-hoc doses with no item id', () => {
+    const t = attributeDosesToRegimens([reg()], [
+      dose({ deleted_at: '2026-06-12T09:00:00+00:00' }),
+      dose({ medication_item_id: null }),
+    ]);
+    expect(t.get('reg-1')).toEqual({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 });
+  });
+
+  it('attributes a shared-drug dose to the most-recently-started in-window regimen (no double-count)', () => {
+    const older = reg({ id: 'old', started_at: '2026-06-01', ended_at: '2026-06-10' });
+    const active = reg({ id: 'new', started_at: '2026-06-11', ended_at: null });
+    const t = attributeDosesToRegimens([older, active], [dose({ occurred_at: '2026-06-12T08:00:00+00:00' })]);
+    expect(t.get('new')?.given).toBe(1);
+    expect(t.get('old')?.given).toBe(0);
+  });
+
+  it('leaves a free-text regimen (no item id) with an empty tally', () => {
+    const freeText = reg({ id: 'ft', medication_item_id: null });
+    const t = attributeDosesToRegimens([freeText], [dose({ medication_item_id: null })]);
+    expect(t.get('ft')).toEqual({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 });
+  });
+
+  it('buckets every adherence value, defaulting NULL to unrated', () => {
+    const t = attributeDosesToRegimens([reg()], [
+      dose({ adherence: 'given' }), dose({ adherence: 'partial' }), dose({ adherence: 'missed' }),
+      dose({ adherence: 'refused' }), dose({ adherence: null }),
+    ]);
+    expect(t.get('reg-1')).toEqual({ given: 1, partial: 1, missed: 1, refused: 1, unrated: 1 });
+  });
+});
+
 describe('computeRegimenCompliance', () => {
   it('computes given ÷ expected for a clean scheduled regimen', () => {
     // 2×/day for 7 days = 14 expected; 14 given → 100%.

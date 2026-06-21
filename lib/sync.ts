@@ -111,6 +111,13 @@ export async function syncPendingMeals(): Promise<void> {
 
   const db = getDb();
 
+  // Only push meals whose PARENT event has already landed in Supabase (events.synced
+  // = 1). The meal→event FK is enforced server-side, so a meal that flushes ahead of
+  // its event fails with 23503 ("Key is not present in table events"). The unsynced
+  // callers (insertMeal, signal regen, completion-card edits) aren't serialised, so a
+  // meal can otherwise out-race its own event; gating on the parent here makes the
+  // order safe by construction — a meal simply waits for the next cycle, after its
+  // event syncs. (B-027 FK-ordering class; same reasoning as medication_administrations.)
   const unsyncedMeals = await db.getAllAsync<{
     id: string;
     event_id: string;
@@ -122,7 +129,12 @@ export async function syncPendingMeals(): Promise<void> {
     created_at: string;
     updated_at: string;
     intake_rating: string | null;
-  }>('SELECT * FROM meals WHERE synced = 0 LIMIT 100');
+  }>(
+    `SELECT m.* FROM meals m
+       JOIN events e ON e.id = m.event_id
+      WHERE m.synced = 0 AND e.synced = 1
+      LIMIT 100`,
+  );
 
   if (unsyncedMeals.length === 0) return;
 

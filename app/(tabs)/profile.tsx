@@ -22,7 +22,8 @@ import { DeleteAccountSheet } from '../../components/profile/DeleteAccountSheet'
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
-  regimenFlagLine, type AdherenceTally, type RegimenCompliance,
+  regimenFlagLine, attributeDosesToRegimens,
+  type AdherenceTally, type RegimenCompliance, type AttributableDose,
 } from '../../lib/medications';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
@@ -235,45 +236,55 @@ export default function ProfileScreen() {
         .order('started_at', { ascending: false });
 
       if (regimenError) throw regimenError;
-      const regimens = (regimenRows as unknown as Regimen[]) ?? [];
+      // Coerce doses_per_day: PostgREST serialises NUMERIC as a string ("1.00"),
+      // which would mis-drive frequencyLabel's switch and the compliance math. Fix
+      // it once at the data boundary so every downstream consumer sees a number.
+      const regimens = ((regimenRows as unknown as Regimen[]) ?? []).map((r) => ({
+        ...r,
+        doses_per_day: r.doses_per_day == null ? null : Number(r.doses_per_day),
+      }));
       if (regimens.length === 0) { setMedications([]); return; }
 
-      // Dose children for these regimens. The parent event's deleted_at is pulled
-      // via a plain to-one embed (the same `food_items(...)` shape loadDietTrial
-      // uses — proven in this codebase) and soft-deleted doses are dropped
-      // client-side, rather than via a `!inner`-embedded filter with no precedent
-      // here. .in(medication_id) drops ad-hoc doses (NULL medication_id) — only
-      // doses tied to a regimen count toward that regimen's compliance.
-      const ids = regimens.map((r) => r.id);
-      const { data: doseRows, error: doseError } = await supabase
-        .from('medication_administrations')
-        .select('medication_id, adherence, events(deleted_at)')
-        .eq('pet_id', activePet.id)
-        .in('medication_id', ids);
+      // Dose children, matched to regimens by medication_item_id within each
+      // regimen's window (attributeDosesToRegimens) — NOT by medication_id. The
+      // one-tap log path writes medication_id = NULL (doses are regimen-unlinked,
+      // B-135), so the old .in('medication_id', …) join counted ZERO and every
+      // regimen read "no doses logged yet" despite real doses. The attribution +
+      // window logic is pure and unit-tested in lib/medications.
+      const itemIds = [...new Set(
+        regimens.map((r) => r.medication_item_id).filter(Boolean),
+      )] as string[];
 
-      if (doseError) throw doseError;
+      let doses: AttributableDose[] = [];
+      if (itemIds.length > 0) {
+        const { data: doseRows, error: doseError } = await supabase
+          .from('medication_administrations')
+          .select('medication_item_id, adherence, events(deleted_at, occurred_at)')
+          .eq('pet_id', activePet.id)
+          .in('medication_item_id', itemIds);
+        if (doseError) throw doseError;
 
-      type DoseRow = {
-        medication_id: string;
-        adherence: string | null;
-        // to-one embed: supabase-js may surface it as an object or a 1-element array
-        events: { deleted_at: string | null } | { deleted_at: string | null }[] | null;
-      };
-      const tallies = new Map<string, AdherenceTally>(ids.map((id) => [id, EMPTY_TALLY()]));
-      for (const d of (doseRows as unknown as DoseRow[]) ?? []) {
-        const ev = Array.isArray(d.events) ? d.events[0] : d.events;
-        if (ev?.deleted_at) continue; // soft-deleted dose — its parent event is gone; don't count it
-        const t = tallies.get(d.medication_id);
-        if (!t) continue;
-        switch (d.adherence) {
-          case 'given': t.given++; break;
-          case 'partial': t.partial++; break;
-          case 'missed': t.missed++; break;
-          case 'refused': t.refused++; break;
-          default: t.unrated++; break; // NULL = logged-but-unrated (never counted as given)
-        }
+        type DoseRow = {
+          medication_item_id: string | null;
+          adherence: string | null;
+          // to-one embed: supabase-js may surface it as an object or a 1-element array
+          events:
+            | { deleted_at: string | null; occurred_at: string }
+            | { deleted_at: string | null; occurred_at: string }[]
+            | null;
+        };
+        doses = ((doseRows as unknown as DoseRow[]) ?? []).map((d) => {
+          const ev = Array.isArray(d.events) ? d.events[0] : d.events;
+          return {
+            medication_item_id: d.medication_item_id,
+            adherence: d.adherence,
+            deleted_at: ev?.deleted_at ?? null,
+            occurred_at: ev?.occurred_at ?? '',
+          };
+        });
       }
 
+      const tallies = attributeDosesToRegimens(regimens, doses);
       setMedications(regimens.map((reg) => buildRegimenDisplay(reg, tallies.get(reg.id) ?? EMPTY_TALLY())));
     } catch (e) {
       console.error('[Profile] load medications failed:', e);
@@ -626,7 +637,7 @@ export default function ProfileScreen() {
                     </TouchableOpacity>
                     <Text style={styles.conditionActionDivider}>·</Text>
                     <TouchableOpacity onPress={() => confirmEndRegimen(reg)} hitSlop={8}>
-                      <Text style={styles.conditionActionText}>End</Text>
+                      <Text style={[styles.conditionActionText, styles.medEndActionText]}>End</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -927,6 +938,11 @@ const styles = StyleSheet.create({
   conditionActionDivider: {
     fontSize: theme.textXS,
     color: theme.colorBorder,
+  },
+  // "End" is destructive (ends a regimen) — the same red as Delete account, not the
+  // neutral grey of the adjacent "Edit".
+  medEndActionText: {
+    color: theme.colorDestructive,
   },
 
   // ── Diet trial ──
