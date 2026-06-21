@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP** (#208; process/tooling, NO schema). `scripts/deploy-edge.sh` (esbuild-bundle → offline verify → MCP `deploy_edge_function`) + `docs/edge-deploy-runbook.md`; dashboard-paste handoff retired in CLAUDE.md/dev-handoff. Drift diff: 5/5 fns ACTIVE; migration history sparse (5 tracked vs 22 on-disk = dashboard-paste legacy → backfill call B-142). Merged current `main` (B-141 slim + B-117 PR 9). Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **Restored the research dossier + competitive-landscape docs** (#210; docs hygiene, NO schema, NO build change). Both were in CLAUDE.md's "Read These" table but had never been committed, so every fresh remote clone flagged them missing; restored as `docs/nyx-research-v1_0.md` + `docs/nyx-competitive-landscape-v1_0.md` (versioned-artifact naming, avoids the `docs/research/` briefs-folder clash) and repointed the two table rows. Also refreshed the spec's drifted Project Structure tree (5 real Edge Functions; killed the never-built `generate-report/`). Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
@@ -129,6 +129,7 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-21 — Restore never-committed research + competitive-landscape docs (CLAUDE.md refs fixed) + refresh spec Project Structure tree — #210
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
 - 2026-06-20 — B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP (`scripts/deploy-edge.sh` + `docs/edge-deploy-runbook.md`) — #208
 - 2026-06-20 — B-117 PR 9: Signal medication confounder pass (§8) — meds enter the engine as confounders — #207
@@ -141,7 +142,3 @@ _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 - 2026-06-19 — B-117 PR 5: medication photo capture + AI extraction + dose-confirm — #199
 - 2026-06-19 — B-127: purge `nyx-medication-photos` in delete-account — #198
 - 2026-06-19 — B-117 PR 4: `nyx-medication-photos` bucket + RLS — #197
-- 2026-06-19 — B-117 PR 3: text-first medication quick-log — #196
-- 2026-06-19 — B-117 PR 2: medication local mirror + sync plumbing — #194
-- 2026-06-19 — B-039 PR 2: client account-deletion UX — #193
-- 2026-06-19 — B-117 PR 1 (schema 020) + B-039 plan + B-043 cleanup — #192 / #189 / #188
