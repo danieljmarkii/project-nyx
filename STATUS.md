@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **B-141: slimmed STATUS + backlog.** Both canonical state files had outgrown their own "scannable / one-line Why" contracts (STATUS 225 KB, backlog 266 KB) and accreted ~67 K tokens of session narrative + ~40 Done rows carrying full build play-by-plays. Pruned to live state only; history left in git + PR descriptions (#72–#205). Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP** (#208; process/tooling, NO schema). `scripts/deploy-edge.sh` (esbuild-bundle → offline verify → MCP `deploy_edge_function`) + `docs/edge-deploy-runbook.md`; dashboard-paste handoff retired in CLAUDE.md/dev-handoff. Drift diff: 5/5 fns ACTIVE; migration history sparse (5 tracked vs 22 on-disk = dashboard-paste legacy → backfill call B-142). Merged current `main` (B-141 slim + B-117 PR 9). Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
