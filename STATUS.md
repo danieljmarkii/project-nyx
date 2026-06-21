@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **Vet-report (Step 9) discovery kickoff prompt** added as `docs/vet-report-discovery-PROMPT.md` (process/meta; NO schema, NO build change). A paste-ready prompt for a future product-discovery session, reviewed by the product team and PM-ratified: audience treatment is a strawman axis (not pre-decided), one prioritized session, and a synthetic round whose ranked real-vet-validation debt gates the requirements spec. Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **Vet-report (Step 9) product-discovery round** complete: deliverable `docs/vet-report-discovery.md` (#214) — a synthetic synthesis ending in decidable Open Questions + a ranked real-vet Research Debt list that gates the requirements spec. Directions to ratify: audience = banded vet-first one-pager; delivery = HTML-first web report + derived PDF (reshapes/demotes the PDF-library question to a render spike, B-144). NO schema, NO build change. Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
@@ -22,7 +22,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 **On-device QA gap:** empty / `no_pattern` + reflection paths verified on device; the **LIVE safety-card path is still unverified on device** (cat Nyx's real data legitimately yields zero safety findings — chicken is a ~3×/day staple → case-crossover correctly washes it out; intake healthy → flag correctly quiet).
 
-**After Step 10:** Step 9 (vet report PDF) resumes — interrupted by PM for B-045 dogfooding value; **blocked on the PDF-library open question**. A product-discovery round is teed up to run first — paste `docs/vet-report-discovery-PROMPT.md` (shipped via #212); its delivery/format finding may reshape the PDF-library question.
+**After Step 10:** Step 9 (vet report) resumes — interrupted by PM for B-045 dogfooding value. **Discovery round complete** (`docs/vet-report-discovery.md`, #214): recommends an HTML-first web report (+ derived PDF), which **reshapes the blocking PDF-library question** into a downstream render spike (B-144). Next: PM ratifies the §8 Open Questions (audience / format / scope) → requirements-spec session, **gated on real-vet validation** of the top Research Debt items (§10).
 
 ---
 
@@ -74,7 +74,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 
 ## Blocking Open Questions
 
-- **PDF rendering library for Step 9** (`pdf-lib` vs `puppeteer` vs `react-pdf`). Blocks the vet report. See CLAUDE.md → Open Questions.
+- **PDF rendering library for Step 9** (`pdf-lib` vs `puppeteer` vs `react-pdf`). Blocks the vet report. See CLAUDE.md → Open Questions. **Reshaped by discovery (#214):** if the PM ratifies HTML-first delivery (`docs/vet-report-discovery.md` §8.2), this demotes to a downstream render spike (B-144) rather than a v1 blocker — pending that ratification.
 
 ---
 
@@ -129,6 +129,7 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-21 — Vet-report (Step 9) product-discovery round — `docs/vet-report-discovery.md` (synthetic; decidable Open Qs + ranked real-vet research-debt gate; HTML-first delivery reshapes the PDF-library question; B-143/B-144 logged) — shipped via #214
 - 2026-06-21 — Vet-report (Step 9) discovery kickoff prompt — `docs/vet-report-discovery-PROMPT.md` (process/meta; team-reviewed, PM-ratified scope) — shipped via #212
 - 2026-06-21 — Restore never-committed research + competitive-landscape docs (CLAUDE.md refs fixed) + refresh spec Project Structure tree — #210
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
