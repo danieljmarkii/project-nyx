@@ -269,19 +269,28 @@ describe('initialStrengthConfirmed — gate seed (§6.5)', () => {
 });
 
 describe('canSaveMedicationCapture — the gate (§6.5)', () => {
-  it('blocks save while an AI strength is unverified, on EVERY screen', () => {
-    // The load-bearing assertion: no path (confirm OR edit) can save until the
-    // strength is confirmed. A future confirm→edit route cannot smuggle one past.
-    expect(canSaveMedicationCapture({ genericName: 'prednisolone', strengthConfirmed: false })).toBe(false);
+  it('blocks save while a PRESENT strength is unverified — AI OR hand-typed, on EVERY screen', () => {
+    // The load-bearing assertion: no path (confirm OR edit) can save until a
+    // present strength is confirmed. A future confirm→edit route cannot smuggle one
+    // past, and a hand-typed strength is gated exactly like an AI one — a transposed
+    // 5 mg → 50 mg is a 10× dosing error regardless of who keyed it.
+    expect(canSaveMedicationCapture({ genericName: 'prednisolone', strength: '5 mg', strengthConfirmed: false })).toBe(false);
   });
 
-  it('allows save once the strength is verified (edited or ticked)', () => {
-    expect(canSaveMedicationCapture({ genericName: 'prednisolone', strengthConfirmed: true })).toBe(true);
+  it('allows save once a present strength is verified (ticked)', () => {
+    expect(canSaveMedicationCapture({ genericName: 'prednisolone', strength: '5 mg', strengthConfirmed: true })).toBe(true);
+  });
+
+  it('does not gate an empty strength — nothing to confirm, so it never blocks save', () => {
+    // No strength = nothing to mistrust. The unconfirmed gate must NOT block an
+    // otherwise-valid save, or a no-strength manual entry would be unsaveable.
+    expect(canSaveMedicationCapture({ genericName: 'prednisolone', strength: '', strengthConfirmed: false })).toBe(true);
+    expect(canSaveMedicationCapture({ genericName: 'prednisolone', strength: '   ', strengthConfirmed: false })).toBe(true);
   });
 
   it('requires a non-empty medication name regardless of the gate', () => {
-    expect(canSaveMedicationCapture({ genericName: '', strengthConfirmed: true })).toBe(false);
-    expect(canSaveMedicationCapture({ genericName: '   ', strengthConfirmed: true })).toBe(false);
+    expect(canSaveMedicationCapture({ genericName: '', strength: '5 mg', strengthConfirmed: true })).toBe(false);
+    expect(canSaveMedicationCapture({ genericName: '   ', strength: '', strengthConfirmed: true })).toBe(false);
   });
 });
 

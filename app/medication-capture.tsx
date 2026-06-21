@@ -7,12 +7,13 @@
 // Three things make this NOT a copy of food-capture (spec §5.2 / §6):
 //  • Single photo (the label), no ingredients/barcode slots, no EXIF meal-time —
 //    a dose is witnessed-now, so insertMedicationDose stamps occurred_at = now.
-//  • DOSE-CONFIRM-REQUIRED (§6.5): an AI-extracted strength is never silently
-//    trusted. Save is BLOCKED (canSaveMedicationCapture) until the owner verifies
-//    the strength against the retained label — by editing it, or ticking "matches
-//    the label" — on EVERY screen that can save it. The gate logic is the pure,
-//    unit-tested initialStrengthConfirmed / canSaveMedicationCapture in
-//    lib/medications.ts, so the invariant is a test, not navigation choreography.
+//  • DOSE-CONFIRM-REQUIRED (§6.5): a strength is never silently trusted — AI-
+//    extracted OR hand-typed (a transposed 5 mg → 50 mg is a 10× error whoever
+//    keyed it). Save is BLOCKED (canSaveMedicationCapture) until the owner
+//    deliberately ticks "matches the label", on EVERY screen that can save it.
+//    Editing the strength re-closes the gate; only the tick opens it. The gate
+//    logic is the pure, unit-tested initialStrengthConfirmed / canSaveMedicationCapture
+//    in lib/medications.ts, so the invariant is a test, not navigation choreography.
 //  • The extractor is STATELESS — it returns the extraction and writes nothing.
 //    Only this screen's commit (post-gate) writes the globally-readable catalog,
 //    so no AI value reaches the shared library without passing the owner's gate.
@@ -97,10 +98,12 @@ export default function MedicationCaptureScreen() {
   const [isPrescription, setIsPrescription] = useState<boolean | null>(null);
   const [extractionFailed, setExtractionFailed] = useState(false);
 
-  // §6.5 dose-confirm gate. True = the strength has been verified against the
-  // label (the owner edited it, or ticked "matches the label"). Seeded by
-  // initialStrengthConfirmed: open when there is no AI strength to mistrust.
-  const [strengthConfirmed, setStrengthConfirmed] = useState(true);
+  // §6.5 dose-confirm gate. True = the owner has DELIBERATELY confirmed the
+  // strength by ticking "matches the label". Seeded CLOSED (false): a present
+  // strength — AI-extracted OR hand-typed — must be confirmed before save, since a
+  // transposed dose (5 mg → 50 mg) is a 10× error whoever keyed it. An empty
+  // strength has nothing to confirm and never blocks save (canSaveMedicationCapture).
+  const [strengthConfirmed, setStrengthConfirmed] = useState(false);
 
   const checkScale = useRef(new Animated.Value(0.5)).current;
   const checkOpacity = useRef(new Animated.Value(0)).current;
@@ -120,11 +123,12 @@ export default function MedicationCaptureScreen() {
     return () => clearTimeout(t);
   }, [step]);
 
-  // Editing the strength, or ticking the confirm checkbox, both count as
-  // verifying it against the label — the §6.5 gate opens on either.
+  // Editing the strength INVALIDATES any prior confirmation — a changed value is an
+  // unverified value, so the §6.5 gate re-closes and the owner must tick to confirm
+  // it. Typing is not verifying: only the deliberate tick opens the gate.
   function onEditStrength(next: string) {
     setStrength(next);
-    setStrengthConfirmed(true);
+    setStrengthConfirmed(false);
   }
 
   async function pickPhoto(presetSource?: 'camera' | 'library'): Promise<CapturedPhoto | null> {
@@ -244,7 +248,7 @@ export default function MedicationCaptureScreen() {
   }
 
   async function commitMedication() {
-    if (!canSaveMedicationCapture({ genericName, strengthConfirmed })) return;
+    if (!canSaveMedicationCapture({ genericName, strength, strengthConfirmed })) return;
     if (submitting.current) return;
     submitting.current = true;
     try {
@@ -349,7 +353,7 @@ export default function MedicationCaptureScreen() {
     setForm(null);
     setRoute(null);
     setIsPrescription(null);
-    setStrengthConfirmed(true); // manual entry: the owner is the source, nothing to mistrust
+    setStrengthConfirmed(false); // a hand-typed strength must be deliberately confirmed too (§6.5)
     setStep('edit');
   }
 
@@ -410,7 +414,8 @@ export default function MedicationCaptureScreen() {
 
   // ── Confirm (dose-confirm-required, §6.5) ──
   if (step === 'confirm') {
-    const canSave = canSaveMedicationCapture({ genericName, strengthConfirmed });
+    const canSave = canSaveMedicationCapture({ genericName, strength, strengthConfirmed });
+    const strengthNeedsConfirm = strength.trim().length > 0 && !strengthConfirmed;
     return (
       <SafeAreaView style={styles.container}>
         <Header title="Confirm" />
@@ -439,7 +444,7 @@ export default function MedicationCaptureScreen() {
 
             <SectionLabel label="Strength" />
             <TextInput
-              style={[styles.textInput, !strengthConfirmed && styles.textInputUnconfirmed]}
+              style={[styles.textInput, strengthNeedsConfirm && styles.textInputUnconfirmed]}
               value={strength}
               onChangeText={onEditStrength}
               placeholder="e.g. 5 mg, 16 mg/mL"
@@ -449,7 +454,7 @@ export default function MedicationCaptureScreen() {
             <StrengthGate
               strength={strength}
               confirmed={strengthConfirmed}
-              onConfirm={() => setStrengthConfirmed(true)}
+              onToggle={() => setStrengthConfirmed((v) => !v)}
             />
 
             <SectionLabel label="Form" />
@@ -466,7 +471,7 @@ export default function MedicationCaptureScreen() {
             >
               <Text style={styles.primaryBtnText}>{logFirstDose ? 'Looks right — log dose' : 'Looks right'}</Text>
             </TouchableOpacity>
-            {!strengthConfirmed && (
+            {strengthNeedsConfirm && (
               <Text style={styles.gateHint}>Check the strength against the label to continue.</Text>
             )}
           </ScrollView>
@@ -477,7 +482,8 @@ export default function MedicationCaptureScreen() {
 
   // ── Edit / manual entry ──
   if (step === 'edit') {
-    const canSave = canSaveMedicationCapture({ genericName, strengthConfirmed });
+    const canSave = canSaveMedicationCapture({ genericName, strength, strengthConfirmed });
+    const strengthNeedsConfirm = strength.trim().length > 0 && !strengthConfirmed;
     return (
       <SafeAreaView style={styles.container}>
         <Header
@@ -515,7 +521,7 @@ export default function MedicationCaptureScreen() {
             />
             <SectionLabel label="Strength (optional)" />
             <TextInput
-              style={[styles.textInput, !strengthConfirmed && styles.textInputUnconfirmed]}
+              style={[styles.textInput, strengthNeedsConfirm && styles.textInputUnconfirmed]}
               placeholder="e.g. 5 mg, 16 mg/mL"
               placeholderTextColor={theme.colorTextSecondary}
               value={strength}
@@ -523,12 +529,12 @@ export default function MedicationCaptureScreen() {
               autoCapitalize="none"
             />
             {/* The gate follows the strength wherever it can be saved, so the edit
-                screen can never save an unverified AI strength either (defense in
-                depth — today's edit-entry paths all arrive confirmed). */}
+                screen can never save an unverified strength either — a hand-typed
+                dose is gated exactly like an AI-extracted one (§6.5). */}
             <StrengthGate
               strength={strength}
               confirmed={strengthConfirmed}
-              onConfirm={() => setStrengthConfirmed(true)}
+              onToggle={() => setStrengthConfirmed((v) => !v)}
             />
             <SectionLabel label="Form" />
             <ChipScroll options={FORM_OPTIONS} value={form} onChange={setForm} />
@@ -542,6 +548,9 @@ export default function MedicationCaptureScreen() {
             >
               <Text style={styles.primaryBtnText}>{logFirstDose ? 'Save and log dose' : 'Save'}</Text>
             </TouchableOpacity>
+            {strengthNeedsConfirm && (
+              <Text style={styles.gateHint}>Confirm the strength to continue.</Text>
+            )}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -576,21 +585,23 @@ function Header({ title, onClose, onBack }: { title: string; onClose?: () => voi
 }
 
 // The §6.5 strength-confirmation control. Shown wherever a strength can be saved,
-// so the gate is uniform across the confirm and edit screens. Ticking it (or
-// editing the strength, via onEditStrength) opens the gate.
+// so the gate is uniform across the confirm and edit screens. It's a real toggle —
+// ticking confirms, tapping again takes the confirmation back. Editing the strength
+// also re-closes the gate (onEditStrength), so a changed value is never left
+// silently "confirmed".
 function StrengthGate({
-  strength, confirmed, onConfirm,
+  strength, confirmed, onToggle,
 }: {
   strength: string;
   confirmed: boolean;
-  onConfirm: () => void;
+  onToggle: () => void;
 }) {
   if (strength.trim().length === 0) return null;
   return (
     <>
       <TouchableOpacity
         style={styles.confirmCheckRow}
-        onPress={onConfirm}
+        onPress={onToggle}
         activeOpacity={0.7}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: confirmed }}

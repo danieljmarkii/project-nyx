@@ -284,13 +284,18 @@ export function initialStrengthConfirmed(aiStrength: string | null | undefined):
 }
 
 // Whether a captured medication may be saved. generic name is the required
-// display key; strengthConfirmed is the §6.5 gate — an unverified AI strength
-// blocks save on EVERY screen, by construction.
+// display key; strengthConfirmed is the §6.5 gate. The gate applies whenever a
+// strength is PRESENT — AI-extracted OR hand-typed — because a transposed dose
+// (5 mg → 50 mg) is a 10× error regardless of who keyed it, so the owner must
+// deliberately confirm their own entry too, not just the AI's. An empty strength
+// has nothing to confirm, so it never blocks save.
 export function canSaveMedicationCapture(params: {
   genericName: string;
+  strength: string;
   strengthConfirmed: boolean;
 }): boolean {
-  return params.genericName.trim().length > 0 && params.strengthConfirmed;
+  const hasStrength = params.strength.trim().length > 0;
+  return params.genericName.trim().length > 0 && (!hasStrength || params.strengthConfirmed);
 }
 
 // ── Shared form/route option lists (the medication_form / medication_route enum
