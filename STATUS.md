@@ -129,6 +129,7 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
 - 2026-06-20 — History filters: scope menu + unified type lens — #205
 - 2026-06-20 — Multi-pet PR 6: cross-pet safety banner + all-active-pets signal freshness (B-086) — #203
 - 2026-06-20 — B-117 PR 8: medication timeline + retroactive adherence + double-dose (B-135) — #204
