@@ -22,6 +22,7 @@ export const theme = {
   textSignal: 26, // AI Signal headline (display face) — consumed by PR 2
   lineHeightSignal: 34, // AI Signal headline leading (26 × ~1.3, per type-signal preview)
   lineHeightBody: 22, // body/paragraph leading — app-wide default for multi-line copy
+  lineHeightSM: 18, // caption/compact-row leading (textSM × ~1.35) — e.g. the cross-pet banner
 
   // ── Font weights ──────────────────────────────────────────────────────────
   weightRegular: '400' as const,
@@ -68,6 +69,11 @@ export const theme = {
   // Event semantic colors
   colorEventSymptom: '#F43F5E',
   colorEventSymptomLight: '#FFE4E6',
+  // Calm safety-surface border — a mid-tone between symptom and symptom-light, for
+  // a tinted safety container that needs definition without alarm (the cross-pet
+  // safety banner, multi-pet §4 / mock A3). Softer than colorEventSymptom so the
+  // banner reads "worth a look", never "alarm".
+  colorEventSymptomBorder: '#FBCFD6',
   colorEventMeal: '#00C2A8',
   colorEventMealLight: '#E0FBF7',
   colorChartEmpty: '#F0F0F0',

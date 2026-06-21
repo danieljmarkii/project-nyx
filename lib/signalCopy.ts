@@ -16,8 +16,10 @@
 import type {
   CachedFinding,
   CoverageDiagnostic,
+  IntakeDeclineFinding,
   SignalFinding,
   SignalSymptomType,
+  SymptomWorseningFinding,
 } from './signal';
 
 export type DisplayState = 'building' | 'no_pattern' | 'stale' | 'live';
@@ -300,4 +302,174 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     `compared with ${count(finding.ratedMealsConsidered, 'recent meal', 'recent meals')}. Eating less can be ` +
     `an early sign something's off, so it's worth keeping an eye on — and a word with your vet if it carries on.`
   );
+}
+
+// ── Cross-pet safety banner (multi-pet §4, mock A3) ───────────────────────────
+// A calm banner on the active pet's home when ANOTHER (non-active, non-archived)
+// pet has a SAFETY-class finding cached. It can only ever ESCALATE attention — by
+// construction it cannot reassure: it renders ONLY on a safety finding, and its
+// absence is never an all-clear, because it is a cache read and a stale/missing
+// cache renders nothing (§4). Reflections, correlations and the descriptive lanes
+// NEVER cross over — only the two safety-lane types below.
+//
+// This module owns the PURE half: which pet's finding to surface (selection +
+// ranking) and the template-only sentence. The cache I/O + freshness regen live
+// in lib/signal.ts; the focus-effect + render live in the hook + component.
+
+// The banner-eligible safety types, in cross-pet priority order (lower wins).
+// intake_decline outranks symptom_worsening, matching the engine's per-pet rank
+// (§4). An explicit allow-list, NOT `priorityClass === 'safety'`: a future safety
+// detector must be added here deliberately (with its own template + guardrail
+// review) before it can reach this clinical escalation surface.
+const BANNER_SAFETY_PRIORITY: Record<'intake_decline' | 'symptom_worsening', number> = {
+  intake_decline: 0,
+  symptom_worsening: 1,
+};
+
+export type BannerSafetyFinding = IntakeDeclineFinding | SymptomWorseningFinding;
+
+function isBannerSafetyFinding(f: SignalFinding): f is BannerSafetyFinding {
+  // Type-narrow via the explicit allow-list. Both are priorityClass 'safety' by
+  // construction (asserted in the tests); the type union is the contract here.
+  return f.type === 'intake_decline' || f.type === 'symptom_worsening';
+}
+
+// A pet's representative banner finding = its highest-priority banner-safety
+// finding (intake_decline preferred). Returns null if it has none — a pet whose
+// only findings are reflections/correlations/descriptive can never raise a banner.
+function petTopSafetyFinding(findings: CachedFinding[]): BannerSafetyFinding | null {
+  let best: BannerSafetyFinding | null = null;
+  for (const cf of findings) {
+    const f = cf.finding;
+    if (!isBannerSafetyFinding(f)) continue;
+    if (best === null || BANNER_SAFETY_PRIORITY[f.type] < BANNER_SAFETY_PRIORITY[best.type]) {
+      best = f;
+    }
+  }
+  return best;
+}
+
+export interface BannerPetCandidate<P> {
+  pet: P;
+  findings: CachedFinding[];
+}
+
+export interface SelectedBanner<P> {
+  pet: P;
+  finding: BannerSafetyFinding;
+}
+
+// Pick the ONE cross-pet banner to show (§4: at most one, never stack). Across all
+// candidate pets that have a banner-safety finding, choose the highest-priority
+// finding (intake_decline > symptom_worsening). Ties (two same-class flags) break
+// by candidate order: the caller passes pets oldest-first, so the choice is
+// deterministic and implies no false clinical precedence between them — the owner
+// reaches the other pet via the switcher. Returns null if none qualifies.
+//
+// The caller MUST pass only non-active, non-archived pets. Excluding the active
+// pet keeps its own safety finding in its Signal zone (no self-banner); the pet
+// store holds only non-archived pets, so an archived pet can never be a candidate.
+export function selectCrossPetSafetyFinding<P extends { id: string }>(
+  candidates: BannerPetCandidate<P>[],
+): SelectedBanner<P> | null {
+  let best: SelectedBanner<P> | null = null;
+  for (const c of candidates) {
+    const finding = petTopSafetyFinding(c.findings);
+    if (!finding) continue;
+    // Strict `<` so the FIRST candidate wins a same-priority tie (stable order).
+    if (
+      best === null ||
+      BANNER_SAFETY_PRIORITY[finding.type] < BANNER_SAFETY_PRIORITY[best.finding.type]
+    ) {
+      best = { pet: c.pet, finding };
+    }
+  }
+  return best;
+}
+
+export interface BannerCopy {
+  /** Full sentence — the a11y label + the guardrail-validation input. Always starts with the pet name. */
+  text: string;
+  /** The sentence with the leading pet name removed, so the name can render bold (mock A3). */
+  rest: string;
+}
+
+// Template-only, derived from the finding's structured fields (§4): one specific,
+// calm sentence that ESCALATES attention — never reassures, never implies a cause,
+// never alarms. Tighter than the Signal templates (it's a teaser; the tap-through
+// lands on the pet's full Signal where the calibrated ask lives). Plain symptom
+// word (nyx-voice). The sentence always opens with the pet name so the component
+// can bold it; `text === petName + rest` by construction.
+export function bannerCopy(finding: BannerSafetyFinding, petName: string): BannerCopy {
+  const rest = bannerRest(finding);
+  return { text: `${petName}${rest}`, rest };
+}
+
+// A long free-text food label (the meal-log stores brand + product in TEXT
+// columns) must not blow validateBannerPhrasing's length cap and silently suppress
+// a REAL safety finding — so cap the rendered label, keeping the banner visible.
+function truncateFoodLabel(label: string | null): string | null {
+  const f = label?.trim();
+  if (!f) return null;
+  const MAX = 40;
+  return f.length > MAX ? `${f.slice(0, MAX - 1).trimEnd()}…` : f;
+}
+
+// The sentence AFTER the pet name. The name is prepended by bannerCopy, so the
+// rest never repeats it — it refers to the pet as "they" where needed (matching
+// the Signal evidence copy), so the leading name can render bold once (mock A3).
+function bannerRest(finding: BannerSafetyFinding): string {
+  if (finding.type === 'intake_decline') {
+    if (finding.trigger === 'refused_normal_food') {
+      const food = truncateFoodLabel(finding.refusedFoodLabel);
+      // Names the refused food (intake, not a timing-only finding — naming it is
+      // intended and clinically appropriate, as in the Signal template). With no
+      // label, drop the trailing clause so the sentence doesn't read "a meal they
+      // usually finish, which they usually finish" (code-review fix).
+      return food
+        ? ` turned down ${food}, which they usually finish — worth a look.`
+        : ` turned down a meal they usually finish — worth a look.`;
+    }
+    const span =
+      finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
+    return ` has eaten less than usual ${span} — worth a look.`;
+  }
+  // symptom_worsening — name the symptom + the axis that actually rose, week over
+  // week. Frequency only: "more ... this week than last", never "worse" (a severity
+  // verdict) and never a cause.
+  const symptom = SYMPTOM_LABEL[finding.symptomType];
+  if (finding.trigger === 'more_days') {
+    return ` has had ${symptom} on more days this week than last — worth a look.`;
+  }
+  return ` has had more ${symptom} this week than last — worth a look.`;
+}
+
+// ── Banner guardrail screen (validatePhrasing applied client-side, §4) ─────────
+// Mirror of the generate-signal guardrail screens (phrasing.ts) — the RN bundle
+// can't import the Deno module, so the regexes are duplicated here (same as the
+// CachedFinding types and the clock-band helpers). KEEP IN SYNC with phrasing.ts.
+// The banner is always safety-class, so reassurance / dismissive / causal are all
+// barred, plus a banner-specific alarm screen (§4 / voice note: "never alarm").
+const BANNER_REASSURANCE_RE =
+  /\b(fine|okay|ok|healthy|all clear|nothing to worry|nothing serious|probably fine|no concern|don't worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|back to normal|right track)\b/i;
+const BANNER_DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i;
+const BANNER_CAUSAL_RE =
+  /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic)|intoleran(?:t|ce)|reacts? to|leads? to|results? in)\b/i;
+// Banner-specific: no urgency/panic vocabulary. The banner escalates attention
+// calmly; the tiered ask ("book a vet visit soon" etc.) lives in the pet's own Signal.
+const BANNER_ALARM_RE =
+  /\b(emergency|urgent(?:ly)?|immediately|right away|danger(?:ous)?|critical|severe|asap|rush|alarm(?:ing)?)\b/i;
+
+// validatePhrasing applies to the banner (§4): the template copy is guardrail-clean
+// by construction, but this screens it as defense-in-depth. Any drift FAILS SAFE —
+// the caller drops the banner (silence), never a bad escalation, never a reassurance.
+export function validateBannerPhrasing(text: string): boolean {
+  const t = text?.trim() ?? '';
+  if (t.length < 8 || t.length > 200) return false;
+  if (t.includes('!')) return false; // nyx-voice Pattern 4 — no manufactured alarm
+  if (BANNER_REASSURANCE_RE.test(t)) return false;
+  if (BANNER_DISMISSIVE_RE.test(t)) return false;
+  if (BANNER_CAUSAL_RE.test(t)) return false;
+  if (BANNER_ALARM_RE.test(t)) return false;
+  return true;
 }

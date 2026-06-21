@@ -275,7 +275,7 @@ export interface FeedingArrangement {
  *     dose was given within the symptom's own correlation window before onset. This is the
  *     dominant signal TODAY, since logged doses are regimen-unlinked (B-135). Build it via
  *     doseToMedicationWindow, which DROPS missed/refused doses (the drug was NOT given — see
- *     that helper). ACCEPTED RESIDUAL (B-137, adversarial review): a once-daily LONG-ACTING,
+ *     that helper). ACCEPTED RESIDUAL (B-138, adversarial review): a once-daily LONG-ACTING,
  *     regimen-unlinked drug dosed > W hours before onset is invisible to the point model (it
  *     UNDER-detects the confounder → a false food correlation can slip through). Safe direction
  *     — never reassurance, degrades to today's no-medication behavior; the regimen SPAN is the
