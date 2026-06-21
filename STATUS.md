@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **B-070: `staple_washout` fires on ≥80% protein DOMINANCE (over meals+treats), with an honest treats-vs-meals copy register** (PR #211, draft; engine-only, NO schema). Catches the real wedge case (Nyx: chicken via treats, tuna-led meals) that v1's sole-protein test missed; copy never claims "every meal" on a treat-borne staple. adversarial-reviewer **PASS** (executed counterexamples; the false-"every meal" path is unreachable as rendered copy), code-reviewer PASS (one stale-cache type-lie fixed). 232 deno + 660 jest + tsc green. **DEPLOYED — `generate-signal` v20 ACTIVE** via the B-082 MCP path (PM chose pre-verified MCP deploy): authored bundle proven byte-identical to `scripts/deploy-edge.sh`'s artifact (sha a4759d20…) BEFORE deploy, read-back of the live source byte-identical, boot smoke-test clean 404. **First real use of B-082 validated** (with a finding: the 80 KB inline-content transcription is only safe via the scratch-file sha round-trip — token `supabase functions deploy` is the durable fix, logged). Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **B-070: `staple_washout` fires on ≥80% protein DOMINANCE (over meals+treats), with an honest treats-vs-meals copy register** (shipped via #211; engine-only, NO schema). Catches the real wedge case (Nyx: chicken via treats, tuna-led meals) that v1's sole-protein test missed; copy never claims "every meal" on a treat-borne staple. adversarial-reviewer **PASS** (executed counterexamples; the false-"every meal" path is unreachable as rendered copy), code-reviewer PASS (one stale-cache type-lie fixed). 232 deno + 660 jest + tsc green. **DEPLOYED — `generate-signal` v20 ACTIVE** via the B-082 MCP path (PM chose pre-verified MCP deploy): authored bundle proven byte-identical to `scripts/deploy-edge.sh`'s artifact (sha a4759d20…) BEFORE deploy, read-back of the live source byte-identical, boot smoke-test clean 404. **First real use of B-082 validated** (finding: the 80 KB inline-content transcription is only safe via the scratch-file sha round-trip — provisioning a token for `supabase functions deploy` is the durable fix, logged). Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
@@ -22,7 +22,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 **On-device QA gap:** empty / `no_pattern` + reflection paths verified on device; the **LIVE safety-card path is still unverified on device** (cat Nyx's real data legitimately yields zero safety findings — chicken is a ~3×/day staple → case-crossover correctly washes it out; intake healthy → flag correctly quiet).
 
-**After Step 10:** Step 9 (vet report PDF) resumes — interrupted by PM for B-045 dogfooding value; **blocked on the PDF-library open question**.
+**After Step 10:** Step 9 (vet report PDF) resumes — interrupted by PM for B-045 dogfooding value; **blocked on the PDF-library open question**. A product-discovery round is teed up to run first — paste `docs/vet-report-discovery-PROMPT.md` (shipped via #212); its delivery/format finding may reshape the PDF-library question.
 
 ---
 
@@ -130,7 +130,9 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
-- 2026-06-21 — B-070: `staple_washout` ≥80%-dominance + honest treats-vs-meals copy register (engine-only; adversarial PASS; **deployed v20 via B-082 MCP path, byte-verified** — first real use) — #211 (draft)
+- 2026-06-21 — B-070: `staple_washout` ≥80%-dominance + honest treats-vs-meals copy register (engine-only; adversarial PASS; **deployed v20 via B-082 MCP path, byte-verified** — first real use) — shipped via #211
+- 2026-06-21 — Vet-report (Step 9) discovery kickoff prompt — `docs/vet-report-discovery-PROMPT.md` (process/meta; team-reviewed, PM-ratified scope) — shipped via #212
+- 2026-06-21 — Restore never-committed research + competitive-landscape docs (CLAUDE.md refs fixed) + refresh spec Project Structure tree — #210
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
 - 2026-06-20 — B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP (`scripts/deploy-edge.sh` + `docs/edge-deploy-runbook.md`) — #208
 - 2026-06-20 — B-117 PR 9: Signal medication confounder pass (§8) — meds enter the engine as confounders — #207
@@ -141,9 +143,3 @@ _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 - 2026-06-19 — B-117 PR 6: medication picker library + detail/edit — #201
 - 2026-06-19 — B-128: scope delete-account med-photo purge to `{uid}/` prefix — #200
 - 2026-06-19 — B-117 PR 5: medication photo capture + AI extraction + dose-confirm — #199
-- 2026-06-19 — B-127: purge `nyx-medication-photos` in delete-account — #198
-- 2026-06-19 — B-117 PR 4: `nyx-medication-photos` bucket + RLS — #197
-- 2026-06-19 — B-117 PR 3: text-first medication quick-log — #196
-- 2026-06-19 — B-117 PR 2: medication local mirror + sync plumbing — #194
-- 2026-06-19 — B-039 PR 2: client account-deletion UX — #193
-- 2026-06-19 — B-117 PR 1 (schema 020) + B-039 plan + B-043 cleanup — #192 / #189 / #188

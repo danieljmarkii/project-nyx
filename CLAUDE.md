@@ -33,9 +33,9 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 | `docs/nyx-schema-v1_0.sql` | Any session touching data, queries, or new tables. Reference queries are documented here. |
 | `docs/nyx-design-principles-v1_0.md` | Any session touching UI, copy, interaction, or notifications. Seven principles govern every screen. |
 | `docs/personas.md` | Every session. Full persona definitions, the **persona routing table**, and the persona/subagent/skill model. CLAUDE.md carries only the roster + always-on rules. |
-| `research.md` | When making product decisions about scope, features, or user behavior. Market and persona data lives here. |
+| `docs/nyx-research-v1_0.md` | When making product decisions about scope, features, or user behavior. Market and persona data lives here. |
 | `docs/food-library-redesign-requirements.md` | Any session touching food entry, the meal log flow, the food library/picker, or AI-driven extraction of food data. Output of the May 2026 photo-library research session. |
-| `competitive-landscape.md` | When evaluating feature positioning or vet-facing strategy. |
+| `docs/nyx-competitive-landscape-v1_0.md` | When evaluating feature positioning or vet-facing strategy. |
 | `docs/backlog.md` | When the PM asks to `view backlog` / `show backlog`. Also read at session start to surface any backlog item whose **Blocks** column matches the Current Phase. See the Backlog Protocol section below. |
 | `docs/research/README.md` | When making product decisions in a domain a prior research brief covers (feeding behavior, symptom correlation windows, etc.). The README indexes all briefs; read the relevant brief directly before designing in that domain. |
 
