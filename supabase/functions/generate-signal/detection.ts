@@ -695,20 +695,40 @@ export interface RateMealsDiagnostic extends CoverageDiagnosticBase {
 }
 
 /**
- * Detector ① (correlation) can't run because a SINGLE protein is in (nearly)
- * every meal — the line-505 "no contrast" discard. EXPLANATION ONLY: never a
- * "vary the diet" ask (that sabotages a vet-directed elimination trial — our
- * primary wedge — and inverts Pets>$), and FULLY SUPPRESSED on diet-trial pets
- * (the constant staple IS the elimination diet). It is honest uncertainty
- * ("we can't tell yet whether it's linked"), never reassurance.
+ * Where the dominant staple shows up, so the copy can be HONEST about its structure
+ * (B-070). The original copy said "in nearly every meal" unconditionally — false for the
+ * real wedge case (Nyx: her chicken comes via ~83 treats; her meals are tuna-led), and a
+ * false premise can misdirect an elimination-diet conversation (the owner switches the
+ * meal protein while the chicken keeps arriving as treats). The register is resolved in
+ * this deterministic, adversarially-reviewed engine (like WorseningTier), never in copy:
+ *   - 'meals'  — the staple's exposures are overwhelmingly meals → "in most meals".
+ *   - 'treats' — overwhelmingly treats → "most days, usually as treats rather than meals".
+ *   - 'mixed'  — genuinely both (or unclassifiable food_type) → the day-based "most days".
+ */
+export type StapleSource = 'meals' | 'treats' | 'mixed'
+
+/**
+ * Detector ① (correlation) can't usefully assess a protein because that ONE protein
+ * DOMINATES the pet's exposures — it is in (nearly) every case AND control window, so it
+ * is concordant and washes out (or, as a sole protein, leaves ① no contrast at all). B-070
+ * widened this from the v1 EXACTLY-ONE-protein test to DOMINANCE (≥ stapleDominanceFraction
+ * of exposures), measured over the SAME classifiable set the case-crossover keys off
+ * (classifyMeals — meals AND treats), because that is exactly what ① sees and washes out;
+ * meals-only would miss the real wedge case entirely. EXPLANATION ONLY: never a "vary the
+ * diet" ask (that sabotages a vet-directed elimination trial — our primary wedge — and
+ * inverts Pets>$), and FULLY SUPPRESSED on diet-trial pets (the constant staple IS the
+ * elimination diet). It is honest uncertainty ("we can't tell yet whether it's linked"),
+ * never reassurance — an omnipresent exposure is genuinely unassessable, not "safe".
  */
 export interface StapleWashoutDiagnostic extends CoverageDiagnosticBase {
   type: 'staple_washout'
   actionability: 'explanation'
-  /** The staple protein present across (nearly) every classifiable meal, e.g. 'chicken'. */
+  /** The dominant staple protein — present in ≥ stapleDominanceFraction of all exposures, e.g. 'chicken'. */
   protein: string
   /** Distinct symptom episodes (any correlation type, re-logs collapsed) the owner is trying to understand. */
   symptomEpisodes: number
+  /** Where the staple shows up (meals vs treats), so the copy never falsely claims "every meal" (B-070). */
+  stapleSource: StapleSource
 }
 
 /**
@@ -918,11 +938,28 @@ export interface DetectionConfig {
   }
   coverage: {
     /**
-     * Min classifiable meals before "eats X in nearly every meal" is an honest
-     * staple-washout claim. Below it, the single protein could just be a couple of
-     * early logs, not an established staple.
+     * Min classifiable exposures (meals + treats) before "X is in most of what the pet
+     * eats" is an honest staple-washout claim. Below it, the dominant protein could just
+     * be a couple of early logs, not an established staple.
      */
     stapleMinMeals: number
+    /**
+     * B-070: the share of all classifiable exposures (meals + treats) a single protein
+     * must reach to be the DOMINANT staple. Measured over the SAME set detector ① keys
+     * off, because that is exactly what gets concordant-and-washed-out in the case-
+     * crossover; meals-only would miss the real wedge case (a treat-borne staple). 0.8 =
+     * "in most of what the pet eats". v1 fired only on a SOLE protein (an implicit 1.0);
+     * dominance generalizes that. Tune on real data, not a re-decision.
+     */
+    stapleDominanceFraction: number
+    /**
+     * B-070: of the dominant staple's classified (meal|treat) exposures, the share that
+     * must be one kind to pin the copy register to 'meals' or 'treats' (else 'mixed').
+     * Keeps the copy from over-claiming "every meal" when the staple is treat-borne — the
+     * false premise that could misdirect an elimination-diet talk. 0.8 mirrors the
+     * dominance floor. Tune on real data, not a re-decision.
+     */
+    stapleSourceMajorityFraction: number
     /**
      * Min distinct symptom episodes (any correlation type) for staple-washout to
      * fire. Set to the correlation Early floor (correlation.earlyMinMatchedPairs),
@@ -1069,14 +1106,18 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     clusterWindowHours: 4,
     windowDays: 60,
   },
-  // B-053 coverage-diagnostic floors. stapleMinMeals keeps "eats X in nearly every
-  // meal" honest; stapleMinSymptomEpisodes mirrors the correlation Early episode
-  // floor (correlation.earlyMinMatchedPairs = 3) so staple-washout only fires when
-  // the staple is the SOLE blocker — closing the below-floor masquerade (see the
-  // field doc + adversarial review, B-053). Tune on real data, not a re-decision.
+  // B-053 coverage-diagnostic floors. stapleMinMeals keeps "X is in most of what the pet
+  // eats" honest; stapleMinSymptomEpisodes mirrors the correlation Early episode floor
+  // (correlation.earlyMinMatchedPairs = 3) so staple-washout only fires when the staple is
+  // the SOLE blocker — closing the below-floor masquerade (see the field doc + adversarial
+  // review, B-053). B-070: stapleDominanceFraction widens the v1 sole-protein test to ≥80%
+  // dominance over exposures (meals + treats); stapleSourceMajorityFraction pins the copy's
+  // meal/treat register. Tune on real data, not a re-decision.
   coverage: {
     stapleMinMeals: 4,
     stapleMinSymptomEpisodes: 3,
+    stapleDominanceFraction: 0.8,
+    stapleSourceMajorityFraction: 0.8,
   },
   // B-080 diet-structure floors (§5.2). collapse: 5 treats-only days out of the last
   // 10, ≥2 treats/gap-day, ≥80% of feedings classified. churn: 3 brand-new foods +
@@ -1211,6 +1252,13 @@ interface ClassifiedMeal {
   ms: number
   protein: string
   attribution: AttributionConfidence
+  /**
+   * food_items.food_type for this exposure (B-070). Detector ① IGNORES it (an exposure is
+   * an exposure — a chicken treat is a chicken exposure exactly like a chicken meal, which
+   * is why an omnipresent treat protein correctly washes out). Its only consumer is the
+   * staple-washout meal/treat split (resolveStapleSource), which keeps the copy honest.
+   */
+  foodType: 'meal' | 'treat' | 'other' | null
 }
 
 /**
@@ -1230,6 +1278,7 @@ function classifyMeals(mealEvents: MealEvent[]): ClassifiedMeal[] {
       ms: Date.parse(m.occurredAt),
       protein: canonicalizeProtein(m.primaryProtein),
       attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
+      foodType: m.foodType ?? null,
     }))
     .filter((m): m is ClassifiedMeal => m.protein !== null && Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
@@ -1349,9 +1398,11 @@ export function detectCorrelations(
   const medSpans = classifyMedicationWindows(input.medicationWindows ?? [])
 
   const proteins = Array.from(new Set(meals.map((m) => m.protein)))
-  // Need contrast: a single constant diet can't be correlated against anything.
-  // The < 2 case is exactly what the B-053 staple-washout diagnostic explains
-  // (proteins.length === 1 → a namable constant staple); see detectStapleWashout.
+  // Need contrast: a single constant diet can't be correlated against anything. This
+  // sole-protein case is one end of what the B-053 staple-washout diagnostic explains
+  // (B-070 widened it to ≥80% DOMINANCE — a dominant staple that has contrast still
+  // reaches here, washes out as concordant, and is explained the same way); see
+  // detectStapleWashout.
   if (proteins.length < 2) return []
 
   // Proteins present in [anchor - windowMs, anchor], keyed to the WEAKEST attribution
@@ -2511,10 +2562,13 @@ export function detectTimeOfDayClustering(
 // review to TWO, with three reframed or suppressed:
 //   • rate_meals (ACTION) — detector ② dormant for lack of rated meals; rating
 //     a few wakes it. Reads from the line-710 floor (via classifyRatedMeals).
-//   • staple_washout (EXPLANATION) — detector ① has no protein contrast because
-//     one staple is in nearly every meal. Reads from the line-505 discard (via
-//     classifyMeals). EXPLANATION ONLY (never a "vary the diet" ask — that
-//     sabotages a vet-directed elimination trial) and FULLY SUPPRESSED on
+//   • staple_washout (EXPLANATION) — one protein DOMINATES the pet's exposures
+//     (≥80%, B-070), so it is in nearly every case AND control window → washes out
+//     (or, as a sole protein, leaves ① no contrast at all). Reads the dominant
+//     protein over meals+treats (via classifyMeals — the same set ① uses). The copy
+//     carries an engine-resolved meal/treat register so it never falsely says "every
+//     meal" on a treat-borne staple. EXPLANATION ONLY (never a "vary the diet" ask —
+//     that sabotages a vet-directed elimination trial) and FULLY SUPPRESSED on
 //     diet-trial pets.
 //   • meal_type_collapse / diet_churn (EXPLANATION) — the B-080 diet-structure pair
 //     (descriptive lane Phase 3). Placed HERE, not in the live findings stack, per
@@ -2570,6 +2624,35 @@ function detectRateMeals(
   return { type: 'rate_meals', actionability: 'action', ratedMeals, ratedMealsNeeded: needed }
 }
 
+/**
+ * Resolve the copy register for a dominant staple from WHERE it shows up (B-070). Looks
+ * only at the staple protein's own classified (meal|treat) exposures: 'meals' / 'treats'
+ * when one kind is the clear (≥ stapleSourceMajorityFraction) majority, else 'mixed'. Food
+ * with a null/'other' food_type is neither and is excluded from the split — when the
+ * staple is mostly unclassifiable we cannot claim "every meal", so we fall to the safe
+ * day-based 'mixed' register. The danger this exists to prevent is a FALSE "every meal"
+ * claim on a treat-borne staple, so the default always errs to the weaker, true claim.
+ */
+function resolveStapleSource(
+  meals: ClassifiedMeal[],
+  protein: string,
+  config: DetectionConfig,
+): StapleSource {
+  let mealCount = 0
+  let treatCount = 0
+  for (const m of meals) {
+    if (m.protein !== protein) continue
+    if (m.foodType === 'meal') mealCount++
+    else if (m.foodType === 'treat') treatCount++
+  }
+  const classified = mealCount + treatCount
+  if (classified === 0) return 'mixed' // all 'other'/null food_type → can't claim meal vs treat
+  const frac = config.coverage.stapleSourceMajorityFraction
+  if (mealCount / classified >= frac) return 'meals'
+  if (treatCount / classified >= frac) return 'treats'
+  return 'mixed'
+}
+
 function detectStapleWashout(
   input: DetectionInput,
   config: DetectionConfig,
@@ -2579,22 +2662,46 @@ function detectStapleWashout(
   // implies the owner should vary it — sabotaging the trial and inverting Pets>$.
   if (input.pet.dietTrialActive) return null
 
+  // Classifiable EXPOSURES — meals AND treats, the exact set detector ① keys off. A
+  // chicken treat is a chicken exposure (① counts it identically to a meal — see
+  // ClassifiedMeal.foodType), which is why a 3×/day chicken treat washes out in the
+  // case-crossover; the diagnostic that EXPLAINS that washout must use the same set.
   const meals = classifyMeals(input.mealEvents)
-  const proteins = Array.from(new Set(meals.map((m) => m.protein)))
-  // The line-505 discard, narrowed to the NAMABLE single staple: exactly one
-  // protein. (0 proteins is the deferred sparse-protein case; ≥2 with a dominant
-  // staple is a future refinement — v1 is the clean constant-staple case.)
-  if (proteins.length !== 1) return null
-  // "...eats X in nearly every meal" must be honest — needs real meal volume.
+  // "...X is in most of what the pet eats" must be honest — needs real exposure volume.
   if (meals.length < config.coverage.stapleMinMeals) return null
 
-  // "...linked to the symptoms you're tracking" must be TRUE — there must be
-  // symptoms to explain, or the copy falsely implies symptoms (reassurance-by-
-  // implication). No symptoms → no diagnostic (falls back to the generic line).
+  // B-070: fire on DOMINANCE, not sole-protein. Find the most-exposed protein; it is the
+  // staple only if it reaches ≥ stapleDominanceFraction of all exposures — present in
+  // nearly every case AND control window → concordant → washed out (or, at 1.0, ① has no
+  // contrast at all). The v1 "exactly one protein" test was the special case of this at a
+  // 1.0 floor; ≥80% catches the real wedge (Nyx: chicken via treats, tuna-led meals). A tie
+  // for the top is impossible at ≥80% (two proteins can't both clear it), so selection is
+  // deterministic regardless of Map order.
+  const counts = new Map<string, number>()
+  for (const m of meals) counts.set(m.protein, (counts.get(m.protein) ?? 0) + 1)
+  let topProtein = ''
+  let topCount = 0
+  for (const [p, c] of counts) {
+    if (c > topCount) {
+      topProtein = p
+      topCount = c
+    }
+  }
+  if (topCount / meals.length < config.coverage.stapleDominanceFraction) return null
+
+  // "...linked to the symptoms you're tracking" must be TRUE — there must be symptoms to
+  // explain, or the copy falsely implies symptoms (reassurance-by-implication). The floor
+  // also mirrors ①'s Early episode floor so the staple is the SOLE blocker (no below-floor
+  // masquerade — B-053). No / too-few symptoms → no diagnostic (falls back to generic).
   const symptomEpisodes = countSymptomEpisodes(input.symptomEvents, config)
   if (symptomEpisodes < config.coverage.stapleMinSymptomEpisodes) return null
 
-  return { type: 'staple_washout', actionability: 'explanation', protein: proteins[0], symptomEpisodes }
+  // Resolve the copy register from the staple's meal/treat split so the copy never claims
+  // "nearly every meal" when it is treat-borne (B-070). Decided here in the deterministic,
+  // adversarially-reviewed engine (like WorseningTier); copy only renders the result.
+  const stapleSource = resolveStapleSource(meals, topProtein, config)
+
+  return { type: 'staple_washout', actionability: 'explanation', protein: topProtein, symptomEpisodes, stapleSource }
 }
 
 /**

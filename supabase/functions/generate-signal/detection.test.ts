@@ -82,6 +82,10 @@ const symptom = (type: SymptomType, occurredAt: string): SymptomEvent => ({
 const proteinMeal = (day: number, protein: string): MealEvent =>
   meal({ occurredAt: at(day, 8), primaryProtein: protein })
 
+/** A treat (food_type='treat') carrying a protein — a real exposure for ① and the staple denominator (B-070). */
+const proteinTreat = (day: number, protein: string, hour = 8): MealEvent =>
+  meal({ occurredAt: at(day, hour), primaryProtein: protein, foodType: 'treat' })
+
 /** Protein meal at a specific hour, with optional attribution confidence (B-050). */
 const pMeal = (
   day: number,
@@ -2088,6 +2092,9 @@ Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
     DEFAULT_CONFIG.correlation.earlyMinMatchedPairs,
     'staple-washout symptom floor must stay aligned with the correlation Early episode floor',
   )
+  // B-070 dominance + copy-register floors.
+  assert.equal(DEFAULT_CONFIG.coverage.stapleDominanceFraction, 0.8)
+  assert.equal(DEFAULT_CONFIG.coverage.stapleSourceMajorityFraction, 0.8)
 })
 
 // ── Coverage diagnostics (B-053) ────────────────────────────────────────────
@@ -2158,8 +2165,92 @@ Deno.test('detectCoverage — staple_washout explains a single-protein diet with
   assert.equal(sw!.actionability, 'explanation')
   assert.equal(sw!.protein, 'chicken')
   assert.equal(sw!.symptomEpisodes, 3)
+  // All exposures are chicken MEALS → the copy may honestly say "in most meals".
+  assert.equal(sw!.stapleSource, 'meals')
   // Nyx's meals are well-rated → no rate-meals nudge, only the explanation.
   assert.equal(findDiag(diags, 'rate_meals'), undefined)
+})
+
+Deno.test('detectCoverage — B-070: dominant TREAT-borne staple fires (the real Nyx: chicken treats, tuna meals)', () => {
+  // The named motivating case. Chicken arrives via many treats; her actual MEALS are
+  // tuna-led. v1 (exactly-one-protein) stayed silent here; B-070 fires on ≥80% dominance
+  // over ALL exposures (meals + treats) — exactly the set the case-crossover washes out.
+  const mealEvents = [
+    // 12 chicken treats + 2 tuna meals = chicken is 12/14 ≈ 86% of exposures → dominant.
+    ...Array.from({ length: 12 }, (_, i) => proteinTreat(10 + i, 'chicken', 9)),
+    ratedProteinMeal(12, 'tuna', 'all'),
+    ratedProteinMeal(20, 'tuna', 'all'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(13, 8)),
+    symptom('vomit', at(17, 8)),
+    symptom('vomit', at(24, 8)),
+  ]
+  const sw = findDiag(detectCoverage(input({ pet: dog, mealEvents, symptomEvents })), 'staple_washout')
+  assert.ok(sw, 'staple_washout fires on a dominant treat-borne staple')
+  assert.equal(sw!.protein, 'chicken')
+  // The copy must NOT say "every meal" — the chicken is treats, the meals are tuna. A false
+  // "every meal" premise could misdirect an elimination-diet talk (the whole point of B-070).
+  assert.equal(sw!.stapleSource, 'treats')
+})
+
+Deno.test('detectCoverage — B-070: a dominant staple WITH protein contrast still washes out and is explained', () => {
+  // 9 chicken meals + 1 beef meal = chicken 90% → dominant. There IS contrast (① runs),
+  // but chicken is concordant (in nearly every window) → washes out, beef is a single
+  // exposure below the Early floor → no finding. staple_washout explains the chicken.
+  const mealEvents = [
+    ...Array.from({ length: 9 }, (_, i) => proteinMeal(10 + i, 'chicken')),
+    proteinMeal(15, 'beef'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(12, 8)),
+    symptom('vomit', at(16, 8)),
+    symptom('vomit', at(22, 8)),
+  ]
+  const sw = findDiag(detectCoverage(input({ pet: dog, mealEvents, symptomEvents })), 'staple_washout')
+  assert.ok(sw, 'a ≥80%-dominant staple fires even with minority contrast')
+  assert.equal(sw!.protein, 'chicken')
+  assert.equal(sw!.stapleSource, 'meals')
+})
+
+Deno.test('detectCoverage — B-070: NOT dominant (60/40) → silent, no false staple claim', () => {
+  // 6 chicken + 4 beef = top share 60% < the 0.8 dominance floor. Neither is "most of what
+  // the pet eats", so claiming a staple washout would be false. Stay silent.
+  const mealEvents = [
+    ...Array.from({ length: 6 }, (_, i) => proteinMeal(10 + i, 'chicken')),
+    ...Array.from({ length: 4 }, (_, i) => proteinMeal(16 + i, 'beef')),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(12, 8)),
+    symptom('vomit', at(18, 8)),
+    symptom('vomit', at(24, 8)),
+  ]
+  assert.equal(
+    findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'staple_washout'),
+    undefined,
+    'a 60/40 split is not a dominant staple — never claim one',
+  )
+})
+
+Deno.test('detectCoverage — B-070: a genuinely mixed-source staple reports stapleSource=mixed', () => {
+  // Chicken dominates exposures (12 of 14 ≈ 86%) but is split evenly across meals and
+  // treats (6/6) — neither kind is the ≥80% majority → the day-based "most days" register,
+  // never the meal-specific claim. (beef minority keeps total exposures honest.)
+  const mealEvents = [
+    ...Array.from({ length: 6 }, (_, i) => proteinMeal(10 + i, 'chicken')),
+    ...Array.from({ length: 6 }, (_, i) => proteinTreat(10 + i, 'chicken', 14)),
+    proteinMeal(17, 'beef'),
+    proteinMeal(19, 'beef'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(12, 8)),
+    symptom('vomit', at(16, 8)),
+    symptom('vomit', at(22, 8)),
+  ]
+  const sw = findDiag(detectCoverage(input({ pet: dog, mealEvents, symptomEvents })), 'staple_washout')
+  assert.ok(sw, 'a dominant but meal/treat-split staple still fires')
+  assert.equal(sw!.protein, 'chicken')
+  assert.equal(sw!.stapleSource, 'mixed')
 })
 
 Deno.test('detectCoverage — staple_washout is FULLY suppressed on a diet-trial pet', () => {
@@ -2181,7 +2272,11 @@ Deno.test('detectCoverage — staple_washout is FULLY suppressed on a diet-trial
   )
 })
 
-Deno.test('detectCoverage — staple_washout does not fire when there is protein contrast', () => {
+Deno.test('detectCoverage — staple_washout stays silent on a balanced 50/50 diet (no protein dominates)', () => {
+  // B-070: it is non-DOMINANCE that suppresses, not the mere presence of contrast. A 2-and-2
+  // split tops out at 50% < the 0.8 floor — neither protein is "most of what the pet eats" —
+  // so there is no staple to explain. (A ≥80%-dominant staple WITH minority contrast still
+  // fires; see the B-070 dominance test above.)
   const mealEvents = [
     ratedProteinMeal(18, 'chicken', 'all'),
     ratedProteinMeal(20, 'beef', 'all'),
@@ -2209,7 +2304,7 @@ Deno.test('detectCoverage — staple_washout stays silent with no symptoms (neve
   assert.equal(findDiag(detectCoverage(input({ mealEvents })), 'staple_washout'), undefined)
 })
 
-Deno.test('detectCoverage — staple_washout needs real meal volume to claim "nearly every meal"', () => {
+Deno.test('detectCoverage — staple_washout needs real exposure volume before claiming a staple', () => {
   const mealEvents = [proteinMeal(22, 'chicken'), proteinMeal(24, 'chicken')] // 2 < stapleMinMeals(4)
   // Enough symptoms (≥3) that meal VOLUME is the only thing keeping staple_washout silent.
   const symptomEvents = [
@@ -2282,6 +2377,7 @@ Deno.test('rankCoverageDiagnostics — action before explanation regardless of i
     actionability: 'explanation',
     protein: 'chicken',
     symptomEpisodes: 2,
+    stapleSource: 'meals',
   }
   const rm: RateMealsDiagnostic = {
     type: 'rate_meals',

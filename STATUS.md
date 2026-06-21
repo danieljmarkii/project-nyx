@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **Vet-report (Step 9) discovery kickoff prompt** added as `docs/vet-report-discovery-PROMPT.md` (process/meta; NO schema, NO build change). A paste-ready prompt for a future product-discovery session, reviewed by the product team and PM-ratified: audience treatment is a strawman axis (not pre-decided), one prioritized session, and a synthetic round whose ranked real-vet-validation debt gates the requirements spec. Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **B-070: `staple_washout` fires on ≥80% protein DOMINANCE (over meals+treats), with an honest treats-vs-meals copy register** (shipped via #211; engine-only, NO schema). Catches the real wedge case (Nyx: chicken via treats, tuna-led meals) that v1's sole-protein test missed; copy never claims "every meal" on a treat-borne staple. adversarial-reviewer **PASS** (executed counterexamples; the false-"every meal" path is unreachable as rendered copy), code-reviewer PASS (one stale-cache type-lie fixed). 232 deno + 660 jest + tsc green. **DEPLOYED — `generate-signal` v20 ACTIVE** via the B-082 MCP path (PM chose pre-verified MCP deploy): authored bundle proven byte-identical to `scripts/deploy-edge.sh`'s artifact (sha a4759d20…) BEFORE deploy, read-back of the live source byte-identical, boot smoke-test clean 404. **First real use of B-082 validated** (finding: the 80 KB inline-content transcription is only safe via the scratch-file sha round-trip — provisioning a token for `supabase functions deploy` is the durable fix, logged). Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
@@ -18,7 +18,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 **Architecture:** deterministic detection + LLM phrasing — the server computes & ranks a *true* finding in `detection.ts`; Haiku 4.5 only renders copy, with a deterministic template fallback. `phrasing.ts` = pure phrasing/curation/guardrails (offline unit-tested); `index.ts` = I/O shell. `validatePhrasing` rejects model drift (no `!`; never-reassure / never-"picky" on safety; associational-only on correlation).
 
-**Signal engine — detectors live (deployed `generate-signal` v19):** ① case-crossover, ② intake-decline, ③ reflection (presence/counts; a *declining* trend routes to safety), ④ symptom-worsening lane (B-077), ⑤ post-prandial timing (B-078), ⑥ time-of-day clustering (B-079); + no-signal coverage diagnostics (B-053); + **medication confounders** (B-117 PR 9 #207 — a drug on-board in a symptom window enters `detectCorrelations` as a confounder: case-enriched → suppress, concordant → cap at Early). Open follow-ups: **B-052** write-time protein normalization (read-time half shipped #92); **B-070** (P0) dominant-staple refinement + treats-vs-meals denominator; **B-067** reflection/Trend dedup; **B-080** diet-structure placement (blocks descriptive Phase 3, PM call).
+**Signal engine — detectors live (deployed `generate-signal` v20):** ① case-crossover, ② intake-decline, ③ reflection (presence/counts; a *declining* trend routes to safety), ④ symptom-worsening lane (B-077), ⑤ post-prandial timing (B-078), ⑥ time-of-day clustering (B-079); + no-signal coverage diagnostics (B-053, incl. **B-070** ≥80%-dominance staple-washout + treats-vs-meals copy register, live v20); + **medication confounders** (B-117 PR 9 #207 — a drug on-board in a symptom window enters `detectCorrelations` as a confounder: case-enriched → suppress, concordant → cap at Early). Open follow-ups: **B-052** write-time protein normalization (read-time half shipped #92); **B-067** reflection/Trend dedup; **B-080** diet-structure placement (blocks descriptive Phase 3, PM call).
 
 **On-device QA gap:** empty / `no_pattern` + reflection paths verified on device; the **LIVE safety-card path is still unverified on device** (cat Nyx's real data legitimately yields zero safety findings — chicken is a ~3×/day staple → case-crossover correctly washes it out; intake healthy → flag correctly quiet).
 
@@ -88,6 +88,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 - [ ] **Whole-system aesthetic on-device QA** — walk the app vs `docs/design-system/_system/.../index.html` for the holistic Calm/Linear/Oura pass (deferred to end-of-system; all 4 design PRs merged).
 
 **Decisions**
+- [x] **B-070 deploy mechanism — RESOLVED 2026-06-21 (PM chose pre-verified MCP deploy).** Deployed `generate-signal` v20 via the B-082 MCP path: authored the 80 KB bundle, proved it byte-identical to `scripts/deploy-edge.sh`'s artifact (sha `a4759d20…`) via a scratch-file round-trip BEFORE deploy, then confirmed the live read-back is byte-identical + a clean boot smoke-test. **B-082-path finding (logged, low urgency):** the inline-content transcription is only safe with the scratch-file sha gate; provisioning a `SUPABASE_ACCESS_TOKEN` cloud-env secret so `supabase functions deploy` reads the file directly is the durable fix for large clinically-load-bearing functions (runbook's "optional future convenience").
 - [ ] **B-099** — reopen spec §13 #2 (over-time views + dashboard 7d/30d range) before building B-099.
 - [ ] **B-080** — placement of diet-structure observations (Signal band-2 vs B-053 coverage lane); blocks descriptive Phase 3.
 - [ ] **B-023 colour** — reconcile Home `TrendZone` (colours a falling symptom "improving" in the accent, `TrendZone.tsx:66/79`) to the §11 #3 ruling, or accept the cross-tier difference.
@@ -99,7 +100,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 - [ ] **B-118** — delete the leftover `smart-worker` Edge Function from the dashboard (stock template, no callers, carries a `secret`-auth path that bypasses RLS).
 - [ ] **B-044** — finish auditing migration drift (verify `food_items.photo_path` singular vs `photo_paths` plural; full repo-migrations-vs-live-DB reconciliation).
 - [ ] **B-128(b)** — defense-at-rest `BEFORE INSERT/UPDATE` trigger on `medication_items` (own schema PR; run the backfill pre-check first). Not urgent — the consumer-side guard is live via #200.
-- [ ] **Re-deploy `generate-signal` from merged `main`** for provenance (live v19 was deployed from-branch; low urgency — the live bytes are the merged code).
+- [ ] **Re-deploy `generate-signal` from merged `main`** for provenance after #211 merges (live **v20** was deployed from-branch + byte-verified; low urgency — the live bytes are the branch code, which is the merge candidate).
 - [ ] **Revoke the Supabase personal access token** (`nyx-cli-deploy`, 2026-06-07) — account-level, lives in a session transcript. Now obsolete: B-082 (#208) made backend deploys a token-free MCP path, so nothing uses it.
 - [ ] **Supabase CLI dev-dependency** — fold `supabase@^2.102.0` (on branch `claude/epic-volta-H8d6o`) into a PR so it survives merge.
 - [ ] _(awareness, no action)_ **B-074** — the free-fed exclusion fails safe but a single stray free-fed day landing on a selected control day can silence a real correlate.
@@ -129,6 +130,7 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-21 — B-070: `staple_washout` ≥80%-dominance + honest treats-vs-meals copy register (engine-only; adversarial PASS; **deployed v20 via B-082 MCP path, byte-verified** — first real use) — shipped via #211
 - 2026-06-21 — Vet-report (Step 9) discovery kickoff prompt — `docs/vet-report-discovery-PROMPT.md` (process/meta; team-reviewed, PM-ratified scope) — shipped via #212
 - 2026-06-21 — Restore never-committed research + competitive-landscape docs (CLAUDE.md refs fixed) + refresh spec Project Structure tree — #210
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
@@ -141,5 +143,3 @@ _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 - 2026-06-19 — B-117 PR 6: medication picker library + detail/edit — #201
 - 2026-06-19 — B-128: scope delete-account med-photo purge to `{uid}/` prefix — #200
 - 2026-06-19 — B-117 PR 5: medication photo capture + AI extraction + dose-confirm — #199
-- 2026-06-19 — B-127: purge `nyx-medication-photos` in delete-account — #198
-- 2026-06-19 — B-117 PR 4: `nyx-medication-photos` bucket + RLS — #197
