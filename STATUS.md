@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **B-141: slimmed STATUS + backlog.** Both canonical state files had outgrown their own "scannable / one-line Why" contracts (STATUS 225 KB, backlog 266 KB) and accreted ~67 K tokens of session narrative + ~40 Done rows carrying full build play-by-plays. Pruned to live state only; history left in git + PR descriptions (#72–#205). Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **Restored the research dossier + competitive-landscape docs** (#210; docs hygiene, NO schema, NO build change). Both were in CLAUDE.md's "Read These" table but had never been committed, so every fresh remote clone flagged them missing; restored as `docs/nyx-research-v1_0.md` + `docs/nyx-competitive-landscape-v1_0.md` (versioned-artifact naming, avoids the `docs/research/` briefs-folder clash) and repointed the two table rows. Also refreshed the spec's drifted Project Structure tree (5 real Edge Functions; killed the never-built `generate-report/`). Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
@@ -100,7 +100,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 - [ ] **B-044** — finish auditing migration drift (verify `food_items.photo_path` singular vs `photo_paths` plural; full repo-migrations-vs-live-DB reconciliation).
 - [ ] **B-128(b)** — defense-at-rest `BEFORE INSERT/UPDATE` trigger on `medication_items` (own schema PR; run the backfill pre-check first). Not urgent — the consumer-side guard is live via #200.
 - [ ] **Re-deploy `generate-signal` from merged `main`** for provenance (live v19 was deployed from-branch; low urgency — the live bytes are the merged code).
-- [ ] **Revoke the Supabase personal access token** (`nyx-cli-deploy`, 2026-06-07) — account-level, lives in a session transcript.
+- [ ] **Revoke the Supabase personal access token** (`nyx-cli-deploy`, 2026-06-07) — account-level, lives in a session transcript. Now obsolete: B-082 (#208) made backend deploys a token-free MCP path, so nothing uses it.
 - [ ] **Supabase CLI dev-dependency** — fold `supabase@^2.102.0` (on branch `claude/epic-volta-H8d6o`) into a PR so it survives merge.
 - [ ] _(awareness, no action)_ **B-074** — the free-fed exclusion fails safe but a single stray free-fed day landing on a selected control day can silence a real correlate.
 
@@ -129,7 +129,9 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-21 — Restore never-committed research + competitive-landscape docs (CLAUDE.md refs fixed) + refresh spec Project Structure tree — #210
 - 2026-06-21 — B-141: slim STATUS + backlog to their scannable contracts — #209
+- 2026-06-20 — B-082: repeatable Edge-Function + migration deploy path via the Supabase MCP (`scripts/deploy-edge.sh` + `docs/edge-deploy-runbook.md`) — #208
 - 2026-06-20 — B-117 PR 9: Signal medication confounder pass (§8) — meds enter the engine as confounders — #207
 - 2026-06-20 — History filters: scope menu + unified type lens — #205
 - 2026-06-20 — Multi-pet PR 6: cross-pet safety banner + all-active-pets signal freshness (B-086) — #203
@@ -140,7 +142,3 @@ _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 - 2026-06-19 — B-117 PR 5: medication photo capture + AI extraction + dose-confirm — #199
 - 2026-06-19 — B-127: purge `nyx-medication-photos` in delete-account — #198
 - 2026-06-19 — B-117 PR 4: `nyx-medication-photos` bucket + RLS — #197
-- 2026-06-19 — B-117 PR 3: text-first medication quick-log — #196
-- 2026-06-19 — B-117 PR 2: medication local mirror + sync plumbing — #194
-- 2026-06-19 — B-039 PR 2: client account-deletion UX — #193
-- 2026-06-19 — B-117 PR 1 (schema 020) + B-039 plan + B-043 cleanup — #192 / #189 / #188
