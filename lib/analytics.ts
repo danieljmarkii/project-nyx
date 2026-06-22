@@ -317,6 +317,66 @@ function itemFinishedRate(meals: AnalyticsMeal[], freeFed: ReadonlySet<string>):
   return { rate: rated.filter(isFinishedMeal).length / rated.length, ratedMeals: rated.length };
 }
 
+// ── B-115: exact-timestamp same-food TREAT re-log collapse ───────────────────────
+//
+/**
+ * Collapse exact-timestamp re-logs of the SAME treat food into ONE exposure, BEFORE the
+ * ranking cores count. A "multi-piece handful logged per-piece" — one treat-giving entered
+ * as N rows that share an identical (foodItemId, occurred_at) — over-counts that treat's
+ * protein/food EXPOSURE (count → share → rank → ranking floor). Bounded on the descriptive
+ * dashboard, but Top-Protein / Top-Food bridge to the vet report's diet-confounder line,
+ * where overstating a confounder's prevalence is the wrong headline for a diet-trial owner
+ * (vet-report spec §8.6 / §11) — so the artifact is removed here, once, for both cards.
+ *
+ * SCOPE — the narrowest SAFE collapse (the Data-Scientist settlement for B-115):
+ *   • TREATS ONLY (`food_type='treat'`). Meals are never touched, so the meals-only
+ *     finished-rate and the decline detector (§11 #1) cannot regress — this stays entirely
+ *     off the clinical intake lane. (A meal can't be eaten twice in one instant either, but
+ *     the B-115 concern is treat exposure over-count; treat-scoping bounds the blast radius
+ *     to the two ranking cards and keeps the change un-entangled from intake quality.)
+ *   • EXACT timestamp, NOT a fuzzy window. Two treat rows at the literal same ms for one
+ *     food cannot be two real givings, so collapsing them never erases a genuine exposure.
+ *     A time-WINDOW merge could fold two genuinely-separate givings into one and UNDER-count
+ *     a confounder the vet needs to SEE — the worse error here (under-count can hide a
+ *     diet-trial saboteur; over-count merely inflates a rank). Never-over-collapse dominates,
+ *     so we take only the provable duplicate.
+ *   • NON-NULL `foodItemId` — a null id can't identify "the same food re-logged," so those
+ *     rows pass through (preserve exposure).
+ *
+ * This is an exact-duplicate ARTIFACT removal (one giving recorded N times), NOT the general
+ * symptom episode-collapse the count cards decline (see computeSymptomCounts) — it does not
+ * merge distinct feedings into clinical episodes. KNOWN RESIDUAL (flagged for B-115 / real
+ * data): every meal entry point today stamps a full-precision `new Date()` (FAB quick-log,
+ * the `now`-sourced picker), so a rapid per-tap handful lands on DISTINCT ms and is NOT
+ * caught by the exact-ms key — i.e. for the vet-report confounder line this guards the
+ * EXIF-collision + future-batch cases, not yet the per-tap handful (the canonical B-115 case).
+ * The one stamp-identical trigger reachable today is two EXIF-stamped photos sharing a
+ * same-second capture time (second precision, `.000` ms): collapsing ONE giving photographed
+ * twice is the desired behavior, while two genuinely-distinct same-second givings merging is a
+ * rare over-collapse that errs SAFELY — it under-states, never over-states, treat prevalence.
+ * Widening to a small same-food near-window is a Data-Scientist/PM call gated on real-data
+ * prevalence (it reintroduces that under-count risk more broadly); exact-ms is the safe floor
+ * that ships the precondition now and self-applies to any future batch/quantity log path that
+ * writes one timestamp.
+ *
+ * Pure + order-independent: non-collapsible rows pass through unchanged; the first-seen row of
+ * a collapsed group is kept (its protein/label/food_type are identical across the group by
+ * construction — one `foodItemId` joins one `food_items` row — so the choice is immaterial).
+ */
+function collapseTreatRelogs(rows: AnalyticsMeal[]): AnalyticsMeal[] {
+  const seen = new Set<string>();
+  const out: AnalyticsMeal[] = [];
+  for (const m of rows) {
+    if (m.foodType === 'treat' && m.foodItemId !== null && Number.isFinite(m.ms)) {
+      const key = `${m.foodItemId}\u0000${m.ms}`; // \u0000 separator: cannot occur in a UUID or a number
+      if (seen.has(key)) continue; // an exact-timestamp re-log of this treat → already counted
+      seen.add(key);
+    }
+    out.push(m);
+  }
+  return out;
+}
+
 // ── B. Top foods (ranking card) ─────────────────────────────────────────────────
 
 export interface RankedFood {
@@ -349,11 +409,16 @@ export interface RankOptions {
  *  — treats are included (and flagged via isTreat) so a frequently-given treat reads
  *  honestly; the meal/treat split lives in getMealTreatComposition. Floored on the number
  *  of identifiable foods (§11 #5). Each entry carries its share of the diet (the bar) and
- *  its own finished-rate (§11 #1 — intake, never "preference"; floored; treat = ceiling). */
+ *  its own finished-rate (§11 #1 — intake, never "preference"; floored; treat = ceiling).
+ *  Exact-timestamp same-treat re-logs are collapsed first (B-115; see collapseTreatRelogs)
+ *  so a multi-piece handful entered per-piece is ONE exposure, not N — count/share/floor. */
 export function computeTopFoods(rows: AnalyticsMeal[], opts: RankOptions = {}): RankedFood[] | NotEnoughData {
   const limit = opts.limit ?? 5;
   const freeFed = opts.freeFedFoodIds ?? new Set<string>();
-  const candidates = rows.filter((m) => m.foodItemId !== null && !!m.foodLabel);
+  // B-115: collapse exact-timestamp same-treat re-logs BEFORE counting so a per-piece
+  // handful can't inflate a treat's count/share/floor (meals untouched → finished-rate
+  // and the decline lane are unaffected). See collapseTreatRelogs for the exact-ms scope.
+  const candidates = collapseTreatRelogs(rows).filter((m) => m.foodItemId !== null && !!m.foodLabel);
   if (candidates.length < ANALYTICS_FLOORS.minMealsForRanking) {
     return notEnoughData(candidates.length, ANALYTICS_FLOORS.minMealsForRanking);
   }
@@ -436,20 +501,25 @@ export interface RankedProtein {
  *  purely-treat exposure flags. Each entry carries its share of servings (the bar) + its meal
  *  finished-rate (§11 #1).
  *
- *  EXPOSURE IS A RAW FEEDING COUNT, not episode-collapsed — the SAME deliberate stance as
- *  computeSymptomCounts (a descriptive card answers "how many were logged" and should match the
- *  History timeline the owner can scroll; episode-collapse is a correlation-engine refinement,
- *  not a descriptive count). Caveat (B-111 adversarial review CE-H): many SAME-timestamp treat
- *  re-logs (a multi-piece handful logged per-piece) can therefore inflate a treat protein's
- *  rank/share. Bounded — descriptive card, no verdict colour, finishedRate stays null, isTreat
- *  flagged — but this card bridges to the vet report, so whether to dedup exact-timestamp treat
- *  re-logs is a flagged follow-up for the PM/Data-Scientist (B-115), NOT a silent omission. */
+ *  EXPOSURE IS A RAW FEEDING COUNT — genuinely-separate feedings are never episode-collapsed
+ *  (the SAME descriptive stance as computeSymptomCounts: the card answers "how many were logged"
+ *  and tracks the History timeline the owner can scroll; episode-collapse is a correlation-engine
+ *  refinement, not a descriptive count). The ONE exception is B-115: an exact-timestamp same-food
+ *  TREAT re-log (a multi-piece handful entered per-piece) is collapsed to a single exposure by
+ *  collapseTreatRelogs BEFORE counting — that is an exact-duplicate ARTIFACT (one giving recorded
+ *  N times), not a merge of distinct feedings, and it keeps a treat from inflating its
+ *  count/share/rank on the vet-report-bound diet-confounder line (resolves the B-111 adversarial
+ *  review CE-H caveat; see collapseTreatRelogs for the exact-ms-only scope + the rapid-per-tap
+ *  residual). Meals are never collapsed, so the meals-only finished-rate (§11 #1) is untouched. */
 export function computeTopProteins(rows: AnalyticsMeal[], opts: RankOptions = {}): RankedProtein[] | NotEnoughData {
   const limit = opts.limit ?? 5;
   const freeFed = opts.freeFedFoodIds ?? new Set<string>();
   const byProtein = new Map<string, AnalyticsMeal[]>();
   let identified = 0;
-  for (const m of rows) {
+  // B-115: collapse exact-timestamp same-treat re-logs BEFORE ranking exposure, so a
+  // per-piece handful can't inflate a treat protein's count/share/rank/floor (the
+  // diet-confounder line bridges to the vet report). Meals untouched → §11 #1 holds.
+  for (const m of collapseTreatRelogs(rows)) {
     const key = canonicalizeProtein(m.primaryProtein);
     if (key === null) continue;
     identified += 1; // treats count as protein EXPOSURE (B-111) — no longer dropped
