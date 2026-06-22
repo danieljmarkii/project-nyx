@@ -2,6 +2,8 @@
 
 **Backlog:** B-156 | **Date:** 2026-06-22 | **Status:** Investigated — **build deferred (PM)**. This is a *decision record*, not a build-ready spec. It captures the team's read so a future build doesn't re-derive it.
 
+**Look & feel:** a concept mock of the recommended shape (Flows A–D below) lives at **`docs/medication-food-combo-mock.html`** — open it in a browser. It is a picture of the *deferred* recommendation, not a shipped/ratified design.
+
 ---
 
 ## Decision (lead with it)
@@ -97,6 +99,7 @@ Notes for the build:
 
 ## 9. Evidence / references
 
+- **`docs/medication-food-combo-mock.html`** — concept mock of the recommended shape (the combo flow, the safety catch, the Slice-B `how_given` foundation, and the trap-resolved Recent case), built to the live design tokens + shipped components.
 - B-156 backlog row (`docs/backlog.md`).
 - Medication model + safety invariants: `docs/nyx-medication-logging-requirements.md` (§6.2 refusal-is-a-signal, §8 confounder pass), migration `020_medication_logging.sql`.
 - The hot paths this would touch: `app/log.tsx` (`handlePickFood`, `handlePickMedication`), `components/ui/MealCompletionCard.tsx` (the narrow-surface warning), `components/ui/MedicationCompletionCard.tsx`, `components/log/IntakeChipRow.tsx`, `components/log/AdherenceChipRow.tsx`, `store/momentStore.ts`.
