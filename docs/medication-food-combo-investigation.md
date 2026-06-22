@@ -1,6 +1,6 @@
 # Combo-log: medication given with food or treat — Investigation & Decision
 
-**Backlog:** B-156 | **Date:** 2026-06-22 | **Status:** Investigated — **build deferred (PM)**. This is a *decision record*, not a build-ready spec. It captures the team's read so a future build doesn't re-derive it.
+**Backlog:** B-156 | **Date:** 2026-06-22 | **Status:** Investigated; **build deferred (PM)** — but a **gated PR-by-PR build plan now exists (§10)**: Slice B (`how_given`) is buildable now; the combo is gated on a timing spike + two design decisions (§9). This doc is now an investigation + gated build plan.
 
 **Look & feel:** a concept mock of the recommended shape (Flows A–D below) lives at **`docs/medication-food-combo-mock.html`** — open it in a browser. It is a picture of the *deferred* recommendation, not a shipped/ratified design.
 
@@ -126,7 +126,47 @@ After the PM endorsed the direction, two things happened and **converged hard**:
 2. **Before any combo build, run a live clickable prototype** with the real 5000/1500ms timers — the cheapest way to answer the timing question the static mock can't.
 3. **Resolve the safety-prompt-persistence question** (with the existing B-117 open question) **and the edit model** before committing to the card as the combo's host.
 
-## 10. Evidence / references
+## 10. PR-by-PR build plan (gated)
+
+The plan exists; the **combo phase is gated** (§9). It deliberately sequences the unknowns: build the owner-validated safe slice first, run a timing spike, and gate the combo PRs on the two open design decisions. Conventions per CLAUDE.md: schema PRs are isolated + additive (Migration Safety Pre-flight); store/`lib/`/Edge changes carry tests (DoD); the safety-coupling + engine PRs are `adversarial-reviewer`-mandatory.
+
+**Gates before the combo phase (Phase B) can build:**
+- **G1 — timing spike (PR 0)** decides where the safety prompt lives (persist-on-card vs Home insight vs best-effort). Couples with the live CLAUDE.md "medication card — unrated-until-touched" open question — decide together.
+- **G2 — edit model** decided (one combo unit vs two linked instances).
+- **G3 — composes with B-153/B-154** (the dose↔regimen link): recommend those land first, or design the combo's dose-write to compose, so the linked dose isn't built twice.
+- **G4 — "ate-around-the-pill"** (build-time, PR B3): detect-and-prompt vs document-as-known-limit (Dr. Chen).
+
+### Phase 0 — De-risk (gates Phase B)
+- **PR 0 — Combo timing spike (branch-only, NOT merged).** A clickable prototype exercising the combo on the completion card with the real `5000ms`/`1500ms` timers (`store/momentStore.ts`), tested on-device *while actually pilling a pet*. **Deliverable = a decision + a short findings note**, not shippable code → answers G1. No schema, no merge. (Mirrors the B-007 FAB prototype-on-branch precedent.)
+
+### Phase A — Slice B: `how_given` (safe, buildable now, NO gates)
+- **PR A1 — Schema migration** (`022_dose_how_given.sql`, server-only, isolated). Add `dose_route_vehicle` enum (`direct`/`in_food`/`in_treat`/`in_pill_pocket`/`other`) + nullable `how_given` column on `medication_administrations`. Pre-flight: additive / non-destructive / no backfill. Reviewers: Data Scientist + `rls-privacy-reviewer` (new column on the RLS'd dose table; RLS unchanged). PM applies via Supabase MCP. **AC:** column + enum live; existing rows unchanged; RLS still pet-scoped.
+- **PR A2 — Local mirror + sync + write path** (client; **tests required**). Add `how_given` to the `medication_administrations` SQLite mirror (`lib/db.ts`), to the sync upsert column/placeholder/param lists (mind the **B-057** placeholder-drift trap), and as an optional param on `insertMedicationDose`. `supabase-sync` skill. **AC:** `how_given` round-trips device→Supabase→another device; null renders clean.
+- **PR A3 — Capture + display UI** (no schema). Optional "How was it given?" chip row on `MedicationCompletionCard` (subordinate, skippable, default-null — the intake-chip pattern) + edit on `app/medication/[id].tsx` + read display in History/event-detail. Reviewers: Designer + `nyx-voice`. **AC:** skippable; default null; never blocks dismiss; reads clean when unset.
+
+### Phase B — Slice C: the combo (GATED on G1–G3)
+- **PR B1 — Schema migration** (`023_dose_paired_event.sql`, isolated). Add nullable `paired_event_id UUID REFERENCES events(id) ON DELETE SET NULL` on `medication_administrations`. Pre-flight: additive / non-destructive / no backfill. Reviewers: Data Scientist + `rls-privacy-reviewer` — **must verify the paired event belongs to the same pet** (cross-event ref under multi-pet RLS); no uniqueness on `paired_event_id` (N doses per food event). **AC:** link persists; deleting the food event SET-NULLs the link, the dose survives.
+- **PR B2 — Combo entry + linked-dose write** (gated on G1's host decision; **tests required**). The opt-in "+ Gave a med with this?" line on the treat/meal completion card → `MedicationPicker` → logs a dose carrying `paired_event_id` + `how_given` inferred from the food's type. Reuses/extends `insertMedicationDose`. The "Logged together" confirmation surface; show active-pet context (multi-pet catch). Reviewers: Designer + Jordan + Sam + QA. **AC:** the no-med path stays one tap; the combo links correctly; wrong-pet guarded.
+- **PR B3 — Safety coupling (Flow B) — `adversarial-reviewer` MANDATORY.** When a linked vehicle is marked `refused`/`picked`, surface the owner-confirmed "did she still get it?" prompt; route to `partial`/`missed`/unconfirmed; **never auto-flip, never silent-given** (n=1-never-reassures). Host per G1. Name the "ate-around-the-pill" residual (G4). Reviewers: `adversarial-reviewer` + `clinical-guardrails` + Dr. Chen + `nyx-voice`. **AC:** a not-finished vehicle never records a clean "given"; the reviewer states the counterexample it tried.
+- **PR B4 — Edit a combo** (resolves R2/G2). After-the-fact edit of the linked treat + dose per the G2 model, from History/event-detail; mirrors the meal-intake + dose-adherence edit paths. Reviewers: Designer + QA. **AC:** the owner can correct both the intake and the adherence; the link survives an edit.
+
+### Phase C — Engine consumer (gated, adversarial)
+- **PR C1 — §8 confounder precision** (`generate-signal/detection.ts`; `adversarial-reviewer` MANDATORY). The engine reads the pairing so a drug riding in a food is attributed to the drug, not the food. Composes with B-117 PR 9 (`medicationWindows`). Reviewers: Data Scientist + Dr. Chen + `adversarial-reviewer`. Gated on combo data flowing. **AC:** a paired drug+food in a symptom window doesn't surface "food → symptom"; never falsely reassures.
+
+### Parallelism & sequencing
+- **Run now, no gates:** Phase A (A1→A2→A3, strict chain) + PR 0 (spike) — concurrent with each other and with B-153/B-154.
+- **Strict chains:** A1→A2→A3; B1→B2→B3→B4.
+- **Gated:** Phase B on G1 (PR 0) + G2 + G3; Phase C on Phase B data + adversarial.
+- **Shared-file collisions to expect:** `insertMedicationDose` / the dose-write path (A2, B2, **and** B-153/B-154 all touch it — sequence or expect a merge); `lib/db.ts` + `lib/sync.ts` column lists (A2, B1/B2); `STATUS.md` at every wrap.
+
+### Embedded PM decisions
+- **G1 safety-prompt host** — persist-on-card / Home insight / best-effort (couples with the live CLAUDE.md med-card open question).
+- **G2 edit model** — one combo unit vs two linked instances.
+- **G3 cross-track order** — B-153/B-154 before B-156's combo? (Team rec: yes.)
+- **G4 ate-around-the-pill** — detect-and-prompt vs document-as-known-limit.
+- **Promotion** — Slice B (Phase A) to active build now, or held behind the `Now` med-track items?
+
+## 11. Evidence / references
 
 - **`docs/medication-food-combo-mock.html`** — concept mock of the recommended shape (the combo flow, the safety catch, the Slice-B `how_given` foundation, and the trap-resolved Recent case), built to the live design tokens + shipped components.
 - **Pet-owner review (2026-06-22)** — `pm-feature-review` subagent as Jordan + Sam (§9 above); verdicts + the auto-dismiss-timing catch.
