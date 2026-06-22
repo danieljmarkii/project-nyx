@@ -47,6 +47,16 @@ export interface Regimen {
   ended_at: string | null;
 }
 
+// PostgREST serialises NUMERIC as a string ("1.00"); coerce doses_per_day back to a
+// number so the returned regimen drives the card's frequency/compliance render
+// correctly on the optimistic onAdded/onUpdated path (mirrors loadMedications).
+function coerceRegimen(row: Regimen): Regimen {
+  return {
+    ...row,
+    doses_per_day: row.doses_per_day == null ? null : Number(row.doses_per_day),
+  };
+}
+
 // Frequency presets → doses_per_day. "As needed" (PRN) is null: no compliance
 // target (§5.4). doses_per_day is NUMERIC so finer schedules exist, but these
 // presets cover the common cases and keep setup a few taps; null is a distinct,
@@ -182,14 +192,20 @@ export function AddMedicationModal({
       if (isEditing && existingRegimen) {
         // RLS (medications_owner) re-validates ownership of this regimen's pet on
         // the UPDATE; .select() turns a silent 0-row RLS block into a real error.
+        // maybeSingle (not single) so a 0-row read-back resolves to null instead of
+        // throwing — the write still committed; the card refreshes on next focus.
         const { data, error } = await supabase
           .from('medications')
           .update(payload)
           .eq('id', existingRegimen.id)
           .select()
-          .single();
-        if (error || !data) throw error ?? new Error('No data returned');
-        onUpdated?.(data as Regimen);
+          .maybeSingle();
+        if (error) throw error;
+        // Dismiss BEFORE the parent callback, so a hiccup in the optimistic rebuild
+        // can never strand the modal with the Save spinner still spinning (the hang
+        // the PM hit). The finally clears `saving` either way.
+        onClose();
+        if (data) onUpdated?.(coerceRegimen(data as Regimen));
       } else {
         // pet_id comes from the ACTIVE pet (never free input); the RLS WITH CHECK
         // re-validates `pet_id IN (pets owned by auth.uid())` on INSERT (B-123).
@@ -197,11 +213,11 @@ export function AddMedicationModal({
           .from('medications')
           .insert({ pet_id: petId, status: 'active', ...payload })
           .select()
-          .single();
-        if (error || !data) throw error ?? new Error('No data returned');
-        onAdded(data as Regimen);
+          .maybeSingle();
+        if (error) throw error;
+        onClose();
+        if (data) onAdded(coerceRegimen(data as Regimen));
       }
-      onClose();
     } catch (e) {
       console.error('[AddMedicationModal] save failed:', e);
       Alert.alert('Could not save', 'Something went wrong. Try again.');

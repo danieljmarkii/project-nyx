@@ -7,6 +7,7 @@ const INITIAL = {
   oldestPendingAt: null,
   coldStartHydrating: false,
   hydrationTick: 0,
+  signalTick: 0,
 };
 
 describe('syncStore', () => {
@@ -20,6 +21,7 @@ describe('syncStore', () => {
     expect(s.oldestPendingAt).toBeNull();
     expect(s.coldStartHydrating).toBe(false);
     expect(s.hydrationTick).toBe(0);
+    expect(s.signalTick).toBe(0);
   });
 
   it('setPendingStatus updates count and oldest timestamp together', () => {
@@ -57,5 +59,14 @@ describe('syncStore', () => {
     useSyncStore.getState().bumpHydrationTick();
     expect(useSyncStore.getState().coldStartHydrating).toBe(false);
     expect(useSyncStore.getState().hydrationTick).toBe(1);
+  });
+
+  it('bumpSignalTick increments independently of hydrationTick (B-150 regen refresh)', () => {
+    expect(useSyncStore.getState().signalTick).toBe(0);
+    useSyncStore.getState().bumpSignalTick();
+    useSyncStore.getState().bumpSignalTick();
+    expect(useSyncStore.getState().signalTick).toBe(2);
+    // Orthogonal ticks — a signal regen must not read as a sync cycle (or vice versa).
+    expect(useSyncStore.getState().hydrationTick).toBe(0);
   });
 });

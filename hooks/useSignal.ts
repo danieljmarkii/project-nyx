@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { getDb } from '../lib/db';
 import { usePetStore } from '../store/petStore';
+import { useSyncStore } from '../store/syncStore';
 import {
   readSignalCache,
   isSignalCacheStale,
@@ -79,6 +80,9 @@ function getLocalSignalContext(petId: string): LocalSignalContext {
 // lands — the last cached set, or the building/stale state, shows meanwhile.
 export function useSignal(): SignalState {
   const { activePet } = usePetStore();
+  // Re-read on a completed regen (signalTick) too, not only on focus — so the active
+  // pet's debounced-after-log regen updates the Signal without needing a re-focus.
+  const signalTick = useSyncStore((s) => s.signalTick);
   const [findings, setFindings] = useState<CachedFinding[]>([]);
   const [coverage, setCoverage] = useState<CoverageDiagnostic[]>([]);
   const [signalText, setSignalText] = useState<string | null>(null);
@@ -143,7 +147,7 @@ export function useSignal(): SignalState {
       return () => {
         cancelled = true;
       };
-    }, [petId]),
+    }, [petId, signalTick]),
   );
 
   const displayState = deriveDisplayState(
@@ -173,6 +177,11 @@ export interface CrossPetBanner {
 // never reassure: a stale/missing cache renders nothing (absence ≠ wellness).
 export function useCrossPetSafetyBanner(): CrossPetBanner | null {
   const { pets, activePet } = usePetStore();
+  // Re-read when a regen completes for ANY pet (signalTick), not only on focus /
+  // household change — so a non-active pet's finding RESOLVING (its owner logs a
+  // normal meal while you sit on another pet's home) clears this banner promptly,
+  // instead of lingering until the next Home re-focus (B-150).
+  const signalTick = useSyncStore((s) => s.signalTick);
   const [banner, setBanner] = useState<CrossPetBanner | null>(null);
   const activePetId = activePet?.id ?? null;
   // Stable effect dep: the set of NON-active pet ids. Re-runs when the household
@@ -231,7 +240,7 @@ export function useCrossPetSafetyBanner(): CrossPetBanner | null {
       return () => {
         cancelled = true;
       };
-    }, [activePetId, otherPetsKey]),
+    }, [activePetId, otherPetsKey, signalTick]),
   );
 
   return banner;

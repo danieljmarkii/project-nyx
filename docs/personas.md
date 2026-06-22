@@ -18,7 +18,7 @@ Nyx uses three distinct mechanisms to bring expertise to bear. They are not inte
 
 **Rule of thumb:** a *viewpoint* is a persona; a *bounded task that returns a verdict* is a subagent; a *hard rule that must never be forgotten* is a skill. When a persona keeps catching the same class of issue, promote that issue to a skill so it fires deterministically; when a persona's review is bounded and benefits from an un-anchored fresh read, run it as a subagent.
 
-Current subagents: `adversarial-reviewer`, `code-reviewer`, `rls-privacy-reviewer`, `vet-report-cold-read` (`.claude/agents/`).
+Current subagents: `adversarial-reviewer`, `code-reviewer`, `rls-privacy-reviewer`, `vet-report-cold-read`, `pm-feature-review` (`.claude/agents/`).
 Current skills: `clinical-guardrails`, `nyx-voice`, `supabase-sync`, `backlog-groomer` (`.claude/skills/`).
 
 ---
@@ -305,6 +305,7 @@ Persona invocation should not depend on luck-of-the-memory. When a diff or decis
 | When the work touches… | Expected lenses | Reliable backstop |
 |---|---|---|
 | Quick-log / capture flow, FAB, onboarding | Designer (Principles 1–2), Jordan (10-sec test), QA (3am test) | — |
+| Any built feature / cluster of PRs (product-coherence pass) | Sr. PM, Designer, Jordan + Sam, **`pm-feature-review` subagent** | Recommended before/with the device QA; reports in the QA-note taxonomy (broken / works-but-confusing / gaps / decisions / backlog) — pairs with the device pass, never replaces it |
 | Owner-facing copy (any on-screen string, nudge, empty state, label, error) | Designer, nyx-voice **skill** | `nyx-voice` auto-loads |
 | Home / Signal / insight cards | Designer (Principle 3, 5), Data Scientist, Jordan + Sam (context-adaptive) | — |
 | Per-incident AI reads / escalation thresholds / recommendation copy | Dr. Chen, Data Scientist, clinical-guardrails **skill** | `clinical-guardrails` auto-loads |

@@ -15,14 +15,34 @@ export default function SignupScreen() {
   async function handleSignup() {
     if (!email || !password) return;
     setLoading(true);
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({ email, password });
     setLoading(false);
     if (error) {
       Alert.alert('Sign up failed', error.message);
-    } else {
-      // user_profiles row is created by Supabase trigger on auth.users insert
-      router.replace('/onboarding/pet');
+      return;
     }
+    // When email confirmation is on, signUp succeeds with NO session until the user
+    // taps the emailed link. Routing to onboarding here would bounce straight back
+    // to login (the root layout gates every screen on a live session), which reads
+    // to the user as "sign-up does nothing". Handle the no-session case explicitly
+    // instead of treating no-error as signed-in.
+    if (!data.session) {
+      // Supabase returns a user with an empty identities array when the email is
+      // already registered (it hides this while confirmation is on, so it can't be
+      // used to probe which emails have accounts).
+      const alreadyRegistered = !!data.user && (data.user.identities?.length ?? 0) === 0;
+      Alert.alert(
+        alreadyRegistered ? 'You already have an account' : 'Check your email',
+        alreadyRegistered
+          ? 'That email is already set up. Try signing in instead.'
+          : `We sent a confirmation link to ${email.trim()}. Open it to finish setting up your account, then come back and sign in.`,
+      );
+      router.replace('/(auth)/login');
+      return;
+    }
+    // Session present (email confirmation disabled): straight into onboarding.
+    // The user_profiles row is created by the Supabase trigger on auth.users insert.
+    router.replace('/onboarding/pet');
   }
 
   return (

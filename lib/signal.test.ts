@@ -1,6 +1,7 @@
-import { readSignalsAndRefresh, isSignalCacheStale, type SignalCacheRow } from './signal';
+import { readSignalsAndRefresh, regenerateSignal, isSignalCacheStale, type SignalCacheRow } from './signal';
 import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingMeals } from './sync';
+import { useSyncStore } from '../store/syncStore';
 
 // signal.ts imports the real supabase client (fail-fast env check) and the sync
 // queue. Replace both before signal.ts resolves them — same pattern as
@@ -143,5 +144,23 @@ describe('readSignalsAndRefresh', () => {
     const byPet = await readSignalsAndRefresh(['A', 'B', 'C']);
     expect([...byPet.keys()].sort()).toEqual(['A', 'B', 'C']);
     expect(byPet.get('A')).toEqual([]);
+  });
+});
+
+describe('regenerateSignal — signalTick on success (B-150 reactive refresh)', () => {
+  it('bumps signalTick after a successful regen so the Signal + banner re-read', async () => {
+    useSyncStore.setState({ signalTick: 0 });
+    mockedInvoke.mockResolvedValue({ error: null });
+    const { error } = await regenerateSignal('A');
+    expect(error).toBeNull();
+    expect(useSyncStore.getState().signalTick).toBe(1);
+  });
+
+  it('does NOT bump signalTick when the regen fails (no phantom refresh, no re-read loop)', async () => {
+    useSyncStore.setState({ signalTick: 0 });
+    mockedInvoke.mockResolvedValue({ error: { message: 'boom' } });
+    const { error } = await regenerateSignal('A');
+    expect(error).toBe('boom');
+    expect(useSyncStore.getState().signalTick).toBe(0);
   });
 });

@@ -284,13 +284,18 @@ export function initialStrengthConfirmed(aiStrength: string | null | undefined):
 }
 
 // Whether a captured medication may be saved. generic name is the required
-// display key; strengthConfirmed is the §6.5 gate — an unverified AI strength
-// blocks save on EVERY screen, by construction.
+// display key; strengthConfirmed is the §6.5 gate. The gate applies whenever a
+// strength is PRESENT — AI-extracted OR hand-typed — because a transposed dose
+// (5 mg → 50 mg) is a 10× error regardless of who keyed it, so the owner must
+// deliberately confirm their own entry too, not just the AI's. An empty strength
+// has nothing to confirm, so it never blocks save.
 export function canSaveMedicationCapture(params: {
   genericName: string;
+  strength: string;
   strengthConfirmed: boolean;
 }): boolean {
-  return params.genericName.trim().length > 0 && params.strengthConfirmed;
+  const hasStrength = params.strength.trim().length > 0;
+  return params.genericName.trim().length > 0 && (!hasStrength || params.strengthConfirmed);
 }
 
 // ── Shared form/route option lists (the medication_form / medication_route enum
@@ -477,6 +482,70 @@ export function computeRegimenCompliance(input: RegimenComplianceInput): Regimen
   }
 
   return { isPrn, expectedDoses, administeredDoses, flaggedDoses, loggedDoses, percent };
+}
+
+// ── Dose → regimen attribution (compliance counting) ───────────────────────────
+// The Current-medications card counts a regimen's doses by matching on
+// medication_item_id within the regimen's window — NOT on medication_id. The
+// one-tap log path writes medication_id = NULL (doses are regimen-unlinked, B-135),
+// so a medication_id join counted ZERO and every regimen read "no doses logged yet"
+// despite real doses (the bug the PM hit). Pure + unit-tested here because a silent
+// zero-count is exactly the load-bearing miscount a test must pin.
+
+export interface RegimenWindow {
+  id: string;
+  medication_item_id: string | null;
+  started_at: string;       // DATE; inclusive lower bound for a dose's occurred_at
+  ended_at: string | null;  // DATE or null (open-ended); inclusive upper bound
+}
+
+export interface AttributableDose {
+  medication_item_id: string | null;
+  adherence: string | null;
+  deleted_at: string | null; // parent event's soft-delete → not counted
+  occurred_at: string;       // parent event timestamp (window test)
+}
+
+export function emptyTally(): AdherenceTally {
+  return { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 };
+}
+
+// Tally each regimen's doses, attributing a dose to the regimen for the SAME drug
+// (medication_item_id) that was in effect when it occurred: started on/before it,
+// not past its end. ISO date/timestamp strings compare correctly lexicographically,
+// so a date-only started_at vs a full occurred_at works (a dose on the start date
+// counts). With the usual one-active-regimen-per-drug this is a direct match; if two
+// regimens share a drug, the most-recently-started in-window one wins, so a dose is
+// never double-counted. An ad-hoc dose (no item id) or a free-text regimen (no item
+// id) never matches — the residual gap closed only by linking medication_id at dose
+// time (deferred).
+export function attributeDosesToRegimens(
+  regimens: RegimenWindow[],
+  doses: AttributableDose[],
+): Map<string, AdherenceTally> {
+  const tallies = new Map<string, AdherenceTally>(regimens.map((r) => [r.id, emptyTally()]));
+  for (const d of doses) {
+    if (d.deleted_at) continue;          // soft-deleted dose — its event is gone
+    if (!d.medication_item_id) continue; // ad-hoc dose, no drug identity to match
+    let best: RegimenWindow | null = null;
+    for (const reg of regimens) {
+      if (reg.medication_item_id !== d.medication_item_id) continue;
+      if (d.occurred_at < reg.started_at) continue;               // before this regimen began
+      if (reg.ended_at && d.occurred_at > reg.ended_at) continue; // after it ended
+      if (!best || reg.started_at > best.started_at) best = reg;
+    }
+    if (!best) continue;
+    const t = tallies.get(best.id);
+    if (!t) continue;
+    switch (d.adherence) {
+      case 'given': t.given++; break;
+      case 'partial': t.partial++; break;
+      case 'missed': t.missed++; break;
+      case 'refused': t.refused++; break;
+      default: t.unrated++; break; // NULL = logged-but-unrated (never counts as given)
+    }
+  }
+  return tallies;
 }
 
 // Headline adherence line for a regimen card. FACTUAL only — counts and a plain
