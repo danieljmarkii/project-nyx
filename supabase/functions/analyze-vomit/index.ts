@@ -322,6 +322,71 @@ function buildNoFlagReadText(petName: string, hasPhoto: boolean): string {
   return `${lead} If you're worried about ${p}, your vet is the best call.`
 }
 
+// ── Write-back decision: the server half of the never-clobber guard (B-028) ────
+// The n=1 read + flags always refresh (so the deterministic floor can re-escalate
+// on worsening context); the structured CLINICAL fields are the owner's once
+// edited and must survive a re-analysis untouched.
+interface AnalysisReadFields {
+  recommendation: Recommendation
+  read_text: string | null
+  visual_flags: string[]
+  contextual_flags: ContextualFlag[]
+  status: string
+  error: null
+}
+
+export type AnalysisWriteBack =
+  | { mode: 'update'; values: Record<string, unknown> }
+  | { mode: 'upsert'; values: Record<string, unknown> }
+
+// When the owner has edited any structured field (edited_at set), refresh ONLY
+// the read + flags and leave every structured field + the cached ai_raw_payload
+// untouched — re-analysis must never clobber a human-reviewed value the vet will
+// rely on (Pattern 7 / clinical-guardrails). Otherwise (first analysis, or an
+// un-edited row) write the full payload. Pure + exported so the guarantee is
+// unit-tested rather than asserted by a comment.
+export function buildAnalysisWriteBack(params: {
+  humanEdited: boolean
+  eventId: string
+  petId: string
+  analysis: VomitAnalysis | null
+  readFields: AnalysisReadFields
+}): AnalysisWriteBack {
+  if (params.humanEdited) {
+    // ONLY the read columns. No structured field, no ai_raw_payload — that's the
+    // never-clobber guarantee, by construction.
+    return { mode: 'update', values: { ...params.readFields } }
+  }
+  const { analysis } = params
+  return {
+    mode: 'upsert',
+    values: {
+      event_id: params.eventId,
+      pet_id: params.petId,
+      incident_type: 'vomit',
+      ai_raw_payload: analysis,
+      ai_confidence: analysis?.confidence ?? null,
+      colour: analysis?.colour ?? null,
+      contents: analysis?.contents ?? null,
+      consistency: analysis?.consistency ?? null,
+      blood_present: analysis?.blood_present ?? null,
+      bile_present: analysis?.bile_present ?? null,
+      foreign_material_present: analysis?.foreign_material_present ?? null,
+      foreign_material_note: analysis?.foreign_material_note ?? null,
+      description: analysis?.description ?? null,
+      ...params.readFields,
+    },
+  }
+}
+
+// Exported only so the test can assert the update branch carries no structured
+// column (the columns the never-clobber guard must protect).
+export const STRUCTURED_FIELD_KEYS = [
+  'ai_raw_payload', 'ai_confidence', 'colour', 'contents', 'consistency',
+  'blood_present', 'bile_present', 'foreign_material_present', 'foreign_material_note',
+  'description',
+] as const
+
 // ── Context assembly (DB reads, ownership-scoped via the caller JWT) ───────────
 
 async function assembleContext(
@@ -606,7 +671,7 @@ Deno.serve(async (req: Request) => {
 
     const humanEdited = !!existing?.edited_at
 
-    const readFields = {
+    const readFields: AnalysisReadFields = {
       recommendation,
       read_text: readText,
       visual_flags: visualFlags,
@@ -615,32 +680,18 @@ Deno.serve(async (req: Request) => {
       error: null,
     }
 
+    const writeBack = buildAnalysisWriteBack({ humanEdited, eventId, petId, analysis, readFields })
+
     let writeError
-    if (humanEdited) {
+    if (writeBack.mode === 'update') {
       ;({ error: writeError } = await adminClient
         .from('event_ai_analysis')
-        .update(readFields)
+        .update(writeBack.values)
         .eq('event_id', eventId))
     } else {
-      const fullPayload = {
-        event_id: eventId,
-        pet_id: petId,
-        incident_type: 'vomit',
-        ai_raw_payload: analysis,
-        ai_confidence: analysis?.confidence ?? null,
-        colour: analysis?.colour ?? null,
-        contents: analysis?.contents ?? null,
-        consistency: analysis?.consistency ?? null,
-        blood_present: analysis?.blood_present ?? null,
-        bile_present: analysis?.bile_present ?? null,
-        foreign_material_present: analysis?.foreign_material_present ?? null,
-        foreign_material_note: analysis?.foreign_material_note ?? null,
-        description: analysis?.description ?? null,
-        ...readFields,
-      }
       ;({ error: writeError } = await adminClient
         .from('event_ai_analysis')
-        .upsert(fullPayload, { onConflict: 'event_id' }))
+        .upsert(writeBack.values, { onConflict: 'event_id' }))
     }
 
     if (writeError) throw new Error(`DB write failed: ${writeError.message}`)

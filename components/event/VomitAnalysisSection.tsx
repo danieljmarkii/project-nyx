@@ -3,10 +3,13 @@
 // (written server-side by the analyze-vomit Edge Function), triggers analysis
 // lazily if none exists yet, and polls while it runs.
 //
-// Scope of THIS component (v1): display the AI read + structured observations,
-// dismiss/undismiss the read, retry on failure, and the pending / uncertain /
-// failed states. Owner editing of the structured fields + the per-field
-// "Edited [date]" provenance is a deliberate fast-follow (see PR / B-027).
+// Scope of THIS component: display the AI read + structured observations,
+// dismiss/undismiss the read, retry on failure, the pending / uncertain /
+// failed states, AND owner editing of the structured fields with a per-field
+// "edited" marker + a single calm "Edited [date]" line (B-028). The n=1 read
+// (recommendation/read_text) stays DISMISSIBLE, never editable; only the facts
+// that feed the vet report are editable. An owner edit is the more-trusted value
+// (human-reviewed > raw AI) and re-analysis never clobbers it (Edge Function).
 //
 // Guardrail (Dr. Chen, B-013): the read ESCALATES on a visible/contextual red
 // flag and NEVER reassures on absence. The recommendation enum has no
@@ -15,7 +18,23 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { theme } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
-import { triggerVomitAnalysis } from '../../lib/analysis';
+import {
+  triggerVomitAnalysis,
+  saveVomitFieldEdits,
+  deriveEditedFields,
+  extractEditableFromPayload,
+  normalizeVomitEdits,
+  VomitEditableFields,
+  EditableVomitField,
+} from '../../lib/analysis';
+import { VomitFieldsEditor } from './VomitFieldsEditor';
+import {
+  labelFor,
+  COLOUR_OPTIONS,
+  CONTENT_OPTIONS,
+  CONSISTENCY_OPTIONS,
+  BLOOD_OPTIONS,
+} from './vomitFields';
 
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain';
 type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
@@ -32,36 +51,19 @@ interface AnalysisRow {
   bile_present: string | null;
   foreign_material_present: string | null;
   foreign_material_note: string | null;
+  ai_raw_payload: Record<string, unknown> | null;
+  edited_at: string | null;
   dismissed_at: string | null;
   error: string | null;
 }
 
 const SELECT_COLS =
   'status, recommendation, read_text, description, colour, contents, consistency, ' +
-  'blood_present, bile_present, foreign_material_present, foreign_material_note, dismissed_at, error';
+  'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
+  'ai_raw_payload, edited_at, dismissed_at, error';
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 12; // ~36s — covers a slow vision call without spinning forever
-
-// ── Enum → owner-facing labels ────────────────────────────────────────────────
-const COLOUR_LABELS: Record<string, string> = {
-  clear: 'Clear', white: 'White', yellow: 'Yellow', green: 'Green', brown: 'Brown',
-  tan: 'Tan', pink_red: 'Pink / red', dark_red: 'Dark red',
-  black_coffee_ground: 'Black', mixed: 'Mixed', unsure: 'Unclear',
-};
-const CONTENT_LABELS: Record<string, string> = {
-  undigested_food: 'Undigested food', partially_digested_food: 'Partly digested food',
-  bile: 'Bile', foam: 'Foam', liquid_only: 'Liquid', grass_or_plant: 'Grass / plant',
-  hair: 'Hair', unsure: 'Unclear',
-};
-const CONSISTENCY_LABELS: Record<string, string> = {
-  watery: 'Watery', foamy: 'Foamy', mucoid_slimy: 'Slimy',
-  soft_formed: 'Soft / formed', chunky: 'Chunky', unsure: 'Unclear',
-};
-const BLOOD_LABELS: Record<string, string> = {
-  none_visible: 'None visible', fresh_red: 'Fresh red',
-  coffee_ground: 'Dark / older blood', unsure: 'Unclear',
-};
 
 const REC_LABEL: Record<Recommendation, string> = {
   worth_a_call: 'Worth a call',
@@ -73,6 +75,8 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
   const [working, setWorking] = useState(false); // analysis in flight (triggered or polling)
   const [retrying, setRetrying] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const cancelled = useRef(false);
 
   const fetchRow = useCallback(async (): Promise<AnalysisRow | null> => {
@@ -150,6 +154,29 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
       setRow({ ...row, dismissed_at: prev });
       Alert.alert('Could not update', 'Try again in a moment.');
     }
+  }
+
+  // Persist owner edits to the structured fields (B-028). A no-op save (nothing
+  // changed vs the persisted values) just closes the editor — it never stamps
+  // edited_at, so the never-clobber guard stays armed only by a real edit.
+  async function handleSaveEdits(next: VomitEditableFields) {
+    if (!row) return;
+    const current = currentEditable(row);
+    if (deriveEditedFields(next, current).length === 0) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const norm = normalizeVomitEdits(next);
+    const { error } = await saveVomitFieldEdits(eventId, norm);
+    setSaving(false);
+    if (error) {
+      Alert.alert('Could not save', 'Try again in a moment.');
+      return;
+    }
+    // Optimistic local commit — mirror the DB write (fields + provenance stamp).
+    setRow({ ...row, ...norm, edited_at: new Date().toISOString() });
+    setEditing(false);
   }
 
   // ── Render states ──
@@ -232,6 +259,10 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
     : styles.recLabelMuted;
 
   const observations = buildObservations(row);
+  const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
+  const editedSet = new Set<EditableVomitField>(
+    deriveEditedFields(currentEditable(row), extractEditableFromPayload(row.ai_raw_payload)),
+  );
 
   return (
     <View style={styles.section}>
@@ -260,20 +291,54 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
         </View>
       )}
 
-      {!dismissed && observations.length > 0 ? (
+      {!dismissed && (observations.length > 0 || canEdit) ? (
         <View style={styles.obsBlock}>
-          <Text style={styles.obsHeading}>What's visible</Text>
-          {observations.map((o) => (
-            <View key={o.label} style={styles.obsRow}>
-              <Text style={styles.obsKey}>{o.label}</Text>
-              <Text style={styles.obsVal}>{o.value}</Text>
-            </View>
-          ))}
-          {row.description ? <Text style={styles.obsDescription}>{row.description}</Text> : null}
+          <View style={styles.obsHeaderRow}>
+            <Text style={styles.obsHeading}>What's visible</Text>
+            {!editing && canEdit ? (
+              <TouchableOpacity onPress={() => setEditing(true)} hitSlop={16}>
+                <Text style={styles.editLink}>{observations.length > 0 ? 'Edit' : 'Add details'}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {editing ? (
+            <VomitFieldsEditor
+              initial={currentEditable(row)}
+              saving={saving}
+              onSave={handleSaveEdits}
+              onCancel={() => setEditing(false)}
+            />
+          ) : (
+            <>
+              {observations.map((o) => (
+                <View key={o.label} style={styles.obsRow}>
+                  <Text style={styles.obsKey}>{o.label}</Text>
+                  <View style={styles.obsValWrap}>
+                    <Text style={styles.obsVal}>{o.value}</Text>
+                    {isObsRowEdited(editedSet, o.field) ? (
+                      <Text style={styles.editedTag}>Edited</Text>
+                    ) : null}
+                  </View>
+                </View>
+              ))}
+              {row.description ? (
+                <View style={styles.descWrap}>
+                  <Text style={styles.obsDescription}>{row.description}</Text>
+                  {editedSet.has('description') ? <Text style={styles.editedTag}>Edited</Text> : null}
+                </View>
+              ) : null}
+              {/* One calm provenance line — never alarming (nyx-voice). The
+                  per-field markers say WHAT changed; this says WHEN. */}
+              {row.edited_at ? (
+                <Text style={styles.editedLine}>Edited {formatEditedDate(row.edited_at)}</Text>
+              ) : null}
+            </>
+          )}
         </View>
       ) : null}
 
-      {!dismissed ? (
+      {!dismissed && !editing ? (
         <TouchableOpacity
           onPress={handleRetry}
           disabled={retrying}
@@ -289,25 +354,69 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
   );
 }
 
-function buildObservations(row: AnalysisRow): { label: string; value: string }[] {
-  const out: { label: string; value: string }[] = [];
-  if (row.colour && COLOUR_LABELS[row.colour]) out.push({ label: 'Colour', value: COLOUR_LABELS[row.colour] });
-  if (row.consistency && CONSISTENCY_LABELS[row.consistency]) {
-    out.push({ label: 'Consistency', value: CONSISTENCY_LABELS[row.consistency] });
-  }
+interface Observation {
+  field: EditableVomitField;
+  label: string;
+  value: string;
+}
+
+function buildObservations(row: AnalysisRow): Observation[] {
+  const out: Observation[] = [];
+  const colour = labelFor(COLOUR_OPTIONS, row.colour);
+  if (colour) out.push({ field: 'colour', label: 'Colour', value: colour });
+  const consistency = labelFor(CONSISTENCY_OPTIONS, row.consistency);
+  if (consistency) out.push({ field: 'consistency', label: 'Consistency', value: consistency });
   if (row.contents && row.contents.length > 0) {
-    const labels = row.contents.map((c) => CONTENT_LABELS[c] ?? c).filter(Boolean);
-    if (labels.length > 0) out.push({ label: 'Contents', value: labels.join(', ') });
+    const labels = row.contents.map((c) => labelFor(CONTENT_OPTIONS, c) ?? c).filter(Boolean);
+    if (labels.length > 0) out.push({ field: 'contents', label: 'Contents', value: labels.join(', ') });
   }
   // Blood is clinically central — show it even when none is visible (a factual
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
-  if (row.blood_present && BLOOD_LABELS[row.blood_present]) {
-    out.push({ label: 'Blood', value: BLOOD_LABELS[row.blood_present] });
-  }
+  const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
+  if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
   if (row.foreign_material_present === 'yes') {
-    out.push({ label: 'Foreign material', value: row.foreign_material_note?.trim() || 'Possible' });
+    out.push({
+      field: 'foreign_material_present',
+      label: 'Foreign material',
+      value: row.foreign_material_note?.trim() || 'Possible',
+    });
   }
   return out;
+}
+
+// The 'Foreign material' row is driven by presence but shows the note, so an
+// edit to EITHER marks the row.
+function isObsRowEdited(editedSet: Set<EditableVomitField>, field: EditableVomitField): boolean {
+  if (field === 'foreign_material_present') {
+    return editedSet.has('foreign_material_present') || editedSet.has('foreign_material_note');
+  }
+  return editedSet.has(field);
+}
+
+// The live editable fields, pulled off the analysis row for the editor + the
+// vs-AI diff.
+function currentEditable(row: AnalysisRow): VomitEditableFields {
+  return {
+    colour: row.colour,
+    consistency: row.consistency,
+    contents: row.contents,
+    blood_present: row.blood_present,
+    foreign_material_present: row.foreign_material_present,
+    foreign_material_note: row.foreign_material_note,
+    description: row.description,
+  };
+}
+
+function formatEditedDate(iso: string): string {
+  const d = new Date(iso);
+  // Add the year only when it isn't the current one — "Jun 22" stays clean for a
+  // recent edit but a year-old correction reads unambiguously on the vet's clock.
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
 }
 
 const styles = StyleSheet.create({
@@ -411,29 +520,66 @@ const styles = StyleSheet.create({
     marginTop: theme.space2,
     gap: 4,
   },
+  obsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spaceMicro,
+  },
   obsHeading: {
     fontSize: theme.textSM,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorTextSecondary,
-    marginBottom: 2,
+  },
+  editLink: {
+    fontSize: theme.textSM,
+    color: theme.colorAccent,
+    fontWeight: theme.fontWeightMedium,
   },
   obsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: theme.space2,
   },
   obsKey: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },
+  obsValWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+    flexShrink: 1,
+    gap: 6,
+  },
   obsVal: {
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
     fontWeight: theme.fontWeightMedium,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  // Per-field provenance marker — deliberately tertiary + small so it reads as a
+  // quiet annotation, never an alarm (Designer / nyx-voice).
+  editedTag: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    fontWeight: theme.fontWeightMedium,
+  },
+  descWrap: {
+    marginTop: 6,
+    gap: theme.spaceMicro,
   },
   obsDescription: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: 19,
+  },
+  editedLine: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
     marginTop: 6,
   },
   disclaimer: {
