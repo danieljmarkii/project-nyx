@@ -2,6 +2,16 @@
 
 **Status:** Discovery synthesis — NOT a build-ready requirements spec. | **Date:** 2026-06-21 | **Round:** Synthetic (persona role-play); the ranked Research Debt in §10 is the **gate of real-vet validation before the requirements spec locks.**
 
+> **Updated 2026-06-21 — PM QA review (leans recorded inline; await formal ratification at the requirements-spec session):**
+> - **Audience → banded both-sides** (clinical-first report with a "for the owner" section above) — the owner also keeps their separate Patterns analytics; the vet gets a familiar clinical document (§6.3, §8.1).
+> - **Delivery → HTML/webview-first**, derive the PDF later (easier to iterate; PDFs are finicky) (§7.2, §8.2).
+> - **Audience is a distribution channel, not a layout** — swing for the fences, don't let scope-trimming hollow out the two-sided design (§5.4, §8.1).
+> - **Specialist panel → its own PR-evolvable doc**, not embedded in `personas.md` (§3.2, §8.8).
+> - **Diet-detail depth → deferred to Dr. Chen + the specialist-panel roundtable** (§5.4, §10 R7).
+> - **B-028 can be kicked off in parallel now** (§8.7, §9); the report is **explicitly owner-accessible** (§6.4).
+> - **Keep the report SOAP-adjacent** (PM endorses; §4.3, §10 R6).
+> - New future scope logged: **B-145** vet-visit document capture. Data-quality fix to insight I1 + a flagged inconsistency in `nyx-research-v1_0.md` (§5.3, §11).
+
 > This document is the single deliverable of the discovery round defined in `docs/vet-report-discovery-PROMPT.md`. It ends in *decidable* Open Questions (§8), prioritized Recommendations (§9), and a ranked Research Debt list (§10). It writes no code, schema, or requirements spec, and proposes — but does not write — Tier-2 edits to `personas.md`, the technical spec, and the competitive-landscape doc (collected in §11).
 >
 > **Prior-art finding (sweep done first):** there is **essentially no prior art beyond spec §7.** `app/report.tsx` is a placeholder ("coming in build step 9"); `lib/pdf.ts` is a 28-line client stub that invokes a not-yet-existent `generate-report` Edge Function and returns `{ shareToken, shareUrl, storagePath }`; no report Edge Function exists; the `vet_reports` table + RLS already exist and are correct (migration 001). So this round designs from a clean slate against decided *architecture* (server-side render, share token, 30-day expiry, public read-without-account) — not against existing report design.
@@ -95,7 +105,7 @@ A panel of specialist lenses that **rotates per question**, layered on top of th
 - **Rotation = per clinical question / report section**, pulled in as an in-context lens; v1's standing rotation is **GI internist + nutritionist + skeptical GP** (the wedge + the trust attack). Keep it light — no rotation taxonomy to build.
 - **Composition with existing mechanisms:** the panel are **personas** (in-context lenses for discovery/design). Dr. Chen (persona) stays the always-on GP lens. The **`vet-report-cold-read` subagent** remains the *isolated acceptance gate* on the **rendered** artifact — the panel informs design; the subagent gates the build. No overlap: lenses shape, the subagent judges.
 
-**→ Tier-2 PM decision (§11):** formalize this panel into `personas.md` (as a rotating sub-roster under Dr. Chen) — or keep it doc-local. Flagged, not written.
+**→ Tier-2 PM decision (§11). PM lean (QA 2026-06-21):** formalize this panel into **its own PR-evolvable doc** (e.g. `docs/vet-specialist-panel.md`) that grows and is kept current via PRs over time — *not* embedded as a sub-roster inside `personas.md`. `personas.md` + the persona-routing table cross-reference it (so routing still points there), but the panel's depth lives in a file that can evolve independently. Flagged, not written.
 
 ---
 
@@ -168,11 +178,11 @@ OUTCOME: A GP vet trusts the report enough to let it inform the encounter for a
 
 ### 5.2 Jobs-to-be-done
 - **Vet (Dr. Chen):** *"When an owner hands me data for a patient I haven't prepped for, help me orient in 60 seconds and judge whether to trust it enough to act — without making me learn an app or log into anything."*
-- **Owner (Jordan) — the JTBD to study explicitly:** *"When I'm in the waiting room / across the consult desk, help me hand my vet something credible so we spend the 15 minutes on the problem, not on me failing to remember."* **The handoff context constrains format more than aesthetics** — a multi-page PDF is wrong for a phone shown across a desk. *When/where/how* the report changes hands (phone shown · emailed ahead · printed) is **[ASSUMPTION]** today → Research Debt §10 (R2, top gate).
+- **Owner (Jordan) — the JTBD to study explicitly:** *"When I'm in the waiting room / across the consult desk, help me hand my vet something credible so we spend the 15 minutes on the problem, not on me failing to remember."* **The handoff context constrains format more than aesthetics** — a multi-page PDF is wrong for a phone shown across a desk. **PM QA probe (2026-06-21):** *is the typical interaction really the owner handing their phone to the vet?* — maybe not, and we shouldn't assume it. The candidate handoff modes are broader than one: **phone shown across the desk · link/PDF emailed or uploaded ahead of the visit · printed and brought in · the owner reading from it themselves · (future) surfaced inside the practice's own tooling.** Which mode(s) dominate is **[ASSUMPTION]** today and is the strongest argument *for* HTML-first (one artifact that serves all of them) — but it must be validated → Research Debt §10 (**R2, top gate**).
 - **Owner (Sam, cat):** *"Show my vet that Pixel's intake actually dropped — honestly — without it reading as 'she's just being picky.'"* (intake-decline ≠ preference; shared-bowl honesty.)
 
 ### 5.3 Key insights (tagged)
-- **I1 [EVIDENCE]** Vets get ~85 days between visits and rely on owner verbal recall as the primary diagnostic input; structured longitudinal data "currently never exists." (research §1–2) → the report's reason to exist.
+- **I1 [EVIDENCE]** Pets average **~2.4 vet visits/year — roughly one every ~5 months** (AVMA, research §1), and the owner's recall across that gap is the primary diagnostic input; structured longitudinal data "currently never exists." (research §1–2) → the report's reason to exist. *(Data-quality note — PM QA caught this: research §1 also cites an "85.8-day gap between visits" (Vetsource 2024); that **cannot** be the inverse of 2.4 visits/yr — which implies ~152 days — and does **not** mean ~4 visits/yr. The two figures use different cohorts/denominators. The load-bearing point — months pass between visits — holds under the conservative 2.4/yr figure; the source's internal inconsistency is flagged as a Tier-2 fix to `nyx-research-v1_0.md`, §11.)*
 - **I2 [EVIDENCE]** Clinicians distrust patient-initiated data and want it *synthesized and prioritized*, not dumped. (§4.4 PGHD) → "synthesize, don't dump" is evidence-based, not taste.
 - **I3 [EVIDENCE]** Dr. Chen trusts **frequency over owner-rated severity**; back-dating and missing denominators are named trust-killers. (personas.md; research §2) → severity is demoted; denominators are mandatory.
 - **I4 [EVIDENCE]** Distribution is passive infrastructure (QR on a discharge sheet, a line in a post-visit email), not a sales motion — the report must require **zero extra effort from the vet** to be useful. (research §2) → no-login, no-account, prints.
@@ -184,6 +194,7 @@ OUTCOME: A GP vet trusts the report enough to let it inform the encounter for a
 > **Designer:** A single artifact with an owner-readable summary band serves the real handoff — Jordan is standing there and shouldn't be handed something alien. It also raises owner confidence going into a stressful consult.
 > **Dr. Chen (+ skeptical GP):** Any owner-facing copy near the clinical data risks reading "consumer app," which is exactly the trust I'm trying to extend to owner-collected data. A vet-only one-pager is safer for trust.
 > **PM decision needed:** the **audience treatment** (vet-only vs single artifact with an owner band). → Open Question §8.1; discovery's emerging recommendation in §6.3, to ratify.
+> **PM (QA 2026-06-21) — strategic weight:** this is **not just a layout choice — it is a distribution channel.** One owner bringing a credibly-designed report to a vet is how the vet flywheel (research §2; success signal S3) actually starts: a set of advocates, word-of-mouth sign-ups. **Do not let scope-trimming hollow out the two-sided design — swing for the fences here and get it right.** PM leans to the **banded both-sides** artifact (§6.3). The Dir.-of-Eng scope instinct is noted but **yields on *this* decision** — the *build* is still phased (§6.6), the *design ambition* is not cut.
 
 > **Engineer (Dir. Eng):** A structured CSV/JSON export is cheap and serves owner portability (B-041) and the AI-context-pack (B-089).
 > **Trust & Safety:** A downloadable structured dump of the whole record is a far wider unauthenticated-exposure surface than a bounded, revocable, view-only page — and vets have nothing to ingest it into (§4.3, no vet FHIR). For the *vet* audience it adds risk and no value in v1.
@@ -191,7 +202,7 @@ OUTCOME: A GP vet trusts the report enough to let it inform the encounter for a
 
 > **Nutritionist:** The diet section should be WSAVA-complete — every treat, supplement, and med-delivery food.
 > **Dr. Chen (GP, 60s scan):** WSAVA-complete risks an unscannable wall. The scan path must survive.
-> **PM decision needed:** how much diet detail on page 1 vs an appendix? → resolved provisionally in §6.4 (summary on page 1, WSAVA-superset in the appendix); confirm via the nutritionist+GP Research Debt item (§10 R7).
+> **PM decision needed:** how much diet detail on page 1 vs an appendix? **PM (QA 2026-06-21): this scope call is deferred to Dr. Chen + the specialist-panel roundtable (§3), not pre-resolved here.** The §6.4 split (page-1 summary line + WSAVA-superset in the appendix) is the *starting proposal* the roundtable refines, owned by R7 (§10).
 
 ---
 
@@ -203,6 +214,8 @@ v1 must answer **one or both** of:
 2. **"Is this symptom getting better or worse?"** — frequency/trend over the window, with denominators.
 
 Both reduce to **trend + denominator + confounders, scoped to a window.** A report that answers no specific question is the data dump §4 says everyone already ships. **This spine is the most important output of Workstream E** — IA, strawmen, and the cut all derive from it.
+
+**Substrate honesty (PM QA 2026-06-21):** the app already carries the **`diet_trials`** table + the profile **diet-trial card** (days elapsed / target duration + compliance %, via schema reference query [3]) — that is the trial substrate the "is the trial working?" question reads from. There is **no richer guided "trial workflow"** (protocol stepper, structured check-ins) today, and **v1 does not require one** — the report renders the existing trial data honestly. A deeper trial *experience*, if ever wanted, is a separate feature, **not** a vet-report dependency (note it for the spec; don't assume it).
 
 ### 6.2 Three divergent strawmen (text mocks — vary on density/register × audience)
 
@@ -264,6 +277,8 @@ This is what the owner observed and logged. It is not a diagnosis.
 
 **Emerging recommendation (→ ratify at §8.1):** **a vet-first single artifact (the Strawman-A clinical one-pager) with a thin owner-readable header band and a provenance appendix — i.e., disciplined Strawman C.** The clinical page is **primary and self-sufficient** (it must pass the cold read *alone*, band removed); the owner band is **one orienting line, not a parallel owner report**; the appendix satisfies "can I check this?" This resolves Principle 6 (the clinical surface is unbranded and dense) *and* the handoff reality (Jordan isn't locked out). The audience question is thereby **decided by the critique**, not pre-decided — and goes to the PM to ratify.
 
+**PM endorsement (QA 2026-06-21):** the PM lands here too — *"clinical-first report with a 'for the owner' section above"* — because it **serves both audiences without compromising either**: the vet gets a document in their familiar (SOAP-adjacent) form; the owner gets an orienting band **and** keeps their own analytics home. The two owner surfaces are **complementary, not redundant** — the report's owner band is a **one-line orienting summary of *this* report**, while the **Patterns dashboard** (B-023) is the owner's **ongoing, exploratory analytics**. The report does not try to be the dashboard, and the dashboard's warm cards never leak onto the clinical export (§2.2; B-023 §9). Held with the §5.4 "this is a distribution channel — swing for the fences" weight.
+
 ### 6.4 Design decisions worked against the strawmen
 
 | Decision | Resolution |
@@ -275,6 +290,7 @@ This is what the owner observed and logged. It is not a diagnosis.
 | **Intake honesty** | Free-fed renders **"Intake not directly observed"** verbatim (B-040); absence of logged intake is **never** "didn't eat"; decline routes to a **health flag, never "picky"** (feline 48h window); shared-bowl/grazing ambiguity rendered honestly (Sam). Finished-rate is **meals-only** (treats excluded; §11 #1). |
 | **Self-framing — authority & limits** | *"Owner-reported observations for [pet], [range]. Associational, not a diagnosis."* The liability boundary is stated plainly — and to a skeptical vet it **reads as a strength** (the tool knows its lane), *not* as undermining the trust it's built to earn. |
 | **Owner-facing copy (the band)** | One nyx-voice line that clarifies without spiking anxiety and **without false reassurance** (n=1 discipline; generated at a stressful moment). Never causal. |
+| **Owner access** *(PM QA 2026-06-21)* | The **owner can always view the full report they generate** — it's their pet's data, transparency builds trust, and care is never gated (Principle 7). **The owner sees exactly what the vet sees — no hidden clinical layer.** This is the report artifact; the owner's *ongoing* analytics home is the separate Patterns dashboard (B-023). |
 | **Accessibility** | **Non-colour severity/trend encoding** (shape · label · position · sparkline) that survives **grayscale and print** — the report is frequently printed B&W, so **colour can never be load-bearing.** **Reuse the B-023 colour-as-wellness ruling** (verdict colour only on established multi-sample metrics; adverse falling = calm/muted, **never a green "win"**; single observation neutral both ways) — do not re-decide colour semantics. |
 
 ### 6.5 Trust-killers & QA edge cases the strawmen were tested against
@@ -282,7 +298,17 @@ This is what the owner observed and logged. It is not a diagnosis.
 - **QA edge-case data scenarios (must each have a defined render):** **zero-event / empty** (designed empty state, not a blank page) · **share-token after expiry** (server-side 410/expired view, never the report) · **back-dated before trial start** (event excluded from trial-window stats but visible in the full log with its real date) · **deleted pet** (report generation blocked / prior reports invalidated by cascade).
 
 ### 6.6 System vs. wedge (ship the wedge; leave a seam, don't build an abstraction)
-v1 serves the **diet-trial / GI-symptom reactive-tracking owner.** The "discipline-extensible system" is a **seam plan, not built abstraction**: the section model (signalment · question-headline · trend · diet · meds · provenance) is general enough that derm (8–12 wk skin trials), behavior, or a senior-wellness report slot in later **without re-architecting** — but we do not build those sections, those rotations, or a template engine now. **Named v1 cut, defended:** GI/diet-trial only; no derm-specific section, no multi-pet comparative report, no A/P, no structured export, no PIMS integration, `Early`-tier and n=1 reads excluded.
+v1 serves the **diet-trial / GI-symptom reactive-tracking owner** — *the wedge* (Nyx's primary, highest-intent user: the owner sent home from a vet visit with a diet-trial or symptom-monitoring directive; CLAUDE.md "primary wedge"). The "discipline-extensible system" is a **seam plan, not built abstraction**: the section model (signalment · question-headline · trend · diet · meds · provenance) is general enough that derm (8–12 wk skin trials), behavior, or a senior-wellness report slot in later **without re-architecting** — but we do not build those sections, those rotations, or a template engine now. **Named v1 cut, defended:** GI/diet-trial only; no derm-specific section, no multi-pet comparative report, no A/P, no structured export, no PIMS integration, `Early`-tier and n=1 reads excluded.
+
+**Indicative build phasing** *(PM QA 2026-06-21 — a sketch for the requirements spec to refine, NOT the plan of record).* The PM asked that this surface be split into phases → PRs so the work reads as a concrete project plan ("this is coming in N PRs"), like B-117's 10-PR plan. A candidate decomposition, wedge-first:
+> - **Phase 1 — Core clinical one-pager (the spine):** signalment + clinical-question headline + symptom trend with denominators + diet section + provenance appendix; **HTML-first render**; the `generate-report` Edge Function + reference query [4]. *(~2–3 PRs: data/query layer · render · share-token wiring.)*
+> - **Phase 2 — Committed consumers:** medications + adherence (B-117 PR 10) · free-fed "Intake not directly observed" (B-040) · human-food line (B-102 PR 6) · B-010 timestamp-confidence rendering. *(~3–4 PRs, several disjoint/parallel.)*
+> - **Phase 3 — The two-sided artifact:** the owner band + the "Share with my vet" dashboard bridge (B-023 PR 5) + owner-initiated revocation (B-143). *(~2 PRs.)*
+> - **Phase 4 — Save/print PDF derivation** (B-144 spike → implementation) + the QA edge-case empty/expired/deleted states. *(~1–2 PRs.)*
+>
+> Each phase is gated by `vet-report-cold-read` (rendered artifact); load-bearing logic also gates on `adversarial-reviewer` + `rls-privacy-reviewer`. The **real-vet validation (§10 R1/R2)** precedes Phase 1 locking. The spec session owns the final cut.
+
+**Adjacent future seam — vet-visit document capture (B-145).** The PM floated capturing vet-visit documentation (discharge sheets, lab reports) by photo + AI extraction. **Out of v1 vet-report scope**, but it composes naturally: it **reuses the existing vision-extraction infra** (`extract-food/medication-from-photo`) on the `vet_visit_attachments` substrate (B-044), and would feed *into* the report — closing the loop so Nyx ingests what the vet sent home, then summarizes the owner's data back. Logged as B-145; carries the same provenance/guardrail rules (AI-extracted clinical data never silently trusted; n=1 reads stay owner-side).
 
 ---
 
@@ -306,6 +332,8 @@ v1 serves the **diet-trial / GI-symptom reactive-tracking owner.** The "discipli
 - Gives **server-side revocation + expiry** (Trust & Safety) that an emailed PDF **file can never have** — a downloaded PDF is uncontrollable forever, and **no live link may survive the B-039 deletion cascade.** An HTML-first, server-controlled artifact makes "kill the row → kill the link" true; a mailed file breaks that guarantee.
 - Print/PDF stays because vets **archive documents into the PIMS** and print (§4.3).
 
+**PM endorsement (QA 2026-06-21):** the PM independently lands on **webview/HTML-first** for two further reasons: **(1) iteration speed** — a web view is far easier to spin up and change than a PDF (PDFs are notoriously finicky on layout), so we converge on the final design in HTML and then **derive the PDF from the iterated webview**; **(2)** it matches this recommendation. This firms §8.2 toward option (a).
+
 ### 7.3 How this RESHAPES the blocking PDF-library Open Question
 If the primary artifact is an HTML/web report, **"which PDF library" stops being the question.** It is **reshaped and demoted** to: *"server-render HTML as the canonical artifact, and derive the save/print PDF via (a) headless-Chromium HTML→PDF, (b) a print stylesheet + browser print with no heavy dependency, or (c) a lightweight `pdf-lib` pass."* The **render-library choice is a follow-up engineering spike (now B-144), gated on the PM ratifying HTML-first vs PDF-first (§8.2)** — not a discovery deliverable. The old CLAUDE.md Open Question ("`pdf-lib` vs `puppeteer` vs `react-pdf`") is **narrowed**: `puppeteer`/headless-Chromium becomes the natural fit *only if* we want pixel-faithful PDF of the HTML; option (b) may need no PDF library at all.
 
@@ -324,9 +352,9 @@ If the primary artifact is an HTML/web report, **"which PDF library" stops being
 
 Each is decidable now (pick an option), with a discovery recommendation. **§8.1–8.3 gate the spec.**
 
-**8.1 — Audience treatment** *(the strawman-axis decision).* Options: **(a)** vet-only clinical one-pager · **(b)** single artifact with a thin owner-readable header band + provenance appendix · **(c)** separate owner and vet documents. **Recommend (b)** (disciplined Strawman C; §6.3) — clinical surface self-sufficient, owner band one line. *Routes to: requirements spec IA.*
+**8.1 — Audience treatment** *(the strawman-axis decision).* Options: **(a)** vet-only clinical one-pager · **(b)** single artifact with a thin owner-readable header band + provenance appendix · **(c)** separate owner and vet documents. **Recommend (b)** (disciplined Strawman C; §6.3) — clinical surface self-sufficient, owner band one line. *Routes to: requirements spec IA.* **PM lean (QA 2026-06-21): (b) — banded both-sides**, held as a *distribution-channel* decision (swing for the fences, §5.4), to ratify at the spec session.
 
-**8.2 — Primary delivery format** *(reshapes the PDF-library question).* Options: **(a)** HTML-first web report (source of truth) + derived save/print PDF · **(b)** PDF-first · **(c)** both co-equal. **Recommend (a)** (§7.2). Ratifying (a) **narrows the CLAUDE.md PDF-library Open Question** to the B-144 render spike. *Routes to: spec + B-144.*
+**8.2 — Primary delivery format** *(reshapes the PDF-library question).* Options: **(a)** HTML-first web report (source of truth) + derived save/print PDF · **(b)** PDF-first · **(c)** both co-equal. **Recommend (a)** (§7.2). Ratifying (a) **narrows the CLAUDE.md PDF-library Open Question** to the B-144 render spike. *Routes to: spec + B-144.* **PM lean (QA 2026-06-21): (a) — HTML/webview-first** (iterate in HTML, derive the PDF later; §7.2).
 
 **8.3 — Report scope & control.** Options: fixed window · owner-chosen range · auto-scoped to active diet trial · since-last-visit. **Recommend a default cascade:** **since last vet visit (`vet_visits`) → else active diet-trial window → else 30 days**, with an **owner range override.** The trial is the natural clinical unit for the wedge; this composes with B-023's "since last visit else 30d." *Routes to: spec IA + the `generate-report` query.*
 
@@ -336,9 +364,9 @@ Each is decidable now (pick an option), with a discovery recommendation. **§8.1
 
 **8.6 — Resolve B-115 (protein-exposure over-count) before the diet/confounder line ships.** Options: dedup exact-timestamp same-food treat re-logs before ranking · ratify the raw-count stance. **Recommend dedup** — overstating a confounder's prevalence is the wrong headline for a diet-trial owner. *Routes to: the existing B-115 PM/Data-Scientist call, now a Step-9 precondition.*
 
-**8.7 — B-028 ordering (editable AI structured fields).** The report must not render an uncorrectable AI-derived field as fact. Options: gate the report's use of AI structured fields on B-028 shipping · render only owner-confirmed fields in v1. **Recommend: v1 renders owner-confirmed fields only; AI-derived-unedited fields are excluded or carry an explicit provenance tag.** *Routes to: spec + B-028 sequencing.*
+**8.7 — B-028 ordering (editable AI structured fields).** The report must not render an uncorrectable AI-derived field as fact. Options: gate the report's use of AI structured fields on B-028 shipping · render only owner-confirmed fields in v1. **Recommend: v1 renders owner-confirmed fields only; AI-derived-unedited fields are excluded or carry an explicit provenance tag.** *Routes to: spec + B-028 sequencing.* **PM (QA 2026-06-21): B-028 can be kicked off in parallel now** — building the editable-fields layer ahead of / alongside the report *removes* this precondition rather than gating on it (added to the §9 parallel track).
 
-**8.8 — Formalize the specialist vet panel into `personas.md`?** Options: formalize as a rotating sub-roster under Dr. Chen · keep doc-local. **Recommend formalize** (it earns its keep across C–F). Tier-2 — flagged in §11, not written. *Routes to: PM.*
+**8.8 — Formalize the specialist vet panel — where?** Options: a sub-roster inside `personas.md` · **its own PR-evolvable doc** (`docs/vet-specialist-panel.md`) cross-referenced from `personas.md` · keep doc-local. **Recommend formalize** (it earns its keep across C–F). **PM lean (QA 2026-06-21): its own PR-evolvable doc**, kept current via PRs, cross-referenced from `personas.md` + the routing table (§3.2). Tier-2 — flagged in §11, not written. *Routes to: PM.*
 
 **8.9 — Which v1 success signal(s) do we instrument (§1.3)?** Options: S2 only (cold-read orient, testable now) · S2 + S3 (add the "wants it again" proxy via B-047) · all three (needs a real-vet feedback channel). **Recommend S2 as the build bar + S3 instrumented via B-047; S1 deferred to the real-vet validation channel.** *Routes to: B-047 + the Research-Debt vet panel.*
 
@@ -350,7 +378,7 @@ Each is decidable now (pick an option), with a discovery recommendation. **§8.1
 
 ## 9. Recommendations & next steps
 
-**What the requirements-spec session should decide first (ordered):**
+**Immediate next step: the requirements-spec session** (turns these decisions into a build-ready spec — the natural follow-up the PM flagged). It should decide, in order:
 1. **Ratify §8.1–8.3 (audience · format · scope)** — they gate the entire IA and the `generate-report` contract. One PM batch unblocks the spec.
 2. **Validate the top Research Debt items (§10 R1, R2) with real practicing vets BEFORE the spec locks** — this is the gate; synthetic vets cannot validate trust or the handoff moment.
 3. **Resolve the data-integrity preconditions:** B-115 (§8.6) and B-028 ordering (§8.7) — both feed the report and must be settled before the diet/AI-field sections ship.
@@ -358,7 +386,7 @@ Each is decidable now (pick an option), with a discovery recommendation. **§8.1
 5. Then the spec defines: the clinical-question-spine IA (§6.1), the must-carry sections (§2.2–2.3), sparse/empty behavior (§6.4), and the §7.4 threat-model controls.
 
 **Parallelism & efficiencies (don't run this linearly):**
-- **Independent, run concurrently:** the **B-144 render-library spike** (engineering) and the **real-vet validation pass** (§10, PM/research) are disjoint — no shared files, no logical dependency — and can run as separate tracks once §8.2 is ratified. **B-044's migration audit** is independent and **ready-to-run now** (doesn't wait on any decision).
+- **Independent, run concurrently:** the **B-144 render-library spike** (engineering) and the **real-vet validation pass** (§10, PM/research) are disjoint — no shared files, no logical dependency — and can run as separate tracks once §8.2 is ratified. **B-044's migration audit** and **B-028 (editable AI fields — PM: parallelizable now, §8.7)** are both independent and **ready-to-run now** (neither waits on a decision); doing B-028 in parallel *removes* the §8.7 precondition instead of gating on it.
 - **One decision unblocks several tracks:** ratifying **§8.1–8.3** simultaneously unblocks the spec IA, the B-023 PR 5 bridge, and the B-144 spike scoping.
 - **Gated vs ready:** ready-now = B-044, the strawman rendering for cold-read, real-vet recruiting. Gated-on-a-PM-call = the spec itself (§8.1–8.3), B-115 (§8.6), B-028 (§8.7).
 - **Shared-file collision to expect at wrap:** `STATUS.md` and `CLAUDE.md` Open Questions (the PDF-library row) — coordinate if the spike and spec sessions run in parallel.
@@ -376,8 +404,8 @@ Each is decidable now (pick an option), with a discovery recommendation. **§8.1
 | **R3** | **Frequency-over-severity:** do vets want owner-rated severity at all, or is it noise? (§8.4) | **HIGH × MED** | Vet preference test on a strawman with vs without severity. If vets *want* severity, §8.4 changes. |
 | **R4** | Is the **owner-readable band** a help or a trust-contaminant? (§5.4 / §6.3 / §8.1) | **HIGH × MED** | A/B cold-read of banded (Strawman C) vs vet-only (Strawman A): does the band lower vet trust? |
 | **R5** | Will a vet **open a web link** mid-consult, or is print/PDF the only thing that survives the workflow? (§7) | **MED × HIGH** | Vet workflow interviews + a **discharge-sheet format scan** (research §4 already flags this owner=PM). If vets won't open links, PDF/print becomes primary. |
-| **R6** | Does the report need to **map to SOAP S/O explicitly** to be ingested, or is a clean clinical summary enough? (§4.3) | **MED × MED** | Show GPs a SOAP-mapped vs free-form clinical layout; measure ingest/scan ease. |
-| **R7** | **WSAVA completeness vs scannability** — how much diet detail on page 1 vs appendix? (§5.4 nutritionist↔GP) | **MED × MED** | Nutritionist + GP review of the diet section at two detail levels. |
+| **R6** | Does the report need to **map to SOAP S/O explicitly** to be ingested, or is a clean clinical summary enough? (§4.3; **PM endorses SOAP-adjacency** — keep the report close to standard clinical documentation) | **MED × MED** | Show GPs a SOAP-mapped vs free-form clinical layout; measure ingest/scan ease. Direction is set (SOAP-adjacent); the debt is *how explicit* the S/O mapping must be. |
+| **R7** | **WSAVA completeness vs scannability** — how much diet detail on page 1 vs appendix? (§5.4 nutritionist↔GP; **PM: this scope call is owned by Dr. Chen + the specialist-panel roundtable**, §3) | **MED × MED** | Dr. Chen + nutritionist (panel roundtable) review the diet section at two detail levels and pick the page-1/appendix line. |
 | **R8** | **PIMS archival** — do vets save a handed-over report into the PIMS as a document, and does that change the format/filename/metadata needs? | **LOW × MED** | Practice-manager interviews; if archival matters, add filename/header conventions to the spec. |
 | **R9** | Prevalence of the **"paste history into ChatGPT"** incumbent behavior (§4.2) — sizes the B-089 escape-hatch demand. | **LOW × MED** | Owner survey; informs B-089 prioritization, not v1 report. |
 
@@ -386,11 +414,12 @@ Each is decidable now (pick an option), with a discovery recommendation. **§8.1
 ## 11. Tier-2 doc edits proposed (flagged, NOT written) & protocol notes
 
 **Proposed Tier-2 edits (await PM confirmation before any write):**
-- **`docs/personas.md`** — formalize the §3 specialist vet panel as a rotating sub-roster under Dr. Chen, and note its composition with the `vet-report-cold-read` subagent. *(→ §8.8.)*
+- **New doc `docs/vet-specialist-panel.md`** *(PM lean, QA 2026-06-21)* — formalize the §3 specialist vet panel in **its own PR-evolvable file** (not a sub-roster inside `personas.md`), noting its composition with the `vet-report-cold-read` subagent; **cross-reference it from `personas.md` + the persona-routing table** so routing still points there. *(→ §8.8.)*
+- **`docs/nyx-research-v1_0.md`** — reconcile the **internally inconsistent visit-cadence figures**: §1 cites both "2.39 visits/year" and an "85.8-day gap between visits," which conflict (2.4/yr ⇒ ~152 days, not 85.8). Correct or footnote so downstream docs don't propagate a ~4×/yr misread (see §5.3 I1).
 - **`docs/nyx-competitive-landscape-v1_0.md`** — add the §4.1 indie-app "export-to-vet is now table stakes" crop (Vet Record / Vettie / Petfetti / PetDocs / PetVitality) and the §4.3 "no veterinary FHIR/HL7 standard" finding; both sharpen Nyx's differentiation toward *synthesized clinical answer*, not export.
 - **`docs/nyx-technical-spec-v1_0.md` §7** — once §8.1–8.3 are ratified: reshape the "PDF rendering library" Open Engineering Question per §7.3; add the must-carry sections (meds + adherence, human-food line, free-fed "Intake not directly observed" verbatim, B-010 timestamp-confidence rendering) to the §7 content list; record the HTML-first delivery direction.
 - **`docs/nyx-design-principles-v1_0.md`** — the "vet portal visual language" Open Design Question now has discovery input (Principle 6 + the §6.4 accessibility/colour-reuse rulings); flag for the future design pass.
 
-**New backlog rows added this session** (operational file; proactive add per Backlog Protocol — these are *resolved deferrals*, not new scope): **B-143** owner-initiated share-link revocation; **B-144** vet-report render-library spike. New *scope/decisions* were routed to Open Questions (§8), never silently added to the backlog.
+**New backlog rows added this session** (operational file; proactive add per Backlog Protocol — *resolved deferrals*, not new scope): **B-143** owner-initiated share-link revocation; **B-144** vet-report render-library spike; **B-145** vet-visit document capture + AI extraction (PM-floated future scope, §6.6). New *scope/decisions* were routed to Open Questions (§8), never silently added to the backlog.
 
 **Protocols honored:** Persona Conflict Protocol (§5.4 — flagged, not resolved); Tier-2 doc protocol (above — flagged, not written); Backlog Protocol (B-143/B-144 with full row contract; existing specs cross-referenced, not restated); safety invariants throughout (n=1 never reassures and is off the report; intake decline ≠ preference; report claims associational, never causal/diagnostic; absence ≠ wellness).

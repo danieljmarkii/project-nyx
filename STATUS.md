@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **Vet-report (Step 9) product-discovery round** complete: deliverable `docs/vet-report-discovery.md` (#214) — a synthetic synthesis ending in decidable Open Questions + a ranked real-vet Research Debt list that gates the requirements spec. Directions to ratify: audience = banded vet-first one-pager; delivery = HTML-first web report + derived PDF (reshapes/demotes the PDF-library question to a render spike, B-144). NO schema, NO build change. Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **Vet-report (Step 9) product-discovery round** complete + **PM QA-reviewed**: deliverable `docs/vet-report-discovery.md` (#214) — a synthetic synthesis ending in decidable Open Questions + a ranked real-vet Research Debt list that gates the requirements spec. PM leans converged (to ratify at the spec session): audience = **banded both-sides** (clinical-first + "for the owner" band; held as a *distribution-channel* call); delivery = **HTML/webview-first** + derived PDF (reshapes/demotes the PDF-library question to a render spike, B-144); specialist panel → **its own PR-evolvable doc** (not personas.md); **B-028 parallelizable now**. New future scope: **B-145** vet-visit doc capture. NO schema, NO build change. Build phase **unchanged** — Step 10 + parallel tracks.
 
 ---
 
