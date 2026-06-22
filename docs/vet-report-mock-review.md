@@ -17,7 +17,7 @@
 |---|---|---|---|
 | GP-0 | **Metronidazole confound was positioned two sections from the trend claim** — a page-1-only reader could credit the diet for an antibiotic started the same day. "Letting the diet quietly take credit for an antibiotic's possible effect is the highest-consequence misread available here." | **Blocking (before real vets)** | ✅ Fixed — `Reading the trend` note now sits directly under the charts |
 | GP-1 | Charts had no date axis / trial-start marker — couldn't tell if the worst week was before or after the diet started (the central confound). | Nice-to-have (strong) | ✅ Fixed — dashed trial-start (May 8) line + May 1 / Jun 21 anchors on both charts |
-| GP-2 | Owner band: keep it (doesn't erode trust, walled off + disclaimed) but **reframe from success → change + confound**. | Nice-to-have | ✅ Reframed (keep/remove still = R4, see §4) |
+| GP-2 | Owner band: keep it (doesn't erode trust, walled off + disclaimed) but **reframe from success → change + confound**. | Nice-to-have | ✅ **RESOLVED — band removed** (PM, 2026-06-22); report is vet-only |
 | GP-3 | Scope is clear ("since last visit", stated 3×). General policy: default since-last-visit + ~90-day fallback; owner range OK **but disclose out-of-window events** (cherry-pick guard). | Policy (spec) | → §4 / spec |
 | GP-4 | Page 1 **is** scannable in 60s; SOAP-adjacency genuinely helps familiarity ("oriented in seconds, no app vocab"). Real density issue = restatement (glance ↔ diet) + 2 long notes. Appendices correctly verbose. | Nice-to-have | Partially done (de-dup'd the pre-trial note); rest → §4 |
 | GP-5 | Surface chronic duration ("~3 months") on page 1; B&W test-print the zebra/band shading. | Nice-to-have | ✅ Duration added; B&W print = PM action |
@@ -41,7 +41,7 @@ Standout praise (unprompted): timestamp handling (`seen`/`est`/`range` + overnig
 > Verbatim intent from the 2026-06-22 review; the vet read is the priority response.
 
 1. **Bar charts lose meaning without dates.** → **Vets agree** (GP-1 + GI + criticalist). Fixed: trial-start (May 8) divider + May 1/Jun 21 anchors; the chart now answers "did the peak come before or after the diet/drug started?" (it peaked just *after* — clinically interesting).
-2. **Do we like the "for the owner" section? Pros and cons.** → **Split, and it's R4.** GP: keep but reframe (done). Skeptical GP: would skip it. This is exactly the §8.1 / R4 question — kept for the real-vet A/B (toggle ready); **your call after real vets weigh in.**
+2. **Do we like the "for the owner" section? Pros and cons.** → **RESOLVED 2026-06-22 — band removed (PM decision).** The report is vet-only (Strawman A); the owner's surface is the Patterns dashboard (B-023). Aligns with the skeptical-GP lens and the original cold-read P6 concern. §8.1 closed → option (a), vet-only.
 3. **Should it have a date filter / will it get long (e.g. a year)?** → **Vets: scope is already right** (since-last-visit; this is a snapshot, not the full year). Default = since-last-visit + ~90-day fallback; owner *should* be able to set the range — **but the report must disclose events outside a custom window** (cherry-pick guard, the one new thing the vets add). The range *selection* is an app-side action when generating (the B-023 "Share with my vet" bridge), not a control on the static report. → spec / §4.
 4. **Too text-heavy? Familiar enough for a 60s scan?** → **Vets: yes, scannable in 60s, and SOAP-adjacency makes it familiar without teaching.** The real fix isn't "less content" — it's removing page-1 *restatement* (glance ↔ diet) and compressing 2 notes; appendices should stay verbose (reference). Partially done; rest in §4.
 
@@ -56,8 +56,8 @@ Standout praise (unprompted): timestamp handling (`seen`/`est`/`range` + overnig
 - **Page-1 de-densification (GP-4):** one home per fact (glance = headline, diet section = detail); compress the timing section to its two-line finding. Editorial — PM to steer how aggressive.
 - **PIMS archival header/filename convention (vet-tech lens / discovery R8).**
 
-**For the real-vet A/B (R4 — your call after the panel):**
-- **Owner band: keep (Strawman C) vs vet-only (Strawman A).** The mock's toggle prints both; this is the §8.1 audience decision and should be settled by real GPs, not us.
+**Resolved (PM, 2026-06-22):**
+- **Owner band removed — the report is vet-only (Strawman A).** §8.1 closed → option (a); R4 is no longer an open A/B. The owner's surface is the Patterns dashboard (B-023). (Formalize §8.1 in the requirements spec.)
 
 **PM manual:**
 - **B&W test print** — confirm the zebra-row + owner-band gray shading render cleanly on a mono laser (the brief says it's printed mono often).
@@ -66,10 +66,10 @@ Standout praise (unprompted): timestamp handling (`seen`/`est`/`range` + overnig
 
 ---
 
-## 5. Real vet panel feedback — R1/R2/R4 (THE GATE — to be filled after the sessions)
+## 5. Real vet panel feedback — R1/R2 (THE GATE — to be filled after the sessions)
 
-_Recruit 5–8 real practicing GPs (discovery §10). Capture per reviewer; this is what locks/changes the design before the requirements spec._
+_Recruit 5–8 real practicing GPs (discovery §10). Capture per reviewer; this is what locks/changes the design before the requirements spec. (R4 — the owner band — is resolved: removed, so the report is vet-only; no A/B needed.)_
 
-| Reviewer (role) | R1 — would you act on it / want it again? | R2 — how would you receive it (phone/print/email)? | R4 — band: help or trust-contaminant? | Other |
-|---|---|---|---|---|
-| _…_ | | | | |
+| Reviewer (role) | R1 — would you act on it / want it again? | R2 — how would you receive it (phone/print/email)? | Other |
+|---|---|---|---|
+| _…_ | | | |

@@ -66,20 +66,7 @@
     box-shadow:0 1px 5px rgba(0,0,0,.28);
   }
 
-  /* Owner band (thin, top of page 1) */
-  .owner-band{
-    border:1px solid #000;
-    padding:9px 12px;
-    margin-bottom:14px;
-    background:var(--band);
-    -webkit-print-color-adjust:exact;print-color-adjust:exact;
-  }
-  .owner-band .tag{
-    font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
-    font-weight:700;color:var(--muted);display:block;margin-bottom:3px;
-  }
-  .owner-band p{margin:0;font-size:13px;line-height:1.5;}
-  .owner-band.hidden{display:none;}  /* screen toggle for the R4 banded-vs-vet-only A/B */
+  /* (owner band removed 2026-06-22 — vet-only report; Open Question §8.1 resolved) */
 
   /* Signalment header */
   .head{
@@ -169,25 +156,12 @@
 
 <!-- SCREEN-ONLY: not part of the report artifact -->
 <div class="toolbar no-print">
-  <span>Design-validation mock · Strawman C (banded one-pager) · sample data, not a real patient</span>
-  <span style="display:flex;gap:8px">
-    <button onclick="document.getElementById('ownerBand').classList.toggle('hidden')">Toggle owner band (A/B)</button>
-    <button onclick="window.print()">Print / Save as PDF</button>
-  </span>
+  <span>Design-validation mock · clinical one-pager (vet-only) · sample data, not a real patient</span>
+  <button onclick="window.print()">Print / Save as PDF</button>
 </div>
 
 <!-- ============================ PAGE 1 — CLINICAL ONE-PAGER ============================ -->
 <section class="page">
-
-  <!-- The clinical page is self-sufficient: this band can be removed and the page still
-       passes the cold read. One orienting owner line, plain language, never causal,
-       no false reassurance. -->
-  <div class="owner-band" id="ownerBand">
-    <span class="tag">For the owner</span>
-    <p>Over this window, the vomiting and loose stool you logged for Mochi both came down (vomiting 6 to 3,
-       loose stool 5 to 1). This period also included a new medication and some off-diet foods, so the detail below is
-       for your vet to interpret &mdash; it&rsquo;s a summary of what you observed, not a diagnosis.</p>
-  </div>
 
   <div class="head">
     <div class="who">
