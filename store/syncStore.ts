@@ -19,6 +19,15 @@ interface SyncState {
   // pull-to-refresh or reload. A monotonic counter so an effect can depend on it.
   hydrationTick: number;
   bumpHydrationTick: () => void;
+
+  // B-150 — reactive refresh-after-regen for the Signal surfaces. Bumped when a
+  // generate-signal regen SUCCEEDS (for any pet), so the Home Signal and the
+  // cross-pet safety banner re-read the fresh cache without waiting for a screen
+  // re-focus. A non-active pet's finding can RESOLVE while its owner sits on
+  // another pet's home; without this tick the banner showed the stale (resolved)
+  // finding until the next Home re-focus. A monotonic counter so an effect deps on it.
+  signalTick: number;
+  bumpSignalTick: () => void;
 }
 
 export const useSyncStore = create<SyncState>((set) => ({
@@ -31,4 +40,7 @@ export const useSyncStore = create<SyncState>((set) => ({
 
   hydrationTick: 0,
   bumpHydrationTick: () => set((s) => ({ hydrationTick: s.hydrationTick + 1 })),
+
+  signalTick: 0,
+  bumpSignalTick: () => set((s) => ({ signalTick: s.signalTick + 1 })),
 }));

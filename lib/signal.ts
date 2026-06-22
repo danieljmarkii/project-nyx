@@ -14,6 +14,7 @@
 // so it can be unit-tested offline.
 
 import { supabase } from './supabase';
+import { useSyncStore } from '../store/syncStore';
 import { syncPendingEvents, syncPendingMeals } from './sync';
 
 // ── Client mirror of the cached finding shape ────────────────────────────────
@@ -256,6 +257,13 @@ export async function regenerateSignal(petId: string): Promise<{ error: string |
     const { error } = await supabase.functions.invoke('generate-signal', {
       body: { petId },
     });
+    if (!error) {
+      // A successful regen wrote a fresh cache. Bump the signal tick so the Home
+      // Signal (useSignal) and the cross-pet safety banner (useCrossPetSafetyBanner)
+      // re-read it without waiting for a screen re-focus — closes the B-150 window
+      // where a non-active pet's RESOLVED finding lingered on the banner.
+      useSyncStore.getState().bumpSignalTick();
+    }
     return { error: error ? error.message : null };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
