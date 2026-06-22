@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Owner-reported summary — Mochi (May 1 – Jun 21, 2026)</title>
+<!--
+  Vet Report — Strawman C ("Banded one-pager") static HTML mock.
+  Build Step 9 foundation. HTML-first artifact (docs/vet-report-discovery.md §8.2),
+  NOT the requirements spec and NOT backend-wired. Sample data only.
+
+  Design constraints enforced here:
+  - Principle 6: clinical-grade, not pretty; no app branding beyond a small footer.
+  - §6.4: 60s scan IA (signalment -> question headline -> trend w/ denominators ->
+          diet & confounders -> meds + adherence -> provenance footer).
+  - §6.4 accessibility: NO load-bearing colour. Trend/severity carried by number,
+          bar height, label, position — survives grayscale + B&W print.
+  - §6.4 statistical honesty: a denominator + window on every count; correlations
+          stay associational, never causal.
+  - §6.4 intake honesty / B-040: absence of a log is never "didn't eat".
+  - B-010: discovered events render as a time RANGE, never a false precise point.
+  - B-117: medications carry a computed adherence line (never "compliant" on 0 doses).
+  - B-102: a distinct human-food confounder line.
+  - The clinical page is PRIMARY and self-sufficient — it must pass the cold read with
+    the owner band removed. The owner band is one orienting line, not a parallel report.
+-->
+<style>
+  :root{
+    --ink:#000;
+    --muted:#555;
+    --faint:#777;
+    --hair:#b9b9b9;
+    --rule:#000;
+    --band:#f1f1f1;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:#e7e7e7;
+    color:var(--ink);
+    font-family:-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:13px;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num{font-variant-numeric:tabular-nums;}
+
+  /* Screen-only toolbar — never part of the printed artifact */
+  .toolbar{
+    max-width:210mm;margin:14px auto 0;padding:8px 12px;
+    background:#222;color:#fff;border-radius:6px;
+    display:flex;justify-content:space-between;align-items:center;gap:12px;
+    font-size:12px;
+  }
+  .toolbar span{opacity:.85;}
+  .toolbar button{
+    font:inherit;background:#fff;color:#111;border:0;border-radius:5px;
+    padding:6px 12px;cursor:pointer;
+  }
+
+  /* A "sheet" */
+  .page{
+    width:210mm;min-height:297mm;
+    margin:14px auto;padding:16mm 16mm 13mm;
+    background:#fff;
+    box-shadow:0 1px 5px rgba(0,0,0,.28);
+  }
+
+  /* Owner band (thin, top of page 1) */
+  .owner-band{
+    border:1px solid #000;
+    padding:9px 12px;
+    margin-bottom:14px;
+    background:var(--band);
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .owner-band .tag{
+    font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+    font-weight:700;color:var(--muted);display:block;margin-bottom:3px;
+  }
+  .owner-band p{margin:0;font-size:13px;line-height:1.5;}
+
+  /* Signalment header */
+  .head{
+    display:flex;justify-content:space-between;align-items:flex-start;
+    gap:18px;border-bottom:2px solid var(--rule);padding-bottom:9px;
+  }
+  .head .who{max-width:62%;}
+  .head .name{font-size:21px;font-weight:700;letter-spacing:.01em;line-height:1.1;}
+  .head .signalment{font-size:12.5px;color:#111;margin-top:3px;}
+  .head .weight{font-size:12px;color:var(--muted);margin-top:2px;}
+  .head .meta{text-align:right;font-size:11.5px;line-height:1.5;}
+  .head .meta .big{font-size:12.5px;font-weight:600;color:#000;}
+  .head .meta .nd{font-weight:600;}
+
+  /* Section blocks */
+  .sec{margin-top:15px;}
+  .sec > h2{
+    font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    margin:0 0 7px;padding-bottom:3px;border-bottom:1.5px solid var(--rule);
+  }
+  .sec p{margin:5px 0;}
+  .lead{font-size:13px;}
+  .kv{display:flex;gap:7px;margin:3px 0;}
+  .kv .k{flex:0 0 auto;font-weight:600;}
+  .note{font-size:11.5px;color:var(--muted);}
+  .ref{font-size:11px;color:var(--faint);font-style:italic;}
+
+  /* "At a glance" summary list */
+  .glance{margin:6px 0 0;padding:0;list-style:none;}
+  .glance li{
+    position:relative;padding:3px 0 3px 16px;border-bottom:1px solid #e4e4e4;
+  }
+  .glance li:last-child{border-bottom:0;}
+  .glance li::before{content:"–";position:absolute;left:2px;color:#000;}
+  .glance b{font-weight:600;}
+
+  /* Symptom rows w/ inline charts */
+  .symrow{display:flex;align-items:center;gap:14px;padding:6px 0;border-bottom:1px solid #ececec;}
+  .symrow:last-child{border-bottom:0;}
+  .symrow .lab{flex:0 0 116px;font-weight:600;}
+  .symrow .chart{flex:0 0 auto;}
+  .symrow .read{flex:1 1 auto;font-size:12.5px;}
+  .symrow .read .sub{display:block;color:var(--muted);font-size:11.5px;margin-top:1px;}
+  .charts-cap{font-size:10.5px;color:var(--faint);margin:5px 0 0;}
+
+  svg .bar{fill:#1a1a1a;}
+  svg .nub{fill:#9a9a9a;}
+  svg .base{stroke:#000;stroke-width:1;}
+  svg .divider{stroke:#000;stroke-width:1;stroke-dasharray:2 2;}
+
+  /* Tables (appendix) */
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;}
+  caption{caption-side:top;text-align:left;font-size:11px;color:var(--muted);margin-bottom:4px;}
+  th,td{text-align:left;padding:4px 7px;border-bottom:1px solid var(--hair);vertical-align:top;}
+  thead th{border-bottom:1.5px solid var(--rule);font-weight:700;font-size:11px;}
+  tbody tr:nth-child(even){background:#f7f7f7;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  td.r,th.r{text-align:right;}
+  td.c,th.c{text-align:center;}
+  .conf{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#000;border:1px solid #777;border-radius:3px;padding:0 4px;white-space:nowrap;}
+
+  .appx-title{font-size:13px;font-weight:700;margin:0 0 2px;}
+  .appx-sub{font-size:11.5px;color:var(--muted);margin:0 0 10px;}
+  .legend{font-size:11.5px;}
+  .legend dt{font-weight:600;float:left;clear:left;width:84px;}
+  .legend dd{margin:0 0 4px 96px;color:#222;}
+
+  /* Per-page footer */
+  .foot{
+    margin-top:16px;border-top:1px solid var(--hair);padding-top:7px;
+    font-size:10.5px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;
+  }
+  .foot .src{color:var(--faint);}
+
+  @media print{
+    body{background:#fff;font-size:10.4pt;}
+    .no-print{display:none !important;}
+    .page{width:auto;min-height:0;margin:0;padding:0;box-shadow:none;}
+    .page + .page{page-break-before:always;}
+    thead{display:table-header-group;}
+    tr,.symrow,.glance li,.sec{page-break-inside:avoid;}
+  }
+  @page{size:A4 portrait;margin:14mm;}
+</style>
+</head>
+<body>
+
+<!-- SCREEN-ONLY: not part of the report artifact -->
+<div class="toolbar no-print">
+  <span>Design-validation mock · Strawman C (banded one-pager) · sample data, not a real patient</span>
+  <button onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<!-- ============================ PAGE 1 — CLINICAL ONE-PAGER ============================ -->
+<section class="page">
+
+  <!-- The clinical page is self-sufficient: this band can be removed and the page still
+       passes the cold read. One orienting owner line, plain language, never causal,
+       no false reassurance. -->
+  <div class="owner-band">
+    <span class="tag">For the owner</span>
+    <p>Since Mochi&rsquo;s food changed on May&nbsp;8, the vomiting you&rsquo;ve logged is down by about half and
+       the loose stool has nearly stopped. The detail below is for your vet &mdash; it&rsquo;s a summary of what
+       you observed, not a diagnosis.</p>
+  </div>
+
+  <div class="head">
+    <div class="who">
+      <div class="name">Mochi</div>
+      <div class="signalment">Canine &middot; mixed breed (terrier type) &middot; male, neutered &middot; 4&nbsp;yr (b. 2022)</div>
+      <div class="weight">Weight <span class="num">12.4&nbsp;kg</span> (owner-recorded Jun&nbsp;2, 2026)</div>
+    </div>
+    <div class="meta">
+      <div class="big">Owner-reported summary</div>
+      <div><span class="num">May&nbsp;1 &ndash; Jun&nbsp;21, 2026</span> &middot; <span class="num">51</span>&nbsp;days</div>
+      <div>Range: since last vet visit (<span class="num">May&nbsp;1</span>)</div>
+      <div class="nd">Prepared for veterinary review</div>
+      <div class="nd">Not a diagnosis</div>
+    </div>
+  </div>
+
+  <!-- SAFETY-LEADS SLOT: when an intake-decline / feline-window / worsening flag is
+       present it renders here, directly under signalment, impossible to miss (§6.3
+       criticalist). Mochi's data triggers none, so nothing is rendered — an empty
+       "all clear" box is never shown (absence != wellness). -->
+
+  <!-- 1. CLINICAL-QUESTION HEADLINE (objective; S/O only — never A/P) -->
+  <div class="sec">
+    <h2>Summary &mdash; this window</h2>
+    <p class="lead">Tracking chronic intermittent <b>vomiting and loose stool</b> on a
+       <b>hydrolyzed-protein elimination trial</b> (day&nbsp;<span class="num">44</span> of&nbsp;<span class="num">56</span>).
+       Owner-reported counts over the 51-day window:</p>
+    <ul class="glance">
+      <li><b>Vomiting</b> <span class="num">9 episodes / 51&nbsp;d</span> &mdash; <span class="num">6</span> in the first half vs <span class="num">3</span> in the second.</li>
+      <li><b>Loose stool</b> <span class="num">6 episodes / 51&nbsp;d</span> &mdash; <span class="num">5</span> vs <span class="num">1</span>.</li>
+      <li><b>Trial-diet compliance</b> <span class="num">41 of 44</span> trial days with &ge;1 meal logged (<span class="num">93%</span>).</li>
+      <li><b>Confounders this window:</b> human food on <span class="num">3</span> days; <span class="num">7</span> treats (<span class="num">3</span> poultry-based).</li>
+      <li><b>Medication:</b> metronidazole, given consistently (<span class="num">88 of 88</span> logged doses).</li>
+    </ul>
+    <p class="note">Symptom entries were logged on <span class="num">47</span> of the <span class="num">51</span> days
+       (no entries Jun&nbsp;8&ndash;11). Counts are over days with at least one entry; absence of an entry is not
+       evidence a symptom did not occur.</p>
+  </div>
+
+  <!-- 2. SYMPTOM TREND with denominators + non-colour encoding -->
+  <div class="sec">
+    <h2>Symptom frequency &amp; trend</h2>
+
+    <div class="symrow">
+      <div class="lab">Vomiting</div>
+      <div class="chart">
+        <!-- weekly episodes [1,2,2,1,1,1,1,0]; scale: 1 unit = 15px, max 2 -->
+        <svg width="192" height="46" role="img" aria-label="Vomiting episodes per week: 1,2,2,1,1,1,1,0">
+          <line class="base" x1="4" y1="36" x2="188" y2="36"/>
+          <line class="divider" x1="94" y1="6" x2="94" y2="36"/>
+          <rect class="bar" x="6"   y="21" width="16" height="15"/>
+          <rect class="bar" x="29"  y="6"  width="16" height="30"/>
+          <rect class="bar" x="52"  y="6"  width="16" height="30"/>
+          <rect class="bar" x="75"  y="21" width="16" height="15"/>
+          <rect class="bar" x="98"  y="21" width="16" height="15"/>
+          <rect class="bar" x="121" y="21" width="16" height="15"/>
+          <rect class="bar" x="144" y="21" width="16" height="15"/>
+          <rect class="nub" x="167" y="34.5" width="16" height="1.5"/>
+        </svg>
+      </div>
+      <div class="read">
+        <span class="num">9</span> episodes / <span class="num">51</span> d &middot;
+        first half <span class="num">6</span> &rarr; second half <span class="num">3</span>
+        <span class="sub">Weekly count, 8 columns (May&nbsp;1&rarr;Jun&nbsp;21). Severity owner-reported per event &mdash; appendix&nbsp;A.</span>
+      </div>
+    </div>
+
+    <div class="symrow">
+      <div class="lab">Loose stool</div>
+      <div class="chart">
+        <!-- weekly episodes [2,2,1,0,1,0,0,0] -->
+        <svg width="192" height="46" role="img" aria-label="Loose stool episodes per week: 2,2,1,0,1,0,0,0">
+          <line class="base" x1="4" y1="36" x2="188" y2="36"/>
+          <line class="divider" x1="94" y1="6" x2="94" y2="36"/>
+          <rect class="bar" x="6"   y="6"  width="16" height="30"/>
+          <rect class="bar" x="29"  y="6"  width="16" height="30"/>
+          <rect class="bar" x="52"  y="21" width="16" height="15"/>
+          <rect class="nub" x="75"  y="34.5" width="16" height="1.5"/>
+          <rect class="bar" x="98"  y="21" width="16" height="15"/>
+          <rect class="nub" x="121" y="34.5" width="16" height="1.5"/>
+          <rect class="nub" x="144" y="34.5" width="16" height="1.5"/>
+          <rect class="nub" x="167" y="34.5" width="16" height="1.5"/>
+        </svg>
+      </div>
+      <div class="read">
+        <span class="num">6</span> episodes / <span class="num">51</span> d &middot;
+        first half <span class="num">5</span> &rarr; second half <span class="num">1</span>
+        <span class="sub">Dashed line marks the midpoint (first half = May&nbsp;1&ndash;28). Trend read by frequency, not severity.</span>
+      </div>
+    </div>
+
+    <p class="charts-cap">Bars show episodes per week; height is the count (max&nbsp;2 here). No colour is used &mdash; the
+       chart reads identically in grayscale and print.</p>
+  </div>
+
+  <!-- 3. DIET & CONFOUNDERS (summary line; full WSAVA history in appendix C) -->
+  <div class="sec">
+    <h2>Diet &amp; feeding</h2>
+    <div class="kv"><span class="k">Trial diet:</span>
+      <span>Royal Canin Veterinary Diet Hydrolyzed Protein HP, dry (prescription) &middot; started May&nbsp;8, 2026 &middot;
+      target <span class="num">56</span> days &middot; now day <span class="num">44</span>.</span></div>
+    <div class="kv"><span class="k">Feeding:</span>
+      <span>2 measured meals/day (~<span class="num">95&nbsp;g</span> each), fed by owner &amp; partner. Meals finished:
+      <span class="num">38 of 41</span> logged meal-days fully eaten, <span class="num">3</span> partially eaten
+      (May&nbsp;12, Jun&nbsp;1, Jun&nbsp;10) &mdash; owner-observed.</span></div>
+    <div class="kv"><span class="k">Human food:</span>
+      <span>Owner supplemented with human food on <span class="num">3</span> days this window
+      (May&nbsp;19 roast chicken, Jun&nbsp;2 cheese, Jun&nbsp;14 peanut butter).</span></div>
+    <div class="kv"><span class="k">Treats:</span>
+      <span><span class="num">7</span> given (4 wheat-based dental chews; 3 chicken-based training treats) &mdash; dates in appendix&nbsp;B.</span></div>
+    <p class="ref">Full diet history (amounts, schedule, supplements, foods used to give medication): appendix&nbsp;C.</p>
+  </div>
+
+  <!-- 4. MEAL/TREAT -> SYMPTOM TIMING (associational, denominatored, never causal) -->
+  <div class="sec">
+    <h2>Meal &amp; treat timing vs symptoms <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--muted)">(associational &mdash; not causal)</span></h2>
+    <p>Of the <span class="num">9</span> vomiting episodes, <span class="num">7</span> had a time precise enough to compare
+       with prior intake (<span class="num">2</span> occurred overnight and are recorded as time ranges).
+       <span class="num">4</span> of the <span class="num">9</span> fell on a day with a treat or human food logged
+       (May&nbsp;19, May&nbsp;24, Jun&nbsp;2, Jun&nbsp;14); <span class="num">1</span> (May&nbsp;24) began within ~30&nbsp;minutes
+       of a treat, by an estimated time.</p>
+    <p class="note">No single food, protein, or treat reached the established correlation threshold over this window
+       &mdash; counts are too few to establish a pattern. Reported as co-occurrence for the clinician to weigh, not as cause.</p>
+  </div>
+
+  <!-- 5. MEDICATIONS + adherence (B-117) -->
+  <div class="sec">
+    <h2>Medications</h2>
+    <div class="kv"><span class="k">Metronidazole 250&nbsp;mg</span>
+      <span>&mdash; by mouth, every 12&nbsp;h &middot; for GI signs &middot; started May&nbsp;8, 2026.</span></div>
+    <p style="margin:3px 0 0;">Adherence: <b>given consistently</b> &mdash; <span class="num">88 of 88</span> logged doses
+       (44 days &times; 2). No missed or refused doses logged.</p>
+    <p class="ref">Owner-logged administration; full dose log in appendix&nbsp;D.</p>
+  </div>
+
+  <!-- 6. PROVENANCE / DATA NOTES -->
+  <div class="sec">
+    <h2>Data notes</h2>
+    <p class="note">Owner-reported observations. <span class="num">6</span> of the <span class="num">15</span> symptom
+       events were recorded as estimated times or time ranges rather than a witnessed exact time (each shown
+       individually in appendix&nbsp;A). Times are owner-reported and local. Every count above traces to the
+       appendix event log.</p>
+  </div>
+
+  <div class="foot">
+    <span>Owner-reported observations for Mochi &middot; <span class="num">May&nbsp;1&ndash;Jun&nbsp;21, 2026</span> &middot; associational, not a diagnosis.</span>
+    <span class="src">Generated by Nyx (owner-reported pet-health tracking) &middot; nyx.app/report/9f2c&hellip; &middot; Jun&nbsp;21, 2026 &middot; Page 1 of 3</span>
+  </div>
+</section>
+
+<!-- ============================ PAGE 2 — APPENDIX A + B ============================ -->
+<section class="page">
+  <p class="appx-title">Appendix A &mdash; Symptom event log</p>
+  <p class="appx-sub">Every vomiting and loose-stool event in the window, in order. &ldquo;Occurred&rdquo; is the owner&rsquo;s
+     best account of when it happened; for events found later it is a time range, not the time it was noticed.
+     Severity is owner-reported (1&ndash;5) and is not averaged anywhere in this report.</p>
+
+  <table>
+    <caption>15 symptom events &middot; May 1 – Jun 21, 2026</caption>
+    <thead>
+      <tr>
+        <th style="width:74px">Date</th>
+        <th>Type</th>
+        <th style="width:150px">Occurred (owner-reported)</th>
+        <th style="width:70px">Logged</th>
+        <th class="c" style="width:74px">Severity</th>
+        <th>Owner note</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="num">May 2</td><td>Loose stool</td><td><span class="num">~07:30</span> <span class="conf">est</span></td><td class="num">07:50</td><td class="c num">3/5</td><td>Soft, barely formed; first yard trip.</td></tr>
+      <tr><td class="num">May 3</td><td>Vomiting</td><td><span class="num">14:30</span> <span class="conf">seen</span></td><td class="num">14:32</td><td class="c num">2/5</td><td>After morning walk; bile / foam.</td></tr>
+      <tr><td class="num">May 5</td><td>Loose stool</td><td><span class="num">18:15</span> <span class="conf">seen</span></td><td class="num">18:20</td><td class="c num">4/5</td><td>Watery.</td></tr>
+      <tr><td class="num">May 8</td><td>Loose stool</td><td><span class="num">08:00</span> <span class="conf">seen</span></td><td class="num">08:05</td><td class="c num">3/5</td><td>Loose (first day of trial diet).</td></tr>
+      <tr><td class="num">May 9</td><td>Vomiting</td><td><span class="num">08:15</span> <span class="conf">seen</span></td><td class="num">08:18</td><td class="c num">3/5</td><td>~1&nbsp;h after breakfast; undigested food.</td></tr>
+      <tr><td class="num">May 12</td><td>Vomiting</td><td><span class="num">~03:00&ndash;07:00</span> <span class="conf">range</span></td><td class="num">07:22</td><td class="c num">2/5</td><td>Found on waking; yellow bile.</td></tr>
+      <tr><td class="num">May 14</td><td>Loose stool</td><td><span class="num">~19:00</span> <span class="conf">est</span></td><td class="num">19:30</td><td class="c num">3/5</td><td>Soft.</td></tr>
+      <tr><td class="num">May 16</td><td>Vomiting</td><td><span class="num">21:40</span> <span class="conf">seen</span></td><td class="num">21:43</td><td class="c num">2/5</td><td>Foam.</td></tr>
+      <tr><td class="num">May 19</td><td>Vomiting</td><td><span class="num">23:05</span> <span class="conf">seen</span></td><td class="num">23:08</td><td class="c num">3/5</td><td>~2&nbsp;h after table scraps (roast chicken); undigested.</td></tr>
+      <tr><td class="num">May 21</td><td>Loose stool</td><td><span class="num">~08:45</span> <span class="conf">est</span></td><td class="num">09:12</td><td class="c num">2/5</td><td>Soft; firmer than prior week.</td></tr>
+      <tr><td class="num">May 24</td><td>Vomiting</td><td><span class="num">~16:00</span> <span class="conf">est</span></td><td class="num">17:05</td><td class="c num">2/5</td><td>Bile; ~15&nbsp;min after a chicken training treat (time estimated).</td></tr>
+      <tr><td class="num">Jun 1</td><td>Loose stool</td><td><span class="num">16:30</span> <span class="conf">seen</span></td><td class="num">16:40</td><td class="c num">2/5</td><td>Soft (also a partially-eaten meal day).</td></tr>
+      <tr><td class="num">Jun 2</td><td>Vomiting</td><td><span class="num">22:30</span> <span class="conf">seen</span></td><td class="num">22:34</td><td class="c num">3/5</td><td>Evening; had cheese earlier (~20:00).</td></tr>
+      <tr><td class="num">Jun 10</td><td>Vomiting</td><td><span class="num">~04:00&ndash;07:42</span> <span class="conf">range</span></td><td class="num">07:44</td><td class="c num">2/5</td><td>Found on waking; yellow bile / foam.</td></tr>
+      <tr><td class="num">Jun 14</td><td>Vomiting</td><td><span class="num">19:50</span> <span class="conf">seen</span></td><td class="num">19:52</td><td class="c num">2/5</td><td>~3&nbsp;h after peanut butter on toast.</td></tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:8px">Why a range and not a time: a vomit found at 07:44 but occurring around 04:00
+     changes the interval from the prior meal from minutes to hours &mdash; a clinically different picture. Where the
+     owner did not witness the event, the window it occurred in is shown rather than the time it was noticed.</p>
+
+  <p class="appx-title" style="margin-top:22px">Appendix B &mdash; Off-diet exposures (confounders)</p>
+  <p class="appx-sub">Everything fed outside the trial diet, because these are the most common reasons a diet trial
+     reads as &ldquo;not working.&rdquo; Human food and poultry-based treats are noted explicitly.</p>
+  <table>
+    <caption>Human food (3) and treats (7) &middot; May 1 – Jun 21, 2026</caption>
+    <thead>
+      <tr>
+        <th style="width:74px">Date</th>
+        <th style="width:96px">Category</th>
+        <th>Item</th>
+        <th>Note</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="num">May 5</td><td>Treat</td><td>Greenies Original Dental Chew (Teenie)</td><td>Wheat-based.</td></tr>
+      <tr><td class="num">May 11</td><td>Treat</td><td>Zuke&rsquo;s Mini Naturals &mdash; Chicken</td><td>Poultry-based (off the hydrolyzed trial).</td></tr>
+      <tr><td class="num">May 17</td><td>Treat</td><td>Greenies Original Dental Chew (Teenie)</td><td>Wheat-based.</td></tr>
+      <tr><td class="num">May 19</td><td>Human food</td><td>Roast chicken (table scraps)</td><td>Vomiting logged ~2&nbsp;h later (see appendix&nbsp;A).</td></tr>
+      <tr><td class="num">May 24</td><td>Treat</td><td>Zuke&rsquo;s Mini Naturals &mdash; Chicken</td><td>Poultry-based; vomiting logged ~15&nbsp;min later (time estimated).</td></tr>
+      <tr><td class="num">Jun 2</td><td>Human food</td><td>Cheddar cheese (a few cubes)</td><td>Vomiting logged later that evening.</td></tr>
+      <tr><td class="num">Jun 5</td><td>Treat</td><td>Greenies Original Dental Chew (Teenie)</td><td>Wheat-based.</td></tr>
+      <tr><td class="num">Jun 9</td><td>Treat</td><td>Zuke&rsquo;s Mini Naturals &mdash; Chicken</td><td>Poultry-based.</td></tr>
+      <tr><td class="num">Jun 14</td><td>Human food</td><td>Peanut butter on toast crust</td><td>Vomiting logged ~3&nbsp;h later.</td></tr>
+      <tr><td class="num">Jun 16</td><td>Treat</td><td>Greenies Original Dental Chew (Teenie)</td><td>Wheat-based.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="foot">
+    <span>Owner-reported observations for Mochi &middot; appendix.</span>
+    <span class="src">nyx.app/report/9f2c&hellip; &middot; Page 2 of 3</span>
+  </div>
+</section>
+
+<!-- ============================ PAGE 3 — APPENDIX C + D + E ============================ -->
+<section class="page">
+  <p class="appx-title">Appendix C &mdash; Diet history</p>
+  <p class="appx-sub">A complete picture of everything Mochi is fed over a typical 24&nbsp;hours, in the spirit of the
+     WSAVA diet-history form &mdash; including treats, supplements, and any food used to give medication.</p>
+  <table>
+    <tbody>
+      <tr><th style="width:165px">Primary diet</th><td>Royal Canin Veterinary Diet Hydrolyzed Protein HP, dry (prescription hydrolyzed diet). Started May&nbsp;8, 2026.</td></tr>
+      <tr><th>Amount &amp; schedule</th><td>~<span class="num">95&nbsp;g</span> by measuring cup, twice daily (~08:00 and ~18:00). ~<span class="num">190&nbsp;g</span>/day.</td></tr>
+      <tr><th>Who feeds</th><td>Owner (mornings); owner or partner (evenings).</td></tr>
+      <tr><th>Water</th><td>Fresh water, freely available; intake not measured.</td></tr>
+      <tr><th>Treats</th><td><span class="num">7</span> this window: Greenies Original Dental Chew (wheat-based) &times;4; Zuke&rsquo;s Mini Naturals Chicken (poultry-based) &times;3. Dates in appendix&nbsp;B.</td></tr>
+      <tr><th>Human food</th><td><span class="num">3</span> days: roast chicken (May&nbsp;19), cheese (Jun&nbsp;2), peanut butter (Jun&nbsp;14).</td></tr>
+      <tr><th>Supplements</th><td>Purina Pro Plan FortiFlora probiotic, 1 sachet daily with breakfast (owner-reported, over-the-counter).</td></tr>
+      <tr><th>Food used for meds</th><td>Metronidazole given in a small piece of the hydrolyzed canned diet (kept on-trial).</td></tr>
+      <tr><th>Active conditions</th><td>Chronic intermittent vomiting &amp; loose stool &mdash; under monitoring (first noted ~Mar&nbsp;2026).</td></tr>
+    </tbody>
+  </table>
+
+  <p class="appx-title" style="margin-top:22px">Appendix D &mdash; Medication log</p>
+  <p class="appx-sub">Doses are owner-logged. Adherence on page&nbsp;1 is computed from these entries; with no doses logged a
+     drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo;</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Medication</th>
+        <th style="width:150px">Regimen</th>
+        <th class="c" style="width:120px">Doses logged</th>
+        <th>Adherence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Metronidazole 250&nbsp;mg</td>
+        <td>By mouth, every 12&nbsp;h, for GI signs (since May&nbsp;8)</td>
+        <td class="c num">88 / 88</td>
+        <td>Given consistently &mdash; no missed or refused doses logged.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="appx-title" style="margin-top:22px">Appendix E &mdash; How to read this report</p>
+  <dl class="legend">
+    <dt>Owner-reported</dt><dd>Every entry was logged by the owner on a phone. This is a record of what the owner observed, not a clinical examination, and contains no diagnosis or treatment recommendation.</dd>
+    <dt>Denominators</dt><dd>Counts are shown over their window and the days logged (e.g. &ldquo;9 episodes / 51&nbsp;d&rdquo;), so a count is never read without knowing how long and how completely it was tracked.</dd>
+    <dt>Logging coverage</dt><dd>Entries were made on <span class="num">47</span> of <span class="num">51</span> days; none were logged Jun&nbsp;8&ndash;11. Absence of an entry is not evidence a symptom did not occur.</dd>
+    <dt>Meal completion</dt><dd>Counted from logged meals only; treats and human food are excluded. Unobserved or free-fed intake, when present, is reported as &ldquo;intake not directly observed&rdquo; and never counted as a meal refused.</dd>
+    <dt>Severity</dt><dd>Owner-reported on a 1&ndash;5 scale, per event in appendix&nbsp;A. It is intentionally never averaged into a headline figure; trend is read from frequency.</dd>
+    <dt>Time confidence</dt><dd><span class="conf">seen</span> the owner witnessed it (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed.</dd>
+    <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
+    <dt>Range</dt><dd>Scoped to since the last veterinary visit (May&nbsp;1, 2026). The owner can change the range.</dd>
+  </dl>
+
+  <div class="foot">
+    <span>Owner-reported observations for Mochi &middot; appendix.</span>
+    <span class="src">nyx.app/report/9f2c&hellip; &middot; Page 3 of 3</span>
+  </div>
+</section>
+
+</body>
+</html>
