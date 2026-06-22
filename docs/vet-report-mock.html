@@ -79,6 +79,7 @@
     font-weight:700;color:var(--muted);display:block;margin-bottom:3px;
   }
   .owner-band p{margin:0;font-size:13px;line-height:1.5;}
+  .owner-band.hidden{display:none;}  /* screen toggle for the R4 banded-vs-vet-only A/B */
 
   /* Signalment header */
   .head{
@@ -168,7 +169,10 @@
 <!-- SCREEN-ONLY: not part of the report artifact -->
 <div class="toolbar no-print">
   <span>Design-validation mock · Strawman C (banded one-pager) · sample data, not a real patient</span>
-  <button onclick="window.print()">Print / Save as PDF</button>
+  <span style="display:flex;gap:8px">
+    <button onclick="document.getElementById('ownerBand').classList.toggle('hidden')">Toggle owner band (A/B)</button>
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </span>
 </div>
 
 <!-- ============================ PAGE 1 — CLINICAL ONE-PAGER ============================ -->
@@ -177,7 +181,7 @@
   <!-- The clinical page is self-sufficient: this band can be removed and the page still
        passes the cold read. One orienting owner line, plain language, never causal,
        no false reassurance. -->
-  <div class="owner-band">
+  <div class="owner-band" id="ownerBand">
     <span class="tag">For the owner</span>
     <p>Mochi&rsquo;s vomiting is down by about half over this window, and the loose stool has nearly stopped.
        The detail below is for your vet &mdash; it&rsquo;s a summary of what you observed, not a diagnosis.</p>
@@ -218,7 +222,9 @@
     </ul>
     <p class="note">Something was logged on <span class="num">48</span> of the <span class="num">52</span> days
        (nothing logged May&nbsp;13, May&nbsp;27, Jun&nbsp;11, Jun&nbsp;18). Counts are over the full window; absence of an
-       entry is not evidence a symptom did not occur.</p>
+       entry is not evidence a symptom did not occur. The window starts at the last vet visit (May&nbsp;1) and the
+       trial began May&nbsp;8, so the first 26-day window includes the <span class="num">7</span> days before the trial
+       started; the last 26 days are entirely on-trial.</p>
   </div>
 
   <!-- 2. SYMPTOM TREND with denominators + non-colour encoding -->
