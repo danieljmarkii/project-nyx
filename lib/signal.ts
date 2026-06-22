@@ -170,6 +170,10 @@ export interface RateMealsDiagnostic {
   ratedMealsNeeded: number;
 }
 
+// Where the dominant staple shows up — drives the honest copy register (B-070). Mirror of
+// detection.ts StapleSource; the copy must never claim "every meal" when it is treat-borne.
+export type StapleSource = 'meals' | 'treats' | 'mixed';
+
 export interface StapleWashoutDiagnostic {
   type: 'staple_washout';
   actionability: 'explanation';
@@ -177,6 +181,12 @@ export interface StapleWashoutDiagnostic {
   // Retained for parity with the cached shape + future copy (e.g. citing the count);
   // coverageCopy() does not render it today.
   symptomEpisodes: number;
+  // B-070: resolved in the engine so coverageCopy() picks a register matching the staple's
+  // structure (a treat-borne staple is NOT "every meal" — a false premise could misdirect).
+  // OPTIONAL on the CLIENT (unlike the engine, which always writes it): a staple_washout row
+  // cached BEFORE B-070 shipped has no such field. The 24h TTL bounds that window, and
+  // coverageCopy() defaults a missing value to the safe day-based 'mixed' register.
+  stapleSource?: StapleSource;
 }
 
 // B-080 diet-structure observations (descriptive lane Phase 3), rendered in the

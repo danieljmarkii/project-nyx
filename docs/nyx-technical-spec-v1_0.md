@@ -40,48 +40,70 @@ Stay in Expo managed workflow for the MVP. Do not eject unless a required native
 
 ```
 /
-├── app/                        # Expo Router screens
-│   ├── (auth)/
-│   │   ├── login.tsx
-│   │   └── signup.tsx
-│   ├── (tabs)/
-│   │   ├── index.tsx           # Home screen
-│   │   ├── history.tsx         # Timeline / log history
-│   │   └── profile.tsx         # Pet profile
-│   ├── log.tsx                 # Quick-log modal (not a tab)
-│   ├── report.tsx              # Vet report generation
-│   └── _layout.tsx
-├── components/
-│   ├── home/                   # Home screen zone components
-│   ├── log/                    # Quick-log components
-│   ├── history/                # Timeline components
-│   └── shared/                 # Reusable primitives
-├── lib/
-│   ├── supabase.ts             # Supabase client init
-│   ├── db.ts                   # Local SQLite client and queries
-│   ├── sync.ts                 # Sync engine: local → Supabase
-│   └── pdf.ts                  # Edge function call wrapper
-├── store/
-│   ├── petStore.ts             # Active pet state
-│   ├── eventStore.ts           # Event log state
-│   └── authStore.ts            # Auth session state
-├── hooks/
-│   ├── usePet.ts
-│   ├── useEvents.ts
-│   └── useSync.ts
+├── app/                          # Expo Router screens (file-based routing)
+│   ├── (auth)/                   # login, signup, _layout
+│   ├── (tabs)/                   # index (Home), history, profile, foods
+│   ├── onboarding/               # pet, food
+│   ├── event/[id].tsx            # Event detail
+│   ├── food/[id].tsx             # Food detail
+│   ├── medication/[id].tsx       # Medication detail
+│   ├── insights/                 # Patterns dashboard + per-metric detail
+│   ├── log.tsx                   # Quick-log modal (not a tab)
+│   ├── food-capture.tsx          # Photo capture + AI confirm (food)
+│   ├── medication-capture.tsx    # Photo capture + AI confirm (medication)
+│   ├── add-pet.tsx               # + archived-pets, edit-event, vet-visit
+│   ├── report.tsx                # Vet report (Step 9)
+│   └── _layout.tsx               # Root layout + font-load gate
+├── components/                   # Feature-grouped UI (PascalCase)
+│   ├── home/                     # Home zones: Signal / Today / Trend
+│   ├── log/                      # Quick-log
+│   ├── history/                  # Timeline
+│   ├── event/                    # Event detail / AI read
+│   ├── food/                     # Food capture + confirm
+│   ├── foods/                    # Foods-tab library
+│   ├── pet/                      # Pet creation / cards
+│   ├── profile/                  # Pet profile + diet-trial card
+│   ├── dashboard/                # Patterns dashboard cards + charts
+│   └── ui/                       # Reusable primitives (theme tokens only)
+├── lib/                          # Client logic + integrations (unit-tested)
+│   ├── supabase.ts               # Supabase client init (fails fast on missing env)
+│   ├── db.ts                     # Local SQLite client and queries
+│   ├── sync.ts                   # Sync engine: local → Supabase (last-write-wins)
+│   ├── storage.ts                # Supabase Storage uploads / signed URLs
+│   ├── signal.ts                 # AI Signal detection + caching helpers
+│   ├── pdf.ts                    # Vet-report Edge Function call wrapper
+│   └── …                         # food, meals, medications, analytics, summary, profile, …
+├── store/                        # Zustand global state
+│   ├── petStore.ts               # Active pet
+│   ├── eventStore.ts             # Event log
+│   ├── authStore.ts              # Auth session
+│   ├── syncStore.ts              # Sync queue
+│   └── …                         # attachmentStore, momentStore
+├── hooks/                        # usePet, useEvents, useSync, useSignal, useSummary, useTrend, …
 ├── constants/
-│   ├── eventTypes.ts           # Icons, labels, colors per event type
-│   └── theme.ts                # Design tokens from design principles
-├── docs/                       # All project documentation lives here
-│   ├── product-brief.md
-│   ├── design-principles.md
-│   ├── research.md
-│   ├── technical-spec.md       # This file
-│   └── schema.sql
+│   ├── eventTypes.ts             # Icons, labels, colors per event type
+│   └── theme.ts                  # Design tokens (single source — no hardcoded values)
+├── scripts/                      # Build / deploy helpers (deploy-edge.sh, …)
+├── assets/                       # Icons, splash, fonts
+├── __mocks__/                    # Jest manual mocks
+├── docs/                         # All project documentation lives here
+│   ├── nyx-technical-spec-v1_0.md          # This file
+│   ├── nyx-schema-v1_0.sql                 # Canonical schema + reference queries
+│   ├── nyx-design-principles-v1_0.md       # The seven principles
+│   ├── nyx-research-v1_0.md                # Market / clinical / persona research dossier
+│   ├── nyx-competitive-landscape-v1_0.md   # Competitor + strategic-gap analysis
+│   ├── personas.md                         # Full personas + subagent/skill model
+│   ├── backlog.md                          # Deferred items (B-NNN)
+│   ├── *-requirements.md                   # Per-feature build specs
+│   └── research/                           # Append-only evidence briefs + README index
 └── supabase/
-    ├── migrations/             # Schema migrations
-    └── functions/
-        └── generate-report/    # Edge function for PDF generation
+    ├── migrations/               # Schema migrations (001 … 021)
+    └── functions/                # Edge Functions (Deno)
+        ├── generate-signal/                # AI Signal (Haiku 4.5) + deterministic detection
+        ├── analyze-vomit/                  # Per-incident vision read
+        ├── extract-food-from-photo/        # Food-label vision (Sonnet 4.6)
+        ├── extract-medication-from-photo/  # Drug-label vision (Sonnet 4.6)
+        └── delete-account/                 # Hard-delete cascade + Storage purge
 ```
 
 ---

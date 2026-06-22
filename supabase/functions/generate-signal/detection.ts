@@ -254,6 +254,88 @@ export interface FeedingArrangement {
   attributionConfidence?: AttributionConfidence | null
 }
 
+/**
+ * A medication exposure window (B-117 PR 9, spec §8) — "was a drug plausibly ON BOARD
+ * during this span?". Medications enter the correlation engine as CONTEXT/CONFOUNDERS,
+ * never as correlates: the unit of analysis is still the food→symptom association; a drug
+ * never becomes a finding. The point is to stop the §1 false attribution — a "chicken →
+ * vomit" card that is really "antibiotic → nausea", which makes a diet trial "fail" for the
+ * wrong reason.
+ *
+ * Like B-040 free-feeding, two physical shapes both reduce to this ONE span type, and the
+ * caller (generate-signal/index.ts) resolves both:
+ *   • a REGIMEN (a `medications` row) → a continuous span [started_at, ended_at] — the drug
+ *     is on board for the whole course, BETWEEN doses, robust to un-logged doses (a missing
+ *     dose log ≠ the drug was off — conservative-on-certainty). DATE columns: the caller
+ *     passes started_at as the day's start and ended_at as END-OF-DAY-inclusive, so the
+ *     engine sees precise instants and never has to guess DATE-vs-timestamp (this is why
+ *     classifyMedicationWindows, unlike classifyArrangements, does NOT add a day itself).
+ *   • a DOSE (an administered `medication_administrations` event) → a POINT [occurred_at,
+ *     occurred_at]. A point behaves exactly like a meal exposure: it is "in window" iff the
+ *     dose was given within the symptom's own correlation window before onset. This is the
+ *     dominant signal TODAY, since logged doses are regimen-unlinked (B-135). Build it via
+ *     doseToMedicationWindow, which DROPS missed/refused doses (the drug was NOT given — see
+ *     that helper). ACCEPTED RESIDUAL (B-138, adversarial review): a once-daily LONG-ACTING,
+ *     regimen-unlinked drug dosed > W hours before onset is invisible to the point model (it
+ *     UNDER-detects the confounder → a false food correlation can slip through). Safe direction
+ *     — never reassurance, degrades to today's no-medication behavior; the regimen SPAN is the
+ *     robust fix once a regimen exists. A dose-persistence/tail is the alternative (a Dr. Chen
+ *     window-shape call, composes with the B-135 revisit).
+ *
+ * `medicationItemId` is carried per the spec ("correlation keys on the stable
+ * medication_item_id", which sidesteps the B-052 free-text canonicalization problem). v1
+ * SUPPRESSION is deliberately IDENTITY-AGNOSTIC — ANY drug on board confounds, because we
+ * have no curated drug→side-effect data to say a given drug is GI-irrelevant (a curated
+ * catalog is an explicit future refactor, spec §10). The id is retained for a future
+ * per-drug caveat ("the antibiotic may be a factor") and as the audit key; the v1 logic
+ * never branches on it. CONTRACT: the caller passes non-soft-deleted events only; absent/
+ * empty ⇒ detection behaves EXACTLY as before (byte-identical — detectors ②–⑥ ignore it,
+ * and detectCorrelations short-circuits on an empty set).
+ */
+export interface MedicationWindow {
+  /** Stable drug identity (medication_item_id), or null for an unlinked ad-hoc dose. Audit/future-caveat only — v1 suppression is identity-agnostic. */
+  medicationItemId: string | null
+  /** Inclusive span start (ISO-8601 UTC). Null = unbounded past (on board since before lookback). For a dose: the dose time. */
+  activeFrom: string | null
+  /** Inclusive span end (ISO-8601 UTC). Null = still on board (through now). For a dose: the same instant as activeFrom (a point). */
+  activeUntil: string | null
+}
+
+/** A logged dose reduced to what doseToMedicationWindow needs (the caller's DB-row projection). */
+export interface DoseEventInput {
+  medicationItemId: string | null
+  /** ISO-8601 UTC administration time (the parent event's occurred_at). */
+  occurredAt: string
+  /** dose_adherence value; null defaults to administered ('given', per the §5.1 capture default). */
+  adherence: string | null
+}
+
+/**
+ * Resolve a logged dose to a medication exposure POINT, or null when the dose was NOT
+ * administered. This is the one clinically load-bearing transform in the medication
+ * mapping, so it is a pure, exported, unit-tested function rather than inline I/O:
+ *
+ *   • given / partial / null  → the drug WAS on board → a point window at the dose time.
+ *     (null defaults to administered: the capture UI defaults adherence to 'given', and a
+ *     logged dose with no rating is a logged administration, not an absence.)
+ *   • missed / refused        → the drug was NOT given → null, NEVER an exposure window.
+ *     Modelling a non-administration as drug-presence would let a FORGOTTEN antibiotic
+ *     suppress a real food finding — a false negative we would never see. (refused is also
+ *     a disease signal handled elsewhere, §6.2; here it simply means "not on board".)
+ *
+ * An unparseable time still yields a window (activeFrom/Until = the raw string);
+ * classifyMedicationWindows drops it downstream, so the same Date.parse guard isn't
+ * duplicated here.
+ */
+export function doseToMedicationWindow(dose: DoseEventInput): MedicationWindow | null {
+  if (dose.adherence === 'missed' || dose.adherence === 'refused') return null
+  return {
+    medicationItemId: dose.medicationItemId,
+    activeFrom: dose.occurredAt,
+    activeUntil: dose.occurredAt,
+  }
+}
+
 export interface DetectionInput {
   pet: PetContext
   /**
@@ -274,6 +356,17 @@ export interface DetectionInput {
    * confounder) per detectCorrelations. See FeedingArrangement.
    */
   feedingArrangements?: FeedingArrangement[]
+  /**
+   * Medication exposure windows for this pet (B-117 PR 9, §8) — regimen spans + administered
+   * dose points, see MedicationWindow. They are CONFOUNDERS on the food→symptom correlation,
+   * not correlates: a drug case-enriched across a symptom's matched pairs SUPPRESSES that
+   * symptom's food correlations (the §1 "antibiotic, not chicken" case); a drug merely PRESENT
+   * but concordant (chronic steady-state) caps the tier at Early (§8 "caveated"). Optional —
+   * absent/empty means no medication context and detectCorrelations behaves exactly as before.
+   * Only detectCorrelations reads this; ②–⑥ ignore it (like feedingArrangements). CONTRACT: the
+   * caller passes non-soft-deleted events and EXCLUDES missed/refused doses (doseToMedicationWindow).
+   */
+  medicationWindows?: MedicationWindow[]
   /**
    * Pet owner's IANA timezone (e.g. 'America/New_York'), from user_profiles.timezone —
    * Phase 2 (⑥ time-of-day clustering) ONLY. Timestamps are stored UTC; "4–7am" only means
@@ -602,20 +695,40 @@ export interface RateMealsDiagnostic extends CoverageDiagnosticBase {
 }
 
 /**
- * Detector ① (correlation) can't run because a SINGLE protein is in (nearly)
- * every meal — the line-505 "no contrast" discard. EXPLANATION ONLY: never a
- * "vary the diet" ask (that sabotages a vet-directed elimination trial — our
- * primary wedge — and inverts Pets>$), and FULLY SUPPRESSED on diet-trial pets
- * (the constant staple IS the elimination diet). It is honest uncertainty
- * ("we can't tell yet whether it's linked"), never reassurance.
+ * Where the dominant staple shows up, so the copy can be HONEST about its structure
+ * (B-070). The original copy said "in nearly every meal" unconditionally — false for the
+ * real wedge case (Nyx: her chicken comes via ~83 treats; her meals are tuna-led), and a
+ * false premise can misdirect an elimination-diet conversation (the owner switches the
+ * meal protein while the chicken keeps arriving as treats). The register is resolved in
+ * this deterministic, adversarially-reviewed engine (like WorseningTier), never in copy:
+ *   - 'meals'  — the staple's exposures are overwhelmingly meals → "in most meals".
+ *   - 'treats' — overwhelmingly treats → "most days, usually as treats rather than meals".
+ *   - 'mixed'  — genuinely both (or unclassifiable food_type) → the day-based "most days".
+ */
+export type StapleSource = 'meals' | 'treats' | 'mixed'
+
+/**
+ * Detector ① (correlation) can't usefully assess a protein because that ONE protein
+ * DOMINATES the pet's exposures — it is in (nearly) every case AND control window, so it
+ * is concordant and washes out (or, as a sole protein, leaves ① no contrast at all). B-070
+ * widened this from the v1 EXACTLY-ONE-protein test to DOMINANCE (≥ stapleDominanceFraction
+ * of exposures), measured over the SAME classifiable set the case-crossover keys off
+ * (classifyMeals — meals AND treats), because that is exactly what ① sees and washes out;
+ * meals-only would miss the real wedge case entirely. EXPLANATION ONLY: never a "vary the
+ * diet" ask (that sabotages a vet-directed elimination trial — our primary wedge — and
+ * inverts Pets>$), and FULLY SUPPRESSED on diet-trial pets (the constant staple IS the
+ * elimination diet). It is honest uncertainty ("we can't tell yet whether it's linked"),
+ * never reassurance — an omnipresent exposure is genuinely unassessable, not "safe".
  */
 export interface StapleWashoutDiagnostic extends CoverageDiagnosticBase {
   type: 'staple_washout'
   actionability: 'explanation'
-  /** The staple protein present across (nearly) every classifiable meal, e.g. 'chicken'. */
+  /** The dominant staple protein — present in ≥ stapleDominanceFraction of all exposures, e.g. 'chicken'. */
   protein: string
   /** Distinct symptom episodes (any correlation type, re-logs collapsed) the owner is trying to understand. */
   symptomEpisodes: number
+  /** Where the staple shows up (meals vs treats), so the copy never falsely claims "every meal" (B-070). */
+  stapleSource: StapleSource
 }
 
 /**
@@ -825,11 +938,28 @@ export interface DetectionConfig {
   }
   coverage: {
     /**
-     * Min classifiable meals before "eats X in nearly every meal" is an honest
-     * staple-washout claim. Below it, the single protein could just be a couple of
-     * early logs, not an established staple.
+     * Min classifiable exposures (meals + treats) before "X is in most of what the pet
+     * eats" is an honest staple-washout claim. Below it, the dominant protein could just
+     * be a couple of early logs, not an established staple.
      */
     stapleMinMeals: number
+    /**
+     * B-070: the share of all classifiable exposures (meals + treats) a single protein
+     * must reach to be the DOMINANT staple. Measured over the SAME set detector ① keys
+     * off, because that is exactly what gets concordant-and-washed-out in the case-
+     * crossover; meals-only would miss the real wedge case (a treat-borne staple). 0.8 =
+     * "in most of what the pet eats". v1 fired only on a SOLE protein (an implicit 1.0);
+     * dominance generalizes that. Tune on real data, not a re-decision.
+     */
+    stapleDominanceFraction: number
+    /**
+     * B-070: of the dominant staple's classified (meal|treat) exposures, the share that
+     * must be one kind to pin the copy register to 'meals' or 'treats' (else 'mixed').
+     * Keeps the copy from over-claiming "every meal" when the staple is treat-borne — the
+     * false premise that could misdirect an elimination-diet talk. 0.8 mirrors the
+     * dominance floor. Tune on real data, not a re-decision.
+     */
+    stapleSourceMajorityFraction: number
     /**
      * Min distinct symptom episodes (any correlation type) for staple-washout to
      * fire. Set to the correlation Early floor (correlation.earlyMinMatchedPairs),
@@ -976,14 +1106,18 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     clusterWindowHours: 4,
     windowDays: 60,
   },
-  // B-053 coverage-diagnostic floors. stapleMinMeals keeps "eats X in nearly every
-  // meal" honest; stapleMinSymptomEpisodes mirrors the correlation Early episode
-  // floor (correlation.earlyMinMatchedPairs = 3) so staple-washout only fires when
-  // the staple is the SOLE blocker — closing the below-floor masquerade (see the
-  // field doc + adversarial review, B-053). Tune on real data, not a re-decision.
+  // B-053 coverage-diagnostic floors. stapleMinMeals keeps "X is in most of what the pet
+  // eats" honest; stapleMinSymptomEpisodes mirrors the correlation Early episode floor
+  // (correlation.earlyMinMatchedPairs = 3) so staple-washout only fires when the staple is
+  // the SOLE blocker — closing the below-floor masquerade (see the field doc + adversarial
+  // review, B-053). B-070: stapleDominanceFraction widens the v1 sole-protein test to ≥80%
+  // dominance over exposures (meals + treats); stapleSourceMajorityFraction pins the copy's
+  // meal/treat register. Tune on real data, not a re-decision.
   coverage: {
     stapleMinMeals: 4,
     stapleMinSymptomEpisodes: 3,
+    stapleDominanceFraction: 0.8,
+    stapleSourceMajorityFraction: 0.8,
   },
   // B-080 diet-structure floors (§5.2). collapse: 5 treats-only days out of the last
   // 10, ≥2 treats/gap-day, ≥80% of feedings classified. churn: 3 brand-new foods +
@@ -1118,6 +1252,13 @@ interface ClassifiedMeal {
   ms: number
   protein: string
   attribution: AttributionConfidence
+  /**
+   * food_items.food_type for this exposure (B-070). Detector ① IGNORES it (an exposure is
+   * an exposure — a chicken treat is a chicken exposure exactly like a chicken meal, which
+   * is why an omnipresent treat protein correctly washes out). Its only consumer is the
+   * staple-washout meal/treat split (resolveStapleSource), which keeps the copy honest.
+   */
+  foodType: 'meal' | 'treat' | 'other' | null
 }
 
 /**
@@ -1137,6 +1278,7 @@ function classifyMeals(mealEvents: MealEvent[]): ClassifiedMeal[] {
       ms: Date.parse(m.occurredAt),
       protein: canonicalizeProtein(m.primaryProtein),
       attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
+      foodType: m.foodType ?? null,
     }))
     .filter((m): m is ClassifiedMeal => m.protein !== null && Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
@@ -1189,6 +1331,40 @@ function classifyArrangements(arrangements: FeedingArrangement[]): StandingExpos
   return out
 }
 
+/** A medication exposure window reduced to a parsed [fromMs, untilMs] span (B-117 PR 9). */
+interface MedSpan {
+  fromMs: number
+  untilMs: number
+}
+
+/**
+ * Reduce medication windows (regimen spans + dose points) to parsed ms spans (B-117 PR 9).
+ * Unlike classifyArrangements, this does NOT add a day to `untilMs`: the caller already
+ * normalizes regimen DATE ends to end-of-day instants, and a dose window is a precise POINT
+ * (untilMs === fromMs) that must stay a point. A span with an unparseable edge is dropped (a
+ * garbage window must never silently confound every finding); an INVERTED span (until < from)
+ * is dropped, but an equal-edge POINT is kept — that IS a dose. Null from → -Infinity
+ * (on board since before lookback); null until → +Infinity (still on board / through now).
+ */
+function classifyMedicationWindows(windows: MedicationWindow[]): MedSpan[] {
+  const out: MedSpan[] = []
+  for (const w of windows) {
+    const fromMs = w.activeFrom == null ? -Infinity : Date.parse(w.activeFrom)
+    if (Number.isNaN(fromMs)) continue
+    let untilMs: number
+    if (w.activeUntil == null) {
+      untilMs = Infinity
+    } else {
+      const parsed = Date.parse(w.activeUntil)
+      if (Number.isNaN(parsed)) continue
+      untilMs = parsed
+    }
+    if (untilMs < fromMs) continue // inverted span exposes nothing; a point (==) is a valid dose
+    out.push({ fromMs, untilMs })
+  }
+  return out
+}
+
 export function detectCorrelations(
   input: DetectionInput,
   config: DetectionConfig = DEFAULT_CONFIG,
@@ -1210,11 +1386,23 @@ export function detectCorrelations(
   // A free-fed-only protein (never logged as a discrete meal) is never in `proteins` to
   // begin with; a free-fed protein that ALSO has discrete logs is removed by (a).
   const standing = classifyArrangements(input.feedingArrangements ?? [])
+  // Medication exposure spans (B-117 PR 9, §8). A drug ON BOARD in a symptom window is a
+  // CONFOUNDER — it never becomes a finding. Two effects, applied per symptom type below:
+  //   • CASE-ENRICHED (the drug clears the SAME case-crossover bar a protein must to be an
+  //     Early correlate — present in materially more case windows than control) → SUPPRESS
+  //     that symptom's food correlations. This is the §1 antibiotic-not-chicken case.
+  //   • PRESENT but CONCORDANT (chronic steady-state, in both arms equally → the self-matching
+  //     controls for it) → does NOT suppress, but caps the tier at Early (§8 "caveated"; mirrors
+  //     a free-fed standing exposure capping Established).
+  // Empty ⇒ medActive is always false ⇒ byte-identical to pre-B-117 behavior.
+  const medSpans = classifyMedicationWindows(input.medicationWindows ?? [])
 
   const proteins = Array.from(new Set(meals.map((m) => m.protein)))
-  // Need contrast: a single constant diet can't be correlated against anything.
-  // The < 2 case is exactly what the B-053 staple-washout diagnostic explains
-  // (proteins.length === 1 → a namable constant staple); see detectStapleWashout.
+  // Need contrast: a single constant diet can't be correlated against anything. This
+  // sole-protein case is one end of what the B-053 staple-washout diagnostic explains
+  // (B-070 widened it to ≥80% DOMINANCE — a dominant staple that has contrast still
+  // reaches here, washes out as concordant, and is explained the same way); see
+  // detectStapleWashout.
   if (proteins.length < 2) return []
 
   // Proteins present in [anchor - windowMs, anchor], keyed to the WEAKEST attribution
@@ -1255,7 +1443,18 @@ export function detectCorrelations(
         if (s.protein !== null) standingProteins.add(s.protein)
       }
     }
-    return { exposures, mealCount, standingInWindow, standingProteins }
+    // Was ANY medication on board in this window (B-117 PR 9)? Inclusive interval overlap of
+    // the med span [fromMs, untilMs] with the exposure window [windowStart, anchorMs] — `<=`
+    // on both edges so a dose POINT (fromMs === untilMs) at exactly windowStart/anchorMs counts,
+    // matching the meal exposure boundary. Identity-agnostic: any drug present sets the flag.
+    let medActive = false
+    for (const m of medSpans) {
+      if (m.fromMs <= anchorMs && windowStart <= m.untilMs) {
+        medActive = true
+        break
+      }
+    }
+    return { exposures, mealCount, standingInWindow, standingProteins, medActive }
   }
 
   interface Candidate {
@@ -1277,9 +1476,25 @@ export function detectCorrelations(
      * exposure being present at all.
      */
     standingConfounder: boolean
+    /**
+     * A medication was on board for ≥1 of this symptom's matched pairs but is NOT
+     * case-enriched (B-117 PR 9, §8). A present-but-concordant drug is controlled by the
+     * self-matching, so it does NOT suppress the finding, but — like a free-fed standing
+     * exposure — it is an uncontrolled variable that caps the tier at Early ("caveated").
+     * The CASE-ENRICHED case never reaches here: it suppresses the whole symptom type
+     * before candidates are built.
+     */
+    medicationPresent: boolean
     symptomEventCount: number
   }
   const candidates: Candidate[] = []
+  // Would-be candidates withdrawn by the medication confounder pass (B-117 PR 9). These
+  // were FULLY tested (a real matched set was built, the pseudo-exposure test ran) and then
+  // withdrawn for a confound — so they still consumed a comparison and must still count
+  // toward the Bonferroni family below. Without this, suppressing one symptom type shrinks
+  // `candidates.length` and inflates an UNRELATED symptom's finding Early→Established
+  // (adversarial review, B-117 PR 9 — a real tier wart, though never a false reassurance).
+  let suppressedFamilyCount = 0
 
   for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
     const windowHours =
@@ -1309,6 +1524,10 @@ export function detectCorrelations(
       ctrlExp: Map<string, AttributionConfidence>
       /** A free-fed standing exposure was in the case OR control window (B-040 confounder). */
       standing: boolean
+      /** A medication was on board in the CASE window (B-117 PR 9 confounder analysis). */
+      medInCase: boolean
+      /** A medication was on board in the matched CONTROL window (B-117 PR 9). */
+      medInControl: boolean
     }[] = []
     // Proteins under an active free-fed arrangement that was in-window for ≥1 matched
     // pair (case OR control) of this symptom. These are excluded from candidacy — a
@@ -1328,6 +1547,7 @@ export function detectCorrelations(
         exposures: Map<string, AttributionConfidence>
         standingInWindow: boolean
         standingProteins: Set<string>
+        medActive: boolean
       } | null = null
       let bestDist = Infinity
       for (const d of mealDays) {
@@ -1351,6 +1571,8 @@ export function detectCorrelations(
         caseExp: caseWin.exposures,
         ctrlExp: bestCtrl.exposures,
         standing: caseWin.standingInWindow || bestCtrl.standingInWindow,
+        medInCase: caseWin.medActive,
+        medInControl: bestCtrl.medActive,
       })
     }
 
@@ -1361,6 +1583,57 @@ export function detectCorrelations(
     // (§3 engine rule). One uncontrolled standing exposure is enough; we are
     // conservative-on-certainty, matching the rest of the engine.
     const standingConfounder = pairs.some((p) => p.standing)
+
+    // ── Medication confounder analysis (B-117 PR 9, §8) ──────────────────────────────
+    // Treat "a drug was on board" as a PSEUDO-EXPOSURE and run it through the SAME
+    // case-crossover arithmetic a protein faces. The drug confounds this symptom's food
+    // correlations when it is CASE-ENRICHED — present in materially more case windows than
+    // control windows, clearing the EXACT bar (earlyMinDiscordantCaseOnly, earlyMinRiskDifference,
+    // b>c) a protein must clear to be an Early correlate. When it does, we cannot statistically
+    // separate "drug causes the symptom" from "food causes the symptom" (they are collinear in
+    // the matched set), and a systemic drug plausibly shifts the response to ALL foods — so the
+    // honest, never-false-attribution output is to SUPPRESS every food→symptom correlation for
+    // this symptom type. This is the §1 "antibiotic, not chicken" harm.
+    //
+    // Why case-enrichment, not mere presence: a CHRONIC steady-state drug is on board in BOTH
+    // arms of every pair → medB ≈ medC ≈ 0 → not case-enriched → it does NOT suppress (the
+    // self-matching already controls for it — otherwise we'd gut the flagship wedge for exactly
+    // the chronically-ill pets who need it most). Only a drug whose on/off TRANSITION falls
+    // inside the analysis window (an acute course overlapping the symptom cluster, whose
+    // symptom-free controls are systematically off-drug) becomes case-enriched. The few
+    // boundary pairs a recently-started chronic drug produces are diluted by the riskDifference
+    // floor across the matched set, so they do not trip suppression.
+    //
+    // SUPPRESSION NEVER REASSURES: it removes cards; the symptom stays tracked, the intake-
+    // decline (②) and worsening (④) SAFETY detectors fire independently, the ③ reflection still
+    // counts episodes, and an empty correlation set renders building/no_pattern — never "all
+    // clear" (§9). A present-but-concordant drug instead caps the tier at Early (medicationPresent
+    // below; §8 "caveated") rather than certifying an Established association under an
+    // uncontrolled variable — exactly how a free-fed standing exposure caps.
+    let medCaseExposed = 0
+    let medControlExposed = 0
+    let medB = 0
+    let medC = 0
+    for (const p of pairs) {
+      if (p.medInCase) medCaseExposed++
+      if (p.medInControl) medControlExposed++
+      if (p.medInCase && !p.medInControl) medB++
+      else if (!p.medInCase && p.medInControl) medC++
+    }
+    const medicationPresent = medCaseExposed > 0 || medControlExposed > 0
+    const medRiskDifference = (medCaseExposed - medControlExposed) / pairs.length
+    const medicationConfounds =
+      medB >= cfg.earlyMinDiscordantCaseOnly &&
+      medB > medC &&
+      medRiskDifference >= cfg.earlyMinRiskDifference
+    if (medicationConfounds) {
+      // Suppress this symptom type's food correlations entirely — but FIRST record the
+      // candidates we are withdrawing so they still count toward the multiple-comparison
+      // family (they exactly match the protein loop below: every non-free-fed protein).
+      // Keeps correctedAlpha STABLE so suppression can never promote an unrelated finding's tier.
+      suppressedFamilyCount += proteins.filter((p) => !freeFedProteins.has(p)).length
+      continue
+    }
 
     for (const protein of proteins) {
       // A free-fed protein is background context, never a clean correlate on its own
@@ -1394,6 +1667,7 @@ export function detectCorrelations(
         c,
         attributionFloor,
         standingConfounder,
+        medicationPresent,
         symptomEventCount,
       })
     }
@@ -1403,12 +1677,23 @@ export function detectCorrelations(
 
   // Multiple-comparison correction: Bonferroni over the family of (protein × symptom)
   // pairs we evaluated — every protein with a built matched set counts (conservative).
-  const correctedAlpha = cfg.familywiseAlpha / candidates.length
+  // `suppressedFamilyCount` keeps medication-withdrawn candidates in the family (B-117 PR 9):
+  // they were tested then withheld for a confound, so they still consumed a comparison —
+  // otherwise suppression would silently inflate an unrelated finding's tier.
+  const correctedAlpha = cfg.familywiseAlpha / (candidates.length + suppressedFamilyCount)
 
   const findings: CorrelationFinding[] = []
   for (const cand of candidates) {
-    const { matchedPairs, caseExposed, controlExposed, b, c, attributionFloor, standingConfounder } =
-      cand
+    const {
+      matchedPairs,
+      caseExposed,
+      controlExposed,
+      b,
+      c,
+      attributionFloor,
+      standingConfounder,
+      medicationPresent,
+    } = cand
     const riskDifference = caseExposed / matchedPairs - controlExposed / matchedPairs
 
     // Positive, case-direction enrichment only, with a coincidence guard on discordants.
@@ -1419,11 +1704,15 @@ export function detectCorrelations(
     const pValue = mcNemarExactRightTail(b, c)
 
     // Established requires the higher sample floor AND corrected significance AND clean
-    // attribution AND no uncontrolled standing exposure in-window. A 'low' (shared-bowl)
-    // attribution OR a free-fed standing confounder (B-040) caps the finding at Early.
+    // attribution AND no uncontrolled confounder in-window. A 'low' (shared-bowl)
+    // attribution, a free-fed standing confounder (B-040), OR a present-but-concordant
+    // medication on board (B-117 PR 9, §8 "caveated") each cap the finding at Early — an
+    // uncontrolled variable means we cannot certify a clean Established association. (A
+    // CASE-ENRICHED medication never reaches here; it suppressed the symptom type above.)
     const tier: EvidenceTier =
       attributionFloor === 'high' &&
       !standingConfounder &&
+      !medicationPresent &&
       matchedPairs >= cfg.establishedMinMatchedPairs &&
       pValue <= correctedAlpha
         ? 'established'
@@ -2273,10 +2562,13 @@ export function detectTimeOfDayClustering(
 // review to TWO, with three reframed or suppressed:
 //   • rate_meals (ACTION) — detector ② dormant for lack of rated meals; rating
 //     a few wakes it. Reads from the line-710 floor (via classifyRatedMeals).
-//   • staple_washout (EXPLANATION) — detector ① has no protein contrast because
-//     one staple is in nearly every meal. Reads from the line-505 discard (via
-//     classifyMeals). EXPLANATION ONLY (never a "vary the diet" ask — that
-//     sabotages a vet-directed elimination trial) and FULLY SUPPRESSED on
+//   • staple_washout (EXPLANATION) — one protein DOMINATES the pet's exposures
+//     (≥80%, B-070), so it is in nearly every case AND control window → washes out
+//     (or, as a sole protein, leaves ① no contrast at all). Reads the dominant
+//     protein over meals+treats (via classifyMeals — the same set ① uses). The copy
+//     carries an engine-resolved meal/treat register so it never falsely says "every
+//     meal" on a treat-borne staple. EXPLANATION ONLY (never a "vary the diet" ask —
+//     that sabotages a vet-directed elimination trial) and FULLY SUPPRESSED on
 //     diet-trial pets.
 //   • meal_type_collapse / diet_churn (EXPLANATION) — the B-080 diet-structure pair
 //     (descriptive lane Phase 3). Placed HERE, not in the live findings stack, per
@@ -2332,6 +2624,35 @@ function detectRateMeals(
   return { type: 'rate_meals', actionability: 'action', ratedMeals, ratedMealsNeeded: needed }
 }
 
+/**
+ * Resolve the copy register for a dominant staple from WHERE it shows up (B-070). Looks
+ * only at the staple protein's own classified (meal|treat) exposures: 'meals' / 'treats'
+ * when one kind is the clear (≥ stapleSourceMajorityFraction) majority, else 'mixed'. Food
+ * with a null/'other' food_type is neither and is excluded from the split — when the
+ * staple is mostly unclassifiable we cannot claim "every meal", so we fall to the safe
+ * day-based 'mixed' register. The danger this exists to prevent is a FALSE "every meal"
+ * claim on a treat-borne staple, so the default always errs to the weaker, true claim.
+ */
+function resolveStapleSource(
+  meals: ClassifiedMeal[],
+  protein: string,
+  config: DetectionConfig,
+): StapleSource {
+  let mealCount = 0
+  let treatCount = 0
+  for (const m of meals) {
+    if (m.protein !== protein) continue
+    if (m.foodType === 'meal') mealCount++
+    else if (m.foodType === 'treat') treatCount++
+  }
+  const classified = mealCount + treatCount
+  if (classified === 0) return 'mixed' // all 'other'/null food_type → can't claim meal vs treat
+  const frac = config.coverage.stapleSourceMajorityFraction
+  if (mealCount / classified >= frac) return 'meals'
+  if (treatCount / classified >= frac) return 'treats'
+  return 'mixed'
+}
+
 function detectStapleWashout(
   input: DetectionInput,
   config: DetectionConfig,
@@ -2341,22 +2662,46 @@ function detectStapleWashout(
   // implies the owner should vary it — sabotaging the trial and inverting Pets>$.
   if (input.pet.dietTrialActive) return null
 
+  // Classifiable EXPOSURES — meals AND treats, the exact set detector ① keys off. A
+  // chicken treat is a chicken exposure (① counts it identically to a meal — see
+  // ClassifiedMeal.foodType), which is why a 3×/day chicken treat washes out in the
+  // case-crossover; the diagnostic that EXPLAINS that washout must use the same set.
   const meals = classifyMeals(input.mealEvents)
-  const proteins = Array.from(new Set(meals.map((m) => m.protein)))
-  // The line-505 discard, narrowed to the NAMABLE single staple: exactly one
-  // protein. (0 proteins is the deferred sparse-protein case; ≥2 with a dominant
-  // staple is a future refinement — v1 is the clean constant-staple case.)
-  if (proteins.length !== 1) return null
-  // "...eats X in nearly every meal" must be honest — needs real meal volume.
+  // "...X is in most of what the pet eats" must be honest — needs real exposure volume.
   if (meals.length < config.coverage.stapleMinMeals) return null
 
-  // "...linked to the symptoms you're tracking" must be TRUE — there must be
-  // symptoms to explain, or the copy falsely implies symptoms (reassurance-by-
-  // implication). No symptoms → no diagnostic (falls back to the generic line).
+  // B-070: fire on DOMINANCE, not sole-protein. Find the most-exposed protein; it is the
+  // staple only if it reaches ≥ stapleDominanceFraction of all exposures — present in
+  // nearly every case AND control window → concordant → washed out (or, at 1.0, ① has no
+  // contrast at all). The v1 "exactly one protein" test was the special case of this at a
+  // 1.0 floor; ≥80% catches the real wedge (Nyx: chicken via treats, tuna-led meals). A tie
+  // for the top is impossible at ≥80% (two proteins can't both clear it), so selection is
+  // deterministic regardless of Map order.
+  const counts = new Map<string, number>()
+  for (const m of meals) counts.set(m.protein, (counts.get(m.protein) ?? 0) + 1)
+  let topProtein = ''
+  let topCount = 0
+  for (const [p, c] of counts) {
+    if (c > topCount) {
+      topProtein = p
+      topCount = c
+    }
+  }
+  if (topCount / meals.length < config.coverage.stapleDominanceFraction) return null
+
+  // "...linked to the symptoms you're tracking" must be TRUE — there must be symptoms to
+  // explain, or the copy falsely implies symptoms (reassurance-by-implication). The floor
+  // also mirrors ①'s Early episode floor so the staple is the SOLE blocker (no below-floor
+  // masquerade — B-053). No / too-few symptoms → no diagnostic (falls back to generic).
   const symptomEpisodes = countSymptomEpisodes(input.symptomEvents, config)
   if (symptomEpisodes < config.coverage.stapleMinSymptomEpisodes) return null
 
-  return { type: 'staple_washout', actionability: 'explanation', protein: proteins[0], symptomEpisodes }
+  // Resolve the copy register from the staple's meal/treat split so the copy never claims
+  // "nearly every meal" when it is treat-borne (B-070). Decided here in the deterministic,
+  // adversarially-reviewed engine (like WorseningTier); copy only renders the result.
+  const stapleSource = resolveStapleSource(meals, topProtein, config)
+
+  return { type: 'staple_washout', actionability: 'explanation', protein: topProtein, symptomEpisodes, stapleSource }
 }
 
 /**

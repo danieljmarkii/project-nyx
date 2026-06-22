@@ -19,6 +19,7 @@ import type {
   IntakeDeclineFinding,
   SignalFinding,
   SignalSymptomType,
+  StapleSource,
   SymptomWorseningFinding,
 } from './signal';
 
@@ -140,8 +141,24 @@ export function coverageCopy(diagnostic: CoverageDiagnostic, petName: string): C
   }
   // staple_washout — EXPLANATION ONLY, no action. Honest uncertainty ("we can't tell
   // yet"), never reassurance, never a "vary the diet" ask, associational not causal.
+  // B-070: the lead clause matches the staple's STRUCTURE (engine-resolved stapleSource) so
+  // it never claims "every meal" when the staple is treat-borne — a false premise that could
+  // misdirect an elimination-diet talk (e.g. Nyx's chicken arrives as treats; her meals are
+  // tuna). The "usually as treats rather than meals" texture is descriptive, never an action
+  // ("cut the treats" would be a diet-varying ask that sabotages a vet-directed trial).
+  const { protein } = diagnostic;
+  // stapleSource is engine-resolved (B-070). Default a MISSING value (a row cached before
+  // B-070 shipped — see the field doc) to the safe day-based 'mixed' register explicitly,
+  // rather than relying on undefined falling through. The Record is exhaustive by
+  // construction: a future StapleSource member won't compile until its copy is written.
+  const source: StapleSource = diagnostic.stapleSource ?? 'mixed';
+  const leadBySource: Record<StapleSource, string> = {
+    meals: `${petName} eats ${protein} in most meals`,
+    treats: `${petName} has ${protein} most days, usually as treats rather than meals`,
+    mixed: `${petName} eats ${protein} most days`,
+  };
   return {
-    why: `${petName} eats ${diagnostic.protein} in nearly every meal, so we can't yet tell whether it's linked to the symptoms you're tracking — there's nothing to compare it against.`,
+    why: `${leadBySource[source]}, so we can't yet tell whether it's linked to the symptoms you're tracking — there's nothing to compare it against.`,
     action: null,
   };
 }

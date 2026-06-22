@@ -19,6 +19,7 @@ import {
   detectTimeOfDayClustering,
   detectSignals,
   detectCoverage,
+  doseToMedicationWindow,
   rankCoverageDiagnostics,
   rankFindings,
   fisherExactRightTail,
@@ -37,6 +38,7 @@ import {
   type DetectionInput,
   type MealEvent,
   type FeedingArrangement,
+  type MedicationWindow,
   type SymptomEvent,
   type SymptomType,
   type IntakeRating,
@@ -80,6 +82,10 @@ const symptom = (type: SymptomType, occurredAt: string): SymptomEvent => ({
 const proteinMeal = (day: number, protein: string): MealEvent =>
   meal({ occurredAt: at(day, 8), primaryProtein: protein })
 
+/** A treat (food_type='treat') carrying a protein — a real exposure for ① and the staple denominator (B-070). */
+const proteinTreat = (day: number, protein: string, hour = 8): MealEvent =>
+  meal({ occurredAt: at(day, hour), primaryProtein: protein, foodType: 'treat' })
+
 /** Protein meal at a specific hour, with optional attribution confidence (B-050). */
 const pMeal = (
   day: number,
@@ -111,6 +117,20 @@ const arrangement = (
   activeFrom,
   activeUntil,
   ...(attribution ? { attributionConfidence: attribution } : {}),
+})
+
+/** A medication regimen exposure span (B-117 PR 9). ISO; null activeUntil = still on board. */
+const medRegimen = (
+  activeFrom: string | null,
+  activeUntil: string | null,
+  medicationItemId: string | null = 'drug-1',
+): MedicationWindow => ({ medicationItemId, activeFrom, activeUntil })
+
+/** An administered dose as a POINT exposure window (B-117 PR 9). */
+const medDose = (occurredAt: string, medicationItemId: string | null = 'drug-1'): MedicationWindow => ({
+  medicationItemId,
+  activeFrom: occurredAt,
+  activeUntil: occurredAt,
 })
 
 const dog: PetContext = { name: 'Mochi', species: 'dog', dietTrialActive: false }
@@ -376,6 +396,240 @@ Deno.test('detectCorrelations — B-040: an ENDED arrangement (active span befor
   assert.equal(f.protein, 'beef')
   assert.equal(f.matchedPairs, 6)
   assert.equal(f.tier, 'established', 'an arrangement that ended before the episodes does not confound them')
+})
+
+// ── Detector ①: B-117 PR 9 — medication as confounder (§8) ───────────────────
+
+Deno.test('doseToMedicationWindow — administered doses become a point window; not-given doses are dropped', () => {
+  // given / partial / null(→given default) = drug ON BOARD → a point window at the dose time.
+  for (const adherence of ['given', 'partial', null]) {
+    const w = doseToMedicationWindow({ medicationItemId: 'drug-1', occurredAt: at(5, 9), adherence })
+    assert.ok(w, `adherence=${adherence} must yield a window`)
+    assert.equal(w!.activeFrom, at(5, 9))
+    assert.equal(w!.activeUntil, at(5, 9), 'a dose is a POINT — from === until')
+  }
+  // missed / refused = drug NOT given → NEVER an exposure (a forgotten antibiotic must not
+  // suppress a real food finding; absence of a given dose is not drug-presence).
+  assert.equal(doseToMedicationWindow({ medicationItemId: 'd', occurredAt: at(5, 9), adherence: 'missed' }), null)
+  assert.equal(doseToMedicationWindow({ medicationItemId: 'd', occurredAt: at(5, 9), adherence: 'refused' }), null)
+})
+
+Deno.test('detectCorrelations — B-117: an acute drug case-enriched across a symptom cluster SUPPRESSES the food correlation', () => {
+  // THE §1 / §13-PR9 counterexample: a "chicken → vomit" that is really "antibiotic → nausea".
+  // A contiguous vomit flare (days 11–14) on which chicken is the food in-window; the
+  // time-matched controls are forced onto symptom-free days 10/15, where chicken is absent
+  // → WITHOUT med context chicken false-fires as an Early correlate. An antibiotic regimen
+  // is active EXACTLY over the flare (days 11–14) and absent from the off-flare controls →
+  // the drug is case-enriched (clears the same case-crossover bar a protein would), so we
+  // cannot separate drug from food → the engine declines to surface "chicken → vomit".
+  const mealEvents = [
+    ...staple(1, 20, 'beef', 9), // daily staple: eligibility + contrast; concordant → washes out
+    pMeal(11, 'chicken', 10),
+    pMeal(12, 'chicken', 10),
+    pMeal(13, 'chicken', 10),
+    pMeal(14, 'chicken', 10),
+  ]
+  const symptomEvents = [11, 12, 13, 14].map((d) => symptom('vomit', at(d, 11)))
+
+  // Baseline: without med context, chicken surfaces (the false attribution we must prevent).
+  const baseline = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(baseline.some((f) => f.protein === 'chicken'), true, 'baseline: chicken false-fires')
+
+  // With an antibiotic active over the flare, chicken is suppressed entirely.
+  const withMed = detectCorrelations(
+    input({ mealEvents, symptomEvents, medicationWindows: [medRegimen(at(11, 0), at(14, 12))] }),
+  )
+  assert.equal(
+    withMed.some((f) => f.protein === 'chicken'),
+    false,
+    'a case-enriched drug suppresses the symptom\'s food correlations (declines the false attribution)',
+  )
+  assert.equal(withMed.length, 0, 'nothing else surfaces — the honest answer while a drug confounds the window')
+})
+
+Deno.test('detectCorrelations — B-117: suppression works off regimen-UNLINKED dose points (the dominant signal today, B-135)', () => {
+  // Same flare, but the drug presence comes from administered DOSE EVENTS (not a regimen) —
+  // the current reality, since logged doses are regimen-unlinked. Each dose is a point in its
+  // own case window (given ~2h before onset), absent from the off-flare controls → case-enriched
+  // → suppressed. Proves the confounder pass does not depend on a regimen having been set up.
+  const mealEvents = [
+    ...staple(1, 20, 'beef', 9),
+    ...[11, 12, 13, 14].map((d) => pMeal(d, 'chicken', 10)),
+  ]
+  const symptomEvents = [11, 12, 13, 14].map((d) => symptom('vomit', at(d, 11)))
+  const withDoses = detectCorrelations(
+    input({
+      mealEvents,
+      symptomEvents,
+      medicationWindows: [11, 12, 13, 14].map((d) => medDose(at(d, 9))),
+    }),
+  )
+  assert.equal(
+    withDoses.some((f) => f.protein === 'chicken'),
+    false,
+    'administered dose points alone suppress a case-enriched confounded correlation',
+  )
+})
+
+Deno.test('detectCorrelations — B-117: missed/refused doses are NOT on board — a forgotten drug does not suppress a real finding', () => {
+  // The SAME flare + dose times as the dose-point suppression test, but every dose was MISSED
+  // (owner forgot) → the drug was never administered → it is NOT on board → it must not
+  // suppress. doseToMedicationWindow drops missed/refused upstream, so the engine sees no med
+  // windows and chicken surfaces exactly as the baseline. Modelling a non-administration as
+  // drug-presence would be a false negative we would never catch.
+  const mealEvents = [
+    ...staple(1, 20, 'beef', 9),
+    ...[11, 12, 13, 14].map((d) => pMeal(d, 'chicken', 10)),
+  ]
+  const symptomEvents = [11, 12, 13, 14].map((d) => symptom('vomit', at(d, 11)))
+  const missedWindows = [11, 12, 13, 14]
+    .map((d) => doseToMedicationWindow({ medicationItemId: 'drug-1', occurredAt: at(d, 9), adherence: 'missed' }))
+    .filter((w): w is MedicationWindow => w !== null)
+  assert.equal(missedWindows.length, 0, 'missed doses produce no exposure windows')
+  const withMissed = detectCorrelations(input({ mealEvents, symptomEvents, medicationWindows: missedWindows }))
+  assert.equal(withMissed.some((f) => f.protein === 'chicken'), true, 'a forgotten drug does not suppress chicken')
+})
+
+Deno.test('detectCorrelations — B-117: a CHRONIC concordant drug does NOT suppress, but caps the tier at Early (§8 caveat)', () => {
+  // The Established beef fixture (6 clean pairs), plus a chronic drug on board the WHOLE time
+  // (active since before the episodes, still active). It sits in BOTH the case and control
+  // windows of every pair → concordant → the self-matching controls for it → it does NOT
+  // suppress (we must not gut the wedge for chronically-medicated pets). But an uncontrolled
+  // drug on board means we cannot certify Established, so — like a free-fed standing exposure —
+  // it caps the finding at Early. The insight still surfaces; only the tier is caveated.
+  const mealEvents = [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(
+    input({ mealEvents, symptomEvents, medicationWindows: [medRegimen(at(1, 0), null)] }),
+  )
+  assert.equal(findings.length, 1, 'the real beef correlation still surfaces — not suppressed')
+  const f = findings[0]
+  assert.equal(f.protein, 'beef')
+  assert.equal(f.matchedPairs, 6, 'same sample size that reached Established with no medication')
+  assert.equal(f.attributionFloor, 'high', "beef's own attribution is untouched — the drug is the confounder")
+  assert.equal(f.tier, 'early', 'a present-but-concordant drug caps Established at Early (caveated)')
+})
+
+Deno.test('detectCorrelations — B-117: medicationWindows:[] is byte-identical to no medication context (inert)', () => {
+  // The empty-input no-op contract. An explicit empty array must reach Established exactly as
+  // the no-medicationWindows Established fixture does — the confounder pass adds nothing when
+  // there are no meds.
+  const mealEvents = [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents, medicationWindows: [] }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].protein, 'beef')
+  assert.equal(findings[0].tier, 'established', 'an empty medicationWindows must not change anything')
+})
+
+Deno.test('detectCorrelations — B-117: a drug started MID-window (control-enriched, not case-enriched) does NOT over-suppress', () => {
+  // Adversarial: a chronic drug introduced PART-WAY through the analysis (day 4) on the
+  // Established beef fixture (symptom days 1–6). The early cases (1–3) predate the drug; their
+  // controls (days 7–12) are after it → the drug is CONTROL-enriched (medC), the OPPOSITE of the
+  // dangerous case-enriched direction. Suppression fires ONLY on case-enrichment (b>c, positive
+  // riskDifference), so a control-enriched drug must NOT suppress — it only caps at Early.
+  const mealEvents = [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(
+    input({ mealEvents, symptomEvents, medicationWindows: [medRegimen(at(4, 0), null)] }),
+  )
+  assert.equal(findings.length, 1, 'a control-enriched drug must not suppress a real finding')
+  assert.equal(findings[0].protein, 'beef')
+  assert.equal(findings[0].tier, 'early', 'present-in-window → capped at Early, but never suppressed')
+})
+
+Deno.test('detectCorrelations — B-117: a brief drug touching few of MANY symptom episodes does not suppress (riskDifference floor)', () => {
+  // Adversarial: the riskDifference floor is what stops a brief/incidental drug from suppressing
+  // a long symptom history. 11 vomit episodes (even days 2–22) with beef case-enriched on each,
+  // chicken a daily staple. A drug touches only 2 of the 11 case windows (days 2, 4) → medB=2
+  // (meets the discordant-case floor) BUT riskDifference = 2/11 ≈ 0.18 < 0.20 → NOT a confounder.
+  // The beef correlation is preserved (capped at Early, since a drug is present in-window).
+  const evenDays = [2, 4, 6, 8, 10, 12, 14, 16, 18, 22]
+  const mealEvents = [
+    ...staple(1, 23, 'chicken', 9),
+    ...evenDays.map((d) => pMeal(d, 'beef', 10)),
+    pMeal(20, 'beef', 10),
+  ]
+  const symptomEvents = [...evenDays, 20].sort((a, b) => a - b).map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(
+    input({
+      mealEvents,
+      symptomEvents,
+      medicationWindows: [medDose(at(2, 9)), medDose(at(4, 9))],
+    }),
+  )
+  const beef = findings.find((f) => f.protein === 'beef')
+  assert.ok(beef, 'a drug touching only 2 of 11 episodes must not suppress the beef correlation')
+  assert.equal(beef!.tier, 'early', 'a drug present in-window caps at Early, but the riskDifference floor blocks suppression')
+})
+
+Deno.test('detectCorrelations — B-117: suppression is symptom-type-wide — two co-enriched proteins are both suppressed (documented trade-off)', () => {
+  // When a drug confounds a symptom window, the engine cannot disentangle WHICH food is
+  // implicated (drug + every co-enriched food are collinear in the matched set, and a systemic
+  // drug plausibly shifts the response to all foods). The honest, conservative output is to
+  // suppress ALL of that symptom's food correlations — accepting a temporary false negative on a
+  // genuinely-independent food over a false attribution (§1). Both chicken AND beef are
+  // case-enriched over the flare; the antibiotic suppresses both.
+  const mealEvents = [
+    ...staple(1, 20, 'salmon', 8), // staple: contrast + eligibility; concordant → washes out
+    ...[11, 12, 13, 14].flatMap((d) => [pMeal(d, 'chicken', 9), pMeal(d, 'beef', 10)]),
+  ]
+  const symptomEvents = [11, 12, 13, 14].map((d) => symptom('vomit', at(d, 11)))
+
+  const baseline = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.deepEqual(
+    baseline.map((f) => f.protein).sort(),
+    ['beef', 'chicken'],
+    'baseline: both proteins false-fire over the flare',
+  )
+  const withMed = detectCorrelations(
+    input({ mealEvents, symptomEvents, medicationWindows: [medRegimen(at(11, 0), at(14, 12))] }),
+  )
+  assert.equal(withMed.length, 0, 'a confounding drug suppresses every food correlation for that symptom type')
+})
+
+Deno.test('detectCorrelations — B-117: suppressing one symptom type must NOT inflate an UNRELATED finding\'s tier (Bonferroni family stays stable)', () => {
+  // Adversarial-review defect (B-117 PR 9): when a drug suppresses a whole symptom type, those
+  // withdrawn candidates must STILL count toward the multiple-comparison family — else
+  // correctedAlpha grows and an UNRELATED finding flips Early→Established purely because we
+  // suppressed elsewhere (a tier-inflation wart, never a false reassurance). Fixture: a clean
+  // beef→DIARRHEA correlation (6 pairs) + a separate, far-away vomit flare an antibiotic
+  // suppresses. The diarrhea finding's correctedAlpha and tier must be IDENTICAL whether or not
+  // the unrelated antibiotic suppresses the vomit type.
+  const mealEvents = [
+    ...staple(1, 30, 'chicken', 8), // washes out both types; eligibility + contrast everywhere
+    ...[2, 5, 8, 11, 14, 17].map((d) => pMeal(d, 'beef', 10)), // beef enriched on diarrhea days only
+  ]
+  const symptomEvents = [
+    ...[2, 5, 8, 11, 14, 17].map((d) => symptom('diarrhea', at(d, 11))),
+    ...[22, 23, 24].map((d) => symptom('vomit', at(d, 11))), // a separate, unrelated vomit flare
+  ]
+  const beefDiarrhea = (fs: CorrelationFinding[]) =>
+    fs.find((f) => f.protein === 'beef' && f.symptomType === 'diarrhea')
+
+  const noMed = detectCorrelations(input({ mealEvents, symptomEvents }))
+  const withMed = detectCorrelations(
+    input({ mealEvents, symptomEvents, medicationWindows: [medRegimen(at(22, 0), at(24, 12))] }),
+  )
+  const bdNo = beefDiarrhea(noMed)
+  const bdMed = beefDiarrhea(withMed)
+  assert.ok(bdNo && bdMed, 'the beef→diarrhea finding exists in both runs (diarrhea is never suppressed)')
+  assert.equal(withMed.some((f) => f.symptomType === 'vomit'), false, 'the vomit type IS suppressed by the antibiotic')
+  assert.equal(
+    bdMed!.correctedAlpha,
+    bdNo!.correctedAlpha,
+    'suppressing the vomit type must not shrink the Bonferroni family for the unrelated diarrhea finding',
+  )
+  assert.equal(bdMed!.tier, bdNo!.tier, "the unrelated finding's tier must not inflate Early→Established")
 })
 
 // ── Detector ①: B-052 protein-key canonicalization (read-time) ───────────────
@@ -1838,6 +2092,9 @@ Deno.test('DEFAULT_CONFIG — encodes the §7 v1 thresholds', () => {
     DEFAULT_CONFIG.correlation.earlyMinMatchedPairs,
     'staple-washout symptom floor must stay aligned with the correlation Early episode floor',
   )
+  // B-070 dominance + copy-register floors.
+  assert.equal(DEFAULT_CONFIG.coverage.stapleDominanceFraction, 0.8)
+  assert.equal(DEFAULT_CONFIG.coverage.stapleSourceMajorityFraction, 0.8)
 })
 
 // ── Coverage diagnostics (B-053) ────────────────────────────────────────────
@@ -1908,8 +2165,92 @@ Deno.test('detectCoverage — staple_washout explains a single-protein diet with
   assert.equal(sw!.actionability, 'explanation')
   assert.equal(sw!.protein, 'chicken')
   assert.equal(sw!.symptomEpisodes, 3)
+  // All exposures are chicken MEALS → the copy may honestly say "in most meals".
+  assert.equal(sw!.stapleSource, 'meals')
   // Nyx's meals are well-rated → no rate-meals nudge, only the explanation.
   assert.equal(findDiag(diags, 'rate_meals'), undefined)
+})
+
+Deno.test('detectCoverage — B-070: dominant TREAT-borne staple fires (the real Nyx: chicken treats, tuna meals)', () => {
+  // The named motivating case. Chicken arrives via many treats; her actual MEALS are
+  // tuna-led. v1 (exactly-one-protein) stayed silent here; B-070 fires on ≥80% dominance
+  // over ALL exposures (meals + treats) — exactly the set the case-crossover washes out.
+  const mealEvents = [
+    // 12 chicken treats + 2 tuna meals = chicken is 12/14 ≈ 86% of exposures → dominant.
+    ...Array.from({ length: 12 }, (_, i) => proteinTreat(10 + i, 'chicken', 9)),
+    ratedProteinMeal(12, 'tuna', 'all'),
+    ratedProteinMeal(20, 'tuna', 'all'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(13, 8)),
+    symptom('vomit', at(17, 8)),
+    symptom('vomit', at(24, 8)),
+  ]
+  const sw = findDiag(detectCoverage(input({ pet: dog, mealEvents, symptomEvents })), 'staple_washout')
+  assert.ok(sw, 'staple_washout fires on a dominant treat-borne staple')
+  assert.equal(sw!.protein, 'chicken')
+  // The copy must NOT say "every meal" — the chicken is treats, the meals are tuna. A false
+  // "every meal" premise could misdirect an elimination-diet talk (the whole point of B-070).
+  assert.equal(sw!.stapleSource, 'treats')
+})
+
+Deno.test('detectCoverage — B-070: a dominant staple WITH protein contrast still washes out and is explained', () => {
+  // 9 chicken meals + 1 beef meal = chicken 90% → dominant. There IS contrast (① runs),
+  // but chicken is concordant (in nearly every window) → washes out, beef is a single
+  // exposure below the Early floor → no finding. staple_washout explains the chicken.
+  const mealEvents = [
+    ...Array.from({ length: 9 }, (_, i) => proteinMeal(10 + i, 'chicken')),
+    proteinMeal(15, 'beef'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(12, 8)),
+    symptom('vomit', at(16, 8)),
+    symptom('vomit', at(22, 8)),
+  ]
+  const sw = findDiag(detectCoverage(input({ pet: dog, mealEvents, symptomEvents })), 'staple_washout')
+  assert.ok(sw, 'a ≥80%-dominant staple fires even with minority contrast')
+  assert.equal(sw!.protein, 'chicken')
+  assert.equal(sw!.stapleSource, 'meals')
+})
+
+Deno.test('detectCoverage — B-070: NOT dominant (60/40) → silent, no false staple claim', () => {
+  // 6 chicken + 4 beef = top share 60% < the 0.8 dominance floor. Neither is "most of what
+  // the pet eats", so claiming a staple washout would be false. Stay silent.
+  const mealEvents = [
+    ...Array.from({ length: 6 }, (_, i) => proteinMeal(10 + i, 'chicken')),
+    ...Array.from({ length: 4 }, (_, i) => proteinMeal(16 + i, 'beef')),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(12, 8)),
+    symptom('vomit', at(18, 8)),
+    symptom('vomit', at(24, 8)),
+  ]
+  assert.equal(
+    findDiag(detectCoverage(input({ mealEvents, symptomEvents })), 'staple_washout'),
+    undefined,
+    'a 60/40 split is not a dominant staple — never claim one',
+  )
+})
+
+Deno.test('detectCoverage — B-070: a genuinely mixed-source staple reports stapleSource=mixed', () => {
+  // Chicken dominates exposures (12 of 14 ≈ 86%) but is split evenly across meals and
+  // treats (6/6) — neither kind is the ≥80% majority → the day-based "most days" register,
+  // never the meal-specific claim. (beef minority keeps total exposures honest.)
+  const mealEvents = [
+    ...Array.from({ length: 6 }, (_, i) => proteinMeal(10 + i, 'chicken')),
+    ...Array.from({ length: 6 }, (_, i) => proteinTreat(10 + i, 'chicken', 14)),
+    proteinMeal(17, 'beef'),
+    proteinMeal(19, 'beef'),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(12, 8)),
+    symptom('vomit', at(16, 8)),
+    symptom('vomit', at(22, 8)),
+  ]
+  const sw = findDiag(detectCoverage(input({ pet: dog, mealEvents, symptomEvents })), 'staple_washout')
+  assert.ok(sw, 'a dominant but meal/treat-split staple still fires')
+  assert.equal(sw!.protein, 'chicken')
+  assert.equal(sw!.stapleSource, 'mixed')
 })
 
 Deno.test('detectCoverage — staple_washout is FULLY suppressed on a diet-trial pet', () => {
@@ -1931,7 +2272,11 @@ Deno.test('detectCoverage — staple_washout is FULLY suppressed on a diet-trial
   )
 })
 
-Deno.test('detectCoverage — staple_washout does not fire when there is protein contrast', () => {
+Deno.test('detectCoverage — staple_washout stays silent on a balanced 50/50 diet (no protein dominates)', () => {
+  // B-070: it is non-DOMINANCE that suppresses, not the mere presence of contrast. A 2-and-2
+  // split tops out at 50% < the 0.8 floor — neither protein is "most of what the pet eats" —
+  // so there is no staple to explain. (A ≥80%-dominant staple WITH minority contrast still
+  // fires; see the B-070 dominance test above.)
   const mealEvents = [
     ratedProteinMeal(18, 'chicken', 'all'),
     ratedProteinMeal(20, 'beef', 'all'),
@@ -1959,7 +2304,7 @@ Deno.test('detectCoverage — staple_washout stays silent with no symptoms (neve
   assert.equal(findDiag(detectCoverage(input({ mealEvents })), 'staple_washout'), undefined)
 })
 
-Deno.test('detectCoverage — staple_washout needs real meal volume to claim "nearly every meal"', () => {
+Deno.test('detectCoverage — staple_washout needs real exposure volume before claiming a staple', () => {
   const mealEvents = [proteinMeal(22, 'chicken'), proteinMeal(24, 'chicken')] // 2 < stapleMinMeals(4)
   // Enough symptoms (≥3) that meal VOLUME is the only thing keeping staple_washout silent.
   const symptomEvents = [
@@ -2032,6 +2377,7 @@ Deno.test('rankCoverageDiagnostics — action before explanation regardless of i
     actionability: 'explanation',
     protein: 'chicken',
     symptomEpisodes: 2,
+    stapleSource: 'meals',
   }
   const rm: RateMealsDiagnostic = {
     type: 'rate_meals',
