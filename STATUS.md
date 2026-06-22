@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **B-070: `staple_washout` fires on ≥80% protein DOMINANCE (over meals+treats), with an honest treats-vs-meals copy register** (shipped via #211; engine-only, NO schema). Catches the real wedge case (Nyx: chicken via treats, tuna-led meals) that v1's sole-protein test missed; copy never claims "every meal" on a treat-borne staple. adversarial-reviewer **PASS** (executed counterexamples; the false-"every meal" path is unreachable as rendered copy), code-reviewer PASS (one stale-cache type-lie fixed). 232 deno + 660 jest + tsc green. **DEPLOYED — `generate-signal` v21 ACTIVE** via the B-082 MCP path (PM chose pre-verified MCP deploy; v20 from-branch, then redeployed **v21 from merged `main`** after #211 merged): authored bundle proven byte-identical to `scripts/deploy-edge.sh`'s artifact (sha a4759d20…) BEFORE deploy, read-back of the live source byte-identical, boot smoke-test clean 404. **First real use of B-082 validated** (finding: the 80 KB inline-content transcription is only safe via the scratch-file sha round-trip — provisioning a token for `supabase functions deploy` is the durable fix, logged). Build phase **unchanged** — Step 10 + parallel tracks.
+**Last updated:** 2026-06-21 — **Vet-report (Step 9) product-discovery round** complete + **PM QA-reviewed**: deliverable `docs/vet-report-discovery.md` (#214) — a synthetic synthesis ending in decidable Open Questions + a ranked real-vet Research Debt list that gates the requirements spec. PM leans converged (to ratify at the spec session): audience = **banded both-sides** (clinical-first + "for the owner" band; held as a *distribution-channel* call); delivery = **HTML/webview-first** + derived PDF (reshapes/demotes the PDF-library question to a render spike, B-144); specialist panel → **its own PR-evolvable doc** (not personas.md); **B-028 parallelizable now**. New future scope: **B-145** vet-visit doc capture. NO schema, NO build change. Build phase **unchanged** — Step 10 + parallel tracks. _(Merged `main` mid-wrap: B-070 staple-washout + `generate-signal` v21 also landed via #211/#215 — see Current Phase + Recent Sessions.)_
 
 ---
 
@@ -22,7 +22,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 **On-device QA gap:** empty / `no_pattern` + reflection paths verified on device; the **LIVE safety-card path is still unverified on device** (cat Nyx's real data legitimately yields zero safety findings — chicken is a ~3×/day staple → case-crossover correctly washes it out; intake healthy → flag correctly quiet).
 
-**After Step 10:** Step 9 (vet report PDF) resumes — interrupted by PM for B-045 dogfooding value; **blocked on the PDF-library open question**. A product-discovery round is teed up to run first — paste `docs/vet-report-discovery-PROMPT.md` (shipped via #212); its delivery/format finding may reshape the PDF-library question.
+**After Step 10:** Step 9 (vet report) resumes — interrupted by PM for B-045 dogfooding value. **Discovery round complete** (`docs/vet-report-discovery.md`, #214): recommends an HTML-first web report (+ derived PDF), which **reshapes the blocking PDF-library question** into a downstream render spike (B-144). Next: PM ratifies the §8 Open Questions (audience / format / scope) → requirements-spec session, **gated on real-vet validation** of the top Research Debt items (§10).
 
 ---
 
@@ -74,7 +74,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 
 ## Blocking Open Questions
 
-- **PDF rendering library for Step 9** (`pdf-lib` vs `puppeteer` vs `react-pdf`). Blocks the vet report. See CLAUDE.md → Open Questions.
+- **PDF rendering library for Step 9** (`pdf-lib` vs `puppeteer` vs `react-pdf`). Blocks the vet report. See CLAUDE.md → Open Questions. **Reshaped by discovery (#214):** if the PM ratifies HTML-first delivery (`docs/vet-report-discovery.md` §8.2), this demotes to a downstream render spike (B-144) rather than a v1 blocker — pending that ratification.
 
 ---
 
@@ -130,6 +130,7 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-21 — Vet-report (Step 9) product-discovery round — `docs/vet-report-discovery.md` (synthetic; decidable Open Qs + ranked real-vet research-debt gate; HTML-first delivery reshapes the PDF-library question; B-143/B-144/B-145 logged) — shipped via #214
 - 2026-06-21 — B-070: `staple_washout` ≥80%-dominance + honest treats-vs-meals copy register (engine-only; adversarial PASS; **deployed via B-082 MCP path, byte-verified; redeployed v21 from merged main** — first real use of B-082) — shipped via #211
 - 2026-06-21 — Vet-report (Step 9) discovery kickoff prompt — `docs/vet-report-discovery-PROMPT.md` (process/meta; team-reviewed, PM-ratified scope) — shipped via #212
 - 2026-06-21 — Restore never-committed research + competitive-landscape docs (CLAUDE.md refs fixed) + refresh spec Project Structure tree — #210
@@ -142,4 +143,3 @@ _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 - 2026-06-19 — B-117 PR 7: regimen setup + "Current medications" card + compliance % — #202
 - 2026-06-19 — B-117 PR 6: medication picker library + detail/edit — #201
 - 2026-06-19 — B-128: scope delete-account med-photo purge to `{uid}/` prefix — #200
-- 2026-06-19 — B-117 PR 5: medication photo capture + AI extraction + dose-confirm — #199
