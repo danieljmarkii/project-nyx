@@ -366,6 +366,137 @@ describe('computeTopProteins', () => {
   });
 });
 
+// ── B-115: exact-timestamp same-food TREAT re-log collapse ───────────────────────
+//
+// A "multi-piece handful logged per-piece" (one treat-giving entered as N identical rows)
+// must not inflate a treat's protein/food EXPOSURE — the count/share/rank/floor that bridges
+// to the vet-report diet-confounder line. Collapse is TREAT-only + EXACT-ms + non-null
+// foodItemId: the narrowest safe scope — it never over-collapses a genuine exposure (which
+// would HIDE a confounder the vet needs to see) and never touches the meals-only finished-rate.
+
+describe('B-115 — exact-timestamp treat re-log collapse', () => {
+  it('collapses a same-treat handful so it cannot push a treat protein over the staple (the CE-H counterexample)', () => {
+    // duck = the real meal protein (4 meals). A SINGLE handful of chicken treats is logged
+    // per-piece — 5 rows at the SAME instant + SAME treat food. Raw count would rank chicken
+    // 5 > duck 4 → a treat confounder wrongly #1. Collapsed, the handful is ONE chicken
+    // exposure (share over the collapsed 5-feeding set) and duck stays the headline.
+    const handfulMs = at(2);
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'duck', foodType: 'meal', foodItemId: 'd' }),
+      meal({ ms: at(1), primaryProtein: 'duck', foodType: 'meal', foodItemId: 'd' }),
+      meal({ ms: at(3), primaryProtein: 'duck', foodType: 'meal', foodItemId: 'd' }),
+      meal({ ms: at(4), primaryProtein: 'duck', foodType: 'meal', foodItemId: 'd' }),
+      ...Array.from({ length: 5 }, () =>
+        meal({ ms: handfulMs, primaryProtein: 'chicken', foodType: 'treat', foodItemId: 'temptation' }),
+      ),
+    ];
+    expect(computeTopProteins(rows)).toEqual([
+      { protein: 'duck', count: 4, shareOfDiet: 4 / 5, finishedRate: null, ratedMeals: 0, isTreat: false },
+      { protein: 'chicken', count: 1, shareOfDiet: 1 / 5, finishedRate: null, ratedMeals: 0, isTreat: true },
+    ]);
+  });
+
+  it('collapses a same-treat handful in Top Foods too (count/share over the collapsed set)', () => {
+    const handfulMs = at(1);
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), foodItemId: 'M', foodLabel: 'Meal M', foodType: 'meal' }),
+      meal({ ms: at(2), foodItemId: 'M', foodLabel: 'Meal M', foodType: 'meal' }),
+      meal({ ms: at(3), foodItemId: 'M', foodLabel: 'Meal M', foodType: 'meal' }),
+      ...Array.from({ length: 4 }, () =>
+        meal({ ms: handfulMs, foodItemId: 'T', foodLabel: 'Temptations', foodType: 'treat' }),
+      ),
+    ];
+    expect(computeTopFoods(rows)).toEqual([
+      { foodItemId: 'M', label: 'Meal M', foodType: 'meal', count: 3, shareOfDiet: 0.75, finishedRate: null, ratedMeals: 0, isTreat: false },
+      { foodItemId: 'T', label: 'Temptations', foodType: 'treat', count: 1, shareOfDiet: 0.25, finishedRate: null, ratedMeals: 0, isTreat: true },
+    ]);
+  });
+
+  it('does NOT collapse genuinely-separate treat givings at different timestamps (preserve real exposure)', () => {
+    // A daily chicken treat over 5 days — 5 DISTINCT timestamps = 5 REAL exposures. Only an
+    // EXACT-ms re-log collapses; a time-window merge would erase real exposures and could hide
+    // a diet-trial confounder (the never-over-collapse rule).
+    const rows: AnalyticsMeal[] = [0, 1, 2, 3, 4].map((d) =>
+      meal({ ms: at(d), primaryProtein: 'chicken', foodType: 'treat', foodItemId: 'temptation' }),
+    );
+    expect(computeTopProteins(rows)).toEqual([
+      { protein: 'chicken', count: 5, shareOfDiet: 1, finishedRate: null, ratedMeals: 0, isTreat: true },
+    ]);
+  });
+
+  it('does NOT collapse two DIFFERENT treat foods sharing an instant (distinct product exposures)', () => {
+    // A jerky AND a Temptation given together: same ms, both beef, but different foodItemId →
+    // two genuine product exposures, not one food re-logged.
+    const sameMs = at(0);
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: sameMs, primaryProtein: 'beef', foodType: 'treat', foodItemId: 'jerky' }),
+      meal({ ms: sameMs, primaryProtein: 'beef', foodType: 'treat', foodItemId: 'temptation' }),
+      meal({ ms: at(1), primaryProtein: 'beef', foodType: 'treat', foodItemId: 'jerky' }),
+      meal({ ms: at(2), primaryProtein: 'beef', foodType: 'treat', foodItemId: 'jerky' }),
+    ];
+    expect((computeTopProteins(rows) as RankedProtein[])[0].count).toBe(4);
+  });
+
+  it('does NOT collapse treat re-logs with a null foodItemId (cannot identify the same food)', () => {
+    // Built literally: the `meal()` helper coalesces a null foodItemId to 'f1', so the null
+    // case must bypass it. Without a foodItemId we can't tell "same treat re-logged" from
+    // "two foods" → leave them (preserve exposure rather than risk merging distinct feedings).
+    const t = (ms: number): AnalyticsMeal => ({
+      ms, foodItemId: null, foodLabel: 'Mystery treat', foodType: 'treat',
+      primaryProtein: 'chicken', intakeRating: null,
+    });
+    const rows: AnalyticsMeal[] = [t(at(0)), t(at(0)), t(at(1)), t(at(2))];
+    expect((computeTopProteins(rows) as RankedProtein[])[0].count).toBe(4);
+  });
+
+  it('does NOT collapse meals sharing an instant — only treats — so the meals-only finished-rate cannot regress (§11 #1)', () => {
+    // Two MEAL rows of one food at the exact same instant stay TWO rated meals: B-115 is
+    // treat-scoped, keeping it entirely off the clinical intake/decline lane.
+    const sameMs = at(0);
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: sameMs, primaryProtein: 'chicken', foodItemId: 'a', foodType: 'meal', intakeRating: 'refused' }),
+      meal({ ms: sameMs, primaryProtein: 'chicken', foodItemId: 'a', foodType: 'meal', intakeRating: 'refused' }),
+      meal({ ms: at(1), primaryProtein: 'chicken', foodItemId: 'a', foodType: 'meal', intakeRating: 'most' }),
+      meal({ ms: at(2), primaryProtein: 'chicken', foodItemId: 'a', foodType: 'meal', intakeRating: 'most' }),
+    ];
+    const out = computeTopProteins(rows) as RankedProtein[];
+    expect(out).toHaveLength(1);
+    expect(out[0].count).toBe(4); // all 4 meals preserved (no treat collapse)
+    expect(out[0].ratedMeals).toBe(4); // finished-rate denominator intact
+    expect(out[0].finishedRate).toBeCloseTo(0.5, 5); // 2 of 4 finished (2 refused, 2 most)
+  });
+
+  it('a collapsed handful does not lift a thin dataset over the ranking floor (the floor is on REAL exposures)', () => {
+    // 1 real beef meal + a 5-piece chicken-treat handful at one instant. Raw count 6 > floor,
+    // but there are only 2 real feedings, so the honest reading is BELOW the floor → the
+    // notEnoughData sentinel, never a fabricated treat rank.
+    const handfulMs = at(1);
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'beef', foodType: 'meal', foodItemId: 'm' }),
+      ...Array.from({ length: 5 }, () =>
+        meal({ ms: handfulMs, primaryProtein: 'chicken', foodType: 'treat', foodItemId: 't' }),
+      ),
+    ];
+    expect(computeTopProteins(rows)).toEqual({
+      status: 'not_enough_data', samples: 2, needed: ANALYTICS_FLOORS.minMealsForRanking,
+    });
+  });
+
+  it('a genuine single treat exposure still ranks, flagged isTreat (B-111 invariant preserved)', () => {
+    // The collapse must not regress B-111: one chicken treat is still one chicken exposure.
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'beef', foodType: 'meal', foodItemId: 'm' }),
+      meal({ ms: at(1), primaryProtein: 'beef', foodType: 'meal', foodItemId: 'm' }),
+      meal({ ms: at(2), primaryProtein: 'beef', foodType: 'meal', foodItemId: 'm' }),
+      meal({ ms: at(3), primaryProtein: 'chicken', foodType: 'treat', foodItemId: 'temptation' }),
+    ];
+    expect(computeTopProteins(rows)).toEqual([
+      { protein: 'beef', count: 3, shareOfDiet: 0.75, finishedRate: null, ratedMeals: 0, isTreat: false },
+      { protein: 'chicken', count: 1, shareOfDiet: 0.25, finishedRate: null, ratedMeals: 0, isTreat: true },
+    ]);
+  });
+});
+
 // ── Intake / finished-rate (MEALS ONLY) ─────────────────────────────────────────
 
 describe('computeIntakeRate', () => {
