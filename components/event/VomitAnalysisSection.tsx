@@ -296,7 +296,7 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
           <View style={styles.obsHeaderRow}>
             <Text style={styles.obsHeading}>What's visible</Text>
             {!editing && canEdit ? (
-              <TouchableOpacity onPress={() => setEditing(true)} hitSlop={12}>
+              <TouchableOpacity onPress={() => setEditing(true)} hitSlop={16}>
                 <Text style={styles.editLink}>{observations.length > 0 ? 'Edit' : 'Add details'}</Text>
               </TouchableOpacity>
             ) : null}
@@ -408,7 +408,15 @@ function currentEditable(row: AnalysisRow): VomitEditableFields {
 }
 
 function formatEditedDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const d = new Date(iso);
+  // Add the year only when it isn't the current one — "Jun 22" stays clean for a
+  // recent edit but a year-old correction reads unambiguously on the vet's clock.
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
 }
 
 const styles = StyleSheet.create({
@@ -516,7 +524,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 2,
+    marginBottom: theme.spaceMicro,
   },
   obsHeading: {
     fontSize: theme.textSM,
@@ -562,7 +570,7 @@ const styles = StyleSheet.create({
   },
   descWrap: {
     marginTop: 6,
-    gap: 2,
+    gap: theme.spaceMicro,
   },
   obsDescription: {
     fontSize: theme.textSM,

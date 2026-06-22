@@ -59,8 +59,21 @@ function normText(v: string | null | undefined): string | null {
   return t.length > 0 ? t : null;
 }
 
+// Order-preserving de-dup: `contents` is semantically a SET (a multi-select of
+// distinct observations), so a duplicate is meaningless. Deduping here — on both
+// the write and both sides of the diff — keeps a model-emitted ['bile','bile']
+// from mis-firing the "edited" marker against an owner's de-duplicated ['bile'].
 function normArray(v: string[] | null | undefined): string[] {
-  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of v) {
+    if (typeof x === 'string' && !seen.has(x)) {
+      seen.add(x);
+      out.push(x);
+    }
+  }
+  return out;
 }
 
 // Canonical form for write + compare: empty strings and empty arrays collapse to
@@ -113,6 +126,12 @@ function sameSet(a: string[], b: string[]): boolean {
 // report's "owner-confirmed fields only" rule (B-028 / requirements §8.7): a
 // field listed here is the owner's, not the AI's. Returns [] when there's no AI
 // baseline — an edit can't be attributed without an original to diff against.
+//
+// NOTE for the Step 9 PR-7 (report) author: in the no-baseline case (analysis
+// failed/pending, ai_raw_payload null) this safely UNDER-claims — an owner who
+// filled a field still gets []. So "owner-confirmed" for the report must key off
+// a non-null edited VALUE (with edited_at set), NOT the presence of a marker here,
+// or those fields would be wrongly excluded. (adversarial-reviewer, B-028.)
 export function deriveEditedFields(
   current: VomitEditableFields,
   original: VomitEditableFields | null,

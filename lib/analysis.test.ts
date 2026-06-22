@@ -60,6 +60,13 @@ describe('normalizeVomitEdits', () => {
     expect(n.blood_present).toBe('none_visible');
     expect(n.contents).toEqual(['bile', 'foam']);
   });
+
+  it('de-dups contents (a set), preserving order — guards the marker mis-fire', () => {
+    // A vision model can emit ['bile','bile']; without de-dup it would diff as an
+    // edit against an owner's ['bile'] (adversarial-reviewer finding).
+    const n = normalizeVomitEdits({ ...blank(), contents: ['bile', 'foam', 'bile'] });
+    expect(n.contents).toEqual(['bile', 'foam']);
+  });
 });
 
 describe('extractEditableFromPayload', () => {
@@ -131,6 +138,12 @@ describe('deriveEditedFields', () => {
   it('treats contents as a set — reorder is not an edit, add/remove is', () => {
     expect(deriveEditedFields({ ...ai, contents: ['foam', 'bile'] }, ai)).toEqual([]);
     expect(deriveEditedFields({ ...ai, contents: ['bile'] }, ai)).toEqual(['contents']);
+  });
+
+  it('a value reverted to the AI original is no longer "edited"', () => {
+    // Owner corrects blood, then changes it back to what the AI said: value-based
+    // diff correctly reports no edit (the report must not claim it as the owner's).
+    expect(deriveEditedFields({ ...ai, blood_present: 'none_visible' }, ai)).toEqual([]);
   });
 
   it('flags clearing a field the AI had set', () => {
