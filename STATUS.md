@@ -2,7 +2,7 @@
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
-**Last updated:** 2026-06-21 — **Vet-report (Step 9) product-discovery round** complete + **PM QA-reviewed**: deliverable `docs/vet-report-discovery.md` (#214) — a synthetic synthesis ending in decidable Open Questions + a ranked real-vet Research Debt list that gates the requirements spec. PM leans converged (to ratify at the spec session): audience = **banded both-sides** (clinical-first + "for the owner" band; held as a *distribution-channel* call); delivery = **HTML/webview-first** + derived PDF (reshapes/demotes the PDF-library question to a render spike, B-144); specialist panel → **its own PR-evolvable doc** (not personas.md); **B-028 parallelizable now**. New future scope: **B-145** vet-visit doc capture. NO schema, NO build change. Build phase **unchanged** — Step 10 + parallel tracks. _(Merged `main` mid-wrap: B-070 staple-washout + `generate-signal` v21 also landed via #211/#215 — see Current Phase + Recent Sessions.)_
+**Last updated:** 2026-06-22 — **Vet-report (Step 9): rendered HTML mock built** — `docs/vet-report-mock.html` (#216, draft), the banded one-pager (**Strawman C**) as the HTML-first artifact (§8.2) for the §10 R1/R2 real-vet validation. Clinical-grade, B&W-print-safe, unbranded; realistic Mochi diet-trial/GI sample where **every page-1 figure reconciles to the appendix**. `vet-report-cold-read` ×3 → **band-removed clinical page is CLINIC-READY** (the discovery doc's "self-sufficient with band removed" criterion); fixed the metronidazole-confounder omission, a 52-day-window denominator cascade, and honest gap/adherence rendering. **Owner band flagged by the cold read as a Principle-6/trust risk → that *is* Open Question §8.1 / Research-Debt R4 (band = help vs trust-contaminant), a PM call** — kept per the explicit banded request + a screen-only A/B toggle, surfaced not silently resolved. NO schema, NO app code, NO build-phase change — **Step 10 + parallel tracks unchanged**. (Discovery round `docs/vet-report-discovery.md` #214 is the prior step; see Recent Sessions.)
 
 ---
 
@@ -95,6 +95,8 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 - [ ] **B-065** — should the food-capture add-then-log path also show the meal completion card (intake chips + "Change time")?
 - [ ] **B-063** — approve the Tier-2 design-principles line (tone-aware "moment" — calm, never festive on a worrying event); awaiting PM sign-off before writing.
 - [ ] **PR #79** — env fail-fast guard + CLAUDE.md doc fix: mark ready/merge or close.
+- [ ] **Vet-report owner band (Open Q §8.1 / Research-Debt R4)** — `vet-report-cold-read` flagged the "For the owner" band as a Principle-6/trust risk (a conclusion above the clinical data anchors a hurried vet). Decide audience treatment: keep **banded** (Strawman C, current default) vs **vet-only** (Strawman A). Best settled by the real-vet A/B the mock now enables (the screen-only toggle in `docs/vet-report-mock.html` #216 prints both). Blocks the requirements-spec IA.
+- [ ] **Principle 6 doc-drift (Tier-2 edit)** — `nyx-design-principles-v1_0.md` §6 still lists "severity averages" as desired report content; the mock + §8.4 deliberately use frequency-over-severity (Dr. Chen's stated preference). Both cold reads flagged it. Approve the doc-line update (flagged, not written).
 
 **Cleanup / infra**
 - [ ] **B-118** — delete the leftover `smart-worker` Edge Function from the dashboard (stock template, no callers, carries a `secret`-auth path that bypasses RLS).
@@ -130,6 +132,7 @@ eas build --platform ios --profile production --auto-submit
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
 
+- 2026-06-22 — Vet-report (Step 9): rendered HTML mock of the banded one-pager (Strawman C) — `docs/vet-report-mock.html`, the HTML-first artifact for §10 R1/R2 real-vet validation (clinical-grade, B&W-safe, unbranded; Mochi diet-trial sample reconciles to its appendix). `vet-report-cold-read` ×3: band-removed clinical page **CLINIC-READY**; owner band → §8.1/R4 PM call. No schema/app code — shipped via #216
 - 2026-06-21 — Vet-report (Step 9) product-discovery round — `docs/vet-report-discovery.md` (synthetic; decidable Open Qs + ranked real-vet research-debt gate; HTML-first delivery reshapes the PDF-library question; B-143/B-144/B-145 logged) — shipped via #214
 - 2026-06-21 — B-070: `staple_washout` ≥80%-dominance + honest treats-vs-meals copy register (engine-only; adversarial PASS; **deployed via B-082 MCP path, byte-verified; redeployed v21 from merged main** — first real use of B-082) — shipped via #211
 - 2026-06-21 — Vet-report (Step 9) discovery kickoff prompt — `docs/vet-report-discovery-PROMPT.md` (process/meta; team-reviewed, PM-ratified scope) — shipped via #212
