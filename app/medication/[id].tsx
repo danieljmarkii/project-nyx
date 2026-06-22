@@ -45,6 +45,7 @@ import { theme } from '../../constants/theme';
 import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
+import { ChipGroup } from '../../components/ui/ChipGroup';
 import { PhotoViewer } from '../../components/ui';
 import { supabase } from '../../lib/supabase';
 import { getDb } from '../../lib/db';
@@ -433,10 +434,10 @@ export default function MedicationDetailScreen() {
             />
 
             <SectionLabel label="Form" />
-            <ChipRow options={MEDICATION_FORM_OPTIONS} value={form} onChange={setForm} />
+            <ChipGroup options={MEDICATION_FORM_OPTIONS} value={form} onChange={setForm} accessibilityLabel="Form" style={styles.chipScroll} />
 
             <SectionLabel label="Route" />
-            <ChipRow options={MEDICATION_ROUTE_OPTIONS} value={route} onChange={setRoute} />
+            <ChipGroup options={MEDICATION_ROUTE_OPTIONS} value={route} onChange={setRoute} accessibilityLabel="Route" style={styles.chipScroll} />
 
             <SectionLabel label="Type" />
             <View style={styles.rxRow}>
@@ -479,32 +480,6 @@ export default function MedicationDetailScreen() {
         onClose={() => setViewerVisible(false)}
       />
     </SafeAreaView>
-  );
-}
-
-// Horizontally-scrollable single-select chip row. A second tap on the active chip
-// clears it (null is a legitimate "unset" state for form/route). Mirrors the
-// capture screen's ChipScroll so the two surfaces read identically.
-function ChipRow({
-  options, value, onChange,
-}: {
-  options: { value: string; label: string }[];
-  value: string | null;
-  onChange: (next: string | null) => void;
-}) {
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-      {options.map((o) => (
-        <View key={o.value} style={styles.chipWrap}>
-          <FilterChip
-            label={o.label}
-            active={value === o.value}
-            onPress={() => onChange(value === o.value ? null : o.value)}
-            variant="filled"
-          />
-        </View>
-      ))}
-    </ScrollView>
   );
 }
 
@@ -593,9 +568,6 @@ const styles = StyleSheet.create({
   },
   chipScroll: {
     marginBottom: theme.space1,
-  },
-  chipWrap: {
-    marginRight: theme.space1,
   },
   rxRow: {
     flexDirection: 'row',

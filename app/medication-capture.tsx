@@ -30,7 +30,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Check } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
-import { FilterChip } from '../components/ui/FilterChip';
+import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
@@ -458,10 +458,10 @@ export default function MedicationCaptureScreen() {
             />
 
             <SectionLabel label="Form" />
-            <ChipScroll options={FORM_OPTIONS} value={form} onChange={setForm} />
+            <ChipGroup options={FORM_OPTIONS} value={form} onChange={setForm} accessibilityLabel="Form" style={styles.chipScroll} />
 
             <SectionLabel label="Route" />
-            <ChipScroll options={ROUTE_OPTIONS} value={route} onChange={setRoute} />
+            <ChipGroup options={ROUTE_OPTIONS} value={route} onChange={setRoute} accessibilityLabel="Route" style={styles.chipScroll} />
 
             <TouchableOpacity
               style={[styles.primaryBtn, !canSave && styles.primaryBtnDisabled]}
@@ -537,9 +537,9 @@ export default function MedicationCaptureScreen() {
               onToggle={() => setStrengthConfirmed((v) => !v)}
             />
             <SectionLabel label="Form" />
-            <ChipScroll options={FORM_OPTIONS} value={form} onChange={setForm} />
+            <ChipGroup options={FORM_OPTIONS} value={form} onChange={setForm} accessibilityLabel="Form" style={styles.chipScroll} />
             <SectionLabel label="Route" />
-            <ChipScroll options={ROUTE_OPTIONS} value={route} onChange={setRoute} />
+            <ChipGroup options={ROUTE_OPTIONS} value={route} onChange={setRoute} accessibilityLabel="Route" style={styles.chipScroll} />
             <TouchableOpacity
               style={[styles.primaryBtn, !canSave && styles.primaryBtnDisabled]}
               onPress={commitMedication}
@@ -617,29 +617,6 @@ function StrengthGate({
         Worth a quick check — the strength is the one thing worth getting exactly right.
       </Text>
     </>
-  );
-}
-
-function ChipScroll({
-  options, value, onChange,
-}: {
-  options: { value: string; label: string }[];
-  value: string | null;
-  onChange: (next: string | null) => void;
-}) {
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-      {options.map((o) => (
-        <View key={o.value} style={styles.chipWrap}>
-          <FilterChip
-            label={o.label}
-            active={value === o.value}
-            onPress={() => onChange(value === o.value ? null : o.value)}
-            variant="filled"
-          />
-        </View>
-      ))}
-    </ScrollView>
   );
 }
 
@@ -859,9 +836,6 @@ const styles = StyleSheet.create({
   },
   chipScroll: {
     marginBottom: theme.space1,
-  },
-  chipWrap: {
-    marginRight: theme.space1,
   },
 
   formScroll: {

@@ -1,4 +1,4 @@
-import { TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, AccessibilityRole } from 'react-native';
 import { theme } from '../../constants/theme';
 
 type Variant =
@@ -11,15 +11,21 @@ interface Props {
   active: boolean;
   onPress: () => void;
   variant?: Variant;
+  // When this chip is one option in a single-select group (ChipGroup), the group
+  // passes 'radio' so the active state is announced as a radio selection. Left
+  // undefined for filter/toggle usages, which keep TouchableOpacity's button role.
+  accessibilityRole?: AccessibilityRole;
 }
 
-export function FilterChip({ label, active, onPress, variant = 'default' }: Props) {
+export function FilterChip({ label, active, onPress, variant = 'default', accessibilityRole }: Props) {
   const set = STYLE_BY_VARIANT[variant];
   return (
     <TouchableOpacity
       style={[set.base, active && set.activeContainer]}
       onPress={onPress}
       activeOpacity={0.7}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={accessibilityRole ? { selected: active } : undefined}
       // Chips are ~32pt tall; expand the tap zone vertically to the 44pt floor
       // (Designer anti-pattern: sub-44pt targets need hitSlop). Vertical-only so
       // adjacent chips in a horizontal row never share a tap zone.
