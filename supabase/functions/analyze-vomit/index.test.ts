@@ -13,8 +13,11 @@ import {
   computeContextualFlags,
   applyEscalationFloor,
   buildContextualReadText,
+  buildAnalysisWriteBack,
+  STRUCTURED_FIELD_KEYS,
   detectImageMediaType,
   type ContextInput,
+  type VomitAnalysis,
 } from './index.ts'
 
 // ── detectImageMediaType ──────────────────────────────────────────────────────
@@ -254,4 +257,87 @@ Deno.test('buildContextualReadText — never reassures', () => {
     assertEquals(/\b(fine|okay|ok|healthy|nothing to worry)\b/i.test(t), false)
     assertEquals(t.includes('!'), false)
   }
+})
+
+// ── buildAnalysisWriteBack — the never-clobber guard (B-028) ───────────────────
+// The bit that was untested until this PR: a re-analysis of a row the owner has
+// edited must refresh ONLY the read, never the structured clinical fields the vet
+// report relies on. A regression here silently overwrites a human-corrected
+// "Blood: fresh_red" back to the AI's "none_visible".
+
+const sampleAnalysis: VomitAnalysis = {
+  appears_to_show_vomit: true,
+  colour: 'yellow',
+  contents: ['bile', 'foam'],
+  consistency: 'foamy',
+  blood_present: 'none_visible',
+  bile_present: 'yes',
+  foreign_material_present: 'no',
+  foreign_material_note: null,
+  description: 'A small amount of yellow foam.',
+  visual_flags: [],
+  recommendation: 'monitor',
+  read_text: "This one doesn't show anything obviously concerning on its own.",
+  confidence: { colour: 0.9 },
+}
+
+const freshReadFields = {
+  recommendation: 'worth_a_call' as const,
+  read_text: 'Repeated vomiting — worth a call.',
+  visual_flags: [],
+  contextual_flags: ['repeated_vomiting' as const],
+  status: 'completed',
+  error: null,
+}
+
+Deno.test('buildAnalysisWriteBack — edited row: update mode, NO structured column touched', () => {
+  const wb = buildAnalysisWriteBack({
+    humanEdited: true,
+    eventId: 'e1',
+    petId: 'p1',
+    analysis: sampleAnalysis,
+    readFields: freshReadFields,
+  })
+  assertStrictEquals(wb.mode, 'update')
+  // The never-clobber assertion: not a single structured field (or the cached
+  // original) appears in the write — the owner's facts survive untouched.
+  for (const key of STRUCTURED_FIELD_KEYS) {
+    assertEquals(Object.prototype.hasOwnProperty.call(wb.values, key), false)
+  }
+  // But the read DID refresh — the floor can still re-escalate on worse context.
+  assertStrictEquals(wb.values.recommendation, 'worth_a_call')
+  assertEquals(wb.values.contextual_flags, ['repeated_vomiting'])
+})
+
+Deno.test('buildAnalysisWriteBack — un-edited row: full upsert with structured fields + cached payload', () => {
+  const wb = buildAnalysisWriteBack({
+    humanEdited: false,
+    eventId: 'e1',
+    petId: 'p1',
+    analysis: sampleAnalysis,
+    readFields: freshReadFields,
+  })
+  assertStrictEquals(wb.mode, 'upsert')
+  assertStrictEquals(wb.values.blood_present, 'none_visible')
+  assertStrictEquals(wb.values.colour, 'yellow')
+  assertStrictEquals(wb.values.ai_raw_payload, sampleAnalysis)
+  assertStrictEquals(wb.values.incident_type, 'vomit')
+  // Read still refreshes on a first/un-edited write.
+  assertStrictEquals(wb.values.recommendation, 'worth_a_call')
+})
+
+Deno.test('buildAnalysisWriteBack — un-edited row with a failed vision call still writes null fields', () => {
+  // analysis === null (photo unreadable / no photo): the upsert must not throw and
+  // must null the structured fields rather than carry stale ones.
+  const wb = buildAnalysisWriteBack({
+    humanEdited: false,
+    eventId: 'e1',
+    petId: 'p1',
+    analysis: null,
+    readFields: { ...freshReadFields, recommendation: 'not_enough_to_say', status: 'uncertain', contextual_flags: [] },
+  })
+  assertStrictEquals(wb.mode, 'upsert')
+  assertStrictEquals(wb.values.ai_raw_payload, null)
+  assertStrictEquals(wb.values.blood_present, null)
+  assertStrictEquals(wb.values.recommendation, 'not_enough_to_say')
 })

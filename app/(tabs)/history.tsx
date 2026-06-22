@@ -445,9 +445,11 @@ export default function HistoryScreen() {
               <View style={styles.emptyState}>
                 {typeFilter || datePreset ? (
                   <>
-                    <Text style={styles.emptyTitle}>No events found</Text>
+                    <Text style={styles.emptyTitle}>Nothing matches that filter</Text>
                     <Text style={styles.emptyBody}>
-                      Try removing a filter to see more history.
+                      {activePet
+                        ? `Try clearing a filter to see more of ${activePet.name}'s history.`
+                        : 'Try clearing a filter to see more history.'}
                     </Text>
                   </>
                 ) : (
@@ -455,8 +457,8 @@ export default function HistoryScreen() {
                     <Text style={styles.emptyTitle}>Nothing logged yet</Text>
                     <Text style={styles.emptyBody}>
                       {activePet
-                        ? `Tap + anywhere to log ${activePet.name}'s first event.`
-                        : 'Tap + anywhere to start logging.'}
+                        ? `Tap + anywhere to log ${activePet.name}'s first meal or symptom. Everything you log builds up here.`
+                        : 'Tap + anywhere to log a first meal or symptom. Everything you log builds up here.'}
                     </Text>
                   </>
                 )}

@@ -225,7 +225,7 @@ export default function FoodsScreen() {
         </View>
       ) : isEmpty ? (
         <View style={styles.centered}>
-          <Text style={styles.stateTitle}>No foods yet</Text>
+          <Text style={styles.stateTitle}>Your food library starts here</Text>
           <Text style={styles.stateBody}>
             Tap Add food to start your library, or snap one when you log a meal —
             either way it shows up here, ready to reuse.
