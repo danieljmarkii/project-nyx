@@ -19,6 +19,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
+import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
@@ -697,18 +698,16 @@ export default function FoodCaptureScreen() {
               autoCapitalize="words"
             />
             <SectionLabel label="Format" />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.formatRow}>
-              {FOOD_FORMATS.map((f) => (
-                <View key={f.value} style={{ marginRight: theme.space1 }}>
-                  <FilterChip
-                    label={f.label}
-                    active={extractedFormat === f.value}
-                    onPress={() => setExtractedFormat(f.value)}
-                    variant="filled"
-                  />
-                </View>
-              ))}
-            </ScrollView>
+            <ChipGroup
+              options={FOOD_FORMATS}
+              value={extractedFormat}
+              // allowDeselect={false} guarantees a non-null value at runtime; the guard
+              // also narrows ChipGroup's (string | null) onChange to the string this setter wants.
+              onChange={(v) => { if (v !== null) setExtractedFormat(v); }}
+              allowDeselect={false}
+              accessibilityLabel="Format"
+              style={styles.formatRow}
+            />
             <SectionLabel label="Type" />
             <View style={styles.foodTypeRow}>
               {FOOD_TYPES.map((t) => (

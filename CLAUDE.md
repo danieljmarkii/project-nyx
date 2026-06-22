@@ -140,6 +140,7 @@ Establish these from session one. Do not drift from them. When a new convention 
 - **Language:** TypeScript strict mode throughout. No `any`. No implicit returns.
 - **Naming:** Components PascalCase. Hooks `useCamelCase`. Store files `camelCaseStore.ts`. Constants `SCREAMING_SNAKE_CASE`.
 - **Styling:** Theme tokens only. No inline styles. No hardcoded values. All tokens live in `constants/theme.ts`.
+- **Single-select chips:** closed-set single-select pickers (form / route / format, etc.) use the wrapping, accessible `components/ui/ChipGroup` — never a horizontal `ScrollView` of chips. A silent h-scroll hides options off-screen, so owners pick from only what they can see (B-146). Horizontal scrolling is for browsing media/recents only, and always carries a visible "there's more" cue (paging dots or an edge-fade), never a bare hidden-overflow row.
 - **Imports:** Absolute imports from project root. No relative `../../` chains longer than one level.
 - **State:** Zustand for global state. Local `useState` for component-only state. No prop drilling beyond two levels.
 - **Error handling:** Every async function has explicit error handling. No silent failures in sync or API calls.
