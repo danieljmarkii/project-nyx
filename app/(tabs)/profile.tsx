@@ -545,7 +545,8 @@ export default function ProfileScreen() {
             <ActivityIndicator style={styles.sectionLoader} color={theme.colorTextSecondary} />
           ) : conditions.length === 0 ? (
             <Text style={styles.emptyConditionsText}>
-              No known conditions. Tap + Add to record one.
+              No conditions on file yet. Add anything {activePet.name} has been
+              diagnosed with, like allergies or a sensitive stomach.
             </Text>
           ) : (
             conditions.map((condition) => (
@@ -597,7 +598,8 @@ export default function ProfileScreen() {
             <ActivityIndicator style={styles.sectionLoader} color={theme.colorTextSecondary} />
           ) : medications.length === 0 ? (
             <Text style={styles.emptyConditionsText}>
-              No active medications. Tap + Add to set up a regimen — then logging a dose is one tap.
+              No medications yet. Add a regimen once and logging each dose
+              becomes a single tap.
             </Text>
           ) : (
             medications.map((reg) => {
