@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>B-156 — Medication-with-food: workflow mock</title>
+<style>
+  :root {
+    --accent:#00C2A8; --accent-light:#E0FBF7; --accent-soft:#86D9CC;
+    --dark:#0A0A0A; --neutral-mid:#262626; --neutral-light:#FAFAFA;
+    --surface:#FFFFFF; --surface-subtle:#F5F5F5;
+    --tp:#0A0A0A; --ts:#525252; --tt:#737373; --td:#A3A3A3;
+    --border:#EAEAEA; --border-strong:#D4D4D4;
+    --rose:#F43F5E; --rose-light:#FFE4E6; --rose-border:#FBCFD6;
+    --gold:#FBBF24; --mint:#00C2A8;
+    --r-sm:8px; --r-md:16px; --r-lg:24px; --r-full:999px;
+    --font:'Geist','Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+  body {
+    margin:0; font-family:var(--font); color:var(--tp);
+    background:#F2F2F0; line-height:1.45;
+  }
+  .wrap { max-width:1180px; margin:0 auto; padding:32px 24px 80px; }
+
+  /* ── Masthead ── */
+  header.mast { margin-bottom:8px; }
+  .eyebrow { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--tt); font-weight:600; }
+  h1 { font-size:30px; margin:6px 0 4px; letter-spacing:-.02em; }
+  .sub { color:var(--ts); font-size:15px; max-width:760px; }
+  .banner {
+    margin:20px 0 36px; padding:14px 18px; border-radius:var(--r-md);
+    background:#FFF7E6; border:1px solid #F3D98A; color:#6b5414; font-size:13.5px;
+    display:flex; gap:10px; align-items:flex-start;
+  }
+  .banner b { color:#4a3a0a; }
+  .banner .dot { flex:0 0 auto; width:8px; height:8px; border-radius:var(--r-full); background:var(--gold); margin-top:6px; }
+
+  /* ── Section ── */
+  section { margin:0 0 56px; }
+  .sec-head { display:flex; align-items:baseline; gap:12px; margin-bottom:6px; }
+  .sec-tag {
+    font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:#fff; background:var(--dark); padding:3px 8px; border-radius:var(--r-full);
+  }
+  .sec-tag.b { background:var(--accent); }
+  .sec-tag.safe { background:var(--rose); }
+  .sec-tag.trap { background:var(--neutral-mid); }
+  h2 { font-size:21px; margin:0; letter-spacing:-.01em; }
+  .sec-sub { color:var(--ts); font-size:14px; margin:8px 0 24px; max-width:840px; }
+  .sec-sub code { background:#fff; border:1px solid var(--border); border-radius:5px; padding:1px 5px; font-size:12.5px; }
+
+  /* ── Flow row of frames ── */
+  .flow { display:flex; flex-wrap:wrap; gap:28px; align-items:flex-start; }
+  .step { width:300px; }
+  .cap { font-size:13px; color:var(--ts); margin-top:14px; }
+  .cap .n { display:inline-block; min-width:20px; height:20px; line-height:20px; text-align:center;
+    border-radius:var(--r-full); background:var(--dark); color:#fff; font-size:11px; font-weight:700; margin-right:7px; }
+  .cap b { color:var(--tp); }
+  .why { font-size:12px; color:var(--tt); margin-top:7px; padding-left:27px; border-left:2px solid var(--border); margin-left:9px; }
+  .why.safe { border-color:var(--rose); }
+  .arrow { align-self:center; color:var(--td); font-size:26px; line-height:1; padding:0 2px; }
+
+  /* ── Phone frame ── */
+  .phone {
+    width:300px; height:540px; background:var(--surface); border-radius:34px;
+    border:1px solid var(--border-strong); box-shadow:0 18px 40px rgba(0,0,0,.13);
+    overflow:hidden; position:relative; display:flex; flex-direction:column;
+  }
+  .statusbar { height:30px; display:flex; align-items:center; justify-content:center; position:relative; flex:0 0 auto; }
+  .statusbar .notch { width:96px; height:18px; background:var(--dark); border-radius:0 0 12px 12px; }
+  .scr { flex:1; position:relative; overflow:hidden; }
+
+  /* App header inside screen */
+  .appbar { display:flex; align-items:center; gap:8px; padding:6px 16px 12px; }
+  .appbar .back { color:var(--tp); font-size:20px; }
+  .appbar .title { flex:1; text-align:center; font-size:15px; font-weight:500; }
+  .appbar .spacer { width:18px; }
+
+  /* Dimmed home backdrop (behind a docked completion card) */
+  .home { position:absolute; inset:0; padding:16px; opacity:.5; filter:saturate(.8); }
+  .home .h-title { font-size:24px; font-weight:600; letter-spacing:-.01em; }
+  .home .h-sig { margin-top:14px; padding:16px; border-radius:var(--r-md); background:var(--neutral-light); border:1px solid var(--border); }
+  .home .h-sig .l { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--tt); font-weight:600; }
+  .home .h-sig .t { font-family:'Newsreader',Georgia,serif; font-size:19px; margin-top:6px; color:var(--tp); line-height:1.3; }
+  .home .h-card { margin-top:12px; padding:14px; border-radius:var(--r-md); background:var(--surface); border:1px solid var(--border); }
+  .home .h-card .l { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--tt); font-weight:600; }
+  .home .h-row { display:flex; justify-content:space-between; margin-top:8px; font-size:13px; color:var(--ts); }
+  .scrim { position:absolute; inset:0; background:rgba(10,10,10,.18); }
+
+  /* ── Completion / moment card (dark) ── */
+  .moment {
+    position:absolute; left:12px; right:12px; bottom:18px;
+    background:var(--dark); border-radius:var(--r-lg); padding:14px 14px 15px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  .m-head { display:flex; align-items:center; gap:12px; }
+  .check {
+    width:32px; height:32px; border-radius:var(--r-full); flex:0 0 auto;
+    background:rgba(255,255,255,.06); border:1.5px solid var(--mint);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 12px rgba(251,191,36,.55);
+  }
+  .check svg { width:18px; height:18px; }
+  .m-labels { flex:1; min-width:0; }
+  .m-title { color:#fff; font-size:15px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .m-sub { color:rgba(255,255,255,.7); font-size:13px; margin-top:1px; }
+  .m-action { color:#fff; font-size:14px; font-weight:500; text-decoration:underline; white-space:nowrap; }
+
+  .m-divide { border-top:1px solid rgba(255,255,255,.15); margin:12px 0 0; padding-top:10px; }
+  .m-q { color:rgba(255,255,255,.7); font-size:13px; margin-bottom:8px; }
+
+  /* chips on dark */
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip {
+    font-size:13px; font-weight:500; padding:5px 11px; border-radius:var(--r-full);
+    border:1px solid rgba(255,255,255,.3); color:rgba(255,255,255,.85); background:transparent;
+  }
+  .chip.on-acc { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .chip.on-rose { background:var(--rose); border-color:var(--rose); color:#fff; }
+
+  /* the NEW opt-in combo line */
+  .combo-line {
+    margin-top:11px; padding-top:10px; border-top:1px solid rgba(255,255,255,.15);
+    display:flex; align-items:center; gap:8px; color:rgba(255,255,255,.78); font-size:13.5px;
+  }
+  .combo-line .pluspill {
+    width:22px; height:22px; border-radius:var(--r-full); border:1px solid rgba(255,255,255,.4);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-size:15px; line-height:1;
+  }
+  .combo-line .chev { margin-left:auto; color:rgba(255,255,255,.5); }
+
+  /* ── Combo "logged together" stacked rows ── */
+  .combo-rows { margin-top:12px; border-top:1px solid rgba(255,255,255,.15); padding-top:12px; display:flex; flex-direction:column; gap:0; position:relative; }
+  .combo-item { display:flex; align-items:center; gap:11px; padding:7px 0; }
+  .combo-item .ico { width:30px; height:30px; flex:0 0 auto; border-radius:var(--r-sm); background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; }
+  .combo-item .ico svg { width:16px; height:16px; }
+  .combo-item .ci-main { flex:1; min-width:0; }
+  .combo-item .ci-name { color:#fff; font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .combo-item .ci-meta { color:rgba(255,255,255,.6); font-size:11.5px; margin-top:1px; }
+  .pillbadge { font-size:11px; font-weight:600; padding:3px 9px; border-radius:var(--r-full); white-space:nowrap; }
+  .pillbadge.acc { background:rgba(0,194,168,.18); color:#5be6d3; border:1px solid rgba(0,194,168,.4); }
+  .pillbadge.rose { background:rgba(244,63,94,.16); color:#ff8da0; border:1px solid rgba(244,63,94,.4); }
+  /* link connector between the two rows */
+  .combo-link { display:flex; align-items:center; gap:6px; color:rgba(255,255,255,.45); font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; padding:2px 0 2px 41px; }
+  .combo-link svg { width:12px; height:12px; }
+
+  /* rose safety prompt block inside the dark card */
+  .safety {
+    margin-top:11px; border-radius:var(--r-md); padding:11px 12px;
+    background:rgba(244,63,94,.12); border:1px solid rgba(244,63,94,.4);
+  }
+  .safety .s-q { color:#ffd4db; font-size:13px; font-weight:500; line-height:1.4; }
+  .safety .chips { margin-top:9px; }
+  .safety .chip { border-color:rgba(255,255,255,.35); }
+
+  /* ── Picker screen ── */
+  .add-cta { margin:0 14px; display:flex; gap:12px; align-items:center; background:var(--accent-light);
+    border-radius:var(--r-md); padding:13px 14px; }
+  .add-cta .ci { width:26px; height:26px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; }
+  .add-cta .ci svg { width:19px; height:19px; }
+  .add-cta .t1 { font-size:14px; font-weight:500; }
+  .add-cta .t2 { font-size:12.5px; color:var(--ts); margin-top:1px; }
+  .seclabel { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--tt); font-weight:600; padding:18px 16px 8px; }
+  .recent-strip { display:flex; gap:10px; padding:0 14px; overflow:hidden; }
+  .med-tile { flex:0 0 150px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface); padding:12px; min-height:78px; }
+  .med-tile.sel { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-light); }
+  .med-tile .eb { font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--tt); font-weight:600; }
+  .med-tile .nm { font-size:15px; font-weight:500; margin-top:6px; }
+  .search { margin:14px; height:40px; border-radius:var(--r-sm); background:var(--neutral-light); border:1px solid var(--border);
+    display:flex; align-items:center; padding:0 12px; color:var(--td); font-size:13px; }
+  .lib-grid { display:flex; flex-wrap:wrap; gap:10px; padding:0 14px; }
+  .lib-grid .med-tile { flex:1 1 calc(50% - 5px); min-width:0; }
+  .fingertip { position:absolute; width:34px; height:34px; border-radius:var(--r-full);
+    background:rgba(0,194,168,.25); border:2px solid var(--accent); }
+
+  /* Recent food tile (trap section) */
+  .food-tile { flex:0 0 150px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--surface); padding:12px; min-height:74px; }
+  .food-tile .eb { font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--tt); font-weight:600; }
+  .food-tile .nm { font-size:14px; font-weight:500; margin-top:5px; line-height:1.25; }
+  .food-tile .ty { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--td); margin-top:7px; }
+
+  /* legend */
+  .legend { display:flex; flex-wrap:wrap; gap:18px; margin:6px 0 0; font-size:12.5px; color:var(--ts); }
+  .legend .it { display:flex; align-items:center; gap:7px; }
+  .legend .sw { width:14px; height:14px; border-radius:4px; }
+
+  footer { margin-top:24px; padding-top:20px; border-top:1px solid var(--border); color:var(--tt); font-size:12.5px; }
+  footer code { background:#fff; border:1px solid var(--border); border-radius:5px; padding:1px 5px; }
+  .keyline { display:grid; grid-template-columns:auto 1fr; gap:6px 12px; margin:18px 0 0; max-width:860px; font-size:13.5px; }
+  .keyline .k { font-weight:600; color:var(--tp); white-space:nowrap; }
+  .keyline .v { color:var(--ts); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">Project Nyx · B-156 · concept mock</div>
+    <h1>Medication given with food or treat</h1>
+    <p class="sub">A look-and-feel pass on the <b>recommended shape</b> from the investigation — how the combo would feel if/when it's built. Pixel (Sam's fussy cat) gets her cetirizine (Zyrtec) inside a Delectables lickable treat.</p>
+  </header>
+
+  <div class="banner">
+    <span class="dot"></span>
+    <div><b>Not shipped. Not ratified.</b> The PM decided to keep treats and medications as separate logs for now (investigate-only). This mock visualizes the <b>deferred</b> recommended shape so the decision record has a picture attached — it is not a build artifact. Decision + rationale: <b>docs/medication-food-combo-investigation.md</b>.</div>
+  </div>
+
+  <div class="legend">
+    <div class="it"><span class="sw" style="background:var(--accent)"></span> Accent / on-track (given, eaten)</div>
+    <div class="it"><span class="sw" style="background:var(--rose)"></span> Concern / needs a look (refused, dose in doubt)</div>
+    <div class="it"><span class="sw" style="background:var(--gold)"></span> The earned "moment" (warm-gold beat)</div>
+    <div class="it"><span class="sw" style="background:var(--dark)"></span> Completion card (the one surface this touches)</div>
+  </div>
+
+  <!-- ════════════════ FLOW A — THE COMBO (SLICE C) ════════════════ -->
+  <section style="margin-top:44px;">
+    <div class="sec-head"><span class="sec-tag">Slice C · the hero</span><h2>The combo: log the treat, piggyback the pill</h2></div>
+    <p class="sec-sub">The owner's mental model is <b>one act</b> ("I gave her her treat with her pill"). A quiet, opt-in line on the treat's completion card lets them add the dose in a <b>short detour</b> — pick the drug, confirm. Be honest: engaging the combo is <i>a few taps, not one</i> (the picker in A2 is a real screen) — it's the slowest path on the card, justified by value, not speed. The 99% of meals with no medication tap nothing, and the card auto-dismisses — so <b>Principle 1 stays intact for them</b>. (Pet-owner review caveats below, §"What the pet owners flagged.")</p>
+
+    <div class="flow">
+      <!-- A1 -->
+      <div class="step">
+        <div class="phone">
+          <div class="statusbar"><div class="notch"></div></div>
+          <div class="scr">
+            <div class="home">
+              <div class="h-title">Pixel</div>
+              <div class="h-sig"><div class="l">Today</div><div class="t">Pixel's morning is off to a calm start.</div></div>
+              <div class="h-card"><div class="l">Trend</div><div class="h-row"><span>Vomiting</span><span>0 this week</span></div></div>
+            </div>
+            <div class="scrim"></div>
+            <div class="moment">
+              <div class="m-head">
+                <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="m-labels"><div class="m-title">Logged · Delectables</div><div class="m-sub">4:32 PM</div></div>
+                <div class="m-action">Change time</div>
+              </div>
+              <div class="m-divide">
+                <div class="m-q">How much did Pixel eat?</div>
+                <div class="chips">
+                  <span class="chip">Refused</span><span class="chip">Picked</span>
+                  <span class="chip">Some</span><span class="chip on-acc">Most</span><span class="chip">All</span>
+                </div>
+              </div>
+              <div class="combo-line">
+                <span class="pluspill">+</span> Gave a med with this?
+                <span class="chev">›</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="n">1</span><b>The treat lands as normal.</b> Same gold beat + intake chips as today — plus one new quiet line at the bottom.</div>
+        <div class="why">Opt-in & subordinate. Skip it and the card dismisses; the hot path stays one tap.</div>
+      </div>
+
+      <div class="arrow">→</div>
+
+      <!-- A2 -->
+      <div class="step">
+        <div class="phone">
+          <div class="statusbar"><div class="notch"></div></div>
+          <div class="scr">
+            <div class="appbar"><span class="back">←</span><span class="title">A med with the Delectables?</span><span class="spacer"></span></div>
+            <div class="add-cta">
+              <div class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3"/></svg></div>
+              <div><div class="t1">Add a medication</div><div class="t2">Snap the label, or enter it by hand</div></div>
+            </div>
+            <div class="seclabel">Recent</div>
+            <div class="recent-strip">
+              <div class="med-tile sel">
+                <div class="eb">Zyrtec · 10 mg · Tablet</div>
+                <div class="nm">Cetirizine</div>
+              </div>
+              <div class="med-tile">
+                <div class="eb">Apoquel · 5.4 mg</div>
+                <div class="nm">Oclacitinib</div>
+              </div>
+            </div>
+            <div class="search">Search medications</div>
+            <div class="fingertip" style="left:54px; top:150px;"></div>
+          </div>
+        </div>
+        <div class="cap"><span class="n">2</span><b>The live medication picker.</b> Reuses the existing surface — Recent on top, then the library. Tap cetirizine.</div>
+        <div class="why">Nothing new to learn. The pick <b>links a dose</b> to the treat just logged.</div>
+      </div>
+
+      <div class="arrow">→</div>
+
+      <!-- A3 -->
+      <div class="step">
+        <div class="phone">
+          <div class="statusbar"><div class="notch"></div></div>
+          <div class="scr">
+            <div class="home">
+              <div class="h-title">Pixel</div>
+              <div class="h-sig"><div class="l">Today</div><div class="t">Pixel's morning is off to a calm start.</div></div>
+            </div>
+            <div class="scrim"></div>
+            <div class="moment">
+              <div class="m-head">
+                <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="m-labels"><div class="m-title">Logged together</div><div class="m-sub">4:32 PM</div></div>
+              </div>
+              <div class="combo-rows">
+                <div class="combo-item">
+                  <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 0 0 2-2V2M5 11v11M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg></div>
+                  <div class="ci-main"><div class="ci-name">Delectables Lickable</div><div class="ci-meta">Treat</div></div>
+                  <span class="pillbadge acc">Most eaten</span>
+                </div>
+                <div class="combo-link">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+                  given in this treat
+                </div>
+                <div class="combo-item">
+                  <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg></div>
+                  <div class="ci-main"><div class="ci-name">Cetirizine · 10 mg</div><div class="ci-meta">Zyrtec · oral</div></div>
+                  <span class="pillbadge acc">Given</span>
+                </div>
+              </div>
+              <div class="m-divide">
+                <div class="m-q">Did Pixel take it?</div>
+                <div class="chips">
+                  <span class="chip on-acc">Given</span><span class="chip">Partial</span>
+                  <span class="chip">Missed</span><span class="chip">Refused</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="n">3</span><b>One moment, two events.</b> The treat and the dose, shown together and <b>linked</b> — adherence confirmable right here.</div>
+        <div class="why">Single-event timeline preserved: two rows = two events. The link lives on the dose, never on the food.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ FLOW B — THE SAFETY CATCH ════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-tag safe">Why it's not just convenience</span><h2>The safety catch: a pill in a treat she didn't finish</h2></div>
+    <p class="sec-sub">This is the real reason to do it. When the pill rides inside the treat and Pixel doesn't finish it, the dose is <b>in doubt</b>. Two separate logs would happily record "treat: picked" and "dose: given" as unrelated facts — a <b>false-adherence record</b>, which the medication <i>n=1-never-reassures</i> rule forbids. Because the combo couples them, the card can ask honestly.</p>
+
+    <div class="flow">
+      <!-- B1 -->
+      <div class="step">
+        <div class="phone">
+          <div class="statusbar"><div class="notch"></div></div>
+          <div class="scr">
+            <div class="home"><div class="h-title">Pixel</div></div>
+            <div class="scrim"></div>
+            <div class="moment">
+              <div class="m-head">
+                <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="m-labels"><div class="m-title">Logged together</div><div class="m-sub">4:32 PM</div></div>
+              </div>
+              <div class="combo-rows">
+                <div class="combo-item">
+                  <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h0a2 2 0 0 0 2-2V2M5 11v11M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg></div>
+                  <div class="ci-main"><div class="ci-name">Delectables Lickable</div><div class="ci-meta">Treat</div></div>
+                  <span class="pillbadge rose">Picked</span>
+                </div>
+                <div class="combo-link">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+                  the cetirizine was in this treat
+                </div>
+              </div>
+              <div class="safety">
+                <div class="s-q">Pixel only picked at the treat — did she still get the cetirizine?</div>
+                <div class="chips">
+                  <span class="chip">Yes, all of it</span><span class="chip">Some of it</span><span class="chip on-rose">Not sure</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="n">1</span><b>Owner marks the treat "Picked."</b> Because a dose is linked, the card surfaces the coupling instead of silently filing "given."</div>
+        <div class="why safe">The dose can never auto-read "given" off a half-eaten vehicle. Owner-confirmed, never auto-flipped — "Not sure" → the dose lands <b>missed/uncertain</b>, not a clean given.</div>
+      </div>
+
+      <div class="step" style="width:340px; padding-top:6px;">
+        <div style="background:#fff; border:1px solid var(--border); border-radius:var(--r-md); padding:18px 20px;">
+          <div style="font-size:13px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--rose); margin-bottom:10px;">The coupling, in words</div>
+          <div class="keyline" style="margin:0;">
+            <div class="k">Ate it all →</div><div class="v">dose stays <b>Given</b>. No prompt — nothing to question.</div>
+            <div class="k">Picked / Some →</div><div class="v">prompt fires: confirm the dose. "Some of it" → <b>Partial</b>.</div>
+            <div class="k">Refused →</div><div class="v">the dose almost certainly didn't land → <b>Refused / Missed</b>, routed to a health flag (refusal can be nausea, not fussiness).</div>
+            <div class="k">Not sure →</div><div class="v">honest uncertainty → recorded as <b>not confirmed</b>, never "given." Absence ≠ wellness.</div>
+          </div>
+          <div style="margin-top:16px; font-size:12.5px; color:var(--tt); border-top:1px solid var(--border); padding-top:12px;">
+            This logic is clinically load-bearing → at build it's <b>adversarial-reviewer-gated</b> (DoD), exactly like the Signal detectors.
+          </div>
+        </div>
+        <div class="cap"><span class="n">2</span><b>Intake → adherence, made honest.</b> The treat's intake chip and the dose's adherence stop being two unrelated facts.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ FLOW C — SLICE B (FOUNDATION) ════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-tag b">Slice B · build-first</span><h2>The lightweight foundation: "how was it given?"</h2></div>
+    <p class="sec-sub">The cheap, always-correct piece that ships first — a single optional row on the <b>medication</b> completion card. It touches only the med path (zero meal-hot-path cost), captures the clinical "with food" fact on its own, and is the hook the combo reuses. Covers the common case: a pill in a dab of food you wouldn't bother logging as a meal.</p>
+
+    <div class="flow">
+      <!-- C1 -->
+      <div class="step">
+        <div class="phone">
+          <div class="statusbar"><div class="notch"></div></div>
+          <div class="scr">
+            <div class="home"><div class="h-title">Pixel</div></div>
+            <div class="scrim"></div>
+            <div class="moment">
+              <div class="m-head">
+                <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                <div class="m-labels"><div class="m-title">Logged · Cetirizine</div><div class="m-sub">8:05 AM</div></div>
+              </div>
+              <div class="m-divide">
+                <div class="m-q">Did Pixel take it?</div>
+                <div class="chips">
+                  <span class="chip on-acc">Given</span><span class="chip">Partial</span>
+                  <span class="chip">Missed</span><span class="chip">Refused</span>
+                </div>
+              </div>
+              <div class="m-divide">
+                <div class="m-q">How was it given? <span style="opacity:.55">(optional)</span></div>
+                <div class="chips">
+                  <span class="chip">Directly</span><span class="chip on-acc">In a treat</span>
+                  <span class="chip">In food</span><span class="chip">Pill pocket</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="n">1</span><b>One new optional row on the dose card.</b> No new screens, no meal-path changes. Defaults to nothing — skippable like intake.</div>
+        <div class="why">Solves the recent-treats trap by construction: "in a treat" is a fact about <b>this dose</b>, never about the treat in your library.</div>
+      </div>
+
+      <div class="step" style="width:360px; padding-top:6px;">
+        <div style="background:#fff; border:1px solid var(--border); border-radius:var(--r-md); padding:18px 20px;">
+          <div style="font-size:13px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); margin-bottom:10px;">Why this ships first</div>
+          <ul style="margin:0; padding-left:18px; color:var(--ts); font-size:13.5px; line-height:1.7;">
+            <li>Additive enum on <code style="background:var(--surface-subtle);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:12px;">medication_administrations</code> — no migration risk.</li>
+            <li>Zero cost to the meal completion card (the surface we've sworn to keep narrow).</li>
+            <li>Captures the clinical "with food / empty stomach" absorption fact even when no treat is logged.</li>
+            <li>Becomes the field the combo (Slice C) writes automatically when a food <i>is</i> linked.</li>
+          </ul>
+        </div>
+        <div class="cap"><span class="n">2</span><b>Foundation, then the wedge.</b> Slice B alone is correct and safe; Slice C adds the one-flow magic on top.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ FLOW D — THE TRAP, RESOLVED ════════════════ -->
+  <section>
+    <div class="sec-head"><span class="sec-tag trap">The trap, resolved</span><h2>"Some Delectables have a pill, some don't"</h2></div>
+    <p class="sec-sub">The PM's worry — binding "Delectables = Delectables + Zyrtec" would be false. It never happens here: <b>the link is per-event, derived from what you do this session</b> (the same shape as saw-it/found-it), never a property of the food. Tomorrow's Delectables tap from Recent logs <b>only the treat</b>.</p>
+
+    <div class="flow">
+      <!-- D1 -->
+      <div class="step">
+        <div class="phone">
+          <div class="statusbar"><div class="notch"></div></div>
+          <div class="scr">
+            <div class="appbar"><span class="back">←</span><span class="title">What did Pixel eat?</span><span class="spacer"></span></div>
+            <div class="seclabel" style="padding-top:6px;">Recent</div>
+            <div class="recent-strip">
+              <div class="food-tile sel" style="border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-light);">
+                <div class="eb">Delectables</div>
+                <div class="nm">Lickable Treat — Chicken</div>
+                <div class="ty">Treat</div>
+              </div>
+              <div class="food-tile">
+                <div class="eb">Fancy Feast</div>
+                <div class="nm">Classic Paté — Salmon</div>
+                <div class="ty">Meal</div>
+              </div>
+            </div>
+            <div class="fingertip" style="left:52px; top:128px;"></div>
+            <div style="position:absolute; left:14px; right:14px; bottom:46px;">
+              <div class="moment" style="position:static;">
+                <div class="m-head">
+                  <div class="check"><svg viewBox="0 0 24 24" fill="none" stroke="#00C2A8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+                  <div class="m-labels"><div class="m-title">Logged · Delectables</div><div class="m-sub">Tomorrow, 4:30 PM · no medication</div></div>
+                </div>
+                <div class="m-divide">
+                  <div class="m-q">How much did Pixel eat?</div>
+                  <div class="chips"><span class="chip">Refused</span><span class="chip">Picked</span><span class="chip">Some</span><span class="chip on-acc">All</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><span class="n">1</span><b>Recent re-adds the bare treat.</b> No phantom Zyrtec rides along — just a treat, exactly like today.</div>
+        <div class="why">The combo only happens when you explicitly add a med that session. Identity stays clean; the pairing is history, not a rule.</div>
+      </div>
+
+      <div class="step" style="width:380px; padding-top:6px;">
+        <div style="background:#fff; border:1px solid var(--border); border-radius:var(--r-md); padding:18px 20px;">
+          <div style="font-size:13px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--tt); margin-bottom:10px;">Where the link lives</div>
+          <div class="keyline" style="margin:0;">
+            <div class="k">On the dose ✓</div><div class="v">a nullable <code>paired_event_id</code> on the dose row points at the treat's event. Per-incident, like B-010 time-confidence.</div>
+            <div class="k">On the food ✗</div><div class="v">never. <code>food_items</code> stays a clean catalog — no "this treat implies a pill" anywhere.</div>
+          </div>
+          <div style="margin-top:14px; font-size:12.5px; color:var(--tt); border-top:1px solid var(--border); padding-top:12px;">
+            Delete the treat later → the dose survives, link just clears (<code>ON DELETE SET NULL</code>).
+          </div>
+        </div>
+        <div class="cap"><span class="n">2</span><b>The architecture answers the worry.</b> Putting the link on the event (not the food) is what makes "sometimes a pill, sometimes not" honest.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════ PET-OWNER REVIEW CAVEATS ════════════════ -->
+  <section style="background:#fff; border:1px solid var(--border); border-radius:var(--r-lg); padding:24px 26px;">
+    <div class="sec-head"><span class="sec-tag safe">What the pet owners flagged</span><h2>Open questions from the Jordan + Sam review (2026-06-22)</h2></div>
+    <p class="sec-sub">The pet owners endorsed the direction — <b>Flow C and Flow D are owner-validated</b> — but pushed hard on two things (both of which the PM independently raised). These are revisit-time questions, not solved here.</p>
+    <div class="keyline">
+      <div class="k">⏱ Timing (the big one)</div><div class="v">The safety prompt that justifies the whole feature lives on a card that auto-dismisses at <b>5s</b> — and a chip tap <b>replaces</b> that with <b>1.5s</b>, it doesn't extend it. But pilling a squirming cat and watching whether the vehicle goes down takes <b>20+ seconds, two hands</b>. The moment Sam most needs the prompt is the moment she can't answer it in time → <b>the safety prompt probably can't auto-dismiss at all</b> (persist until answered, or fall back to a Home insight). Needs a live clickable prototype to judge.</div>
+      <div class="k">✏️ Editing a combo</div><div class="v">No after-the-fact story yet. The data model links a dose to a treat event, implying <b>two separate History edits</b> — but the owner's mental model is "one act" and expects to fix one thing. Designed answer required before build.</div>
+      <div class="k">🐈 Ate around the pill</div><div class="v">Cats lick the treat clean and leave the dry tablet. The treat reads "All" → the dose stays "Given" with no prompt → a <b>false-adherence record in exactly the feline case the feature exists to prevent.</b> Decide: detect-and-prompt, or document as a known limit.</div>
+      <div class="k">🔎 Discoverability</div><div class="v">A quiet line on a 5s card is easy to never notice — fine for Jordan (skips it), risky for Sam (needs it daily). Resolve only with a prototype: "did Sam find it unprompted?"</div>
+      <div class="k">🐾 Multi-pet</div><div class="v">The dose inherits the pet from the treat event; in a shared-bowl household a wrong-pet dose is a real adherence error. Show active-pet context on the combo card.</div>
+    </div>
+    <p style="margin:16px 0 0; font-size:12.5px; color:var(--tt);">Verdicts — <b>Flow C (how_given): WORKS-FOR-ME</b> (build first) · <b>Flow D (trap): WORKS-FOR-ME</b> · <b>Flow A (combo) + Flow B (safety): NEEDS-WORK</b> (timing + edit model + a live prototype). Full write-up: <code style="background:var(--surface-subtle);border:1px solid var(--border);border-radius:4px;padding:1px 5px;">docs/medication-food-combo-investigation.md</code> §9.</p>
+  </section>
+
+  <footer>
+    <div style="font-weight:600; color:var(--tp); font-size:13.5px; margin-bottom:6px;">Status &amp; provenance</div>
+    Concept mock for the <b>deferred</b> B-156. Built to the live design tokens (<code>constants/theme.ts</code>) and the shipped completion-card / picker / chip components (<code>MealCompletionCard</code>, <code>MedicationCompletionCard</code>, <code>MedicationPicker</code>, <code>IntakeChipRow</code>, <code>AdherenceChipRow</code>). Copy follows <code>nyx-voice</code> (first-person pet, no exclamation marks). Decision &amp; recommended phased plan: <code>docs/medication-food-combo-investigation.md</code>. Nothing here is shipped or schema-applied.
+  </footer>
+
+</div>
+</body>
+</html>
