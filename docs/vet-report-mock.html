@@ -129,6 +129,7 @@
   svg .nub{fill:#9a9a9a;}
   svg .base{stroke:#000;stroke-width:1;}
   svg .divider{stroke:#000;stroke-width:1;stroke-dasharray:2 2;}
+  svg text.axlab{font-size:7px;fill:#777;}
 
   /* Tables (appendix) */
   table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;}
@@ -183,8 +184,9 @@
        no false reassurance. -->
   <div class="owner-band" id="ownerBand">
     <span class="tag">For the owner</span>
-    <p>Mochi&rsquo;s vomiting is down by about half over this window, and the loose stool has nearly stopped.
-       The detail below is for your vet &mdash; it&rsquo;s a summary of what you observed, not a diagnosis.</p>
+    <p>Over this window, the vomiting and loose stool you logged for Mochi both came down (vomiting 6 to 3,
+       loose stool 5 to 1). This period also included a new medication and some off-diet foods, so the detail below is
+       for your vet to interpret &mdash; it&rsquo;s a summary of what you observed, not a diagnosis.</p>
   </div>
 
   <div class="head">
@@ -210,7 +212,7 @@
   <!-- 1. CLINICAL-QUESTION HEADLINE (objective; S/O only — never A/P) -->
   <div class="sec">
     <h2>Summary &mdash; this window</h2>
-    <p class="lead">Tracking chronic intermittent <b>vomiting and loose stool</b> on a
+    <p class="lead">Tracking chronic intermittent <b>vomiting and loose stool</b> (first noted ~Mar&nbsp;2026) on a
        <b>hydrolyzed-protein elimination trial</b> (day&nbsp;<span class="num">45</span> of&nbsp;<span class="num">56</span>).
        Owner-reported counts over the 52-day window:</p>
     <ul class="glance">
@@ -222,9 +224,7 @@
     </ul>
     <p class="note">Something was logged on <span class="num">48</span> of the <span class="num">52</span> days
        (nothing logged May&nbsp;13, May&nbsp;27, Jun&nbsp;11, Jun&nbsp;18). Counts are over the full window; absence of an
-       entry is not evidence a symptom did not occur. The window starts at the last vet visit (May&nbsp;1) and the
-       trial began May&nbsp;8, so the first 26-day window includes the <span class="num">7</span> days before the trial
-       started; the last 26 days are entirely on-trial.</p>
+       entry is not evidence a symptom did not occur.</p>
   </div>
 
   <!-- 2. SYMPTOM TREND with denominators + non-colour encoding -->
@@ -235,8 +235,9 @@
       <div class="lab">Vomiting</div>
       <div class="chart">
         <!-- weekly episodes [1,2,2,1,1,1,1,0]; scale: 1 unit = 15px, max 2 -->
-        <svg width="192" height="46" role="img" aria-label="Vomiting episodes per week: 1,2,2,1,1,1,1,0">
+        <svg width="192" height="50" role="img" aria-label="Vomiting episodes per week, May 1 to Jun 21: 1,2,2,1,1,1,1,0; dashed line marks the trial-diet start (week 2)">
           <line class="base" x1="4" y1="36" x2="188" y2="36"/>
+          <line class="divider" x1="25.5" y1="8" x2="25.5" y2="36"/>
           <rect class="bar" x="6"   y="21" width="16" height="15"/>
           <rect class="bar" x="29"  y="6"  width="16" height="30"/>
           <rect class="bar" x="52"  y="6"  width="16" height="30"/>
@@ -245,6 +246,8 @@
           <rect class="bar" x="121" y="21" width="16" height="15"/>
           <rect class="bar" x="144" y="21" width="16" height="15"/>
           <rect class="nub" x="167" y="34.5" width="16" height="1.5"/>
+          <text x="2" y="47" class="axlab">May 1</text>
+          <text x="150" y="47" class="axlab">Jun 21</text>
         </svg>
       </div>
       <div class="read">
@@ -258,8 +261,9 @@
       <div class="lab">Loose stool</div>
       <div class="chart">
         <!-- weekly episodes [2,2,1,0,1,0,0,0] -->
-        <svg width="192" height="46" role="img" aria-label="Loose stool episodes per week: 2,2,1,0,1,0,0,0">
+        <svg width="192" height="50" role="img" aria-label="Loose stool episodes per week, May 1 to Jun 21: 2,2,1,0,1,0,0,0; dashed line marks the trial-diet start (week 2)">
           <line class="base" x1="4" y1="36" x2="188" y2="36"/>
+          <line class="divider" x1="25.5" y1="8" x2="25.5" y2="36"/>
           <rect class="bar" x="6"   y="6"  width="16" height="30"/>
           <rect class="bar" x="29"  y="6"  width="16" height="30"/>
           <rect class="bar" x="52"  y="21" width="16" height="15"/>
@@ -268,6 +272,8 @@
           <rect class="nub" x="121" y="34.5" width="16" height="1.5"/>
           <rect class="nub" x="144" y="34.5" width="16" height="1.5"/>
           <rect class="nub" x="167" y="34.5" width="16" height="1.5"/>
+          <text x="2" y="47" class="axlab">May 1</text>
+          <text x="150" y="47" class="axlab">Jun 21</text>
         </svg>
       </div>
       <div class="read">
@@ -277,10 +283,13 @@
       </div>
     </div>
 
-    <p class="charts-cap">Bars show episodes per week; height is the count (max&nbsp;2 here), with no colour used
-       &mdash; the chart reads identically in grayscale and print. Nothing was logged on <span class="num">4</span> days
-       (May&nbsp;13, May&nbsp;27, Jun&nbsp;11, Jun&nbsp;18); <span class="num">3</span> fall in the last 26-day window and could
-       mask events there.</p>
+    <p class="charts-cap">Each column is one week, May&nbsp;1 (left) to Jun&nbsp;21 (right); the dashed line marks the
+       trial-diet start (May&nbsp;8). Height is the episode count (max&nbsp;2 here); no colour is used, so the chart reads
+       identically in grayscale and print. Nothing was logged on <span class="num">4</span> days
+       (May&nbsp;13, May&nbsp;27, Jun&nbsp;11, Jun&nbsp;18); <span class="num">3</span> fall in the last 26-day window and could mask events there.</p>
+    <p class="note" style="margin-top:6px"><b>Reading the trend:</b> the first 26-day window includes the
+       <span class="num">7</span> days before the trial began, and metronidazole started the same day as the diet
+       (May&nbsp;8) &mdash; so this improvement cannot be attributed to the diet alone (see Medications).</p>
   </div>
 
   <!-- 3. DIET & CONFOUNDERS (summary line; full WSAVA history in appendix C) -->
