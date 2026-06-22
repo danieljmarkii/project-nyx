@@ -10,7 +10,7 @@
 
 **Keep treats and medications as separate logs for now.** The PM, after this investigation, chose to **not build the combo this cycle** and to keep the two as independent one-tap logs. B-156 is re-prioritized **Now → Later** with a named revisit trigger (below).
 
-The investigation did **not** conclude "bad idea" — it concluded "real, but not now." The clinical value is genuine (see §2) and the main worry the PM raised is fully solvable (§3); the cost is concentrated in one scarce design surface (§4). When the trigger conditions arrive, §5–§7 are the recommended shape.
+The investigation did **not** conclude "bad idea" — it concluded "real, but not now." The clinical value is genuine (see §2) and the main worry the PM raised is fully solvable (§3); the cost is concentrated in one scarce design surface (§4). When the trigger conditions arrive, §5–§7 are the recommended shape. A **pet-owner review** (Jordan + Sam, 2026-06-22 — §9) endorsed the direction and sharpened the revisit-time open questions; its headline: the **safety prompt (Flow B) likely cannot live on the auto-dismissing completion card**, and the combo's **edit model** needs a designed answer.
 
 This changes **nothing** in the codebase today: no schema, no UI, no migration. Doses and meals/treats remain separate events, exactly as shipped.
 
@@ -97,9 +97,39 @@ Notes for the build:
 - Allow **N doses per food event** (two pills in one treat) — no uniqueness on `paired_event_id`.
 - The vehicle-treat-as-its-own-intake-event question (does a pure-vehicle treat inflate diet/Top-Proteins stats? cf. B-111) is a **build-time sub-decision**, not a blocker: recommend the food is a real event only if the owner logged it as a meal/treat, and the §8 engine learns to discount a pure-vehicle pairing.
 
-## 9. Evidence / references
+## 9. Pet-owner review & refinements (added 2026-06-22)
+
+After the PM endorsed the direction, two things happened and **converged hard**: the PM raised two refinements, and the pet-owner personas (Jordan + Sam) reviewed the mock via the `pm-feature-review` lens.
+
+**PM reactions (recorded):**
+- **R1 — Toast dwell vs. the physical task.** The completion cards auto-dismiss quickly; the owner must have time to actually finish giving the treat / pilling the cat **and then** interact. The interaction window must accommodate the real-world action, not just reading speed.
+- **R2 — Editing a combo.** With meds + treats split into separate events, do we edit them as two independent instances or as one combo unit? Undecided — needs a designed answer.
+
+**Pet-owner verdicts:**
+- **Flow C (`how_given`) — WORKS-FOR-ME.** Confirmed the right first slice: cheap, optional, no hot-path cost, dissolves the trap by construction. Caveat: no adherence safety on its own — the false-adherence hole stays open until the combo lands; name that gap.
+- **Flow D (trap resolved) — WORKS-FOR-ME.** Clearest part; the per-event-link reasoning is owner-legible — answers Sam's exact fear ("will it assume every Delectable has a pill?").
+- **Flow A (combo) — NEEDS-WORK.** Architecture is right, but **mis-framed as one-tap** — engaging the combo is tap→read→tap→navigate(picker)→find→tap→read→tap. Honest framing: the combo is the *slowest* path on the card, justified by value, not speed.
+- **Flow B (safety catch) — NEEDS-WORK, and the most important.** Copy + intent excellent (both invariants honored), but its home — an auto-dismissing card — collides with reality (below). A static mock cannot validate it; a **live clickable prototype with the real timers** is required.
+
+**The headline catch (R1, sharpened):** the safety prompt that justifies the whole feature sits on a card that auto-dismisses at **5000ms**, and a chip tap **replaces** that timer with **1500ms** (it does *not* extend it — `store/momentStore.ts:186`). Meanwhile the owner needs 20+ seconds and both hands to pill a squirming cat and watch whether the vehicle actually goes down. **For Sam — the target user — the moment she most needs the prompt is the moment she's least able to answer it in time.** → The safety prompt likely **cannot live on the auto-dismissing card at all**; it must persist until answered, or survive as a Home insight ("a dose may be in doubt"). This is the **same problem** as the live CLAUDE.md open question *"Medication completion card — diverge for safety / land the dose `unrated` until touched / hold longer?"* — **decide them together.**
+
+**New catches the personas surfaced (beyond R1/R2):**
+- **"Vehicle eaten, pill NOT delivered."** Cats eat *around* a pill — lick the Delectable clean, leave the dry tablet. The treat reads "All," so the coupling leaves the dose "Given" with no prompt → a **false-adherence record in exactly the feline case the feature exists to prevent.** A blind spot in the safety story; decide detect-and-prompt vs. document-as-known-limit.
+- **Edit model (R2) is where "two events" vs. "one act" collides.** `paired_event_id`-on-the-dose implies two separate History edits; the owner expects to fix one thing. Designed answer required before build.
+- **Discoverability tension.** A quiet line on a 5s card is easy to never notice — good for Jordan (skips it), bad for Sam (needs it daily). Resolve only with a prototype + "did Sam find it unprompted?"
+- **Multi-pet attribution.** The dose inherits the pet from the treat event; in Sam's shared-bowl reality a wrong-pet dose is a real adherence error. Show active-pet context on the combo card.
+- **A3 reads as asking twice.** The dose row's "Given" badge + a "Did Pixel take it?" chip row with "Given" pre-selected reads as redundant → owner taps nothing and misses the downgrade affordance.
+- **"+ Gave a med with this?" tense is ambiguous** (already gave / about to give).
+
+**Refined recommendation (sharpens §6 — substance unchanged):**
+1. **Flow C (`how_given`) first** — owner-validated, safe, cheap. Name the false-adherence gap that persists until the combo ships.
+2. **Before any combo build, run a live clickable prototype** with the real 5000/1500ms timers — the cheapest way to answer the timing question the static mock can't.
+3. **Resolve the safety-prompt-persistence question** (with the existing B-117 open question) **and the edit model** before committing to the card as the combo's host.
+
+## 10. Evidence / references
 
 - **`docs/medication-food-combo-mock.html`** — concept mock of the recommended shape (the combo flow, the safety catch, the Slice-B `how_given` foundation, and the trap-resolved Recent case), built to the live design tokens + shipped components.
+- **Pet-owner review (2026-06-22)** — `pm-feature-review` subagent as Jordan + Sam (§9 above); verdicts + the auto-dismiss-timing catch.
 - B-156 backlog row (`docs/backlog.md`).
 - Medication model + safety invariants: `docs/nyx-medication-logging-requirements.md` (§6.2 refusal-is-a-signal, §8 confounder pass), migration `020_medication_logging.sql`.
 - The hot paths this would touch: `app/log.tsx` (`handlePickFood`, `handlePickMedication`), `components/ui/MealCompletionCard.tsx` (the narrow-surface warning), `components/ui/MedicationCompletionCard.tsx`, `components/log/IntakeChipRow.tsx`, `components/log/AdherenceChipRow.tsx`, `store/momentStore.ts`.

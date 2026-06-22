@@ -216,7 +216,7 @@
   <!-- ════════════════ FLOW A — THE COMBO (SLICE C) ════════════════ -->
   <section style="margin-top:44px;">
     <div class="sec-head"><span class="sec-tag">Slice C · the hero</span><h2>The combo: log the treat, piggyback the pill</h2></div>
-    <p class="sec-sub">The owner's mental model is <b>one act</b> ("I gave her her treat with her pill"). A quiet, opt-in line on the treat's completion card lets them add the dose without leaving the flow. The 99% of meals with no medication tap nothing — the card still auto-dismisses in one tap (<b>Principle 1</b>).</p>
+    <p class="sec-sub">The owner's mental model is <b>one act</b> ("I gave her her treat with her pill"). A quiet, opt-in line on the treat's completion card lets them add the dose in a <b>short detour</b> — pick the drug, confirm. Be honest: engaging the combo is <i>a few taps, not one</i> (the picker in A2 is a real screen) — it's the slowest path on the card, justified by value, not speed. The 99% of meals with no medication tap nothing, and the card auto-dismisses — so <b>Principle 1 stays intact for them</b>. (Pet-owner review caveats below, §"What the pet owners flagged.")</p>
 
     <div class="flow">
       <!-- A1 -->
@@ -506,6 +506,20 @@
         <div class="cap"><span class="n">2</span><b>The architecture answers the worry.</b> Putting the link on the event (not the food) is what makes "sometimes a pill, sometimes not" honest.</div>
       </div>
     </div>
+  </section>
+
+  <!-- ════════════════ PET-OWNER REVIEW CAVEATS ════════════════ -->
+  <section style="background:#fff; border:1px solid var(--border); border-radius:var(--r-lg); padding:24px 26px;">
+    <div class="sec-head"><span class="sec-tag safe">What the pet owners flagged</span><h2>Open questions from the Jordan + Sam review (2026-06-22)</h2></div>
+    <p class="sec-sub">The pet owners endorsed the direction — <b>Flow C and Flow D are owner-validated</b> — but pushed hard on two things (both of which the PM independently raised). These are revisit-time questions, not solved here.</p>
+    <div class="keyline">
+      <div class="k">⏱ Timing (the big one)</div><div class="v">The safety prompt that justifies the whole feature lives on a card that auto-dismisses at <b>5s</b> — and a chip tap <b>replaces</b> that with <b>1.5s</b>, it doesn't extend it. But pilling a squirming cat and watching whether the vehicle goes down takes <b>20+ seconds, two hands</b>. The moment Sam most needs the prompt is the moment she can't answer it in time → <b>the safety prompt probably can't auto-dismiss at all</b> (persist until answered, or fall back to a Home insight). Needs a live clickable prototype to judge.</div>
+      <div class="k">✏️ Editing a combo</div><div class="v">No after-the-fact story yet. The data model links a dose to a treat event, implying <b>two separate History edits</b> — but the owner's mental model is "one act" and expects to fix one thing. Designed answer required before build.</div>
+      <div class="k">🐈 Ate around the pill</div><div class="v">Cats lick the treat clean and leave the dry tablet. The treat reads "All" → the dose stays "Given" with no prompt → a <b>false-adherence record in exactly the feline case the feature exists to prevent.</b> Decide: detect-and-prompt, or document as a known limit.</div>
+      <div class="k">🔎 Discoverability</div><div class="v">A quiet line on a 5s card is easy to never notice — fine for Jordan (skips it), risky for Sam (needs it daily). Resolve only with a prototype: "did Sam find it unprompted?"</div>
+      <div class="k">🐾 Multi-pet</div><div class="v">The dose inherits the pet from the treat event; in a shared-bowl household a wrong-pet dose is a real adherence error. Show active-pet context on the combo card.</div>
+    </div>
+    <p style="margin:16px 0 0; font-size:12.5px; color:var(--tt);">Verdicts — <b>Flow C (how_given): WORKS-FOR-ME</b> (build first) · <b>Flow D (trap): WORKS-FOR-ME</b> · <b>Flow A (combo) + Flow B (safety): NEEDS-WORK</b> (timing + edit model + a live prototype). Full write-up: <code style="background:var(--surface-subtle);border:1px solid var(--border);border-radius:4px;padding:1px 5px;">docs/medication-food-combo-investigation.md</code> §9.</p>
   </section>
 
   <footer>
