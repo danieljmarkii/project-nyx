@@ -464,7 +464,7 @@ export default function EditEventModal() {
               {showFoodPicker ? (
                 <View style={styles.foodList}>
                   {foods.length === 0 ? (
-                    <Text style={styles.foodEmpty}>No foods in library.</Text>
+                    <Text style={styles.foodEmpty}>No foods yet — they'll show up here as you log meals.</Text>
                   ) : null}
                   {foods.map((item: CachedFood) => {
                     const isSelected = item.id === currentFoodId;
