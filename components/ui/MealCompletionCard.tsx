@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Modal, Pressable, Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { router } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { useMomentStore } from '../../store/momentStore';
@@ -43,8 +44,18 @@ const INTAKE_CONFIRM_HOLD_MS = 1500;
 //
 // Both are skippable: the card auto-dismisses with the user's last input
 // preserved (the "intake is not preference" invariant — capture stays optional,
-// default-null, at peak recall). If a third affordance is ever proposed here,
-// stop and reconsider — the surface is intentionally narrow.
+// default-null, at peak recall).
+//
+// A THIRD affordance was deliberately spent here under B-156 PR B2b: the opt-in
+// "+ Add a med given with this" combo line (meal/treat only). The surface's standing
+// warning — "if a third affordance is proposed, stop and reconsider, it's
+// intentionally narrow" — was honored, not waived: it's a quiet, visually-quietest
+// line the ~99% no-med majority reads past (Principle 1), it never adds a tap to
+// the no-med path, and it only renders for foods you'd actually hide a pill in. It
+// hands off to the medication picker pre-bound to THIS meal (event id = the link,
+// the meal's pet = the same-pet write target, food type = the inferred vehicle).
+// The intake→adherence SAFETY coupling is deliberately NOT here — that's the gated,
+// adversarial-reviewed PR B3. Before proposing a FOURTH affordance: stop.
 export function MealCompletionCard() {
   const { visible, payload, hide, patchOccurredAt, patchIntakeRating, rescheduleHide } = useMomentStore();
   const { patchInToday } = useEventStore();
@@ -159,6 +170,29 @@ export function MealCompletionCard() {
     }
   }
 
+  // B-156 PR B2b — the opt-in combo entry. Dismiss THIS card and open the medication
+  // picker pre-bound to this meal: the meal's event id (the paired_event_id link), the
+  // meal's pet (the same-pet dose-write target — read from the payload, captured at
+  // log time, never a re-read active pet), and the food type (→ inferred vehicle) flow
+  // as route params; the picked dose lands linked via insertMedicationDose. Hiding the
+  // card first avoids it lingering behind the picker modal or racing its auto-dismiss;
+  // the dose confirmation will present its own "Logged together" card on return.
+  function handleAddMed() {
+    if (!isMeal) return;
+    const foodName = [payload.foodBrand, payload.foodProductName].filter(Boolean).join(' ').trim();
+    hide();
+    router.push({
+      pathname: '/log',
+      params: {
+        type: 'medication',
+        pairedEventId: payload.eventId,
+        pairedPetId: payload.petId,
+        pairedFoodType: payload.foodType ?? '',
+        pairedFoodName: foodName,
+      },
+    });
+  }
+
   // Keep rendering through the dismiss fade (payload is preserved by hide()),
   // but never mount for a beat payload.
   if (!payload || payload.kind !== 'meal') return null;
@@ -216,6 +250,26 @@ export function MealCompletionCard() {
                 onDark
               />
             </View>
+          )}
+          {/* B-156 PR B2b — the opt-in combo line (meal/treat only). The quietest line
+              on the card; the no-med majority reads past it, the few who hid a pill in
+              the food tap it to add the linked dose. */}
+          {showIntake && (
+            <TouchableOpacity
+              style={styles.comboRow}
+              onPress={handleAddMed}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Add a medication given with ${petName}'s ${foodName || 'food'}`}
+            >
+              {/* Copy: "+ Add … given with this" — the "+ Add" frames it as logging an
+                  existing fact and "given with this" pins the PAST tense to the meal, so
+                  it can't read as "go give a med now" (the tense ambiguity the bare
+                  "Gave a med with this?" carried — flagged in investigation §9 + the
+                  B2b pm-feature-review). The banner on the next screen echoes it
+                  ("…you gave with it"). */}
+              <Text style={styles.comboText}>+ Add a med given with this</Text>
+            </TouchableOpacity>
           )}
         </View>
       </Animated.View>
@@ -345,6 +399,21 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: 'rgba(255,255,255,0.7)',
     fontWeight: theme.weightRegular,
+  },
+  // The opt-in combo entry (B-156 PR B2b). ≥44pt tappable (the 3am-test floor) via
+  // minHeight; a faint divider so it reads as a separate, optional add-on beneath the
+  // intake row, never a peer of the logged act. Deliberately the quietest line.
+  comboRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+    paddingTop: theme.space1,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  comboText: {
+    fontSize: theme.textSM,
+    color: 'rgba(255,255,255,0.75)',
+    fontWeight: theme.weightMedium,
   },
 
   backdrop: {

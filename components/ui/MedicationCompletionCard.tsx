@@ -116,9 +116,18 @@ export function MedicationCompletionCard() {
   if (!payload || payload.kind !== 'medication') return null;
 
   const occurredDate = new Date(payload.occurredAt);
-  // Neutral "Logged · {drug}" (never "Gave"): the title must not contradict a
-  // downgrade to Missed/Refused on the chips below.
-  const title = payload.drugName ? `Logged · ${payload.drugName}` : 'Logged';
+  // B-156 PR B2b — a COMBO dose (logged WITH a meal/treat) frames the card as "Logged
+  // together" with a subline naming the drug + the food it rode in, so the one-act link
+  // is legible; a STANDALONE dose keeps "Logged · {drug}" + the logged time. Neutral
+  // "Logged" (never "Gave") either way: the title must not contradict a downgrade to
+  // Missed/Refused on the chips below.
+  const isCombo = !!payload.pairedFoodName;
+  const title = isCombo
+    ? 'Logged together'
+    : (payload.drugName ? `Logged · ${payload.drugName}` : 'Logged');
+  const subLabel = isCombo
+    ? `${payload.drugName} · with ${payload.pairedFoodName}`
+    : formatTime(occurredDate);
   const petName = activePet?.name ?? 'your pet';
 
   return (
@@ -133,7 +142,7 @@ export function MedicationCompletionCard() {
           </Animated.View>
           <View style={styles.labelCol}>
             <Text style={styles.title} numberOfLines={1}>{title}</Text>
-            <Text style={styles.subLabel}>{formatTime(occurredDate)}</Text>
+            <Text style={styles.subLabel} numberOfLines={1}>{subLabel}</Text>
           </View>
         </View>
         <View style={styles.adherenceWrap}>

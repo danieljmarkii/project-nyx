@@ -36,6 +36,7 @@ import {
   MEDICATION_VEHICLE_OPTIONS,
   vehicleLabel,
   asDoseVehicle,
+  inferDoseVehicleFromFoodType,
   type DoseVehicle,
   type LocalMedicationItem,
   type LocalMedication,
@@ -1032,5 +1033,44 @@ describe('MEDICATION_VEHICLE_OPTIONS + vehicleLabel (B-156 Slice B)', () => {
     expect(asDoseVehicle('')).toBeNull();
     expect(asDoseVehicle('in_water')).toBeNull();
     expect(asDoseVehicle('DIRECT')).toBeNull();
+  });
+});
+
+// ── B-156 Slice C (the combo) — vehicle inferred from the co-logged food (PR B2b) ──
+// When a med is logged WITH a meal/treat from the completion card, the dose's vehicle
+// is inferred from the food's type: a meal → in_food, a treat → in_treat. This is the
+// only place the combo write derives how_given, so a wrong mapping would mislabel
+// every combo dose's vehicle on the vet report's "with food" note. Anything other than
+// the two mapped types returns null — an absent/unexpected type NEVER fabricates a
+// vehicle (the same never-coerce stance as the wire mapper and asDoseVehicle).
+describe('inferDoseVehicleFromFoodType — combo vehicle inference (B-156 PR B2b)', () => {
+  it('maps a meal to in_food and a treat to in_treat', () => {
+    expect(inferDoseVehicleFromFoodType('meal')).toBe('in_food');
+    expect(inferDoseVehicleFromFoodType('treat')).toBe('in_treat');
+  });
+
+  it("returns null for 'other' and for an absent type — never fabricates a vehicle", () => {
+    // The combo line is gated to meal/treat, so these don't arise in a real combo;
+    // the helper still must refuse to invent a vehicle (clean NULL = "not recorded").
+    expect(inferDoseVehicleFromFoodType('other')).toBeNull();
+    expect(inferDoseVehicleFromFoodType(null)).toBeNull();
+    expect(inferDoseVehicleFromFoodType(undefined)).toBeNull();
+    expect(inferDoseVehicleFromFoodType('')).toBeNull();
+  });
+
+  it('returns null for an unrecognized/garbage type rather than a raw token', () => {
+    expect(inferDoseVehicleFromFoodType('snack')).toBeNull();
+    expect(inferDoseVehicleFromFoodType('MEAL')).toBeNull(); // case-sensitive, like asDoseVehicle
+  });
+
+  it('only ever returns a value the vehicle enum recognizes (no drift)', () => {
+    // Whatever it returns must be a real dose_route_vehicle member, so a combo write
+    // can never push a value the server enum rejects.
+    for (const t of ['meal', 'treat', 'other', null, undefined, 'snack']) {
+      const v = inferDoseVehicleFromFoodType(t as string | null | undefined);
+      if (v !== null) {
+        expect(MEDICATION_VEHICLE_OPTIONS.some((o) => o.value === v)).toBe(true);
+      }
+    }
   });
 });

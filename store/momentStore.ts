@@ -44,6 +44,12 @@ interface BeatPayload {
 export interface MealPayload {
   kind: 'meal';
   eventId: string;
+  // The pet this meal was logged for, captured at log time (immutable). Carried so
+  // the "+ gave a med with this" combo (B-156 PR B2b) can bind its linked dose to the
+  // SAME pet as the meal — the migration-023 same-pet trigger requires it — using the
+  // meal's pet rather than a re-read active pet that could have been switched (the
+  // multi-pet wrong-pet guard, queue-then-switch edge).
+  petId: string;
   // ISO UTC of the logged event's occurred_at.
   occurredAt: string;
   // food_items.food_type of the just-logged food, or null if unclassified.
@@ -74,7 +80,16 @@ export interface MedicationPayload {
   // In-flight dose vehicle (B-156 Slice B). Starts null — the one-tap path doesn't
   // ask, and an unrecorded vehicle is a clean NULL (it's descriptive, never inferred).
   // Optionally set via patchHowGiven when the owner taps the card's vehicle chips.
+  // For a combo dose (B-156 PR B2b) it starts at the vehicle inferred from the food
+  // (in_food / in_treat), pre-selected on the card for the owner to confirm or change.
   howGiven: DoseVehicle | null;
+  // B-156 Slice C (the combo) — when this dose was logged WITH a meal/treat (the
+  // "+ gave a med with this" path), the co-logged food's display name, so the
+  // completion card frames it as "Logged together · {drug} · with {food}" — the link
+  // made legible. Absent/null for a standalone dose, which renders the normal
+  // "Logged · {drug}" header. Display-only context; the authoritative link lives on
+  // the dose's paired_event_id (written by insertMedicationDose), not here.
+  pairedFoodName?: string | null;
 }
 
 export type MomentPayload = BeatPayload | MealPayload | MedicationPayload;
