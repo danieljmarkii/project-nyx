@@ -296,6 +296,7 @@ export default function LogModal() {
         occurredAt: result.occurredAtIso,
         drugName: med.generic_name,
         adherence: 'given',
+        howGiven: null, // the one-tap path doesn't ask; the card's chips can set it
       },
       { delayMs: 450 },
     );

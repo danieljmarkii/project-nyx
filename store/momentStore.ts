@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
+import type { DoseVehicle } from '../lib/medications';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -70,6 +71,10 @@ export interface MedicationPayload {
   // starts 'given' — the owner's affirmative tap = "I gave this dose." Updated
   // optimistically via patchAdherence when the owner downgrades on the card.
   adherence: DoseAdherence | null;
+  // In-flight dose vehicle (B-156 Slice B). Starts null — the one-tap path doesn't
+  // ask, and an unrecorded vehicle is a clean NULL (it's descriptive, never inferred).
+  // Optionally set via patchHowGiven when the owner taps the card's vehicle chips.
+  howGiven: DoseVehicle | null;
 }
 
 export type MomentPayload = BeatPayload | MealPayload | MedicationPayload;
@@ -98,6 +103,9 @@ interface MomentState {
   // Mutates the in-flight MEDICATION card's adherence after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on other payloads.
   patchAdherence: (adherence: DoseAdherence | null) => void;
+  // Mutates the in-flight MEDICATION card's vehicle (how_given) after a chip tap.
+  // null clears it (optional row). Pair with rescheduleHide(). No-op on other payloads.
+  patchHowGiven: (howGiven: DoseVehicle | null) => void;
   // Reschedules the hide timer to fire `durationMs` from now — used to hold the
   // meal card open ~1.5s after a chip tap so the selection is confirmed visibly.
   rescheduleHide: (durationMs: number) => void;
@@ -181,6 +189,12 @@ export const useMomentStore = create<MomentState>((set) => ({
     set((state) =>
       state.payload?.kind === 'medication'
         ? { payload: { ...state.payload, adherence } }
+        : {}
+    ),
+  patchHowGiven: (howGiven) =>
+    set((state) =>
+      state.payload?.kind === 'medication'
+        ? { payload: { ...state.payload, howGiven } }
         : {}
     ),
   rescheduleHide: (durationMs) => {

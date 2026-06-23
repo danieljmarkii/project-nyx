@@ -33,6 +33,10 @@ import {
   DOUBLE_DOSE_WINDOW_CAP_HOURS,
   DOUBLE_DOSE_WINDOW_FLOOR_HOURS,
   MEDICATION_SCHEMA_SQL,
+  MEDICATION_VEHICLE_OPTIONS,
+  vehicleLabel,
+  asDoseVehicle,
+  type DoseVehicle,
   type LocalMedicationItem,
   type LocalMedication,
   type LocalMedicationAdministration,
@@ -846,5 +850,67 @@ describe('formatDoseGap + doubleDoseNote — calm, specific, no alarm (nyx-voice
     const note = doubleDoseNote({ drugName: null, gapMinutes: 30 });
     expect(note).toContain('another dose');
     expect(note).not.toContain('!');
+  });
+});
+
+// ── B-156 Slice B — dose vehicle options + label (PR A3) ─────────────────────
+// The vehicle list is the ONE source of truth shared by the capture chip, the
+// dose-edit screen, the History read display, and the write params — so the test
+// that matters is the DRIFT GUARD: its values must equal the server dose_route_
+// vehicle enum members exactly (migration 022), or a chip would write a value the
+// server upsert rejects. vehicleLabel must also read clean (null, never a raw
+// token) for an unset/legacy value — the A3 "reads clean when unset" AC.
+describe('MEDICATION_VEHICLE_OPTIONS + vehicleLabel (B-156 Slice B)', () => {
+  // The exact dose_route_vehicle enum members, in their migration-022 order. If a
+  // member is added/renamed server-side, this assertion forces the list to follow.
+  const ENUM_MEMBERS: DoseVehicle[] = ['direct', 'in_food', 'in_treat', 'in_pill_pocket', 'other'];
+
+  it('lists exactly the server enum members, in order (drift guard)', () => {
+    expect(MEDICATION_VEHICLE_OPTIONS.map((o) => o.value)).toEqual(ENUM_MEMBERS);
+  });
+
+  it('gives every option a non-empty, distinct owner-facing label', () => {
+    const labels = MEDICATION_VEHICLE_OPTIONS.map((o) => o.label);
+    labels.forEach((l) => expect(l.trim().length).toBeGreaterThan(0));
+    expect(new Set(labels).size).toBe(labels.length); // no duplicate labels
+  });
+
+  it('uses warm, plain, jargon-free copy with no exclamation (nyx-voice)', () => {
+    MEDICATION_VEHICLE_OPTIONS.forEach((o) => {
+      expect(o.label).not.toContain('!');
+      // No clinical jargon ("vehicle", "route", "PO") leaking into owner copy.
+      expect(o.label.toLowerCase()).not.toMatch(/vehicle|route|\bpo\b|per os/);
+    });
+  });
+
+  it('vehicleLabel returns the matching label for every enum member', () => {
+    MEDICATION_VEHICLE_OPTIONS.forEach((o) => {
+      expect(vehicleLabel(o.value)).toBe(o.label);
+    });
+  });
+
+  it('vehicleLabel reads clean (null) for an unset value — never a raw token', () => {
+    expect(vehicleLabel(null)).toBeNull();
+    expect(vehicleLabel(undefined)).toBeNull();
+    expect(vehicleLabel('')).toBeNull();
+  });
+
+  it('vehicleLabel returns null for an unrecognized/legacy value (renders nothing)', () => {
+    expect(vehicleLabel('in_water')).toBeNull();
+    expect(vehicleLabel('DIRECT')).toBeNull(); // case-sensitive: only exact enum members
+  });
+
+  it('asDoseVehicle narrows every enum member to itself (the single read-coercion site)', () => {
+    MEDICATION_VEHICLE_OPTIONS.forEach((o) => {
+      expect(asDoseVehicle(o.value)).toBe(o.value);
+    });
+  });
+
+  it('asDoseVehicle returns null for unset / unrecognized values (never trusts a token)', () => {
+    expect(asDoseVehicle(null)).toBeNull();
+    expect(asDoseVehicle(undefined)).toBeNull();
+    expect(asDoseVehicle('')).toBeNull();
+    expect(asDoseVehicle('in_water')).toBeNull();
+    expect(asDoseVehicle('DIRECT')).toBeNull();
   });
 });

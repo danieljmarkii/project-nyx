@@ -19,6 +19,7 @@ function medicationPayload(over: Partial<Omit<MedicationPayload, 'kind'>> = {}):
     occurredAt: '2026-06-07T14:00:00.000Z',
     drugName: 'Prednisolone',
     adherence: 'given',
+    howGiven: null,
     ...over,
   };
 }
@@ -227,6 +228,8 @@ describe('momentStore', () => {
     expect(payload.drugName).toBe('Prednisolone');
     // The one-tap log starts 'given' (the affirmative tap), never null.
     expect(payload.adherence).toBe('given');
+    // The vehicle (B-156) starts null — the one-tap path doesn't ask; it's optional.
+    expect(payload.howGiven).toBeNull();
   });
 
   it('a medication card auto-dismisses after the default 5s window (interactive)', () => {
@@ -261,6 +264,29 @@ describe('momentStore', () => {
     const { payload } = useMomentStore.getState();
     if (payload?.kind !== 'meal') throw new Error('expected meal payload');
     expect(payload).not.toHaveProperty('adherence');
+  });
+
+  it('patchHowGiven sets and clears the in-flight medication card vehicle (B-156)', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    useMomentStore.getState().patchHowGiven('in_treat');
+    let payload = useMomentStore.getState().payload;
+    if (payload?.kind !== 'medication') throw new Error('expected medication payload');
+    expect(payload.howGiven).toBe('in_treat');
+    // Tapping the active chip clears it back to null (the optional-row behaviour).
+    useMomentStore.getState().patchHowGiven(null);
+    payload = useMomentStore.getState().payload;
+    if (payload?.kind !== 'medication') throw new Error('expected medication payload');
+    expect(payload.howGiven).toBeNull();
+    // The vehicle patch must not disturb adherence.
+    expect(payload.adherence).toBe('given');
+  });
+
+  it('patchHowGiven is a no-op on a meal payload (medication-only affordance)', () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    useMomentStore.getState().patchHowGiven('in_food');
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'meal') throw new Error('expected meal payload');
+    expect(payload).not.toHaveProperty('howGiven');
   });
 
   it('patchIntakeRating / patchOccurredAt never mutate a medication payload', () => {

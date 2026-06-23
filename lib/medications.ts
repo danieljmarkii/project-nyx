@@ -342,6 +342,47 @@ export const MEDICATION_ROUTE_OPTIONS: { value: string; label: string }[] = [
   { value: 'other',      label: 'Other' },
 ];
 
+// ── B-156 Slice B — dose vehicle ("How was it given?") ──────────────────────────
+// The dose_route_vehicle enum (migration 022). ONE source of truth shared by the
+// capture chip (MedicationCompletionCard), the dose-event edit (app/event/[id].tsx),
+// the History read display, and the insertMedicationDose / updateDoseHowGiven write
+// params — the VALUES must match the server enum exactly, so this list is never
+// copied per screen (the same stance as the form/route lists, and the reason the
+// write helpers alias this type rather than re-declaring the union).
+//
+// A DESCRIPTIVE fact only: the vehicle records HOW a dose was given (the clinical
+// "with food" absorption note) and carries no adherence/safety meaning on its own —
+// the intake→adherence coupling is the gated combo (Phase B), not this slice. So an
+// unrecorded vehicle is simply absent (NULL), never inferred.
+export type DoseVehicle = 'direct' | 'in_food' | 'in_treat' | 'in_pill_pocket' | 'other';
+
+export const MEDICATION_VEHICLE_OPTIONS: { value: DoseVehicle; label: string }[] = [
+  { value: 'direct',         label: 'Directly' },
+  { value: 'in_food',        label: 'In food' },
+  { value: 'in_treat',       label: 'In a treat' },
+  { value: 'in_pill_pocket', label: 'In a pill pocket' },
+  { value: 'other',          label: 'Other' },
+];
+
+// Narrow a loose stored/wire value (TEXT from the local mirror) to the DoseVehicle
+// union, deriving the valid set from MEDICATION_VEHICLE_OPTIONS so it can never drift
+// from the chips/enum (the single coercion site for read screens; keeps the literal
+// union out of every consumer). Returns null for an unrecorded or unrecognized/legacy
+// value — read surfaces render nothing rather than trusting a garbage token.
+export function asDoseVehicle(value: string | null | undefined): DoseVehicle | null {
+  if (!value) return null;
+  return MEDICATION_VEHICLE_OPTIONS.some((o) => o.value === value) ? (value as DoseVehicle) : null;
+}
+
+// Owner-facing label for a stored vehicle, for the History/detail READ display.
+// Returns null for an unrecorded (NULL) OR unrecognized value so the surface renders
+// nothing rather than a raw enum token — an unset vehicle stays as quiet as an
+// unrated dose ("reads clean when unset", the A3 AC).
+export function vehicleLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return MEDICATION_VEHICLE_OPTIONS.find((o) => o.value === value)?.label ?? null;
+}
+
 // ── PR 6 detail/edit allow-list (app/medication/[id].tsx) ──────────────────────
 // The medication_items columns the owner may edit on the detail screen, and the
 // pure builder for the UPDATE payload. Extracted here — NOT inlined in the screen

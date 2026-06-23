@@ -21,6 +21,7 @@ import {
   deleteEventAttachmentLocal,
   updateMealIntake,
   updateDoseAdherence,
+  updateDoseHowGiven,
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture } from '../../lib/storage';
@@ -31,7 +32,8 @@ import { useEventStore } from '../../store/eventStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceChipRow';
-import { doubleDoseNote, DoubleDoseResult } from '../../lib/medications';
+import { VehicleChipRow } from '../../components/log/VehicleChipRow';
+import { doubleDoseNote, DoubleDoseResult, asDoseVehicle, type DoseVehicle } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { Header, PhotoViewer } from '../../components/ui';
 
@@ -97,6 +99,9 @@ export default function EventDetailScreen() {
     medicationItemId: string | null;
   } | null>(null);
   const [adherence, setAdherence] = useState<DoseAdherence | null>(null);
+  // B-156 Slice B — the dose vehicle (how_given), editable here (the descriptive
+  // twin of adherence). Optional/nullable; seeded from the dose row on load.
+  const [howGiven, setHowGiven] = useState<DoseVehicle | null>(null);
   const [doubleDose, setDoubleDose] = useState<DoubleDoseResult | null>(null);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -111,6 +116,7 @@ export default function EventDetailScreen() {
     setIntakeRating(null);
     setDose(null);
     setAdherence(null);
+    setHowGiven(null);
     setDoubleDose(null);
     try {
       const row = await getEventById(id);
@@ -156,6 +162,10 @@ export default function EventDetailScreen() {
           const adh: DoseAdherence | null =
             a === 'given' || a === 'partial' || a === 'missed' || a === 'refused' ? a : null;
           setAdherence(adh);
+          // Coerce the loose TEXT how_given to the closed vehicle union via the
+          // single shared narrower; an unrecognized/legacy value reads as null
+          // (renders clean), never a raw token.
+          setHowGiven(asDoseVehicle(d.how_given));
           // B-135 (§6.4) — surface a calm check if this given dose sits too close to
           // another given dose of the same drug. Computed from per-dose occurred_at.
           // Own try/catch so a check failure doesn't abort the dose load or mislabel
@@ -228,6 +238,24 @@ export default function EventDetailScreen() {
       occurredAt: event.occurred_at,
       adherence: next,
     }).then(setDoubleDose).catch((e) => console.warn('[event-detail] double-dose recheck failed:', e));
+  }
+
+  // Retroactive vehicle edit (B-156 Slice B) — the descriptive twin of
+  // handleAdherenceChange. Optional + clearable (tapping the active chip passes
+  // null), no double-dose recompute (the vehicle has no timing/safety meaning).
+  async function handleVehicleChange(next: DoseVehicle | null) {
+    if (!event || !dose) return;
+    const prev = howGiven;
+    if (next === prev) return;
+    setHowGiven(next);
+    try {
+      await updateDoseHowGiven(event.id, next);
+      syncPendingMedicationAdministrations().catch(console.error);
+    } catch (e) {
+      console.error('[event-detail] failed to update vehicle:', e);
+      setHowGiven(prev);
+      Alert.alert('Could not save', 'Try again in a moment.');
+    }
   }
 
   function handleEdit() {
@@ -519,6 +547,17 @@ export default function EventDetailScreen() {
                 <AdherenceChipRow
                   value={adherence}
                   onChange={handleAdherenceChange}
+                  label={null}
+                />
+              </View>
+              {/* B-156 Slice B — the dose vehicle, editable retroactively. Optional:
+                  the chips start empty when nothing was recorded, and the owner can
+                  set or clear it any time. Descriptive, never a safety verdict. */}
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>HOW GIVEN</Text>
+                <VehicleChipRow
+                  value={howGiven}
+                  onChange={handleVehicleChange}
                   label={null}
                 />
               </View>

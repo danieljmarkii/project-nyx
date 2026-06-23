@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { EventTypeKey } from '../constants/eventTypes';
+import type { DoseVehicle } from '../lib/medications';
 
 export interface NyxEvent {
   id: string;
@@ -29,6 +30,10 @@ export interface NyxEvent {
   // rating (the intake_rating analog). NULL on non-medication events.
   medication_item_id?: string | null;
   adherence?: 'given' | 'partial' | 'missed' | 'refused' | null;
+  // B-156 Slice B — the dose vehicle ("how it was given"). NULL = not recorded.
+  // Descriptive only (no adherence/safety meaning); renders nothing when unset.
+  // Uses the canonical DoseVehicle type so it can't drift from the server enum.
+  how_given?: DoseVehicle | null;
   drug_generic_name?: string | null;
   drug_brand_name?: string | null;
 }
