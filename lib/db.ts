@@ -8,6 +8,7 @@ import {
   detectDoubleDose,
   type NearbyDose,
   type DoubleDoseResult,
+  type DoseVehicle,
 } from './medications';
 import { LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
 import { uuid } from './utils';
@@ -383,6 +384,9 @@ export interface TimelineRow {
   // them via getDoseForEvent.
   medication_item_id: string | null;
   adherence: string | null;
+  // B-156 Slice B — the dose vehicle (how_given), for the History read display.
+  // NULL on non-medication rows and on doses with no recorded vehicle.
+  how_given: string | null;
   drug_generic_name: string | null;
   drug_brand_name: string | null;
 }
@@ -414,7 +418,7 @@ export async function getTimeline(
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
-            ma.medication_item_id, ma.adherence,
+            ma.medication_item_id, ma.adherence, ma.how_given,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
@@ -438,7 +442,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
-            ma.medication_item_id, ma.adherence,
+            ma.medication_item_id, ma.adherence, ma.how_given,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
@@ -815,6 +819,26 @@ export async function updateDoseAdherence(
   }
 }
 
+// B-156 Slice B (PR A3) — set/clear the dose vehicle (how_given). The descriptive
+// twin of updateDoseAdherence: same updated_at + synced=0 LWW write so a vehicle
+// edit propagates, and the same throw-on-zero-row guard (SQLite silently affects
+// zero rows, which would let the card/detail screen claim success while persisting
+// nothing). NULL is a first-class value here — clearing the vehicle is a real edit
+// (the owner tapping the active chip), never coerced to a default.
+export async function updateDoseHowGiven(
+  eventId: string,
+  howGiven: DoseVehicle | null,
+): Promise<void> {
+  const db = getDb();
+  const res = await db.runAsync(
+    'UPDATE medication_administrations SET how_given = ?, updated_at = ?, synced = 0 WHERE event_id = ?',
+    [howGiven, new Date().toISOString(), eventId],
+  );
+  if (res.changes === 0) {
+    throw new Error(`No medication_administration row for event ${eventId}`);
+  }
+}
+
 // The medication analog of getMealForEvent — the dose child + its drug-library
 // display fields, for the event-detail screen (B-117 PR 8). NULL when the event has
 // no administration row (a non-medication event, or a dose whose child hasn't
@@ -825,6 +849,7 @@ export async function getDoseForEvent(eventId: string): Promise<{
   medication_id: string | null;
   adherence: string | null;
   dose_amount: string | null;
+  how_given: string | null;
   drug_generic_name: string | null;
   drug_brand_name: string | null;
   drug_strength: string | null;
@@ -835,11 +860,12 @@ export async function getDoseForEvent(eventId: string): Promise<{
     medication_id: string | null;
     adherence: string | null;
     dose_amount: string | null;
+    how_given: string | null;
     drug_generic_name: string | null;
     drug_brand_name: string | null;
     drug_strength: string | null;
   }>(
-    `SELECT ma.medication_item_id, ma.medication_id, ma.adherence, ma.dose_amount,
+    `SELECT ma.medication_item_id, ma.medication_id, ma.adherence, ma.dose_amount, ma.how_given,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
             mi.strength AS drug_strength
      FROM medication_administrations ma

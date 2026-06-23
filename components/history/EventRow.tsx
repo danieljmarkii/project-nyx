@@ -5,6 +5,7 @@ import { EventIcon } from '../event/EventIcon';
 import { theme } from '../../constants/theme';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
+import { vehicleLabel } from '../../lib/medications';
 import { describeOccurredAt } from '../../lib/utils';
 
 interface Props {
@@ -50,6 +51,11 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
       ? `${event.drug_generic_name} · ${event.drug_brand_name}`
       : event.drug_generic_name
     : event.drug_brand_name ?? null;
+
+  // B-156 Slice B — a quiet read-only vehicle line ("In a treat"), shown only when
+  // the owner recorded how the dose was given. NULL/unrecognized → nothing, so an
+  // unrecorded vehicle stays as silent as an unrated dose.
+  const vehicle = vehicleLabel(event.how_given);
 
   // B-010 — read-only confidence marker so the timeline stops implying false
   // precision on found/estimated events. Witnessed and legacy (null) rows keep
@@ -106,6 +112,10 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
             <AdherenceChipRow value={(event.adherence ?? null) as DoseAdherence | null} />
           </View>
         ) : null}
+
+        {/* Vehicle ("In a treat") — a quiet secondary line under the drug, only when
+            recorded. Reads as a plain note, not a badge: it's descriptive context. */}
+        {vehicle ? <Text style={styles.vehicleNote}>{vehicle}</Text> : null}
 
         {isExpanded ? (
           <View style={styles.expandedContent}>
@@ -196,6 +206,10 @@ const styles = StyleSheet.create({
     // read-only intake badge flush-right under the timestamp so it reads
     // as a scannable right rail instead of drifting with text length.
     flex: 1,
+  },
+  vehicleNote: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
   },
   expandedContent: {
     marginTop: theme.space1,

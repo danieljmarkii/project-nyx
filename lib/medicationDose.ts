@@ -18,6 +18,7 @@
 import { getDb } from './db';
 import { syncPendingEvents, syncPendingMedicationAdministrations } from './sync';
 import { uuid } from './utils';
+import type { DoseVehicle } from './medications';
 
 export interface InsertMedicationDoseParams {
   petId: string;
@@ -42,12 +43,13 @@ export interface InsertMedicationDoseParams {
   // meaning on its own (the intake→adherence coupling is the gated combo, Phase B),
   // so a null is simply "not recorded", exactly like a null dose_amount. The capture
   // chip that sets it is PR A3; this param is the write path it threads through.
-  // Typed as the closed dose_route_vehicle enum here — like `adherence` above, the
-  // caller-facing write param is a literal union so a stray value is a compile error
-  // before it reaches the server enum (which would reject the upsert). The loose
-  // sync row-shapes keep `how_given: string | null` to mirror the DB exactly, the
-  // same split `adherence` uses (tight on the param, plain TEXT on the row).
-  howGiven?: 'direct' | 'in_food' | 'in_treat' | 'in_pill_pocket' | 'other' | null;
+  // Typed as the closed DoseVehicle enum (the dose_route_vehicle members, defined
+  // once in lib/medications.ts) — like `adherence` above, the caller-facing write
+  // param is a literal union so a stray value is a compile error before it reaches
+  // the server enum (which would reject the upsert). The loose sync row-shapes keep
+  // `how_given: string | null` to mirror the DB exactly, the same split `adherence`
+  // uses (tight on the param, plain TEXT on the row).
+  howGiven?: DoseVehicle | null;
   // Administration time. The one-tap path passes now() — a dose is witnessed
   // (you see yourself give it), so confidence is always 'witnessed' with no window.
   occurredAt: Date;

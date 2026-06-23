@@ -6,18 +6,21 @@ import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { useMomentStore } from '../../store/momentStore';
 import { usePetStore } from '../../store/petStore';
-import { updateDoseAdherence } from '../../lib/db';
+import { updateDoseAdherence, updateDoseHowGiven } from '../../lib/db';
 import { syncPendingMedicationAdministrations } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
+import type { DoseVehicle } from '../../lib/medications';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
+import { VehicleChipRow } from '../log/VehicleChipRow';
 
 // Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it isn't
 // occluded when the user lands back on a tabs screen after a log.
 const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 80 : 60;
 
-// Hold the card open this long after a chip tap so the selection is visibly
-// confirmed before dismiss (same rationale as the meal card's intake hold).
-const ADHERENCE_CONFIRM_HOLD_MS = 1500;
+// Hold the card open this long after a chip tap (adherence OR vehicle) so the
+// selection is visibly confirmed before dismiss (same rationale as the meal card's
+// intake hold).
+const CHIP_CONFIRM_HOLD_MS = 1500;
 
 // Root-mounted MEDICATION completion card (B-117 PR 3) — the dose sibling of
 // <MealCompletionCard/>. The same warmed bottom-card presentation of the
@@ -34,7 +37,7 @@ const ADHERENCE_CONFIRM_HOLD_MS = 1500;
 // chips let them DOWNGRADE (partial / missed / refused) — never an alarm, just an
 // honest correction. A downgrade is persisted + synced like the meal intake edit.
 export function MedicationCompletionCard() {
-  const { visible, payload, patchAdherence, rescheduleHide } = useMomentStore();
+  const { visible, payload, patchAdherence, patchHowGiven, rescheduleHide } = useMomentStore();
   const { activePet } = usePetStore();
 
   const translateY = useRef(new Animated.Value(80)).current;
@@ -74,7 +77,7 @@ export function MedicationCompletionCard() {
     // Optimistic update first so the chip lights immediately; persistence + sync
     // follow, and we revert + surface on failure (the meal-intake pattern).
     patchAdherence(next);
-    rescheduleHide(ADHERENCE_CONFIRM_HOLD_MS);
+    rescheduleHide(CHIP_CONFIRM_HOLD_MS);
     try {
       await updateDoseAdherence(eventId, next);
       syncPendingMedicationAdministrations().catch(console.error);
@@ -82,6 +85,28 @@ export function MedicationCompletionCard() {
       console.error('[medication-card] failed to update adherence:', e);
       // Revert local state. The next focus on History/detail refetches ground truth.
       patchAdherence(prev);
+      Alert.alert('Could not save', "Try again from the dose's detail screen.");
+    }
+  }
+
+  // The descriptive twin of handleAdherenceChange (B-156 Slice B). The vehicle is
+  // OPTIONAL and skippable — a tap on the active chip clears it back to null — and
+  // carries no adherence/safety meaning, so this is the same optimistic write the
+  // intake row uses, never an escalation. It never blocks the card's auto-dismiss:
+  // an unanswered vehicle simply stays null ("not recorded").
+  async function handleVehicleChange(next: DoseVehicle | null) {
+    if (!isMedication) return;
+    const eventId = payload.eventId;
+    const prev = payload.howGiven;
+    if (next === prev) return;
+    patchHowGiven(next);
+    rescheduleHide(CHIP_CONFIRM_HOLD_MS);
+    try {
+      await updateDoseHowGiven(eventId, next);
+      syncPendingMedicationAdministrations().catch(console.error);
+    } catch (e) {
+      console.error('[medication-card] failed to update vehicle:', e);
+      patchHowGiven(prev);
       Alert.alert('Could not save', "Try again from the dose's detail screen.");
     }
   }
@@ -116,6 +141,19 @@ export function MedicationCompletionCard() {
           <AdherenceChipRow
             value={payload.adherence}
             onChange={handleAdherenceChange}
+            label={null}
+            size="compact"
+            onDark
+          />
+        </View>
+        {/* B-156 Slice B — the optional, subordinate vehicle row. Skippable and
+            default-null: the owner can ignore it entirely and the card still
+            auto-dismisses; it never gates dismiss and reads clean when unset. */}
+        <View style={styles.vehicleWrap}>
+          <Text style={styles.vehicleLabel}>How was it given? (optional)</Text>
+          <VehicleChipRow
+            value={payload.howGiven}
+            onChange={handleVehicleChange}
             label={null}
             size="compact"
             onDark
@@ -189,6 +227,20 @@ const styles = StyleSheet.create({
   adherenceLabel: {
     fontSize: theme.textSM,
     color: 'rgba(255,255,255,0.7)',
+    fontWeight: theme.weightRegular,
+  },
+  // Subordinate to the adherence block: a fainter divider + dimmer label so the
+  // optional vehicle row reads as a quiet add-on under the primary "did they take
+  // it?" question, never a peer of it.
+  vehicleWrap: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    paddingTop: theme.space1,
+    gap: 6,
+  },
+  vehicleLabel: {
+    fontSize: theme.textSM,
+    color: 'rgba(255,255,255,0.55)',
     fontWeight: theme.weightRegular,
   },
 });
