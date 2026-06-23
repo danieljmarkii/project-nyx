@@ -114,6 +114,7 @@ export function FAB() {
       // that path). Replaces the retired standalone post-log toast.
       showMealMoment({
         eventId,
+        petId: pet.id,
         occurredAt: occurredAtIso,
         foodType,
         foodBrand: food.brand,

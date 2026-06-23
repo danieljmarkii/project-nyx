@@ -398,6 +398,27 @@ export function vehicleLabel(value: string | null | undefined): string | null {
   return MEDICATION_VEHICLE_OPTIONS.find((o) => o.value === value)?.label ?? null;
 }
 
+// B-156 Slice C (the combo) — infer the dose vehicle from the co-logged food's type
+// when a med is logged WITH a meal/treat from the completion card. A pill given with
+// a meal is in_food; with a treat, in_treat. The combo affordance is gated to
+// meal/treat foods (the same gate as the intake-chip row), so 'other'/null never
+// reach a real combo write — they return null defensively, so an absent inference
+// stays a clean NULL how_given, never a fabricated 'direct' (the same never-coerce
+// rule the wire mapper enforces). This is a best-guess SEED the owner can correct on
+// the dose card's vehicle chips: descriptive only, carrying no adherence/safety
+// meaning — the intake→adherence coupling is the gated B3, not this slice.
+// Param is `string | null | undefined` (not the narrow food_type union) so it accepts
+// both a typed payload value AND a loose route-param string at the call site without a
+// cast; any value other than the two mapped types returns null (defensive — an absent
+// or unexpected type never fabricates a vehicle).
+export function inferDoseVehicleFromFoodType(
+  foodType: string | null | undefined,
+): DoseVehicle | null {
+  if (foodType === 'meal') return 'in_food';
+  if (foodType === 'treat') return 'in_treat';
+  return null;
+}
+
 // ── PR 6 detail/edit allow-list (app/medication/[id].tsx) ──────────────────────
 // The medication_items columns the owner may edit on the detail screen, and the
 // pure builder for the UPDATE payload. Extracted here — NOT inlined in the screen

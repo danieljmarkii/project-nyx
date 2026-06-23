@@ -4,6 +4,7 @@ import type { MealPayload, MedicationPayload } from './momentStore';
 function mealPayload(over: Partial<Omit<MealPayload, 'kind'>> = {}): Omit<MealPayload, 'kind'> {
   return {
     eventId: 'e1',
+    petId: 'p1',
     occurredAt: '2026-06-07T14:00:00.000Z',
     foodType: 'meal',
     foodBrand: 'Royal Canin',
@@ -128,6 +129,16 @@ describe('momentStore', () => {
     expect(payload.intakeRating).toBeNull();
   });
 
+  it('carries the meal pet id so the "+ gave a med with this" combo binds the dose to the same pet (B-156 PR B2b)', () => {
+    // The combo (PR B2b) reads payload.petId — the pet the meal was logged for,
+    // captured at log time — to write the linked dose, NOT a re-read active pet that
+    // could have been switched. The store must carry it through verbatim.
+    useMomentStore.getState().showMeal(mealPayload({ petId: 'pet-meal-owner' }));
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'meal') throw new Error('expected meal payload');
+    expect(payload.petId).toBe('pet-meal-owner');
+  });
+
   it('a meal card auto-dismisses after the default 5s window (longer, interactive)', () => {
     useMomentStore.getState().showMeal(mealPayload());
     expect(useMomentStore.getState().visible).toBe(true);
@@ -230,6 +241,25 @@ describe('momentStore', () => {
     expect(payload.adherence).toBe('given');
     // The vehicle (B-156) starts null — the one-tap path doesn't ask; it's optional.
     expect(payload.howGiven).toBeNull();
+    // A standalone dose has no co-logged food — pairedFoodName is absent (renders the
+    // normal "Logged · {drug}" header, not the combo "Logged together" framing).
+    expect(payload.pairedFoodName ?? null).toBeNull();
+  });
+
+  it('carries pairedFoodName + the inferred vehicle for a COMBO dose (B-156 PR B2b)', () => {
+    // A dose logged WITH a treat from the meal card: the store carries the food name
+    // (→ the card's "Logged together · {drug} · with {food}" framing) and the vehicle
+    // inferred from the food type, pre-selected on the card for the owner to confirm.
+    useMomentStore.getState().showMedication(
+      medicationPayload({ howGiven: 'in_treat', pairedFoodName: 'Delectable' }),
+    );
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'medication') throw new Error('expected medication payload');
+    expect(payload.pairedFoodName).toBe('Delectable');
+    expect(payload.howGiven).toBe('in_treat');
+    // Combo doesn't touch adherence — the dose still starts at the affirmative 'given'
+    // (the intake→adherence coupling is the gated B3, deliberately not in B2b).
+    expect(payload.adherence).toBe('given');
   });
 
   it('a medication card auto-dismisses after the default 5s window (interactive)', () => {

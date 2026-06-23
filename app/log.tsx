@@ -24,6 +24,7 @@ import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
 import { insertMedicationDose } from '../lib/medicationDose';
+import { inferDoseVehicleFromFoodType } from '../lib/medications';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
@@ -50,14 +51,26 @@ const SEVERITY_CONFIG = [
 ];
 
 export default function LogModal() {
-  const { activePet } = usePetStore();
+  const { activePet, pets } = usePetStore();
   const { user } = useAuthStore();
   const { prependEvent } = useEventStore();
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
   const showMoment = useMomentStore((s) => s.show);
   const showMealMoment = useMomentStore((s) => s.showMeal);
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
-  const { type: typeParam } = useLocalSearchParams<{ type?: string }>();
+  // B-156 PR B2b — combo params. When pairedEventId is set, this medication log is a
+  // dose given WITH a just-logged meal/treat (entered from its completion card): the
+  // dose binds to the meal's pet (pairedPetId) and links to the meal event, and
+  // how_given is inferred from pairedFoodType. Absent on every standalone log path.
+  const { type: typeParam, pairedEventId, pairedPetId, pairedFoodType, pairedFoodName } =
+    useLocalSearchParams<{
+      type?: string;
+      pairedEventId?: string;
+      pairedPetId?: string;
+      pairedFoodType?: string;
+      pairedFoodName?: string;
+    }>();
+  const isComboMode = !!pairedEventId;
 
   const [step, setStep] = useState<Step>('type');
   const [selectedType, setSelectedType] = useState<EventTypeKey | null>(null);
@@ -230,6 +243,7 @@ export default function LogModal() {
       showMealMoment(
         {
           eventId: result.eventId,
+          petId: result.petId,
           occurredAt: result.occurredAt,
           foodType,
           foodBrand: food.brand,
@@ -241,35 +255,53 @@ export default function LogModal() {
     }
   }
 
-  // One-tap dose log from the medication picker — the medication twin of
-  // handlePickFood (B-117 PR 3). insertMedicationDose owns the event + dose-child
-  // write and the sync push; here we mirror the meal path's caller concerns: the
-  // optimistic store update (prependEvent) and the completion card. Pet identity
-  // is read at write time (the queue-then-switch edge, multi-pet spec §6).
+  // Dose log from the medication picker — the medication twin of handlePickFood
+  // (B-117 PR 3). insertMedicationDose owns the event + dose-child write and the sync
+  // push; here we mirror the meal path's caller concerns: the optimistic store update
+  // (prependEvent) and the completion card. Serves TWO entry points: a STANDALONE dose
+  // (the FAB/medication step), and a COMBO dose (B-156 PR B2b) entered from a meal/treat
+  // completion card — which binds the dose to the meal's pet + event (paired_event_id)
+  // and infers the vehicle from the food. The only difference is which pet/link/vehicle
+  // the write carries; everything downstream (regimen link, sync, card) is shared.
   async function handlePickMedication(med: PickerMedication) {
-    const pet = usePetStore.getState().activePet;
-    if (!pet) return;
-    // B-153: link this one-tap dose to the drug's active regimen (if any) so a
-    // configured regimen accumulates doses and the dose inherits the regimen's
-    // dose_amount — confirm-don't-enter (spec §5.1). The lookup reads the locally-
-    // hydrated regimens, so it works offline. No regimen → an honest ad-hoc dose
-    // (null link, null amount), exactly as before; a lookup failure degrades to the
-    // same ad-hoc dose rather than blocking the log (logging must never be gated on
-    // an optional enrichment).
+    // The pet this dose is written for. STANDALONE: the active pet, read at write time
+    // (the queue-then-switch edge, multi-pet spec §6). COMBO (B-156 PR B2b): the MEAL's
+    // pet (pairedPetId) — a dose given with a meal must land on the same pet as that
+    // meal, and binding to the meal's pet (never a possibly-switched active pet) makes
+    // the paired_event_id link same-pet BY CONSTRUCTION; the migration-023 trigger is
+    // the server-side backstop, not the primary guard.
+    const writePetId = isComboMode
+      ? (pairedPetId ?? null)
+      : (usePetStore.getState().activePet?.id ?? null);
+    if (!writePetId) return;
+    // COMBO: infer the vehicle from the food it rode in (meal → in_food, treat →
+    // in_treat). A best-guess seed, pre-selected on the card for the owner to confirm
+    // or change; descriptive only, no adherence/safety meaning (the intake→adherence
+    // coupling is the gated B3, deliberately NOT in this PR).
+    const howGiven = isComboMode ? inferDoseVehicleFromFoodType(pairedFoodType) : null;
+
+    // B-153: link this dose to the drug's active regimen (if any) so a configured
+    // regimen accumulates doses and the dose inherits its dose_amount — confirm-don't-
+    // enter (spec §5.1). Reads the locally-hydrated regimens, so it works offline. No
+    // regimen → an honest ad-hoc dose; a lookup failure degrades to the same ad-hoc dose
+    // rather than blocking the log (logging is never gated on an optional enrichment).
+    // Orthogonal to the combo link — a dose can be both regimen-linked and food-paired.
     let link: Awaited<ReturnType<typeof getActiveRegimenForDrug>> = null;
     try {
-      link = await getActiveRegimenForDrug(pet.id, med.id);
+      link = await getActiveRegimenForDrug(writePetId, med.id);
     } catch (e) {
       console.warn('[log] active-regimen lookup failed; logging an ad-hoc dose:', e);
     }
     let result: Awaited<ReturnType<typeof insertMedicationDose>>;
     try {
       result = await insertMedicationDose({
-        petId: pet.id,
+        petId: writePetId,
         medicationItemId: med.id,
         medicationId: link?.id ?? null,        // the active regimen, if one exists
-        adherence: 'given',                    // the affirmative one-tap = "I gave this dose"
+        adherence: 'given',                    // the affirmative tap = "I gave this dose"
         doseAmount: link?.dose_amount ?? null, // inherit the regimen's dose; else honest-null
+        howGiven,                              // combo: inferred vehicle; standalone: null
+        pairedEventId: pairedEventId ?? null,  // combo: the co-logged meal/treat event; else null
         occurredAt: new Date(),
       });
     } catch (e) {
@@ -277,31 +309,36 @@ export default function LogModal() {
       Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
       return;
     }
-    // Carry the dose's drug name + adherence into the store event so it renders in
-    // the timeline (History) immediately with the drug + adherence chip, without
-    // waiting for a reload (B-117 PR 8). A later adherence edit on the completion
-    // card / detail screen re-reads ground truth on the next focus.
-    prependEvent({
-      id: result.eventId,
-      pet_id: pet.id,
-      event_type: 'medication',
-      occurred_at: result.occurredAtIso,
-      occurred_at_confidence: 'witnessed',
-      severity: null,
-      notes: null,
-      source: 'manual',
-      deleted_at: null,
-      created_at: result.now,
-      updated_at: result.now,
-      medication_item_id: med.id,
-      adherence: 'given',
-      drug_generic_name: med.generic_name,
-      drug_brand_name: med.brand_name,
-    });
-    // Dismiss the modal, then play the dose completion card at the root layer
-    // (delayMs clears the dismissing modal so the card isn't briefly occluded on
-    // iOS — same reason the meal card is deferred). The card carries the adherence
-    // chips defaulted to 'given' as the confirm-over-entry follow-up (§5.1).
+    // Optimistic timeline insert (B-117 PR 8) — only when the dose's pet is the one on
+    // screen. In the rare combo queue-then-switch edge (writePetId is the meal's pet and
+    // the active pet has since changed) the dose is still written + synced correctly for
+    // the meal's pet; skipping the prepend just avoids briefly showing it under the wrong
+    // pet — it appears when that pet's timeline next loads. A later adherence edit on the
+    // completion card / detail screen re-reads ground truth on focus.
+    if (writePetId === (usePetStore.getState().activePet?.id ?? null)) {
+      prependEvent({
+        id: result.eventId,
+        pet_id: writePetId,
+        event_type: 'medication',
+        occurred_at: result.occurredAtIso,
+        occurred_at_confidence: 'witnessed',
+        severity: null,
+        notes: null,
+        source: 'manual',
+        deleted_at: null,
+        created_at: result.now,
+        updated_at: result.now,
+        medication_item_id: med.id,
+        adherence: 'given',
+        drug_generic_name: med.generic_name,
+        drug_brand_name: med.brand_name,
+      });
+    }
+    // Dismiss the picker, then play the dose completion card at the root layer (delayMs
+    // clears the dismissing modal so the card isn't briefly occluded on iOS). A combo
+    // dose frames the card as "Logged together · {drug} · with {food}" (the link made
+    // legible) and pre-selects the inferred vehicle; a standalone dose is the normal
+    // "Logged · {drug}". Either way the adherence chips default to 'given' (§5.1).
     router.back();
     showMedicationMoment(
       {
@@ -309,7 +346,8 @@ export default function LogModal() {
         occurredAt: result.occurredAtIso,
         drugName: med.generic_name,
         adherence: 'given',
-        howGiven: null, // the one-tap path doesn't ask; the card's chips can set it
+        howGiven, // combo: inferred vehicle (pre-set); standalone: null (chips can set it)
+        pairedFoodName: pairedFoodName ?? null, // combo: names the food on the card; else null
       },
       { delayMs: 450 },
     );
@@ -321,7 +359,7 @@ export default function LogModal() {
     foodProduct: string;
     foodType?: string | null;
     timeFields?: TimeFields;
-  }): Promise<{ eventId: string; occurredAt: string } | null> {
+  }): Promise<{ eventId: string; occurredAt: string; petId: string } | null> {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
     // of write, never the render-time closure, so an event always lands on the
     // pet that's active when the log is confirmed (the queue-then-switch edge).
@@ -467,11 +505,17 @@ export default function LogModal() {
         .catch(console.error);
       triggerSignalRegenDebounced(pet.id);
     }
-    return { eventId, occurredAt: effectiveOccurredAt.toISOString() };
+    // petId is the pet the event was actually written for (read at write time) —
+    // the meal card carries it so its "+ gave a med with this" combo can bind the
+    // linked dose to the same pet (B-156 PR B2b multi-pet guard).
+    return { eventId, occurredAt: effectiveOccurredAt.toISOString(), petId: pet.id };
   }
 
   function handleBack() {
     if (step === 'type') { router.back(); return; }
+    // Combo mode (B-156 PR B2b) opened straight into the medication picker from the
+    // meal card, so there's no type-grid to step back to — back closes the modal.
+    if (isComboMode && step === 'medication') { router.back(); return; }
     if (step === 'food' || step === 'medication' || step === 'symptom' || step === 'simple' || step === 'stool-type') {
       setSelectedType(null);
       setSeverity(null);
@@ -679,18 +723,42 @@ export default function LogModal() {
   // ── Medication picker (Recent / Library / + Add medication) ────────────────
 
   if (step === 'medication') {
+    // Combo context (B-156 PR B2b): resolve the MEAL's pet by pairedPetId (NOT the
+    // possibly-switched active pet) + the food, so the banner + header name exactly the
+    // pet and meal this dose is being added to — the multi-pet wrong-pet guard, made
+    // visible. Fall back to a neutral 'your pet' (NOT the active pet's name — which may
+    // be a different pet than the meal's, the whole reason we key off pairedPetId) on
+    // the unreachable-in-practice case where pets haven't hydrated.
+    const comboPetName = (pairedPetId ? pets.find((p) => p.id === pairedPetId)?.name : null) ?? 'your pet';
+    const comboFoodLabel = pairedFoodName?.trim() || (pairedFoodType === 'treat' ? 'treat' : 'meal');
+    const headerPetName = isComboMode ? comboPetName : petName;
+    // The Recent shelf is pet-scoped, so it should show the MEAL's pet's drugs in
+    // combo mode; the Library is global so it's identical either way.
+    const pickerPetId = isComboMode && pairedPetId ? pairedPetId : activePet?.id;
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
             <Text style={styles.backBtnText}>←</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>What did {petName} take?</Text>
+          <Text style={styles.headerTitle}>What did {headerPetName} take?</Text>
           <View style={styles.headerSpacer} />
         </View>
-        {activePet && (
+        {isComboMode && (
+          <View style={styles.comboBanner}>
+            <Text style={styles.comboBannerText}>
+              Adding to {comboPetName}'s {comboFoodLabel} — pick the medication you gave with it
+            </Text>
+          </View>
+        )}
+        {/* Gate on pickerPetId alone, NOT activePet: in combo mode the picker must
+            mount for the MEAL's pet (pairedPetId) even if the active pet is null/mid-
+            hydration or has since been switched — gating on activePet here would
+            contradict the whole "bind to the meal's pet" rationale. In standalone mode
+            pickerPetId IS activePet?.id, so this is identical to the old activePet gate. */}
+        {pickerPetId && (
           <MedicationPicker
-            petId={activePet.id}
+            petId={pickerPetId}
             onPickMedication={handlePickMedication}
             onAddNew={() => router.push('/medication-capture?fromLog=1')}
             // Long-press a tile opens the editable detail screen (B-117 PR 6).
@@ -1088,6 +1156,28 @@ const styles = StyleSheet.create({
     borderColor: theme.colorBorder,
     borderStyle: 'dashed',
     backgroundColor: theme.colorSurface,
+  },
+  // ── Combo context banner (B-156 PR B2b) ──
+  // Mirrors attachmentBanner: a tinted strip above the medication picker naming the
+  // pet + food this dose is being logged together with. accentLight signals "linked".
+  comboBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.space3,
+    paddingVertical: theme.space2,
+    backgroundColor: theme.colorAccentLight,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colorBorder,
+  },
+  comboBannerText: {
+    // On the type scale (textSM + its leading token) rather than the raw 14/20 the
+    // sibling attachmentBanner carries (pre-existing, tracked B-066) — a new style
+    // shouldn't add a second off-scale value. lineHeightSM is the token designed for
+    // exactly this secondary-banner body.
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+    flex: 1,
+    lineHeight: theme.lineHeightSM,
   },
   // ── Stool choice ──
   stoolChoiceContainer: {
