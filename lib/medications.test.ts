@@ -135,18 +135,22 @@ describe('administrationRowToRemote — dose-event child payload', () => {
     medication_item_id: 'item-1',
     adherence: 'given',
     dose_amount: '5 mg',
+    how_given: 'in_treat',
     notes: null,
     created_at: '2026-06-01T10:00:00.000Z',
     updated_at: '2026-06-01T10:00:00.000Z',
   };
 
   it('forwards every server column and carries NO deleted_at (soft-delete rides the parent event)', () => {
+    // B-057 drift guard: the key set IS the column contract. how_given (B-156) is
+    // now part of it; a stray local-only key would error against the Postgres schema.
     const keys = Object.keys(administrationRowToRemote(dose));
     expect(keys).not.toContain('deleted_at');
+    expect(keys).not.toContain('synced');
     expect(keys.sort()).toEqual(
       [
-        'adherence', 'created_at', 'dose_amount', 'event_id', 'id', 'medication_id',
-        'medication_item_id', 'notes', 'pet_id', 'updated_at',
+        'adherence', 'created_at', 'dose_amount', 'event_id', 'how_given', 'id',
+        'medication_id', 'medication_item_id', 'notes', 'pet_id', 'updated_at',
       ].sort(),
     );
   });
@@ -159,6 +163,21 @@ describe('administrationRowToRemote — dose-event child payload', () => {
 
   it('passes an ad-hoc one-off dose (null medication_id = no regimen) through', () => {
     expect(administrationRowToRemote({ ...dose, medication_id: null }).medication_id).toBeNull();
+  });
+
+  it('forwards how_given AS-IS for the round trip (B-156 Slice B)', () => {
+    // The vehicle is a descriptive fact carried verbatim device→Supabase; the wire
+    // must not rewrite it. Every enum member passes through untouched.
+    for (const vehicle of ['direct', 'in_food', 'in_treat', 'in_pill_pocket', 'other']) {
+      expect(administrationRowToRemote({ ...dose, how_given: vehicle }).how_given).toBe(vehicle);
+    }
+  });
+
+  it('keeps an unset how_given NULL on the wire — never coerced to a default (renders clean)', () => {
+    // A dose logged without recording the vehicle (the one-tap path) is how_given=NULL
+    // and must stay NULL — never fabricated to 'direct'. An absent vehicle is simply
+    // absent; it carries no safety meaning, so there is nothing to default it to.
+    expect(administrationRowToRemote({ ...dose, how_given: null }).how_given).toBeNull();
   });
 });
 
@@ -196,6 +215,31 @@ describe('MEDICATION_SCHEMA_SQL — production local DDL', () => {
     const adm = db.prepare('SELECT * FROM medication_administrations WHERE id = ?').get('adm-1') as Record<string, unknown>;
     expect(adm.event_id).toBe('evt-1');
     expect(adm.synced).toBe(0);
+    db.close();
+  });
+
+  it('round-trips a dose how_given value through the local mirror (B-156 Slice B)', () => {
+    // The vehicle column the write path (insertMedicationDose) and the hydration pull
+    // both populate. A set value must survive a write→read against the EXACT production
+    // DDL — proving the column exists and the local round-trip half of the AC holds.
+    const db = freshDb();
+    db.exec(`INSERT INTO events (id, event_type) VALUES ('evt-1', 'medication');`);
+    db.exec(`INSERT INTO medication_administrations (id, event_id, pet_id, adherence, how_given)
+             VALUES ('adm-1', 'evt-1', 'pet-1', 'given', 'in_treat');`);
+    const adm = db.prepare('SELECT how_given FROM medication_administrations WHERE id = ?').get('adm-1') as Record<string, unknown>;
+    expect(adm.how_given).toBe('in_treat');
+    db.close();
+  });
+
+  it('defaults how_given to NULL when a dose is logged without one (renders clean)', () => {
+    // The one-tap path doesn't record a vehicle; the column must read back NULL — not
+    // an empty string or a fabricated default — the same clean-absence rule as adherence.
+    const db = freshDb();
+    db.exec(`INSERT INTO events (id, event_type) VALUES ('evt-1', 'medication');`);
+    db.exec(`INSERT INTO medication_administrations (id, event_id, pet_id, adherence)
+             VALUES ('adm-1', 'evt-1', 'pet-1', 'given');`);
+    const adm = db.prepare('SELECT how_given FROM medication_administrations WHERE id = ?').get('adm-1') as Record<string, unknown>;
+    expect(adm.how_given).toBeNull();
     db.close();
   });
 

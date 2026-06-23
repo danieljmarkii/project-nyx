@@ -36,6 +36,18 @@ export interface InsertMedicationDoseParams {
   // from, and a drug's per-unit strength is NOT the dose, so we never fabricate one
   // (PR 7's regimen captures the real dose). Honest-null over a guessed value.
   doseAmount?: string | null;
+  // B-156 Slice B — the vehicle the dose was given in. Optional, defaults to NULL:
+  // the one-tap path doesn't ask, so an unset vehicle is a clean NULL, never a
+  // fabricated 'direct'. A descriptive fact only — it carries no adherence/safety
+  // meaning on its own (the intake→adherence coupling is the gated combo, Phase B),
+  // so a null is simply "not recorded", exactly like a null dose_amount. The capture
+  // chip that sets it is PR A3; this param is the write path it threads through.
+  // Typed as the closed dose_route_vehicle enum here — like `adherence` above, the
+  // caller-facing write param is a literal union so a stray value is a compile error
+  // before it reaches the server enum (which would reject the upsert). The loose
+  // sync row-shapes keep `how_given: string | null` to mirror the DB exactly, the
+  // same split `adherence` uses (tight on the param, plain TEXT on the row).
+  howGiven?: 'direct' | 'in_food' | 'in_treat' | 'in_pill_pocket' | 'other' | null;
   // Administration time. The one-tap path passes now() — a dose is witnessed
   // (you see yourself give it), so confidence is always 'witnessed' with no window.
   occurredAt: Date;
@@ -57,7 +69,7 @@ export interface InsertMedicationDoseResult {
 export async function insertMedicationDose(
   params: InsertMedicationDoseParams,
 ): Promise<InsertMedicationDoseResult> {
-  const { petId, medicationItemId, medicationId = null, adherence, doseAmount = null, occurredAt } = params;
+  const { petId, medicationItemId, medicationId = null, adherence, doseAmount = null, howGiven = null, occurredAt } = params;
   const db = getDb();
   const now = new Date().toISOString();
   const occurredAtIso = occurredAt.toISOString();
@@ -91,9 +103,9 @@ export async function insertMedicationDose(
     await db.runAsync(
       `INSERT INTO medication_administrations
          (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount,
-          notes, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0)`,
-      [administrationId, eventId, petId, medicationId, medicationItemId, adherence, doseAmount, now, now],
+          how_given, notes, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0)`,
+      [administrationId, eventId, petId, medicationId, medicationItemId, adherence, doseAmount, howGiven, now, now],
     );
   });
 
