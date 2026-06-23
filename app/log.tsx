@@ -19,7 +19,7 @@ import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
 import { useMomentStore } from '../store/momentStore';
-import { getDb, PickerFood, PickerMedication } from '../lib/db';
+import { getDb, getActiveRegimenForDrug, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
@@ -249,14 +249,27 @@ export default function LogModal() {
   async function handlePickMedication(med: PickerMedication) {
     const pet = usePetStore.getState().activePet;
     if (!pet) return;
+    // B-153: link this one-tap dose to the drug's active regimen (if any) so a
+    // configured regimen accumulates doses and the dose inherits the regimen's
+    // dose_amount — confirm-don't-enter (spec §5.1). The lookup reads the locally-
+    // hydrated regimens, so it works offline. No regimen → an honest ad-hoc dose
+    // (null link, null amount), exactly as before; a lookup failure degrades to the
+    // same ad-hoc dose rather than blocking the log (logging must never be gated on
+    // an optional enrichment).
+    let link: Awaited<ReturnType<typeof getActiveRegimenForDrug>> = null;
+    try {
+      link = await getActiveRegimenForDrug(pet.id, med.id);
+    } catch (e) {
+      console.warn('[log] active-regimen lookup failed; logging an ad-hoc dose:', e);
+    }
     let result: Awaited<ReturnType<typeof insertMedicationDose>>;
     try {
       result = await insertMedicationDose({
         petId: pet.id,
         medicationItemId: med.id,
-        medicationId: null,   // no regimen in PR 3 → an ad-hoc one-off dose
-        adherence: 'given',   // the affirmative one-tap = "I gave this dose"
-        doseAmount: null,     // honest-null; PR 7's regimen captures the real dose
+        medicationId: link?.id ?? null,        // the active regimen, if one exists
+        adherence: 'given',                    // the affirmative one-tap = "I gave this dose"
+        doseAmount: link?.dose_amount ?? null, // inherit the regimen's dose; else honest-null
         occurredAt: new Date(),
       });
     } catch (e) {
