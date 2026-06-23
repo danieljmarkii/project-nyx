@@ -253,6 +253,18 @@ export async function initDb(): Promise<void> {
   } catch {
     // Column already exists — safe to ignore
   }
+
+  // how_given — B-156 Slice B (PR A2). The vehicle a dose was given in
+  // (direct | in_food | in_treat | in_pill_pocket | other). medication_administrations
+  // shipped in B-117 PR 2 (#194) without it, so a device upgrading from that build
+  // has the table already and CREATE TABLE IF NOT EXISTS won't add the column — this
+  // ALTER does. Nullable TEXT, no default: an absent vehicle is a clean NULL, exactly
+  // like adherence. Mirrors migration 022 (the dose_route_vehicle enum) on the server.
+  try {
+    await database.execAsync(`ALTER TABLE medication_administrations ADD COLUMN how_given TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
 }
 
 // FR-9 (B-054, Trust & Safety ship gate) — wipe the local copy of the

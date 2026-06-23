@@ -84,6 +84,13 @@ export const MEDICATION_SCHEMA_SQL = `
     medication_item_id  TEXT,
     adherence           TEXT,
     dose_amount         TEXT,
+    -- B-156 Slice B (PR A2): how the dose was administered (the vehicle) —
+    -- 'direct'/'in_food'/'in_treat'/'in_pill_pocket'/'other'. Plain TEXT locally
+    -- (the dose_route_vehicle enum lives server-side, migration 022) exactly as
+    -- adherence mirrors the dose_adherence enum. Nullable with no default, so a
+    -- dose logged without it renders clean — the column captures the clinical
+    -- "with food" fact when the owner sets it and is simply absent otherwise.
+    how_given           TEXT,
     notes               TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
@@ -138,6 +145,7 @@ export interface LocalMedicationAdministration {
   medication_item_id: string | null;
   adherence: string | null;
   dose_amount: string | null;
+  how_given: string | null; // B-156 — vehicle (dose_route_vehicle enum, server-side)
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -238,6 +246,7 @@ export interface RemoteMedicationAdministrationUpsert {
   medication_item_id: string | null;
   adherence: string | null;
   dose_amount: string | null;
+  how_given: string | null; // B-156 — vehicle; forwarded as-is, never coerced
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -247,8 +256,11 @@ export interface RemoteMedicationAdministrationUpsert {
 // and is forwarded AS-IS: a dose logged before the owner taps a chip is NULL and
 // must stay NULL on the wire — it must never default to 'given', or an unrated dose
 // would read as a confirmed-given one (the n=1 never-reassures invariant, spec §6).
-// Carries NO deleted_at: a dose's soft-delete rides its parent event's deleted_at
-// (migration 020), so there is nothing to send here.
+// how_given (B-156 Slice B) follows the same as-is/never-coerced rule: NULL means
+// "vehicle not recorded" and must stay NULL — it is a descriptive fact, never a
+// safety verdict, so an absent value is simply absent, never defaulted. Carries NO
+// deleted_at: a dose's soft-delete rides its parent event's deleted_at (migration
+// 020), so there is nothing to send here.
 export function administrationRowToRemote(
   row: LocalMedicationAdministration,
 ): RemoteMedicationAdministrationUpsert {
@@ -260,6 +272,7 @@ export function administrationRowToRemote(
     medication_item_id: row.medication_item_id,
     adherence: row.adherence,
     dose_amount: row.dose_amount,
+    how_given: row.how_given,
     notes: row.notes,
     created_at: row.created_at,
     updated_at: row.updated_at,
