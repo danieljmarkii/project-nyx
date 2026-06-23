@@ -727,6 +727,7 @@ interface RemoteMedicationAdministration {
   id: string; event_id: string; pet_id: string; medication_id: string | null;
   medication_item_id: string | null; adherence: string | null; dose_amount: string | null;
   how_given: string | null; // B-156 — vehicle (dose_route_vehicle enum, migration 022)
+  paired_event_id: string | null; // B-156 Slice C — combo link (events.id, migration 023)
   notes: string | null; created_at: string; updated_at: string;
 }
 
@@ -1043,7 +1044,7 @@ async function hydrateMedicationAdministrations(db: Db, stale: () => boolean): P
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteMedicationAdministration>(
     'medication_administrations',
-    'id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, notes, created_at, updated_at',
+    'id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, notes, created_at, updated_at',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -1052,24 +1053,26 @@ async function hydrateMedicationAdministrations(db: Db, stale: () => boolean): P
   const { toWrite } = reconcileBatch(rows, localById, 'lww');
   if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
   for (const a of toWrite) {
-    // DO UPDATE refreshes the mutable fields only (incl. how_given so a cross-device
-    // vehicle edit propagates); identity columns (event_id, pet_id) and created_at are
-    // immutable and deliberately omitted from the SET — created_at appears in the
-    // column list for the INSERT branch only, so that asymmetry is correct, not B-057
-    // drift (mirrors hydrateMeals). The `WHERE ...synced = 1` backstop guarantees a
-    // hydrate write never clobbers a row with an unpushed local edit.
+    // DO UPDATE refreshes the mutable fields only (incl. how_given + paired_event_id so
+    // a cross-device vehicle edit or a combo (un)link propagates); identity columns
+    // (event_id, pet_id) and created_at are immutable and deliberately omitted from the
+    // SET — created_at appears in the column list for the INSERT branch only, so that
+    // asymmetry is correct, not B-057 drift (mirrors hydrateMeals). The `WHERE ...synced
+    // = 1` backstop guarantees a hydrate write never clobbers a row with an unpushed
+    // local edit.
     await db.runAsync(
       `INSERT INTO medication_administrations
-        (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, notes, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, notes, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          medication_id=excluded.medication_id, medication_item_id=excluded.medication_item_id,
          adherence=excluded.adherence, dose_amount=excluded.dose_amount, how_given=excluded.how_given,
+         paired_event_id=excluded.paired_event_id,
          notes=excluded.notes, updated_at=excluded.updated_at, synced=1
        WHERE medication_administrations.synced = 1`,
       [
         a.id, a.event_id, a.pet_id, a.medication_id ?? null, a.medication_item_id ?? null,
-        a.adherence ?? null, a.dose_amount ?? null, a.how_given ?? null, a.notes ?? null, a.created_at, a.updated_at,
+        a.adherence ?? null, a.dose_amount ?? null, a.how_given ?? null, a.paired_event_id ?? null, a.notes ?? null, a.created_at, a.updated_at,
       ],
     );
   }

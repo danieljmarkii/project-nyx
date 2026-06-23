@@ -57,6 +57,17 @@ export interface InsertMedicationDoseParams {
   // `how_given: string | null` to mirror the DB exactly, the same split `adherence`
   // uses (tight on the param, plain TEXT on the row).
   howGiven?: DoseVehicle | null;
+  // B-156 Slice C — the co-logged meal/treat event this dose was given INSIDE (the
+  // "with food" combo). Optional, defaults to NULL: the standalone-dose paths (one-tap,
+  // "Log a dose", the medication quick-log) never set it, so an unlinked dose is a clean
+  // NULL, exactly like a null dose_amount. A plain UUID (the meal event's id); the FK +
+  // same-pet integrity live server-side (migration 023). THE CALLER MUST PASS AN EVENT
+  // FOR THE SAME PET — the combo entry point (a later PR) passes the just-logged meal's
+  // id, which is the same pet by construction; the server-side same-pet trigger is the
+  // defense-at-rest backstop if a wrong id ever reaches the wire (it rejects the upsert,
+  // it never silently mis-links). This is the write-path half of the link; no caller
+  // sets a non-null value yet (B2 is the plumbing the combo UI threads through).
+  pairedEventId?: string | null;
   // Administration time. The one-tap path passes now() — a dose is witnessed
   // (you see yourself give it), so confidence is always 'witnessed' with no window.
   occurredAt: Date;
@@ -78,7 +89,7 @@ export interface InsertMedicationDoseResult {
 export async function insertMedicationDose(
   params: InsertMedicationDoseParams,
 ): Promise<InsertMedicationDoseResult> {
-  const { petId, medicationItemId, medicationId = null, adherence, doseAmount = null, howGiven = null, occurredAt } = params;
+  const { petId, medicationItemId, medicationId = null, adherence, doseAmount = null, howGiven = null, pairedEventId = null, occurredAt } = params;
   const db = getDb();
   const now = new Date().toISOString();
   const occurredAtIso = occurredAt.toISOString();
@@ -112,9 +123,9 @@ export async function insertMedicationDose(
     await db.runAsync(
       `INSERT INTO medication_administrations
          (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount,
-          how_given, notes, created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0)`,
-      [administrationId, eventId, petId, medicationId, medicationItemId, adherence, doseAmount, howGiven, now, now],
+          how_given, paired_event_id, notes, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0)`,
+      [administrationId, eventId, petId, medicationId, medicationItemId, adherence, doseAmount, howGiven, pairedEventId, now, now],
     );
   });
 

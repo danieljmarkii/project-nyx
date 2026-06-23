@@ -140,21 +140,23 @@ describe('administrationRowToRemote — dose-event child payload', () => {
     adherence: 'given',
     dose_amount: '5 mg',
     how_given: 'in_treat',
+    paired_event_id: null,
     notes: null,
     created_at: '2026-06-01T10:00:00.000Z',
     updated_at: '2026-06-01T10:00:00.000Z',
   };
 
   it('forwards every server column and carries NO deleted_at (soft-delete rides the parent event)', () => {
-    // B-057 drift guard: the key set IS the column contract. how_given (B-156) is
-    // now part of it; a stray local-only key would error against the Postgres schema.
+    // B-057 drift guard: the key set IS the column contract. how_given (Slice B) and
+    // paired_event_id (Slice C, PR B2) are now part of it; a stray local-only key would
+    // error against the Postgres schema, and a MISSING one would silently desync.
     const keys = Object.keys(administrationRowToRemote(dose));
     expect(keys).not.toContain('deleted_at');
     expect(keys).not.toContain('synced');
     expect(keys.sort()).toEqual(
       [
         'adherence', 'created_at', 'dose_amount', 'event_id', 'how_given', 'id',
-        'medication_id', 'medication_item_id', 'notes', 'pet_id', 'updated_at',
+        'medication_id', 'medication_item_id', 'notes', 'paired_event_id', 'pet_id', 'updated_at',
       ].sort(),
     );
   });
@@ -182,6 +184,22 @@ describe('administrationRowToRemote — dose-event child payload', () => {
     // and must stay NULL — never fabricated to 'direct'. An absent vehicle is simply
     // absent; it carries no safety meaning, so there is nothing to default it to.
     expect(administrationRowToRemote({ ...dose, how_given: null }).how_given).toBeNull();
+  });
+
+  it('forwards paired_event_id AS-IS for the round trip (B-156 Slice C)', () => {
+    // The combo link is a plain UUID carried verbatim device→Supabase; the wire must
+    // not rewrite it. Validation of WHICH event it may point at (same pet) is the
+    // server-side migration-023 trigger's job, not this mapper's — the mapper only
+    // guarantees the value travels unchanged.
+    const linked = administrationRowToRemote({ ...dose, paired_event_id: 'evt-meal-42' });
+    expect(linked.paired_event_id).toBe('evt-meal-42');
+  });
+
+  it('keeps an unlinked dose paired_event_id NULL on the wire — never fabricated (B-156 Slice C)', () => {
+    // The ~99% standalone dose (one-tap / "Log a dose" / quick-log) has no co-logged
+    // food, so paired_event_id is NULL and must stay NULL. There is nothing to default
+    // a non-combo dose's link to — an absent link is simply absent.
+    expect(administrationRowToRemote({ ...dose, paired_event_id: null }).paired_event_id).toBeNull();
   });
 });
 
@@ -244,6 +262,34 @@ describe('MEDICATION_SCHEMA_SQL — production local DDL', () => {
              VALUES ('adm-1', 'evt-1', 'pet-1', 'given');`);
     const adm = db.prepare('SELECT how_given FROM medication_administrations WHERE id = ?').get('adm-1') as Record<string, unknown>;
     expect(adm.how_given).toBeNull();
+    db.close();
+  });
+
+  it('round-trips a dose paired_event_id through the local mirror (B-156 Slice C)', () => {
+    // The combo-link column the write path (insertMedicationDose) and the hydration pull
+    // both populate. A set value must survive a write→read against the EXACT production
+    // DDL — proving the column exists locally and the device-side round-trip half of the
+    // AC holds (the cross-pet integrity guard is server-side, migration 023, not local).
+    const db = freshDb();
+    db.exec(`INSERT INTO events (id, event_type) VALUES ('evt-meal', 'meal');`);
+    db.exec(`INSERT INTO events (id, event_type) VALUES ('evt-dose', 'medication');`);
+    db.exec(`INSERT INTO medication_administrations (id, event_id, pet_id, adherence, paired_event_id)
+             VALUES ('adm-1', 'evt-dose', 'pet-1', 'given', 'evt-meal');`);
+    const adm = db.prepare('SELECT paired_event_id FROM medication_administrations WHERE id = ?').get('adm-1') as Record<string, unknown>;
+    expect(adm.paired_event_id).toBe('evt-meal');
+    db.close();
+  });
+
+  it('defaults paired_event_id to NULL for a standalone dose (renders clean)', () => {
+    // The standalone dose (no co-logged food) doesn't set the link; the column must read
+    // back NULL — not an empty string or a fabricated default — the same clean-absence
+    // rule as adherence/how_given. ~99% of doses are standalone, so this is the norm.
+    const db = freshDb();
+    db.exec(`INSERT INTO events (id, event_type) VALUES ('evt-1', 'medication');`);
+    db.exec(`INSERT INTO medication_administrations (id, event_id, pet_id, adherence)
+             VALUES ('adm-1', 'evt-1', 'pet-1', 'given');`);
+    const adm = db.prepare('SELECT paired_event_id FROM medication_administrations WHERE id = ?').get('adm-1') as Record<string, unknown>;
+    expect(adm.paired_event_id).toBeNull();
     db.close();
   });
 
