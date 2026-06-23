@@ -554,32 +554,67 @@ export interface RegimenWindow {
 }
 
 export interface AttributableDose {
+  // The explicit regimen link (B-153/B-154). When set, it is AUTHORITATIVE — the
+  // dose was logged against this regimen, so it is attributed directly and never
+  // re-matched by drug/window. NULL = a legacy/unlinked one-tap dose → fall back to
+  // the item+window match below.
+  medication_id: string | null;
   medication_item_id: string | null;
   adherence: string | null;
   deleted_at: string | null; // parent event's soft-delete → not counted
   occurred_at: string;       // parent event timestamp (window test)
 }
 
+function bucketAdherence(t: AdherenceTally, adherence: string | null): void {
+  switch (adherence) {
+    case 'given': t.given++; break;
+    case 'partial': t.partial++; break;
+    case 'missed': t.missed++; break;
+    case 'refused': t.refused++; break;
+    default: t.unrated++; break; // NULL = logged-but-unrated (never counts as given)
+  }
+}
+
 export function emptyTally(): AdherenceTally {
   return { given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 };
 }
 
-// Tally each regimen's doses, attributing a dose to the regimen for the SAME drug
-// (medication_item_id) that was in effect when it occurred: started on/before it,
-// not past its end. ISO date/timestamp strings compare correctly lexicographically,
-// so a date-only started_at vs a full occurred_at works (a dose on the start date
-// counts). With the usual one-active-regimen-per-drug this is a direct match; if two
-// regimens share a drug, the most-recently-started in-window one wins, so a dose is
-// never double-counted. An ad-hoc dose (no item id) or a free-text regimen (no item
-// id) never matches — the residual gap closed only by linking medication_id at dose
-// time (deferred).
+// Tally each regimen's doses in two passes of precedence:
+//
+//   1. EXPLICIT LINK (B-153/B-154). A dose carrying a medication_id is attributed
+//      straight to that regimen — the owner logged it against that regimen (via the
+//      one-tap path's active-regimen resolver or the "Log a dose" card affordance),
+//      so the link is authoritative and is NEVER re-matched by drug/window. This is
+//      the only path that lets a FREE-TEXT regimen (medication_item_id NULL) ever
+//      accumulate doses — the residual gap the item+window match structurally can't
+//      close, and the bug the PM hit ("No doses logged yet" forever). A dose linked
+//      to a regimen not in this set (e.g. an ended one) counts toward nothing here,
+//      rather than being silently reassigned to a different active regimen.
+//
+//   2. ITEM + WINDOW FALLBACK (legacy/unlinked one-tap doses, pre-B-153). Attribute
+//      to the regimen for the SAME drug (medication_item_id) that was in effect when
+//      it occurred: started on/before it, not past its end. ISO date/timestamp
+//      strings compare correctly lexicographically, so a date-only started_at vs a
+//      full occurred_at works (a dose on the start date counts). With the usual
+//      one-active-regimen-per-drug this is a direct match; if two regimens share a
+//      drug, the most-recently-started in-window one wins, so a dose is never
+//      double-counted. An ad-hoc dose with no item id and no link never matches.
 export function attributeDosesToRegimens(
   regimens: RegimenWindow[],
   doses: AttributableDose[],
 ): Map<string, AdherenceTally> {
   const tallies = new Map<string, AdherenceTally>(regimens.map((r) => [r.id, emptyTally()]));
   for (const d of doses) {
-    if (d.deleted_at) continue;          // soft-deleted dose — its event is gone
+    if (d.deleted_at) continue; // soft-deleted dose — its event is gone
+
+    // 1. Explicit regimen link wins outright.
+    if (d.medication_id) {
+      const t = tallies.get(d.medication_id);
+      if (t) bucketAdherence(t, d.adherence);
+      continue;
+    }
+
+    // 2. Unlinked dose → match by the same drug, in-window.
     if (!d.medication_item_id) continue; // ad-hoc dose, no drug identity to match
     let best: RegimenWindow | null = null;
     for (const reg of regimens) {
@@ -590,14 +625,7 @@ export function attributeDosesToRegimens(
     }
     if (!best) continue;
     const t = tallies.get(best.id);
-    if (!t) continue;
-    switch (d.adherence) {
-      case 'given': t.given++; break;
-      case 'partial': t.partial++; break;
-      case 'missed': t.missed++; break;
-      case 'refused': t.refused++; break;
-      default: t.unrated++; break; // NULL = logged-but-unrated (never counts as given)
-    }
+    if (t) bucketAdherence(t, d.adherence);
   }
   return tallies;
 }

@@ -6,7 +6,7 @@
 //
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
+import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
 
 interface PickRow {
   id: string;
@@ -84,6 +84,66 @@ describe('LIBRARY_MEDICATIONS_QUERY', () => {
     const rows = db.prepare(LIBRARY_MEDICATIONS_QUERY).all() as unknown as PickRow[];
     db.close();
     expect(rows).toHaveLength(2);
+  });
+});
+
+describe('ACTIVE_REGIMEN_FOR_DRUG_QUERY (B-153 dose→regimen link)', () => {
+  // [id, pet_id, medication_item_id, dose_amount, started_at, status]
+  type RegFixture = [string, string, string | null, string | null, string, string];
+  function freshRegDb() {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE medications (
+      id TEXT PRIMARY KEY, pet_id TEXT, medication_item_id TEXT, dose_amount TEXT,
+      started_at TEXT, status TEXT
+    );`);
+    return db;
+  }
+  function seedRegs(db: ReturnType<typeof freshRegDb>, regs: RegFixture[]) {
+    const ins = db.prepare(
+      `INSERT INTO medications (id, pet_id, medication_item_id, dose_amount, started_at, status)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    for (const r of regs) ins.run(...r);
+  }
+  type RegRow = { id: string; medication_item_id: string | null; dose_amount: string | null };
+
+  it('returns the active regimen for the pet+drug, with its dose_amount to inherit', () => {
+    const db = freshRegDb();
+    seedRegs(db, [['r1', 'p1', 'item-pred', '5 mg', '2026-06-10', 'active']]);
+    const row = db.prepare(ACTIVE_REGIMEN_FOR_DRUG_QUERY).get('p1', 'item-pred') as unknown as RegRow;
+    db.close();
+    expect(row).toMatchObject({ id: 'r1', medication_item_id: 'item-pred', dose_amount: '5 mg' });
+  });
+
+  it('ignores completed/stopped regimens (only an active one links)', () => {
+    const db = freshRegDb();
+    seedRegs(db, [['r1', 'p1', 'item-pred', '5 mg', '2026-06-10', 'completed']]);
+    const row = db.prepare(ACTIVE_REGIMEN_FOR_DRUG_QUERY).get('p1', 'item-pred');
+    db.close();
+    expect(row).toBeUndefined();
+  });
+
+  it('scopes to the requested pet and drug', () => {
+    const db = freshRegDb();
+    seedRegs(db, [
+      ['r1', 'p2', 'item-pred', '5 mg', '2026-06-10', 'active'], // other pet
+      ['r2', 'p1', 'item-amox', '250 mg', '2026-06-10', 'active'], // other drug
+    ]);
+    const row = db.prepare(ACTIVE_REGIMEN_FOR_DRUG_QUERY).get('p1', 'item-pred');
+    db.close();
+    expect(row).toBeUndefined();
+  });
+
+  it('picks the most-recently-started active regimen when a drug has more than one', () => {
+    const db = freshRegDb();
+    seedRegs(db, [
+      ['old', 'p1', 'item-pred', '2.5 mg', '2026-06-01', 'active'],
+      ['new', 'p1', 'item-pred', '5 mg', '2026-06-12', 'active'],
+    ]);
+    const row = db.prepare(ACTIVE_REGIMEN_FOR_DRUG_QUERY).get('p1', 'item-pred') as unknown as RegRow;
+    db.close();
+    expect(row.id).toBe('new');
+    expect(row.dose_amount).toBe('5 mg'); // inherits the current regimen's dose
   });
 });
 

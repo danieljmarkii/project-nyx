@@ -453,7 +453,7 @@ describe('attributeDosesToRegimens — dose→regimen counting (B-135 item+windo
     id: 'reg-1', medication_item_id: 'item-pred', started_at: '2026-06-10', ended_at: null, ...over,
   });
   const dose = (over: Partial<AttributableDose> = {}): AttributableDose => ({
-    medication_item_id: 'item-pred', adherence: 'given', deleted_at: null,
+    medication_id: null, medication_item_id: 'item-pred', adherence: 'given', deleted_at: null,
     occurred_at: '2026-06-12T08:00:00+00:00', ...over,
   });
 
@@ -510,6 +510,80 @@ describe('attributeDosesToRegimens — dose→regimen counting (B-135 item+windo
       dose({ adherence: 'refused' }), dose({ adherence: null }),
     ]);
     expect(t.get('reg-1')).toEqual({ given: 1, partial: 1, missed: 1, refused: 1, unrated: 1 });
+  });
+});
+
+describe('attributeDosesToRegimens — explicit regimen link (B-153/B-154) wins', () => {
+  const reg = (over: Partial<RegimenWindow> = {}): RegimenWindow => ({
+    id: 'reg-1', medication_item_id: 'item-pred', started_at: '2026-06-10', ended_at: null, ...over,
+  });
+  const dose = (over: Partial<AttributableDose> = {}): AttributableDose => ({
+    medication_id: null, medication_item_id: 'item-pred', adherence: 'given', deleted_at: null,
+    occurred_at: '2026-06-12T08:00:00+00:00', ...over,
+  });
+
+  it('attributes a linked dose to its regimen by medication_id', () => {
+    const t = attributeDosesToRegimens([reg()], [dose({ medication_id: 'reg-1' })]);
+    expect(t.get('reg-1')?.given).toBe(1);
+  });
+
+  it('lets a FREE-TEXT regimen (no item id) accumulate linked doses — the B-153 fix', () => {
+    // The whole point: a free-text regimen has no medication_item_id, so the
+    // item+window fallback can NEVER see its doses ("No doses logged yet" forever).
+    // A dose logged from the card carries medication_id (and has no item id), so the
+    // explicit link is the only thing that attributes it.
+    const freeText = reg({ id: 'ft', medication_item_id: null });
+    const t = attributeDosesToRegimens([freeText], [
+      dose({ medication_id: 'ft', medication_item_id: null, adherence: 'given' }),
+      dose({ medication_id: 'ft', medication_item_id: null, adherence: 'missed' }),
+    ]);
+    expect(t.get('ft')).toEqual({ given: 1, partial: 0, missed: 1, refused: 0, unrated: 0 });
+  });
+
+  it('honors the link even when the dose falls outside the regimen window', () => {
+    // The owner explicitly logged this dose against the regimen — the link is
+    // authoritative and is NOT re-checked against started_at/ended_at.
+    const t = attributeDosesToRegimens(
+      [reg({ started_at: '2026-06-10', ended_at: '2026-06-15' })],
+      [dose({ medication_id: 'reg-1', occurred_at: '2026-06-20T08:00:00+00:00' })],
+    );
+    expect(t.get('reg-1')?.given).toBe(1);
+  });
+
+  it('does not double-count: a linked dose is never also item+window matched', () => {
+    // Both the link and the drug/window could match reg-1; it must count exactly once.
+    const t = attributeDosesToRegimens([reg()], [
+      dose({ medication_id: 'reg-1', medication_item_id: 'item-pred' }),
+    ]);
+    expect(t.get('reg-1')?.given).toBe(1);
+  });
+
+  it('counts a dose linked to a regimen not in the set toward nothing (no reassignment)', () => {
+    // A dose linked to an ended/other regimen is NOT silently reassigned to a
+    // different active regimen of the same drug — it simply isn't counted here.
+    const active = reg({ id: 'active', medication_item_id: 'item-pred' });
+    const t = attributeDosesToRegimens([active], [
+      dose({ medication_id: 'ended-regimen', medication_item_id: 'item-pred' }),
+    ]);
+    expect(t.get('active')).toEqual({ given: 0, partial: 0, missed: 0, refused: 0, unrated: 0 });
+  });
+
+  it('still ignores a soft-deleted linked dose', () => {
+    const t = attributeDosesToRegimens([reg()], [
+      dose({ medication_id: 'reg-1', deleted_at: '2026-06-12T09:00:00+00:00' }),
+    ]);
+    expect(t.get('reg-1')?.given).toBe(0);
+  });
+
+  it('mixes linked and unlinked doses on the same regimen', () => {
+    // A free-text-era regimen that later gets logged both ways: a legacy unlinked
+    // one-tap dose (item+window) plus new linked doses all roll up together.
+    const t = attributeDosesToRegimens([reg()], [
+      dose({ medication_id: null, adherence: 'given' }),          // legacy, item+window
+      dose({ medication_id: 'reg-1', adherence: 'given' }),       // linked
+      dose({ medication_id: 'reg-1', adherence: 'refused' }),     // linked
+    ]);
+    expect(t.get('reg-1')).toEqual({ given: 2, partial: 0, missed: 0, refused: 1, unrated: 0 });
   });
 });
 

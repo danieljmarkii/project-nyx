@@ -22,20 +22,27 @@ import type { DoseVehicle } from './medications';
 
 export interface InsertMedicationDoseParams {
   petId: string;
-  // The drug product being administered (medication_items_cache.id).
-  medicationItemId: string;
-  // The active regimen this dose belongs to, if any. NULL = an ad-hoc one-off
-  // dose (the only case in PR 3 — regimens arrive in PR 7). Schema-valid: the
-  // dose's medication_id is nullable.
+  // The drug product being administered (medication_items_cache.id), or NULL for a
+  // dose logged against a FREE-TEXT regimen (B-154) — a regimen with no library item,
+  // so there is no medication_item_id to carry. Such a dose is attributed by its
+  // medicationId link below; it simply won't appear in the Recent picker (which inner-
+  // joins the library), which is correct — there is no library tile to re-pick.
+  medicationItemId: string | null;
+  // The active regimen this dose belongs to, if any. Populated by the one-tap path's
+  // active-regimen resolver (B-153, getActiveRegimenForDrug) and the "Log a dose"
+  // card affordance (B-154); NULL only when no active regimen exists for the drug — a
+  // genuine ad-hoc one-off dose. Schema-valid: the dose's medication_id is nullable.
+  // Carrying it is what lets a regimen (free-text ones especially) accumulate doses.
   medicationId?: string | null;
   // Adherence at log time. The one-tap path passes 'given' (the owner's
   // affirmative tap = "I gave this dose"); the completion card can downgrade it.
   // Nullable for forward-compatibility, but never auto-defaulted to 'given' on a
   // null (the n=1 never-reassures invariant lives in the wire mapper, spec §6).
   adherence: 'given' | 'partial' | 'missed' | 'refused' | null;
-  // Actual administered amount. NULL when unknown — PR 3 has no regimen to default
-  // from, and a drug's per-unit strength is NOT the dose, so we never fabricate one
-  // (PR 7's regimen captures the real dose). Honest-null over a guessed value.
+  // Actual administered amount, inherited from the active regimen's dose_amount when
+  // the dose is logged against one (B-153/B-154). NULL when there is no regimen to
+  // default from — and a drug's per-unit strength is NOT the dose, so we never
+  // fabricate one. Honest-null over a guessed value.
   doseAmount?: string | null;
   // B-156 Slice B — the vehicle the dose was given in. Optional, defaults to NULL:
   // the one-tap path doesn't ask, so an unset vehicle is a clean NULL, never a

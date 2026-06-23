@@ -10,7 +10,7 @@ import {
   type DoubleDoseResult,
   type DoseVehicle,
 } from './medications';
-import { LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
+import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
 import { uuid } from './utils';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -788,6 +788,31 @@ export async function getRecentMedications(
 export async function getLibraryMedications(): Promise<PickerMedication[]> {
   const db = getDb();
   return db.getAllAsync<PickerMedication>(LIBRARY_MEDICATIONS_QUERY);
+}
+
+// The active regimen a one-tap dose of `medicationItemId` should link to and inherit
+// its dose amount from (B-153), or null when the drug has no active regimen (→ the
+// dose stays ad-hoc). Reads the LOCALLY-hydrated `medications` table so linking works
+// offline, exactly like the dose write itself — never a Supabase round-trip on the
+// one-tap path. Thin glue over ACTIVE_REGIMEN_FOR_DRUG_QUERY (most-recently-started
+// active regimen wins; one active regimen per drug is the norm). The SQL is unit-
+// tested against in-memory SQLite in medicationQueries.test.ts.
+export interface ActiveRegimenLink {
+  id: string;
+  medication_item_id: string | null;
+  dose_amount: string | null;
+}
+
+export async function getActiveRegimenForDrug(
+  petId: string,
+  medicationItemId: string,
+): Promise<ActiveRegimenLink | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<ActiveRegimenLink>(
+    ACTIVE_REGIMEN_FOR_DRUG_QUERY,
+    [petId, medicationItemId],
+  );
+  return row ?? null;
 }
 
 // NOTE: the text-first addMedicationItem() helper (B-117 PR 3) was retired in

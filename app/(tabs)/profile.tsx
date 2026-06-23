@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator, Alert, Image, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
@@ -14,6 +15,8 @@ import { uploadPhoto, getPublicUrl } from '../../lib/storage';
 import { archiveBlockedCopy } from '../../lib/utils';
 import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
+import { useMomentStore } from '../../store/momentStore';
+import { insertMedicationDose } from '../../lib/medicationDose';
 import { EditPetModal } from '../../components/profile/EditPetModal';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
@@ -129,6 +132,7 @@ function statusLabel(status: string): string {
 export default function ProfileScreen() {
   const { pets, activePet, updatePet } = usePetStore();
   const { user } = useAuthStore();
+  const showMedicationMoment = useMomentStore((s) => s.showMedication);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conditionModalVisible, setConditionModalVisible] = useState(false);
@@ -245,26 +249,42 @@ export default function ProfileScreen() {
       }));
       if (regimens.length === 0) { setMedications([]); return; }
 
-      // Dose children, matched to regimens by medication_item_id within each
-      // regimen's window (attributeDosesToRegimens) — NOT by medication_id. The
-      // one-tap log path writes medication_id = NULL (doses are regimen-unlinked,
-      // B-135), so the old .in('medication_id', …) join counted ZERO and every
-      // regimen read "no doses logged yet" despite real doses. The attribution +
-      // window logic is pure and unit-tested in lib/medications.
+      // Dose children, attributed to regimens by attributeDosesToRegimens: an
+      // EXPLICIT regimen link (medication_id, set by B-153/B-154) wins, else an
+      // item+window fallback for legacy/unlinked one-tap doses. So we must fetch BOTH
+      // sets: doses linked to one of these regimens (medication_id), AND doses of one
+      // of these drugs (medication_item_id) — the latter is how pre-B-153 doses and a
+      // free-text regimen's own item-less doses are covered. The pure attribution
+      // (unit-tested in lib/medications) decides which regimen each lands on.
+      // This .or() filter is built by string interpolation, so the id lists MUST be
+      // delimiter-free — a stray ',' or ')' would break the in-list or smuggle in
+      // another predicate. The invariant that makes this safe: both lists are Supabase
+      // `uuid` PRIMARY-KEY values read straight from the `medications` rows above, so
+      // they contain only [0-9a-f-]. The isUuid filter enforces that and fails CLOSED
+      // — a malformed id is dropped, never interpolated raw — and if it ever empties
+      // both clauses we skip the fetch entirely (→ empty tallies → "No doses logged
+      // yet", the safe under-read, never a fabricated all-given).
+      const isUuid = (s: string) => /^[0-9a-fA-F-]{36}$/.test(s);
+      const regimenIds = regimens.map((r) => r.id).filter(isUuid);
       const itemIds = [...new Set(
-        regimens.map((r) => r.medication_item_id).filter(Boolean),
-      )] as string[];
+        regimens.map((r) => r.medication_item_id).filter((id): id is string => !!id),
+      )].filter(isUuid);
+
+      const orParts: string[] = [];
+      if (regimenIds.length > 0) orParts.push(`medication_id.in.(${regimenIds.join(',')})`);
+      if (itemIds.length > 0) orParts.push(`medication_item_id.in.(${itemIds.join(',')})`);
 
       let doses: AttributableDose[] = [];
-      if (itemIds.length > 0) {
+      if (orParts.length > 0) {
         const { data: doseRows, error: doseError } = await supabase
           .from('medication_administrations')
-          .select('medication_item_id, adherence, events(deleted_at, occurred_at)')
+          .select('medication_id, medication_item_id, adherence, events(deleted_at, occurred_at)')
           .eq('pet_id', activePet.id)
-          .in('medication_item_id', itemIds);
+          .or(orParts.join(','));
         if (doseError) throw doseError;
 
         type DoseRow = {
+          medication_id: string | null;
           medication_item_id: string | null;
           adherence: string | null;
           // to-one embed: supabase-js may surface it as an object or a 1-element array
@@ -276,9 +296,13 @@ export default function ProfileScreen() {
         doses = ((doseRows as unknown as DoseRow[]) ?? []).map((d) => {
           const ev = Array.isArray(d.events) ? d.events[0] : d.events;
           return {
+            medication_id: d.medication_id,
             medication_item_id: d.medication_item_id,
             adherence: d.adherence,
             deleted_at: ev?.deleted_at ?? null,
+            // '' only when the FK'd parent event embed is absent (not reachable with
+            // the non-null events FK); harmless — pass 2 orders it out ('' < any date)
+            // and pass 1 ignores occurred_at entirely.
             occurred_at: ev?.occurred_at ?? '',
           };
         });
@@ -295,9 +319,22 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadConditions();
-    loadMedications();
     loadDietTrial();
-  }, [loadConditions, loadMedications, loadDietTrial]);
+  }, [loadConditions, loadDietTrial]);
+
+  // Medications reload on every FOCUS, not just mount — so the card reconciles to
+  // ground truth whenever the owner returns to this tab. This is the clinical
+  // backstop for handleLogDose's optimistic `given++`: if a dose was downgraded to
+  // refused/missed on the completion card after logging, a focus-driven reload
+  // replaces the optimistic count with the real adherence (the refusal flag then
+  // shows) — closing the §6.1 over-reassurance window. Safe in both directions: the
+  // card reads from the server, so an offline/just-logged dose simply under-reads
+  // (never a false "all given"), and self-heals once it syncs and the tab refocuses.
+  useFocusEffect(
+    useCallback(() => {
+      loadMedications();
+    }, [loadMedications]),
+  );
 
   async function handlePickPhoto() {
     Alert.alert('Profile photo', 'Choose a source', [
@@ -419,6 +456,57 @@ export default function ProfileScreen() {
       console.error('[Profile] end regimen failed:', e);
       Alert.alert('Could not update', 'Something went wrong. Try again.');
     }
+  }
+
+  // B-154: log a dose straight from the regimen card — the wedge's most-wanted path
+  // ("here's Mochi's twice-daily pill, tap to log this morning's"). This is the clean
+  // place to carry the regimen link: the dose is written with medication_id = reg.id
+  // and inherits the regimen's dose_amount, so it counts toward compliance even for a
+  // FREE-TEXT regimen (no library item — the only loggable path for one). The same
+  // shared insertMedicationDose path as the picker, so the write is built once.
+  async function handleLogDose(reg: RegimenDisplay) {
+    if (!activePet) return;
+    let result: Awaited<ReturnType<typeof insertMedicationDose>>;
+    try {
+      result = await insertMedicationDose({
+        petId: activePet.id,
+        medicationItemId: reg.medication_item_id, // null for a free-text regimen
+        medicationId: reg.id,                     // the explicit link (B-154)
+        adherence: 'given',                       // the affirmative tap = "I gave this dose"
+        doseAmount: reg.dose_amount,              // inherit the regimen's dose
+        occurredAt: new Date(),
+      });
+    } catch (e) {
+      console.error('[Profile] log dose failed:', e);
+      Alert.alert("Couldn't log that dose", 'Something went wrong. Please try again.');
+      return;
+    }
+    // Optimistically reflect the new given dose on this regimen's compliance line.
+    // The card reads doses from Supabase, but a dose is written LOCAL-FIRST (it isn't
+    // on the server until the next sync flush, and never while offline), so a refetch
+    // can't show it yet — the optimistic tally is the only honest immediate feedback
+    // for the current view. If the owner then downgrades this dose to refused/missed
+    // on the completion card, the optimistic 'given' is corrected by the focus-driven
+    // loadMedications (the useFocusEffect above) the next time this tab is focused —
+    // not silently left stale. (A downgrade while the owner never leaves the profile
+    // is the one residual window; reconciled on the next focus.)
+    setMedications((prev) =>
+      prev.map((m) =>
+        m.id === reg.id
+          ? buildRegimenDisplay(m, { ...m.tally, given: m.tally.given + 1 })
+          : m,
+      ),
+    );
+    // The confirm-over-entry adherence follow-up (§5.1) — the same warmed card the
+    // picker shows, so a dose logged from the card can still be downgraded to
+    // partial/missed/refused (the n=1-never-reassures safety path stays reachable).
+    showMedicationMoment({
+      eventId: result.eventId,
+      occurredAt: result.occurredAtIso,
+      drugName: reg.drug_name,
+      adherence: 'given',
+      howGiven: null,
+    });
   }
 
   function confirmEndRegimen(reg: RegimenDisplay) {
@@ -634,6 +722,15 @@ export default function ProfileScreen() {
                   {reg.indication ? <Text style={styles.medContext}>For {reg.indication}</Text> : null}
                   {reg.prescribed_by ? <Text style={styles.medContext}>Prescribed by {reg.prescribed_by}</Text> : null}
                   <View style={styles.conditionActions}>
+                    <TouchableOpacity
+                      onPress={() => handleLogDose(reg)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Log a dose of ${reg.drug_name}`}
+                    >
+                      <Text style={[styles.conditionActionText, styles.logDoseActionText]}>Log a dose</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.conditionActionDivider}>·</Text>
                     <TouchableOpacity onPress={() => openEditRegimen(reg)} hitSlop={8}>
                       <Text style={styles.conditionActionText}>Edit</Text>
                     </TouchableOpacity>
@@ -945,6 +1042,12 @@ const styles = StyleSheet.create({
   // neutral grey of the adjacent "Edit".
   medEndActionText: {
     color: theme.colorDestructive,
+  },
+  // "Log a dose" is the card's primary action (the wedge path), so it leads in the
+  // accent colour while Edit/End stay quiet secondary text.
+  logDoseActionText: {
+    color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
   },
 
   // ── Diet trial ──

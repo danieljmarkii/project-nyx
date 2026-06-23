@@ -20,6 +20,22 @@ export const LIBRARY_MEDICATIONS_QUERY =
    FROM medication_items_cache
    ORDER BY generic_name COLLATE NOCASE ASC, brand_name COLLATE NOCASE ASC`;
 
+// The active regimen a one-tap dose of a given drug should LINK to and INHERIT from
+// (B-153): the most-recently-started ACTIVE regimen for that pet+drug, or no row when
+// none exists (→ the dose stays honestly ad-hoc). Selects exactly what the dose write
+// carries — the regimen id (the medication_id link) and its dose_amount. Mirrors the
+// inline most-recently-started-active lookup getDoubleDoseFlag already runs (db.ts),
+// kept as a pure string here so it's exercised against in-memory SQLite in
+// medicationQueries.test.ts.
+//
+// Params, in placeholder order: pet_id, medication_item_id.
+export const ACTIVE_REGIMEN_FOR_DRUG_QUERY =
+  `SELECT id, medication_item_id, dose_amount
+   FROM medications
+   WHERE pet_id = ? AND medication_item_id = ? AND status = 'active'
+   ORDER BY started_at DESC
+   LIMIT 1`;
+
 // This pet's most-recently-given distinct drugs, newest first — ordered by the
 // pet's actual last dose of each drug (MAX(occurred_at)), the exact shape of
 // getRecentFoods. The INNER JOIN on medication_items_cache deliberately drops
