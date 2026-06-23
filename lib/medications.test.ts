@@ -44,6 +44,8 @@ import {
   comboInDoubtReason,
   doseInDoubtNote,
   DOSE_IN_DOUBT_TAG,
+  pairedVehicleLinkLabel,
+  pairedDoseLinkLabel,
   type DoseVehicle,
   type LocalMedicationItem,
   type LocalMedication,
@@ -1217,6 +1219,63 @@ describe('combo safety copy — never reassures, never softens to fussy, no excl
     for (const s of [...prompts, ...notes, DOSE_IN_DOUBT_TAG]) {
       expect(REASSURE.test(s)).toBe(false);
       expect(SOFTEN.test(s)).toBe(false);
+      expect(s.includes('!')).toBe(false);
+    }
+  });
+});
+
+describe('combo cross-link labels (B-156 PR B4) — legible without merging, drop cleanly', () => {
+  describe('pairedVehicleLinkLabel — dose → vehicle', () => {
+    it('names the vehicle the dose was given with', () => {
+      expect(pairedVehicleLinkLabel('Churu')).toBe('Given with Churu');
+      expect(pairedVehicleLinkLabel('Delectables Lickable')).toBe('Given with Delectables Lickable');
+    });
+
+    it('returns null when the food name is absent — the soft-deleted-vehicle drop (the AC)', () => {
+      // getTimeline nulls paired_food_name when the paired event is soft-deleted (the join
+      // filters deleted_at IS NULL). A null label → the surface renders no link → the combo
+      // link drops cleanly, never pointing at a meal gone from History.
+      expect(pairedVehicleLinkLabel(null)).toBeNull();
+      expect(pairedVehicleLinkLabel(undefined)).toBeNull();
+      expect(pairedVehicleLinkLabel('')).toBeNull();
+      expect(pairedVehicleLinkLabel('   ')).toBeNull();
+    });
+  });
+
+  describe('pairedDoseLinkLabel — vehicle → dose', () => {
+    it('names the single drug when exactly one dose is paired, mirroring "Given with …"', () => {
+      // Symmetric with pairedVehicleLinkLabel ("Given with …") so the two sides read as one
+      // relationship, and no leading "+" (which would collide with B2b's create affordance).
+      expect(pairedDoseLinkLabel({ count: 1, drugName: 'Cetirizine' })).toBe('Given with a Cetirizine dose');
+    });
+
+    it('falls back to "Given with a dose" when the single dose\'s drug name has not hydrated', () => {
+      expect(pairedDoseLinkLabel({ count: 1, drugName: null })).toBe('Given with a dose');
+      expect(pairedDoseLinkLabel({ count: 1, drugName: undefined })).toBe('Given with a dose');
+      expect(pairedDoseLinkLabel({ count: 1, drugName: '  ' })).toBe('Given with a dose');
+    });
+
+    it('summarizes as a count for N doses in one vehicle (B1 allows N — no uniqueness)', () => {
+      expect(pairedDoseLinkLabel({ count: 2, drugName: 'Cetirizine' })).toBe('Given with 2 doses');
+      expect(pairedDoseLinkLabel({ count: 3 })).toBe('Given with 3 doses');
+    });
+
+    it('returns null when no dose is paired — the soft-deleted-dose drop (the AC)', () => {
+      // The reverse join excludes a soft-deleted dose → count 0 → null label → the meal's
+      // link drops cleanly. Defensive on a negative too (never reachable, never renders).
+      expect(pairedDoseLinkLabel({ count: 0, drugName: 'Cetirizine' })).toBeNull();
+      expect(pairedDoseLinkLabel({ count: -1 })).toBeNull();
+    });
+  });
+
+  it('neither cross-link ever shouts (nyx-voice — no exclamation)', () => {
+    const strings = [
+      pairedVehicleLinkLabel('Churu'),
+      pairedDoseLinkLabel({ count: 1, drugName: 'Cetirizine' }),
+      pairedDoseLinkLabel({ count: 1, drugName: null }),
+      pairedDoseLinkLabel({ count: 2 }),
+    ].filter((s): s is string => s != null);
+    for (const s of strings) {
       expect(s.includes('!')).toBe(false);
     }
   });

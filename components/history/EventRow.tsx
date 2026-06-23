@@ -1,12 +1,47 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import { NyxEvent } from '../../store/eventStore';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
 import { theme } from '../../constants/theme';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
-import { vehicleLabel, isComboDoseInDoubt, DOSE_IN_DOUBT_TAG } from '../../lib/medications';
+import {
+  vehicleLabel, isComboDoseInDoubt, DOSE_IN_DOUBT_TAG,
+  pairedVehicleLinkLabel, pairedDoseLinkLabel,
+} from '../../lib/medications';
 import { describeOccurredAt } from '../../lib/utils';
+
+// B-156 PR B4 — the quiet, tappable combo cross-link, shown on each side of a combo
+// (the dose ↔ its vehicle meal/treat) so the "one act" is legible across the two
+// History rows without merging them. Renders nothing when there's nothing to point at
+// (a null label OR no target event) — which is exactly how the soft-delete drop works:
+// when the other side is removed, the query nulls the label/count and the link vanishes,
+// never dangling at an event gone from History. A nested TouchableOpacity captures its
+// own tap (the same pattern as the row's expanded View/Edit/Remove actions), so tapping
+// the link navigates while a tap elsewhere on the row still toggles.
+function ComboCrossLink({
+  label,
+  targetEventId,
+}: {
+  label: string | null;
+  targetEventId: string | null | undefined;
+}) {
+  if (!label || !targetEventId) return null;
+  return (
+    <TouchableOpacity
+      style={styles.crossLink}
+      onPress={() => router.push({ pathname: '/event/[id]', params: { id: targetEventId } })}
+      activeOpacity={0.6}
+      accessibilityRole="link"
+      accessibilityLabel={label}
+    >
+      <Text style={styles.crossLinkText} numberOfLines={1}>{label}</Text>
+      <ChevronRight size={14} color={theme.colorAccent} strokeWidth={2} />
+    </TouchableOpacity>
+  );
+}
 
 interface Props {
   event: NyxEvent;
@@ -116,6 +151,17 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
           </View>
         ) : null}
 
+        {/* B-156 PR B4 — vehicle → dose cross-link. On a meal/treat that carried a
+            co-logged dose, a tap jumps to that dose. Null (no link) on a meal with no
+            paired dose, and drops cleanly when the only paired dose is soft-deleted. */}
+        <ComboCrossLink
+          label={pairedDoseLinkLabel({
+            count: event.paired_dose_count ?? 0,
+            drugName: event.paired_dose_drug_name,
+          })}
+          targetEventId={event.paired_dose_event_id}
+        />
+
         {drugLabel ? (
           <View style={styles.foodLine}>
             <Text style={styles.foodName} numberOfLines={1}>{drugLabel}</Text>
@@ -137,6 +183,14 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
         {/* Vehicle ("In a treat") — a quiet secondary line under the drug, only when
             recorded. Reads as a plain note, not a badge: it's descriptive context. */}
         {vehicle ? <Text style={styles.vehicleNote}>{vehicle}</Text> : null}
+
+        {/* B-156 PR B4 — dose → vehicle cross-link. On a dose given inside a meal/treat,
+            a tap jumps to that vehicle. Null (no link) on a standalone dose, and drops
+            cleanly when the vehicle is soft-deleted (the join nulls paired_food_name). */}
+        <ComboCrossLink
+          label={pairedVehicleLinkLabel(event.paired_food_name)}
+          targetEventId={event.paired_event_id}
+        />
 
         {isExpanded ? (
           <View style={styles.expandedContent}>
@@ -231,6 +285,27 @@ const styles = StyleSheet.create({
   vehicleNote: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // The combo cross-link (B-156 PR B4). Accent text + a chevron so it reads as a
+  // navigation affordance, not a badge. alignSelf flex-start so the tap target hugs
+  // the label (the chevron sits right after it) instead of spanning the row; maxWidth
+  // keeps a long food name truncating at the row edge rather than overflowing.
+  // minHeight 44 clears the touch-target floor (the 3am-stumbling rule) — the text line
+  // alone is ~18px, so a tap relying on hitSlop would fall short; this matches the
+  // detail screen's ComboLinkRow. The text centers in the taller box.
+  crossLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spaceMicro,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    minHeight: 44,
+  },
+  crossLinkText: {
+    fontSize: theme.textSM,
+    color: theme.colorAccent,
+    fontWeight: theme.fontWeightMedium,
+    flexShrink: 1,
   },
   // The in-doubt resurface tag — a quiet rose pill, the concern colour the adherence
   // chips use for partial/missed/refused, so an unconfirmed dose reads in the same

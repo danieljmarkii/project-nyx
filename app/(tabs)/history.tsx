@@ -91,6 +91,9 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     paired_food_name: row.paired_food_name,
     drug_generic_name: row.drug_generic_name,
     drug_brand_name: row.drug_brand_name,
+    paired_dose_count: row.paired_dose_count,
+    paired_dose_event_id: row.paired_dose_event_id,
+    paired_dose_drug_name: row.paired_dose_drug_name,
   };
 }
 

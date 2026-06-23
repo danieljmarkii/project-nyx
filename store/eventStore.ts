@@ -45,6 +45,14 @@ export interface NyxEvent {
   paired_food_name?: string | null;
   drug_generic_name?: string | null;
   drug_brand_name?: string | null;
+  // B-156 PR B4 — the reverse combo link (vehicle → dose), for the cross-link on a
+  // meal/treat row that carried co-logged dose(s). The mirror of paired_* above so the
+  // combo reads from BOTH sides without merging. count = NON-DELETED paired doses (0 on a
+  // non-meal row); event_id = the nav target (the single dose when count=1); drug_name =
+  // that dose's drug for the single-dose label. A soft-deleted dose drops out of the count.
+  paired_dose_count?: number;
+  paired_dose_event_id?: string | null;
+  paired_dose_drug_name?: string | null;
 }
 
 interface EventState {
