@@ -9,7 +9,9 @@ import { usePetStore } from '../../store/petStore';
 import { updateDoseAdherence, updateDoseHowGiven } from '../../lib/db';
 import { syncPendingMedicationAdministrations } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
-import type { DoseVehicle } from '../../lib/medications';
+import {
+  isComboDoseInDoubt, comboAdherencePrompt, comboInDoubtReason, type DoseVehicle,
+} from '../../lib/medications';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
 import { VehicleChipRow } from '../log/VehicleChipRow';
 
@@ -130,6 +132,22 @@ export function MedicationCompletionCard() {
     : formatTime(occurredDate);
   const petName = activePet?.name ?? 'your pet';
 
+  // B-156 PR B3 — the intake → adherence safety coupling on the card. A combo dose
+  // whose linked vehicle was NOT finished (refused/picked) lands UNCONFIRMED (adherence
+  // null, set in handlePickMedication) and is IN DOUBT: the chips show no pre-lit
+  // 'given' and the prompt SHARPENS to "Did {pet} still get it?" with a one-line reason,
+  // so an auto-dismiss never leaves a false 'given' on the record (clinical-guardrails
+  // Pattern 2). The owner tapping any chip resolves it (adherence → non-null), which
+  // re-derives inDoubt to false. A finished/standalone dose is unchanged.
+  // (isCombo is the coarse display gate off pairedFoodName; the in-doubt decision is
+  // vehicleIntake-driven — a finished-vehicle combo is isCombo=true but inDoubt=false —
+  // so the two are deliberately distinct inputs, not redundant.)
+  const inDoubt = isComboDoseInDoubt({
+    isCombo,
+    vehicleIntake: payload.vehicleIntake ?? null,
+    adherence: payload.adherence,
+  });
+
   return (
     <Animated.View
       pointerEvents={shown ? 'box-none' : 'none'}
@@ -146,7 +164,13 @@ export function MedicationCompletionCard() {
           </View>
         </View>
         <View style={styles.adherenceWrap}>
-          <Text style={styles.adherenceLabel}>Did {petName} take it?</Text>
+          <Text style={styles.adherenceLabel}>{comboAdherencePrompt({ petName, inDoubt })}</Text>
+          {/* In-doubt only: the faint reason, so the owner doesn't have to recall they
+              marked the food refused on the now-dismissed meal card. Factual, never
+              "fussy", never reassuring. */}
+          {inDoubt ? (
+            <Text style={styles.inDoubtReason}>{comboInDoubtReason({ petName })}</Text>
+          ) : null}
           <AdherenceChipRow
             value={payload.adherence}
             onChange={handleAdherenceChange}
@@ -236,6 +260,13 @@ const styles = StyleSheet.create({
   adherenceLabel: {
     fontSize: theme.textSM,
     color: 'rgba(255,255,255,0.7)',
+    fontWeight: theme.weightRegular,
+  },
+  // The in-doubt reason line — fainter than the prompt, sits between it and the chips.
+  // Calm, never an alarm colour: the rose flag lives on the chip-row downgrade, not here.
+  inDoubtReason: {
+    fontSize: theme.textXS,
+    color: 'rgba(255,255,255,0.55)',
     fontWeight: theme.weightRegular,
   },
   // Subordinate to the adherence block: a fainter divider + dimmer label so the

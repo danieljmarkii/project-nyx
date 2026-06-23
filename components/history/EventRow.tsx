@@ -5,7 +5,7 @@ import { EventIcon } from '../event/EventIcon';
 import { theme } from '../../constants/theme';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
-import { vehicleLabel } from '../../lib/medications';
+import { vehicleLabel, isComboDoseInDoubt, DOSE_IN_DOUBT_TAG } from '../../lib/medications';
 import { describeOccurredAt } from '../../lib/utils';
 
 interface Props {
@@ -56,6 +56,18 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   // the owner recorded how the dose was given. NULL/unrecognized → nothing, so an
   // unrecorded vehicle stays as silent as an unrated dose.
   const vehicle = vehicleLabel(event.how_given);
+
+  // B-156 PR B3 — the calm resurface tag. A combo dose whose vehicle was not finished
+  // (refused/picked) and whose adherence is still unconfirmed (null) shows a quiet rose
+  // "Unconfirmed" tag where the adherence badge would be — so the owner can SEE on the
+  // daily scan which dose still needs confirming, without opening every one. The detail
+  // screen carries the full ask + the chips to resolve it. Not an alarm; the owner
+  // answering (anywhere) clears it by giving the dose an explicit adherence.
+  const doseInDoubt = isComboDoseInDoubt({
+    isCombo: !!event.paired_event_id,
+    vehicleIntake: event.paired_vehicle_intake,
+    adherence: event.adherence ?? null,
+  });
 
   // B-010 — read-only confidence marker so the timeline stops implying false
   // precision on found/estimated events. Witnessed and legacy (null) rows keep
@@ -108,8 +120,17 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
           <View style={styles.foodLine}>
             <Text style={styles.foodName} numberOfLines={1}>{drugLabel}</Text>
             {/* Read-only adherence badge — concern states (partial/missed/refused)
-                light rose, 'given' lights accent; NULL renders nothing. */}
-            <AdherenceChipRow value={(event.adherence ?? null) as DoseAdherence | null} />
+                light rose, 'given' lights accent; NULL renders nothing. An in-doubt
+                combo dose (null adherence) shows the rose "Unconfirmed" tag instead. */}
+            {doseInDoubt ? (
+              // pointerEvents none so a tap falls through to the row's toggle/long-press
+              // gesture, exactly like the read-only adherence/intake badges.
+              <View style={styles.inDoubtTag} pointerEvents="none">
+                <Text style={styles.inDoubtTagText}>{DOSE_IN_DOUBT_TAG}</Text>
+              </View>
+            ) : (
+              <AdherenceChipRow value={(event.adherence ?? null) as DoseAdherence | null} />
+            )}
           </View>
         ) : null}
 
@@ -210,6 +231,22 @@ const styles = StyleSheet.create({
   vehicleNote: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // The in-doubt resurface tag — a quiet rose pill, the concern colour the adherence
+  // chips use for partial/missed/refused, so an unconfirmed dose reads in the same
+  // visual register as a flagged one without being an alarm.
+  inDoubtTag: {
+    paddingHorizontal: theme.space1,
+    paddingVertical: theme.spaceMicro,
+    borderRadius: theme.radiusFull,
+    borderWidth: 1,
+    borderColor: theme.colorEventSymptom,
+    backgroundColor: theme.colorEventSymptomLight,
+  },
+  inDoubtTagText: {
+    fontSize: theme.textXS,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorEventSymptom,
   },
   expandedContent: {
     marginTop: theme.space1,
