@@ -37,6 +37,13 @@ import {
   vehicleLabel,
   asDoseVehicle,
   inferDoseVehicleFromFoodType,
+  isVehicleNotFinished,
+  initialComboDoseAdherence,
+  isComboDoseInDoubt,
+  comboAdherencePrompt,
+  comboInDoubtReason,
+  doseInDoubtNote,
+  DOSE_IN_DOUBT_TAG,
   type DoseVehicle,
   type LocalMedicationItem,
   type LocalMedication,
@@ -1072,5 +1079,173 @@ describe('inferDoseVehicleFromFoodType — combo vehicle inference (B-156 PR B2b
         expect(MEDICATION_VEHICLE_OPTIONS.some((o) => o.value === v)).toBe(true);
       }
     }
+  });
+});
+
+// ── B-156 Slice C (PR B3) — intake → adherence safety coupling ──────────────────
+// The clinically load-bearing half of the combo. These tests ARE the never-reassure
+// invariant (clinical-guardrails Pattern 8: the rule is a test, not a comment) — they
+// pin that a not-finished vehicle has NO path to a clean 'given' by construction.
+
+describe('isVehicleNotFinished — the refused/picked boundary', () => {
+  it('is true ONLY for refused and picked', () => {
+    expect(isVehicleNotFinished('refused')).toBe(true);
+    expect(isVehicleNotFinished('picked')).toBe(true);
+  });
+
+  it("is false for the 'ate enough to carry a pill' ratings", () => {
+    expect(isVehicleNotFinished('some')).toBe(false);
+    expect(isVehicleNotFinished('most')).toBe(false);
+    expect(isVehicleNotFinished('all')).toBe(false);
+  });
+
+  it('is false for an unrated/absent vehicle (no owner-reported failure signal)', () => {
+    expect(isVehicleNotFinished(null)).toBe(false);
+    expect(isVehicleNotFinished(undefined)).toBe(false);
+    expect(isVehicleNotFinished('')).toBe(false);
+  });
+
+  it('is false for a garbage/legacy token, never a raw match', () => {
+    expect(isVehicleNotFinished('REFUSED')).toBe(false); // case-sensitive, like the enum narrowers
+    expect(isVehicleNotFinished('skipped')).toBe(false);
+  });
+});
+
+describe('initialComboDoseAdherence — a not-finished vehicle never auto-defaults to given', () => {
+  it('starts UNCONFIRMED (null) when the vehicle was refused or picked', () => {
+    // THE load-bearing rule: no path to 'given' by construction for a not-finished
+    // vehicle. An unanswered card therefore records null, never a false 'given'.
+    expect(initialComboDoseAdherence('refused')).toBeNull();
+    expect(initialComboDoseAdherence('picked')).toBeNull();
+  });
+
+  it("keeps the affirmative 'given' default for a finished vehicle", () => {
+    expect(initialComboDoseAdherence('some')).toBe('given');
+    expect(initialComboDoseAdherence('most')).toBe('given');
+    expect(initialComboDoseAdherence('all')).toBe('given');
+  });
+
+  it("keeps 'given' for an unrated vehicle (the owner's combo tap is the basis, like a standalone dose)", () => {
+    expect(initialComboDoseAdherence(null)).toBe('given');
+    expect(initialComboDoseAdherence(undefined)).toBe('given');
+  });
+
+  it("only ever returns 'given' or null — never partial/missed/refused as an inference", () => {
+    for (const intake of ['refused', 'picked', 'some', 'most', 'all', null, undefined, 'garbage']) {
+      const a = initialComboDoseAdherence(intake as string | null | undefined);
+      expect(a === 'given' || a === null).toBe(true);
+    }
+  });
+});
+
+describe('isComboDoseInDoubt — the derived unconfirmed state (resurface + card sharpen)', () => {
+  it('is true for a combo dose with a not-finished vehicle and NO explicit adherence', () => {
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: 'refused', adherence: null })).toBe(true);
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: 'picked', adherence: null })).toBe(true);
+  });
+
+  it("is FALSE once the owner answers — including 'given' (they may have pilled directly; never re-nag an explicit answer)", () => {
+    // The whole point of honoring the explicit answer: an owner who taps 'given' on the
+    // "still get it?" prompt is asserting it got in. We do not re-open or auto-flip it.
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: 'refused', adherence: 'given' })).toBe(false);
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: 'refused', adherence: 'missed' })).toBe(false);
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: 'refused', adherence: 'partial' })).toBe(false);
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: 'picked', adherence: 'refused' })).toBe(false);
+  });
+
+  it('is false when the vehicle was finished, even with a null adherence (no failure signal to resurface)', () => {
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: 'all', adherence: null })).toBe(false);
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: 'some', adherence: null })).toBe(false);
+  });
+
+  it('is false for an unrated vehicle (unconfirmed ≠ in-doubt: no reported not-finished signal)', () => {
+    expect(isComboDoseInDoubt({ isCombo: true, vehicleIntake: null, adherence: null })).toBe(false);
+  });
+
+  it('is false for a STANDALONE dose — no vehicle to be in doubt about', () => {
+    // A standalone unrated dose is just "unrated", never "in-doubt" — the resurface is
+    // strictly a combo concern (there is no co-logged vehicle).
+    expect(isComboDoseInDoubt({ isCombo: false, vehicleIntake: 'refused', adherence: null })).toBe(false);
+    expect(isComboDoseInDoubt({ isCombo: false, vehicleIntake: null, adherence: null })).toBe(false);
+  });
+});
+
+describe('combo safety copy — never reassures, never softens to fussy, no exclamation', () => {
+  // Pattern 8 (clinical-guardrails): the never-reassure / never-"picky" invariant is a
+  // scan ASSERTION over every owner-facing string this PR can emit, not a comment.
+  const REASSURE = /\b(fine|okay|ok|healthy|all clear|no concern|nothing to worry|probably|don't worry|should be)\b/i;
+  const SOFTEN = /\b(fussy|picky|stubborn|naughty|just being)\b/i;
+
+  const prompts = [
+    comboAdherencePrompt({ petName: 'Pixel', inDoubt: true }),
+    comboAdherencePrompt({ petName: 'Pixel', inDoubt: false }),
+    comboInDoubtReason({ petName: 'Pixel' }),
+  ];
+  const notes = [
+    doseInDoubtNote({ petName: 'Pixel', foodName: 'Churu' }),
+    doseInDoubtNote({ petName: 'Pixel', foodName: null }),
+    doseInDoubtNote({ petName: 'Pixel', foodName: '' }),
+  ];
+
+  it('the in-doubt prompt sharpens to "still get it?" and the plain one stays "take it?"', () => {
+    expect(comboAdherencePrompt({ petName: 'Pixel', inDoubt: true })).toBe('Did Pixel still get it?');
+    expect(comboAdherencePrompt({ petName: 'Pixel', inDoubt: false })).toBe('Did Pixel take it?');
+  });
+
+  it('the card reason states the fact plainly and names the pet', () => {
+    expect(comboInDoubtReason({ petName: 'Pixel' })).toBe("Pixel didn't finish the food.");
+  });
+
+  it('the detail note names the food, falls back to "the food", and asks (never asserts)', () => {
+    // Exact strings so a grammar regression (a dropped relative pronoun) fails here, not
+    // just a loose toContain — the note is owner-visible on the dose detail screen.
+    expect(doseInDoubtNote({ petName: 'Pixel', foodName: 'Churu' })).toBe(
+      "This dose was given in Churu, which Pixel didn't finish — confirm above whether it still got in.",
+    );
+    expect(doseInDoubtNote({ petName: 'Pixel', foodName: null })).toBe(
+      "This dose was given in the food, which Pixel didn't finish — confirm above whether it still got in.",
+    );
+    expect(doseInDoubtNote({ petName: 'Pixel', foodName: '' })).toContain('the food');
+    // Names the pet (nyx-voice Pattern 1) and points to the resolve affordance above.
+    for (const n of notes) {
+      expect(n).toContain('Pixel');
+      expect(n.toLowerCase()).toContain('confirm');
+    }
+  });
+
+  it('never reassures and never softens a refusal to "fussy"/"picky", and never shouts', () => {
+    for (const s of [...prompts, ...notes, DOSE_IN_DOUBT_TAG]) {
+      expect(REASSURE.test(s)).toBe(false);
+      expect(SOFTEN.test(s)).toBe(false);
+      expect(s.includes('!')).toBe(false);
+    }
+  });
+});
+
+// Wire-path reinforcement: an in-doubt dose (null adherence) MUST round-trip to the
+// server as null — the medication never-coerce rule, now load-bearing for the combo
+// safety story (a coerced 'given' would be exactly the false-adherence record B3 exists
+// to prevent). administrationRowToRemote is tested broadly elsewhere; this pins the
+// combo case explicitly so a future "default the null" edit fails here first.
+describe('administrationRowToRemote — an unconfirmed combo dose stays null on the wire', () => {
+  it('forwards a null adherence as null even with a paired_event_id set (never coerced to given)', () => {
+    const row: LocalMedicationAdministration = {
+      id: 'dose-indoubt',
+      event_id: 'evt-dose',
+      pet_id: 'pet-1',
+      medication_id: null,
+      medication_item_id: 'item-1',
+      adherence: null, // unconfirmed — the not-finished-vehicle combo case
+      dose_amount: null,
+      how_given: 'in_treat',
+      paired_event_id: 'evt-meal', // the refused/picked vehicle
+      notes: null,
+      created_at: '2026-06-23T10:00:00.000Z',
+      updated_at: '2026-06-23T10:00:00.000Z',
+    };
+    const out = administrationRowToRemote(row);
+    expect(out.adherence).toBeNull();
+    expect(out.paired_event_id).toBe('evt-meal');
+    expect(out.how_given).toBe('in_treat');
   });
 });

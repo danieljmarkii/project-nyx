@@ -400,6 +400,20 @@ export interface TimelineRow {
   // B-156 Slice B — the dose vehicle (how_given), for the History read display.
   // NULL on non-medication rows and on doses with no recorded vehicle.
   how_given: string | null;
+  // B-156 PR B3 — the combo safety-coupling read fields. paired_event_id is the
+  // co-logged meal/treat this dose was given inside (NULL for a standalone dose);
+  // paired_vehicle_intake is THAT meal's current intake_rating (joined live, so a
+  // later intake edit is reflected); paired_food_name names the vehicle for the
+  // resurface copy. Together they let a read surface derive isComboDoseInDoubt
+  // (combo + vehicle refused/picked + adherence null) without a second query — the
+  // History "Unconfirmed" tag and the dose-detail resurface note both read these.
+  // The paired join routes through `events pe ... AND pe.deleted_at IS NULL`, so a
+  // SOFT-DELETED vehicle nulls these out → the in-doubt flag cleanly drops (the owner
+  // removed the evidence; the dose stays un-given/unrated, never a false 'given'),
+  // avoiding a note that points at a meal no longer in History.
+  paired_event_id: string | null;
+  paired_vehicle_intake: string | null;
+  paired_food_name: string | null;
   drug_generic_name: string | null;
   drug_brand_name: string | null;
 }
@@ -432,12 +446,18 @@ export async function getTimeline(
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
             ma.medication_item_id, ma.adherence, ma.how_given,
+            ma.paired_event_id,
+            pm.intake_rating AS paired_vehicle_intake,
+            pf.product_name AS paired_food_name,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+     LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
+     LEFT JOIN meals pm ON pm.event_id = pe.id
+     LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
      WHERE e.pet_id = ? AND e.deleted_at IS NULL
      ${typeClause} ${dateClause}
      ORDER BY e.occurred_at DESC
@@ -456,12 +476,18 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
             ma.medication_item_id, ma.adherence, ma.how_given,
+            ma.paired_event_id,
+            pm.intake_rating AS paired_vehicle_intake,
+            pf.product_name AS paired_food_name,
             mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+     LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
+     LEFT JOIN meals pm ON pm.event_id = pe.id
+     LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
      WHERE e.id = ? AND e.deleted_at IS NULL`,
     [eventId],
   );

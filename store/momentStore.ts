@@ -90,6 +90,16 @@ export interface MedicationPayload {
   // "Logged · {drug}" header. Display-only context; the authoritative link lives on
   // the dose's paired_event_id (written by insertMedicationDose), not here.
   pairedFoodName?: string | null;
+  // B-156 PR B3 — the linked vehicle's intake rating at log time (the WSAVA scale,
+  // refused/picked/some/most/all), or null for a standalone dose / unrated vehicle.
+  // Typed loosely as the stored TEXT (not the IntakeRating union) because it's a raw
+  // snapshot of meals.intake_rating, consumed only through the garbage-safe
+  // isComboDoseInDoubt — a stray/legacy value can never fabricate an in-doubt state.
+  // The card derives the IN-DOUBT state from this + adherence: a refused/picked vehicle
+  // with a null adherence sharpens the prompt to "Did {pet} still get it?" and never
+  // pre-lights a 'given'. Authoritative vehicle truth is re-read live at the resurface
+  // surfaces (History row + detail note); this is the snapshot the card uses.
+  vehicleIntake?: string | null;
 }
 
 export type MomentPayload = BeatPayload | MealPayload | MedicationPayload;

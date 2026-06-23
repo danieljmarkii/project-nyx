@@ -419,6 +419,128 @@ export function inferDoseVehicleFromFoodType(
   return null;
 }
 
+// ── B-156 Slice C (PR B3) — intake → adherence SAFETY coupling ──────────────────
+// The load-bearing safety logic for a COMBO dose (a pill given inside a meal/treat,
+// linked by paired_event_id). A dose hidden in food the pet did NOT finish is a DOSE
+// IN DOUBT: the owner's combo tap meant "I gave it in this food", and if that food was
+// refused or barely picked at, the drug most likely did not go down with it. The combo
+// is the only surface where we can honestly couple this — the intake truth ("did she
+// eat it?") and the adherence truth ("did the drug get in?") are captured in the same
+// act (investigation §2; spec §6.2).
+//
+// These are pure + unit-tested HERE (not buried in a screen) because the asymmetry is
+// clinically load-bearing — the medication analog of analyze-vomit's escalation floor
+// (clinical-guardrails Pattern 2: there must be NO PATH to a reassuring "given" by
+// construction; Pattern 8: the invariant is a TEST, not a comment). A refused/picked
+// vehicle is a possible DISEASE signal AND a dose-delivery failure — never softened to
+// "fussy"/"picky" (intake-is-not-preference, for drugs).
+
+// The two WSAVA intake ratings that leave a co-logged dose IN DOUBT: the food the pill
+// rode in was refused (ate none) or picked (barely touched), so we cannot assert the
+// drug was consumed with it. 'some'/'most'/'all' = enough went down to carry a pill;
+// null/unrated = no owner-reported evidence either way (NOT treated as in-doubt — there
+// is no positive signal the vehicle failed). The set is the load-bearing boundary the
+// adversarial review probes, so it lives in one named place, not inline at each site.
+const VEHICLE_NOT_FINISHED: ReadonlySet<string> = new Set(['refused', 'picked']);
+
+export function isVehicleNotFinished(vehicleIntake: string | null | undefined): boolean {
+  return vehicleIntake != null && VEHICLE_NOT_FINISHED.has(vehicleIntake);
+}
+
+// The adherence a NEW combo dose must START at, given its vehicle's intake at log time.
+// THE LOAD-BEARING RULE: a dose whose vehicle was not finished must NEVER auto-default
+// to 'given' — it starts UNCONFIRMED (null), so that if the completion card auto-
+// dismisses unanswered the dose is recorded unconfirmed, never a false 'given' (the
+// n=1-never-reassures invariant, for drugs). A finished OR not-yet-rated vehicle keeps
+// the affirmative 'given' default (the owner's combo tap, the same basis a standalone
+// one-tap dose uses). The ONLY transition INTO 'given' for a not-finished vehicle is an
+// explicit owner tap on the card prompt (they pilled directly after the refusal, say) —
+// never an inference. This is the construction that makes a reassuring verdict
+// unreachable by default (clinical-guardrails Pattern 2).
+export function initialComboDoseAdherence(
+  vehicleIntake: string | null | undefined,
+): DoseAdherence | null {
+  return isVehicleNotFinished(vehicleIntake) ? null : 'given';
+}
+
+// Is a logged combo dose currently IN DOUBT (unconfirmed)? True only when ALL hold: it
+// is a combo dose (given inside a vehicle), the owner reported that vehicle as not
+// finished (refused/picked), AND the dose has no explicit adherence yet (null). This is
+// the derived "unconfirmed" state the resurface reads (History row tag + the dose-detail
+// note) and the completion card uses to sharpen its prompt — no new enum value or column
+// needed (null adherence already counts as un-given toward compliance).
+//
+// An EXPLICIT adherence — INCLUDING 'given' — means the owner ANSWERED the prompt, so it
+// is their call and is NOT in doubt: they may legitimately have pilled directly after the
+// food refusal. We never re-open or auto-flip an answered dose (never-auto-flip; honoring
+// the owner's own statement).
+//
+// DOCUMENTED RESIDUAL (sibling of G4, the "ate-around-the-pill" gap): a combo dose that
+// auto-defaulted 'given' (vehicle finished/unrated at log time) and whose vehicle is
+// marked refused/picked AFTERWARD is NOT re-flagged here, because a stored 'given' cannot
+// be told apart from an explicit owner 'given' without an adherence-provenance field (a
+// future schema PR). We err toward never-nagging an explicit answer; the creation-time
+// path — the dominant combo flow, where the intake chips sit directly above the combo
+// entry on the meal card — is fully covered. The read-time join means a dose CREATED
+// in-doubt (null) self-heals if its vehicle rating changes either way.
+export function isComboDoseInDoubt(params: {
+  isCombo: boolean;
+  vehicleIntake: string | null | undefined;
+  adherence: string | null;
+}): boolean {
+  return (
+    params.isCombo &&
+    isVehicleNotFinished(params.vehicleIntake) &&
+    params.adherence == null
+  );
+}
+
+// The completion-card adherence prompt for a dose. When a combo dose's vehicle was not
+// finished the prompt SHARPENS to "still get it?" — acknowledging the food didn't go
+// down — and the chips start unselected (initialComboDoseAdherence → null); otherwise
+// it's the plain "take it?". nyx-voice: pet by name, specific, no exclamation; never
+// softens the refusal to "fussy"/"picky".
+export function comboAdherencePrompt(params: { petName: string; inDoubt: boolean }): string {
+  return params.inDoubt
+    ? `Did ${params.petName} still get it?`
+    : `Did ${params.petName} take it?`;
+}
+
+// The faint reason sub-line under the sharpened card prompt, so the owner doesn't have
+// to remember they marked the food refused on the (now-dismissed) meal card. States the
+// fact plainly — the food (named in the card header) wasn't finished — which is what
+// makes the "still get it?" ask legible. NEVER softens to "fussy"/"picky" and never
+// reassures (clinical-guardrails Pattern 6/8); the food is "the food" (an object, not
+// the pet, so nyx-voice Pattern 1's "the pet" ban doesn't apply).
+export function comboInDoubtReason(params: { petName: string }): string {
+  return `${params.petName} didn't finish the food.`;
+}
+
+// The calm RESURFACE note for an in-doubt combo dose, shown on the dose's detail screen
+// with the adherence chips directly above it to resolve. Names the food when known
+// (nyx-voice Pattern 2 — specific over generic). It NEVER reassures (no "probably
+// fine"), never asserts the dose was given, and never softens the refusal to
+// "picky"/"fussy" — it states the fact and asks the owner to resolve it
+// (clinical-guardrails Pattern 6 / Pattern 8). The food fallback is "the food" (a thing,
+// not the pet — Pattern 1's "the pet" ban doesn't apply to objects).
+export function doseInDoubtNote(params: {
+  petName: string;
+  foodName: string | null | undefined;
+}): string {
+  const food = (params.foodName ?? '').trim();
+  const vehicle = food.length > 0 ? food : 'the food';
+  // Lead with the dose (the detail screen's subject), then the fact, then the ask —
+  // the "which {pet} didn't finish" relative clause reads cleanly for both a named
+  // food ("Churu, which Pixel didn't finish") and the fallback ("the food, which …").
+  return `This dose was given in ${vehicle}, which ${params.petName} didn't finish — confirm above whether it still got in.`;
+}
+
+// The terse rose state tag for an in-doubt dose on a scan surface (History row). Calm,
+// never an alarm word; the row tag flags that the dose's adherence is unresolved, and
+// the detail screen carries the full ask. A constant (not interpolated) so the History
+// list stays cheap; kept here beside the logic it labels.
+export const DOSE_IN_DOUBT_TAG = 'Unconfirmed';
+
 // ── PR 6 detail/edit allow-list (app/medication/[id].tsx) ──────────────────────
 // The medication_items columns the owner may edit on the detail screen, and the
 // pure builder for the UPDATE payload. Extracted here — NOT inlined in the screen

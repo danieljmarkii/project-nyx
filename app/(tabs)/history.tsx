@@ -86,6 +86,9 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     medication_item_id: row.medication_item_id,
     adherence: row.adherence as NyxEvent['adherence'],
     how_given: row.how_given as NyxEvent['how_given'],
+    paired_event_id: row.paired_event_id,
+    paired_vehicle_intake: row.paired_vehicle_intake as NyxEvent['paired_vehicle_intake'],
+    paired_food_name: row.paired_food_name,
     drug_generic_name: row.drug_generic_name,
     drug_brand_name: row.drug_brand_name,
   };

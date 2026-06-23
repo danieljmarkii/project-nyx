@@ -29,11 +29,15 @@ import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
+import { usePetStore } from '../../store/petStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../../components/log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceChipRow';
 import { VehicleChipRow } from '../../components/log/VehicleChipRow';
-import { doubleDoseNote, DoubleDoseResult, asDoseVehicle, type DoseVehicle } from '../../lib/medications';
+import {
+  doubleDoseNote, DoubleDoseResult, asDoseVehicle,
+  isComboDoseInDoubt, doseInDoubtNote, type DoseVehicle,
+} from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { Header, PhotoViewer } from '../../components/ui';
 
@@ -82,6 +86,7 @@ function formatDate(iso: string): string {
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { removeFromToday } = useEventStore();
+  const { activePet } = usePetStore();
 
   const [event, setEvent] = useState<TimelineRow | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -549,6 +554,26 @@ export default function EventDetailScreen() {
                   onChange={handleAdherenceChange}
                   label={null}
                 />
+                {/* B-156 PR B3 — the calm resurface note for an in-doubt combo dose:
+                    the vehicle was marked not-finished (refused/picked) and the dose is
+                    still unconfirmed (null adherence). Sits directly under the chips so
+                    "confirm above" points at them. Derived live from the event's paired
+                    vehicle + the current adherence, so tapping a chip clears it at once.
+                    Never reassures, never softens to "fussy" (clinical-guardrails). */}
+                {isComboDoseInDoubt({
+                  isCombo: !!event.paired_event_id,
+                  vehicleIntake: event.paired_vehicle_intake,
+                  adherence,
+                }) ? (
+                  <View style={styles.inDoubtNote}>
+                    <Text style={styles.inDoubtNoteText}>
+                      {doseInDoubtNote({
+                        petName: activePet?.name ?? 'your pet',
+                        foodName: event.paired_food_name,
+                      })}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               {/* B-156 Slice B — the dose vehicle, editable retroactively. Optional:
                   the chips start empty when nothing was recorded, and the owner can
@@ -715,6 +740,20 @@ const styles = StyleSheet.create({
   doubleDoseText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightBody,
+  },
+  // The in-doubt resurface note (B-156 PR B3). A soft-rose box — the same calm concern
+  // register as the History "Unconfirmed" tag and the adherence chips' downgrade colour,
+  // so the two surfaces agree — but never an alarm (no icon, no exclamation; Principle 4).
+  inDoubtNote: {
+    marginTop: theme.space2,
+    backgroundColor: theme.colorEventSymptomLight,
+    borderRadius: theme.radiusSmall,
+    padding: theme.space2,
+  },
+  inDoubtNoteText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
     lineHeight: theme.lineHeightBody,
   },
   footer: {

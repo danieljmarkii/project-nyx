@@ -34,6 +34,15 @@ export interface NyxEvent {
   // Descriptive only (no adherence/safety meaning); renders nothing when unset.
   // Uses the canonical DoseVehicle type so it can't drift from the server enum.
   how_given?: DoseVehicle | null;
+  // B-156 PR B3 — the combo safety-coupling read fields (NULL on a standalone dose /
+  // non-medication event). paired_event_id = the co-logged meal/treat this dose was
+  // given inside; paired_vehicle_intake = THAT meal's intake_rating; paired_food_name
+  // = its food name (for the resurface copy). A read surface derives the IN-DOUBT state
+  // (isComboDoseInDoubt: combo + vehicle refused/picked + adherence null) from these —
+  // the History "Unconfirmed" tag and the dose-detail resurface note.
+  paired_event_id?: string | null;
+  paired_vehicle_intake?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null;
+  paired_food_name?: string | null;
   drug_generic_name?: string | null;
   drug_brand_name?: string | null;
 }

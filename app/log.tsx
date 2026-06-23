@@ -19,12 +19,12 @@ import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
 import { useMomentStore } from '../store/momentStore';
-import { getDb, getActiveRegimenForDrug, PickerFood, PickerMedication } from '../lib/db';
+import { getDb, getActiveRegimenForDrug, getMealForEvent, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
 import { insertMedicationDose } from '../lib/medicationDose';
-import { inferDoseVehicleFromFoodType } from '../lib/medications';
+import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, type DoseAdherence } from '../lib/medications';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
@@ -276,9 +276,33 @@ export default function LogModal() {
     if (!writePetId) return;
     // COMBO: infer the vehicle from the food it rode in (meal → in_food, treat →
     // in_treat). A best-guess seed, pre-selected on the card for the owner to confirm
-    // or change; descriptive only, no adherence/safety meaning (the intake→adherence
-    // coupling is the gated B3, deliberately NOT in this PR).
+    // or change; descriptive only, no adherence/safety meaning of its own.
     const howGiven = isComboMode ? inferDoseVehicleFromFoodType(pairedFoodType) : null;
+
+    // B-156 PR B3 — the intake → adherence SAFETY coupling. For a combo dose, the
+    // linked vehicle's intake decides the dose's STARTING adherence: a not-finished
+    // vehicle (refused/picked) starts the dose UNCONFIRMED (null), never an auto
+    // 'given' — so if the completion card auto-dismisses unanswered, the dose is
+    // recorded unconfirmed, never a false compliant record (clinical-guardrails
+    // Pattern 2: no path to a reassuring verdict by construction; the medication
+    // analog of analyze-vomit's escalation floor). A standalone dose, or a combo
+    // whose vehicle was finished/unrated, keeps the affirmative 'given'. The vehicle
+    // intake is read from the just-logged meal; on a read failure we fall back to
+    // null (unconfirmed) rather than 'given' — under uncertainty we never assert the
+    // drug got in, and the read-time resurface join self-corrects either way.
+    let vehicleIntake: string | null = null;
+    let adherence: DoseAdherence | null = 'given';
+    if (isComboMode && pairedEventId) {
+      try {
+        const meal = await getMealForEvent(pairedEventId);
+        vehicleIntake = meal?.intake_rating ?? null;
+        adherence = initialComboDoseAdherence(vehicleIntake);
+      } catch (e) {
+        console.warn('[log] combo vehicle-intake read failed; logging the dose UNCONFIRMED (never auto-given):', e);
+        vehicleIntake = null;
+        adherence = null;
+      }
+    }
 
     // B-153: link this dose to the drug's active regimen (if any) so a configured
     // regimen accumulates doses and the dose inherits its dose_amount — confirm-don't-
@@ -298,7 +322,7 @@ export default function LogModal() {
         petId: writePetId,
         medicationItemId: med.id,
         medicationId: link?.id ?? null,        // the active regimen, if one exists
-        adherence: 'given',                    // the affirmative tap = "I gave this dose"
+        adherence,                             // standalone/finished: 'given'; not-finished combo: null (B-156 PR B3)
         doseAmount: link?.dose_amount ?? null, // inherit the regimen's dose; else honest-null
         howGiven,                              // combo: inferred vehicle; standalone: null
         pairedEventId: pairedEventId ?? null,  // combo: the co-logged meal/treat event; else null
@@ -329,7 +353,12 @@ export default function LogModal() {
         created_at: result.now,
         updated_at: result.now,
         medication_item_id: med.id,
-        adherence: 'given',
+        adherence, // mirrors the dose write — null for a not-finished-vehicle combo (B-156 PR B3)
+        // paired_event_id / paired_vehicle_intake / paired_food_name are deliberately
+        // omitted here: the in-doubt tag + note render only on the DB-backed read
+        // surfaces (History EventRow via getTimeline, dose detail via getEventById),
+        // never the Today zone, which reads this optimistic store row. If a Today-zone
+        // in-doubt tag is ever added, thread the paired fields through here.
         drug_generic_name: med.generic_name,
         drug_brand_name: med.brand_name,
       });
@@ -338,16 +367,20 @@ export default function LogModal() {
     // clears the dismissing modal so the card isn't briefly occluded on iOS). A combo
     // dose frames the card as "Logged together · {drug} · with {food}" (the link made
     // legible) and pre-selects the inferred vehicle; a standalone dose is the normal
-    // "Logged · {drug}". Either way the adherence chips default to 'given' (§5.1).
+    // "Logged · {drug}". A standalone/finished-vehicle combo pre-lights 'given' (§5.1);
+    // a NOT-finished-vehicle combo lands UNCONFIRMED (adherence null) and the card
+    // sharpens its prompt to "Did {pet} still get it?" (B-156 PR B3) — vehicleIntake
+    // lets the card derive that in-doubt state and never pre-light a false 'given'.
     router.back();
     showMedicationMoment(
       {
         eventId: result.eventId,
         occurredAt: result.occurredAtIso,
         drugName: med.generic_name,
-        adherence: 'given',
+        adherence, // standalone/finished: 'given'; not-finished combo: null (B-156 PR B3)
         howGiven, // combo: inferred vehicle (pre-set); standalone: null (chips can set it)
         pairedFoodName: pairedFoodName ?? null, // combo: names the food on the card; else null
+        vehicleIntake, // combo: the linked vehicle's intake → drives the in-doubt prompt; else null
       },
       { delayMs: 450 },
     );
