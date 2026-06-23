@@ -91,6 +91,16 @@ export const MEDICATION_SCHEMA_SQL = `
     -- dose logged without it renders clean — the column captures the clinical
     -- "with food" fact when the owner sets it and is simply absent otherwise.
     how_given           TEXT,
+    -- B-156 Slice C (PR B2): the co-logged meal/treat event this dose was given
+    -- INSIDE (a pill in a Delectable / pill pocket / crushed in wet food) — the
+    -- "with food" combo. Plain TEXT locally (a UUID string); the FK to events and
+    -- the same-pet integrity trigger live server-side (migration 023). Nullable,
+    -- no default, so the ~99% of standalone doses read back a clean NULL. A per-
+    -- EVENT fact (never a property of food_items), so it lives on the historical
+    -- dose record, not the catalog — the recent-treats trap is dissolved by this
+    -- placement (§3): re-adding a food from Recent logs a bare treat, never a
+    -- phantom dose.
+    paired_event_id     TEXT,
     notes               TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
@@ -146,6 +156,7 @@ export interface LocalMedicationAdministration {
   adherence: string | null;
   dose_amount: string | null;
   how_given: string | null; // B-156 — vehicle (dose_route_vehicle enum, server-side)
+  paired_event_id: string | null; // B-156 Slice C (PR B2) — the co-logged meal/treat event this dose was given inside
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -247,6 +258,7 @@ export interface RemoteMedicationAdministrationUpsert {
   adherence: string | null;
   dose_amount: string | null;
   how_given: string | null; // B-156 — vehicle; forwarded as-is, never coerced
+  paired_event_id: string | null; // B-156 Slice C — combo link; forwarded as-is (a UUID or NULL)
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -258,9 +270,11 @@ export interface RemoteMedicationAdministrationUpsert {
 // would read as a confirmed-given one (the n=1 never-reassures invariant, spec §6).
 // how_given (B-156 Slice B) follows the same as-is/never-coerced rule: NULL means
 // "vehicle not recorded" and must stay NULL — it is a descriptive fact, never a
-// safety verdict, so an absent value is simply absent, never defaulted. Carries NO
-// deleted_at: a dose's soft-delete rides its parent event's deleted_at (migration
-// 020), so there is nothing to send here.
+// safety verdict, so an absent value is simply absent, never defaulted. paired_event_id
+// (B-156 Slice C) is the same: a plain UUID-or-NULL combo link forwarded verbatim —
+// the server-side same-pet trigger (migration 023), not this mapper, is what validates
+// it. Carries NO deleted_at: a dose's soft-delete rides its parent event's deleted_at
+// (migration 020), so there is nothing to send here.
 export function administrationRowToRemote(
   row: LocalMedicationAdministration,
 ): RemoteMedicationAdministrationUpsert {
@@ -273,6 +287,7 @@ export function administrationRowToRemote(
     adherence: row.adherence,
     dose_amount: row.dose_amount,
     how_given: row.how_given,
+    paired_event_id: row.paired_event_id,
     notes: row.notes,
     created_at: row.created_at,
     updated_at: row.updated_at,

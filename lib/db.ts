@@ -266,6 +266,19 @@ export async function initDb(): Promise<void> {
   } catch {
     // Column already exists — safe to ignore
   }
+
+  // paired_event_id — B-156 Slice C (PR B2). The co-logged meal/treat event a dose
+  // was given inside (the combo link). Same upgrade reasoning as how_given above: a
+  // device that created medication_administrations on an earlier build (B-117 PR 2,
+  // or the A2 how_given build) already has the table, so CREATE TABLE IF NOT EXISTS
+  // won't add the column — this ALTER does. Plain TEXT (a UUID), nullable, no default:
+  // a standalone dose reads a clean NULL. Mirrors migration 023 on the server (the FK
+  // + same-pet trigger are server-side; the local mirror just holds the value).
+  try {
+    await database.execAsync(`ALTER TABLE medication_administrations ADD COLUMN paired_event_id TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
 }
 
 // FR-9 (B-054, Trust & Safety ship gate) — wipe the local copy of the
