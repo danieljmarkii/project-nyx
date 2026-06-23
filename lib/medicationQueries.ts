@@ -36,6 +36,35 @@ export const ACTIVE_REGIMEN_FOR_DRUG_QUERY =
    ORDER BY started_at DESC
    LIMIT 1`;
 
+// B-156 PR B4 — the REVERSE combo join (vehicle → dose), spliced into the timeline
+// SELECT (getTimeline / getEventById) right after the forward paired-vehicle joins. For
+// each timeline event `e` it aggregates the NON-DELETED doses that point AT it (their
+// paired_event_id = e.id) into ONE row — the GROUP BY is what stops a meal with N paired
+// doses from multiplying into N timeline rows — exposing a count + a representative dose
+// event id; the two re-joins resolve that representative dose's drug name for the
+// single-dose cross-link label. Soft-delete: the inner `… AND pade.deleted_at IS NULL`
+// excludes a soft-deleted dose from the count, so a meal's reverse link drops cleanly
+// when its only paired dose is removed — the exact mirror of the forward join's
+// `pe … AND pe.deleted_at IS NULL`. A non-meal event (or a meal with no paired dose) gets
+// no `pd` row → the caller's COALESCE(pd.dose_count, 0) reads 0 → no reverse link.
+//
+// Splices into: `… FROM events e <forward joins> ${PAIRED_DOSE_REVERSE_JOIN} WHERE …`,
+// selecting `COALESCE(pd.dose_count,0) AS paired_dose_count, pd.rep_event_id AS
+// paired_dose_event_id, pdmi.generic_name AS paired_dose_drug_name`. Aliases pad/pade/
+// pdma/pdmi are distinct from the forward join's pe/pm/pf so they can't collide.
+export const PAIRED_DOSE_REVERSE_JOIN = `
+     LEFT JOIN (
+       SELECT pad.paired_event_id AS meal_id,
+              COUNT(*) AS dose_count,
+              MIN(pad.event_id) AS rep_event_id
+       FROM medication_administrations pad
+       JOIN events pade ON pade.id = pad.event_id AND pade.deleted_at IS NULL
+       WHERE pad.paired_event_id IS NOT NULL
+       GROUP BY pad.paired_event_id
+     ) pd ON pd.meal_id = e.id
+     LEFT JOIN medication_administrations pdma ON pdma.event_id = pd.rep_event_id
+     LEFT JOIN medication_items_cache pdmi ON pdmi.id = pdma.medication_item_id`;
+
 // This pet's most-recently-given distinct drugs, newest first — ordered by the
 // pet's actual last dose of each drug (MAX(occurred_at)), the exact shape of
 // getRecentFoods. The INNER JOIN on medication_items_cache deliberately drops

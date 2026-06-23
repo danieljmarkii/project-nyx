@@ -541,6 +541,51 @@ export function doseInDoubtNote(params: {
 // list stays cheap; kept here beside the logic it labels.
 export const DOSE_IN_DOUBT_TAG = 'Unconfirmed';
 
+// ── B-156 PR B4 — combo cross-link labels (History rows + detail screens) ───────
+// A combo is TWO events (the dose + its vehicle meal/treat), cross-linked by
+// paired_event_id — the G2 model: two independent, cross-linked instances, NEVER one
+// merged row. To keep the owner's "one act" legible across those two History instances
+// without merging them, each side shows a quiet, tappable cross-link to the other. These
+// are PURE label builders so the load-bearing "drop the label cleanly when the other side
+// is gone" rule — the soft-delete AC — is a tested function, not a render-time conditional
+// that can rot. BOTH return null when there is nothing to point at, so the surface renders
+// nothing (no dangling affordance to a removed or unhydrated event). Descriptive /
+// navigational only — neither carries adherence or safety meaning (that's B3's coupling).
+
+// Dose → vehicle ("Given with Churu"). The label under a dose given inside a meal/treat.
+// Returns null when the vehicle's food name is absent — which is exactly the soft-deleted-
+// vehicle case: getTimeline joins paired_food_name through `events … AND deleted_at IS NULL`,
+// so removing the vehicle nulls the name and this drops the link cleanly (the dose survives,
+// its link just no longer points at a meal gone from History). nyx-voice: plain, specific.
+export function pairedVehicleLinkLabel(foodName: string | null | undefined): string | null {
+  const food = (foodName ?? '').trim();
+  return food.length > 0 ? `Given with ${food}` : null;
+}
+
+// Vehicle → dose ("Given with a Cetirizine dose"). The label on a meal/treat that carried
+// co-logged dose(s). Names the single drug when there is exactly one; falls back to "a dose"
+// when that dose's drug name hasn't hydrated locally; summarizes as a plain count for the
+// rare N-doses-in-one-bowl case (B1 allows N doses per vehicle — no uniqueness on
+// paired_event_id). Returns null when no NON-DELETED dose is paired, so a soft-deleted dose
+// drops the link cleanly (the reverse join excludes it → count 0).
+//
+// Copy: deliberately mirrors pairedVehicleLinkLabel's "Given with …" so the two sides of one
+// combo read as the SAME bidirectional relationship (Designer/pm-feature-review B4 call). The
+// earlier "+ {drug} dose" shorthand (spec §10) was dropped because its leading "+" collided
+// with B2b's "+ Add a med given with this" CREATE affordance — a navigation link must not read
+// as an add action. nyx-voice: plain, specific, no exclamation.
+export function pairedDoseLinkLabel(params: {
+  count: number;
+  drugName?: string | null;
+}): string | null {
+  if (params.count <= 0) return null;
+  if (params.count === 1) {
+    const drug = (params.drugName ?? '').trim();
+    return drug.length > 0 ? `Given with a ${drug} dose` : 'Given with a dose';
+  }
+  return `Given with ${params.count} doses`;
+}
+
 // ── PR 6 detail/edit allow-list (app/medication/[id].tsx) ──────────────────────
 // The medication_items columns the owner may edit on the detail screen, and the
 // pure builder for the UPDATE payload. Extracted here — NOT inlined in the screen

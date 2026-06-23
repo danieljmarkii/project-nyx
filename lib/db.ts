@@ -10,7 +10,7 @@ import {
   type DoubleDoseResult,
   type DoseVehicle,
 } from './medications';
-import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
+import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN } from './medicationQueries';
 import { uuid } from './utils';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -279,6 +279,25 @@ export async function initDb(): Promise<void> {
   } catch {
     // Column already exists — safe to ignore
   }
+
+  // B-156 PR B4 — local index on the combo link, mirroring Supabase migration 023's
+  // partial index. The reverse-lookup join (PAIRED_DOSE_REVERSE_JOIN) groups
+  // medication_administrations BY paired_event_id on every getTimeline / getEventById,
+  // so the column wants an index for the meal→dose cross-link reads. Created HERE (not in
+  // MEDICATION_SCHEMA_SQL, which runs above at line ~174 BEFORE the ALTER adds the column
+  // on an upgrading install — indexing it there would throw on the missing column and
+  // abort the whole batch). Runs after the ALTER for every install: a new install's
+  // column came from MEDICATION_SCHEMA_SQL's CREATE TABLE (the ALTER no-op'd), an upgrade's
+  // from the ALTER just above — either way the column exists now. IF NOT EXISTS = idempotent.
+  try {
+    await database.execAsync(
+      `CREATE INDEX IF NOT EXISTS idx_medication_administrations_paired_event
+         ON medication_administrations(paired_event_id)
+         WHERE paired_event_id IS NOT NULL`,
+    );
+  } catch (e) {
+    console.warn('[db] paired_event_id index create failed:', e);
+  }
 }
 
 // FR-9 (B-054, Trust & Safety ship gate) — wipe the local copy of the
@@ -416,6 +435,19 @@ export interface TimelineRow {
   paired_food_name: string | null;
   drug_generic_name: string | null;
   drug_brand_name: string | null;
+  // B-156 PR B4 — the REVERSE combo link (vehicle → dose), for the cross-link shown on a
+  // MEAL/treat row that carried co-logged dose(s). The forward fields above link a dose to
+  // its vehicle; these are the mirror so the combo is legible from BOTH sides without
+  // merging the two events (the G2 model). paired_dose_count = how many NON-DELETED doses
+  // point at this event via paired_event_id (0 on a non-meal row or a meal with no paired
+  // dose); paired_dose_event_id = a representative such dose's event id (the nav target —
+  // the single dose when count=1); paired_dose_drug_name = that dose's drug, for the
+  // single-dose label. A SOFT-DELETED dose is excluded from the count (the reverse join
+  // filters deleted_at IS NULL), so the meal's link drops cleanly when its only paired
+  // dose is removed — the mirror of the forward soft-delete drop above.
+  paired_dose_count: number;
+  paired_dose_event_id: string | null;
+  paired_dose_drug_name: string | null;
 }
 
 export async function getTimeline(
@@ -449,7 +481,10 @@ export async function getTimeline(
             ma.paired_event_id,
             pm.intake_rating AS paired_vehicle_intake,
             pf.product_name AS paired_food_name,
-            mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
+            mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
+            COALESCE(pd.dose_count, 0) AS paired_dose_count,
+            pd.rep_event_id AS paired_dose_event_id,
+            pdmi.generic_name AS paired_dose_drug_name
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
@@ -458,6 +493,7 @@ export async function getTimeline(
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
      LEFT JOIN meals pm ON pm.event_id = pe.id
      LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
+     ${PAIRED_DOSE_REVERSE_JOIN}
      WHERE e.pet_id = ? AND e.deleted_at IS NULL
      ${typeClause} ${dateClause}
      ORDER BY e.occurred_at DESC
@@ -479,7 +515,10 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             ma.paired_event_id,
             pm.intake_rating AS paired_vehicle_intake,
             pf.product_name AS paired_food_name,
-            mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name
+            mi.generic_name AS drug_generic_name, mi.brand_name AS drug_brand_name,
+            COALESCE(pd.dose_count, 0) AS paired_dose_count,
+            pd.rep_event_id AS paired_dose_event_id,
+            pdmi.generic_name AS paired_dose_drug_name
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
@@ -488,6 +527,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
      LEFT JOIN meals pm ON pm.event_id = pe.id
      LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
+     ${PAIRED_DOSE_REVERSE_JOIN}
      WHERE e.id = ? AND e.deleted_at IS NULL`,
     [eventId],
   );

@@ -6,7 +6,7 @@
 //
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery } from './medicationQueries';
+import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN } from './medicationQueries';
 
 interface PickRow {
   id: string;
@@ -254,5 +254,124 @@ describe('recentMedicationsQuery', () => {
     const rows = db.prepare(recentMedicationsQuery(false)).all('p1', 2) as unknown as PickRow[];
     db.close();
     expect(rows.map((r) => r.id)).toEqual(['itemC', 'itemB']); // newest 2
+  });
+});
+
+describe('PAIRED_DOSE_REVERSE_JOIN (B-156 PR B4 vehicle → dose cross-link)', () => {
+  // The reverse join is spliced into the timeline SELECT; this wrapper mirrors exactly
+  // how getTimeline / getEventById splice + select it, so the real production fragment
+  // is exercised end-to-end (the GROUP BY no-multiplication + the soft-delete drop — the
+  // AC — are otherwise verified only on-device).
+  const REVERSE_WRAPPER = `
+    SELECT e.id,
+           COALESCE(pd.dose_count, 0) AS paired_dose_count,
+           pd.rep_event_id AS paired_dose_event_id,
+           pdmi.generic_name AS paired_dose_drug_name
+    FROM events e
+    ${PAIRED_DOSE_REVERSE_JOIN}
+    WHERE e.id = ?`;
+
+  interface ReverseRow {
+    id: string;
+    paired_dose_count: number;
+    paired_dose_event_id: string | null;
+    paired_dose_drug_name: string | null;
+  }
+
+  function reverseDb() {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE events (id TEXT PRIMARY KEY, occurred_at TEXT, deleted_at TEXT);`);
+    db.exec(`CREATE TABLE medication_items_cache (
+      id TEXT PRIMARY KEY, generic_name TEXT, brand_name TEXT, strength TEXT, form TEXT, default_route TEXT
+    );`);
+    // paired_event_id is the only addition over the picker harness's dose table.
+    db.exec(`CREATE TABLE medication_administrations (
+      id TEXT PRIMARY KEY, event_id TEXT, pet_id TEXT, medication_item_id TEXT, paired_event_id TEXT
+    );`);
+    return db;
+  }
+
+  it('resolves a meal with one paired dose → count 1, the dose event id, the drug name', () => {
+    const db = reverseDb();
+    db.prepare(`INSERT INTO medication_items_cache (id, generic_name) VALUES (?, ?)`).run('item-cet', 'Cetirizine');
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('meal-1', '2026-06-23T16:00:00.000Z', null);
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('dose-1', '2026-06-23T16:01:00.000Z', null);
+    db.prepare(
+      `INSERT INTO medication_administrations (id, event_id, pet_id, medication_item_id, paired_event_id)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run('adm-1', 'dose-1', 'p1', 'item-cet', 'meal-1');
+
+    const row = db.prepare(REVERSE_WRAPPER).get('meal-1') as unknown as ReverseRow;
+    db.close();
+    expect(row).toMatchObject({
+      paired_dose_count: 1,
+      paired_dose_event_id: 'dose-1',
+      paired_dose_drug_name: 'Cetirizine',
+    });
+  });
+
+  it('drops a soft-deleted dose from the count — the meal link disappears (the AC)', () => {
+    const db = reverseDb();
+    db.prepare(`INSERT INTO medication_items_cache (id, generic_name) VALUES (?, ?)`).run('item-cet', 'Cetirizine');
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('meal-1', '2026-06-23T16:00:00.000Z', null);
+    // The dose's parent event is soft-deleted (deletedness rides the parent event).
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('dose-1', '2026-06-23T16:01:00.000Z', '2026-06-23T17:00:00.000Z');
+    db.prepare(
+      `INSERT INTO medication_administrations (id, event_id, pet_id, medication_item_id, paired_event_id)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run('adm-1', 'dose-1', 'p1', 'item-cet', 'meal-1');
+
+    const row = db.prepare(REVERSE_WRAPPER).get('meal-1') as unknown as ReverseRow;
+    db.close();
+    // count 0 + null target → pairedDoseLinkLabel returns null → no link rendered.
+    expect(row).toMatchObject({ paired_dose_count: 0, paired_dose_event_id: null, paired_dose_drug_name: null });
+  });
+
+  it('counts N doses in one vehicle as ONE timeline row (GROUP BY — no multiplication)', () => {
+    const db = reverseDb();
+    db.prepare(`INSERT INTO medication_items_cache (id, generic_name) VALUES (?, ?)`).run('item-cet', 'Cetirizine');
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('meal-1', '2026-06-23T16:00:00.000Z', null);
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('dose-a', '2026-06-23T16:01:00.000Z', null);
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('dose-b', '2026-06-23T16:02:00.000Z', null);
+    const insDose = db.prepare(
+      `INSERT INTO medication_administrations (id, event_id, pet_id, medication_item_id, paired_event_id)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    insDose.run('adm-a', 'dose-a', 'p1', 'item-cet', 'meal-1');
+    insDose.run('adm-b', 'dose-b', 'p1', 'item-cet', 'meal-1');
+
+    const rows = db.prepare(REVERSE_WRAPPER).all('meal-1') as unknown as ReverseRow[];
+    db.close();
+    expect(rows).toHaveLength(1); // the meal is never duplicated by its 2 paired doses
+    expect(rows[0].paired_dose_count).toBe(2);
+    // The representative (nav target) is deterministic — MIN(event_id) = 'dose-a'.
+    expect(rows[0].paired_dose_event_id).toBe('dose-a');
+  });
+
+  it('reads a clean 0 for a standalone meal and for a (dose / symptom) event nothing points at', () => {
+    const db = reverseDb();
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('meal-solo', '2026-06-23T16:00:00.000Z', null);
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('vomit-1', '2026-06-23T18:00:00.000Z', null);
+
+    const meal = db.prepare(REVERSE_WRAPPER).get('meal-solo') as unknown as ReverseRow;
+    const vomit = db.prepare(REVERSE_WRAPPER).get('vomit-1') as unknown as ReverseRow;
+    db.close();
+    expect(meal).toMatchObject({ paired_dose_count: 0, paired_dose_event_id: null });
+    expect(vomit).toMatchObject({ paired_dose_count: 0, paired_dose_event_id: null });
+  });
+
+  it('returns count 1 with a NULL drug name when the dose has no library item (→ "+ a dose")', () => {
+    const db = reverseDb();
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('meal-1', '2026-06-23T16:00:00.000Z', null);
+    db.prepare(`INSERT INTO events (id, occurred_at, deleted_at) VALUES (?, ?, ?)`).run('dose-1', '2026-06-23T16:01:00.000Z', null);
+    // Free-text/ad-hoc dose: medication_item_id NULL → the re-join finds no drug name.
+    db.prepare(
+      `INSERT INTO medication_administrations (id, event_id, pet_id, medication_item_id, paired_event_id)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run('adm-1', 'dose-1', 'p1', null, 'meal-1');
+
+    const row = db.prepare(REVERSE_WRAPPER).get('meal-1') as unknown as ReverseRow;
+    db.close();
+    expect(row).toMatchObject({ paired_dose_count: 1, paired_dose_event_id: 'dose-1', paired_dose_drug_name: null });
   });
 });

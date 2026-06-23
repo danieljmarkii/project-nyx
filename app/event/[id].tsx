@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { theme } from '../../constants/theme';
@@ -36,7 +37,8 @@ import { AdherenceChipRow, DoseAdherence } from '../../components/log/AdherenceC
 import { VehicleChipRow } from '../../components/log/VehicleChipRow';
 import {
   doubleDoseNote, DoubleDoseResult, asDoseVehicle,
-  isComboDoseInDoubt, doseInDoubtNote, type DoseVehicle,
+  isComboDoseInDoubt, doseInDoubtNote,
+  pairedVehicleLinkLabel, pairedDoseLinkLabel, type DoseVehicle,
 } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { Header, PhotoViewer } from '../../components/ui';
@@ -81,6 +83,35 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], {
     weekday: 'long', month: 'long', day: 'numeric',
   });
+}
+
+// B-156 PR B4 — the combo cross-link on the detail screen, the larger sibling of
+// EventRow's ComboCrossLink. A combo is two independent, cross-linked events (the G2
+// model — never merged): each one's detail screen shows a tappable link to the other so
+// the "one act" stays legible exactly where the owner lands to edit it. Renders nothing
+// when there is nothing to point at (a null label OR no target) — which is how the
+// soft-delete drop works: removing the other side nulls the label/target and the link
+// vanishes, never dangling at an event gone from History.
+function ComboLinkRow({
+  label,
+  targetEventId,
+}: {
+  label: string | null;
+  targetEventId: string | null | undefined;
+}) {
+  if (!label || !targetEventId) return null;
+  return (
+    <TouchableOpacity
+      style={styles.comboLink}
+      onPress={() => router.push({ pathname: '/event/[id]', params: { id: targetEventId } })}
+      activeOpacity={0.7}
+      accessibilityRole="link"
+      accessibilityLabel={label}
+    >
+      <Text style={styles.comboLinkText} numberOfLines={1}>{label}</Text>
+      <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
+    </TouchableOpacity>
+  );
 }
 
 export default function EventDetailScreen() {
@@ -540,12 +571,33 @@ export default function EventDetailScreen() {
             </View>
           ) : null}
 
+          {/* B-156 PR B4 — vehicle → dose cross-link. On a meal/treat that carried a
+              co-logged dose, a tap opens that dose (where its adherence is edited). The
+              two events are edited independently (G2); this keeps the combo legible
+              without merging them. Drops cleanly if the only paired dose is removed. */}
+          {isMeal ? (
+            <ComboLinkRow
+              label={pairedDoseLinkLabel({
+                count: event.paired_dose_count ?? 0,
+                drugName: event.paired_dose_drug_name,
+              })}
+              targetEventId={event.paired_dose_event_id}
+            />
+          ) : null}
+
           {isMedication && dose ? (
             <>
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>MEDICATION</Text>
                 <Text style={styles.foodProduct}>{drugPrimary}</Text>
                 {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                {/* B-156 PR B4 — dose → vehicle cross-link. On a dose given inside a
+                    meal/treat, a tap opens that vehicle (where its intake is edited).
+                    Drops cleanly if the vehicle is soft-deleted (paired_food_name nulls). */}
+                <ComboLinkRow
+                  label={pairedVehicleLinkLabel(event.paired_food_name)}
+                  targetEventId={event.paired_event_id}
+                />
               </View>
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>ADHERENCE</Text>
@@ -722,6 +774,25 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginTop: 2,
+  },
+  // The combo cross-link (B-156 PR B4). Accent text + chevron so it reads as a
+  // navigation affordance to the paired event. alignSelf flex-start so the tap target
+  // hugs the label; minHeight clears the 44pt floor without padding overshoot; maxWidth
+  // truncates a long food name at the body edge rather than overflowing.
+  comboLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spaceMicro,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    marginTop: theme.space1,
+    minHeight: 44,
+  },
+  comboLinkText: {
+    fontSize: theme.textMD,
+    color: theme.colorAccent,
+    fontWeight: theme.fontWeightMedium,
+    flexShrink: 1,
   },
   notes: {
     fontSize: theme.textMD,
