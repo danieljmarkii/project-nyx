@@ -1,6 +1,6 @@
 # Medication-Details Helper Copy + Popular-Name Examples — Requirements
 
-**Version:** 1.0 (DRAFT) | Created: 2026-06-22 | Backlog: **B-160**
+**Version:** 1.0 (DRAFT) | Created: 2026-06-23 | Backlog: **B-160**
 **Status:** Spec drafted, awaiting PM ratification. No code shipped in the spec session. Parent: B-117 (`docs/nyx-medication-logging-requirements.md`). This is a small "quick win" — the spec is proportionate to it, but the one clinical-safety catch in §3 is load-bearing and must not be skipped at build.
 
 ---
@@ -83,7 +83,7 @@ export interface CommonMedication {
 | Pimobendan | generic (Vetmedin) | dog | cardiac | ✓ |
 | Levetiracetam | generic (Keppra) | both | anti-seizure | ✓ |
 
-The **chip row shows ~8–10** (the field still accepts free text — chips are shortcuts, never a closed list). Recommend a horizontal scroll row (reuse the existing `ChipScroll` pattern from `medication-capture.tsx`) under the name input, **shown only when the name field is empty** — so the happy AI-confirm path (name pre-filled) never shows clutter, and the chips help exactly the manual/empty case they're for.
+The **chip row shows ~8–10** (the field still accepts free text — chips are shortcuts, never a closed list). It's a small **new** horizontal, scrollable row of *tap-to-fill* pills built on `components/ui/FilterChip` — deliberately **distinct** from the single-select `components/ui/ChipGroup` that now powers Form/Route (a name chip fills-and-vanishes; it is not a persistent selection, so it is not a radio group). Because it's an *open-ended suggestion* set (not a closed one), a horizontal scroll is right here — but heed the **B-146 lesson** that drove `ChipGroup`: never hide chips with no peek, so the row needs a visible peek/fade at the edge (the mock shows this). Place it under the name input, **shown only when the name field is empty** — so the happy AI-confirm path (name pre-filled) never shows clutter, and the chips help exactly the manual/empty case they're for.
 
 A small selector keeps ordering testable and the screen dumb:
 
@@ -147,7 +147,7 @@ The curated `COMMON_MEDICATIONS` list (esp. the `critical` flag) is a **reusable
 
 **One PR (small, mostly copy + data):**
 1. `COMMON_MEDICATIONS` + `commonMedicationsForSpecies` in `lib/medications.ts` + unit tests (data contract: no dupes, species union never drops a 'both' drug, stable ordering) — **required, it's a shared `lib/` util (DoD)**.
-2. A name-suggestion chip row (reuse `ChipScroll`) + the §4.2 helper copy, wired into `medication-capture.tsx` `step='edit'` and `step='confirm'` (name field empty-state only; strength helper always).
+2. A name-suggestion chip row — a **new** horizontal, tap-to-fill row on `FilterChip` (NOT the single-select `ChipGroup`) — + the §4.2 helper copy, wired into `medication-capture.tsx` `step='edit'` and `step='confirm'` (name field empty-state only; strength helper always).
 3. **(S5, recommended)** the same in `AddMedicationModal.tsx` via `onChangeDrugName`.
 
 No schema, no migration, no Edge Function. Can split (2) and (3) if the PM prefers.
@@ -172,5 +172,6 @@ No schema, no migration, no Edge Function. Can split (2) and (3) if the PM prefe
 
 - Backlog: B-160 (this), siblings B-154/B-155/B-156/B-158/B-159 (med-QA pass), parent B-117.
 - Parent spec: `docs/nyx-medication-logging-requirements.md` (§3 configure-once model, §6.5 dose-confirm gate, §D2 organic library, §10/S2 is_critical, S5 centralized-catalog refactor).
-- Screens/data: `app/medication-capture.tsx` (`step='edit'`/`'confirm'`, `StrengthGate`, `ChipScroll`), `components/profile/AddMedicationModal.tsx` (`onChangeDrugName`), `lib/medications.ts` (`MEDICATION_FORM_OPTIONS`, `initialStrengthConfirmed`, `canSaveMedicationCapture`).
+- Screens/data: `app/medication-capture.tsx` (`step='edit'`/`'confirm'`, `StrengthGate`; Form/Route render via `components/ui/ChipGroup` after the B-146 chip refactor), `components/ui/FilterChip` (base chip the new suggestion row builds on), `components/profile/AddMedicationModal.tsx` (`onChangeDrugName`), `lib/medications.ts` (`MEDICATION_FORM_OPTIONS`, `initialStrengthConfirmed`, `canSaveMedicationCapture`).
+- Reconciliation note: this DRAFT was reconciled against the B-146 chip refactor (shared single-select `ChipGroup` replaced the local `ChipScroll`) that landed on `main` 2026-06-22, before merge.
 - Skills: `clinical-guardrails` (the §3 catch), `nyx-voice` (Patterns 4/5/6 — copy register). Canonicalization context: B-052.
