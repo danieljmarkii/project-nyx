@@ -632,6 +632,150 @@ Deno.test('detectCorrelations — B-117: suppressing one symptom type must NOT i
   assert.equal(bdMed!.tier, bdNo!.tier, "the unrelated finding's tier must not inflate Early→Established")
 })
 
+// ── Detector ①: B-156 PR C1 — the dose↔vehicle pairing (combo confounder) ────
+//
+// A medication given INSIDE a food (a pill in a Delectable) is ONE act stored as TWO events —
+// a meal/treat AND a dose, linked by paired_event_id. For that exposure the food and the drug
+// are collinear by construction, so the engine attributes it to the DRUG, never the food:
+//   • the vehicle meal's protein is dropped from the case/control exposure set (PR C1 core);
+//   • an in-doubt combo dose (vehicle refused/picked, adherence still null) is NOT on board
+//     (B-174 — the carrier wasn't eaten → the drug most likely wasn't delivered).
+// Both reconcile with the B-117 PR 9 confounder pass; absent (no combos) ⇒ byte-identical.
+
+const vehicleMeal = (day: number, protein: string, hour = 10): MealEvent =>
+  meal({ occurredAt: at(day, hour), primaryProtein: protein, isMedicationVehicle: true })
+
+Deno.test('doseToMedicationWindow — B-174: an unconfirmed combo dose with a refused/picked vehicle is NOT on board', () => {
+  const base = { medicationItemId: 'drug-1', occurredAt: at(5, 9) }
+  // The exact collision B-174 resolves: B3 lands a combo dose at adherence `null` ("unconfirmed")
+  // when the owner marked the carrier food refused/picked. The carrier wasn't eaten → the pill in
+  // it most likely wasn't delivered → not on board → no window (just like a refused dose).
+  assert.equal(doseToMedicationWindow({ ...base, adherence: null, pairedVehicleIntake: 'refused' }), null)
+  assert.equal(doseToMedicationWindow({ ...base, adherence: null, pairedVehicleIntake: 'picked' }), null)
+  // The carrier WAS eaten (some/most/all) → §5.1 default holds → on board (a point window). This
+  // also keeps B3's documented `some`-edge known-limit (B-173): `some` reads as given/on-board.
+  for (const intake of ['some', 'most', 'all'] as const) {
+    const w = doseToMedicationWindow({ ...base, adherence: null, pairedVehicleIntake: intake })
+    assert.ok(w, `vehicle=${intake} → the dose is on board`)
+    assert.equal(w!.activeFrom, at(5, 9), 'a dose is still a POINT at its time')
+  }
+  // An EXPLICIT owner answer overrides the in-doubt drop: "I pilled her directly after she spat
+  // the treat" → given/partial → on board even on a refused vehicle.
+  assert.ok(doseToMedicationWindow({ ...base, adherence: 'given', pairedVehicleIntake: 'refused' }))
+  assert.ok(doseToMedicationWindow({ ...base, adherence: 'partial', pairedVehicleIntake: 'picked' }))
+  // missed/refused adherence is dropped regardless of the vehicle (unchanged from PR 9).
+  assert.equal(doseToMedicationWindow({ ...base, adherence: 'missed', pairedVehicleIntake: 'all' }), null)
+  assert.equal(doseToMedicationWindow({ ...base, adherence: 'refused', pairedVehicleIntake: 'all' }), null)
+  // A STANDALONE null dose (no vehicle) is UNTOUCHED — still administered (§5.1). The new branch
+  // requires a refused/picked vehicle, which only a combo has, so standalone semantics can't drift.
+  assert.ok(doseToMedicationWindow({ ...base, adherence: null }), 'standalone null = administered')
+  assert.ok(
+    doseToMedicationWindow({ ...base, adherence: null, pairedVehicleIntake: null }),
+    'a combo whose vehicle intake we cannot see (deleted / out-of-lookback) keeps the §5.1 default',
+  )
+})
+
+Deno.test('detectCorrelations — B-156 PR C1: a protein logged ONLY as a medication vehicle never builds a food correlation', () => {
+  // THE combo false-attribution: every chicken exposure over the flare is a pill-in-a-treat. The
+  // same fixture WITHOUT the pairing false-fires "chicken → vomit" (the B-117 baseline). With the
+  // vehicle flag set, the chicken is attributed to the drug and never surfaces as a food card —
+  // even with NO medication window present, the per-exposure drop alone is decisive.
+  const baseMeals = staple(1, 20, 'beef', 9)
+  const symptomEvents = [11, 12, 13, 14].map((d) => symptom('vomit', at(d, 11)))
+
+  const baseline = detectCorrelations(
+    input({ mealEvents: [...baseMeals, ...[11, 12, 13, 14].map((d) => pMeal(d, 'chicken', 10))], symptomEvents }),
+  )
+  assert.equal(baseline.some((f) => f.protein === 'chicken'), true, 'baseline (clean chicken) false-fires')
+
+  const asVehicle = detectCorrelations(
+    input({ mealEvents: [...baseMeals, ...[11, 12, 13, 14].map((d) => vehicleMeal(d, 'chicken'))], symptomEvents }),
+  )
+  assert.equal(
+    asVehicle.some((f) => f.protein === 'chicken'),
+    false,
+    'a vehicle-only protein is attributed to the drug, never surfaced as a food correlation',
+  )
+})
+
+Deno.test('detectCorrelations — B-156 PR C1: a vehicle is a PER-EXPOSURE drop, not a candidacy exclusion (unlike free-fed)', () => {
+  // The load-bearing distinction from free-feeding: a free-fed protein is excluded from candidacy
+  // WHOLESALE (always present); a vehicle drops only ITS OWN exposure. Here chicken is case-
+  // enriched via CLEAN meals over the flare AND also appears as a medication vehicle on two
+  // symptom-free days. The clean flare signal must still fire — the off-flare vehicle exposures
+  // must NOT blind the engine to the protein the way a free-fed exclusion would.
+  const mealEvents = [
+    ...staple(1, 20, 'beef', 9),
+    ...[11, 12, 13, 14].map((d) => pMeal(d, 'chicken', 10)), // clean, case-enriched over the flare
+    vehicleMeal(3, 'chicken', 15), // off-flare vehicle exposures — dropped, but the protein stays a candidate
+    vehicleMeal(6, 'chicken', 15),
+  ]
+  const symptomEvents = [11, 12, 13, 14].map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(
+    findings.some((f) => f.protein === 'chicken'),
+    true,
+    'clean chicken still fires — a vehicle exposure elsewhere does not exclude the protein from candidacy',
+  )
+})
+
+Deno.test('detectCorrelations — B-156 PR C1: a FINISHED combo drops the vehicle food AND keeps the drug on board for the §8 pass', () => {
+  // The realistic eaten combo: the cat ATE the chicken treat carrying the pill on every flare day.
+  // Two things hold together — (1) the chicken vehicle never builds its own card (PR C1 core), and
+  // (2) the dose IS on board (vehicle eaten → §5.1 default), so the drug is present for the B-117
+  // confounder analysis. The honest combo outcome: no "chicken → vomit".
+  const baseMeals = staple(1, 20, 'beef', 9)
+  const vehicleChicken = [11, 12, 13, 14].map((d) => vehicleMeal(d, 'chicken'))
+  const symptomEvents = [11, 12, 13, 14].map((d) => symptom('vomit', at(d, 11)))
+  const doseWindows = [11, 12, 13, 14]
+    .map((d) =>
+      doseToMedicationWindow({ medicationItemId: 'drug-1', occurredAt: at(d, 10), adherence: null, pairedVehicleIntake: 'all' }),
+    )
+    .filter((w): w is MedicationWindow => w !== null)
+  assert.equal(doseWindows.length, 4, 'an eaten-vehicle combo dose IS on board (a point window each)')
+  const findings = detectCorrelations(
+    input({ mealEvents: [...baseMeals, ...vehicleChicken], symptomEvents, medicationWindows: doseWindows }),
+  )
+  assert.equal(findings.some((f) => f.protein === 'chicken'), false, 'the vehicle chicken never surfaces as a food card')
+})
+
+Deno.test('detectCorrelations — B-174: a refused-vehicle in-doubt combo dose cannot suppress a real finding', () => {
+  // The combo safety case meets the confounder pass. The owner tried to pill the cat in a chicken
+  // treat on the beef-flare days but the cat REFUSED it → in-doubt doses (adherence null, vehicle
+  // refused). doseToMedicationWindow drops every one (drug not delivered), so the engine sees NO
+  // med window and the genuine beef→vomit Established finding survives — a phantom "drug on board"
+  // must never suppress (or even cap) a real food correlation.
+  const mealEvents = [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
+  const inDoubtWindows = [1, 2, 3, 4, 5, 6]
+    .map((d) =>
+      doseToMedicationWindow({ medicationItemId: 'drug-1', occurredAt: at(d, 9), adherence: null, pairedVehicleIntake: 'refused' }),
+    )
+    .filter((w): w is MedicationWindow => w !== null)
+  assert.equal(inDoubtWindows.length, 0, 'every in-doubt refused-vehicle dose is dropped (not on board)')
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents, medicationWindows: inDoubtWindows }))
+  assert.equal(findings.length, 1, 'the real beef finding survives')
+  assert.equal(findings[0].protein, 'beef')
+  assert.equal(findings[0].tier, 'established', 'with no real drug on board it is not even capped at Early')
+})
+
+Deno.test('detectCorrelations — B-156 PR C1: no vehicle flag is byte-identical (the Established fixture still reaches Established)', () => {
+  // Inertness lock: isMedicationVehicle absent/false must perturb nothing. The canonical
+  // Established beef fixture must reach Established exactly as it does without the field.
+  const mealEvents = [
+    ...staple(1, 12, 'chicken', 9),
+    ...[1, 2, 3, 4, 5, 6].map((d) => pMeal(d, 'beef', 10)),
+  ]
+  const symptomEvents = [1, 2, 3, 4, 5, 6].map((d) => symptom('vomit', at(d, 11)))
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].protein, 'beef')
+  assert.equal(findings[0].tier, 'established', 'no vehicle flag ⇒ unchanged behavior')
+})
+
 // ── Detector ①: B-052 protein-key canonicalization (read-time) ───────────────
 
 Deno.test('detectCorrelations — B-052: by-product/casing variants pool into one protein', () => {
