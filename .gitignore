@@ -52,3 +52,6 @@ supabase/.temp/
 
 # Edge Function deploy bundles (scripts/deploy-edge.sh build output)
 .edge-build/
+
+# Deno dependency cache (DENO_DIR for `deno check`/`deno test` during edge deploys)
+.deno-cache/
