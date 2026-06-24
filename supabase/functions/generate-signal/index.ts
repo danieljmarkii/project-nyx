@@ -319,7 +319,14 @@ interface RegimenRow {
   ended_at: string | null // DATE; the drug is on board through the WHOLE day → end-of-day-inclusive below
 }
 
-type MedAdminJoin = { medication_item_id: string | null; adherence: string | null }
+type MedAdminJoin = {
+  medication_item_id: string | null
+  adherence: string | null
+  // B-156 PR C1: the meal/treat event this dose rode inside (a pill in a Delectable), or null
+  // for a standalone dose. Migration 023; nullable FK → events(id). Used to (a) attribute the
+  // vehicle food to the drug and (b) reconcile an in-doubt combo dose's on-board status (B-174).
+  paired_event_id: string | null
+}
 interface MedDoseEventRow {
   occurred_at: string
   medication_administrations: MedAdminJoin | MedAdminJoin[] | null
@@ -337,7 +344,14 @@ function regimenEndIso(endedAt: string | null): string | null {
   return new Date(ms + MS_PER_DAY).toISOString()
 }
 
-function mapMedicationWindows(regimens: RegimenRow[], doseEvents: MedDoseEventRow[]): MedicationWindow[] {
+function mapMedicationWindows(
+  regimens: RegimenRow[],
+  doseEvents: MedDoseEventRow[],
+  // B-156 PR C1 / B-174: meal/treat event id → its intake rating, for resolving a combo dose's
+  // paired vehicle. A vehicle that is soft-deleted or out-of-lookback is simply absent here →
+  // the lookup is null → the dose keeps the §5.1 default (the safe, conservative on-board read).
+  mealIntakeById: Map<string, IntakeRating | null>,
+): MedicationWindow[] {
   const windows: MedicationWindow[] = regimens.map((r) => ({
     medicationItemId: r.medication_item_id,
     activeFrom: r.started_at,
@@ -346,26 +360,37 @@ function mapMedicationWindows(regimens: RegimenRow[], doseEvents: MedDoseEventRo
   for (const e of doseEvents) {
     const admin = first(e.medication_administrations)
     if (!admin) continue // a medication event with no child (shouldn't happen — 1:1); nothing to place
-    // doseToMedicationWindow DROPS missed/refused (drug not given → not on board) and returns a
-    // point window for given/partial/null. The clinically load-bearing filter lives in that
-    // pure, tested helper, never inline here.
+    // doseToMedicationWindow DROPS missed/refused (drug not given → not on board), DROPS an
+    // unconfirmed combo dose whose vehicle was refused/picked (B-174 — carrier not eaten → drug
+    // not delivered), and returns a point window for the rest. The clinically load-bearing
+    // filter lives in that pure, tested helper, never inline here.
+    const pairedVehicleIntake = admin.paired_event_id
+      ? (mealIntakeById.get(admin.paired_event_id) ?? null)
+      : null
     const w = doseToMedicationWindow({
       medicationItemId: admin.medication_item_id,
       occurredAt: e.occurred_at,
       adherence: admin.adherence,
+      pairedVehicleIntake,
     })
     if (w) windows.push(w)
   }
   return windows
 }
 
-function mapMealRows(rows: MealEventRow[]): MealEvent[] {
+// `pairedEventIds` = the set of meal/treat event ids that are the VEHICLE for a live (non-soft-
+// deleted) medication dose (B-156 PR C1). A meal in this set is the drug's carrier, so detection
+// attributes its protein to the drug rather than crediting it as a food correlate. Empty (no
+// combos logged) ⇒ no meal is flagged ⇒ byte-identical to pre-B-156 behavior.
+function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): MealEvent[] {
   return rows.map((r) => {
     const meal = first(r.meals)
     const fi = first(meal?.food_items)
     return {
       id: r.id,
       occurredAt: r.occurred_at,
+      // B-156 PR C1: this meal/treat carried a co-logged dose → attribute it to the drug.
+      isMedicationVehicle: pairedEventIds.has(r.id),
       // B-010 timestamp confidence (B-078): a feeding is timed-eligible when 'witnessed'
       // OR NULL (meals are inherently witnessed; legacy NULL carries the same semantics).
       occurredAtConfidence: (r.occurred_at_confidence ?? null) as OccurredAtConfidence | null,
@@ -466,7 +491,7 @@ Deno.serve(async (req: Request) => {
       // missed/refused doses are filtered in mapMedicationWindows (doseToMedicationWindow).
       supabase
         .from('events')
-        .select('occurred_at, medication_administrations(medication_item_id, adherence)')
+        .select('occurred_at, medication_administrations(medication_item_id, adherence, paired_event_id)')
         .eq('pet_id', petId)
         .eq('event_type', 'medication')
         .is('deleted_at', null)
@@ -479,8 +504,26 @@ Deno.serve(async (req: Request) => {
     }
     const petName = pet.name || 'your pet'
 
+    const mealRows = (mealsRes.data ?? []) as MealEventRow[]
+    const doseRows = (doseEventsRes.data ?? []) as MedDoseEventRow[]
+    // B-156 PR C1 — the dose↔vehicle pairing, derived ONCE from the two already-fetched,
+    // RLS-scoped, non-soft-deleted sets. A dose's `paired_event_id` names the meal/treat event
+    // it rode inside. Two uses below, both keyed off this one join:
+    //   • `pairedEventIds` → which meals are drug vehicles (attribute the food to the drug).
+    //   • `mealIntakeById` → the vehicle's intake, to reconcile an in-doubt combo dose (B-174).
+    // No combos logged ⇒ both empty ⇒ detection behaves exactly as before B-156.
+    const pairedEventIds = new Set<string>()
+    for (const e of doseRows) {
+      const pid = first(e.medication_administrations)?.paired_event_id
+      if (pid) pairedEventIds.add(pid)
+    }
+    const mealIntakeById = new Map<string, IntakeRating | null>()
+    for (const r of mealRows) {
+      mealIntakeById.set(r.id, (first(r.meals)?.intake_rating ?? null) as IntakeRating | null)
+    }
+
     const symptomEvents = mapSymptomRows((symptomsRes.data ?? []) as SymptomRow[])
-    const mealEvents = mapMealRows((mealsRes.data ?? []) as MealEventRow[])
+    const mealEvents = mapMealRows(mealRows, pairedEventIds)
     const arrangementRows = (arrangementsRes.data ?? []) as ArrangementRow[]
     const feedingArrangements = mapArrangementRows(arrangementRows)
     // Foods CURRENTLY free-fed (active_until IS NULL) — the §11 #6 exclusion set for the
@@ -498,7 +541,8 @@ Deno.serve(async (req: Request) => {
     // Empty (no meds logged) ⇒ detectCorrelations behaves exactly as before.
     const medicationWindows = mapMedicationWindows(
       (regimensRes.data ?? []) as RegimenRow[],
-      (doseEventsRes.data ?? []) as MedDoseEventRow[],
+      doseRows,
+      mealIntakeById,
     )
 
     // 2. Detect — the pure engine ranks already-true findings (safety leads).

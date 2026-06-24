@@ -202,6 +202,29 @@ export interface MealEvent {
    * are excluded from the descriptive-timing lane. Absent ⇒ today's behavior unchanged.
    */
   occurredAtConfidence?: OccurredAtConfidence | null
+  /**
+   * This meal/treat was the VEHICLE for a co-logged medication dose (B-156 combo; the
+   * caller sets it true when this event's id appears as `paired_event_id` on a non-
+   * soft-deleted `medication_administrations` row). A pill hidden in a Delectable makes
+   * the owner experience ONE act, but Nyx stores TWO events — a meal AND a dose — and the
+   * food and the drug are then COLLINEAR by construction for that exposure: you cannot
+   * statistically separate "the chicken did it" from "the Zyrtec in the chicken did it".
+   *
+   * So the engine attributes a vehicle exposure to the DRUG, not the food (B-156 PR C1):
+   * detectCorrelations DROPS this meal's protein from the case/control exposure set (the
+   * drug enters separately as a MedicationWindow), so a vehicle food never builds a
+   * food→symptom case on the strength of an exposure it only had because it carried a pill.
+   *
+   * This is a PER-EXPOSURE drop, deliberately UNLIKE a free-fed protein (which is excluded
+   * from candidacy WHOLESALE because it is ALWAYS present): the SAME food logged WITHOUT a
+   * pill on another day is a clean, fully-creditable exposure. The flag lives on the
+   * exposure, never on `food_items` — exactly the per-event shape B-156 §3 chose so a
+   * Recent re-add of the bare treat carries no phantom drug.
+   *
+   * Absent/false ⇒ today's behavior is BYTE-IDENTICAL (detectors ②–⑥ and the coverage
+   * diagnostics ignore it; only detectCorrelations' windowExposures reads it).
+   */
+  isMedicationVehicle?: boolean
 }
 
 /**
@@ -308,6 +331,15 @@ export interface DoseEventInput {
   occurredAt: string
   /** dose_adherence value; null defaults to administered ('given', per the §5.1 capture default). */
   adherence: string | null
+  /**
+   * B-156 PR C1 / B-174 — the intake rating of this dose's paired VEHICLE meal/treat, when
+   * the dose is a combo (rode inside a co-logged food). null/absent ⇒ a STANDALONE dose (no
+   * vehicle) OR a vehicle whose intake we can't see (deleted / out-of-lookback) — both keep
+   * today's §5.1 default. Only present for a combo whose vehicle is in the analysis set. It
+   * reconciles the one place B3's `null` adherence and the §5.1 `null` default collide — see
+   * doseToMedicationWindow.
+   */
+  pairedVehicleIntake?: IntakeRating | null
 }
 
 /**
@@ -323,12 +355,40 @@ export interface DoseEventInput {
  *     suppress a real food finding — a false negative we would never see. (refused is also
  *     a disease signal handled elsewhere, §6.2; here it simply means "not on board".)
  *
+ * B-156 PR C1 / B-174 — the in-doubt COMBO dose. B3 couples a combo dose's adherence to its
+ * vehicle: when the owner marks the carrier food refused/picked and never explicitly confirms
+ * the drug, the dose lands `null` ("unconfirmed", not "given"). But the §5.1 default above
+ * reads a bare `null` as administered — so the two layers disagree on what `null` means (the
+ * exact collision B-174 was filed to resolve at this gate). We resolve it HERE, where the
+ * vehicle intake is in hand: a `null`-adherence dose whose paired vehicle was refused/picked
+ * is NOT on board (the carrier wasn't eaten → the pill in it most likely wasn't delivered),
+ * so it yields no window — exactly as a refused dose does. This is scoped as narrowly as the
+ * collision: it requires a refused/picked VEHICLE (only a combo has one), so a STANDALONE
+ * `null` dose is untouched (no pairedVehicleIntake ⇒ still administered), and an EXPLICIT
+ * owner answer overrides it (adherence is then non-null — `given`/`partial` falls through to a
+ * window, the "I pilled her directly after she spat the treat" case; `missed`/`refused` was
+ * already dropped above). A `some`/`most`/`all` vehicle keeps the §5.1 default (on board),
+ * matching B3's own adherence default and its documented `some`-edge known-limit (B-173).
+ * ACCEPTED RESIDUAL (safe direction, sibling of B-138a): if the owner DID pill directly but
+ * never answered the card, the dose stays `null` and we under-count the confounder — never a
+ * false reassurance, only the risk of a spurious food card; the owner can mark it `given`.
+ *
  * An unparseable time still yields a window (activeFrom/Until = the raw string);
  * classifyMedicationWindows drops it downstream, so the same Date.parse guard isn't
  * duplicated here.
  */
 export function doseToMedicationWindow(dose: DoseEventInput): MedicationWindow | null {
   if (dose.adherence === 'missed' || dose.adherence === 'refused') return null
+  // B-174: an UNCONFIRMED combo dose (adherence still null) whose vehicle the owner marked
+  // refused/picked → the carrier wasn't eaten → the drug most likely wasn't delivered → not
+  // on board. Requires both an unanswered (null) adherence AND a refused/picked vehicle, so
+  // standalone null doses and explicitly-answered combo doses are untouched.
+  if (
+    dose.adherence == null &&
+    (dose.pairedVehicleIntake === 'refused' || dose.pairedVehicleIntake === 'picked')
+  ) {
+    return null
+  }
   return {
     medicationItemId: dose.medicationItemId,
     activeFrom: dose.occurredAt,
@@ -1259,6 +1319,12 @@ interface ClassifiedMeal {
    * staple-washout meal/treat split (resolveStapleSource), which keeps the copy honest.
    */
   foodType: 'meal' | 'treat' | 'other' | null
+  /**
+   * This exposure was a co-logged medication VEHICLE (B-156 PR C1). Carried so
+   * windowExposures can attribute it to the drug instead of crediting it as a food
+   * correlate — see MealEvent.isMedicationVehicle. Defaults false (no pairing).
+   */
+  isMedicationVehicle: boolean
 }
 
 /**
@@ -1279,6 +1345,7 @@ function classifyMeals(mealEvents: MealEvent[]): ClassifiedMeal[] {
       protein: canonicalizeProtein(m.primaryProtein),
       attribution: (m.attributionConfidence ?? 'high') as AttributionConfidence,
       foodType: m.foodType ?? null,
+      isMedicationVehicle: m.isMedicationVehicle === true, // B-156 PR C1; absent ⇒ false
     }))
     .filter((m): m is ClassifiedMeal => m.protein !== null && Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
@@ -1427,7 +1494,16 @@ export function detectCorrelations(
     for (const m of meals) {
       if (m.ms > anchorMs) break // sorted ascending — nothing later precedes the anchor
       if (anchorMs - m.ms > windowMs) continue // earlier than the window
-      mealCount++
+      mealCount++ // a logged feeding — the window IS logging-eligible (even a vehicle-only one)
+      // B-156 PR C1: a medication VEHICLE (a meal/treat that carried a co-logged dose) is
+      // the drug's carrier, not an independent food exposure. Its protein and the drug are
+      // collinear by construction for THIS exposure, so we attribute it to the drug (which
+      // enters separately as a MedicationWindow) and credit NO food exposure here. It still
+      // counted toward mealCount above — the owner logged a feeding, so the window is
+      // logging-eligible for OTHER proteins' absence; we just don't let the vehicle food
+      // build its own food→symptom case. PER-EXPOSURE (not candidacy-wide like free-fed):
+      // the same food without a pill on another day still credits its protein normally.
+      if (m.isMedicationVehicle) continue
       if (m.attribution === 'low' || !exposures.has(m.protein)) {
         exposures.set(m.protein, m.attribution)
       }
