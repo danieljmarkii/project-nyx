@@ -27,6 +27,8 @@ import {
   MEDICATION_ROUTE_OPTIONS, buildRegimenPayload, canSaveRegimen,
   type RegimenFormValues,
 } from '../../lib/medications';
+import { MedicationNameChips } from '../medication/MedicationNameChips';
+import { usePetStore } from '../../store/petStore';
 
 // The regimen row the card lists and this modal edits. A subset of `medications` —
 // the columns the "Current medications" card and this form touch.
@@ -87,6 +89,11 @@ export function AddMedicationModal({
   visible, petId, existingRegimen, onClose, onAdded, onUpdated,
 }: Props) {
   const isEditing = existingRegimen != null;
+
+  // Species for the name-chip ordering (B-160). The modal only gets petId, so resolve
+  // the pet from the store; petId is always the active pet (profile.tsx), so activePet
+  // is the fallback if the list hasn't hydrated this id yet.
+  const species = usePetStore((s) => (s.pets.find((p) => p.id === petId) ?? s.activePet)?.species);
 
   const [library, setLibrary] = useState<PickerMedication[]>([]);
 
@@ -279,6 +286,12 @@ export function AddMedicationModal({
               returnKeyType="done"
               autoFocus={!isEditing && library.length === 0}
             />
+            {/* Name shortcuts — empty-state only. Routes through onChangeDrugName (NOT
+                a bare setter) so a free-text chip name clears any stale
+                medication_item_id, exactly as typing does (§4.3 / buildRegimenPayload). */}
+            {drugName.trim().length === 0 && (
+              <MedicationNameChips species={species} onPick={onChangeDrugName} />
+            )}
 
             <Text style={styles.label}>Dose</Text>
             <TextInput
