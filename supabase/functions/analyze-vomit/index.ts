@@ -161,8 +161,10 @@ const ANALYZE_TOOL = {
       read_text: {
         type: 'string',
         description:
-          'One or two sentences, owner-facing, matching the recommendation. For worth_a_call, name the visible concern plainly and suggest a vet call, calmly. ' +
-          'For monitor, be honest and forward-looking but DO NOT reassure (never say the pet is fine/okay/healthy). No diagnosis, no treatment, no exclamation marks.',
+          'One or two sentences, owner-facing, matching the recommendation. For worth_a_call, name the visible concern plainly and calmly suggest a vet call. ' +
+          'For monitor, do NOT comment on the absence of red flags (never "nothing concerning/alarming", "looks fine/normal", or "all clear"): instead state plainly ' +
+          'what IS visible in this one photo, then one calm forward-looking line — what to keep an eye on and that the vet is the best call if the owner is worried or it recurs. ' +
+          'No diagnosis, no treatment, no exclamation marks; never say or imply the pet is fine/okay/healthy/normal.',
       },
       confidence: {
         type: 'object',
@@ -188,9 +190,10 @@ const SYSTEM_PROMPT =
   '(1) You are looking at ONE instance. You never diagnose, never name a disease or condition, never suggest treatment, medication, or dosing. ' +
   '(2) You may flag the PRESENCE of something visibly concerning — visible blood (fresh red or coffee-ground/digested), or material that does not look like food — ' +
   'and when present, recommend the owner call their vet. You phrase this calmly, without alarm. ' +
-  '(3) You NEVER reassure based on the absence of a visible problem. A normal-looking photo does not mean the pet is well. ' +
-  "If nothing concerning is visible, say only that this one doesn't show anything obviously concerning on its own, and keep the read forward-looking. " +
-  'Never say or imply the pet is "fine", "okay", or "healthy". ' +
+  '(3) You NEVER reassure based on the absence of a visible problem — absence of a visible red flag does not mean the pet is well, and is never an all-clear. ' +
+  'When you see no red flag, do NOT comment on that absence at all: do not say a photo looks fine/normal/okay, that there is nothing concerning or alarming, or that there is nothing to worry about. ' +
+  'Instead, describe plainly what IS visible in this one photo, then give a single calm, forward-looking line — what to keep an eye on (e.g. if it happens again, or the pet seems unwell or off their food), and that the vet is the best call if the owner is worried. ' +
+  'Never say or imply the pet is "fine", "okay", "healthy", or "normal". ' +
   '(4) For any structured field not clearly visible, return "unsure" — never guess. Set confidence to reflect legibility. ' +
   '(5) If the photo does not appear to show vomit, set appears_to_show_vomit=false, leave fields "unsure", and recommend not_enough_to_say. ' +
   '(6) Plain owner language, not clinical jargon ("blood" not "haematemesis", "something that is not food" not "foreign body"). No exclamation marks. ' +
@@ -320,6 +323,78 @@ function buildNoFlagReadText(petName: string, hasPhoto: boolean): string {
     ? "There's not much I can read from this one on its own."
     : "Without a photo there's not much I can read from this one on its own."
   return `${lead} If you're worried about ${p}, your vet is the best call.`
+}
+
+// ── B-060: the n=1 read never reassures on the ABSENCE of a red flag ───────────
+// Dr. Chen / clinical-guardrails Pattern 1: a single sample may ESCALATE on the
+// presence of a visible flag, never reassure on its absence (absence ≠ wellness —
+// the foam-cat hepatic-lipidosis miss). The model's free-text read_text is the only
+// owner-facing string a template doesn't produce, so the guarantee is STRUCTURAL, not
+// lexical: the model's words reach the owner ONLY when the recommendation escalates on
+// a visual flag it raised (there the read NAMES a present concern — the safe
+// "escalate on presence" direction). On the monitor / no-flag path — the
+// reassurance-on-absence risk — the read is a deterministic template, never the
+// model's words. (A regex denylist was tried and rejected: it can't enumerate the
+// open vocabulary of "the model asserted wellness" — it missed ~86% of plausible
+// phrasings while nuking legitimate concern reads; adversarial review 2026-06-24.)
+
+// monitor: a clear photo with no visible/contextual flag. One sample is never an
+// all-clear, so this acknowledges the limit and stays forward-looking — it does NOT
+// comment on the absence of concern.
+function buildMonitorReadText(petName: string): string {
+  const p = petName || 'your pet'
+  return `A single photo on its own can't tell you how ${p} is doing. Keep an eye on ${p} — if it happens again, or ${p} seems unwell or goes off food, your vet is the best call.`
+}
+
+// Escalation on a model-raised visual flag, used when the model didn't write its own
+// read. Names the present concern plainly (the safe direction) and routes to the vet.
+function buildVisualFlagReadText(petName: string, visualFlags: string[]): string {
+  const p = petName || 'your pet'
+  const hasBlood = visualFlags.includes('blood')
+  const hasForeign = visualFlags.includes('suspected_foreign_material')
+  const seen = hasBlood && hasForeign
+    ? "what looks like blood, and something that doesn't look like food,"
+    : hasBlood
+      ? 'what looks like blood'
+      : hasForeign
+        ? "something that doesn't look like food"
+        : 'something worth a closer look'
+  return `I can see ${seen} in this photo. That's worth a call to your vet about ${p}.`
+}
+
+// Photo present but unreadable (oversize / undecodable format). Honest about the
+// failure, never reassures, routes to the vet.
+function buildPhotoUnreadableReadText(petName: string): string {
+  const p = petName || 'your pet'
+  return `I couldn't read this photo — it may be too large or in a format I can't open. Try replacing it with a fresh shot and I'll take another look. If you're worried about ${p}, your vet is the best call.`
+}
+
+// The load-bearing read selection, pure + exported so the never-reassure guarantee is
+// unit-tested rather than asserted by a comment. The model's free text reaches the
+// owner ONLY on the worth_a_call escalation path; every other path — above all the
+// reassurance-on-absence (monitor) path — is a deterministic template.
+export function selectReadText(params: {
+  petName: string
+  recommendation: Recommendation
+  contextualFlags: ContextualFlag[]
+  visualFlags: string[]
+  modelReadText: string | null
+  photoUnreadable: boolean
+  hasPhoto: boolean
+}): string {
+  const { petName, recommendation, contextualFlags, visualFlags, modelReadText, photoUnreadable, hasPhoto } = params
+  // 1. Floor escalated on CONTEXT — the model's photo-only read may contradict it.
+  if (contextualFlags.length > 0) return buildContextualReadText(petName, contextualFlags)
+  // 2. Unreadable photo — honest failure, never reassures.
+  if (photoUnreadable) return buildPhotoUnreadableReadText(petName)
+  // 3. Escalation on a VISUAL flag — the ONLY path that surfaces the model's free text
+  //    (it names a present red flag; "escalate on presence" is the safe direction).
+  if (recommendation === 'worth_a_call') return modelReadText ?? buildVisualFlagReadText(petName, visualFlags)
+  // 4. monitor — a clear photo, no flag. NEVER the model's read (the reassurance-on-
+  //    absence risk); a deterministic forward-looking template instead.
+  if (recommendation === 'monitor') return buildMonitorReadText(petName)
+  // 5. not_enough_to_say — unclear photo, not vomit, or no photo.
+  return buildNoFlagReadText(petName, hasPhoto)
 }
 
 // ── Write-back decision: the server half of the never-clobber guard (B-028) ────
@@ -643,19 +718,20 @@ Deno.serve(async (req: Request) => {
       contextualFlags,
     })
 
-    // 5. Read text: contextual reason overrides a photo-only read when the floor
-    // escalated on context; otherwise keep the model's read (or a templated
-    // not_enough_to_say for the no-photo case).
-    let readText: string | null
-    if (contextualFlags.length > 0) {
-      readText = buildContextualReadText(petName, contextualFlags)
-    } else if (analysis?.read_text) {
-      readText = analysis.read_text
-    } else if (photoUnreadable) {
-      readText = `I couldn't read this photo — it may be too large or in a format I can't open. Try replacing it with a fresh shot and I'll take another look. If you're worried about ${petName}, your vet is the best call.`
-    } else {
-      readText = buildNoFlagReadText(petName, hasPhoto)
-    }
+    // 5. Read text — the load-bearing never-reassure selection (B-060), pure + tested.
+    // The model's free text reaches the owner ONLY on the worth_a_call (visual-flag)
+    // escalation path; the monitor / no-flag path is a deterministic template, so a
+    // single sample can never assert an all-clear (the n=1 invariant, made structural
+    // after a denylist proved too leaky to be the net — adversarial review 2026-06-24).
+    const readText = selectReadText({
+      petName,
+      recommendation,
+      contextualFlags,
+      visualFlags,
+      modelReadText: analysis?.read_text ?? null,
+      photoUnreadable,
+      hasPhoto,
+    })
 
     const status = recommendation === 'not_enough_to_say' ? 'uncertain' : 'completed'
 
