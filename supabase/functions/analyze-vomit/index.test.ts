@@ -13,6 +13,7 @@ import {
   computeContextualFlags,
   applyEscalationFloor,
   buildContextualReadText,
+  selectReadText,
   buildAnalysisWriteBack,
   STRUCTURED_FIELD_KEYS,
   detectImageMediaType,
@@ -69,7 +70,7 @@ Deno.test('parseAnalysisToolResult — full parse', () => {
     description: 'A small amount of yellow foam.',
     visual_flags: [],
     recommendation: 'monitor',
-    read_text: "This one doesn't show anything obviously concerning on its own.",
+    read_text: 'This shows a small amount of yellow foam. Keep an eye on Mochi and call your vet if it keeps happening.',
     confidence: { colour: 0.9 },
   }))!
   assertStrictEquals(r.appears_to_show_vomit, true)
@@ -248,13 +249,118 @@ Deno.test('buildContextualReadText — repeated vomiting', () => {
   assertEquals(t.toLowerCase().includes('more than once'), true)
 })
 
+// A test-only vocabulary check for Pattern 8 — applied ONLY to OUR deterministic
+// templates (strings we control), to assert none of them reassure. This is NOT a
+// runtime guard on the model's open-vocabulary output: B-060's runtime guarantee is
+// STRUCTURAL (selectReadText only surfaces the model's words on the escalation path).
+const REASSURE_VOCAB =
+  /\b(fine|okay|ok|healthy|normal|unremarkable|all clear|nothing (?:to worry|concerning|alarming))\b/i
+
 Deno.test('buildContextualReadText — never reassures', () => {
   for (const t of [
     buildContextualReadText('Mochi', ['feline_reduced_intake']),
     buildContextualReadText('Mochi', ['repeated_vomiting']),
     buildContextualReadText('Mochi', ['concurrent_lethargy']),
   ]) {
-    assertEquals(/\b(fine|okay|ok|healthy|nothing to worry)\b/i.test(t), false)
+    assertEquals(REASSURE_VOCAB.test(t), false)
+    assertEquals(t.includes('!'), false)
+  }
+})
+
+// ── selectReadText — the load-bearing read selection (B-060) ───────────────────
+// The model's free text reaches the owner ONLY when the recommendation escalates on a
+// visual flag (it names a PRESENT concern — the safe direction). The monitor / no-flag
+// path is the reassurance-on-absence risk and MUST be deterministic. This replaced a
+// regex denylist that an adversarial pass proved too leaky to be the net (it missed
+// ~86% of plausible model reassurance and nuked legitimate concern reads).
+
+const base = {
+  petName: 'Mochi',
+  recommendation: 'monitor' as const,
+  contextualFlags: [] as ('repeated_vomiting' | 'feline_reduced_intake' | 'concurrent_lethargy')[],
+  visualFlags: [] as string[],
+  modelReadText: null as string | null,
+  photoUnreadable: false,
+  hasPhoto: true,
+}
+
+Deno.test('selectReadText — monitor NEVER surfaces the model read, even a floridly reassuring one (the B-060 invariant)', () => {
+  // The exact failure the denylist could not stop: a clean-photo monitor read where
+  // the model asserts wellness. selectReadText discards it for the deterministic
+  // template, BY CONSTRUCTION — no vocabulary matching involved.
+  const out = selectReadText({
+    ...base,
+    recommendation: 'monitor',
+    modelReadText: 'Mochi is totally fine — this is a typical hairball, nothing to worry about, looks completely benign and settled.',
+  })
+  assertEquals(out.includes('fine'), false)
+  assertEquals(out.includes('benign'), false)
+  assertEquals(out.toLowerCase().includes('hairball'), false)
+  assertEquals(REASSURE_VOCAB.test(out), false)
+  assertEquals(out.includes('Mochi'), true) // it's the forward-looking template
+})
+
+Deno.test('selectReadText — worth_a_call surfaces the model read (escalate on presence is the safe direction)', () => {
+  const out = selectReadText({
+    ...base,
+    recommendation: 'worth_a_call',
+    visualFlags: ['blood'],
+    modelReadText: 'I can see what looks like fresh red blood. That is worth a call to your vet.',
+  })
+  assertEquals(out.includes('blood'), true)
+})
+
+Deno.test('selectReadText — worth_a_call with NO model read falls back to a flag-named template (still escalates)', () => {
+  const out = selectReadText({
+    ...base,
+    recommendation: 'worth_a_call',
+    visualFlags: ['suspected_foreign_material'],
+    modelReadText: null,
+  })
+  assertEquals(out.toLowerCase().includes("doesn't look like food"), true)
+  assertEquals(out.toLowerCase().includes('vet'), true)
+})
+
+Deno.test('selectReadText — a contextual flag overrides any model read', () => {
+  const out = selectReadText({
+    ...base,
+    recommendation: 'worth_a_call',
+    contextualFlags: ['feline_reduced_intake'],
+    modelReadText: 'looks fine',
+  })
+  assertEquals(out.toLowerCase().includes("hasn't eaten"), true)
+})
+
+Deno.test('selectReadText — an unreadable photo never surfaces the model read', () => {
+  const out = selectReadText({
+    ...base,
+    recommendation: 'not_enough_to_say',
+    modelReadText: 'everything looks normal',
+    photoUnreadable: true,
+  })
+  assertEquals(out.includes("couldn't read"), true)
+})
+
+Deno.test('selectReadText — not_enough_to_say (no photo) → the no-flag template', () => {
+  const out = selectReadText({ ...base, recommendation: 'not_enough_to_say', hasPhoto: false })
+  assertEquals(out.toLowerCase().includes('without a photo'), true)
+})
+
+Deno.test('selectReadText — every deterministic template it emits never reassures (Pattern 8)', () => {
+  const templates = [
+    selectReadText({ ...base, recommendation: 'monitor' }),
+    selectReadText({ ...base, recommendation: 'worth_a_call', visualFlags: ['blood'], modelReadText: null }),
+    selectReadText({ ...base, recommendation: 'worth_a_call', visualFlags: ['suspected_foreign_material'], modelReadText: null }),
+    selectReadText({ ...base, recommendation: 'worth_a_call', visualFlags: ['blood', 'suspected_foreign_material'], modelReadText: null }),
+    selectReadText({ ...base, recommendation: 'not_enough_to_say' }),
+    selectReadText({ ...base, recommendation: 'not_enough_to_say', hasPhoto: false }),
+    selectReadText({ ...base, recommendation: 'not_enough_to_say', photoUnreadable: true }),
+    buildContextualReadText('Mochi', ['feline_reduced_intake']),
+    buildContextualReadText('Mochi', ['repeated_vomiting']),
+    buildContextualReadText('Mochi', ['concurrent_lethargy']),
+  ]
+  for (const t of templates) {
+    assertEquals(REASSURE_VOCAB.test(t), false, `reassured: "${t}"`)
     assertEquals(t.includes('!'), false)
   }
 })
@@ -277,7 +383,7 @@ const sampleAnalysis: VomitAnalysis = {
   description: 'A small amount of yellow foam.',
   visual_flags: [],
   recommendation: 'monitor',
-  read_text: "This one doesn't show anything obviously concerning on its own.",
+  read_text: 'This shows a small amount of yellow foam. Keep an eye on Mochi and call your vet if it keeps happening.',
   confidence: { colour: 0.9 },
 }
 

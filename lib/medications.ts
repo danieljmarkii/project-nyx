@@ -479,6 +479,27 @@ export function vehicleLabel(value: string | null | undefined): string | null {
   return MEDICATION_VEHICLE_OPTIONS.find((o) => o.value === value)?.label ?? null;
 }
 
+// B-161 — the owner-facing drug label for a dose row ("generic · brand" when the
+// brand adds info, generic alone, else the brand). One source so the History row
+// (EventRow) and the Home "Today" strip (TodayZone) can't drift on how a dose names
+// its drug — the multi-med pet's two "Medication" rows are distinguished by this.
+// Returns null when neither name is known, so a nameless dose renders no subline
+// rather than an empty one (the same "no value → nothing" rule the label twins use).
+export function formatDrugLabel(
+  genericName: string | null | undefined,
+  brandName: string | null | undefined,
+): string | null {
+  // Coalesce empty/whitespace to null so a blank name never produces a label
+  // (`??` alone would let a '' brand through). Identical to the prior inline
+  // EventRow logic on every real value; only the all-blank case now reads null.
+  const generic = genericName?.trim() || null;
+  const brand = brandName?.trim() || null;
+  if (generic) {
+    return brand ? `${generic} · ${brand}` : generic;
+  }
+  return brand;
+}
+
 // B-156 Slice C (the combo) — infer the dose vehicle from the co-logged food's type
 // when a med is logged WITH a meal/treat from the completion card. A pill given with
 // a meal is in_food; with a treat, in_treat. The combo affordance is gated to

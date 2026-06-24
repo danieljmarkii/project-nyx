@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronRight, Camera } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { theme } from '../../constants/theme';
@@ -514,7 +514,9 @@ export default function EventDetailScreen() {
               <ActivityIndicator />
             ) : (
               <>
-                <Text style={styles.heroEmptyIcon}>📷</Text>
+                {/* B-062 — Lucide Camera (was a 📷 emoji) for a consistent vector
+                    glyph set across the photo-affordance empty states. */}
+                <Camera size={32} color={theme.colorTextTertiary} strokeWidth={1.5} />
                 <Text style={styles.heroEmptyText}>Add photo</Text>
               </>
             )}
@@ -713,10 +715,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: theme.space1,
-  },
-  heroEmptyIcon: {
-    fontSize: 32,
-    opacity: 0.5,
   },
   heroEmptyText: {
     fontSize: 15,

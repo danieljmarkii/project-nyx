@@ -416,8 +416,14 @@ export default function HistoryScreen() {
 
       {/* §6a ambient strip — pinned above the list (not in the scroll) so a
           free-fed bowl stays visible every time the tab opens, never out of
-          sight / out of mind. Standing context, not an event row. */}
-      <FreeFeedingStrip arrangements={arrangements} />
+          sight / out of mind. Standing context, not an event row.
+          B-137: it's a FOOD standing fact, so it only belongs under the "All"
+          and "Meal" lenses — showing a bowl while the list is filtered to e.g.
+          Vomit reads incongruously. Hidden under any other type filter; the
+          markers in the stream are already type-gated the same way (§6a). */}
+      {(typeFilter === null || typeFilter === 'meal') && (
+        <FreeFeedingStrip arrangements={arrangements} />
+      )}
 
       {/* Event list — flex: 1 so it fills remaining space regardless of event count */}
       <View style={styles.listContainer}>

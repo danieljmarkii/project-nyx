@@ -9,7 +9,7 @@ import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
 import {
   vehicleLabel, isComboDoseInDoubt, DOSE_IN_DOUBT_TAG,
-  pairedVehicleLinkLabel, pairedDoseLinkLabel,
+  pairedVehicleLinkLabel, pairedDoseLinkLabel, formatDrugLabel,
 } from '../../lib/medications';
 import { describeOccurredAt } from '../../lib/utils';
 
@@ -80,12 +80,9 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
   // Medication dose (B-117 PR 8): the drug name (generic, brand appended when it
   // adds info) + the read-only adherence chip — the dose twin of foodLabel + the
   // intake badge. AdherenceChipRow renders nothing for a NULL rating, so an unrated
-  // dose stays as quiet as an unrated meal.
-  const drugLabel = event.drug_generic_name
-    ? event.drug_brand_name
-      ? `${event.drug_generic_name} · ${event.drug_brand_name}`
-      : event.drug_generic_name
-    : event.drug_brand_name ?? null;
+  // dose stays as quiet as an unrated meal. Shared with TodayZone via formatDrugLabel
+  // (B-161) so the two row surfaces agree on how a dose names its drug.
+  const drugLabel = formatDrugLabel(event.drug_generic_name, event.drug_brand_name);
 
   // B-156 Slice B — a quiet read-only vehicle line ("In a treat"), shown only when
   // the owner recorded how the dose was given. NULL/unrecognized → nothing, so an

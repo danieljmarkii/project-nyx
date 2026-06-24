@@ -3,6 +3,8 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
@@ -173,8 +175,15 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
           style={styles.addCta}
           onPress={onAddNew}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Snap a new food"
         >
-          <Text style={styles.addCtaIcon}>📷</Text>
+          {/* B-062 — Lucide Camera (was a 📷 emoji), matching MedicationPicker's
+              identical "Add" CTA so the two pickers read as one family of vector
+              glyphs rather than mixed emoji/icon. */}
+          <View style={styles.addCtaIcon}>
+            <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
+          </View>
           <View style={styles.addCtaText}>
             <Text style={styles.addCtaTitle}>Snap a new food</Text>
             <Text style={styles.addCtaHint}>Or choose from your photos</Text>
@@ -185,23 +194,41 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
       {recent.length > 0 && (
         <View style={styles.zone}>
           <SectionLabel label="Recent" />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.recentRow}
-          >
-            {recent.map((f) => (
-              <View key={f.id} style={styles.recentTile}>
-                <FoodTile
-                  brand={f.brand}
-                  productName={f.product_name}
-                  format={f.format}
-                  onPress={() => onPickFood(f)}
-                  onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
-                />
-              </View>
-            ))}
-          </ScrollView>
+          {/* Wrapper is the positioning context for the absolute edge-fade below
+              (a View is position:relative by default — matches History's lens row). */}
+          <View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recentRow}
+            >
+              {recent.map((f) => (
+                <View key={f.id} style={styles.recentTile}>
+                  <FoodTile
+                    brand={f.brand}
+                    productName={f.product_name}
+                    format={f.format}
+                    onPress={() => onPickFood(f)}
+                    onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+            {/* B-166 — right-edge "there's more →" fade, mirroring the History lens
+                row. A Recent shelf is a BROWSE row (the full library sits right
+                below), so a fade is the correct cue — unlike the option pickers,
+                where hidden overflow was wrong and B-146 switched them to a wrap.
+                The 0-alpha stop is white's zero-alpha form, NOT 'transparent' (RN
+                fades 'transparent' through black and dirties the edge); keep in
+                sync with the surface the picker sits on (log.tsx = colorSurface). */}
+            <LinearGradient
+              colors={['rgba(255,255,255,0)', theme.colorSurface]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.recentFade}
+              pointerEvents="none"
+            />
+          </View>
         </View>
       )}
 
@@ -457,6 +484,15 @@ const styles = StyleSheet.create({
   zone: {
     gap: theme.space2,
   },
+  // B-166 — the right-edge "there's more →" fade over the Recent shelf (top/bottom 0
+  // spans the shelf's content height; no explicit height needed).
+  recentFade: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 28,
+  },
   recentRow: {
     gap: theme.space2,
     paddingRight: theme.space2,
@@ -619,7 +655,8 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   addCtaIcon: {
-    fontSize: 24,
+    width: 24,
+    alignItems: 'center',
   },
   addCtaText: {
     flex: 1,

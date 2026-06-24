@@ -72,6 +72,16 @@ const FREQUENCY_OPTIONS: { label: string; value: number | null }[] = [
   { label: 'As needed', value: null },
 ];
 
+// B-158 — course length as an explicit Ongoing (default) vs Set an end choice, so a
+// chronic/seasonal med (allergy season, lifelong thyroid) needs no fake duration
+// number. 'ongoing' → target_duration_days stays null (the card renders "Started …",
+// never "Day X of Y"); 'fixed' reveals the days input. Mirrors the small closed-set
+// chip pattern the Frequency/Route rows already use in this modal.
+const DURATION_MODE_OPTIONS: { label: string; value: 'ongoing' | 'fixed' }[] = [
+  { label: 'Ongoing', value: 'ongoing' },
+  { label: 'Set an end', value: 'fixed' },
+];
+
 interface Props {
   visible: boolean;
   petId: string;
@@ -107,6 +117,7 @@ export function AddMedicationModal({
   const [prescribedBy, setPrescribedBy] = useState('');
   const [startedAt, setStartedAt] = useState<Date>(new Date());
   const [targetDuration, setTargetDuration] = useState('');
+  const [durationMode, setDurationMode] = useState<'ongoing' | 'fixed'>('ongoing');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -128,6 +139,7 @@ export function AddMedicationModal({
           ? String(existingRegimen.target_duration_days)
           : '',
       );
+      setDurationMode(existingRegimen.target_duration_days != null ? 'fixed' : 'ongoing');
     } else {
       setDrugName('');
       setMedicationItemId(null);
@@ -139,6 +151,7 @@ export function AddMedicationModal({
       setPrescribedBy('');
       setStartedAt(new Date());
       setTargetDuration('');
+      setDurationMode('ongoing');
     }
     setShowDatePicker(false);
   }, [visible, existingRegimen]);
@@ -186,7 +199,12 @@ export function AddMedicationModal({
       indication,
       prescribedBy,
       startedAt: startedAt.toISOString().split('T')[0],
-      targetDurationDays: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : null,
+      // 'ongoing' always saves null; 'fixed' saves the entered days (still null if the
+      // field's left blank/zero, so a "Set an end" with no number never fakes a course).
+      targetDurationDays:
+        durationMode === 'fixed' && Number.isFinite(parsedDuration) && parsedDuration > 0
+          ? parsedDuration
+          : null,
     };
   }
 
@@ -360,19 +378,37 @@ export function AddMedicationModal({
               />
             )}
 
-            <Text style={styles.label}>Course length (optional)</Text>
-            <View style={styles.durationRow}>
-              <TextInput
-                style={[styles.input, styles.durationInput]}
-                value={targetDuration}
-                onChangeText={(t) => setTargetDuration(t.replace(/[^0-9]/g, ''))}
-                placeholder="Ongoing"
-                placeholderTextColor={theme.colorTextSecondary}
-                keyboardType="number-pad"
-                returnKeyType="done"
-              />
-              <Text style={styles.durationUnit}>days</Text>
+            <Text style={styles.label}>Course length</Text>
+            <View style={styles.chipWrap}>
+              {DURATION_MODE_OPTIONS.map((opt) => {
+                const active = opt.value === durationMode;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => setDurationMode(opt.value)}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+            {/* Only a fixed course needs a number — an ongoing med stays null (no fake
+                duration), and the card reads "Started …" rather than "Day X of Y". */}
+            {durationMode === 'fixed' && (
+              <View style={styles.durationRow}>
+                <TextInput
+                  style={[styles.input, styles.durationInput]}
+                  value={targetDuration}
+                  onChangeText={(t) => setTargetDuration(t.replace(/[^0-9]/g, ''))}
+                  placeholder="e.g. 14"
+                  placeholderTextColor={theme.colorTextSecondary}
+                  keyboardType="number-pad"
+                  returnKeyType="done"
+                />
+                <Text style={styles.durationUnit}>days</Text>
+              </View>
+            )}
 
             <Text style={styles.label}>Schedule notes (optional)</Text>
             <TextInput
