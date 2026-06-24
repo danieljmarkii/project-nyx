@@ -357,6 +357,87 @@ export const MEDICATION_ROUTE_OPTIONS: { value: string; label: string }[] = [
   { value: 'other',      label: 'Other' },
 ];
 
+// ── B-160 — common-medication NAME suggestions (medication-details helper) ──────
+// A curated, owner-recognizable list of frequently-prescribed companion-animal
+// drugs, surfaced as tap-to-FILL NAME chips on the medication-details free-text
+// field (app/medication-capture.tsx step='edit'/'confirm' + the regimen modal).
+// Pure data, no imports — unit-testable like MEDICATION_FORM_OPTIONS.
+//
+// THIS IS A SPELLING AID, NOT A FORMULARY OR CLINICAL ADVICE. It lists names of
+// drugs a pet may ALREADY be prescribed so the owner can fill the field without
+// mistyping a long/unfamiliar spelling — a misspelling fractures the organically-
+// built medication_items library, weakens the PR 9 Signal confounder key (which
+// keys on a stable name/id), and reads sloppy on the vet report. It recommends no
+// drug and no dose. Tapping a chip fills the NAME text field ONLY — it creates no
+// medication_items row, sets no medication_item_id, and fills no strength/form/
+// route; the library stays organically built (parent §D2; B-160 §5).
+//
+// THE ONE CLINICAL CATCH (§3): NAMES get chips; STRENGTH never does. A given drug
+// ships in many strengths (prednisolone 1/5/20 mg), so a tappable strength VALUE
+// would invite picking *a* strength instead of reading *the* label — and a chip
+// tap feels like confirmation, eroding the §6.5 dose-confirm gate. A name typo is
+// a data-hygiene problem; a wrong strength is a 10× dosing hazard. They are not
+// the same class of error and never get the same affordance. The "strength
+// especially" lever is FORMAT helper copy on the screen, never value chips here.
+//
+// `name` is the owner-recognizable name (generic where owners know it, brand where
+// that's what's on the bottle). `species` drives ORDERING only — it is a UNION,
+// never a filter; a cross-species ('both') drug is never hidden
+// (commonMedicationsForSpecies). `critical` is forward-looking ONLY: a reuse
+// candidate for the PR 9 is_critical curated-match (parent §10/S2; B-160 §7) — it
+// is NOT rendered here and wires no escalation.
+export interface CommonMedication {
+  name: string;
+  species: 'dog' | 'cat' | 'both';
+  critical?: boolean;
+}
+
+// Dr. Chen S1 trim of the §4.1 starter set (≤16, curated — not a formulary):
+// "Gabapentin / Trazodone" was a protocol, not a drug NAME (and Gabapentin is
+// already listed), so it's recorded as its real, separately-bottled member
+// **Trazodone**. Order is rough owner-frequency; commonMedicationsForSpecies
+// re-orders it for the active pet's species at render time.
+export const COMMON_MEDICATIONS: CommonMedication[] = [
+  { name: 'Apoquel',       species: 'both' },                  // oclacitinib — allergy / itch
+  { name: 'Prednisolone',  species: 'both' },                  // steroid
+  { name: 'Gabapentin',    species: 'both' },                  // pain / anxiety
+  { name: 'Metronidazole', species: 'both' },                  // GI / antibiotic
+  { name: 'Clavamox',      species: 'both' },                  // amox-clav antibiotic
+  { name: 'Carprofen',     species: 'dog'  },                  // NSAID (Rimadyl)
+  { name: 'Meloxicam',     species: 'both' },                  // NSAID (Metacam)
+  { name: 'Cerenia',       species: 'both' },                  // maropitant — anti-nausea
+  { name: 'Mirtazapine',   species: 'cat'  },                  // appetite stimulant
+  { name: 'Methimazole',   species: 'cat'  },                  // hyperthyroid (Felimazole)
+  { name: 'Trazodone',     species: 'dog'  },                  // anxiety / sedation
+  { name: 'Fluoxetine',    species: 'both' },                  // behavior (Prozac)
+  { name: 'Insulin',       species: 'both', critical: true },  // diabetes
+  { name: 'Furosemide',    species: 'both', critical: true },  // cardiac / diuretic (Lasix)
+  { name: 'Pimobendan',    species: 'dog',  critical: true },  // cardiac (Vetmedin)
+  { name: 'Levetiracetam', species: 'both', critical: true },  // anti-seizure (Keppra)
+];
+
+// Order the curated names for an active pet's species: the pet's species-specific
+// drugs FIRST (so a cat owner sees methimazole/mirtazapine in the visible peek, a
+// dog owner carprofen/pimobendan), then the cross-species 'both' drugs, then the
+// opposite species — each group kept in stable COMMON_MEDICATIONS order. It is a
+// UNION: EVERY drug is always returned (the horizontal row scrolls; nothing is
+// hidden), so the §9 "never hides a 'both' drug" AC holds by construction.
+// 'other'/null/undefined match nothing, so 'both' leads (the broadly-applicable
+// set first). Pure → unit-tested.
+export function commonMedicationsForSpecies(
+  species: 'dog' | 'cat' | 'other' | null | undefined,
+): CommonMedication[] {
+  const matches: CommonMedication[] = [];
+  const both: CommonMedication[] = [];
+  const rest: CommonMedication[] = [];
+  for (const m of COMMON_MEDICATIONS) {
+    if (m.species === species) matches.push(m);
+    else if (m.species === 'both') both.push(m);
+    else rest.push(m);
+  }
+  return [...matches, ...both, ...rest];
+}
+
 // ── B-156 Slice B — dose vehicle ("How was it given?") ──────────────────────────
 // The dose_route_vehicle enum (migration 022). ONE source of truth shared by the
 // capture chip (MedicationCompletionCard), the dose-event edit (app/event/[id].tsx),

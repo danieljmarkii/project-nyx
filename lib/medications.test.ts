@@ -47,6 +47,9 @@ import {
   DOSE_IN_DOUBT_TAG,
   pairedVehicleLinkLabel,
   pairedDoseLinkLabel,
+  COMMON_MEDICATIONS,
+  commonMedicationsForSpecies,
+  type CommonMedication,
   type DoseVehicle,
   type LocalMedicationItem,
   type LocalMedication,
@@ -1335,5 +1338,104 @@ describe('formatDrugLabel — dose drug name (B-161)', () => {
     expect(formatDrugLabel(null, null)).toBeNull();
     expect(formatDrugLabel(undefined, undefined)).toBeNull();
     expect(formatDrugLabel('', '')).toBeNull();
+  });
+});
+
+// ── B-160 — common-medication NAME suggestions (curated-list contract) ──────────
+// COMMON_MEDICATIONS is a shared lib/ data source consumed by the name-chip row, so
+// the DoD requires it pinned by a test. The contract that matters: it stays a small
+// CURATED list (no dupes, real names), and commonMedicationsForSpecies orders it
+// per the active pet's species WITHOUT ever hiding a 'both' drug (the §9 union AC).
+describe('COMMON_MEDICATIONS — curated data contract', () => {
+  it('has no duplicate names (a duplicate would render two identical chips)', () => {
+    const names = COMMON_MEDICATIONS.map((m) => m.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('stays curated, not a formulary (≤16, the S1 cap)', () => {
+    expect(COMMON_MEDICATIONS.length).toBeGreaterThan(0);
+    expect(COMMON_MEDICATIONS.length).toBeLessThanOrEqual(16);
+  });
+
+  it('gives every entry a non-empty, trimmed name and a valid species', () => {
+    COMMON_MEDICATIONS.forEach((m) => {
+      expect(m.name.trim()).toBe(m.name);
+      expect(m.name.length).toBeGreaterThan(0);
+      expect(['dog', 'cat', 'both']).toContain(m.species);
+    });
+  });
+
+  it('names never shout (nyx-voice — no exclamation; this is setup copy, same bar)', () => {
+    COMMON_MEDICATIONS.forEach((m) => expect(m.name).not.toContain('!'));
+  });
+
+  it('flags exactly the life-critical drugs `critical` (forward-looking PR 9 reuse, §7)', () => {
+    // Not rendered — but the curated `critical` set is the asset PR 9 consumes for the
+    // missed-critical-dose escalation. Pin it so a future edit can't silently drop a
+    // critical drug (insulin/cardiac/anti-seizure) or over-mark a routine one.
+    const critical = COMMON_MEDICATIONS.filter((m) => m.critical).map((m) => m.name).sort();
+    expect(critical).toEqual(['Furosemide', 'Insulin', 'Levetiracetam', 'Pimobendan'].sort());
+    // A routine allergy/itch drug must NOT be flagged critical.
+    expect(COMMON_MEDICATIONS.find((m) => m.name === 'Apoquel')?.critical).toBeFalsy();
+  });
+});
+
+describe('commonMedicationsForSpecies — species-first ordering, never a filter (§4.1 / §9)', () => {
+  // The group a drug belongs to for a given species: 0 = species-specific (leads),
+  // 1 = 'both' (cross-species, never hidden), 2 = the opposite species (tail).
+  const groupOf = (m: CommonMedication, species: 'dog' | 'cat'): number =>
+    m.species === species ? 0 : m.species === 'both' ? 1 : 2;
+
+  it('returns EVERY drug for any species — a union, never a filter (never hides a `both`)', () => {
+    // The load-bearing §9 AC: all entries always present, so no 'both' (or any) drug
+    // is ever dropped. Same multiset in, same multiset out, just reordered.
+    for (const sp of ['dog', 'cat', 'other', null, undefined] as const) {
+      const out = commonMedicationsForSpecies(sp);
+      expect(out.length).toBe(COMMON_MEDICATIONS.length);
+      expect(out.map((m) => m.name).sort()).toEqual(COMMON_MEDICATIONS.map((m) => m.name).sort());
+    }
+    // Explicitly: every 'both' drug survives every species ordering.
+    const bothNames = COMMON_MEDICATIONS.filter((m) => m.species === 'both').map((m) => m.name);
+    for (const sp of ['dog', 'cat', 'other'] as const) {
+      const outNames = commonMedicationsForSpecies(sp).map((m) => m.name);
+      bothNames.forEach((n) => expect(outNames).toContain(n));
+    }
+  });
+
+  it('leads a cat with the cat-specific drugs (methimazole/mirtazapine surface)', () => {
+    const cat = commonMedicationsForSpecies('cat');
+    // The two feline drugs lead, in stable COMMON_MEDICATIONS order (Mirtazapine row
+    // precedes Methimazole), ahead of any 'both' or dog drug.
+    expect(cat.slice(0, 2).map((m) => m.name)).toEqual(['Mirtazapine', 'Methimazole']);
+    // And the group sequence is non-decreasing — [cat…, both…, dog…], no interleave.
+    const groups = cat.map((m) => groupOf(m, 'cat'));
+    expect(groups).toEqual([...groups].sort((a, b) => a - b));
+  });
+
+  it('leads a dog with the dog-specific drugs (carprofen/pimobendan surface)', () => {
+    const dog = commonMedicationsForSpecies('dog');
+    expect(dog.slice(0, 3).map((m) => m.name)).toEqual(['Carprofen', 'Trazodone', 'Pimobendan']);
+    expect(dog.slice(0, 3).map((m) => m.name)).toEqual(expect.arrayContaining(['Carprofen', 'Pimobendan']));
+    const groups = dog.map((m) => groupOf(m, 'dog'));
+    expect(groups).toEqual([...groups].sort((a, b) => a - b));
+  });
+
+  it("orders an 'other'/unknown pet with 'both' first, then the species drugs (nothing matches)", () => {
+    // No drug is species 'other', so the matches group is empty → 'both' leads (the
+    // broadly-applicable set), then the dog+cat drugs in stable order.
+    for (const sp of ['other', null, undefined] as const) {
+      const out = commonMedicationsForSpecies(sp);
+      const firstSpecific = out.findIndex((m) => m.species !== 'both');
+      const lastBoth = out.map((m) => m.species).lastIndexOf('both');
+      expect(lastBoth).toBeLessThan(firstSpecific); // every 'both' precedes every specific
+    }
+  });
+
+  it('preserves stable COMMON_MEDICATIONS order WITHIN each group', () => {
+    // Stability matters: rough owner-frequency order is the within-group ranking.
+    const cat = commonMedicationsForSpecies('cat');
+    const both = cat.filter((m) => m.species === 'both').map((m) => m.name);
+    const originalBoth = COMMON_MEDICATIONS.filter((m) => m.species === 'both').map((m) => m.name);
+    expect(both).toEqual(originalBoth);
   });
 });

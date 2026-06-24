@@ -31,6 +31,7 @@ import { Check, Camera, Images } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { ChipGroup } from '../components/ui/ChipGroup';
+import { MedicationNameChips } from '../components/medication/MedicationNameChips';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
@@ -443,6 +444,12 @@ export default function MedicationCaptureScreen() {
               placeholderTextColor={theme.colorTextSecondary}
               autoCapitalize="sentences"
             />
+            {/* Name shortcuts — empty-state only, so the AI-confirm happy path (name
+                pre-filled) shows none. Fills the name field via the SAME handler as
+                the keyboard; never touches the strength gate (§3 / §4.3). */}
+            {genericName.trim().length === 0 && (
+              <MedicationNameChips species={activePet?.species} onPick={setGenericName} />
+            )}
 
             <SectionLabel label="Strength" />
             <TextInput
@@ -453,6 +460,12 @@ export default function MedicationCaptureScreen() {
               placeholderTextColor={theme.colorTextSecondary}
               autoCapitalize="none"
             />
+            {/* FORMAT guidance, always shown — copy the printed value with its unit.
+                Distinct from the §6.5 confirm gate below (which appears only once a
+                value is present): never a value chip, never a strength suggestion. */}
+            <Text style={styles.strengthFormatHint}>
+              Copy the strength exactly as printed — include the unit, like 5 mg or 16 mg/mL.
+            </Text>
             <StrengthGate
               strength={strength}
               confirmed={strengthConfirmed}
@@ -512,6 +525,11 @@ export default function MedicationCaptureScreen() {
               onChangeText={setGenericName}
               autoCapitalize="sentences"
             />
+            {/* Name shortcuts — empty-state only; the manual/empty case these are
+                for. Fills the name via the SAME handler as the keyboard. */}
+            {genericName.trim().length === 0 && (
+              <MedicationNameChips species={activePet?.species} onPick={setGenericName} />
+            )}
             <SectionLabel label="Brand (optional)" />
             <TextInput
               style={styles.textInput}
@@ -530,6 +548,12 @@ export default function MedicationCaptureScreen() {
               onChangeText={onEditStrength}
               autoCapitalize="none"
             />
+            {/* FORMAT guidance, always shown — copy the printed value with its unit
+                (never a value chip / strength suggestion, §3). Sits alongside the
+                §6.5 confirm gate below, which appears only once a value is present. */}
+            <Text style={styles.strengthFormatHint}>
+              Copy the strength exactly as printed — include the unit, like 5 mg or 16 mg/mL.
+            </Text>
             {/* The gate follows the strength wherever it can be saved, so the edit
                 screen can never save an unverified strength either — a hand-typed
                 dose is gated exactly like an AI-extracted one (§6.5). */}
@@ -823,7 +847,15 @@ const styles = StyleSheet.create({
   strengthHint: {
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
-    lineHeight: 18,
+    lineHeight: theme.lineHeightSM,
+  },
+  // Always-on FORMAT guidance under the Strength input (B-160 §4.2). Same tertiary
+  // treatment as strengthHint, but distinct: this is format help (shown even when
+  // empty), not the §6.5 confirm prompt (shown only with a value present).
+  strengthFormatHint: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.lineHeightSM,
   },
   gateHint: {
     fontSize: theme.textSM,
