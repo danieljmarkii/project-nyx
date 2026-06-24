@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
@@ -102,21 +103,37 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
         {recent.length > 0 && (
           <View style={styles.zone}>
             <SectionLabel label="Recent" />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.recentRow}
-            >
-              {recent.map((m) => (
-                <View key={m.id} style={styles.recentTile}>
-                  <MedTile
-                    med={m}
-                    onPress={() => onPickMedication(m)}
-                    onLongPress={onOpenDetail ? () => onOpenDetail(m) : undefined}
-                  />
-                </View>
-              ))}
-            </ScrollView>
+            {/* Wrapper is the positioning context for the absolute edge-fade below
+                (a View is position:relative by default — matches History's lens row). */}
+            <View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.recentRow}
+              >
+                {recent.map((m) => (
+                  <View key={m.id} style={styles.recentTile}>
+                    <MedTile
+                      med={m}
+                      onPress={() => onPickMedication(m)}
+                      onLongPress={onOpenDetail ? () => onOpenDetail(m) : undefined}
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+              {/* B-166 — right-edge "there's more →" fade, mirroring the History lens
+                  row and the FoodPicker twin. A Recent shelf is a BROWSE row (the full
+                  library sits below), so a fade is the right cue. The 0-alpha stop is
+                  white's zero-alpha form, NOT 'transparent' (RN fades 'transparent'
+                  through black); keep in sync with the picker surface (colorSurface). */}
+              <LinearGradient
+                colors={['rgba(255,255,255,0)', theme.colorSurface]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.recentFade}
+                pointerEvents="none"
+              />
+            </View>
           </View>
         )}
 
@@ -247,6 +264,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginTop: 2,
+  },
+  // B-166 — the right-edge "there's more →" fade over the Recent shelf (top/bottom 0
+  // spans the shelf's content height; no explicit height needed).
+  recentFade: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 28,
   },
   recentRow: {
     gap: theme.space2,

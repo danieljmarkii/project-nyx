@@ -6,6 +6,7 @@ import { Card } from '../ui/Card';
 import { SectionLabel } from '../ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../../constants/eventTypes';
 import { EventIcon } from '../event/EventIcon';
+import { formatDrugLabel } from '../../lib/medications';
 import { NyxEvent } from '../../store/eventStore';
 import { useEvents } from '../../hooks/useEvents';
 import { usePetStore } from '../../store/petStore';
@@ -99,9 +100,18 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
   const config = EVENT_TYPES[event.event_type as EventTypeKey] ?? FALLBACK;
   const isSymptom = SYMPTOM_TYPES.has(event.event_type as EventTypeKey);
   const isMeal = event.event_type === 'meal';
+  const isMedication = event.event_type === 'medication';
   // Meal events backed by a treat-typed food render as "Treat". Legacy NULL
   // and 'meal'/'other' food_type keep the "Meal" label.
   const rowLabel = isMeal && event.food_type === 'treat' ? 'Treat' : config.label;
+
+  // B-161 — the drug name as a subline, so a pet on two meds doesn't show two
+  // identical "Medication" rows. The dose twin of the meal's food-name subline,
+  // and shares EventRow's formatDrugLabel so the two surfaces never drift. NULL
+  // (no drug name hydrated yet) → no subline, exactly like an unnamed meal.
+  const drugLabel = isMedication
+    ? formatDrugLabel(event.drug_generic_name, event.drug_brand_name)
+    : null;
 
   // Tint the glyph to its category so meal vs. symptom reads at a glance — the
   // mid-tone sits cleanly on the light category-tinted circle (mint/rose) and
@@ -127,6 +137,10 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
         {isMeal && event.food_product_name ? (
           <Text style={styles.eventSub} numberOfLines={1}>
             {event.food_product_name}
+          </Text>
+        ) : drugLabel ? (
+          <Text style={styles.eventSub} numberOfLines={1}>
+            {drugLabel}
           </Text>
         ) : null}
       </View>

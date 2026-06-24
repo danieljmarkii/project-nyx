@@ -624,7 +624,7 @@ export default function ProfileScreen() {
         <Card style={styles.sectionGap}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Conditions</Text>
-            <TouchableOpacity onPress={openAddCondition} hitSlop={8}>
+            <TouchableOpacity style={styles.cardActionTouch} onPress={openAddCondition} hitSlop={8}>
               <Text style={styles.sectionAction}>+ Add</Text>
             </TouchableOpacity>
           </View>
@@ -658,11 +658,11 @@ export default function ProfileScreen() {
                       variant={condition.status === 'monitoring' ? 'accent' : 'symptom'}
                     />
                     <View style={styles.conditionActions}>
-                      <TouchableOpacity onPress={() => openEditCondition(condition)} hitSlop={8}>
+                      <TouchableOpacity style={styles.cardActionTouch} onPress={() => openEditCondition(condition)} hitSlop={8}>
                         <Text style={styles.conditionActionText}>Edit</Text>
                       </TouchableOpacity>
                       <Text style={styles.conditionActionDivider}>·</Text>
-                      <TouchableOpacity onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
+                      <TouchableOpacity style={styles.cardActionTouch} onPress={() => confirmResolveCondition(condition)} hitSlop={8}>
                         <Text style={styles.conditionActionText}>Resolve</Text>
                       </TouchableOpacity>
                     </View>
@@ -677,7 +677,7 @@ export default function ProfileScreen() {
         <Card style={styles.sectionGap}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Current medications</Text>
-            <TouchableOpacity onPress={openAddMedication} hitSlop={8}>
+            <TouchableOpacity style={styles.cardActionTouch} onPress={openAddMedication} hitSlop={8}>
               <Text style={styles.sectionAction}>+ Add</Text>
             </TouchableOpacity>
           </View>
@@ -723,6 +723,7 @@ export default function ProfileScreen() {
                   {reg.prescribed_by ? <Text style={styles.medContext}>Prescribed by {reg.prescribed_by}</Text> : null}
                   <View style={styles.conditionActions}>
                     <TouchableOpacity
+                      style={styles.cardActionTouch}
                       onPress={() => handleLogDose(reg)}
                       hitSlop={8}
                       accessibilityRole="button"
@@ -731,11 +732,11 @@ export default function ProfileScreen() {
                       <Text style={[styles.conditionActionText, styles.logDoseActionText]}>Log a dose</Text>
                     </TouchableOpacity>
                     <Text style={styles.conditionActionDivider}>·</Text>
-                    <TouchableOpacity onPress={() => openEditRegimen(reg)} hitSlop={8}>
+                    <TouchableOpacity style={styles.cardActionTouch} onPress={() => openEditRegimen(reg)} hitSlop={8}>
                       <Text style={styles.conditionActionText}>Edit</Text>
                     </TouchableOpacity>
                     <Text style={styles.conditionActionDivider}>·</Text>
-                    <TouchableOpacity onPress={() => confirmEndRegimen(reg)} hitSlop={8}>
+                    <TouchableOpacity style={styles.cardActionTouch} onPress={() => confirmEndRegimen(reg)} hitSlop={8}>
                       <Text style={[styles.conditionActionText, styles.medEndActionText]}>End</Text>
                     </TouchableOpacity>
                   </View>
@@ -1028,6 +1029,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  // B-136 — the inline card actions (Edit/Resolve/End/Log a dose/+Add on the
+  // Conditions and Current medications cards) render small (textXS/textMD) text, so
+  // a bare hitSlop left the tap target ≈27px tall, under the 44pt floor. minHeight 44
+  // + centered lifts each to the floor without touching the text style; the existing
+  // hitSlop stays as extra slack. Shared so every card action clears the bar identically.
+  cardActionTouch: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
   conditionActionText: {
     fontSize: theme.textXS,

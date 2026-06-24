@@ -35,6 +35,7 @@ import {
   MEDICATION_SCHEMA_SQL,
   MEDICATION_VEHICLE_OPTIONS,
   vehicleLabel,
+  formatDrugLabel,
   asDoseVehicle,
   inferDoseVehicleFromFoodType,
   isVehicleNotFinished,
@@ -1306,5 +1307,33 @@ describe('administrationRowToRemote — an unconfirmed combo dose stays null on 
     expect(out.adherence).toBeNull();
     expect(out.paired_event_id).toBe('evt-meal');
     expect(out.how_given).toBe('in_treat');
+  });
+});
+
+// ── B-161 — the shared owner-facing drug label (History row + Home "Today" strip) ──
+// One source so the two surfaces can't drift on how a dose names its drug; the whole
+// point is distinguishing two "Medication" rows for a multi-med pet. The brand is
+// appended ONLY when a generic exists (generic is the clinical primary); with neither
+// name we return null so a nameless dose renders no subline rather than an empty one.
+describe('formatDrugLabel — dose drug name (B-161)', () => {
+  it('joins generic · brand when both are present', () => {
+    expect(formatDrugLabel('cetirizine', 'Zyrtec')).toBe('cetirizine · Zyrtec');
+  });
+
+  it('returns the generic alone when there is no brand', () => {
+    expect(formatDrugLabel('gabapentin', null)).toBe('gabapentin');
+    expect(formatDrugLabel('gabapentin', undefined)).toBe('gabapentin');
+    expect(formatDrugLabel('gabapentin', '')).toBe('gabapentin');
+  });
+
+  it('falls back to the brand when the generic is missing', () => {
+    expect(formatDrugLabel(null, 'Apoquel')).toBe('Apoquel');
+    expect(formatDrugLabel('', 'Apoquel')).toBe('Apoquel');
+  });
+
+  it('returns null when neither name is known (renders no subline)', () => {
+    expect(formatDrugLabel(null, null)).toBeNull();
+    expect(formatDrugLabel(undefined, undefined)).toBeNull();
+    expect(formatDrugLabel('', '')).toBeNull();
   });
 });

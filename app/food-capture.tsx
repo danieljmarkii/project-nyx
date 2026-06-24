@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Camera, Images } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
@@ -487,12 +488,15 @@ export default function FoodCaptureScreen() {
             A clear shot of the front lets us read the label. The ingredients
             and barcode are optional but make the entry more useful later.
           </Text>
+          {/* B-062 — Lucide Camera/Images (were 📷/🖼 emoji). Both glyphs on the
+              screen convert together so the two buttons don't end up one vector +
+              one emoji. */}
           <TouchableOpacity style={styles.primaryBtn} onPress={() => handleSnapFront('camera')} activeOpacity={0.85}>
-            <Text style={styles.primaryBtnIcon}>📷</Text>
+            <Camera size={20} color={theme.colorTextOnDark} strokeWidth={2} />
             <Text style={styles.primaryBtnText}>Take a photo</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.outlineBtn} onPress={() => handleSnapFront('library')} activeOpacity={0.85}>
-            <Text style={styles.outlineBtnIcon}>🖼</Text>
+            <Images size={20} color={theme.colorTextPrimary} strokeWidth={2} />
             <Text style={styles.outlineBtnText}>Choose from library</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} hitSlop={8}>
@@ -536,7 +540,7 @@ export default function FoodCaptureScreen() {
           <Text style={styles.introHeading}>{heading}</Text>
           <Text style={styles.introBody}>{body}</Text>
           <TouchableOpacity style={styles.primaryBtn} onPress={ctaAction} activeOpacity={0.85}>
-            {nextEncouragedSlot && <Text style={styles.primaryBtnIcon}>📷</Text>}
+            {nextEncouragedSlot && <Camera size={20} color={theme.colorTextOnDark} strokeWidth={2} />}
             <Text style={styles.primaryBtnText}>{ctaLabel}</Text>
           </TouchableOpacity>
           {nextEncouragedSlot && (
@@ -876,9 +880,6 @@ const styles = StyleSheet.create({
   primaryBtnDisabled: {
     backgroundColor: theme.colorBorder,
   },
-  primaryBtnIcon: {
-    fontSize: 18,
-  },
   primaryBtnText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
@@ -899,9 +900,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     paddingVertical: theme.space2,
     minHeight: 52,
-  },
-  outlineBtnIcon: {
-    fontSize: 18,
   },
   outlineBtnText: {
     fontSize: theme.textMD,

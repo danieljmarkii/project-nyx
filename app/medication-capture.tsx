@@ -27,7 +27,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { Check } from 'lucide-react-native';
+import { Check, Camera, Images } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { ChipGroup } from '../components/ui/ChipGroup';
@@ -382,12 +382,14 @@ export default function MedicationCaptureScreen() {
             A clear photo of the label lets us read the name and strength, so you
             can confirm them instead of typing. You can also enter it by hand.
           </Text>
+          {/* B-062 — Lucide Camera/Images (were 📷/🖼 emoji), matching the food-capture
+              twin so both glyphs on the screen are vector. */}
           <TouchableOpacity style={styles.primaryBtn} onPress={() => handleSnap('camera')} activeOpacity={0.85}>
-            <Text style={styles.primaryBtnIcon}>📷</Text>
+            <Camera size={20} color={theme.colorTextOnDark} strokeWidth={2} />
             <Text style={styles.primaryBtnText}>Take a photo</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.outlineBtn} onPress={() => handleSnap('library')} activeOpacity={0.85}>
-            <Text style={styles.outlineBtnIcon}>🖼</Text>
+            <Images size={20} color={theme.colorTextPrimary} strokeWidth={2} />
             <Text style={styles.outlineBtnText}>Choose from library</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.linkBtn} onPress={handleManualEntry} hitSlop={8}>
@@ -690,9 +692,6 @@ const styles = StyleSheet.create({
   primaryBtnDisabled: {
     backgroundColor: theme.colorBorder,
   },
-  primaryBtnIcon: {
-    fontSize: 18,
-  },
   primaryBtnText: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
@@ -709,9 +708,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     paddingVertical: theme.space2,
     minHeight: 52,
-  },
-  outlineBtnIcon: {
-    fontSize: 18,
   },
   outlineBtnText: {
     fontSize: theme.textMD,

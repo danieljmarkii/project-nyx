@@ -4,6 +4,7 @@ import {
   Dimensions, TouchableOpacity, Text,
   NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
+import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { getSignedUrl } from '../../lib/storage';
 import { PhotoViewer } from '../ui';
@@ -50,7 +51,10 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
         activeOpacity={onAddPhoto ? 0.7 : 1}
         disabled={!onAddPhoto}
       >
-        <Text style={styles.emptyIcon}>📷</Text>
+        {/* B-062 — Lucide Camera (was a 📷 emoji) so the photo affordances are all
+            vector glyphs. The trailing "＋ Add another" slide stays a plain glyph —
+            it's a plus, not a camera, and never renders alongside this empty state. */}
+        <Camera size={36} color={theme.colorTextTertiary} strokeWidth={1.5} />
         <Text style={styles.emptyText}>
           {onAddPhoto ? 'Tap to add a photo' : 'No photos yet'}
         </Text>
