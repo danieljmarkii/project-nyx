@@ -33,6 +33,7 @@ import {
   type IntakeDeclineFinding,
   type ReflectionFinding,
   type SymptomWorseningFinding,
+  type SymptomChronicityFinding,
   type PostprandialTimingFinding,
   type TimeOfDayClusteringFinding,
   type OccurredAtConfidence,
@@ -1465,7 +1466,10 @@ Deno.test('detectChronicity — the council case: ~6 weeks of q2-day vomiting fi
   assert.equal(f.tier, 'firm') // span 42 ≥ firmSpanDays
   assert.equal(f.spanDays, 42)
   assert.equal(f.episodeCount, 22)
-  assert.equal(f.activeWeeks, 7) // buckets 0..6
+  // B-188 phase-stable measure: a q2-day cadence packs the 42-day span into 6 disjoint 7-day
+  // reaches (each greedy anchor jumps to the next onset ≥7 days out = +8d at q2-day), not the
+  // 7 fixed-grid buckets the old now-anchored measure produced. Both clear minActiveWeeks 3.
+  assert.equal(f.activeWeeks, 6)
   assert.equal(f.daysSinceLastEpisode, 0)
   assert.equal(f.windowDays, 56)
   assert.equal(f.associationalOnly, true)
@@ -1605,6 +1609,129 @@ Deno.test('detectChronicity — property: an occasional vomiter (meals logged) f
   const rate = fires / TRIALS
   console.log(`detectChronicity occasional-vomiter fire rate: ${(rate * 100).toFixed(3)}% (${fires}/${TRIALS})`)
   assert.ok(rate < 0.02, `occasional-vomiter fire rate ${(rate * 100).toFixed(3)}% must be ≪ small (< 2%)`)
+})
+
+// ── Detector ⑦: composition & ranking (B-182 PR 2) ───────────────────────────
+//
+// The §7 composition/ranking fixtures (11–13) + the B-188 phase-stability regression. These
+// prove the load-bearing PR-2 couplings: the same-symptom ④-suppression with firm-tier
+// INHERITANCE (§4.5), the GLOBAL ③-suppression valve (§4.4 — a chronic course must blank the
+// whole soothing reflection layer), the within-safety-band ranking (intake-decline → chronicity
+// → worsening, §5), and the B-188 fix (a two-cluster "barbell" can no longer straddle a bucket
+// edge into a false activeWeeks 3, and the measure is identical across every calendar phase).
+
+// Fixture 11 — chronic AND worsening, SAME symptom → one ⑦ card (firm-INHERITED), ④ dropped.
+Deno.test('detectChronicity/④ — same-symptom chronic+worsening shows ONE firm ⑦ card, ④ suppressed', () => {
+  // A 5-week vomiting course (chronic) whose CURRENT week is also up on the prior week
+  // (worsening). On its own ⑦ is 'standard' (span 34 < firmSpanDays 42) and ④ fires — the
+  // two inputs the composition layer reconciles into one firm card.
+  const symptomEvents = [1, 3, 5, 8, 10, 21, 28, 35].map((d) => vomitAgo(d))
+  const mealEvents: MealEvent[] = []
+  for (let d = 0; d <= 40; d++) mealEvents.push(mealAgo(d)) // logging-eligible both lanes
+  const inp = input({ symptomEvents, mealEvents })
+
+  // The raw detector outputs the composition layer starts from:
+  assert.equal(detectChronicity(inp)[0].tier, 'standard', '⑦ alone is span-only standard')
+  const worsening = detectWorsening(inp)
+  assert.equal(worsening.length, 1, '④ alone fires on the week-over-week rise')
+  assert.equal(worsening[0].symptomType, 'vomit')
+
+  // Composed: ④ is dropped (same symptom as ⑦), and ⑦ INHERITS firm from the suppressed rise.
+  const ranked = detectSignals(inp)
+  const safety = ranked.filter((r) => r.finding.priorityClass === 'safety')
+  assert.equal(safety.length, 1, 'one safety card — same-symptom ④ is de-duplicated by ⑦')
+  assert.equal(safety[0].finding.type, 'symptom_chronicity')
+  assert.equal((safety[0].finding as SymptomChronicityFinding).tier, 'firm', 'firm inherited from the suppressed ④')
+  assert.ok(!ranked.some((r) => r.finding.type === 'symptom_worsening'), 'no redundant ④ card')
+})
+
+// Fixture 12 — chronic vomiting + improving itch → the GLOBAL ③ valve blanks the itch reflection.
+Deno.test('detectReflections — a chronic symptom suppresses an otherwise-rendering itch reflection (§4.4)', () => {
+  const itchEvents = [
+    ...[1, 3].map((d) => symptom('itch', ago(d))), // current week: 2 episodes
+    ...[8, 10, 12, 13].map((d) => symptom('itch', ago(d))), // prior week: 4 episodes
+  ]
+  // Chronic vomiting that is NOT worsening (current week carries one episode) — so this case
+  // isolates the ③ chronicity valve, not the ④ path.
+  const vomitEvents = [2, 9, 16, 23, 30, 37].map((d) => vomitAgo(d))
+  const mealEvents: MealEvent[] = []
+  for (let d = 0; d <= 40; d++) mealEvents.push(mealAgo(d))
+
+  // Control: the itch trend alone DOES render a soothing "improving" reflection.
+  const itchOnly = input({ symptomEvents: itchEvents, mealEvents })
+  const refl = detectReflections(itchOnly)
+  assert.equal(refl.length, 1, 'itch improving reflection renders when nothing is chronic')
+  assert.equal(refl[0].symptomType, 'itch')
+  assert.equal(refl[0].direction, 'improving')
+
+  // With the chronic vomiting course present, the WHOLE reflection layer is blanked (§4.7 #4) —
+  // no calm "itch is improving" alongside a pet that has been vomiting for weeks.
+  const full = input({ symptomEvents: [...vomitEvents, ...itchEvents], mealEvents })
+  assert.deepEqual(detectReflections(full), [], 'a chronic symptom blanks the reflection layer')
+  const ranked = detectSignals(full)
+  assert.ok(
+    ranked.some((r) => r.finding.type === 'symptom_chronicity' && r.finding.symptomType === 'vomit'),
+    'the chronic vomiting card leads',
+  )
+  assert.ok(!ranked.some((r) => r.finding.type === 'reflection'), 'no soothing reflection survives')
+})
+
+// Fixture 13 — rank order: intake_decline leads chronicity leads worsening (SAFETY_TYPE_ORDER).
+Deno.test('rankFindings — co-firing safety: intake_decline → chronicity → worsening', () => {
+  // Three DIFFERENT-axis safety signals co-fire: declining intake (②), a chronic vomiting
+  // course (⑦), and a worsening — but NOT chronic — diarrhea (④). Different symptoms, so ⑦
+  // does not suppress the diarrhea ④; all three are kept and ranked by SAFETY_TYPE_ORDER.
+  const symptomEvents = [
+    ...[2, 9, 16, 23, 30, 37].map((d) => vomitAgo(d)), // chronic vomit, not worsening
+    ...[1, 3, 5].map((d) => diarrheaAgo(d)), // worsening diarrhea (current week)
+    diarrheaAgo(8), // prior-week diarrhea (the lower baseline the rise is measured against)
+  ]
+  const mealEvents = [
+    // a proven dog intake-decline pattern: an 'all' baseline collapsing to picked→refused.
+    ratedMeal(18, 'all'), ratedMeal(20, 'all'), ratedMeal(22, 'all'), ratedMeal(24, 'all'),
+    ratedMeal(26, 'all'), ratedMeal(29, 'picked'), ratedMeal(30, 'refused'),
+  ]
+  const ranked = detectSignals(input({ pet: dog, symptomEvents, mealEvents }))
+  const safetyTypes = ranked
+    .filter((r) => r.finding.priorityClass === 'safety')
+    .map((r) => r.finding.type)
+  assert.deepEqual(
+    safetyTypes,
+    ['intake_decline', 'symptom_chronicity', 'symptom_worsening'],
+    'intake-decline (fastest-killing) leads, then chronicity (council #3), then the weekly bump',
+  )
+  // All three lead every other insight (band 0).
+  assert.equal(ranked[0].finding.type, 'intake_decline')
+  assert.equal(ranked[1].finding.type, 'symptom_chronicity')
+  assert.equal(ranked[2].finding.type, 'symptom_worsening')
+})
+
+// Fixture — B-188 regression: a two-cluster "barbell" stays SILENT and is calendar-phase-stable.
+Deno.test('detectChronicity — B-188: a two-cluster barbell stays SILENT across every calendar phase', () => {
+  // Two tight 3-consecutive-day clusters ~6 quiet weeks apart. episodeCount (6), spanDays (43)
+  // and recency (0) all clear their floors — activeWeeks is the UNIQUE blocker. The OLD
+  // now-anchored bucket measure (floor((now−onset)/7d)) let the stale cluster STRADDLE a bucket
+  // edge and reach activeWeeks 3 on SOME calendar phases (fire) but not others (silent) — the
+  // B-188 non-determinism. The phase-stable greedy measure (countDistributionWeeks) counts each
+  // tight cluster as ONE distribution-week (→ 2 < minActiveWeeks 3), IDENTICALLY for every `now`.
+  // Sweep 7 consecutive daily phases; all must stay silent (the old measure would fire on ≥1).
+  for (let phase = 0; phase < 7; phase++) {
+    const nowMs = NOW_MS + phase * DAY_MS
+    const isoAgo = (daysAgo: number, h = 11): string => {
+      const d = new Date(nowMs - daysAgo * DAY_MS)
+      d.setUTCHours(h, 0, 0, 0)
+      return d.toISOString()
+    }
+    const symptomEvents = [41, 42, 43, 0, 1, 2].map((d) => symptom('vomit', isoAgo(d)))
+    const mealEvents: MealEvent[] = []
+    for (let d = 0; d <= 43; d++) mealEvents.push(meal({ occurredAt: isoAgo(d) }))
+    const now = new Date(nowMs).toISOString()
+    assert.deepEqual(
+      detectChronicity(input({ symptomEvents, mealEvents, now })),
+      [],
+      `barbell must stay silent at calendar phase +${phase}d (activeWeeks 2 < 3)`,
+    )
+  }
 })
 
 // ── Detector ⑤: postprandial timing (B-078 — descriptive lane Phase 1) ───────

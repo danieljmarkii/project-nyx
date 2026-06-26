@@ -616,9 +616,10 @@ export interface SymptomWorseningFinding extends FindingBase {
  * Copy-urgency tier for a chronicity finding (detector ⑦, B-182). Anchored on DURATION
  * (chronicity's natural urgency axis), NOT the week-over-week delta (that is ④'s axis):
  *   - 'firm'     — a long course (`spanDays ≥ firmSpanDays`, ≥6 weeks): "...worth booking
- *                  a vet visit." (PR 2 also inherits 'firm' when the same symptom is ALSO
- *                  worsening — the §4.5 valve coupling — once suppressWorseningWhenChronic
- *                  lands; PR 1's resolver is span-only so it ships no untested clinical path.)
+ *                  a vet visit." Also inherited (PR 2) when the same symptom is ALSO worsening
+ *                  week-over-week — the §4.5 valve coupling, applied in the composition layer
+ *                  (suppressWorseningWhenChronic), NOT in resolveChronicityTier (which stays
+ *                  pure/span-only and has no view of the worsening findings).
  *   - 'standard' — a present-and-recurring course (span in [minSpanDays, firmSpanDays)):
  *                  "...worth a word with your vet."
  * There is deliberately NO 'soft' register (one fewer than ④): a symptom recurring for
@@ -660,7 +661,7 @@ export interface SymptomChronicityFinding extends FindingBase {
   episodeCount: number
   /** First→last onset span, in whole days. ≥ chronicity.minSpanDays. */
   spanDays: number
-  /** Distinct now-anchored 7-day buckets carrying an episode (distribution, not two endpoints). ≥ minActiveWeeks. */
+  /** Phase-stable distribution count: distinct ~weekly periods carrying an episode (not two endpoints, not `now`-dependent — B-188). ≥ minActiveWeeks. */
   activeWeeks: number
   /** Distinct UTC symptom-days (density/evidence detail). */
   symptomDays: number
@@ -2255,6 +2256,23 @@ export function detectReflections(
   // soothing "itch is down" card while the rising vomit is dropped).
   if (stats.some((s) => isWorsening(s, cfg))) return []
 
+  // GLOBAL chronicity gate (§4.4, detector ⑦ — THE VALVE): the reflection layer also stays
+  // silent if ANY tracked symptom is chronic. This is the never-reassure heart of the
+  // chronicity lane — without it, the IMPROVING TAIL of a chronic course (4→3→1 episodes/wk,
+  // still recent) renders ③'s soothing "improving — down from 4" on a pet that has been sick
+  // for weeks and is still symptomatic, the single biggest mis-action risk the vet council
+  // named. The gate is GLOBAL (any chronic symptom blanks the WHOLE layer, exactly like the
+  // worsening gate) so a chronic vomiting course can't let a calm "itch is improving" surface
+  // alongside it (§4.7 #4). It shares the EXACT predicate detector ⑦ fires on —
+  // `isChronic(s) && s.loggingEligible` (computeChronicityStats carries the per-symptom
+  // logging-eligibility guard; detectChronicity gates on the same conjunction) — so "③ goes
+  // silent ⟺ ⑦ speaks" holds by construction and the valve cannot drift, the same provably-
+  // closed architecture as ④'s shared `isWorsening`.
+  const chronicityStats = computeChronicityStats(input, config)
+  if (chronicityStats?.some((s) => isChronic(s, config.chronicity) && s.loggingEligible)) {
+    return []
+  }
+
   // Candidates: flat-or-improving on BOTH episode count AND symptom-day spread, on a
   // real current count, with enough history in the busier window to state a trend.
   const candidates: ReflectionFinding[] = stats
@@ -2407,18 +2425,22 @@ export function detectWorsening(
 //   • A below-floor result (short / sparse / few episodes) → SILENT, never "the {symptom}
 //     doesn't seem to be a lasting problem" (never inverted).
 //
-// SCOPE SPLIT (B-182 build plan §8): PR 1 (this) is the PURE, ADDITIVE detector + payload +
-// config + registry entry. The ③-suppression VALVE (§4.4 — the shared `isChronic` gate that
-// blanks the reflection layer so the "improving tail" can't reassure) and same-symptom
-// ④-suppression with firm-tier INHERITANCE (§4.5, D1) are COMPOSITION-LAYER changes that
-// land in PR 2. So PR 1's resolveChronicityTier is span-only — it ships no untested clinical
-// path; the worsening-inheritance arm lands with the suppression that activates it.
+// SCOPE SPLIT (B-182 build plan §8): PR 1 was the PURE, ADDITIVE detector + payload + config +
+// registry entry. PR 2 (this change) adds the COMPOSITION-LAYER couplings: the ③-suppression
+// VALVE (§4.4 — the shared `isChronic` gate in detectReflections that blanks the reflection
+// layer so the "improving tail" can't reassure), same-symptom ④-suppression with firm-tier
+// INHERITANCE (§4.5, D1 — suppressWorseningWhenChronic), the within-safety-band ranking
+// (SAFETY_TYPE_ORDER: chronicity above worsening), and the B-188 phase-stable activeWeeks fix
+// (countDistributionWeeks). resolveChronicityTier stays span-only/pure — the worsening
+// inheritance is a fact about the COMPOSED set, so it lives with the suppression in the
+// composition layer, not in the detector.
 
 /** Per-symptom chronicity measures over the §6 lookback — the substrate of detector ⑦. */
 interface ChronicityStat {
   symptomType: SymptomType
   episodeCount: number
   spanDays: number
+  /** Phase-stable distribution count (countDistributionWeeks); the B-188 replacement for now-anchored buckets. */
   activeWeeks: number
   symptomDays: number
   daysSinceLastEpisode: number
@@ -2437,16 +2459,50 @@ interface ChronicityStat {
 }
 
 /**
+ * Phase-stable distribution count (B-188 fix) — the number of distinct ~weekly periods in
+ * which the symptom recurred, computed from the onset DATA ALONE (never `now`). A greedy
+ * minimum-7-day-gap packing: walk onsets oldest→newest and count an onset as a new
+ * "distribution week" only when it is ≥7 days after the last counted one.
+ *
+ * This REPLACES the original now-anchored bucket measure (`floor((now − onset)/7d)`), which
+ * had two faults the PR-1 adversarial review surfaced (B-188): (a) it was NON-DETERMINISTIC —
+ * identical data flipped fire↔silent across calendar days as the bucket grid slid under `now`;
+ * and (b) a tight consecutive-day CLUSTER could STRADDLE a bucket edge, so a two-cluster
+ * "barbell" (3 stale + 3 recent, a long quiet gap between) could reach activeWeeks 3 — the
+ * exact two-endpoint/one-cluster shape §4.3 claims the floor EXCLUDES. Greedy packing fixes
+ * both: it depends only on the sorted onsets (phase-stable), and a cluster of episodes within
+ * any 7-day reach counts ONCE (a barbell → 2, never 3), while a genuinely distributed course
+ * (steady q2-day, or intermittent alternating weeks) still counts one week per ~7-day step —
+ * so every clinical fixture's activeWeeks is unchanged. `>=` (not `>`) so an exactly-7-day
+ * cadence (one episode per calendar week) counts each week, matching the steady-course intent.
+ */
+function countDistributionWeeks(onsetsMs: number[]): number {
+  if (onsetsMs.length === 0) return 0
+  const weekMs = 7 * MS_PER_DAY
+  const sorted = [...onsetsMs].sort((a, b) => a - b)
+  let count = 1
+  let anchor = sorted[0]
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] - anchor >= weekMs) {
+      count++
+      anchor = sorted[i]
+    }
+  }
+  return count
+}
+
+/**
  * Compute per-symptom chronicity stats over the §6 lookback. Pure; returns null only when
  * `now` is unparseable. Symptoms with NO onset in the lookback are omitted (their span/
  * recency are undefined — and a zero-episode symptom is never chronic).
  *
  * Episode counting reuses toEpisodeOnsets (the SAME 3h re-log collapse as ③/④/⑤ — a bout
- * logged five times is one episode, not five). activeWeeks buckets onsets into now-anchored
- * 7-day bins (floor((now − onset)/7d)) and counts the DISTINCT bins — a DISTRIBUTION measure
- * (across weeks), not two endpoints and not one cluster. Day-bucketing is UTC, exactly as
- * ③/④ do; chronicity is a duration/recency measure and is timezone-independent (no `timezone`
- * input — §2, unlike ⑥).
+ * logged five times is one episode, not five). activeWeeks is the PHASE-STABLE distribution
+ * count (countDistributionWeeks) — a DISTRIBUTION measure (across weeks), not two endpoints
+ * and not one cluster, and not dependent on `now` (the B-188 fix; the old now-anchored bucket
+ * measure let a tight cluster straddle a bucket edge). Day-bucketing for symptomDays is UTC,
+ * exactly as ③/④ do; chronicity is a duration/recency measure and is timezone-independent (no
+ * `timezone` input — §2, unlike ⑥).
  *
  * loggingEligible is checked PER SYMPTOM over that symptom's own onset span (§4.3 "over the
  * span") — NOT over the fixed 56-day window, which would wrongly silence a legitimate recent
@@ -2462,7 +2518,6 @@ function computeChronicityStats(
   if (!Number.isFinite(nowMs)) return null
 
   const windowStart = nowMs - cfg.windowDays * MS_PER_DAY
-  const weekMs = 7 * MS_PER_DAY
 
   const allEventMs = [
     ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
@@ -2503,7 +2558,7 @@ function computeChronicityStats(
       symptomType,
       episodeCount: onsets.length,
       spanDays: Math.floor((lastOnsetMs - firstOnsetMs) / MS_PER_DAY),
-      activeWeeks: new Set(onsets.map((ms) => Math.floor((nowMs - ms) / weekMs))).size,
+      activeWeeks: countDistributionWeeks(onsets),
       symptomDays: new Set(onsets.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
       daysSinceLastEpisode: Math.floor((nowMs - lastOnsetMs) / MS_PER_DAY),
       firstOnsetMs,
@@ -2535,11 +2590,10 @@ export function isChronic(s: ChronicityStat, cfg: DetectionConfig['chronicity'])
 }
 
 /**
- * Resolve the duration-anchored copy-urgency tier (§4.6). PR 1: span-only — 'firm' (≥6
- * weeks → "book a vet visit") iff the course is long enough on its own, else 'standard'
- * ("a word with your vet"). The §4.5 firm INHERITANCE arm (firm when the same symptom is
- * also worsening week-over-week) lands in PR 2 alongside suppressWorseningWhenChronic, the
- * composition change that activates it — so PR 1 ships no untested clinical path.
+ * Resolve the duration-anchored copy-urgency tier (§4.6). Span-only: 'firm' (≥6 weeks →
+ * "book a vet visit") iff the course is long enough on its own, else 'standard' ("a word
+ * with your vet"). The §4.5 firm INHERITANCE arm (firm when the same symptom is also
+ * worsening week-over-week) is applied in suppressWorseningWhenChronic — see the note below.
  */
 function resolveChronicityTier(
   s: ChronicityStat,
@@ -2547,6 +2601,10 @@ function resolveChronicityTier(
 ): ChronicityTier {
   return s.spanDays >= cfg.firmSpanDays ? 'firm' : 'standard'
 }
+// NOTE: the §4.6 firm-tier INHERITANCE arm (firm when the same symptom is also worsening
+// week-over-week) is applied downstream in suppressWorseningWhenChronic, not here — that fact
+// is only knowable from the COMPOSED finding set, and keeping this resolver pure/span-only is
+// what let PR 1 ship it with no untested clinical path.
 
 export function detectChronicity(
   input: DetectionInput,
@@ -3443,13 +3501,13 @@ export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'food_symptom_correlation', detect: detectCorrelations },
   { type: 'intake_decline', detect: detectIntakeDecline },
   { type: 'symptom_worsening', detect: detectWorsening },
-  // Detector ⑦ (B-182). Registered (live in detectSignals) per build-plan §8 PR 1. Its
-  // within-safety-band RANKING (SAFETY_TYPE_ORDER: chronicity above worsening) and its
-  // composition couplings (③-suppression valve §4.4, same-symptom ④-suppression §4.5) land
-  // in PR 2 — until then a chronic+worsening pet may show BOTH safety cards (acceptable:
-  // safety is never DROPPED, only over-shown; PR 2 de-duplicates). DEPLOY-GATED: the client
-  // (lib/signal.ts InsightType, InsightCard renderers) does not handle 'symptom_chronicity'
-  // until PR 3, so do NOT redeploy generate-signal until the PR1→3 chain + client land.
+  // Detector ⑦ (B-182). Live in detectSignals (PR 1), with its within-safety-band RANKING
+  // (SAFETY_TYPE_ORDER: chronicity above worsening) and composition couplings — the
+  // ③-suppression valve (§4.4) and same-symptom ④-suppression with firm-tier inheritance
+  // (§4.5, suppressWorseningWhenChronic) — now landed (PR 2): a same-symptom chronic+worsening
+  // pet shows ONE card (⑦, firm-inherited), never two. DEPLOY-GATED: the client (lib/signal.ts
+  // InsightType, InsightCard renderers) does not handle 'symptom_chronicity' until PR 3, so do
+  // NOT redeploy generate-signal until the PR3 copy layer + client land.
   { type: 'symptom_chronicity', detect: detectChronicity },
   { type: 'postprandial_timing', detect: detectPostprandialTiming },
   { type: 'timeofday_clustering', detect: detectTimeOfDayClustering },
@@ -3469,7 +3527,7 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //      safety finding AND below every correlation, never the lead of a data-rich
 //      pet that has a real correlation to show.
 function priorityBand(finding: Finding, ctx: PetContext): number {
-  if (finding.priorityClass === 'safety') return 0 // intake_decline AND symptom_worsening
+  if (finding.priorityClass === 'safety') return 0 // intake_decline, symptom_chronicity, symptom_worsening
   if (finding.type === 'reflection') return 3
   // Correlation is the context-lead insight for a diet-trial pet (Jordan's stack, §8).
   if (finding.type === 'food_symptom_correlation' && ctx.dietTrialActive) return 1
@@ -3487,12 +3545,20 @@ const INSIGHT_TYPE_ORDER: Record<string, number> = {
   timeofday_clustering: 2,
 }
 
-// Within the safety band (band 0): intake-decline leads symptom-frequency worsening.
-// Anorexia (esp. the feline 48h hepatic-lipidosis window) is a faster-killing emergency
-// than a week-over-week symptom-count rise; both still lead every insight, and both are
-// kept by curation (a pet eating less AND vomiting more shows two safety cards — the
-// two-signal gestalt the re-run brief found MISSING).
-const SAFETY_TYPE_ORDER: Record<string, number> = { intake_decline: 0, symptom_worsening: 1 }
+// Within the safety band (band 0): intake-decline leads chronicity leads symptom-frequency
+// worsening. Anorexia (esp. the feline 48h hepatic-lipidosis window) is the FASTEST-killing
+// emergency, unchanged at the top. Chronicity (⑦, B-182) outranks the week-over-week
+// worsening bump because the vet council ranked sustained chronicity ABOVE the bump as the
+// more clinically established concern (Consensus #3) — "this has gone on for weeks" is a more
+// complete statement than "up 2 this week". All three lead every insight, and co-firing across
+// DIFFERENT symptoms/axes is kept by curation (a pet eating less AND with one chronic symptom
+// AND another worsening symptom shows all three — the two-/multi-signal gestalt the re-run
+// brief found MISSING). Same-symptom ④ is de-duplicated upstream by suppressWorseningWhenChronic.
+const SAFETY_TYPE_ORDER: Record<string, number> = {
+  intake_decline: 0,
+  symptom_chronicity: 1,
+  symptom_worsening: 2,
+}
 
 /**
  * Orders findings per §5: safety first, then the context-lead insight, then the
@@ -3512,8 +3578,9 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
       return x.pValue - y.pValue
     }
 
-    // Among safety findings: intake-decline leads worsening; within intake-decline,
-    // an outright refusal of a normally-eaten food leads.
+    // Among safety findings: intake-decline leads chronicity leads worsening
+    // (SAFETY_TYPE_ORDER); within intake-decline, an outright refusal of a normally-eaten
+    // food leads.
     if (x.priorityClass === 'safety' && y.priorityClass === 'safety') {
       const safetyDiff = (SAFETY_TYPE_ORDER[x.type] ?? 9) - (SAFETY_TYPE_ORDER[y.type] ?? 9)
       if (safetyDiff !== 0) return safetyDiff
@@ -3560,6 +3627,50 @@ function suppressTimeOfDayWhenPostprandial(findings: Finding[]): Finding[] {
 }
 
 /**
+ * §4.5 / §5 curation (D1, the recommended option — adopted) — detector ⑦ (chronicity) and ④
+ * (worsening) are MUTUALLY EXCLUSIVE per symptom type, and ⑦ wins. A pet that is BOTH chronic
+ * AND worsening for the SAME symptom would otherwise show two redundant safety cards —
+ * "ongoing for 6 weeks" + "3 up from 2" — which dilutes the calm surface (Principle 3).
+ * Chronicity is the MORE COMPLETE clinical statement and the council ranked it ABOVE the
+ * week-over-week bump (Consensus #3), so the ⑦ card is kept and the same-symptom ④ is dropped.
+ *
+ * To never LOSE the urgency the dropped ④ carried, ⑦ INHERITS the 'firm' tier for any symptom
+ * that was also worsening (the §4.6 inheritance arm). This is built HERE, in the composition
+ * layer, not in resolveChronicityTier — the tier resolver is pure (span-only) and has no view
+ * of the worsening findings; the inheritance is a fact about the COMPOSED set, so it lives with
+ * the suppression that activates it (PR 1 deliberately shipped resolveChronicityTier span-only
+ * so no untested clinical path existed before this). DIFFERENT symptoms both survive — a chronic
+ * vomiting + worsening itch pet keeps BOTH cards (the two-signal gestalt the brief found
+ * missing). Lives in the COMPOSITION layer (like suppressTimeOfDayWhenPostprandial) so each
+ * detector stays pure and independently unit-testable; runs before ranking.
+ */
+function suppressWorseningWhenChronic(findings: Finding[]): Finding[] {
+  const chronicTypes = new Set(
+    findings
+      .filter((f): f is SymptomChronicityFinding => f.type === 'symptom_chronicity')
+      .map((f) => f.symptomType),
+  )
+  if (chronicTypes.size === 0) return findings
+  // The symptom types that are BOTH chronic AND worsening — these drive the firm-tier
+  // inheritance (captured BEFORE the ④ findings are dropped, since the drop erases them).
+  const alsoWorseningTypes = new Set(
+    findings
+      .filter(
+        (f): f is SymptomWorseningFinding =>
+          f.type === 'symptom_worsening' && chronicTypes.has(f.symptomType),
+      )
+      .map((f) => f.symptomType),
+  )
+  return findings
+    .filter((f) => !(f.type === 'symptom_worsening' && chronicTypes.has(f.symptomType)))
+    .map((f) =>
+      f.type === 'symptom_chronicity' && alsoWorseningTypes.has(f.symptomType)
+        ? { ...f, tier: 'firm' as ChronicityTier }
+        : f,
+    )
+}
+
+/**
  * Top-level entry point. Runs every registered detector, composes and ranks the
  * results (§5). An empty array means no finding cleared its floor — the caller
  * renders the building/stale state (§3.3); it is NOT an all-clear (§9).
@@ -3572,6 +3683,11 @@ export function detectSignals(
   for (const detector of DETECTOR_REGISTRY) {
     findings.push(...detector.detect(input, config))
   }
-  // §4.4/§6 mutual exclusion (⑤ suppresses ⑥ per symptom) before ranking.
-  return rankFindings(suppressTimeOfDayWhenPostprandial(findings), input.pet)
+  // Composition / mutual exclusion before ranking: ⑤ suppresses ⑥ per symptom (§4.4/§6),
+  // and ⑦ suppresses same-symptom ④ with firm-tier inheritance (§4.5/§5). Independent
+  // passes (disjoint type pairs), so order does not matter.
+  return rankFindings(
+    suppressWorseningWhenChronic(suppressTimeOfDayWhenPostprandial(findings)),
+    input.pet,
+  )
 }
