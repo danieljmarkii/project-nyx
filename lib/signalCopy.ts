@@ -56,6 +56,28 @@ function localHourBand(startHour: number, windowHours: number): string {
   return `between ${clockHourLabel(startHour)} and ${clockHourLabel(end)}`;
 }
 
+// Chronicity recency (⑦, B-182) — days-since-last-episode in plain words. Reinforces the
+// "still ongoing" honesty of the recency floor (the engine only fires when an episode is
+// within ongoingRecencyDays), never a resolution claim. 0→"today", 1→"yesterday", N→"N days ago".
+function recencyPhrase(daysSince: number): string {
+  if (daysSince <= 0) return 'today';
+  if (daysSince === 1) return 'yesterday';
+  return `${daysSince} days ago`;
+}
+
+// UTC month name for the chronicity "since {month}" onset anchor (⑦) — concrete and
+// trust-building, never clinical (§4.1). Mirror of onsetMonth/MONTH_NAMES in phrasing.ts
+// (the RN bundle can't import the Deno module); UTC to match the engine's day-bucketing.
+// KEEP IN SYNC with phrasing.ts.
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+function onsetMonth(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? 'then' : MONTH_NAMES[d.getUTCMonth()];
+}
+
 // ── Display state (§3.3 + B-051) ──────────────────────────────────────────────
 // Findings present → live. With no findings, three honest empty states — never an
 // all-clear (§9):
@@ -197,6 +219,12 @@ export function sampleLine(finding: SignalFinding): string {
     }
     return `${count(finding.currentCount, 'episode', 'episodes')} this week, ${finding.priorCount} last week`;
   }
+  if (finding.type === 'symptom_chronicity') {
+    // The honest denominator (§4.1): episodes across the ACTIVE weeks over the lookback —
+    // never an implied continuity the data can't support ("6 of the last 8 weeks", not
+    // "8 weeks"). Phrasing kept identical to the evidence + server template denominator.
+    return `${count(finding.episodeCount, 'episode', 'episodes')} across ${finding.activeWeeks} of the last ${Math.round(finding.windowDays / 7)} weeks`;
+  }
   if (finding.type === 'postprandial_timing') {
     // The honest denominator: rapid over the episodes we could TIME, never the raw total.
     return `${finding.rapidCount} of ${count(finding.eligibleCount, 'timed episode', 'timed episodes')} within ${finding.rapidWindowMinutes} min of eating`;
@@ -278,6 +306,22 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
       `We've logged ${count(finding.currentCount, 'episode', 'episodes')} of ${symptom} for ${petName} this week, ` +
       `${priorPhrase}. It's a pattern in your logs, not a diagnosis — worth a word with your vet, and keeping an ` +
       `eye on whether it carries on.`
+    );
+  }
+  if (finding.type === 'symptom_chronicity') {
+    // Tap-to-expand evidence (⑦, B-182): names DURATION + RECURRENCE + COUNT + still-ongoing
+    // recency, routed to the vet on the resolved tier. DESCRIPTIVE only — never a cause, never a
+    // mechanism/severity verdict, never a diagnosis, never reassures (§4.7). The honest
+    // denominator is the active weeks over the lookback; the recency clause carries the
+    // "ongoing/unresolved" honesty (the engine only fired because the last episode is recent).
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    const weeks = Math.round(finding.windowDays / 7);
+    const vetAsk = finding.tier === 'firm' ? 'booking a vet visit' : 'a word with your vet';
+    return (
+      `Since ${onsetMonth(finding.firstOnsetIso)}, we've logged ${count(finding.episodeCount, 'episode', 'episodes')} of ` +
+      `${symptom} for ${petName} across ${finding.activeWeeks} of the last ${weeks} weeks, the most recent ` +
+      `${recencyPhrase(finding.daysSinceLastEpisode)}. A symptom that keeps recurring over weeks is worth ${vetAsk} — ` +
+      `a read of your logs, not a diagnosis.`
     );
   }
   if (finding.type === 'postprandial_timing') {
