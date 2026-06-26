@@ -83,6 +83,7 @@ function rowToEvent(row: TimelineRow): NyxEvent {
     food_type: row.food_type,
     quantity: row.quantity,
     intake_rating: row.intake_rating as NyxEvent['intake_rating'],
+    weight_kg: row.weight_kg,
     medication_item_id: row.medication_item_id,
     adherence: row.adherence as NyxEvent['adherence'],
     how_given: row.how_given as NyxEvent['how_given'],
