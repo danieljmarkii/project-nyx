@@ -21,6 +21,7 @@ import type {
   IntakeDeclineFinding,
   ReflectionFinding,
   SymptomWorseningFinding,
+  SymptomChronicityFinding,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
   RankedFinding,
@@ -121,6 +122,33 @@ export function templateWorsening(f: SymptomWorseningFinding, petName: string): 
   return `${petName} has had ${f.currentCount} ${episodeNoun} of ${symptom} this week, ${priorClause} — worth a word with your vet.`
 }
 
+// UTC month names for the chronicity "since {month}" anchor (UTC, matching the engine's
+// UTC day-bucketing). A concrete, trust-building, non-clinical onset anchor (§4.1).
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+function onsetMonth(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? 'then' : MONTH_NAMES[d.getUTCMonth()]
+}
+
+export function templateChronicity(f: SymptomChronicityFinding, petName: string): string {
+  // Detector ⑦ (B-182) — template-only (no LLM, like ③/④/⑤/⑥), a structural never-reassure
+  // guarantee. Names DURATION + RECURRENCE + COUNT, routed to the vet. NEVER causal, never a
+  // mechanism/severity verdict, never a diagnosis, never reassures. The honest denominator is
+  // ACTIVE WEEKS over the lookback ("N of the last M weeks"), never an implied continuity the
+  // data can't support. Urgency rides the resolved tier (duration-anchored, decided in the
+  // engine). PR-1 PLACEHOLDER: guardrail-clean + renderable so the build is green; the final
+  // voice/register is finalized in PR 3 (Designer + Dr. Chen + nyx-voice), which also adds the
+  // client metricText/evidenceText + an explicit validatePhrasing chronicity branch.
+  const symptom = SYMPTOM_LABEL[f.symptomType]
+  const windowWeeks = Math.round(f.windowDays / 7)
+  const noun = f.episodeCount === 1 ? 'episode' : 'episodes'
+  const vetAsk = f.tier === 'firm' ? 'worth booking a vet visit' : 'worth a word with your vet'
+  return `We've logged ${symptom} for ${petName} across ${f.activeWeeks} of the last ${windowWeeks} weeks — ${f.episodeCount} ${noun} since ${onsetMonth(f.firstOnsetIso)}. A symptom that keeps recurring over weeks is ${vetAsk}. This is a read of your logs, not a diagnosis.`
+}
+
 export function templatePostprandialTiming(f: PostprandialTimingFinding, petName: string): string {
   // Detector ⑤ (B-078) — template-only (no LLM, like ③/④). Names TIMING ONLY: never a
   // food/protein/brand/form (§9.1 — those ride feedingFormsInEvidence into the vet report),
@@ -171,6 +199,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templateReflection(finding, petName)
     case 'symptom_worsening':
       return templateWorsening(finding, petName)
+    case 'symptom_chronicity':
+      return templateChronicity(finding, petName)
     case 'postprandial_timing':
       return templatePostprandialTiming(finding, petName)
     case 'timeofday_clustering':
@@ -318,6 +348,24 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       days_last_week: finding.priorDays,
       tier: finding.tier, // 'firm' | 'standard' | 'soft' — urgency register
       relationship: 'descriptive_count', // a frequency we are noting — NOT a cause
+      severity: 'calm_safety_flag', // surface clearly, never reassure
+    }
+  }
+  if (finding.type === 'symptom_chronicity') {
+    // Template-only (index.ts), so this payload is never actually sent to the model; kept
+    // for shape-correctness and parity. Carries DURATION/RECURRENCE/COUNT only — no cause,
+    // no mechanism, no severity verdict (§4.7). Also narrows the union so the intake_decline
+    // fallthrough below stays well-typed.
+    return {
+      insight_type: 'symptom_chronicity',
+      pet_name: petName,
+      symptom: SYMPTOM_LABEL[finding.symptomType],
+      active_weeks: finding.activeWeeks,
+      window_weeks: Math.round(finding.windowDays / 7),
+      episode_count: finding.episodeCount,
+      span_days: finding.spanDays,
+      tier: finding.tier, // 'firm' | 'standard' — duration-anchored urgency register
+      relationship: 'descriptive_duration', // a recurrence over weeks we are noting — NOT a cause
       severity: 'calm_safety_flag', // surface clearly, never reassure
     }
   }
