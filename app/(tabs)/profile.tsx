@@ -18,6 +18,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useMomentStore } from '../../store/momentStore';
 import { insertMedicationDose } from '../../lib/medicationDose';
 import { EditPetModal } from '../../components/profile/EditPetModal';
+import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
@@ -619,6 +620,15 @@ export default function ProfileScreen() {
             <Text style={styles.infoChipValue}>{formatWeightLbs(activePet.weight_kg)}</Text>
           </View>
         </Card>
+
+        {/* ── Weight trend (B-186) — descriptive, neutral; expands on the Weight
+            chip above. snapshotKg lets the card show the profile weight before any
+            weigh-in is logged, so it never contradicts the Weight chip. ── */}
+        <WeightTrendCard
+          petId={activePet.id}
+          petName={activePet.name}
+          snapshotKg={activePet.weight_kg}
+        />
 
         {/* ── Conditions ── */}
         <Card style={styles.sectionGap}>

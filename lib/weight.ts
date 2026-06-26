@@ -33,7 +33,17 @@ import { uuid } from './utils';
 // pre-fill value); lbsToKg returns a NUMBER rounded to 2 dp (the stored value,
 // matching NUMERIC(5,2)).
 export function kgToLbs(kg: number): string {
-  return String(Math.round(kg * 2.20462 * 10) / 10);
+  return String(kgToLbsNum(kg));
+}
+
+// Numeric sibling of kgToLbs — the display value as a NUMBER (rounded to 0.1 lb),
+// for trend math where we need to subtract/compare readings rather than show one.
+// Sharing the one rounding rule means the sparkline points, the big number, and the
+// "x lbs since y" delta are all derived from the same rounded value — so the delta
+// the owner reads is exactly latest − earliest of the numbers drawn (no off-by-0.1
+// mismatch between the chart and the caption).
+export function kgToLbsNum(kg: number): number {
+  return Math.round(kg * 2.20462 * 10) / 10;
 }
 
 export function lbsToKg(lbs: number): number {
@@ -167,4 +177,88 @@ export async function getLatestWeightKg(petId: string): Promise<number | null> {
     [petId],
   );
   return row?.weight_kg ?? null;
+}
+
+// ── Trend read (B-186 PR 3) ──────────────────────────────────────────────────
+// One weight reading: the measured value + when it was taken. occurred_at lives on
+// the parent event (a weight check is an event + its 1:1 child), so the trend is
+// ordered by the EVENT's occurred_at — a back-dated reading sorts into its true
+// place on the line, not where it happened to be entered.
+export interface WeightReading {
+  weightKg: number;
+  occurredAt: string; // ISO, from the parent event
+}
+
+// The most-recent `limit` weight readings for a pet, returned OLDEST-FIRST (the order
+// the sparkline draws). Read from the local mirror (joins weight_checks→events for
+// occurred_at + the soft-delete filter, since deletedness lives on the parent), so it
+// works offline and reflects a just-logged reading immediately. The query takes the
+// most-recent N (ORDER BY … DESC LIMIT) then reverses to chronological — so a long
+// history shows its latest window, never an ancient prefix.
+export async function getWeightHistory(petId: string, limit = 12): Promise<WeightReading[]> {
+  const db = getDb();
+  const rows = await db.getAllAsync<{ weight_kg: number; occurred_at: string }>(
+    `SELECT wc.weight_kg AS weight_kg, e.occurred_at AS occurred_at
+       FROM weight_checks wc
+       JOIN events e ON e.id = wc.event_id
+      WHERE wc.pet_id = ? AND e.deleted_at IS NULL
+      ORDER BY e.occurred_at DESC
+      LIMIT ?`,
+    [petId, limit],
+  );
+  return (rows ?? [])
+    .map((r) => ({ weightKg: r.weight_kg, occurredAt: r.occurred_at }))
+    .reverse();
+}
+
+// The trend card's view model — derived purely from a pet's readings.
+//
+// CLINICAL GUARDRAIL (carried from migration 024 / this file's header): this holds
+// only NUMBERS and a DIRECTION, never a verdict. Weight LOSS is the danger signal,
+// and a rising or flat line is NOT wellness (rising can be fluid/edema). So `direction`
+// is descriptive, never valenced — the card that renders this must stay neutral (no
+// wellness colour, no "improving", no reassurance). v1 deliberately ships no loss
+// flag; that's a separate spec with a mandatory adversarial pass.
+export interface WeightTrend {
+  readingCount: number;
+  seriesLbs: number[]; // oldest-first, rounded 0.1 — the sparkline + delta basis
+  latestLbs: number | null;
+  latestOccurredAt: string | null;
+  earliestOccurredAt: string | null; // first reading in the shown series (the span anchor)
+  deltaLbs: number | null; // latestLbs − seriesLbs[0]; null with <2 readings (no trend yet)
+  direction: 'up' | 'down' | 'flat' | null;
+}
+
+// Reduce a pet's readings into the trend view model. Works in POUNDS (the display
+// unit) so the delta equals latest − earliest of the numbers actually drawn — no
+// rounding mismatch between the chart points and the caption. Defensive sort: the
+// query returns chronological, but a pure fn shouldn't trust its caller.
+export function computeWeightTrend(readings: WeightReading[]): WeightTrend {
+  const sorted = [...readings].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const seriesLbs = sorted.map((r) => kgToLbsNum(r.weightKg));
+  const count = seriesLbs.length;
+
+  if (count === 0) {
+    return {
+      readingCount: 0, seriesLbs: [], latestLbs: null, latestOccurredAt: null,
+      earliestOccurredAt: null, deltaLbs: null, direction: null,
+    };
+  }
+
+  const latestLbs = seriesLbs[count - 1];
+  const latestOccurredAt = sorted[count - 1].occurredAt;
+  const earliestOccurredAt = sorted[0].occurredAt;
+
+  // A single reading is a point, not a trend — no delta, no direction (n=1 says
+  // nothing about movement). The card shows the value and invites another reading.
+  if (count === 1) {
+    return {
+      readingCount: 1, seriesLbs, latestLbs, latestOccurredAt,
+      earliestOccurredAt, deltaLbs: null, direction: null,
+    };
+  }
+
+  const deltaLbs = Math.round((latestLbs - seriesLbs[0]) * 10) / 10;
+  const direction = deltaLbs > 0 ? 'up' : deltaLbs < 0 ? 'down' : 'flat';
+  return { readingCount: count, seriesLbs, latestLbs, latestOccurredAt, earliestOccurredAt, deltaLbs, direction };
 }
