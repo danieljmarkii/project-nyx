@@ -29,6 +29,7 @@ export type InsightType =
   | 'intake_decline'
   | 'reflection'
   | 'symptom_worsening'
+  | 'symptom_chronicity'
   | 'postprandial_timing'
   | 'timeofday_clustering';
 export type PriorityClass = 'safety' | 'insight';
@@ -38,6 +39,10 @@ export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food';
 export type ReflectionDirection = 'flat' | 'improving';
 export type WorseningTrigger = 'more_episodes' | 'more_days';
 export type WorseningTier = 'firm' | 'standard' | 'soft';
+// Chronicity urgency register (⑦, B-182) — duration-anchored, resolved in the engine
+// (firm = ≥6-week span OR firm-inherited from a suppressed same-symptom ④). No 'soft':
+// a symptom recurring for ≥3 weeks always points at the vet (§4.6).
+export type ChronicityTier = 'standard' | 'firm';
 
 export interface CorrelationFinding {
   type: 'food_symptom_correlation';
@@ -88,6 +93,28 @@ export interface SymptomWorseningFinding {
   priorDays: number;
   trigger: WorseningTrigger;
   tier: WorseningTier;
+  windowDays: number;
+}
+
+// Symptom chronicity / persistence (⑦, B-182) — the SAFETY-class lane that fires on
+// DURATION + sustained burden + still-ongoing, orthogonal to ④'s week-over-week delta.
+// It states the sentence the engine never said: "this has been going on for weeks and is
+// not resolving." Descriptive duration/recurrence, never causal, never a severity verdict,
+// never reassures; leads the surface (below intake-decline, above ④ — §5). Mirror of
+// detection.ts SymptomChronicityFinding (rendered fields). `tier` drives the copy urgency
+// register. The server-only `associationalOnly: true` marker is intentionally omitted (it is
+// a phrasing-layer guardrail flag, not a rendered field — matching the ⑤/⑥ mirrors).
+export interface SymptomChronicityFinding {
+  type: 'symptom_chronicity';
+  priorityClass: 'safety';
+  symptomType: SignalSymptomType;
+  episodeCount: number;
+  spanDays: number;
+  activeWeeks: number;
+  symptomDays: number;
+  daysSinceLastEpisode: number;
+  firstOnsetIso: string;
+  tier: ChronicityTier;
   windowDays: number;
 }
 
@@ -143,6 +170,7 @@ export type SignalFinding =
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
+  | SymptomChronicityFinding
   | PostprandialTimingFinding
   | TimeOfDayClusteringFinding;
 

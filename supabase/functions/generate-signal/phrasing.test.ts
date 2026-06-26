@@ -19,6 +19,7 @@ import {
   templateIntakeDecline,
   templateReflection,
   templateWorsening,
+  templateChronicity,
   templatePostprandialTiming,
   templateTimeOfDayClustering,
   clockHourLabel,
@@ -38,6 +39,8 @@ import type {
   SymptomWorseningFinding,
   WorseningTier,
   WorseningTrigger,
+  SymptomChronicityFinding,
+  ChronicityTier,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
   Finding,
@@ -104,6 +107,22 @@ const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorsenin
   trigger: 'more_episodes',
   tier: 'standard',
   windowDays: 7,
+  ...over,
+})
+
+const chronicity = (over: Partial<SymptomChronicityFinding> = {}): SymptomChronicityFinding => ({
+  type: 'symptom_chronicity',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  episodeCount: 20,
+  spanDays: 42,
+  activeWeeks: 6,
+  symptomDays: 18,
+  daysSinceLastEpisode: 0,
+  firstOnsetIso: '2026-05-15T08:00:00.000Z',
+  tier: 'firm',
+  windowDays: 56,
+  associationalOnly: true,
   ...over,
 })
 
@@ -529,6 +548,83 @@ Deno.test('validatePhrasing — rejects reassurance on a worsening (safety) find
   }
 })
 
+// ── templateChronicity (⑦ — safety duration/recurrence, tiered, never causal/reassure) ──
+
+Deno.test('templateChronicity — the council case names duration, recurrence, count and the vet ask', () => {
+  const t = templateChronicity(
+    chronicity({ symptomType: 'vomit', episodeCount: 20, activeWeeks: 6, windowDays: 56, tier: 'firm' }),
+    'Nyx',
+  )
+  assert.ok(t.includes('Nyx'))
+  assert.ok(t.includes('vomiting'), 'plain-language symptom, not the enum')
+  assert.ok(/6 of the last 8 weeks/i.test(t), 'honest active-weeks-over-lookback denominator')
+  assert.ok(t.includes('20'), 'names the episode count')
+  assert.ok(/keeps recurring over weeks/i.test(t), 'duration/recurrence framing')
+  assert.ok(/booking a vet visit/i.test(t), 'firm register routes to the vet')
+  assert.ok(/not a diagnosis/i.test(t), 'descriptive disclaimer')
+  assert.equal(CAUSAL.test(t), false, 'a recurrence is not a cause')
+  assert.equal(REASSURE.test(t), false, 'never reassures')
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, chronicity()), 'own template passes validation')
+})
+
+Deno.test('templateChronicity — standard tier uses the gentler "a word with your vet" ask', () => {
+  const t = templateChronicity(chronicity({ tier: 'standard', activeWeeks: 3, episodeCount: 6 }), 'Nyx')
+  assert.ok(/word with your vet/i.test(t), 'standard register, still routes to the vet')
+  assert.equal(/booking a vet visit/i.test(t), false, 'standard is not the firm ask')
+  assert.equal(REASSURE.test(t), false)
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, chronicity({ tier: 'standard' })))
+})
+
+Deno.test('templateChronicity — anchors the first onset by month ("since {month}")', () => {
+  const t = templateChronicity(chronicity({ firstOnsetIso: '2026-05-15T08:00:00.000Z' }), 'Nyx')
+  assert.ok(/since May/i.test(t), 'concrete, non-clinical onset anchor')
+})
+
+// clinical-guardrails Pattern 8: scan EVERY chronicity string the function can emit — it is a
+// safety finding, so never reassures, never dismissive, never causal/mechanism, no "!".
+Deno.test('every chronicity template — never reassures/dismissive/causal/mechanism, no "!"', () => {
+  const tiers: ChronicityTier[] = ['standard', 'firm']
+  const types: SymptomType[] = ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction']
+  for (const tier of tiers) {
+    for (const symptomType of types) {
+      for (const daysSinceLastEpisode of [0, 1, 7]) {
+        const t = templateChronicity(
+          chronicity({ tier, symptomType, daysSinceLastEpisode, episodeCount: 8, activeWeeks: 4 }),
+          'Nyx',
+        )
+        assert.equal(REASSURE.test(t), false, `reassurance in: ${t}`)
+        assert.equal(DISMISSIVE.test(t), false, `dismissive in: ${t}`)
+        assert.equal(CAUSAL.test(t), false, `causal in: ${t}`)
+        assert.equal(MECHANISM.test(t), false, `mechanism in: ${t}`)
+        assert.equal(FOOD.test(t), false, `food in: ${t}`)
+        assert.equal(t.includes('!'), false, `exclamation in: ${t}`)
+        assert.ok(validatePhrasing(t, chronicity({ tier, symptomType })), `validation failed: ${t}`)
+      }
+    }
+  }
+})
+
+// Fixture 15 (§7) — validatePhrasing rejects causal / reassurance / mechanism / food drift on a
+// chronicity sentence; the template output passes.
+Deno.test('validatePhrasing — rejects causal/reassurance/mechanism drift on a chronicity finding', () => {
+  for (const bad of [
+    "Nyx's recurring vomiting is caused by the chicken.",
+    'The chronic vomiting is due to a food intolerance.',
+    "Nyx keeps vomiting but is probably fine.",
+    'Weeks of vomiting — nothing to worry about.',
+    'The recurring vomiting is reflux from eating too fast.',
+    "Nyx's vomiting keeps following meals with salmon.",
+  ]) {
+    assert.equal(validatePhrasing(bad, chronicity()), false, `should reject: ${bad}`)
+  }
+})
+
+Deno.test('validatePhrasing — accepts the plain descriptive chronicity template', () => {
+  assert.ok(validatePhrasing(templateChronicity(chronicity(), 'Nyx'), chronicity()))
+})
+
 // ── templatePostprandialTiming (⑤ — descriptive timing, B-078) ───────────────────
 
 Deno.test('templatePostprandialTiming — states the honest denominator, names timing only, points to the vet', () => {
@@ -646,6 +742,7 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/vet/i.test(templateForFinding(intakeDecline(), 'Pixel')))
   assert.ok(/about the same as last week/i.test(templateForFinding(reflection(), 'Nyx')))
   assert.ok(/word with your vet/i.test(templateForFinding(worsening(), 'Nyx')))
+  assert.ok(/keeps recurring over weeks/i.test(templateForFinding(chronicity(), 'Nyx')))
   assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
   assert.ok(/between 4am and 8am/.test(templateForFinding(timeofday(), 'Nyx')))
 })

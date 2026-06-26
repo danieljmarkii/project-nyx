@@ -18,6 +18,7 @@ import type {
   IntakeDeclineFinding,
   ReflectionFinding,
   SymptomWorseningFinding,
+  SymptomChronicityFinding,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
   RateMealsDiagnostic,
@@ -74,6 +75,21 @@ const worsening = (over: Partial<SymptomWorseningFinding> = {}): SymptomWorsenin
   ...over,
 });
 
+const chronicity = (over: Partial<SymptomChronicityFinding> = {}): SymptomChronicityFinding => ({
+  type: 'symptom_chronicity',
+  priorityClass: 'safety',
+  symptomType: 'vomit',
+  episodeCount: 20,
+  spanDays: 42,
+  activeWeeks: 6,
+  symptomDays: 18,
+  daysSinceLastEpisode: 0,
+  firstOnsetIso: '2026-05-15T08:00:00.000Z',
+  tier: 'firm',
+  windowDays: 56,
+  ...over,
+});
+
 const postprandial = (over: Partial<PostprandialTimingFinding> = {}): PostprandialTimingFinding => ({
   type: 'postprandial_timing',
   priorityClass: 'insight',
@@ -109,6 +125,7 @@ const cached = (
     | IntakeDeclineFinding
     | ReflectionFinding
     | SymptomWorseningFinding
+    | SymptomChronicityFinding
     | PostprandialTimingFinding
     | TimeOfDayClusteringFinding,
   rank = 0,
@@ -518,6 +535,74 @@ describe('evidenceText — symptom-worsening (④)', () => {
 const MECHANISM_RE =
   /\b(regurgitat|reflux|esophag|eating speed|eats? too fast|wolf|gulp|bilious|empty.?stomach)\b/i;
 const FOOD_RE = /\b(chicken|beef|turkey|lamb|duck|salmon|tuna|kibble|treats?|protein)\b/i;
+
+describe('symptom-chronicity (⑦, B-182) — client copy', () => {
+  it('sampleLine cites episodes over the honest active-weeks-over-lookback denominator', () => {
+    const s = sampleLine(chronicity({ episodeCount: 20, activeWeeks: 6, windowDays: 56 }));
+    expect(s).toContain('20 episodes');
+    // Same denominator wording as the evidence + server template ("of the last N weeks").
+    expect(s).toContain('across 6 of the last 8 weeks');
+  });
+
+  it('evidenceText names the onset month, duration, recurrence + ongoing recency, points to the vet (firm)', () => {
+    const s = evidenceText(
+      chronicity({
+        tier: 'firm',
+        episodeCount: 20,
+        activeWeeks: 6,
+        windowDays: 56,
+        daysSinceLastEpisode: 0,
+        firstOnsetIso: '2026-05-15T08:00:00.000Z',
+      }),
+      'Nyx',
+    );
+    expect(s).toContain('Nyx');
+    expect(s).toMatch(/since May/i); // the onset anchor the main card sentence also carries
+    expect(s).toContain('20 episodes');
+    expect(s).toContain('6 of the last 8 weeks');
+    expect(s).toMatch(/most recent today/i);
+    expect(s).toMatch(/keeps recurring over weeks/i);
+    expect(s).toMatch(/booking a vet visit/i);
+    expect(s).toMatch(/not a diagnosis/i);
+  });
+
+  it('evidenceText uses the gentler ask for the standard tier', () => {
+    const s = evidenceText(chronicity({ tier: 'standard', activeWeeks: 3, episodeCount: 6 }), 'Nyx');
+    expect(s).toMatch(/word with your vet/i);
+    expect(/booking a vet visit/i.test(s)).toBe(false);
+  });
+
+  it('recency reads "yesterday" and "N days ago", reinforcing ongoing (never "resolved")', () => {
+    expect(evidenceText(chronicity({ daysSinceLastEpisode: 1 }), 'Nyx')).toMatch(/most recent yesterday/i);
+    expect(evidenceText(chronicity({ daysSinceLastEpisode: 9 }), 'Nyx')).toMatch(/most recent 9 days ago/i);
+  });
+
+  it('carries no confidence tag (a deterministic safety count shows its own weight)', () => {
+    expect(confidenceTag(chronicity())).toBeNull();
+  });
+
+  it('every tier/symptom/recency is guardrail-clean (never reassures/dismissive/causal/mechanism/food, no "!")', () => {
+    for (const tier of ['firm', 'standard'] as const) {
+      for (const symptomType of ['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction'] as const) {
+        for (const daysSinceLastEpisode of [0, 1, 7]) {
+          const f = chronicity({ tier, symptomType, daysSinceLastEpisode, episodeCount: 8, activeWeeks: 4 });
+          for (const s of [evidenceText(f, 'Nyx'), sampleLine(f)]) {
+            expect(REASSURANCE_RE.test(s)).toBe(false);
+            expect(DISMISSIVE_RE.test(s)).toBe(false);
+            expect(CAUSAL_RE.test(s)).toBe(false);
+            expect(MECHANISM_RE.test(s)).toBe(false);
+            expect(FOOD_RE.test(s)).toBe(false);
+            expect(s.includes('!')).toBe(false);
+          }
+        }
+      }
+    }
+  });
+
+  it('rides the SAFETY rail (priorityClass), leading the surface', () => {
+    expect(chronicity().priorityClass).toBe('safety');
+  });
+});
 
 describe('postprandial timing (⑤, B-078) — client copy', () => {
   it('sampleLine cites rapid over the TIMED denominator, never the raw total', () => {
