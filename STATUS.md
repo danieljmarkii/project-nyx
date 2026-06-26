@@ -68,7 +68,7 @@ Spec `docs/nyx-free-feeding-requirements.md`. PRs 1–4 shipped (#119/#121/#122/
 - Open QA findings: B-111 (treats in Top Proteins, clinical call), B-113 (picker↔tab harmonization, #186), B-112/B-114, B-108 (closed #183). Downstream: B-017 (`food_format`/`food_type` overlap, carries B-024/B-102), B-009/B-018 dedup.
 - **Food dedup & merge — direction aligned + build-ready DRAFT spec (2026-06-24, #237):** `docs/nyx-food-dedup-requirements.md`. Phase 1 prevention (B-009) first, **no schema**; Phase 2 merge (B-018 + B-005) = repoint-then-tombstone. Survivorship/reversibility/multi-user-auth parked as merge-phase decisions. Awaiting PM ratification → re-prioritizes B-009 to Now.
 
-### B-186 Weight tracking — PRs 1–2 built (schema + logging); v1 = display-only
+### B-186 Weight tracking — PRs 1–4 shipped (schema + logging + trend card + History row); v1 = display-only COMPLETE
 The 2026-06-25 vet-council deep-dive named a weight **trend** the #1 missing datum (Nyx = zero `weight_check` events on a free-choice *weight-management* diet). **Audit (2026-06-26):** confirmed no existing weight surface — `weight_check` enum + `pets.weight_kg` snapshot exist, but **no value storage** (`events` carries only `severity`/`notes`), no logging UI, no trend surface. **v1 = display-only / descriptive (PM-confirmed): capture + trend, NO loss flag** (a flag is clinically load-bearing → its own spec + mandatory adversarial pass). **Guardrail every consumer inherits:** a weight trend never reassures — stable/rising ≠ wellness (rising can be fluid/edema); loss is the danger signal. Independent of the chronicity-lane work (disjoint files; only STATUS.md collides at wrap).
 
 | PR | What | Status |
@@ -76,7 +76,7 @@ The 2026-06-25 vet-council deep-dive named a weight **trend** the #1 missing dat
 | 1 | Schema/data layer — migration 024 `weight_checks` (1:1 event child, mirrors `meals`) + local SQLite mirror + `LOCAL_WIPE_TABLES` reg | ✅ merged #244 (applied live, advisors clean) |
 | 2 | Logging — `EVENT_TYPES` entry + numeric `weight` log step (pre-filled last weight, lbs) + `insertWeightCheck` + sync up/down + `pets.weight_kg` snapshot to latest reading | ✅ this session — PR #245 (was stacked on PR 1; rebased onto `main` after #244 merged) |
 | 3 | Profile weight-trend card (descriptive sparkline + readings + delta; neutral framing, no wellness colour) | ✅ shipped via #248 — `WeightTrendCard` (`getWeightHistory`/`computeWeightTrend` in `lib/weight.ts`; "Log a weigh-in" affordance; empty/single/trend states; guardrail held in colour + copy) |
-| 4 | History `weight_check` row + icon | ⬜ next |
+| 4 | History `weight_check` row + icon | ✅ shipped via #249 — `weight_checks` LEFT JOIN in `getTimeline`/`getEventById` (1:1, soft-delete via parent) + `weight_kg` on `TimelineRow`/`rowToEvent`; `EventRow` renders `${kgToLbs} lbs` as a quiet secondary line (Scale icon already via `EVENT_TYPES`, PR 2); display-only, no verdict |
 
 Fast-follows (backlog, not v1): Patterns-dashboard weight card; vet-report weight section (Step 9); Home TrendZone weight; weight-loss flag spec.
 
