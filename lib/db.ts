@@ -56,6 +56,17 @@ export async function initDb(): Promise<void> {
       synced          INTEGER NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS weight_checks (
+      id            TEXT PRIMARY KEY,
+      event_id      TEXT NOT NULL UNIQUE REFERENCES events(id) ON DELETE CASCADE,
+      pet_id        TEXT NOT NULL,
+      weight_kg     REAL NOT NULL,
+      notes         TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      synced        INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS food_items_cache (
       id              TEXT PRIMARY KEY,
       brand           TEXT NOT NULL,

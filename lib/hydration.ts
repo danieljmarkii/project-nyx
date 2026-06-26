@@ -249,6 +249,11 @@ export const LOCAL_WIPE_TABLES = [
   'medication_administrations',
   'medications',
   'medication_items_cache',
+  // B-186 weight_checks — the weight-measurement child, FK→events ON DELETE
+  // CASCADE locally, so it MUST precede events (same rule as
+  // medication_administrations above). Account-scoped pet-health data that must
+  // not leak to the next account on a shared device.
+  'weight_checks',
   'events',
   'vet_visits',
   // feeding_arrangements (B-040 R1) — a pet-child standing-fact table mirrored
