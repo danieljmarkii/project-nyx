@@ -1,4 +1,4 @@
-import { UtensilsCrossed, Droplet, Circle, CircleHelp } from 'lucide-react-native';
+import { UtensilsCrossed, Droplet, Circle, Scale, CircleHelp } from 'lucide-react-native';
 import { iconForType } from './EventIcon';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 
@@ -10,6 +10,8 @@ describe('iconForType', () => {
     expect(iconForType('meal')).toBe(UtensilsCrossed);
     expect(iconForType('vomit')).toBe(Droplet);
     expect(iconForType('stool_normal')).toBe(Circle);
+    // weight_check graduated from UI-unexposed to a real quick-log type (B-186).
+    expect(iconForType('weight_check')).toBe(Scale);
   });
 
   it('resolves every EVENT_TYPES key to the ref declared on the type', () => {
@@ -20,7 +22,6 @@ describe('iconForType', () => {
 
   it('falls back to CircleHelp for an unknown / UI-unexposed event type', () => {
     expect(iconForType('skin_reaction')).toBe(CircleHelp);
-    expect(iconForType('weight_check')).toBe(CircleHelp);
     expect(iconForType('')).toBe(CircleHelp);
   });
 

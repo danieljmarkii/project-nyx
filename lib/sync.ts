@@ -212,6 +212,68 @@ export async function syncPendingMeals(): Promise<void> {
   await db.execAsync(`UPDATE meals SET synced = 1 WHERE id IN (${ids})`);
 }
 
+// Flush unsynced weight-check children to Supabase (B-186). Mirrors syncPendingMeals
+// exactly: only push a weight row whose PARENT event has already landed
+// (events.synced = 1), because the weight_checks→events FK is enforced server-side
+// and a child that flushes ahead of its event fails with 23503. The unsynced
+// callers (insertWeightCheck) aren't serialised against the event push, so gating
+// on the parent here makes the order safe by construction — a weight row simply
+// waits for the next cycle, after its event syncs. No food_items pre-sync (a weight
+// check references no global catalog row); the only FK is to the parent event.
+export async function syncPendingWeightChecks(): Promise<void> {
+  // Ensure the JWT is fresh before writing (Pattern 4).
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
+  const db = getDb();
+
+  const unsynced = await db.getAllAsync<{
+    id: string;
+    event_id: string;
+    pet_id: string;
+    weight_kg: number;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+  }>(
+    `SELECT w.* FROM weight_checks w
+       JOIN events e ON e.id = w.event_id
+      WHERE w.synced = 0 AND e.synced = 1
+      LIMIT 100`,
+  );
+
+  if (unsynced.length === 0) return;
+
+  const { error } = await supabase.from('weight_checks').upsert(
+    unsynced.map((w) => ({
+      id: w.id,
+      event_id: w.event_id,
+      pet_id: w.pet_id,
+      weight_kg: w.weight_kg,
+      notes: w.notes,
+      created_at: w.created_at,
+      // B-055 — send the client updated_at. The set_updated_at trigger rewrites
+      // it to server-NOW on the conflict-update branch (server-time LWW), so this
+      // value is authoritative only for a brand-new INSERT; either way the row
+      // lands with a usable updated_at for the next device to compare.
+      updated_at: w.updated_at,
+    })),
+    { onConflict: 'id' },
+  );
+
+  if (error) {
+    console.error('[sync] weight_checks upsert failed:', error.message,
+      '| code:', error.code,
+      '| details:', error.details,
+      '| hint:', error.hint,
+    );
+    return;
+  }
+
+  const ids = unsynced.map((w) => `'${w.id}'`).join(',');
+  await db.execAsync(`UPDATE weight_checks SET synced = 1 WHERE id IN (${ids})`);
+}
+
 // Flush unsynced local events to Supabase.
 // Called on app foreground and reconnect. Last-write-wins on updated_at.
 export async function syncPendingEvents(): Promise<void> {
@@ -698,6 +760,10 @@ interface RemoteMeal {
   quantity: string | null; is_full_portion: boolean | null; notes: string | null;
   created_at: string; updated_at: string; intake_rating: string | null;
 }
+interface RemoteWeightCheck {
+  id: string; event_id: string; pet_id: string; weight_kg: number;
+  notes: string | null; created_at: string; updated_at: string;
+}
 interface RemoteEventAttachment {
   id: string; event_id: string; pet_id: string; storage_path: string;
   mime_type: string | null; taken_at: string | null; sort_order: number | null; created_at: string;
@@ -839,6 +905,52 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
   const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
   if (stale()) return;
   if (wm) await setWatermark('meals', wm);
+}
+
+async function hydrateWeightChecks(db: Db, stale: () => boolean): Promise<void> {
+  // B-186 — the weight-measurement child, reconciled like meals: incremental
+  // server-time LWW on updated_at with the commit-skew overlap, replace only when
+  // the remote row is strictly newer (a pending local edit isn't clobbered;
+  // push-before-pull ships it up first regardless). Runs AFTER hydrateEvents so the
+  // FK-bearing parent event (weight_checks.event_id → events ON DELETE CASCADE)
+  // exists locally before the child lands (the meals ordering rule / FR-2).
+  // identity columns (event_id, pet_id) are immutable and left untouched by
+  // DO UPDATE. No absence pass: a weight check is only ever SOFT-deleted via its
+  // parent event's deleted_at (which propagates through hydrateEvents), so there is
+  // no hard-delete a pull can't observe (unlike meals + the food cascade).
+  const since = await getWatermark('weight_checks');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteWeightCheck>(
+    'weight_checks',
+    'id, event_id, pet_id, weight_kg, notes, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(db, 'weight_checks', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const w of toWrite) {
+    // DO UPDATE refreshes the mutable fields only (weight_kg, notes); identity
+    // columns (event_id, pet_id) and created_at are immutable and deliberately
+    // omitted from the SET — created_at appears in the column list for the INSERT
+    // branch only, so that asymmetry is correct, not B-057 drift (mirrors
+    // hydrateMeals). The `WHERE ...synced = 1` backstop guarantees a hydrate write
+    // never clobbers a row with an unpushed local edit.
+    await db.runAsync(
+      `INSERT INTO weight_checks
+        (id, event_id, pet_id, weight_kg, notes, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         weight_kg=excluded.weight_kg, notes=excluded.notes,
+         updated_at=excluded.updated_at, synced=1
+       WHERE weight_checks.synced = 1`,
+      [w.id, w.event_id, w.pet_id, w.weight_kg, w.notes ?? null, w.created_at, w.updated_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('weight_checks', wm);
 }
 
 async function hydrateEventAttachments(db: Db, stale: () => boolean): Promise<void> {
@@ -1169,6 +1281,10 @@ export async function hydrateFromCloud(): Promise<void> {
   // set, so it won't be flagged).
   await runHydrationStep('meals:absence', () => reconcileDeletedMeals(db, stale));
   if (stale()) return;
+  // B-186: weight_checks.event_id → events (CASCADE), so it must follow
+  // hydrateEvents (run first, above). LWW child like meals; no absence pass.
+  await runHydrationStep('weight_checks', () => hydrateWeightChecks(db, stale));
+  if (stale()) return;
   await runHydrationStep('event_attachments', () => hydrateEventAttachments(db, stale));
   if (stale()) return;
   await runHydrationStep('vet_visits', () => hydrateVetVisits(db, stale));
@@ -1202,6 +1318,8 @@ export async function syncNow(): Promise<void> {
     // regimens → administrations overall.
     await syncPendingEvents();
     await syncPendingMeals();
+    // B-186: weight_checks FK→events; pushed after events (parents land first).
+    await syncPendingWeightChecks();
     await syncPendingAttachments();
     await syncPendingVetVisits();
     await syncPendingFeedingArrangements();

@@ -24,13 +24,14 @@ import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
 import { insertMedicationDose } from '../lib/medicationDose';
+import { insertWeightCheck, getLatestWeightKg, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
 import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, type DoseAdherence } from '../lib/medications';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
-type Step = 'type' | 'food' | 'medication' | 'symptom' | 'simple' | 'stool-type';
+type Step = 'type' | 'food' | 'medication' | 'symptom' | 'simple' | 'stool-type' | 'weight';
 
 // B-010 — the time fields a logged event carries. occurred_at is always a
 // single derived point; confidence + window bounds describe its certainty.
@@ -87,6 +88,13 @@ export default function LogModal() {
   // Symptom state
   const [severity, setSeverity] = useState<number | null>(null);
 
+  // Weight state (B-186). The lbs the owner is entering — pre-filled with the
+  // pet's last known weight (the pets.weight_kg snapshot, converted to lbs) so a
+  // re-weigh is a small adjustment, not a from-scratch entry. Weight is the one
+  // event where the value IS the entry (Principle 1's confirm-don't-enter can't
+  // apply), so this field is the screen.
+  const [weightLbsStr, setWeightLbsStr] = useState('');
+
   // Shared
   const [notes, setNotes] = useState('');
   const [occurredAt, setOccurredAt] = useState(() => new Date());
@@ -134,6 +142,12 @@ export default function LogModal() {
       // step — special-cased like stool_normal (handleTypeSelect mirrors this).
       setSelectedType('medication');
       setStep('medication');
+    } else if (typeParam === 'weight_check') {
+      // Weight has hasFood:false but needs its own numeric step, not the simple
+      // step — special-cased like medication/stool (handleTypeSelect mirrors this).
+      setSelectedType('weight_check');
+      seedWeightPrefill();
+      setStep('weight');
     } else if (typeParam in EVENT_TYPES) {
       const t = typeParam as EventTypeKey;
       setSelectedType(t);
@@ -146,8 +160,17 @@ export default function LogModal() {
     const config = EVENT_TYPES[type];
     if (config.hasFood) setStep('food');
     else if (type === 'medication') setStep('medication');
+    else if (type === 'weight_check') { seedWeightPrefill(); setStep('weight'); }
     else if (type === 'stool_normal') setStep('stool-type');
     else setStep('simple');
+  }
+
+  // Pre-fill the weight field with the pet's last known weight (the snapshot),
+  // converted to lbs — so a re-weigh is an adjustment, not a fresh entry. Blank
+  // when no weight is on file yet (first-ever check).
+  function seedWeightPrefill() {
+    const lastKg = usePetStore.getState().activePet?.weight_kg ?? null;
+    setWeightLbsStr(lastKg != null ? kgToLbs(lastKg) : '');
   }
 
   async function handlePickPhoto() {
@@ -386,6 +409,88 @@ export default function LogModal() {
     );
   }
 
+  // Weight log from the numeric step — the weight twin of handlePickFood /
+  // handlePickMedication (B-186). insertWeightCheck owns the event + weight_checks
+  // child write and the sync push; here we mirror the other paths' caller concerns:
+  // the optimistic store update (prependEvent), the pets.weight_kg snapshot refresh,
+  // and the completion card. Witnessed by construction (you read the scale), with a
+  // "Change time" escape hatch for a back-dated reading.
+  async function handleConfirmWeight() {
+    // Write-time pet identity (multi-pet spec §6): read the store at the moment of
+    // write, never the render-time closure, so the reading lands on the pet that's
+    // active when the log is confirmed (the queue-then-switch edge).
+    const pet = usePetStore.getState().activePet;
+    if (!pet) return;
+    const weightKg = parseWeightLbsToKg(weightLbsStr);
+    // The Log button is disabled on an invalid value, so this is a belt-and-braces
+    // guard — never store a 0/NaN that would corrupt a trend line.
+    if (weightKg == null) return;
+
+    let result: Awaited<ReturnType<typeof insertWeightCheck>>;
+    try {
+      result = await insertWeightCheck({
+        petId: pet.id,
+        weightKg,
+        occurredAt,
+        occurredAtSource,
+        notes: notes.trim() || null,
+      });
+    } catch (e) {
+      console.error('[log] weight check write failed:', e);
+      Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
+      return;
+    }
+
+    // Optimistic timeline insert. The weight value rides along so a future History/
+    // Today renderer (PR 4) can show it without a re-query; today the row renders as
+    // a plain "Weight" entry like any other event.
+    prependEvent({
+      id: result.eventId,
+      pet_id: pet.id,
+      event_type: 'weight_check',
+      occurred_at: result.occurredAtIso,
+      occurred_at_confidence: 'witnessed',
+      severity: null,
+      notes: notes.trim() || null,
+      source: 'manual',
+      deleted_at: null,
+      created_at: result.now,
+      updated_at: result.now,
+      weight_kg: weightKg,
+    });
+
+    // Keep the pets.weight_kg snapshot pointed at the LATEST reading (by
+    // occurred_at, not insertion order — a back-dated entry must not overwrite a
+    // newer reading's snapshot). getLatestWeightKg reads the local mirror that the
+    // insert above just wrote, so the just-logged value wins when it's the most
+    // recent. Best-effort: a snapshot-sync failure never blocks the log — the
+    // weight_check row is the source of truth; the snapshot is a denormalized
+    // convenience (it's what the profile header + EditPetModal pre-fill read).
+    try {
+      const latestKg = await getLatestWeightKg(pet.id);
+      if (latestKg != null && latestKg !== pet.weight_kg) {
+        const { error } = await supabase.from('pets').update({ weight_kg: latestKg }).eq('id', pet.id);
+        if (error) {
+          console.warn('[log] pets.weight_kg snapshot update failed:', error.message);
+        } else if (usePetStore.getState().activePet?.id === pet.id) {
+          // Only patch the store if this pet is still active (updatePet patches the
+          // active pet); if it was switched away, the next load reads the synced row.
+          usePetStore.getState().updatePet({ weight_kg: latestKg });
+        }
+      }
+    } catch (e) {
+      console.warn('[log] weight snapshot refresh failed:', e);
+    }
+
+    // Dismiss the modal, then play a calm completion beat at the root layer. A
+    // weight check is neutral clinical data, never a celebration of the number —
+    // and the never-reassure guardrail forbids any "looking good" verdict — so it
+    // gets the calm tone, not the festive gold beat. delayMs clears the dismissing
+    // modal so the overlay isn't briefly occluded on iOS.
+    router.back();
+    showMoment({ tone: 'calm' }, { delayMs: 300 });
+  }
+
   async function handleConfirm(override?: {
     foodId: string;
     foodBrand: string;
@@ -549,9 +654,10 @@ export default function LogModal() {
     // Combo mode (B-156 PR B2b) opened straight into the medication picker from the
     // meal card, so there's no type-grid to step back to — back closes the modal.
     if (isComboMode && step === 'medication') { router.back(); return; }
-    if (step === 'food' || step === 'medication' || step === 'symptom' || step === 'simple' || step === 'stool-type') {
+    if (step === 'food' || step === 'medication' || step === 'symptom' || step === 'simple' || step === 'stool-type' || step === 'weight') {
       setSelectedType(null);
       setSeverity(null);
+      setWeightLbsStr('');
       // Reset B-010 confidence state so the next event starts witnessed.
       setTimeMode('saw');
       setFoundMode('before');
@@ -835,6 +941,68 @@ export default function LogModal() {
             <Text style={styles.stoolChoiceHint}>Soft, runny, or diarrhea</Text>
           </TouchableOpacity>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── Weight (numeric, the value IS the entry) ───────────────────────────────
+
+  if (step === 'weight') {
+    // Weight is the one event where confirm-don't-enter can't apply — there's no
+    // value to confirm, so we minimise friction instead: a pre-filled numeric pad
+    // and a single Log button (Principle 1 / Jordan). The button only enables on a
+    // real positive number (parseWeightLbsToKg), never a 0/NaN that would corrupt a
+    // trend line.
+    const canConfirmWeight = parseWeightLbsToKg(weightLbsStr) != null;
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack} style={styles.backBtn} hitSlop={8}>
+            <Text style={styles.backBtnText}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>What does {petName} weigh?</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView contentContainerStyle={styles.simpleScroll} keyboardShouldPersistTaps="handled">
+            <View style={styles.weightInputRow}>
+              <TextInput
+                style={styles.weightInput}
+                value={weightLbsStr}
+                onChangeText={setWeightLbsStr}
+                placeholder="e.g. 12.5"
+                placeholderTextColor={theme.colorTextTertiary}
+                keyboardType="decimal-pad"
+                returnKeyType="done"
+                autoFocus
+              />
+              <Text style={styles.weightUnit}>lbs</Text>
+            </View>
+            {renderNotesInput()}
+            {renderTimeRow()}
+            {showTimePicker && (
+              <DateTimePicker
+                value={occurredAt}
+                mode="datetime"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                maximumDate={new Date()}
+                onChange={(_e, date) => {
+                  if (Platform.OS === 'android') setShowTimePicker(false);
+                  handleTimePickerChange(date);
+                }}
+              />
+            )}
+          </ScrollView>
+          <View style={styles.bottomAction}>
+            <TouchableOpacity
+              style={[styles.confirmBtn, !canConfirmWeight && styles.confirmBtnDisabled]}
+              onPress={handleConfirmWeight}
+              disabled={!canConfirmWeight}
+            >
+              <Text style={styles.confirmBtnText}>Log weight</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -1125,6 +1293,34 @@ const styles = StyleSheet.create({
   simpleScroll: {
     padding: theme.space3,
     gap: theme.space2,
+  },
+
+  // ── Weight input (B-186) ──
+  // A large, centred number with a quiet unit suffix — the value IS the screen,
+  // so it reads as the primary input, not a buried field.
+  weightInputRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: theme.space1,
+    paddingVertical: theme.space3,
+  },
+  weightInput: {
+    // text2XL is the type-scale's documented "hero number" token — the right size
+    // for a single-value entry where the number is the screen (no new magic size).
+    fontSize: theme.text2XL,
+    fontWeight: theme.fontWeightMedium,
+    color: theme.colorNeutralDark,
+    // A layout floor so the number doesn't collapse when the field is empty — a
+    // dimension like the other width literals in this file (severityCircle 52,
+    // photoThumb 40), not a type/spacing token.
+    minWidth: 120,
+    textAlign: 'right',
+    padding: 0,
+  },
+  weightUnit: {
+    fontSize: theme.textLG,
+    color: theme.colorTextSecondary,
   },
 
   // ── Bottom action bar ──
