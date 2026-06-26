@@ -25,6 +25,10 @@ export interface NyxEvent {
   quantity?: string | null;
   // WSAVA 5-point owner-reported intake (B-014). NULL = unrated.
   intake_rating?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null;
+  // Weight reading in kg (B-186) — populated only for event_type='weight_check'
+  // rows, NULL otherwise. The value IS the event; carried on the optimistic row
+  // so a future trend/History renderer can show it without a re-query.
+  weight_kg?: number | null;
   // Medication (dose) join — populated only for event_type='medication' rows
   // (B-117 PR 8). Drug name from the library item; adherence is the offered-vs-given
   // rating (the intake_rating analog). NULL on non-medication events.

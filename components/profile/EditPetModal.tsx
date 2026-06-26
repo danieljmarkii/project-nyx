@@ -9,6 +9,7 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { FilterChip } from '../ui/FilterChip';
 import { supabase } from '../../lib/supabase';
+import { kgToLbs, lbsToKg } from '../../lib/weight';
 import { usePetStore, Pet } from '../../store/petStore';
 
 type Species = 'dog' | 'cat' | 'other';
@@ -78,13 +79,8 @@ function breedsForSpecies(s: Species): string[] {
   return [];
 }
 
-function kgToLbs(kg: number): string {
-  return String(Math.round(kg * 2.20462 * 10) / 10);
-}
-
-function lbsToKg(lbs: number): number {
-  return Math.round((lbs / 2.20462) * 100) / 100;
-}
+// kg<->lbs conversion lives in lib/weight.ts now (B-186) so the log step and this
+// edit form share one rounding rule and can't drift.
 
 function initBreedState(pet: Pet): { breed: string; isOtherBreed: boolean } {
   if (!pet.breed) return { breed: '', isOtherBreed: false };
