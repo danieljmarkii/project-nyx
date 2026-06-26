@@ -42,6 +42,19 @@ jest.mock('../../lib/analytics', () => {
   };
 });
 
+// The screen now reads the weight trend on the same load (getWeightHistory →
+// computeWeightTrend). lib/weight imports ./sync → ./supabase, which throws on unset env
+// at import time — so mock it here like ./db / ./feedingArrangements. Default: no
+// readings, so every test renders the weight card's nudge state. The card's real trend
+// logic is unit-tested in lib/weight.test.ts; this stays a screen-wiring smoke test.
+jest.mock('../../lib/weight', () => ({
+  getWeightHistory: jest.fn().mockResolvedValue([]),
+  computeWeightTrend: () => ({
+    readingCount: 0, seriesLbs: [], latestLbs: null,
+    latestOccurredAt: null, earliestOccurredAt: null, deltaLbs: null, direction: null,
+  }),
+}));
+
 import { render, waitFor, fireEvent } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import PatternsScreen from './index';
@@ -115,6 +128,10 @@ describe('PatternsScreen', () => {
     expect(getByText(/2 more than last month/i)).toBeTruthy();
     // "Vomit" appears as both the count-card label and the frequency-calendar title.
     expect(getAllByText('Vomit').length).toBeGreaterThanOrEqual(1);
+    // The health-trajectory weight card is wired into the ready branch — with no readings
+    // it renders its forward-looking logging nudge + action (never reassures).
+    expect(getByText(/no weigh-ins logged yet/i)).toBeTruthy();
+    expect(getByText('Log a weigh-in')).toBeTruthy();
     // Not the cold-start state.
     expect(queryByText(/still getting to know/i)).toBeNull();
   });

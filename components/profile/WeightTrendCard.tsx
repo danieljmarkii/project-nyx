@@ -5,7 +5,14 @@ import { ArrowDown, ArrowUp, Minus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { Sparkline } from '../dashboard/Sparkline';
-import { computeWeightTrend, getWeightHistory, kgToLbsNum, WeightTrend } from '../../lib/weight';
+import {
+  computeWeightTrend,
+  describeWeightDelta,
+  formatWeightDate,
+  getWeightHistory,
+  kgToLbsNum,
+  WeightTrend,
+} from '../../lib/weight';
 
 // WeightTrendCard — the descriptive weight surface on Profile (B-186 PR 3).
 //
@@ -131,11 +138,15 @@ function EmptyState({ petName, snapshotKg }: { petName: string; snapshotKg: numb
 }
 
 // One reading is a point, not a trend (n=1 says nothing about movement). Show it and
-// invite the next, so the line can begin.
+// invite the next, so the line can begin. The date anchor keeps a lone number from
+// reading as "today's weight" when it may be a back-dated or onboarding figure.
 function SingleReading({ trend, petName }: { trend: WeightTrend; petName: string }) {
   return (
     <View style={styles.body}>
       <BigNumber lbs={trend.latestLbs!} />
+      {trend.latestOccurredAt && (
+        <Text style={styles.note}>Last weighed {formatWeightDate(trend.latestOccurredAt)}</Text>
+      )}
       <Text style={styles.note}>
         One reading so far. Log another after {petName}'s next weigh-in to see the trend.
       </Text>
@@ -159,7 +170,7 @@ function TrendBody({ trend }: { trend: WeightTrend }) {
 
       {trend.latestOccurredAt && (
         <Text style={styles.note}>
-          Last weighed {formatDate(trend.latestOccurredAt)}
+          Last weighed {formatWeightDate(trend.latestOccurredAt)}
           {trend.readingCount > 1 ? ` · ${trend.readingCount} readings` : ''}
         </Text>
       )}
@@ -178,22 +189,15 @@ function BigNumber({ lbs }: { lbs: number }) {
 
 // The period delta — arrow + factual phrase, both neutral grey. The arrow conveys
 // direction; nothing here conveys whether that direction is good or bad (it can't —
-// see the guardrail). Flat reads "No change", never "steady"/"holding" (which lean
-// reassuring).
+// see the guardrail). The phrase comes from the shared describeWeightDelta so it can't
+// drift from the dashboard card: flat reads "No change", never "steady"/"holding".
 function DeltaLine({ trend }: { trend: WeightTrend }) {
-  if (trend.deltaLbs == null || trend.direction == null || !trend.earliestOccurredAt) return null;
-  const since = formatDate(trend.earliestOccurredAt);
-  const abs = Math.abs(trend.deltaLbs);
+  const text = describeWeightDelta(trend);
+  if (text == null || trend.direction == null) return null;
 
   let icon = <Minus size={14} color={theme.colorTextSecondary} />;
-  let text = `No change since ${since}`;
-  if (trend.direction === 'up') {
-    icon = <ArrowUp size={14} color={theme.colorTextSecondary} />;
-    text = `Up ${abs} lbs since ${since}`;
-  } else if (trend.direction === 'down') {
-    icon = <ArrowDown size={14} color={theme.colorTextSecondary} />;
-    text = `Down ${abs} lbs since ${since}`;
-  }
+  if (trend.direction === 'up') icon = <ArrowUp size={14} color={theme.colorTextSecondary} />;
+  else if (trend.direction === 'down') icon = <ArrowDown size={14} color={theme.colorTextSecondary} />;
 
   return (
     <View style={styles.deltaRow}>
@@ -201,16 +205,6 @@ function DeltaLine({ trend }: { trend: WeightTrend }) {
       <Text style={styles.deltaText}>{text}</Text>
     </View>
   );
-}
-
-// "Mon D", plus the year when it isn't the current one (an older reading shouldn't
-// read as this year's). Local time — occurred_at is converted at the app layer.
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString([], sameYear
-    ? { month: 'short', day: 'numeric' }
-    : { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 const styles = StyleSheet.create({

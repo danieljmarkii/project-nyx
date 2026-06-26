@@ -25,6 +25,9 @@ import {
   type MealTreatComposition,
 } from './analytics';
 import { isEstablishedCount, selectCardState, type CardDisplayState } from './dashboardCards';
+// Type-only: keeps this pure module free of lib/weight's runtime deps (db/sync). The
+// screen computes the trend (getWeightHistory → computeWeightTrend) and passes it in.
+import type { WeightTrend } from './weight';
 
 // ── Priority classes (Principle 3 — safety leads) ────────────────────────────────
 //
@@ -111,13 +114,26 @@ export interface CompositionCardDescriptor {
   composition: MealTreatComposition;
 }
 
+export interface WeightTrendCardDescriptor {
+  kind: 'weightTrend';
+  key: 'weightTrend';
+  /** Ordering only — the card always renders NEUTRAL (no verdict colour). Placement is
+   *  reading-count-aware: a populated trend is a health-trajectory vital sign so it leads
+   *  ('safety' cluster, after the symptom cards, above food); an empty card is only a
+   *  logging nudge, so it sits in the 'descriptive' cluster instead of out-ranking live
+   *  safety/intake answers. Never 'intake'. See buildDashboardCards for the rationale. */
+  priority: 'safety' | 'descriptive';
+  trend: WeightTrend;
+}
+
 export type DashboardCard =
   | SymptomCountCard
   | SymptomFrequencyCard
   | IntakeRateCard
   | TopFoodCard
   | TopProteinCard
-  | CompositionCardDescriptor;
+  | CompositionCardDescriptor
+  | WeightTrendCardDescriptor;
 
 /**
  * Order cards so safety leads, then intake, then descriptive (§6 / Principle 3).
@@ -145,6 +161,10 @@ export interface BuildDashboardInput {
   topFoods: RankedFood[] | NotEnoughData;
   topProteins: RankedProtein[] | NotEnoughData;
   composition: MealTreatComposition;
+  /** The pet's weight trend (computeWeightTrend over the last N readings) — the
+   *  health-trajectory weight card. Always present; an empty trend renders the card's
+   *  forward-looking nudge state (the weight-logging habit this card exists to start). */
+  weightTrend: WeightTrend;
 }
 
 /**
@@ -187,6 +207,20 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
       buckets: input.frequencyBuckets,
     });
   }
+  // Weight — the health-trajectory vital sign (spec §6 group A: "Is {pet} okay /
+  // getting better?"), the vet council's #1 missing datum. Placement is reading-count
+  // aware (product-team review, 2026-06-26): a POPULATED trend LEADS here in the safety
+  // cluster (after the symptom cards, above food/intake) because a real weight trend is
+  // a vital sign worth scanning first. An EMPTY card (no readings yet) is only a logging
+  // nudge — it would cost glance-time in the highest-value zone without answering "is
+  // {pet} okay?", so it's emitted lower, at the head of the descriptive cluster (below),
+  // still present to start the habit. Either way it renders NEUTRAL — priority is
+  // PROMINENCE ONLY (the dashboard is uncapped, nothing drops; never a verdict colour).
+  // Always emitted (here or below), so the logging nudge is never silently absent.
+  const weightLeads = input.weightTrend.readingCount > 0;
+  if (weightLeads) {
+    cards.push({ kind: 'weightTrend', key: 'weightTrend', priority: 'safety', trend: input.weightTrend });
+  }
 
   // ── Intake (descriptive intake, §6.B — meals-only finished-rate) ─────────────
   cards.push({
@@ -200,6 +234,11 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
   });
 
   // ── Descriptive (rankings + composition — never a verdict colour, §11 #1) ────
+  // An empty weight card (no readings) leads the descriptive cluster — present and
+  // discoverable as a logging nudge, but not out-ranking the safety/intake answers above.
+  if (!weightLeads) {
+    cards.push({ kind: 'weightTrend', key: 'weightTrend', priority: 'descriptive', trend: input.weightTrend });
+  }
   cards.push({
     kind: 'topFood',
     key: 'topFood',
@@ -238,8 +277,12 @@ export type DashboardState = 'empty' | 'ready';
 export function selectDashboardState(input: {
   symptomCounts: SymptomCount[];
   composition: MealTreatComposition;
+  /** Number of weight readings on file — a pet you've only ever weighed still has a
+   *  real trend to show, so the dashboard is 'ready', not the cold-start empty state. */
+  weightReadingCount: number;
 }): DashboardState {
   const hasSymptoms = input.symptomCounts.length > 0;
   const hasFeedings = input.composition.total > 0;
-  return hasSymptoms || hasFeedings ? 'ready' : 'empty';
+  const hasWeight = input.weightReadingCount > 0;
+  return hasSymptoms || hasFeedings || hasWeight ? 'ready' : 'empty';
 }

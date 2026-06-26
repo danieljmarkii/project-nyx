@@ -22,6 +22,7 @@ import {
   type RankedProtein,
   type MealTreatComposition,
 } from './analytics';
+import type { WeightTrend } from './weight';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,22 @@ function sc(symptomType: string, current: number, prior: number): SymptomCount {
 
 function emptyComposition(): MealTreatComposition {
   return { meal: 0, treat: 0, other: 0, unclassified: 0, total: 0 };
+}
+
+function emptyWeightTrend(): WeightTrend {
+  return {
+    readingCount: 0, seriesLbs: [], latestLbs: null,
+    latestOccurredAt: null, earliestOccurredAt: null, deltaLbs: null, direction: null,
+  };
+}
+
+function populatedWeightTrend(): WeightTrend {
+  return {
+    readingCount: 3, seriesLbs: [10.4, 9.9, 9.5], latestLbs: 9.5,
+    latestOccurredAt: '2026-06-20T08:00:00.000Z',
+    earliestOccurredAt: '2026-06-01T08:00:00.000Z',
+    deltaLbs: -0.9, direction: 'down',
+  };
 }
 
 function buckets(perDay: number[], type = 'vomit'): DayFrequencyBucket[] {
@@ -53,6 +70,7 @@ function baseInput(over: Partial<Parameters<typeof buildDashboardCards>[0]> = {}
     topFoods: NO_FOODS as RankedFood[] | ReturnType<typeof notEnoughData>,
     topProteins: NO_PROTEINS as RankedProtein[] | ReturnType<typeof notEnoughData>,
     composition: emptyComposition(),
+    weightTrend: emptyWeightTrend(),
     ...over,
   };
 }
@@ -195,24 +213,84 @@ describe('buildDashboardCards — ordering & frequency lead', () => {
       expect.arrayContaining(['intakeRate', 'topFood', 'topProtein', 'composition']),
     );
   });
+
+  it('always emits the weight card (a populated trend OR the empty logging nudge)', () => {
+    expect(buildDashboardCards(baseInput()).some((c) => c.kind === 'weightTrend')).toBe(true);
+    expect(
+      buildDashboardCards(baseInput({ weightTrend: populatedWeightTrend() })).some(
+        (c) => c.kind === 'weightTrend',
+      ),
+    ).toBe(true);
+  });
+
+  it('a POPULATED weight trend leads the safety cluster — after the symptom cards, above intake/food', () => {
+    const cards = buildDashboardCards(
+      baseInput({
+        symptomCounts: [sc('vomit', 3, 1), sc('diarrhea', 2, 2)],
+        frequencyBuckets: buckets([0, 1, 2]),
+        weightTrend: populatedWeightTrend(),
+      }),
+    );
+    const weight = cards.find((c) => c.kind === 'weightTrend');
+    expect(weight?.priority).toBe('safety');
+    const kinds = cards.map((c) => c.kind);
+    const weightAt = kinds.indexOf('weightTrend');
+    // After every symptom card (counts + the frequency calendar)…
+    expect(weightAt).toBeGreaterThan(kinds.lastIndexOf('symptomCount'));
+    expect(weightAt).toBeGreaterThan(kinds.indexOf('symptomFrequency'));
+    // …and above intake + the descriptive food cards.
+    expect(weightAt).toBeLessThan(kinds.indexOf('intakeRate'));
+    expect(weightAt).toBeLessThan(kinds.indexOf('topFood'));
+  });
+
+  it('an EMPTY weight card is a nudge — it heads the descriptive cluster, never the safety slot', () => {
+    const cards = buildDashboardCards(
+      baseInput({
+        symptomCounts: [sc('vomit', 3, 1)],
+        frequencyBuckets: buckets([0, 1, 2]),
+        weightTrend: emptyWeightTrend(),
+      }),
+    );
+    const weight = cards.find((c) => c.kind === 'weightTrend');
+    expect(weight?.priority).toBe('descriptive');
+    const kinds = cards.map((c) => c.kind);
+    const weightAt = kinds.indexOf('weightTrend');
+    // Below the live safety + intake answers it would otherwise crowd…
+    expect(weightAt).toBeGreaterThan(kinds.lastIndexOf('symptomCount'));
+    expect(weightAt).toBeGreaterThan(kinds.indexOf('intakeRate'));
+    // …but leading the descriptive cards (still present + discoverable).
+    expect(weightAt).toBeLessThan(kinds.indexOf('topFood'));
+  });
 });
 
 // ── selectDashboardState — cold-start gate (§10) ──────────────────────────────────
 
 describe('selectDashboardState — cold-start vs ready (§10)', () => {
-  it('empty when there are no symptoms AND no logged feedings', () => {
-    expect(selectDashboardState({ symptomCounts: [], composition: emptyComposition() })).toBe('empty');
+  it('empty when there are no symptoms AND no feedings AND no weight', () => {
+    expect(
+      selectDashboardState({ symptomCounts: [], composition: emptyComposition(), weightReadingCount: 0 }),
+    ).toBe('empty');
   });
 
   it('ready when there is any symptom history', () => {
-    expect(selectDashboardState({ symptomCounts: [sc('vomit', 1, 0)], composition: emptyComposition() })).toBe(
-      'ready',
-    );
+    expect(
+      selectDashboardState({
+        symptomCounts: [sc('vomit', 1, 0)],
+        composition: emptyComposition(),
+        weightReadingCount: 0,
+      }),
+    ).toBe('ready');
   });
 
   it('ready when there are logged feedings even with no symptoms', () => {
     const composition: MealTreatComposition = { meal: 5, treat: 1, other: 0, unclassified: 0, total: 6 };
-    expect(selectDashboardState({ symptomCounts: [], composition })).toBe('ready');
+    expect(selectDashboardState({ symptomCounts: [], composition, weightReadingCount: 0 })).toBe('ready');
+  });
+
+  it('ready when there are only weight readings (a pet you have only ever weighed)', () => {
+    expect(
+      selectDashboardState({ symptomCounts: [], composition: emptyComposition(), weightReadingCount: 2 }),
+    ).toBe('ready');
   });
 });
 

@@ -20,6 +20,7 @@ import {
   type DashboardCard,
   type DashboardState,
 } from '../../lib/dashboardScreen';
+import { computeWeightTrend, getWeightHistory } from '../../lib/weight';
 import {
   describeCountDelta,
   describeRateDelta,
@@ -36,6 +37,7 @@ import { MetricCard } from '../../components/dashboard/MetricCard';
 import { RankingCard } from '../../components/dashboard/RankingCard';
 import { FrequencyCalendarCard } from '../../components/dashboard/FrequencyCalendarCard';
 import { CompositionCard } from '../../components/dashboard/CompositionCard';
+import { WeightCard } from '../../components/dashboard/WeightCard';
 import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
 import { DashboardEmptyState } from '../../components/dashboard/DashboardEmptyState';
 import { useSummary } from '../../hooks/useSummary';
@@ -53,6 +55,13 @@ import { useSummary } from '../../hooks/useSummary';
 // result so a single observation (n=1) can never colour (the PR-2 adversarial fix).
 
 const WINDOW: AnalyticsWindow = 'month';
+
+// Weight readings are sparse (you weigh occasionally, not daily), so the weight card
+// shows the last N READINGS rather than the dashboard's month window — a month-scoped
+// weight trend would usually be 0–1 points (no trend). Mirrors the Profile card's
+// SERIES_LIMIT; every number is anchored to an explicit date, so it never reads as
+// "this month" next to the month-scoped cards.
+const WEIGHT_SERIES_LIMIT = 12;
 
 export default function PatternsScreen() {
   const { activePet } = usePetStore();
@@ -88,17 +97,28 @@ export default function PatternsScreen() {
     const myId = ++loadIdRef.current;
     if (showLoading) setStatus('loading');
     try {
-      const [symptomCounts, frequencyBuckets, intakeComparison, topFoods, topProteins, composition] =
-        await Promise.all([
-          getSymptomCounts(pet.id, WINDOW),
-          getSymptomFrequencyByDay(pet.id, WINDOW),
-          getIntakeRateWithPrior(pet.id, WINDOW),
-          getTopFoods(pet.id, WINDOW),
-          getTopProteins(pet.id, WINDOW),
-          getMealTreatComposition(pet.id, WINDOW),
-        ]);
+      const [
+        symptomCounts,
+        frequencyBuckets,
+        intakeComparison,
+        topFoods,
+        topProteins,
+        composition,
+        weightReadings,
+      ] = await Promise.all([
+        getSymptomCounts(pet.id, WINDOW),
+        getSymptomFrequencyByDay(pet.id, WINDOW),
+        getIntakeRateWithPrior(pet.id, WINDOW),
+        getTopFoods(pet.id, WINDOW),
+        getTopProteins(pet.id, WINDOW),
+        getMealTreatComposition(pet.id, WINDOW),
+        getWeightHistory(pet.id, WEIGHT_SERIES_LIMIT),
+      ]);
       if (loadIdRef.current !== myId) return; // superseded by a newer load — drop these results
-      setDashState(selectDashboardState({ symptomCounts, composition }));
+      const weightTrend = computeWeightTrend(weightReadings);
+      setDashState(
+        selectDashboardState({ symptomCounts, composition, weightReadingCount: weightTrend.readingCount }),
+      );
       setCards(
         buildDashboardCards({
           symptomCounts,
@@ -108,6 +128,7 @@ export default function PatternsScreen() {
           topFoods,
           topProteins,
           composition,
+          weightTrend,
         }),
       );
       setStatus('ready');
@@ -332,6 +353,16 @@ function renderCard(card: DashboardCard, petName?: string) {
           definition={compositionDefinition(petName)}
         />
       );
+    case 'weightTrend':
+      // Health-trajectory card — neutral by construction (no verdict colour, factual
+      // delta). Display-only for now; a tap-through to the per-reading history is B-189.
+      return <WeightCard key={card.key} trend={card.trend} petName={petName} />;
+    default: {
+      // Exhaustiveness: a new card kind must add a case above, not silently render
+      // nothing. This fails to compile if DashboardCard gains a member unhandled here.
+      const _exhaustive: never = card;
+      return _exhaustive;
+    }
   }
 }
 
