@@ -419,6 +419,10 @@ export interface TimelineRow {
   food_product_name: string | null;
   food_type: string | null;
   intake_rating: string | null;
+  // Weight reading in kg (B-186 PR 4) — populated only for event_type='weight_check'
+  // rows via the weight_checks LEFT JOIN, NULL otherwise. The value IS the event;
+  // the History row renders it (converted to lbs) the way a meal renders its food.
+  weight_kg: number | null;
   // Medication (dose) join — populated only for event_type='medication' rows via
   // the medication_administrations + medication_items_cache LEFT JOINs (B-117 PR 8).
   // The drug display name comes from the library item (generic/brand); adherence is
@@ -488,6 +492,7 @@ export async function getTimeline(
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            wc.weight_kg AS weight_kg,
             ma.medication_item_id, ma.adherence, ma.how_given,
             ma.paired_event_id,
             pm.intake_rating AS paired_vehicle_intake,
@@ -499,6 +504,7 @@ export async function getTimeline(
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+     LEFT JOIN weight_checks wc ON wc.event_id = e.id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
@@ -522,6 +528,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            wc.weight_kg AS weight_kg,
             ma.medication_item_id, ma.adherence, ma.how_given,
             ma.paired_event_id,
             pm.intake_rating AS paired_vehicle_intake,
@@ -533,6 +540,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
      FROM events e
      LEFT JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
+     LEFT JOIN weight_checks wc ON wc.event_id = e.id
      LEFT JOIN medication_administrations ma ON ma.event_id = e.id
      LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
      LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL

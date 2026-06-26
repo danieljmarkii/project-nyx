@@ -12,6 +12,7 @@ import {
   pairedVehicleLinkLabel, pairedDoseLinkLabel, formatDrugLabel,
 } from '../../lib/medications';
 import { describeOccurredAt } from '../../lib/utils';
+import { kgToLbs } from '../../lib/weight';
 
 // B-156 PR B4 — the quiet, tappable combo cross-link, shown on each side of a combo
 // (the dose ↔ its vehicle meal/treat) so the "one act" is legible across the two
@@ -101,6 +102,15 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
     adherence: event.adherence ?? null,
   });
 
+  // Weight reading (B-186 PR 4): the measured value in lbs — the weight analog of
+  // foodLabel/drugLabel. The value IS the event (there's no badge to pair it with),
+  // so it renders as a plain secondary line. kgToLbs is the one shared rounding rule
+  // (0.1 lb) the log step and profile trend use, so the History row can't drift to a
+  // different number. NULL weight_kg (legacy / non-weight row) → nothing.
+  const weightLabel = event.event_type === 'weight_check' && event.weight_kg != null
+    ? `${kgToLbs(event.weight_kg)} lbs`
+    : null;
+
   // B-010 — read-only confidence marker so the timeline stops implying false
   // precision on found/estimated events. Witnessed and legacy (null) rows keep
   // the plain time and show no tag.
@@ -146,6 +156,10 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
                 is null, so unrated meals stay visually quiet. */}
             <IntakeChipRow value={(event.intake_rating ?? null) as IntakeRating | null} />
           </View>
+        ) : null}
+
+        {weightLabel ? (
+          <Text style={styles.weightValue} numberOfLines={1}>{weightLabel}</Text>
         ) : null}
 
         {/* B-156 PR B4 — vehicle → dose cross-link. On a meal/treat that carried a
@@ -282,6 +296,13 @@ const styles = StyleSheet.create({
   vehicleNote: {
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+  },
+  // The weight reading line (B-186 PR 4). Same register as foodName/drugLabel — a
+  // quiet secondary value under the type label. No flex:1 (unlike foodName): there's
+  // no trailing badge to pin flush-right, so the value sits naturally at the start.
+  weightValue: {
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
   },
   // The combo cross-link (B-156 PR B4). Accent text + a chevron so it reads as a
   // navigation affordance, not a badge. alignSelf flex-start so the tap target hugs
