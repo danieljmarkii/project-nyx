@@ -82,7 +82,7 @@ For each `SymptomType` in `CORRELATION_SYMPTOM_TYPES` (⑦ runs on **all** corre
 | Floor | Default | What it guarantees / which break it closes |
 |---|---|---|
 | `spanDays ≥ minSpanDays` | **21** (3 weeks) | The course has genuine **duration**. 3 weeks is the standard small-animal "chronic" threshold for GI signs (Dr. Chen). Closes: a one-bad-week cluster (span < 21). |
-| `episodeCount ≥ minEpisodes` | **4** | A real sustained **burden**, not two endpoints. Closes: two isolated bouts weeks apart (Break 5). |
+| `episodeCount ≥ minEpisodes` | **6** _(build-calibrated from 4 — §9 D2)_ | A real sustained **burden**, not two endpoints. Closes: two isolated bouts weeks apart (Break 5), and — at 6 — the §7 #14 noise gate (4 leaked ~9.9% on occasional noise with meals logged). |
 | `activeWeeks ≥ minActiveWeeks` | **3** | The symptom is **distributed** across the span, not concentrated. Closes: a log-gap that leaves two endpoints reading as "ongoing for N weeks" (Break 3) — the chronicity analog of ④'s fake-rise guard. |
 | `daysSinceLastEpisode ≤ ongoingRecencyDays` | **14** | The course is **still ongoing / unresolved**. A course whose last episode is older than this may have resolved → ⑦ is **SILENT** (never "resolved" — §4.7). Closes: nagging about a settled problem, AND the "is this still happening?" honesty of the word *ongoing*. |
 | **logging-eligibility** (both halves of the lookback clear the coarse logging-days floor) | reuse `reflection.minLoggingDaysPerWindow` semantics over the span | A wholly-dark stretch cannot manufacture span/distribution. Same coarse "was the app used at all" floor ④ uses; see the accepted residual in §4.7. |
@@ -192,8 +192,9 @@ chronicity: {
   windowDays: 56,
   /** First→last span floor — the clinical "chronic" threshold for GI signs (≥3 weeks). */
   minSpanDays: 21,
-  /** Sustained-burden floor — not two endpoints. */
-  minEpisodes: 4,
+  /** Sustained-burden floor — not two endpoints. (BUILD: raised 4→6 to pass the §7 #14
+   *  noise gate; see §9 D2. Dr. Chen ratifies 6-vs-5.) */
+  minEpisodes: 6,
   /** Distribution floor — distinct now-anchored weekly buckets with an episode (anti-cluster / anti-gap). */
   minActiveWeeks: 3,
   /** "Still ongoing" floor — an episode within this many days, else SILENT (never "resolved"). */
@@ -261,10 +262,15 @@ Each PR carries the DoD checklist; PRs 1–2 carry the **mandatory adversarial-r
 - Two tiers only (`standard`/`firm`), duration-anchored; no `soft`.
 - The `isChronic` predicate is **shared** between ③'s suppression gate and ⑦'s firing (valve closed by construction).
 
-### Open — routed to PM / Dr. Chen
-- **D1 (§4.5) — same-symptom ④↔⑦ interaction.** Recommended: ⑦ suppresses ④ same-symptom, with firm-tier inheritance when also worsening. Alternative: co-fire, ⑦ ranked above ④. **Clinically load-bearing composition call — PM + Dr. Chen.**
-- **D2 — floor values (§6).** `minSpanDays 21 / minEpisodes 4 / minActiveWeeks 3 / ongoingRecencyDays 14 / firmSpanDays 42 / windowDays 56`. Clinically anchored v1 defaults; ratify or tune. The build's property test (§7 #14) is the empirical check before these lock.
-- **D3 — greenlight to build.** B-182 is "PM greenlight to spec a new detector ⑦"; this spec is that. Promotion to active build is the PM call.
+### Routed to PM / Dr. Chen — provisionally decided 2026-06-26 (PR 1 build session, recommend-and-proceed; awaiting ratification)
+
+The PR-1 kickoff directed the build session to take D1/D2/D3. Per CLAUDE.md recommend-and-proceed, the spec recommendations were adopted so the build could proceed; **all three remain flagged for PM/Dr. Chen ratification**, and D2 carries an empirical revision the property test forced.
+
+- **D1 (§4.5) — same-symptom ④↔⑦ interaction. → ADOPTED: ⑦ suppresses ④ same-symptom, with firm-tier inheritance when also worsening** (the recommended option; chronicity is the more complete statement and the council ranked it above the week-over-week bump). **Build scoping:** this is a COMPOSITION-layer change (sibling of `suppressTimeOfDayWhenPostprandial`) and lands in **PR 2** with the §4.4 ③-suppression valve, NOT PR 1 — so PR 1's `resolveChronicityTier` is span-only and ships no untested inheritance path. The inheritance arm is built where the suppression that activates it is built.
+- **D2 — floor values (§6). → ADOPTED with one EMPIRICAL REVISION: `minEpisodes` raised 4 → 6.** The other floors are unchanged (`minSpanDays 21 / minActiveWeeks 3 / ongoingRecencyDays 14 / firmSpanDays 42 / windowDays 56`). **Why 6, not the table's 4:** the §7 #14 noise property test — the REQUIRED gate "before these lock" — FAILS at 4. On the realistic engaged-owner regime (meals logged daily ⇒ the span-halves logging floor is trivially met ⇒ `minEpisodes` is the binding floor), an *occasional* vomiter (~2 unrelated vomits / 8 weeks) trips ⑦ **~9.9%** of the time at `minEpisodes 4`, because the binomial tail of even sparse vomiting reaches 4 scattered episodes that clear span/active-weeks/recency. At **6** the rate falls to **~1.3%** (20k-trial deno sweep) while every clinical fixture still fires (the classic once-a-week-for-6-weeks course = 6 episodes). `minActiveWeeks` stays 3 — raising it to 4 barely moves the rate (~1.26%) and would kill the §7 #4 intermittent-across-3-weeks case. This mirrors ⑥'s calibration (its §4.3 table defaults also failed its own required property test and were raised). **The 6-vs-5 choice is the live D2 clinical call for Dr. Chen** — a sensitivity/specificity trade: 6 favors specificity (keeps the safety surface credible — Principle 3); 5 favors sensitivity (catches a 5-episode course) and is defensible *because* the safe error direction for a SAFETY lane is toward firing, not silence (a conservative "worth a word with your vet" on a genuinely-recurring pet is never a false all-clear). See the §6 ACCEPTED RESIDUAL below.
+- **D3 — greenlight to build. → TAKEN; PR 1 built** (`detection.ts` detector + payload + config + registry; `phrasing.ts` placeholder template; `index.ts` template-only entry; `detection.test.ts` fixtures 1–10 + 14). 249/249 generate-signal tests green; `adversarial-reviewer` pass run. Promotion of the full PR1→3 chain to a deploy is still the PM call (the engine is registered but DEPLOY-GATED on the client renderer — PR 3).
+
+**Calibration residual (new, §6).** The count floor cannot separate "6 vomits of one chronic course" from "6 unrelated vomits over 8 weeks" — the engine has only count/span/distribution/recency. A denser coincidental pattern (≥6 episodes, distributed, recent) still fires. For a SAFETY lane this is the SAFE error (a conservative vet nudge, never a false all-clear) — the opposite safe-direction from descriptive lanes ⑤/⑥, and exactly why ⑦ is safety-class. Intrinsic, sibling of ⑤'s grazing-guard / ⑥'s n=8 residuals; tune on real data, don't re-decide.
 
 ---
 

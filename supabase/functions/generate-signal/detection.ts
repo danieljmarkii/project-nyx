@@ -446,6 +446,7 @@ export type InsightType =
   | 'intake_decline'
   | 'reflection'
   | 'symptom_worsening'
+  | 'symptom_chronicity'
   | 'postprandial_timing'
   | 'timeofday_clustering'
 
@@ -612,6 +613,70 @@ export interface SymptomWorseningFinding extends FindingBase {
 }
 
 /**
+ * Copy-urgency tier for a chronicity finding (detector ⑦, B-182). Anchored on DURATION
+ * (chronicity's natural urgency axis), NOT the week-over-week delta (that is ④'s axis):
+ *   - 'firm'     — a long course (`spanDays ≥ firmSpanDays`, ≥6 weeks): "...worth booking
+ *                  a vet visit." (PR 2 also inherits 'firm' when the same symptom is ALSO
+ *                  worsening — the §4.5 valve coupling — once suppressWorseningWhenChronic
+ *                  lands; PR 1's resolver is span-only so it ships no untested clinical path.)
+ *   - 'standard' — a present-and-recurring course (span in [minSpanDays, firmSpanDays)):
+ *                  "...worth a word with your vet."
+ * There is deliberately NO 'soft' register (one fewer than ④): a symptom recurring for
+ * ≥3 weeks always points at the vet — the gentlest chronicity register still does (§4.6).
+ * Resolved in the deterministic engine (where it is adversarially reviewed), never in copy.
+ */
+export type ChronicityTier = 'standard' | 'firm'
+
+/**
+ * Symptom-chronicity / persistence (⑦, B-182) — the SAFETY-class lane that fires on
+ * DURATION + SUSTAINED BURDEN + STILL-ONGOING, orthogonal to ④'s week-over-week DELTA
+ * axis. It is the symptom-axis statement "this is not a passing thing": six weeks of
+ * roughly-every-other-day vomiting reaches the owner today as ④'s "up from 2 last week"
+ * (a bump) or ③'s calm "same as last week" (a flat reflection) — neither says the true,
+ * important sentence "this has been going on for weeks and is not resolving" (re-run
+ * council deep-dive §9 #1, Finding 2/3). ⑦ says it.
+ *
+ * Purely DESCRIPTIVE duration/frequency — NO causal claim (that is ①/⑤), NO mechanism,
+ * NO severity verdict, NO diagnosis. It NEVER reassures (it is a safety finding) and its
+ * ABSENCE is silence, not wellness — the cardinal requirement is that a flat or
+ * improving-looking chronic course must never read as reassurance (§4.7). The recency
+ * floor (`daysSinceLastEpisode ≤ ongoingRecencyDays`) makes the word "ongoing" honest:
+ * a settled course falls SILENT and emits NO resolution copy (never "seems to have
+ * settled"), the §4.7 mirror of ④'s "absence is silence". Template-only phrasing, like
+ * ③/④/⑤/⑥ — the model never phrases it (itself a structural never-reassure guarantee).
+ *
+ * Fires on the §4.3 conjunction (span AND episodes AND active-weeks AND recency floors,
+ * plus the coarse logging-eligibility guard) — the same episode-collapsing and honesty-
+ * floor philosophy ④ obeys, but a long-span persistence test, not a two-window delta.
+ * Runs on ALL CORRELATION_SYMPTOM_TYPES (chronic diarrhea / pruritus are as real as
+ * chronic vomiting — differs from ⑤'s vomit-only scope, matches ③/④). Surfaces at most
+ * ONE card (the most-chronic symptom) so the safety surface stays calm.
+ */
+export interface SymptomChronicityFinding extends FindingBase {
+  type: 'symptom_chronicity'
+  priorityClass: 'safety'
+  symptomType: SymptomType
+  /** Collapsed episodes in the lookback. ≥ chronicity.minEpisodes. */
+  episodeCount: number
+  /** First→last onset span, in whole days. ≥ chronicity.minSpanDays. */
+  spanDays: number
+  /** Distinct now-anchored 7-day buckets carrying an episode (distribution, not two endpoints). ≥ minActiveWeeks. */
+  activeWeeks: number
+  /** Distinct UTC symptom-days (density/evidence detail). */
+  symptomDays: number
+  /** Days since the most-recent episode. ≤ ongoingRecencyDays (the "still ongoing" gate). */
+  daysSinceLastEpisode: number
+  /** ISO-8601 UTC of the first logged onset in the lookback — powers "since {month}" copy. */
+  firstOnsetIso: string
+  /** Resolved urgency tier (duration-anchored — see ChronicityTier). */
+  tier: ChronicityTier
+  /** The lookback in days (the "{windowWeeks} weeks" denominator). */
+  windowDays: number
+  /** Hard marker for the phrasing layer + reviewers: duration/frequency only, never causal. */
+  associationalOnly: true
+}
+
+/**
  * Rapid post-prandial timing (⑤, B-078 — descriptive lane Phase 1). A purely
  * DESCRIPTIVE count: of the vomiting episodes we could TIME (witnessed onset, a
  * timed-eligible feeding logged in the preceding window, not under a free-fed bowl),
@@ -698,6 +763,7 @@ export type Finding =
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding
+  | SymptomChronicityFinding
   | PostprandialTimingFinding
   | TimeOfDayClusteringFinding
 
@@ -936,6 +1002,34 @@ export interface DetectionConfig {
      */
     worseningDenseDayFloor: number
   }
+  chronicity: {
+    /**
+     * Lookback in days (detector ⑦, B-182 §6). 56 = exactly 8 now-anchored weekly buckets;
+     * covers the council's 6-week case + headroom. The "{windowWeeks} weeks" denominator.
+     */
+    windowDays: number
+    /**
+     * First→last span floor — the clinical "chronic" threshold for GI signs (≥3 weeks, Dr.
+     * Chen). Closes the one-bad-week cluster (Break 5 / §10 #5). All §4.3 floors must pass.
+     */
+    minSpanDays: number
+    /** Sustained-burden floor — a real recurrence, not two endpoints (Break 5 / §10 #6). */
+    minEpisodes: number
+    /**
+     * Distribution floor — distinct now-anchored weekly buckets carrying an episode. The
+     * anti-cluster / anti-gap guard (the chronicity analog of ④'s fake-rise guard): closes
+     * a log-gap that leaves two endpoints reading as "ongoing for N weeks" (Break 3 / §10 #4).
+     */
+    minActiveWeeks: number
+    /**
+     * "Still ongoing" floor — the most-recent episode must be within this many days, else
+     * the course may have resolved and ⑦ is SILENT (never "resolved" — §4.7 #1). Makes the
+     * word "ongoing" honest and closes nagging about a settled problem (§10 #3).
+     */
+    ongoingRecencyDays: number
+    /** Duration-anchored 'firm' register floor (≥6 weeks → "book a vet visit"). */
+    firmSpanDays: number
+  }
   postprandial: {
     /** §3.3: minimum rapid episodes before a pattern is worth stating (2 is an anecdote). */
     minRapidEpisodes: number
@@ -1117,6 +1211,43 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     // week shows symptoms on ≥4 of 7 days. Anchored to density, not a raw count cutoff,
     // so the one new escalation boundary is clinically defensible (see WorseningTier).
     worseningDenseDayFloor: 4,
+  },
+  // B-182 detector ⑦ (symptom chronicity) floors (§6). Clinically-anchored v1 defaults
+  // (PM/Dr. Chen D2 — recommend-and-proceed, pending ratification): a course is "chronic"
+  // when it has genuine DURATION (≥3 weeks span — the small-animal GI chronic threshold),
+  // SUSTAINED BURDEN (≥6 collapsed episodes — see calibration below), DISTRIBUTION (≥3
+  // distinct now-anchored weekly buckets, the anti-cluster/anti-gap guard) AND is STILL
+  // ONGOING (an episode within 14 days). ALL must pass — each floor closes a distinct break
+  // in §10. firmSpanDays 42 (≥6 weeks) lifts the copy to "book a vet visit". Logging-
+  // eligibility reuses reflection.minLoggingDaysPerWindow (§6 — a diagnostic mirrors the
+  // floor of the layer it couples to; no second knob). Tune on real data, not a re-decision.
+  //
+  // CALIBRATION NOTE (build, flagged for D2 ratification — mirrors the ⑥ lesson exactly): the
+  // §6 spec table set minEpisodes 4, but the §7 #14 noise property test — the REQUIRED gate —
+  // FAILS at 4. With realistic daily meal logging (so the span-halves logging floor is
+  // trivially met and minEpisodes is the binding floor), an "occasional vomiter" (~2 unrelated
+  // vomits / 8 weeks) trips ⑦ ~9.9% of the time at minEpisodes 4, because the binomial tail of
+  // even sparse vomiting reaches 4 scattered episodes that clear span/active-weeks/recency.
+  // minEpisodes 6 drops that to ~1.3% (20k-trial deno sweep) while preserving every clinical
+  // fixture (the classic once-a-week-for-6-weeks course = 6 episodes still fires). minActiveWeeks
+  // stays 3 — raising it to 4 barely moves the rate (~1.26%) and would kill the §7 #4 intermittent-
+  // across-3-weeks case. The change errs toward specificity, keeping the safety surface credible
+  // (Principle 3: a chronicity card must not fire on a pet that vomited twice in two months).
+  //
+  // ACCEPTED RESIDUAL (intrinsic, sibling of ⑤'s grazing guard / ⑥'s n=8): a DENSER pattern (≥6
+  // genuine episodes over 8 weeks, distributed, recent) still fires even when the underlying
+  // vomits are coincidental/unrelated — the engine sees only count/span/distribution and cannot
+  // tell "six vomits of one chronic course" from "six unrelated vomits". For a SAFETY lane this
+  // is the SAFE error: a conservative "worth a word with your vet" on a pet that genuinely
+  // vomited 6× in 8 weeks, never a false all-clear. The 6-vs-5 minEpisodes choice (specificity
+  // vs sensitivity, given that safe error direction) is the D2 clinical ratification — Dr. Chen.
+  chronicity: {
+    windowDays: 56,
+    minSpanDays: 21,
+    minEpisodes: 6,
+    minActiveWeeks: 3,
+    ongoingRecencyDays: 14,
+    firmSpanDays: 42,
   },
   // B-078 detector ⑤ (postprandial timing) floors. The window is science-anchored
   // (§9.2: no canonical clinical cutoff; 30 min operationalizes the literature's
@@ -2251,6 +2382,215 @@ export function detectWorsening(
   ]
 }
 
+// ── Detector ⑦: symptom chronicity / persistence (B-182 — the safety chronicity lane) ──
+//
+// The single strongest TRUE signal in the data that the engine never stated (vet-council
+// deep-dive §9 #1): chronicity. ④ fires on a week-over-week RISE and is silent on a
+// flat-but-relentless six-week course; ③ renders that same course CALM ("same as last
+// week"). ⑦ owns the orthogonal DURATION axis — "this has been going on for weeks and is
+// not resolving" — escalating toward a vet, never causal, and (the cardinal requirement)
+// never letting a flat or improving-looking chronic course read as reassurance (§4.7).
+//
+// It is a long-span PERSISTENCE test, not a two-window delta: it couples to ④'s episode-
+// collapsing + honesty-floor philosophy (toEpisodeOnsets, a coarse logging floor) but has
+// its own windowing helper (computeChronicityStats) and its own floors (§4.3). Fires on
+// the §4.3 CONJUNCTION — DURATION (span) AND BURDEN (episodes) AND DISTRIBUTION (active
+// weeks) AND RECENCY (still ongoing) — each floor closing a distinct §10 break that any
+// single floor alone is fooled by (two distant endpoints fool span; one acute multi-bout
+// day fools episodes; sparse single-vomit weeks fool active-weeks). Runs on ALL correlation
+// symptoms. Template-only phrasing, like ③/④/⑤/⑥.
+//
+// SILENCE IS NEVER WELLNESS (§4.7, the never-reassure asymmetry made concrete):
+//   • A recently-SETTLED course (last episode older than ongoingRecencyDays) → SILENT, and
+//     emits NO resolution copy. The pet falls to the honest no_pattern/building state, NOT
+//     an all-clear (the mirror of ④'s "absence is silence, not wellness").
+//   • A below-floor result (short / sparse / few episodes) → SILENT, never "the {symptom}
+//     doesn't seem to be a lasting problem" (never inverted).
+//
+// SCOPE SPLIT (B-182 build plan §8): PR 1 (this) is the PURE, ADDITIVE detector + payload +
+// config + registry entry. The ③-suppression VALVE (§4.4 — the shared `isChronic` gate that
+// blanks the reflection layer so the "improving tail" can't reassure) and same-symptom
+// ④-suppression with firm-tier INHERITANCE (§4.5, D1) are COMPOSITION-LAYER changes that
+// land in PR 2. So PR 1's resolveChronicityTier is span-only — it ships no untested clinical
+// path; the worsening-inheritance arm lands with the suppression that activates it.
+
+/** Per-symptom chronicity measures over the §6 lookback — the substrate of detector ⑦. */
+interface ChronicityStat {
+  symptomType: SymptomType
+  episodeCount: number
+  spanDays: number
+  activeWeeks: number
+  symptomDays: number
+  daysSinceLastEpisode: number
+  /** Epoch ms of the first lookback onset — carried for the firstOnsetIso "since {month}" copy. */
+  firstOnsetMs: number
+  /**
+   * Both HALVES of THIS symptom's onset span clear the coarse logging-days floor (reuse of
+   * reflection.minLoggingDaysPerWindow "over the span" — §4.3 / §6). The §4.3 logging-
+   * eligibility guard: a course can't be "ongoing across the span" if the owner logged
+   * nothing across half of it — that span is MANUFACTURED from two distant data points
+   * (a recent cluster + a couple of stale singles), not a sustained course. Counts DISTINCT
+   * days with ANY logged event (symptom of any type OR meal), the same coarse "was the app
+   * used" floor ④ uses. Defense-in-depth alongside the activeWeeks distribution floor (§10 #4).
+   */
+  loggingEligible: boolean
+}
+
+/**
+ * Compute per-symptom chronicity stats over the §6 lookback. Pure; returns null only when
+ * `now` is unparseable. Symptoms with NO onset in the lookback are omitted (their span/
+ * recency are undefined — and a zero-episode symptom is never chronic).
+ *
+ * Episode counting reuses toEpisodeOnsets (the SAME 3h re-log collapse as ③/④/⑤ — a bout
+ * logged five times is one episode, not five). activeWeeks buckets onsets into now-anchored
+ * 7-day bins (floor((now − onset)/7d)) and counts the DISTINCT bins — a DISTRIBUTION measure
+ * (across weeks), not two endpoints and not one cluster. Day-bucketing is UTC, exactly as
+ * ③/④ do; chronicity is a duration/recency measure and is timezone-independent (no `timezone`
+ * input — §2, unlike ⑥).
+ *
+ * loggingEligible is checked PER SYMPTOM over that symptom's own onset span (§4.3 "over the
+ * span") — NOT over the fixed 56-day window, which would wrongly silence a legitimate recent
+ * 3-week course whose older weeks are simply before the owner started logging.
+ */
+function computeChronicityStats(
+  input: DetectionInput,
+  config: DetectionConfig,
+): ChronicityStat[] | null {
+  const cfg = config.chronicity
+  const floor = config.reflection.minLoggingDaysPerWindow
+  const nowMs = Date.parse(input.now)
+  if (!Number.isFinite(nowMs)) return null
+
+  const windowStart = nowMs - cfg.windowDays * MS_PER_DAY
+  const weekMs = 7 * MS_PER_DAY
+
+  const allEventMs = [
+    ...input.symptomEvents.map((s) => Date.parse(s.occurredAt)),
+    ...input.mealEvents.map((m) => Date.parse(m.occurredAt)),
+  ].filter((ms) => Number.isFinite(ms))
+
+  /** Distinct UTC days with ANY logged event in [start, end] (inclusive end). */
+  const loggingDaysIn = (start: number, end: number): number => {
+    const days = new Set<number>()
+    for (const ms of allEventMs) {
+      if (ms >= start && ms <= end) days.add(Math.floor(ms / MS_PER_DAY))
+    }
+    return days.size
+  }
+
+  const stats: ChronicityStat[] = []
+  for (const symptomType of CORRELATION_SYMPTOM_TYPES) {
+    const msList = input.symptomEvents
+      .filter((s) => s.type === symptomType)
+      .map((s) => Date.parse(s.occurredAt))
+      .filter((ms) => Number.isFinite(ms))
+    const onsets = toEpisodeOnsets(msList, config.symptomEpisodeGapHours).filter(
+      (ms) => ms >= windowStart && ms < nowMs,
+    )
+    if (onsets.length === 0) continue
+
+    const firstOnsetMs = Math.min(...onsets)
+    const lastOnsetMs = Math.max(...onsets)
+    // Split the onset span in half; each half must clear the coarse logging floor. A
+    // single-instant span (acute multi-bout one day) degenerates to an empty first half
+    // and is rejected here too (it also fails the span floor — defense in depth).
+    const spanMidMs = (firstOnsetMs + lastOnsetMs) / 2
+    const loggingEligible =
+      loggingDaysIn(firstOnsetMs, spanMidMs) >= floor &&
+      loggingDaysIn(spanMidMs, lastOnsetMs) >= floor
+
+    stats.push({
+      symptomType,
+      episodeCount: onsets.length,
+      spanDays: Math.floor((lastOnsetMs - firstOnsetMs) / MS_PER_DAY),
+      activeWeeks: new Set(onsets.map((ms) => Math.floor((nowMs - ms) / weekMs))).size,
+      symptomDays: new Set(onsets.map((ms) => Math.floor(ms / MS_PER_DAY))).size,
+      daysSinceLastEpisode: Math.floor((nowMs - lastOnsetMs) / MS_PER_DAY),
+      firstOnsetMs,
+      loggingEligible,
+    })
+  }
+  return stats
+}
+
+/**
+ * The §4.3 chronicity predicate — ALL four floors must pass: genuine DURATION (span),
+ * SUSTAINED BURDEN (episodes), DISTRIBUTION across weeks (activeWeeks) AND STILL-ONGOING
+ * (recency). The conjunction is the point: each floor alone is fooled by a distinct shape
+ * (§4.3 / §10), together they require sustained-distributed-durable-recent presence.
+ *
+ * This is the predicate the PR-2 ③-suppression valve (§4.4) will share — one predicate,
+ * two consumers, so "③ goes silent ⟺ ⑦ speaks" holds by construction (the same provably-
+ * closed architecture as ④'s `isWorsening`). Exported for that PR-2 reuse. NOTE: the
+ * per-symptom logging-eligibility guard lives on the ChronicityStat (computeChronicityStats);
+ * detectChronicity gates on `isChronic(s) && s.loggingEligible`, and PR 2's valve must too.
+ */
+export function isChronic(s: ChronicityStat, cfg: DetectionConfig['chronicity']): boolean {
+  return (
+    s.spanDays >= cfg.minSpanDays &&
+    s.episodeCount >= cfg.minEpisodes &&
+    s.activeWeeks >= cfg.minActiveWeeks &&
+    s.daysSinceLastEpisode <= cfg.ongoingRecencyDays
+  )
+}
+
+/**
+ * Resolve the duration-anchored copy-urgency tier (§4.6). PR 1: span-only — 'firm' (≥6
+ * weeks → "book a vet visit") iff the course is long enough on its own, else 'standard'
+ * ("a word with your vet"). The §4.5 firm INHERITANCE arm (firm when the same symptom is
+ * also worsening week-over-week) lands in PR 2 alongside suppressWorseningWhenChronic, the
+ * composition change that activates it — so PR 1 ships no untested clinical path.
+ */
+function resolveChronicityTier(
+  s: ChronicityStat,
+  cfg: DetectionConfig['chronicity'],
+): ChronicityTier {
+  return s.spanDays >= cfg.firmSpanDays ? 'firm' : 'standard'
+}
+
+export function detectChronicity(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): SymptomChronicityFinding[] {
+  const cfg = config.chronicity
+  const stats = computeChronicityStats(input, config)
+  if (!stats) return []
+
+  // Fire only on the §4.3 conjunction AND the per-symptom logging-eligibility guard (a
+  // dark half of the span means a manufactured, not sustained, course — §10 #4).
+  const chronic = stats.filter((s) => isChronic(s, cfg) && s.loggingEligible)
+  if (chronic.length === 0) return []
+
+  // One card only — the MOST chronic symptom: longest span, then most episodes, then
+  // symptom-type order. Calm safety surface over completeness (§4.5 tie-break, §5).
+  chronic.sort((a, b) => {
+    if (b.spanDays !== a.spanDays) return b.spanDays - a.spanDays
+    if (b.episodeCount !== a.episodeCount) return b.episodeCount - a.episodeCount
+    return (
+      CORRELATION_SYMPTOM_TYPES.indexOf(a.symptomType) -
+      CORRELATION_SYMPTOM_TYPES.indexOf(b.symptomType)
+    )
+  })
+
+  const s = chronic[0]
+  return [
+    {
+      type: 'symptom_chronicity',
+      priorityClass: 'safety',
+      symptomType: s.symptomType,
+      episodeCount: s.episodeCount,
+      spanDays: s.spanDays,
+      activeWeeks: s.activeWeeks,
+      symptomDays: s.symptomDays,
+      daysSinceLastEpisode: s.daysSinceLastEpisode,
+      firstOnsetIso: new Date(s.firstOnsetMs).toISOString(),
+      tier: resolveChronicityTier(s, cfg),
+      windowDays: cfg.windowDays,
+      associationalOnly: true,
+    },
+  ]
+}
+
 // ── Detector ⑤: postprandial timing (B-078 — descriptive lane Phase 1) ──────
 //
 // A purely DESCRIPTIVE, deterministic count: of the vomiting episodes we could TIME,
@@ -3103,6 +3443,14 @@ export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'food_symptom_correlation', detect: detectCorrelations },
   { type: 'intake_decline', detect: detectIntakeDecline },
   { type: 'symptom_worsening', detect: detectWorsening },
+  // Detector ⑦ (B-182). Registered (live in detectSignals) per build-plan §8 PR 1. Its
+  // within-safety-band RANKING (SAFETY_TYPE_ORDER: chronicity above worsening) and its
+  // composition couplings (③-suppression valve §4.4, same-symptom ④-suppression §4.5) land
+  // in PR 2 — until then a chronic+worsening pet may show BOTH safety cards (acceptable:
+  // safety is never DROPPED, only over-shown; PR 2 de-duplicates). DEPLOY-GATED: the client
+  // (lib/signal.ts InsightType, InsightCard renderers) does not handle 'symptom_chronicity'
+  // until PR 3, so do NOT redeploy generate-signal until the PR1→3 chain + client land.
+  { type: 'symptom_chronicity', detect: detectChronicity },
   { type: 'postprandial_timing', detect: detectPostprandialTiming },
   { type: 'timeofday_clustering', detect: detectTimeOfDayClustering },
   { type: 'reflection', detect: detectReflections },

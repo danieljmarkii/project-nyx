@@ -15,6 +15,7 @@ import {
   detectIntakeDecline,
   detectReflections,
   detectWorsening,
+  detectChronicity,
   detectPostprandialTiming,
   detectTimeOfDayClustering,
   detectSignals,
@@ -1425,6 +1426,185 @@ Deno.test('detectSignals — end to end: a worsening pet leads with the safety w
   assert.equal(ranked.length, 1)
   assert.equal(ranked[0].finding.type, 'symptom_worsening')
   assert.equal(ranked[0].finding.priorityClass, 'safety')
+})
+
+// ── Detector ⑦: symptom chronicity / persistence (B-182) ─────────────────────
+//
+// The §7 fixtures, pasted as the visible AC for this build step. The fires-correctly
+// cases (1–5) prove the lane states the chronicity sentence the engine never said; the
+// silence cases (6–10) are the never-reassure / honesty gates (a settled, short, sparse,
+// acute, or manufactured course must stay SILENT — never a resolution or all-clear); the
+// property test (14) is the §6 calibration gate (sparse noise must not trip the conjunction).
+// Composition/ranking fixtures (11–13) + the validatePhrasing fixture (15) land with PR 2/3.
+
+const DAY_MS = 86_400_000
+const HOUR_MS = 3_600_000
+const NOW_MS = Date.parse(NOW) // 2026-05-30T12:00:00Z
+
+/** ISO-8601 UTC for an onset `days` before NOW, at `atHour:atMin` UTC that day. */
+const ago = (days: number, atHour = 11, atMin = 0): string => {
+  const d = new Date(NOW_MS - days * DAY_MS)
+  d.setUTCHours(atHour, atMin, 0, 0)
+  return d.toISOString()
+}
+const vomitAgo = (days: number, atHour = 11, atMin = 0): SymptomEvent =>
+  symptom('vomit', ago(days, atHour, atMin))
+const diarrheaAgo = (days: number, atHour = 11): SymptomEvent => symptom('diarrhea', ago(days, atHour))
+const mealAgo = (days: number): MealEvent => meal({ occurredAt: ago(days) })
+
+// Fixture 1 — the council case (golden). ~q2-day vomiting over 6 weeks, most recent today.
+Deno.test('detectChronicity — the council case: ~6 weeks of q2-day vomiting fires FIRM', () => {
+  const symptomEvents: SymptomEvent[] = []
+  for (let d = 0; d <= 42; d += 2) symptomEvents.push(vomitAgo(d)) // 22 episodes, span 42d
+  const findings = detectChronicity(input({ symptomEvents }))
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.type, 'symptom_chronicity')
+  assert.equal(f.priorityClass, 'safety')
+  assert.equal(f.symptomType, 'vomit')
+  assert.equal(f.tier, 'firm') // span 42 ≥ firmSpanDays
+  assert.equal(f.spanDays, 42)
+  assert.equal(f.episodeCount, 22)
+  assert.equal(f.activeWeeks, 7) // buckets 0..6
+  assert.equal(f.daysSinceLastEpisode, 0)
+  assert.equal(f.windowDays, 56)
+  assert.equal(f.associationalOnly, true)
+})
+
+// Fixture 2 — the flat-relentless case (the whole point). Steady 3/wk for 6 weeks, ongoing.
+Deno.test('detectChronicity — flat-relentless: steady 3/wk for 6 weeks fires while ④ is SILENT', () => {
+  const symptomEvents: SymptomEvent[] = []
+  for (let w = 0; w <= 5; w++) {
+    symptomEvents.push(vomitAgo(7 * w + 0), vomitAgo(7 * w + 2), vomitAgo(7 * w + 4))
+  }
+  const inp = input({ symptomEvents })
+  const findings = detectChronicity(inp)
+  assert.equal(findings.length, 1, 'chronicity fires on the relentless-but-flat course')
+  assert.equal(findings[0].episodeCount, 18)
+  assert.equal(findings[0].spanDays, 39)
+  assert.equal(findings[0].activeWeeks, 6)
+  assert.equal(findings[0].tier, 'standard') // 39 < firmSpanDays; firm-inheritance is PR 2
+  assert.equal(findings[0].daysSinceLastEpisode, 0)
+  // ④ is SILENT — the count is flat week-over-week (no rise), the exact gap ⑦ exists to fill.
+  assert.deepEqual(detectWorsening(inp), [])
+  // (③ still renders its calm "same as last week" here — the ⑦→③ suppression VALVE that
+  // blanks it is the PR-2 composition change; this fixture proves ⑦ FIRES, which is its
+  // prerequisite.)
+})
+
+// Fixture 3 — standard tier: distributed vomiting over ~3.5 weeks, recent.
+Deno.test('detectChronicity — a distributed ~3-week course fires the STANDARD tier', () => {
+  const symptomEvents = [0, 4, 8, 12, 16, 20, 24].map((d) => vomitAgo(d)) // span 24d, 4 active weeks
+  const findings = detectChronicity(input({ symptomEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].tier, 'standard')
+  assert.equal(findings[0].spanDays, 24)
+  assert.equal(findings[0].activeWeeks, 4)
+  assert.equal(findings[0].episodeCount, 7)
+})
+
+// Fixture 4 — intermittent-but-chronic: episodes in alternating weeks (gap weeks quiet).
+Deno.test('detectChronicity — recurrent-across-weeks fires even with quiet weeks between', () => {
+  // Onsets distributed across week-buckets 0, 2, 4 (recent, span 30 days). The current week
+  // carries only one episode (so this is chronicity, not a week-over-week ④ rise). 6 episodes
+  // across 3 distinct weeks — recurrent chronic is real (§7 #4), even with quiet weeks between.
+  const symptomEvents = [
+    vomitAgo(3), // bucket 0 (current week — single episode, no ④ rise)
+    vomitAgo(15), vomitAgo(17), // bucket 2
+    vomitAgo(29), vomitAgo(31), vomitAgo(33), // bucket 4
+  ]
+  const findings = detectChronicity(input({ symptomEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].activeWeeks, 3)
+  assert.equal(findings[0].episodeCount, 6)
+  assert.equal(findings[0].spanDays, 30)
+  assert.equal(findings[0].tier, 'standard')
+})
+
+// Fixture 5 — non-vomit symptom: ⑦ is symptom-agnostic (chronic diarrhea is real).
+Deno.test('detectChronicity — fires for chronic DIARRHEA (symptom-agnostic, unlike ⑤)', () => {
+  const symptomEvents = [1, 8, 15, 22, 29, 36].map((d) => diarrheaAgo(d)) // 6 wks, q1wk
+  const findings = detectChronicity(input({ symptomEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].symptomType, 'diarrhea')
+  assert.equal(findings[0].tier, 'standard')
+  assert.equal(findings[0].spanDays, 35)
+})
+
+// Fixture 6 — recently resolved: last episode older than the recency floor → SILENT.
+Deno.test('detectChronicity — a SETTLED course is SILENT (recency floor; never "resolved")', () => {
+  // A genuine 6-week course, but the last episode was 20 days ago (> ongoingRecencyDays 14).
+  // ⑦ must stay silent AND emit no resolution copy — silence ≠ wellness (§4.7 #1).
+  const symptomEvents = [20, 25, 30, 35, 40, 45, 50].map((d) => vomitAgo(d))
+  assert.deepEqual(detectChronicity(input({ symptomEvents })), [])
+})
+
+// Fixture 7 — one bad week: a single acute week, then nothing → span floor → SILENT.
+Deno.test('detectChronicity — one bad week (span < minSpanDays) stays SILENT', () => {
+  const symptomEvents = [0, 1, 2, 3, 4].map((d) => vomitAgo(d)) // span 4d < 21
+  assert.deepEqual(detectChronicity(input({ symptomEvents })), [])
+})
+
+// Fixture 8 — two distant bouts: long span but only 2 episodes / 2 active weeks → SILENT.
+Deno.test('detectChronicity — two distant bouts (episodes/active-weeks floors) stay SILENT', () => {
+  // Vomit 40 days ago and 2 days ago, nothing between. "Twice in 6 weeks" is not ongoing.
+  const symptomEvents = [vomitAgo(40), vomitAgo(2)]
+  const mealEvents = [mealAgo(35), mealAgo(20), mealAgo(8)] // logging-eligible; the floors that block are episodes/active-weeks
+  assert.deepEqual(detectChronicity(input({ symptomEvents, mealEvents })), [])
+})
+
+// Fixture 9 — acute multi-bout single day: collapses to ~2 episodes, span ≈ 0 → SILENT.
+Deno.test('detectChronicity — an acute multi-bout single day collapses and stays SILENT', () => {
+  // Six vomits in one afternoon. The 3h re-log collapse → 2 episodes (an 11:00 cluster and
+  // an 18:00 cluster), span ≈ 0 → silent. A single bad day is per-incident territory, not ⑦.
+  const symptomEvents = [
+    vomitAgo(5, 11, 0), vomitAgo(5, 11, 30), vomitAgo(5, 12, 0), vomitAgo(5, 12, 30),
+    vomitAgo(5, 18, 0), vomitAgo(5, 18, 30),
+  ]
+  assert.deepEqual(detectChronicity(input({ symptomEvents })), [])
+})
+
+// Fixture 10 — manufactured span: a recent cluster + two stale singles across a DARK first
+// half of the span → the logging-eligibility floor is the unique blocker → SILENT.
+Deno.test('detectChronicity — a manufactured span (dark first half) stays SILENT (logging floor)', () => {
+  // Episodes pass span (49), episodes (5), active-weeks (3) AND recency (0) — but the first
+  // half of the onset span [49d..24.5d] holds only the two stale singles (49, 35), < the
+  // logging-days floor. The span is two endpoints + a recent cluster, not a sustained course.
+  const symptomEvents = [vomitAgo(0), vomitAgo(2), vomitAgo(4), vomitAgo(35), vomitAgo(49)]
+  const stats = detectChronicity(input({ symptomEvents }))
+  assert.deepEqual(stats, [], 'the dark first half of the span fails logging-eligibility')
+})
+
+// Fixture 14 — property test (REQUIRED §6 calibration gate): an OCCASIONAL vomiter, on the
+// REALISTIC engaged-owner regime (meals logged daily → the span-halves logging floor is
+// trivially met, so minEpisodes is the binding floor — the regime where false positives
+// actually live), must NOT trip the §4.3 conjunction at a meaningful rate. This is the gate
+// that drove minEpisodes 4→6 (see DEFAULT_CONFIG.chronicity calibration note): at 4 this
+// fired ~9.9%, at 6 it fires ~1.3%.
+Deno.test('detectChronicity — property: an occasional vomiter (meals logged) fires ⑦ at ≪ a small rate', () => {
+  // Seeded LCG so the sweep is deterministic (no Math.random). Each trial = a pet whose
+  // owner logs a meal every day and whose pet has occasional, UNRELATED single vomits
+  // (~2 expected over the 56-day window — roughly one every few weeks).
+  let seed = 0xc0ffee >>> 0
+  const rng = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0
+    return seed / 0x100000000
+  }
+  const TRIALS = 20000
+  const P_VOMIT_PER_DAY = 2 / 56 // an occasional, unrelated single vomit
+  let fires = 0
+  for (let t = 0; t < TRIALS; t++) {
+    const symptomEvents: SymptomEvent[] = []
+    const mealEvents: MealEvent[] = []
+    for (let d = 0; d < 56; d++) {
+      mealEvents.push(mealAgo(d)) // engaged owner — logging-eligibility always met
+      if (rng() < P_VOMIT_PER_DAY) symptomEvents.push(vomitAgo(d, Math.floor(rng() * 24)))
+    }
+    if (detectChronicity(input({ symptomEvents, mealEvents })).length > 0) fires++
+  }
+  const rate = fires / TRIALS
+  console.log(`detectChronicity occasional-vomiter fire rate: ${(rate * 100).toFixed(3)}% (${fires}/${TRIALS})`)
+  assert.ok(rate < 0.02, `occasional-vomiter fire rate ${(rate * 100).toFixed(3)}% must be ≪ small (< 2%)`)
 })
 
 // ── Detector ⑤: postprandial timing (B-078 — descriptive lane Phase 1) ───────

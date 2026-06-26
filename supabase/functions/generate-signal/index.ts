@@ -108,6 +108,7 @@ async function phraseFinding(finding: Finding, petName: string): Promise<string>
   if (
     finding.type === 'reflection' ||
     finding.type === 'symptom_worsening' ||
+    finding.type === 'symptom_chronicity' ||
     finding.type === 'postprandial_timing' ||
     finding.type === 'timeofday_clustering'
   ) {
