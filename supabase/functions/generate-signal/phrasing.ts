@@ -138,10 +138,10 @@ export function templateChronicity(f: SymptomChronicityFinding, petName: string)
   // guarantee. Names DURATION + RECURRENCE + COUNT, routed to the vet. NEVER causal, never a
   // mechanism/severity verdict, never a diagnosis, never reassures. The honest denominator is
   // ACTIVE WEEKS over the lookback ("N of the last M weeks"), never an implied continuity the
-  // data can't support. Urgency rides the resolved tier (duration-anchored, decided in the
-  // engine). PR-1 PLACEHOLDER: guardrail-clean + renderable so the build is green; the final
-  // voice/register is finalized in PR 3 (Designer + Dr. Chen + nyx-voice), which also adds the
-  // client metricText/evidenceText + an explicit validatePhrasing chronicity branch.
+  // data can't support; "since {month}" anchors the first logged onset (concrete, trust-building,
+  // non-clinical — §4.1). Urgency rides the resolved tier (duration-anchored, decided in the
+  // engine). Finalized voice (PR 3 — Designer + Dr. Chen + nyx-voice); the matching client copy
+  // (metricText/evidenceText) lives in lib/signalCopy.ts and validatePhrasing screens this path.
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const windowWeeks = Math.round(f.windowDays / 7)
   const noun = f.episodeCount === 1 ? 'episode' : 'episodes'
@@ -269,6 +269,15 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // only (index.ts) so the model is never in this loop, but if that ever changes
     // this screen still holds the never-causal line.
     if (CAUSAL_RE.test(t)) return false
+  }
+  if (finding.type === 'symptom_chronicity') {
+    // Detector ⑦ (B-182) is a descriptive DURATION/RECURRENCE statement routed to the vet.
+    // Reassurance/"picky" are already barred by the safety branch above; it ALSO may not
+    // assert a cause, imply a mechanism, or name a food/protein/form — chronicity is a
+    // frequency-over-weeks claim, never causal, never a mechanism/severity verdict, never a
+    // diagnosis (§4.7 #3). Template-only (index.ts) so the model is never in this loop, but
+    // if that ever changes this screen holds all three lines.
+    if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t)) return false
   }
   if (finding.type === 'postprandial_timing') {
     // Detector ⑤ (B-078) is a descriptive TIMING count — anamnesis, never mechanism.
