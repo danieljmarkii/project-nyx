@@ -12,6 +12,7 @@
 
 const mockRunAsync = jest.fn().mockResolvedValue(undefined);
 const mockGetFirstAsync = jest.fn().mockResolvedValue(null);
+const mockGetAllAsync = jest.fn().mockResolvedValue([]);
 // withTransactionAsync runs its callback immediately (the real one wraps in a txn);
 // the test only cares that the callback's writes land.
 const mockWithTransactionAsync = jest.fn(async (cb: () => Promise<void>) => { await cb(); });
@@ -19,6 +20,7 @@ jest.mock('./db', () => ({
   getDb: () => ({
     runAsync: mockRunAsync,
     getFirstAsync: mockGetFirstAsync,
+    getAllAsync: mockGetAllAsync,
     withTransactionAsync: mockWithTransactionAsync,
   }),
 }));
@@ -35,7 +37,10 @@ jest.mock('./utils', () => ({
   uuid: () => `id-${++mockIdCounter}`,
 }));
 
-import { kgToLbs, lbsToKg, parseWeightLbsToKg, MAX_WEIGHT_LBS, insertWeightCheck, getLatestWeightKg } from './weight';
+import {
+  kgToLbs, kgToLbsNum, lbsToKg, parseWeightLbsToKg, MAX_WEIGHT_LBS,
+  insertWeightCheck, getLatestWeightKg, getWeightHistory, computeWeightTrend,
+} from './weight';
 
 // Drain past the fire-and-forget syncPendingEvents().then(syncPendingWeightChecks)
 // chain (a macrotask, like meals.test.ts).
@@ -44,6 +49,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 beforeEach(() => {
   mockRunAsync.mockClear();
   mockGetFirstAsync.mockClear().mockResolvedValue(null);
+  mockGetAllAsync.mockClear().mockResolvedValue([]);
   mockWithTransactionAsync.mockClear();
   mockSyncPendingEvents.mockClear();
   mockSyncPendingWeightChecks.mockClear();
@@ -178,5 +184,107 @@ describe('getLatestWeightKg', () => {
     const sql = mockGetFirstAsync.mock.calls[0][0] as string;
     expect(sql).toMatch(/ORDER BY e\.occurred_at DESC/);
     expect(sql).toMatch(/e\.deleted_at IS NULL/);
+  });
+});
+
+describe('kgToLbsNum', () => {
+  it('returns a number rounded to 0.1 lb, matching kgToLbs', () => {
+    expect(kgToLbsNum(4.54)).toBe(10);
+    expect(typeof kgToLbsNum(5)).toBe('number');
+    // The string and numeric forms agree (one rounding rule, so chart === caption).
+    expect(String(kgToLbsNum(3.9))).toBe(kgToLbs(3.9));
+  });
+});
+
+describe('getWeightHistory', () => {
+  it('reverses the DESC-LIMIT query into oldest-first readings', async () => {
+    // Query returns most-recent-first (so LIMIT keeps the latest window); the card
+    // draws oldest-first, so the helper reverses.
+    mockGetAllAsync.mockResolvedValueOnce([
+      { weight_kg: 4.3, occurred_at: '2026-06-20T08:00:00.000Z' },
+      { weight_kg: 4.5, occurred_at: '2026-06-10T08:00:00.000Z' },
+      { weight_kg: 4.7, occurred_at: '2026-06-01T08:00:00.000Z' },
+    ]);
+    const readings = await getWeightHistory('pet-1');
+    expect(readings.map((r) => r.weightKg)).toEqual([4.7, 4.5, 4.3]);
+    expect(readings[0].occurredAt).toBe('2026-06-01T08:00:00.000Z');
+  });
+
+  it('joins to events for occurred_at, filters soft-deletes, scopes by pet + limit', async () => {
+    await getWeightHistory('pet-1', 12);
+    const [sql, args] = mockGetAllAsync.mock.calls[0];
+    expect(sql).toMatch(/JOIN events e ON e\.id = wc\.event_id/);
+    expect(sql).toMatch(/e\.deleted_at IS NULL/);
+    expect(sql).toMatch(/ORDER BY e\.occurred_at DESC/);
+    expect(sql).toMatch(/LIMIT \?/);
+    expect(args).toEqual(['pet-1', 12]);
+  });
+
+  it('returns [] when there are no readings', async () => {
+    mockGetAllAsync.mockResolvedValueOnce([]);
+    expect(await getWeightHistory('pet-1')).toEqual([]);
+  });
+});
+
+describe('computeWeightTrend (descriptive, never a verdict)', () => {
+  const r = (weightKg: number, occurredAt: string) => ({ weightKg, occurredAt });
+
+  it('returns the empty shape for no readings', () => {
+    const t = computeWeightTrend([]);
+    expect(t.readingCount).toBe(0);
+    expect(t.seriesLbs).toEqual([]);
+    expect(t.latestLbs).toBeNull();
+    expect(t.deltaLbs).toBeNull();
+    expect(t.direction).toBeNull();
+  });
+
+  it('a single reading is a point, not a trend — value but no delta/direction', () => {
+    const t = computeWeightTrend([r(4.54, '2026-06-10T08:00:00.000Z')]);
+    expect(t.readingCount).toBe(1);
+    expect(t.latestLbs).toBe(10);
+    expect(t.seriesLbs).toEqual([10]);
+    expect(t.deltaLbs).toBeNull();
+    expect(t.direction).toBeNull();
+  });
+
+  it('sorts defensively into oldest-first and builds the lbs series', () => {
+    const t = computeWeightTrend([
+      r(4.3, '2026-06-20T08:00:00.000Z'),
+      r(4.7, '2026-06-01T08:00:00.000Z'),
+      r(4.5, '2026-06-10T08:00:00.000Z'),
+    ]);
+    // 4.7kg→10.4, 4.5→9.9, 4.3→9.5
+    expect(t.seriesLbs).toEqual([10.4, 9.9, 9.5]);
+    expect(t.latestLbs).toBe(9.5);
+    expect(t.latestOccurredAt).toBe('2026-06-20T08:00:00.000Z');
+    expect(t.earliestOccurredAt).toBe('2026-06-01T08:00:00.000Z');
+  });
+
+  it('a falling weight reads "down" — the delta is latest − earliest of the DRAWN numbers', () => {
+    const t = computeWeightTrend([
+      r(4.7, '2026-06-01T08:00:00.000Z'), // 10.4 lbs
+      r(4.3, '2026-06-20T08:00:00.000Z'), // 9.5 lbs
+    ]);
+    // Delta is computed from the rounded display values so chart === caption: 9.5 − 10.4.
+    expect(t.deltaLbs).toBe(-0.9);
+    expect(t.direction).toBe('down');
+  });
+
+  it('a rising weight reads "up" — never softened (rising ≠ wellness)', () => {
+    const t = computeWeightTrend([
+      r(4.3, '2026-06-01T08:00:00.000Z'),
+      r(4.7, '2026-06-20T08:00:00.000Z'),
+    ]);
+    expect(t.deltaLbs).toBe(0.9);
+    expect(t.direction).toBe('up');
+  });
+
+  it('no measurable change reads "flat" (0 delta), never "stable"/reassuring', () => {
+    const t = computeWeightTrend([
+      r(4.54, '2026-06-01T08:00:00.000Z'),
+      r(4.54, '2026-06-20T08:00:00.000Z'),
+    ]);
+    expect(t.deltaLbs).toBe(0);
+    expect(t.direction).toBe('flat');
   });
 });
