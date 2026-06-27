@@ -40,6 +40,7 @@ jest.mock('./utils', () => ({
 import {
   kgToLbs, kgToLbsNum, lbsToKg, parseWeightLbsToKg, MAX_WEIGHT_LBS,
   insertWeightCheck, getLatestWeightKg, getWeightHistory, computeWeightTrend,
+  describeWeightDelta, formatWeightDate, type WeightTrend,
 } from './weight';
 
 // Drain past the fire-and-forget syncPendingEvents().then(syncPendingWeightChecks)
@@ -286,5 +287,67 @@ describe('computeWeightTrend (descriptive, never a verdict)', () => {
     ]);
     expect(t.deltaLbs).toBe(0);
     expect(t.direction).toBe('flat');
+  });
+});
+
+describe('describeWeightDelta (the shared, never-reassuring delta phrase)', () => {
+  const r = (weightKg: number, occurredAt: string) => ({ weightKg, occurredAt });
+  const trendFrom = (...readings: { weightKg: number; occurredAt: string }[]): WeightTrend =>
+    computeWeightTrend(readings);
+
+  it('returns null with no trend yet (zero or one reading)', () => {
+    expect(describeWeightDelta(computeWeightTrend([]))).toBeNull();
+    expect(describeWeightDelta(trendFrom(r(4.54, '2026-06-10T08:00:00.000Z')))).toBeNull();
+  });
+
+  it('a falling weight reads "Down X lbs since …" — loss is never softened', () => {
+    const text = describeWeightDelta(
+      trendFrom(r(4.7, '2026-06-01T08:00:00.000Z'), r(4.3, '2026-06-20T08:00:00.000Z')),
+    );
+    expect(text).toMatch(/^Down 0\.9 lbs since /);
+  });
+
+  it('a rising weight reads "Up X lbs since …" — rising is not framed as wellness', () => {
+    const text = describeWeightDelta(
+      trendFrom(r(4.3, '2026-06-01T08:00:00.000Z'), r(4.7, '2026-06-20T08:00:00.000Z')),
+    );
+    expect(text).toMatch(/^Up 0\.9 lbs since /);
+  });
+
+  it('no change reads "No change since …", never "stable"/"steady"/"holding"', () => {
+    const text = describeWeightDelta(
+      trendFrom(r(4.54, '2026-06-01T08:00:00.000Z'), r(4.54, '2026-06-20T08:00:00.000Z')),
+    );
+    expect(text).toMatch(/^No change since /);
+  });
+
+  // GUARDRAIL: a weight trend never reassures — no verdict word in any direction.
+  it('carries no reassuring/valenced vocabulary in any direction', () => {
+    const cases = [
+      trendFrom(r(4.7, '2026-06-01T08:00:00.000Z'), r(4.3, '2026-06-20T08:00:00.000Z')), // down
+      trendFrom(r(4.3, '2026-06-01T08:00:00.000Z'), r(4.7, '2026-06-20T08:00:00.000Z')), // up
+      trendFrom(r(4.54, '2026-06-01T08:00:00.000Z'), r(4.54, '2026-06-20T08:00:00.000Z')), // flat
+    ];
+    const banned = /improv|stable|steady|holding|healthy|better|worse|good|great|fine|on track/i;
+    for (const t of cases) {
+      const text = describeWeightDelta(t);
+      expect(text).not.toBeNull();
+      expect(text!).not.toMatch(banned);
+    }
+  });
+});
+
+describe('formatWeightDate', () => {
+  it('omits the year for a reading in the current year', () => {
+    const thisYear = new Date().getFullYear();
+    const out = formatWeightDate(`${thisYear}-06-01T08:00:00.000Z`);
+    // No 4-digit year shown when it's this year (an ambiguous date would read as now).
+    expect(out).not.toMatch(/\d{4}/);
+  });
+
+  it('shows the year for a reading in a different year (an old reading is not "now")', () => {
+    const lastYear = new Date().getFullYear() - 1;
+    const out = formatWeightDate(`${lastYear}-06-01T08:00:00.000Z`);
+    expect(out).toContain(String(lastYear));
   });
 });

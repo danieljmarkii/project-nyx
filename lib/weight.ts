@@ -262,3 +262,38 @@ export function computeWeightTrend(readings: WeightReading[]): WeightTrend {
   const direction = deltaLbs > 0 ? 'up' : deltaLbs < 0 ? 'down' : 'flat';
   return { readingCount: count, seriesLbs, latestLbs, latestOccurredAt, earliestOccurredAt, deltaLbs, direction };
 }
+
+// ── Trend copy (shared by every weight surface) ──────────────────────────────
+// These render the trend's owner-facing strings. They live here, pure and tested,
+// so the Profile card and the Patterns-dashboard card phrase a trend IDENTICALLY
+// and the clinical guardrail can't drift between the two surfaces:
+//
+//   CLINICAL GUARDRAIL — a weight trend NEVER reassures. The delta line is purely
+//   factual ("Down 0.4 lbs since …" / "Up …" / "No change since …"). It must never
+//   say "improving", "stable", "steady", "holding", or any word that frames a
+//   direction as good — a falling line can be wasting and a rising one can be
+//   fluid/edema, so direction stays neutral and the words carry no verdict. The
+//   colour/arrow neutrality is the card's job; the WORDS are this function's.
+
+// "Mon D", plus the year when it isn't the current one (an older reading shouldn't
+// read as this year's). Local time — occurred_at is converted at the app layer.
+export function formatWeightDate(iso: string): string {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString([], sameYear
+    ? { month: 'short', day: 'numeric' }
+    : { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// The factual period-delta phrase, or null with fewer than two readings (no trend
+// yet — the card shows the value and invites another reading rather than a delta).
+// Direction comes from the card (it owns the arrow icon); this owns the WORDS, which
+// stay neutral by construction — see the guardrail above.
+export function describeWeightDelta(trend: WeightTrend): string | null {
+  if (trend.deltaLbs == null || trend.direction == null || !trend.earliestOccurredAt) return null;
+  const since = formatWeightDate(trend.earliestOccurredAt);
+  const abs = Math.abs(trend.deltaLbs);
+  if (trend.direction === 'up') return `Up ${abs} lbs since ${since}`;
+  if (trend.direction === 'down') return `Down ${abs} lbs since ${since}`;
+  return `No change since ${since}`;
+}
