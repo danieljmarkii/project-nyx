@@ -49,12 +49,14 @@ jest.mock('expo-file-system', () => {
 // can be exercised (mock-prefixed for jest's hoist-out-of-scope rule).
 const mockStorageControl = {
   createSignedUrls: jest.fn(),
+  createSignedUrl: jest.fn(),
 };
 jest.mock('./supabase', () => ({
   supabase: {
     storage: {
       from: () => ({
         createSignedUrls: (...args: unknown[]) => mockStorageControl.createSignedUrls(...args),
+        createSignedUrl: (...args: unknown[]) => mockStorageControl.createSignedUrl(...args),
       }),
     },
   },
@@ -64,7 +66,36 @@ jest.mock('expo-image-manipulator', () => ({
   SaveFormat: { JPEG: 'jpeg' },
 }));
 
-import { persistCapture, getSignedUrls, buildMedicationPhotoPath } from './storage';
+import { persistCapture, getSignedUrl, getSignedUrls, buildMedicationPhotoPath } from './storage';
+
+describe('getSignedUrl (B-200 — transform passthrough for screen-sized photos)', () => {
+  let warnSpy: jest.SpyInstance;
+  beforeEach(() => {
+    mockStorageControl.createSignedUrl.mockReset();
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => warnSpy.mockRestore());
+
+  it('passes an imgproxy transform through to createSignedUrl', async () => {
+    mockStorageControl.createSignedUrl.mockResolvedValue({ data: { signedUrl: 'https://x/y?token=1' }, error: null });
+    const url = await getSignedUrl('nyx-event-attachments', 'p/q.jpg', 3600, { width: 1600, height: 1600, resize: 'contain' });
+    expect(url).toBe('https://x/y?token=1');
+    expect(mockStorageControl.createSignedUrl).toHaveBeenCalledWith('p/q.jpg', 3600, {
+      transform: { width: 1600, height: 1600, resize: 'contain' },
+    });
+  });
+
+  it('omits the options arg entirely when no transform is given (raw fallback URL)', async () => {
+    mockStorageControl.createSignedUrl.mockResolvedValue({ data: { signedUrl: 'https://x/y' }, error: null });
+    await getSignedUrl('nyx-event-attachments', 'p/q.jpg');
+    expect(mockStorageControl.createSignedUrl).toHaveBeenCalledWith('p/q.jpg', 3600, undefined);
+  });
+
+  it('returns null (not a throw) when signing fails, so the caller can fall back', async () => {
+    mockStorageControl.createSignedUrl.mockResolvedValue({ data: null, error: { message: 'transform unavailable' } });
+    expect(await getSignedUrl('nyx-event-attachments', 'p/q.jpg', 3600, { width: 1600 })).toBeNull();
+  });
+});
 
 describe('persistCapture (B-104)', () => {
   let warnSpy: jest.SpyInstance;
