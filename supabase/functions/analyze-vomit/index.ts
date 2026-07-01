@@ -54,8 +54,11 @@ const INTAKE_BASELINE_WINDOW_DAYS = 7
 // filter ran too late to prevent it.
 const MAX_CLAUDE_IMAGE_BASE64 = 5_242_880
 // base64 inflates bytes by 4/3, so the raw ceiling that stays within the base64
-// cap is floor(cap * 3 / 4) ≈ 3.93 MB.
-const MAX_CLAUDE_IMAGE_BYTES = Math.floor((MAX_CLAUDE_IMAGE_BASE64 * 3) / 4)
+// cap is floor(cap / 4) * 3 ≈ 3.93 MB. floor-then-×3 is provably ≤ cap for ANY
+// cap (4·floor(cap/4) ≤ cap), so a future edit to the base64 cap can't quietly
+// let an over-cap image through — unlike floor(cap * 3 / 4), which overshoots
+// when cap mod 4 == 2.
+const MAX_CLAUDE_IMAGE_BYTES = Math.floor(MAX_CLAUDE_IMAGE_BASE64 / 4) * 3
 
 // ── Enum vocabularies (must match the DB enums in migration 013) ──────────────
 const COLOURS = ['clear', 'white', 'yellow', 'green', 'brown', 'tan', 'pink_red', 'dark_red', 'black_coffee_ground', 'mixed', 'unsure'] as const

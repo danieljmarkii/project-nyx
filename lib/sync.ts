@@ -462,16 +462,19 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
     // failure here (e.g. the local file is gone) must not block the row write.
     // Compress first: this force-re-upload path previously pushed the ORIGINAL
     // (uncompressed) capture, clobbering the compressed object and OOM'ing
-    // analyze-vomit (546).
+    // analyze-vomit (546). `prep` is hoisted out of the try so the row upsert
+    // (which must run even if the local file is gone) records the mime we
+    // actually uploaded — parity with syncPendingAttachments.
+    let prep = { uri: att.local_uri, mimeType: att.mime_type };
     try {
-      const prep = await prepareAttachmentUpload(att.local_uri, att.mime_type);
+      prep = await prepareAttachmentUpload(att.local_uri, att.mime_type);
       await uploadPhoto('nyx-event-attachments', att.storage_path, prep.uri, prep.mimeType);
     } catch (e) {
       console.warn('[sync] attachment re-upload skipped:', e);
     }
     const { error } = await supabase.from('event_attachments').upsert({
       id: att.id, event_id: att.event_id, pet_id: att.pet_id,
-      storage_path: att.storage_path, mime_type: att.mime_type, taken_at: att.taken_at,
+      storage_path: att.storage_path, mime_type: prep.mimeType, taken_at: att.taken_at,
     }, { onConflict: 'id' });
     if (error) { console.warn('[sync] ensureEventAttachmentsSynced upsert failed:', error.message); continue; }
     await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [att.id]);
