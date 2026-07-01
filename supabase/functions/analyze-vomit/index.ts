@@ -24,7 +24,6 @@
 // extract-food-from-photo. Re-analysis never clobbers a human-edited field.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -48,9 +47,15 @@ const CONCURRENT_LETHARGY_HOURS = 24
 const INTAKE_BASELINE_WINDOW_DAYS = 7
 
 // Claude rejects any single image whose base64 payload exceeds 5 MB. Full-res
-// photos (uploaded before client-side compression existed) can exceed it; we
-// skip those rather than 500.
+// photos can exceed it (an uncompressed original — see the sync-path clobber this
+// shipped with). We guard on the RAW byte size (blob.size) BEFORE base64-encoding:
+// the encode itself is what OOM'd the worker (a 546 memory kill that hard-terminates
+// the isolate, so no analysis row was ever written) — the old post-encode size
+// filter ran too late to prevent it.
 const MAX_CLAUDE_IMAGE_BASE64 = 5_242_880
+// base64 inflates bytes by 4/3, so the raw ceiling that stays within the base64
+// cap is floor(cap * 3 / 4) ≈ 3.93 MB.
+const MAX_CLAUDE_IMAGE_BYTES = Math.floor((MAX_CLAUDE_IMAGE_BASE64 * 3) / 4)
 
 // ── Enum vocabularies (must match the DB enums in migration 013) ──────────────
 const COLOURS = ['clear', 'white', 'yellow', 'green', 'brown', 'tan', 'pink_red', 'dark_red', 'black_coffee_ground', 'mixed', 'unsure'] as const
@@ -552,15 +557,29 @@ export function detectImageMediaType(bytes: Uint8Array): ClaudeMediaType {
   return 'image/jpeg'
 }
 
+// Chunked base64 encoder. Both prior encoders built the output one character at a
+// time — btoa(Array.from(bytes,…).join('')) materialised one JS string per byte,
+// and deno-std encodeBase64 concatenates per 3 bytes — so for a multi-MB image the
+// output grew as a "rope" of millions of cons-string nodes (~250 MB for a 6.5 MB
+// photo), blowing the isolate's 250 MB memory limit and returning a 546
+// (WORKER_RESOURCE_LIMIT) that HARD-KILLS the worker before it can write a row.
+// Encoding in fixed byte windows and letting native btoa do the work keeps peak
+// memory roughly linear in the image size. Pure + exported so correctness is
+// unit-tested (index.test.ts). Callers only ever pass a size-guarded (≤~3.93 MB)
+// blob, so the window count is small and bounded.
+export function bytesToBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000 // 32 KB — safe to spread into String.fromCharCode
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
 async function blobToImagePart(blob: Blob): Promise<ImagePart> {
   const bytes = new Uint8Array(await blob.arrayBuffer())
   const mediaType = detectImageMediaType(bytes)
-  // Encode straight from the byte array. The old btoa(Array.from(bytes,…).join(''))
-  // materialised one JS string per byte — for a multi-MB uncompressed phone photo
-  // that's hundreds of MB of intermediate strings, tripping the Edge Function
-  // memory limit. encodeBase64 operates on the Uint8Array directly.
-  const data = encodeBase64(bytes)
-  return { data, mediaType }
+  return { data: bytesToBase64(bytes), mediaType }
 }
 
 async function runVisionCall(images: ImagePart[]): Promise<VomitAnalysis | null> {
@@ -680,14 +699,19 @@ Deno.serve(async (req: Request) => {
           return data
         }),
       )
-      const imageParts = await Promise.all(blobs.map(blobToImagePart))
-      // Drop any image over Claude's 5 MB cap.
-      const usableImages = imageParts.filter((p) => p.data.length <= MAX_CLAUDE_IMAGE_BASE64)
-      if (usableImages.length === 0) {
-        photoUnreadable = true // all oversized
+      // Guard on the RAW byte size BEFORE encoding. Claude rejects an inline image
+      // whose base64 exceeds 5 MB (~3.93 MB raw), and — critically — base64-encoding
+      // a multi-MB image is what OOM'd the worker (546) and hard-killed it before
+      // the old post-encode filter could drop the image. Filtering the blobs here
+      // means an oversized photo is never encoded. (Rare now that the client
+      // compresses on every upload path; this is the backstop.)
+      const usableBlobs = blobs.filter((b) => b.size > 0 && b.size <= MAX_CLAUDE_IMAGE_BYTES)
+      if (usableBlobs.length === 0) {
+        photoUnreadable = true // no photo within Claude's size limit (or all empty)
       } else {
+        const imageParts = await Promise.all(usableBlobs.map(blobToImagePart))
         try {
-          analysis = await runVisionCall(usableImages)
+          analysis = await runVisionCall(imageParts)
           if (!analysis) throw new Error('Vision model did not return an analysis')
         } catch (visionErr) {
           const msg = visionErr instanceof Error ? visionErr.message : String(visionErr)

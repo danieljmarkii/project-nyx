@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { getDb, getWatermark, setWatermark } from './db';
-import { uploadPhoto } from './storage';
+import { uploadPhoto, compressForUpload } from './storage';
 import {
   reconcileBatch,
   advanceWatermark,
@@ -387,6 +387,30 @@ export async function syncPendingVetVisits(): Promise<void> {
   }
 }
 
+// Compress an image attachment before (re)upload so the sync/ensure paths never
+// push a full-res original to storage. The inline log-time upload (app/log.tsx)
+// already compresses, but these re-upload paths bypassed it — and because
+// ensureEventAttachmentsSynced force-re-uploads local_uri (the ORIGINAL capture,
+// persisted for the durable hero) with upsert:true on every AI-analysis trigger,
+// that bypass silently clobbered the compressed object with the multi-MB original,
+// which then OOM'd analyze-vomit (a 546 memory kill) and left the read stuck.
+// Non-images (e.g. a vet-visit PDF) and already-remote rows ('' / non-file
+// local_uri) pass through untouched; a compression failure falls back to the
+// original so a re-upload is never blocked. Exported for unit testing.
+export async function prepareAttachmentUpload(
+  localUri: string,
+  mimeType: string,
+): Promise<{ uri: string; mimeType: string }> {
+  if (localUri?.startsWith('file://') && mimeType?.startsWith('image/')) {
+    try {
+      return { uri: await compressForUpload(localUri), mimeType: 'image/jpeg' };
+    } catch (e) {
+      console.warn('[sync] attachment compress failed, uploading original:', e);
+    }
+  }
+  return { uri: localUri, mimeType };
+}
+
 export async function syncPendingAttachments(): Promise<void> {
   const db = getDb();
 
@@ -398,10 +422,11 @@ export async function syncPendingAttachments(): Promise<void> {
 
   for (const att of pending) {
     try {
-      await uploadPhoto('nyx-event-attachments', att.storage_path, att.local_uri, att.mime_type);
+      const prep = await prepareAttachmentUpload(att.local_uri, att.mime_type);
+      await uploadPhoto('nyx-event-attachments', att.storage_path, prep.uri, prep.mimeType);
       const { error } = await supabase.from('event_attachments').upsert({
         id: att.id, event_id: att.event_id, pet_id: att.pet_id,
-        storage_path: att.storage_path, mime_type: att.mime_type, taken_at: att.taken_at,
+        storage_path: att.storage_path, mime_type: prep.mimeType, taken_at: att.taken_at,
       }, { onConflict: 'id' });
       // Only mark synced when the row actually landed. Previously the upsert
       // error was ignored and synced was set unconditionally — so a failed
@@ -435,8 +460,12 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
   for (const att of atts) {
     // Best-effort re-upload — the file is usually already in storage, so a
     // failure here (e.g. the local file is gone) must not block the row write.
+    // Compress first: this force-re-upload path previously pushed the ORIGINAL
+    // (uncompressed) capture, clobbering the compressed object and OOM'ing
+    // analyze-vomit (546).
     try {
-      await uploadPhoto('nyx-event-attachments', att.storage_path, att.local_uri, att.mime_type);
+      const prep = await prepareAttachmentUpload(att.local_uri, att.mime_type);
+      await uploadPhoto('nyx-event-attachments', att.storage_path, prep.uri, prep.mimeType);
     } catch (e) {
       console.warn('[sync] attachment re-upload skipped:', e);
     }
