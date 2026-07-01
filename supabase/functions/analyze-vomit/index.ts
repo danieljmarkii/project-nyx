@@ -60,6 +60,14 @@ const MAX_CLAUDE_IMAGE_BASE64 = 5_242_880
 // when cap mod 4 == 2.
 const MAX_CLAUDE_IMAGE_BYTES = Math.floor(MAX_CLAUDE_IMAGE_BASE64 / 4) * 3
 
+// Oversized photos are re-fetched through Supabase Storage image transformations
+// (imgproxy — resizes server-side, so zero isolate memory and no base64 of the
+// original) scaled to fit this longest edge. 1568px is the size Claude downsamples
+// to internally, so this costs no clinical detail vs. what the model would see
+// anyway. Requires the Pro plan's transformation add-on; if it's unavailable or
+// errors, we degrade to photoUnreadable (never crash, never reassure).
+const DOWNSCALE_EDGE_PX = 1568
+
 // ── Enum vocabularies (must match the DB enums in migration 013) ──────────────
 const COLOURS = ['clear', 'white', 'yellow', 'green', 'brown', 'tan', 'pink_red', 'dark_red', 'black_coffee_ground', 'mixed', 'unsure'] as const
 const CONTENTS = ['undigested_food', 'partially_digested_food', 'bile', 'foam', 'liquid_only', 'grass_or_plant', 'hair', 'unsure'] as const
@@ -585,6 +593,35 @@ async function blobToImagePart(blob: Blob): Promise<ImagePart> {
   return { data: bytesToBase64(bytes), mediaType }
 }
 
+// Fetch a photo as a blob within Claude's size cap. An already-small object is
+// used as-is (exact bytes, no transform quota). An oversized object is re-fetched
+// through Supabase Storage image transformations (imgproxy resizes server-side —
+// no isolate memory, no base64 of the multi-MB original) scaled to
+// DOWNSCALE_EDGE_PX, so an oversized photo still gets a real read instead of being
+// skipped. Returns null when the object can't be brought under the cap (transform
+// unavailable/errored — e.g. a format imgproxy can't read, or still too big) so the
+// caller degrades to photoUnreadable. A raw-download failure throws (a real,
+// retryable error), matching the prior behaviour. The worst case of the transform
+// is "degrades exactly like before"; it introduces no new failure mode.
+async function fetchUsableImageBlob(adminClient: SupabaseClient, path: string): Promise<Blob | null> {
+  const bucket = adminClient.storage.from('nyx-event-attachments')
+  const { data, error } = await bucket.download(path)
+  if (error || !data) throw new Error(`Storage download failed for ${path}: ${error?.message ?? 'no data'}`)
+  if (data.size > 0 && data.size <= MAX_CLAUDE_IMAGE_BYTES) return data
+
+  // Oversized (or zero-byte): try a server-side downscale.
+  const { data: resized, error: resizeErr } = await bucket.download(path, {
+    transform: { width: DOWNSCALE_EDGE_PX, height: DOWNSCALE_EDGE_PX, resize: 'contain' },
+  })
+  if (resizeErr || !resized) {
+    console.warn(`analyze-vomit: downscale unavailable for ${path}: ${resizeErr?.message ?? 'no data'}`)
+    return null
+  }
+  if (resized.size > 0 && resized.size <= MAX_CLAUDE_IMAGE_BYTES) return resized
+  console.warn(`analyze-vomit: downscaled image still over cap for ${path} (${resized.size} bytes)`)
+  return null
+}
+
 async function runVisionCall(images: ImagePart[]): Promise<VomitAnalysis | null> {
   const imageBlocks = images.map((img) => ({
     type: 'image' as const,
@@ -695,22 +732,19 @@ Deno.serve(async (req: Request) => {
     let analysis: VomitAnalysis | null = null
     let photoUnreadable = false
     if (hasPhoto) {
-      const blobs = await Promise.all(
-        photoPaths.slice(0, 3).map(async (path) => {
-          const { data, error } = await adminClient.storage.from('nyx-event-attachments').download(path)
-          if (error || !data) throw new Error(`Storage download failed for ${path}: ${error?.message ?? 'no data'}`)
-          return data
-        }),
+      // Fetch each photo at a size Claude can accept. An already-small object is
+      // used as-is; an oversized one is re-fetched via server-side downscaling
+      // (imgproxy) so we never base64-encode a multi-MB image (the 546 OOM) AND an
+      // oversized photo still gets a real read instead of being skipped. Anything
+      // we can't get under the cap becomes null → photoUnreadable (honest degrade,
+      // never a crash). The raw-size guard lives in fetchUsableImageBlob, BEFORE
+      // any encoding.
+      const fetched = await Promise.all(
+        photoPaths.slice(0, 3).map((path) => fetchUsableImageBlob(adminClient, path)),
       )
-      // Guard on the RAW byte size BEFORE encoding. Claude rejects an inline image
-      // whose base64 exceeds 5 MB (~3.93 MB raw), and — critically — base64-encoding
-      // a multi-MB image is what OOM'd the worker (546) and hard-killed it before
-      // the old post-encode filter could drop the image. Filtering the blobs here
-      // means an oversized photo is never encoded. (Rare now that the client
-      // compresses on every upload path; this is the backstop.)
-      const usableBlobs = blobs.filter((b) => b.size > 0 && b.size <= MAX_CLAUDE_IMAGE_BYTES)
+      const usableBlobs = fetched.filter((b): b is Blob => b !== null)
       if (usableBlobs.length === 0) {
-        photoUnreadable = true // no photo within Claude's size limit (or all empty)
+        photoUnreadable = true // no photo we could get within Claude's size limit
       } else {
         const imageParts = await Promise.all(usableBlobs.map(blobToImagePart))
         try {
