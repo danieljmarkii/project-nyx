@@ -22,6 +22,7 @@
 // with the data so the trend/report surfaces (PR 3+) honour it.
 
 import { getDb } from './db';
+import { supabase } from './supabase';
 import { syncPendingEvents, syncPendingWeightChecks } from './sync';
 import { uuid } from './utils';
 
@@ -177,6 +178,73 @@ export async function getLatestWeightKg(petId: string): Promise<number | null> {
     [petId],
   );
   return row?.weight_kg ?? null;
+}
+
+// ── Edit side (B-197) ─────────────────────────────────────────────────────────
+
+// Read the stored weight (kg) for a weight_check event's child, or null when the
+// event has no child (a non-weight event, or a row not yet hydrated). Lets the
+// edit screen pre-fill the field with the current value so an edit is an
+// adjustment, not a from-scratch re-entry (the same reasoning as the log step's
+// snapshot pre-fill).
+export async function getWeightKgForEvent(eventId: string): Promise<number | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ weight_kg: number }>(
+    `SELECT weight_kg FROM weight_checks WHERE event_id = ?`,
+    [eventId],
+  );
+  return row?.weight_kg ?? null;
+}
+
+// Update a weight check's measured value — the edit-side twin of insertWeightCheck
+// (B-197: the value was un-editable; the edit screen could change time/notes but
+// not the number). The event's time/notes are edited through the shared updateEvent
+// path (like a meal's parent fields); this owns ONLY the child value + the
+// denormalized snapshot, mirroring how insertWeightCheck splits the write.
+//
+// Steps: bump the child (weight_kg + updated_at, synced=0 so it re-pushes under
+// last-write-wins — updated_at is ISO for cross-device LWW, B-055), then re-point
+// the pets.weight_kg snapshot at the LATEST reading by occurred_at. Re-pointing
+// after every edit is correct both ways: editing the newest reading changes the
+// snapshot, editing an older one leaves it (getLatestWeightKg still returns the
+// newest). Returns { petId, snapshotKg } so the caller can sync the in-memory pet
+// store (screens own store writes, as log.tsx does); null when the event has no
+// weight child. The snapshot write + sync push are best-effort and never throw
+// into the caller — the weight_checks row is the source of truth.
+export async function updateWeightCheck(
+  eventId: string,
+  weightKg: number,
+): Promise<{ petId: string; snapshotKg: number | null } | null> {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const row = await db.getFirstAsync<{ pet_id: string }>(
+    `SELECT pet_id FROM weight_checks WHERE event_id = ?`,
+    [eventId],
+  );
+  if (!row) return null;
+
+  await db.runAsync(
+    `UPDATE weight_checks SET weight_kg = ?, updated_at = ?, synced = 0 WHERE event_id = ?`,
+    [weightKg, now, eventId],
+  );
+
+  // Re-point the denormalized snapshot at the latest reading (best-effort: a
+  // snapshot-sync failure never blocks the edit — same non-fatal treatment the
+  // log path uses).
+  const snapshotKg = await getLatestWeightKg(row.pet_id);
+  if (snapshotKg != null) {
+    const { error } = await supabase.from('pets').update({ weight_kg: snapshotKg }).eq('id', row.pet_id);
+    if (error) console.warn('[updateWeightCheck] snapshot update failed:', error.message);
+  }
+
+  // Push the child edit. The parent event is pushed by the edit screen's own
+  // syncPendingEvents call; the child's FK parent already exists server-side, so a
+  // bare weight-checks push is correct (no events-first ordering needed here).
+  syncPendingWeightChecks().catch((e) =>
+    console.error('[updateWeightCheck] sync push failed:', e),
+  );
+
+  return { petId: row.pet_id, snapshotKg };
 }
 
 // ── Trend read (B-186 PR 3) ──────────────────────────────────────────────────
