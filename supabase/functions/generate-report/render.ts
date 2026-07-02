@@ -803,9 +803,21 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
     mixHtml = `<div class="seg" style="flex:1;background:#c7c9ce;color:#16181d">no legible read yet</div>`
   }
 
-  // Consistency: name the most-common, deterministically (no average).
-  const consistTop = Object.entries(p.consistencyDistribution).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]
-  const consistBit = consistTop ? ` Consistency, where legible, was most often ${h(consistTop[0].replace(/_/g, ' '))}.` : ''
+  // Consistency: name the most-common deterministically (no average). On a TIE for the
+  // top count, say so rather than picking one — asserting "most often foamy" when foamy
+  // and watery are 2–2 is a false majority (cold-read).
+  const consistEntries = Object.entries(p.consistencyDistribution).sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  )
+  let consistBit = ''
+  if (consistEntries.length > 0) {
+    const maxN = consistEntries[0][1]
+    const tied = consistEntries.filter(([, n]) => n === maxN).map(([k]) => k.replace(/_/g, ' '))
+    consistBit =
+      tied.length === 1
+        ? ` Consistency, where legible, was most often ${h(tied[0])}.`
+        : ` Consistency, where legible, had no single predominant type (${h(tied.slice(0, 3).join(', '))}).`
+  }
 
   // The four-state denominator disclosure (§5.10) — kept distinct, never collapsed.
   const noPhoto = p.totalIncidents - p.withAnalysis
@@ -1287,7 +1299,7 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo; For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
     <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
-    <dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. Every figure is computed over exactly the events listed in appendices A&ndash;B — nothing is counted that is not shown.</dd>
+    <dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. The symptom counts on page&nbsp;1 trace line-by-line to appendix&nbsp;A and the off-diet exposures to appendix&nbsp;B; medication, diet and weight figures summarize the owner's logs for those items. Nothing is counted that the owner did not log.</dd>
   </dl>
   ${footer(snap, 'Appendix F — how to read')}
 </section>`

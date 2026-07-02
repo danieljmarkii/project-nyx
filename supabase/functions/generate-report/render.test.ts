@@ -285,6 +285,17 @@ Deno.test('phenotype discloses the four AI states distinctly (assessed denominat
   assert.ok(/uncertain/.test(text) && /not legible/.test(text), 'uncertain + failed disclosed distinctly')
 })
 
+Deno.test('phenotype consistency: a tie for the top type is disclosed, not asserted as a majority', () => {
+  const tie = renderReport(
+    base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 2, watery: 2, chunky: 1 } }) }),
+  )
+  assert.ok(/no single predominant type/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
+  const clear = renderReport(
+    base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 6, chunky: 2 } }) }),
+  )
+  assert.ok(/most often foamy/i.test(clear), 'a clear majority still reads "most often X"')
+})
+
 // ── §4 / B-117 adherence — never "compliant" on zero doses ─────────────────────────
 
 Deno.test('medication with zero doses → "adherence not tracked", never compliant/given', () => {
