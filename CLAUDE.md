@@ -433,7 +433,7 @@ If a blocking question remains unanswered after one full session, document a pro
 
 | Question | Blocks | Status |
 |---|---|---|
-| Which PDF rendering library for the Edge Function? (`pdf-lib` vs `puppeteer` vs `react-pdf`) | Step 9: Vet report | Open — **reshaped** by the requirements spec (`docs/nyx-vet-report-requirements.md` §8.2): design basis is HTML-first → this demotes to the **B-144 render-path spike** (Phase 4 PR 10) and does **not** block Phase 1. Needs the PM's **formal ratification of HTML-first** to close. |
+| Which PDF rendering library for the Edge Function? (`pdf-lib` vs `puppeteer` vs `react-pdf`) | Step 9: Vet report | **Resolved 2026-07-02 — HTML-first RATIFIED by the PM.** The report is HTML-first: canonical server-rendered HTML, shown **in-app via a WebView** (the owner sees it in the app — never a downloaded `.html` file), and handed to the vet as a **PDF via the native share sheet**. The "which PDF library" question is demoted to the **B-144 render-path spike**; the PDF-generation *location* (on-device `expo-print` vs server-side headless) is a build-time sub-decision (`nyx-vet-report-requirements.md` §14 S7). Does not block Phase 1 (`report.ts` is format-agnostic). |
 | Minimum Expo SDK version? Document immediately after scaffold. | Step 1: Scaffold | Open |
 | Push notification provider for nudge system? | Post-MVP | Open |
 | Freemium gate: which specific features sit behind a future paywall? | Post-MVP | Open |
