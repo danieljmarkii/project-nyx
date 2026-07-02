@@ -94,8 +94,10 @@ export function EditPetModal({ visible, onClose }: Props) {
     setShowBreedPicker(false);
   }
 
-  function handleBreedOther() {
-    setBreed('');
+  function handleBreedOther(seed: string) {
+    // Carry a typed-but-unmatched search term into the free-text field so the
+    // owner doesn't retype it (BreedPicker passes its current query).
+    setBreed(seed);
     setIsOtherBreed(true);
     setShowBreedPicker(false);
   }

@@ -25,13 +25,17 @@ describe('BreedPicker', () => {
     expect(getByText('Other / not listed')).toBeTruthy();
   });
 
-  it('shows an "add it below" hint and keeps "Other" when nothing matches', () => {
+  it('shows a hint and carries the typed query into "Other" when nothing matches', () => {
+    const onSelectOther = jest.fn();
     const { getByLabelText, getByText } = render(
-      <BreedPicker breeds={BREEDS} value="" onSelect={() => {}} onSelectOther={() => {}} />,
+      <BreedPicker breeds={BREEDS} value="" onSelect={() => {}} onSelectOther={onSelectOther} />,
     );
     fireEvent.changeText(getByLabelText('Search breeds'), 'zzz');
     expect(getByText(/No breeds match/)).toBeTruthy();
-    expect(getByText('Other / not listed')).toBeTruthy();
+    // "Other" stays reachable, and tapping it hands back the typed term so the
+    // owner doesn't have to retype it into the free-text field.
+    fireEvent.press(getByText('Other / not listed'));
+    expect(onSelectOther).toHaveBeenCalledWith('zzz');
   });
 
   it('calls onSelect with the tapped breed', () => {
@@ -43,13 +47,13 @@ describe('BreedPicker', () => {
     expect(onSelect).toHaveBeenCalledWith('Maine Coon');
   });
 
-  it('calls onSelectOther when "Other / not listed" is tapped', () => {
+  it('calls onSelectOther with an empty seed when tapped with no search text', () => {
     const onSelectOther = jest.fn();
     const { getByText } = render(
       <BreedPicker breeds={BREEDS} value="" onSelect={() => {}} onSelectOther={onSelectOther} />,
     );
     fireEvent.press(getByText('Other / not listed'));
-    expect(onSelectOther).toHaveBeenCalledTimes(1);
+    expect(onSelectOther).toHaveBeenCalledWith('');
   });
 
   it('marks the selected breed as selected for a screen reader', () => {

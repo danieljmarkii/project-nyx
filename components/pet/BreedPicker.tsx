@@ -13,12 +13,16 @@ import { filterBreeds } from '../../constants/breeds';
 const MAX_VISIBLE = 80;
 
 interface BreedPickerProps {
-  breeds: string[];
+  breeds: readonly string[];
   /** Currently selected breed, or '' when none is chosen. */
   value: string;
   onSelect: (breed: string) => void;
-  /** Owner picked "Other / not listed" — parent switches to a free-text field. */
-  onSelectOther: () => void;
+  /**
+   * Owner picked "Other / not listed" — parent switches to a free-text field.
+   * Receives the current search text so a typed-but-unmatched breed carries over
+   * instead of making the owner retype it.
+   */
+  onSelectOther: (seed: string) => void;
 }
 
 export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPickerProps) {
@@ -63,7 +67,9 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
 
         {matches.length === 0 && (
           <View style={styles.item}>
-            <Text style={styles.emptyText}>No breeds match “{query.trim()}”. Add it below.</Text>
+            <Text style={styles.emptyText}>
+              No breeds match “{query.trim()}”. Tap “Other / not listed” below to add it.
+            </Text>
           </View>
         )}
 
@@ -77,7 +83,7 @@ export function BreedPicker({ breeds, value, onSelect, onSelectOther }: BreedPic
             blocked by a breed we didn't list. */}
         <TouchableOpacity
           style={styles.item}
-          onPress={onSelectOther}
+          onPress={() => onSelectOther(query.trim())}
           activeOpacity={0.7}
           accessibilityRole="button"
         >
@@ -114,6 +120,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: theme.space2,
+    // Guarantee the 44pt tap-target floor (docs/personas.md) at the row itself —
+    // for a contiguous list, sizing the row is cleaner than hitSlop, which would
+    // overlap adjacent rows' touch areas.
+    minHeight: 44,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
     backgroundColor: theme.colorSurface,
@@ -140,7 +150,7 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   hintRow: {
-    paddingVertical: 10,
+    paddingVertical: theme.space1,
     paddingHorizontal: theme.space2,
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,

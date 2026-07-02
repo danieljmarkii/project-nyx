@@ -49,15 +49,29 @@ describe('breed lists', () => {
     for (const b of LEGACY_DOG) expect(DOG_BREEDS).toContain(b);
   });
 
-  it('pins the non-pedigree catch-alls first, then sorts the remainder', () => {
+  it('pins the non-pedigree catch-alls to the very top', () => {
     expect(CAT_BREEDS.slice(0, 4)).toEqual([
       'Domestic Shorthair', 'Domestic Mediumhair', 'Domestic Longhair', 'Mixed breed',
     ]);
     expect(DOG_BREEDS[0]).toBe('Mixed breed');
+  });
 
-    const catTail = CAT_BREEDS.slice(4);
+  it('surfaces popular breeds above the alphabetical remainder', () => {
+    // A cat owner sees Maine Coon without searching — before the first purely
+    // alphabetical entry (Aegean).
+    expect(CAT_BREEDS.indexOf('Maine Coon')).toBeLessThan(CAT_BREEDS.indexOf('Aegean'));
+    // The most-owned dog breeds sit before the alphabetical mass (Affenpinscher
+    // is the first AKC "A"), so they aren't pushed past the picker's render cap.
+    for (const b of ['Labrador Retriever', 'French Bulldog', 'Golden Retriever']) {
+      expect(DOG_BREEDS.indexOf(b)).toBeGreaterThan(-1);
+      expect(DOG_BREEDS.indexOf(b)).toBeLessThan(DOG_BREEDS.indexOf('Affenpinscher'));
+    }
+  });
+
+  it('keeps the remainder after the pinned block alphabetical', () => {
+    const catTail = CAT_BREEDS.slice(CAT_BREEDS.indexOf('Aegean'));
     expect(catTail).toEqual([...catTail].sort((a, b) => a.localeCompare(b)));
-    const dogTail = DOG_BREEDS.slice(1);
+    const dogTail = DOG_BREEDS.slice(DOG_BREEDS.indexOf('Affenpinscher'));
     expect(dogTail).toEqual([...dogTail].sort((a, b) => a.localeCompare(b)));
   });
 
@@ -93,6 +107,12 @@ describe('filterBreeds', () => {
   it('matches a substring case-insensitively', () => {
     expect(filterBreeds(SAMPLE, 'russ')).toEqual(['Russian Blue']);
     expect(filterBreeds(SAMPLE, 'COON')).toEqual(['Maine Coon']);
+  });
+
+  it('matches accented breeds when the owner types plain ASCII', () => {
+    const ACCENTED = ['Löwchen', 'Grand Basset Griffon Vendéen', 'Poodle'];
+    expect(filterBreeds(ACCENTED, 'lowchen')).toEqual(['Löwchen']);
+    expect(filterBreeds(ACCENTED, 'vendeen')).toEqual(['Grand Basset Griffon Vendéen']);
   });
 
   it('matches anywhere in the name and preserves list order', () => {

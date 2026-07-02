@@ -131,23 +131,61 @@ const DOG_EXTRA = [
   'Schnoodle', 'Sheepadoodle', 'Shih-Poo', 'Yorkipoo',
 ];
 
+// Most-owned breeds, surfaced right below the catch-alls so the common answer is
+// visible without searching — the one virtue of the old short list. Without this
+// a pure-alphabetical list pushes Labrador / French Bulldog / Golden Retriever
+// past the picker's render cap, so a scanner can wrongly conclude "my breed
+// isn't here" and bail to free-text "Other" (an off-catalog duplicate that
+// erodes the breed→risk value the full list exists for). Every entry must also
+// appear in the alphabetical source below; it's de-duplicated out of the tail.
+const CAT_POPULAR = [
+  'Maine Coon', 'Ragdoll', 'Persian', 'Siamese', 'Bengal', 'British Shorthair',
+  'Sphynx', 'Scottish Fold', 'Abyssinian', 'American Shorthair',
+];
+const DOG_POPULAR = [
+  'Labrador Retriever', 'French Bulldog', 'Golden Retriever', 'German Shepherd',
+  'Poodle', 'Bulldog', 'Beagle', 'Rottweiler', 'Dachshund', 'Yorkshire Terrier',
+  'Boxer', 'Pit Bull Terrier',
+];
+
 const byName = (a: string, b: string) => a.localeCompare(b);
 
-// Sorted at module load so the source arrays stay easy to edit without hand-
-// maintaining alphabetical order; the pinned catch-alls stay first.
-export const CAT_BREEDS = [...CAT_COMMON, ...[...CAT_PEDIGREE].sort(byName)];
-export const DOG_BREEDS = [...DOG_COMMON, ...[...DOG_AKC, ...DOG_EXTRA].sort(byName)];
+// [catch-alls, popular, …everything else alphabetical]. The tail is sorted at
+// module load (source arrays stay easy to edit) and de-duplicated against the
+// pinned block so nothing appears twice.
+const pinFirst = (pinned: string[], rest: string[]) => [
+  ...pinned,
+  ...rest.filter((b) => !pinned.includes(b)),
+];
 
-export function breedsForSpecies(species: BreedSpecies): string[] {
+// readonly so the shared, app-wide singletons can't be mutated by a caller (a
+// stray .sort()/.push() on the returned reference would corrupt every later read).
+export const CAT_BREEDS: readonly string[] = pinFirst(
+  [...CAT_COMMON, ...CAT_POPULAR],
+  [...CAT_PEDIGREE].sort(byName),
+);
+export const DOG_BREEDS: readonly string[] = pinFirst(
+  [...DOG_COMMON, ...DOG_POPULAR],
+  [...DOG_AKC, ...DOG_EXTRA].sort(byName),
+);
+
+export function breedsForSpecies(species: BreedSpecies): readonly string[] {
   if (species === 'dog') return DOG_BREEDS;
   if (species === 'cat') return CAT_BREEDS;
   return [];
 }
 
-// Case-insensitive substring match, preserving list order. Pure + exported so
-// the picker's filtering is unit-tested without rendering.
-export function filterBreeds(breeds: string[], query: string): string[] {
-  const q = query.trim().toLowerCase();
+// Strip combining diacritical marks so an owner typing plain ASCII ("lowchen",
+// "vendeen") still finds accented breeds ("Löwchen", "…Vendéen") — otherwise
+// search, the only real navigation for a list this long, silently sends them to
+// "Other" for a breed that IS in the list.
+const foldDiacritics = (s: string) =>
+  s.normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '');
+
+// Diacritic- and case-insensitive substring match, preserving list order. Pure +
+// exported so the picker's filtering is unit-tested without rendering.
+export function filterBreeds(breeds: readonly string[], query: string): readonly string[] {
+  const q = foldDiacritics(query.trim().toLowerCase());
   if (!q) return breeds;
-  return breeds.filter((b) => b.toLowerCase().includes(q));
+  return breeds.filter((b) => foldDiacritics(b.toLowerCase()).includes(q));
 }
