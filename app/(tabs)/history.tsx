@@ -153,7 +153,18 @@ export default function HistoryScreen() {
         dateAfterForPreset(preset),
       );
       const mapped = rows.map(rowToEvent);
-      setEvents((prev: NyxEvent[]) => replace ? mapped : [...prev, ...mapped]);
+      setEvents((prev: NyxEvent[]) => {
+        if (replace) return mapped;
+        // Dedupe by id on append (B-198). getTimeline is OFFSET-paginated, so a
+        // live insert while History is mounted (logging an event — e.g. a
+        // weigh-in — via the FAB) shifts the DB ordering down by one and "Load
+        // more" re-fetches a row already held from an earlier page. Without this
+        // guard the same id renders twice → React "two children with the same key
+        // e:<id>" (and may duplicate/omit rows). The realtime prepend above
+        // already dedupes; this closes the append path.
+        const seen = new Set(prev.map((e) => e.id));
+        return [...prev, ...mapped.filter((e) => !seen.has(e.id))];
+      });
       setHasMore(rows.length === PAGE_SIZE);
       setOffset(currentOffset + rows.length);
     } catch (e) {

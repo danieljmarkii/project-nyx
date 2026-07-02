@@ -279,7 +279,13 @@ export default function ProfileScreen() {
       if (orParts.length > 0) {
         const { data: doseRows, error: doseError } = await supabase
           .from('medication_administrations')
-          .select('medication_id, medication_item_id, adherence, events(deleted_at, occurred_at)')
+          // Disambiguate the parent-event embed by FK name (B-196). B-156's
+          // migration 023 added a SECOND medication_administrations→events FK
+          // (paired_event_id, the combo link) beside event_id, so a bare
+          // `events(...)` embed is ambiguous and PostgREST rejects it (PGRST201) —
+          // which threw the whole load and blanked the Current-medications card.
+          // We always want the dose's OWN parent event here, never the paired meal.
+          .select('medication_id, medication_item_id, adherence, events!medication_administrations_event_id_fkey(deleted_at, occurred_at)')
           .eq('pet_id', activePet.id)
           .or(orParts.join(','));
         if (doseError) throw doseError;

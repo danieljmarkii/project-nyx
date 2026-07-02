@@ -37,9 +37,18 @@ jest.mock('./utils', () => ({
   uuid: () => `id-${++mockIdCounter}`,
 }));
 
+// supabase.from('pets').update({ weight_kg }).eq('id', petId) → { error } — the
+// snapshot re-point in updateWeightCheck (B-197).
+const mockPetsEq = jest.fn().mockResolvedValue({ error: null });
+const mockPetsUpdate = jest.fn(() => ({ eq: mockPetsEq }));
+jest.mock('./supabase', () => ({
+  supabase: { from: jest.fn(() => ({ update: mockPetsUpdate })) },
+}));
+
 import {
   kgToLbs, kgToLbsNum, lbsToKg, parseWeightLbsToKg, MAX_WEIGHT_LBS,
-  insertWeightCheck, getLatestWeightKg, getWeightHistory, computeWeightTrend,
+  insertWeightCheck, getLatestWeightKg, getWeightKgForEvent, updateWeightCheck,
+  getWeightHistory, computeWeightTrend,
   describeWeightDelta, formatWeightDate, type WeightTrend,
 } from './weight';
 
@@ -54,6 +63,8 @@ beforeEach(() => {
   mockWithTransactionAsync.mockClear();
   mockSyncPendingEvents.mockClear();
   mockSyncPendingWeightChecks.mockClear();
+  mockPetsEq.mockClear().mockResolvedValue({ error: null });
+  mockPetsUpdate.mockClear();
   mockIdCounter = 0;
 });
 
@@ -185,6 +196,62 @@ describe('getLatestWeightKg', () => {
     const sql = mockGetFirstAsync.mock.calls[0][0] as string;
     expect(sql).toMatch(/ORDER BY e\.occurred_at DESC/);
     expect(sql).toMatch(/e\.deleted_at IS NULL/);
+  });
+});
+
+describe('getWeightKgForEvent (edit pre-fill, B-197)', () => {
+  it('returns the child weight_kg for the event, or null when none', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ weight_kg: 4.31 });
+    expect(await getWeightKgForEvent('evt-1')).toBe(4.31);
+    mockGetFirstAsync.mockResolvedValueOnce(null);
+    expect(await getWeightKgForEvent('evt-1')).toBeNull();
+  });
+
+  it('reads the child by event_id', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ weight_kg: 4.31 });
+    await getWeightKgForEvent('evt-1');
+    const [sql, args] = mockGetFirstAsync.mock.calls[0];
+    expect(sql).toMatch(/FROM weight_checks WHERE event_id = \?/);
+    expect(args).toEqual(['evt-1']);
+  });
+});
+
+describe('updateWeightCheck (edit the value, B-197)', () => {
+  it('updates the child (synced=0), re-points the snapshot, does NOT self-push, returns petId+snapshot', async () => {
+    // 1st getFirstAsync = pet_id lookup; 2nd = getLatestWeightKg (the new snapshot).
+    mockGetFirstAsync
+      .mockResolvedValueOnce({ pet_id: 'pet-1' })
+      .mockResolvedValueOnce({ weight_kg: 4.2 });
+
+    const res = await updateWeightCheck('evt-9', 4.2);
+    await flush();
+
+    // child UPDATE, marked unsynced so it re-pushes under last-write-wins
+    const upd = mockRunAsync.mock.calls.find((c) => /UPDATE weight_checks SET/.test(c[0] as string))!;
+    expect(upd[0]).toMatch(/weight_kg = \?/);
+    expect(upd[0]).toMatch(/synced = 0/);
+    expect(upd[0]).toMatch(/WHERE event_id = \?/);
+    expect(upd[1]).toEqual([4.2, expect.any(String), 'evt-9']);
+
+    // snapshot re-pointed to the latest reading (by occurred_at)
+    expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 4.2 });
+    expect(mockPetsEq).toHaveBeenCalledWith('id', 'pet-1');
+
+    // Does NOT self-push: the child's sync gate needs the parent event synced=1,
+    // but the caller (edit-event) just marked it synced=0 — so the ordered push
+    // (events → then meals + weight_checks) is the caller's job (B-197 review).
+    expect(mockSyncPendingWeightChecks).not.toHaveBeenCalled();
+    expect(res).toEqual({ petId: 'pet-1', snapshotKg: 4.2 });
+  });
+
+  it('no-ops when the event has no weight child (returns null; no write, snapshot, or sync)', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce(null); // pet_id lookup misses
+    const res = await updateWeightCheck('evt-x', 4.2);
+    await flush();
+    expect(res).toBeNull();
+    expect(mockRunAsync).not.toHaveBeenCalled();
+    expect(mockPetsUpdate).not.toHaveBeenCalled();
+    expect(mockSyncPendingWeightChecks).not.toHaveBeenCalled();
   });
 });
 
