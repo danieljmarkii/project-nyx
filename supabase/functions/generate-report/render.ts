@@ -89,7 +89,13 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 function dayParts(dayKey: string): { y: number; m: number; d: number } | null {
   const mm = /^(\d{4})-(\d{2})-(\d{2})/.exec(dayKey)
   if (!mm) return null
-  return { y: Number(mm[1]), m: Number(mm[2]), d: Number(mm[3]) }
+  const m = Number(mm[2])
+  const d = Number(mm[3])
+  // Bounds-check so an out-of-range month/day degrades to the raw-string fallback (via the
+  // callers' `h(dayKey)`) rather than interpolating `MONTHS[12] === undefined` verbatim into
+  // a document a vet reads (code-reviewer).
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null
+  return { y: Number(mm[1]), m, d }
 }
 
 /** 'YYYY-MM-DD' → "Mon D" (no year). */
@@ -470,9 +476,11 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
     case 'chronicity': {
       return flagRow(
         'Chronicity',
-        `<b>${h(symptomLabel(f.symptomType))} has been ongoing ${num(f.spanDays)} days</b> (first noted ~${h(
-          fmtLocalDay(f.firstOnsetIso, tz),
-        )}): ${num(f.episodeCount)} episodes across ${num(f.activeWeeks)} week${
+        `<b>${h(symptomLabel(f.symptomType))} has been ongoing ${num(f.spanDays)} day${
+          f.spanDays === 1 ? '' : 's'
+        }</b> (first noted ~${h(fmtLocalDay(f.firstOnsetIso, tz))}): ${num(f.episodeCount)} episodes across ${num(
+          f.activeWeeks,
+        )} week${
           f.activeWeeks === 1 ? '' : 's'
         }, on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
@@ -523,7 +531,11 @@ function headline(snap: ReportSnapshot): string {
 
 function weightBlock(snap: ReportSnapshot): string {
   const w: WeightSection = snap.weight
-  if (w.isEmpty) {
+  // Empty state when there is genuinely nothing to draw. Belt-and-suspenders on `latest`
+  // + `trend` (not just `isEmpty`): those are independent fields across the report.ts
+  // boundary, and a fabricated "0.0 kg" (from a `?? 0` fallback) would be exactly the
+  // invented value this file refuses to render (code-reviewer). Honest "—", never a zero.
+  if (w.isEmpty || (!w.latest && !w.trend)) {
     return `
   <div class="weight weight-empty">
     <div class="wt-read"><span class="v">No home weigh-ins recorded.</span><br/>
@@ -532,12 +544,13 @@ function weightBlock(snap: ReportSnapshot): string {
   }
   const t = w.trend
   if (!t) {
-    // A latest reading exists overall, but none inside the window.
-    const latest = w.latest
+    // A latest reading exists overall (guaranteed non-null by the guard above), but none
+    // inside the window.
+    const latest = w.latest!
     return `
   <div class="weight">
-    <div class="wt-read"><span class="v num">${h((latest?.kg ?? 0).toFixed(1))}&nbsp;kg</span> <span class="l">&middot; latest weigh-in ${h(
-      fmtDay(latest?.date ?? null),
+    <div class="wt-read"><span class="v num">${h(latest.kg.toFixed(1))}&nbsp;kg</span> <span class="l">&middot; latest weigh-in ${h(
+      fmtDay(latest.date),
     )} (before this window)</span><br/>
     <span class="l">No weigh-ins fell inside this window. Descriptive — not a diagnosis; body condition not assessed.</span></div>
   </div>`
@@ -631,8 +644,12 @@ function atAGlance(snap: ReportSnapshot): string {
       ),
     )
   } else {
-    const kg = snap.weight.latest?.kg ?? snap.weight.trend?.latestKg ?? 0
-    tiles.push(tile(`${kg.toFixed(1)}`, `<small>&nbsp;kg</small>`, `Latest weigh-in<br/>single reading — no trend yet`))
+    const kg = snap.weight.latest?.kg ?? snap.weight.trend?.latestKg ?? null
+    tiles.push(
+      kg === null
+        ? tile('—', '', `Weight<br/>no reading in this window`)
+        : tile(`${kg.toFixed(1)}`, `<small>&nbsp;kg</small>`, `Latest weigh-in<br/>single reading — no trend yet`),
+    )
   }
 
   // Tile 4 — logging coverage.

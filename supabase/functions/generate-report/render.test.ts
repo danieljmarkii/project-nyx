@@ -453,6 +453,105 @@ Deno.test('owner free text is HTML-escaped (no injection through pet name / note
   assert.ok(html.includes('&amp;') && html.includes('&quot;') && html.includes('&#39;'), 'ampersand/quote/apostrophe escaped')
 })
 
+// ── Regression: never fabricate a weight value (code-reviewer BUG) ─────────────────
+
+Deno.test('isEmpty=false but no latest/trend → empty state, never a fabricated "0.0 kg"', () => {
+  const html = renderReport(base({ weight: { isEmpty: false, latest: null, trend: null } }))
+  assert.ok(/No home weigh-ins recorded/i.test(html), 'falls back to the honest empty state')
+  assert.ok(!/0\.0&nbsp;kg|0\.0 kg/.test(html), 'no fabricated zero weight')
+})
+
+// ── Regression: a malformed date degrades to raw text, never "undefined" (BUG) ─────
+
+Deno.test('an out-of-range date degrades to the raw string, never leaks "undefined"', () => {
+  const s = base()
+  s.scope.startDate = '2026-13-45' // month 13 / day 45 — impossible
+  const html = renderReport(s)
+  assert.ok(!/undefined/.test(html), 'no undefined leaked into the header')
+})
+
+// ── Coverage: stool characteristics (present-only for blood/mucus) ─────────────────
+
+Deno.test('stool characteristics render normal vs loose + a present-only blood/mucus note', () => {
+  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48 } }))
+  assert.ok(/Stool characteristics/.test(html))
+  assert.ok(/Blood &amp; mucus/.test(html) && /Not reported/.test(html), 'present-only blood/mucus limitation note')
+  assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
+})
+
+// ── Coverage: full diet/meds — trial + human food + established association ─────────
+
+Deno.test('diet/meds render an active trial, the human-food confounder line, and an association (never causal)', () => {
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'vomit' },
+      diet: {
+        activeTrial: {
+          foodLabel: 'RC Hydrolyzed HP',
+          primaryProtein: 'hydrolyzed',
+          startedAt: '2026-05-08',
+          targetDurationDays: 56,
+          daysElapsed: 45,
+          vetName: 'Dr. Chen',
+        },
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: { ratedMeals: 80, finishedMeals: 78, rate: 0.975 },
+        treats: { count: 7, distinctItems: 2 },
+        humanFood: { count: 3, days: 3, items: [{ date: '2026-05-19', label: 'Roast chicken' }] },
+      },
+      correlation: {
+        established: [
+          {
+            symptomType: 'vomit',
+            protein: 'chicken',
+            matchedPairs: 20,
+            caseExposed: 8,
+            controlExposed: 2,
+            riskDifference: 0.3,
+            pValue: 0.02,
+            symptomEventCount: 12,
+            correlationWindowHours: 24,
+          },
+        ],
+        hasEstablished: true,
+        noThreshold: false,
+        stapleProtein: null,
+        timing: [],
+      },
+    }),
+  )
+  assert.ok(html.includes('RC Hydrolyzed HP'), 'trial food named')
+  assert.ok(/Human food/.test(html) && html.includes('Roast chicken'), 'human-food confounder line (B-102)')
+  assert.ok(html.includes('chicken') && /not a proven cause/i.test(html), 'association, explicitly not causal')
+})
+
+// ── Coverage: reading-the-trend GP-0 note + a zero-count week renders a visible nub ─
+
+Deno.test('a zero-count week renders a nub (never blank) + the GP-0 note names concurrent changes', () => {
+  const html = renderReport(
+    base({
+      symptoms: [
+        aggregate({
+          type: 'vomit',
+          count: 3,
+          weeklyBuckets: [2, 0, 1], // a zero week in the middle
+          bucketStartDates: ['2026-05-01', '2026-05-08', '2026-05-15'],
+          windowDays: 21,
+        }),
+      ],
+      concurrentChanges: [
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1 },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 1 },
+      ],
+    }),
+  )
+  assert.ok(html.includes('class="nub"'), 'a zero-count week draws a visible nub, not a blank')
+  assert.ok(/Reading the trend/.test(html))
+  assert.ok(/cannot be attributed/i.test(html), 'GP-0 co-attribution caution')
+  assert.ok(html.includes('RC HP') && html.includes('Metronidazole'), 'every concurrent change is named')
+})
+
 // ── The document is a complete, standalone artifact ────────────────────────────────
 
 Deno.test('renders a complete standalone HTML document with a titled head', () => {
