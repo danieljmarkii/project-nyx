@@ -25,7 +25,8 @@ import {
   updateDoseHowGiven,
   TimelineRow,
 } from '../../lib/db';
-import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture } from '../../lib/storage';
+import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
+import { resolveEventPhotoDisplay } from '../../lib/eventPhoto';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis } from '../../lib/analysis';
@@ -51,7 +52,7 @@ const SIGNED_URL_TTL_SEC = 60 * 60;
 // full-screen open is instant (was 5–10s on legacy uncompressed photos, B-200).
 // 1600px longest edge matches the app's own client-compression bar and stays
 // sharp for a contain fit on any phone.
-const EVENT_PHOTO_TRANSFORM = { width: 1600, height: 1600, resize: 'contain' as const };
+const EVENT_PHOTO_TRANSFORM = { width: MAX_EDGE_PX, height: MAX_EDGE_PX, resize: 'contain' as const };
 
 interface Attachment {
   id: string;
@@ -384,6 +385,8 @@ export default function EventDetailScreen() {
             // Optimistic UI: clear immediately, restore on failure
             setAttachment(null);
             setRemoteUrl(null);
+            setRemoteUrlFull(null);
+            setTransformFailed(false);
             setPhotoViewerVisible(false);
             try {
               await deleteEventAttachmentLocal(att.id);
@@ -394,6 +397,11 @@ export default function EventDetailScreen() {
             } catch (e) {
               console.error('[event-detail] remove photo failed:', e);
               setAttachment(att);
+              // Re-resolve the signed URLs the optimistic remove cleared, so a
+              // remote-only photo reappears (not just the local-file case). B-200.
+              setTransformFailed(false);
+              getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC, EVENT_PHOTO_TRANSFORM).then(setRemoteUrl).catch(() => {});
+              getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC).then(setRemoteUrlFull).catch(() => {});
               Alert.alert('Could not remove', 'Try again.');
             }
           },
@@ -494,15 +502,20 @@ export default function EventDetailScreen() {
   // on-device file) — fall back to the signed Storage URL rather than handing
   // an empty string to <Image>.
   const localUri = attachment?.local_uri && attachment.local_uri.length > 0 ? attachment.local_uri : null;
-  // Prefer the screen-sized transform; fall back to the raw URL if it failed to
-  // load (transformFailed) or hasn't resolved yet. B-200.
-  const remoteBest = !transformFailed && remoteUrl ? remoteUrl : remoteUrlFull;
-  const photoUri = localUri ?? remoteBest;
-  // Meals' clinical artifact is the food name, not a photo. Don't show an
-  // empty-state hero begging for one — flagged by Dr. Chen + Jordan during
-  // on-device review. If a meal happens to have a photo, the hero still renders.
+  // Meals' clinical artifact is the food name, not a photo — never beg for one
+  // (Dr. Chen + Jordan, on-device review). If a meal has a photo, the hero renders.
   const isMeal = event.event_type === 'meal';
-  const showEmptyHero = !photoUri && !isMeal;
+  // Which photo the hero + viewer render, and whether to show the add-photo empty
+  // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
+  // flashes an add-photo target over an existing photo mid-fallback). B-200.
+  const { photoUri, showEmptyHero } = resolveEventPhotoDisplay({
+    localUri,
+    remoteUrl,
+    remoteUrlFull,
+    transformFailed,
+    isMeal,
+    hasAttachment: !!attachment,
+  });
   // Medication dose display (B-117 PR 8). Generic name leads (the clinical
   // identifier); brand + strength form the secondary line. Falls back to the bare
   // type label if the drug's library row hasn't hydrated on this device.

@@ -6,7 +6,7 @@ import { supabase } from './supabase';
 // client-only compression to bound storage cost and keep the upload
 // path single-source. Longest edge ≤1600px, JPEG q75 — sufficient for
 // Claude vision extraction while cutting storage ~5–10×.
-const MAX_EDGE_PX = 1600;
+export const MAX_EDGE_PX = 1600;
 
 export async function compressForUpload(
   localUri: string,
