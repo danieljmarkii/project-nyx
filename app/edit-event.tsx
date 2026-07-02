@@ -13,11 +13,13 @@ import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
-import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
+import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks } from '../lib/sync';
 import { uploadPhoto, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
 import { uuid, formatExifAttribution, formatTime, deriveOccurredAt } from '../lib/utils';
+import { getWeightKgForEvent, updateWeightCheck, parseWeightLbsToKg, kgToLbs, MAX_WEIGHT_LBS } from '../lib/weight';
+import { usePetStore } from '../store/petStore';
 import { IntakeChipRow, IntakeRating } from '../components/log/IntakeChipRow';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { PhotoViewer } from '../components/ui';
@@ -42,6 +44,7 @@ export default function EditEventModal() {
 
   const eventType = type as EventTypeKey;
   const config = EVENT_TYPES[eventType] ?? { label: 'Event', hasSeverity: false, hasFood: false };
+  const isWeight = eventType === 'weight_check';
 
   const [occurredAt, setOccurredAt] = useState(() =>
     occurredAtParam ? new Date(occurredAtParam) : new Date(),
@@ -54,8 +57,10 @@ export default function EditEventModal() {
 
   // B-010 — editable witnessed/found confidence (QA Note 1: confidence wasn't
   // editable after logging). Shown only for non-meal events; meals are always
-  // witnessed. Reconstructed from stored fields on mount. Mirrors log.tsx.
-  const showConfidenceControl = !config.hasFood;
+  // witnessed — and so is a weight check (you read the scale), so it uses the
+  // plain point picker too and never the Saw-it/Found-it control (B-197).
+  // Reconstructed from stored fields on mount. Mirrors log.tsx.
+  const showConfidenceControl = !config.hasFood && !isWeight;
   const [timeMode, setTimeMode] = useState<TimeMode>('saw');
   const [foundMode, setFoundMode] = useState<FoundMode>('before');
   const [earliest, setEarliest] = useState<Date | null>(null);
@@ -85,6 +90,10 @@ export default function EditEventModal() {
   // every other field here.
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
 
+  // Weight value in lbs (B-197) — weight_check only; the value IS the entry, so
+  // unlike every other field here it must be present and real on save.
+  const [weightLbsStr, setWeightLbsStr] = useState('');
+
   const [saving, setSaving] = useState(false);
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
 
@@ -104,6 +113,12 @@ export default function EditEventModal() {
               || r === 'most' || r === 'all' ? r : null,
           );
         }
+      }).catch(console.error);
+    }
+
+    if (isWeight) {
+      getWeightKgForEvent(id).then((kg) => {
+        if (kg != null) setWeightLbsStr(kgToLbs(kg));
       }).catch(console.error);
     }
 
@@ -247,6 +262,18 @@ export default function EditEventModal() {
 
   async function handleSave() {
     if (!id) return;
+
+    // Weight value is mandatory + must be real (B-197) — validate before any write
+    // so an invalid entry never half-saves (time/notes without the value).
+    let weightKg: number | null = null;
+    if (isWeight) {
+      weightKg = parseWeightLbsToKg(weightLbsStr);
+      if (weightKg == null) {
+        Alert.alert('Enter a valid weight', `Weight must be a number up to ${MAX_WEIGHT_LBS} lbs.`);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       // Meals are always witnessed (you see yourself put the bowl down); the
@@ -274,6 +301,21 @@ export default function EditEventModal() {
 
       if (config.hasFood) {
         await updateMealIntake(id, intakeRating);
+      }
+
+      if (isWeight && weightKg != null) {
+        const res = await updateWeightCheck(id, weightKg);
+        // A weight_check must have its child row; a null return means nothing was
+        // written (e.g. a partial-hydration window) — fail into the catch below
+        // ("Could not save") rather than claim success, matching updateMealFood/
+        // updateMealIntake's zero-row throw.
+        if (!res) throw new Error(`updateWeightCheck: no weight_checks row for event ${id}`);
+        // Keep the active pet's in-memory snapshot in step (screens own store
+        // writes, as log.tsx does) so the profile header + next pre-fill read the
+        // new value without waiting for a reload.
+        if (res.snapshotKg != null && usePetStore.getState().activePet?.id === res.petId) {
+          usePetStore.getState().updatePet({ weight_kg: res.snapshotKg });
+        }
       }
 
       // Persist new photo attachment if one was selected
@@ -326,10 +368,17 @@ export default function EditEventModal() {
         food_brand: currentFoodBrand,
         food_product_name: currentFoodProduct,
         intake_rating: intakeRating,
+        ...(isWeight && weightKg != null ? { weight_kg: weightKg } : {}),
       });
 
-      // Attachments are handled above with their own direct upload + retry-on-reconnect pattern
-      syncPendingEvents().then(() => syncPendingMeals()).catch(console.error);
+      // Attachments are handled above with their own direct upload + retry-on-reconnect pattern.
+      // One ordered push for all edited tables: events FIRST, then the children
+      // (meals + weight_checks) — both child pushes gate on the parent event being
+      // synced=1 (lib/sync.ts), so they must follow the event push. updateWeightCheck
+      // deliberately does NOT self-sync for exactly this reason (B-197 review).
+      syncPendingEvents()
+        .then(() => Promise.all([syncPendingMeals(), syncPendingWeightChecks()]))
+        .catch(console.error);
       router.back();
     } catch (e) {
       console.error('[edit-event] save failed:', e);
@@ -504,6 +553,25 @@ export default function EditEventModal() {
                 onChange={setIntakeRating}
                 label={null}
               />
+            </>
+          ) : null}
+
+          {/* Weight value (weight_check only — the value IS the entry, B-197) */}
+          {isWeight ? (
+            <>
+              <SectionLabel label="Weight" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <View style={styles.weightRow}>
+                <TextInput
+                  style={styles.weightInput}
+                  value={weightLbsStr}
+                  onChangeText={setWeightLbsStr}
+                  placeholder="e.g. 12.5"
+                  placeholderTextColor={theme.colorTextSecondary}
+                  keyboardType="decimal-pad"
+                  returnKeyType="done"
+                />
+                <Text style={styles.weightUnitText}>lbs</Text>
+              </View>
             </>
           ) : null}
 
@@ -705,5 +773,25 @@ const styles = StyleSheet.create({
     minHeight: 80,
     maxHeight: 160,
     textAlignVertical: 'top',
+  },
+  weightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space2,
+    paddingHorizontal: theme.space2,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    backgroundColor: theme.colorNeutralLight,
+  },
+  weightInput: {
+    flex: 1,
+    fontSize: 15,
+    color: theme.colorTextPrimary,
+    paddingVertical: theme.space2,
+  },
+  weightUnitText: {
+    fontSize: 15,
+    color: theme.colorTextSecondary,
   },
 });

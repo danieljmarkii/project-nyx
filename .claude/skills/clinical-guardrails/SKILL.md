@@ -142,30 +142,36 @@ The model is also pinned to `tool_choice: { type: 'any' }` against a single tool
 
 **RULE:** When the photo cannot be analysed (oversize, undecodable format like HEIC, Claude 400 response, missing photo entirely) the function does NOT 500, does NOT reassure, and does NOT skip the escalation floor. It sets a `photoUnreadable` flag, runs the contextual floor anyway (context-only flags can still fire), and falls back to a templated read that names the failure plainly and points the owner at their vet.
 
-**CANONICAL EXAMPLE** (`supabase/functions/analyze-vomit/index.ts:546–566, 589–593`):
+**CANONICAL EXAMPLE** (`supabase/functions/analyze-vomit/index.ts` — the raw-size guard at ~`:702–712`, the templated fallback via `selectReadText` at ~`:389–397`):
 
 ```ts
-const usableImages = imageParts.filter((p) => p.data.length <= MAX_CLAUDE_IMAGE_BASE64)
-if (usableImages.length === 0) {
-  photoUnreadable = true // all oversized
+// Guard on the RAW byte size BEFORE encoding. Encoding a multi-MB image is
+// itself what OOM'd the worker (546, WORKER_RESOURCE_LIMIT) — a hard kill that
+// runs before any row is written — so an oversized photo must be skipped
+// *before* base64, never sent to Claude. (The old guard filtered on the encoded
+// length, i.e. after the OOM.)
+const usableBlobs = blobs.filter((b) => b.size > 0 && b.size <= MAX_CLAUDE_IMAGE_BYTES)
+if (usableBlobs.length === 0) {
+  photoUnreadable = true // no photo within Claude's size limit (or all empty)
 } else {
+  const imageParts = await Promise.all(usableBlobs.map(blobToImagePart))
   try {
-    analysis = await runVisionCall(usableImages)
+    analysis = await runVisionCall(imageParts)
     if (!analysis) throw new Error('Vision model did not return an analysis')
   } catch (visionErr) {
     const msg = visionErr instanceof Error ? visionErr.message : String(visionErr)
     if (msg.includes('Claude API error 400')) {
-      console.warn('analyze-vomit: image unreadable, degrading:', msg)
-      photoUnreadable = true
+      photoUnreadable = true  // undecodable format (e.g. HEIC) — degrade, don't 500
     } else {
       throw visionErr  // transient errors are real, retryable failures
     }
   }
 }
-// ... later, templated fallback:
-} else if (photoUnreadable) {
-  readText = `I couldn't read this photo — it may be too large or in a format I can't open. Try replacing it with a fresh shot and I'll take another look. If you're worried about ${petName}, your vet is the best call.`
-}
+// ... the read is then chosen by selectReadText(), whose photoUnreadable branch
+// returns a templated fallback that names the failure and never reassures:
+//   "I couldn't read this photo — it may be too large or in a format I can't
+//    open. Try replacing it with a fresh shot… If you're worried about {pet},
+//    your vet is the best call."
 ```
 
 **ANTI-PATTERN:** Returning a 500 on an unreadable image (the user sees a generic failure and loses the read entirely). Or, worse, returning a `monitor` recommendation with a "couldn't see the photo so probably fine" read — that's reassurance on absence, the exact rule violation Pattern 1 forbids.

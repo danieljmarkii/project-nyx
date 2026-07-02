@@ -25,7 +25,8 @@ import {
   updateDoseHowGiven,
   TimelineRow,
 } from '../../lib/db';
-import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture } from '../../lib/storage';
+import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
+import { resolveEventPhotoDisplay } from '../../lib/eventPhoto';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis } from '../../lib/analysis';
@@ -44,6 +45,14 @@ import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSectio
 import { Header, PhotoViewer } from '../../components/ui';
 
 const HERO_HEIGHT = 320;
+const SIGNED_URL_TTL_SEC = 60 * 60;
+// The hero and the full-screen viewer render the SAME resolved URI, so serving a
+// screen-sized transform (imgproxy — Pro) instead of the multi-MB original means
+// the hero downloads a ~few-hundred-KB image and the tap reuses that cache — the
+// full-screen open is instant (was 5–10s on legacy uncompressed photos, B-207).
+// 1600px longest edge matches the app's own client-compression bar and stays
+// sharp for a contain fit on any phone.
+const EVENT_PHOTO_TRANSFORM = { width: MAX_EDGE_PX, height: MAX_EDGE_PX, resize: 'contain' as const };
 
 interface Attachment {
   id: string;
@@ -122,6 +131,10 @@ export default function EventDetailScreen() {
   const [event, setEvent] = useState<TimelineRow | null>(null);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
+  // Raw (non-transformed) signed URL, resolved in parallel as a fallback for when
+  // the transformed URL can't load (image transformations unavailable). B-207.
+  const [remoteUrlFull, setRemoteUrlFull] = useState<string | null>(null);
+  const [transformFailed, setTransformFailed] = useState(false);
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
@@ -154,6 +167,9 @@ export default function EventDetailScreen() {
     setAdherence(null);
     setHowGiven(null);
     setDoubleDose(null);
+    setRemoteUrl(null);
+    setRemoteUrlFull(null);
+    setTransformFailed(false);
     try {
       const row = await getEventById(id);
       setEvent(row);
@@ -166,11 +182,17 @@ export default function EventDetailScreen() {
         const usableLocalUri =
           att.local_uri.length > 0 && localFileExists(att.local_uri) ? att.local_uri : '';
         setAttachment({ id: att.id, local_uri: usableLocalUri, storage_path: att.storage_path });
-        // Fallback to signed URL when the local file isn't available on this device
-        getSignedUrl('nyx-event-attachments', att.storage_path).then(setRemoteUrl).catch(() => {});
+        // Fall back to a signed URL when the local file isn't on this device.
+        // Resolve a screen-sized transform (fast) AND the raw URL in parallel; the
+        // hero prefers the transform and swaps to raw if it can't load — so image
+        // transformations being unavailable degrades to today's behaviour, never a
+        // blank photo (B-207). Only the chosen URL is ever downloaded.
+        getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC, EVENT_PHOTO_TRANSFORM).then(setRemoteUrl).catch(() => {});
+        getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC).then(setRemoteUrlFull).catch(() => {});
       } else {
         setAttachment(null);
         setRemoteUrl(null);
+        setRemoteUrlFull(null);
       }
 
       if (EVENT_TYPES[row.event_type as EventTypeKey]?.hasFood) {
@@ -363,6 +385,8 @@ export default function EventDetailScreen() {
             // Optimistic UI: clear immediately, restore on failure
             setAttachment(null);
             setRemoteUrl(null);
+            setRemoteUrlFull(null);
+            setTransformFailed(false);
             setPhotoViewerVisible(false);
             try {
               await deleteEventAttachmentLocal(att.id);
@@ -373,6 +397,11 @@ export default function EventDetailScreen() {
             } catch (e) {
               console.error('[event-detail] remove photo failed:', e);
               setAttachment(att);
+              // Re-resolve the signed URLs the optimistic remove cleared, so a
+              // remote-only photo reappears (not just the local-file case). B-207.
+              setTransformFailed(false);
+              getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC, EVENT_PHOTO_TRANSFORM).then(setRemoteUrl).catch(() => {});
+              getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC).then(setRemoteUrlFull).catch(() => {});
               Alert.alert('Could not remove', 'Try again.');
             }
           },
@@ -473,12 +502,20 @@ export default function EventDetailScreen() {
   // on-device file) — fall back to the signed Storage URL rather than handing
   // an empty string to <Image>.
   const localUri = attachment?.local_uri && attachment.local_uri.length > 0 ? attachment.local_uri : null;
-  const photoUri = localUri ?? remoteUrl;
-  // Meals' clinical artifact is the food name, not a photo. Don't show an
-  // empty-state hero begging for one — flagged by Dr. Chen + Jordan during
-  // on-device review. If a meal happens to have a photo, the hero still renders.
+  // Meals' clinical artifact is the food name, not a photo — never beg for one
+  // (Dr. Chen + Jordan, on-device review). If a meal has a photo, the hero renders.
   const isMeal = event.event_type === 'meal';
-  const showEmptyHero = !photoUri && !isMeal;
+  // Which photo the hero + viewer render, and whether to show the add-photo empty
+  // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
+  // flashes an add-photo target over an existing photo mid-fallback). B-207.
+  const { photoUri, showEmptyHero } = resolveEventPhotoDisplay({
+    localUri,
+    remoteUrl,
+    remoteUrlFull,
+    transformFailed,
+    isMeal,
+    hasAttachment: !!attachment,
+  });
   // Medication dose display (B-117 PR 8). Generic name leads (the clinical
   // identifier); brand + strength form the secondary line. Falls back to the bare
   // type label if the drug's library row hasn't hydrated on this device.
@@ -501,7 +538,18 @@ export default function EventDetailScreen() {
             a photo, an empty-state tap-to-add hero. Meals skip the empty hero. */}
         {photoUri ? (
           <TouchableOpacity activeOpacity={0.95} onPress={() => setPhotoViewerVisible(true)}>
-            <Image source={{ uri: photoUri }} style={styles.hero} resizeMode="cover" />
+            <Image
+              source={{ uri: photoUri }}
+              style={styles.hero}
+              resizeMode="cover"
+              onError={() => {
+                // The transformed URL failed to load (image transformations
+                // likely unavailable) — latch to the raw original so the photo
+                // still shows. The viewer reads the same photoUri, so it inherits
+                // the fallback. B-207.
+                if (photoUri === remoteUrl && !transformFailed) setTransformFailed(true);
+              }}
+            />
           </TouchableOpacity>
         ) : showEmptyHero ? (
           <TouchableOpacity
