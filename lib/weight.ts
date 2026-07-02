@@ -209,8 +209,12 @@ export async function getWeightKgForEvent(eventId: string): Promise<number | nul
 // snapshot, editing an older one leaves it (getLatestWeightKg still returns the
 // newest). Returns { petId, snapshotKg } so the caller can sync the in-memory pet
 // store (screens own store writes, as log.tsx does); null when the event has no
-// weight child. The snapshot write + sync push are best-effort and never throw
-// into the caller — the weight_checks row is the source of truth.
+// weight child (nothing was written — the caller should treat that as a failure).
+//
+// Does NOT push the child to Supabase — the CALLER must, AFTER its event push
+// (the child's sync gate requires the parent event synced=1). This matches the
+// meal-edit path (updateMealFood/Intake also don't self-sync; edit-event batches
+// one ordered push at the end). The snapshot write is best-effort (never throws).
 export async function updateWeightCheck(
   eventId: string,
   weightKg: number,
@@ -237,13 +241,13 @@ export async function updateWeightCheck(
     if (error) console.warn('[updateWeightCheck] snapshot update failed:', error.message);
   }
 
-  // Push the child edit. The parent event is pushed by the edit screen's own
-  // syncPendingEvents call; the child's FK parent already exists server-side, so a
-  // bare weight-checks push is correct (no events-first ordering needed here).
-  syncPendingWeightChecks().catch((e) =>
-    console.error('[updateWeightCheck] sync push failed:', e),
-  );
-
+  // No sync push here (deliberate). The caller's updateEvent just marked this
+  // event synced=0, and syncPendingWeightChecks only flushes a child whose PARENT
+  // is already synced=1 (lib/sync.ts) — so a push fired now would deterministically
+  // no-op and the edit would sit unsynced until the next full cycle. Instead the
+  // edit screen batches ONE ordered push at the end of the save (events → then
+  // meals + weight_checks), exactly as it already does for a meal edit; that
+  // ordering is what lets the child land right after its re-synced parent.
   return { petId: row.pet_id, snapshotKg };
 }
 

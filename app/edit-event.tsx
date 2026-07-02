@@ -13,7 +13,7 @@ import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
-import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
+import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks } from '../lib/sync';
 import { uploadPhoto, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
@@ -305,10 +305,15 @@ export default function EditEventModal() {
 
       if (isWeight && weightKg != null) {
         const res = await updateWeightCheck(id, weightKg);
+        // A weight_check must have its child row; a null return means nothing was
+        // written (e.g. a partial-hydration window) — fail into the catch below
+        // ("Could not save") rather than claim success, matching updateMealFood/
+        // updateMealIntake's zero-row throw.
+        if (!res) throw new Error(`updateWeightCheck: no weight_checks row for event ${id}`);
         // Keep the active pet's in-memory snapshot in step (screens own store
         // writes, as log.tsx does) so the profile header + next pre-fill read the
         // new value without waiting for a reload.
-        if (res && res.snapshotKg != null && usePetStore.getState().activePet?.id === res.petId) {
+        if (res.snapshotKg != null && usePetStore.getState().activePet?.id === res.petId) {
           usePetStore.getState().updatePet({ weight_kg: res.snapshotKg });
         }
       }
@@ -366,8 +371,14 @@ export default function EditEventModal() {
         ...(isWeight && weightKg != null ? { weight_kg: weightKg } : {}),
       });
 
-      // Attachments are handled above with their own direct upload + retry-on-reconnect pattern
-      syncPendingEvents().then(() => syncPendingMeals()).catch(console.error);
+      // Attachments are handled above with their own direct upload + retry-on-reconnect pattern.
+      // One ordered push for all edited tables: events FIRST, then the children
+      // (meals + weight_checks) — both child pushes gate on the parent event being
+      // synced=1 (lib/sync.ts), so they must follow the event push. updateWeightCheck
+      // deliberately does NOT self-sync for exactly this reason (B-197 review).
+      syncPendingEvents()
+        .then(() => Promise.all([syncPendingMeals(), syncPendingWeightChecks()]))
+        .catch(console.error);
       router.back();
     } catch (e) {
       console.error('[edit-event] save failed:', e);

@@ -217,7 +217,7 @@ describe('getWeightKgForEvent (edit pre-fill, B-197)', () => {
 });
 
 describe('updateWeightCheck (edit the value, B-197)', () => {
-  it('updates the child (synced=0), re-points the snapshot, pushes the child, returns petId+snapshot', async () => {
+  it('updates the child (synced=0), re-points the snapshot, does NOT self-push, returns petId+snapshot', async () => {
     // 1st getFirstAsync = pet_id lookup; 2nd = getLatestWeightKg (the new snapshot).
     mockGetFirstAsync
       .mockResolvedValueOnce({ pet_id: 'pet-1' })
@@ -237,8 +237,10 @@ describe('updateWeightCheck (edit the value, B-197)', () => {
     expect(mockPetsUpdate).toHaveBeenCalledWith({ weight_kg: 4.2 });
     expect(mockPetsEq).toHaveBeenCalledWith('id', 'pet-1');
 
-    // the child edit is pushed; return carries petId + the new snapshot
-    expect(mockSyncPendingWeightChecks).toHaveBeenCalledTimes(1);
+    // Does NOT self-push: the child's sync gate needs the parent event synced=1,
+    // but the caller (edit-event) just marked it synced=0 — so the ordered push
+    // (events → then meals + weight_checks) is the caller's job (B-197 review).
+    expect(mockSyncPendingWeightChecks).not.toHaveBeenCalled();
     expect(res).toEqual({ petId: 'pet-1', snapshotKg: 4.2 });
   });
 
