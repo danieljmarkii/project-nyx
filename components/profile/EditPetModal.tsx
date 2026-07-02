@@ -6,8 +6,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
+import { breedsForSpecies } from '../../constants/breeds';
 import { SectionLabel } from '../ui/SectionLabel';
 import { FilterChip } from '../ui/FilterChip';
+import { BreedPicker } from '../pet/BreedPicker';
 import { supabase } from '../../lib/supabase';
 import { kgToLbs, lbsToKg } from '../../lib/weight';
 import { usePetStore, Pet } from '../../store/petStore';
@@ -26,58 +28,6 @@ const SEX_OPTIONS: { value: Sex; label: string }[] = [
   { value: 'female', label: 'Female' },
   { value: 'unknown', label: 'Unknown' },
 ];
-
-const DOG_BREEDS = [
-  'Mixed breed',
-  'Labrador Retriever',
-  'French Bulldog',
-  'Golden Retriever',
-  'German Shepherd',
-  'Bulldog',
-  'Poodle',
-  'Beagle',
-  'Rottweiler',
-  'Dachshund',
-  'Pembroke Welsh Corgi',
-  'Australian Shepherd',
-  'Yorkshire Terrier',
-  'Boxer',
-  'Cavalier King Charles Spaniel',
-  'Doberman Pinscher',
-  'Great Dane',
-  'Miniature Schnauzer',
-  'Siberian Husky',
-  'Boston Terrier',
-  'Bernese Mountain Dog',
-  'Shih Tzu',
-  'Havanese',
-  'Border Collie',
-  'Pit Bull Terrier',
-];
-
-const CAT_BREEDS = [
-  'Domestic Shorthair',
-  'Maine Coon',
-  'Ragdoll',
-  'Bengal',
-  'British Shorthair',
-  'Persian',
-  'Siamese',
-  'Abyssinian',
-  'Scottish Fold',
-  'Sphynx',
-  'Russian Blue',
-  'Norwegian Forest Cat',
-  'American Shorthair',
-  'Birman',
-  'Burmese',
-];
-
-function breedsForSpecies(s: Species): string[] {
-  if (s === 'dog') return DOG_BREEDS;
-  if (s === 'cat') return CAT_BREEDS;
-  return [];
-}
 
 // kg<->lbs conversion lives in lib/weight.ts now (B-186) so the log step and this
 // edit form share one rounding rule and can't drift.
@@ -254,28 +204,12 @@ export function EditPetModal({ visible, onClose }: Props) {
                   <Text style={styles.changeLabel}>{showBreedPicker ? 'Done' : 'Change'}</Text>
                 </TouchableOpacity>
                 {showBreedPicker && (
-                  <View style={styles.breedList}>
-                    {breeds.map((b) => (
-                      <TouchableOpacity
-                        key={b}
-                        style={[styles.breedItem, breed === b && styles.breedItemSelected]}
-                        onPress={() => handleBreedSelect(b)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.breedItemText, breed === b && styles.breedItemTextSelected]}>
-                          {b}
-                        </Text>
-                        {breed === b && <Text style={styles.breedItemCheck}>✓</Text>}
-                      </TouchableOpacity>
-                    ))}
-                    <TouchableOpacity
-                      style={styles.breedItem}
-                      onPress={handleBreedOther}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.breedItemText}>Other / not listed</Text>
-                    </TouchableOpacity>
-                  </View>
+                  <BreedPicker
+                    breeds={breeds}
+                    value={breed}
+                    onSelect={handleBreedSelect}
+                    onSelectOther={handleBreedOther}
+                  />
                 )}
               </>
             ) : (
@@ -449,38 +383,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
-  },
-  breedList: {
-    borderWidth: 1,
-    borderColor: theme.colorBorder,
-    borderRadius: theme.radiusSmall,
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  breedItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: theme.space2,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colorBorder,
-    backgroundColor: theme.colorSurface,
-  },
-  breedItemSelected: {
-    backgroundColor: theme.colorNeutralDark,
-  },
-  breedItemText: {
-    flex: 1,
-    fontSize: 15,
-    color: theme.colorTextPrimary,
-  },
-  breedItemTextSelected: {
-    color: '#fff',
-    fontWeight: theme.fontWeightMedium,
-  },
-  breedItemCheck: {
-    fontSize: 15,
-    color: '#fff',
   },
   clearBtn: {
     alignSelf: 'flex-start',
