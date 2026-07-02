@@ -1,6 +1,6 @@
 // Pure derivation for the event-detail hero + full-screen viewer: which photo URI
 // to render, and whether to show the "add a photo" empty state. Extracted from
-// app/event/[id].tsx so the transform→raw fallback logic (B-200) is unit-testable
+// app/event/[id].tsx so the transform→raw fallback logic (B-207) is unit-testable
 // without mounting the screen — this is exactly the class of bug a screen test
 // wouldn't cheaply catch: a stale fallback URL surviving a photo removal, or a
 // live "Add photo" target flashing over an existing photo mid-fallback.
@@ -33,7 +33,7 @@ export function resolveEventPhotoDisplay(input: EventPhotoInput): EventPhotoDisp
   const photoUri = localUri ?? remoteBest;
   // Only offer the add-photo empty state when there is genuinely NO photo — never
   // when an attachment exists but its URL is still resolving / mid-fallback, which
-  // would briefly render a live "Add photo" target over an existing photo (B-200).
+  // would briefly render a live "Add photo" target over an existing photo (B-207).
   const showEmptyHero = !photoUri && !isMeal && !hasAttachment;
   return { photoUri, showEmptyHero };
 }

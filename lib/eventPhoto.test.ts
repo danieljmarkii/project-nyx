@@ -10,7 +10,7 @@ const base: EventPhotoInput = {
   hasAttachment: false,
 };
 
-describe('resolveEventPhotoDisplay (B-200 — transform→raw fallback + empty-state gating)', () => {
+describe('resolveEventPhotoDisplay (B-207 — transform→raw fallback + empty-state gating)', () => {
   it('prefers the on-device local file over any remote URL', () => {
     expect(
       resolveEventPhotoDisplay({

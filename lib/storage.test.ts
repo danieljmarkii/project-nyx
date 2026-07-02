@@ -68,7 +68,7 @@ jest.mock('expo-image-manipulator', () => ({
 
 import { persistCapture, getSignedUrl, getSignedUrls, buildMedicationPhotoPath } from './storage';
 
-describe('getSignedUrl (B-200 — transform passthrough for screen-sized photos)', () => {
+describe('getSignedUrl (B-207 — transform passthrough for screen-sized photos)', () => {
   let warnSpy: jest.SpyInstance;
   beforeEach(() => {
     mockStorageControl.createSignedUrl.mockReset();

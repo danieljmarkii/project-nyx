@@ -49,7 +49,7 @@ const SIGNED_URL_TTL_SEC = 60 * 60;
 // The hero and the full-screen viewer render the SAME resolved URI, so serving a
 // screen-sized transform (imgproxy — Pro) instead of the multi-MB original means
 // the hero downloads a ~few-hundred-KB image and the tap reuses that cache — the
-// full-screen open is instant (was 5–10s on legacy uncompressed photos, B-200).
+// full-screen open is instant (was 5–10s on legacy uncompressed photos, B-207).
 // 1600px longest edge matches the app's own client-compression bar and stays
 // sharp for a contain fit on any phone.
 const EVENT_PHOTO_TRANSFORM = { width: MAX_EDGE_PX, height: MAX_EDGE_PX, resize: 'contain' as const };
@@ -132,7 +132,7 @@ export default function EventDetailScreen() {
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
   // Raw (non-transformed) signed URL, resolved in parallel as a fallback for when
-  // the transformed URL can't load (image transformations unavailable). B-200.
+  // the transformed URL can't load (image transformations unavailable). B-207.
   const [remoteUrlFull, setRemoteUrlFull] = useState<string | null>(null);
   const [transformFailed, setTransformFailed] = useState(false);
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
@@ -186,7 +186,7 @@ export default function EventDetailScreen() {
         // Resolve a screen-sized transform (fast) AND the raw URL in parallel; the
         // hero prefers the transform and swaps to raw if it can't load — so image
         // transformations being unavailable degrades to today's behaviour, never a
-        // blank photo (B-200). Only the chosen URL is ever downloaded.
+        // blank photo (B-207). Only the chosen URL is ever downloaded.
         getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC, EVENT_PHOTO_TRANSFORM).then(setRemoteUrl).catch(() => {});
         getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC).then(setRemoteUrlFull).catch(() => {});
       } else {
@@ -398,7 +398,7 @@ export default function EventDetailScreen() {
               console.error('[event-detail] remove photo failed:', e);
               setAttachment(att);
               // Re-resolve the signed URLs the optimistic remove cleared, so a
-              // remote-only photo reappears (not just the local-file case). B-200.
+              // remote-only photo reappears (not just the local-file case). B-207.
               setTransformFailed(false);
               getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC, EVENT_PHOTO_TRANSFORM).then(setRemoteUrl).catch(() => {});
               getSignedUrl('nyx-event-attachments', att.storage_path, SIGNED_URL_TTL_SEC).then(setRemoteUrlFull).catch(() => {});
@@ -507,7 +507,7 @@ export default function EventDetailScreen() {
   const isMeal = event.event_type === 'meal';
   // Which photo the hero + viewer render, and whether to show the add-photo empty
   // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
-  // flashes an add-photo target over an existing photo mid-fallback). B-200.
+  // flashes an add-photo target over an existing photo mid-fallback). B-207.
   const { photoUri, showEmptyHero } = resolveEventPhotoDisplay({
     localUri,
     remoteUrl,
@@ -546,7 +546,7 @@ export default function EventDetailScreen() {
                 // The transformed URL failed to load (image transformations
                 // likely unavailable) — latch to the raw original so the photo
                 // still shows. The viewer reads the same photoUri, so it inherits
-                // the fallback. B-200.
+                // the fallback. B-207.
                 if (photoUri === remoteUrl && !transformFailed) setTransformFailed(true);
               }}
             />
