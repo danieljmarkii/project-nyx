@@ -64,4 +64,10 @@ describe('resolveEventPhotoDisplay (B-200 — transform→raw fallback + empty-s
   it('never shows the empty hero for a meal (its artifact is the food name, not a photo)', () => {
     expect(resolveEventPhotoDisplay({ ...base, isMeal: true }).showEmptyHero).toBe(false);
   });
+
+  it('still renders a meal photo when one exists (isMeal suppresses only the empty state, not the photo)', () => {
+    expect(
+      resolveEventPhotoDisplay({ ...base, isMeal: true, remoteUrl: 'https://transform', hasAttachment: true }),
+    ).toEqual({ photoUri: 'https://transform', showEmptyHero: false });
+  });
 });
