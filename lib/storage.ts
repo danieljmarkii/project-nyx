@@ -6,7 +6,7 @@ import { supabase } from './supabase';
 // client-only compression to bound storage cost and keep the upload
 // path single-source. Longest edge ≤1600px, JPEG q75 — sufficient for
 // Claude vision extraction while cutting storage ~5–10×.
-const MAX_EDGE_PX = 1600;
+export const MAX_EDGE_PX = 1600;
 
 export async function compressForUpload(
   localUri: string,
@@ -145,14 +145,26 @@ export function getPublicUrl(bucket: string, storagePath: string): string {
 // For private buckets (RLS-gated reads), getPublicUrl returns a URL that
 // 400s for unauthenticated GETs. Use signed URLs instead — the token is
 // embedded in the URL so Image components don't need auth headers.
+// Optional imgproxy transform (Pro Image Transformation add-on). When passed,
+// Storage serves a resized image at the signed URL — used to fetch a screen-sized
+// photo instead of a multi-MB original. If the add-on is unavailable the signed
+// URL may fail to load, so callers should keep a non-transformed URL as a fallback.
+export interface SignedUrlTransform {
+  width?: number;
+  height?: number;
+  resize?: 'cover' | 'contain' | 'fill';
+  quality?: number;
+}
+
 export async function getSignedUrl(
   bucket: string,
   storagePath: string,
   expiresInSec: number = 60 * 60,
+  transform?: SignedUrlTransform,
 ): Promise<string | null> {
   const { data, error } = await supabase.storage
     .from(bucket)
-    .createSignedUrl(storagePath, expiresInSec);
+    .createSignedUrl(storagePath, expiresInSec, transform ? { transform } : undefined);
   if (error || !data) {
     console.warn('[storage] signed URL failed:', bucket, storagePath, error?.message);
     return null;
