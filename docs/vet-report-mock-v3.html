@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- PRIVACY (rls-privacy-reviewer): the token-served report must leak NOTHING to a third
+     party. no-referrer stops the share token walking out in the Referer header; PRODUCTION
+     must ALSO self-host this font so the served page makes ZERO third-party subresource
+     requests. The CDN link below is a mock-only preview of the Newsreader display face. -->
+<meta name="referrer" content="no-referrer" />
+<title>Owner-reported summary — Mochi (Nguyen) · May 1 – Jun 21, 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet" />
+<!--
+  Vet Report — Mock v3 ("Chart-forward letterhead", post-panel revision) static HTML mock.
+  Build Step 9. HTML-first artifact (docs/nyx-vet-report-requirements.md §8.2),
+  NOT backend-wired. Sample data only — not a real patient.
+
+  v3 folds in the 9-lens panel review of v2 (docs/vet-report-mock-v2.html). Changes:
+    - PHENOTYPE reframed PRESENT-ONLY (criticalist + stats red-team): blood/foreign are
+      shown ONLY when present, never as a "0 of N" clearance panel — mirrors the empty-
+      safety-slot principle. A de-weighted limitation note states what a photo can/can't
+      establish (coffee-ground blood photographs poorly; these are AI reads). Tag is
+      "owner-reviewable" (raw AI, not human-reviewed unless edited).
+    - Denominator pinned: 9 episodes, 8 with a LEGIBLE photo, 1 too dark (Jun 14) — the
+      same definition on the strip, the note, appendix A, and appendix E (was contradictory).
+    - Relabels: "91% compliance" → "trial-diet days logged" (a contaminated trial isn't
+      compliant); "4 poultry treats" → "4 poultry-antigen exposures (3 treats + roast chicken)".
+    - WEIGHT trend added (B-186) — a GI-deterioration bellwether the panel flagged as too
+      quiet. Descriptive only; NO loss flag (that needs the B-190 spec + adversarial pass).
+    - STOOL characteristics strip added (GI internist: stool is the PRIMARY diet-trial
+      outcome) — same present-only discipline.
+    - FortiFlora rendered as a SUPPLEMENT in a "medications & supplements" section and named
+      in the trend callout as the third concurrent intervention (was an un-dated omission).
+    - Owner/client surname on the artifact + every footer (PIMS files under surname→patient).
+    - Footer marketing removed ("Free forever / learn about Nyx"); QR is a verify affordance
+      only, encodes NO token (skeptical GP + designer: the one "consumer app" leak).
+    - Print: phenotype/stool proportion bars now print-color-adjust:exact (were blank on a
+      default clinic print).
+    - Photos: SPLIT BY TYPE (PM call) — everyday photos web-only/revocable/excluded from the
+      PDF; a SAFETY-flagged photo leads the safety band + is offered as a permanent record copy.
+
+  Preserved invariants (docs/nyx-vet-report-requirements.md §5):
+  - Denominator + window on every count.  - Associational, never causal.
+  - Absence != wellness — empty safety slot (never a fabricated all-clear); blood/foreign
+    present-only; weight/photo absence is never read as wellness.
+  - Intake honesty (B-040): absence of a log is never "didn't eat".
+  - B-010: discovered events render as a time RANGE, never a false point.
+  - B-117: medications carry a computed adherence line (never "compliant" on 0 doses).
+  - No load-bearing colour: trend/severity carried by number, bar height, label, position.
+  - The n=1 per-incident worry read (analyze-vomit recommendation) is NEVER on the report.
+-->
+<style>
+  :root{
+    --ink:#16181d;
+    --muted:#565961;
+    --faint:#8a8d94;
+    --hair:#e4e5e8;
+    --hair2:#eef0f2;
+    --bar:#1a1c22;
+    --nub:#c7c9ce;
+    --fill:#f4f5f7;
+    --surface:#ffffff;
+    /* Brand accent — letterhead furniture ONLY (wordmark, top rule, QR).
+       Never encodes clinical data; degrades to dark gray in B&W print. */
+    --brand:#2e3a4f;
+    --brand-soft:#eef1f5;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:#eceef1;
+    color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:13.5px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .num{font-variant-numeric:tabular-nums;}
+  .serif{font-family:"Newsreader",Georgia,"Iowan Old Style","Palatino Linotype",serif;}
+
+  /* Screen-only toolbar — never part of the printed artifact */
+  .toolbar{
+    max-width:210mm;margin:16px auto 0;padding:9px 14px;
+    background:var(--ink);color:#fff;border-radius:8px;
+    display:flex;justify-content:space-between;align-items:center;gap:12px;
+    font-size:12px;
+  }
+  .toolbar span{opacity:.85;}
+  .toolbar button{
+    font:inherit;background:#fff;color:#111;border:0;border-radius:6px;
+    padding:6px 13px;cursor:pointer;font-weight:600;
+  }
+
+  .page{
+    width:210mm;min-height:297mm;
+    margin:16px auto;padding:15mm 16mm 12mm;
+    background:var(--surface);
+    box-shadow:0 1px 3px rgba(20,24,34,.10),0 8px 28px rgba(20,24,34,.10);
+    border-radius:3px;
+  }
+
+  /* ── Letterhead ─────────────────────────────────────────────── */
+  .letter{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;}
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .wordmark{
+    font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:27px;
+    letter-spacing:.005em;color:var(--brand);line-height:1;
+  }
+  .brand .kind{
+    font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+    font-weight:600;padding-bottom:2px;
+  }
+  .letter .stamp{text-align:right;font-size:11px;line-height:1.55;color:var(--muted);}
+  .letter .stamp b{color:var(--ink);font-weight:600;}
+  .rule-brand{height:2px;background:var(--brand);margin:9px 0 0;border-radius:2px;opacity:.9;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+
+  /* ── Signalment + range band ────────────────────────────────── */
+  .ident{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-top:14px;}
+  .ident .name{font-size:23px;font-weight:700;letter-spacing:.005em;line-height:1.05;}
+  .ident .sig{font-size:12.5px;color:#25272d;margin-top:3px;}
+  .ident .wt{font-size:12px;color:var(--muted);margin-top:2px;}
+  .rangebox{
+    flex:0 0 auto;text-align:right;border:1px solid var(--hair);border-radius:8px;
+    padding:8px 12px;min-width:188px;background:#fcfcfd;
+  }
+  .rangebox .win{font-size:14px;font-weight:700;letter-spacing:.005em;}
+  .rangebox .days{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .rangebox .basis{
+    display:inline-block;margin-top:6px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);border:1px solid var(--hair);border-radius:999px;padding:2px 9px;background:#fff;
+  }
+
+  /* Clinical-question headline */
+  .headline{
+    margin-top:14px;font-size:14.5px;line-height:1.45;
+    border-left:3px solid var(--ink);padding:2px 0 2px 12px;
+  }
+  .headline b{font-weight:700;}
+
+  /* Weight trend strip (B-186 — descriptive, no flag) */
+  .weight{display:flex;align-items:center;gap:14px;margin-top:12px;border:1px solid var(--hair);border-radius:9px;padding:9px 13px;background:#fcfcfd;}
+  .weight .spark{flex:0 0 auto;}
+  .weight .wt-read{font-size:12px;line-height:1.45;}
+  .weight .wt-read .v{font-weight:700;font-size:15px;}
+  .weight .wt-read .l{color:var(--muted);}
+  svg .spk{fill:none;stroke:var(--ink);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;}
+  svg .spkdot{fill:var(--ink);}
+
+  /* ── Section scaffolding ────────────────────────────────────── */
+  .sec{margin-top:13px;}
+  .sec > h2{
+    font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+    margin:0 0 9px;padding-bottom:5px;border-bottom:1px solid var(--hair);
+    display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  }
+  .sec > h2 .aside{font-weight:500;letter-spacing:0;text-transform:none;font-size:10.5px;color:var(--faint);}
+  .note{font-size:11.5px;color:var(--muted);margin:6px 0 0;}
+  .note b{color:var(--ink);}
+  .ref{font-size:11px;color:var(--faint);font-style:italic;margin:6px 0 0;}
+
+  /* ── Stat tiles ─────────────────────────────────────────────── */
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .tile{border:1px solid var(--hair);border-radius:9px;padding:11px 12px;background:#fcfcfd;}
+  .tile .v{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.05;}
+  .tile .v small{font-size:13px;color:var(--muted);font-weight:600;}
+  .tile .l{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35;}
+
+  /* ── Trend chart panels (the hero) ──────────────────────────── */
+  .trend{border:1px solid var(--hair);border-radius:10px;padding:10px 15px 4px;background:#fff;}
+  .trend + .trend{margin-top:8px;}
+  .trend .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;}
+  .trend .who{font-size:13.5px;font-weight:700;}
+  .trend .who .win{font-weight:500;color:var(--faint);font-size:11.5px;margin-left:2px;}
+  .trend .big{text-align:right;line-height:1.1;}
+  .trend .big .n{font-size:26px;font-weight:600;letter-spacing:-.01em;}
+  .trend .big .n small{font-size:13px;color:var(--muted);font-weight:600;}
+  .trend .big .delta{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .trend .big .delta b{color:var(--ink);font-weight:700;}
+  .trend svg{display:block;width:100%;height:auto;margin-top:4px;}
+  svg .grid{stroke:var(--hair);stroke-width:1;}
+  svg .axis{stroke:var(--ink);stroke-width:1.25;}
+  svg .bar{fill:var(--bar);}
+  svg .nub{fill:var(--nub);}
+  svg .mark{stroke:var(--ink);stroke-width:1;stroke-dasharray:3 3;}
+  svg text.yl{font-size:10px;fill:var(--faint);}
+  svg text.xl{font-size:10.5px;fill:var(--muted);}
+  svg text.cap{font-size:11px;fill:var(--muted);}
+  svg text.z{font-size:11px;fill:var(--faint);}
+  svg text.ann{font-size:10px;fill:var(--ink);font-weight:600;}
+
+  /* "Reading the trend" confound callout — the highest-consequence misread guard */
+  .callout{
+    margin-top:11px;background:var(--fill);border-left:3px solid var(--ink);border-radius:0 7px 7px 0;
+    padding:9px 13px;font-size:12px;line-height:1.5;
+  }
+  .callout .k{font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10px;color:var(--muted);display:block;margin-bottom:2px;}
+
+  /* ── Phenotype strips (vomit + stool) ───────────────────────── */
+  .aitag{
+    font-weight:500;letter-spacing:0;text-transform:none;font-size:10px;color:var(--muted);
+    border:1px solid var(--hair);border-radius:999px;padding:1px 8px;white-space:nowrap;
+  }
+  .pheno{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;align-items:start;}
+  .barmix{display:flex;height:34px;border-radius:6px;overflow:hidden;background:#fff;border:1px solid var(--hair);}
+  .barmix .seg{position:relative;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600;border-right:2px solid #fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .barmix .seg:last-child{border-right:0;}
+  .barmix .seg.s1{background:#1a1c22;}
+  .barmix .seg.s2{background:#5f636c;}
+  .barmix .seg.s3{background:#a7abb2;color:#16181d;}
+  .mixkey{margin-top:8px;font-size:11px;color:var(--muted);line-height:1.7;}
+  .mixkey .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  /* De-weighted honesty note — the present-only replacement for the old "0 of N" panel */
+  .limit{border:1px solid var(--hair);border-left:3px solid var(--faint);border-radius:0 8px 8px 0;padding:9px 12px;background:#fcfcfd;font-size:11.5px;line-height:1.5;color:var(--muted);}
+  .limit b{color:var(--ink);}
+  .limit .h{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:9.5px;color:var(--muted);margin-bottom:3px;}
+
+  /* ── Compact key-value blocks (diet / meds) ─────────────────── */
+  .cols2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .kv{display:flex;gap:8px;margin:4px 0;font-size:12.5px;}
+  .kv .k{flex:0 0 auto;font-weight:600;color:#25272d;}
+
+  /* ── Appendix ───────────────────────────────────────────────── */
+  .appx-title{font-size:14px;font-weight:700;margin:0 0 2px;}
+  .appx-title.serif{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:16px;}
+  .appx-sub{font-size:11.5px;color:var(--muted);margin:0 0 11px;line-height:1.5;}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px;}
+  caption{caption-side:top;text-align:left;font-size:11px;color:var(--muted);margin-bottom:5px;}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--hair);vertical-align:top;}
+  thead th{border-bottom:1.5px solid var(--ink);font-weight:700;font-size:10.5px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);}
+  tbody tr:nth-child(even){background:#f8f9fa;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  td.r,th.r{text-align:right;}
+  td.c,th.c{text-align:center;}
+  .conf{font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:0 4px;white-space:nowrap;}
+  .fields{display:block;color:var(--muted);font-size:10.5px;margin-top:2px;}
+  .fields b{color:#25272d;font-weight:600;}
+
+  .legend{font-size:11.5px;}
+  .legend dt{font-weight:700;float:left;clear:left;width:104px;color:#25272d;}
+  .legend dd{margin:0 0 6px 116px;color:#2a2c31;}
+
+  /* ── Photo appendix ─────────────────────────────────────────── */
+  .photos{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:6px;}
+  .photo{border:1px solid var(--hair);border-radius:9px;overflow:hidden;background:#fff;}
+  .photo .frame{
+    aspect-ratio:4/3;background:
+      repeating-linear-gradient(135deg,#f0f1f3 0 10px,#e9eaed 10px 20px);
+    display:flex;align-items:center;justify-content:center;color:var(--faint);position:relative;
+  }
+  .photo .frame .cam{width:26px;height:26px;opacity:.5;}
+  .photo .frame .ph{position:absolute;bottom:6px;left:8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);}
+  .photo .cap{padding:7px 9px;font-size:10.5px;line-height:1.4;}
+  .photo .cap .d{font-weight:700;}
+  .photo .cap .m{color:var(--muted);}
+  .flagchip{display:inline-block;font-size:9px;letter-spacing:.05em;text-transform:uppercase;font-weight:700;border:1px solid var(--ink);border-radius:3px;padding:0 4px;}
+
+  /* ── Footer letterhead ──────────────────────────────────────── */
+  .foot{
+    margin-top:20px;border-top:1px solid var(--hair);padding-top:9px;
+    display:flex;justify-content:space-between;align-items:center;gap:14px;
+    font-size:10.5px;color:var(--muted);
+  }
+  .foot .fbrand{display:flex;align-items:center;gap:9px;}
+  .foot .fbrand .qr{width:42px;height:42px;flex:0 0 auto;}
+  .foot .fbrand .fw{line-height:1.35;}
+  .foot .fbrand .fw .w{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:14px;color:var(--brand);}
+  .foot .fbrand .fw .u{color:var(--faint);}
+  .foot .fbrand .fw .scan{color:var(--muted);}
+  .foot .pg{text-align:right;color:var(--faint);}
+
+  @media print{
+    body{background:#fff;font-size:10.4pt;}
+    .no-print{display:none !important;}
+    .page{width:auto;min-height:0;margin:0;padding:0;box-shadow:none;border-radius:0;}
+    .page + .page{page-break-before:always;}
+    thead{display:table-header-group;}
+    /* Only ATOMIC units resist breaking — never a whole .sec/.pheno (that fragments
+       the one-pager onto extra sheets when a big block can't fit the remaining space). */
+    tr,.trend,.tile,.photo,.callout,.weight{page-break-inside:avoid;}
+    .rule-brand,.wordmark,.foot .fbrand .fw .w{ -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  }
+  /* 11mm margins keep the printable height (~275mm) above the one-pager's content
+     height so page 1 stays a single physical A4 sheet; safe for office printers. */
+  @page{size:A4 portrait;margin:11mm;}
+</style>
+</head>
+<body>
+
+<!-- SCREEN-ONLY -->
+<div class="toolbar no-print">
+  <span>Vet report — mock v3 (Mochi · post-panel revision) · vet-only clinical artifact · sample data, not a real patient</span>
+  <button onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<!-- ============================ PAGE 1 — CLINICAL ONE-PAGER ============================ -->
+<section class="page">
+
+  <!-- Letterhead — restrained professional brand; clinical body stays unbranded -->
+  <div class="letter">
+    <div class="brand">
+      <span class="wordmark">Nyx</span>
+      <span class="kind">Owner-reported<br/>pet-health summary</span>
+    </div>
+    <div class="stamp">
+      <div><b>Prepared for veterinary review</b></div>
+      <div>Not a diagnosis · owner-reported observations</div>
+      <div>Generated Jun&nbsp;21, 2026</div>
+    </div>
+  </div>
+  <div class="rule-brand"></div>
+
+  <!-- Signalment + client name (PIMS files under surname → patient) + the range -->
+  <div class="ident">
+    <div class="who">
+      <div class="name">Mochi</div>
+      <div class="sig">Canine &middot; mixed breed (terrier type) &middot; male, neutered &middot; 4&nbsp;yr (b.&nbsp;2022)</div>
+      <div class="wt">Owner: Nguyen, Jordan &middot; latest weight <span class="num">12.4&nbsp;kg</span> (Jun&nbsp;2)</div>
+    </div>
+    <div class="rangebox">
+      <div class="win num">May&nbsp;1 &ndash; Jun&nbsp;21, 2026</div>
+      <div class="days"><span class="num">52</span>&nbsp;days &middot; <span class="num">48</span>&nbsp;days with a log</div>
+      <div class="basis">Since last vet visit</div>
+    </div>
+  </div>
+
+  <!-- SAFETY-LEADS SLOT (conditional; renders directly here, above the fold).
+       Mochi's improving data triggers no intake-decline / feline-window / worsening
+       flag, so NOTHING renders — an empty "all clear" box is never shown (absence !=
+       wellness). The companion cat mock (Sam) exercises this slot leading the page. -->
+
+  <!-- Clinical-question headline (S/O only — never A/P) -->
+  <div class="headline">
+    Chronic intermittent <b>vomiting &amp; loose stool</b> (first noted ~Mar&nbsp;2026), tracked on a
+    <b>hydrolyzed-protein elimination trial</b> &mdash; day <span class="num">45</span> of <span class="num">56</span>.
+  </div>
+
+  <!-- Weight trend (B-186) — a GI-deterioration bellwether the panel flagged as too quiet.
+       Descriptive only; NO loss flag (that needs the B-190 spec + adversarial pass). -->
+  <div class="weight">
+    <svg class="spark" width="118" height="34" viewBox="0 0 118 34" role="img" aria-label="Weight trend, 3 owner weigh-ins: 12.9 kg May 3, 12.6 kg May 20, 12.4 kg Jun 2 — a slight decline.">
+      <polyline class="spk" points="6,8 59,18 112,26"/>
+      <circle class="spkdot" cx="6" cy="8" r="2.6"/><circle class="spkdot" cx="59" cy="18" r="2.6"/><circle class="spkdot" cx="112" cy="26" r="2.6"/>
+    </svg>
+    <div class="wt-read">
+      <span class="v num">12.9 &rarr; 12.4&nbsp;kg</span> <span class="l">&middot; 3 owner weigh-ins, May&nbsp;3 &ndash; Jun&nbsp;2</span><br/>
+      <span class="l">A home-scale weight trend, read as a trajectory rather than a single point. Descriptive &mdash; not a diagnosis, and body condition was not assessed.</span>
+    </div>
+  </div>
+
+  <!-- Stat tiles — chart-forward, scannable -->
+  <div class="sec">
+    <h2>At a glance <span class="aside">counts over the 52-day window</span></h2>
+    <div class="tiles">
+      <div class="tile">
+        <div class="v num">41<small>&nbsp;/&nbsp;45</small></div>
+        <div class="l">Trial-diet days logged (&ge;1 meal)<br/>not a clean-elimination count &mdash; <span class="num">10</span> off-diet exposures</div>
+      </div>
+      <div class="tile">
+        <div class="v num">82<small>&nbsp;/&nbsp;90</small></div>
+        <div class="l">Metronidazole doses logged<br/><span class="num">8</span> unconfirmed, none refused</div>
+      </div>
+      <div class="tile">
+        <div class="v num">10</div>
+        <div class="l">Off-diet exposures<br/><span class="num">3</span> human food, <span class="num">7</span> treats &middot; <span class="num">4</span> poultry-antigen (3 treats + roast chicken)</div>
+      </div>
+      <div class="tile">
+        <div class="v num">15</div>
+        <div class="l">Symptom events<br/><span class="num">9</span> vomiting, <span class="num">6</span> loose stool</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Symptom trend — THE HERO -->
+  <div class="sec">
+    <h2>Symptom frequency &amp; trend <span class="aside">weekly episodes · read by frequency, not severity</span></h2>
+
+    <!-- Vomiting -->
+    <div class="trend">
+      <div class="top">
+        <div class="who">Vomiting <span class="win num">May&nbsp;1 &rarr; Jun&nbsp;21</span></div>
+        <div class="big">
+          <div class="n num">9<small>&nbsp;/&nbsp;52&nbsp;d</small></div>
+          <div class="delta">first 26&nbsp;d <b class="num">6</b> &rarr; last 26&nbsp;d <b class="num">3</b></div>
+        </div>
+      </div>
+      <svg viewBox="0 0 648 150" role="img" aria-label="Vomiting episodes per week, May 1 to Jun 21: 1, 2, 2, 1, 1, 1, 1, 0. Dashed marker at week 2 = trial diet and metronidazole both started May 8.">
+        <line class="grid" x1="40" y1="28" x2="628" y2="28"/>
+        <line class="grid" x1="40" y1="72" x2="628" y2="72"/>
+        <line class="axis" x1="40" y1="116" x2="628" y2="116"/>
+        <text class="yl num" x="30" y="31" text-anchor="end">2</text>
+        <text class="yl num" x="30" y="75" text-anchor="end">1</text>
+        <text class="yl num" x="30" y="119" text-anchor="end">0</text>
+        <line class="mark" x1="116" y1="18" x2="116" y2="116"/>
+        <text class="ann" x="120" y="11">Trial diet + metronidazole + probiotic started May&nbsp;8</text>
+        <rect class="bar" x="68"  y="72" width="24" height="44" rx="4"/><text class="cap num" x="80"  y="66" text-anchor="middle">1</text>
+        <rect class="bar" x="140" y="28" width="24" height="88" rx="4"/><text class="cap num" x="152" y="22" text-anchor="middle">2</text>
+        <rect class="bar" x="212" y="28" width="24" height="88" rx="4"/><text class="cap num" x="224" y="22" text-anchor="middle">2</text>
+        <rect class="bar" x="284" y="72" width="24" height="44" rx="4"/><text class="cap num" x="296" y="66" text-anchor="middle">1</text>
+        <rect class="bar" x="356" y="72" width="24" height="44" rx="4"/><text class="cap num" x="368" y="66" text-anchor="middle">1</text>
+        <rect class="bar" x="428" y="72" width="24" height="44" rx="4"/><text class="cap num" x="440" y="66" text-anchor="middle">1</text>
+        <rect class="bar" x="500" y="72" width="24" height="44" rx="4"/><text class="cap num" x="512" y="66" text-anchor="middle">1</text>
+        <rect class="nub" x="572" y="113" width="24" height="3" rx="1.5"/><text class="z num" x="584" y="107" text-anchor="middle">0</text>
+        <text class="xl" x="44" y="136">May&nbsp;1</text>
+        <text class="xl" x="620" y="136" text-anchor="end">Jun&nbsp;21</text>
+      </svg>
+    </div>
+
+    <!-- Loose stool -->
+    <div class="trend">
+      <div class="top">
+        <div class="who">Loose stool <span class="win num">May&nbsp;1 &rarr; Jun&nbsp;21</span></div>
+        <div class="big">
+          <div class="n num">6<small>&nbsp;/&nbsp;52&nbsp;d</small></div>
+          <div class="delta">first 26&nbsp;d <b class="num">5</b> &rarr; last 26&nbsp;d <b class="num">1</b></div>
+        </div>
+      </div>
+      <svg viewBox="0 0 648 150" role="img" aria-label="Loose stool episodes per week, May 1 to Jun 21: 2, 2, 1, 0, 1, 0, 0, 0. Dashed marker at week 2 = trial diet started May 8.">
+        <line class="grid" x1="40" y1="28" x2="628" y2="28"/>
+        <line class="grid" x1="40" y1="72" x2="628" y2="72"/>
+        <line class="axis" x1="40" y1="116" x2="628" y2="116"/>
+        <text class="yl num" x="30" y="31" text-anchor="end">2</text>
+        <text class="yl num" x="30" y="75" text-anchor="end">1</text>
+        <text class="yl num" x="30" y="119" text-anchor="end">0</text>
+        <line class="mark" x1="116" y1="18" x2="116" y2="116"/>
+        <text class="ann" x="120" y="11">Trial diet started May&nbsp;8</text>
+        <rect class="bar" x="68"  y="28" width="24" height="88" rx="4"/><text class="cap num" x="80"  y="22" text-anchor="middle">2</text>
+        <rect class="bar" x="140" y="28" width="24" height="88" rx="4"/><text class="cap num" x="152" y="22" text-anchor="middle">2</text>
+        <rect class="bar" x="212" y="72" width="24" height="44" rx="4"/><text class="cap num" x="224" y="66" text-anchor="middle">1</text>
+        <rect class="nub" x="284" y="113" width="24" height="3" rx="1.5"/><text class="z num" x="296" y="107" text-anchor="middle">0</text>
+        <rect class="bar" x="356" y="72" width="24" height="44" rx="4"/><text class="cap num" x="368" y="66" text-anchor="middle">1</text>
+        <rect class="nub" x="428" y="113" width="24" height="3" rx="1.5"/><text class="z num" x="440" y="107" text-anchor="middle">0</text>
+        <rect class="nub" x="500" y="113" width="24" height="3" rx="1.5"/><text class="z num" x="512" y="107" text-anchor="middle">0</text>
+        <rect class="nub" x="572" y="113" width="24" height="3" rx="1.5"/><text class="z num" x="584" y="107" text-anchor="middle">0</text>
+        <text class="xl" x="44" y="136">May&nbsp;1</text>
+        <text class="xl" x="620" y="136" text-anchor="end">Jun&nbsp;21</text>
+      </svg>
+    </div>
+
+    <!-- The single highest-consequence misread to prevent (GP-0), directly under the charts -->
+    <div class="callout">
+      <span class="k">Reading the trend</span>
+      <b>Three things changed together around May&nbsp;8:</b> the trial diet, metronidazole, and a probiotic (FortiFlora)
+      all started at once, and both were given on most days since. The first 26-day window also includes the
+      <span class="num">7</span> days before any began. A change in GI signs over this period
+      <b>cannot be attributed to the diet alone</b>. Nothing was logged on <span class="num">4</span> days
+      (May&nbsp;13, May&nbsp;27, Jun&nbsp;11, Jun&nbsp;18; <span class="num">3</span> in the last 26 days), which could mask events there.
+    </div>
+  </div>
+
+  <!-- Vomit phenotype — aggregated analyze-vomit STRUCTURED fields; PRESENT-ONLY (see head comment) -->
+  <div class="sec">
+    <h2>Vomit characteristics <span class="aitag">Nyx photo analysis · owner-reviewable</span></h2>
+    <div class="pheno">
+      <div>
+        <div class="barmix" role="img" aria-label="Content across 9 vomiting episodes: bile or foam 6, undigested or partly-digested food 2, photo too dark to read 1.">
+          <div class="seg s1" style="flex:6">6</div>
+          <div class="seg s2" style="flex:2">2</div>
+          <div class="seg s3" style="flex:1">1</div>
+        </div>
+        <div class="mixkey">
+          <span class="sw" style="background:#1a1c22"></span><b>Bile / foam</b> &times;6&nbsp;&middot;&nbsp;
+          <span class="sw" style="background:#5f636c"></span>Undigested / partly-digested food &times;2&nbsp;&middot;&nbsp;
+          <span class="sw" style="background:#a7abb2"></span>Photo too dark to read &times;1
+          <br/>Across all <span class="num">9</span> episodes; <span class="num">8</span> have a legible photo, <span class="num">1</span> too dark to read (Jun&nbsp;14). Consistency, where legible, was most often foamy or watery. Per-episode detail in appendix&nbsp;A.
+        </div>
+      </div>
+      <div class="limit">
+        <span class="h">Blood &amp; foreign material</span>
+        <b>Not seen</b> in the <span class="num">8</span> legible photos (<span class="num">1</span> not legible). This is <b>not</b> a clearance
+        &mdash; a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads.
+        If blood or foreign material <b>is</b> seen in any incident, that incident leads the safety band at the top of the report.
+      </div>
+    </div>
+  </div>
+
+  <!-- Stool characteristics — the PRIMARY outcome of a diet trial (GI internist). Present-only. -->
+  <div class="sec">
+    <h2>Stool characteristics <span class="aside">6 loose-stool episodes · owner-described, no photo</span></h2>
+    <div class="pheno">
+      <div>
+        <div class="barmix" role="img" aria-label="Consistency of 6 loose-stool episodes: soft or barely formed 4, watery 2.">
+          <div class="seg s1" style="flex:4">4</div>
+          <div class="seg s2" style="flex:2">2</div>
+        </div>
+        <div class="mixkey">
+          <span class="sw" style="background:#1a1c22"></span><b>Soft / barely formed</b> &times;4&nbsp;&middot;&nbsp;
+          <span class="sw" style="background:#5f636c"></span>Watery &times;2
+          <br/>Owner-described (no stool photos this window). <span class="num">5</span> of the <span class="num">6</span> fell in the first 26 days &mdash; see the trend chart above. Per-episode detail in appendix&nbsp;A.
+        </div>
+      </div>
+      <div class="limit">
+        <span class="h">Blood &amp; mucus</span>
+        <b>Not reported</b> by the owner. This is <b>not</b> an exam finding &mdash; large-bowel signs like fresh blood or mucus are not reliably owner-detected without a photo or a fecal check, and no stool photo was taken. Absence here is not evidence of their absence.
+      </div>
+    </div>
+  </div>
+
+  <!-- Diet, feeding, medications & supplements — compacted; timing reduced to the load-bearing line -->
+  <div class="sec">
+    <h2>Diet, feeding, medications &amp; supplements</h2>
+    <div class="cols2">
+      <div>
+        <div class="kv"><span class="k">Trial diet</span><span>Royal Canin Hydrolyzed Protein HP, dry (Rx) &middot; started May&nbsp;8 &middot; target <span class="num">56</span>&nbsp;d, now day <span class="num">45</span>.</span></div>
+        <div class="kv"><span class="k">Feeding</span><span>2 measured meals/day (~<span class="num">95&nbsp;g</span>), fed by owner &amp; partner. <span class="num">38 of 41</span> logged meal-days fully eaten, <span class="num">3</span> partial (owner-observed).</span></div>
+        <div class="kv"><span class="k">Off-diet</span><span>Human food <span class="num">3</span> days (roast chicken, cheese, peanut butter); <span class="num">7</span> treats (<span class="num">3</span> poultry-based, <span class="num">4</span> wheat, on a hydrolyzed trial). Dates in appendix&nbsp;B.</span></div>
+      </div>
+      <div>
+        <div class="kv"><span class="k">Metronidazole</span><span>250&nbsp;mg &middot; by mouth, every 12&nbsp;h &middot; for GI signs &middot; since May&nbsp;8 (in a piece of the on-trial canned diet). Adherence: <span class="num">82 of 90</span> doses on <span class="num">41 of 45</span> days; <span class="num">8</span> unconfirmed, none refused.</span></div>
+        <div class="kv"><span class="k">Supplement</span><span>FortiFlora probiotic &middot; 1 sachet daily with breakfast &middot; started ~May&nbsp;8 (owner-reported, OTC) &mdash; a concurrent GI intervention, named in the trend note above.</span></div>
+        <div class="kv"><span class="k">Timing vs symptoms</span><span><span class="num">7</span> of <span class="num">9</span> vomits had a comparable time; <b>none reached the established correlation threshold</b> &mdash; co-occurrence, not cause (detail in appendix&nbsp;B).</span></div>
+      </div>
+    </div>
+    <p class="ref">Full WSAVA-style diet history, off-diet exposures, event log &amp; medication log: appendices A&ndash;D.</p>
+  </div>
+
+  <!-- Footer letterhead (branding + provenance + verify QR — no token, no marketing) -->
+  <div class="foot">
+    <div class="fbrand">
+      <!-- QR encodes a NON-SECRET verification URL only (rls-privacy-reviewer): never the share token. -->
+      <svg class="qr" viewBox="0 0 42 42" aria-hidden="true">
+        <rect width="42" height="42" fill="#fff"/>
+        <rect x="2" y="2" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="6" y="6" width="4" height="4" fill="#2e3a4f"/>
+        <rect x="28" y="2" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="32" y="6" width="4" height="4" fill="#2e3a4f"/>
+        <rect x="2" y="28" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="6" y="32" width="4" height="4" fill="#2e3a4f"/>
+        <g fill="#2e3a4f">
+          <rect x="18" y="4" width="2" height="2"/><rect x="22" y="8" width="2" height="2"/><rect x="18" y="12" width="2" height="2"/>
+          <rect x="20" y="18" width="2" height="2"/><rect x="24" y="20" width="2" height="2"/><rect x="28" y="18" width="2" height="2"/>
+          <rect x="32" y="22" width="2" height="2"/><rect x="36" y="20" width="2" height="2"/><rect x="18" y="24" width="2" height="2"/>
+          <rect x="4" y="18" width="2" height="2"/><rect x="8" y="22" width="2" height="2"/><rect x="12" y="20" width="2" height="2"/>
+          <rect x="22" y="28" width="2" height="2"/><rect x="26" y="30" width="2" height="2"/><rect x="30" y="28" width="2" height="2"/>
+          <rect x="34" y="32" width="2" height="2"/><rect x="38" y="30" width="2" height="2"/><rect x="24" y="36" width="2" height="2"/>
+          <rect x="30" y="36" width="2" height="2"/><rect x="36" y="38" width="2" height="2"/><rect x="20" y="34" width="2" height="2"/>
+        </g>
+      </svg>
+      <div class="fw">
+        <div><span class="w">Nyx</span> <span class="u">&middot; nyx.app/report/9f2c&hellip;</span></div>
+        <div class="scan">Mochi (Nguyen) &middot; owner-reported observations &middot; associational, not a diagnosis.</div>
+        <div class="scan">Scan to verify this report is authentic.</div>
+      </div>
+    </div>
+    <div class="pg">May&nbsp;1&ndash;Jun&nbsp;21, 2026<br/>Clinical summary</div>
+  </div>
+</section>
+
+<!-- ============================ PAGE 2 — APPENDIX A ============================ -->
+<section class="page">
+  <p class="appx-title serif">Appendix A — Symptom event log</p>
+  <p class="appx-sub">Every vomiting and loose-stool event in the window, in order. &ldquo;Occurred&rdquo; is the owner&rsquo;s best account of
+     when it happened; for events found later it is a time range, not the time it was noticed. Severity is owner-reported (1&ndash;5) and
+     is never averaged anywhere in this report. For photographed vomiting events, the Nyx photo-analysis fields are shown beneath the note
+     (owner-reviewable; an edited field is the owner-confirmed value).</p>
+
+  <table>
+    <caption>15 symptom events &middot; May 1 – Jun 21, 2026</caption>
+    <thead>
+      <tr>
+        <th style="width:62px">Date</th>
+        <th>Type</th>
+        <th style="width:138px">Occurred (owner-reported)</th>
+        <th style="width:58px">Logged</th>
+        <th class="c" style="width:62px">Severity</th>
+        <th>Owner note &amp; photo findings</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="num">May&nbsp;2</td><td>Loose stool</td><td><span class="num">~07:30</span> <span class="conf">est</span></td><td class="num">07:50</td><td class="c num">3/5</td><td>Soft, barely formed; first yard trip.</td></tr>
+      <tr><td class="num">May&nbsp;3</td><td>Vomiting</td><td><span class="num">14:30</span> <span class="conf">seen</span></td><td class="num">14:32</td><td class="c num">2/5</td><td>After morning walk; bile / foam.<span class="fields"><b>Photo:</b> colour yellow &middot; contents bile, foam &middot; consistency foamy &middot; blood none &middot; foreign material none</span></td></tr>
+      <tr><td class="num">May&nbsp;5</td><td>Loose stool</td><td><span class="num">18:15</span> <span class="conf">seen</span></td><td class="num">18:20</td><td class="c num">4/5</td><td>Watery.</td></tr>
+      <tr><td class="num">May&nbsp;8</td><td>Loose stool</td><td><span class="num">08:00</span> <span class="conf">seen</span></td><td class="num">08:05</td><td class="c num">3/5</td><td>Loose (first day of trial diet).</td></tr>
+      <tr><td class="num">May&nbsp;9</td><td>Vomiting</td><td><span class="num">08:15</span> <span class="conf">seen</span></td><td class="num">08:18</td><td class="c num">3/5</td><td>~1&nbsp;h after breakfast; undigested food.<span class="fields"><b>Photo:</b> colour tan &middot; contents undigested food &middot; consistency chunky &middot; blood none &middot; foreign material none</span></td></tr>
+      <tr><td class="num">May&nbsp;12</td><td>Vomiting</td><td><span class="num">~03:00&ndash;07:00</span> <span class="conf">range</span></td><td class="num">07:22</td><td class="c num">2/5</td><td>Found on waking; yellow bile.<span class="fields"><b>Photo:</b> colour yellow &middot; contents bile, foam &middot; consistency foamy &middot; blood none &middot; foreign material none</span></td></tr>
+      <tr><td class="num">May&nbsp;14</td><td>Loose stool</td><td><span class="num">~19:00</span> <span class="conf">est</span></td><td class="num">19:30</td><td class="c num">3/5</td><td>Soft.</td></tr>
+      <tr><td class="num">May&nbsp;16</td><td>Vomiting</td><td><span class="num">21:40</span> <span class="conf">seen</span></td><td class="num">21:43</td><td class="c num">2/5</td><td>Foam.<span class="fields"><b>Photo:</b> colour clear &middot; contents foam, liquid only &middot; consistency foamy &middot; blood none &middot; foreign material none</span></td></tr>
+      <tr><td class="num">May&nbsp;19</td><td>Vomiting</td><td><span class="num">23:05</span> <span class="conf">seen</span></td><td class="num">23:08</td><td class="c num">3/5</td><td>~2&nbsp;h after table scraps (roast chicken); undigested.<span class="fields"><b>Photo:</b> colour brown &middot; contents partially-digested food &middot; consistency chunky &middot; blood none &middot; foreign material none</span></td></tr>
+      <tr><td class="num">May&nbsp;21</td><td>Loose stool</td><td><span class="num">~08:45</span> <span class="conf">est</span></td><td class="num">09:12</td><td class="c num">2/5</td><td>Soft; firmer than prior week.</td></tr>
+      <tr><td class="num">May&nbsp;24</td><td>Vomiting</td><td><span class="num">~16:00</span> <span class="conf">est</span></td><td class="num">17:05</td><td class="c num">2/5</td><td>Bile; ~15&nbsp;min after a chicken training treat (time estimated).<span class="fields"><b>Photo:</b> colour yellow &middot; contents bile &middot; consistency watery &middot; blood none &middot; foreign material none</span></td></tr>
+      <tr><td class="num">Jun&nbsp;1</td><td>Loose stool</td><td><span class="num">16:30</span> <span class="conf">seen</span></td><td class="num">16:40</td><td class="c num">2/5</td><td>Soft (also a partially-eaten meal day).</td></tr>
+      <tr><td class="num">Jun&nbsp;2</td><td>Vomiting</td><td><span class="num">22:30</span> <span class="conf">seen</span></td><td class="num">22:34</td><td class="c num">3/5</td><td>Evening; had cheese earlier (~20:00).<span class="fields"><b>Photo:</b> colour white &middot; contents foam, partially-digested food &middot; consistency mucoid &middot; blood none &middot; foreign material none</span></td></tr>
+      <tr><td class="num">Jun&nbsp;10</td><td>Vomiting</td><td><span class="num">~04:00&ndash;07:42</span> <span class="conf">range</span></td><td class="num">07:44</td><td class="c num">2/5</td><td>Found on waking; yellow bile / foam.<span class="fields"><b>Photo:</b> colour yellow &middot; contents bile, foam &middot; consistency foamy &middot; blood none &middot; foreign material none</span></td></tr>
+      <tr><td class="num">Jun&nbsp;14</td><td>Vomiting</td><td><span class="num">19:50</span> <span class="conf">seen</span></td><td class="num">19:52</td><td class="c num">2/5</td><td>~3&nbsp;h after peanut butter on toast.<span class="fields"><b>Photo:</b> present but not legible &mdash; too dark to read (owner note kept; not counted as an assessed photo)</span></td></tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:9px"><b>Why a range and not a time:</b> a vomit found at 07:44 but occurring around 04:00 changes the interval
+     from the prior meal from minutes to hours &mdash; a clinically different picture. Where the owner did not witness the event, the
+     window it occurred in is shown, not the time it was noticed. Photo findings are Nyx&rsquo;s read of the owner&rsquo;s photo and are
+     owner-reviewable; they never carry a diagnosis or a single-incident &ldquo;worry&rdquo; verdict (that stays in the app, off this report).</p>
+
+  <div class="foot">
+    <div class="fbrand"><div class="fw"><span class="w">Nyx</span> <span class="u">&middot; nyx.app/report/9f2c&hellip;</span><div class="scan">Mochi (Nguyen) &middot; owner-reported observations &middot; appendix.</div></div></div>
+    <div class="pg">May&nbsp;1&ndash;Jun&nbsp;21, 2026<br/>Appendix A — event log</div>
+  </div>
+</section>
+
+<!-- ============================ PAGE 3 — APPENDIX B + C + D ============================ -->
+<section class="page">
+  <p class="appx-title serif">Appendix B — Off-diet exposures (confounders)</p>
+  <p class="appx-sub">Everything fed outside the trial diet, because these are the most common reasons a diet trial reads as &ldquo;not working.&rdquo;
+     Human food and poultry-based treats on a hydrolyzed trial are noted explicitly.</p>
+  <table>
+    <caption>Off-diet exposures: 3 human food + 7 treats = 10 &middot; 4 involve poultry &middot; May 1 – Jun 21, 2026</caption>
+    <thead>
+      <tr><th style="width:62px">Date</th><th style="width:92px">Category</th><th>Item</th><th>Note</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="num">May&nbsp;5</td><td>Treat</td><td>Greenies Original Dental Chew (Teenie)</td><td>Wheat-based.</td></tr>
+      <tr><td class="num">May&nbsp;11</td><td>Treat</td><td>Zuke&rsquo;s Mini Naturals &mdash; Chicken</td><td>Poultry-based (off the hydrolyzed trial).</td></tr>
+      <tr><td class="num">May&nbsp;17</td><td>Treat</td><td>Greenies Original Dental Chew (Teenie)</td><td>Wheat-based.</td></tr>
+      <tr><td class="num">May&nbsp;19</td><td>Human food</td><td>Roast chicken (table scraps)</td><td>Poultry; vomiting logged ~2&nbsp;h later (appendix&nbsp;A).</td></tr>
+      <tr><td class="num">May&nbsp;24</td><td>Treat</td><td>Zuke&rsquo;s Mini Naturals &mdash; Chicken</td><td>Poultry-based; vomiting logged ~15&nbsp;min later (time estimated).</td></tr>
+      <tr><td class="num">Jun&nbsp;2</td><td>Human food</td><td>Cheddar cheese (a few cubes)</td><td>Dairy + fat. Vomiting logged later that evening.</td></tr>
+      <tr><td class="num">Jun&nbsp;5</td><td>Treat</td><td>Greenies Original Dental Chew (Teenie)</td><td>Wheat-based.</td></tr>
+      <tr><td class="num">Jun&nbsp;9</td><td>Treat</td><td>Zuke&rsquo;s Mini Naturals &mdash; Chicken</td><td>Poultry-based.</td></tr>
+      <tr><td class="num">Jun&nbsp;14</td><td>Human food</td><td>Peanut butter on toast crust</td><td>Plant protein + fat. Vomiting logged ~3&nbsp;h later.</td></tr>
+      <tr><td class="num">Jun&nbsp;16</td><td>Treat</td><td>Greenies Original Dental Chew (Teenie)</td><td>Wheat-based.</td></tr>
+    </tbody>
+  </table>
+  <p class="note"><b>Poultry-antigen exposures:</b> 3 chicken treats (May&nbsp;11, 24, Jun&nbsp;9) + 1 roast chicken (May&nbsp;19) = <span class="num">4</span> &mdash; the antigen most likely to break a hydrolyzed trial. Cheese and peanut butter are additional intact-protein / high-fat breaks.</p>
+
+  <p class="appx-title serif" style="margin-top:22px">Appendix C — Diet history</p>
+  <p class="appx-sub">A complete picture of everything Mochi is fed over a typical 24&nbsp;hours, in the spirit of the WSAVA Short Diet History
+     Form &mdash; including previous diet, treats, supplements, food used to give medication, and nutritional status.</p>
+  <table>
+    <tbody>
+      <tr><th style="width:170px">Primary diet</th><td>Royal Canin Veterinary Diet Hydrolyzed Protein HP, dry (prescription hydrolyzed diet). Started May&nbsp;8, 2026.</td></tr>
+      <tr><th>Previous diet (before May&nbsp;8)</th><td>Owner-reported adult chicken-and-rice kibble (supermarket brand) &mdash; this defines what the hydrolyzed trial is eliminating.</td></tr>
+      <tr><th>Amount &amp; schedule</th><td>~<span class="num">95&nbsp;g</span> by measuring cup, twice daily (~08:00 and ~18:00). ~<span class="num">190&nbsp;g</span>/day (measuring-cup estimate).</td></tr>
+      <tr><th>Who feeds</th><td>Owner (mornings); owner or partner (evenings).</td></tr>
+      <tr><th>Water</th><td>Fresh water, freely available; intake not measured.</td></tr>
+      <tr><th>Treats</th><td><span class="num">7</span> this window: Greenies Original Dental Chew (wheat-based) &times;4; Zuke&rsquo;s Mini Naturals Chicken (poultry-based) &times;3. Dates in appendix&nbsp;B.</td></tr>
+      <tr><th>Human food</th><td><span class="num">3</span> days: roast chicken (May&nbsp;19), cheese (Jun&nbsp;2), peanut butter (Jun&nbsp;14).</td></tr>
+      <tr><th>Supplements</th><td>Purina Pro Plan FortiFlora probiotic, 1 sachet daily with breakfast, started ~May&nbsp;8, 2026 (owner-reported, OTC) &mdash; a concurrent GI intervention alongside the diet and metronidazole.</td></tr>
+      <tr><th>Food used for meds</th><td>Metronidazole given in a small piece of the hydrolyzed canned diet (kept on-trial).</td></tr>
+      <tr><th>Active conditions</th><td>Chronic intermittent vomiting &amp; loose stool &mdash; under monitoring (first noted ~Mar&nbsp;2026).</td></tr>
+      <tr><th>Nutritional status</th><td>Weight trend on page&nbsp;1: 12.9 &rarr; 12.4&nbsp;kg over 3 owner weigh-ins (May&nbsp;3&ndash;Jun&nbsp;2). Body-condition score and caloric adequacy not assessed in this record.</td></tr>
+    </tbody>
+  </table>
+
+  <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
+  <p class="appx-sub">Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads
+     &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Over-the-counter supplements are listed in appendix&nbsp;C.</p>
+  <table>
+    <thead>
+      <tr><th>Medication</th><th style="width:150px">Regimen</th><th class="c" style="width:110px">Doses logged</th><th>Adherence</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Metronidazole 250&nbsp;mg</td>
+        <td>By mouth, every 12&nbsp;h, for GI signs (since May&nbsp;8)</td>
+        <td class="c num">82 / 90</td>
+        <td>Logged on 41 of 45 days. 8 doses on 4 no-log days (May&nbsp;13, 27, Jun&nbsp;11, 18) are unconfirmed; none recorded as refused.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="foot">
+    <div class="fbrand"><div class="fw"><span class="w">Nyx</span> <span class="u">&middot; nyx.app/report/9f2c&hellip;</span><div class="scan">Mochi (Nguyen) &middot; owner-reported observations &middot; appendix.</div></div></div>
+    <div class="pg">May&nbsp;1&ndash;Jun&nbsp;21, 2026<br/>Appendices B–D — exposures, diet &amp; meds</div>
+  </div>
+</section>
+
+<!-- ============================ PAGE 4 — APPENDIX E (photos) + F (legend) ============================ -->
+<section class="page">
+  <p class="appx-title serif">Appendix E — Incident photos</p>
+  <p class="appx-sub">The owner&rsquo;s own photos of the vomiting incidents, most recent first &mdash; something a vet rarely gets to see.
+     <b>Everyday photos</b> (below) are shown on-screen only, over the same expiring, revocable link as the report, and are
+     <b>not</b> included in the printed / PDF copy. A photo with a <b>safety finding</b> (blood or suspected foreign material)
+     is handled differently &mdash; it leads the safety band on page&nbsp;1 and is offered as a <b>permanent copy the clinic can keep</b>
+     for the record; none were flagged this window, and absence of a flag is not evidence of wellness.
+     <b>(Placeholders shown in this mock.)</b></p>
+
+  <div class="photos">
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">Jun&nbsp;10</span> <span class="m">&middot; found ~04:00–07:42</span><br/><span class="m">Yellow · bile / foam</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">Jun&nbsp;2</span> <span class="m">&middot; 22:30 seen</span><br/><span class="m">White · foam / food</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">May&nbsp;24</span> <span class="m">&middot; ~16:00 est</span><br/><span class="m">Yellow · bile</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">May&nbsp;19</span> <span class="m">&middot; 23:05 seen</span><br/><span class="m">Brown · partly-digested food</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">May&nbsp;16</span> <span class="m">&middot; 21:40 seen</span><br/><span class="m">Clear · foam / liquid</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">May&nbsp;12</span> <span class="m">&middot; found ~03:00–07:00</span><br/><span class="m">Yellow · bile / foam</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">May&nbsp;9</span> <span class="m">&middot; 08:15 seen</span><br/><span class="m">Tan · undigested food</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">May&nbsp;3</span> <span class="m">&middot; 14:30 seen</span><br/><span class="m">Yellow · bile / foam</span></div>
+    </div>
+  </div>
+  <p class="note" style="margin-top:11px"><b>8</b> of the <span class="num">9</span> vomiting episodes have a legible photo; <span class="num">1</span> (Jun&nbsp;14) has a photo too dark to read, kept with its owner note in appendix&nbsp;A.
+     A photo lets a vet check the AI&rsquo;s read directly &mdash; but no photo, an unreadable one, and no absence of one, is evidence the pet is well.</p>
+
+  <p class="appx-title serif" style="margin-top:22px">Appendix F — How to read this report</p>
+  <dl class="legend">
+    <dt>Owner-reported</dt><dd>Every entry was logged by the owner on a phone. This is a record of what the owner observed, not a clinical examination, and contains no diagnosis or treatment recommendation.</dd>
+    <dt>Range</dt><dd>Scoped to since the last veterinary visit (May&nbsp;1, 2026). The owner can change the range when generating the report; a custom (hand-picked) window discloses the count of symptom events that fall outside it, so nothing is cropped to a good week.</dd>
+    <dt>Denominators</dt><dd>Counts are shown over their window and the days logged (e.g. &ldquo;9 episodes / 52&nbsp;d&rdquo;), so a count is never read without knowing how long and how completely it was tracked.</dd>
+    <dt>Logging coverage</dt><dd>Something was logged on <span class="num">48</span> of <span class="num">52</span> days; nothing on May&nbsp;13, May&nbsp;27, Jun&nbsp;11, or Jun&nbsp;18. Absence of an entry is not evidence a symptom did not occur.</dd>
+    <dt>Severity</dt><dd>Owner-reported on a 1&ndash;5 scale, per event in appendix&nbsp;A. It is intentionally never averaged into a headline figure; trend is read from frequency.</dd>
+    <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed.</dd>
+    <dt>Photo analysis</dt><dd>For photographed incidents, Nyx reads structured fields from the photo (colour, contents, blood, foreign material). These are owner-reviewable and aggregated descriptively (appendix&nbsp;A, page&nbsp;1). They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
+    <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident &mdash; never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the safety band and its photo is offered as a permanent record copy.</dd>
+    <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
+    <dt>Photos &amp; verify</dt><dd>Everyday incident photos are viewable only while this link is live and are not in the printed copy; a safety-flagged photo is offered as a permanent copy for the record. The footer link and QR point to a public verification page and carry no private key &mdash; the report opens only through the owner-shared, expiring, revocable link.</dd>
+    <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
+    <dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. Every figure is computed over exactly the events listed in appendices&nbsp;A&ndash;B &mdash; nothing is counted that is not shown.</dd>
+  </dl>
+
+  <div class="foot">
+    <div class="fbrand">
+      <svg class="qr" viewBox="0 0 42 42" aria-hidden="true">
+        <rect width="42" height="42" fill="#fff"/>
+        <rect x="2" y="2" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="6" y="6" width="4" height="4" fill="#2e3a4f"/>
+        <rect x="28" y="2" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="32" y="6" width="4" height="4" fill="#2e3a4f"/>
+        <rect x="2" y="28" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="6" y="32" width="4" height="4" fill="#2e3a4f"/>
+        <g fill="#2e3a4f"><rect x="18" y="4" width="2" height="2"/><rect x="22" y="8" width="2" height="2"/><rect x="18" y="12" width="2" height="2"/><rect x="20" y="18" width="2" height="2"/><rect x="24" y="20" width="2" height="2"/><rect x="28" y="18" width="2" height="2"/><rect x="32" y="22" width="2" height="2"/><rect x="36" y="20" width="2" height="2"/><rect x="18" y="24" width="2" height="2"/><rect x="4" y="18" width="2" height="2"/><rect x="8" y="22" width="2" height="2"/><rect x="12" y="20" width="2" height="2"/><rect x="22" y="28" width="2" height="2"/><rect x="26" y="30" width="2" height="2"/><rect x="30" y="28" width="2" height="2"/><rect x="34" y="32" width="2" height="2"/><rect x="38" y="30" width="2" height="2"/><rect x="24" y="36" width="2" height="2"/></g>
+      </svg>
+      <div class="fw"><div><span class="w">Nyx</span> <span class="u">&middot; nyx.app/report/9f2c&hellip;</span></div><div class="scan">Mochi (Nguyen) &middot; owner-reported observations &middot; not a diagnosis.</div><div class="scan">Scan to verify this report is authentic.</div></div>
+    </div>
+    <div class="pg">May&nbsp;1&ndash;Jun&nbsp;21, 2026<br/>Appendices E–F — photos &amp; how to read</div>
+  </div>
+</section>
+
+</body>
+</html>

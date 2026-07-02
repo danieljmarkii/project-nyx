@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<title>Owner-reported summary — Pixel (Okafor) · Jun 1 – Jun 20, 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet" />
+<!--
+  Vet Report — COMPANION mock: the CAT / SAFETY-LED case (Pixel), post-panel.
+  Build Step 9. HTML-first, sample data only — not a real patient.
+
+  This is the second mock the requirements spec (§10) and the criticalist require: the
+  improving-dog mock (vet-report-mock-v3.html) leaves the safety-leads slot EMPTY, so it
+  cannot show the loud half. Pixel is a cat going OFF FOOD with rising vomiting and a
+  possible-blood photo — so the SAFETY BAND leads the page, impossible to miss.
+
+  Demonstrates, beyond v3:
+    - SAFETY-LEADS SLOT rendering (criticalist): intake decline (feline 48–72h window),
+      possible blood, and worsening frequency, above the fold, mono-prominent (heavy
+      border + weight, never colour).
+    - Intake decline rendered as a HEALTH SIGNAL, never "picky" (intake ≠ preference).
+    - PRESENT-ONLY phenotype with a flag PRESENT: "possible blood" is SHOWN because it
+      occurred (the escalation half of the asymmetry v3 could only describe).
+    - PHOTOS SPLIT BY TYPE (PM Call 1): everyday photos are screen-only/revocable; the
+      SAFETY-flagged photo (Jun 18 possible blood) is marked and offered as a PERMANENT
+      copy for the medical record.
+  Invariants identical to v3 (denominators, associational-not-causal, absence≠wellness,
+  no load-bearing colour, n=1 read stays off the report).
+-->
+<style>
+  :root{
+    --ink:#16181d;--muted:#565961;--faint:#8a8d94;--hair:#e4e5e8;--hair2:#eef0f2;
+    --bar:#1a1c22;--nub:#c7c9ce;--fill:#f4f5f7;--surface:#ffffff;--brand:#2e3a4f;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:#eceef1;color:var(--ink);font-family:ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13.5px;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  .num{font-variant-numeric:tabular-nums;}
+
+  .toolbar{max-width:210mm;margin:16px auto 0;padding:9px 14px;background:var(--ink);color:#fff;border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;}
+  .toolbar span{opacity:.85;}
+  .toolbar button{font:inherit;background:#fff;color:#111;border:0;border-radius:6px;padding:6px 13px;cursor:pointer;font-weight:600;}
+
+  .page{width:210mm;min-height:297mm;margin:16px auto;padding:15mm 16mm 12mm;background:var(--surface);box-shadow:0 1px 3px rgba(20,24,34,.10),0 8px 28px rgba(20,24,34,.10);border-radius:3px;}
+
+  .letter{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;}
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .wordmark{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:27px;letter-spacing:.005em;color:var(--brand);line-height:1;}
+  .brand .kind{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;padding-bottom:2px;}
+  .letter .stamp{text-align:right;font-size:11px;line-height:1.55;color:var(--muted);}
+  .letter .stamp b{color:var(--ink);font-weight:600;}
+  .rule-brand{height:2px;background:var(--brand);margin:9px 0 0;border-radius:2px;opacity:.9;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+
+  .ident{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-top:14px;}
+  .ident .name{font-size:23px;font-weight:700;letter-spacing:.005em;line-height:1.05;}
+  .ident .sig{font-size:12.5px;color:#25272d;margin-top:3px;}
+  .ident .wt{font-size:12px;color:var(--muted);margin-top:2px;}
+  .rangebox{flex:0 0 auto;text-align:right;border:1px solid var(--hair);border-radius:8px;padding:8px 12px;min-width:188px;background:#fcfcfd;}
+  .rangebox .win{font-size:14px;font-weight:700;letter-spacing:.005em;}
+  .rangebox .days{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .rangebox .basis{display:inline-block;margin-top:6px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:999px;padding:2px 9px;background:#fff;}
+
+  /* ── SAFETY BAND — leads the page (criticalist). Mono-prominent: heavy border + weight. ── */
+  .safetyband{border:2px solid var(--ink);border-radius:9px;padding:10px 14px 4px;margin-top:14px;}
+  .safetyband > .h{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:8px;padding-bottom:7px;border-bottom:1.5px solid var(--ink);}
+  .safetyband > .h svg{width:16px;height:16px;flex:0 0 auto;}
+  .safetyband > .h .sub{margin-left:auto;font-weight:500;letter-spacing:0;text-transform:none;font-size:10px;color:var(--muted);}
+  .safetyband .flag{display:flex;gap:11px;padding:8px 0;font-size:12.5px;line-height:1.45;}
+  .safetyband .flag + .flag{border-top:1px solid var(--hair);}
+  .safetyband .flag .tag{flex:0 0 62px;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);border:1.5px solid var(--ink);border-radius:4px;padding:3px 0;text-align:center;height:max-content;}
+  .safetyband .flag .body b{font-weight:700;}
+
+  .headline{margin-top:14px;font-size:14.5px;line-height:1.45;border-left:3px solid var(--ink);padding:2px 0 2px 12px;}
+  .headline b{font-weight:700;}
+
+  .weight{display:flex;align-items:center;gap:14px;margin-top:12px;border:1px solid var(--hair);border-radius:9px;padding:9px 13px;background:#fcfcfd;}
+  .weight .wt-read{font-size:12px;line-height:1.45;}
+  .weight .wt-read .v{font-weight:700;font-size:15px;}
+  .weight .wt-read .l{color:var(--muted);}
+  svg .spk{fill:none;stroke:var(--ink);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;}
+  svg .spkdot{fill:var(--ink);}
+
+  .sec{margin-top:13px;}
+  .sec > h2{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 9px;padding-bottom:5px;border-bottom:1px solid var(--hair);display:flex;justify-content:space-between;align-items:baseline;gap:12px;}
+  .sec > h2 .aside{font-weight:500;letter-spacing:0;text-transform:none;font-size:10.5px;color:var(--faint);}
+  .note{font-size:11.5px;color:var(--muted);margin:6px 0 0;}
+  .note b{color:var(--ink);}
+  .ref{font-size:11px;color:var(--faint);font-style:italic;margin:6px 0 0;}
+
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .tile{border:1px solid var(--hair);border-radius:9px;padding:11px 12px;background:#fcfcfd;}
+  .tile .v{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.05;}
+  .tile .v small{font-size:13px;color:var(--muted);font-weight:600;}
+  .tile .l{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.35;}
+
+  .trend{border:1px solid var(--hair);border-radius:10px;padding:10px 15px 4px;background:#fff;}
+  .trend .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;}
+  .trend .who{font-size:13.5px;font-weight:700;}
+  .trend .who .win{font-weight:500;color:var(--faint);font-size:11.5px;margin-left:2px;}
+  .trend .big{text-align:right;line-height:1.1;}
+  .trend .big .n{font-size:26px;font-weight:600;letter-spacing:-.01em;}
+  .trend .big .n small{font-size:13px;color:var(--muted);font-weight:600;}
+  .trend .big .delta{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .trend .big .delta b{color:var(--ink);font-weight:700;}
+  .trend svg{display:block;width:100%;height:auto;margin-top:4px;}
+  svg .grid{stroke:var(--hair);stroke-width:1;}
+  svg .axis{stroke:var(--ink);stroke-width:1.25;}
+  svg .bar{fill:var(--bar);}
+  svg text.yl{font-size:10px;fill:var(--faint);}
+  svg text.xl{font-size:10.5px;fill:var(--muted);}
+  svg text.cap{font-size:11px;fill:var(--muted);}
+
+  /* Intake — recent offered meals, showing decline (health signal, not preference) */
+  .intake{display:grid;grid-template-columns:1.1fr 1fr;gap:16px;align-items:center;}
+  .mealrow{display:flex;gap:4px;align-items:center;margin-top:4px;}
+  .mealrow .m{width:26px;height:26px;border:1.5px solid var(--ink);border-radius:5px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .mealrow .m.full{background:var(--ink);}
+  .mealrow .m.some{background:linear-gradient(90deg,var(--ink) 50%,#fff 50%);}
+  .mealrow .m.none{background:#fff;}
+  .mealkey{font-size:10.5px;color:var(--muted);margin-top:6px;}
+
+  .pheno{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;align-items:start;}
+  .barmix{display:flex;height:34px;border-radius:6px;overflow:hidden;background:#fff;border:1px solid var(--hair);}
+  .barmix .seg{position:relative;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:600;border-right:2px solid #fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .barmix .seg:last-child{border-right:0;}
+  .barmix .seg.s1{background:#1a1c22;}
+  .barmix .seg.s2{background:#5f636c;}
+  .barmix .seg.s3{background:#a7abb2;color:#16181d;}
+  .mixkey{margin-top:8px;font-size:11px;color:var(--muted);line-height:1.7;}
+  .mixkey .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  /* PRESENT flag — a finding that IS present (the escalation half). Heavier than .limit. */
+  .present{border:1.5px solid var(--ink);border-radius:8px;padding:9px 12px;font-size:11.5px;line-height:1.5;}
+  .present .h{display:flex;align-items:center;gap:6px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;font-size:9.5px;color:var(--ink);margin-bottom:3px;}
+  .present .h svg{width:12px;height:12px;}
+  .present b{color:var(--ink);}
+
+  .cols2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .kv{display:flex;gap:8px;margin:4px 0;font-size:12.5px;}
+  .kv .k{flex:0 0 auto;font-weight:600;color:#25272d;}
+
+  .appx-title{font-size:14px;font-weight:700;margin:0 0 2px;}
+  .appx-title.serif{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:16px;}
+  .appx-sub{font-size:11.5px;color:var(--muted);margin:0 0 11px;line-height:1.5;}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px;}
+  caption{caption-side:top;text-align:left;font-size:11px;color:var(--muted);margin-bottom:5px;}
+  th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--hair);vertical-align:top;}
+  thead th{border-bottom:1.5px solid var(--ink);font-weight:700;font-size:10.5px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);}
+  tbody tr:nth-child(even){background:#f8f9fa;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  td.c,th.c{text-align:center;}
+  .conf{font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:0 4px;white-space:nowrap;}
+  .flagtag{font-size:9px;letter-spacing:.04em;text-transform:uppercase;font-weight:800;color:var(--ink);border:1.5px solid var(--ink);border-radius:3px;padding:0 4px;white-space:nowrap;}
+  .fields{display:block;color:var(--muted);font-size:10.5px;margin-top:2px;}
+  .fields b{color:#25272d;font-weight:600;}
+  .legend{font-size:11.5px;}
+  .legend dt{font-weight:700;float:left;clear:left;width:104px;color:#25272d;}
+  .legend dd{margin:0 0 6px 116px;color:#2a2c31;}
+
+  .photos{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:6px;}
+  .photo{border:1px solid var(--hair);border-radius:9px;overflow:hidden;background:#fff;}
+  .photo.flagged{border:2px solid var(--ink);}
+  .photo .frame{aspect-ratio:4/3;background:repeating-linear-gradient(135deg,#f0f1f3 0 10px,#e9eaed 10px 20px);display:flex;align-items:center;justify-content:center;color:var(--faint);position:relative;}
+  .photo .frame .cam{width:26px;height:26px;opacity:.5;}
+  .photo .frame .ph{position:absolute;bottom:6px;left:8px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);}
+  .photo .frame .flagph{position:absolute;top:6px;left:6px;right:6px;font-size:9px;letter-spacing:.04em;text-transform:uppercase;font-weight:800;color:#fff;background:var(--ink);border-radius:3px;padding:2px 5px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .photo .cap{padding:7px 9px;font-size:10.5px;line-height:1.4;}
+  .photo .cap .d{font-weight:700;}
+  .photo .cap .m{color:var(--muted);}
+  .photo .cap .keep{color:var(--ink);font-weight:600;}
+
+  .foot{margin-top:18px;border-top:1px solid var(--hair);padding-top:9px;display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:10.5px;color:var(--muted);}
+  .foot .fbrand{display:flex;align-items:center;gap:9px;}
+  .foot .fbrand .qr{width:42px;height:42px;flex:0 0 auto;}
+  .foot .fbrand .fw{line-height:1.35;}
+  .foot .fbrand .fw .w{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:14px;color:var(--brand);}
+  .foot .fbrand .fw .u{color:var(--faint);}
+  .foot .fbrand .fw .scan{color:var(--muted);}
+  .foot .pg{text-align:right;color:var(--faint);}
+
+  @media print{
+    body{background:#fff;font-size:10.4pt;}
+    .no-print{display:none !important;}
+    .page{width:auto;min-height:0;margin:0;padding:0;box-shadow:none;border-radius:0;}
+    .page + .page{page-break-before:always;}
+    thead{display:table-header-group;}
+    tr,.trend,.tile,.photo,.safetyband,.weight,.present{page-break-inside:avoid;}
+    .rule-brand,.wordmark,.foot .fbrand .fw .w{ -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  }
+  @page{size:A4 portrait;margin:11mm;}
+</style>
+</head>
+<body>
+
+<div class="toolbar no-print">
+  <span>Vet report — companion mock (Pixel · cat · SAFETY-LED case) · vet-only clinical artifact · sample data, not a real patient</span>
+  <button onclick="window.print()">Print / Save as PDF</button>
+</div>
+
+<!-- ============================ PAGE 1 — CLINICAL ONE-PAGER (SAFETY-LED) ============================ -->
+<section class="page">
+
+  <div class="letter">
+    <div class="brand">
+      <span class="wordmark">Nyx</span>
+      <span class="kind">Owner-reported<br/>pet-health summary</span>
+    </div>
+    <div class="stamp">
+      <div><b>Prepared for veterinary review</b></div>
+      <div>Not a diagnosis · owner-reported observations</div>
+      <div>Generated Jun&nbsp;20, 2026</div>
+    </div>
+  </div>
+  <div class="rule-brand"></div>
+
+  <div class="ident">
+    <div class="who">
+      <div class="name">Pixel</div>
+      <div class="sig">Feline &middot; domestic shorthair &middot; female, spayed &middot; 6&nbsp;yr (b.&nbsp;2020)</div>
+      <div class="wt">Owner: Okafor, Sam &middot; latest weight <span class="num">3.8&nbsp;kg</span> (Jun&nbsp;19)</div>
+    </div>
+    <div class="rangebox">
+      <div class="win num">Jun&nbsp;1 &ndash; Jun&nbsp;20, 2026</div>
+      <div class="days"><span class="num">20</span>&nbsp;days &middot; <span class="num">18</span>&nbsp;days with a log</div>
+      <div class="basis">Since last vet visit</div>
+    </div>
+  </div>
+
+  <!-- SAFETY-LEADS SLOT — renders because flags are present, directly under signalment,
+       above the fold, impossible to miss (criticalist). Prominence from the heavy border
+       + weight, never colour (B&W-safe). -->
+  <div class="safetyband">
+    <div class="h">
+      <svg viewBox="0 0 24 24" fill="#16181d" aria-hidden="true"><path d="M12 2 L23 21 H1 Z"/><rect x="11" y="9" width="2" height="6" fill="#fff"/><rect x="11" y="16.5" width="2" height="2" fill="#fff"/></svg>
+      Safety — flags for review
+      <span class="sub">owner-reported · not a diagnosis</span>
+    </div>
+    <div class="flag">
+      <div class="tag">Intake</div>
+      <div class="body"><b>Reduced intake.</b> Last logged full meal ~<span class="num">52&nbsp;h</span> ago (Jun&nbsp;18, 08:00); <span class="num">4</span> of the last <span class="num">6</span> offered meals were declined or barely touched. In cats, ≥48&ndash;72&nbsp;h of markedly reduced intake is a hepatic-lipidosis risk window. Recorded as a health signal &mdash; not &ldquo;picky.&rdquo;</div>
+    </div>
+    <div class="flag">
+      <div class="tag">Possible blood</div>
+      <div class="body"><b>One vomiting incident (Jun&nbsp;18) has a photo Nyx flagged as possible coffee-ground (digested) blood.</b> This is an AI read of an owner photo, owner-reviewable and not confirmed &mdash; a permanent copy is attached for your record (appendix&nbsp;E).</div>
+    </div>
+    <div class="flag">
+      <div class="tag">Worsening</div>
+      <div class="body"><b>Rising frequency + falling weight.</b> Vomiting rose from <span class="num">1</span> episode in the first 10 days to <span class="num">4</span> in the last 10; weight is down <span class="num">4.2&nbsp;&rarr;&nbsp;3.8&nbsp;kg</span> (~<span class="num">10%</span>) over the window.</div>
+    </div>
+  </div>
+
+  <div class="headline">
+    <b>Reduced appetite and intermittent vomiting</b> over ~3 weeks, now with <b>markedly reduced intake</b> &mdash; owner tracking a cat that is going off food. No diet trial; symptom monitoring.
+  </div>
+
+  <div class="weight">
+    <svg class="spark" width="118" height="34" viewBox="0 0 118 34" role="img" aria-label="Weight trend, 3 owner weigh-ins: 4.2 kg Jun 2, 4.0 kg Jun 11, 3.8 kg Jun 19 — a decline of about 10 percent.">
+      <polyline class="spk" points="6,8 59,16 112,25"/>
+      <circle class="spkdot" cx="6" cy="8" r="2.6"/><circle class="spkdot" cx="59" cy="16" r="2.6"/><circle class="spkdot" cx="112" cy="25" r="2.6"/>
+    </svg>
+    <div class="wt-read">
+      <span class="v num">4.2 &rarr; 3.8&nbsp;kg</span> <span class="l">&middot; 3 owner weigh-ins, Jun&nbsp;2 &ndash; Jun&nbsp;19 (~10% down)</span><br/>
+      <span class="l">A home-scale weight trend, read as a trajectory. Descriptive &mdash; not a diagnosis; body condition not assessed. In a cat going off food, weight loss is the trajectory that matters.</span>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>At a glance <span class="aside">counts over the 20-day window</span></h2>
+    <div class="tiles">
+      <div class="tile">
+        <div class="v num">4<small>&nbsp;/&nbsp;6</small></div>
+        <div class="l">Recent offered meals declined<br/>last full meal <span class="num">~52&nbsp;h</span> ago</div>
+      </div>
+      <div class="tile">
+        <div class="v num">7<small>&nbsp;/&nbsp;20&nbsp;d</small></div>
+        <div class="l">Vomiting episodes<br/>rising: <span class="num">1</span> &rarr; <span class="num">4</span> (first vs last 10 days)</div>
+      </div>
+      <div class="tile">
+        <div class="v num">&minus;0.4<small>&nbsp;kg</small></div>
+        <div class="l">Weight over 17 days<br/>4.2 &rarr; 3.8&nbsp;kg (~<span class="num">10%</span>)</div>
+      </div>
+      <div class="tile">
+        <div class="v num">18<small>&nbsp;/&nbsp;20</small></div>
+        <div class="l">Days with any log<br/>nothing logged Jun&nbsp;6, Jun&nbsp;13</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>Vomiting frequency &amp; trend <span class="aside">5-day buckets · read by frequency, not severity</span></h2>
+    <div class="trend">
+      <div class="top">
+        <div class="who">Vomiting <span class="win num">Jun&nbsp;1 &rarr; Jun&nbsp;20</span></div>
+        <div class="big">
+          <div class="n num">7<small>&nbsp;/&nbsp;20&nbsp;d</small></div>
+          <div class="delta">first 10&nbsp;d <b class="num">2</b> &rarr; last 10&nbsp;d <b class="num">5</b> &middot; rising</div>
+        </div>
+      </div>
+      <svg viewBox="0 0 648 150" role="img" aria-label="Vomiting episodes per 5-day bucket, Jun 1 to Jun 20: 1, 1, 2, 3 — rising.">
+        <line class="grid" x1="40" y1="28" x2="628" y2="28"/>
+        <line class="grid" x1="40" y1="72" x2="628" y2="72"/>
+        <line class="axis" x1="40" y1="116" x2="628" y2="116"/>
+        <text class="yl num" x="30" y="31" text-anchor="end">4</text>
+        <text class="yl num" x="30" y="75" text-anchor="end">2</text>
+        <text class="yl num" x="30" y="119" text-anchor="end">0</text>
+        <rect class="bar" x="101" y="94" width="30" height="22" rx="4"/><text class="cap num" x="116" y="88" text-anchor="middle">1</text>
+        <rect class="bar" x="245" y="94" width="30" height="22" rx="4"/><text class="cap num" x="260" y="88" text-anchor="middle">1</text>
+        <rect class="bar" x="389" y="72" width="30" height="44" rx="4"/><text class="cap num" x="404" y="66" text-anchor="middle">2</text>
+        <rect class="bar" x="533" y="50" width="30" height="66" rx="4"/><text class="cap num" x="548" y="44" text-anchor="middle">3</text>
+        <text class="xl" x="116" y="136" text-anchor="middle">Jun 1–5</text>
+        <text class="xl" x="260" y="136" text-anchor="middle">6–10</text>
+        <text class="xl" x="404" y="136" text-anchor="middle">11–15</text>
+        <text class="xl" x="548" y="136" text-anchor="middle">16–20</text>
+      </svg>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>Intake <span class="aside">last 6 offered meals · a cat off food is a health signal, not preference</span></h2>
+    <div class="intake">
+      <div>
+        <div class="mealrow" role="img" aria-label="Last 6 offered meals, oldest to newest: ate all, ate some, declined, ate some, declined, declined.">
+          <div class="m full" title="ate all"></div>
+          <div class="m some" title="ate some"></div>
+          <div class="m none" title="declined"></div>
+          <div class="m some" title="ate some"></div>
+          <div class="m none" title="declined"></div>
+          <div class="m none" title="declined"></div>
+        </div>
+        <div class="mealkey">■ ate all &middot; ◧ ate some &middot; □ declined &nbsp;(Jun&nbsp;17 &rarr; Jun&nbsp;20, oldest left)</div>
+      </div>
+      <div class="note" style="margin-top:0"><b>Intake is owner-observed here</b> (measured meals, not free-fed) &mdash; declined food is recorded as a possible health signal, never as &ldquo;fussy.&rdquo; The <span class="num">52&nbsp;h</span> since a full meal drives the intake flag above.</div>
+    </div>
+  </div>
+
+  <!-- Vomit phenotype — PRESENT-ONLY, and here a finding IS present (the escalation half). -->
+  <div class="sec">
+    <h2>Vomit characteristics <span class="aside" style="border:1px solid var(--hair);border-radius:999px;padding:1px 8px;color:var(--muted)">Nyx photo analysis · owner-reviewable</span></h2>
+    <div class="pheno">
+      <div>
+        <div class="barmix" role="img" aria-label="Content across 5 photographed vomiting episodes: bile or foam 3, undigested food 1, brown or granular 1.">
+          <div class="seg s1" style="flex:3">3</div>
+          <div class="seg s2" style="flex:1">1</div>
+          <div class="seg s3" style="flex:1">1</div>
+        </div>
+        <div class="mixkey">
+          <span class="sw" style="background:#1a1c22"></span><b>Bile / foam</b> &times;3&nbsp;&middot;&nbsp;
+          <span class="sw" style="background:#5f636c"></span>Undigested food &times;1&nbsp;&middot;&nbsp;
+          <span class="sw" style="background:#a7abb2"></span>Brown / granular &times;1
+          <br/>Across <span class="num">5</span> of the <span class="num">7</span> episodes that have a legible photo. Per-episode detail in appendix&nbsp;A.
+        </div>
+      </div>
+      <div class="present">
+        <div class="h"><svg viewBox="0 0 24 24" fill="#16181d" aria-hidden="true"><path d="M12 2 L23 21 H1 Z"/><rect x="11" y="9" width="2" height="6" fill="#fff"/><rect x="11" y="16.5" width="2" height="2" fill="#fff"/></svg> Possible blood — 1 incident</div>
+        <b>Jun&nbsp;18:</b> the photo was read as possible <b>coffee-ground (digested) blood</b>. Shown because it is present &mdash; owner-reviewable, not confirmed. It leads the safety band above; the photo is attached as a permanent copy (appendix&nbsp;E). No foreign material was seen in any incident.
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>Diet &amp; medication</h2>
+    <div class="cols2">
+      <div>
+        <div class="kv"><span class="k">Current diet</span><span>Hill&rsquo;s Science Diet Adult, dry + wet, ~<span class="num">55&nbsp;g</span>/day split across 2&ndash;3 meals. No recent diet change. Fed by owner.</span></div>
+        <div class="kv"><span class="k">Water</span><span>Fountain + bowls; intake not measured. Owner notes reduced water interest this week.</span></div>
+      </div>
+      <div>
+        <div class="kv"><span class="k">Medication</span><span>None logged this window.</span></div>
+        <div class="kv"><span class="k">Timing vs symptoms</span><span>Vomiting is not tied to meals in the log (intake is falling, so few meals to compare). Reported as observation only, not cause.</span></div>
+      </div>
+    </div>
+    <p class="ref">Full event log &amp; incident photos: appendices A &amp; E.</p>
+  </div>
+
+  <div class="foot">
+    <div class="fbrand">
+      <svg class="qr" viewBox="0 0 42 42" aria-hidden="true">
+        <rect width="42" height="42" fill="#fff"/>
+        <rect x="2" y="2" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="6" y="6" width="4" height="4" fill="#2e3a4f"/>
+        <rect x="28" y="2" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="32" y="6" width="4" height="4" fill="#2e3a4f"/>
+        <rect x="2" y="28" width="12" height="12" fill="none" stroke="#2e3a4f" stroke-width="2.4"/><rect x="6" y="32" width="4" height="4" fill="#2e3a4f"/>
+        <g fill="#2e3a4f"><rect x="18" y="4" width="2" height="2"/><rect x="22" y="8" width="2" height="2"/><rect x="18" y="12" width="2" height="2"/><rect x="20" y="18" width="2" height="2"/><rect x="24" y="20" width="2" height="2"/><rect x="28" y="18" width="2" height="2"/><rect x="32" y="22" width="2" height="2"/><rect x="36" y="20" width="2" height="2"/><rect x="18" y="24" width="2" height="2"/><rect x="4" y="18" width="2" height="2"/><rect x="8" y="22" width="2" height="2"/><rect x="12" y="20" width="2" height="2"/><rect x="22" y="28" width="2" height="2"/><rect x="26" y="30" width="2" height="2"/><rect x="30" y="28" width="2" height="2"/><rect x="34" y="32" width="2" height="2"/><rect x="38" y="30" width="2" height="2"/><rect x="24" y="36" width="2" height="2"/></g>
+      </svg>
+      <div class="fw">
+        <div><span class="w">Nyx</span> <span class="u">&middot; nyx.app/report/4b7e&hellip;</span></div>
+        <div class="scan">Pixel (Okafor) &middot; owner-reported observations &middot; not a diagnosis.</div>
+        <div class="scan">Scan to verify this report is authentic.</div>
+      </div>
+    </div>
+    <div class="pg">Jun&nbsp;1&ndash;Jun&nbsp;20, 2026<br/>Clinical summary</div>
+  </div>
+</section>
+
+<!-- ============================ PAGE 2 — APPENDIX A + E + F ============================ -->
+<section class="page">
+  <p class="appx-title serif">Appendix A — Event log</p>
+  <p class="appx-sub">Every vomiting event and every declined / partial meal in the window, in order. &ldquo;Occurred&rdquo; is the owner&rsquo;s best account;
+     for events found later it is a time range. Photo findings are Nyx&rsquo;s read of the owner&rsquo;s photo, owner-reviewable; they never carry a
+     single-incident verdict (that stays in the app). Meal outcomes are owner-observed intake, recorded as a health signal &mdash; never &ldquo;picky.&rdquo;</p>
+  <table>
+    <caption>Vomiting ×7 · declined/partial meals ×5 · Jun 1 – Jun 20, 2026</caption>
+    <thead>
+      <tr><th style="width:60px">Date</th><th>Type</th><th style="width:132px">Occurred</th><th class="c" style="width:66px">Severity</th><th>Owner note &amp; photo findings</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="num">Jun&nbsp;3</td><td>Vomiting</td><td><span class="num">09:10</span> <span class="conf">seen</span></td><td class="c num">2/5</td><td>Foam after breakfast.<span class="fields"><b>Photo:</b> colour clear · contents foam · consistency foamy · blood none · foreign material none</span></td></tr>
+      <tr><td class="num">Jun&nbsp;9</td><td>Vomiting</td><td><span class="num">~14:00</span> <span class="conf">est</span></td><td class="c num">2/5</td><td>Yellow bile.<span class="fields"><b>Photo:</b> colour yellow · contents bile, foam · consistency foamy · blood none · foreign material none</span></td></tr>
+      <tr><td class="num">Jun&nbsp;12</td><td>Vomiting</td><td><span class="num">21:30</span> <span class="conf">seen</span></td><td class="c num">3/5</td><td>Undigested food ~1&nbsp;h after eating.<span class="fields"><b>Photo:</b> colour tan · contents undigested food · consistency chunky · blood none · foreign material none</span></td></tr>
+      <tr><td class="num">Jun&nbsp;16</td><td>Meal — declined</td><td><span class="num">18:00</span> <span class="conf">seen</span></td><td class="c">—</td><td>Sniffed wet food, walked away. Offered again 20:00, ate a little.</td></tr>
+      <tr><td class="num">Jun&nbsp;17</td><td>Vomiting</td><td><span class="num">08:40</span> <span class="conf">seen</span></td><td class="c num">2/5</td><td>Bile, small amount.<span class="fields"><b>Photo:</b> colour yellow · contents bile · consistency watery · blood none · foreign material none</span></td></tr>
+      <tr><td class="num">Jun&nbsp;18</td><td>Meal — barely touched</td><td><span class="num">08:00</span> <span class="conf">seen</span></td><td class="c">—</td><td>A few bites of wet food only. Last meal recorded as &ldquo;most/all.&rdquo;</td></tr>
+      <tr><td class="num">Jun&nbsp;18</td><td>Vomiting</td><td><span class="num">~17:00&ndash;19:20</span> <span class="conf">range</span></td><td class="c num">3/5</td><td>Found on the mat; darker than usual. <span class="flagtag">Possible blood</span><span class="fields"><b>Photo:</b> colour brown · contents granular material · consistency mucoid · <b>blood possible — coffee-ground (AI-flagged, unconfirmed)</b> · foreign material none · <b>permanent copy retained (appendix&nbsp;E)</b></span></td></tr>
+      <tr><td class="num">Jun&nbsp;19</td><td>Meal — declined</td><td><span class="num">08:00</span> <span class="conf">seen</span></td><td class="c">—</td><td>No interest in wet or dry.</td></tr>
+      <tr><td class="num">Jun&nbsp;19</td><td>Meal — declined</td><td><span class="num">19:00</span> <span class="conf">seen</span></td><td class="c">—</td><td>No interest.</td></tr>
+      <tr><td class="num">Jun&nbsp;20</td><td>Meal — declined</td><td><span class="num">08:00</span> <span class="conf">seen</span></td><td class="c">—</td><td>No interest; report generated.</td></tr>
+      <tr><td class="num">Jun&nbsp;20</td><td>Vomiting</td><td><span class="num">11:15</span> <span class="conf">seen</span></td><td class="c num">3/5</td><td>Small amount, foam.<span class="fields"><b>Photo:</b> not taken (owner note kept)</span></td></tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:9px"><b>Reduced-intake window:</b> the last meal recorded as fully/mostly eaten was Jun&nbsp;18, 08:00 &mdash; ~52&nbsp;h before this report. Declined meals are counted only where the owner logs intake; absence of a meal log is not read as &ldquo;didn&rsquo;t eat.&rdquo;</p>
+
+  <p class="appx-title serif" style="margin-top:22px">Appendix E — Incident photos</p>
+  <p class="appx-sub">The owner&rsquo;s own photos, most recent first. <b>Everyday photos</b> are shown on-screen only, over the same expiring, revocable link, and are
+     <b>not</b> in the printed / PDF copy. The <b>safety-flagged</b> photo (Jun&nbsp;18, possible blood) is different: it leads the safety band on page&nbsp;1 and is
+     retained as a <b>permanent copy for the medical record</b> &mdash; kept even if the owner later revokes the link. <b>(Placeholders shown in this mock.)</b></p>
+  <div class="photos">
+    <div class="photo flagged">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="flagph">⚑ Possible blood · permanent copy</span></div>
+      <div class="cap"><span class="d">Jun&nbsp;18</span> <span class="m">&middot; found ~17:00–19:20</span><br/><span class="m">Brown / granular · coffee-ground?</span><br/><span class="keep">Retained for the record</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">Jun&nbsp;17</span> <span class="m">&middot; 08:40 seen</span><br/><span class="m">Yellow · bile</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">Jun&nbsp;12</span> <span class="m">&middot; 21:30 seen</span><br/><span class="m">Tan · undigested food</span></div>
+    </div>
+    <div class="photo">
+      <div class="frame"><svg class="cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h4l2-2h6l2 2h4v11H3z"/><circle cx="12" cy="13" r="3.2"/></svg><span class="ph">Photo · screen only</span></div>
+      <div class="cap"><span class="d">Jun&nbsp;9</span> <span class="m">&middot; ~14:00 est</span><br/><span class="m">Yellow · bile / foam</span></div>
+    </div>
+  </div>
+  <p class="note" style="margin-top:11px">A photo lets a vet check the AI&rsquo;s read directly &mdash; the Jun&nbsp;18 &ldquo;possible blood&rdquo; is a flag to <b>look</b>, not a confirmed finding. No photo, and no absence of one, is evidence the cat is well.</p>
+
+  <p class="appx-title serif" style="margin-top:22px">Appendix F — How to read this report</p>
+  <dl class="legend">
+    <dt>Safety flags</dt><dd>Shown only when present, above the fold. They escalate on the presence of a concern (reduced intake, possible blood, worsening) and are owner-reported, not a diagnosis. Absence of a flag is never shown as an &ldquo;all clear.&rdquo;</dd>
+    <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal &mdash; never &ldquo;picky.&rdquo; Absence of a meal log is not read as &ldquo;didn&rsquo;t eat.&rdquo;</dd>
+    <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident &mdash; never as a &ldquo;0 of N&rdquo; count. A flagged incident leads the safety band and its photo is retained as a permanent record copy. A photo cannot exclude bleeding.</dd>
+    <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend. Descriptive, not a diagnosis; in a cat off food, weight loss is the trajectory that matters.</dd>
+    <dt>Denominators</dt><dd>Every count carries its window and days logged, so a count is never read without knowing how completely it was tracked.</dd>
+    <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed &middot; <span class="conf">est</span> estimated &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time noticed.</dd>
+    <dt>Photos &amp; verify</dt><dd>Everyday photos are viewable only while this link is live and are not in the printed copy; a safety-flagged photo is retained permanently for the record. The footer link and QR carry no private key.</dd>
+  </dl>
+
+  <div class="foot">
+    <div class="fbrand"><div class="fw"><span class="w">Nyx</span> <span class="u">&middot; nyx.app/report/4b7e&hellip;</span><div class="scan">Pixel (Okafor) &middot; owner-reported observations &middot; appendix.</div></div></div>
+    <div class="pg">Jun&nbsp;1&ndash;Jun&nbsp;20, 2026<br/>Appendices A, E–F</div>
+  </div>
+</section>
+
+</body>
+</html>
