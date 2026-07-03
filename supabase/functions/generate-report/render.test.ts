@@ -853,3 +853,30 @@ Deno.test('a confounder that ended mid-window reads "until <date>", never a fals
   assert.ok(/ongoing, start not recorded/.test(html), 'a null-start standing bowl reads honestly, not "since undefined"')
   assert.ok(!/undefined/.test(html), 'no undefined leaks from a null start date')
 })
+
+// ── Appendix B category label parity: a format='treat' exposure reads "Treat", not "Off-diet" ──
+
+Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with the treat count)', () => {
+  const html = renderReport(
+    base({
+      provenance: {
+        ownerReported: true,
+        totalSymptomIncidents: 0,
+        estimatedOrWindowCount: 0,
+        deletedExcluded: true,
+        symptomLog: [],
+        intakeLog: [],
+        intakeLogHiddenOlder: 0,
+        confounders: [
+          { eventId: 'e1', occurredAt: '2026-06-01T16:00:00Z', dayKey: '2026-06-01', foodLabel: 'Jerky', primaryProtein: 'chicken', format: 'treat', foodType: 'other', note: null },
+        ],
+        proteinExposureTally: { chicken: 1 },
+        conditions: [],
+      },
+    }),
+  )
+  // The row is labelled "Treat" (format='treat'), not "Off-diet"; the protein is still tallied.
+  assert.ok(/<td>Treat<\/td>/.test(html), 'a format=treat row reads "Treat"')
+  assert.ok(!/<td>Off-diet<\/td>/.test(html), 'not mislabelled "Off-diet"')
+  assert.ok(/chicken/.test(html), 'the antigen is retained')
+})

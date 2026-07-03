@@ -1340,7 +1340,7 @@ function appendixB(snap: ReportSnapshot): string {
         // human_food-first, to agree with the page-1 lines and the confounder de-dup (A3): a
         // table-scrap logged as both a treat and human food is ONE "Human food" row here too.
         `<tr><td class="num">${h(fmtLocalDay(c.occurredAt, snap.timezone))}</td><td>${
-          c.format === 'human_food' ? 'Human food' : c.foodType === 'treat' ? 'Treat' : 'Off-diet'
+          c.format === 'human_food' ? 'Human food' : c.foodType === 'treat' || c.format === 'treat' ? 'Treat' : 'Off-diet'
         }</td><td>${c.foodLabel ? h(c.foodLabel) : '&mdash;'}</td><td>${c.primaryProtein ? h(c.primaryProtein) : ''}${
           c.note ? ` ${h(c.note)}` : ''
         }</td></tr>`,
