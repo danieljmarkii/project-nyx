@@ -612,10 +612,13 @@ Deno.serve(async (req: Request) => {
       headers: { ...CORS_HEADERS, 'Cache-Control': 'private, no-store' },
     })
   } catch (err) {
+    // Log the detail server-side; return a GENERIC message. A report-assembly error
+    // string can interpolate a data value, and this is a health-data function — never
+    // echo raw internal error text to the caller (rls-privacy-reviewer hygiene, PR 5).
     const message = err instanceof Error ? err.message : String(err)
     console.error('generate-report error:', message)
     return Response.json(
-      { error: 'Report generation failed', detail: message },
+      { error: 'Report generation failed' },
       { status: 500, headers: CORS_HEADERS },
     )
   }
