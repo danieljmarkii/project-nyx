@@ -800,16 +800,25 @@ function readingTheTrend(snap: ReportSnapshot): string {
       Read the trend by frequency of episodes across the window, not by any single event's severity (severity is per-event in appendix&nbsp;A and is never averaged).${gapBit}</div>`
   }
 
+  // Each intervention is timed honestly: "started <date>" when it began in-window (it also
+  // carries a dashed chart marker), "ongoing since <date>" when it began BEFORE the window and
+  // ran through it — a standing confounder with no start point to mark but every bit as able to
+  // confound the trend (adversarial finding A1). "overlaps this window" is the honest umbrella:
+  // a standing steroid did not "change" during the window, but its presence still forbids
+  // crediting the diet.
   const list = changes
-    .map((c) => `${changeLabel(c)} (started ${h(fmtDay(c.startDate))})`)
+    .map(
+      (c) =>
+        `${changeLabel(c)} (${c.ongoing ? `ongoing since ${h(fmtDay(c.startDate))}` : `started ${h(fmtDay(c.startDate))}`})`,
+    )
     .join('; ')
   const plural = changes.length > 1
   const lead = plural
-    ? `<b>${num(changes.length)} things changed during this window:</b> ${list}.`
-    : `<b>One thing changed during this window:</b> ${list}.`
+    ? `<b>${num(changes.length)} interventions overlap this window:</b> ${list}.`
+    : `<b>One intervention overlaps this window:</b> ${list}.`
   const caution = plural
-    ? ' A change in signs over this period <b>cannot be attributed to any one of them alone</b> — they moved together.'
-    : ' A change in signs over this period <b>cannot be attributed to the diet alone</b> if it coincides with this change.'
+    ? ' A change in signs over this period <b>cannot be attributed to any one of them alone</b> — they overlap in time.'
+    : ' A change in signs over this period <b>cannot be attributed to the diet alone</b> while this intervention overlaps it.'
   return `
     <div class="callout">
       <span class="k">Reading the trend</span>
@@ -953,7 +962,7 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
         <div class="barmix">${segs.join('')}</div>
         <div class="mixkey">${key.join('&nbsp;&middot;&nbsp; ')}<br/>Owner-described over ${num(st.loggedDays)} of ${num(
     st.windowDays,
-  )} days logged. Per-event detail in appendix&nbsp;A.</div>
+  )} days logged. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.</div>
       </div>
       <div class="limit">
         <span class="h">Blood &amp; mucus</span>
@@ -961,6 +970,23 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
       </div>
     </div>
   </div>`
+}
+
+/**
+ * Distinct food-item labels, capped, with an honest "+N more" (never a silent truncation).
+ * Human food is logged per-feeding, so four table-scraps of the same item would otherwise
+ * render "Ground beef, Ground beef, Ground beef, Ground beef" — a broken-looking list that
+ * makes a vet discount the page (cold-read + adversarial finding A6). The count/days stay on
+ * the line; this only collapses the ITEM list to what's distinct.
+ */
+function distinctLabels(items: ReadonlyArray<{ label: string | null }>, cap: number): string {
+  const seen: string[] = []
+  for (const it of items) {
+    const l = it.label ?? 'item'
+    if (!seen.includes(l)) seen.push(l)
+  }
+  const shown = seen.slice(0, cap).map((l) => h(l)).join(', ')
+  return seen.length > cap ? `${shown} +${seen.length - cap} more` : shown
 }
 
 /** Diet, feeding, medications & supplements (§3.8) — B-040, B-102, B-117, timing. */
@@ -1005,14 +1031,15 @@ function dietMeds(snap: ReportSnapshot): string {
   // Off-diet (human food line B-102 + treats).
   const offBits: string[] = []
   if (d.humanFood.count > 0) {
-    const items = d.humanFood.items
-      .slice(0, 6)
-      .map((it) => (it.label ? h(it.label) : 'item'))
-      .join(', ')
+    const items = distinctLabels(d.humanFood.items, 6)
+    // Trial-aware framing (adversarial finding A4): "the #1 diet-trial confounder" is the
+    // B-102 wedge phrasing, but it asserts a trial. On a no-trial monitoring report it reads
+    // as a self-contradiction ("no diet trial" then "the diet-trial confounder").
+    const confounderTag = d.activeTrial ? ' — the #1 diet-trial confounder.' : ' — a common dietary confounder.'
     offBits.push(
       `Human food on ${num(d.humanFood.days)} day${d.humanFood.days === 1 ? '' : 's'} (${num(
         d.humanFood.count,
-      )} feeding${d.humanFood.count === 1 ? '' : 's'}: ${items}) — the #1 diet-trial confounder.`,
+      )} feeding${d.humanFood.count === 1 ? '' : 's'}: ${items})${confounderTag}`,
     )
   }
   if (d.treats.count > 0) {
@@ -1034,9 +1061,13 @@ function dietMeds(snap: ReportSnapshot): string {
     right.push(
       kv(
         'Supplement',
+        // "a concurrent intervention over this window" is self-contained; the old copy claimed
+        // "named in the trend note above," but that note only renders when symptom events exist
+        // (else it points at nothing) — adversarial finding A1 sibling. The note DOES name every
+        // overlapping supplement now, so the phrasing holds when it renders without asserting it.
         `${h(m.drugName)}${m.scheduleNotes ? ` &middot; ${h(m.scheduleNotes)}` : ''} &middot; started ${h(
           fmtDay(m.startedAt),
-        )} (owner-reported, OTC) — a concurrent intervention, named in the trend note above.`,
+        )} (owner-reported, OTC) — a concurrent intervention over this window.`,
       ),
     )
   }
@@ -1289,11 +1320,14 @@ function appendixBCD(snap: ReportSnapshot): string {
 
 function appendixB(snap: ReportSnapshot): string {
   const conf: ConfounderExposure[] = snap.provenance.confounders
+  const hasTrial = !!snap.diet.activeTrial
   const rows = conf
     .map(
       (c) =>
+        // human_food-first, to agree with the page-1 lines and the confounder de-dup (A3): a
+        // table-scrap logged as both a treat and human food is ONE "Human food" row here too.
         `<tr><td class="num">${h(fmtLocalDay(c.occurredAt, snap.timezone))}</td><td>${
-          c.foodType === 'treat' ? 'Treat' : c.format === 'human_food' ? 'Human food' : 'Off-diet'
+          c.format === 'human_food' ? 'Human food' : c.foodType === 'treat' ? 'Treat' : 'Off-diet'
         }</td><td>${c.foodLabel ? h(c.foodLabel) : '&mdash;'}</td><td>${c.primaryProtein ? h(c.primaryProtein) : ''}${
           c.note ? ` ${h(c.note)}` : ''
         }</td></tr>`,
@@ -1303,12 +1337,39 @@ function appendixB(snap: ReportSnapshot): string {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([p, n]) => `${h(p)} &times;${n}`)
     .join(', ')
-  const tallyBit = tally
-    ? `<p class="note"><b>Protein exposures (off-diet):</b> ${tally} — the antigens most likely to break an elimination trial.</p>`
-    : ''
+  // A continuously-available free-fed competing protein is the biggest breach of an elimination
+  // trial, but it is not a discrete meal event so it never enters the count-based tally
+  // (adversarial finding A2). Name it explicitly alongside — as a standing exposure, never a
+  // fabricated "×N". Only when a trial exists: for a no-trial pet the free-fed food IS the diet
+  // (appendix C), not an off-diet confounder.
+  const freeFedProteins = [
+    ...new Set(snap.diet.freeFed.map((f) => f.primaryProtein).filter((p): p is string => !!p)),
+  ]
+  const tallyParts: string[] = []
+  if (tally) {
+    tallyParts.push(
+      `<b>Protein exposures (off-diet):</b> ${tally}${
+        hasTrial
+          ? ' — the antigens most likely to break an elimination trial.'
+          : ' — off-diet protein exposures to weigh against the symptom pattern.'
+      }`,
+    )
+  }
+  if (hasTrial && freeFedProteins.length) {
+    tallyParts.push(
+      `<b>Free-fed alongside the trial:</b> ${freeFedProteins
+        .map(h)
+        .join(', ')} (continuously available; intake not directly observed) — a competing antigen the discrete tally above cannot count.`,
+    )
+  }
+  const tallyBit = tallyParts.length ? `<p class="note">${tallyParts.join(' ')}</p>` : ''
   return `
   <p class="appx-title serif">Appendix B — Off-diet exposures (confounders)</p>
-  <p class="appx-sub">Everything fed outside the main/trial diet, because these are the most common reasons a diet trial reads as &ldquo;not working.&rdquo;</p>
+  <p class="appx-sub">${
+    hasTrial
+      ? 'Everything fed outside the trial diet, because these are the most common reasons a diet trial reads as &ldquo;not working.&rdquo;'
+      : 'Everything fed outside the main diet — the exposures most worth weighing against the symptom pattern.'
+  }</p>
   <table>
     <caption>${num(conf.length)} off-diet exposure${conf.length === 1 ? '' : 's'} &middot; ${h(
     fmtRange(snap.scope.startDate, snap.scope.endDate),
@@ -1329,15 +1390,23 @@ function appendixC(snap: ReportSnapshot): string {
     ? `${num(d.treats.count)} this window (${num(d.treats.distinctItems)} distinct). Dates in appendix&nbsp;B.`
     : 'None recorded.'
   const humanBit = d.humanFood.count
-    ? `${num(d.humanFood.days)} day${d.humanFood.days === 1 ? '' : 's'} (${d.humanFood.items
-        .slice(0, 6)
-        .map((it) => (it.label ? h(it.label) : 'item'))
-        .join(', ')}).`
+    ? `${num(d.humanFood.days)} day${d.humanFood.days === 1 ? '' : 's'} (${distinctLabels(d.humanFood.items, 6)}).`
     : 'None recorded.'
+  // A concurrent free_choice bowl MUST appear in the diet history even when a trial is active —
+  // an ad-lib competing-protein staple is the single thing most likely to break an elimination
+  // trial, and the WSAVA diet history is exactly the section a vet reads to spot it. The old
+  // ternary reached the free-fed branch ONLY when there was no trial, so a trial contaminated by
+  // a duck bowl rendered a "clean" single-protein history (adversarial + cold-read finding A2 —
+  // the highest-consequence WSAVA miss; the no-trial cat listed free-fed correctly, proving it a
+  // bug not a design choice).
+  const freeFedNames = d.freeFed.map((f) => (f.foodLabel ? h(f.foodLabel) : 'free-fed food')).join(', ')
+  const freeFedClause = d.freeFed.length
+    ? ` Also free-fed alongside: ${freeFedNames} (free-choice &mdash; intake not directly observed).`
+    : ''
   const primaryDiet = d.activeTrial
-    ? `${d.activeTrial.foodLabel ? h(d.activeTrial.foodLabel) : 'Trial diet'}. Started ${h(fmtDayYear(d.activeTrial.startedAt))}.`
+    ? `${d.activeTrial.foodLabel ? h(d.activeTrial.foodLabel) : 'Trial diet'}. Started ${h(fmtDayYear(d.activeTrial.startedAt))}.${freeFedClause}`
     : d.freeFed.length
-      ? d.freeFed.map((f) => (f.foodLabel ? h(f.foodLabel) : 'free-fed food')).join(', ') + ' (free-choice — intake not directly observed).'
+      ? `${freeFedNames} (free-choice &mdash; intake not directly observed).`
       : // No structured trial/arrangement to name here; the fed food still appears per-meal in the log
         // (and any refused-food note on page 1). Worded so it does not read as "diet unknown".
         'No diet trial or free-feeding arrangement recorded for this window; the fed diet appears per meal in the log.'
@@ -1419,7 +1488,7 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo; When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal), and the recent rated meals are listed in the recent-meals appendix. For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
     <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
-    <dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. The symptom counts on page&nbsp;1 trace line-by-line to appendix&nbsp;A and the off-diet exposures to appendix&nbsp;B; medication, diet and weight figures summarize the owner's logs for those items. Nothing is counted that the owner did not log.</dd>
+    <dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. The symptom counts on page&nbsp;1 (including loose stools) trace line-by-line to appendix&nbsp;A and the off-diet exposures to appendix&nbsp;B; medication, diet, weight and normal-stool figures summarize the owner's logs for those items rather than itemising each one. Nothing is counted that the owner did not log.</dd>
   </dl>
   ${footer(snap, 'Appendix F — how to read')}
 </section>`

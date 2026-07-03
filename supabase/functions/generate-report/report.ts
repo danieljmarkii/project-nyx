@@ -866,8 +866,17 @@ export interface ConcurrentChange {
   kind: InterventionKind
   label: string
   startDate: string
-  /** The 7-day bucket index where this intervention started (the dashed marker, §3.5); null if outside the window. */
+  /** The 7-day bucket index where this intervention started (the dashed marker, §3.5); null if it started outside the window (a standing confounder gets no marker). */
   bucketIndex: number | null
+  /**
+   * True when the intervention STARTED before the window but is active within it — a
+   * STANDING confounder (e.g. a steroid begun before the report range, running throughout).
+   * It carries no chart marker (there is no start point in-window) but MUST still be named in
+   * the "Reading the trend" note; otherwise a drug that suppresses the very signs the trial
+   * measures is invisible and the diet silently takes its credit — spec §4/B-117, the
+   * single highest-consequence misread. false ⇒ the intervention started inside the window.
+   */
+  ongoing: boolean
 }
 
 export interface SymptomLogPhenotype {
@@ -1472,12 +1481,33 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       : null
 
   // ── Weight (§3.3, B-186) ──────────────────────────────────────────────────────
-  // Exclude any weigh-in whose parent event was collapsed as a §5.11 duplicate
-  // (weight_check is an event type too, so a double-logged weigh-in is de-duped here
-  // exactly like a double-logged vomit — the trend must not draw the same point twice).
-  const allReadings = [...input.weightChecks]
+  // Weigh-ins arrive in their OWN array (weightChecks), NOT in input.events, so the
+  // type-and-minute event de-dup never sees them — and it deliberately excludes
+  // weight_check anyway, because a distinct weight VALUE means two genuine readings are
+  // not duplicates (DEDUP_OBSERVATION_TYPES note). But a double-tap / offline-sync retry
+  // produces two near-simultaneous rows for ONE weigh-in, which would inflate readingCount
+  // and draw a phantom point on the sparkline (adversarial finding A5). So collapse readings
+  // within DEDUP_WINDOW_MS of the prior kept one, keeping the LATER row (last-write-wins,
+  // the project's sync-conflict rule) — a correction 5 s later wins, a retry of the same
+  // value is idempotent. Distinct readings minutes+ apart are always preserved.
+  // First drop any weigh-in whose PARENT event was collapsed by the type-and-minute event
+  // de-dup (only reachable if the I/O shell also placed the weight_check event in input.events
+  // — weight_check is in DEDUP_OBSERVATION_TYPES; a no-op when weightChecks is a standalone
+  // pull), then apply the near-simultaneous collapse below for the standalone-array case.
+  const sortedReadings = [...input.weightChecks]
     .filter((r) => !droppedEventIds.has(r.eventId))
     .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))
+  const allReadings: ReportWeightCheckInput[] = []
+  for (const r of sortedReadings) {
+    const prev = allReadings[allReadings.length - 1]
+    const prevMs = prev ? parseMs(prev.occurredAt) : null
+    const curMs = parseMs(r.occurredAt)
+    if (prev && prevMs !== null && curMs !== null && curMs - prevMs < DEDUP_WINDOW_MS) {
+      allReadings[allReadings.length - 1] = r // collapse the retry/correction pair, keep the later
+    } else {
+      allReadings.push(r)
+    }
+  }
   const latestOverall = allReadings.length > 0 ? allReadings[allReadings.length - 1] : null
   const windowReadings = allReadings.filter((r) => inWindow(r.occurredAt))
   const weight = buildWeightSection(latestOverall, windowReadings, tz)
@@ -1517,9 +1547,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ? { ratedMeals: ratedMeals.length, finishedMeals, rate: finishedMeals / ratedMeals.length }
       : null
 
-  const treatFeedings = windowMeals.filter((e) => e.meal!.foodType === 'treat' || e.meal!.format === 'treat')
-  const treatItemIds = new Set(treatFeedings.map((e) => e.meal!.foodItemId ?? e.id))
+  // human_food format is the STRONGER confounder signal (B-102, the #1 diet-trial confounder),
+  // so it takes precedence: a table-scrap "treat" (foodType='treat' AND format='human_food')
+  // counts ONCE, as human food, and is excluded from the treats tally. Without this the same
+  // feeding was summed on BOTH the page-1 human-food line and the treats line (adversarial
+  // finding A3 — page 1 disagreed with the de-duplicated Appendix B). Appendix B's category
+  // ternary is ordered human_food-first to match.
   const humanFoodFeedings = windowMeals.filter((e) => e.meal!.format === 'human_food')
+  const treatFeedings = windowMeals.filter(
+    (e) => (e.meal!.foodType === 'treat' || e.meal!.format === 'treat') && e.meal!.format !== 'human_food',
+  )
+  const treatItemIds = new Set(treatFeedings.map((e) => e.meal!.foodItemId ?? e.id))
   const humanFoodDays = new Set<number>()
   const humanFoodItems: Array<{ date: string; label: string | null }> = []
   for (const e of humanFoodFeedings) {
@@ -1945,19 +1983,36 @@ function buildConcurrentChanges(
   bucketIndexOfDay: (dn: number) => number,
 ): ConcurrentChange[] {
   const out: ConcurrentChange[] = []
-  const push = (kind: InterventionKind, label: string, startDate: string) => {
-    const dn = dayNumber(startDate)
-    if (dn === null || dn < scope.startDayNum || dn > scope.endDayNum) return
-    out.push({ kind, label, startDate, bucketIndex: bucketIndexOfDay(dn) })
+  // An intervention is a concurrent confounder if its ACTIVE SPAN overlaps the window at
+  // all — NOT only if it STARTED inside it. A steroid begun before the range and running
+  // throughout suppresses exactly the signs the trial measures, so dropping it (the old
+  // in-window-start-only gate) let the diet take its credit — adversarial finding A1, the
+  // spec §4/B-117 highest-consequence misread. An open-ended (still-active) intervention
+  // runs to the window end; one that ENDED before the window never overlaps and is dropped.
+  const consider = (kind: InterventionKind, label: string, startDate: string, endDate: string | null) => {
+    const startDn = dayNumber(startDate)
+    if (startDn === null) return
+    const activeEndDn = endDate ? dayNumber(endDate) : null
+    const spanEnd = activeEndDn ?? scope.endDayNum // open-ended → active through the window end
+    if (startDn > scope.endDayNum || spanEnd < scope.startDayNum) return // no overlap with the window
+    const startedInWindow = startDn >= scope.startDayNum && startDn <= scope.endDayNum
+    out.push({
+      kind,
+      label,
+      startDate,
+      // A marker only where there is a real start point in-window; a standing confounder gets none.
+      bucketIndex: startedInWindow ? bucketIndexOfDay(startDn) : null,
+      ongoing: !startedInWindow,
+    })
   }
   for (const t of input.dietTrials) {
-    push('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt)
+    consider('diet_trial', t.foodLabel ?? 'Diet trial', t.startedAt, t.completedAt)
   }
   for (const m of input.medications) {
-    push(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt)
+    consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)
   }
   for (const a of input.feedingArrangements) {
-    if (a.method === 'free_choice' && a.activeFrom) push('free_fed', a.foodLabel ?? 'Free-fed food', a.activeFrom)
+    if (a.method === 'free_choice' && a.activeFrom) consider('free_fed', a.foodLabel ?? 'Free-fed food', a.activeFrom, a.activeUntil)
   }
   // Explicit total order (matches the determinism discipline of every other sort here) —
   // by start date, then kind, then label, so same-day interventions never depend on push order.
