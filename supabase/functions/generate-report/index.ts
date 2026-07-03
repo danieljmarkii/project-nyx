@@ -204,6 +204,20 @@ function foodLabel(fi: { brand: string; product_name: string } | null): string |
   return label.length > 0 ? label : null
 }
 
+/**
+ * Rows from a query result, or THROW on a query error. A vet report renders as a
+ * clinical artifact a vet acts on, so a swallowed query error (RLS misconfig,
+ * transient PostgREST fault, an ambiguous embed) that silently becomes "zero rows"
+ * would produce a FALSE-CLEAN report — the exact absence≠wellness / n=1-never-
+ * reassures failure the report exists to avoid. So every read is checked: a real
+ * error surfaces as a 500, never as a quietly empty section. (CLAUDE.md: no silent
+ * failures in API calls; the B-196 class of bug re-hardened.)
+ */
+function rowsOrThrow<T>(res: { data: unknown; error: { message: string } | null }, table: string): T[] {
+  if (res.error) throw new Error(`${table} read failed: ${res.error.message}`)
+  return (res.data ?? []) as T[]
+}
+
 // ── Pure DB → ReportInput mappers (exported for offline deno tests) ────────────
 // These are the load-bearing DB-column-to-contract translation. The clinical
 // honesty logic lives in report.ts; these only rename fields and normalise
@@ -272,13 +286,26 @@ export function mapAiAnalysisRows(rows: AiAnalysisRow[]): ReportAiAnalysisInput[
   }))
 }
 
+/** True when a parent-event instant is at/after the lookback floor. weight_checks and
+ * medication_administrations carry no occurred_at column, so they can't be bounded in
+ * the query the way `events` is (.gte occurred_at) — we post-filter their PARENT's
+ * occurred_at here so a pet on a years-long regimen doesn't pull its entire dose/weight
+ * history on every report (report.ts scopes to the window anyway; this bounds the pull's
+ * processing to the same superset `events` uses). NaN/absent floor ⇒ no bound. */
+function withinLookback(occurredAt: string, lookbackMs: number | undefined): boolean {
+  if (lookbackMs === undefined) return true
+  const ms = Date.parse(occurredAt)
+  return Number.isNaN(ms) ? true : ms >= lookbackMs
+}
+
 /** Weigh-ins carry their timing on the PARENT event; soft-delete is on the parent
  * too (1:1 child), so a weigh-in whose event was soft-deleted is dropped here. */
-export function mapWeightRows(rows: WeightRow[]): ReportWeightCheckInput[] {
+export function mapWeightRows(rows: WeightRow[], lookbackMs?: number): ReportWeightCheckInput[] {
   const out: ReportWeightCheckInput[] = []
   for (const r of rows) {
     const ev = first(r.events)
     if (!ev || ev.deleted_at) continue
+    if (!withinLookback(ev.occurred_at, lookbackMs)) continue
     const kg = num(r.weight_kg)
     if (kg === null) continue
     out.push({ eventId: r.event_id, weightKg: kg, occurredAt: ev.occurred_at })
@@ -288,11 +315,12 @@ export function mapWeightRows(rows: WeightRow[]): ReportWeightCheckInput[] {
 
 /** Doses carry timing on the parent event; drop soft-deleted parents. The clinical
  * on-board filtering (missed/refused/in-doubt-combo) stays in report.ts/detection. */
-export function mapDoseRows(rows: DoseRow[]): ReportDoseInput[] {
+export function mapDoseRows(rows: DoseRow[], lookbackMs?: number): ReportDoseInput[] {
   const out: ReportDoseInput[] = []
   for (const r of rows) {
     const ev = first(r.events)
     if (!ev || ev.deleted_at) continue
+    if (!withinLookback(ev.occurred_at, lookbackMs)) continue
     out.push({
       eventId: r.event_id,
       occurredAt: ev.occurred_at,
@@ -384,6 +412,15 @@ export function mapConditionRows(rows: ConditionRow[]): ReportConditionInput[] {
  * long since-visit range) plus CHERRY_PICK_LOOKBACK_DAYS of pre-window history for
  * the custom-window out-of-range disclosure, and at least BASE_LOOKBACK_DAYS.
  * Pure + exported so the boundary math is unit-tested, not asserted.
+ *
+ * DELIBERATE BOUND (Data Scientist sign-off, PR 5): the §6 cherry-pick disclosure
+ * ("N symptom events outside this range") is therefore computed over at most ~this
+ * lookback, not the pet's full record — so for a pet tracked well beyond it with an
+ * old symptom cluster and a recent custom window, the out-of-window count can
+ * UNDERstate. Accepted for v1: it mirrors generate-signal's own 180-day precedent,
+ * keeps the query on the (pet_id, occurred_at) index, and the disclosure is a
+ * trust signal, not a load-bearing count. Revisit if real-vet feedback wants
+ * full-history cherry-pick accounting (would widen the pull for long-tracked pets).
  */
 export function computeLookbackIso(scope: ReportScope, nowMs: number): string {
   const windowStartMs = Date.parse(`${scope.startDate}T00:00:00.000Z`)
@@ -425,18 +462,23 @@ export async function generateReportForPet(
       .eq('pet_id', petId),
   ])
 
+  // A real error on the pet load must NOT masquerade as a 404 ("you don't own this
+  // pet") — that would hide a backend fault as an authorization result. Throw → 500;
+  // only a genuine null (not found OR not owned) is the 404.
+  if (petRes.error) throw new Error(`pets read failed: ${petRes.error.message}`)
   const petRow = petRes.data as PetRow | null
   if (!petRow) {
     // Not found OR not owned — indistinguishable by design (no ownership oracle).
     return { status: 404, body: { error: 'Pet not found' } }
   }
+  if (profileRes.error) throw new Error(`user_profiles read failed: ${profileRes.error.message}`)
 
   const profile = profileRes.data as { display_name: string | null; timezone: string | null } | null
   const pet = mapPet(petRow)
   const ownerName = profile?.display_name?.trim() || null
   const timezone = profile?.timezone || null
-  const vetVisits = mapVetVisitRows((vetVisitsRes.data ?? []) as unknown as VetVisitRow[])
-  const dietTrials = mapDietTrialRows((dietTrialsRes.data ?? []) as unknown as DietTrialRow[])
+  const vetVisits = mapVetVisitRows(rowsOrThrow<VetVisitRow>(vetVisitsRes, 'vet_visits'))
+  const dietTrials = mapDietTrialRows(rowsOrThrow<DietTrialRow>(dietTrialsRes, 'diet_trials'))
 
   // 2. Resolve the window (§6 cascade) from the small window-determining rows, so
   //    the heavy event pull can be bounded to cover exactly that window (+ buffer).
@@ -527,21 +569,27 @@ export async function generateReportForPet(
     supabase.from('conditions').select('condition_name, status, diagnosed_at').eq('pet_id', petId),
   ])
 
+  // weight_checks / medication_administrations carry no occurred_at column (it lives on
+  // the parent event), so they can't be .gte-bounded in the query the way `events` is —
+  // bound them here against the same lookback floor so a chronic-regimen pet doesn't
+  // process its entire dose/weight history (report.ts scopes to the window regardless).
+  const lookbackMs = Date.parse(lookbackIso)
+
   const input: ReportInput = {
     now: nowIso,
     timezone,
     pet,
     ownerName,
     requestedWindow,
-    events: mapEventRows((eventsRes.data ?? []) as unknown as EventRow[]),
-    aiAnalyses: mapAiAnalysisRows((aiRes.data ?? []) as unknown as AiAnalysisRow[]),
-    weightChecks: mapWeightRows((weightRes.data ?? []) as unknown as WeightRow[]),
-    doses: mapDoseRows((dosesRes.data ?? []) as unknown as DoseRow[]),
-    medications: mapMedicationRows((medsRes.data ?? []) as unknown as MedicationRow[]),
+    events: mapEventRows(rowsOrThrow<EventRow>(eventsRes, 'events')),
+    aiAnalyses: mapAiAnalysisRows(rowsOrThrow<AiAnalysisRow>(aiRes, 'event_ai_analysis')),
+    weightChecks: mapWeightRows(rowsOrThrow<WeightRow>(weightRes, 'weight_checks'), lookbackMs),
+    doses: mapDoseRows(rowsOrThrow<DoseRow>(dosesRes, 'medication_administrations'), lookbackMs),
+    medications: mapMedicationRows(rowsOrThrow<MedicationRow>(medsRes, 'medications')),
     dietTrials,
     vetVisits,
-    feedingArrangements: mapFeedingArrangementRows((arrangementsRes.data ?? []) as unknown as ArrangementRow[]),
-    conditions: mapConditionRows((conditionsRes.data ?? []) as unknown as ConditionRow[]),
+    feedingArrangements: mapFeedingArrangementRows(rowsOrThrow<ArrangementRow>(arrangementsRes, 'feeding_arrangements')),
+    conditions: mapConditionRows(rowsOrThrow<ConditionRow>(conditionsRes, 'conditions')),
   }
 
   // 4. Pure assembly → pure render. No LLM, no I/O, no mutation.

@@ -7,14 +7,20 @@
 // (shareReportPdf) is integration, verified on-device; the modules are mocked here
 // only so importing pdf.ts doesn't drag native code into jest.
 
-import { reportPdfFilename, generateVetReport } from './pdf';
+import { reportPdfFilename, generateVetReport, shareReportPdf, type VetReport } from './pdf';
 import { supabase } from './supabase';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 
 jest.mock('./supabase', () => ({
   supabase: { functions: { invoke: jest.fn() } },
 }));
 jest.mock('expo-print', () => ({ printToFileAsync: jest.fn() }));
 jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(), shareAsync: jest.fn() }));
+
+// File.copy throws when this is set — drives the "clinic-name copy failed → share the
+// raw temp uri" fallback branch (mock-prefixed so jest can hoist the factory over it).
+const mockFileControl = { copyThrows: false };
 jest.mock('expo-file-system', () => ({
   Paths: { cache: { uri: 'file:///cache' } },
   File: class {
@@ -24,11 +30,16 @@ jest.mock('expo-file-system', () => ({
     }
     get exists() { return false; }
     delete() {}
-    copy() {}
+    copy() {
+      if (mockFileControl.copyThrows) throw new Error('copy failed');
+    }
   },
 }));
 
 const mockedInvoke = supabase.functions.invoke as jest.Mock;
+const mockedIsAvailable = Sharing.isAvailableAsync as jest.Mock;
+const mockedShare = Sharing.shareAsync as jest.Mock;
+const mockedPrint = Print.printToFileAsync as jest.Mock;
 
 describe('reportPdfFilename', () => {
   it('builds a clinic-friendly name with the range', () => {
@@ -84,5 +95,45 @@ describe('generateVetReport', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('generate-report', {
       body: { petId: 'p1', startDate: '2026-05-01', endDate: '2026-06-01' },
     });
+  });
+});
+
+describe('shareReportPdf', () => {
+  const report: VetReport = {
+    html: '<html>Nyx</html>', petName: 'Nyx', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'fallback_90d',
+  };
+  beforeEach(() => {
+    mockedIsAvailable.mockReset();
+    mockedShare.mockReset().mockResolvedValue(undefined);
+    mockedPrint.mockReset().mockResolvedValue({ uri: 'file:///cache/print-tmp.pdf' });
+    mockFileControl.copyThrows = false;
+  });
+
+  it('returns false and never prints when the platform has no share sheet', async () => {
+    mockedIsAvailable.mockResolvedValue(false);
+    const ok = await shareReportPdf(report);
+    expect(ok).toBe(false);
+    expect(mockedPrint).not.toHaveBeenCalled();
+    expect(mockedShare).not.toHaveBeenCalled();
+  });
+
+  it('renders the html to a PDF and shares the clinic-named file', async () => {
+    mockedIsAvailable.mockResolvedValue(true);
+    const ok = await shareReportPdf(report);
+    expect(ok).toBe(true);
+    expect(mockedPrint).toHaveBeenCalledWith({ html: report.html });
+    // Shares the renamed clinic-friendly file, not the raw temp uri.
+    expect(mockedShare).toHaveBeenCalledWith(
+      'file:///cache/Nyx-vet-report-2026-04-04-to-2026-07-03.pdf',
+      expect.objectContaining({ mimeType: 'application/pdf', UTI: 'com.adobe.pdf' }),
+    );
+  });
+
+  it('falls back to the raw temp uri (never blocks sharing) when the rename copy fails', async () => {
+    mockedIsAvailable.mockResolvedValue(true);
+    mockFileControl.copyThrows = true;
+    const ok = await shareReportPdf(report);
+    expect(ok).toBe(true);
+    expect(mockedShare).toHaveBeenCalledWith('file:///cache/print-tmp.pdf', expect.anything());
   });
 });

@@ -148,6 +148,18 @@ Deno.test('mapWeightRows: reads timing from parent, drops soft-deleted parent + 
   assert.equal(rows[1].weightKg, 5)
 })
 
+Deno.test('mapWeightRows: lookbackMs drops readings whose parent event predates the floor', () => {
+  const floor = Date.parse('2026-04-04T00:00:00Z')
+  const rows = mapWeightRows(
+    [
+      { event_id: 'old', weight_kg: '4.0', events: { occurred_at: '2026-01-01T12:00:00Z', deleted_at: null } },
+      { event_id: 'new', weight_kg: '4.2', events: { occurred_at: '2026-06-01T12:00:00Z', deleted_at: null } },
+    ],
+    floor,
+  )
+  assert.deepEqual(rows.map((r) => r.eventId), ['new'])
+})
+
 // ── mapDoseRows ─────────────────────────────────────────────────────────────
 
 Deno.test('mapDoseRows: timing from parent, soft-deleted dropped, paired link carried', () => {
@@ -169,6 +181,20 @@ Deno.test('mapDoseRows: timing from parent, soft-deleted dropped, paired link ca
   assert.equal(rows[0].medicationId, 'reg1')
   assert.equal(rows[0].adherence, 'given')
   assert.equal(rows[0].pairedEventId, 'meal1')
+})
+
+Deno.test('mapDoseRows: lookbackMs bounds a chronic regimen to the pull window', () => {
+  const floor = Date.parse('2026-04-04T00:00:00Z')
+  const rows = mapDoseRows(
+    [
+      { event_id: 'old', medication_id: 'r', medication_item_id: null, adherence: 'given', dose_amount: null, paired_event_id: null,
+        events: { occurred_at: '2025-01-01T08:00:00Z', deleted_at: null } },
+      { event_id: 'new', medication_id: 'r', medication_item_id: null, adherence: 'given', dose_amount: null, paired_event_id: null,
+        events: { occurred_at: '2026-06-01T08:00:00Z', deleted_at: null } },
+    ],
+    floor,
+  )
+  assert.deepEqual(rows.map((r) => r.eventId), ['new'])
 })
 
 // ── mapMedicationRows ───────────────────────────────────────────────────────
@@ -299,16 +325,17 @@ Deno.test('integration: mapped rows assemble + render to HTML naming the pet', (
 // to a canned { data } (or { data: null } for an unowned pet).
 function fakeClient(tables: Record<string, unknown>) {
   const builder = (table: string) => {
-    const result = tables[table]
+    const result = tables[table] as { single?: unknown; list?: unknown; error?: { message: string } } | undefined
+    const err = result?.error ?? null
     const chain: Record<string, unknown> = {}
     const ret = () => chain
     chain.select = ret
     chain.eq = ret
     chain.is = ret
     chain.gte = ret
-    chain.maybeSingle = () => Promise.resolve({ data: (result as { single?: unknown })?.single ?? null })
-    chain.then = (onF: (v: { data: unknown }) => unknown) =>
-      Promise.resolve({ data: (result as { list?: unknown })?.list ?? [] }).then(onF)
+    chain.maybeSingle = () => Promise.resolve({ data: result?.single ?? null, error: err })
+    chain.then = (onF: (v: { data: unknown; error: unknown }) => unknown) =>
+      Promise.resolve({ data: result?.list ?? [], error: err }).then(onF)
     return chain
   }
   return { from: builder } as unknown as Parameters<typeof generateReportForPet>[0]
@@ -319,6 +346,23 @@ Deno.test('generateReportForPet: unowned/absent pet → 404, never leaks a repor
   const res = await generateReportForPet(client, 'somebody-elses-pet', NOW_MS, null)
   assert.equal(res.status, 404)
   assert.equal(res.body.html, undefined)
+})
+
+Deno.test('generateReportForPet: a query ERROR throws (never a silent false-clean report)', async () => {
+  // A backend fault on the pet load must surface, and must NOT masquerade as a 404.
+  const petErr = fakeClient({ pets: { error: { message: 'connection reset' } } })
+  await assert.rejects(() => generateReportForPet(petErr, 'p1', NOW_MS, null), /pets read failed/)
+
+  // A fault on a downstream pull (events) must throw too — a swallowed error would
+  // render the pet as having zero events (a false-clean clinical artifact).
+  const eventsErr = fakeClient({
+    pets: { single: { id: 'p1', name: 'Nyx', species: 'cat', breed: null, sex: 'female', date_of_birth: '2020-01-01', weight_kg: '4.2' } },
+    user_profiles: { single: { display_name: 'Jordan', timezone: 'UTC' } },
+    vet_visits: { list: [] },
+    diet_trials: { list: [] },
+    events: { error: { message: 'statement timeout' } },
+  })
+  await assert.rejects(() => generateReportForPet(eventsErr, 'p1', NOW_MS, null), /events read failed/)
 })
 
 Deno.test('generateReportForPet: owned pet → 200 with html + scope metadata', async () => {

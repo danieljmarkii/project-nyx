@@ -27,27 +27,38 @@ export default function ReportScreen() {
   const [errorMsg, setErrorMsg] = useState('');
   const [sharing, setSharing] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!activePet) {
-      setErrorMsg('Add a pet before generating a report.');
-      setStatus('error');
-      return;
-    }
-    setStatus('loading');
-    try {
-      const r = await generateVetReport({ petId: activePet.id });
-      setReport(r);
-      setStatus('ready');
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Something went wrong preparing the report.');
-      setStatus('error');
-    }
-  }, [activePet]);
+  // `token` guards against a stale response: if the active pet changes while a
+  // generate call is in flight, the older response must not overwrite the newer one.
+  const load = useCallback(
+    async (token?: { cancelled: boolean }) => {
+      if (!activePet) {
+        setErrorMsg('Add a pet before generating a report.');
+        setStatus('error');
+        return;
+      }
+      setStatus('loading');
+      try {
+        const r = await generateVetReport({ petId: activePet.id });
+        if (token?.cancelled) return;
+        setReport(r);
+        setStatus('ready');
+      } catch (e) {
+        if (token?.cancelled) return;
+        setErrorMsg(e instanceof Error ? e.message : 'Something went wrong preparing the report.');
+        setStatus('error');
+      }
+    },
+    [activePet],
+  );
 
   // Generate once per active pet. The report is a snapshot; the owner re-opens the
   // screen (or taps Try again) to regenerate against the latest data.
   useEffect(() => {
-    load();
+    const token = { cancelled: false };
+    load(token);
+    return () => {
+      token.cancelled = true;
+    };
   }, [load]);
 
   const onShare = useCallback(async () => {
@@ -82,7 +93,7 @@ export default function ReportScreen() {
         <View style={styles.center}>
           <Text style={styles.errorTitle}>Couldn’t prepare the report</Text>
           <Text style={styles.muted}>{errorMsg}</Text>
-          <PrimaryButton label="Try again" onPress={load} variant="secondary" style={styles.retry} />
+          <PrimaryButton label="Try again" onPress={() => load()} variant="secondary" style={styles.retry} />
         </View>
       )}
 
