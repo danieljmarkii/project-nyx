@@ -24,6 +24,7 @@ import { AddConditionModal, Condition } from '../../components/profile/AddCondit
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DeleteAccountSheet } from '../../components/profile/DeleteAccountSheet';
+import { OwnerNameRow } from '../../components/profile/OwnerNameRow';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
@@ -809,6 +810,9 @@ export default function ProfileScreen() {
         {/* ── Account ── */}
         <Card style={styles.sectionGap}>
           <Text style={styles.sectionTitle}>Account</Text>
+          <Divider style={styles.accountDivider} />
+          {/* §7.1 — the vet report's "Owner:" line reads this name (PM, 2026-07-03). */}
+          <OwnerNameRow />
           <Divider style={styles.accountDivider} />
           <TouchableOpacity style={styles.accountRow} onPress={handleSignOut} hitSlop={8}>
             <Text style={styles.accountRowText}>Sign out</Text>

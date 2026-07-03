@@ -1,6 +1,6 @@
-// User-profile writes (B-085). Currently this is just the timezone stamp that
-// detector ⑥ depends on; kept in its own module so the auth/session bootstrap
-// (app/_layout.tsx) has a small, testable seam to call.
+// User-profile reads/writes (B-085 timezone stamp + the owner display name).
+// Kept in its own module so the auth/session bootstrap (app/_layout.tsx) and the
+// Profile tab have a small, testable seam to call.
 
 import { supabase } from './supabase';
 
@@ -76,4 +76,54 @@ export async function syncUserTimezone(userId: string): Promise<TimezoneSyncResu
   }
 
   return { status: 'written', timezone };
+}
+
+// ── Owner display name ────────────────────────────────────────────────────────
+// The vet report's "Owner:" line (PIMS filing identity, vet-report spec §7.1) reads
+// user_profiles.display_name — but until 2026-07-03 nothing in the app ever WROTE the
+// column (the signup trigger inserts only `id`), so every report said "Owner: not
+// recorded". These helpers back the Profile tab's "Your name" row. Server-side,
+// generate-report falls back to the account email when the name is unset.
+
+export type DisplayNameReadResult =
+  | { status: 'ok'; displayName: string | null }
+  | { status: 'error' };
+
+export async function fetchDisplayName(userId: string): Promise<DisplayNameReadResult> {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('display_name')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[profile] display_name read failed:', error.message);
+    return { status: 'error' };
+  }
+  const raw = data?.display_name;
+  return { status: 'ok', displayName: typeof raw === 'string' && raw.trim() ? raw.trim() : null };
+}
+
+export type DisplayNameWriteResult =
+  | { status: 'written'; displayName: string | null }
+  | { status: 'error' };
+
+// Trims; an empty string clears the name (writes NULL — the report then falls back to
+// the account email). Upsert, not update, for the same reason as syncUserTimezone: a
+// pre-trigger account has no user_profiles row, and an UPDATE would silently match zero
+// rows. RLS (auth.uid() = id) scopes the write to the caller's own row.
+export async function updateDisplayName(
+  userId: string,
+  name: string,
+): Promise<DisplayNameWriteResult> {
+  const displayName = name.trim() || null;
+  const { error } = await supabase
+    .from('user_profiles')
+    .upsert({ id: userId, display_name: displayName }, { onConflict: 'id' });
+
+  if (error) {
+    console.warn('[profile] display_name write failed:', error.message);
+    return { status: 'error' };
+  }
+  return { status: 'written', displayName };
 }

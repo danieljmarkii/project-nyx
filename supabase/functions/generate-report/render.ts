@@ -477,7 +477,10 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
     case 'present_foreign': {
       const n = f.incidents.length
       const notes = f.incidents.map((i) => i.note).filter((x): x is string => !!x)
-      const noteBit = notes.length ? ` Owner/AI note: ${h(notes[0])}.` : ''
+      // The stored note usually ends with its own terminal punctuation — appending an
+      // unconditional "." printed "…is notable.." on the first real artifact.
+      const note0 = notes.length ? notes[0].trim() : ''
+      const noteBit = note0 ? ` Owner/AI note: ${h(note0)}${/[.!?\u2026]$/.test(note0) ? '' : '.'}` : ''
       const dates = f.incidents.map((i) => fmtLocalDay(i.occurredAt, tz)).join(', ')
       return flagRow(
         'Foreign material',
@@ -515,7 +518,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             )} without a full meal.`
           : ' No fully-eaten meal is recorded in this window.'
       const appendixBit =
-        snap.provenance.intakeLog.length > 0 ? ' Meal-by-meal detail in the recent-meals appendix.' : ''
+        snap.provenance.intakeLog.length > 0 ? ' Meal-by-meal detail in appendix&nbsp;E (recent meals).' : ''
       const detail =
         f.trigger === 'refused_normal_food'
           ? `This pet <b>refused a food it normally eats</b>${
@@ -530,15 +533,18 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       )
     }
     case 'chronicity': {
+      // activeWeeks is deliberately NOT rendered: it is the engine's phase-stable
+      // distribution floor (B-188 buckets), not calendar weeks — next to the calendar
+      // weekly chart it read as a contradiction on the first real artifact ("across 5
+      // weeks" vs 8 non-zero bars). Span + days + recency carry the clinical picture and
+      // every number traces to appendix A.
       return flagRow(
         'Chronicity',
         `<b>${h(symptomLabel(f.symptomType))} has been ongoing ${num(f.spanDays)} day${
           f.spanDays === 1 ? '' : 's'
-        }</b> (first noted ~${h(fmtLocalDay(f.firstOnsetIso, tz))}): ${num(f.episodeCount)} episodes across ${num(
-          f.activeWeeks,
-        )} week${
-          f.activeWeeks === 1 ? '' : 's'
-        }, on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
+        }</b> (first noted ~${h(fmtLocalDay(f.firstOnsetIso, tz))}): ${num(f.episodeCount)} episode${
+          f.episodeCount === 1 ? '' : 's'
+        } on ${num(f.symptomDays)} day${f.symptomDays === 1 ? '' : 's'}; most recent ${num(
           f.daysSinceLastEpisode,
         )} day${f.daysSinceLastEpisode === 1 ? '' : 's'} ago. A sustained pattern over many samples, not a single incident.`,
       )
@@ -700,7 +706,11 @@ function atAGlance(snap: ReportSnapshot): string {
       ),
     )
   } else {
-    const kg = snap.weight.latest?.kg ?? snap.weight.trend?.latestKg ?? null
+    // IN-WINDOW readings only (weight.trend). weight.latest may be a stale, out-of-window
+    // reading — the Weight block above discloses it as "(before this window)", but a bare
+    // tile cannot carry that caveat, so a months-old weight would read as current in the
+    // 60-second scan (code-review find). The tile header promises window-scoped counts.
+    const kg = snap.weight.trend?.latestKg ?? null
     tiles.push(
       kg === null
         ? tile('—', '', `Weight<br/>no reading in this window`)
@@ -1244,6 +1254,20 @@ function symptomLogRow(e: SymptomLogEntry, tz: string | null): string {
 /** B-010 occurred cell — witnessed=exact+seen, estimated=~time+est, window=range+range. */
 function occurredCell(e: SymptomLogEntry, tz: string | null): string {
   const conf = e.occurredAtConfidence
+  if (conf === 'window' && !(e.occurredAtEarliest && e.occurredAtLatest)) {
+    // One-sided window — the "Sometime before/after" capture mode records a single bound
+    // (occurred_at IS that bound, B-010 addendum). The first real artifact rendered these as
+    // bare, precise-looking points with no tag while the preamble still counted them as
+    // windowed — the exact false precision §4/B-010 forbids. Render the bound the owner
+    // actually asserted; a boundless window (shouldn't exist) degrades to an estimate mark.
+    if (e.occurredAtLatest) {
+      return `${num(`before ${fmtLocalTime(e.occurredAtLatest, tz)}`)} <span class="conf">range</span>`
+    }
+    if (e.occurredAtEarliest) {
+      return `${num(`after ${fmtLocalTime(e.occurredAtEarliest, tz)}`)} <span class="conf">range</span>`
+    }
+    return `${num(`~${fmtLocalTime(e.occurredAt, tz)}`)} <span class="conf">est</span>`
+  }
   if (conf === 'window' && e.occurredAtEarliest && e.occurredAtLatest) {
     return `${num(`~${fmtLocalTime(e.occurredAtEarliest, tz)}–${fmtLocalTime(e.occurredAtLatest, tz)}`)} <span class="conf">range</span>`
   }
@@ -1253,8 +1277,10 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
   if (conf === 'witnessed') {
     return `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">seen</span>`
   }
-  // null / unknown confidence — a bare point time, no false-precision tag.
-  return `${num(fmtLocalTime(e.occurredAt, tz))}`
+  // null confidence (legacy rows logged before B-010) — tag it explicitly. A bare time in a
+  // column of tagged rows reads as MORE certain than a witnessed one, the reassuring
+  // direction; the honest render says the confidence was never recorded.
+  return `${num(fmtLocalTime(e.occurredAt, tz))} <span class="conf">unspecified</span>`
 }
 
 /**
@@ -1264,6 +1290,10 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
  * so the recent decline + the last full meal lead; the last fully-eaten meal is tagged so the
  * page-1 "last full meal" number has an unambiguous home. Escalate-only voice: a declined meal
  * is a possible health signal, NEVER "picky"; free-fed food is unobserved and never appears.
+ *
+ * Lettering: this is appendix E — the ONLY conditional appendix — and the closing "How to
+ * read" page is deliberately unlettered, so a report without an intake flag runs A–D with no
+ * gap (a hardcoded "F" after a skipped E read as a missing page on the first real artifact).
  */
 function intakeAppendix(snap: ReportSnapshot): string {
   const log: IntakeLogEntry[] = snap.provenance.intakeLog
@@ -1296,7 +1326,7 @@ function intakeAppendix(snap: ReportSnapshot): string {
     : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
   return `
 <section class="page">
-  <p class="appx-title serif">Appendix — Recent meals &amp; intake</p>
+  <p class="appx-title serif">Appendix E — Recent meals &amp; intake</p>
   <p class="appx-sub">The rated meals behind the reduced-intake flag on page&nbsp;1, most recent first. &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is recorded as a possible health signal, never &ldquo;picky.&rdquo; Free-fed food is not directly observed and is not rated, so it does not appear here.${hiddenBit}</p>
   <table>
     <caption>${num(log.length)} rated meal${log.length === 1 ? '' : 's'} &middot; ${h(
@@ -1306,7 +1336,7 @@ function intakeAppendix(snap: ReportSnapshot): string {
     <tbody>${rows}</tbody>
   </table>
   <p class="note" style="margin-top:9px"><b>Reading this:</b> ${anchorSentence}. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.</p>
-  ${footer(snap, 'Appendix — recent meals')}
+  ${footer(snap, 'Appendix E — recent meals')}
 </section>`
 }
 
@@ -1327,7 +1357,7 @@ function appendixBCD(snap: ReportSnapshot): string {
   ${appendixB(snap)}
   ${appendixC(snap)}
   ${appendixD(snap)}
-  ${footer(snap, 'Appendices B–D — exposures, diet &amp; meds')}
+  ${footer(snap, 'Appendices B–D — exposures, diet & meds')}
 </section>`
 }
 
@@ -1350,6 +1380,13 @@ function appendixB(snap: ReportSnapshot): string {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([p, n]) => `${h(p)} &times;${n}`)
     .join(', ')
+  // Feedings whose item carries no usable protein (junk sentinels like the literal string
+  // "null", or nothing recorded) are counted and disclosed, never tallied as a protein and
+  // never silently dropped (§5.1 — the first real artifact printed "null ×24" as the
+  // second-largest exposure).
+  const unknownN = snap.provenance.proteinUnknownCount
+  const unknownBit =
+    unknownN > 0 ? ` (+&nbsp;${num(unknownN)} feeding${unknownN === 1 ? '' : 's'} with no recorded protein)` : ''
   // A continuously-available free-fed competing protein is the biggest breach of an elimination
   // trial, but it is not a discrete meal event so it never enters the count-based tally
   // (adversarial finding A2). Name it explicitly alongside — as a standing exposure, never a
@@ -1361,7 +1398,7 @@ function appendixB(snap: ReportSnapshot): string {
   const tallyParts: string[] = []
   if (tally) {
     tallyParts.push(
-      `<b>Protein exposures (off-diet):</b> ${tally}${
+      `<b>Protein exposures (off-diet):</b> ${tally}${unknownBit}${
         hasTrial
           ? ' — the antigens most likely to break an elimination trial.'
           : ' — off-diet protein exposures to weigh against the symptom pattern.'
@@ -1376,6 +1413,19 @@ function appendixB(snap: ReportSnapshot): string {
     )
   }
   const tallyBit = tallyParts.length ? `<p class="note">${tallyParts.join(' ')}</p>` : ''
+  // Reconcile this caption with page 1, which reports treats and human food as SEPARATE
+  // counts ("340 treats" + "6 feedings") — a caption saying only "346 off-diet exposures"
+  // left the arithmetic to the reader on the first real artifact. Same category predicate
+  // as the rows above.
+  const humanN = conf.filter((c) => c.format === 'human_food').length
+  const treatN = conf.filter((c) => c.format !== 'human_food' && (c.foodType === 'treat' || c.format === 'treat')).length
+  const otherN = conf.length - humanN - treatN
+  const breakdownParts = [
+    treatN > 0 ? `${num(treatN)} treat${treatN === 1 ? '' : 's'}` : '',
+    humanN > 0 ? `${num(humanN)} human-food feeding${humanN === 1 ? '' : 's'}` : '',
+    otherN > 0 ? `${num(otherN)} other` : '',
+  ].filter(Boolean)
+  const breakdownBit = breakdownParts.length > 1 ? ` (${breakdownParts.join(' + ')})` : ''
   return `
   <p class="appx-title serif">Appendix B — Off-diet exposures (confounders)</p>
   <p class="appx-sub">${
@@ -1384,7 +1434,7 @@ function appendixB(snap: ReportSnapshot): string {
       : 'Everything fed outside the main diet — the exposures most worth weighing against the symptom pattern.'
   }</p>
   <table>
-    <caption>${num(conf.length)} off-diet exposure${conf.length === 1 ? '' : 's'} &middot; ${h(
+    <caption>${num(conf.length)} off-diet exposure${conf.length === 1 ? '' : 's'}${breakdownBit} &middot; ${h(
     fmtRange(snap.scope.startDate, snap.scope.endDate),
   )}</caption>
     <thead><tr><th style="width:64px">Date</th><th style="width:96px">Category</th><th>Item</th><th>Note</th></tr></thead>
@@ -1395,7 +1445,11 @@ function appendixB(snap: ReportSnapshot): string {
 
 function appendixC(snap: ReportSnapshot): string {
   const d = snap.diet
-  const supps = snap.medications.filter((m) => m.isSupplement)
+  // Window-scoped like every other medication view (page-1 dietMeds + appendix D both
+  // filter on overlapsWindow) — the meds pull is deliberately unbounded for the
+  // concurrent-change logic, so without this guard a supplement stopped years ago would
+  // render here as a live entry while page 1 correctly omits it (code-review find).
+  const supps = snap.medications.filter((m) => m.isSupplement && m.overlapsWindow)
   const suppBit = supps.length
     ? supps.map((m) => `${h(m.drugName)} (started ${h(fmtDay(m.startedAt))})`).join('; ')
     : 'None recorded.'
@@ -1488,22 +1542,27 @@ function appendixF(snap: ReportSnapshot): string {
     : `<dt>Safety flags</dt><dd>Shown only when present, above the fold. None were present in this window — and an <b>absence</b> of a flag is never shown as an &ldquo;all clear.&rdquo;</dd>`
   return `
 <section class="page">
-  <p class="appx-title serif">Appendix F — How to read this report</p>
+  <p class="appx-title serif">How to read this report</p>
   <dl class="legend">
     ${safetyDt}
     <dt>Owner-reported</dt><dd>Every entry was logged by the owner on a phone. This is a record of what the owner observed, not a clinical examination, and contains no diagnosis or treatment recommendation.</dd>
     <dt>Range</dt><dd>Scoped to ${h(scopeBasisLabel(snap.scope).toLowerCase())} (${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}). A custom (hand-picked) window discloses the count of symptom events that fall outside it, so nothing is cropped to a good week.</dd>
     <dt>Denominators</dt><dd>Counts are shown over their window and the days logged, so a count is never read without knowing how long and how completely it was tracked.</dd>
     <dt>Severity</dt><dd>Owner-reported on a 1&ndash;5 scale, per event in appendix&nbsp;A, blank when unrated. It is intentionally never averaged into a headline figure; trend is read from frequency.</dd>
-    <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed.</dd>
+    <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed — a one-sided account renders as &ldquo;before/after&rdquo; that bound &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>
+    <dt>Duplicate logs</dt><dd>A <span class="conf">N logs</span> tag marks the same incident logged more than once (a re-log or sync retry). It is counted once everywhere in this report; the duplicate count is disclosed rather than hidden.</dd>
     <dt>Photo analysis</dt><dd>For photographed incidents, Nyx reads structured fields from the photo (colour, contents, blood, foreign material). These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the safety band.</dd>
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
-    <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo; When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal), and the recent rated meals are listed in the recent-meals appendix. For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
+    <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo;${
+      snap.provenance.intakeLog.length > 0
+        ? ' When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal), and the recent rated meals are listed in appendix&nbsp;E.'
+        : ' When a reduced-intake flag is raised, page&nbsp;1 adds the time since the last <b>fully-eaten</b> meal and a recent-meals appendix lists the rated meals behind it; no such flag was raised in this window, so this report includes neither.'
+    } For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
     <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
     <dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. The symptom counts on page&nbsp;1 (including loose stools) trace line-by-line to appendix&nbsp;A and the off-diet exposures to appendix&nbsp;B; medication, diet, weight and normal-stool figures summarize the owner's logs for those items rather than itemising each one. Nothing is counted that the owner did not log.</dd>
   </dl>
-  ${footer(snap, 'Appendix F — how to read')}
+  ${footer(snap, 'How to read this report')}
 </section>`
 }
 

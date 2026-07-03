@@ -72,6 +72,12 @@ import {
   type TimeOfDayClusteringFinding,
   type StapleWashoutDiagnostic,
 } from '../generate-signal/detection.ts'
+// The SHARED protein canonicalizer (lib/protein.ts via the generate-signal re-export —
+// same path detection.ts uses, so esbuild inlines one copy). The appendix-B tally MUST
+// key off the canonical protein, or one real protein fragments across case/qualifier
+// variants and junk sentinels print as proteins ("chicken ×238, null ×24, Chicken ×11,
+// Chicken By-Product Meal ×15" on the first real artifact — B-052's exact bug class).
+import { canonicalizeProtein } from '../generate-signal/protein.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -972,8 +978,14 @@ export interface Provenance {
   intakeLogHiddenOlder: number
   /** Appendix B — off-diet exposures (treats + human food). */
   confounders: ConfounderExposure[]
-  /** Protein tally over non-meal feedings (the poultry-antigen reconciliation, appendix B). */
+  /**
+   * Protein tally over non-meal feedings (the poultry-antigen reconciliation, appendix B),
+   * keyed by the CANONICAL protein (lib/protein.ts) so one real protein never fragments
+   * across case/qualifier variants and junk sentinels ("null") never print as proteins.
+   */
   proteinExposureTally: Record<string, number>
+  /** Feedings with no usable protein (junk sentinel or nothing recorded) — disclosed in appendix B, never silently dropped (§5.1). */
+  proteinUnknownCount: number
   /** Appendix C context — active/monitored conditions. */
   conditions: Array<{ name: string; status: string; diagnosedAt: string | null }>
 }
@@ -1640,13 +1652,33 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
   if (detection.chronicity) {
     const f = detection.chronicity
+    // The engine buckets symptomDays by UTC day — deliberate for the rolling Signal
+    // (detection.ts §2: chronicity is timezone-independent), but on THIS artifact the
+    // number sits one page from appendix A, which a vet tallies in LOCAL days: the first
+    // real report said "on 18 days" beside a trend footnote and appendix showing 19. The
+    // report is the local-day surface, so recount the SAME episode set (deduped window
+    // events of this type from the detector's first onset) in the owner's timezone. If the
+    // report window doesn't cover the detector's full episode set (episode counts differ),
+    // keep the engine's number rather than derive one from a partial set. The worsening
+    // flag's sibling UTC counts are NOT patched here — that reconciliation is a single
+    // adversarial-gated decision (backlog).
+    const firstOnsetMs = Date.parse(f.firstOnsetIso)
+    const episodes = windowEvents.filter(
+      (e) => e.type === f.symptomType && Number.isFinite(firstOnsetMs) && Date.parse(e.occurredAt) >= firstOnsetMs,
+    )
+    const localDayNums = new Set<number>()
+    for (const e of episodes) {
+      const dn = eventDayNumber(e.occurredAt, tz)
+      if (dn !== null) localDayNums.add(dn)
+    }
+    const localSymptomDays = episodes.length === f.episodeCount ? localDayNums.size : f.symptomDays
     safetyFlags.push({
       kind: 'chronicity',
       symptomType: f.symptomType,
       episodeCount: f.episodeCount,
       spanDays: f.spanDays,
       activeWeeks: f.activeWeeks,
-      symptomDays: f.symptomDays,
+      symptomDays: localSymptomDays,
       daysSinceLastEpisode: f.daysSinceLastEpisode,
       firstOnsetIso: f.firstOnsetIso,
       tier: f.tier,
@@ -1721,14 +1753,23 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     occurredAt: e.occurredAt,
     dayKey: localDayKey(e.occurredAt, tz),
     foodLabel: mealFoodLabel(e.meal!),
-    primaryProtein: e.meal!.primaryProtein,
+    // Keep the stored casing for the row display, but a junk sentinel (the literal string
+    // "null", "unknown", …) is NOT a protein — null it here so no consumer prints it.
+    primaryProtein: canonicalizeProtein(e.meal!.primaryProtein) ? e.meal!.primaryProtein : null,
     format: e.meal!.format,
     foodType: e.meal!.foodType,
     note: e.notes,
   }))
+  // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"
+  // are one antigen for the vet weighing exposures. Feedings with no usable protein are
+  // counted separately and disclosed in the render — never a "null ×N" tally line, never
+  // silently dropped.
   const proteinExposureTally: Record<string, number> = {}
+  let proteinUnknownCount = 0
   for (const c of confounders) {
-    if (c.primaryProtein) proteinExposureTally[c.primaryProtein] = (proteinExposureTally[c.primaryProtein] ?? 0) + 1
+    const key = canonicalizeProtein(c.primaryProtein)
+    if (key) proteinExposureTally[key] = (proteinExposureTally[key] ?? 0) + 1
+    else proteinUnknownCount++
   }
 
   // ── Intake appendix (B-213) — recent rated meals, ONLY when an intake flag fired ─────
@@ -1776,6 +1817,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     intakeLogHiddenOlder,
     confounders,
     proteinExposureTally,
+    proteinUnknownCount,
     conditions: input.conditions.map((c) => ({
       name: c.conditionName,
       status: c.status,

@@ -1023,3 +1023,60 @@ Deno.test('A1c — a pre-window intervention that ENDED mid-window carries endIn
   assert.equal(t.ongoing, true, 'started before the window')
   assert.equal(t.endInWindow, '2026-05-15', 'its mid-window end is carried, so the note says "until" not "ongoing"')
 })
+
+// ── PM feedback round 1 (2026-07-03) — fixes from the first real on-device artifact ──
+
+Deno.test('appendix B tally — canonical protein keys (B-052); junk sentinel counted as unknown, never a "null" protein', () => {
+  const mkTreat = (day: string, protein: string | null, time: string) =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(day, time),
+      meal: {
+        foodItemId: nextId('f'),
+        intakeRating: null,
+        quantity: null,
+        foodType: 'treat',
+        format: 'treat',
+        primaryProtein: protein,
+        brand: 'B',
+        productName: 'p',
+      },
+    })
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        mkTreat('2026-06-01', 'chicken', '09:00:00'),
+        mkTreat('2026-06-02', 'Chicken', '09:10:00'),
+        mkTreat('2026-06-03', 'Chicken By-Product Meal', '09:20:00'),
+        mkTreat('2026-06-04', 'null', '09:30:00'), // the literal junk sentinel from the live DB
+        mkTreat('2026-06-05', null, '09:40:00'),
+      ],
+    }),
+  )
+  // One real antigen, three variants → ONE tally key ("chicken ×238 / Chicken ×11 /
+  // Chicken By-Product Meal ×15" fragmented the first real artifact's tally).
+  assert.deepEqual(snap.provenance.proteinExposureTally, { chicken: 3 })
+  // The sentinel + the genuinely-absent protein are disclosed, never a "null ×N" line.
+  assert.equal(snap.provenance.proteinUnknownCount, 2)
+  // The row-level protein is nulled for junk too, so NO consumer can print "null".
+  const rowProteins = snap.provenance.confounders.map((c) => c.primaryProtein)
+  assert.ok(!rowProteins.includes('null'), 'junk sentinel never survives onto a row')
+  assert.ok(rowProteins.includes('Chicken By-Product Meal'), 'real proteins keep their stored casing on rows')
+})
+
+Deno.test('chronicity flag — symptomDays recounted in LOCAL days (the 18-vs-19 artifact bug)', () => {
+  // The engine buckets symptomDays by UTC day (deliberate — detection.ts §2). A
+  // late-evening EDT episode lands on the NEXT UTC day: 2026-07-01T01:00Z is Jun 30
+  // 21:00 local. Added to the dry-run's 23 local days (all at 14:00Z = same local/UTC
+  // day), the engine counts 24 UTC days but a vet tallying appendix A sees 23 local
+  // days — the report must carry the local count.
+  const input = buildNyxInput()
+  input.events.push(
+    makeEvent({ type: 'vomit', occurredAt: '2026-07-01T01:00:00Z' }),
+  )
+  const snap = assembleReport(input)
+  const chron = snap.safetyFlags.find((f) => f.kind === 'chronicity')
+  assert.ok(chron && chron.kind === 'chronicity', 'chronicity still fires')
+  assert.equal(chron.episodeCount, 24, 'episode count includes the added late-evening episode')
+  assert.equal(chron.symptomDays, 23, 'days are LOCAL days (24 UTC days would over-count vs appendix A)')
+})

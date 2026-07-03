@@ -438,6 +438,7 @@ export async function generateReportForPet(
   petId: string,
   nowMs: number,
   requestedWindow: { startDate: string; endDate: string } | null,
+  callerJwt: string | null = null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const nowIso = new Date(nowMs).toISOString()
 
@@ -475,7 +476,19 @@ export async function generateReportForPet(
 
   const profile = profileRes.data as { display_name: string | null; timezone: string | null } | null
   const pet = mapPet(petRow)
-  const ownerName = profile?.display_name?.trim() || null
+  let ownerName = profile?.display_name?.trim() || null
+  // §7.1 PIMS-filing fallback (PM, 2026-07-03): when no display name is set, fall back to
+  // the caller's account email — a filing/contact identity beats "Owner: not recorded",
+  // and the JWT is already gateway-verified (verify_jwt=true). A failure here must never
+  // sink the report: a report without an owner line beats no report.
+  if (!ownerName && callerJwt) {
+    try {
+      const { data: userData, error: userErr } = await supabase.auth.getUser(callerJwt)
+      if (!userErr) ownerName = userData.user?.email?.trim() || null
+    } catch (_err) {
+      // Leave null → renders "Owner: not recorded".
+    }
+  }
   const timezone = profile?.timezone || null
   const vetVisits = mapVetVisitRows(rowsOrThrow<VetVisitRow>(vetVisitsRes, 'vet_visits'))
   const dietTrials = mapDietTrialRows(rowsOrThrow<DietTrialRow>(dietTrialsRes, 'diet_trials'))
@@ -653,7 +666,8 @@ Deno.serve(async (req: Request) => {
   )
 
   try {
-    const { status, body } = await generateReportForPet(supabase, petId, Date.now(), requestedWindow)
+    const callerJwt = authHeader.replace(/^Bearer\s+/i, '').trim() || null
+    const { status, body } = await generateReportForPet(supabase, petId, Date.now(), requestedWindow, callerJwt)
     return Response.json(body, {
       status,
       // no-store: the report is a snapshot of health data; never cache it at any hop.

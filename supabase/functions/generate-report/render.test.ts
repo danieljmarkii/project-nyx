@@ -22,6 +22,7 @@ import type {
   VomitPhenotype,
   MedicationAdherence,
   SymptomLogEntry,
+  ConfounderExposure,
 } from './report.ts'
 
 // ── A complete, neutral base snapshot; each test overrides only what it exercises ──
@@ -89,7 +90,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       intakeLog: [],
       intakeLogHiddenOlder: 0,
       confounders: [],
-      proteinExposureTally: {},
+      proteinExposureTally: {}, proteinUnknownCount: 0,
       conditions: [],
     },
     ...overrides,
@@ -302,7 +303,7 @@ Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread 
           { eventId: 'm1b', occurredAt: '2026-06-30T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
           { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false },
         ],
-        intakeLogHiddenOlder: 0, confounders: [], proteinExposureTally: {}, conditions: [],
+        intakeLogHiddenOlder: 0, confounders: [], proteinExposureTally: {}, proteinUnknownCount: 0, conditions: [],
       },
     }),
   ).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
@@ -358,7 +359,7 @@ Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last
         ],
         intakeLogHiddenOlder: 5,
         confounders: [],
-        proteinExposureTally: {},
+        proteinExposureTally: {}, proteinUnknownCount: 0,
         conditions: [],
       },
     }),
@@ -499,7 +500,7 @@ Deno.test('unrated severity renders blank; a rated one renders x/5; nothing is a
         intakeLog: [],
         intakeLogHiddenOlder: 0,
         confounders: [],
-        proteinExposureTally: {},
+        proteinExposureTally: {}, proteinUnknownCount: 0,
         conditions: [],
       },
     }),
@@ -532,7 +533,7 @@ Deno.test('B-010 — windowed event renders a time RANGE, estimated an ~time, ne
         intakeLog: [],
         intakeLogHiddenOlder: 0,
         confounders: [],
-        proteinExposureTally: {},
+        proteinExposureTally: {}, proteinUnknownCount: 0,
         conditions: [],
       },
     }),
@@ -870,7 +871,7 @@ Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with 
         confounders: [
           { eventId: 'e1', occurredAt: '2026-06-01T16:00:00Z', dayKey: '2026-06-01', foodLabel: 'Jerky', primaryProtein: 'chicken', format: 'treat', foodType: 'other', note: null },
         ],
-        proteinExposureTally: { chicken: 1 },
+        proteinExposureTally: { chicken: 1 }, proteinUnknownCount: 0,
         conditions: [],
       },
     }),
@@ -879,4 +880,190 @@ Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with 
   assert.ok(/<td>Treat<\/td>/.test(html), 'a format=treat row reads "Treat"')
   assert.ok(!/<td>Off-diet<\/td>/.test(html), 'not mislabelled "Off-diet"')
   assert.ok(/chicken/.test(html), 'the antigen is retained')
+})
+
+// ── PM feedback round 1 (2026-07-03) — fixes from the first real on-device artifact ──
+
+Deno.test('B-010 one-sided window → "before/after <bound>" + range tag, never a bare point', () => {
+  const beforeOnly = logEntry({
+    type: 'vomit',
+    occurredAt: '2026-05-18T07:09:00Z',
+    occurredAtConfidence: 'window',
+    occurredAtLatest: '2026-05-18T07:09:00Z',
+  })
+  const afterOnly = logEntry({
+    eventId: 'ev-2',
+    type: 'vomit',
+    occurredAt: '2026-05-19T12:00:00Z',
+    occurredAtConfidence: 'window',
+    occurredAtEarliest: '2026-05-19T09:00:00Z',
+  })
+  const html = renderReport(
+    base({
+      provenance: {
+        ...base().provenance,
+        symptomLog: [beforeOnly, afterOnly],
+        totalSymptomIncidents: 2,
+        estimatedOrWindowCount: 2,
+      },
+    }),
+  )
+  assert.ok(/before 03:09/.test(html), 'one-sided (latest) renders "before <time>"')
+  assert.ok(/after 05:00/.test(html), 'one-sided (earliest) renders "after <time>"')
+  // Both carry the range tag — the artifact rendered these as bare precise-looking points.
+  const rangeTags = html.match(/<span class="conf">range<\/span>/g) ?? []
+  assert.ok(rangeTags.length >= 2, 'both one-sided windows are tagged range')
+})
+
+Deno.test('B-010 null confidence → explicit "unspecified" tag, and the legend defines it', () => {
+  const legacy = logEntry({
+    type: 'vomit',
+    occurredAt: '2026-06-21T21:06:00Z',
+    occurredAtConfidence: null,
+  })
+  const html = renderReport(
+    base({
+      provenance: { ...base().provenance, symptomLog: [legacy], totalSymptomIncidents: 1 },
+    }),
+  )
+  assert.ok(html.includes('<span class="conf">unspecified</span>'), 'null confidence is tagged, not bare')
+  assert.ok(/logged without a time confidence/.test(html), 'legend explains the unspecified tag')
+})
+
+Deno.test('legend defines the "N logs" duplicate tag', () => {
+  const html = renderReport(base())
+  assert.ok(/Duplicate logs/.test(html), 'legend has a Duplicate logs entry')
+  assert.ok(/counted once/i.test(html))
+})
+
+Deno.test('chronicity flag copy — no engine "across N weeks"; episodes-on-days phrasing traces to appendix A', () => {
+  const flag: SafetyFlag = {
+    kind: 'chronicity',
+    symptomType: 'vomit',
+    episodeCount: 22,
+    spanDays: 46,
+    activeWeeks: 5,
+    symptomDays: 19,
+    daysSinceLastEpisode: 4,
+    firstOnsetIso: '2026-05-14T14:00:00Z',
+    tier: 'standard',
+    windowDays: 56,
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(!/across 5 weeks/.test(html), 'the phase-stable activeWeeks measure is not rendered (contradicted the calendar chart)')
+  assert.ok(/22<\/span> episodes on <span class="num">19<\/span> days/.test(html.replace(/\s+/g, ' ')) || /episodes on/.test(html), 'episodes-on-days phrasing')
+})
+
+Deno.test('foreign-material note keeps its own terminal punctuation — never ".."', () => {
+  const flag: SafetyFlag = {
+    kind: 'present_foreign',
+    incidents: [
+      { eventId: 'v1', occurredAt: '2026-05-18T07:09:00Z', note: 'A small blue object is visible near the vomit; their proximity is notable.' },
+    ],
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(!html.includes('notable..'), 'no double period')
+  assert.ok(html.includes('notable.'), 'note still ends with a period')
+})
+
+Deno.test('at-a-glance weight tile never shows an out-of-window (stale) reading', () => {
+  const html = renderReport(
+    base({
+      weight: {
+        isEmpty: false,
+        latest: { kg: 4.2, lbs: 9.3, date: '2025-11-01' }, // months before the window
+        trend: null, // nothing in-window
+      },
+    }),
+  )
+  // The Weight block discloses the stale reading with its "(before this window)" caveat…
+  assert.ok(/before this window/.test(html), 'weight block carries the caveat')
+  // …but the bare tile must NOT carry the stale number (it cannot carry the caveat).
+  assert.ok(!/4\.2<\/span><small>&nbsp;kg<\/small><\/div><div class="tl">Latest weigh-in/.test(html.replace(/\s+/g, '')), 'tile does not show the stale kg')
+  assert.ok(/no reading in this window/.test(html), 'tile falls to the honest empty state')
+})
+
+Deno.test('appendix C supplements are window-scoped like every other medication view', () => {
+  const stale = med({
+    regimenId: 'supp-old',
+    drugName: 'Ancient Probiotic',
+    isSupplement: true,
+    overlapsWindow: false,
+    startedAt: '2023-01-01',
+    endedAt: '2023-03-01',
+  })
+  const live = med({
+    regimenId: 'supp-live',
+    drugName: 'Current Fish Oil',
+    isSupplement: true,
+    overlapsWindow: true,
+    startedAt: '2026-05-01',
+  })
+  const html = renderReport(base({ medications: [stale, live] }))
+  assert.ok(!html.includes('Ancient Probiotic'), 'a supplement ended years before the window does not render')
+  assert.ok(html.includes('Current Fish Oil'), 'an overlapping supplement renders')
+})
+
+Deno.test('appendix lettering — conditional recent-meals is E; the how-to-read page is unlettered (no D→F gap)', () => {
+  // Without an intake log: A–D render, no "Appendix E", no "Appendix F" anywhere.
+  const calm = renderReport(base())
+  assert.ok(!calm.includes('Appendix E'), 'no appendix E without an intake flag')
+  assert.ok(!calm.includes('Appendix F'), 'the how-to-read page carries no letter')
+  assert.ok(calm.includes('How to read this report'))
+  // With an intake log: the recent-meals appendix is lettered E.
+  const withIntake = renderReport(
+    base({
+      provenance: {
+        ...base().provenance,
+        intakeLog: [
+          { eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+        ],
+      },
+    }),
+  )
+  assert.ok(withIntake.includes('Appendix E — Recent meals'), 'the intake appendix is lettered E')
+})
+
+Deno.test('legend intake entry never promises a suppressed appendix (dangling cross-reference)', () => {
+  const calm = renderReport(base())
+  assert.ok(
+    /no such flag was raised in this window/.test(calm),
+    'without an intake flag the legend says the drill-down is conditional and absent',
+  )
+  assert.ok(!/listed in appendix&nbsp;E/.test(calm), 'no dangling reference to an absent appendix')
+  const withIntake = renderReport(
+    base({
+      provenance: {
+        ...base().provenance,
+        intakeLog: [
+          { eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+        ],
+      },
+    }),
+  )
+  assert.ok(/listed in appendix&nbsp;E/.test(withIntake), 'with the appendix present, the legend points at it')
+})
+
+Deno.test('appendix B — caption reconciles treats + human food; unknown-protein feedings disclosed; footer ampersand single-escaped', () => {
+  const conf: ConfounderExposure[] = [
+    { eventId: 'c1', occurredAt: '2026-06-01T12:00:00Z', dayKey: '2026-06-01', foodLabel: 'Treat A', primaryProtein: 'chicken', format: 'treat', foodType: 'treat', note: null },
+    { eventId: 'c2', occurredAt: '2026-06-02T12:00:00Z', dayKey: '2026-06-02', foodLabel: 'Treat B', primaryProtein: null, format: 'treat', foodType: 'treat', note: null },
+    { eventId: 'c3', occurredAt: '2026-06-03T12:00:00Z', dayKey: '2026-06-03', foodLabel: 'Rotisserie chicken', primaryProtein: 'chicken', format: 'human_food', foodType: 'meal', note: null },
+  ]
+  const html = renderReport(
+    base({
+      provenance: {
+        ...base().provenance,
+        confounders: conf,
+        proteinExposureTally: { chicken: 2 },
+        proteinUnknownCount: 1,
+      },
+    }),
+  )
+  const flat = html.replace(/\s+/g, ' ')
+  assert.ok(/3<\/span> off-diet exposures \(/.test(flat), 'caption carries a breakdown parenthetical')
+  assert.ok(/2<\/span> treats/.test(flat) && /1<\/span> human-food feeding/.test(flat), 'treats + human food reconcile to the total')
+  assert.ok(/with no recorded protein\)/.test(flat), 'unknown-protein feedings are disclosed in the tally')
+  assert.ok(flat.includes('exposures, diet &amp; meds'), 'footer ampersand escaped exactly once')
+  assert.ok(!flat.includes('&amp;amp;'), 'no double-escaped ampersand anywhere')
 })

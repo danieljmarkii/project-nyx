@@ -385,3 +385,70 @@ Deno.test('generateReportForPet: owned pet → 200 with html + scope metadata', 
   assert.equal(res.body.scope_basis, 'fallback_90d')
   assert.ok(typeof res.body.html === 'string' && (res.body.html as string).includes('Nyx'))
 })
+
+Deno.test('generateReportForPet: no display name → owner falls back to the caller email (§7.1, PM 2026-07-03)', async () => {
+  const tables = {
+    pets: { single: { id: 'p1', name: 'Nyx', species: 'cat', breed: null, sex: 'female', date_of_birth: '2020-01-01', weight_kg: '4.2' } },
+    user_profiles: { single: { display_name: null, timezone: 'America/New_York' } },
+    vet_visits: { list: [] },
+    diet_trials: { list: [] },
+    events: { list: [] },
+    event_ai_analysis: { list: [] },
+    weight_checks: { list: [] },
+    medication_administrations: { list: [] },
+    medications: { list: [] },
+    feeding_arrangements: { list: [] },
+    conditions: { list: [] },
+  }
+  const client = fakeClient(tables) as unknown as {
+    auth?: { getUser: (jwt: string) => Promise<{ data: { user: { email: string } | null }; error: null }> }
+  }
+  client.auth = {
+    getUser: (jwt: string) => {
+      assert.equal(jwt, 'jwt-token', 'the verified caller JWT is passed through')
+      return Promise.resolve({ data: { user: { email: 'owner@example.com' } }, error: null })
+    },
+  }
+  const res = await generateReportForPet(
+    client as Parameters<typeof generateReportForPet>[0],
+    'p1',
+    NOW_MS,
+    null,
+    'jwt-token',
+  )
+  assert.equal(res.status, 200)
+  assert.ok((res.body.html as string).includes('owner@example.com'), 'the email files the report')
+
+  // A set display name WINS over the email (no fallback when the name exists) — and a
+  // getUser failure must never sink the report.
+  const named = fakeClient({
+    ...tables,
+    user_profiles: { single: { display_name: 'Daniel Mark', timezone: 'America/New_York' } },
+  }) as unknown as { auth?: unknown }
+  named.auth = {
+    getUser: () => Promise.reject(new Error('must not be called when a name exists')),
+  }
+  const res2 = await generateReportForPet(
+    named as Parameters<typeof generateReportForPet>[0],
+    'p1',
+    NOW_MS,
+    null,
+    'jwt-token',
+  )
+  assert.equal(res2.status, 200)
+  assert.ok((res2.body.html as string).includes('Daniel Mark'))
+  assert.ok(!(res2.body.html as string).includes('owner@example.com'))
+
+  // getUser errors → "not recorded", never a 500.
+  const failing = fakeClient(tables) as unknown as { auth?: unknown }
+  failing.auth = { getUser: () => Promise.reject(new Error('gotrue down')) }
+  const res3 = await generateReportForPet(
+    failing as Parameters<typeof generateReportForPet>[0],
+    'p1',
+    NOW_MS,
+    null,
+    'jwt-token',
+  )
+  assert.equal(res3.status, 200)
+  assert.ok((res3.body.html as string).includes('Owner: not recorded'))
+})

@@ -1,0 +1,61 @@
+# Vet Report — First Real Artifact Review (2026-07-03)
+
+**Artifact:** the first vet report generated on a real device from live data (pet Nyx, 2yr F cat, 22 vomiting episodes / 90-day window, no trial, free-fed) — an 18-page PDF exported via the PR 5 share flow.
+**Reviews run (all against the rendered artifact, not the code):** `vet-report-cold-read` (Dr. Chen, cold), `pm-feature-review` (walked as Jordan + Sam), a Designer + Dr. Chen + Trust & Safety synthesis pass, and a `code-reviewer` bug hunt over the Step 9 build (#261–#265).
+**Cold-read verdict: NOT READY** — but "fix 3–4 things," not a rebuild. The bones passed: signalment instant, safety flags lead and hedge correctly, denominators + occurred-vs-logged + confidence tags all extracted in the 60-second scan, free-fed excluded from the intake denominator, correlation negative Established-only, Principle 6 register clean.
+
+This doc is the durable record: §1–2 what was fixed immediately (feedback round 1 PR), §3 the ratified-pending round-2 change list, §4 sign-off routing, §5 the PM decision menu.
+
+---
+
+## 1. Root causes found (fixed in the feedback-round-1 PR)
+
+1. **Mojibake (`Â·`/`â`/`&amp;`)** — NOT a missing charset (the HTML has `<meta charset>`; repo source is clean UTF-8). The **deployed bundle** was corrupted: `deploy-edge.sh` bundled with `--charset=utf8` (raw UTF-8 bytes verbatim) and those bytes were Latin-1-misread once in the MCP deploy hop. Proof: every entity-encoded char (`&middot;`) rendered clean, every raw source literal mojibake'd, and **DB-sourced text (the AI note's em-dashes) was clean** — only bundle literals were hit. Fix: `--charset=ascii` (escapes literals to `\uXXXX`, transport-proof; protects every future edge deploy) + a raw `…` inside a regex literal (which esbuild does not transform) escaped to `\\u2026` at source. **Requires a `generate-report` redeploy to take effect.**
+2. **`null ×24` + fragmented protein tally** — `food_items.primary_protein` holds the literal string `"null"` (24 Temptations Catnip feedings) and the appendix-B tally keyed off raw values (`chicken ×238 / Chicken ×11 / Chicken By-Product Meal ×15 / chicken by-product meal ×2`). The shared canonicalizer (`lib/protein.ts`, B-052) already handled every case — the report just never imported it. Tally now canonical; junk-protein feedings disclosed as "(+ N feedings with no recorded protein)", never silently dropped; junk nulled at the row level too.
+3. **18-vs-19 days** — page-1 chronicity said "on 18 days," the trend footnote "19 of 90 days had an episode," same 22 events. The engine buckets `symptomDays` by UTC day (deliberate; detection.ts §2); the report counts local days. Fixed report-side: local-day recount over the same episode set, guarded by an episode-count cross-check. The **worsening flag has the same latent bug → B-219** (one reconciled decision + adversarial pass, not an ad-hoc patch).
+4. **"Across 5 weeks" vs 8 chart bars** — the flag rendered the engine's phase-stable `activeWeeks` distribution measure next to a calendar-week chart. `activeWeeks` is no longer rendered (resolves **B-216**); flag copy is span + episodes-on-days + recency, all traceable to appendix A.
+5. **Five bare untagged times in appendix A** — `window`-confidence events with a **one-sided bound** (the B-010 "Sometime before" capture) fell through `occurredCell`'s both-bounds check and rendered as precise-looking points (the exact false precision §4/B-010 forbids) while still being counted in "10 of them have an estimated or windowed time." Now: `before/after <bound>` + range tag; null-confidence rows get an explicit `unspecified` tag + legend entry.
+6. **Dangling appendix-F promises** — the legend unconditionally described a page-1 "time since last fully-eaten meal" and a "recent-meals appendix" that only render when an intake flag fires (Dr. Chen went looking and hit a wall). Legend now states the conditionality when the sections are absent.
+7. **D→F appendix lettering gap** — the conditional recent-meals appendix was unlettered and "Appendix F" hardcoded, so every no-intake report skipped E ("a page is missing"). Recent-meals is now **Appendix E**; the closing "How to read this report" page is deliberately unlettered.
+8. **Stale weight in At-a-glance** — the weight tile fell back to the pet's all-time latest weight with no window caveat (the Weight block on the same page says "(before this window)" for the identical reading). Tile now renders in-window readings only.
+9. **Appendix C supplements unbounded** — not `overlapsWindow`-filtered (unlike page 1 and appendix D); a supplement stopped years ago rendered as live. Now window-scoped.
+10. **Smaller:** double period after the AI note ("notable.."); `&amp;` double-escape in the Appendices B–D footer; "1 episodes" latent plural; 340-vs-346 left as reader arithmetic (caption now reads "346 off-diet exposures (340 treats + 6 human-food feedings)"); "2 LOGS" tag got a legend entry.
+11. **"Owner: not recorded"** — the report read `user_profiles.display_name` but nothing in the app ever wrote it. Fixed (PM-ratified): a "Your name" row in Profile → Account (`components/profile/OwnerNameRow.tsx`, `lib/profile.ts`) + a server-side fallback to the caller's account email (`generate-report/index.ts`).
+
+## 2. Confirmed as designed / routed elsewhere
+
+- **Photos absent** — in spec as Phase 2 **PR 7** (split-by-type under §8 privacy controls, after PR 6's public link). PM note 12's "representative, not every incident" refinement folds into PR 7's spec (see §5).
+- **No date-range control** — spec §6 has the override at generation time; scheduled Phase 3 PR 10. PM pulled it forward → **B-222** (own small PR).
+- **Patterns-dashboard entry point** — already planned as the B-023 PR 5 bridge (= vet-report PR 10); now unblocked.
+- **Trend chart** — PM-endorsed; fundamentals untouched (only annotation-legibility polish proposed, §3 R2-6).
+
+## 3. Round-2 change list (panel-consolidated, ranked by impact)
+
+**R2-1 — Collapse Appendix B to grouped exposure rows.** 346 one-row-per-feeding treat entries are ~10–11 of the 18 pages — *the* reason the artifact scares a vet. Group to item × count × date-span × protein ("Temptations Tasty Chicken Flavor · chicken · ×41 · Jun 15–Jul 3"); human-food rows stay itemized (only 6; they're the confounder that matters). Sum-of-×N still traces page-1 counts (§5.6 holds). Also: lead the appendix with the protein/product aggregate, itemized rows below (today the useful tally is buried at the end). ~18pp → ~6–7pp. *(Spec §3 edit → PM; Dr. Chen ratifies granularity.)*
+
+**R2-2 — Replace the At-a-glance tile set for the no-trial/safety-led shape.** Today: tile 1 duplicates the trend headline, tile 2 is the misleading `0/25`, tile 3 an empty owner-nudge, tile 4 duplicates the range box. Proposed four (denominatored, §5-clean): episodes-since-onset (`22/46d` + logged-days), trajectory (`2 → 20`, first/last half), days-since-last-episode (`4 d`, with a logged-days caveat when the gap is long — adversarial guard), off-diet load (`29 distinct · 340 treats + human food on 4 d`). *(Spec §3.4 edit → PM; Dr. Chen + adversarial on tile 3.)*
+
+**R2-3 — The `0/25 meals fully eaten` grazer misread (the sharpest single finding).** All three reviews converged: for a free-fed grazing cat it reads as anorexia (feline lipidosis territory), the engine itself declined to fire an intake flag, and the mitigating context lives on page 17. **Framing fix only — the intake-decline engine and its fully-eaten anchor are untouched (clinical-guardrails floor).** Recommended: no scored completion tile for a free-fed pet with no decline flag; a descriptive Feeding line instead ("primarily free-fed dry — intake not directly observed; 25 wet meals offered, typically partly eaten"). *(PM decision — see §5.)*
+
+**R2-4 — Disclaimer consolidation (~23 disclaimer-class strings → ~4 on page 1).** Keep the floor: ONE masthead lane statement; a short per-page footer (pages get photocopied — T&S floor, page 1 at minimum); a uniform "AI read · unconfirmed" badge on every AI-derived datum; data-qualifiers that change a specific datum's meaning; appendix F as the single long-form home. Cut: the safety-band header's own hedge, per-flag full sentences (→ badge), appendix preamble restatements, self-narrating design rationale ("No value is shown here rather than reuse…"). Dr. Chen's cold read independently converged on the same three anchors and called the trimmed version *more* trustworthy. *(Dr. Chen + T&S ratify the keep/cut table; one PM conflict on appendix footers — §5.)*
+
+**R2-5 — Summary/appendix differentiation.** (a) divider page after the clinical summary ("End of clinical summary. Appendices follow for reference: A event log · B exposures · C diet · D medications · E meals (when present)"); (b) one orientation line on page 1 ("Clinical summary: this page. Appendices: reference record."); (c) true per-section page numbers are a B-144-adjacent build-time item (print-CSS limits); (d) a "summary-only" export toggle is **recommended against** (breaks §5.6 provenance; R2-1 dissolves the motivation). *(a/b pure design; d → PM.)*
+
+**R2-6 — Polish + naming.** The app-name/pet-name collision ("a photo **Nyx** flagged…" when the patient is Nyx): brand never acts — attribute to the mechanism ("automated photo analysis (Nyx app)"), add a "Patient:" label to the signalment/footers. ▲ intervention marker reads as "spike" — neutral tick + micro-label + chart legend line. Month ticks on the x-axis (only Apr/Jul today). "22" appears ~5× on page 1 (one-home-per-fact). Type-scale consolidation (4 near-identical display sizes; 6 tracking values). Single-symptom tile self-restatement. Empty-D preamble references a page-1 adherence line that doesn't exist for a no-meds pet — make conditional. Acceleration stat ("first 42 d 2 → last 48 d 20") needs its unlogged-early-window caveat co-located, or reframe as "since onset ~May 14." *(Pure design except the acceleration reframe — Dr. Chen glance.)*
+
+## 4. Sign-off routing
+
+- **PM:** R2-1 (spec §3), R2-2 (spec §3.4), R2-3 (framing policy), R2-4 appendix-footer question, R2-5d export toggle.
+- **Dr. Chen:** R2-1 granularity, R2-2 tile set, R2-3 wording, R2-4 keep/cut, R2-6 marker + acceleration reframe.
+- **T&S:** R2-4 (band-header cut + footer scope; K2 badge coverage).
+- **adversarial-reviewer:** R2-2 tile 3 (gap-since-last-episode must not read as recovery), B-219 (worsening tz reconciliation).
+- **`vet-report-cold-read`:** mandatory re-run on the regenerated artifact after the round-2 PR (and after the redeploy fixes the mojibake).
+
+## 5. PM decision menu (blocks the round-2 PR)
+
+1. **`0/25` policy (R2-3):** (a) suppress the scored tile for free-fed + no-flag and use the descriptive line *(panel recommendation)*; (b) keep the number but co-locate the grazing/treat context; (c) keep as is. **Panel: (a).**
+2. **Appendix B grouping (R2-1):** ratify the spec §3 edit (grouped treat rows + aggregate-first). **Panel: yes.**
+3. **At-a-glance tile set (R2-2):** ratify the shape-conditional replacement. **Panel: yes.**
+4. **Disclaimer footers (R2-4):** short-form footer on page 1 only *(Designer)* vs all pages *(T&S — pages get separated)*. **Panel splits — genuine PM call.** (Dr. Chen's cold read kept the per-page footer.)
+5. **Photos / PR 7 (notes 6+12):** selection rule for "representative": safety-flagged photos always included (permanent record copy); everyday photos as a representative subset per type. Ratify so PR 7's spec can be written. *(Sequencing already decided: after PR 6.)*
+6. **Summary-only export (R2-5d):** panel recommends **no** (provenance break); confirm.
