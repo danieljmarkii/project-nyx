@@ -708,8 +708,8 @@ Deno.test('a zero-count week renders a nub (never blank) + the GP-0 note names c
         }),
       ],
       concurrentChanges: [
-        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1 },
-        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 1 },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
       ],
     }),
   )
@@ -717,6 +717,26 @@ Deno.test('a zero-count week renders a nub (never blank) + the GP-0 note names c
   assert.ok(/Reading the trend/.test(html))
   assert.ok(/cannot be attributed/i.test(html), 'GP-0 co-attribution caution')
   assert.ok(html.includes('RC HP') && html.includes('Metronidazole'), 'every concurrent change is named')
+})
+
+// ── A1: a standing (pre-window) confounder is named in the GP-0 note as "ongoing" ──────
+
+Deno.test('a standing pre-window intervention is named "ongoing" in the Reading-the-trend note', () => {
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [1, 1, 1], windowDays: 21 })],
+      concurrentChanges: [
+        // A steroid begun before the window, running throughout — no chart marker, but MUST
+        // be named or the diet silently takes its credit (spec §4/B-117).
+        { kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: null },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
+      ],
+    }),
+  )
+  assert.ok(/Prednisolone/.test(html), 'the standing steroid is named')
+  assert.ok(/ongoing since/i.test(html), 'a pre-window intervention reads "ongoing since", not "started"')
+  assert.ok(/RC HP.*started/is.test(html), 'an in-window intervention still reads "started"')
+  assert.ok(/cannot be attributed to any one of them alone/i.test(html), 'co-attribution caution holds')
 })
 
 // ── The document is a complete, standalone artifact ────────────────────────────────
@@ -727,4 +747,136 @@ Deno.test('renders a complete standalone HTML document with a titled head', () =
   assert.ok(html.includes('<title>Owner-reported summary — Nyx'))
   assert.ok(html.includes('name="referrer" content="no-referrer"'), 'privacy meta present')
   assert.ok(html.trimEnd().endsWith('</html>'))
+})
+
+// ── A2: a concurrent free-fed bowl appears in the WSAVA diet history + antigen tally ──────
+// A competing-protein bowl left down during an elimination trial is the single thing most
+// likely to break it; it must not be hidden from Appendix C or the Appendix B tally.
+
+Deno.test('A2 — an active trial + a free-fed bowl: the bowl shows in Appendix C and the Appendix B tally', () => {
+  const html = renderReport(
+    base({
+      diet: {
+        activeTrial: {
+          foodLabel: 'RC Hydrolyzed HP',
+          primaryProtein: 'hydrolyzed',
+          startedAt: '2026-05-08',
+          targetDurationDays: 56,
+          daysElapsed: 45,
+          vetName: null,
+        },
+        freeFed: [{ foodLabel: 'Duck & pea kibble (bowl down)', primaryProtein: 'duck', activeFrom: '2026-01-01', activeUntil: null }],
+        intakeNotDirectlyObserved: true,
+        mealCompletion: null,
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  // Appendix C "Primary diet" now carries BOTH the trial food and the concurrent free-fed bowl.
+  assert.ok(html.includes('RC Hydrolyzed HP'), 'trial food named')
+  assert.ok(html.includes('Also free-fed alongside') && html.includes('Duck &amp; pea kibble (bowl down)'), 'the free-fed bowl is in the WSAVA diet history under an active trial')
+  // Appendix B tally names the free-fed competing antigen (it has no discrete count).
+  assert.ok(/Free-fed alongside the trial:/.test(html) && /duck/.test(html), 'free-fed protein named as a trial-breaking antigen')
+})
+
+// ── A4: no-trial (symptom-monitoring) report never asserts a diet trial ─────────────────
+
+Deno.test('A4 — a no-trial report frames human food as a general confounder, not a "diet-trial" one', () => {
+  const html = renderReport(
+    base({
+      diet: {
+        activeTrial: null,
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 2, days: 2, items: [{ date: '2026-06-01', label: 'Toast' }, { date: '2026-06-05', label: 'Rotisserie chicken' }] },
+      },
+    }),
+  )
+  assert.ok(/a common dietary confounder/.test(html), 'monitoring-mode framing')
+  assert.ok(!/#1 diet-trial confounder/.test(html), 'no "diet-trial confounder" claim without a trial')
+  assert.ok(!/reads as .{0,3}not working/.test(html), 'Appendix B header does not assert a trial')
+  assert.ok(!/break an elimination trial/.test(html), 'the tally does not assert an elimination trial')
+})
+
+// ── A6: human-food items are de-duplicated (no "Ground beef, Ground beef, ..." repeat) ──
+
+Deno.test('A6 — repeated human-food items render distinct, not verbatim-repeated', () => {
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'vomit' },
+      diet: {
+        activeTrial: { foodLabel: 'HP', primaryProtein: 'hydrolyzed', startedAt: '2026-05-08', targetDurationDays: 56, daysElapsed: 45, vetName: null },
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: {
+          count: 4,
+          days: 3,
+          items: [
+            { date: '2026-06-01', label: 'Ground beef' },
+            { date: '2026-06-02', label: 'Ground beef' },
+            { date: '2026-06-03', label: 'Ground beef' },
+            { date: '2026-06-04', label: 'Rice' },
+          ],
+        },
+      },
+    }),
+  )
+  // The page-1 human-food line keeps the "4 feedings" count but lists each distinct item ONCE.
+  const beefHits = (html.match(/Ground beef/g) ?? []).length
+  assert.equal(beefHits, 2, 'Ground beef appears once on page 1 and once in Appendix C, never 4x per line')
+  assert.ok(html.includes('Rice'), 'the other distinct item is still listed')
+  const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  assert.ok(/4 feeding/.test(text), 'the feeding COUNT is preserved (only the item list is collapsed)')
+})
+
+// ── Adversarial re-verify (PR 4 round 2): honest confounder timing in "Reading the trend" ──
+
+Deno.test('a confounder that ended mid-window reads "until <date>", never a false "ongoing since"', () => {
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [1, 1, 1], windowDays: 21 })],
+      concurrentChanges: [
+        // Pre-window start, stopped mid-window → must NOT read present-tense "ongoing since".
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-20' },
+        // Standing arrangement, start unrecorded, still active → "ongoing, start not recorded".
+        { kind: 'free_fed', label: 'Duck bowl', startDate: null, bucketIndex: null, ongoing: true, endInWindow: null },
+      ],
+    }),
+  )
+  assert.ok(/until May 20/.test(html), 'a mid-window-stopped confounder is timed with its end date')
+  assert.ok(!/Metronidazole \(medication\) \(ongoing since/.test(html), 'not falsely "ongoing since" after it stopped')
+  assert.ok(/ongoing, start not recorded/.test(html), 'a null-start standing bowl reads honestly, not "since undefined"')
+  assert.ok(!/undefined/.test(html), 'no undefined leaks from a null start date')
+})
+
+// ── Appendix B category label parity: a format='treat' exposure reads "Treat", not "Off-diet" ──
+
+Deno.test('Appendix B labels a format=treat exposure "Treat" (label parity with the treat count)', () => {
+  const html = renderReport(
+    base({
+      provenance: {
+        ownerReported: true,
+        totalSymptomIncidents: 0,
+        estimatedOrWindowCount: 0,
+        deletedExcluded: true,
+        symptomLog: [],
+        intakeLog: [],
+        intakeLogHiddenOlder: 0,
+        confounders: [
+          { eventId: 'e1', occurredAt: '2026-06-01T16:00:00Z', dayKey: '2026-06-01', foodLabel: 'Jerky', primaryProtein: 'chicken', format: 'treat', foodType: 'other', note: null },
+        ],
+        proteinExposureTally: { chicken: 1 },
+        conditions: [],
+      },
+    }),
+  )
+  // The row is labelled "Treat" (format='treat'), not "Off-diet"; the protein is still tallied.
+  assert.ok(/<td>Treat<\/td>/.test(html), 'a format=treat row reads "Treat"')
+  assert.ok(!/<td>Off-diet<\/td>/.test(html), 'not mislabelled "Off-diet"')
+  assert.ok(/chicken/.test(html), 'the antigen is retained')
 })

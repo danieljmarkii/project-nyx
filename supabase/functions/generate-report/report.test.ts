@@ -25,6 +25,7 @@ import {
   type ReportMedicationInput,
   type ReportDoseInput,
 } from './report.ts'
+import type { FoodFormat } from '../generate-signal/detection.ts'
 
 // ── Fixture helpers ────────────────────────────────────────────────────────────
 
@@ -881,4 +882,144 @@ Deno.test('resolveScope is a pure re-derivable function (no hidden Date.now / de
   const a = resolveScope(input)
   const b = resolveScope(input)
   assert.deepEqual(a, b)
+})
+
+// ── A1: a pre-window medication overlapping the window enters the concurrent-change note ──
+// The highest-consequence misread (spec §4/B-117): a standing steroid begun before the report
+// range but active throughout must be a confounder, or the diet silently takes its credit.
+
+function mealEvent(
+  date: string,
+  o: { foodType?: 'meal' | 'treat' | 'other'; format?: FoodFormat | null; protein?: string | null; label?: string; rating?: 'all' | 'refused' | null } = {},
+): ReportEventInput {
+  return makeEvent({
+    type: 'meal',
+    occurredAt: at(date, '12:00:00'),
+    meal: {
+      foodItemId: o.label ?? 'fi',
+      intakeRating: o.rating ?? null,
+      quantity: null,
+      foodType: o.foodType ?? 'meal',
+      format: o.format ?? 'dry_kibble',
+      primaryProtein: o.protein ?? null,
+      brand: null,
+      productName: o.label ?? null,
+    },
+  })
+}
+
+Deno.test('A1 — a pre-window drug active through the window is a "ongoing" concurrent change, not dropped', () => {
+  idSeq = 0
+  const input = baseInput({
+    now: '2026-07-02T12:00:00Z',
+    dietTrials: [
+      { id: 'dt', foodItemId: 'fi-t', startedAt: '2026-05-12', targetDurationDays: 56, status: 'active', completedAt: null, vetName: null, foodLabel: 'Hydro HP', primaryProtein: 'hydrolyzed' },
+    ],
+    medications: [
+      {
+        id: 'm-pred', medicationItemId: null, drugName: 'Prednisolone', doseAmount: '5 mg', route: 'mouth',
+        dosesPerDay: 1, scheduleNotes: null, indication: 'derm', prescribedBy: null,
+        startedAt: '2026-04-01', targetDurationDays: null, status: 'active', endedAt: null, isPrescription: true, strength: '5 mg',
+      },
+      {
+        id: 'm-old', medicationItemId: null, drugName: 'OldAntibiotic', doseAmount: null, route: 'mouth',
+        dosesPerDay: 2, scheduleNotes: null, indication: null, prescribedBy: null,
+        // Ended BEFORE the diet-trial window (May 12) → NOT a concurrent confounder → dropped.
+        startedAt: '2026-04-01', targetDurationDays: 7, status: 'completed', endedAt: '2026-04-10', isPrescription: true, strength: null,
+      },
+    ],
+  })
+  const snap = assembleReport(input)
+  const pred = snap.concurrentChanges.find((c) => c.label === 'Prednisolone')
+  assert.ok(pred, 'the standing pre-window steroid is a concurrent change')
+  assert.equal(pred.ongoing, true, 'flagged ongoing (started before the window)')
+  assert.equal(pred.bucketIndex, null, 'no chart marker — there is no in-window start point')
+  const trial = snap.concurrentChanges.find((c) => c.kind === 'diet_trial')
+  assert.equal(trial?.ongoing, false, 'the in-window trial start is NOT ongoing')
+  assert.ok(!snap.concurrentChanges.some((c) => c.label === 'OldAntibiotic'), 'a drug that ended before the window is not a confounder')
+})
+
+// ── A3: a treat that is ALSO human food counts ONCE (human_food wins), never on both lines ──
+
+Deno.test('A3 — a treat×human_food feeding is counted once as human food, never double-counted', () => {
+  idSeq = 0
+  const input = baseInput({
+    events: [
+      mealEvent('2026-06-01', { foodType: 'treat', format: 'human_food', protein: 'dairy', label: 'Cheddar cube' }),
+      mealEvent('2026-06-02', { foodType: 'treat', format: 'treat', protein: 'chicken', label: 'Biscuit' }),
+    ],
+  })
+  const snap = assembleReport(input)
+  assert.equal(snap.diet.humanFood.count, 1, 'the cheese cube is human food')
+  assert.equal(snap.diet.treats.count, 1, 'ONLY the real treat is a treat (cheese excluded)')
+  // Appendix B (confounders) still lists BOTH exposures, once each.
+  assert.equal(snap.provenance.confounders.length, 2, 'two distinct off-diet exposures, no duplication')
+})
+
+// ── A5: a double-logged (near-simultaneous) weigh-in is collapsed, keeping the later ──────
+
+Deno.test('A5 — near-simultaneous duplicate weigh-ins collapse (readingCount not inflated)', () => {
+  const input = baseInput({
+    weightChecks: [
+      { eventId: 'w1', weightKg: 4.60, occurredAt: '2026-06-01T09:00:00Z' },
+      { eventId: 'w2', weightKg: 4.55, occurredAt: '2026-06-01T09:00:04Z' }, // a 4-second retry/correction
+      { eventId: 'w3', weightKg: 4.40, occurredAt: '2026-06-20T09:00:00Z' },
+    ],
+  })
+  const snap = assembleReport(input)
+  assert.ok(snap.weight.trend, 'a trend renders')
+  assert.equal(snap.weight.trend.readingCount, 2, 'the 4-second retry collapsed — 2 readings, not 3')
+  // Last-write-wins on the collapsed pair → the later 4.55 value is kept for that instant.
+  assert.equal(snap.weight.trend.seriesKg[0], 4.55, 'the later reading of the collapsed pair wins (LWW)')
+  assert.equal(snap.weight.latest?.kg, 4.40, 'the genuine later weigh-in is untouched')
+})
+
+// ── Adversarial re-verify follow-ups (PR 4 round 2) ──────────────────────────────────
+
+Deno.test('A3b — a format=treat item (non-treat foodType) is counted in Appendix B + the antigen tally', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      // A chicken jerky logged with format='treat' but foodType='other' — the classic poultry
+      // trial-breaker. It must NOT be counted on page 1 (treats) yet vanish from the antigen
+      // reconciliation (adversarial finding: confounder predicate omitted format==='treat').
+      events: [mealEvent('2026-06-01', { foodType: 'other', format: 'treat', protein: 'chicken', label: 'Jerky' })],
+    }),
+  )
+  assert.equal(snap.diet.treats.count, 1, 'counted as a treat on page 1')
+  assert.equal(snap.provenance.confounders.length, 1, 'ALSO in Appendix B — not dropped')
+  assert.equal(snap.provenance.proteinExposureTally.chicken, 1, 'chicken is in the antigen tally, not invisible')
+})
+
+Deno.test('A1b — a free-fed bowl with a NULL start date still reaches the concurrent-change note', () => {
+  const snap = assembleReport(
+    baseInput({
+      feedingArrangements: [
+        // "Bowl always down" — start never recorded. Was dropped by the old `&& a.activeFrom` guard.
+        { id: 'fa', foodItemId: 'fi-duck', method: 'free_choice', activeFrom: null, activeUntil: null, isShared: false, primaryProtein: 'duck', foodLabel: 'Duck bowl' },
+      ],
+    }),
+  )
+  const ff = snap.concurrentChanges.find((c) => c.kind === 'free_fed')
+  assert.ok(ff, 'the null-start free-fed bowl is a concurrent confounder')
+  assert.equal(ff.ongoing, true, 'treated as standing/ongoing')
+  assert.equal(ff.startDate, null, 'start date preserved as null (unrecorded)')
+  assert.equal(ff.bucketIndex, null, 'no chart marker without a start point')
+})
+
+Deno.test('A1c — a pre-window intervention that ENDED mid-window carries endInWindow (not false "ongoing")', () => {
+  const snap = assembleReport(
+    baseInput({
+      // A vet visit anchors a since-visit window starting 04-20; a trial ran 04-01 → 05-15,
+      // i.e. it started BEFORE the window and stopped mid-window.
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        { id: 'dt', foodItemId: 'fi', startedAt: '2026-04-01', targetDurationDays: 44, status: 'completed', completedAt: '2026-05-15', vetName: null, foodLabel: 'OldTrial', primaryProtein: 'venison' },
+      ],
+    }),
+  )
+  const t = snap.concurrentChanges.find((c) => c.kind === 'diet_trial')
+  assert.ok(t, 'the completed trial overlaps the window and is a concurrent change')
+  assert.equal(t.ongoing, true, 'started before the window')
+  assert.equal(t.endInWindow, '2026-05-15', 'its mid-window end is carried, so the note says "until" not "ongoing"')
 })
