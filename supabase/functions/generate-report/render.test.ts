@@ -86,6 +86,8 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       estimatedOrWindowCount: 0,
       deletedExcluded: true,
       symptomLog: [],
+      intakeLog: [],
+      intakeLogHiddenOlder: 0,
       confounders: [],
       proteinExposureTally: {},
       conditions: [],
@@ -215,6 +217,8 @@ Deno.test('intake_decline renders as a health signal, never "picky"', () => {
     daysBelowBaseline: 0,
     refusedFoodLabel: 'wet food',
     ratedMealsConsidered: 14,
+    lastFullMealIso: '2026-06-30T08:00:00Z',
+    hoursSinceLastFullMeal: 52,
   }
   const html = renderReport(base({ safetyFlags: [flag] }))
   assert.ok(/health signal/i.test(html))
@@ -222,6 +226,154 @@ Deno.test('intake_decline renders as a health signal, never "picky"', () => {
   assert.ok(/hepatic-lipidosis/i.test(html), 'feline window note for a cat')
   // The refused-food trigger must NOT print a bogus "0 consecutive days".
   assert.ok(!/0 consecutive day/i.test(html))
+})
+
+// ── B-213: intake-decline duration + recent-meals appendix ─────────────────────
+
+Deno.test('B-213 — intake flag renders the "how long off food" gap (hours, feline window)', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline',
+    trigger: 'consecutive_low',
+    species: 'cat',
+    baselineScore: 3.6,
+    recentScore: 1,
+    daysBelowBaseline: 2,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 8,
+    lastFullMealIso: '2026-06-30T08:00:00Z',
+    hoursSinceLastFullMeal: 52,
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  assert.ok(/fully-eaten meal/i.test(text), 'names the last fully-eaten meal')
+  assert.ok(/about 52 h without a full meal/.test(text), 'renders the sub-72h gap in hours for the feline window')
+  // Still escalate-only — the gap never softens the flag. Scope the never-reassure check to
+  // the flag body (the legend legitimately says the report never shows an "all clear").
+  const flagBody = text.slice(text.indexOf('Reduced intake'), text.indexOf('Reduced intake') + 500)
+  assert.ok(/health signal/i.test(flagBody))
+  assert.ok(!/all clear|is fine|no concern|reassur|looks (good|fine)/i.test(flagBody))
+})
+
+Deno.test('B-213 — a >72h gap renders in days, not hours', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline',
+    trigger: 'consecutive_low',
+    species: 'dog',
+    baselineScore: 3.6,
+    recentScore: 1,
+    daysBelowBaseline: 4,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 8,
+    lastFullMealIso: '2026-06-26T08:00:00Z',
+    hoursSinceLastFullMeal: 100,
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  assert.ok(/about 4\.2 days without a full meal/.test(text), '100 h renders as 4.2 days')
+  assert.ok(!/\d+ h without a full meal/.test(text), 'a multi-day gap is not shown in hours')
+})
+
+Deno.test('B-213 — a whole-day gap drops the ".0" (no self-contradictory "about 3.0 days")', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline', trigger: 'consecutive_low', species: 'cat',
+    baselineScore: 3.6, recentScore: 1, daysBelowBaseline: 3, refusedFoodLabel: null,
+    ratedMealsConsidered: 8, lastFullMealIso: '2026-06-29T12:00:00Z', hoursSinceLastFullMeal: 72,
+  }
+  const text = renderReport(base({ safetyFlags: [flag] })).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  assert.ok(/about 3 days without a full meal/.test(text), '72 h reads "3 days", not "3.0 days"')
+  assert.ok(!/3\.0 days/.test(text))
+})
+
+Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread as marked anorexia', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline', trigger: 'refused_normal_food', species: 'cat',
+    baselineScore: 3.6, recentScore: 0, daysBelowBaseline: 0, refusedFoodLabel: 'Tiki Cat Tuna',
+    ratedMealsConsidered: 9, lastFullMealIso: '2026-06-30T08:00:00Z', hoursSinceLastFullMeal: 72,
+  }
+  const text = renderReport(
+    base({
+      safetyFlags: [flag],
+      provenance: {
+        ownerReported: true, totalSymptomIncidents: 0, estimatedOrWindowCount: 0, deletedExcluded: true,
+        symptomLog: [],
+        intakeLog: [
+          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'picked', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1b', occurredAt: '2026-06-30T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false },
+        ],
+        intakeLogHiddenOlder: 0, confounders: [], proteinExposureTally: {}, conditions: [],
+      },
+    }),
+  ).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  // The trajectory names the slope (oldest→newest), so "3 days since a full meal" can't be read
+  // as 3 days of marked anorexia — the pet ate partially in between.
+  assert.ok(/Recent rated meals declined: ate it all . ate some . picked at it . refused/i.test(text), text.slice(text.indexOf('Reduced intake'), text.indexOf('Reduced intake') + 400))
+})
+
+Deno.test('B-213 — no full meal in window renders honestly, never a false recent anchor', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline',
+    trigger: 'consecutive_low',
+    species: 'cat',
+    baselineScore: 2.8,
+    recentScore: 0,
+    daysBelowBaseline: 2,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 6,
+    lastFullMealIso: null,
+    hoursSinceLastFullMeal: null,
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(/No fully-eaten meal is recorded/i.test(html))
+  assert.ok(!/fully-eaten meal was/i.test(html), 'no fabricated date when none exists')
+})
+
+Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last full meal, never "picky"', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline',
+    trigger: 'consecutive_low',
+    species: 'cat',
+    baselineScore: 3.6,
+    recentScore: 0.5,
+    daysBelowBaseline: 2,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 8,
+    lastFullMealIso: '2026-06-30T08:00:00Z',
+    hoursSinceLastFullMeal: 52,
+  }
+  const html = renderReport(
+    base({
+      safetyFlags: [flag],
+      provenance: {
+        ownerReported: true,
+        totalSymptomIncidents: 0,
+        estimatedOrWindowCount: 0,
+        deletedExcluded: true,
+        symptomLog: [],
+        intakeLog: [
+          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false },
+        ],
+        intakeLogHiddenOlder: 5,
+        confounders: [],
+        proteinExposureTally: {},
+        conditions: [],
+      },
+    }),
+  )
+  const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  assert.ok(/Recent meals &amp; intake/i.test(html), 'the appendix renders')
+  assert.ok(/last full meal/i.test(text), 'tags the last fully-eaten meal')
+  assert.ok(/Refused/.test(text) && /Ate it all/.test(text), 'renders the raw ratings')
+  assert.ok(/5 earlier rated meals/i.test(text), 'discloses the hidden older count — no silent cap')
+  assert.ok(/not &ldquo;picky/i.test(html), 'never picky, even in the appendix')
+})
+
+Deno.test('B-213 — no intake appendix on a calm report (empty intakeLog)', () => {
+  const html = renderReport(base({}))
+  assert.ok(!/Recent meals &amp; intake/i.test(html), 'no meal dump when there is no intake concern')
 })
 
 Deno.test('symptom_worsening copy uses the window LENGTH (windowDays), not the symptom-day density', () => {
@@ -344,6 +496,8 @@ Deno.test('unrated severity renders blank; a rated one renders x/5; nothing is a
           logEntry({ type: 'vomit', occurredAt: '2026-06-01T14:00:00Z', severity: null }),
           logEntry({ type: 'diarrhea', occurredAt: '2026-06-02T12:00:00Z', severity: 3 }),
         ],
+        intakeLog: [],
+        intakeLogHiddenOlder: 0,
         confounders: [],
         proteinExposureTally: {},
         conditions: [],
@@ -375,6 +529,8 @@ Deno.test('B-010 — windowed event renders a time RANGE, estimated an ~time, ne
           }),
           logEntry({ type: 'diarrhea', occurredAt: '2026-06-02T12:00:00Z', occurredAtConfidence: 'estimated' }),
         ],
+        intakeLog: [],
+        intakeLogHiddenOlder: 0,
         confounders: [],
         proteinExposureTally: {},
         conditions: [],

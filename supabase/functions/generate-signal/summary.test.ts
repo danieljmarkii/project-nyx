@@ -49,6 +49,7 @@ function declineFinding(over: Partial<IntakeDeclineFinding> = {}): IntakeDecline
     daysBelowBaseline: 0,
     refusedFoodLabel: 'Tiki Cat Tuna',
     ratedMealsConsidered: 6,
+    lastFullMealIso: null,
     ...over,
   }
 }
