@@ -865,7 +865,8 @@ export type InterventionKind = 'diet_trial' | 'medication' | 'supplement' | 'fre
 export interface ConcurrentChange {
   kind: InterventionKind
   label: string
-  startDate: string
+  /** The intervention's start date; NULL when a standing arrangement's start was never recorded (a free-fed bowl "always down") — rendered "ongoing (start not recorded)". */
+  startDate: string | null
   /** The 7-day bucket index where this intervention started (the dashed marker, §3.5); null if it started outside the window (a standing confounder gets no marker). */
   bucketIndex: number | null
   /**
@@ -877,6 +878,13 @@ export interface ConcurrentChange {
    * single highest-consequence misread. false ⇒ the intervention started inside the window.
    */
   ongoing: boolean
+  /**
+   * The end date IF the intervention STOPPED strictly before the window end (a trial completed
+   * mid-window, a course that ended). NULL ⇒ still active at the window end. Without it a
+   * pre-window drug that stopped mid-window rendered a false present-tense "ongoing since …"
+   * (adversarial finding) — the note must say "until <date>" instead.
+   */
+  endInWindow: string | null
 }
 
 export interface SymptomLogPhenotype {
@@ -1700,8 +1708,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     (e) => e.occurredAtConfidence === 'estimated' || e.occurredAtConfidence === 'window',
   ).length
 
+  // MUST mirror the treatFeedings + humanFoodFeedings union exactly, or an off-diet exposure
+  // counted on page 1 (treats) vanishes from Appendix B and the antigen tally — a hidden
+  // trial-breaking antigen (adversarial finding: a `format==='treat'` item with a non-'treat'
+  // foodType was in page-1 treats but absent from the reconciliation). `format==='treat'` is a
+  // legitimate FoodFormat, so the treat arm needs BOTH predicates here too.
   const confounderFeedings = windowMeals.filter(
-    (e) => e.meal!.foodType === 'treat' || e.meal!.format === 'human_food',
+    (e) => e.meal!.foodType === 'treat' || e.meal!.format === 'treat' || e.meal!.format === 'human_food',
   )
   const confounders: ConfounderExposure[] = confounderFeedings.map((e) => ({
     eventId: e.id,
@@ -1989,20 +2002,29 @@ function buildConcurrentChanges(
   // in-window-start-only gate) let the diet take its credit — adversarial finding A1, the
   // spec §4/B-117 highest-consequence misread. An open-ended (still-active) intervention
   // runs to the window end; one that ENDED before the window never overlaps and is dropped.
-  const consider = (kind: InterventionKind, label: string, startDate: string, endDate: string | null) => {
-    const startDn = dayNumber(startDate)
-    if (startDn === null) return
+  const consider = (kind: InterventionKind, label: string, startDate: string | null, endDate: string | null) => {
+    // A NULL startDate = a standing arrangement whose start was never recorded (a free-fed bowl
+    // "always down"). Treat it as active from before the window (spanStart -Infinity) so it is
+    // never dropped from the confounder note just because its start date is missing (adversarial
+    // finding: a null-activeFrom bowl escaped the GP-0 guard). A malformed non-null date bails.
+    const startDn = startDate ? dayNumber(startDate) : null
+    if (startDate !== null && startDn === null) return
+    const spanStart = startDn ?? -Infinity
     const activeEndDn = endDate ? dayNumber(endDate) : null
     const spanEnd = activeEndDn ?? scope.endDayNum // open-ended → active through the window end
-    if (startDn > scope.endDayNum || spanEnd < scope.startDayNum) return // no overlap with the window
-    const startedInWindow = startDn >= scope.startDayNum && startDn <= scope.endDayNum
+    if (spanStart > scope.endDayNum || spanEnd < scope.startDayNum) return // no overlap with the window
+    const startedInWindow = startDn !== null && startDn >= scope.startDayNum && startDn <= scope.endDayNum
+    // The end date ONLY when it stopped strictly before the window end — so the render says
+    // "until <date>" instead of a false present-tense "ongoing since <start>" (adversarial finding).
+    const endInWindow = activeEndDn !== null && activeEndDn < scope.endDayNum ? endDate : null
     out.push({
       kind,
       label,
       startDate,
       // A marker only where there is a real start point in-window; a standing confounder gets none.
-      bucketIndex: startedInWindow ? bucketIndexOfDay(startDn) : null,
+      bucketIndex: startedInWindow ? bucketIndexOfDay(startDn as number) : null,
       ongoing: !startedInWindow,
+      endInWindow,
     })
   }
   for (const t of input.dietTrials) {
@@ -2012,12 +2034,15 @@ function buildConcurrentChanges(
     consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)
   }
   for (const a of input.feedingArrangements) {
-    if (a.method === 'free_choice' && a.activeFrom) consider('free_fed', a.foodLabel ?? 'Free-fed food', a.activeFrom, a.activeUntil)
+    // Drop the old `&& a.activeFrom` guard: a free-fed bowl with an unrecorded start still
+    // overlaps the window and must reach the confounder note (consider() handles the null start).
+    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', a.activeFrom, a.activeUntil)
   }
   // Explicit total order (matches the determinism discipline of every other sort here) —
   // by start date, then kind, then label, so same-day interventions never depend on push order.
+  // A null start sorts first (a standing arrangement of unrecorded, hence earliest, origin).
   out.sort(
-    (x, y) => x.startDate.localeCompare(y.startDate) || x.kind.localeCompare(y.kind) || x.label.localeCompare(y.label),
+    (x, y) => (x.startDate ?? '').localeCompare(y.startDate ?? '') || x.kind.localeCompare(y.kind) || x.label.localeCompare(y.label),
   )
   return out
 }

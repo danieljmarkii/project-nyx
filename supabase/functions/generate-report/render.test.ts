@@ -708,8 +708,8 @@ Deno.test('a zero-count week renders a nub (never blank) + the GP-0 note names c
         }),
       ],
       concurrentChanges: [
-        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false },
-        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 1, ongoing: false },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
       ],
     }),
   )
@@ -728,8 +728,8 @@ Deno.test('a standing pre-window intervention is named "ongoing" in the Reading-
       concurrentChanges: [
         // A steroid begun before the window, running throughout — no chart marker, but MUST
         // be named or the diet silently takes its credit (spec §4/B-117).
-        { kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null, ongoing: true },
-        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false },
+        { kind: 'medication', label: 'Prednisolone', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: null },
+        { kind: 'diet_trial', label: 'RC HP', startDate: '2026-05-08', bucketIndex: 1, ongoing: false, endInWindow: null },
       ],
     }),
   )
@@ -832,4 +832,24 @@ Deno.test('A6 — repeated human-food items render distinct, not verbatim-repeat
   assert.ok(html.includes('Rice'), 'the other distinct item is still listed')
   const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
   assert.ok(/4 feeding/.test(text), 'the feeding COUNT is preserved (only the item list is collapsed)')
+})
+
+// ── Adversarial re-verify (PR 4 round 2): honest confounder timing in "Reading the trend" ──
+
+Deno.test('a confounder that ended mid-window reads "until <date>", never a false "ongoing since"', () => {
+  const html = renderReport(
+    base({
+      symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [1, 1, 1], windowDays: 21 })],
+      concurrentChanges: [
+        // Pre-window start, stopped mid-window → must NOT read present-tense "ongoing since".
+        { kind: 'medication', label: 'Metronidazole', startDate: '2026-03-01', bucketIndex: null, ongoing: true, endInWindow: '2026-05-20' },
+        // Standing arrangement, start unrecorded, still active → "ongoing, start not recorded".
+        { kind: 'free_fed', label: 'Duck bowl', startDate: null, bucketIndex: null, ongoing: true, endInWindow: null },
+      ],
+    }),
+  )
+  assert.ok(/until May 20/.test(html), 'a mid-window-stopped confounder is timed with its end date')
+  assert.ok(!/Metronidazole \(medication\) \(ongoing since/.test(html), 'not falsely "ongoing since" after it stopped')
+  assert.ok(/ongoing, start not recorded/.test(html), 'a null-start standing bowl reads honestly, not "since undefined"')
+  assert.ok(!/undefined/.test(html), 'no undefined leaks from a null start date')
 })

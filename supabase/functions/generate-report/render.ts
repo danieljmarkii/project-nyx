@@ -806,12 +806,7 @@ function readingTheTrend(snap: ReportSnapshot): string {
   // confound the trend (adversarial finding A1). "overlaps this window" is the honest umbrella:
   // a standing steroid did not "change" during the window, but its presence still forbids
   // crediting the diet.
-  const list = changes
-    .map(
-      (c) =>
-        `${changeLabel(c)} (${c.ongoing ? `ongoing since ${h(fmtDay(c.startDate))}` : `started ${h(fmtDay(c.startDate))}`})`,
-    )
-    .join('; ')
+  const list = changes.map((c) => `${changeLabel(c)} (${changeTiming(c)})`).join('; ')
   const plural = changes.length > 1
   const lead = plural
     ? `<b>${num(changes.length)} interventions overlap this window:</b> ${list}.`
@@ -823,6 +818,24 @@ function readingTheTrend(snap: ReportSnapshot): string {
     <div class="callout">
       <span class="k">Reading the trend</span>
       ${lead}${caution}${gapBit}</div>`
+}
+
+/**
+ * The honest timing clause for a concurrent intervention (adversarial findings): "started
+ * <date>" in-window (with a chart marker); "ongoing since <date>" / "ongoing (start not
+ * recorded)" for a standing one still active at the window end; "until <date>" when it stopped
+ * mid-window — so a completed trial or a finished course is never mislabelled present-tense.
+ */
+function changeTiming(c: ConcurrentChange): string {
+  const start = c.startDate ? h(fmtDay(c.startDate)) : null
+  const end = c.endInWindow ? h(fmtDay(c.endInWindow)) : null
+  if (!c.ongoing) {
+    // Started in-window.
+    return end ? `started ${start}, stopped ${end}` : `started ${start}`
+  }
+  // Started before the window (or unrecorded start).
+  if (end) return start ? `from before this window until ${end}` : `until ${end}`
+  return start ? `ongoing since ${start}` : 'ongoing, start not recorded'
 }
 
 function changeLabel(c: ConcurrentChange): string {

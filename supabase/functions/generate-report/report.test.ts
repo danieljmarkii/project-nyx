@@ -973,3 +973,53 @@ Deno.test('A5 — near-simultaneous duplicate weigh-ins collapse (readingCount n
   assert.equal(snap.weight.trend.seriesKg[0], 4.55, 'the later reading of the collapsed pair wins (LWW)')
   assert.equal(snap.weight.latest?.kg, 4.40, 'the genuine later weigh-in is untouched')
 })
+
+// ── Adversarial re-verify follow-ups (PR 4 round 2) ──────────────────────────────────
+
+Deno.test('A3b — a format=treat item (non-treat foodType) is counted in Appendix B + the antigen tally', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      // A chicken jerky logged with format='treat' but foodType='other' — the classic poultry
+      // trial-breaker. It must NOT be counted on page 1 (treats) yet vanish from the antigen
+      // reconciliation (adversarial finding: confounder predicate omitted format==='treat').
+      events: [mealEvent('2026-06-01', { foodType: 'other', format: 'treat', protein: 'chicken', label: 'Jerky' })],
+    }),
+  )
+  assert.equal(snap.diet.treats.count, 1, 'counted as a treat on page 1')
+  assert.equal(snap.provenance.confounders.length, 1, 'ALSO in Appendix B — not dropped')
+  assert.equal(snap.provenance.proteinExposureTally.chicken, 1, 'chicken is in the antigen tally, not invisible')
+})
+
+Deno.test('A1b — a free-fed bowl with a NULL start date still reaches the concurrent-change note', () => {
+  const snap = assembleReport(
+    baseInput({
+      feedingArrangements: [
+        // "Bowl always down" — start never recorded. Was dropped by the old `&& a.activeFrom` guard.
+        { id: 'fa', foodItemId: 'fi-duck', method: 'free_choice', activeFrom: null, activeUntil: null, isShared: false, primaryProtein: 'duck', foodLabel: 'Duck bowl' },
+      ],
+    }),
+  )
+  const ff = snap.concurrentChanges.find((c) => c.kind === 'free_fed')
+  assert.ok(ff, 'the null-start free-fed bowl is a concurrent confounder')
+  assert.equal(ff.ongoing, true, 'treated as standing/ongoing')
+  assert.equal(ff.startDate, null, 'start date preserved as null (unrecorded)')
+  assert.equal(ff.bucketIndex, null, 'no chart marker without a start point')
+})
+
+Deno.test('A1c — a pre-window intervention that ENDED mid-window carries endInWindow (not false "ongoing")', () => {
+  const snap = assembleReport(
+    baseInput({
+      // A vet visit anchors a since-visit window starting 04-20; a trial ran 04-01 → 05-15,
+      // i.e. it started BEFORE the window and stopped mid-window.
+      vetVisits: [{ visitedAt: '2026-04-20', clinicName: null, vetName: null, reason: null }],
+      dietTrials: [
+        { id: 'dt', foodItemId: 'fi', startedAt: '2026-04-01', targetDurationDays: 44, status: 'completed', completedAt: '2026-05-15', vetName: null, foodLabel: 'OldTrial', primaryProtein: 'venison' },
+      ],
+    }),
+  )
+  const t = snap.concurrentChanges.find((c) => c.kind === 'diet_trial')
+  assert.ok(t, 'the completed trial overlaps the window and is a concurrent change')
+  assert.equal(t.ongoing, true, 'started before the window')
+  assert.equal(t.endInWindow, '2026-05-15', 'its mid-window end is carried, so the note says "until" not "ongoing"')
+})
