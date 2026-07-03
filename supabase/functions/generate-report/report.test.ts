@@ -1080,3 +1080,24 @@ Deno.test('chronicity flag — symptomDays recounted in LOCAL days (the 18-vs-19
   assert.equal(chron.episodeCount, 24, 'episode count includes the added late-evening episode')
   assert.equal(chron.symptomDays, 23, 'days are LOCAL days (24 UTC days would over-count vs appendix A)')
 })
+
+Deno.test('chronicity under a narrow custom window — no partial-set fabrication; cropped episodes disclosed', () => {
+  // Detection runs over the report window (its sub-windows nest inside it), so a
+  // custom 10-day window means chronicity evaluates only the in-window slice — it
+  // goes silent rather than firing off a partial set (the recount's episode-count
+  // fallback guard is defense-in-depth for a mismatch this architecture does not
+  // produce; the match path is regression-locked by the local-day test above). The
+  // §6 cherry-pick guard must still disclose the cropped-out episodes.
+  const input = buildNyxInput()
+  input.requestedWindow = { startDate: '2026-06-22', endDate: '2026-07-02' }
+  const snap = assembleReport(input)
+  const chron = snap.safetyFlags.find((f) => f.kind === 'chronicity')
+  if (chron && chron.kind === 'chronicity') {
+    // If a future architecture change makes it fire here, the flag must never carry
+    // a day count smaller than the window slice it is derived from.
+    const windowVomitDays = new Set(snap.provenance.symptomLog.map((e) => e.occurredAt.slice(0, 10))).size
+    assert.ok(chron.symptomDays >= windowVomitDays, 'never shrunk below the window slice')
+  }
+  assert.ok(snap.scope.isCustomOverride)
+  assert.ok(snap.scope.outOfWindowSymptomCount > 0, 'cropped episodes are disclosed (§6 cherry-pick guard)')
+})
