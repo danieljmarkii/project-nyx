@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator, Alert, Image, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
+import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
@@ -791,6 +792,20 @@ export default function ProfileScreen() {
           </Card>
         )}
 
+        {/* ── Vet report (Step 9) ── */}
+        <Card style={styles.sectionGap}>
+          <Text style={styles.sectionTitle}>Vet report</Text>
+          <Text style={styles.reportBlurb}>
+            A clinical summary of {activePet.name}’s symptoms, diet, and trends — view it
+            here, then send it to your vet as a PDF.
+          </Text>
+          <PrimaryButton
+            label="Open vet report"
+            onPress={() => router.push('/report')}
+            style={styles.reportButton}
+          />
+        </Card>
+
         {/* ── Account ── */}
         <Card style={styles.sectionGap}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -996,6 +1011,14 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+  },
+  reportBlurb: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextSecondary,
+  },
+  reportButton: {
+    marginTop: theme.space1,
   },
   sectionAction: {
     fontSize: theme.textMD,
