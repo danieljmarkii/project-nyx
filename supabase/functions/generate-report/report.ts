@@ -99,6 +99,18 @@ export const FALLBACK_DAYS = 90
 export const DEDUP_WINDOW_MS = 60_000
 
 /**
+ * B-213 — cap on the recent-meals intake appendix (most-recent-first). The intake flag's
+ * evidence is always recent (a decline is measured over days), so the most-recent N rows
+ * carry it; older rated meals beyond the cap are COUNTED and disclosed (intakeLogHiddenOlder),
+ * never silently dropped (the "no silent caps" house rule). 40 rows ≈ 20 days of twice-daily
+ * feeding — ample to show the baseline-then-decline the flag rests on.
+ */
+export const INTAKE_LOG_CAP = 40
+
+/** ms per hour — the "hours since last full meal" unit (B-213). */
+const MS_PER_HOUR = 3_600_000
+
+/**
  * The symptom types the report's frequency section covers. Superset of the engine's
  * CORRELATION_SYMPTOM_TYPES (which drives the reused correlation line) by `lethargy`
  * — a real symptom an owner logs and a vet wants counted, but one the correlation
@@ -667,6 +679,16 @@ export type SafetyFlag =
       daysBelowBaseline: number
       refusedFoodLabel: string | null
       ratedMealsConsidered: number
+      /** B-213 — occurred_at of the most recent fully-eaten meal, or null when none in the window. */
+      lastFullMealIso: string | null
+      /**
+       * B-213 — whole hours from the report's `now` (the window end, = scope.detectionNowIso, the
+       * SAME instant the detector used) to the last full meal; null when there is no full meal. The
+       * "how long off food?" number that sets urgency inside the feline hepatic-lipidosis window.
+       * Computed here (not in the finding) so the finding stays a raw fact and the report owns the
+       * window-relative arithmetic. Never negative (clamped).
+       */
+      hoursSinceLastFullMeal: number | null
     }
   | {
       kind: 'chronicity'
@@ -888,6 +910,20 @@ export interface ConfounderExposure {
   note: string | null
 }
 
+/**
+ * B-213 — one rated meal, for the recent-meals intake appendix. Populated ONLY when an
+ * intake-decline flag is present (the traceability the cold-read asked for: the page-1
+ * intake figures — "declined N of last M", the last full meal — must trace to real meal
+ * rows). Raw ratings only; no derived "below baseline" verdict (two co-firing findings can
+ * carry different baselines, and the vet reads the decline directly from the ratings).
+ */
+export interface IntakeLogEntry {
+  eventId: string
+  occurredAt: string
+  foodLabel: string | null
+  intakeRating: IntakeRating
+}
+
 export interface Provenance {
   ownerReported: true
   totalSymptomIncidents: number
@@ -896,6 +932,14 @@ export interface Provenance {
   deletedExcluded: true
   /** Appendix A — every in-window symptom incident, occurred-vs-logged, with per-event phenotype. */
   symptomLog: SymptomLogEntry[]
+  /**
+   * B-213 — recent rated meals for the intake appendix, most-recent-first. EMPTY unless an
+   * intake-decline flag fired (so calm reports carry no meal dump). Capped; older rated meals
+   * beyond the cap are counted in intakeLogHiddenOlder, never silently dropped.
+   */
+  intakeLog: IntakeLogEntry[]
+  /** Count of in-window rated meals older than the intakeLog cap (disclosed, never a silent truncation). */
+  intakeLogHiddenOlder: number
   /** Appendix B — off-diet exposures (treats + human food). */
   confounders: ConfounderExposure[]
   /** Protein tally over non-meal feedings (the poultry-antigen reconciliation, appendix B). */
@@ -1513,6 +1557,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
   if (detection.intakeDecline) {
     const f = detection.intakeDecline
+    // B-213 — the "how long off food?" number, measured from the report's `now` (window end,
+    // = the detector's own `now`) to the last fully-eaten meal. Whole hours; clamped ≥0 so a
+    // boundary meal can never read as a negative gap. null when no full meal exists in-window.
+    const detNowMs = parseMs(scope.detectionNowIso)
+    const lastFullMs = parseMs(f.lastFullMealIso)
+    const hoursSinceLastFullMeal =
+      detNowMs !== null && lastFullMs !== null
+        ? Math.max(0, Math.round((detNowMs - lastFullMs) / MS_PER_HOUR))
+        : null
     safetyFlags.push({
       kind: 'intake_decline',
       trigger: f.trigger,
@@ -1522,6 +1575,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       daysBelowBaseline: f.daysBelowBaseline,
       refusedFoodLabel: f.refusedFoodLabel,
       ratedMealsConsidered: f.ratedMealsConsidered,
+      lastFullMealIso: f.lastFullMealIso,
+      hoursSinceLastFullMeal,
     })
   }
   if (detection.chronicity) {
@@ -1612,12 +1667,35 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     if (c.primaryProtein) proteinExposureTally[c.primaryProtein] = (proteinExposureTally[c.primaryProtein] ?? 0) + 1
   }
 
+  // ── Intake appendix (B-213) — recent rated meals, ONLY when an intake flag fired ─────
+  // The page-1 intake numbers (baseline, decline, last full meal) must trace to real meal
+  // rows. Built from the deduped, windowed rated meals — the SAME set the detector saw — so
+  // "declined N of last M" and the last-full-meal date line up with appendix rows. Empty on
+  // calm reports (no meal dump when there's no intake concern). Most-recent-first + capped.
+  const hasIntakeFlag = safetyFlags.some((f) => f.kind === 'intake_decline')
+  let intakeLog: IntakeLogEntry[] = []
+  let intakeLogHiddenOlder = 0
+  if (hasIntakeFlag) {
+    const ratedForLog = windowMeals
+      .filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+    intakeLogHiddenOlder = Math.max(0, ratedForLog.length - INTAKE_LOG_CAP)
+    intakeLog = ratedForLog.slice(0, INTAKE_LOG_CAP).map((e) => ({
+      eventId: e.id,
+      occurredAt: e.occurredAt,
+      foodLabel: mealFoodLabel(e.meal!),
+      intakeRating: e.meal!.intakeRating as IntakeRating,
+    }))
+  }
+
   const provenance: Provenance = {
     ownerReported: true,
     totalSymptomIncidents,
     estimatedOrWindowCount,
     deletedExcluded: true,
     symptomLog,
+    intakeLog,
+    intakeLogHiddenOlder,
     confounders,
     proteinExposureTally,
     conditions: input.conditions.map((c) => ({

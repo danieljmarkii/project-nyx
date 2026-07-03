@@ -82,6 +82,7 @@ const intakeDecline = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineF
   daysBelowBaseline: 2,
   refusedFoodLabel: null,
   ratedMealsConsidered: 8,
+  lastFullMealIso: '2026-06-10T08:00:00Z',
   ...over,
 })
 

@@ -58,6 +58,7 @@ import type {
   CorrelationSummary,
   ConcurrentChange,
   SymptomLogEntry,
+  IntakeLogEntry,
   ConfounderExposure,
   ScopeInfo,
   Signalment,
@@ -161,7 +162,37 @@ function fmtLocalTime(iso: string, tz: string | null): string {
   return new Date(ms).toISOString().slice(11, 16)
 }
 
+/**
+ * B-213 — a whole-hour gap rendered as the clinically-natural unit: hours below the feline
+ * 72 h window (so a vet can place the pet in the ≥48–72 h band), days above it. Deterministic,
+ * no rounding surprises (input is already whole hours from report.ts).
+ */
+function humanizeGap(hours: number): string {
+  if (hours < 72) return `${num(hours)}&nbsp;h`
+  const days = hours / 24
+  const d = days < 30 ? days.toFixed(1) : String(Math.round(days))
+  return `${num(d)}&nbsp;days`
+}
+
 // ── Display-label maps ───────────────────────────────────────────────────────────
+
+/** Owner-recorded intake, as a clinical label for the meal appendix (B-213). */
+function intakeLabel(rating: string): string {
+  switch (rating) {
+    case 'all':
+      return 'Ate it all'
+    case 'most':
+      return 'Ate most'
+    case 'some':
+      return 'Ate some'
+    case 'picked':
+      return 'Picked at it'
+    case 'refused':
+      return 'Refused'
+    default:
+      return rating.replace(/_/g, ' ')
+  }
+}
 
 function symptomLabel(type: string): string {
   switch (type) {
@@ -460,6 +491,18 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const baselineBit = ` Baseline read over ${num(f.ratedMealsConsidered)} recent rated meal${
         f.ratedMealsConsidered === 1 ? '' : 's'
       }.`
+      // B-213 — "how long off food?" The time since the last FULLY-eaten meal is the number
+      // that places a pet in (or before) the feline window above. It is a fact the vet weighs:
+      // it escalates on a long gap and never reassures on a short one — the flag itself still
+      // leads, and a recent full meal does NOT retract the refusal/decline that fired it.
+      const durationBit =
+        f.lastFullMealIso && f.hoursSinceLastFullMeal !== null
+          ? ` The most recent fully-eaten meal was ${h(fmtLocalDay(f.lastFullMealIso, tz))} — about ${humanizeGap(
+              f.hoursSinceLastFullMeal,
+            )} before the end of this window.`
+          : ' No fully-eaten meal is recorded in this window.'
+      const appendixBit =
+        snap.provenance.intakeLog.length > 0 ? ' Meal-by-meal detail in the recent-meals appendix.' : ''
       const detail =
         f.trigger === 'refused_normal_food'
           ? `This pet <b>refused a food it normally eats</b>${
@@ -470,7 +513,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             }</b>.${baselineBit}`
       return flagRow(
         'Intake',
-        `<b>Reduced intake.</b> ${detail}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;`,
+        `<b>Reduced intake.</b> ${detail}${durationBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
       )
     }
     case 'chronicity': {
@@ -1157,6 +1200,54 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
   return `${num(fmtLocalTime(e.occurredAt, tz))}`
 }
 
+/**
+ * Recent-meals intake appendix (B-213) — renders ONLY when the intake log is populated (i.e.
+ * an intake-decline flag fired). The traceability the cold-read asked for: the page-1 intake
+ * figures (baseline, decline, "how long off food") trace here, meal by meal. Most-recent-first,
+ * so the recent decline + the last full meal lead; the last fully-eaten meal is tagged so the
+ * page-1 "last full meal" number has an unambiguous home. Escalate-only voice: a declined meal
+ * is a possible health signal, NEVER "picky"; free-fed food is unobserved and never appears.
+ */
+function intakeAppendix(snap: ReportSnapshot): string {
+  const log: IntakeLogEntry[] = snap.provenance.intakeLog
+  if (log.length === 0) return ''
+  // The last fully-eaten meal = the FIRST 'all' in a most-recent-first list; tag that one row.
+  const lastFullIdx = log.findIndex((e) => e.intakeRating === 'all')
+  const rows = log.map((e, i) => intakeLogRow(e, i === lastFullIdx, snap.timezone)).join('')
+  const hidden = snap.provenance.intakeLogHiddenOlder
+  const hiddenBit =
+    hidden > 0
+      ? ` ${num(hidden)} earlier rated meal${hidden === 1 ? '' : 's'} in this window ${
+          hidden === 1 ? 'is' : 'are'
+        } not shown (the most recent are listed).`
+      : ''
+  return `
+<section class="page">
+  <p class="appx-title serif">Appendix — Recent meals &amp; intake</p>
+  <p class="appx-sub">The rated meals behind the reduced-intake flag on page&nbsp;1, most recent first. &ldquo;Intake&rdquo; is what the owner recorded after each meal; a declined or barely-touched meal is recorded as a possible health signal, never &ldquo;picky.&rdquo; Free-fed food is not directly observed and is not rated, so it does not appear here.${hiddenBit}</p>
+  <table>
+    <caption>${num(log.length)} rated meal${log.length === 1 ? '' : 's'} &middot; ${h(
+    fmtRange(snap.scope.startDate, snap.scope.endDate),
+  )}</caption>
+    <thead><tr><th style="width:64px">Date</th><th style="width:58px">Time</th><th>Food</th><th style="width:150px">Intake</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <p class="note" style="margin-top:9px"><b>Reading this:</b> the &ldquo;last fully-eaten meal&rdquo; on page&nbsp;1 is the most recent meal tagged here as eaten in full; the time since it is how long the pet has gone without a full meal, which sets the urgency of a reduced-intake flag (especially the feline 48&ndash;72&nbsp;h window). Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.</p>
+  ${footer(snap, 'Appendix — recent meals')}
+</section>`
+}
+
+function intakeLogRow(e: IntakeLogEntry, isLastFull: boolean, tz: string | null): string {
+  const tag = isLastFull ? ` <span class="conf">last full meal</span>` : ''
+  const eaten = e.intakeRating === 'all' || e.intakeRating === 'most'
+  // Below-baseline ratings get weight so the decline reads down the column; a full/most meal
+  // stays plain. NOT a colour or a verdict — just typographic emphasis on the concerning rows.
+  const intakeCell = eaten ? h(intakeLabel(e.intakeRating)) : `<b>${h(intakeLabel(e.intakeRating))}</b>`
+  return `<tr><td class="num">${h(fmtLocalDay(e.occurredAt, tz))}</td><td class="num">${h(
+    fmtLocalTime(e.occurredAt, tz),
+  )}</td><td>${e.foodLabel ? h(e.foodLabel) : '&mdash;'}</td><td>${intakeCell}${tag}</td></tr>`
+}
+
 function appendixBCD(snap: ReportSnapshot): string {
   return `
 <section class="page">
@@ -1297,7 +1388,7 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Photo analysis</dt><dd>For photographed incidents, Nyx reads structured fields from the photo (colour, contents, blood, foreign material). These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the safety band.</dd>
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
-    <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo; For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
+    <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo; When intake drops, page&nbsp;1 shows the time since the last <b>fully-eaten</b> meal (how long the pet has gone without a full meal), and the recent rated meals are listed in the recent-meals appendix. For free-fed food, intake is <b>not directly observed</b>; absence of a meal log is not read as &ldquo;didn't eat.&rdquo;</dd>
     <dt>Associations</dt><dd>Any timing relationship is reported as co-occurrence with counts for the clinician to weigh. Nothing in this report asserts that a food caused a symptom.</dd>
     <dt>Deleted entries</dt><dd>Entries the owner deleted are excluded. The symptom counts on page&nbsp;1 trace line-by-line to appendix&nbsp;A and the off-diet exposures to appendix&nbsp;B; medication, diet and weight figures summarize the owner's logs for those items. Nothing is counted that the owner did not log.</dd>
   </dl>
@@ -1343,6 +1434,7 @@ export function renderReport(snap: ReportSnapshot): string {
 <body>
 ${page1}
 ${appendixA(snap)}
+${intakeAppendix(snap)}
 ${appendixBCD(snap)}
 ${appendixF(snap)}
 </body>

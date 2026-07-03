@@ -902,6 +902,45 @@ Deno.test('detectIntakeDecline — consecutive low days below baseline fire the 
   assert.equal(f.daysBelowBaseline, 2)
   assert.ok(f.baselineScore > f.recentScore)
   assert.equal(f.refusedFoodLabel, null)
+  // B-213 — the finding carries the most-recent FULLY-eaten meal (day 26 `all`, not the
+  // day-24 `all` nor the day-22 `most`), the anchor the report turns into "how long off food".
+  assert.equal(f.lastFullMealIso, at(26, 8))
+})
+
+Deno.test('detectIntakeDecline — B-213: lastFullMealIso is null when no meal was fully eaten (never under-states the gap)', () => {
+  // A cat that only ever eats `most` (score 3), then refuses. The flag fires (a real decline
+  // vs its own baseline), and because NO meal in the window was fully eaten, the "last full
+  // meal" anchor is null — an escalating fact, never softened into a recent false anchor.
+  const mealEvents = [
+    ratedMeal(18, 'most'),
+    ratedMeal(20, 'most'),
+    ratedMeal(22, 'most'),
+    ratedMeal(24, 'most'),
+    ratedMeal(26, 'most'),
+    ratedMeal(30, 'refused'),
+  ]
+  const findings = detectIntakeDecline(input({ pet: cat, mealEvents }))
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].trigger, 'consecutive_low')
+  assert.equal(findings[0].lastFullMealIso, null)
+})
+
+Deno.test('detectIntakeDecline — B-213: a refusal finding also carries the last full meal (any food)', () => {
+  const mealEvents = [
+    ratedMeal(18, 'all', { foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    ratedMeal(20, 'all', { foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    ratedMeal(22, 'most', { foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    ratedMeal(30, 'refused', { foodItemId: 'F1', foodLabel: 'the turkey pâté' }),
+    ratedMeal(29, 'all', { foodItemId: 'F2', foodLabel: 'the chicken can' }),
+    ratedMeal(30, 'all', { foodItemId: 'F2', foodLabel: 'the chicken can' }),
+  ]
+  const findings = detectIntakeDecline(input({ pet: dog, mealEvents }))
+  const refusal = findings.find((f) => f.trigger === 'refused_normal_food')
+  assert.ok(refusal, 'the refusal fires')
+  // The last full meal is the day-30 F2 `all` (a different food eaten fully today) — the
+  // anchor is food-agnostic and honest: the pet DID eat a full meal today even though it
+  // refused F1. The flag still leads; the anchor is context a vet weighs, not reassurance.
+  assert.equal(refusal!.lastFullMealIso, at(30, 8))
 })
 
 // ── Detector ②: feline sensitivity (P0 — Dr. Chen) ───────────────────────────
@@ -1409,6 +1448,7 @@ Deno.test('detectWorsening — within the safety band, intake-decline outranks w
     daysBelowBaseline: 1,
     refusedFoodLabel: null,
     ratedMealsConsidered: 6,
+    lastFullMealIso: null,
   }
   const ranked = rankFindings([worsening, decline], cat)
   assert.equal(ranked.length, 2, 'both safety cards are kept')
@@ -2392,6 +2432,7 @@ Deno.test('rankFindings — a reflection ranks below safety AND below a correlat
     daysBelowBaseline: 2,
     refusedFoodLabel: null,
     ratedMealsConsidered: 5,
+    lastFullMealIso: null,
   }
   const reflection = reflectionFinding()
   // Deliberately pass the reflection FIRST to prove ordering is by band, not input order.
@@ -2432,6 +2473,7 @@ Deno.test('rankFindings — safety always leads, then Established before Early',
     daysBelowBaseline: 2,
     refusedFoodLabel: null,
     ratedMealsConsidered: 5,
+    lastFullMealIso: null,
   }
   const findings: Finding[] = [early, established, safety]
   const ranked = rankFindings(findings, cat)

@@ -529,6 +529,18 @@ export interface IntakeDeclineFinding extends FindingBase {
   refusedFoodLabel: string | null
   /** How many rated meals informed the baseline — shown so an owner can gauge the read. */
   ratedMealsConsidered: number
+  /**
+   * B-213 — occurred_at (ISO) of the most recent FULLY-eaten meal (intake `all`), or null
+   * when none exists in the window. The conservative "last full meal" anchor for "how long
+   * off food?" — the number that sets urgency, esp. inside the feline hepatic-lipidosis
+   * window. Deliberately the strictest rating (never a nibble): counting a partial meal as
+   * "full" would UNDER-state time-since-a-real-meal, the ONE error direction a never-reassure
+   * intake lane must avoid. Trigger-independent (computed once over the rated meals), so a
+   * refusal and a consecutive-low both carry the same honest anchor. A null here is itself an
+   * escalating fact ("no full meal recorded"), never softened. The report layer derives the
+   * span; this stays a raw structured fact (no Date.now-relative arithmetic in the finding).
+   */
+  lastFullMealIso: string | null
 }
 
 /** A reflection only ever describes a FLAT ("same as last week") or IMPROVING (falling) trend. */
@@ -1960,6 +1972,8 @@ function utcDateKey(ms: number): string {
 /** A rated meal reduced to the fields the intake-decline / coverage logic needs. */
 interface RatedMeal {
   ms: number
+  /** Original ISO occurred_at (B-213 — the `lastFullMealIso` anchor needs the exact instant, not just `ms`). */
+  occurredAt: string
   score: number
   foodItemId: string | null
   foodLabel: string | null
@@ -1977,12 +1991,26 @@ function classifyRatedMeals(mealEvents: MealEvent[]): RatedMeal[] {
     .filter((m) => m.foodType === 'meal' && m.intakeRating != null)
     .map((m) => ({
       ms: Date.parse(m.occurredAt),
+      occurredAt: m.occurredAt,
       score: intakeScore(m.intakeRating as IntakeRating),
       foodItemId: m.foodItemId,
       foodLabel: m.foodLabel ?? null,
     }))
     .filter((m) => Number.isFinite(m.ms))
     .sort((x, y) => x.ms - y.ms)
+}
+
+/**
+ * B-213 — the ISO of the most recent FULLY-eaten meal (`all`), or null when none. `meals`
+ * is sorted ascending, so the last `all`-scored entry is the most recent. `>= FULL_MEAL_SCORE`
+ * is `=== 4` today (the max), written as a floor so it can't silently invert if the enum grows.
+ */
+const FULL_MEAL_SCORE = intakeScore('all')
+function lastFullMeal(meals: RatedMeal[]): string | null {
+  for (let i = meals.length - 1; i >= 0; i--) {
+    if (meals[i].score >= FULL_MEAL_SCORE) return meals[i].occurredAt
+  }
+  return null
 }
 
 export function detectIntakeDecline(
@@ -2004,6 +2032,13 @@ export function detectIntakeDecline(
   const baselineWindowStart = nowMs - cfg.baselineWindowDays * MS_PER_DAY
   const windowMeals = ratedMeals.filter((m) => m.ms >= baselineWindowStart)
   if (windowMeals.length < cfg.minRatedMealsForBaseline) return []
+
+  // B-213 — the conservative "last full meal" anchor, computed ONCE over the rated meals
+  // and shared by whichever finding(s) fire. `ratedMeals` is sorted ascending, so the last
+  // element scoring `all` is the most recent fully-eaten meal. Uses the full rated set (not
+  // just windowMeals) so a decline running longer than the baseline window still traces to a
+  // real "last full meal" instead of silently clamping the gap shorter (never-reassure).
+  const lastFullMealIso = lastFullMeal(ratedMeals)
 
   const findings: IntakeDeclineFinding[] = []
 
@@ -2056,6 +2091,7 @@ export function detectIntakeDecline(
           daysBelowBaseline: recentDays.length,
           refusedFoodLabel: null,
           ratedMealsConsidered: baselineMeals.length,
+          lastFullMealIso,
         })
       }
     }
@@ -2106,6 +2142,7 @@ export function detectIntakeDecline(
       daysBelowBaseline: 0,
       refusedFoodLabel: latest.foodLabel,
       ratedMealsConsidered: meals.length,
+      lastFullMealIso,
     }
     // Surface the most-eaten-then-refused food (largest drop) if several qualify.
     if (!refusalFinding || candidate.baselineScore > refusalFinding.baselineScore) {

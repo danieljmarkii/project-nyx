@@ -18,6 +18,7 @@ import {
   dedupeEvents,
   resolveScope,
   FALLBACK_DAYS,
+  INTAKE_LOG_CAP,
   type ReportInput,
   type ReportEventInput,
   type ReportAiAnalysisInput,
@@ -382,6 +383,95 @@ Deno.test('de-dup — a bout logged twice keeps the COMPLETED analysis, not the 
   assert.equal(survivors[0].id, completedId) // representative = the completed-AI event
   assert.equal(survivors[0].dupCount, 2)
   assert.ok(droppedEventIds.has(dupId))
+})
+
+// ── B-213: intake-decline duration + recent-meals intake appendix ──────────────
+
+/** A rated 'meal'-type meal event (B-213 intake fixtures). */
+function ratedMealEvent(date: string, time: string, rating: 'all' | 'most' | 'some' | 'picked' | 'refused'): ReportEventInput {
+  return makeEvent({
+    type: 'meal',
+    occurredAt: at(date, time),
+    meal: {
+      foodItemId: 'rc-chicken',
+      intakeRating: rating,
+      quantity: null,
+      foodType: 'meal',
+      format: null,
+      primaryProtein: 'chicken',
+      brand: 'Royal Canin',
+      productName: 'Chicken',
+    },
+  })
+}
+
+Deno.test('B-213 — assembleReport threads lastFullMealIso + hoursSinceLastFullMeal + intakeLog on a decline', () => {
+  idSeq = 0
+  // A cat that ate fully through late June, then refused on Jul 2 (recent low day) → the
+  // consecutive-low intake flag fires. Last full meal = Jun 30 08:00Z; now = Jul 2 12:00Z ⇒ 52 h.
+  const events: ReportEventInput[] = [
+    ratedMealEvent('2026-06-22', '08:00:00', 'all'),
+    ratedMealEvent('2026-06-24', '08:00:00', 'all'),
+    ratedMealEvent('2026-06-26', '08:00:00', 'all'),
+    ratedMealEvent('2026-06-28', '08:00:00', 'all'),
+    ratedMealEvent('2026-06-30', '08:00:00', 'all'), // the last FULL meal
+    ratedMealEvent('2026-07-02', '08:00:00', 'refused'), // recent low day
+  ]
+  const snap = assembleReport(baseInput({ events }))
+
+  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+  assert.ok(flag && flag.kind === 'intake_decline', 'the intake-decline flag fires')
+  assert.equal(flag.lastFullMealIso, '2026-06-30T08:00:00Z', 'the most recent fully-eaten meal')
+  assert.equal(flag.hoursSinceLastFullMeal, 52, 'gap from the window end to the last full meal, whole hours')
+
+  // The intake appendix log is populated (most-recent-first), so the page-1 figures trace.
+  assert.equal(snap.provenance.intakeLog.length, 6, 'all six rated meals line-item')
+  assert.equal(snap.provenance.intakeLog[0].intakeRating, 'refused', 'most recent first')
+  assert.equal(snap.provenance.intakeLogHiddenOlder, 0)
+  // Every intake-log entry carries a real rating (no fabricated rows).
+  for (const e of snap.provenance.intakeLog) assert.ok(e.occurredAt && e.intakeRating)
+})
+
+Deno.test('B-213 — no intake flag ⇒ an EMPTY intake log (no meal dump on a calm report)', () => {
+  // Nyx's real dry-run: free-fed, no rated meals ⇒ no intake flag ⇒ no intake appendix.
+  const snap = assembleReport(buildNyxInput())
+  assert.ok(!snap.safetyFlags.some((f) => f.kind === 'intake_decline'), 'no intake flag on the free-fed pet')
+  assert.equal(snap.provenance.intakeLog.length, 0, 'the intake log stays empty')
+  assert.equal(snap.provenance.intakeLogHiddenOlder, 0)
+})
+
+Deno.test('B-213 — intake log is capped and discloses the hidden older count (no silent truncation)', () => {
+  idSeq = 0
+  // 43 rated meals, one per day back from now: the most recent is a refusal (cat single-day
+  // flag fires), the rest are `all`. All fall in the 90-day report window, so the intake log
+  // sees 43 but caps at INTAKE_LOG_CAP and DISCLOSES the remainder — never a silent drop.
+  const TOTAL = 43
+  const baseMs = Date.parse('2026-07-02T08:00:00Z')
+  const events: ReportEventInput[] = []
+  for (let i = 0; i < TOTAL; i++) {
+    events.push(
+      makeEvent({
+        type: 'meal',
+        occurredAt: new Date(baseMs - i * 86_400_000).toISOString(),
+        meal: {
+          foodItemId: 'rc-chicken',
+          intakeRating: i === 0 ? 'refused' : 'all',
+          quantity: null,
+          foodType: 'meal',
+          format: null,
+          primaryProtein: 'chicken',
+          brand: 'Royal Canin',
+          productName: 'Chicken',
+        },
+      }),
+    )
+  }
+  const snap = assembleReport(baseInput({ events }))
+  assert.ok(snap.safetyFlags.some((f) => f.kind === 'intake_decline'), 'the decline fires')
+  assert.equal(snap.provenance.intakeLog.length, INTAKE_LOG_CAP, 'log capped at INTAKE_LOG_CAP')
+  assert.equal(snap.provenance.intakeLogHiddenOlder, TOTAL - INTAKE_LOG_CAP, 'the remainder is disclosed, not dropped')
+  // The most-recent row (the refusal) is always shown — the flag's evidence is never cropped.
+  assert.equal(snap.provenance.intakeLog[0].intakeRating, 'refused')
 })
 
 Deno.test('de-dup — two DIFFERENT medication events at the same minute are NOT collapsed (B-156 combo data-loss guard)', () => {
