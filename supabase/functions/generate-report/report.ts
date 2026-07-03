@@ -922,6 +922,19 @@ export interface IntakeLogEntry {
   occurredAt: string
   foodLabel: string | null
   intakeRating: IntakeRating
+  /**
+   * True for the page-1 anchor — the most recent fully-eaten meal (the same meal detection.ts
+   * anchors `lastFullMealIso` on). Render tags this row "last full meal" so the page-1 "how long
+   * off food" number always points at a VISIBLE row (adversarial finding: the anchor can predate
+   * the 40 most-recent meals in a chronic-inappetence case).
+   */
+  isLastFullMeal: boolean
+  /**
+   * True when this row is the anchor PINNED back in past the most-recent cap (it is older than
+   * every other shown row, with omitted meals between). Render draws an "earlier meals omitted"
+   * break before it so it never reads as contiguous with the recent rows.
+   */
+  pinned: boolean
 }
 
 export interface Provenance {
@@ -1679,12 +1692,26 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     const ratedForLog = windowMeals
       .filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
-    intakeLogHiddenOlder = Math.max(0, ratedForLog.length - INTAKE_LOG_CAP)
-    intakeLog = ratedForLog.slice(0, INTAKE_LOG_CAP).map((e) => ({
+    // The page-1 anchor = the most recent fully-eaten meal (ratedForLog is most-recent-first,
+    // so the first `all` is exactly the meal detection.ts anchored `lastFullMealIso` on — one
+    // rule, no divergence). May be null (no full meal in the window → flag says so honestly).
+    const anchorMeal = ratedForLog.find((e) => e.meal!.intakeRating === 'all') ?? null
+    const head = ratedForLog.slice(0, INTAKE_LOG_CAP)
+    // TRACEABILITY (adversarial finding): the "how long off food" number must point at a VISIBLE
+    // row. If the anchor predates the most-recent cap (a chronically-inappetent pet with >cap
+    // non-full meals since its last full meal), PIN it back in as a trailing row so it is shown
+    // and taggable — never left cited-but-invisible. Everything between is disclosed as omitted.
+    const anchorInHead = anchorMeal !== null && head.includes(anchorMeal)
+    const shownRows = anchorMeal !== null && !anchorInHead ? [...head, anchorMeal] : head
+    const shownIds = new Set(shownRows.map((e) => e.id))
+    intakeLogHiddenOlder = ratedForLog.filter((e) => !shownIds.has(e.id)).length
+    intakeLog = shownRows.map((e) => ({
       eventId: e.id,
       occurredAt: e.occurredAt,
       foodLabel: mealFoodLabel(e.meal!),
       intakeRating: e.meal!.intakeRating as IntakeRating,
+      isLastFullMeal: anchorMeal !== null && e.id === anchorMeal.id,
+      pinned: !anchorInHead && anchorMeal !== null && e.id === anchorMeal.id,
     }))
   }
 

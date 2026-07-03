@@ -428,6 +428,11 @@ Deno.test('B-213 — assembleReport threads lastFullMealIso + hoursSinceLastFull
   assert.equal(snap.provenance.intakeLog.length, 6, 'all six rated meals line-item')
   assert.equal(snap.provenance.intakeLog[0].intakeRating, 'refused', 'most recent first')
   assert.equal(snap.provenance.intakeLogHiddenOlder, 0)
+  // The Jun 30 `all` meal is the tagged anchor and matches the page-1 lastFullMealIso (traceable).
+  const anchor = snap.provenance.intakeLog.find((e) => e.isLastFullMeal)
+  assert.ok(anchor && anchor.occurredAt === flag.lastFullMealIso, 'the tagged anchor IS the page-1 last full meal')
+  assert.equal(anchor.pinned, false, 'in-cap anchor is not pinned')
+  assert.equal(snap.provenance.intakeLog.filter((e) => e.isLastFullMeal).length, 1)
   // Every intake-log entry carries a real rating (no fabricated rows).
   for (const e of snap.provenance.intakeLog) assert.ok(e.occurredAt && e.intakeRating)
 })
@@ -472,6 +477,50 @@ Deno.test('B-213 — intake log is capped and discloses the hidden older count (
   assert.equal(snap.provenance.intakeLogHiddenOlder, TOTAL - INTAKE_LOG_CAP, 'the remainder is disclosed, not dropped')
   // The most-recent row (the refusal) is always shown — the flag's evidence is never cropped.
   assert.equal(snap.provenance.intakeLog[0].intakeRating, 'refused')
+})
+
+Deno.test('B-213 — the last full meal is PINNED into the appendix when it predates the cap (adversarial traceability finding)', () => {
+  idSeq = 0
+  // The chronic-inappetence case: the last fully-eaten meal is 44 days ago, then 44 non-full
+  // rated meals since. The page-1 anchor must still point at a VISIBLE, tagged appendix row —
+  // never cited-but-invisible past the most-recent cap.
+  const TOTAL = 45
+  const baseMs = Date.parse('2026-07-02T08:00:00Z')
+  const events: ReportEventInput[] = []
+  for (let i = 0; i < TOTAL; i++) {
+    events.push(
+      makeEvent({
+        type: 'meal',
+        occurredAt: new Date(baseMs - i * 86_400_000).toISOString(),
+        meal: {
+          foodItemId: 'rc-chicken',
+          intakeRating: i === 0 ? 'refused' : i === TOTAL - 1 ? 'all' : 'some',
+          quantity: null,
+          foodType: 'meal',
+          format: null,
+          primaryProtein: 'chicken',
+          brand: 'Royal Canin',
+          productName: 'Chicken',
+        },
+      }),
+    )
+  }
+  const snap = assembleReport(baseInput({ events }))
+  const flag = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
+  assert.ok(flag && flag.kind === 'intake_decline', 'the decline fires')
+  const log = snap.provenance.intakeLog
+  // The anchor is pinned back in as a trailing row, so the shown set is cap + 1.
+  assert.equal(log.length, INTAKE_LOG_CAP + 1, 'the anchor is pinned past the cap')
+  const anchor = log[log.length - 1]
+  assert.equal(anchor.pinned, true, 'the trailing row is the pinned anchor')
+  assert.equal(anchor.isLastFullMeal, true, 'the pinned row is tagged the last full meal')
+  assert.equal(anchor.intakeRating, 'all')
+  assert.equal(anchor.occurredAt, flag.lastFullMealIso, 'the pinned row IS the page-1 anchor — traceable')
+  assert.equal(log.filter((e) => e.isLastFullMeal).length, 1, 'exactly one anchor row')
+  // The omitted meals between the recent run and the pinned anchor are disclosed, not dropped.
+  assert.equal(snap.provenance.intakeLogHiddenOlder, TOTAL - (INTAKE_LOG_CAP + 1))
+  // No recent row is mis-tagged (only the pinned anchor is the full meal).
+  assert.equal(log[0].isLastFullMeal, false)
 })
 
 Deno.test('de-dup — two DIFFERENT medication events at the same minute are NOT collapsed (B-156 combo data-loss guard)', () => {

@@ -165,12 +165,15 @@ function fmtLocalTime(iso: string, tz: string | null): string {
 /**
  * B-213 — a whole-hour gap rendered as the clinically-natural unit: hours below the feline
  * 72 h window (so a vet can place the pet in the ≥48–72 h band), days above it. Deterministic,
- * no rounding surprises (input is already whole hours from report.ts).
+ * no rounding surprises (input is already whole hours from report.ts). A whole-day value drops
+ * the ".0" so "about 3 days" reads cleanly (a "3.0" alongside "about" is self-contradictory —
+ * cold-read nit).
  */
 function humanizeGap(hours: number): string {
   if (hours < 72) return `${num(hours)}&nbsp;h`
   const days = hours / 24
-  const d = days < 30 ? days.toFixed(1) : String(Math.round(days))
+  const oneDp = days.toFixed(1)
+  const d = days >= 30 ? String(Math.round(days)) : oneDp.endsWith('.0') ? oneDp.slice(0, -2) : oneDp
   return `${num(d)}&nbsp;days`
 }
 
@@ -491,15 +494,25 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const baselineBit = ` Baseline read over ${num(f.ratedMealsConsidered)} recent rated meal${
         f.ratedMealsConsidered === 1 ? '' : 's'
       }.`
-      // B-213 — "how long off food?" The time since the last FULLY-eaten meal is the number
-      // that places a pet in (or before) the feline window above. It is a fact the vet weighs:
-      // it escalates on a long gap and never reassures on a short one — the flag itself still
-      // leads, and a recent full meal does NOT retract the refusal/decline that fired it.
+      // B-213 — the recent-intake SLOPE (cold-read fix): show the trajectory into the flag, not
+      // just endpoints, so "N days since a full meal" can't be misread as N days of MARKED
+      // anorexia. The pet may have eaten partially in between (all → some → picked → refused);
+      // naming that shape is honest AND keeps the escalation (a decline TO refusal, not "picky").
+      const recent = snap.provenance.intakeLog.slice(0, 4).reverse() // chronological, up to 4
+      const trajectoryBit =
+        recent.length >= 2
+          ? ` Recent rated meals declined: ${h(recent.map((e) => intakeLabel(e.intakeRating).toLowerCase()).join(' → '))}.`
+          : ''
+      // "How long off food?" — time since the last FULLY-eaten meal, the number that places a pet
+      // in (or before) the feline window above. Worded "without a full meal" (NOT "of reduced
+      // intake") because the pet may have eaten partially since — the trajectory above shows it.
+      // A fact the vet weighs: it escalates on a long gap and never reassures on a short one; the
+      // flag itself still leads, and a recent full meal does NOT retract the decline that fired it.
       const durationBit =
         f.lastFullMealIso && f.hoursSinceLastFullMeal !== null
           ? ` The most recent fully-eaten meal was ${h(fmtLocalDay(f.lastFullMealIso, tz))} — about ${humanizeGap(
               f.hoursSinceLastFullMeal,
-            )} before the end of this window.`
+            )} without a full meal.`
           : ' No fully-eaten meal is recorded in this window.'
       const appendixBit =
         snap.provenance.intakeLog.length > 0 ? ' Meal-by-meal detail in the recent-meals appendix.' : ''
@@ -513,7 +526,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             }</b>.${baselineBit}`
       return flagRow(
         'Intake',
-        `<b>Reduced intake.</b> ${detail}${durationBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
+        `<b>Reduced intake.</b> ${detail}${trajectoryBit}${durationBit}${feline} Recorded as a health signal — not &ldquo;picky.&rdquo;${appendixBit}`,
       )
     }
     case 'chronicity': {
@@ -1211,16 +1224,32 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
 function intakeAppendix(snap: ReportSnapshot): string {
   const log: IntakeLogEntry[] = snap.provenance.intakeLog
   if (log.length === 0) return ''
-  // The last fully-eaten meal = the FIRST 'all' in a most-recent-first list; tag that one row.
-  const lastFullIdx = log.findIndex((e) => e.intakeRating === 'all')
-  const rows = log.map((e, i) => intakeLogRow(e, i === lastFullIdx, snap.timezone)).join('')
   const hidden = snap.provenance.intakeLogHiddenOlder
+  // A row flagged `pinned` is the last-full-meal anchor pulled back in past the most-recent cap;
+  // draw an explicit "omitted" break before it so it never reads as contiguous with the recent
+  // rows. The tag itself is report-computed (isLastFullMeal), so it always matches the page-1
+  // anchor even when that meal predates the shown window (adversarial finding).
+  const rows = log
+    .map((e) => {
+      const brk = e.pinned
+        ? `<tr><td colspan="4" class="omit">&hellip; ${num(hidden)} earlier rated meal${
+            hidden === 1 ? '' : 's'
+          } omitted; the last fully-eaten meal (page&nbsp;1 anchor) is pinned below &hellip;</td></tr>`
+        : ''
+      return brk + intakeLogRow(e, snap.timezone)
+    })
+    .join('')
+  const hasFull = log.some((e) => e.isLastFullMeal)
   const hiddenBit =
     hidden > 0
       ? ` ${num(hidden)} earlier rated meal${hidden === 1 ? '' : 's'} in this window ${
           hidden === 1 ? 'is' : 'are'
-        } not shown (the most recent are listed).`
+        } not shown (the most recent are listed${hasFull && log.some((e) => e.pinned) ? ', plus the last full meal' : ''}).`
       : ''
+  // Only claim a tagged anchor row when one exists — a window with no fully-eaten meal has none.
+  const anchorSentence = hasFull
+    ? 'the &ldquo;last fully-eaten meal&rdquo; on page&nbsp;1 is the row tagged &ldquo;last full meal&rdquo; here; the time since it is how long the pet has gone without a full meal, which sets the urgency of a reduced-intake flag (especially the feline 48&ndash;72&nbsp;h window)'
+    : 'no fully-eaten meal was recorded in this window, so page&nbsp;1 shows no &ldquo;last full meal&rdquo; and none is tagged here'
   return `
 <section class="page">
   <p class="appx-title serif">Appendix — Recent meals &amp; intake</p>
@@ -1232,13 +1261,13 @@ function intakeAppendix(snap: ReportSnapshot): string {
     <thead><tr><th style="width:64px">Date</th><th style="width:58px">Time</th><th>Food</th><th style="width:150px">Intake</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="note" style="margin-top:9px"><b>Reading this:</b> the &ldquo;last fully-eaten meal&rdquo; on page&nbsp;1 is the most recent meal tagged here as eaten in full; the time since it is how long the pet has gone without a full meal, which sets the urgency of a reduced-intake flag (especially the feline 48&ndash;72&nbsp;h window). Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.</p>
+  <p class="note" style="margin-top:9px"><b>Reading this:</b> ${anchorSentence}. Absence of a full meal is not evidence the pet ate nothing — only that no fully-eaten meal was recorded.</p>
   ${footer(snap, 'Appendix — recent meals')}
 </section>`
 }
 
-function intakeLogRow(e: IntakeLogEntry, isLastFull: boolean, tz: string | null): string {
-  const tag = isLastFull ? ` <span class="conf">last full meal</span>` : ''
+function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
+  const tag = e.isLastFullMeal ? ` <span class="conf">last full meal</span>` : ''
   const eaten = e.intakeRating === 'all' || e.intakeRating === 'most'
   // Below-baseline ratings get weight so the decline reads down the column; a full/most meal
   // stays plain. NOT a colour or a verdict — just typographic emphasis on the concerning rows.
@@ -1583,6 +1612,7 @@ const STYLE = `
   tbody tr:nth-child(even){background:#f8f9fa;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   td.r,th.r{text-align:right;}
   td.c,th.c{text-align:center;}
+  td.omit{text-align:center;font-size:10.5px;font-style:italic;color:var(--faint);background:#fafbfc;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .conf{font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:0 4px;white-space:nowrap;}
   .fields{display:block;color:var(--muted);font-size:10.5px;margin-top:2px;}
   .fields b{color:#25272d;font-weight:600;}

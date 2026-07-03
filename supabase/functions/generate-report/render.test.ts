@@ -246,7 +246,7 @@ Deno.test('B-213 — intake flag renders the "how long off food" gap (hours, fel
   const html = renderReport(base({ safetyFlags: [flag] }))
   const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
   assert.ok(/fully-eaten meal/i.test(text), 'names the last fully-eaten meal')
-  assert.ok(/about 52 h before/.test(text), 'renders the sub-72h gap in hours for the feline window')
+  assert.ok(/about 52 h without a full meal/.test(text), 'renders the sub-72h gap in hours for the feline window')
   // Still escalate-only — the gap never softens the flag. Scope the never-reassure check to
   // the flag body (the legend legitimately says the report never shows an "all clear").
   const flagBody = text.slice(text.indexOf('Reduced intake'), text.indexOf('Reduced intake') + 500)
@@ -269,8 +269,46 @@ Deno.test('B-213 — a >72h gap renders in days, not hours', () => {
   }
   const html = renderReport(base({ safetyFlags: [flag] }))
   const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
-  assert.ok(/4\.2 days/.test(text), '100 h renders as 4.2 days')
-  assert.ok(!/ h before/.test(text), 'a multi-day gap is not shown in hours')
+  assert.ok(/about 4\.2 days without a full meal/.test(text), '100 h renders as 4.2 days')
+  assert.ok(!/\d+ h without a full meal/.test(text), 'a multi-day gap is not shown in hours')
+})
+
+Deno.test('B-213 — a whole-day gap drops the ".0" (no self-contradictory "about 3.0 days")', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline', trigger: 'consecutive_low', species: 'cat',
+    baselineScore: 3.6, recentScore: 1, daysBelowBaseline: 3, refusedFoodLabel: null,
+    ratedMealsConsidered: 8, lastFullMealIso: '2026-06-29T12:00:00Z', hoursSinceLastFullMeal: 72,
+  }
+  const text = renderReport(base({ safetyFlags: [flag] })).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  assert.ok(/about 3 days without a full meal/.test(text), '72 h reads "3 days", not "3.0 days"')
+  assert.ok(!/3\.0 days/.test(text))
+})
+
+Deno.test('B-213 — the flag shows the decline SLOPE so the gap is not misread as marked anorexia', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline', trigger: 'refused_normal_food', species: 'cat',
+    baselineScore: 3.6, recentScore: 0, daysBelowBaseline: 0, refusedFoodLabel: 'Tiki Cat Tuna',
+    ratedMealsConsidered: 9, lastFullMealIso: '2026-06-30T08:00:00Z', hoursSinceLastFullMeal: 72,
+  }
+  const text = renderReport(
+    base({
+      safetyFlags: [flag],
+      provenance: {
+        ownerReported: true, totalSymptomIncidents: 0, estimatedOrWindowCount: 0, deletedExcluded: true,
+        symptomLog: [],
+        intakeLog: [
+          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'picked', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1b', occurredAt: '2026-06-30T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false },
+        ],
+        intakeLogHiddenOlder: 0, confounders: [], proteinExposureTally: {}, conditions: [],
+      },
+    }),
+  ).replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
+  // The trajectory names the slope (oldest→newest), so "3 days since a full meal" can't be read
+  // as 3 days of marked anorexia — the pet ate partially in between.
+  assert.ok(/Recent rated meals declined: ate it all . ate some . picked at it . refused/i.test(text), text.slice(text.indexOf('Reduced intake'), text.indexOf('Reduced intake') + 400))
 })
 
 Deno.test('B-213 — no full meal in window renders honestly, never a false recent anchor', () => {
@@ -314,9 +352,9 @@ Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last
         deletedExcluded: true,
         symptomLog: [],
         intakeLog: [
-          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused' },
-          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some' },
-          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all' },
+          { eventId: 'm3', occurredAt: '2026-07-02T18:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'refused', isLastFullMeal: false, pinned: false },
+          { eventId: 'm2', occurredAt: '2026-07-01T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'some', isLastFullMeal: false, pinned: false },
+          { eventId: 'm1', occurredAt: '2026-06-30T08:00:00Z', foodLabel: 'Tiki Cat Tuna', intakeRating: 'all', isLastFullMeal: true, pinned: false },
         ],
         intakeLogHiddenOlder: 5,
         confounders: [],
