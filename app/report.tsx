@@ -21,7 +21,7 @@ import { generateVetReport, shareReportPdf, type VetReport, type VetReportParams
 // so there is no "no data" screen state here; only loading / error.
 //
 // Range control (B-222): the owner chooses the report window at generation time.
-// "Recommended" sends NO override, so the server resolves the §6 default cascade
+// "Default" sends NO override, so the server resolves the §6 default cascade
 // (since last visit → active diet trial → 90-day fallback) and does NOT show the
 // cherry-pick disclosure. "Custom…" sends an explicit hand-picked window, which
 // the server treats as a custom scope and discloses the count of any symptom
@@ -35,7 +35,7 @@ import { generateVetReport, shareReportPdf, type VetReport, type VetReportParams
 // though 90 days is a principled standard window. A first-class, honestly-labeled
 // "Last 90 days" preset needs a small generate-report change and is tracked as a
 // fast-follow (B-236). Meanwhile the last-90-days case is still covered: it's what
-// "Recommended" resolves to when there's no visit/trial, and "Custom…" opens
+// "Default" resolves to when there's no visit/trial, and "Custom…" opens
 // pre-filled to exactly the last 90 days.
 
 type Status = 'loading' | 'ready' | 'error';
@@ -47,7 +47,7 @@ type RangeMode = 'default' | 'custom';
 const LAST_90_DAYS = 90;
 
 const RANGE_OPTIONS: { value: RangeMode; label: string }[] = [
-  { value: 'default', label: 'Recommended' },
+  { value: 'default', label: 'Default' },
   { value: 'custom', label: 'Custom…' },
 ];
 
@@ -97,7 +97,7 @@ export default function ReportScreen() {
 
   // The exact params for the current selection. Keyed on date STRINGS (not Date
   // objects) so an inline picker firing onChange with the same day doesn't churn
-  // a regenerate. "Recommended" sends no dates → the server §6 cascade + no
+  // a regenerate. "Default" sends no dates → the server §6 cascade + no
   // cherry-pick disclosure; "Custom…" sends an explicit window → disclosure.
   const requestParams = useMemo<VetReportParams | null>(() => {
     if (!petId) return null;
@@ -155,7 +155,7 @@ export default function ReportScreen() {
     }
   }, [report]);
 
-  // The concrete window the server resolved, so the owner sees what "Recommended"
+  // The concrete window the server resolved, so the owner sees what "Default"
   // landed on without scrolling into the report's own range box. Gated on the
   // 'ready' status so a range change doesn't leave the PREVIOUS report's resolved
   // window on screen while the new one is still generating (stale-label guard).
@@ -248,6 +248,25 @@ export default function ReportScreen() {
                 if (date) setCustomEnd(date);
               }}
             />
+          )}
+
+          {/* iOS renders the picker inline (it stays open until dismissed) with no
+              built-in "done" affordance — so give it one. Android uses a modal dialog
+              that dismisses itself, so this only shows on iOS. The date already applies
+              live (the report re-generates on change), so "Done" just collapses the
+              calendar to reveal the updated report. */}
+          {Platform.OS === 'ios' && (showStartPicker || showEndPicker) && rangeMode === 'custom' && (
+            <TouchableOpacity
+              style={styles.pickerDone}
+              onPress={() => {
+                setShowStartPicker(false);
+                setShowEndPicker(false);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Done choosing dates"
+            >
+              <Text style={styles.pickerDoneText}>Done</Text>
+            </TouchableOpacity>
           )}
 
           {resolvedLabel && <Text style={styles.rangeResolved}>{resolvedLabel}</Text>}
@@ -383,6 +402,18 @@ const styles = StyleSheet.create({
   dateChangeText: {
     fontFamily: theme.fontBody,
     fontSize: theme.textSM,
+    color: theme.colorAccent,
+  },
+  pickerDone: {
+    alignSelf: 'flex-end',
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: theme.space2,
+  },
+  pickerDoneText: {
+    fontFamily: theme.fontBodyMedium,
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
     color: theme.colorAccent,
   },
   rangeResolved: {
