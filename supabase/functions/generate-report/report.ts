@@ -798,8 +798,14 @@ export interface DietSummary {
   /** Active free_choice arrangements → "Intake not directly observed" (B-040, verbatim in render). */
   freeFed: Array<{ foodLabel: string | null; primaryProtein: string | null; activeFrom: string | null; activeUntil: string | null }>
   intakeNotDirectlyObserved: boolean
-  /** MEALS-ONLY completion (treats + free-fed excluded, B-040). Null when no rated meals. */
-  mealCompletion: { ratedMeals: number; finishedMeals: number; rate: number } | null
+  /**
+   * MEALS-ONLY completion (treats + free-fed excluded, B-040). Null when no rated meals.
+   * `intakeMode` is the strict-plurality intake rating across the rated meals (null on a tie or
+   * when there are none) — used ONLY by the render's descriptive free-fed feeding line (R2-3), so
+   * a grazing cat's discrete meals read "typically partly eaten" instead of a scary "0 of N fully
+   * eaten." Descriptive texture, never a scored completion figure and never reassurance.
+   */
+  mealCompletion: { ratedMeals: number; finishedMeals: number; rate: number; intakeMode: IntakeRating | null } | null
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
   humanFood: { count: number; days: number; items: Array<{ date: string; label: string | null }> }
@@ -997,6 +1003,33 @@ export interface AtAGlance {
   loggedDays: number
   trialDaysLogged: number | null
   weightState: 'trend' | 'single' | 'empty'
+  // ── R2-2: the no-trial / symptom-monitoring At-a-glance tile set inputs ──────────
+  // (round-2 design PR, B-221). These derive the shape-conditional tiles the render
+  // shows when there is NO active trial: episodes-since-onset, trajectory, and the
+  // adversarial-gated days-since-last-episode tile (which must never read as recovery).
+  /** Local days from the PRIMARY symptom's first onset → window end (inclusive). Null when no symptom. */
+  sinceOnsetDays: number | null
+  /**
+   * Local days from the most recent episode of ANY symptom type → window end (0 = today). Null when
+   * no symptom. Across-all (not primary-only) so the generic "most recent episode" tile can never
+   * overstate a symptom-free stretch by ignoring a more-recent secondary symptom (adversarial fix).
+   */
+  daysSinceLastEpisode: number | null
+  /**
+   * Logged days strictly AFTER the last episode day, through the window end — the adversarial
+   * guard behind the days-since tile: a long gap over sparsely-logged days is a LOGGING gap,
+   * not a recovery, so the render co-locates this coverage rather than let "N days since" read
+   * as improvement. Null when there is no primary symptom.
+   */
+  loggedDaysSinceLastEpisode: number | null
+  /**
+   * Logged days (any event) in the FIRST vs SECOND half of the window (split at the same bucket
+   * midpoint the trend delta uses). The unlogged-early-window caveat (R2-6): a "2 → 20" acceleration
+   * over an unlogged early window is an artifact, so the render caveats the trajectory when the
+   * first half is sparsely logged.
+   */
+  firstHalfLoggedDays: number
+  secondHalfLoggedDays: number
 }
 
 export interface ReportSnapshot {
@@ -1030,6 +1063,30 @@ function kgToLbsNum(kg: number): number {
 /** "Brand Product" for a food, or null when neither is set — one home for the label rule. */
 function mealFoodLabel(meal: { brand: string | null; productName: string | null }): string | null {
   return meal.brand || meal.productName ? `${meal.brand ?? ''} ${meal.productName ?? ''}`.trim() : null
+}
+
+/**
+ * The strict-plurality intake rating across a set of rated meals (R2-3), or null when the set is
+ * empty OR two ratings tie for the top count (no honest "typically X"). Deterministic; used only
+ * for descriptive texture on the free-fed feeding line. On a tie we return null rather than pick a
+ * side — and we never break the tie toward the calmer rating, so this can't manufacture reassurance.
+ */
+function strictPluralityIntake(ratings: IntakeRating[]): IntakeRating | null {
+  const counts = new Map<IntakeRating, number>()
+  for (const r of ratings) counts.set(r, (counts.get(r) ?? 0) + 1)
+  let mode: IntakeRating | null = null
+  let modeN = 0
+  let tie = false
+  for (const [r, c] of counts) {
+    if (c > modeN) {
+      mode = r
+      modeN = c
+      tie = false
+    } else if (c === modeN) {
+      tie = true
+    }
+  }
+  return tie ? null : mode
 }
 
 function computeAge(dob: string | null, nowMs: number): { years: number | null; months: number | null } {
@@ -1562,9 +1619,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const windowMeals = windowEvents.filter((e) => e.type === 'meal' && e.meal)
   const ratedMeals = windowMeals.filter((e) => e.meal!.foodType === 'meal' && e.meal!.intakeRating != null)
   const finishedMeals = ratedMeals.filter((e) => e.meal!.intakeRating === 'all').length
+  // R2-3 — the descriptive intake MODE (strict plurality only): "typically <mode>" texture for the
+  // free-fed grazer's discrete meals, never a scored figure. A tie yields null (no honest "typical").
+  // NOTE: this is descriptive display data only — it does NOT touch the intake-decline engine or the
+  // fully-eaten anchor (detection.ts / lastFullMealIso), which the clinical-guardrails floor protects.
+  const intakeMode = strictPluralityIntake(ratedMeals.map((e) => e.meal!.intakeRating as IntakeRating))
   const mealCompletion =
     ratedMeals.length > 0
-      ? { ratedMeals: ratedMeals.length, finishedMeals, rate: finishedMeals / ratedMeals.length }
+      ? { ratedMeals: ratedMeals.length, finishedMeals, rate: finishedMeals / ratedMeals.length, intakeMode }
       : null
 
   // human_food format is the STRONGER confounder signal (B-102, the #1 diet-trial confounder),
@@ -1865,6 +1927,42 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     primarySymptom: primarySymptom?.type ?? null,
   }
 
+  // ── R2-2 no-trial tile-set inputs (episodes-since-onset, days-since guard, trajectory caveat) ──
+  // Derived from the PRIMARY symptom (symptoms[0], highest count) and the window's logged-day set.
+  const ps = symptoms[0] ?? null
+  // sinceOnset is scoped to the PRIMARY symptom because Tile 1 is labelled with it ("Vomiting since
+  // onset").
+  const psFirstOnsetDayNum = ps?.firstOnset ? eventDayNumber(ps.firstOnset, tz) : null
+  const sinceOnsetDays = psFirstOnsetDayNum !== null ? endDayNum - psFirstOnsetDayNum + 1 : null
+  // days-since-last-episode is the most recent episode of ANY symptom type, NOT just the primary —
+  // Tile 3's label is the generic "most recent episode", so a more-recent SECONDARY symptom (e.g.
+  // diarrhea today while vomiting was 30 d ago) must NOT be erased into a false symptom-free streak
+  // that reads as recovery (adversarial finding). The safe error direction for a gap tile is a
+  // SMALLER gap, never a larger one, so we take the MAX last-onset day across all symptoms.
+  let lastEpisodeDayNum: number | null = null
+  for (const s of symptoms) {
+    const dn = s.lastOnset ? eventDayNumber(s.lastOnset, tz) : null
+    if (dn !== null && (lastEpisodeDayNum === null || dn > lastEpisodeDayNum)) lastEpisodeDayNum = dn
+  }
+  const daysSinceLastEpisode = lastEpisodeDayNum !== null ? Math.max(0, endDayNum - lastEpisodeDayNum) : null
+  let loggedDaysSinceLastEpisode: number | null = null
+  if (lastEpisodeDayNum !== null) {
+    let c = 0
+    for (const dn of loggedDayNums) if (dn > lastEpisodeDayNum && dn <= endDayNum) c++
+    loggedDaysSinceLastEpisode = c
+  }
+  // Window-half logged-day split — the same midpoint the trend delta / trajectory tile use, so the
+  // "unlogged early window" caveat lines up with the acceleration it qualifies (R2-6).
+  const midBuckets = Math.floor(numBuckets / 2)
+  const firstHalfDays = Math.min(windowDays, midBuckets * WEEK_DAYS)
+  const firstHalfEndDayNum = startDayNum + firstHalfDays - 1
+  let firstHalfLoggedDays = 0
+  let secondHalfLoggedDays = 0
+  for (const dn of loggedDayNums) {
+    if (dn <= firstHalfEndDayNum) firstHalfLoggedDays++
+    else secondHalfLoggedDays++
+  }
+
   const atAGlance: AtAGlance = {
     primarySymptom,
     totalSymptomIncidents,
@@ -1872,6 +1970,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     loggedDays,
     trialDaysLogged: activeTrial ? countTrialDaysLogged(windowEvents, activeTrialInput!, tz) : null,
     weightState: weight.isEmpty ? 'empty' : weight.trend && weight.trend.readingCount >= 2 ? 'trend' : 'single',
+    sinceOnsetDays,
+    daysSinceLastEpisode,
+    loggedDaysSinceLastEpisode,
+    firstHalfLoggedDays,
+    secondHalfLoggedDays,
   }
 
   return {

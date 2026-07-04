@@ -1101,3 +1101,71 @@ Deno.test('chronicity under a narrow custom window — no partial-set fabricatio
   assert.ok(snap.scope.isCustomOverride)
   assert.ok(snap.scope.outOfWindowSymptomCount > 0, 'cropped episodes are disclosed (§6 cherry-pick guard)')
 })
+
+// ── Round-2 (B-221) — At-a-glance no-trial tile inputs + intake mode ─────────────
+
+Deno.test('R2-2 — AtAGlance derives since-onset, days-since-last-episode, and its logged-day coverage', () => {
+  // Primary symptom onset Jun 1, last episode Jun 25 (window ends Jul 2 local). A treat on Jun 30
+  // is a LOGGED day after the last episode but NOT an episode — the guard must count it as coverage,
+  // never shorten the days-since gap.
+  const input = baseInput({
+    events: [
+      makeEvent({ type: 'vomit', occurredAt: at('2026-06-01') }),
+      makeEvent({ type: 'vomit', occurredAt: at('2026-06-10') }),
+      makeEvent({ type: 'vomit', occurredAt: at('2026-06-20') }),
+      makeEvent({ type: 'vomit', occurredAt: at('2026-06-25') }),
+      makeEvent({
+        type: 'meal',
+        occurredAt: at('2026-06-30', '09:00:00'),
+        meal: { foodItemId: 'ft', intakeRating: null, quantity: null, foodType: 'treat', format: 'treat', primaryProtein: 'chicken', brand: 'T', productName: 'C' },
+      }),
+    ],
+  })
+  const ag = assembleReport(input).atAGlance
+  assert.equal(ag.primarySymptom?.type, 'vomit')
+  assert.equal(ag.sinceOnsetDays, 32, 'Jun 1 → Jul 2 inclusive = 32 days')
+  assert.equal(ag.daysSinceLastEpisode, 7, 'Jun 25 → Jul 2 = 7 days (the treat does not shorten it)')
+  assert.equal(ag.loggedDaysSinceLastEpisode, 1, 'the Jun 30 treat is the one logged day since the last episode')
+})
+
+Deno.test('R2-2 — daysSinceLastEpisode is 0 when the most recent episode is the window-end day', () => {
+  const input = baseInput({
+    events: [
+      makeEvent({ type: 'vomit', occurredAt: at('2026-06-01') }),
+      makeEvent({ type: 'vomit', occurredAt: at('2026-07-02') }), // window end (local)
+    ],
+  })
+  const ag = assembleReport(input).atAGlance
+  assert.equal(ag.daysSinceLastEpisode, 0, 'an episode today reads 0 days since — never negative')
+})
+
+Deno.test('R2-3 — mealCompletion.intakeMode is the strict plurality; a tie yields null', () => {
+  const mealAt = (date: string, rating: 'all' | 'most' | 'some' | 'picked' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '18:00:00'),
+      meal: { foodItemId: 'fm', intakeRating: rating, quantity: 'n', foodType: 'meal', format: 'wet_canned', primaryProtein: 'tuna', brand: 'F', productName: 'T' },
+    })
+  const plurality = assembleReport(
+    baseInput({ events: [mealAt('2026-06-10', 'some'), mealAt('2026-06-11', 'some'), mealAt('2026-06-12', 'some'), mealAt('2026-06-13', 'all')] }),
+  )
+  assert.equal(plurality.diet.mealCompletion?.intakeMode, 'some', 'the most common rating wins')
+  const tied = assembleReport(
+    baseInput({ events: [mealAt('2026-06-10', 'all'), mealAt('2026-06-11', 'all'), mealAt('2026-06-12', 'some'), mealAt('2026-06-13', 'some')] }),
+  )
+  assert.equal(tied.diet.mealCompletion?.intakeMode, null, 'a tie has no honest "typical" — null, never a picked side')
+})
+
+Deno.test('R2-2 ADVERSARIAL — days-since is the most recent episode of ANY symptom, never just the primary', () => {
+  // Primary symptom = vomiting (8, last on Jun 2 = 30 d before the Jul 2 window end); a lower-count
+  // SECONDARY symptom (diarrhea, 2) has an episode on the window-end day. The generic "most recent
+  // episode" tile must read 0 days — NOT 30 — or it advertises a false symptom-free streak and hides
+  // a same-day sign (the blocking adversarial counterexample this fix closes).
+  const vomits = ['2026-04-10', '2026-04-20', '2026-05-01', '2026-05-10', '2026-05-20', '2026-05-28', '2026-06-01', '2026-06-02'].map((d) =>
+    makeEvent({ type: 'vomit', occurredAt: at(d) }),
+  )
+  const diarrhea = ['2026-06-15', '2026-07-02'].map((d) => makeEvent({ type: 'diarrhea', occurredAt: at(d) }))
+  const ag = assembleReport(baseInput({ events: [...vomits, ...diarrhea] })).atAGlance
+  assert.equal(ag.primarySymptom?.type, 'vomit', 'vomiting is the higher-count primary symptom')
+  assert.equal(ag.daysSinceLastEpisode, 0, 'diarrhea today is the most recent episode of ANY symptom — the gap is 0, not 30')
+})
