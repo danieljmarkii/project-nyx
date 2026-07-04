@@ -23,22 +23,31 @@ import { generateVetReport, shareReportPdf, type VetReport, type VetReportParams
 // Range control (B-222): the owner chooses the report window at generation time.
 // "Recommended" sends NO override, so the server resolves the §6 default cascade
 // (since last visit → active diet trial → 90-day fallback) and does NOT show the
-// cherry-pick disclosure. "Last 90 days" and "Custom…" send an explicit window,
-// which the server treats as a hand-picked scope and discloses the count of any
-// symptom events that fall outside it ("nothing cropped to a good week", §6). The
+// cherry-pick disclosure. "Custom…" sends an explicit hand-picked window, which
+// the server treats as a custom scope and discloses the count of any symptom
+// events that fall outside it ("nothing cropped to a good week", §6). The
 // disclosure is rendered *inside* the report HTML by render.ts — this screen only
 // picks the window; it never renders the disclosure itself.
+//
+// A dedicated "Last 90 days" preset is deliberately NOT offered here: passing an
+// explicit 90-day window makes the server label the report "Custom range" (any
+// override ⇒ basis 'custom'), which reads as a hand-picked crop to the vet even
+// though 90 days is a principled standard window. A first-class, honestly-labeled
+// "Last 90 days" preset needs a small generate-report change and is tracked as a
+// fast-follow (B-236). Meanwhile the last-90-days case is still covered: it's what
+// "Recommended" resolves to when there's no visit/trial, and "Custom…" opens
+// pre-filled to exactly the last 90 days.
 
 type Status = 'loading' | 'ready' | 'error';
-type RangeMode = 'default' | 'last90' | 'custom';
+type RangeMode = 'default' | 'custom';
 
-// Mirrors the server's §6 rung-3 fallback window (report.ts FALLBACK_DAYS) so
-// "Last 90 days" reproduces exactly the same 90 inclusive calendar days.
+// The default custom span: the last 90 inclusive calendar days, mirroring the
+// server's §6 rung-3 fallback (report.ts FALLBACK_DAYS) so "Custom…" opens on a
+// familiar, sensible window rather than an empty picker.
 const LAST_90_DAYS = 90;
 
 const RANGE_OPTIONS: { value: RangeMode; label: string }[] = [
   { value: 'default', label: 'Recommended' },
-  { value: 'last90', label: 'Last 90 days' },
   { value: 'custom', label: 'Custom…' },
 ];
 
@@ -89,16 +98,10 @@ export default function ReportScreen() {
   // The exact params for the current selection. Keyed on date STRINGS (not Date
   // objects) so an inline picker firing onChange with the same day doesn't churn
   // a regenerate. "Recommended" sends no dates → the server §6 cascade + no
-  // cherry-pick disclosure; the other modes send an explicit window → disclosure.
+  // cherry-pick disclosure; "Custom…" sends an explicit window → disclosure.
   const requestParams = useMemo<VetReportParams | null>(() => {
     if (!petId) return null;
     if (rangeMode === 'default') return { petId };
-    if (rangeMode === 'last90') {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - (LAST_90_DAYS - 1));
-      return { petId, startDate: toLocalDayKey(start), endDate: toLocalDayKey(end) };
-    }
     return { petId, startDate: customStartKey, endDate: customEndKey };
   }, [petId, rangeMode, customStartKey, customEndKey]);
 
