@@ -134,9 +134,13 @@ fi
 # Externals: ALL runtime specifiers Deno resolves natively (https://, jsr:, npm:,
 # node:) stay external — esbuild only inlines the function's own relative .ts
 # files (including the cross-package ../../../lib/protein.ts that is the whole
-# reason bundling is needed). --charset=utf8 keeps non-ASCII verbatim so the
-# deployed source reads back byte-clean (no \uXXXX escapes); un-minified by
-# default so the artifact is readable in the dashboard and diffable on read-back.
+# reason bundling is needed). --charset=ascii escapes every non-ASCII character
+# in the bundle to \uXXXX: the bundle travels the MCP deploy hop as text, and raw
+# UTF-8 bytes were Latin-1-misread there once, baking mojibake ("Â·"/"â") into
+# the deployed generate-report — every entity-encoded char survived, every raw
+# literal was corrupted (first real vet report, 2026-07-03). ASCII-escaped
+# literals are transport-proof; the cost is a less pretty dashboard read-back.
+# Un-minified by default so the artifact stays readable and diffable.
 log "Bundling $ENTRY -> $OUT"
 mkdir -p "$(dirname "$OUT")"
 esbuild_args=(
@@ -148,7 +152,7 @@ esbuild_args=(
   "--external:jsr:*"
   "--external:npm:*"
   "--external:node:*"
-  --charset=utf8
+  --charset=ascii
   --legal-comments=none
   --outfile="$OUT"
 )

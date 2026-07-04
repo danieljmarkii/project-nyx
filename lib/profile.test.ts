@@ -1,4 +1,4 @@
-import { getDeviceTimezone, syncUserTimezone } from './profile';
+import { fetchDisplayName, getDeviceTimezone, syncUserTimezone, updateDisplayName } from './profile';
 import { supabase } from './supabase';
 
 // Mock the Supabase client module wholesale — replacing it before profile.ts
@@ -164,6 +164,72 @@ describe('syncUserTimezone', () => {
     const result = await syncUserTimezone(USER_ID);
 
     expect(result).toEqual({ status: 'error' });
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+// ── Owner display name (vet-report §7.1 — the "Owner:" line) ────────────────────
+
+// The read chain differs from the timezone one only in the selected column; reuse
+// the same chainable stand-in shape.
+function mockNameTable(opts: {
+  read?: { data: { display_name: string | null } | null; error: { message: string } | null };
+  upsertResult?: { error: { message: string } | null };
+}) {
+  const maybeSingle = jest.fn().mockResolvedValue(opts.read ?? { data: null, error: null });
+  const eq = jest.fn(() => ({ maybeSingle }));
+  const select = jest.fn(() => ({ eq }));
+  const upsert = jest.fn().mockResolvedValue(opts.upsertResult ?? { error: null });
+  mockedFrom.mockReturnValue({ select, upsert });
+  return { select, eq, maybeSingle, upsert };
+}
+
+describe('fetchDisplayName', () => {
+  it('returns the trimmed name', async () => {
+    mockNameTable({ read: { data: { display_name: '  Daniel Mark ' }, error: null } });
+    expect(await fetchDisplayName(USER_ID)).toEqual({ status: 'ok', displayName: 'Daniel Mark' });
+  });
+
+  it('missing row / blank name → null (the report then falls back to the email)', async () => {
+    mockNameTable({ read: { data: null, error: null } });
+    expect(await fetchDisplayName(USER_ID)).toEqual({ status: 'ok', displayName: null });
+    mockNameTable({ read: { data: { display_name: '   ' }, error: null } });
+    expect(await fetchDisplayName(USER_ID)).toEqual({ status: 'ok', displayName: null });
+  });
+
+  it('read failure → error status, no silent failure', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockNameTable({ read: { data: null, error: { message: 'boom' } } });
+    expect(await fetchDisplayName(USER_ID)).toEqual({ status: 'error' });
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe('updateDisplayName', () => {
+  it('upserts the trimmed name (upsert, not update — a pre-trigger account has no row)', async () => {
+    const t = mockNameTable({});
+    const result = await updateDisplayName(USER_ID, '  Daniel Mark ');
+    expect(result).toEqual({ status: 'written', displayName: 'Daniel Mark' });
+    expect(t.upsert).toHaveBeenCalledWith(
+      { id: USER_ID, display_name: 'Daniel Mark' },
+      { onConflict: 'id' },
+    );
+  });
+
+  it('an empty string clears the name (writes NULL)', async () => {
+    const t = mockNameTable({});
+    const result = await updateDisplayName(USER_ID, '   ');
+    expect(result).toEqual({ status: 'written', displayName: null });
+    expect(t.upsert).toHaveBeenCalledWith(
+      { id: USER_ID, display_name: null },
+      { onConflict: 'id' },
+    );
+  });
+
+  it('write failure → error status, no silent failure', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockNameTable({ upsertResult: { error: { message: 'rls denied' } } });
+    expect(await updateDisplayName(USER_ID, 'X')).toEqual({ status: 'error' });
     expect(warn).toHaveBeenCalled();
   });
 });
