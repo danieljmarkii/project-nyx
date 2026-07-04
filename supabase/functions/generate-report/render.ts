@@ -385,7 +385,7 @@ function letterhead(snap: ReportSnapshot): string {
   // unlettered. State the ACCURATE range — the first round-2 artifact said "A–F", sending a
   // careful vet hunting for a non-existent E/F on a document whose whole pitch is "traces to
   // every figure" (cold-read).
-  const lastAppendix = snap.diet.mealItems.length > 0 || snap.provenance.intakeLog.length > 0 ? 'E' : 'D'
+  const lastAppendix = mealsAppendixVisible(snap) ? 'E' : 'D'
   return `
   <div class="letter">
     <div class="brand">
@@ -1043,9 +1043,9 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
     mixHtml = barSegs
       .map((c, i) => {
         const gray = GRAY_RAMP[i % GRAY_RAMP.length]
-        // Ink text on every segment but the darkest (the ramp is mid-to-light now, so ink reads
-        // on all but index 0, which keeps white for contrast).
-        const light = i >= 1
+        // White text on the two darkest fills (index 0–1), ink on the lighter rest — keeps the
+        // segment-count label above the WCAG-AA contrast floor on the lightened ramp (code-reviewer).
+        const light = i >= 2
         return `<div class="seg" style="flex:${p.contentsMix[c]};background:${gray}${light ? ';color:#16181d' : ''}">${
           p.contentsMix[c]
         }</div>`
@@ -1129,7 +1129,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   return `
   <div class="sec">
     <h2>Vomit characteristics <span class="aitag">Automated photo analysis &middot; owner-reviewable</span></h2>
-    <p class="note lead">Colour, contents, and consistency are read automatically from the photo the owner took of each incident, then aggregated below. Each read is shown for the owner to confirm; none is a diagnosis, and a single photo is never read on its own.</p>
+    <p class="note lead">Colour, contents, and consistency are read automatically from the photo the owner took of each incident, then aggregated below. Each read is shown for the owner to confirm; none carries a diagnosis or a verdict on a single incident.</p>
     <div class="pheno">
       <div>
         <div class="barmix">${mixHtml}</div>
@@ -1307,9 +1307,7 @@ function dietMeds(snap: ReportSnapshot): string {
       <div>${right.join('')}</div>
     </div>
     <p class="ref">Full event log, diet history, off-diet exposures${
-      snap.diet.mealItems.length > 0 || snap.provenance.intakeLog.length > 0
-        ? ', medications &amp; meals: appendices A&ndash;E'
-        : ' &amp; medications: appendices A&ndash;D'
+      mealsAppendixVisible(snap) ? ', medications &amp; meals: appendices A&ndash;E' : ' &amp; medications: appendices A&ndash;D'
     }.</p>
   </div>`
 }
@@ -1417,9 +1415,18 @@ function footer(snap: ReportSnapshot, sectionLabel: string): string {
  * section behind any figure. Rendered at the top of the first appendix page (not its own sheet —
  * true per-section page numbers are a print-CSS / B-144 build item).
  */
+/**
+ * Appendix E (meals & intake) renders when the owner logged meals OR an intake flag fired. ONE
+ * source of truth so the letterhead range, the divider, the page-1 ref line, and the appendix's
+ * own guard never drift apart — the exact copy-paste-boolean drift class that produced round-2's
+ * dangling-appendix bug (code-reviewer catch).
+ */
+function mealsAppendixVisible(snap: ReportSnapshot): boolean {
+  return snap.diet.mealItems.length > 0 || snap.provenance.intakeLog.length > 0
+}
+
 function appendixDivider(snap: ReportSnapshot): string {
-  const eBit =
-    snap.diet.mealItems.length > 0 || snap.provenance.intakeLog.length > 0 ? ' &middot; E — meals &amp; intake' : ''
+  const eBit = mealsAppendixVisible(snap) ? ' &middot; E — meals &amp; intake' : ''
   return `
   <div class="divider">
     <span class="k">End of clinical summary</span>
@@ -1538,7 +1545,7 @@ function occurredCell(e: SymptomLogEntry, tz: string | null): string {
 function mealsAppendix(snap: ReportSnapshot): string {
   const items = snap.diet.mealItems
   const log: IntakeLogEntry[] = snap.provenance.intakeLog
-  if (items.length === 0 && log.length === 0) return ''
+  if (!mealsAppendixVisible(snap)) return ''
   return `
 <section class="page">
   <p class="appx-title serif">Appendix E — Meals &amp; intake</p>

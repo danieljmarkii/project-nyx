@@ -1655,7 +1655,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   >()
   for (const e of ratedMeals) {
     const m = e.meal!
-    const key = m.foodItemId ?? mealFoodLabel(m) ?? e.id
+    // Group by food identity: the library item id when present, else the brand/product label.
+    // A meal with NEITHER collapses into ONE "unlabeled" bucket (a fixed key, not the unique
+    // event id) so N unlabeled meals never fragment into N singleton "—" rows (code-reviewer).
+    const key = m.foodItemId ?? mealFoodLabel(m) ?? '__unlabeled__'
     const dayKey = localDayKey(e.occurredAt, tz)
     const g = mealGroups.get(key)
     if (g) {
