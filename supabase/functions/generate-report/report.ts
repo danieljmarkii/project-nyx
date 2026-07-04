@@ -806,6 +806,22 @@ export interface DietSummary {
    * eaten." Descriptive texture, never a scored completion figure and never reassurance.
    */
   mealCompletion: { ratedMeals: number; finishedMeals: number; rate: number; intakeMode: IntakeRating | null } | null
+  /**
+   * Grouped rated-meal items (#7/#8) — the actual foods eaten AS MEALS (e.g. a wet diet),
+   * grouped by food item like Appendix B treats: label · protein · feeding count · date span ·
+   * typical intake. Previously the rated meals were reduced to a bare count and their food
+   * identity discarded before render, so a substantial wet diet was invisible in the diet picture
+   * and the feeding line cited a non-existent appendix. Named in the diet history + itemised in
+   * the meals appendix (E). Descriptive only — this does NOT touch the intake-decline engine.
+   */
+  mealItems: Array<{
+    foodLabel: string | null
+    primaryProtein: string | null
+    count: number
+    firstDate: string | null
+    lastDate: string | null
+    intakeMode: IntakeRating | null
+  }>
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
   humanFood: { count: number; days: number; items: Array<{ date: string; label: string | null }> }
@@ -1032,6 +1048,27 @@ export interface AtAGlance {
   secondHalfLoggedDays: number
 }
 
+/**
+ * Off-diet protein exposure binned by the SAME weekly buckets as the symptom chart (#9) — the
+ * data behind the "protein exposure over time" stacked bar. Tells the temporal story a table
+ * can't ("a lot of proteins early, then collapsed"). Off-diet only (treats + human food, the
+ * confounder set), so sum-over-bins reconciles to the Appendix C protein tally (§5.6).
+ */
+export interface ProteinTimeline {
+  /** One week-start day key per bucket — shares the symptom chart's x-axis exactly. */
+  weekStartDates: string[]
+  /** Canonical protein keys present, ordered by total desc (largest sits on the stack baseline). */
+  proteins: string[]
+  /** bins[weekIndex][proteinIndex] = off-diet feeding count for that protein that week. */
+  bins: number[][]
+  /** Per-week count of off-diet feedings with no recorded protein (disclosed, never dropped, §5.1). */
+  unknownByWeek: number[]
+  /** Sum over the window per protein — reconciles to provenance.proteinExposureTally. */
+  totalByProtein: Record<string, number>
+  hasUnknown: boolean
+  totalFeedings: number
+}
+
 export interface ReportSnapshot {
   generatedAt: string
   timezone: string | null
@@ -1049,6 +1086,7 @@ export interface ReportSnapshot {
   medications: MedicationAdherence[]
   correlation: CorrelationSummary
   concurrentChanges: ConcurrentChange[]
+  proteinTimeline: ProteinTimeline
   provenance: Provenance
 }
 
@@ -1629,6 +1667,50 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ? { ratedMeals: ratedMeals.length, finishedMeals, rate: finishedMeals / ratedMeals.length, intakeMode }
       : null
 
+  // Grouped rated-meal items (#7/#8) — surface the ACTUAL foods eaten as meals (e.g. a wet diet),
+  // which the pipeline previously reduced to a bare count and discarded. Grouped by food item so
+  // the diet history can name them and the meals appendix (E) can itemise them, mirroring the
+  // Appendix B treat grouping. Descriptive only — orthogonal to the intake-decline engine.
+  const mealGroups = new Map<
+    string,
+    { foodLabel: string | null; primaryProtein: string | null; count: number; firstDate: string | null; lastDate: string | null; intakes: IntakeRating[] }
+  >()
+  for (const e of ratedMeals) {
+    const m = e.meal!
+    // Group by food identity: the library item id when present, else the brand/product label.
+    // A meal with NEITHER collapses into ONE "unlabeled" bucket (a fixed key, not the unique
+    // event id) so N unlabeled meals never fragment into N singleton "—" rows (code-reviewer).
+    const key = m.foodItemId ?? mealFoodLabel(m) ?? '__unlabeled__'
+    const dayKey = localDayKey(e.occurredAt, tz)
+    const g = mealGroups.get(key)
+    if (g) {
+      g.count++
+      if (dayKey && (g.firstDate === null || dayKey < g.firstDate)) g.firstDate = dayKey
+      if (dayKey && (g.lastDate === null || dayKey > g.lastDate)) g.lastDate = dayKey
+      g.intakes.push(m.intakeRating as IntakeRating)
+    } else {
+      mealGroups.set(key, {
+        foodLabel: mealFoodLabel(m),
+        // A junk sentinel ("null"/"unknown") is not a protein — null it so no consumer prints it.
+        primaryProtein: canonicalizeProtein(m.primaryProtein) ? m.primaryProtein : null,
+        count: 1,
+        firstDate: dayKey,
+        lastDate: dayKey,
+        intakes: [m.intakeRating as IntakeRating],
+      })
+    }
+  }
+  const mealItems = [...mealGroups.values()]
+    .map((g) => ({
+      foodLabel: g.foodLabel,
+      primaryProtein: g.primaryProtein,
+      count: g.count,
+      firstDate: g.firstDate,
+      lastDate: g.lastDate,
+      intakeMode: strictPluralityIntake(g.intakes),
+    }))
+    .sort((a, b) => b.count - a.count || (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''))
+
   // human_food format is the STRONGER confounder signal (B-102, the #1 diet-trial confounder),
   // so it takes precedence: a table-scrap "treat" (foodType='treat' AND format='human_food')
   // counts ONCE, as human food, and is excluded from the treats tally. Without this the same
@@ -1654,6 +1736,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     freeFed,
     intakeNotDirectlyObserved: freeFed.length > 0,
     mealCompletion,
+    mealItems,
     treats: { count: treatFeedings.length, distinctItems: treatItemIds.size },
     humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
   }
@@ -1834,6 +1917,34 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     else proteinUnknownCount++
   }
 
+  // Off-diet protein exposure over time (#9) — bin the SAME confounder set by the SAME weekly
+  // buckets as the symptom chart, by canonical protein. Every confounder bins (a null local-day
+  // key falls back to the UTC slice, which is always parseable), so sum-over-bins === the tally
+  // above === the Appendix C total (§5.6 reconciliation). Largest protein first → stack baseline.
+  const timelineProteins = Object.keys(proteinExposureTally).sort(
+    (a, b) => proteinExposureTally[b] - proteinExposureTally[a] || a.localeCompare(b),
+  )
+  const proteinIdx = new Map(timelineProteins.map((p, i) => [p, i]))
+  const timelineBins: number[][] = Array.from({ length: numBuckets }, () => new Array(timelineProteins.length).fill(0))
+  const unknownByWeek: number[] = new Array(numBuckets).fill(0)
+  for (const c of confounders) {
+    const dn = dayNumber(c.dayKey ?? c.occurredAt.slice(0, 10))
+    if (dn === null) continue
+    const w = bucketIndexOfDay(dn)
+    const key = canonicalizeProtein(c.primaryProtein)
+    if (key) timelineBins[w][proteinIdx.get(key)!]++
+    else unknownByWeek[w]++
+  }
+  const proteinTimeline: ProteinTimeline = {
+    weekStartDates: bucketStartDates,
+    proteins: timelineProteins,
+    bins: timelineBins,
+    unknownByWeek,
+    totalByProtein: proteinExposureTally,
+    hasUnknown: proteinUnknownCount > 0,
+    totalFeedings: confounders.length,
+  }
+
   // ── Intake appendix (B-213) — recent rated meals, ONLY when an intake flag fired ─────
   // The page-1 intake numbers (baseline, decline, last full meal) must trace to real meal
   // rows. Built from the deduped, windowed rated meals — the SAME set the detector saw — so
@@ -1993,6 +2104,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     medications,
     correlation,
     concurrentChanges,
+    proteinTimeline,
     provenance,
   }
 }
@@ -2179,9 +2291,14 @@ function buildConcurrentChanges(
     consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)
   }
   for (const a of input.feedingArrangements) {
-    // Drop the old `&& a.activeFrom` guard: a free-fed bowl with an unrecorded start still
-    // overlaps the window and must reach the confounder note (consider() handles the null start).
-    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', a.activeFrom, a.activeUntil)
+    // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,
+    // NOT when the diet actually started (PM-confirmed, B-233) — the food is typically given well
+    // before its first log. Rendering it as a diet that "started <activeFrom>" drew a false
+    // mid-window diet-change marker + a "started May 16" note for a standing maintenance diet.
+    // So pass a NULL start: the diet is a STANDING confounder present across the window with an
+    // unrecorded start (no chart marker, framed as context — not a change). `activeUntil` (a
+    // deliberate "stopped feeding this" action) is kept, since a stop IS a real signal.
+    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', null, a.activeUntil)
   }
   // Explicit total order (matches the determinism discipline of every other sort here) —
   // by start date, then kind, then label, so same-day interventions never depend on push order.

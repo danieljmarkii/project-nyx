@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nyx Vet Report — Chart Design Mocks</title>
+<style>
+  :root{
+    --ink:#16181d; --muted:#565961; --faint:#8a8d94;
+    --hair:#e4e5e8; --line2:#d8dade; --paper:#ffffff; --panel:#fbfbfc;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#f4f4f5;color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums;}
+  .sheet{max-width:900px;margin:28px auto;background:var(--paper);
+    padding:40px 44px 48px;border:1px solid var(--hair);border-radius:4px;}
+  .kicker{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+    font-weight:600;margin:0 0 6px;}
+  h1{font-size:22px;font-weight:600;letter-spacing:-.01em;margin:0 0 14px;}
+  .lede{font-size:14px;line-height:1.55;color:var(--muted);max-width:62ch;margin:0 0 4px;}
+  .lede strong{color:var(--ink);font-weight:600;}
+
+  .seclabel{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+    font-weight:600;margin:0;}
+  .chartblock{margin-top:34px;padding-top:22px;border-top:1px solid var(--hair);}
+  h2{font-size:15px;font-weight:600;margin:8px 0 3px;letter-spacing:-.005em;}
+  .caption{font-size:12px;line-height:1.5;color:var(--muted);margin:0 0 16px;max-width:70ch;}
+  .caption .trade{color:var(--faint);}
+
+  .chart{width:100%;overflow-x:auto;}
+  svg{display:block;max-width:100%;height:auto;}
+
+  /* svg text roles */
+  .barnum{font-size:10px;fill:var(--muted);text-anchor:middle;font-weight:600;}
+  .xlab{font-size:9.5px;fill:var(--faint);text-anchor:middle;}
+  .ylab{font-size:9.5px;fill:var(--faint);text-anchor:end;}
+  .ylabR{font-size:9.5px;fill:var(--faint);text-anchor:start;}
+  .grid{stroke:var(--hair);stroke-width:1;}
+  .axis{stroke:#cfd1d6;stroke-width:1;}
+  .segpct{font-size:13px;fill:var(--ink);text-anchor:middle;font-weight:600;}
+  .segpctlab{font-size:8.5px;fill:var(--muted);text-anchor:middle;}
+  .rowlab{font-size:10.5px;fill:var(--ink);text-anchor:end;}
+  .rownum{font-size:10px;fill:var(--muted);text-anchor:start;}
+  .axtitle{font-size:9.5px;fill:var(--faint);letter-spacing:.04em;}
+
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:2px 0 14px;}
+  .legitem{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink);}
+  .sw{width:22px;height:14px;flex:0 0 auto;}
+  .sw rect{stroke:var(--line2);stroke-width:.75;}
+  .legnum{color:var(--faint);font-weight:600;}
+
+  .note{margin-top:12px;background:var(--panel);border:1px solid var(--hair);
+    border-left:3px solid #c9ccd2;border-radius:3px;padding:12px 15px;
+    font-size:12px;line-height:1.55;color:var(--muted);}
+  .note b{color:var(--ink);font-weight:600;}
+
+  .greytag{display:inline-block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--faint);font-weight:600;border:1px solid var(--hair);border-radius:3px;
+    padding:2px 7px;margin-bottom:8px;}
+  .greybox{filter:grayscale(1);}
+
+  .foot{margin-top:36px;padding-top:16px;border-top:1px solid var(--hair);
+    font-size:11px;line-height:1.6;color:var(--faint);}
+  .foot code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;}
+
+  @media print{
+    html,body{background:#fff;}
+    .sheet{margin:0;border:none;border-radius:0;padding:0 8mm;max-width:none;}
+    .chartblock{page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+
+<!-- shared paint servers: colourblind-safe hue + distinct texture per category.
+     defined once, referenced by url(#id) from every svg on the page. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <!-- chicken: dominant baseline -> solid warm ochre (mid tone in greyscale, no texture) -->
+  <pattern id="pChicken" width="10" height="10" patternUnits="userSpaceOnUse">
+    <rect width="10" height="10" fill="#e6a23c"/>
+  </pattern>
+  <!-- no recorded protein: neutral pale grey solid (lightest, no texture) -->
+  <pattern id="pNone" width="10" height="10" patternUnits="userSpaceOnUse">
+    <rect width="10" height="10" fill="#c7cbd3"/>
+  </pattern>
+  <!-- turkey: blue + diagonal hatch (/) -->
+  <pattern id="pTurkey" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect width="5" height="5" fill="#d9e3f4"/>
+    <line x1="0" y1="0" x2="0" y2="5" stroke="#2f5aa8" stroke-width="1.5"/>
+  </pattern>
+  <!-- tuna: teal-green + cross-hatch (X) -->
+  <pattern id="pTuna" width="6" height="6" patternUnits="userSpaceOnUse">
+    <rect width="6" height="6" fill="#d2ece4"/>
+    <path d="M0,0 L6,6 M6,0 L0,6" stroke="#1f7d68" stroke-width="1"/>
+  </pattern>
+  <!-- lobster: red + dots -->
+  <pattern id="pLobster" width="7" height="7" patternUnits="userSpaceOnUse">
+    <rect width="7" height="7" fill="#f6dce0"/>
+    <circle cx="3.5" cy="3.5" r="1.5" fill="#b23345"/>
+  </pattern>
+  <!-- ocean whitefish: purple + horizontal lines -->
+  <pattern id="pWhitefish" width="6" height="6" patternUnits="userSpaceOnUse">
+    <rect width="6" height="6" fill="#e7dcf1"/>
+    <line x1="0" y1="3" x2="6" y2="3" stroke="#6b4c8f" stroke-width="1.6"/>
+  </pattern>
+  <!-- rabbit: slate + vertical lines -->
+  <pattern id="pRabbit" width="6" height="6" patternUnits="userSpaceOnUse">
+    <rect width="6" height="6" fill="#dcdfe4"/>
+    <line x1="3" y1="0" x2="3" y2="6" stroke="#3f4855" stroke-width="1.6"/>
+  </pattern>
+  <!-- vomit (symptom load): muted clinical red + dense diagonal hatch -->
+  <pattern id="pVomit" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect width="4" height="4" fill="#eccace"/>
+    <line x1="0" y1="0" x2="0" y2="4" stroke="#b23a3a" stroke-width="1.4"/>
+  </pattern>
+</defs></svg>
+
+<div class="sheet">
+
+  <p class="kicker">Nyx vet report · chart design mocks · internal</p>
+  <h1>Making protein exposure scannable in 60 seconds</h1>
+  <p class="lede">Three chart treatments of the same 90-day off-diet feeding record (Apr 6 – Jul 4), drafted before we build the render path into the vet report. The clinical story is that <strong>chicken accounts for roughly three-quarters of every off-diet exposure</strong>, so no single protein can be isolated as a trigger — a chart should make that obvious at a glance rather than buried in a table.</p>
+  <p class="lede">The one tension resolved here: the report is printed and photocopied in black &amp; white (house rule §5.8, <em>no load-bearing colour</em>). A seven-category stack can't lean on hue alone, so <strong>every protein carries both a colourblind-safe hue and a distinct SVG texture</strong> — the segments stay separable in colour and in greyscale. A greyscale proof is included below.</p>
+
+  <!-- ============================================================ CHART 1 -->
+  <section class="chartblock">
+    <p class="seclabel">Option A · primary</p>
+    <h2>Protein exposure over time — stacked bar</h2>
+    <p class="caption">Weekly count of off-diet feedings (treats + human food), stacked by protein source; chicken sits on the baseline for a stable read. <span class="trade">Tradeoff: shows the ramp and the timing of variety, but thin proteins (rabbit, whitefish) become slivers — the composition views below read those better.</span></p>
+
+    <div class="legend">
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><rect width="22" height="14" fill="url(#pChicken)"/></svg><span>Chicken</span><span class="legnum">274 · 77%</span></div>
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><rect width="22" height="14" fill="url(#pNone)"/></svg><span>No recorded protein</span><span class="legnum">27 · 8%</span></div>
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><rect width="22" height="14" fill="url(#pTurkey)"/></svg><span>Turkey</span><span class="legnum">18 · 5%</span></div>
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><rect width="22" height="14" fill="url(#pTuna)"/></svg><span>Tuna</span><span class="legnum">16 · 5%</span></div>
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><rect width="22" height="14" fill="url(#pLobster)"/></svg><span>Lobster</span><span class="legnum">10 · 3%</span></div>
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><rect width="22" height="14" fill="url(#pWhitefish)"/></svg><span>Ocean whitefish</span><span class="legnum">6 · 2%</span></div>
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><rect width="22" height="14" fill="url(#pRabbit)"/></svg><span>Rabbit</span><span class="legnum">3 · 1%</span></div>
+    </div>
+
+    <div class="chart">
+    <svg viewBox="0 0 820 430" role="img" aria-label="Weekly protein exposure, stacked bar chart, chicken dominant">
+      <text transform="rotate(-90 14 194)" x="14" y="194" class="axtitle" text-anchor="middle">feedings / week</text>
+      <line x1="44" y1="366.0" x2="804" y2="366.0" class="grid"/>
+      <text x="38" y="369.5" class="ylab">0</text>
+      <line x1="44" y1="316.3" x2="804" y2="316.3" class="grid"/>
+      <text x="38" y="319.8" class="ylab">10</text>
+      <line x1="44" y1="266.6" x2="804" y2="266.6" class="grid"/>
+      <text x="38" y="270.1" class="ylab">20</text>
+      <line x1="44" y1="216.9" x2="804" y2="216.9" class="grid"/>
+      <text x="38" y="220.4" class="ylab">30</text>
+      <line x1="44" y1="167.1" x2="804" y2="167.1" class="grid"/>
+      <text x="38" y="170.6" class="ylab">40</text>
+      <line x1="44" y1="117.4" x2="804" y2="117.4" class="grid"/>
+      <text x="38" y="120.9" class="ylab">50</text>
+      <line x1="44" y1="67.7" x2="804" y2="67.7" class="grid"/>
+      <text x="38" y="71.2" class="ylab">60</text>
+      <line x1="44" y1="18.0" x2="804" y2="18.0" class="grid"/>
+      <text x="38" y="21.5" class="ylab">70</text>
+      <line x1="44" y1="366.0" x2="804" y2="366.0" class="axis"/>
+
+      <rect x="348.5" y="296.4" width="34" height="69.6" fill="url(#pChicken)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="348.5" y="281.5" width="34" height="14.9" fill="url(#pTurkey)" stroke="#fff" stroke-width="0.75"/>
+      <text x="365.5" y="276.5" class="barnum">17</text>
+      <rect x="407.0" y="231.8" width="34" height="134.2" fill="url(#pChicken)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="407.0" y="201.9" width="34" height="29.8" fill="url(#pNone)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="407.0" y="187.0" width="34" height="14.9" fill="url(#pTurkey)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="407.0" y="167.1" width="34" height="19.9" fill="url(#pTuna)" stroke="#fff" stroke-width="0.75"/>
+      <text x="424.0" y="162.1" class="barnum">40</text>
+      <rect x="465.5" y="226.8" width="34" height="139.2" fill="url(#pChicken)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="465.5" y="192.0" width="34" height="34.8" fill="url(#pNone)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="465.5" y="152.2" width="34" height="39.8" fill="url(#pTurkey)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="465.5" y="132.3" width="34" height="19.9" fill="url(#pTuna)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="465.5" y="127.4" width="34" height="5.0" fill="url(#pRabbit)" stroke="#fff" stroke-width="0.75"/>
+      <text x="482.5" y="122.4" class="barnum">48</text>
+      <rect x="523.9" y="157.2" width="34" height="208.8" fill="url(#pChicken)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="523.9" y="122.4" width="34" height="34.8" fill="url(#pNone)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="523.9" y="102.5" width="34" height="19.9" fill="url(#pTuna)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="523.9" y="77.7" width="34" height="24.9" fill="url(#pLobster)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="523.9" y="62.7" width="34" height="14.9" fill="url(#pWhitefish)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="523.9" y="57.8" width="34" height="5.0" fill="url(#pRabbit)" stroke="#fff" stroke-width="0.75"/>
+      <text x="540.9" y="52.8" class="barnum">62</text>
+      <rect x="582.4" y="112.5" width="34" height="253.5" fill="url(#pChicken)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="582.4" y="77.7" width="34" height="34.8" fill="url(#pNone)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="582.4" y="72.7" width="34" height="5.0" fill="url(#pTuna)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="582.4" y="47.8" width="34" height="24.9" fill="url(#pLobster)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="582.4" y="32.9" width="34" height="14.9" fill="url(#pWhitefish)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="582.4" y="27.9" width="34" height="5.0" fill="url(#pRabbit)" stroke="#fff" stroke-width="0.75"/>
+      <text x="599.4" y="22.9" class="barnum">68</text>
+      <rect x="640.8" y="231.8" width="34" height="134.2" fill="url(#pChicken)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="640.8" y="226.8" width="34" height="5.0" fill="url(#pNone)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="640.8" y="221.8" width="34" height="5.0" fill="url(#pTuna)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="640.8" y="216.9" width="34" height="5.0" fill="url(#pRabbit)" stroke="#fff" stroke-width="0.75"/>
+      <text x="657.8" y="211.9" class="barnum">30</text>
+      <rect x="699.3" y="152.2" width="34" height="213.8" fill="url(#pChicken)" stroke="#fff" stroke-width="0.75"/>
+      <rect x="699.3" y="137.3" width="34" height="14.9" fill="url(#pTurkey)" stroke="#fff" stroke-width="0.75"/>
+      <text x="716.3" y="132.3" class="barnum">46</text>
+      <rect x="757.8" y="147.3" width="34" height="218.7" fill="url(#pChicken)" stroke="#fff" stroke-width="0.75"/>
+      <text x="774.8" y="142.3" class="barnum">44</text>
+
+      <text x="73.2" y="382.0" class="xlab">Apr 6</text>
+      <text x="131.7" y="382.0" class="xlab">Apr 13</text>
+      <text x="190.2" y="382.0" class="xlab">Apr 20</text>
+      <text x="248.6" y="382.0" class="xlab">Apr 27</text>
+      <text x="307.1" y="382.0" class="xlab">May 4</text>
+      <text x="365.5" y="382.0" class="xlab">May 11</text>
+      <text x="424.0" y="382.0" class="xlab">May 18</text>
+      <text x="482.5" y="382.0" class="xlab">May 25</text>
+      <text x="540.9" y="382.0" class="xlab">Jun 1</text>
+      <text x="599.4" y="382.0" class="xlab">Jun 8</text>
+      <text x="657.8" y="382.0" class="xlab">Jun 15</text>
+      <text x="716.3" y="382.0" class="xlab">Jun 22</text>
+      <text x="774.8" y="382.0" class="xlab">Jun 29</text>
+      <text x="424" y="416" class="axtitle" text-anchor="middle">week beginning</text>
+    </svg>
+    </div>
+
+    <div class="note">
+      <b>Why texture, not just colour.</b> Segments are filled with SVG <code>&lt;pattern&gt;</code> textures — chicken is solid, turkey a diagonal hatch, tuna a cross-hatch, lobster dots, whitefish horizontal rules, rabbit vertical rules, “no protein” a flat pale grey. The hue is a colourblind-safe accent; the <b>texture is what survives a black-and-white photocopy</b>. The legend carries hue + texture + label + count so it decodes either way. Empty weeks (Apr 6 – May 4) are honest — off-diet logging began mid-May.
+    </div>
+  </section>
+
+  <!-- ============================================================ CHART 2 -->
+  <section class="chartblock">
+    <p class="seclabel">Option B · same data, composition</p>
+    <h2>Share of exposure &amp; protein ranking</h2>
+    <p class="caption">The identical 354 exposures collapsed to “who dominates” — a 100%-width share bar over a ranked total bar. <span class="trade">Tradeoff: drops all timing information, but answers the vet's actual first question — “is one protein driving this?” — in a single glance, and gives the thin proteins a readable length.</span></p>
+
+    <div class="chart">
+    <svg viewBox="0 0 820 108" role="img" aria-label="Share of protein exposure, 100 percent stacked bar">
+      <text x="16" y="20" class="axtitle">Share of all 354 off-diet exposures</text>
+      <rect x="16.0" y="30" width="609.9" height="54" fill="url(#pChicken)" stroke="#fff" stroke-width="1"/>
+      <text x="321.0" y="55.0" class="segpct">77%</text>
+      <text x="321.0" y="69.0" class="segpctlab">Chicken</text>
+      <rect x="625.9" y="30" width="60.1" height="54" fill="url(#pNone)" stroke="#fff" stroke-width="1"/>
+      <text x="656.0" y="55.0" class="segpct">8%</text>
+      <text x="656.0" y="69.0" class="segpctlab">No protein</text>
+      <rect x="686.0" y="30" width="40.1" height="54" fill="url(#pTurkey)" stroke="#fff" stroke-width="1"/>
+      <rect x="726.1" y="30" width="35.6" height="54" fill="url(#pTuna)" stroke="#fff" stroke-width="1"/>
+      <rect x="761.7" y="30" width="22.3" height="54" fill="url(#pLobster)" stroke="#fff" stroke-width="1"/>
+      <rect x="784.0" y="30" width="13.4" height="54" fill="url(#pWhitefish)" stroke="#fff" stroke-width="1"/>
+      <rect x="797.3" y="30" width="6.7" height="54" fill="url(#pRabbit)" stroke="#fff" stroke-width="1"/>
+      <text x="686" y="98" class="segpctlab" text-anchor="start" style="fill:#8a8d94">Turkey 5% · Tuna 5% · Lobster 3% · Whitefish 2% · Rabbit 1%</text>
+    </svg>
+    </div>
+
+    <div class="chart" style="margin-top:8px">
+    <svg viewBox="0 0 820 312" role="img" aria-label="Protein totals ranked, horizontal bar chart">
+      <text x="110" y="42.5" class="rowlab">Chicken</text>
+      <rect x="118" y="24" width="648.0" height="30" fill="url(#pChicken)" stroke="#d8dade" stroke-width="0.75"/>
+      <text x="773.0" y="42.5" class="rownum">274 · 77%</text>
+      <text x="110" y="82.5" class="rowlab">No recorded protein</text>
+      <rect x="118" y="64" width="63.9" height="30" fill="url(#pNone)" stroke="#d8dade" stroke-width="0.75"/>
+      <text x="188.9" y="82.5" class="rownum">27 · 8%</text>
+      <text x="110" y="122.5" class="rowlab">Turkey</text>
+      <rect x="118" y="104" width="42.6" height="30" fill="url(#pTurkey)" stroke="#d8dade" stroke-width="0.75"/>
+      <text x="167.6" y="122.5" class="rownum">18 · 5%</text>
+      <text x="110" y="162.5" class="rowlab">Tuna</text>
+      <rect x="118" y="144" width="37.8" height="30" fill="url(#pTuna)" stroke="#d8dade" stroke-width="0.75"/>
+      <text x="162.8" y="162.5" class="rownum">16 · 5%</text>
+      <text x="110" y="202.5" class="rowlab">Lobster</text>
+      <rect x="118" y="184" width="23.6" height="30" fill="url(#pLobster)" stroke="#d8dade" stroke-width="0.75"/>
+      <text x="148.6" y="202.5" class="rownum">10 · 3%</text>
+      <text x="110" y="242.5" class="rowlab">Ocean whitefish</text>
+      <rect x="118" y="224" width="14.2" height="30" fill="url(#pWhitefish)" stroke="#d8dade" stroke-width="0.75"/>
+      <text x="139.2" y="242.5" class="rownum">6 · 2%</text>
+      <text x="110" y="282.5" class="rowlab">Rabbit</text>
+      <rect x="118" y="264" width="7.1" height="30" fill="url(#pRabbit)" stroke="#d8dade" stroke-width="0.75"/>
+      <text x="132.1" y="282.5" class="rownum">3 · 1%</text>
+    </svg>
+    </div>
+  </section>
+
+  <!-- ============================================================ GREYSCALE PROOF -->
+  <section class="chartblock">
+    <p class="seclabel">Print-safe proof</p>
+    <h2>The share bar as it photocopies</h2>
+    <p class="caption">The same 100%-width bar rendered through <span class="trade">a greyscale filter — the worst case for adjacent categories.</span> Every band stays distinct because texture, not hue, is doing the separating.</p>
+    <span class="greytag">Greyscale preview · filter:grayscale(1)</span>
+    <div class="chart greybox">
+    <svg viewBox="0 0 820 108" role="img" aria-label="Greyscale preview of the share bar">
+      <text x="16" y="20" class="axtitle">Share of all 354 off-diet exposures (B&amp;W)</text>
+      <rect x="16.0" y="30" width="609.9" height="54" fill="url(#pChicken)" stroke="#fff" stroke-width="1"/>
+      <text x="321.0" y="55.0" class="segpct">77%</text>
+      <text x="321.0" y="69.0" class="segpctlab">Chicken</text>
+      <rect x="625.9" y="30" width="60.1" height="54" fill="url(#pNone)" stroke="#fff" stroke-width="1"/>
+      <text x="656.0" y="55.0" class="segpct">8%</text>
+      <text x="656.0" y="69.0" class="segpctlab">No protein</text>
+      <rect x="686.0" y="30" width="40.1" height="54" fill="url(#pTurkey)" stroke="#fff" stroke-width="1"/>
+      <rect x="726.1" y="30" width="35.6" height="54" fill="url(#pTuna)" stroke="#fff" stroke-width="1"/>
+      <rect x="761.7" y="30" width="22.3" height="54" fill="url(#pLobster)" stroke="#fff" stroke-width="1"/>
+      <rect x="784.0" y="30" width="13.4" height="54" fill="url(#pWhitefish)" stroke="#fff" stroke-width="1"/>
+      <rect x="797.3" y="30" width="6.7" height="54" fill="url(#pRabbit)" stroke="#fff" stroke-width="1"/>
+    </svg>
+    </div>
+  </section>
+
+  <!-- ============================================================ CHART 3 -->
+  <section class="chartblock">
+    <p class="seclabel">Option C · optional context</p>
+    <h2>Vomiting against off-diet exposure volume</h2>
+    <p class="caption">Weekly vomiting episodes (bars, left axis) with total off-diet exposures per week as a line (right axis), on one canvas. <span class="trade">Tradeoff: invites an eyeball causal read the n=1 data can't support — belongs on the owner-facing summary, not the clinical report, or paired with an explicit “association, not cause” caption.</span></p>
+
+    <div class="legend" style="margin-bottom:10px">
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><rect width="22" height="14" fill="url(#pVomit)"/></svg><span>Vomiting episodes / week</span><span class="legnum">22 total · 19 days</span></div>
+      <div class="legitem"><svg class="sw" viewBox="0 0 22 14"><line x1="1" y1="7" x2="21" y2="7" stroke="#16181d" stroke-width="1.8"/><circle cx="11" cy="7" r="2.4" fill="#16181d"/></svg><span>Off-diet exposures / week</span></div>
+    </div>
+
+    <div class="chart">
+    <svg viewBox="0 0 820 300" role="img" aria-label="Weekly vomiting episodes with off-diet exposure volume line">
+      <text transform="rotate(-90 12 134)" x="12" y="134" class="axtitle" text-anchor="middle">vomit episodes</text>
+      <text transform="rotate(90 810 134)" x="810" y="134" class="axtitle" text-anchor="middle">exposures / week</text>
+      <line x1="40" y1="248.0" x2="774" y2="248.0" class="grid"/>
+      <text x="34" y="251.5" class="ylab">0</text>
+      <line x1="40" y1="172.0" x2="774" y2="172.0" class="grid"/>
+      <text x="34" y="175.5" class="ylab">2</text>
+      <line x1="40" y1="96.0" x2="774" y2="96.0" class="grid"/>
+      <text x="34" y="99.5" class="ylab">4</text>
+      <line x1="40" y1="20.0" x2="774" y2="20.0" class="grid"/>
+      <text x="34" y="23.5" class="ylab">6</text>
+      <text x="780" y="251.5" class="ylabR">0</text>
+      <text x="780" y="186.4" class="ylabR">20</text>
+      <text x="780" y="121.2" class="ylabR">40</text>
+      <text x="780" y="56.1" class="ylabR">60</text>
+      <line x1="40" y1="248.0" x2="774" y2="248.0" class="axis"/>
+
+      <rect x="339.5" y="172.0" width="22" height="76.0" fill="url(#pVomit)" stroke="#b23a3a" stroke-width="0.5"/>
+      <text x="350.5" y="168.0" class="barnum">2</text>
+      <rect x="396.0" y="96.0" width="22" height="152.0" fill="url(#pVomit)" stroke="#b23a3a" stroke-width="0.5"/>
+      <text x="407.0" y="92.0" class="barnum">4</text>
+      <rect x="452.5" y="96.0" width="22" height="152.0" fill="url(#pVomit)" stroke="#b23a3a" stroke-width="0.5"/>
+      <text x="463.5" y="92.0" class="barnum">4</text>
+      <rect x="508.9" y="210.0" width="22" height="38.0" fill="url(#pVomit)" stroke="#b23a3a" stroke-width="0.5"/>
+      <text x="519.9" y="206.0" class="barnum">1</text>
+      <rect x="565.4" y="96.0" width="22" height="152.0" fill="url(#pVomit)" stroke="#b23a3a" stroke-width="0.5"/>
+      <text x="576.4" y="92.0" class="barnum">4</text>
+      <rect x="621.8" y="134.0" width="22" height="114.0" fill="url(#pVomit)" stroke="#b23a3a" stroke-width="0.5"/>
+      <text x="632.8" y="130.0" class="barnum">3</text>
+      <rect x="678.3" y="134.0" width="22" height="114.0" fill="url(#pVomit)" stroke="#b23a3a" stroke-width="0.5"/>
+      <text x="689.3" y="130.0" class="barnum">3</text>
+      <rect x="734.8" y="210.0" width="22" height="38.0" fill="url(#pVomit)" stroke="#b23a3a" stroke-width="0.5"/>
+      <text x="745.8" y="206.0" class="barnum">1</text>
+
+      <polyline points="68.2,248.0 124.7,248.0 181.2,248.0 237.6,248.0 294.1,248.0 350.5,192.6 407.0,117.7 463.5,91.7 519.9,46.1 576.4,26.5 632.8,150.3 689.3,98.2 745.8,104.7" fill="none" stroke="#16181d" stroke-width="1.6"/>
+      <circle cx="68.2" cy="248.0" r="2.6" fill="#16181d"/>
+      <circle cx="124.7" cy="248.0" r="2.6" fill="#16181d"/>
+      <circle cx="181.2" cy="248.0" r="2.6" fill="#16181d"/>
+      <circle cx="237.6" cy="248.0" r="2.6" fill="#16181d"/>
+      <circle cx="294.1" cy="248.0" r="2.6" fill="#16181d"/>
+      <circle cx="350.5" cy="192.6" r="2.6" fill="#16181d"/>
+      <circle cx="407.0" cy="117.7" r="2.6" fill="#16181d"/>
+      <circle cx="463.5" cy="91.7" r="2.6" fill="#16181d"/>
+      <circle cx="519.9" cy="46.1" r="2.6" fill="#16181d"/>
+      <circle cx="576.4" cy="26.5" r="2.6" fill="#16181d"/>
+      <circle cx="632.8" cy="150.3" r="2.6" fill="#16181d"/>
+      <circle cx="689.3" cy="98.2" r="2.6" fill="#16181d"/>
+      <circle cx="745.8" cy="104.7" r="2.6" fill="#16181d"/>
+
+      <text x="68.2" y="264.0" class="xlab">Apr 6</text>
+      <text x="124.7" y="264.0" class="xlab">Apr 13</text>
+      <text x="181.2" y="264.0" class="xlab">Apr 20</text>
+      <text x="237.6" y="264.0" class="xlab">Apr 27</text>
+      <text x="294.1" y="264.0" class="xlab">May 4</text>
+      <text x="350.5" y="264.0" class="xlab">May 11</text>
+      <text x="407.0" y="264.0" class="xlab">May 18</text>
+      <text x="463.5" y="264.0" class="xlab">May 25</text>
+      <text x="519.9" y="264.0" class="xlab">Jun 1</text>
+      <text x="576.4" y="264.0" class="xlab">Jun 8</text>
+      <text x="632.8" y="264.0" class="xlab">Jun 15</text>
+      <text x="689.3" y="264.0" class="xlab">Jun 22</text>
+      <text x="745.8" y="264.0" class="xlab">Jun 29</text>
+    </svg>
+    </div>
+
+    <div class="note">
+      <b>Clinical caution.</b> This view co-plots symptom load and exposure volume, which reads as a correlation the data can't earn (n=1, chicken confounds everything). If it ships at all it belongs owner-side, or under an explicit “association, not cause” note — never as a standalone claim on the vet report.
+    </div>
+  </section>
+
+  <div class="foot">
+    <b style="color:#565961">Data.</b> Real Nyx 90-day window, Apr 6 – Jul 4 2026 (cat; chronic intermittent vomiting). 354 off-diet exposures = 347 treats + 7 human-food feedings, plus ~28 rated Instinct wet meals (not counted as off-diet). Protein totals: chicken 274, no-recorded-protein 27, turkey 18, tuna 16, lobster 10, ocean whitefish 6, rabbit 3. Vomiting: 22 episodes across 19 days. Weekly bins spread each treat item evenly across its logged date span — plausible for a mock, not exact per-day counts. <br>
+    <b style="color:#565961">Build notes.</b> Fully self-contained for the report's strict CSP: all CSS inline, all charts inline <code>&lt;svg&gt;</code>, textures as reusable <code>&lt;pattern&gt;</code> paint servers — no scripts, fonts, CDNs, chart libraries, or remote assets. System sans-serif, tabular figures, hairline <code>#e4e5e8</code> gridlines, zero-baseline axes.
+  </div>
+
+</div>
+</body>
+</html>

@@ -890,7 +890,7 @@ Deno.test('resolveScope is a pure re-derivable function (no hidden Date.now / de
 
 function mealEvent(
   date: string,
-  o: { foodType?: 'meal' | 'treat' | 'other'; format?: FoodFormat | null; protein?: string | null; label?: string; rating?: 'all' | 'refused' | null } = {},
+  o: { foodType?: 'meal' | 'treat' | 'other'; format?: FoodFormat | null; protein?: string | null; label?: string; rating?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null } = {},
 ): ReportEventInput {
   return makeEvent({
     type: 'meal',
@@ -991,6 +991,67 @@ Deno.test('A3b — a format=treat item (non-treat foodType) is counted in Append
   assert.equal(snap.provenance.proteinExposureTally.chicken, 1, 'chicken is in the antigen tally, not invisible')
 })
 
+Deno.test('#9 protein timeline — off-diet bins reconcile to the protein tally; unknowns disclosed, never dropped', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      // Distinct items/days so no same-timestamp treat-relog collapse muddies the absolute counts.
+      events: [
+        mealEvent('2026-05-12', { foodType: 'treat', format: 'treat', protein: 'chicken', label: 'Temptations' }),
+        mealEvent('2026-05-13', { foodType: 'treat', format: 'treat', protein: 'chicken', label: 'Delectables' }),
+        mealEvent('2026-05-14', { foodType: 'treat', format: 'treat', protein: 'turkey', label: 'Fussie' }),
+        mealEvent('2026-06-02', { foodType: 'treat', format: 'treat', protein: 'chicken', label: 'Greenies' }),
+        mealEvent('2026-06-02', { foodType: 'treat', format: 'treat', protein: null, label: 'Catnip' }),
+      ],
+    }),
+  )
+  const t = snap.proteinTimeline
+  assert.equal(t.bins.length, t.weekStartDates.length, 'one bin row per week')
+  assert.ok(t.weekStartDates.length >= 12, 'weekly buckets span the ~90-day window')
+  // §5.6: sum over bins for each protein === its tally === the provenance tally (Appendix C).
+  t.proteins.forEach((p, j) => {
+    const summed = t.bins.reduce((s, wk) => s + wk[j], 0)
+    assert.equal(summed, t.totalByProtein[p], `bins for ${p} reconcile to its tally`)
+    assert.equal(t.totalByProtein[p], snap.provenance.proteinExposureTally[p], `${p} matches the provenance tally`)
+  })
+  assert.equal(t.totalByProtein.chicken, 3, 'chicken exposures counted')
+  assert.equal(t.totalByProtein.turkey, 1, 'turkey counted')
+  // The null-protein treat is disclosed per-week, never tallied as a protein nor dropped (§5.1).
+  assert.equal(t.unknownByWeek.reduce((a, b) => a + b, 0), 1, 'the no-protein treat is in unknownByWeek')
+  assert.equal(t.hasUnknown, true)
+  assert.equal(t.totalFeedings, snap.provenance.confounders.length, 'total === off-diet confounder count')
+  assert.equal(t.totalFeedings, 5)
+})
+
+Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · count · span · typical intake)', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        mealEvent('2026-05-14', { foodType: 'meal', format: 'wet_canned', protein: 'chicken', label: 'Instinct Chicken', rating: 'some' }),
+        mealEvent('2026-05-20', { foodType: 'meal', format: 'wet_canned', protein: 'chicken', label: 'Instinct Chicken', rating: 'some' }),
+        mealEvent('2026-06-10', { foodType: 'meal', format: 'wet_canned', protein: 'chicken', label: 'Instinct Chicken', rating: 'all' }),
+        mealEvent('2026-05-22', { foodType: 'meal', format: 'wet_canned', protein: 'turkey', label: 'Instinct Turkey', rating: 'some' }),
+      ],
+    }),
+  )
+  const items = snap.diet.mealItems
+  assert.equal(items.length, 2, 'two distinct meal foods, grouped (not one row per feeding)')
+  // Largest first (chicken ×3 on the stack baseline, then turkey ×1).
+  assert.equal(items[0].foodLabel, 'Instinct Chicken')
+  assert.equal(items[0].count, 3)
+  assert.equal(items[0].primaryProtein, 'chicken')
+  assert.equal(items[0].firstDate, '2026-05-14', 'date span start')
+  assert.equal(items[0].lastDate, '2026-06-10', 'date span end')
+  assert.equal(items[0].intakeMode, 'some', 'strict-plurality intake (2 some vs 1 all)')
+  assert.equal(items[1].foodLabel, 'Instinct Turkey')
+  assert.equal(items[1].count, 1)
+  // The grouped total reconciles with mealCompletion (same ratedMeals set).
+  const grouped = items.reduce((s, i) => s + i.count, 0)
+  assert.equal(grouped, snap.diet.mealCompletion?.ratedMeals, 'grouped meal count === ratedMeals')
+  assert.equal(grouped, 4)
+})
+
 Deno.test('A1b — a free-fed bowl with a NULL start date still reaches the concurrent-change note', () => {
   const snap = assembleReport(
     baseInput({
@@ -1005,6 +1066,23 @@ Deno.test('A1b — a free-fed bowl with a NULL start date still reaches the conc
   assert.equal(ff.ongoing, true, 'treated as standing/ongoing')
   assert.equal(ff.startDate, null, 'start date preserved as null (unrecorded)')
   assert.equal(ff.bucketIndex, null, 'no chart marker without a start point')
+})
+
+Deno.test('B-233 — a free-fed arrangement with an in-window activeFrom is STANDING, not a dated diet change', () => {
+  // activeFrom is the first-food-LOG date, not when the diet started (PM-confirmed); it must never
+  // render as a mid-window diet-change marker / "started <date>". Treated as standing context.
+  const snap = assembleReport(
+    baseInput({
+      feedingArrangements: [
+        { id: 'fa', foodItemId: 'fi-rc', method: 'free_choice', activeFrom: '2026-05-16', activeUntil: null, isShared: false, primaryProtein: 'chicken', foodLabel: 'Royal Canin Weight' },
+      ],
+    }),
+  )
+  const ff = snap.concurrentChanges.find((c) => c.kind === 'free_fed')
+  assert.ok(ff, 'the free-fed diet is a concurrent confounder')
+  assert.equal(ff.startDate, null, 'the log-date activeFrom is NOT used as a diet start (B-233)')
+  assert.equal(ff.bucketIndex, null, 'no dashed chart marker for a standing maintenance diet')
+  assert.equal(ff.ongoing, true, 'standing context, present across the window')
 })
 
 Deno.test('A1c — a pre-window intervention that ENDED mid-window carries endInWindow (not false "ongoing")', () => {
@@ -1154,6 +1232,38 @@ Deno.test('R2-3 — mealCompletion.intakeMode is the strict plurality; a tie yie
     baseInput({ events: [mealAt('2026-06-10', 'all'), mealAt('2026-06-11', 'all'), mealAt('2026-06-12', 'some'), mealAt('2026-06-13', 'some')] }),
   )
   assert.equal(tied.diet.mealCompletion?.intakeMode, null, 'a tie has no honest "typical" — null, never a picked side')
+})
+
+Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · count · span · typical intake)', () => {
+  const meal = (date: string, food: string, protein: string, rating: 'all' | 'most' | 'some' | 'picked' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '18:00:00'),
+      meal: { foodItemId: food, intakeRating: rating, quantity: 'n', foodType: 'meal', format: 'wet_canned', primaryProtein: protein, brand: food, productName: 'x' },
+    })
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        meal('2026-06-10', 'instinct-chicken', 'chicken', 'some'),
+        meal('2026-06-12', 'instinct-chicken', 'chicken', 'some'),
+        meal('2026-06-14', 'instinct-chicken', 'chicken', 'all'),
+        meal('2026-06-11', 'instinct-turkey', 'turkey', 'picked'),
+      ],
+    }),
+  )
+  const items = snap.diet.mealItems
+  assert.equal(items.length, 2, 'one row per food item')
+  // Sorted by count desc → chicken (3) then turkey (1).
+  assert.equal(items[0].count, 3)
+  assert.equal(items[0].primaryProtein, 'chicken')
+  assert.equal(items[0].intakeMode, 'some', 'strict-plurality typical intake across the grouped food (some 2 vs all 1)')
+  assert.equal(items[0].firstDate, '2026-06-10')
+  assert.equal(items[0].lastDate, '2026-06-14')
+  assert.equal(items[1].count, 1)
+  assert.equal(items[1].primaryProtein, 'turkey')
+  assert.equal(items[1].intakeMode, 'picked')
+  // Reconciles with mealCompletion.ratedMeals — the SAME underlying set, never a double count.
+  assert.equal(items.reduce((a, i) => a + i.count, 0), snap.diet.mealCompletion?.ratedMeals)
 })
 
 Deno.test('R2-2 ADVERSARIAL — days-since is the most recent episode of ANY symptom, never just the primary', () => {
