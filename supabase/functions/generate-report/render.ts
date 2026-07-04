@@ -980,24 +980,39 @@ function readingTheTrend(snap: ReportSnapshot): string {
       Read the trend by how often episodes occur across the window.${gapBit}</div>`
   }
 
-  // Each intervention is timed honestly: "started <date>" when it began in-window (it also
-  // carries a dashed chart marker), "ongoing since <date>" when it began BEFORE the window and
-  // ran through it — a standing confounder with no start point to mark but every bit as able to
-  // confound the trend (adversarial finding A1). "overlaps this window" is the honest umbrella:
-  // a standing steroid did not "change" during the window, but its presence still forbids
-  // crediting the diet.
-  const list = changes.map((c) => `${changeLabel(c)} (${changeTiming(c)})`).join('; ')
-  const plural = changes.length > 1
-  const lead = plural
-    ? `<b>${num(changes.length)} changes overlap this window:</b> ${list}.`
-    : `<b>One change overlaps this window:</b> ${list}.`
-  const caution = plural
-    ? ' A shift in signs over this period <b>cannot be attributed to any one of them alone</b> — they overlap in time.'
-    : ' A shift in signs over this period <b>cannot be attributed to the diet alone</b> while this overlaps it.'
+  // Split real in-window CHANGES (something started or stopped mid-window — a dated event with a
+  // chart marker) from STANDING context (a diet/regimen present across the whole window, no
+  // in-window transition). A standing maintenance diet is NOT a "change" — it is the constant
+  // backdrop the trend can't be cleanly attributed against; framing it as a change was the
+  // "why call free-feeding an intervention" complaint (PM #6 / B-227). A pre-window drug that
+  // ran throughout, or one that STOPPED mid-window (a dated transition), still counts as a change.
+  const started = changes.filter((c) => !c.ongoing || c.endInWindow)
+  const standing = changes.filter((c) => c.ongoing && !c.endInWindow)
+  const parts: string[] = []
+  if (started.length > 0) {
+    // changeTiming carries the dated transition ("started <date>" / "started <date>, stopped
+    // <date>" / "until <date>") — the real in-window change the marker points at.
+    const list = started.map((c) => `${changeLabel(c)} (${changeTiming(c)})`).join('; ')
+    const s = started.length > 1
+    parts.push(`<b>${s ? `${num(started.length)} changes` : 'One change'} overlap${s ? '' : 's'} this window:</b> ${list}.`)
+  }
+  if (standing.length > 0) {
+    // changeTiming renders "ongoing since <date>" for a recorded start (a pre-window steroid) and
+    // "ongoing, start not recorded" for a free-fed diet whose only date is a first-food-log, not a
+    // real diet start (B-227) — so a maintenance diet is framed as standing context, never a change.
+    const list = standing.map((c) => `${changeLabel(c)} (${changeTiming(c)})`).join('; ')
+    parts.push(`<b>In place across this whole window:</b> ${list}.`)
+  }
+  // ONE co-attribution caution, keyed to the TOTAL confounder count — a diet PLUS a standing
+  // steroid is two things the trend can't be cleanly attributed to, even though only one "changed".
+  const caution =
+    changes.length > 1
+      ? ` A shift in signs over this period <b>cannot be attributed to any one of them alone</b> — they overlap in time.`
+      : ` A shift in signs over this period <b>cannot be attributed to it alone</b> while it overlaps.`
   return `
     <div class="callout">
       <span class="k">Reading the trend</span>
-      ${lead}${caution}${gapBit}</div>`
+      ${parts.join(' ')}${caution}${gapBit}</div>`
 }
 
 /**

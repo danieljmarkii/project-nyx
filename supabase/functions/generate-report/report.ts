@@ -2240,9 +2240,14 @@ function buildConcurrentChanges(
     consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)
   }
   for (const a of input.feedingArrangements) {
-    // Drop the old `&& a.activeFrom` guard: a free-fed bowl with an unrecorded start still
-    // overlaps the window and must reach the confounder note (consider() handles the null start).
-    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', a.activeFrom, a.activeUntil)
+    // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,
+    // NOT when the diet actually started (PM-confirmed, B-227) — the food is typically given well
+    // before its first log. Rendering it as a diet that "started <activeFrom>" drew a false
+    // mid-window diet-change marker + a "started May 16" note for a standing maintenance diet.
+    // So pass a NULL start: the diet is a STANDING confounder present across the window with an
+    // unrecorded start (no chart marker, framed as context — not a change). `activeUntil` (a
+    // deliberate "stopped feeding this" action) is kept, since a stop IS a real signal.
+    if (a.method === 'free_choice') consider('free_fed', a.foodLabel ?? 'Free-fed food', null, a.activeUntil)
   }
   // Explicit total order (matches the determinism discipline of every other sort here) —
   // by start date, then kind, then label, so same-day interventions never depend on push order.
