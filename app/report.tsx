@@ -164,6 +164,12 @@ export default function ReportScreen() {
       ? `${SCOPE_BASIS_LABEL[report.scopeBasis] ?? 'Report range'} · ${formatDayKey(report.startDate)} – ${formatDayKey(report.endDate)}`
       : null;
 
+  // Soft refresh: once a report exists, a range change re-generates it *in place*
+  // — keep the current report on screen under a quiet "Updating…" pill rather than
+  // unmounting the whole surface to a full-screen spinner on every tap (Calm bar).
+  // The full spinner is reserved for the very first load, when there's nothing yet.
+  const regenerating = status === 'loading' && report !== null;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header title="Vet report" leading="back" onLeadingPress={() => router.back()} />
@@ -248,7 +254,7 @@ export default function ReportScreen() {
         </View>
       )}
 
-      {status === 'loading' && (
+      {status === 'loading' && !report && (
         <View style={styles.center}>
           <ActivityIndicator color={theme.colorTextSecondary} />
           <Text style={styles.muted}>
@@ -265,22 +271,36 @@ export default function ReportScreen() {
         </View>
       )}
 
-      {status === 'ready' && report && (
+      {(status === 'ready' || regenerating) && report && (
         <>
-          <WebView
-            style={styles.web}
-            originWhitelist={['*']}
-            source={{ html: report.html }}
-            // The report is static, self-contained clinical HTML — no scripts, no
-            // third-party subresources (§8). Disabling JS keeps the surface minimal.
-            javaScriptEnabled={false}
-            showsVerticalScrollIndicator
-          />
+          <View style={styles.reportBody}>
+            <WebView
+              style={styles.web}
+              originWhitelist={['*']}
+              source={{ html: report.html }}
+              // The report is static, self-contained clinical HTML — no scripts, no
+              // third-party subresources (§8). Disabling JS keeps the surface minimal.
+              javaScriptEnabled={false}
+              showsVerticalScrollIndicator
+            />
+            {regenerating && (
+              // Quiet "we're refreshing" pill over the still-visible prior report —
+              // pointerEvents=none so the report stays scrollable underneath.
+              <View style={styles.updatingOverlay} pointerEvents="none">
+                <View style={styles.updatingPill}>
+                  <ActivityIndicator size="small" color={theme.colorTextSecondary} />
+                  <Text style={styles.updatingText}>Updating…</Text>
+                </View>
+              </View>
+            )}
+          </View>
           <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>
             <PrimaryButton
+              // Disabled while regenerating — the visible report is the PREVIOUS
+              // window; never let the owner share a stale range to the vet.
               label={sharing ? 'Preparing PDF…' : 'Send to vet'}
               onPress={onShare}
-              disabled={sharing}
+              disabled={sharing || regenerating}
             />
             <Text style={styles.barHint}>
               Creates a PDF you can email, message, or AirDrop to your vet.
@@ -294,7 +314,33 @@ export default function ReportScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colorSurface },
+  reportBody: { flex: 1 },
   web: { flex: 1, backgroundColor: theme.colorSurface },
+
+  // ── Soft-refresh pill ──
+  updatingOverlay: {
+    position: 'absolute',
+    top: theme.space2,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  updatingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusMedium,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+  },
+  updatingText: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
+    color: theme.colorTextSecondary,
+  },
 
   // ── Range control ──
   rangeBar: {
