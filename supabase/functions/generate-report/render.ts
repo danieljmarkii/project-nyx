@@ -316,20 +316,10 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     parts.push(`<text class="ann" x="${lx.toFixed(1)}" y="11" text-anchor="${anchor}">start &middot; ${h(fmtDay(m.startDate))}</text>`)
   }
 
-  // X-axis month ticks — the first real artifact labelled only the first + last date, so a 90-day
-  // chart had no interior orientation (R2-6). Draw a light tick + month label at each bucket where
-  // the calendar month changes, so the reader can place a bar in Apr / May / Jun / Jul at a glance.
-  let lastMonth = -1
-  for (let i = 0; i < n; i++) {
-    const p = dayParts(sym.bucketStartDates[i] ?? '')
-    if (!p) continue
-    if (p.m !== lastMonth) {
-      lastMonth = p.m
-      const x = L + i * slot
-      parts.push(`<line class="mtick" x1="${x.toFixed(1)}" y1="${BASE}" x2="${x.toFixed(1)}" y2="${BASE + 4}"/>`)
-      parts.push(`<text class="xl" x="${(x + 3).toFixed(1)}" y="${BASE + 15}">${MONTHS[p.m - 1]}</text>`)
-    }
-  }
+  // X-axis: week-start date labels (PM) via the shared helper the protein chart also uses, so the
+  // two weekly charts align on identical dates. Replaces the month-only ticks (R2-6) with per-week
+  // orientation ("May 11, May 18 …"); the exact window bounds stay in the range box + caption.
+  parts.push(weekAxisLabels(sym.bucketStartDates, L, slot, n, BASE))
 
   // Bars + count labels.
   for (let i = 0; i < n; i++) {
@@ -347,12 +337,143 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     }
   }
 
-  // The exact window-end date anchors the right edge (month ticks orient the interior); the exact
-  // start is the leftmost month tick, and both exact bounds are also in the range box + caption.
-  parts.push(`<text class="xl" x="${R - 8}" y="${BASE + 15}" text-anchor="end">${h(fmtDay(windowEndDate))}</text>`)
-
-  const aria = `${symptomLabel(sym.type)} episodes per week: ${buckets.join(', ')}.`
+  const aria = `${symptomLabel(sym.type)} episodes per week: ${buckets.join(', ')}. Window ends ${h(fmtDay(windowEndDate))}.`
   return `<svg viewBox="0 0 648 150" role="img" aria-label="${h(aria)}">${parts.join('')}</svg>`
+}
+
+/**
+ * Week-start x-axis labels shared by the symptom + protein charts, so both weekly charts line up
+ * on the same dates (PM: "work the week-over-week labels — May 11, May 18 — into the vomit chart").
+ * A light tick at each week edge + the week-start date centred under the bar. Every week when there
+ * are ≤14; every other above that, so a long window never crowds the axis (never a silent drop —
+ * the range box + caption still carry the exact bounds).
+ */
+function weekAxisLabels(bucketStartDates: string[], L: number, slot: number, n: number, BASE: number): string {
+  const stride = n > 14 ? 2 : 1
+  const parts: string[] = []
+  for (let i = 0; i < n; i++) {
+    if (i % stride !== 0) continue
+    const p = dayParts(bucketStartDates[i] ?? '')
+    if (!p) continue
+    const xEdge = L + i * slot
+    const xMid = L + (i + 0.5) * slot
+    parts.push(`<line class="mtick" x1="${xEdge.toFixed(1)}" y1="${BASE}" x2="${xEdge.toFixed(1)}" y2="${BASE + 4}"/>`)
+    parts.push(`<text class="xl" x="${xMid.toFixed(1)}" y="${BASE + 15}" text-anchor="middle">${MONTHS[p.m - 1]} ${p.d}</text>`)
+  }
+  return parts.join('')
+}
+
+// ── Protein-over-time stacked bar (#9) ─────────────────────────────────────────────
+// The report is otherwise grayscale (§5.8). This one chart introduces a MUTED palette to separate
+// up to ~8 proteins — but colour is NEVER load-bearing: every segment ALSO carries a distinct SVG
+// texture AND a legend count, so it reads identically in a B&W photocopy (the mock's greyscale
+// proof validated this). Largest protein sits on the baseline; a no-recorded-protein band caps it.
+const PROTEIN_COLORS = ['#d69a3f', '#6f92c9', '#4c9c8d', '#c67f9a', '#9184bf', '#7f8894', '#b17f63', '#89a25c']
+const UNKNOWN_COLOR = '#d3d5d9'
+
+/** A tile-clean, print-visible texture over a muted fill — one per protein index (cycles at 8). */
+function proteinPattern(id: string, color: string, texIndex: number): string {
+  const ink = 'rgba(20,24,34,.34)'
+  let tex = ''
+  switch (texIndex % 8) {
+    case 0: tex = ''; break // solid (the dominant baseline protein)
+    case 1: tex = `<circle cx="4" cy="4" r="1.5" fill="${ink}"/>`; break // dots
+    case 2: tex = `<path d="M0 4 H8" stroke="${ink}" stroke-width="1.4"/>`; break // horizontal
+    case 3: tex = `<path d="M4 0 V8" stroke="${ink}" stroke-width="1.4"/>`; break // vertical
+    case 4: tex = `<path d="M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6" stroke="${ink}" stroke-width="1.3"/>`; break // diagonal /
+    case 5: tex = `<path d="M-2 6 L2 10 M0 0 L8 8 M6 -2 L10 2" stroke="${ink}" stroke-width="1.3"/>`; break // diagonal \
+    case 6: tex = `<path d="M0 4 H8 M4 0 V8" stroke="${ink}" stroke-width="1"/>`; break // grid
+    case 7: tex = `<path d="M0 0 L8 8 M0 8 L8 0" stroke="${ink}" stroke-width="1"/>`; break // cross
+  }
+  return `<pattern id="${id}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="${color}"/>${tex}</pattern>`
+}
+
+/** A small legend swatch (self-contained svg + its own pattern def, unique id) mirroring a bar fill. */
+function proteinSwatch(id: string, color: string | null, texIndex: number): string {
+  const def = color === null
+    ? `<pattern id="${id}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="${UNKNOWN_COLOR}"/></pattern>`
+    : proteinPattern(id, color, texIndex)
+  return `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><defs>${def}</defs><rect width="12" height="12" rx="2" fill="url(#${id})" stroke="rgba(20,24,34,.25)"/></svg>`
+}
+
+function proteinTimelineChart(t: import('./report.ts').ProteinTimeline): string {
+  const n = Math.max(1, t.weekStartDates.length)
+  const L = 40
+  const R = 628
+  const BASE = 124
+  const TOP = 20
+  const slot = (R - L) / n
+  const barW = Math.max(12, Math.min(34, slot * 0.6))
+  const weekTotal = (w: number): number => t.bins[w].reduce((a, b) => a + b, 0) + (t.unknownByWeek[w] ?? 0)
+  const yMax = Math.max(2, ...Array.from({ length: n }, (_, w) => weekTotal(w)))
+  const yFor = (v: number): number => BASE - (v / yMax) * (BASE - TOP)
+  const centerX = (i: number): number => L + (i + 0.5) * slot
+
+  const defs =
+    t.proteins.map((_, j) => proteinPattern(`ptc-${j}`, PROTEIN_COLORS[j % PROTEIN_COLORS.length], j)).join('') +
+    `<pattern id="ptc-u" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="${UNKNOWN_COLOR}"/></pattern>`
+
+  const parts: string[] = []
+  parts.push(`<line class="grid" x1="${L}" y1="${TOP}" x2="${R}" y2="${TOP}"/>`)
+  parts.push(`<line class="grid" x1="${L}" y1="${(TOP + BASE) / 2}" x2="${R}" y2="${(TOP + BASE) / 2}"/>`)
+  parts.push(`<line class="axis" x1="${L}" y1="${BASE}" x2="${R}" y2="${BASE}"/>`)
+  parts.push(`<text class="yl num" x="30" y="${TOP + 3}" text-anchor="end">${yMax}</text>`)
+  parts.push(`<text class="yl num" x="30" y="${(TOP + BASE) / 2 + 3}" text-anchor="end">${Math.round(yMax / 2)}</text>`)
+  parts.push(`<text class="yl num" x="30" y="${BASE + 3}" text-anchor="end">0</text>`)
+
+  for (let i = 0; i < n; i++) {
+    const x = centerX(i) - barW / 2
+    let yCursor = BASE
+    for (let j = 0; j < t.proteins.length; j++) {
+      const v = t.bins[i]?.[j] ?? 0
+      if (v <= 0) continue
+      const hgt = (v / yMax) * (BASE - TOP)
+      yCursor -= hgt
+      parts.push(
+        `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${hgt.toFixed(1)}" fill="url(#ptc-${j})" stroke="#fff" stroke-width="0.6"/>`,
+      )
+    }
+    const u = t.unknownByWeek[i] ?? 0
+    if (u > 0) {
+      const hgt = (u / yMax) * (BASE - TOP)
+      yCursor -= hgt
+      parts.push(
+        `<rect x="${x.toFixed(1)}" y="${yCursor.toFixed(1)}" width="${barW.toFixed(1)}" height="${hgt.toFixed(1)}" fill="url(#ptc-u)" stroke="#fff" stroke-width="0.6"/>`,
+      )
+    }
+    const total = weekTotal(i)
+    if (total > 0) parts.push(`<text class="cap num" x="${centerX(i).toFixed(1)}" y="${(yFor(total) - 5).toFixed(1)}" text-anchor="middle">${total}</text>`)
+  }
+  parts.push(weekAxisLabels(t.weekStartDates, L, slot, n, BASE))
+  // print-color-adjust:exact inherits to the pattern fills so the bars survive a default clinic printer.
+  return `<svg viewBox="0 0 648 148" role="img" aria-label="Off-diet protein exposure per week." style="-webkit-print-color-adjust:exact;print-color-adjust:exact;"><defs>${defs}</defs>${parts.join('')}</svg>`
+}
+
+/** Capitalise a protein label for the legend ("chicken" → "Chicken"), leaving multi-word casing alone. */
+function capProtein(p: string): string {
+  return p.length ? p.charAt(0).toUpperCase() + p.slice(1) : p
+}
+
+function proteinTimelineSection(snap: ReportSnapshot): string {
+  const t = snap.proteinTimeline
+  if (t.proteins.length === 0 && !t.hasUnknown) return '' // nothing off-diet to chart
+  const n = t.weekStartDates.length
+  const legend =
+    t.proteins
+      .map((p, j) => `<span class="ptleg">${proteinSwatch(`pts-${j}`, PROTEIN_COLORS[j % PROTEIN_COLORS.length], j)}${h(capProtein(p))} ${num(t.totalByProtein[p] ?? 0)}</span>`)
+      .join('') +
+    (t.hasUnknown ? `<span class="ptleg">${proteinSwatch('pts-u', null, 0)}no recorded protein ${num(t.unknownByWeek.reduce((a, b) => a + b, 0))}</span>` : '')
+  return `
+  <div class="sec">
+    <h2>Off-diet protein exposure over time</h2>
+    <div class="trend">
+      ${proteinTimelineChart(t)}
+      <div class="ptlegend">${legend}</div>
+      <div class="subnote">${num(t.totalFeedings)} off-diet feeding${
+        t.totalFeedings === 1 ? '' : 's'
+      } (treats + human food) over ${num(n)} week${n === 1 ? '' : 's'}; each bar is one week, stacked by protein. Colour is a convenience — every protein also carries a texture, so this reads in black &amp; white. Itemised in appendix&nbsp;C.</div>
+    </div>
+  </div>`
 }
 
 /** A tiny weight sparkline (non-colour): polyline over the in-window series + dots. */
@@ -1967,6 +2088,7 @@ export function renderReport(snap: ReportSnapshot): string {
   ${weightBlock(snap)}
   ${atAGlance(snap)}
   ${symptomTrend(snap)}
+  ${proteinTimelineSection(snap)}
   ${vomitCharacteristics(snap)}
   ${stoolCharacteristics(snap)}
   ${dietMeds(snap)}
@@ -2160,6 +2282,11 @@ const STYLE = `
   .tile .v .arw{color:var(--faint);font-weight:400;}
   .trend .big .delta-caveat{font-size:10px;color:var(--faint);margin-top:1px;font-style:italic;}
   .chartlegend{font-size:10.5px;color:var(--faint);margin:8px 0 0;padding-left:2px;}
+  /* Protein-over-time legend (#9) — swatch (hue + texture) · protein · count, wrapping. */
+  .ptlegend{margin-top:9px;font-size:10.5px;color:var(--muted);line-height:1.9;}
+  .ptleg{display:inline-block;margin-right:13px;white-space:nowrap;}
+  .ptleg svg{display:inline-block;width:12px;height:12px;vertical-align:-2px;margin-right:4px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .ptlegend .num{color:#25272d;font-weight:600;}
   .chartlegend b{color:var(--muted);font-weight:600;}
   .note.lead{margin:0 0 9px;}
   .rnote{color:var(--faint);font-style:italic;}

@@ -1048,6 +1048,27 @@ export interface AtAGlance {
   secondHalfLoggedDays: number
 }
 
+/**
+ * Off-diet protein exposure binned by the SAME weekly buckets as the symptom chart (#9) — the
+ * data behind the "protein exposure over time" stacked bar. Tells the temporal story a table
+ * can't ("a lot of proteins early, then collapsed"). Off-diet only (treats + human food, the
+ * confounder set), so sum-over-bins reconciles to the Appendix C protein tally (§5.6).
+ */
+export interface ProteinTimeline {
+  /** One week-start day key per bucket — shares the symptom chart's x-axis exactly. */
+  weekStartDates: string[]
+  /** Canonical protein keys present, ordered by total desc (largest sits on the stack baseline). */
+  proteins: string[]
+  /** bins[weekIndex][proteinIndex] = off-diet feeding count for that protein that week. */
+  bins: number[][]
+  /** Per-week count of off-diet feedings with no recorded protein (disclosed, never dropped, §5.1). */
+  unknownByWeek: number[]
+  /** Sum over the window per protein — reconciles to provenance.proteinExposureTally. */
+  totalByProtein: Record<string, number>
+  hasUnknown: boolean
+  totalFeedings: number
+}
+
 export interface ReportSnapshot {
   generatedAt: string
   timezone: string | null
@@ -1065,6 +1086,7 @@ export interface ReportSnapshot {
   medications: MedicationAdherence[]
   correlation: CorrelationSummary
   concurrentChanges: ConcurrentChange[]
+  proteinTimeline: ProteinTimeline
   provenance: Provenance
 }
 
@@ -1895,6 +1917,34 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     else proteinUnknownCount++
   }
 
+  // Off-diet protein exposure over time (#9) — bin the SAME confounder set by the SAME weekly
+  // buckets as the symptom chart, by canonical protein. Every confounder bins (a null local-day
+  // key falls back to the UTC slice, which is always parseable), so sum-over-bins === the tally
+  // above === the Appendix C total (§5.6 reconciliation). Largest protein first → stack baseline.
+  const timelineProteins = Object.keys(proteinExposureTally).sort(
+    (a, b) => proteinExposureTally[b] - proteinExposureTally[a] || a.localeCompare(b),
+  )
+  const proteinIdx = new Map(timelineProteins.map((p, i) => [p, i]))
+  const timelineBins: number[][] = Array.from({ length: numBuckets }, () => new Array(timelineProteins.length).fill(0))
+  const unknownByWeek: number[] = new Array(numBuckets).fill(0)
+  for (const c of confounders) {
+    const dn = dayNumber(c.dayKey ?? c.occurredAt.slice(0, 10))
+    if (dn === null) continue
+    const w = bucketIndexOfDay(dn)
+    const key = canonicalizeProtein(c.primaryProtein)
+    if (key) timelineBins[w][proteinIdx.get(key)!]++
+    else unknownByWeek[w]++
+  }
+  const proteinTimeline: ProteinTimeline = {
+    weekStartDates: bucketStartDates,
+    proteins: timelineProteins,
+    bins: timelineBins,
+    unknownByWeek,
+    totalByProtein: proteinExposureTally,
+    hasUnknown: proteinUnknownCount > 0,
+    totalFeedings: confounders.length,
+  }
+
   // ── Intake appendix (B-213) — recent rated meals, ONLY when an intake flag fired ─────
   // The page-1 intake numbers (baseline, decline, last full meal) must trace to real meal
   // rows. Built from the deduped, windowed rated meals — the SAME set the detector saw — so
@@ -2054,6 +2104,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     medications,
     correlation,
     concurrentChanges,
+    proteinTimeline,
     provenance,
   }
 }

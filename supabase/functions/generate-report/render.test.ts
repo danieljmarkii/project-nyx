@@ -87,6 +87,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     medications: [],
     correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [] },
     concurrentChanges: [],
+    proteinTimeline: { weekStartDates: [], proteins: [], bins: [], unknownByWeek: [], totalByProtein: {}, hasUnknown: false, totalFeedings: 0 },
     provenance: {
       ownerReported: true,
       totalSymptomIncidents: 0,
@@ -1307,7 +1308,7 @@ Deno.test('R2-6 — an intervention marker is a neutral "start ·" label (no ▲
   assert.ok(/dashed vertical marks when a diet, medication, or supplement/i.test(html), 'chart legend line explains the marker')
 })
 
-Deno.test('R2-6 — the chart draws month ticks across a multi-month window', () => {
+Deno.test('the symptom chart draws week-start date labels (May 11, May 18 …), not bare month ticks', () => {
   const snap = base({
     symptoms: [
       aggregate({
@@ -1319,7 +1320,32 @@ Deno.test('R2-6 — the chart draws month ticks across a multi-month window', ()
     ],
   })
   const html = renderReport(snap)
-  for (const m of ['Apr', 'May', 'Jun']) assert.ok(html.includes(`>${m}<`), `month tick ${m}`)
+  // Per-week orientation: each week's start date is labelled (13 weeks ≤ 14 → every week shown).
+  for (const d of ['Apr 3', 'May 1', 'May 8', 'Jun 5']) assert.ok(html.includes(`>${d}</text>`), `week-start label ${d}`)
+  assert.ok(!/>Apr<\/text>/.test(html), 'no bare month-only tick label')
+})
+
+Deno.test('#9 protein-over-time section renders with a hue+texture legend when off-diet exposures exist; absent otherwise', () => {
+  const withTimeline = renderReport(
+    base({
+      proteinTimeline: {
+        weekStartDates: ['2026-04-03', '2026-04-10', '2026-04-17'],
+        proteins: ['chicken', 'turkey'],
+        bins: [[2, 0], [3, 1], [0, 0]],
+        unknownByWeek: [0, 1, 0],
+        totalByProtein: { chicken: 5, turkey: 1 },
+        hasUnknown: true,
+        totalFeedings: 7,
+      },
+    }),
+  )
+  assert.ok(/Off-diet protein exposure over time/.test(withTimeline), 'the section renders')
+  assert.ok(/Chicken/.test(withTimeline) && /Turkey/.test(withTimeline), 'proteins named in the legend')
+  assert.ok(/no recorded protein/.test(withTimeline), 'the unknown band is disclosed, never dropped')
+  assert.ok(/<pattern id="ptc-1"/.test(withTimeline), 'a texture pattern is defined (print-safe, not colour-only)')
+  assert.ok(/reads in black &amp; white/.test(withTimeline), 'the print-safe note is present')
+  // Absent when nothing off-diet — never an empty chart.
+  assert.ok(!/Off-diet protein exposure over time/.test(renderReport(base())), 'no empty chart when nothing off-diet')
 })
 
 Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {

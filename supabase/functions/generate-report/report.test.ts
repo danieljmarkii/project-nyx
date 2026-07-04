@@ -991,6 +991,38 @@ Deno.test('A3b — a format=treat item (non-treat foodType) is counted in Append
   assert.equal(snap.provenance.proteinExposureTally.chicken, 1, 'chicken is in the antigen tally, not invisible')
 })
 
+Deno.test('#9 protein timeline — off-diet bins reconcile to the protein tally; unknowns disclosed, never dropped', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      // Distinct items/days so no same-timestamp treat-relog collapse muddies the absolute counts.
+      events: [
+        mealEvent('2026-05-12', { foodType: 'treat', format: 'treat', protein: 'chicken', label: 'Temptations' }),
+        mealEvent('2026-05-13', { foodType: 'treat', format: 'treat', protein: 'chicken', label: 'Delectables' }),
+        mealEvent('2026-05-14', { foodType: 'treat', format: 'treat', protein: 'turkey', label: 'Fussie' }),
+        mealEvent('2026-06-02', { foodType: 'treat', format: 'treat', protein: 'chicken', label: 'Greenies' }),
+        mealEvent('2026-06-02', { foodType: 'treat', format: 'treat', protein: null, label: 'Catnip' }),
+      ],
+    }),
+  )
+  const t = snap.proteinTimeline
+  assert.equal(t.bins.length, t.weekStartDates.length, 'one bin row per week')
+  assert.ok(t.weekStartDates.length >= 12, 'weekly buckets span the ~90-day window')
+  // §5.6: sum over bins for each protein === its tally === the provenance tally (Appendix C).
+  t.proteins.forEach((p, j) => {
+    const summed = t.bins.reduce((s, wk) => s + wk[j], 0)
+    assert.equal(summed, t.totalByProtein[p], `bins for ${p} reconcile to its tally`)
+    assert.equal(t.totalByProtein[p], snap.provenance.proteinExposureTally[p], `${p} matches the provenance tally`)
+  })
+  assert.equal(t.totalByProtein.chicken, 3, 'chicken exposures counted')
+  assert.equal(t.totalByProtein.turkey, 1, 'turkey counted')
+  // The null-protein treat is disclosed per-week, never tallied as a protein nor dropped (§5.1).
+  assert.equal(t.unknownByWeek.reduce((a, b) => a + b, 0), 1, 'the no-protein treat is in unknownByWeek')
+  assert.equal(t.hasUnknown, true)
+  assert.equal(t.totalFeedings, snap.provenance.confounders.length, 'total === off-diet confounder count')
+  assert.equal(t.totalFeedings, 5)
+})
+
 Deno.test('A1b — a free-fed bowl with a NULL start date still reaches the concurrent-change note', () => {
   const snap = assembleReport(
     baseInput({
