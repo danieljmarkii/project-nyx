@@ -5,9 +5,10 @@ import { WebView } from 'react-native-webview';
 import { router } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/theme';
-import { Header, PrimaryButton } from '../components/ui';
+import { Header, PrimaryButton, SectionLabel } from '../components/ui';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
+import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
 import { generateVetReport, shareReportPdf, type VetReport, type VetReportParams } from '../lib/pdf';
 
 // Vet report — owner-facing MVP (Step 9, Phase 2 PR 5) + range control (PR 5d / B-222).
@@ -35,29 +36,15 @@ type RangeMode = 'default' | 'last90' | 'custom';
 // "Last 90 days" reproduces exactly the same 90 inclusive calendar days.
 const LAST_90_DAYS = 90;
 
-const RANGE_OPTIONS = [
+const RANGE_OPTIONS: { value: RangeMode; label: string }[] = [
   { value: 'default', label: 'Recommended' },
   { value: 'last90', label: 'Last 90 days' },
   { value: 'custom', label: 'Custom…' },
 ];
 
-// Local calendar day (YYYY-MM-DD) from a Date's LOCAL components — the server
-// treats window bounds as local days, so we must not round-trip through UTC
-// (toISOString would shift the day for owners behind UTC).
-function toLocalDayKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-// Parse a server YYYY-MM-DD into a LOCAL Date (not UTC) so formatting never
-// shifts the day. Returns null for a malformed/empty key.
-function dayKeyToLocalDate(key: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
-  if (!m) return null;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-}
+// toLocalDayKey / dayKeyToLocalDate live in lib/utils (unit-tested there) — the
+// server treats window bounds as local calendar days, so both avoid a UTC
+// round-trip that would shift the day for owners behind UTC.
 
 function formatDayKey(key: string): string {
   const d = dayKeyToLocalDate(key);
@@ -166,9 +153,11 @@ export default function ReportScreen() {
   }, [report]);
 
   // The concrete window the server resolved, so the owner sees what "Recommended"
-  // landed on without scrolling into the report's own range box.
+  // landed on without scrolling into the report's own range box. Gated on the
+  // 'ready' status so a range change doesn't leave the PREVIOUS report's resolved
+  // window on screen while the new one is still generating (stale-label guard).
   const resolvedLabel =
-    report && report.startDate && report.endDate
+    status === 'ready' && report && report.startDate && report.endDate
       ? `${SCOPE_BASIS_LABEL[report.scopeBasis] ?? 'Report range'} · ${formatDayKey(report.startDate)} – ${formatDayKey(report.endDate)}`
       : null;
 
@@ -178,7 +167,7 @@ export default function ReportScreen() {
 
       {activePet && (
         <View style={styles.rangeBar}>
-          <Text style={styles.rangeLabel}>Report range</Text>
+          <SectionLabel label="Report range" />
           <ChipGroup
             options={RANGE_OPTIONS}
             value={rangeMode}
@@ -313,14 +302,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colorBorder,
     gap: theme.space2,
-  },
-  rangeLabel: {
-    fontFamily: theme.fontBodyMedium,
-    fontSize: theme.textXS,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
   },
   customFields: {
     flexDirection: 'row',

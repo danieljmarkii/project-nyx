@@ -37,6 +37,24 @@ export function formatTime(date: Date): string {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// Local calendar day (YYYY-MM-DD) from a Date's LOCAL components. Used for
+// report-window bounds (B-222), which the server treats as local calendar days
+// — a UTC round-trip (toISOString) would shift the day for anyone behind UTC.
+export function toLocalDayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Parse a YYYY-MM-DD day key into a LOCAL Date (midnight local), not UTC, so
+// downstream formatting never shifts the day. Returns null for a malformed key.
+export function dayKeyToLocalDate(key: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
 // Compact pet age for the Home identity strip (B-076) — distinct from the Pet
 // tab's detailed "4yr 2mo": here we want the single coarsest unit ("4 yrs",
 // "8 mo") that reads at a glance above the Signal. Returns null when there's no

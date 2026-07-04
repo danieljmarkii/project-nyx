@@ -1,12 +1,14 @@
 import {
   archiveBlockedCopy,
   archiveConfirmBody,
+  dayKeyToLocalDate,
   deriveOccurredAt,
   describeOccurredAt,
   formatTime,
   petAgeShort,
   petIdentityLine,
   petPronouns,
+  toLocalDayKey,
 } from './utils';
 
 const at = (iso: string) => new Date(iso);
@@ -223,5 +225,44 @@ describe('petPronouns / archiveConfirmBody', () => {
     expect(petPronouns('female')).toEqual({ subject: 'she', object: 'her', possessive: 'her', comesVerb: 'comes' });
     expect(petPronouns('male')).toEqual({ subject: 'he', object: 'him', possessive: 'his', comesVerb: 'comes' });
     expect(petPronouns('unknown')).toEqual({ subject: 'they', object: 'them', possessive: 'their', comesVerb: 'come' });
+  });
+});
+
+// Report-window bounds (B-222). These must key off LOCAL calendar components,
+// never a UTC round-trip, or an owner behind UTC hands the vet a window shifted
+// by a day. The assertions read the Date back via its local getters, so they
+// hold regardless of the machine's timezone.
+describe('toLocalDayKey', () => {
+  it('formats local Y-M-D with zero-padding', () => {
+    expect(toLocalDayKey(new Date(2026, 0, 5))).toBe('2026-01-05'); // Jan 5
+    expect(toLocalDayKey(new Date(2026, 11, 31))).toBe('2026-12-31'); // Dec 31
+  });
+
+  it('uses local components, not a UTC round-trip', () => {
+    // Late-evening local time: toISOString() could roll to the next UTC day for
+    // positive offsets / previous day for negative — toLocalDayKey must not.
+    const d = new Date(2026, 6, 4, 23, 30); // Jul 4, 23:30 local
+    expect(toLocalDayKey(d)).toBe('2026-07-04');
+  });
+});
+
+describe('dayKeyToLocalDate', () => {
+  it('parses a valid key into a local midnight Date', () => {
+    const d = dayKeyToLocalDate('2026-07-04');
+    expect(d).not.toBeNull();
+    expect(d!.getFullYear()).toBe(2026);
+    expect(d!.getMonth()).toBe(6); // July (0-indexed)
+    expect(d!.getDate()).toBe(4);
+  });
+
+  it('round-trips with toLocalDayKey', () => {
+    expect(toLocalDayKey(dayKeyToLocalDate('2026-02-28')!)).toBe('2026-02-28');
+  });
+
+  it('returns null for a malformed or empty key', () => {
+    expect(dayKeyToLocalDate('')).toBeNull();
+    expect(dayKeyToLocalDate('2026-7-4')).toBeNull(); // unpadded — not the server's YYYY-MM-DD
+    expect(dayKeyToLocalDate('garbage')).toBeNull();
+    expect(dayKeyToLocalDate('2026-07-04T00:00:00Z')).toBeNull(); // full ISO, not a day key
   });
 });
