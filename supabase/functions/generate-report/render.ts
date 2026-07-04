@@ -1314,13 +1314,13 @@ function dietMeds(snap: ReportSnapshot): string {
   // Timing vs symptoms (associational; §3.8).
   right.push(kv('Timing vs symptoms', timingLine(snap.correlation, snap)))
 
+  // Single aligned label column (PM #: the two-column split read as messy, especially with a sparse
+  // meds column). One definition-list of Diet · Feeding · Off-diet · Medication · Timing, values
+  // aligned off a fixed label gutter — the WSAVA-form register a vet scans top-to-bottom.
   return `
   <div class="sec">
     <h2>Diet, feeding, medications &amp; supplements</h2>
-    <div class="cols2">
-      <div>${left.join('')}</div>
-      <div>${right.join('')}</div>
-    </div>
+    <div class="kvcol">${left.join('')}${right.join('')}</div>
     <p class="ref">Full event log, diet history, off-diet exposures${
       mealsAppendixVisible(snap) ? ', medications &amp; meals: appendices A&ndash;E' : ' &amp; medications: appendices A&ndash;D'
     }.</p>
@@ -2117,6 +2117,9 @@ const STYLE = `
   .cols2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   .kv{display:flex;gap:8px;margin:4px 0;font-size:12.5px;}
   .kv .k{flex:0 0 auto;font-weight:600;color:#25272d;}
+  /* Single aligned column for the diet/feeding/meds list — values align off a fixed label gutter. */
+  .kvcol .kv{margin:6px 0;}
+  .kvcol .kv .k{flex:0 0 132px;}
 
   /* Appendix */
   .appx-title{font-size:14px;font-weight:700;margin:0 0 2px;}
