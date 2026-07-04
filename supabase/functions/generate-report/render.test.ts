@@ -1264,3 +1264,16 @@ Deno.test('R2-6 — the chart draws month ticks across a multi-month window', ()
   const html = renderReport(snap)
   for (const m of ['Apr', 'May', 'Jun']) assert.ok(html.includes(`>${m}<`), `month tick ${m}`)
 })
+
+Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {
+  const snap = base({
+    medications: [
+      med({ drugName: 'Metronidazole', status: 'completed', endedAt: '2026-05-26', startedAt: '2026-05-12', adherenceState: 'not_tracked', givenDoses: 0, partialDoses: 0, daysWithDose: 0, unconfirmedDoses: 0, expectedDoses: null }),
+    ],
+    symptoms: [aggregate({ type: 'vomit', count: 3 })],
+  })
+  const html = renderReport(snap)
+  // The end date appears (not a bare "since May 12" that reads as still-active), on BOTH surfaces.
+  assert.ok(/May 12 &ndash; May 26 \(course complete\)/.test(html), 'completed course shows its date span + "course complete"')
+  assert.ok(!/Metronidazole.*since <span class="num">May 12/.test(html), 'the ended course does not read "since May 12" as if still active')
+})

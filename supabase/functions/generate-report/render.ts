@@ -1300,6 +1300,20 @@ function kv(k: string, v: string): string {
   return `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`
 }
 
+/**
+ * The regimen's date clause. A COMPLETED / STOPPED course carries its end date so the meds line and
+ * Appendix D agree with the "Reading the trend" callout (which already says "stopped <date>") — a
+ * cold-read coherence catch: a vet scanning only the meds column otherwise reads an ended ~2-week
+ * course as still-active with an ongoing adherence gap. Still-active regimens read "since <start>".
+ */
+function regimenDates(m: MedicationAdherence): string {
+  if (m.endedAt && (m.status === 'completed' || m.status === 'stopped')) {
+    const verb = m.status === 'completed' ? ' (course complete)' : ' (stopped)'
+    return `${h(fmtDay(m.startedAt))} &ndash; ${h(fmtDay(m.endedAt))}${verb}`
+  }
+  return `since ${h(fmtDay(m.startedAt))}`
+}
+
 /** The B-117 adherence line — "adherence not tracked" on zero doses, NEVER "compliant". */
 function medicationLine(m: MedicationAdherence): string {
   // Dedupe strength vs dose-amount — a 250 mg tablet given as a 250 mg dose is ONE
@@ -1311,7 +1325,7 @@ function medicationLine(m: MedicationAdherence): string {
     m.route ? `by ${h(m.route)}` : null,
     m.dosesPerDay != null ? `${m.dosesPerDay}×/day` : 'as needed',
     m.indication ? `for ${h(m.indication)}` : null,
-    `since ${fmtDay(m.startedAt)}`,
+    regimenDates(m),
   ]
     .filter(Boolean)
     .join(' &middot; ')
@@ -1783,7 +1797,7 @@ function appendixD(snap: ReportSnapshot): string {
             }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
-      } (since ${h(fmtDay(m.startedAt))})</td><td class="c num">${logged}</td><td>${adherence}</td></tr>`
+      } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td>${adherence}</td></tr>`
     })
     .join('')
   // R2-6 — the preamble referenced a page-1 adherence line that does not exist on a no-meds report;
