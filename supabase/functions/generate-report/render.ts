@@ -1001,7 +1001,11 @@ function readingTheTrend(snap: ReportSnapshot): string {
     // "ongoing, start not recorded" for a free-fed diet whose only date is a first-food-log, not a
     // real diet start (B-227) — so a maintenance diet is framed as standing context, never a change.
     const list = standing.map((c) => `${changeLabel(c)} (${changeTiming(c)})`).join('; ')
-    parts.push(`<b>In place across this whole window:</b> ${list}.`)
+    // "Present during this window" — NOT "across this whole window": a free-fed diet renders
+    // null-start (its logged date is unreliable), so a positive full-span duration claim would
+    // over-state the data and, for a genuine mid-window free-fed switch the app can't distinguish,
+    // could let a vet dismiss a real trigger as "always there" (adversarial direction-of-error).
+    parts.push(`<b>Present during this window:</b> ${list}.`)
   }
   // ONE co-attribution caution, keyed to the TOTAL confounder count — a diet PLUS a standing
   // steroid is two things the trend can't be cleanly attributed to, even though only one "changed".
