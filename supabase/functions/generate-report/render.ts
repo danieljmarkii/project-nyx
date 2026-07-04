@@ -493,7 +493,9 @@ function safetyBand(snap: ReportSnapshot): string {
 }
 
 function flagRow(tag: string, body: string): string {
-  return `<div class="flag"><div class="tag">${h(tag)}</div><div class="body">${body}</div></div>`
+  // The type chip leads the line INLINE (not a fixed-width left column) — the same two-column-reads-
+  // messy fix applied to the diet section (PM). The body flows full-width after/under the chip.
+  return `<div class="flag"><span class="tag">${h(tag)}</span> ${body}</div>`
 }
 
 function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
@@ -2039,10 +2041,10 @@ const STYLE = `
   .safetyband > .h{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink);display:flex;align-items:center;gap:8px;padding-bottom:7px;border-bottom:1.5px solid var(--ink);}
   .safetyband > .h svg{width:16px;height:16px;flex:0 0 auto;}
   .safetyband > .h .sub{margin-left:auto;font-weight:500;letter-spacing:0;text-transform:none;font-size:10px;color:var(--muted);}
-  .safetyband .flag{display:flex;gap:11px;padding:8px 0;font-size:12.5px;line-height:1.45;}
+  .safetyband .flag{padding:8px 0;font-size:12.5px;line-height:1.5;}
   .safetyband .flag + .flag{border-top:1px solid var(--hair);}
-  .safetyband .flag .tag{flex:0 0 66px;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);border:1.5px solid var(--ink);border-radius:4px;padding:3px 0;text-align:center;height:max-content;}
-  .safetyband .flag .body b{font-weight:700;}
+  .safetyband .flag .tag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);border:1.5px solid var(--ink);border-radius:4px;padding:1px 6px;margin-right:4px;vertical-align:2px;}
+  .safetyband .flag b{font-weight:700;}
 
   .headline{margin-top:14px;font-size:14px;line-height:1.45;border-left:3px solid var(--ink);padding:2px 0 2px 12px;}
   .headline b{font-weight:700;}
