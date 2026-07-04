@@ -224,6 +224,28 @@ export default function ReportScreen() {
             </View>
           )}
 
+          {/* iOS renders the picker inline (it stays open until dismissed) with no
+              built-in "done" affordance — so give it one, in a toolbar ABOVE the
+              calendar (the native iOS placement), so the dismiss control is visible
+              the moment the tall picker opens instead of below the fold on a small
+              screen. Android uses a self-dismissing modal, so no toolbar there. The
+              date already applies live (the report re-generates on change), so "Done"
+              just collapses the calendar to reveal the updated report. */}
+          {Platform.OS === 'ios' && (showStartPicker || showEndPicker) && rangeMode === 'custom' && (
+            <View style={styles.pickerToolbar}>
+              <TouchableOpacity
+                style={styles.pickerDone}
+                onPress={() => {
+                  setShowStartPicker(false);
+                  setShowEndPicker(false);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Done choosing dates"
+              >
+                <Text style={styles.pickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {showStartPicker && rangeMode === 'custom' && (
             <DateTimePicker
               value={customStart}
@@ -248,25 +270,6 @@ export default function ReportScreen() {
                 if (date) setCustomEnd(date);
               }}
             />
-          )}
-
-          {/* iOS renders the picker inline (it stays open until dismissed) with no
-              built-in "done" affordance — so give it one. Android uses a modal dialog
-              that dismisses itself, so this only shows on iOS. The date already applies
-              live (the report re-generates on change), so "Done" just collapses the
-              calendar to reveal the updated report. */}
-          {Platform.OS === 'ios' && (showStartPicker || showEndPicker) && rangeMode === 'custom' && (
-            <TouchableOpacity
-              style={styles.pickerDone}
-              onPress={() => {
-                setShowStartPicker(false);
-                setShowEndPicker(false);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Done choosing dates"
-            >
-              <Text style={styles.pickerDoneText}>Done</Text>
-            </TouchableOpacity>
           )}
 
           {resolvedLabel && <Text style={styles.rangeResolved}>{resolvedLabel}</Text>}
@@ -404,8 +407,13 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorAccent,
   },
+  pickerToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colorBorder,
+  },
   pickerDone: {
-    alignSelf: 'flex-end',
     minHeight: 44,
     justifyContent: 'center',
     paddingHorizontal: theme.space2,
