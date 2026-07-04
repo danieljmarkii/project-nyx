@@ -807,13 +807,13 @@ Deno.test('a standing pre-window intervention is named "ongoing" in the Reading-
   assert.ok(/cannot be attributed to any one of them alone/i.test(html), 'co-attribution caution holds')
 })
 
-Deno.test('B-227 — a lone standing free-fed diet renders as context ("Present during this window"), not a change', () => {
+Deno.test('B-233 — a lone standing free-fed diet renders as context ("Present during this window"), not a change', () => {
   const html = renderReport(
     base({
       symptoms: [aggregate({ type: 'vomit', count: 3, weeklyBuckets: [1, 1, 1], windowDays: 21 })],
       concurrentChanges: [
         // A free-fed maintenance diet, null start (its logged date is a first-food-log, not a
-        // real diet start — B-227). Must read as standing context, never "One change overlaps".
+        // real diet start — B-233). Must read as standing context, never "One change overlaps".
         { kind: 'free_fed', label: 'Royal Canin Weight', startDate: null, bucketIndex: null, ongoing: true, endInWindow: null },
       ],
     }),

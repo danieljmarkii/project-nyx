@@ -1107,7 +1107,7 @@ function readingTheTrend(snap: ReportSnapshot): string {
   // chart marker) from STANDING context (a diet/regimen present across the whole window, no
   // in-window transition). A standing maintenance diet is NOT a "change" — it is the constant
   // backdrop the trend can't be cleanly attributed against; framing it as a change was the
-  // "why call free-feeding an intervention" complaint (PM #6 / B-227). A pre-window drug that
+  // "why call free-feeding an intervention" complaint (PM #6 / B-233). A pre-window drug that
   // ran throughout, or one that STOPPED mid-window (a dated transition), still counts as a change.
   const started = changes.filter((c) => !c.ongoing || c.endInWindow)
   const standing = changes.filter((c) => c.ongoing && !c.endInWindow)
@@ -1122,7 +1122,7 @@ function readingTheTrend(snap: ReportSnapshot): string {
   if (standing.length > 0) {
     // changeTiming renders "ongoing since <date>" for a recorded start (a pre-window steroid) and
     // "ongoing, start not recorded" for a free-fed diet whose only date is a first-food-log, not a
-    // real diet start (B-227) — so a maintenance diet is framed as standing context, never a change.
+    // real diet start (B-233) — so a maintenance diet is framed as standing context, never a change.
     const list = standing.map((c) => `${changeLabel(c)} (${changeTiming(c)})`).join('; ')
     // "Present during this window" — NOT "across this whole window": a free-fed diet renders
     // null-start (its logged date is unreliable), so a positive full-span duration claim would

@@ -1068,7 +1068,7 @@ Deno.test('A1b — a free-fed bowl with a NULL start date still reaches the conc
   assert.equal(ff.bucketIndex, null, 'no chart marker without a start point')
 })
 
-Deno.test('B-227 — a free-fed arrangement with an in-window activeFrom is STANDING, not a dated diet change', () => {
+Deno.test('B-233 — a free-fed arrangement with an in-window activeFrom is STANDING, not a dated diet change', () => {
   // activeFrom is the first-food-LOG date, not when the diet started (PM-confirmed); it must never
   // render as a mid-window diet-change marker / "started <date>". Treated as standing context.
   const snap = assembleReport(
@@ -1080,7 +1080,7 @@ Deno.test('B-227 — a free-fed arrangement with an in-window activeFrom is STAN
   )
   const ff = snap.concurrentChanges.find((c) => c.kind === 'free_fed')
   assert.ok(ff, 'the free-fed diet is a concurrent confounder')
-  assert.equal(ff.startDate, null, 'the log-date activeFrom is NOT used as a diet start (B-227)')
+  assert.equal(ff.startDate, null, 'the log-date activeFrom is NOT used as a diet start (B-233)')
   assert.equal(ff.bucketIndex, null, 'no dashed chart marker for a standing maintenance diet')
   assert.equal(ff.ongoing, true, 'standing context, present across the window')
 })

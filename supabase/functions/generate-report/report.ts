@@ -2292,7 +2292,7 @@ function buildConcurrentChanges(
   }
   for (const a of input.feedingArrangements) {
     // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,
-    // NOT when the diet actually started (PM-confirmed, B-227) — the food is typically given well
+    // NOT when the diet actually started (PM-confirmed, B-233) — the food is typically given well
     // before its first log. Rendering it as a diet that "started <activeFrom>" drew a false
     // mid-window diet-change marker + a "started May 16" note for a standing maintenance diet.
     // So pass a NULL start: the diet is a STANDING confounder present across the window with an
