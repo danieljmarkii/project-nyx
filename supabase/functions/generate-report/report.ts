@@ -806,6 +806,22 @@ export interface DietSummary {
    * eaten." Descriptive texture, never a scored completion figure and never reassurance.
    */
   mealCompletion: { ratedMeals: number; finishedMeals: number; rate: number; intakeMode: IntakeRating | null } | null
+  /**
+   * Grouped rated-meal items (#7/#8) — the actual foods eaten AS MEALS (e.g. a wet diet),
+   * grouped by food item like Appendix B treats: label · protein · feeding count · date span ·
+   * typical intake. Previously the rated meals were reduced to a bare count and their food
+   * identity discarded before render, so a substantial wet diet was invisible in the diet picture
+   * and the feeding line cited a non-existent appendix. Named in the diet history + itemised in
+   * the meals appendix (E). Descriptive only — this does NOT touch the intake-decline engine.
+   */
+  mealItems: Array<{
+    foodLabel: string | null
+    primaryProtein: string | null
+    count: number
+    firstDate: string | null
+    lastDate: string | null
+    intakeMode: IntakeRating | null
+  }>
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
   humanFood: { count: number; days: number; items: Array<{ date: string; label: string | null }> }
@@ -1629,6 +1645,47 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       ? { ratedMeals: ratedMeals.length, finishedMeals, rate: finishedMeals / ratedMeals.length, intakeMode }
       : null
 
+  // Grouped rated-meal items (#7/#8) — surface the ACTUAL foods eaten as meals (e.g. a wet diet),
+  // which the pipeline previously reduced to a bare count and discarded. Grouped by food item so
+  // the diet history can name them and the meals appendix (E) can itemise them, mirroring the
+  // Appendix B treat grouping. Descriptive only — orthogonal to the intake-decline engine.
+  const mealGroups = new Map<
+    string,
+    { foodLabel: string | null; primaryProtein: string | null; count: number; firstDate: string | null; lastDate: string | null; intakes: IntakeRating[] }
+  >()
+  for (const e of ratedMeals) {
+    const m = e.meal!
+    const key = m.foodItemId ?? mealFoodLabel(m) ?? e.id
+    const dayKey = localDayKey(e.occurredAt, tz)
+    const g = mealGroups.get(key)
+    if (g) {
+      g.count++
+      if (dayKey && (g.firstDate === null || dayKey < g.firstDate)) g.firstDate = dayKey
+      if (dayKey && (g.lastDate === null || dayKey > g.lastDate)) g.lastDate = dayKey
+      g.intakes.push(m.intakeRating as IntakeRating)
+    } else {
+      mealGroups.set(key, {
+        foodLabel: mealFoodLabel(m),
+        // A junk sentinel ("null"/"unknown") is not a protein — null it so no consumer prints it.
+        primaryProtein: canonicalizeProtein(m.primaryProtein) ? m.primaryProtein : null,
+        count: 1,
+        firstDate: dayKey,
+        lastDate: dayKey,
+        intakes: [m.intakeRating as IntakeRating],
+      })
+    }
+  }
+  const mealItems = [...mealGroups.values()]
+    .map((g) => ({
+      foodLabel: g.foodLabel,
+      primaryProtein: g.primaryProtein,
+      count: g.count,
+      firstDate: g.firstDate,
+      lastDate: g.lastDate,
+      intakeMode: strictPluralityIntake(g.intakes),
+    }))
+    .sort((a, b) => b.count - a.count || (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''))
+
   // human_food format is the STRONGER confounder signal (B-102, the #1 diet-trial confounder),
   // so it takes precedence: a table-scrap "treat" (foodType='treat' AND format='human_food')
   // counts ONCE, as human food, and is excluded from the treats tally. Without this the same
@@ -1654,6 +1711,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     freeFed,
     intakeNotDirectlyObserved: freeFed.length > 0,
     mealCompletion,
+    mealItems,
     treats: { count: treatFeedings.length, distinctItems: treatItemIds.size },
     humanFood: { count: humanFoodFeedings.length, days: humanFoodDays.size, items: humanFoodItems },
   }

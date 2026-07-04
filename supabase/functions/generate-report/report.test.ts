@@ -1156,6 +1156,38 @@ Deno.test('R2-3 — mealCompletion.intakeMode is the strict plurality; a tie yie
   assert.equal(tied.diet.mealCompletion?.intakeMode, null, 'a tie has no honest "typical" — null, never a picked side')
 })
 
+Deno.test('#7/#8 — mealItems groups rated meals by food (label · protein · count · span · typical intake)', () => {
+  const meal = (date: string, food: string, protein: string, rating: 'all' | 'most' | 'some' | 'picked' | 'refused') =>
+    makeEvent({
+      type: 'meal',
+      occurredAt: at(date, '18:00:00'),
+      meal: { foodItemId: food, intakeRating: rating, quantity: 'n', foodType: 'meal', format: 'wet_canned', primaryProtein: protein, brand: food, productName: 'x' },
+    })
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        meal('2026-06-10', 'instinct-chicken', 'chicken', 'some'),
+        meal('2026-06-12', 'instinct-chicken', 'chicken', 'some'),
+        meal('2026-06-14', 'instinct-chicken', 'chicken', 'all'),
+        meal('2026-06-11', 'instinct-turkey', 'turkey', 'picked'),
+      ],
+    }),
+  )
+  const items = snap.diet.mealItems
+  assert.equal(items.length, 2, 'one row per food item')
+  // Sorted by count desc → chicken (3) then turkey (1).
+  assert.equal(items[0].count, 3)
+  assert.equal(items[0].primaryProtein, 'chicken')
+  assert.equal(items[0].intakeMode, 'some', 'strict-plurality typical intake across the grouped food (some 2 vs all 1)')
+  assert.equal(items[0].firstDate, '2026-06-10')
+  assert.equal(items[0].lastDate, '2026-06-14')
+  assert.equal(items[1].count, 1)
+  assert.equal(items[1].primaryProtein, 'turkey')
+  assert.equal(items[1].intakeMode, 'picked')
+  // Reconciles with mealCompletion.ratedMeals — the SAME underlying set, never a double count.
+  assert.equal(items.reduce((a, i) => a + i.count, 0), snap.diet.mealCompletion?.ratedMeals)
+})
+
 Deno.test('R2-2 ADVERSARIAL — days-since is the most recent episode of ANY symptom, never just the primary', () => {
   // Primary symptom = vomiting (8, last on Jun 2 = 30 d before the Jul 2 window end); a lower-count
   // SECONDARY symptom (diarrhea, 2) has an episode on the window-end day. The generic "most recent

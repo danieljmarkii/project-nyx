@@ -80,6 +80,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       freeFed: [],
       intakeNotDirectlyObserved: false,
       mealCompletion: null,
+      mealItems: [],
       treats: { count: 0, distinctItems: 0 },
       humanFood: { count: 0, days: 0, items: [] },
     },
@@ -374,16 +375,42 @@ Deno.test('B-213 — recent-meals appendix line-items rated meals, tags the last
     }),
   )
   const text = html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ')
-  assert.ok(/Recent meals &amp; intake/i.test(html), 'the appendix renders')
+  assert.ok(/Appendix E — Meals &amp; intake/i.test(html), 'the appendix renders')
   assert.ok(/last full meal/i.test(text), 'tags the last fully-eaten meal')
   assert.ok(/Refused/.test(text) && /Ate it all/.test(text), 'renders the raw ratings')
   assert.ok(/5 earlier rated meals/i.test(text), 'discloses the hidden older count — no silent cap')
   assert.ok(/not &ldquo;picky/i.test(html), 'never picky, even in the appendix')
 })
 
-Deno.test('B-213 — no intake appendix on a calm report (empty intakeLog)', () => {
+Deno.test('B-213 — no meals appendix on a calm report (no meals logged, empty intakeLog)', () => {
   const html = renderReport(base({}))
-  assert.ok(!/Recent meals &amp; intake/i.test(html), 'no meal dump when there is no intake concern')
+  assert.ok(!/Appendix E/i.test(html), 'no meal dump when no meals were logged and there is no intake concern')
+})
+
+Deno.test('#7/#8 — meals appendix E renders the grouped meal foods even with NO intake flag', () => {
+  const html = renderReport(
+    base({
+      diet: {
+        activeTrial: null,
+        freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', activeFrom: '2026-05-01', activeUntil: null }],
+        intakeNotDirectlyObserved: true,
+        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.1, intakeMode: 'some' },
+        mealItems: [
+          { foodLabel: 'Instinct Original Real Chicken', primaryProtein: 'chicken', count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some' },
+          { foodLabel: 'Instinct Limited Ingredient Turkey', primaryProtein: 'turkey', count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'some' },
+        ],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/Appendix E — Meals &amp; intake/.test(html), 'the meals appendix renders without an intake flag')
+  assert.ok(html.includes('Instinct Original Real Chicken') && html.includes('Instinct Limited Ingredient Turkey'), 'names the wet foods')
+  assert.ok(/28 logged meals across 2 foods/.test(text), 'grouped caption reconciles the meal count')
+  // Page-1 feeding line names the foods + cites appendix E, not the old bogus appendix A.
+  assert.ok(/Also fed as meals: Instinct/.test(text), 'the feeding line names the meal foods')
+  assert.ok(!/per-meal in appendix/i.test(text), 'no dangling appendix-A meal citation')
 })
 
 Deno.test('symptom_worsening copy uses the window LENGTH (windowDays), not the symptom-day density', () => {
@@ -484,6 +511,7 @@ Deno.test('free-fed arrangement → verbatim "Intake not directly observed"', ()
         freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', activeFrom: '2026-05-01', activeUntil: null }],
         intakeNotDirectlyObserved: true,
         mealCompletion: null,
+        mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
       },
@@ -492,9 +520,9 @@ Deno.test('free-fed arrangement → verbatim "Intake not directly observed"', ()
   assert.ok(html.includes('Intake not directly observed'), 'verbatim B-040 string')
 })
 
-// ── §5.5 severity blank, never averaged ────────────────────────────────────────────
+// ── §5.5 severity is NOT rendered (PM round-3: unused column of blanks, removed) ──────
 
-Deno.test('unrated severity renders blank; a rated one renders x/5; nothing is averaged', () => {
+Deno.test('severity never reaches the report — no column, no x/5, no "Severity" heading, no legend entry', () => {
   const html = renderReport(
     base({
       provenance: {
@@ -514,9 +542,11 @@ Deno.test('unrated severity renders blank; a rated one renders x/5; nothing is a
       },
     }),
   )
-  assert.ok(html.includes('3/5'), 'a rated severity shows x/5')
+  // A rated severity (3) is carried on the event but must not surface anywhere in the artifact.
+  assert.ok(!html.includes('3/5'), 'a rated severity is not rendered as x/5')
+  const text = html.replace(/<[^>]*>/g, ' ')
+  assert.ok(!/\bseverity\b/i.test(text), 'the word "severity" appears nowhere in the report')
   assert.ok(!/average sever/i.test(html), 'no averaged severity anywhere')
-  assert.ok(/never\b.*averaged/i.test(html.replace(/<[^>]*>/g, ' ')), 'legend states severity is never averaged')
 })
 
 // ── B-010 occurred-time rendering ──────────────────────────────────────────────────
@@ -674,6 +704,7 @@ Deno.test('diet/meds render an active trial, the human-food confounder line, and
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: { ratedMeals: 80, finishedMeals: 78, rate: 0.975, intakeMode: 'all' },
+        mealItems: [],
         treats: { count: 7, distinctItems: 2 },
         humanFood: { count: 3, days: 3, items: [{ date: '2026-05-19', label: 'Roast chicken' }] },
       },
@@ -778,6 +809,7 @@ Deno.test('A2 — an active trial + a free-fed bowl: the bowl shows in Appendix 
         freeFed: [{ foodLabel: 'Duck & pea kibble (bowl down)', primaryProtein: 'duck', activeFrom: '2026-01-01', activeUntil: null }],
         intakeNotDirectlyObserved: true,
         mealCompletion: null,
+        mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 0, days: 0, items: [] },
       },
@@ -800,6 +832,7 @@ Deno.test('A4 — a no-trial report frames human food as a general confounder, n
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
+        mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: { count: 2, days: 2, items: [{ date: '2026-06-01', label: 'Toast' }, { date: '2026-06-05', label: 'Rotisserie chicken' }] },
       },
@@ -822,6 +855,7 @@ Deno.test('A6 — repeated human-food items render distinct, not verbatim-repeat
         freeFed: [],
         intakeNotDirectlyObserved: false,
         mealCompletion: null,
+        mealItems: [],
         treats: { count: 0, distinctItems: 0 },
         humanFood: {
           count: 4,
@@ -1030,16 +1064,16 @@ Deno.test('appendix lettering — conditional recent-meals is E; the how-to-read
       },
     }),
   )
-  assert.ok(withIntake.includes('Appendix E — Recent meals'), 'the intake appendix is lettered E')
+  assert.ok(withIntake.includes('Appendix E — Meals'), 'the meals & intake appendix is lettered E')
 })
 
 Deno.test('legend intake entry never promises a suppressed appendix (dangling cross-reference)', () => {
   const calm = renderReport(base())
   assert.ok(
-    /no such flag was raised in this window/.test(calm),
-    'without an intake flag the legend says the drill-down is conditional and absent',
+    /no meals were logged in this window/.test(calm),
+    'with no meals and no flag the legend says the drill-down is conditional and absent',
   )
-  assert.ok(!/listed in appendix&nbsp;E/.test(calm), 'no dangling reference to an absent appendix')
+  assert.ok(!/in appendix&nbsp;E/.test(calm), 'no dangling reference to an absent appendix')
   const withIntake = renderReport(
     base({
       provenance: {
@@ -1050,7 +1084,7 @@ Deno.test('legend intake entry never promises a suppressed appendix (dangling cr
       },
     }),
   )
-  assert.ok(/listed in appendix&nbsp;E/.test(withIntake), 'with the appendix present, the legend points at it')
+  assert.ok(/in appendix&nbsp;E/.test(withIntake), 'with the appendix present, the legend points at it')
 })
 
 Deno.test('appendix B — caption reconciles treats + human food; unknown-protein feedings disclosed; footer ampersand single-escaped', () => {
@@ -1073,7 +1107,7 @@ Deno.test('appendix B — caption reconciles treats + human food; unknown-protei
   assert.ok(/3<\/span> off-diet exposures \(/.test(flat), 'caption carries a breakdown parenthetical')
   assert.ok(/2<\/span> treats/.test(flat) && /1<\/span> human-food feeding/.test(flat), 'treats + human food reconcile to the total')
   assert.ok(/with no recorded protein\)/.test(flat), 'unknown-protein feedings are disclosed in the tally')
-  assert.ok(flat.includes('exposures, diet &amp; meds'), 'footer ampersand escaped exactly once')
+  assert.ok(flat.includes('diet, exposures &amp; meds'), 'footer ampersand escaped exactly once')
   assert.ok(!flat.includes('&amp;amp;'), 'no double-escaped ampersand anywhere')
 })
 
@@ -1109,6 +1143,7 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
       freeFed: [],
       intakeNotDirectlyObserved: false,
       mealCompletion: null,
+      mealItems: [],
       treats: { count: 340, distinctItems: 29 },
       humanFood: { count: 6, days: 4, items: [] },
     },
@@ -1147,6 +1182,7 @@ Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
       ...base().diet,
       activeTrial: { foodLabel: 'Hydrolyzed', primaryProtein: 'hydrolyzed', startedAt: '2026-05-01', targetDurationDays: 56, daysElapsed: 40, vetName: null },
       mealCompletion: { ratedMeals: 50, finishedMeals: 48, rate: 0.96, intakeMode: 'all' },
+      mealItems: [],
     },
     atAGlance: { ...base().atAGlance, trialDaysLogged: 38, primarySymptom: { type: 'vomit', count: 5 }, totalSymptomIncidents: 5 },
   })
@@ -1161,6 +1197,7 @@ Deno.test('R2-3 — a free-fed grazer with NO decline flag gets a descriptive fe
       freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', activeFrom: null, activeUntil: null }],
       intakeNotDirectlyObserved: true,
       mealCompletion: { ratedMeals: 25, finishedMeals: 0, rate: 0, intakeMode: 'some' },
+      mealItems: [],
     },
     safetyFlags: [],
   })
@@ -1190,6 +1227,7 @@ Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (
       freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', activeFrom: null, activeUntil: null }],
       intakeNotDirectlyObserved: true,
       mealCompletion: { ratedMeals: 25, finishedMeals: 5, rate: 0.2, intakeMode: 'some' },
+      mealItems: [],
     },
     safetyFlags: [flag],
     provenance: { ...base().provenance, intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-28T18:00:00Z', foodLabel: 'RC', intakeRating: 'all', isLastFullMeal: true, pinned: false }] },
