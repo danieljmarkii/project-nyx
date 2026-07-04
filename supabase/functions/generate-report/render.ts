@@ -62,6 +62,7 @@ import type {
   ConfounderExposure,
   ScopeInfo,
   Signalment,
+  AtAGlance,
 } from './report.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
@@ -81,6 +82,17 @@ function h(v: string | number | null | undefined): string {
 /** A tabular-figures numeric span (cosmetic alignment only; the value is the datum). */
 function num(v: string | number): string {
   return `<span class="num">${h(v)}</span>`
+}
+
+/**
+ * The ONE uniform provenance badge for any AI-derived datum (R2-4 disclaimer consolidation). It
+ * replaces the ~per-flag "This is an AI read of an owner photo — owner-reviewable and not confirmed"
+ * sentences that the first real artifact repeated ~23 times; a single, scannable "AI read ·
+ * unconfirmed" chip carries the same provenance without the prose. Data-qualifiers that change a
+ * datum's clinical MEANING (e.g. "a photo cannot exclude bleeding") are NOT hedges and are kept.
+ */
+function aiBadge(): string {
+  return `<span class="aibadge">AI read &middot; unconfirmed</span>`
 }
 
 // ── Date / time formatting (deterministic; formats GIVEN instants, no Date.now) ──
@@ -282,7 +294,10 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
   parts.push(`<text class="yl num" x="30" y="${(TOP + BASE) / 2 + 3}" text-anchor="end">${Math.round(yMax / 2)}</text>`)
   parts.push(`<text class="yl num" x="30" y="${BASE + 3}" text-anchor="end">0</text>`)
 
-  // Intervention markers (dashed verticals + a short date at the top of each).
+  // Intervention markers (dashed verticals + a short date at the top of each). The date carries a
+  // small "start" prefix and NO ▲ glyph — on the first real artifact the triangle read as a data
+  // spike/peak on the chart itself (R2-6); a dashed rule + a labelled "start ·" is unambiguously a
+  // divider, and the one-line legend below the panels spells out what it marks.
   const markedBuckets = new Set<number>()
   for (const m of markers) {
     if (m.bucketIndex === null || m.bucketIndex < 0 || m.bucketIndex >= n) continue
@@ -293,7 +308,22 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     // Anchor the date label so it stays inside the plot (end-anchor in the right third).
     const anchor = mx > L + plotW * 0.66 ? 'end' : 'start'
     const lx = anchor === 'end' ? mx - 3 : mx + 3
-    parts.push(`<text class="ann" x="${lx.toFixed(1)}" y="11" text-anchor="${anchor}">▲ ${h(fmtDay(m.startDate))}</text>`)
+    parts.push(`<text class="ann" x="${lx.toFixed(1)}" y="11" text-anchor="${anchor}">start &middot; ${h(fmtDay(m.startDate))}</text>`)
+  }
+
+  // X-axis month ticks — the first real artifact labelled only the first + last date, so a 90-day
+  // chart had no interior orientation (R2-6). Draw a light tick + month label at each bucket where
+  // the calendar month changes, so the reader can place a bar in Apr / May / Jun / Jul at a glance.
+  let lastMonth = -1
+  for (let i = 0; i < n; i++) {
+    const p = dayParts(sym.bucketStartDates[i] ?? '')
+    if (!p) continue
+    if (p.m !== lastMonth) {
+      lastMonth = p.m
+      const x = L + i * slot
+      parts.push(`<line class="mtick" x1="${x.toFixed(1)}" y1="${BASE}" x2="${x.toFixed(1)}" y2="${BASE + 4}"/>`)
+      parts.push(`<text class="xl" x="${(x + 3).toFixed(1)}" y="${BASE + 15}">${MONTHS[p.m - 1]}</text>`)
+    }
   }
 
   // Bars + count labels.
@@ -312,10 +342,9 @@ function symptomChart(sym: SymptomAggregate, markers: ConcurrentChange[], window
     }
   }
 
-  // X-axis date anchors: first bucket start, window end.
-  const firstDate = sym.bucketStartDates[0] ?? null
-  parts.push(`<text class="xl" x="${L + 4}" y="136">${h(fmtDay(firstDate))}</text>`)
-  parts.push(`<text class="xl" x="${R - 8}" y="136" text-anchor="end">${h(fmtDay(windowEndDate))}</text>`)
+  // The exact window-end date anchors the right edge (month ticks orient the interior); the exact
+  // start is the leftmost month tick, and both exact bounds are also in the range box + caption.
+  parts.push(`<text class="xl" x="${R - 8}" y="${BASE + 15}" text-anchor="end">${h(fmtDay(windowEndDate))}</text>`)
 
   const aria = `${symptomLabel(sym.type)} episodes per week: ${buckets.join(', ')}.`
   return `<svg viewBox="0 0 648 150" role="img" aria-label="${h(aria)}">${parts.join('')}</svg>`
@@ -346,6 +375,11 @@ function weightSpark(seriesKg: number[]): string {
 // ── Page-1 sections ──────────────────────────────────────────────────────────────
 
 function letterhead(snap: ReportSnapshot): string {
+  // The lettered appendices run A–D, plus a conditional E (recent meals, only when an intake flag
+  // fired); the closing "How to read" page is deliberately unlettered. State the ACCURATE range —
+  // the first round-2 artifact said "A–F", sending a careful vet hunting for a non-existent E/F
+  // on a document whose whole pitch is "traces to every figure" (cold-read).
+  const lastAppendix = snap.provenance.intakeLog.length > 0 ? 'E' : 'D'
   return `
   <div class="letter">
     <div class="brand">
@@ -358,7 +392,8 @@ function letterhead(snap: ReportSnapshot): string {
       <div>Generated ${h(fmtDayYear(localDayKeyOf(snap.generatedAt, snap.timezone)))}</div>
     </div>
   </div>
-  <div class="rule-brand"></div>`
+  <div class="rule-brand"></div>
+  <div class="orient">Clinical summary: this page. Appendices A&ndash;${lastAppendix} (+ a legend): the reference record behind every figure.</div>`
 }
 
 /** The generated-at day, localized (for the letterhead stamp). */
@@ -446,7 +481,7 @@ function safetyBand(snap: ReportSnapshot): string {
   const warnIcon = `<svg viewBox="0 0 24 24" fill="#16181d" aria-hidden="true"><path d="M12 2 L23 21 H1 Z"/><rect x="11" y="9" width="2" height="6" fill="#fff"/><rect x="11" y="16.5" width="2" height="2" fill="#fff"/></svg>`
   return `
   <div class="safetyband">
-    <div class="h">${warnIcon} Safety — flags for review <span class="sub">owner-reported · not a diagnosis</span></div>
+    <div class="h">${warnIcon} Safety — flags for review</div>
     ${rows}
   </div>`
 }
@@ -469,9 +504,10 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const dates = f.incidents.map((i) => fmtLocalDay(i.occurredAt, tz)).join(', ')
       return flagRow(
         'Possible blood',
-        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> ${
-          n === 1 ? 'has' : 'have'
-        } a photo Nyx flagged as ${h(kindPhrase)}. This is an AI read of an owner photo — owner-reviewable and not confirmed. Shown because it is present; a photo cannot exclude bleeding.`,
+        // R2-6 — attribute to the mechanism ("automated photo analysis"), never the brand ("a photo
+        // Nyx flagged"), since the app name collides with the patient's name (Nyx). R2-4 — the AI
+        // provenance sentence collapses into the uniform badge; the present-only qualifier stays.
+        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — ${h(kindPhrase)} on automated photo analysis. ${aiBadge()} Shown because it is present; a photo cannot exclude bleeding.`,
       )
     }
     case 'present_foreign': {
@@ -484,9 +520,8 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const dates = f.incidents.map((i) => fmtLocalDay(i.occurredAt, tz)).join(', ')
       return flagRow(
         'Foreign material',
-        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> ${
-          n === 1 ? 'has' : 'have'
-        } a photo Nyx flagged as possible foreign material.${noteBit} AI read of an owner photo — owner-reviewable, not confirmed.`,
+        // R2-6 mechanism-not-brand + R2-4 badge (see present_blood above).
+        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — possible foreign material on automated photo analysis.${noteBit} ${aiBadge()}`,
       )
     }
     case 'intake_decline': {
@@ -601,7 +636,7 @@ function weightBlock(snap: ReportSnapshot): string {
     return `
   <div class="weight weight-empty">
     <div class="wt-read"><span class="v">No home weigh-ins recorded.</span><br/>
-    <span class="l">A weight trend is a useful GI bellwether; the owner can log weigh-ins in Nyx. No value is shown here rather than reuse an undated onboarding figure.</span></div>
+    <span class="l">A weight trend is a useful GI bellwether; the owner can log weigh-ins in Nyx.</span></div>
   </div>`
   }
   const t = w.trend
@@ -641,6 +676,25 @@ function weightBlock(snap: ReportSnapshot): string {
 
 function atAGlance(snap: ReportSnapshot): string {
   const ag = snap.atAGlance
+  // Shape-conditional tile set (R2-2). A diet-trial report keeps the trial-oriented tiles
+  // (symptom events · trial-days-logged · weight · coverage). A no-trial / symptom-monitoring
+  // report — the first real artifact's shape — gets a symptom-trajectory set instead, because on
+  // that shape the old tiles duplicated the trend headline, showed the misleading "0 of 25 fully
+  // eaten" for a free-fed grazer (R2-3), and restated the range box.
+  const tiles = snap.diet.activeTrial ? trialTiles(snap) : monitoringTiles(snap)
+  const aside = snap.diet.activeTrial
+    ? `counts over the ${num(ag.windowDays)}-day window`
+    : `symptom trajectory over the window`
+  return `
+  <div class="sec">
+    <h2>At a glance <span class="aside">${aside}</span></h2>
+    <div class="tiles">${tiles.join('')}</div>
+  </div>`
+}
+
+/** The diet-trial At-a-glance tiles (the pre-round-2 set — appropriate only when a trial is active). */
+function trialTiles(snap: ReportSnapshot): string[] {
+  const ag = snap.atAGlance
   const tiles: string[] = []
 
   // Tile 1 — symptom events + breakdown.
@@ -657,7 +711,7 @@ function atAGlance(snap: ReportSnapshot): string {
 
   // Tile 2 — trial days logged, else intake summary, else meal completion.
   const intake = snap.safetyFlags.find((f) => f.kind === 'intake_decline')
-  if (snap.diet.activeTrial && ag.trialDaysLogged !== null) {
+  if (ag.trialDaysLogged !== null && snap.diet.activeTrial) {
     tiles.push(
       tile(
         `${ag.trialDaysLogged}`,
@@ -691,51 +745,144 @@ function atAGlance(snap: ReportSnapshot): string {
     tiles.push(tile('—', '', `No rated meals in this window`))
   }
 
-  // Tile 3 — weight (trend delta / single / empty), per §3.4.
-  if (snap.weight.isEmpty) {
-    tiles.push(tile('—', '', `Weight<br/>no weigh-ins yet — a useful trend to log`))
-  } else if (snap.weight.trend && snap.weight.trend.readingCount >= 2 && snap.weight.trend.deltaKg !== null) {
-    const d = snap.weight.trend.deltaKg
-    const sign = d > 0 ? '+' : ''
+  tiles.push(weightTile(snap))
+  tiles.push(coverageTile(ag))
+  return tiles
+}
+
+/**
+ * The no-trial / symptom-monitoring tiles (R2-2): episodes-since-onset · trajectory · days-since ·
+ * off-diet. Each tile degrades gracefully when there is no primary symptom (a calm no-symptom
+ * monitoring report), so the row is always four filled tiles, never a broken grid.
+ */
+function monitoringTiles(snap: ReportSnapshot): string[] {
+  const ag = snap.atAGlance
+  const ps = snap.symptoms[0] ?? null
+  const tiles: string[] = []
+
+  // Tile 1 — episodes since onset. An onset-scoped denominator, not the window: for a mid-window
+  // onset (Nyx: ~46 of 91 days) the window denominator dilutes the rate a vet actually reads.
+  if (ps && ag.sinceOnsetDays !== null) {
     tiles.push(
       tile(
-        `${sign}${d.toFixed(1)}`,
-        `<small>&nbsp;kg</small>`,
-        // Descriptive, but NEVER reassuring — a loss is the danger direction (B-186 guardrail).
-        `Weight over ${snap.weight.trend.readingCount} weigh-ins<br/>home-scale trajectory (descriptive)`,
+        `${ps.count}`,
+        `<small>&nbsp;/&nbsp;${ag.sinceOnsetDays}&nbsp;d</small>`,
+        `${h(symptomLabel(ps.type))} since onset<br/>on ${num(ps.symptomDays)} of ${num(ag.sinceOnsetDays)} days`,
       ),
     )
   } else {
-    // IN-WINDOW readings only (weight.trend). weight.latest may be a stale, out-of-window
-    // reading — the Weight block above discloses it as "(before this window)", but a bare
-    // tile cannot carry that caveat, so a months-old weight would read as current in the
-    // 60-second scan (code-review find). The tile header promises window-scoped counts.
-    const kg = snap.weight.trend?.latestKg ?? null
     tiles.push(
-      kg === null
-        ? tile('—', '', `Weight<br/>no reading in this window`)
-        : tile(`${kg.toFixed(1)}`, `<small>&nbsp;kg</small>`, `Latest weigh-in<br/>single reading — no trend yet`),
+      tile(
+        `${ag.totalSymptomIncidents}`,
+        `<small>&nbsp;/&nbsp;${ag.windowDays}&nbsp;d</small>`,
+        `Symptom events<br/>none logged in this window`,
+      ),
     )
   }
 
-  // Tile 4 — logging coverage.
-  tiles.push(
-    tile(
-      `${ag.loggedDays}`,
-      `<small>&nbsp;/&nbsp;${ag.windowDays}</small>`,
-      `Days with any log<br/>gaps could mask events`,
-    ),
-  )
+  // Tile 2 — trajectory (first half → last half). When the early window is sparsely logged the
+  // apparent acceleration is partly an artifact of WHEN logging started, so co-locate that caveat
+  // (R2-6) rather than let "2 → 20" read as a clean worsening it can't support.
+  if (ps && ps.weeklyBuckets.length >= 2) {
+    const nB = ps.weeklyBuckets.length
+    const mid = Math.floor(nB / 2)
+    const firstCount = ps.weeklyBuckets.slice(0, mid).reduce((a, b) => a + b, 0)
+    const lastCount = ps.weeklyBuckets.slice(mid).reduce((a, b) => a + b, 0)
+    const firstDays = Math.min(ps.windowDays, mid * 7)
+    const lastDays = ps.windowDays - firstDays
+    const earlySparse = lastCount > firstCount && ag.firstHalfLoggedDays < Math.max(1, Math.ceil(firstDays / 3))
+    const sub = earlySparse
+      ? `early window sparsely logged (${num(ag.firstHalfLoggedDays)} of ${num(firstDays)} d)`
+      : `first ${num(firstDays)}&nbsp;d &rarr; last ${num(lastDays)}&nbsp;d`
+    tiles.push(
+      tileHtml(`${firstCount} <span class="arw">&rarr;</span> ${lastCount}`, `Episodes, first &rarr; last half<br/>${sub}`),
+    )
+  } else {
+    tiles.push(weightTile(snap))
+  }
 
-  return `
-  <div class="sec">
-    <h2>At a glance <span class="aside">counts over the ${num(ag.windowDays)}-day window</span></h2>
-    <div class="tiles">${tiles.join('')}</div>
-  </div>`
+  // Tile 3 — days since the most recent episode. ADVERSARIAL GUARD (spec §5.3 / this PR's gate):
+  // a gap must NEVER read as recovery. Always framed "not recovery"; when the gap spans days that
+  // were mostly unlogged, the logged-day coverage is disclosed so the gap is not mistaken for a
+  // real symptom-free stretch (absence of a logged episode is not evidence the sign resolved).
+  if (ps && ag.daysSinceLastEpisode !== null) {
+    const dsl = ag.daysSinceLastEpisode
+    const logged = ag.loggedDaysSinceLastEpisode ?? 0
+    // Three registers, so the caveat strength SCALES with the recovery-misread risk (adversarial
+    // residual — the old logic gave the biggest, best-logged gap the THINNEST disclaimer):
+    //   under-logged gap → show the coverage (it may be a logging gap, not a real absence);
+    //   long gap (≥14 d) → the most emphatic "not evidence the signs resolved";
+    //   short well-logged gap → the plain non-recovery framing.
+    const guard =
+      dsl >= 3 && logged < dsl
+        ? `${num(logged)} of the last ${num(dsl)} days logged — not recovery`
+        : dsl >= 14
+          ? `a gap is not evidence the signs resolved`
+          : `not a measure of recovery`
+    tiles.push(tile(`${dsl}`, `<small>&nbsp;d</small>`, `Since the most recent episode<br/>${guard}`))
+  } else {
+    tiles.push(coverageTile(ag))
+  }
+
+  // Tile 4 — off-diet load.
+  tiles.push(offDietTile(snap))
+  return tiles
 }
 
 function tile(value: string, small: string, label: string): string {
   return `<div class="tile"><div class="v num">${h(value)}${small}</div><div class="l">${label}</div></div>`
+}
+
+/** Like tile(), but the value is pre-built HTML (built ONLY from numbers + safe entities, never owner text). */
+function tileHtml(valueHtml: string, label: string): string {
+  return `<div class="tile"><div class="v num">${valueHtml}</div><div class="l">${label}</div></div>`
+}
+
+/** §3.4 weight tile (trend delta / single reading / empty) — shared by both tile sets. */
+function weightTile(snap: ReportSnapshot): string {
+  if (snap.weight.isEmpty) {
+    return tile('—', '', `Weight<br/>no weigh-ins yet — a useful trend to log`)
+  }
+  if (snap.weight.trend && snap.weight.trend.readingCount >= 2 && snap.weight.trend.deltaKg !== null) {
+    const d = snap.weight.trend.deltaKg
+    const sign = d > 0 ? '+' : ''
+    // Descriptive, but NEVER reassuring — a loss is the danger direction (B-186 guardrail).
+    return tile(
+      `${sign}${d.toFixed(1)}`,
+      `<small>&nbsp;kg</small>`,
+      `Weight over ${snap.weight.trend.readingCount} weigh-ins<br/>home-scale trajectory (descriptive)`,
+    )
+  }
+  // IN-WINDOW readings only (weight.trend). weight.latest may be a stale, out-of-window reading —
+  // the Weight block discloses it as "(before this window)", but a bare tile cannot carry that
+  // caveat, so a months-old weight would read as current in the 60-second scan (code-review find).
+  const kg = snap.weight.trend?.latestKg ?? null
+  return kg === null
+    ? tile('—', '', `Weight<br/>no reading in this window`)
+    : tile(`${kg.toFixed(1)}`, `<small>&nbsp;kg</small>`, `Latest weigh-in<br/>single reading — no trend yet`)
+}
+
+/** §3.4 logging-coverage tile — shared by both tile sets. */
+function coverageTile(ag: AtAGlance): string {
+  return tile(`${ag.loggedDays}`, `<small>&nbsp;/&nbsp;${ag.windowDays}</small>`, `Days with any log<br/>gaps could mask events`)
+}
+
+/**
+ * R2-2 off-diet load tile — leads with the total treat COUNT (the exposure magnitude a vet weighs),
+ * not the distinct-item count. On the first artifact the tile led with "2 distinct", which
+ * undersold a 343-feeding load until the sub-label was read (cold-read NIT).
+ */
+function offDietTile(snap: ReportSnapshot): string {
+  const treats = snap.diet.treats
+  const hf = snap.diet.humanFood
+  if (treats.count > 0) {
+    const hfBit = hf.count > 0 ? ` &middot; human food ${num(hf.days)} d` : ''
+    return tile(`${treats.count}`, `<small>&nbsp;treats</small>`, `Off-diet load<br/>${num(treats.distinctItems)} distinct${hfBit}`)
+  }
+  if (hf.count > 0) {
+    return tile(`${hf.count}`, `<small>&nbsp;feedings</small>`, `Human food<br/>on ${num(hf.days)} day${hf.days === 1 ? '' : 's'}`)
+  }
+  return tile('—', '', `Off-diet load<br/>none logged in this window`)
 }
 
 function symptomTrend(snap: ReportSnapshot): string {
@@ -747,10 +894,18 @@ function symptomTrend(snap: ReportSnapshot): string {
   </div>`
   }
   const panels = snap.symptoms.map((s) => symptomPanel(s, snap)).join('')
+  // One legend line for the dashed intervention markers on the charts (R2-6) — so a reader who
+  // sees a dashed vertical knows it is a start-of-intervention divider, not a data spike, and where
+  // the detail lives. Only shown when there is at least one marker to explain.
+  const markerLegend =
+    snap.concurrentChanges.some((c) => c.bucketIndex !== null)
+      ? `<div class="chartlegend">A dashed vertical marks when a diet, medication, or supplement <b>started</b> — each is named in &ldquo;Reading the trend&rdquo; below.</div>`
+      : ''
   return `
   <div class="sec">
     <h2>Symptom frequency &amp; trend <span class="aside">weekly episodes · read by frequency, not severity</span></h2>
     ${panels}
+    ${markerLegend}
     ${readingTheTrend(snap)}
   </div>`
 }
@@ -765,9 +920,18 @@ function symptomPanel(s: SymptomAggregate, snap: ReportSnapshot): string {
     const lastCount = s.weeklyBuckets.slice(mid).reduce((a, b) => a + b, 0)
     const firstDays = Math.min(s.windowDays, mid * 7)
     const lastDays = s.windowDays - firstDays
+    // Co-locate the unlogged-early-window caveat (R2-6): a first→last acceleration is partly an
+    // artifact of when logging began. Shown only on a RISE (the misleading direction) when the
+    // first half was sparsely logged — so the delta can't be read as a clean worsening it can't bear.
+    const earlySparse = lastCount > firstCount && snap.atAGlance.firstHalfLoggedDays < Math.max(1, Math.ceil(firstDays / 3))
+    const caveat = earlySparse
+      ? `<div class="delta-caveat">early window sparsely logged (${num(snap.atAGlance.firstHalfLoggedDays)} of ${num(
+          firstDays,
+        )}&nbsp;d)</div>`
+      : ''
     deltaHtml = `<div class="delta">first ${num(firstDays)}&nbsp;d <b class="num">${firstCount}</b> &rarr; last ${num(
       lastDays,
-    )}&nbsp;d <b class="num">${lastCount}</b></div>`
+    )}&nbsp;d <b class="num">${lastCount}</b></div>${caveat}`
   }
   const markers = snap.concurrentChanges
   return `
@@ -924,10 +1088,16 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   const foreign = p.foreignPresent
   let sideHtml = ''
   if (blood.length === 0 && foreign.length === 0) {
+    // With ZERO legible photos, "not seen in the legible photos" is vacuously true (cold-read NIT) —
+    // say plainly that there was nothing to read; the "not a clearance" caveat carries either way.
+    const openLine =
+      assessed > 0
+        ? '<b>Not seen</b> in the legible photos.'
+        : '<b>No photos were legible</b> for a blood or foreign-material read.'
     sideHtml = `
       <div class="limit">
         <span class="h">Blood &amp; foreign material</span>
-        <b>Not seen</b> in the legible photos. This is <b>not</b> a clearance — a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads. If blood or foreign material <b>is</b> seen in any incident, that incident leads the safety band at the top of the report.
+        ${openLine} This is <b>not</b> a clearance — a photo cannot exclude bleeding, digested (coffee-ground) blood photographs poorly, and these are AI reads. If blood or foreign material <b>is</b> seen in any incident, that incident leads the safety band at the top of the report.
       </div>`
   } else {
     const lines: string[] = []
@@ -942,7 +1112,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
     sideHtml = `
       <div class="present">
         <span class="h">Present findings</span>
-        ${lines.join('<br/>')}<br/>Shown because present — owner-reviewable, not confirmed. ${
+        ${lines.join('<br/>')}<br/>Shown because present. ${aiBadge()} ${
       blood.length > 0 || foreign.length > 0 ? 'These lead the safety band above.' : ''
     }
       </div>`
@@ -950,7 +1120,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
 
   return `
   <div class="sec">
-    <h2>Vomit characteristics <span class="aitag">Nyx photo analysis · owner-reviewable</span></h2>
+    <h2>Vomit characteristics <span class="aitag">Automated photo analysis &middot; owner-reviewable</span></h2>
     <div class="pheno">
       <div>
         <div class="barmix">${mixHtml}</div>
@@ -1035,18 +1205,35 @@ function dietMeds(snap: ReportSnapshot): string {
   }
 
   // Feeding: meal completion (meals-only) + free-fed verbatim string (B-040).
+  const isFreeFed = d.freeFed.length > 0
+  const hasIntakeFlag = snap.safetyFlags.some((f) => f.kind === 'intake_decline')
+  const freeFedLabels = d.freeFed.map((f) => (f.foodLabel ? h(f.foodLabel) : 'free-fed food')).join(', ')
   const feedBits: string[] = []
-  if (d.mealCompletion) {
-    feedBits.push(
-      `${num(d.mealCompletion.finishedMeals)} of ${num(
-        d.mealCompletion.ratedMeals,
-      )} rated meals fully eaten (owner-observed; treats + free-fed excluded).`,
-    )
-  }
-  if (d.freeFed.length > 0) {
-    const labels = d.freeFed.map((f) => (f.foodLabel ? h(f.foodLabel) : 'free-fed food')).join(', ')
-    // §4 / B-040 — the verbatim string, non-negotiable.
-    feedBits.push(`Free-fed: ${labels}. <b>Intake not directly observed.</b>`)
+  if (isFreeFed && !hasIntakeFlag) {
+    // R2-3 — a free-fed grazer with NO decline flag: DESCRIBE, don't score. "0 of 25 meals fully
+    // eaten" reads as anorexia (feline lipidosis territory) for a cat that grazes across the day;
+    // the intake-decline engine fired NO flag, so this is normal grazing. Framing only — the engine
+    // and its fully-eaten anchor are untouched (clinical-guardrails floor). The verbatim B-040
+    // string stays. If a decline flag WERE present, the else-branch keeps the scored figure and the
+    // flag leads the safety band.
+    const mc = d.mealCompletion
+    const typically = mc && mc.intakeMode ? `, typically &ldquo;${h(intakeLabel(mc.intakeMode).toLowerCase())}&rdquo;` : ''
+    const mealsBit = mc
+      ? ` ${num(mc.ratedMeals)} discrete meal${mc.ratedMeals === 1 ? '' : 's'} were also offered${typically} (per-meal in appendix&nbsp;A).`
+      : ''
+    feedBits.push(`Primarily free-fed: ${freeFedLabels}. <b>Intake not directly observed.</b>${mealsBit}`)
+  } else {
+    if (d.mealCompletion) {
+      feedBits.push(
+        `${num(d.mealCompletion.finishedMeals)} of ${num(
+          d.mealCompletion.ratedMeals,
+        )} rated meals fully eaten (owner-observed; treats + free-fed excluded).`,
+      )
+    }
+    if (isFreeFed) {
+      // §4 / B-040 — the verbatim string, non-negotiable.
+      feedBits.push(`Free-fed: ${freeFedLabels}. <b>Intake not directly observed.</b>`)
+    }
   }
   if (feedBits.length === 0) feedBits.push('No rated meals logged in this window.')
   left.push(kv('Feeding', feedBits.join(' ')))
@@ -1113,6 +1300,20 @@ function kv(k: string, v: string): string {
   return `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`
 }
 
+/**
+ * The regimen's date clause. A COMPLETED / STOPPED course carries its end date so the meds line and
+ * Appendix D agree with the "Reading the trend" callout (which already says "stopped <date>") — a
+ * cold-read coherence catch: a vet scanning only the meds column otherwise reads an ended ~2-week
+ * course as still-active with an ongoing adherence gap. Still-active regimens read "since <start>".
+ */
+function regimenDates(m: MedicationAdherence): string {
+  if (m.endedAt && (m.status === 'completed' || m.status === 'stopped')) {
+    const verb = m.status === 'completed' ? ' (course complete)' : ' (stopped)'
+    return `${h(fmtDay(m.startedAt))} &ndash; ${h(fmtDay(m.endedAt))}${verb}`
+  }
+  return `since ${h(fmtDay(m.startedAt))}`
+}
+
 /** The B-117 adherence line — "adherence not tracked" on zero doses, NEVER "compliant". */
 function medicationLine(m: MedicationAdherence): string {
   // Dedupe strength vs dose-amount — a 250 mg tablet given as a 250 mg dose is ONE
@@ -1124,7 +1325,7 @@ function medicationLine(m: MedicationAdherence): string {
     m.route ? `by ${h(m.route)}` : null,
     m.dosesPerDay != null ? `${m.dosesPerDay}×/day` : 'as needed',
     m.indication ? `for ${h(m.indication)}` : null,
-    `since ${fmtDay(m.startedAt)}`,
+    regimenDates(m),
   ]
     .filter(Boolean)
     .join(' &middot; ')
@@ -1175,13 +1376,15 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
 // ── Footer (per page/section) ────────────────────────────────────────────────────
 
 function footer(snap: ReportSnapshot, sectionLabel: string): string {
-  const owner = snap.signalment.ownerName ? ` (${h(snap.signalment.ownerName)})` : ''
+  // R2-6 — an explicit "Patient:" label disambiguates the pet's name from the app name (both "Nyx"
+  // on the first real artifact); the owner is the client, labelled as such for PIMS filing.
+  const owner = snap.signalment.ownerName ? ` &middot; Owner: ${h(snap.signalment.ownerName)}` : ''
   return `
   <div class="foot">
     <div class="fbrand">
       <div class="fw">
         <span class="w">Nyx</span>
-        <div class="scan">${h(snap.signalment.name)}${owner} &middot; owner-reported observations &middot; associational, not a diagnosis.</div>
+        <div class="scan">Patient: ${h(snap.signalment.name)}${owner} &middot; owner-reported observations &middot; associational, not a diagnosis.</div>
       </div>
     </div>
     <div class="pg">${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}<br/>${h(sectionLabel)}</div>
@@ -1189,6 +1392,21 @@ function footer(snap: ReportSnapshot, sectionLabel: string): string {
 }
 
 // ── Appendices ────────────────────────────────────────────────────────────────────
+
+/**
+ * R2-5 — a divider between the self-sufficient clinical summary (page 1) and the appendices, so a
+ * vet who has read the 60-second summary knows the rest is the reference record, and can find the
+ * section behind any figure. Rendered at the top of the first appendix page (not its own sheet —
+ * true per-section page numbers are a print-CSS / B-144 build item).
+ */
+function appendixDivider(snap: ReportSnapshot): string {
+  const eBit = snap.provenance.intakeLog.length > 0 ? ' &middot; E — recent meals' : ''
+  return `
+  <div class="divider">
+    <span class="k">End of clinical summary</span>
+    The appendices are the reference record behind every figure on page&nbsp;1: A — event log &middot; B — off-diet exposures &middot; C — diet history &middot; D — medications${eBit} &middot; How to read this report.
+  </div>`
+}
 
 function appendixA(snap: ReportSnapshot): string {
   const rows = snap.provenance.symptomLog.map((e) => symptomLogRow(e, snap.timezone)).join('')
@@ -1200,6 +1418,7 @@ function appendixA(snap: ReportSnapshot): string {
       : ''
   return `
 <section class="page">
+  ${appendixDivider(snap)}
   <p class="appx-title serif">Appendix A — Symptom event log</p>
   <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed.${estBit} Severity is owner-reported (1&ndash;5), blank when the owner did not rate it, and is <b>never averaged</b> anywhere in this report. For photographed vomiting events the Nyx photo-analysis fields are shown beneath the note (owner-reviewable).</p>
   <table>
@@ -1361,40 +1580,95 @@ function appendixBCD(snap: ReportSnapshot): string {
 </section>`
 }
 
+/**
+ * R2-1 — one grouped exposure row per (item, protein) instead of one row per feeding. The first
+ * real artifact rendered 346 one-row-per-treat entries (~10–11 of 18 pages — THE thing that scared
+ * a vet). Note-less treat/off-diet feedings collapse to a single row with a count + date span;
+ * HUMAN FOOD stays itemised (few, and the confounder that matters); and any feeding carrying an
+ * owner NOTE stays itemised so no note is silently dropped (§5.1). Sum-of-×N over the grouped rows
+ * still equals the page-1 treat count, so provenance holds (§5.6).
+ */
+interface ConfounderRow {
+  category: 'human' | 'treat' | 'other'
+  label: string | null
+  protein: string | null
+  note: string | null
+  count: number
+  firstDay: string | null
+  lastDay: string | null
+}
+
+function confCategory(c: ConfounderExposure): 'human' | 'treat' | 'other' {
+  if (c.format === 'human_food') return 'human'
+  if (c.foodType === 'treat' || c.format === 'treat') return 'treat'
+  return 'other'
+}
+
+function confCategoryLabel(cat: 'human' | 'treat' | 'other'): string {
+  return cat === 'human' ? 'Human food' : cat === 'treat' ? 'Treat' : 'Off-diet'
+}
+
+function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
+  const itemised: ConfounderRow[] = []
+  const groups = new Map<string, ConfounderRow>()
+  for (const c of conf) {
+    const cat = confCategory(c)
+    const day = c.dayKey ?? c.occurredAt.slice(0, 10)
+    // Human food OR any feeding carrying an owner note stays a discrete row (nothing dropped, §5.1).
+    if (cat === 'human' || c.note) {
+      itemised.push({ category: cat, label: c.foodLabel, protein: c.primaryProtein, note: c.note, count: 1, firstDay: day, lastDay: day })
+      continue
+    }
+    const key = `${cat}||${c.foodLabel ?? ''}||${c.primaryProtein ?? ''}`
+    let g = groups.get(key)
+    if (!g) {
+      g = { category: cat, label: c.foodLabel, protein: c.primaryProtein, note: null, count: 0, firstDay: day, lastDay: day }
+      groups.set(key, g)
+    }
+    g.count++
+    if (g.firstDay === null || (day && day < g.firstDay)) g.firstDay = day
+    if (g.lastDay === null || (day && day > g.lastDay)) g.lastDay = day
+  }
+  // Order: human-food itemised rows first (the confounder that matters, few), by date; then the
+  // grouped rows by descending count (the compressed bulk); then noted non-human rows by date.
+  const human = itemised.filter((r) => r.category === 'human').sort((a, b) => (a.firstDay ?? '').localeCompare(b.firstDay ?? ''))
+  const notedOther = itemised.filter((r) => r.category !== 'human').sort((a, b) => (a.firstDay ?? '').localeCompare(b.firstDay ?? ''))
+  const grouped = [...groups.values()].sort((a, b) => b.count - a.count || (a.label ?? '').localeCompare(b.label ?? ''))
+  return [...human, ...grouped, ...notedOther]
+}
+
+function confounderRowHtml(r: ConfounderRow): string {
+  const span =
+    r.firstDay && r.lastDay && r.firstDay !== r.lastDay
+      ? `${h(fmtDay(r.firstDay))} &ndash; ${h(fmtDay(r.lastDay))}`
+      : h(fmtDay(r.firstDay))
+  const item = `${r.label ? h(r.label) : '&mdash;'}${r.note ? ` <span class="rnote">${h(r.note)}</span>` : ''}`
+  const feedings = r.count > 1 ? `&times;${num(r.count)}` : num(1)
+  return `<tr><td>${item}</td><td>${h(confCategoryLabel(r.category))}</td><td>${
+    r.protein ? h(r.protein) : ''
+  }</td><td class="c num">${feedings}</td><td class="num">${span}</td></tr>`
+}
+
 function appendixB(snap: ReportSnapshot): string {
   const conf: ConfounderExposure[] = snap.provenance.confounders
   const hasTrial = !!snap.diet.activeTrial
-  const rows = conf
-    .map(
-      (c) =>
-        // human_food-first, to agree with the page-1 lines and the confounder de-dup (A3): a
-        // table-scrap logged as both a treat and human food is ONE "Human food" row here too.
-        `<tr><td class="num">${h(fmtLocalDay(c.occurredAt, snap.timezone))}</td><td>${
-          c.format === 'human_food' ? 'Human food' : c.foodType === 'treat' || c.format === 'treat' ? 'Treat' : 'Off-diet'
-        }</td><td>${c.foodLabel ? h(c.foodLabel) : '&mdash;'}</td><td>${c.primaryProtein ? h(c.primaryProtein) : ''}${
-          c.note ? ` ${h(c.note)}` : ''
-        }</td></tr>`,
-    )
-    .join('')
+
+  // Aggregate-first (R2-1): LEAD with the protein/product tally — the useful antigen picture the
+  // first artifact buried at the very end — then the grouped exposure rows below it.
   const tally = Object.entries(snap.provenance.proteinExposureTally)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([p, n]) => `${h(p)} &times;${n}`)
     .join(', ')
-  // Feedings whose item carries no usable protein (junk sentinels like the literal string
-  // "null", or nothing recorded) are counted and disclosed, never tallied as a protein and
-  // never silently dropped (§5.1 — the first real artifact printed "null ×24" as the
-  // second-largest exposure).
+  // Feedings whose item carries no usable protein (junk sentinels like the literal string "null",
+  // or nothing recorded) are counted and disclosed, never tallied as a protein and never silently
+  // dropped (§5.1 — the first artifact printed "null ×24" as the second-largest exposure).
   const unknownN = snap.provenance.proteinUnknownCount
   const unknownBit =
     unknownN > 0 ? ` (+&nbsp;${num(unknownN)} feeding${unknownN === 1 ? '' : 's'} with no recorded protein)` : ''
   // A continuously-available free-fed competing protein is the biggest breach of an elimination
   // trial, but it is not a discrete meal event so it never enters the count-based tally
-  // (adversarial finding A2). Name it explicitly alongside — as a standing exposure, never a
-  // fabricated "×N". Only when a trial exists: for a no-trial pet the free-fed food IS the diet
-  // (appendix C), not an off-diet confounder.
-  const freeFedProteins = [
-    ...new Set(snap.diet.freeFed.map((f) => f.primaryProtein).filter((p): p is string => !!p)),
-  ]
+  // (adversarial finding A2). Name it explicitly — a standing exposure, never a fabricated "×N".
+  const freeFedProteins = [...new Set(snap.diet.freeFed.map((f) => f.primaryProtein).filter((p): p is string => !!p))]
   const tallyParts: string[] = []
   if (tally) {
     tallyParts.push(
@@ -1412,11 +1686,11 @@ function appendixB(snap: ReportSnapshot): string {
         .join(', ')} (continuously available; intake not directly observed) — a competing antigen the discrete tally above cannot count.`,
     )
   }
-  const tallyBit = tallyParts.length ? `<p class="note">${tallyParts.join(' ')}</p>` : ''
-  // Reconcile this caption with page 1, which reports treats and human food as SEPARATE
-  // counts ("340 treats" + "6 feedings") — a caption saying only "346 off-diet exposures"
-  // left the arithmetic to the reader on the first real artifact. Same category predicate
-  // as the rows above.
+  const tallyBit = tallyParts.length ? `<p class="note lead">${tallyParts.join(' ')}</p>` : ''
+
+  const rows = groupConfounders(conf).map(confounderRowHtml).join('')
+
+  // Reconcile the caption with page 1, which reports treats and human food as SEPARATE counts.
   const humanN = conf.filter((c) => c.format === 'human_food').length
   const treatN = conf.filter((c) => c.format !== 'human_food' && (c.foodType === 'treat' || c.format === 'treat')).length
   const otherN = conf.length - humanN - treatN
@@ -1432,15 +1706,15 @@ function appendixB(snap: ReportSnapshot): string {
     hasTrial
       ? 'Everything fed outside the trial diet, because these are the most common reasons a diet trial reads as &ldquo;not working.&rdquo;'
       : 'Everything fed outside the main diet — the exposures most worth weighing against the symptom pattern.'
-  }</p>
+  } Repeated treats are grouped by item (with a feeding count and date span); human food is listed feeding-by-feeding.</p>
+  ${tallyBit}
   <table>
     <caption>${num(conf.length)} off-diet exposure${conf.length === 1 ? '' : 's'}${breakdownBit} &middot; ${h(
     fmtRange(snap.scope.startDate, snap.scope.endDate),
   )}</caption>
-    <thead><tr><th style="width:64px">Date</th><th style="width:96px">Category</th><th>Item</th><th>Note</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="4">No off-diet exposures logged in this window.</td></tr>`}</tbody>
-  </table>
-  ${tallyBit}`
+    <thead><tr><th>Item</th><th style="width:92px">Category</th><th style="width:104px">Protein</th><th class="c" style="width:72px">Feedings</th><th style="width:118px">Dates</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="5">No off-diet exposures logged in this window.</td></tr>`}</tbody>
+  </table>`
 }
 
 function appendixC(snap: ReportSnapshot): string {
@@ -1523,12 +1797,18 @@ function appendixD(snap: ReportSnapshot): string {
             }${m.refusedDoses ? ` ${num(m.refusedDoses)} refused.` : ' None recorded as refused.'}`
       return `<tr><td>${h(m.drugName)}${m.strength ? ` ${h(m.strength)}` : ''}</td><td>${regimen}${
         m.indication ? ` — for ${h(m.indication)}` : ''
-      } (since ${h(fmtDay(m.startedAt))})</td><td class="c num">${logged}</td><td>${adherence}</td></tr>`
+      } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td>${adherence}</td></tr>`
     })
     .join('')
+  // R2-6 — the preamble referenced a page-1 adherence line that does not exist on a no-meds report;
+  // make it conditional so an empty Appendix D never points at a section that isn't there.
+  const sub =
+    meds.length === 0
+      ? 'No prescription medications overlap this window. Over-the-counter supplements, if any, are listed in appendix&nbsp;C.'
+      : 'Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Over-the-counter supplements are listed in appendix&nbsp;C.'
   return `
   <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
-  <p class="appx-sub">Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Over-the-counter supplements are listed in appendix&nbsp;C.</p>
+  <p class="appx-sub">${sub}</p>
   <table>
     <thead><tr><th>Medication</th><th style="width:150px">Regimen</th><th class="c" style="width:100px">Doses logged</th><th>Adherence</th></tr></thead>
     <tbody>${rows || `<tr><td colspan="4">No prescription medications overlap this window.</td></tr>`}</tbody>
@@ -1769,6 +2049,19 @@ const STYLE = `
   .foot .fbrand .fw .scan{color:var(--muted);}
   .foot .pg{text-align:right;color:var(--faint);}
 
+  /* Round-2 (B-221) additions */
+  .orient{margin-top:7px;font-size:10.5px;color:var(--faint);letter-spacing:.01em;}
+  .aibadge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border:1px solid var(--hair);border-radius:3px;padding:1px 5px;white-space:nowrap;vertical-align:baseline;}
+  .tile .v .arw{color:var(--faint);font-weight:400;}
+  .trend .big .delta-caveat{font-size:10px;color:var(--faint);margin-top:1px;font-style:italic;}
+  .chartlegend{font-size:10.5px;color:var(--faint);margin:8px 0 0;padding-left:2px;}
+  .chartlegend b{color:var(--muted);font-weight:600;}
+  .note.lead{margin:0 0 9px;}
+  .rnote{color:var(--faint);font-style:italic;}
+  .divider{margin:0 0 16px;border:1px solid var(--hair);border-left:3px solid var(--ink);border-radius:0 8px 8px 0;padding:9px 13px;font-size:11.5px;line-height:1.5;color:var(--muted);background:#fcfcfd;}
+  .divider .k{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10px;color:var(--ink);margin-bottom:2px;}
+  svg .mtick{stroke:var(--faint);stroke-width:1;}
+
   @media print{
     body{background:#fff;font-size:10.4pt;}
     .no-print{display:none !important;}
@@ -1776,7 +2069,7 @@ const STYLE = `
     .page + .page{page-break-before:always;}
     thead{display:table-header-group;}
     /* Only ATOMIC units resist breaking — never a whole .sec (that fragments the page). */
-    tr,.trend,.tile,.callout,.weight,.safetyband,.present{page-break-inside:avoid;}
+    tr,.trend,.tile,.callout,.weight,.safetyband,.present,.divider{page-break-inside:avoid;}
     .rule-brand,.wordmark,.foot .fbrand .fw .w{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
   @page{size:A4 portrait;margin:11mm;}

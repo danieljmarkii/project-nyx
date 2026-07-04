@@ -66,6 +66,11 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       loggedDays: 0,
       trialDaysLogged: null,
       weightState: 'empty',
+      sinceOnsetDays: null,
+      daysSinceLastEpisode: null,
+      loggedDaysSinceLastEpisode: null,
+      firstHalfLoggedDays: 0,
+      secondHalfLoggedDays: 0,
     },
     symptoms: [],
     vomitPhenotype: null,
@@ -205,7 +210,11 @@ Deno.test('present_blood flag → "Possible blood" leads the safety band', () =>
   const html = renderReport(base({ safetyFlags: [flag] }))
   assert.ok(html.includes('class="safetyband"'))
   assert.ok(html.includes('Possible blood'))
-  assert.ok(/not confirmed/i.test(html), 'owner-reviewable, not confirmed')
+  // R2-4/R2-6 — the AI provenance collapses to the uniform badge, and the mechanism (not the brand
+  // name "Nyx", which collides with the patient's) is what "flagged" it.
+  assert.ok(/AI read &middot; unconfirmed/.test(html), 'uniform AI badge present')
+  assert.ok(/automated photo analysis/i.test(html), 'attributed to the mechanism, not the app name')
+  assert.ok(!/photo Nyx flagged/.test(html), 'no app-name/patient-name collision')
 })
 
 Deno.test('intake_decline renders as a health signal, never "picky"', () => {
@@ -569,7 +578,7 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
           direction: 'down',
         },
       },
-      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend' },
+      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8 },
     }),
   )
   assert.ok(html.includes('polyline'), 'sparkline drawn')
@@ -664,7 +673,7 @@ Deno.test('diet/meds render an active trial, the human-food confounder line, and
         },
         freeFed: [],
         intakeNotDirectlyObserved: false,
-        mealCompletion: { ratedMeals: 80, finishedMeals: 78, rate: 0.975 },
+        mealCompletion: { ratedMeals: 80, finishedMeals: 78, rate: 0.975, intakeMode: 'all' },
         treats: { count: 7, distinctItems: 2 },
         humanFood: { count: 3, days: 3, items: [{ date: '2026-05-19', label: 'Roast chicken' }] },
       },
@@ -1066,4 +1075,205 @@ Deno.test('appendix B — caption reconciles treats + human food; unknown-protei
   assert.ok(/with no recorded protein\)/.test(flat), 'unknown-protein feedings are disclosed in the tally')
   assert.ok(flat.includes('exposures, diet &amp; meds'), 'footer ampersand escaped exactly once')
   assert.ok(!flat.includes('&amp;amp;'), 'no double-escaped ampersand anywhere')
+})
+
+// ── Round-2 (B-221) render changes ───────────────────────────────────────────────
+
+function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
+  return base({
+    symptoms: [
+      aggregate({
+        type: 'vomit',
+        count: 22,
+        symptomDays: 18,
+        windowDays: 91,
+        weeklyBuckets: [0, 1, 1, 2, 2, 4, 5, 7],
+        bucketStartDates: ['2026-04-03', '2026-04-10', '2026-04-17', '2026-04-24', '2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22'],
+      }),
+    ],
+    atAGlance: {
+      primarySymptom: { type: 'vomit', count: 22 },
+      totalSymptomIncidents: 22,
+      windowDays: 91,
+      loggedDays: 40,
+      trialDaysLogged: null,
+      weightState: 'empty',
+      sinceOnsetDays: 46,
+      daysSinceLastEpisode: 9,
+      loggedDaysSinceLastEpisode: 2,
+      firstHalfLoggedDays: 3,
+      secondHalfLoggedDays: 37,
+    },
+    diet: {
+      activeTrial: null,
+      freeFed: [],
+      intakeNotDirectlyObserved: false,
+      mealCompletion: null,
+      treats: { count: 340, distinctItems: 29 },
+      humanFood: { count: 6, days: 4, items: [] },
+    },
+    ...over,
+  })
+}
+
+Deno.test('R2-2 — no-trial At-a-glance: since-onset + trajectory + off-diet tiles; the old score tiles are gone', () => {
+  const html = renderReport(monitoringSnap())
+  assert.ok(/since onset/i.test(html), 'episodes-since-onset tile')
+  assert.ok(/46&nbsp;d/.test(html), 'onset-scoped denominator (not the 91-day window)')
+  assert.ok(/first &rarr; last half/i.test(html), 'trajectory tile')
+  assert.ok(/Off-diet load/.test(html) && html.includes('>340</span>') && /treats/.test(html) && /distinct/.test(html) && /human food/.test(html), 'off-diet load tile leads with the treat load')
+  // The misleading pre-round-2 tiles do not appear on the no-trial shape.
+  assert.ok(!/Meals fully eaten \(rated meals only\)/.test(html), 'no "meals fully eaten" score on the no-trial shape')
+})
+
+Deno.test('R2-2 ADVERSARIAL — the days-since-last-episode tile never reads as recovery; the caveat scales with the gap', () => {
+  const html = renderReport(monitoringSnap())
+  assert.ok(/Since the most recent episode/.test(html), 'days-since tile present')
+  // 9 days since, only 2 of them logged → the coverage is disclosed AND framed "not recovery".
+  assert.ok(/2 of the last <span class="num">9<\/span> days logged/.test(html) || /of the last .*9.* days logged/.test(html), 'sparse-gap coverage disclosed')
+  assert.ok(/not recovery/i.test(html), 'a gap is never allowed to read as recovery')
+  // A short, well-logged gap still carries the neutral non-recovery framing (no coverage caveat).
+  const dense = renderReport(monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, daysSinceLastEpisode: 1, loggedDaysSinceLastEpisode: 1 } }))
+  assert.ok(/not a measure of recovery/i.test(dense), 'short gap still framed as not-recovery')
+  // A LONG, fully-logged gap gets the MOST emphatic caveat, never the thinnest (adversarial residual).
+  const longGap = renderReport(monitoringSnap({ atAGlance: { ...monitoringSnap().atAGlance, daysSinceLastEpisode: 40, loggedDaysSinceLastEpisode: 40 } }))
+  assert.ok(/a gap is not evidence the signs resolved/.test(longGap), 'a long well-logged gap gets the strongest non-recovery caveat')
+})
+
+Deno.test('R2-2 — a diet-trial report keeps the trial-oriented tiles', () => {
+  const snap = base({
+    symptoms: [aggregate({ type: 'vomit', count: 5 })],
+    diet: {
+      ...base().diet,
+      activeTrial: { foodLabel: 'Hydrolyzed', primaryProtein: 'hydrolyzed', startedAt: '2026-05-01', targetDurationDays: 56, daysElapsed: 40, vetName: null },
+      mealCompletion: { ratedMeals: 50, finishedMeals: 48, rate: 0.96, intakeMode: 'all' },
+    },
+    atAGlance: { ...base().atAGlance, trialDaysLogged: 38, primarySymptom: { type: 'vomit', count: 5 }, totalSymptomIncidents: 5 },
+  })
+  const html = renderReport(snap)
+  assert.ok(/Trial-diet days logged/.test(html), 'trial-days tile on a trial report (unchanged)')
+})
+
+Deno.test('R2-3 — a free-fed grazer with NO decline flag gets a descriptive feeding line, not "0 of N fully eaten"', () => {
+  const snap = base({
+    diet: {
+      ...base().diet,
+      freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', activeFrom: null, activeUntil: null }],
+      intakeNotDirectlyObserved: true,
+      mealCompletion: { ratedMeals: 25, finishedMeals: 0, rate: 0, intakeMode: 'some' },
+    },
+    safetyFlags: [],
+  })
+  const html = renderReport(snap)
+  assert.ok(/Primarily free-fed/.test(html), 'descriptive free-fed line')
+  assert.ok(/Intake not directly observed/.test(html), 'verbatim B-040 string preserved')
+  assert.ok(/typically/.test(html), 'descriptive intake-mode texture (not a score)')
+  assert.ok(!/rated meals fully eaten/.test(html), 'no scary "0 of 25 fully eaten" score for the grazer')
+})
+
+Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (flag leads; the number matters)', () => {
+  const flag: SafetyFlag = {
+    kind: 'intake_decline',
+    trigger: 'consecutive_low',
+    species: 'cat',
+    baselineScore: 3,
+    recentScore: 1,
+    daysBelowBaseline: 3,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 20,
+    lastFullMealIso: '2026-06-28T18:00:00Z',
+    hoursSinceLastFullMeal: 90,
+  }
+  const snap = base({
+    diet: {
+      ...base().diet,
+      freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', activeFrom: null, activeUntil: null }],
+      intakeNotDirectlyObserved: true,
+      mealCompletion: { ratedMeals: 25, finishedMeals: 5, rate: 0.2, intakeMode: 'some' },
+    },
+    safetyFlags: [flag],
+    provenance: { ...base().provenance, intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-28T18:00:00Z', foodLabel: 'RC', intakeRating: 'all', isLastFullMeal: true, pinned: false }] },
+  })
+  const html = renderReport(snap)
+  assert.ok(/rated meals fully eaten/.test(html), 'the scored figure stays when a decline flag is present')
+})
+
+Deno.test('R2-1 — Appendix B groups repeated treats (count + span); human food stays itemised; the tally leads', () => {
+  const conf: ConfounderExposure[] = [
+    { eventId: 't1', occurredAt: '2026-06-15T13:00:00Z', dayKey: '2026-06-15', foodLabel: 'Temptations Chicken', primaryProtein: 'chicken', format: 'treat', foodType: 'treat', note: null },
+    { eventId: 't2', occurredAt: '2026-06-20T13:00:00Z', dayKey: '2026-06-20', foodLabel: 'Temptations Chicken', primaryProtein: 'chicken', format: 'treat', foodType: 'treat', note: null },
+    { eventId: 't3', occurredAt: '2026-07-03T13:00:00Z', dayKey: '2026-07-03', foodLabel: 'Temptations Chicken', primaryProtein: 'chicken', format: 'treat', foodType: 'treat', note: null },
+    { eventId: 'h1', occurredAt: '2026-06-18T18:00:00Z', dayKey: '2026-06-18', foodLabel: 'Ground beef', primaryProtein: 'beef', format: 'human_food', foodType: 'meal', note: 'from my plate' },
+  ]
+  const snap = base({
+    provenance: { ...base().provenance, confounders: conf, proteinExposureTally: { chicken: 3, beef: 1 }, proteinUnknownCount: 0 },
+    diet: { ...base().diet, treats: { count: 3, distinctItems: 1 }, humanFood: { count: 1, days: 1, items: [] } },
+  })
+  const html = renderReport(snap)
+  assert.ok(/Temptations Chicken/.test(html), 'the treat item')
+  assert.ok(/&times;<span class="num">3<\/span>/.test(html), 'the three identical treats collapse to one row ×3')
+  assert.ok(/Jun 15 &ndash; Jul 3/.test(html), 'the grouped row shows a date span')
+  assert.ok(/Ground beef/.test(html) && /from my plate/.test(html), 'human food itemised, its note preserved')
+  assert.ok(/Protein exposures \(off-diet\)/.test(html), 'the protein tally leads the appendix')
+})
+
+Deno.test('R2-5 — page 1 carries an orientation line; the appendices open with a divider', () => {
+  const html = renderReport(base())
+  assert.ok(/Clinical summary: this page/.test(html), 'orientation line on page 1')
+  assert.ok(/End of clinical summary/.test(html), 'divider before the appendices')
+  assert.ok(/reference record behind every figure/.test(html), 'divider explains the appendices')
+})
+
+Deno.test('R2-4/R2-6 — one uniform AI badge; safety-band header hedge removed; footer labels the patient', () => {
+  const flag: SafetyFlag = { kind: 'present_blood', incidents: [{ eventId: 'v1', occurredAt: '2026-06-18T18:00:00Z', kind: 'coffee_ground' }] }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(/AI read &middot; unconfirmed/.test(html), 'the uniform AI badge')
+  assert.ok(!/owner-reported · not a diagnosis<\/span>/.test(html), 'safety-band header no longer restates the masthead hedge')
+  assert.ok(/Patient: Nyx/.test(html), 'footer labels the patient explicitly')
+})
+
+Deno.test('R2-6 — an intervention marker is a neutral "start ·" label (no ▲ spike) with a chart legend line', () => {
+  const snap = base({
+    symptoms: [
+      aggregate({
+        type: 'vomit',
+        count: 5,
+        weeklyBuckets: [1, 1, 1, 1, 1],
+        bucketStartDates: ['2026-04-03', '2026-04-10', '2026-04-17', '2026-04-24', '2026-05-01'],
+      }),
+    ],
+    concurrentChanges: [{ kind: 'medication', label: 'Metronidazole', startDate: '2026-04-20', bucketIndex: 2, ongoing: false, endInWindow: null }],
+  })
+  const html = renderReport(snap)
+  assert.ok(!html.includes('▲'), 'no triangle spike glyph on the chart')
+  assert.ok(/start &middot;/.test(html), 'neutral "start ·" marker label')
+  assert.ok(/dashed vertical marks when a diet, medication, or supplement/i.test(html), 'chart legend line explains the marker')
+})
+
+Deno.test('R2-6 — the chart draws month ticks across a multi-month window', () => {
+  const snap = base({
+    symptoms: [
+      aggregate({
+        type: 'vomit',
+        count: 13,
+        weeklyBuckets: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        bucketStartDates: ['2026-04-03', '2026-04-10', '2026-04-17', '2026-04-24', '2026-05-01', '2026-05-08', '2026-05-15', '2026-05-22', '2026-05-29', '2026-06-05', '2026-06-12', '2026-06-19', '2026-06-26'],
+      }),
+    ],
+  })
+  const html = renderReport(snap)
+  for (const m of ['Apr', 'May', 'Jun']) assert.ok(html.includes(`>${m}<`), `month tick ${m}`)
+})
+
+Deno.test('cold-read coherence — a completed/stopped medication carries its end date on the meds line + Appendix D', () => {
+  const snap = base({
+    medications: [
+      med({ drugName: 'Metronidazole', status: 'completed', endedAt: '2026-05-26', startedAt: '2026-05-12', adherenceState: 'not_tracked', givenDoses: 0, partialDoses: 0, daysWithDose: 0, unconfirmedDoses: 0, expectedDoses: null }),
+    ],
+    symptoms: [aggregate({ type: 'vomit', count: 3 })],
+  })
+  const html = renderReport(snap)
+  // The end date appears (not a bare "since May 12" that reads as still-active), on BOTH surfaces.
+  assert.ok(/May 12 &ndash; May 26 \(course complete\)/.test(html), 'completed course shows its date span + "course complete"')
+  assert.ok(!/Metronidazole.*since <span class="num">May 12/.test(html), 'the ended course does not read "since May 12" as if still active')
 })
