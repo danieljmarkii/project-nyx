@@ -890,7 +890,7 @@ Deno.test('resolveScope is a pure re-derivable function (no hidden Date.now / de
 
 function mealEvent(
   date: string,
-  o: { foodType?: 'meal' | 'treat' | 'other'; format?: FoodFormat | null; protein?: string | null; label?: string; rating?: 'all' | 'refused' | null } = {},
+  o: { foodType?: 'meal' | 'treat' | 'other'; format?: FoodFormat | null; protein?: string | null; label?: string; rating?: 'refused' | 'picked' | 'some' | 'most' | 'all' | null } = {},
 ): ReportEventInput {
   return makeEvent({
     type: 'meal',
@@ -1021,6 +1021,35 @@ Deno.test('#9 protein timeline — off-diet bins reconcile to the protein tally;
   assert.equal(t.hasUnknown, true)
   assert.equal(t.totalFeedings, snap.provenance.confounders.length, 'total === off-diet confounder count')
   assert.equal(t.totalFeedings, 5)
+})
+
+Deno.test('#7/#8 mealItems — rated meals grouped by food (label · protein · count · span · typical intake)', () => {
+  idSeq = 0
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        mealEvent('2026-05-14', { foodType: 'meal', format: 'wet_canned', protein: 'chicken', label: 'Instinct Chicken', rating: 'some' }),
+        mealEvent('2026-05-20', { foodType: 'meal', format: 'wet_canned', protein: 'chicken', label: 'Instinct Chicken', rating: 'some' }),
+        mealEvent('2026-06-10', { foodType: 'meal', format: 'wet_canned', protein: 'chicken', label: 'Instinct Chicken', rating: 'all' }),
+        mealEvent('2026-05-22', { foodType: 'meal', format: 'wet_canned', protein: 'turkey', label: 'Instinct Turkey', rating: 'some' }),
+      ],
+    }),
+  )
+  const items = snap.diet.mealItems
+  assert.equal(items.length, 2, 'two distinct meal foods, grouped (not one row per feeding)')
+  // Largest first (chicken ×3 on the stack baseline, then turkey ×1).
+  assert.equal(items[0].foodLabel, 'Instinct Chicken')
+  assert.equal(items[0].count, 3)
+  assert.equal(items[0].primaryProtein, 'chicken')
+  assert.equal(items[0].firstDate, '2026-05-14', 'date span start')
+  assert.equal(items[0].lastDate, '2026-06-10', 'date span end')
+  assert.equal(items[0].intakeMode, 'some', 'strict-plurality intake (2 some vs 1 all)')
+  assert.equal(items[1].foodLabel, 'Instinct Turkey')
+  assert.equal(items[1].count, 1)
+  // The grouped total reconciles with mealCompletion (same ratedMeals set).
+  const grouped = items.reduce((s, i) => s + i.count, 0)
+  assert.equal(grouped, snap.diet.mealCompletion?.ratedMeals, 'grouped meal count === ratedMeals')
+  assert.equal(grouped, 4)
 })
 
 Deno.test('A1b — a free-fed bowl with a NULL start date still reaches the concurrent-change note', () => {

@@ -388,6 +388,32 @@ Deno.test('B-213 — no meals appendix on a calm report (no meals logged, empty 
   assert.ok(!/Appendix E/i.test(html), 'no meal dump when no meals were logged and there is no intake concern')
 })
 
+Deno.test('#7/#8 meals-only Appendix E — grouped meal foods render WITHOUT an intake flag (the wet-food fix)', () => {
+  const html = renderReport(
+    base({
+      // Rated meals logged, NO intake-decline flag, empty intakeLog — the exact free-fed-grazer path
+      // that previously left the wet food unnamed + cited a non-existent appendix.
+      diet: {
+        ...base().diet,
+        freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', activeFrom: null, activeUntil: null }],
+        mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.107, intakeMode: 'some' },
+        mealItems: [
+          { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some' },
+          { foodLabel: 'Fancy Feast Salmon', primaryProtein: 'salmon', count: 10, firstDate: '2026-05-20', lastDate: '2026-07-01', intakeMode: 'most' },
+        ],
+      },
+    }),
+  )
+  const text = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+  assert.ok(/Appendix E — Meals &amp; intake/.test(html), 'the meals appendix renders on meals alone (no flag needed)')
+  assert.ok(/Instinct Chicken/.test(text) && /Fancy Feast Salmon/.test(text), 'each meal food is named + itemised')
+  assert.ok(/&times;<span class="num">18<\/span>/.test(html), 'per-food feeding count shown')
+  assert.ok(/Ate some/.test(text) && /Ate most/.test(text), 'typical intake per food')
+  // Page-1 feeding line names the foods + cites the RIGHT appendix (not the old "appendix A").
+  assert.ok(/Also fed as meals:/.test(text) && /itemised in appendix&nbsp;E/.test(html), 'page-1 feeding line names foods + cites appendix E')
+  assert.ok(!/per-meal in appendix&nbsp;A/.test(html), 'the bogus appendix-A citation is gone')
+})
+
 Deno.test('#7/#8 — meals appendix E renders the grouped meal foods even with NO intake flag', () => {
   const html = renderReport(
     base({
