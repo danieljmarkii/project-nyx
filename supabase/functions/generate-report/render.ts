@@ -2095,11 +2095,16 @@ export function renderReport(snap: ReportSnapshot): string {
   ${footer(snap, 'Clinical summary')}
 </section>`
 
+  // Viewport width is pinned to the fixed page width (210mm ≈ 794px), NOT
+  // device-width: this is a fixed-layout print document, so a mobile WebView must
+  // shrink-to-fit the whole page rather than render it at 1:1 and strand the reader
+  // zoomed into the top-left corner (the owner's in-app preview). Print/PDF pagination
+  // is driven by the page box, not this meta, so the vet-facing PDF is unaffected.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=794" />
 <meta name="referrer" content="no-referrer" />
 <title>${title}</title>
 <style>${STYLE}</style>
