@@ -1,30 +1,23 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   TouchableOpacity, StyleSheet, View, Animated,
-  Text, Pressable, Alert, ActivityIndicator,
+  Text, Pressable, ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { Camera, ChevronDown, Plus } from 'lucide-react-native';
+import { ChevronDown, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
-import { useAttachmentStore } from '../../store/attachmentStore';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
-import { getDb, getRecentFoods, PickerFood } from '../../lib/db';
-import { syncPendingEvents } from '../../lib/sync';
+import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
-import { triggerSignalRegenDebounced } from '../../lib/signal';
-import { uuid, exifDateToISO } from '../../lib/utils';
 
 export function FAB() {
-  const { setPendingAttachment } = useAttachmentStore();
   const { prependEvent } = useEventStore();
   const { pets, activePet } = usePetStore();
-  const showMoment = useMomentStore((s) => s.show);
   const showMealMoment = useMomentStore((s) => s.showMeal);
 
   const [open, setOpen] = useState(false);
@@ -126,106 +119,6 @@ export function FAB() {
     }
   }
 
-  // TODO: quick symptom log should offer a photo step after logging
-  // (e.g. navigate to a photo-capture screen with the event_id pre-filled
-  // so the attachment can be linked). Currently logs silently with no photo path.
-  async function handleQuickSymptom(type: 'vomit' | 'diarrhea') {
-    // Write-time pet identity — same rule as handleQuickMeal.
-    const pet = usePetStore.getState().activePet;
-    if (logging || !pet) return;
-    setLogging(type);
-    try {
-      const now = new Date().toISOString();
-      const eventId = uuid();
-      const db = getDb();
-
-      // ISO created_at/updated_at — see handleQuickMeal (avoids the SQLite
-      // datetime('now') local-time parse trap in cross-device LWW).
-      await db.runAsync(
-        'INSERT INTO events (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source, created_at, updated_at, synced) VALUES (?, ?, ?, ?, null, null, ?, ?, ?, ?, 0)',
-        [eventId, pet.id, type, now, 'manual', 'now', now, now],
-      );
-
-      // Push immediately so the quick symptom reaches Supabase right away (no
-      // meal row here, so events only). Fire-and-forget. See handleQuickMeal.
-      syncPendingEvents().catch(console.error);
-
-      // Freshness (§2): a symptom is a primary input to the correlation + safety
-      // detectors, so refresh the AI Signal — the full log.tsx symptom flow does
-      // the same. (Meals get this via insertMeal; this is the symptom parallel.)
-      triggerSignalRegenDebounced(pet.id);
-
-      prependEvent({
-        id: eventId,
-        pet_id: pet.id,
-        event_type: type,
-        occurred_at: now,
-        severity: null,
-        notes: null,
-        source: 'manual',
-        deleted_at: null,
-        created_at: now,
-        updated_at: now,
-      });
-      closeMenu();
-      // Calm completion moment — a symptom log gets a quiet confirm, never the
-      // festive gold beat (B-063). Also closes the prior no-feedback gap: this
-      // quick path used to log silently with no on-screen confirmation at all.
-      showMoment({ tone: 'calm' });
-    } finally {
-      setLogging(null);
-    }
-  }
-
-  async function handlePhotoLog() {
-    Alert.alert('Add photo', 'Choose a source', [
-      {
-        text: 'Take photo', onPress: async () => {
-          const { status } = await ImagePicker.requestCameraPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert('Camera access needed', 'Allow camera access in Settings.');
-            return;
-          }
-          launchPicker('camera');
-        },
-      },
-      {
-        text: 'Choose from library', onPress: async () => {
-          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert('Photo access needed', 'Allow photo access in Settings.');
-            return;
-          }
-          launchPicker('library');
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }
-
-  async function launchPicker(source: 'camera' | 'library') {
-    const options: ImagePicker.ImagePickerOptions = {
-      mediaTypes: ['images'],
-      allowsEditing: false,
-      quality: 0.85,
-      exif: true,
-    };
-    const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync(options)
-      : await ImagePicker.launchImageLibraryAsync(options);
-
-    if (result.canceled || !result.assets[0]) return;
-
-    const asset = result.assets[0];
-    const exifRaw = (asset.exif as Record<string, unknown> | undefined);
-    const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
-    const takenAt = typeof dateRaw === 'string' ? exifDateToISO(dateRaw) : null;
-
-    setPendingAttachment({ localUri: asset.uri, takenAt, mimeType: 'image/jpeg' });
-    closeMenu();
-    router.push('/log');
-  }
-
   const iconRotate = fabAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '45deg'] });
   const menuOpacity = fabAnim;
   const menuTranslateY = fabAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] });
@@ -250,7 +143,7 @@ export function FAB() {
                 wrong-pet log means delete + re-log; the log taps below stay
                 one-tap (Principle 1). Renders only when pets.length > 1 —
                 single-pet households see no multi-pet chrome (§7.8). The menu
-                stays open across a flip: recent meals re-query reactively and
+                stays open across a flip: recent foods re-query reactively and
                 every write path reads the store at write time. */}
             {pets.length > 1 && activePet && (
               <>
@@ -277,10 +170,11 @@ export function FAB() {
               </>
             )}
 
-            {/* Recent meals */}
-            <Text style={styles.sectionHeader}>Recent meals</Text>
+            {/* Recent foods — meals AND treats the pet actually ate (the recency
+                query is food_type-agnostic), so "foods" not "meals". */}
+            <Text style={styles.sectionHeader}>Recent foods</Text>
             {recentFoods.length === 0 ? (
-              <Text style={styles.emptyMeals}>No meals logged yet</Text>
+              <Text style={styles.emptyFoods}>No foods logged yet</Text>
             ) : (
               recentFoods.map((food) => (
                 <TouchableOpacity
@@ -310,53 +204,43 @@ export function FAB() {
               <View style={styles.menuActionIcon}>
                 <Plus size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
               </View>
-              <Text style={[styles.menuActionLabel, styles.newMealLabel]}>New meal</Text>
+              <Text style={[styles.menuActionLabel, styles.newFoodLabel]}>Log food</Text>
             </TouchableOpacity>
 
             <View style={styles.divider} />
 
-            {/* Quick GI symptom taps — prominent, warm-tinted */}
+            {/* Quick GI symptom taps — route into the full log flow (the `simple`
+                step) rather than logging silently. That flow already carries the
+                optional photo step (a vomit photo auto-triggers the AI read) and
+                the B-010 "Saw it / Found it" time affordance, which vomit/loose
+                stool need because they're discovery-prone. The photo is optional,
+                so this stays fast — one tap to the screen, one tap to save — while
+                closing the old no-photo gap (was FAB.tsx handleQuickSymptom TODO). */}
             <View style={styles.symptomRow}>
               <TouchableOpacity
                 style={styles.symptomBtn}
-                onPress={() => handleQuickSymptom('vomit')}
+                onPress={() => { closeMenu(); router.push('/log?type=vomit'); }}
                 activeOpacity={0.7}
-                disabled={logging !== null}
               >
-                {logging === 'vomit'
-                  ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
-                  : <>
-                      <EventIcon type="vomit" size={20} color={theme.colorEventSymptom} />
-                      <Text style={styles.symptomBtnText}>Vomit</Text>
-                    </>
-                }
+                <EventIcon type="vomit" size={20} color={theme.colorEventSymptom} />
+                <Text style={styles.symptomBtnText}>Vomit</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.symptomBtn}
-                onPress={() => handleQuickSymptom('diarrhea')}
+                onPress={() => { closeMenu(); router.push('/log?type=diarrhea'); }}
                 activeOpacity={0.7}
-                disabled={logging !== null}
               >
-                {logging === 'diarrhea'
-                  ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
-                  : <>
-                      <EventIcon type="diarrhea" size={20} color={theme.colorEventSymptom} />
-                      <Text style={styles.symptomBtnText}>Loose stool</Text>
-                    </>
-                }
+                <EventIcon type="diarrhea" size={20} color={theme.colorEventSymptom} />
+                <Text style={styles.symptomBtnText}>Loose stool</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.divider} />
 
-            {/* Full-flow actions */}
-            <TouchableOpacity style={styles.menuAction} onPress={handlePhotoLog} activeOpacity={0.7}>
-              <View style={styles.menuActionIcon}>
-                <Camera size={20} color={theme.colorTextSecondary} strokeWidth={1.75} />
-              </View>
-              <Text style={styles.menuActionLabel}>Log with photo</Text>
-            </TouchableOpacity>
-
+            {/* More events → the full type grid (which itself carries the
+                photo-first "Attach photo" entry). The old "Log with photo" row
+                was removed: it landed on this same type grid, just with a photo
+                pre-attached — a redundant second pathway to one destination. */}
             <TouchableOpacity
               style={styles.menuAction}
               onPress={() => { closeMenu(); router.push('/log'); }}
@@ -452,7 +336,7 @@ const styles = StyleSheet.create({
     paddingTop: theme.space1,
     paddingBottom: theme.space1,
   },
-  emptyMeals: {
+  emptyFoods: {
     fontSize: 13,
     color: theme.colorTextSecondary,
     paddingHorizontal: theme.space2,
@@ -531,7 +415,7 @@ const styles = StyleSheet.create({
   spinner: {
     marginLeft: theme.space1,
   },
-  newMealLabel: {
+  newFoodLabel: {
     color: theme.colorTextSecondary,
   },
 });
