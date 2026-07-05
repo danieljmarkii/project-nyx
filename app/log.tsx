@@ -131,7 +131,8 @@ export default function LogModal() {
     }
   }, []);
 
-  // Skip type selection when a type is pre-selected via route param (e.g. FAB "New meal")
+  // Skip type selection when a type is pre-selected via route param (e.g. FAB
+  // "Log food" → meal, or the Vomit / Loose stool quick taps → vomit / diarrhea)
   useEffect(() => {
     if (!typeParam) return;
     if (typeParam === 'meal') {
