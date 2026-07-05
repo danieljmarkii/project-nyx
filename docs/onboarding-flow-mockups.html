@@ -1,0 +1,591 @@
+<style>
+  /* ============================================================
+     Nyx — Onboarding Flow Mockups · v3 (B-251)
+     Board chrome theme-aware; phones render in the Nyx light theme.
+     Fonts approximate: Geist (body) → sans, Newsreader (display) → serif.
+     ============================================================ */
+  :root {
+    --board-bg: #EFECE6; --board-bg-2: #E7E3DB; --board-panel: #FBFAF7;
+    --board-ink: #1B1A17; --board-ink-2: #66625A; --board-ink-3: #918C82;
+    --board-line: #DAD5CB; --board-accent: #00A892;
+    --tag-req-bg: #D8F1EB;  --tag-req-ink: #045C4E;
+    --tag-skip-bg: #ECE9E2; --tag-skip-ink: #5F5B52; --tag-skip-line: #D3CEC3;
+    --tag-mock-bg: #F6E7CE; --tag-mock-ink: #8A5D12;
+    --tag-new-bg: #E2E9F6;  --tag-new-ink: #33507F;
+    --app-bg: #FAF9F5; --app-surface: #FFFFFF;
+    --app-ink: #10120F; --app-ink-2: #6B6E68; --app-ink-3: #9DA09A;
+    --app-line: #EAE7DF; --app-line-2: #DED9CE;
+    --accent: #00C2A8; --accent-press: #00A892; --accent-ink: #00382F;
+    --accent-soft: #E4F6F2; --accent-soft-2: #D2EFE8;
+    --rose: #E06A93; --rose-soft: #FBE7EE; --ink-btn: #14150F;
+    --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --r-xs: 4px; --r-sm: 8px; --r-md: 14px; --r-lg: 22px; --r-full: 999px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --board-bg: #131417; --board-bg-2: #0E0F12; --board-panel: #1C1E22;
+      --board-ink: #ECEAE4; --board-ink-2: #A6A29A; --board-ink-3: #7C7972;
+      --board-line: #2C2F34; --board-accent: #35D6BE;
+      --tag-req-bg: #0E3A32; --tag-req-ink: #5FE0C9;
+      --tag-skip-bg: #26282C; --tag-skip-ink: #AEB0A9; --tag-skip-line: #3A3D42;
+      --tag-mock-bg: #3A2D14; --tag-mock-ink: #E7B667;
+      --tag-new-bg: #1B2740; --tag-new-ink: #9DB8E8;
+    }
+  }
+  :root[data-theme="light"] {
+    --board-bg: #EFECE6; --board-bg-2: #E7E3DB; --board-panel: #FBFAF7;
+    --board-ink: #1B1A17; --board-ink-2: #66625A; --board-ink-3: #918C82;
+    --board-line: #DAD5CB; --board-accent: #00A892;
+    --tag-req-bg: #D8F1EB; --tag-req-ink: #045C4E;
+    --tag-skip-bg: #ECE9E2; --tag-skip-ink: #5F5B52; --tag-skip-line: #D3CEC3;
+    --tag-mock-bg: #F6E7CE; --tag-mock-ink: #8A5D12;
+    --tag-new-bg: #E2E9F6; --tag-new-ink: #33507F;
+  }
+  :root[data-theme="dark"] {
+    --board-bg: #131417; --board-bg-2: #0E0F12; --board-panel: #1C1E22;
+    --board-ink: #ECEAE4; --board-ink-2: #A6A29A; --board-ink-3: #7C7972;
+    --board-line: #2C2F34; --board-accent: #35D6BE;
+    --tag-req-bg: #0E3A32; --tag-req-ink: #5FE0C9;
+    --tag-skip-bg: #26282C; --tag-skip-ink: #AEB0A9; --tag-skip-line: #3A3D42;
+    --tag-mock-bg: #3A2D14; --tag-mock-ink: #E7B667;
+    --tag-new-bg: #1B2740; --tag-new-ink: #9DB8E8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(120% 80% at 50% -10%, var(--board-bg-2), transparent 60%), var(--board-bg); color: var(--board-ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; line-height: 1.5; }
+  .page { max-width: 1360px; margin: 0 auto; padding: 56px 28px 96px; }
+  .masthead { max-width: 820px; }
+  .wordmark { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; letter-spacing: .28em; text-transform: uppercase; color: var(--board-ink-2); font-weight: 600; margin-bottom: 22px; }
+  .wordmark .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--board-accent); }
+  h1.title { font-family: var(--font-serif); font-weight: 500; font-size: clamp(32px, 5vw, 50px); line-height: 1.05; letter-spacing: -.01em; margin: 0 0 18px; text-wrap: balance; }
+  h1.title em { font-style: italic; color: var(--board-accent); }
+  .lede { font-size: 17px; line-height: 1.6; color: var(--board-ink-2); margin: 0 0 8px; max-width: 64ch; }
+  .lede b { color: var(--board-ink); font-weight: 600; }
+  .changed { margin-top: 24px; background: var(--board-panel); border: 1px solid var(--board-line); border-radius: var(--r-md); padding: 18px 20px; }
+  .changed h4 { margin: 0 0 10px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--board-accent); font-weight: 700; }
+  .changed ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+  .changed li { font-size: 13.5px; line-height: 1.5; color: var(--board-ink-2); }
+  .changed li b { color: var(--board-ink); font-weight: 600; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--board-line); }
+  .legend { font-size: 12.5px; color: var(--board-ink-2); }
+  .tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; letter-spacing: .04em; padding: 4px 9px; border-radius: var(--r-full); text-transform: uppercase; white-space: nowrap; }
+  .tag.req  { background: var(--tag-req-bg);  color: var(--tag-req-ink); }
+  .tag.skip { background: var(--tag-skip-bg); color: var(--tag-skip-ink); box-shadow: inset 0 0 0 1px var(--tag-skip-line); }
+  .tag.mock { background: var(--tag-mock-bg); color: var(--tag-mock-ink); }
+  .tag.new  { background: var(--tag-new-bg);  color: var(--tag-new-ink); }
+  .note-line { margin-top: 14px; font-size: 12.5px; color: var(--board-ink-3); line-height: 1.6; max-width: 74ch; }
+  .note-line code, .cap-note code, .changed code { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: .9em; background: var(--board-panel); padding: 1px 5px; border-radius: var(--r-xs); box-shadow: inset 0 0 0 1px var(--board-line); }
+  .phase { flex-basis: 100%; width: 100%; margin: 46px 0 4px; }
+  .phase:first-of-type { margin-top: 40px; }
+  .phase .k { font-size: 12px; letter-spacing: .22em; text-transform: uppercase; color: var(--board-accent); font-weight: 700; }
+  .phase h2 { font-family: var(--font-serif); font-weight: 500; font-size: 25px; margin: 6px 0 4px; letter-spacing: -.01em; }
+  .phase p { margin: 0; color: var(--board-ink-2); font-size: 14px; max-width: 68ch; }
+  .phase .rule { height: 1px; background: var(--board-line); margin-top: 18px; }
+  .wall { display: flex; flex-wrap: wrap; gap: 44px 30px; justify-content: center; margin-top: 30px; }
+  .cell { width: 300px; }
+  .phone { width: 300px; border-radius: 40px; padding: 9px; background: linear-gradient(160deg, #2A2C31, #17181B); box-shadow: 0 30px 60px -28px rgba(0,0,0,.55), 0 6px 18px -10px rgba(0,0,0,.4), inset 0 0 0 1px rgba(255,255,255,.06); }
+  .screen { position: relative; border-radius: 32px; overflow: hidden; background: var(--app-bg); color: var(--app-ink); min-height: 604px; display: flex; flex-direction: column; }
+  .screen.paywall { background: #101312; color: #F3F2EE; }
+  .sbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px 4px; font-size: 12px; font-weight: 600; color: var(--app-ink); flex: 0 0 auto; }
+  .screen.paywall .sbar { color: #F3F2EE; }
+  .sbar .sig { display: inline-flex; align-items: center; gap: 5px; }
+  .sbar .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 10px; }
+  .sbar .bars i { width: 3px; background: currentColor; border-radius: 1px; display: block; }
+  .sbar .bars i:nth-child(1){height:4px}.sbar .bars i:nth-child(2){height:6px}.sbar .bars i:nth-child(3){height:8px}.sbar .bars i:nth-child(4){height:10px}
+  .batt { width: 22px; height: 11px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px currentColor; position: relative; opacity:.9;}
+  .batt::after { content:""; position:absolute; left:2px; top:2px; bottom:2px; width:13px; background:currentColor; border-radius:1px;}
+  .batt::before { content:""; position:absolute; right:-3px; top:3.5px; height:4px; width:2px; background:currentColor; border-radius:0 1px 1px 0;}
+  .body { flex: 1 1 auto; display: flex; flex-direction: column; padding: 10px 24px 26px; }
+  .body.center { justify-content: center; text-align: center; }
+  .toprow { display:flex; align-items:center; justify-content:space-between; min-height: 30px; margin-bottom: 6px; }
+  .back { width:30px; height:30px; display:grid; place-items:center; color: var(--app-ink-2); margin-left:-6px;}
+  .skip { font-size: 13.5px; font-weight: 500; color: var(--app-ink-2); }
+  .skip.strong { color: var(--accent-press); font-weight: 600; }
+  .prog { display:flex; gap:5px; align-items:center; }
+  .prog i { height:4px; border-radius: var(--r-full); background: var(--app-line-2); flex:1; }
+  .prog i.on, .prog i.cur { background: var(--accent); }
+  .prog-wrap { margin: 2px 0 20px; }
+  .prog-lab { font-size: 11px; color: var(--app-ink-3); margin-top: 8px; letter-spacing:.02em; }
+  .eyebrow { font-size:11.5px; letter-spacing:.16em; text-transform:uppercase; color: var(--accent-press); font-weight:700; margin-bottom:12px;}
+  h3.h { font-family: var(--font-sans); font-weight: 600; font-size: 25px; line-height: 1.18; letter-spacing: -.015em; margin: 0 0 10px; text-wrap: balance; color: var(--app-ink); }
+  h3.h.serif { font-family: var(--font-serif); font-weight: 500; font-size: 30px; letter-spacing: -.01em; }
+  .sub { font-size: 14.5px; line-height: 1.5; color: var(--app-ink-2); margin: 0 0 20px; }
+  .sub.tight { margin-bottom: 14px; }
+  .grow { flex: 1 1 auto; }
+  .field { margin-bottom: 13px; }
+  .field label { display:block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color: var(--app-ink-3); font-weight:600; margin: 0 0 6px 2px;}
+  .input { display:flex; align-items:center; gap:8px; background: var(--app-surface); border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--app-line-2); padding: 12px 14px; font-size: 15px; color: var(--app-ink); min-height: 46px; }
+  .input.ph { color: var(--app-ink-3); }
+  .input.focus { box-shadow: inset 0 0 0 1.6px var(--accent); }
+  .input .eye, .input .mag { color: var(--app-ink-3); display:flex; }
+  .input .eye { margin-left:auto; }
+  .row2 { display:flex; gap:10px; }
+  .row2 .field { flex:1; margin-bottom:13px; }
+  .btn { display:flex; align-items:center; justify-content:center; gap:8px; border-radius: var(--r-full); font-size:15.5px; font-weight:600; padding: 14px 18px; min-height: 50px; width:100%; }
+  .btn.primary { background: var(--accent); color: #04352E; box-shadow: 0 8px 18px -8px rgba(0,194,168,.7); }
+  .btn.disabled { background: var(--app-line-2); color: var(--app-ink-3); box-shadow:none; }
+  .btn.ghost { background: transparent; color: var(--app-ink); min-height: 42px; padding: 8px; font-weight: 600; }
+  .btn.ghost .u { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--app-line-2); }
+  .btn.social { background: var(--app-surface); color: var(--app-ink); box-shadow: inset 0 0 0 1px var(--app-line-2); font-weight: 600; font-size: 15px; }
+  .btn.social.apple { background:#000; color:#fff; box-shadow:none; }
+  .btn.block + .btn.block { margin-top: 10px; }
+  .cta { margin-top: 18px; display:flex; flex-direction:column; gap:8px; }
+  .or { display:flex; align-items:center; gap:12px; color: var(--app-ink-3); font-size:12px; margin: 16px 0; }
+  .or::before, .or::after { content:""; height:1px; background: var(--app-line-2); flex:1; }
+  .tos { font-size:11.5px; line-height:1.5; color: var(--app-ink-3); text-align:center; margin-top:14px; }
+  .tos a { color: var(--app-ink-2); text-decoration: underline; text-underline-offset: 2px; }
+  .dots { display:flex; gap:7px; justify-content:center; }
+  .dots i { width:7px; height:7px; border-radius:50%; background: var(--app-line-2); }
+  .dots i.on { background: var(--accent); width: 20px; border-radius: var(--r-full); }
+  .chips { display:flex; flex-wrap:wrap; gap:10px; }
+  .chip { padding: 11px 18px; border-radius: var(--r-full); font-size:15px; font-weight:600; background: var(--app-surface); color: var(--app-ink); box-shadow: inset 0 0 0 1px var(--app-line-2); }
+  .chip.sel { background: var(--ink-btn); color:#fff; box-shadow:none; }
+  .tiles { display:flex; flex-direction:column; gap:14px; }
+  .tile { display:flex; align-items:center; gap:16px; padding: 18px; border-radius: var(--r-lg); background: var(--app-surface); box-shadow: inset 0 0 0 1px var(--app-line-2); }
+  .tile.sel { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
+  .tile .avatar { width:54px; height:54px; border-radius: var(--r-full); background: var(--accent-soft); display:grid; place-items:center; color: var(--accent-press); flex:0 0 auto; }
+  .tile.sel .avatar { background: #fff; }
+  .tile .tl-t { font-size:17px; font-weight:600; }
+  .tile .tl-s { font-size:12.5px; color: var(--app-ink-2); margin-top:1px; }
+  .tile .rad { margin-left:auto; width:22px; height:22px; border-radius:50%; box-shadow: inset 0 0 0 1.6px var(--app-line-2); flex:0 0 auto; }
+  .tile.sel .rad { box-shadow: inset 0 0 0 6px var(--accent); background:#fff; }
+  .list { display:flex; flex-direction:column; margin-top: 4px; }
+  .lrow { display:flex; align-items:center; gap:12px; padding: 13px 4px; border-bottom:1px solid var(--app-line); font-size:15px; }
+  .lrow .rad2 { width:20px; height:20px; border-radius:50%; box-shadow: inset 0 0 0 1.6px var(--app-line-2); flex:0 0 auto; }
+  .lrow.sel .rad2 { box-shadow: inset 0 0 0 6px var(--accent); }
+  .lrow.other { color: var(--app-ink-2); }
+  .lrow .mut { color: var(--app-ink-3); font-size:12px; margin-left:auto; }
+  .seg { display:flex; background: var(--app-line); border-radius: var(--r-full); padding:4px; margin-bottom: 22px; }
+  .seg b { flex:1; text-align:center; font-size:14px; font-weight:600; padding:9px; border-radius: var(--r-full); color: var(--app-ink-2); }
+  .seg b.on { background: var(--app-surface); color: var(--app-ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .wheels { display:flex; gap:12px; }
+  .wheel { flex:1; text-align:center; }
+  .wheel .wlab { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color: var(--app-ink-3); margin-bottom:8px; }
+  .wheel .wbox { background: var(--app-surface); border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--app-line-2); padding: 6px 0; position: relative; }
+  .wheel .wv { font-size:15px; color: var(--app-ink-3); padding:6px 0; }
+  .wheel .wv.mid { font-size:28px; font-weight:600; color: var(--app-ink); font-variant-numeric: tabular-nums; }
+  .wheel .wsel { position:absolute; left:8px; right:8px; top:50%; transform:translateY(-50%); height:44px; border-radius: var(--r-sm); box-shadow: inset 0 0 0 1.4px var(--accent-soft-2); pointer-events:none; }
+  .illus { display:grid; place-items:center; margin: 8px auto 22px; }
+  .orb { width: 128px; height:128px; border-radius: var(--r-full); background: radial-gradient(120% 120% at 30% 25%, var(--accent-soft), var(--accent-soft-2)); display:grid; place-items:center; color: var(--accent-press); box-shadow: 0 12px 30px -16px rgba(0,194,168,.6), inset 0 0 0 1px rgba(0,194,168,.16); }
+  .body.landing { padding-top: 8px; }
+  .logo { display:flex; align-items:center; justify-content:center; gap:8px; padding: 6px 0 4px; color: var(--app-ink); }
+  .logo svg { color: var(--accent-press); }
+  .logo b { font-family: var(--font-serif); font-size: 23px; font-weight: 600; letter-spacing: -.01em; }
+  .value-stage { flex:1 1 auto; display:flex; flex-direction:column; justify-content:center; gap: 16px; padding: 6px 0 2px; }
+  .v-copy h3 { font-family: var(--font-serif); font-weight: 500; font-size: 23px; line-height: 1.15; letter-spacing:-.01em; margin: 0 0 6px; color: var(--app-ink); text-wrap: balance; }
+  .v-copy p { margin:0; font-size: 13.5px; line-height:1.5; color: var(--app-ink-2); }
+  .mini { background: var(--app-surface); border-radius: var(--r-lg); box-shadow: 0 16px 34px -22px rgba(0,0,0,.34), inset 0 0 0 1px var(--app-line); padding: 15px; text-align:left; position: relative; }
+  .mini.tilt { transform: rotate(-1.4deg); }
+  .mini .mlabel { font-size:10px; letter-spacing:.15em; text-transform:uppercase; font-weight:700; color: var(--accent-press); margin-bottom:9px; }
+  .signal-h { font-family: var(--font-serif); font-size: 19px; line-height:1.25; letter-spacing:-.01em; color: var(--app-ink); }
+  .mini .tap { font-size:11.5px; color: var(--app-ink-3); margin-top:10px; display:flex; align-items:center; gap:5px; }
+  .qgrid { display:grid; grid-template-columns: repeat(2,1fr); gap:8px; }
+  .qtile { display:flex; align-items:center; gap:9px; padding:11px; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--app-line-2); font-size:13.5px; font-weight:600; }
+  .qtile.hot { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+  .qtile .qi { width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-press); flex:0 0 auto;}
+  .qtile.sym .qi { background:var(--rose-soft);color:var(--rose);}
+  .toast { display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12.5px;color:var(--app-ink-2);}
+  .toast .ck { width:18px;height:18px;border-radius:50%;background:var(--accent);color:#04352E;display:grid;place-items:center; flex:0 0 auto;}
+  .vh { display:flex;align-items:center;justify-content:space-between; }
+  .vmeta { font-size:11px;color:var(--app-ink-2);margin:3px 0 8px; }
+  .vrow { display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--app-line);font-size:13px; }
+  .vrow .vk { color:var(--app-ink-2); }
+  .vrow .vv { font-weight:600; font-variant-numeric:tabular-nums; }
+  .vrow .down { color:var(--accent-press); font-weight:600; }
+  .center .sub { margin-left:auto; margin-right:auto; max-width: 30ch; }
+  .closing { font-size:12.5px; color: var(--app-ink-3); text-align:center; margin-top: 14px; line-height:1.5; }
+  .cap { margin-top: 18px; padding: 0 4px; }
+  .cap-h { display:flex; align-items:baseline; gap:8px; }
+  .cap-n { font-family: var(--font-serif); font-size: 15px; color: var(--board-accent); font-weight:600; font-variant-numeric: tabular-nums; flex:0 0 auto; }
+  .cap-name { font-size: 15px; font-weight: 650; color: var(--board-ink); letter-spacing:-.01em; }
+  .cap-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top: 9px; }
+  .cap-note { font-size: 12.5px; line-height:1.55; color: var(--board-ink-2); margin-top: 9px; }
+  footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--board-line); font-size: 12.5px; color: var(--board-ink-3); line-height: 1.7; }
+  footer b { color: var(--board-ink-2); }
+  a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--board-accent); outline-offset: 3px; border-radius: 4px; }
+  @media (prefers-reduced-motion: no-preference) { .cell { animation: rise .5s cubic-bezier(.2,.7,.2,1) both; } @keyframes rise { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform:none; } } }
+  @media (max-width: 660px) { .page { padding: 40px 16px 72px; } }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="wordmark"><span class="dot"></span> Nyx · Product Design · v3</div>
+    <h1 class="title">Onboarding v3 — <em>lead with the Signal</em></h1>
+    <p class="lede">Near-final. The Landing now <b>opens on the Signal</b> — the differentiator and the "is she getting better?" answer — then the log, then the free vet report. New logging copy blends the ease you liked ("a couple of taps") with the story ("what's changing"). Phase C stays five calm screens.</p>
+
+    <div class="changed">
+      <h4>What changed from v2</h4>
+      <ul>
+        <li><b>Signal leads the Landing (01).</b> The differentiator opens; the log becomes the "and it's effortless to feed it" beat (02); the free vet report closes (03). <span style="color:var(--board-ink-3)">Fixes the "doesn't lead with value" opener.</span></li>
+        <li><b>New logging copy</b> (02) — <b>"A couple of taps today. A clearer picture tomorrow."</b> Blends the couple-of-taps ease with the what's-changing story.</li>
+        <li><b>Phase C kept at 5 screens</b> — your call; the prominent per-screen <b>Skip</b> does the work, one-thing-per-screen calm preserved.</li>
+        <li>The Signal and vet-report previews you loved are <b>unchanged</b>.</li>
+      </ul>
+    </div>
+
+    <div class="meta-row">
+      <span class="legend">Tags:</span>
+      <span class="tag new">New / changed in v3</span>
+      <span class="tag req">Required</span>
+      <span class="tag skip">Skippable</span>
+      <span class="tag mock">Mocked — not wired</span>
+    </div>
+    <p class="note-line"><b style="color:var(--board-ink-2)">Scope holds:</b> email functional; <code>Apple</code>/<code>Google</code> shown for sign-off, wired later (PR 9); paywall is a non-functional mock. Previews show what you'll <em>get</em>, never data you must <em>enter</em>. Type approximates <b style="color:var(--board-ink-2)">Geist</b> + <b style="color:var(--board-ink-2)">Newsreader</b>.</p>
+  </header>
+
+  <div class="wall">
+
+    <!-- ============ PHASE A — LANDING ============ -->
+    <div class="phase">
+      <div class="k">Phase A · one screen</div>
+      <h2>Landing — opens on the Signal</h2>
+      <p>The three frames are the <b>same screen</b> at swipe positions 1–3. Logo and <b>Create account / Log in</b> stay pinned; only the preview swipes. It now leads with the Signal — the thing only Nyx gives you.</p>
+      <div class="rule"></div>
+    </div>
+
+    <!-- 01 landing · signal (now first) -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body landing">
+          <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4 6.4 6.4 0 0 0 20 14.5z"/></svg><b>Nyx</b></div>
+          <div class="value-stage">
+            <div class="mini tilt">
+              <div class="mlabel">Signal</div>
+              <div class="signal-h">Vomiting is down 60% since you switched to turkey.</div>
+              <svg width="100%" height="40" viewBox="0 0 220 40" preserveAspectRatio="none" style="margin-top:10px" fill="none"><path d="M4 8 L44 14 L84 12 L124 24 L164 30 L212 34" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="212" cy="34" r="3.4" fill="var(--accent)"/></svg>
+              <div class="tap">Tap to see why <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+            </div>
+            <div class="v-copy"><h3>Patterns you can't see.</h3><p>Nyx tells you what the data means — not just what happened.</p></div>
+          </div>
+          <div class="dots"><i class="on"></i><i></i><i></i></div>
+          <div class="cta"><div class="btn primary block">Create account</div><div class="btn ghost">Log in</div></div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">01</span><span class="cap-name">Landing · swipe 1 (Signal)</span></div>
+        <div class="cap-tags"><span class="tag new">Now leads</span></div>
+        <div class="cap-note">The differentiator opens the flow — the "is she getting better?" answer Sam said she can't get anywhere else, in the Newsreader display face. A promise, not a day-1 claim.</div>
+      </div>
+    </div>
+
+    <!-- 02 landing · log (new copy) -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body landing">
+          <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4 6.4 6.4 0 0 0 20 14.5z"/></svg><b>Nyx</b></div>
+          <div class="value-stage">
+            <div class="mini tilt">
+              <div class="mlabel">Quick-log</div>
+              <div class="qgrid">
+                <div class="qtile"><span class="qi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>Meal</div>
+                <div class="qtile sym hot"><span class="qi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10M8 9l4 4 4-4"/><path d="M5 17a7 4 0 0 0 14 0"/></svg></span>Vomit</div>
+                <div class="qtile"><span class="qi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/></svg></span>Stool</div>
+                <div class="qtile"><span class="qi"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>More</div>
+              </div>
+              <div class="toast"><span class="ck"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span> Logged · Vomit · 2:14 PM</div>
+            </div>
+            <div class="v-copy"><h3>A couple of taps today.<br>A clearer picture tomorrow.</h3><p>Log a meal or a symptom in seconds — it's what lets Nyx catch what's changing.</p></div>
+          </div>
+          <div class="dots"><i></i><i class="on"></i><i></i></div>
+          <div class="cta"><div class="btn primary block">Create account</div><div class="btn ghost">Log in</div></div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">02</span><span class="cap-name">Landing · swipe 2 (log)</span></div>
+        <div class="cap-tags"><span class="tag new">New copy</span></div>
+        <div class="cap-note">Recast as the "and it's effortless" bridge after the Signal. New line blends the couple-of-taps ease with the what's-changing story — nearly your own words. Two easy swaps: "A few taps now, a clearer picture later." / "Log it in seconds — Nyx does the rest."</div>
+      </div>
+    </div>
+
+    <!-- 03 landing · vet report -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body landing">
+          <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4 6.4 6.4 0 0 0 20 14.5z"/></svg><b>Nyx</b></div>
+          <div class="value-stage">
+            <div class="mini tilt">
+              <div class="mlabel">Vet summary</div>
+              <div class="vmeta">Mochi · French Bulldog · Apr 6 – Jul 5</div>
+              <div class="vrow"><span class="vk">Vomiting</span><span class="vv">6 episodes <span class="down">↓</span></span></div>
+              <div class="vrow"><span class="vk">Current diet</span><span class="vv">Hydrolyzed protein</span></div>
+              <div class="vrow"><span class="vk">Weight</span><span class="vv">15.2 kg · stable</span></div>
+            </div>
+            <div class="v-copy"><h3>Ready for the vet.</h3><p>Hand your vet a clear, clinical summary in one tap. Free, always.</p></div>
+          </div>
+          <div class="dots"><i></i><i></i><i class="on"></i></div>
+          <div class="cta"><div class="btn primary block">Create account</div><div class="btn ghost">Log in</div></div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">03</span><span class="cap-name">Landing · swipe 3 (vet report)</span></div>
+        <div class="cap-tags"><span class="tag skip">Unchanged</span></div>
+        <div class="cap-note">Clinical, dense, scannable (Principle 6). Closes the story on the free portable report — "free, always" states Pets&nbsp;&gt;&nbsp;$.</div>
+      </div>
+    </div>
+
+    <!-- ============ PHASE B — ACCOUNT ============ -->
+    <div class="phase">
+      <div class="k">Phase B</div>
+      <h2>Account — who you are</h2>
+      <p>Reached by tapping <b>Create account</b> on the Landing. Owner name captured for the first time (fixes "Owner: not recorded" on the vet report).</p>
+      <div class="rule"></div>
+    </div>
+
+    <!-- 04 create account -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="toprow"><span class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span><span></span></div>
+          <h3 class="h">Create your account</h3>
+          <p class="sub tight">This is you — we'll set up your pet next.</p>
+          <div class="row2">
+            <div class="field"><label>First name</label><div class="input">Jordan</div></div>
+            <div class="field"><label>Last name</label><div class="input">Rivera</div></div>
+          </div>
+          <div class="field"><label>Email</label><div class="input">jordan@email.com</div></div>
+          <div class="field"><label>Password</label><div class="input focus">••••••••<span class="eye"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.6"/></svg></span></div></div>
+          <div class="or">or</div>
+          <div class="btn social apple block"><svg width="16" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-2.6 2.13-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.9-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.78 1.3 10.32.86 1.24 1.88 2.63 3.22 2.58 1.29-.05 1.78-.83 3.34-.83 1.56 0 2 .83 3.37.81 1.39-.03 2.27-1.26 3.12-2.51.98-1.44 1.39-2.83 1.41-2.9-.03-.01-2.71-1.04-2.74-4.13zM14.6 4.9c.71-.86 1.19-2.06 1.06-3.25-1.02.04-2.26.68-2.99 1.54-.66.76-1.23 1.98-1.08 3.15 1.14.09 2.3-.58 3.01-1.44z"/></svg> Continue with Apple</div>
+          <div class="btn social block"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.2-2.2H12v4.1h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.7 2.9c2.2-2 3.5-5 3.5-8.6z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.7-2.9c-1 .7-2.4 1.2-4.2 1.2-3.2 0-6-2.2-7-5.2l-3.9 3C3.1 21.3 7.2 24 12 24z"/><path fill="#FBBC05" d="M5 14.2c-.2-.7-.4-1.4-.4-2.2s.1-1.5.4-2.2l-3.9-3C.4 8.4 0 10.1 0 12s.4 3.6 1.1 5.2l3.9-3z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3 .8 3.7 1.4l2.7-2.6C16.8 1.1 14.2 0 12 0 7.2 0 3.1 2.7 1.1 6.8l3.9 3c1-3 3.8-5 7-5z"/></svg> Continue with Google</div>
+          <div class="cta" style="margin-top:16px"><div class="btn primary block">Create account</div></div>
+          <p class="tos">By continuing you agree to Nyx's <a>Terms</a> and <a>Privacy&nbsp;Policy</a>.</p>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">04</span><span class="cap-name">Create account</span></div>
+        <div class="cap-tags"><span class="tag req">First / last / email</span><span class="tag mock">Apple / Google</span></div>
+        <div class="cap-note">Writes <code>first_name</code>, <code>last_name</code>, derived <code>display_name</code>. One-line TOS/privacy (B-230/B-229 mock). Social shown for sign-off; email is the wired path in v1.</div>
+      </div>
+    </div>
+
+    <!-- 05 verify -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body center">
+          <div class="grow"></div>
+          <div class="illus"><div class="orb"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></div></div>
+          <h3 class="h">Check your inbox</h3>
+          <p class="sub">We sent a link to <b style="color:var(--app-ink)">jordan@email.com</b>. Tap it to verify — you can do this anytime.</p>
+          <div class="grow"></div>
+          <div class="cta"><div class="btn primary block">Open email app</div><div class="btn ghost"><span class="u">Resend link</span></div></div>
+          <p class="closing">Verify later · continue for now</p>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">05</span><span class="cap-name">Verify email</span></div>
+        <div class="cap-tags"><span class="tag skip">Soft gate</span></div>
+        <div class="cap-note">Enforcement deferred to the hardening pass (S3) — v1 lets you proceed and nudges. Only shows when Supabase email confirmation is on.</div>
+      </div>
+    </div>
+
+    <!-- ============ PHASE C — PET SETUP (5 screens, per PM) ============ -->
+    <div class="phase">
+      <div class="k">Phase C · 5 screens</div>
+      <h2>Pet setup — meet the first pet</h2>
+      <p>One decision per screen, progress bar, back-nav. Only <b>type</b> and <b>name</b> are walls; breed, gender, age are prompted but skippable — the prominent <b>Skip</b> keeps the optional tail fast.</p>
+      <div class="rule"></div>
+    </div>
+
+    <!-- 06 pet type -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="toprow"><span class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span><span></span></div>
+          <div class="prog-wrap"><div class="prog"><i class="cur"></i><i></i><i></i><i></i><i></i></div><div class="prog-lab">Step 1 of 5</div></div>
+          <h3 class="h">Who are we tracking?</h3>
+          <p class="sub">Built for every pet in your home — you can add the rest anytime.</p>
+          <div class="tiles">
+            <div class="tile sel">
+              <div class="avatar"><svg width="30" height="30" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M13 22 L15 9 L23 16"/><path d="M35 22 L33 9 L25 16"/><circle cx="24" cy="27" r="12"/><circle cx="20" cy="26" r="1.1" fill="currentColor" stroke="none"/><circle cx="28" cy="26" r="1.1" fill="currentColor" stroke="none"/><path d="M24 29v2M24 31q-2 2 -4 1M24 31q2 2 4 1"/><path d="M10 27h5M33 27h5"/></svg></div>
+              <div><div class="tl-t">Cat</div><div class="tl-s">Whiskers, grazing, the works</div></div>
+              <div class="rad"></div>
+            </div>
+            <div class="tile">
+              <div class="avatar"><svg width="30" height="30" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M14 14 q-6 2 -5 12 q1 6 5 6"/><path d="M34 14 q6 2 5 12 q-1 6 -5 6"/><circle cx="24" cy="26" r="12"/><circle cx="20" cy="24" r="1.1" fill="currentColor" stroke="none"/><circle cx="28" cy="24" r="1.1" fill="currentColor" stroke="none"/><ellipse cx="24" cy="30" rx="2.2" ry="1.6" fill="currentColor" stroke="none"/><path d="M24 31.6v2M22 35h4"/></svg></div>
+              <div><div class="tl-t">Dog</div><div class="tl-s">Walks, treats, tail wags</div></div>
+              <div class="rad"></div>
+            </div>
+          </div>
+          <div class="grow"></div>
+          <div class="cta"><div class="btn primary block">Continue</div></div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">06</span><span class="cap-name">Pet type</span></div>
+        <div class="cap-tags"><span class="tag req">Required</span></div>
+        <div class="cap-note">Multi-pet reassurance sits here (Sam's ask). Capture is one pet; the rest are added in-app.</div>
+      </div>
+    </div>
+
+    <!-- 07 pet name -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="toprow"><span class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span><span></span></div>
+          <div class="prog-wrap"><div class="prog"><i class="on"></i><i class="cur"></i><i></i><i></i><i></i></div><div class="prog-lab">Step 2 of 5</div></div>
+          <h3 class="h">What's your pet's name?</h3>
+          <p class="sub">The one you actually call them.</p>
+          <div class="field"><label>Name</label><div class="input focus">Theia</div></div>
+          <div class="grow"></div>
+          <div class="cta"><div class="btn primary block">Continue</div></div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">07</span><span class="cap-name">Pet name</span></div>
+        <div class="cap-tags"><span class="tag req">Required</span></div>
+        <div class="cap-note">"The one you actually call them." — warm, plain, human; the database-speak is gone. (nyx-voice does a final pass.)</div>
+      </div>
+    </div>
+
+    <!-- 08 breed -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="toprow"><span class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span><span class="skip strong">Skip</span></div>
+          <div class="prog-wrap"><div class="prog"><i class="on"></i><i class="on"></i><i class="cur"></i><i></i><i></i></div><div class="prog-lab">Step 3 of 5</div></div>
+          <h3 class="h">What's Theia's breed?</h3>
+          <p class="sub tight">Optional — it helps tailor what we watch for.</p>
+          <div class="input ph"><span class="mag"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>Search breeds</div>
+          <div class="list">
+            <div class="lrow sel"><span class="rad2"></span>Domestic Shorthair</div>
+            <div class="lrow"><span class="rad2"></span>Domestic Longhair</div>
+            <div class="lrow"><span class="rad2"></span>Maine Coon</div>
+            <div class="lrow"><span class="rad2"></span>Siamese</div>
+            <div class="lrow other"><span class="rad2"></span>Other / not listed <span class="mut">type it in</span></div>
+          </div>
+          <div class="grow"></div>
+          <div class="cta"><div class="btn primary block">Continue</div></div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">08</span><span class="cap-name">Breed</span></div>
+        <div class="cap-tags"><span class="tag skip">Skippable</span></div>
+        <div class="cap-note">Reuses the <code>BreedPicker</code> from PR&nbsp;#259 — closes B-210. Prominent teal Skip keeps the optional tail fast (your Phase-C call).</div>
+      </div>
+    </div>
+
+    <!-- 09 gender -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="toprow"><span class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span><span class="skip strong">Skip</span></div>
+          <div class="prog-wrap"><div class="prog"><i class="on"></i><i class="on"></i><i class="on"></i><i class="cur"></i><i></i></div><div class="prog-lab">Step 4 of 5</div></div>
+          <h3 class="h">What's Theia's gender?</h3>
+          <p class="sub">Optional — helps us read the data in context.</p>
+          <div class="chips">
+            <div class="chip sel">Female</div>
+            <div class="chip">Male</div>
+          </div>
+          <div class="grow"></div>
+          <div class="cta"><div class="btn primary block">Continue</div></div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">09</span><span class="cap-name">Gender</span></div>
+        <div class="cap-tags"><span class="tag skip">Skippable</span></div>
+        <div class="cap-note">Skip stores <code>sex = 'unknown'</code>. Neuter/spay is a clinical field for the in-app profile, not onboarding.</div>
+      </div>
+    </div>
+
+    <!-- 10 age -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="toprow"><span class="back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span><span class="skip strong">Not sure? Skip</span></div>
+          <div class="prog-wrap"><div class="prog"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="cur"></i></div><div class="prog-lab">Step 5 of 5</div></div>
+          <h3 class="h">How old is Theia?</h3>
+          <p class="sub tight">An age or a birthday — whichever you know.</p>
+          <div class="seg"><b class="on">Age</b><b>Birthday</b></div>
+          <div class="wheels">
+            <div class="wheel"><div class="wlab">Years</div><div class="wbox"><div class="wsel"></div><div class="wv">1</div><div class="wv mid">2</div><div class="wv">3</div></div></div>
+            <div class="wheel"><div class="wlab">Months</div><div class="wbox"><div class="wsel"></div><div class="wv">2</div><div class="wv mid">3</div><div class="wv">4</div></div></div>
+          </div>
+          <div class="grow"></div>
+          <div class="cta"><div class="btn primary block">Continue</div></div>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">10</span><span class="cap-name">Age — dual input</span></div>
+        <div class="cap-tags"><span class="tag skip">Skippable</span></div>
+        <div class="cap-note">Toggle <b>Age</b> (years/months) or <b>Birthday</b> (date picker). Both store <code>date_of_birth</code>; an age-entry is flagged <code>approximate</code> so the report never shows a computed birthday as fact (S2). "Not sure? Skip" matters for rescues (Sam).</div>
+      </div>
+    </div>
+
+    <!-- ============ PHASE D — CLOSE ============ -->
+    <div class="phase">
+      <div class="k">Phase D</div>
+      <h2>Close — the upsell &amp; the payoff</h2>
+      <p>Paywall after value is delivered, then a warm finish into a real home.</p>
+      <div class="rule"></div>
+    </div>
+
+    <!-- 11 paywall -->
+    <div class="cell">
+      <div class="phone"><div class="screen paywall">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body">
+          <div class="toprow"><span></span><span class="skip" style="color:#B9BDBA">Maybe later</span></div>
+          <h3 class="h" style="color:#F3F2EE">Nyx Premium</h3>
+          <p class="sub" style="color:#B4B8B4">Everything that keeps Theia healthy is free. Premium just adds convenience.</p>
+          <div style="display:flex;gap:10px;margin:6px 0 14px">
+            <div style="flex:1;border-radius:14px;padding:13px;box-shadow:inset 0 0 0 1.6px var(--accent);background:#16201E;position:relative"><span style="position:absolute;top:-8px;right:10px;background:var(--accent);color:#04352E;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:999px">Best value</span><div style="font-size:12px;color:#B9BDBA">Yearly</div><div style="font-size:18px;font-weight:700;margin-top:2px">£29.99<small style="font-size:11px;font-weight:500;color:#B9BDBA">/yr</small></div></div>
+            <div style="flex:1;border-radius:14px;padding:13px;box-shadow:inset 0 0 0 1px #33383A"><div style="font-size:12px;color:#B9BDBA">Monthly</div><div style="font-size:18px;font-weight:700;margin-top:2px">£3.99<small style="font-size:11px;font-weight:500;color:#B9BDBA">/mo</small></div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:11px;margin:4px 0 6px">
+            <div style="display:flex;gap:10px;font-size:13.5px;color:#DBDDD9"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg> Multi-pet profiles</div>
+            <div style="display:flex;gap:10px;font-size:13.5px;color:#DBDDD9"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg> Full history, beyond 90 days</div>
+            <div style="display:flex;gap:10px;font-size:13.5px;color:#DBDDD9"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4.5 4.5L19 7"/></svg> Advanced correlation views</div>
+          </div>
+          <div class="grow"></div>
+          <div class="cta"><div class="btn primary block">Start 7-day free trial</div></div>
+          <p style="font-size:12px;color:#9AA09C;text-align:center;margin-top:10px;line-height:1.5"><b style="color:#CFEFE7;font-weight:600">Always free:</b> logging, health alerts, trends &amp; vet reports.</p>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">11</span><span class="cap-name">Upgrade / paywall</span></div>
+        <div class="cap-tags"><span class="tag mock">Mocked — not wired</span></div>
+        <div class="cap-note">No purchase in v1. Prominent "Maybe later". Copy holds to Principle 7 — premium wraps <em>convenience</em>; the free-tier line is explicit.</div>
+      </div>
+    </div>
+
+    <!-- 12 done -->
+    <div class="cell">
+      <div class="phone"><div class="screen">
+        <div class="sbar"><span>9:41</span><span class="sig"><span class="bars"><i></i><i></i><i></i><i></i></span><span class="batt"></span></span></div>
+        <div class="body center">
+          <div class="grow"></div>
+          <div class="illus"><div class="orb"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.2 4.2L19 7"/></svg></div></div>
+          <h3 class="h serif">You're all set.</h3>
+          <p class="sub">Say hi to Theia — her home is ready.</p>
+          <div class="grow"></div>
+          <div class="cta"><div class="btn primary block">Go to Theia's home</div></div>
+          <p class="closing">Got more than one pet? You can add them anytime from your profile.</p>
+        </div>
+      </div></div>
+      <div class="cap">
+        <div class="cap-h"><span class="cap-n">12</span><span class="cap-name">All set</span></div>
+        <div class="cap-tags"><span class="tag skip">Multi-pet note</span></div>
+        <div class="cap-note">Writes the durable <code>onboarding_completed_at</code> and lands on Home's designed empty state (Principle 5). No forced first log — the payoff is the pet being ready.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <b>Nyx onboarding flow — v3 mockup for review.</b> Built from PM v2 feedback (Signal leads; new logging copy; Phase C kept at 5). Faithful to <code>constants/theme.ts</code> (teal <code>#00C2A8</code>, Geist/Newsreader). Static comps — mark up any screen (01–12) and I'll fold it into <code>docs/nyx-onboarding-requirements.md</code> and re-render.<br>
+    Still excluded from v1: notification prompt, functional social login (PR 9), functional paywall, food/health capture (in-app). &nbsp;·&nbsp; Spec: B-251 · PR&nbsp;#284.
+  </footer>
+
+</div>

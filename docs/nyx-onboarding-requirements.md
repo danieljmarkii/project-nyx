@@ -1,8 +1,9 @@
 # Project Nyx — Onboarding Experience Requirements
 
-**Version:** 1.2 (draft — awaiting build) | **Status:** Build-ready pending sub-decisions | **Last Updated:** 2026-07-05
+**Version:** 1.3 (design-locked — ready to build) | **Status:** Build-ready · PM signed off on mockup v3 · detailed 11-PR plan in §9 | **Last Updated:** 2026-07-05
 _v1.1 (2026-07-05): flow revised to the **Landing** pattern (logo + persistent auth + data-rich value previews) and copy updated, after the PM's v1-mockup review + a Jordan/Sam persona interview. See §3.0 / §5._
 _v1.2 (2026-07-05): PM v2 review — the Landing now **leads with the Signal** (differentiator opens), logging copy → "A couple of taps today. A clearer picture tomorrow.", and **Phase C stays at 5 screens** (per-screen Skip does the work). Three review mockups exist (v1, v2, v3)._
+_v1.3 (2026-07-05): **PM signed off on mockup v3 — design locked.** §9 expanded from a summary table into a full **11-PR implementation plan** (dependency graph, per-PR files / migration pre-flights / acceptance criteria / tests / review gates / sizes). The signed-off mockup is committed at `docs/onboarding-flow-mockups.html`._
 **Owner:** PM (decisions) · Sr. Product Designer (flow/craft lead) · Dir. of Engineering (build) · Trust & Safety (store gates)
 **Swimlane:** App-store readiness (siblings: B-039 account deletion, B-229 privacy policy, B-230 TOS, B-231 version display)
 
@@ -191,23 +192,137 @@ First-person pet / second-person owner, specific over generic, no exclamation ma
 
 ---
 
-## 9. PR plan
+## 9. PR-by-PR implementation plan
 
-Schema-isolated, one concern per PR. Order: schema → primitives → screens → wiring → social follow-up.
+**Design locked to mockup v3** (Signal-led Landing; Phase C = 5 screens; final copy). **11 PRs.** Rules: one concern per PR; **every schema migration ships in its own PR** (schema-isolation); a migration a later PR depends on is **applied before** that PR's code lands; social auth stays mocked behind `SOCIAL_AUTH_ENABLED` until PR 11. Sizes: **S** ≈ <½ day, **M** ≈ ½–1 day, **L** ≈ 1–2 days.
 
-| PR | Title | Contents | Schema? | Reviews |
-|---|---|---|---|---|
-| **1** | Owner-profile schema | Migration A (first/last name + `onboarding_completed_at`); `UserProfile` type; write derived `display_name`. | ✅ (isolated) | `rls-privacy-reviewer` (light), supabase-sync |
-| **2** | Age-precision schema | Migration B (`date_of_birth_precision`) — *gated on S2*. | ✅ (isolated) | Data Scientist / Dr. Chen sign-off |
-| **3** | Design-system primitives | New `TextField` primitive; `PrimaryButton` `loading` prop; consolidate onboarding/auth onto `ChipGroup`/`PrimaryButton`. | ❌ | code-reviewer |
-| **4** | Account creation | Owner first/last/email/password; inline validation; TOS/privacy line (B-230 mock); Apple/Google buttons behind `SOCIAL_AUTH_ENABLED` (off); soft verify state; write names + display_name. | ❌ | code-reviewer, nyx-voice, rls-privacy (auth path) |
-| **5** | Landing screen | Logo + swipeable **data-rich value previews** (log / Signal / vet-report snippet, from real component styles) + **persistent "Create account" / "Log in"**; new unauthenticated entry point; routing. _(v2: was a standalone carousel; combined into one Landing.)_ | ❌ | Designer, nyx-voice, pm-feature-review |
-| **6** | Pet-setup flow | type → name → breed (`BreedPicker`) → gender → age (dual input); progress indicator; skips; back-nav; writes all captured pet fields + precision. | ❌ | Designer (Principles 1/5), Jordan+Sam, code-reviewer, nyx-voice |
-| **7** | Paywall mock | Non-functional, skippable, slotted screen; Principle-7-safe copy. | ❌ | Designer, nyx-voice |
-| **8** | Completion + gate wiring | "All set" payoff → Home; write `onboarding_completed_at`; replace the ≥1-pet inference; returning-user + legacy-account routing (§6). | ❌ | code-reviewer, QA (routing edge cases), pm-feature-review |
-| **9** | *(follow-up, specced now)* Functional Apple + Google sign-in | `expo-apple-authentication` + Google OAuth; deep-link handling; flip `SOCIAL_AUTH_ENABLED`; backfill names from the provider. **Apple mandatory alongside Google** (Apple's rule). | ❌ | rls-privacy-reviewer (new auth paths), code-reviewer |
+**Dependency graph & sequencing:**
+```
+ ┌ PR1  owner-profile schema ┐
+ ├ PR2  age-precision schema │  ← 1·2·3 fully parallel (disjoint files)
+ └ PR3  design-system primitives ┘
+                 │
+              PR4  onboarding shell (routing + progress + completion gate)   [needs PR1]
+                 │
+   ┌──────┬──────┴───┬───────────────┬──────────────┐
+  PR5    PR6        PR7             PR10            (parallel once PR3+PR4 land)
+ Landing Account   Pet type+name   Paywall+Completion
+                    │
+                  ┌─┴─┐
+                 PR8  PR9
+                 breed  age
+                 +gender (needs PR2)
 
-Parallelism: PRs 1 & 2 (schema) and PR 3 (primitives) are independent and can run concurrently; PRs 4–8 depend on 1 & 3. Shared-file collision to expect at wrap: `STATUS.md`.
+  PR11  functional Apple+Google sign-in  [needs PR6; post-v1 follow-up]
+```
+
+**Recommended first move:** kick off **PR 1 + PR 2 + PR 3 in parallel** (three independent branches — schema × schema × UI), then **PR 4** (the shell everything slots into), then fan out the screen PRs. The one shared-file collision to expect at each wrap is `STATUS.md`.
+
+---
+
+### PR 1 — Owner-profile schema  ·  S  ·  schema-isolated
+- **Goal:** capture owner identity (first/last name) + a durable onboarding-complete flag.
+- **Depends on:** none.
+- **Files:** `supabase/migrations/027_user_profile_names.sql` (new); new `UserProfile` TS type; `lib/profile.ts` (add first/last read/write helper beside `updateDisplayName`, writing a derived `display_name = "First Last"` for back-compat with `generate-report`).
+- **Migration (Safety Pre-flight):** `ALTER TABLE user_profiles ADD COLUMN first_name TEXT, ADD COLUMN last_name TEXT, ADD COLUMN onboarding_completed_at TIMESTAMPTZ;` — **Destructive: n** · nullable, no default · **Backfill: N/A** · **Rollback:** `DROP COLUMN` ×3.
+- **AC:** applies via MCP `apply_migration`; `get_advisors` (security+perf) clean, no new RLS gap; `UserProfile` exported; helper writes first/last + derived `display_name`; existing accounts unaffected (null names).
+- **Tests:** unit — the name→`display_name` derive helper.
+- **Reviews:** `rls-privacy-reviewer` (light — confirm no `user_profiles` policy widens), `supabase-sync`.
+
+### PR 2 — Age-precision schema  ·  S  ·  schema-isolated  ·  _gated on S2_
+- **Goal:** record whether a stored DOB is exact (a real birthday) or approximate (derived from an age), so no surface renders a computed birthday as fact.
+- **Depends on:** none.
+- **Files:** `supabase/migrations/028_pet_dob_precision.sql` (new); extend the `Pet` type in `store/petStore.ts`.
+- **Migration (Pre-flight):** `CREATE TYPE dob_precision AS ENUM ('exact','approximate'); ALTER TABLE pets ADD COLUMN date_of_birth_precision dob_precision NOT NULL DEFAULT 'exact';` — **Destructive: n** · default `'exact'` (existing DOBs came from the birthday picker) · **Backfill: N/A** · **Rollback:** `DROP COLUMN` + `DROP TYPE`.
+- **AC:** applies; advisors clean; `Pet` carries the field; existing pets read `'exact'`.
+- **Tests:** N/A (schema/type only) — the age→DOB+precision logic is tested in PR 9.
+- **Reviews:** **Data Scientist / Dr. Chen sign-off** on the honesty rationale (this is why the column exists).
+
+### PR 3 — Design-system primitives  ·  M
+- **Goal:** the shared text input the codebase lacks + a loading button, so screens stop hand-rolling the bordered-input style across ~6 files.
+- **Depends on:** none.
+- **Files:** `components/ui/TextField.tsx` (new); `components/ui/PrimaryButton.tsx` (add a `loading` prop). Adoption in existing screens is deferred to each screen PR to keep this one focused.
+- **Schema:** none.
+- **AC:** `TextField` supports label, value, placeholder, `secureTextEntry` (with a show/hide eye), error state, focus ring, ≥44pt, theme-tokens-only, a11y label/role; `PrimaryButton loading` shows a spinner + disables; no hardcoded values.
+- **Tests:** `TextField.test.tsx` + `PrimaryButton.test.tsx` (states, a11y).
+- **Reviews:** `code-reviewer`, Designer.
+
+### PR 4 — Onboarding shell: routing + progress + completion gate  ·  M
+- **Goal:** the navigation frame the screens slot into, and the **durable completion gate** that replaces the fragile "≥1 pet" inference.
+- **Depends on:** PR 1 (reads `onboarding_completed_at`).
+- **Files:** `app/onboarding/_layout.tsx` (rework to the v3 stack + shared chrome); `components/onboarding/ProgressBar.tsx` (new); `hooks/usePet.ts` (replace the `setOnboarded(false)` "zero pets" logic with the `onboarding_completed_at` read + the §6 legacy rule); `store/petStore.ts`; `app/_layout.tsx` (onboarding-vs-tabs routing); back-nav.
+- **Schema:** none (reads PR 1's column).
+- **AC (§6 routing matrix):** completion flag set → skip onboarding; account-but-no-pet → resume at pet steps; **legacy account (has a pet, null completion) → treated complete, never re-onboarded**; sign-out resets; progress bar renders across the 5 pet steps; back preserves entered values.
+- **Tests:** unit — the gate/routing decision function (legacy + resume + fresh cases). This is the extractable logic; it must be tested.
+- **Reviews:** `code-reviewer`, QA (routing edge cases from §6).
+
+### PR 5 — Landing screen  ·  M
+- **Goal:** the Signal-led entry — logo + swipeable data-rich previews + persistent auth (mockup v3, screens 01–03).
+- **Depends on:** PR 3, PR 4.
+- **Files:** new unauthenticated entry (`app/(auth)/index.tsx` or `app/onboarding/landing.tsx`); `components/onboarding/ValuePreview.tsx` ×3 (Signal / log / vet-report cards, **built from real component styles** so they don't drift from the product — Eng note); swipe + dots; "Create account" → account, "Log in" → existing `app/(auth)/login.tsx`.
+- **Schema:** none.
+- **AC:** opens on the **Signal** preview; logo + Create account + Log in persistent across all swipe positions; previews imply **no required data entry**; completed/returning users never see it; theme-tokens; a swipe alternative for a11y.
+- **Tests:** N/A — pure UI (Engineer exemption line), or a light render smoke test.
+- **Reviews:** Designer, `nyx-voice`, `pm-feature-review`.
+
+### PR 6 — Account creation + soft verify  ·  M
+- **Goal:** create the account, capture owner name, soft email verification (screens 04–05).
+- **Depends on:** PR 1, PR 3, PR 4.
+- **Files:** rework `app/(auth)/signup.tsx` (or new `app/onboarding/account.tsx`) onto `TextField`; first/last/email/password + inline validation; TOS/privacy line (mock links → B-230/B-229); Apple/Google buttons behind `SOCIAL_AUTH_ENABLED` (off → hidden per S7); `supabase.auth.signUp` → write first/last + derived `display_name` via the PR 1 helper; reuse the existing `!data.session` branch for the soft "check your inbox" screen (resend + proceed).
+- **Schema:** none.
+- **AC:** signup creates the auth user + writes names; `display_name = "First Last"`; already-registered email handled calmly; verify screen is soft (proceed + resend, enforcement deferred — S3); social hidden when the flag is off; no new secret without a Register row; voice pass on copy.
+- **Tests:** unit — the name write + display_name derive on the auth path.
+- **Reviews:** `rls-privacy-reviewer` (the auth path), `code-reviewer`, `nyx-voice`.
+
+### PR 7 — Pet setup: type + name (required)  ·  M
+- **Goal:** the two required pet screens, inside the shell with progress (screens 06–07).
+- **Depends on:** PR 3, PR 4.
+- **Files:** `app/onboarding/pet-type.tsx`, `app/onboarding/pet-name.tsx` (new); retire/refactor the old `app/onboarding/pet.tsx`; reuse the `pets` insert (`{user_id, name, species}`, extended by PR 8/9); multi-pet reassurance copy on type; Continue gated on a non-empty name.
+- **Schema:** none.
+- **AC:** Cat/Dog required (2 tiles, no `other`); name required (Continue disabled until non-empty); writes the pet row; progress steps 1–2; back preserves; multi-pet line present.
+- **Tests:** N/A UI (or a light Continue-gating validation test).
+- **Reviews:** Designer (Principles 1/5), Jordan + Sam, `code-reviewer`, `nyx-voice`.
+
+### PR 8 — Pet setup: breed + gender (skippable)  ·  M
+- **Goal:** the two straightforward optional screens (08–09).
+- **Depends on:** PR 3, PR 4, PR 7.
+- **Files:** `app/onboarding/pet-breed.tsx` (reuse `components/pet/BreedPicker.tsx`), `app/onboarding/pet-gender.tsx`; prominent Skip; writes `breed` / `sex`; skip → `null` / `'unknown'`.
+- **Schema:** none.
+- **AC:** BreedPicker species-filtered + "Other" free-text; Skip advances (breed `null`, sex `'unknown'`); Male/Female chips; **closes B-210 on merge**.
+- **Tests:** N/A UI.
+- **Reviews:** Designer, `code-reviewer`, `nyx-voice`.
+
+### PR 9 — Pet setup: age (dual input + precision)  ·  M  ·  _clinical-honesty gate_
+- **Goal:** the dual integer-or-birthday age input, stored honestly (screen 10).
+- **Depends on:** PR 2 (needs `date_of_birth_precision`), PR 3, PR 4, PR 7.
+- **Files:** `app/onboarding/pet-age.tsx`; a **pure** `lib/age.ts` helper (`ageToDob(years, months) → {date_of_birth, precision:'approximate'}`; birthday → `{date_of_birth, precision:'exact'}`); segmented Age/Birthday toggle; wheels + date picker; "Not sure? Skip".
+- **Schema:** none (writes PR 2's column).
+- **AC:** toggle works; birthday → **exact** DOB; integer → anchored **approximate** DOB (S6: `today − duration`) + `precision='approximate'`; skip → `null`; **no downstream surface (Profile, vet report) renders an approximate DOB as a witnessed birthday** — the honesty invariant, verified against the helper output.
+- **Tests:** **unit tests for `lib/age.ts`** — both modes, precision, boundaries (the clinically-sensitive extractable logic; mandatory).
+- **Reviews:** **Data Scientist / Dr. Chen sign-off** — a bare ✓ is not enough; name the case you tried to break it with (e.g. "entered '2 years' → renders '~2 yrs (estimated)', never 'born Jul 5 2024' ✓").
+
+### PR 10 — Paywall mock + completion + end-to-end wiring  ·  M
+- **Goal:** close the flow — the mocked paywall + the warm completion that writes the durable gate (screens 11–12).
+- **Depends on:** PR 4 (gate), PR 5–9 (all screens).
+- **Files:** `app/onboarding/paywall.tsx` (non-functional mock, "Maybe later"); `app/onboarding/done.tsx` ("All set" → Home); write `onboarding_completed_at = now()` at completion; land on Home's empty state.
+- **Schema:** none.
+- **AC:** paywall skippable, **no purchase**, Principle-7 copy (explicit free-tier line, no gated care); completion writes the durable flag; lands on Home (Principle 5 empty state); **the full flow completes one-handed**; the §10 acceptance criteria pass end-to-end.
+- **Tests:** unit — the completion write; a QA full-flow script.
+- **Reviews:** Designer, `nyx-voice`, `pm-feature-review`, QA (§10 AC).
+
+### PR 11 — Functional Apple + Google sign-in (post-v1 follow-up)  ·  L
+- **Goal:** turn the mocked social buttons real (the store-submission bar).
+- **Depends on:** PR 6.
+- **Files:** `expo-apple-authentication` + Google OAuth wiring; deep-link handling; flip `SOCIAL_AUTH_ENABLED`; backfill first/last from the provider identity into `user_profiles`.
+- **Schema:** none.
+- **AC:** Sign in with Apple works; Google works; **Apple present whenever Google is** (Apple Guideline 4.8); provider name backfills; sessions persist; the unauthenticated gate holds.
+- **Tests:** auth-path units where extractable.
+- **Reviews:** **`rls-privacy-reviewer`** (new auth paths), `code-reviewer`.
+- **PM prerequisites:** Apple Developer account (✓ enrolled) + a **Google OAuth client** to provision (Secrets Register + PM action).
+
+---
+
+**Tier-2 doc ratification (do around PR 4–5, not code-blocking):** the `design-principles.md` §Onboarding revision + the Principle-2 softening (see §12) need the PM's sign-off before those doc edits are written.
 
 ---
 
