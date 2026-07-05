@@ -1,0 +1,54 @@
+-- ============================================================
+-- vet_reports — DROP the mass-disclosure "public share" RLS policy
+-- Security fix: B-218 (docs/backlog.md). Step 9 vet-report hard blocker.
+-- ============================================================
+-- 001_schema.sql created:
+--
+--   CREATE POLICY "vet_reports_public_share" ON vet_reports
+--     FOR SELECT USING (
+--       share_token IS NOT NULL
+--       AND token_expires_at > NOW()
+--     );
+--
+-- This policy has NO `TO` clause, so it applies to `public` — which
+-- includes the `anon` role. Its `USING` predicate is effectively
+-- always true: `share_token` is `NOT NULL DEFAULT uuid_generate_v4()`,
+-- so `share_token IS NOT NULL` holds for every row, and the only
+-- remaining gate is a live (non-expired) `token_expires_at`.
+--
+-- Net effect: a bare `GET /rest/v1/vet_reports?select=*` carrying only
+-- the public anon key could enumerate EVERY user's report metadata —
+-- `pet_id`, `storage_path`, `share_token`, and the date ranges — a
+-- health-artifact + valid-token dump that would in turn unlock the
+-- Storage PDFs. A share token is meant to unlock the ONE artifact it
+-- was minted for; this policy instead turned the anon key into a live
+-- query key over the entire table.
+--
+-- It is DORMANT today (no code mints a `vet_reports` row yet, so the
+-- table is empty), but it becomes a live leak the instant the PR 6
+-- public `view-report` route ships. We remove it now so the public
+-- path is FORCED onto the safe pattern.
+--
+-- The fix (B-218): the public report view is served by a service-role
+-- Edge Function that validates the token server-side (single-row
+-- lookup by `share_token`, `token_expires_at` expiry check) and returns
+-- only that one artifact — never a raw, anon-queryable table. That
+-- read path is built with PR 6; this migration removes the unsafe RLS
+-- grant it replaces. Manual link revocation (B-143) was declined by
+-- the PM (2026-07-05); the existing 30-day `token_expires_at` default
+-- stays the sole expiry mechanism.
+--
+-- After this drops, `vet_reports` retains exactly one policy —
+-- `vet_reports_owner` (FOR ALL USING auth.uid() = generated_by) — so:
+--   • the authenticated owner keeps full access to their own reports;
+--   • anon / other users get NOTHING (auth.uid() is null for anon, so
+--     `null = generated_by` is never true).
+-- RLS stays enabled on the table.
+--
+-- Reversal / destructiveness: drops a POLICY only — no table, column,
+-- or row is touched (destructive = n; the table is empty regardless).
+-- Rollback = recreate the policy (see the CREATE above) — but doing so
+-- REINTRODUCES the leak, so rollback is intentionally undesirable.
+-- ============================================================
+
+DROP POLICY IF EXISTS "vet_reports_public_share" ON vet_reports;
