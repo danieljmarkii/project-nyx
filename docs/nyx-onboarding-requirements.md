@@ -1,7 +1,8 @@
 # Project Nyx — Onboarding Experience Requirements
 
-**Version:** 1.1 (draft — awaiting build) | **Status:** Build-ready pending sub-decisions | **Last Updated:** 2026-07-05
-_v1.1 (2026-07-05): flow revised to the **Landing** pattern (logo + persistent auth + data-rich value previews) and copy updated, after the PM's v1-mockup review + a Jordan/Sam persona interview. See §3.0 / §5. Two review mockups exist (v1, v2)._
+**Version:** 1.2 (draft — awaiting build) | **Status:** Build-ready pending sub-decisions | **Last Updated:** 2026-07-05
+_v1.1 (2026-07-05): flow revised to the **Landing** pattern (logo + persistent auth + data-rich value previews) and copy updated, after the PM's v1-mockup review + a Jordan/Sam persona interview. See §3.0 / §5._
+_v1.2 (2026-07-05): PM v2 review — the Landing now **leads with the Signal** (differentiator opens), logging copy → "A couple of taps today. A clearer picture tomorrow.", and **Phase C stays at 5 screens** (per-screen Skip does the work). Three review mockups exist (v1, v2, v3)._
 **Owner:** PM (decisions) · Sr. Product Designer (flow/craft lead) · Dir. of Engineering (build) · Trust & Safety (store gates)
 **Swimlane:** App-store readiness (siblings: B-039 account deletion, B-229 privacy policy, B-230 TOS, B-231 version display)
 
@@ -64,7 +65,7 @@ A visible **progress indicator** runs across the post-account pet-setup steps (S
 ### 0 · Landing (logo + value previews + persistent auth) — _revised v2_
 _Revised after the PM v1 review + a Jordan/Sam persona interview: v1's three standalone carousel cards had no obvious "create account" affordance and no logo, and both personas bounced on the entry. v2 collapses the carousel into **one Landing screen** that combines the logo, the (well-liked) swipeable value, and always-present auth — "richer, not longer" (Jordan's funnel line)._
 - **Nyx logo** anchors the top (fixes "which app did I open?").
-- A **swipeable value area** (3 previews, dots) sits in the middle; the previews are **tangible Nyx UIs, not abstract art** — (1) the 10-second quick-log, (2) a Signal insight card ("Vomiting is down 60%…", Newsreader face), (3) a clinical vet-report snippet. Borrowed from the competitor's data-richness, but scoped to **our wedge** (log → Signal → report), never a generic vet-finder/records app.
+- A **swipeable value area** (3 previews, dots) sits in the middle; the previews are **tangible Nyx UIs, not abstract art**, and **lead with the Signal** (_v3, PM call — the differentiator opens; it recasts the log's "A few taps…" line from a weak opener into the "and it's effortless" beat_): (1) a **Signal insight card** ("Vomiting is down 60%…", Newsreader face), (2) the **10-second quick-log**, (3) a clinical **vet-report snippet**. Borrowed from the competitor's data-richness, but scoped to **our wedge** (log → Signal → report), never a generic vet-finder/records app.
 - **"Create account" (primary) + "Log in" (text)** are **pinned and persistent** across all swipe positions — a new user can browse the value _or_ sign up immediately; a returning user taps "Log in".
 - Previews are **marketing surfaces** — they show what the owner will _get_, and must **never imply required data entry** (Sam's Principle-1 caution; required is still just type + name). Build them from real component styles so they don't drift into promising a product we don't ship (Eng).
 - This is the **new unauthenticated entry point** (replaces the current bare login-first landing). Users with a valid session + completed onboarding never see it.
@@ -137,8 +138,8 @@ ALTER TABLE pets ADD COLUMN date_of_birth_precision dob_precision NOT NULL DEFAU
 
 First-person pet / second-person owner, specific over generic, no exclamation marks, warm-not-cute. Draft copy — `nyx-voice` skill reviews at build.
 
-- **Landing preview 1 (logging):** "A few taps. Even at 2am." / "Log a symptom or a meal one-handed, in seconds — no forms."
-- **Landing preview 2 (Signal):** "Patterns you can't see." / "Nyx tells you what the data means — not just what happened."
+- **Landing preview 1 (Signal — _leads, v3_):** "Patterns you can't see." / "Nyx tells you what the data means — not just what happened."
+- **Landing preview 2 (logging — _new copy, v3_):** "A couple of taps today. A clearer picture tomorrow." / "Log a meal or a symptom in seconds — it's what lets Nyx catch what's changing." _(alts: "A few taps now, a clearer picture later." · "Log it in seconds — Nyx does the rest.")_
 - **Landing preview 3 (report):** "Ready for the vet." / "Hand your vet a clear, clinical summary in one tap. Free, always."
 - **Landing auth:** "Create account" (primary) · "Log in" (secondary).
 - **Account CTA:** "Create your account" · TOS line: "By continuing you agree to Nyx's Terms and Privacy Policy."
