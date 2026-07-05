@@ -64,6 +64,8 @@ import type {
   ScopeInfo,
   Signalment,
   AtAGlance,
+  IncidentPhoto,
+  SymptomLogPhenotype,
 } from './report.ts'
 
 // ── HTML escaping — EVERY interpolated data string flows through here ────────────
@@ -501,12 +503,12 @@ function weightSpark(seriesKg: number[]): string {
 // ── Page-1 sections ──────────────────────────────────────────────────────────────
 
 function letterhead(snap: ReportSnapshot): string {
-  // The lettered appendices run A–D, plus a conditional E (meals & intake, whenever the owner
-  // logged meals or an intake flag fired); the closing "How to read" page is deliberately
-  // unlettered. State the ACCURATE range — the first round-2 artifact said "A–F", sending a
-  // careful vet hunting for a non-existent E/F on a document whose whole pitch is "traces to
-  // every figure" (cold-read).
-  const lastAppendix = mealsAppendixVisible(snap) ? 'E' : 'D'
+  // The lettered appendices run A–D, plus a conditional meals appendix (E, whenever the owner
+  // logged meals or an intake flag fired) and a conditional incident-photos appendix (PR 7, the
+  // last letter — E or F); the closing "How to read" page is deliberately unlettered. State the
+  // ACCURATE range — the first round-2 artifact said "A–F", sending a careful vet hunting for a
+  // non-existent appendix on a document whose whole pitch is "traces to every figure" (cold-read).
+  const lastAppendix = lastAppendixLetter(snap)
   return `
   <div class="letter">
     <div class="brand">
@@ -619,6 +621,29 @@ function flagRow(tag: string, body: string): string {
   return `<div class="flag"><span class="tag">${h(tag)}</span> ${body}</div>`
 }
 
+/**
+ * The safety-band photo lead (PR 7, §2/§3.1): a safety-flagged photo (blood/foreign) also LEADS
+ * the safety band on page 1, so the frame the flag is about is impossible to miss (prominence is
+ * orthogonal to Appendix E inclusion). Renders the embedded thumbnails for the flagged incidents,
+ * pointing to their full appendix entry. Only photos actually embedded (dataUri set) show here —
+ * a photo whose server-side fetch failed still leaves its flag TEXT leading the band (the flag is
+ * a fact independent of the image), just without a thumbnail. Photos never carry an n=1 verdict.
+ *
+ * The data URI is server-generated base64 over a fixed media-type allowlist (index.ts) — NOT owner
+ * text — and the base64 alphabet contains none of h()'s escaped characters, so it is interpolated
+ * directly (escaping a multi-hundred-KB string per photo would be pure waste); every owner-entered
+ * string in this file still flows through h().
+ */
+function safetyBandThumbs(snap: ReportSnapshot, eventIds: string[]): string {
+  const ids = new Set(eventIds)
+  const photos = snap.incidentPhotos.filter((p) => ids.has(p.eventId) && p.dataUri)
+  if (photos.length === 0) return ''
+  const imgs = photos.map((p) => `<img class="sbthumb" src="${p.dataUri}" alt="" />`).join('')
+  return `<div class="sbthumbs">${imgs}<span class="sbthumbnote">Full photo${
+    photos.length === 1 ? '' : 's'
+  } in appendix&nbsp;${photosAppendixLetter(snap)} (incident photos).</span></div>`
+}
+
 function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
   const tz = snap.timezone
   switch (f.kind) {
@@ -636,7 +661,11 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         // R2-6 — attribute to the mechanism ("automated photo analysis"), never the brand ("a photo
         // Nyx flagged"), since the app name collides with the patient's name (Nyx). R2-4 — the AI
         // provenance sentence collapses into the uniform badge; the present-only qualifier stays.
-        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — ${h(kindPhrase)} on automated photo analysis. ${aiBadge()} Shown because it is present; a photo cannot exclude bleeding.`,
+        // PR 7 — the flagged photo also leads the band (thumbnail), impossible to miss.
+        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — ${h(kindPhrase)} on automated photo analysis. ${aiBadge()} Shown because it is present; a photo cannot exclude bleeding.${safetyBandThumbs(
+          snap,
+          f.incidents.map((i) => i.eventId),
+        )}`,
       )
     }
     case 'present_foreign': {
@@ -649,8 +678,11 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       const dates = f.incidents.map((i) => fmtLocalDay(i.occurredAt, tz)).join(', ')
       return flagRow(
         'Foreign material',
-        // R2-6 mechanism-not-brand + R2-4 badge (see present_blood above).
-        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — possible foreign material on automated photo analysis.${noteBit} ${aiBadge()}`,
+        // R2-6 mechanism-not-brand + R2-4 badge (see present_blood above). PR 7 — thumbnail leads the band.
+        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — possible foreign material on automated photo analysis.${noteBit} ${aiBadge()}${safetyBandThumbs(
+          snap,
+          f.incidents.map((i) => i.eventId),
+        )}`,
       )
     }
     case 'intake_decline': {
@@ -1567,12 +1599,33 @@ function mealsAppendixVisible(snap: ReportSnapshot): boolean {
   return snap.diet.mealItems.length > 0 || snap.provenance.intakeLog.length > 0
 }
 
+/**
+ * Incident-photo appendix (PR 7). Renders whenever any in-window incident was photographed.
+ * Lettering: it is the LAST lettered appendix, after the (conditional) meals appendix — so it is
+ * 'F' when meals render and 'E' when they don't (the meals-appendix 'E' cross-references, all
+ * gated behind mealsAppendixVisible, never collide). The closing "How to read" page stays
+ * unlettered. Kept as ONE source of truth so the letterhead orient line, the appendix divider,
+ * this appendix's own heading, and the legend never drift apart.
+ */
+function hasIncidentPhotos(snap: ReportSnapshot): boolean {
+  return snap.incidentPhotos.length > 0
+}
+function photosAppendixLetter(snap: ReportSnapshot): string {
+  return mealsAppendixVisible(snap) ? 'F' : 'E'
+}
+/** The last LETTERED appendix (drives the page-1 orient line + the divider): photos → meals → D. */
+function lastAppendixLetter(snap: ReportSnapshot): string {
+  if (hasIncidentPhotos(snap)) return photosAppendixLetter(snap)
+  return mealsAppendixVisible(snap) ? 'E' : 'D'
+}
+
 function appendixDivider(snap: ReportSnapshot): string {
   const eBit = mealsAppendixVisible(snap) ? ' &middot; E — meals &amp; intake' : ''
+  const photoBit = hasIncidentPhotos(snap) ? ` &middot; ${photosAppendixLetter(snap)} — incident photos` : ''
   return `
   <div class="divider">
     <span class="k">End of clinical summary</span>
-    The appendices are the reference record behind every figure on page&nbsp;1: A — event log &middot; B — diet history &middot; C — off-diet exposures &middot; D — medications${eBit} &middot; How to read this report.
+    The appendices are the reference record behind every figure on page&nbsp;1: A — event log &middot; B — diet history &middot; C — off-diet exposures &middot; D — medications${eBit}${photoBit} &middot; How to read this report.
   </div>`
 }
 
@@ -1607,29 +1660,39 @@ function appendixA(snap: ReportSnapshot): string {
 </section>`
 }
 
+/**
+ * The owner-reviewable, PRESENT-only photo-analysis fields as one inline string — shared by
+ * Appendix A's symptom log AND Appendix E's incident-photo caption, so the two can never phrase the
+ * same read differently. Completed → colour · contents · consistency · (present-only) blood/foreign;
+ * a non-completed state → the honest "not clear enough to read" (never a positive "no", §5.9).
+ * Returns '' when there is no phenotype. NEVER an n=1 verdict/recommendation.
+ */
+function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
+  if (!ph) return ''
+  if (ph.status === 'completed') {
+    const bits = [
+      ph.colour ? `colour ${h(ph.colour)}` : null,
+      ph.contentsCategory ? `contents ${h(contentsLabel(ph.contentsCategory).toLowerCase())}` : null,
+      ph.consistency ? `consistency ${h(ph.consistency.replace(/_/g, ' '))}` : null,
+      // PRESENT-only (§5.9): render blood/foreign ONLY when present; silence otherwise.
+      ph.bloodPresent ? `<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>` : null,
+      ph.foreignPresent ? `<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>` : null,
+    ].filter(Boolean)
+    return bits.join(' &middot; ')
+  }
+  const stateWord =
+    ph.status === 'failed' ? 'present but not legible' : ph.status === 'uncertain' ? 'read uncertain' : 'still processing'
+  return `${h(stateWord)} — not clear enough to read`
+}
+
 function symptomLogRow(e: SymptomLogEntry, tz: string | null): string {
   const dateCell = fmtLocalDay(e.occurredAt, tz)
   const occCell = occurredCell(e, tz)
   const loggedCell = fmtLocalTime(e.loggedAt, tz)
   const dup = e.dupCount > 1 ? ` <span class="conf">${e.dupCount} logs</span>` : ''
   let noteCell = e.notes ? h(e.notes) : ''
-  const ph = e.phenotype
-  if (ph) {
-    if (ph.status === 'completed') {
-      const bits = [
-        ph.colour ? `colour ${h(ph.colour)}` : null,
-        ph.contentsCategory ? `contents ${h(contentsLabel(ph.contentsCategory).toLowerCase())}` : null,
-        ph.consistency ? `consistency ${h(ph.consistency.replace(/_/g, ' '))}` : null,
-        // PRESENT-only (§5.9): render blood/foreign ONLY when present; silence otherwise.
-        ph.bloodPresent ? `<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>` : null,
-        ph.foreignPresent ? `<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>` : null,
-      ].filter(Boolean)
-      noteCell += `<span class="fields"><b>Photo:</b> ${bits.join(' &middot; ')}</span>`
-    } else {
-      const stateWord =
-        ph.status === 'failed' ? 'present but not legible' : ph.status === 'uncertain' ? 'read uncertain' : 'still processing'
-      noteCell += `<span class="fields"><b>Photo:</b> ${h(stateWord)} — not clear enough to read</span>`
-    }
+  if (e.phenotype) {
+    noteCell += `<span class="fields"><b>Photo:</b> ${phenotypeFieldBits(e.phenotype)}</span>`
   }
   return `<tr><td class="num">${h(dateCell)}</td><td>${h(symptomLabel(e.type))}</td><td>${occCell}${dup}</td><td class="num">${h(
     loggedCell,
@@ -1773,6 +1836,61 @@ function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
   return `<tr><td class="num">${h(fmtLocalDay(e.occurredAt, tz))}</td><td class="num">${h(
     fmtLocalTime(e.occurredAt, tz),
   )}</td><td>${e.foodLabel ? h(e.foodLabel) : '&mdash;'}</td><td>${intakeCell}${tag}</td></tr>`
+}
+
+/**
+ * Appendix E/F — incident photos (PR 7). Every photographed in-window incident, most-recent-first,
+ * each with its owner-reviewable AI read (present-only; never an n=1 verdict) and owner note. All
+ * photos are baked into the artifact (and the PDF), so the record the vet reviews is complete; the
+ * bytes are EXIF/GPS-stripped and downscaled server-side (index.ts). A photo whose server-side
+ * fetch failed still lists its incident + AI read, with an honest "could not be embedded"
+ * placeholder — its metadata is not silently dropped.
+ */
+function incidentPhotosAppendix(snap: ReportSnapshot): string {
+  if (!hasIncidentPhotos(snap)) return ''
+  const letter = photosAppendixLetter(snap)
+  const photos = snap.incidentPhotos
+  const n = photos.length
+  const missing = photos.filter((p) => !p.dataUri).length
+  const missingNote =
+    missing > 0
+      ? ` ${num(missing)} photo${missing === 1 ? '' : 's'} could not be embedded and ${
+          missing === 1 ? 'is' : 'are'
+        } shown as a labelled placeholder rather than dropped.`
+      : ''
+  const cards = photos.map((p) => incidentPhotoCard(p, snap.timezone)).join('')
+  return `
+<section class="page">
+  <p class="appx-title serif">Appendix ${letter} — Incident photos</p>
+  <p class="appx-sub"><span class="num">${n}</span> photographed incident${
+    n === 1 ? '' : 's'
+  } in this window, most recent first — the owner's own photos, attached when the event was logged. For vomiting incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}</p>
+  <div class="phgrid">${cards}</div>
+  ${footer(snap, `Appendix ${letter} — incident photos`)}
+</section>`
+}
+
+function incidentPhotoCard(p: IncidentPhoto, tz: string | null): string {
+  const date = fmtLocalDay(p.occurredAt, tz)
+  const typeLabel = symptomLabel(p.type)
+  const safetyTag = p.safety
+    ? `<span class="phtag">${p.safety === 'blood' ? 'Possible blood' : 'Foreign material'}</span>`
+    : ''
+  const img = p.dataUri
+    ? `<img class="phimg" src="${p.dataUri}" alt="Owner photo of a ${h(typeLabel.toLowerCase())} incident on ${h(date)}" />`
+    : `<div class="phimg phimg-missing">Photo could not be embedded</div>`
+  const readBits = phenotypeFieldBits(p.phenotype)
+  const readLine = readBits ? `<div class="phread"><b>Photo:</b> ${readBits} ${aiBadge()}</div>` : ''
+  const note = p.notes ? `<div class="phnote">${h(p.notes)}</div>` : ''
+  return `
+  <figure class="phcard">
+    ${img}
+    <figcaption class="phcap">
+      <div class="phhead"><span class="phdate num">${h(date)}</span> <span class="phtype">${h(typeLabel)}</span>${safetyTag}</div>
+      ${readLine}
+      ${note}
+    </figcaption>
+  </figure>`
 }
 
 // Appendices B–D on one sheet, in reading order: diet history FIRST (what the pet is fed),
@@ -2041,6 +2159,13 @@ function appendixF(snap: ReportSnapshot): string {
   const safetyDt = hasSafety
     ? `<dt>Safety flags</dt><dd>Shown only when present, above the fold. They escalate on the presence of a concern (chronicity, reduced intake, possible blood/foreign, worsening) and are owner-reported, not a diagnosis. Absence of a flag is never shown as an &ldquo;all clear.&rdquo;</dd>`
     : `<dt>Safety flags</dt><dd>Shown only when present, above the fold. None were present in this window — and an <b>absence</b> of a flag is never shown as an &ldquo;all clear.&rdquo;</dd>`
+  // PR 7 — the incident-photos legend entry only renders when photos exist (so the legend never
+  // points at an appendix that isn't there — the dangling-appendix class the meals appendix hit).
+  const photoDt = hasIncidentPhotos(snap)
+    ? `<dt>Incident photos</dt><dd>Every photographed incident in the window is in appendix&nbsp;${photosAppendixLetter(
+        snap,
+      )}, most recent first — the owner's own photos, attached when the event was logged. Location, device and capture-time metadata are removed before embedding, and the images are downscaled. A photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1; a clear photo is never an all-clear.</dd>`
+    : ''
   return `
 <section class="page">
   <p class="appx-title serif">How to read this report</p>
@@ -2052,6 +2177,7 @@ function appendixF(snap: ReportSnapshot): string {
     <dt>Time confidence</dt><dd><span class="conf">seen</span> witnessed (exact time) &middot; <span class="conf">est</span> an estimated time &middot; <span class="conf">range</span> found later; the window it occurred in is shown, not the time it was noticed — a one-sided account renders as &ldquo;before/after&rdquo; that bound &middot; <span class="conf">unspecified</span> logged without a time confidence; treat the time as approximate.</dd>
     <dt>Duplicate logs</dt><dd>A <span class="conf">N logs</span> tag marks the same incident logged more than once (a re-log or sync retry). It is counted once everywhere in this report; the duplicate count is disclosed rather than hidden.</dd>
     <dt>Photo analysis</dt><dd>For photographed incidents, structured fields (colour, contents, blood, foreign material) are read automatically from the photo the owner took. These are owner-reviewable and aggregated over the incidents with a legible read. They never carry a diagnosis or a single-incident verdict, and a clear photo is never an all-clear.</dd>
+    ${photoDt}
     <dt>Blood &amp; foreign material</dt><dd>Reported <b>only when seen</b> in an incident — never as a &ldquo;0 of N&rdquo; count, because absence in a photo cannot exclude bleeding (digested blood photographs poorly) and these are AI reads. A flagged incident leads the flags for review at the top.</dd>
     <dt>Weight</dt><dd>Owner home-scale weigh-ins, shown as a trend rather than a single point. Descriptive context, never a diagnosis or an alarm; body condition is not assessed here.</dd>
     <dt>Intake</dt><dd>Where the owner logs meals, a declined or barely-touched meal is recorded as a possible health signal — never &ldquo;picky.&rdquo;${
@@ -2109,6 +2235,7 @@ ${page1}
 ${appendixA(snap)}
 ${appendixBCD(snap)}
 ${mealsAppendix(snap)}
+${incidentPhotosAppendix(snap)}
 ${appendixF(snap)}
 </body>
 </html>`
@@ -2294,6 +2421,26 @@ const STYLE = `
   .divider .k{display:block;font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:10px;color:var(--ink);margin-bottom:2px;}
   svg .mtick{stroke:var(--faint);stroke-width:1;}
 
+  /* Incident-photos appendix (PR 7). The chrome is grayscale (§5.8); the photos are the
+     source datum, not a colour-coded encoding, so they carry no §5.8 concern. */
+  .phgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px;margin-top:6px;}
+  .phcard{margin:0;border:1px solid var(--hair);border-radius:9px;overflow:hidden;background:#fcfcfd;}
+  .phimg{display:block;width:100%;height:auto;max-height:340px;object-fit:contain;background:var(--fill);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .phimg-missing{display:flex;align-items:center;justify-content:center;min-height:120px;font-size:11px;color:var(--faint);font-style:italic;border-bottom:1px solid var(--hair);}
+  .phcap{padding:8px 11px 10px;font-size:11.5px;line-height:1.45;}
+  .phhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .phhead .phdate{font-weight:700;}
+  .phhead .phtype{color:var(--muted);}
+  .phtag{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink);border:1.5px solid var(--ink);border-radius:4px;padding:1px 6px;}
+  .phread{color:var(--muted);font-size:10.5px;margin-top:4px;}
+  .phread b{color:#25272d;font-weight:600;}
+  .phnote{margin-top:4px;color:#2a2c31;}
+
+  /* Safety-band photo lead — a small thumbnail row inside the flag, on page 1. */
+  .sbthumbs{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:7px;}
+  .sbthumb{width:66px;height:66px;object-fit:cover;border:1.5px solid var(--ink);border-radius:6px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .sbthumbnote{font-size:10px;color:var(--muted);font-style:italic;}
+
   @media print{
     body{background:#fff;font-size:10.4pt;}
     .no-print{display:none !important;}
@@ -2301,7 +2448,7 @@ const STYLE = `
     .page + .page{page-break-before:always;}
     thead{display:table-header-group;}
     /* Only ATOMIC units resist breaking — never a whole .sec (that fragments the page). */
-    tr,.trend,.tile,.callout,.weight,.safetyband,.present,.divider{page-break-inside:avoid;}
+    tr,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard{page-break-inside:avoid;}
     .rule-brand,.wordmark,.foot .fbrand .fw .w{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
   @page{size:A4 portrait;margin:11mm;}

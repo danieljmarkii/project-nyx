@@ -23,6 +23,7 @@ import type {
   MedicationAdherence,
   SymptomLogEntry,
   ConfounderExposure,
+  IncidentPhoto,
 } from './report.ts'
 
 // ── A complete, neutral base snapshot; each test overrides only what it exercises ──
@@ -100,6 +101,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       proteinExposureTally: {}, proteinUnknownCount: 0,
       conditions: [],
     },
+    incidentPhotos: [],
     ...overrides,
   }
 }
@@ -1385,4 +1387,93 @@ Deno.test('cold-read coherence — a completed/stopped medication carries its en
   // The end date appears (not a bare "since May 12" that reads as still-active), on BOTH surfaces.
   assert.ok(/May 12 &ndash; May 26 \(course complete\)/.test(html), 'completed course shows its date span + "course complete"')
   assert.ok(!/Metronidazole.*since <span class="num">May 12/.test(html), 'the ended course does not read "since May 12" as if still active')
+})
+
+// ── Incident photos — Appendix E/F render + safety-band lead (PR 7) ──────────────
+
+// A tiny valid 1x1 PNG data URI (base64) — stands in for an embedded, EXIF-stripped photo.
+const PNG_1PX =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+
+function photo(over: Partial<IncidentPhoto> & { eventId: string; occurredAt: string }): IncidentPhoto {
+  return {
+    eventId: over.eventId,
+    storagePath: over.storagePath ?? `p/${over.eventId}.jpg`,
+    type: over.type ?? 'vomit',
+    occurredAt: over.occurredAt,
+    occurredAtConfidence: over.occurredAtConfidence ?? 'witnessed',
+    occurredAtEarliest: over.occurredAtEarliest ?? null,
+    occurredAtLatest: over.occurredAtLatest ?? null,
+    notes: over.notes ?? null,
+    safety: over.safety ?? null,
+    phenotype: over.phenotype ?? null,
+    dataUri: over.dataUri ?? null,
+  }
+}
+
+Deno.test('PR7 render — Appendix E renders when photos exist; letter is E with no meals appendix', () => {
+  const html = renderReport(base({ incidentPhotos: [photo({ eventId: 'v1', occurredAt: '2026-06-20T14:00:00Z', dataUri: PNG_1PX })] }))
+  assert.ok(html.includes('Appendix E — Incident photos'), 'photos appendix is lettered E (no meals appendix)')
+  assert.ok(html.includes(PNG_1PX), 'the embedded photo bytes are baked into the artifact')
+  assert.ok(/metadata \(location, device, capture time\) is removed/.test(html), 'the EXIF-strip is disclosed in the appendix')
+})
+
+Deno.test('PR7 render — no photos ⇒ no photos appendix, no dangling cross-reference', () => {
+  const html = renderReport(base())
+  assert.ok(!html.includes('Incident photos'), 'no photos appendix and no legend entry when there are no photos')
+})
+
+Deno.test('PR7 render — with a meals appendix present, photos take the NEXT letter (F)', () => {
+  const html = renderReport(
+    base({
+      provenance: {
+        ...base().provenance,
+        intakeLog: [{ eventId: 'm1', occurredAt: '2026-06-30T12:00:00Z', foodLabel: 'Wet food', intakeRating: 'refused', isLastFullMeal: false, pinned: false }],
+      },
+      incidentPhotos: [photo({ eventId: 'v1', occurredAt: '2026-06-20T14:00:00Z', dataUri: PNG_1PX })],
+    }),
+  )
+  assert.ok(html.includes('Appendix E — Meals'), 'the meals appendix keeps E')
+  assert.ok(html.includes('Appendix F — Incident photos'), 'photos come after meals as F')
+})
+
+Deno.test('PR7 render — a safety-flagged photo also LEADS the safety band on page 1 (thumbnail)', () => {
+  const bloodFlag: SafetyFlag = { kind: 'present_blood', incidents: [{ eventId: 'vb', occurredAt: '2026-06-20T14:00:00Z', kind: 'fresh_red' }] }
+  const html = renderReport(
+    base({
+      safetyFlags: [bloodFlag],
+      incidentPhotos: [photo({ eventId: 'vb', occurredAt: '2026-06-20T14:00:00Z', safety: 'blood', dataUri: PNG_1PX })],
+    }),
+  )
+  const bandStart = html.indexOf('safetyband')
+  const bandEnd = html.indexOf('</section>', bandStart)
+  const band = html.slice(bandStart, bandEnd)
+  assert.ok(band.includes('sbthumb'), 'the flagged photo thumbnail renders inside the safety band')
+  assert.ok(band.includes(PNG_1PX), 'the actual flagged frame leads the band')
+})
+
+Deno.test('PR7 render — a photo that failed to embed shows an honest placeholder, never a raw fallback', () => {
+  const html = renderReport(base({ incidentPhotos: [photo({ eventId: 'v1', occurredAt: '2026-06-20T14:00:00Z', dataUri: null })] }))
+  assert.ok(html.includes('Photo could not be embedded'), 'a null-dataUri photo is a labelled placeholder')
+  assert.ok(/could not be embedded and is shown as a labelled placeholder/.test(html), 'the omission is disclosed in the appendix preamble')
+})
+
+Deno.test('PR7 render — the owner-reviewable AI read shows present-only fields, never an n=1 verdict', () => {
+  const html = renderReport(
+    base({
+      incidentPhotos: [
+        photo({
+          eventId: 'v1',
+          occurredAt: '2026-06-20T14:00:00Z',
+          dataUri: PNG_1PX,
+          phenotype: { status: 'completed', contentsCategory: 'bile', consistency: 'foamy', colour: 'yellow', bloodPresent: 'coffee_ground', foreignPresent: null, foreignNote: null, edited: false },
+        }),
+      ],
+    }),
+  )
+  assert.ok(html.includes('AI read &middot; unconfirmed'), 'the uniform AI-read badge is present')
+  assert.ok(html.includes('possible coffee-ground'), 'present blood renders as a possibility')
+  // The IncidentPhoto phenotype has no recommendation field by construction; assert the analyze-vomit
+  // n=1 verdict vocabulary (recommendation enum labels) never surfaces as a per-photo verdict.
+  assert.ok(!/worth a call|not enough to say|worth_a_call/i.test(html), 'no single-incident recommendation leaks onto the report')
 })

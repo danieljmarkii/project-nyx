@@ -109,6 +109,14 @@ export default function ReportScreen() {
             showsVerticalScrollIndicator
           />
           <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>
+            {report.photoCount > 0 && (
+              // Owner visibility (spec §8): before sending, the owner sees how many of their own
+              // incident photos this report hands to the vet. The interactive "tap to exclude any"
+              // review is the deferred fast-follow (B-227) that builds on this.
+              <Text style={styles.barPhotos}>
+                Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
+              </Text>
+            )}
             <PrimaryButton
               label={sharing ? 'Preparing PDF…' : 'Send to vet'}
               onPress={onShare}
@@ -160,6 +168,12 @@ const styles = StyleSheet.create({
     fontFamily: theme.fontBody,
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+    textAlign: 'center',
+  },
+  barPhotos: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
     textAlign: 'center',
   },
 });

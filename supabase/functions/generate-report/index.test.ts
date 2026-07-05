@@ -22,10 +22,14 @@ import {
   mapVetVisitRows,
   mapFeedingArrangementRows,
   mapConditionRows,
+  mapAttachmentRows,
+  detectPhotoMediaType,
+  bytesToBase64,
+  embedIncidentPhotos,
   computeLookbackIso,
   generateReportForPet,
 } from './index.ts'
-import { assembleReport, resolveScope, type ReportInput } from './report.ts'
+import { assembleReport, resolveScope, type ReportInput, type IncidentPhoto } from './report.ts'
 import { renderReport } from './render.ts'
 
 const NOW = '2026-07-02T12:00:00Z'
@@ -451,4 +455,134 @@ Deno.test('generateReportForPet: no display name → owner falls back to the cal
   )
   assert.equal(res3.status, 200)
   assert.ok((res3.body.html as string).includes('Owner: not recorded'))
+})
+
+// ── PR 7 — incident-photo mappers + fetch/strip/embed ───────────────────────────
+
+Deno.test('mapAttachmentRows: renames fields, defaults null mime + missing sort_order to 0', () => {
+  const out = mapAttachmentRows([
+    { event_id: 'e1', storage_path: 'pet/e1.jpg', mime_type: 'image/jpeg', sort_order: 2 },
+    { event_id: 'e2', storage_path: 'pet/e2.jpg', mime_type: null, sort_order: null },
+  ])
+  assert.deepEqual(out, [
+    { eventId: 'e1', storagePath: 'pet/e1.jpg', mimeType: 'image/jpeg', sortOrder: 2 },
+    { eventId: 'e2', storagePath: 'pet/e2.jpg', mimeType: null, sortOrder: 0 },
+  ])
+})
+
+Deno.test('detectPhotoMediaType: sniffs jpeg/png/gif/webp from magic bytes, defaults jpeg', () => {
+  assert.equal(detectPhotoMediaType(new Uint8Array([0xff, 0xd8, 0xff, 0x00])), 'image/jpeg')
+  assert.equal(detectPhotoMediaType(new Uint8Array([0x89, 0x50, 0x4e, 0x47])), 'image/png')
+  assert.equal(detectPhotoMediaType(new Uint8Array([0x47, 0x49, 0x46, 0x38])), 'image/gif')
+  const webp = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])
+  assert.equal(detectPhotoMediaType(webp), 'image/webp')
+  assert.equal(detectPhotoMediaType(new Uint8Array([0, 1, 2, 3])), 'image/jpeg')
+})
+
+Deno.test('bytesToBase64: round-trips (chunked encode is correct for a large buffer)', () => {
+  const big = new Uint8Array(70_000).map((_, i) => i % 256)
+  const b64 = bytesToBase64(big)
+  const back = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+  assert.equal(back.length, big.length)
+  assert.deepEqual(Array.from(back.slice(0, 300)), Array.from(big.slice(0, 300)))
+})
+
+// A fake service-role client that records every Storage download call + its options.
+function fakeAdmin(behavior: (path: string, opts: unknown) => { data: Blob | null; error: { message: string } | null }) {
+  const calls: Array<{ path: string; opts: unknown }> = []
+  const client = {
+    storage: {
+      from(bucket: string) {
+        assert.equal(bucket, 'nyx-event-attachments', 'photos are read ONLY from the incident-attachments bucket')
+        return {
+          download(path: string, opts: unknown) {
+            calls.push({ path, opts })
+            return Promise.resolve(behavior(path, opts))
+          },
+        }
+      },
+    },
+  }
+  return { client: client as unknown as Parameters<typeof embedIncidentPhotos>[0], calls }
+}
+
+function jpegBlob(size = 1024): Blob {
+  const bytes = new Uint8Array(size)
+  bytes[0] = 0xff
+  bytes[1] = 0xd8
+  bytes[2] = 0xff
+  return new Blob([bytes], { type: 'image/jpeg' })
+}
+
+function mkPhoto(over: Partial<IncidentPhoto> & { eventId: string }): IncidentPhoto {
+  return {
+    eventId: over.eventId,
+    storagePath: over.storagePath ?? `pet/${over.eventId}.jpg`,
+    type: over.type ?? 'vomit',
+    occurredAt: over.occurredAt ?? '2026-06-20T14:00:00Z',
+    occurredAtConfidence: 'witnessed',
+    occurredAtEarliest: null,
+    occurredAtLatest: null,
+    notes: null,
+    safety: over.safety ?? null,
+    phenotype: null,
+    dataUri: null,
+  }
+}
+
+Deno.test('embedIncidentPhotos: ALWAYS fetches through the EXIF-stripping transform, never the raw original', async () => {
+  const { client, calls } = fakeAdmin(() => ({ data: jpegBlob(), error: null }))
+  const photos = [mkPhoto({ eventId: 'v1' })]
+  const stats = await embedIncidentPhotos(client, photos)
+  assert.equal(stats.embedded, 1)
+  assert.ok(photos[0].dataUri?.startsWith('data:image/jpeg;base64,'), 'embedded as a data URI')
+  // The load-bearing privacy control: EVERY download carries a transform (imgproxy re-encode strips
+  // EXIF/GPS + downscales). A raw download (no transform option) would leak GPS — must never happen.
+  assert.equal(calls.length, 1)
+  const opts = calls[0].opts as { transform?: { width: number; height: number; quality: number; resize: string } }
+  assert.ok(opts?.transform, 'the download is transform-only')
+  assert.ok(opts.transform.width > 0 && opts.transform.height > 0, 'downscaled')
+  assert.ok(opts.transform.quality > 0 && opts.transform.quality <= 100, 'quality set')
+})
+
+Deno.test('embedIncidentPhotos: a transform failure yields a null dataUri (placeholder), NEVER a raw fallback', async () => {
+  const { client, calls } = fakeAdmin(() => ({ data: null, error: { message: 'transform add-on unavailable' } }))
+  const photos = [mkPhoto({ eventId: 'v1' })]
+  const stats = await embedIncidentPhotos(client, photos)
+  assert.equal(stats.embedded, 0)
+  assert.equal(stats.omitted, 1)
+  assert.equal(photos[0].dataUri, null, 'never embeds the un-stripped original as a fallback')
+  // It attempted the transform once and did NOT retry with a raw (no-transform) download.
+  assert.equal(calls.length, 1)
+  assert.ok((calls[0].opts as { transform?: unknown }).transform, 'the single attempt was transform-only')
+})
+
+Deno.test('embedIncidentPhotos: an oversize transformed blob is skipped, not embedded', async () => {
+  const { client } = fakeAdmin(() => ({ data: jpegBlob(4_000_000), error: null })) // > MAX_EMBED_IMAGE_BYTES
+  const photos = [mkPhoto({ eventId: 'v1' })]
+  const stats = await embedIncidentPhotos(client, photos)
+  assert.equal(stats.embedded, 0)
+  assert.equal(photos[0].dataUri, null)
+})
+
+Deno.test('embedIncidentPhotos: safety-flagged photos are attempted FIRST so the cap never drops them', async () => {
+  const seen: string[] = []
+  const { client } = fakeAdmin((path) => {
+    seen.push(path)
+    return { data: jpegBlob(), error: null }
+  })
+  // A plain photo first in manifest order, then a blood-flagged one — the flagged one must be fetched first.
+  const photos = [
+    mkPhoto({ eventId: 'plain', storagePath: 'pet/plain.jpg' }),
+    mkPhoto({ eventId: 'blood', storagePath: 'pet/blood.jpg', safety: 'blood' }),
+  ]
+  await embedIncidentPhotos(client, photos)
+  assert.equal(seen[0], 'pet/blood.jpg', 'the safety-flagged photo is embedded before the plain one')
+})
+
+Deno.test('embedIncidentPhotos: empty manifest is a no-op (no Storage calls)', async () => {
+  const { client, calls } = fakeAdmin(() => ({ data: jpegBlob(), error: null }))
+  const stats = await embedIncidentPhotos(client, [])
+  assert.deepEqual(stats, { total: 0, embedded: 0, omitted: 0 })
+  assert.equal(calls.length, 0)
 })
