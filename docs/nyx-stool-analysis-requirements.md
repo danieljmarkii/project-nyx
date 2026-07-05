@@ -1,5 +1,5 @@
 # Stool Analysis — Requirements
-**Version:** 1.0 | Created: 2026-07-05 | Backlog: B-243
+**Version:** 1.0 | Created: 2026-07-05 | Backlog: B-247
 **Status:** Draft — awaiting PM ratification of §2 decisions before PR 1 starts
 
 ---
