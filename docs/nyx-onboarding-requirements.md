@@ -1,6 +1,7 @@
 # Project Nyx — Onboarding Experience Requirements
 
-**Version:** 1.0 (draft — awaiting build) | **Status:** Build-ready pending sub-decisions | **Last Updated:** 2026-07-05
+**Version:** 1.1 (draft — awaiting build) | **Status:** Build-ready pending sub-decisions | **Last Updated:** 2026-07-05
+_v1.1 (2026-07-05): flow revised to the **Landing** pattern (logo + persistent auth + data-rich value previews) and copy updated, after the PM's v1-mockup review + a Jordan/Sam persona interview. See §3.0 / §5. Two review mockups exist (v1, v2)._
 **Owner:** PM (decisions) · Sr. Product Designer (flow/craft lead) · Dir. of Engineering (build) · Trust & Safety (store gates)
 **Swimlane:** App-store readiness (siblings: B-039 account deletion, B-229 privacy policy, B-230 TOS, B-231 version display)
 
@@ -48,7 +49,7 @@ Account-first (matches the PM's own ordering and the current architecture — pe
 A visible **progress indicator** runs across the post-account pet-setup steps (S5 decides whether it spans the whole flow).
 
 ```
-0. Welcome + value carousel  (3 cards, skippable)      ──▶ "Get started" / "Log in"
+0. Landing (ONE screen)      logo + swipeable value previews + persistent "Create account" / "Log in"
 1. Create account            (owner: first, last, email, password; TOS/privacy; Apple/Google mocked)
    └─ 1a. Verify email       (soft "check your inbox" — enforcement deferred, S3)
 2. Pet type                  Cat · Dog                 [REQUIRED]        ◀── progress starts
@@ -60,10 +61,14 @@ A visible **progress indicator** runs across the post-account pet-setup steps (S
 8. All set                   warm payoff → Home        (+ "add more pets anytime")
 ```
 
-### 0 · Welcome + value carousel
-- Three tight, swipeable cards; **skippable** via a persistent "Skip" and a "Get started" CTA; a small "Log in" affordance routes returning users to the existing login screen.
-- Card themes (copy in §5): (1) frictionless logging, (2) understand your pet (the Signal), (3) vet-ready reports. Warm illustration, on-brand, no exclamation marks.
+### 0 · Landing (logo + value previews + persistent auth) — _revised v2_
+_Revised after the PM v1 review + a Jordan/Sam persona interview: v1's three standalone carousel cards had no obvious "create account" affordance and no logo, and both personas bounced on the entry. v2 collapses the carousel into **one Landing screen** that combines the logo, the (well-liked) swipeable value, and always-present auth — "richer, not longer" (Jordan's funnel line)._
+- **Nyx logo** anchors the top (fixes "which app did I open?").
+- A **swipeable value area** (3 previews, dots) sits in the middle; the previews are **tangible Nyx UIs, not abstract art** — (1) the 10-second quick-log, (2) a Signal insight card ("Vomiting is down 60%…", Newsreader face), (3) a clinical vet-report snippet. Borrowed from the competitor's data-richness, but scoped to **our wedge** (log → Signal → report), never a generic vet-finder/records app.
+- **"Create account" (primary) + "Log in" (text)** are **pinned and persistent** across all swipe positions — a new user can browse the value _or_ sign up immediately; a returning user taps "Log in".
+- Previews are **marketing surfaces** — they show what the owner will _get_, and must **never imply required data entry** (Sam's Principle-1 caution; required is still just type + name). Build them from real component styles so they don't drift into promising a product we don't ship (Eng).
 - This is the **new unauthenticated entry point** (replaces the current bare login-first landing). Users with a valid session + completed onboarding never see it.
+- _Open taste call:_ value area auto-advances vs. swipe-only. Default **swipe-only + dots** (restrained motion; matches the competitor and stays calm).
 
 ### 1 · Create account
 - Fields: **First name**, **Last name**, **Email**, **Password** — built on a new shared `TextField` primitive (see PR 3). Inline validation (valid email, password length) surfaced calmly, not as red-alarm.
@@ -132,12 +137,13 @@ ALTER TABLE pets ADD COLUMN date_of_birth_precision dob_precision NOT NULL DEFAU
 
 First-person pet / second-person owner, specific over generic, no exclamation marks, warm-not-cute. Draft copy — `nyx-voice` skill reviews at build.
 
-- **Carousel 1 (logging):** "Log a symptom or a meal in a few taps — even one-handed at 2am."
-- **Carousel 2 (Signal):** "Nyx watches for patterns you can't, and tells you what they mean — not just what happened."
-- **Carousel 3 (report):** "When you see the vet, hand them a clear, clinical summary — free, always."
+- **Landing preview 1 (logging):** "A few taps. Even at 2am." / "Log a symptom or a meal one-handed, in seconds — no forms."
+- **Landing preview 2 (Signal):** "Patterns you can't see." / "Nyx tells you what the data means — not just what happened."
+- **Landing preview 3 (report):** "Ready for the vet." / "Hand your vet a clear, clinical summary in one tap. Free, always."
+- **Landing auth:** "Create account" (primary) · "Log in" (secondary).
 - **Account CTA:** "Create your account" · TOS line: "By continuing you agree to Nyx's Terms and Privacy Policy."
-- **Pet type:** "Who are we tracking?" (subtitle: "You can add more pets later.")
-- **Pet name:** "What's your pet's name?"
+- **Pet type:** "Who are we tracking?" (subtitle, _v2 — multi-pet reassurance, Sam_: "Built for every pet in your home — you can add the rest anytime.")
+- **Pet name:** "What's your pet's name?" (subtitle, _v2 — replaces the DB-flavored "we'll use it everywhere"_: "The one you actually call them.")
 - **Breed skip:** "Skip — you can add {name}'s breed anytime."
 - **Age header:** "How old is {name}?" (subtitle: "An age or a birthday — whichever you know.")
 - **Age skip / rescue case (Sam):** "Not sure? Skip it — an estimate is fine later."
@@ -194,7 +200,7 @@ Schema-isolated, one concern per PR. Order: schema → primitives → screens �
 | **2** | Age-precision schema | Migration B (`date_of_birth_precision`) — *gated on S2*. | ✅ (isolated) | Data Scientist / Dr. Chen sign-off |
 | **3** | Design-system primitives | New `TextField` primitive; `PrimaryButton` `loading` prop; consolidate onboarding/auth onto `ChipGroup`/`PrimaryButton`. | ❌ | code-reviewer |
 | **4** | Account creation | Owner first/last/email/password; inline validation; TOS/privacy line (B-230 mock); Apple/Google buttons behind `SOCIAL_AUTH_ENABLED` (off); soft verify state; write names + display_name. | ❌ | code-reviewer, nyx-voice, rls-privacy (auth path) |
-| **5** | Welcome + value carousel | 3 skippable cards; new unauthenticated entry point; "Log in" affordance; routing. | ❌ | Designer, nyx-voice, pm-feature-review |
+| **5** | Landing screen | Logo + swipeable **data-rich value previews** (log / Signal / vet-report snippet, from real component styles) + **persistent "Create account" / "Log in"**; new unauthenticated entry point; routing. _(v2: was a standalone carousel; combined into one Landing.)_ | ❌ | Designer, nyx-voice, pm-feature-review |
 | **6** | Pet-setup flow | type → name → breed (`BreedPicker`) → gender → age (dual input); progress indicator; skips; back-nav; writes all captured pet fields + precision. | ❌ | Designer (Principles 1/5), Jordan+Sam, code-reviewer, nyx-voice |
 | **7** | Paywall mock | Non-functional, skippable, slotted screen; Principle-7-safe copy. | ❌ | Designer, nyx-voice |
 | **8** | Completion + gate wiring | "All set" payoff → Home; write `onboarding_completed_at`; replace the ≥1-pet inference; returning-user + legacy-account routing (§6). | ❌ | code-reviewer, QA (routing edge cases), pm-feature-review |
