@@ -787,7 +787,7 @@ export async function generateReportForPet(
       scope_basis: snapshot.scope.basis,
       // Owner-visibility (spec §8 "the mitigation is owner visibility"): the app surfaces the count
       // so the owner knows how many of their photos this report hands to the vet. The interactive
-      // "tap to exclude any" review is the deferred fast-follow (B-236) that builds on this count.
+      // "tap to exclude any" review is the deferred fast-follow (B-243) that builds on this count.
       photo_count: photoStats.total,
       photo_embedded: photoStats.embedded,
       photo_omitted: photoStats.omitted,

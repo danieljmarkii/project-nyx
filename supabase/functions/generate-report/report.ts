@@ -1908,7 +1908,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     // symptomDays AND daysSinceLastEpisode are recounted over the SAME episode set (deduped window
     // events of this type from the detector's first onset) in the owner's timezone, so the flag
     // agrees with the tile it sits beside. If the report window doesn't cover the detector's full
-    // episode set (episode counts differ — the 56d-detector-vs-90d-report gap, B-239), keep the
+    // episode set (episode counts differ — the 56d-detector-vs-90d-report gap, B-246), keep the
     // engine's numbers rather than derive from a partial set. The WORSENING flag's sibling UTC
     // counts are still NOT patched here — that reconciliation stays the deferred B-219 decision.
     const firstOnsetMs = Date.parse(f.firstOnsetIso)

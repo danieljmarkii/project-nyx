@@ -320,7 +320,7 @@ export default function ReportScreen() {
             {report.photoCount > 0 && (
               // Owner visibility (spec §8): before sending, the owner sees how many of their own
               // incident photos this report hands to the vet. The interactive "tap to exclude any"
-              // review is the deferred fast-follow (B-236) that builds on this.
+              // review is the deferred fast-follow (B-243) that builds on this.
               <Text style={styles.barPhotos}>
                 Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
               </Text>

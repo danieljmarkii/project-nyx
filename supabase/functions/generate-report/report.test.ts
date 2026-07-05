@@ -1435,7 +1435,7 @@ Deno.test('PR7 photos — a vomit with NO analysis and no photo is NOT counted a
   assert.equal(snap.incidentPhotosAnalyzedNoRetained, 0, 'an unphotographed incident is not a removed photo')
 })
 
-Deno.test('PR7/B-239 slice — chronicity flag daysSinceLastEpisode agrees with the At-a-glance tile (local-day, no UTC drift)', () => {
+Deno.test('PR7/B-246 slice — chronicity flag daysSinceLastEpisode agrees with the At-a-glance tile (local-day, no UTC drift)', () => {
   // The flag's "days since the most recent episode" and the tile's are the SAME quantity for a
   // single-symptom chronic course; a UTC-vs-local off-by-one on the LEAD safety line was the
   // cold-read blocker (flag "4" vs tile "5"). Both must now read the report's local-day value.
