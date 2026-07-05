@@ -417,6 +417,8 @@ The backlog lives at `docs/backlog.md`. It is the destination for anything that 
 
 **Distinction from Open Questions:** Open Questions are *unresolved decisions* that need PM input to unblock work. Backlog items are *resolved deferrals* — we know what to do, just not now. If an item needs a decision, it goes in Open Questions; if it needs execution at a later time, it goes in the backlog.
 
+**Size trip-wire (B-141, 2026-07-05):** `docs/backlog.md` and `STATUS.md` drift stale in a specific, recurring way — items ship but their row/entry never gets reconciled — and that drift compounds fastest once the files get large enough that nobody reads the whole thing. Rather than a one-off manual prune (which regrows within weeks), `/kickoff` checks both files' size at session start; when either crosses **~150KB**, it flags this in the opening orientation and offers to run a `backlog-groomer` pass (row reconciliation) and/or an actual size-reduction prune (e.g. moving `Done` rows older than ~2 months to a `docs/backlog-archive.md`) before new work starts. This is a recurring maintenance cadence, not a discrete backlog item — B-141 is closed out in favor of this trip-wire.
+
 ---
 
 ## Open Questions

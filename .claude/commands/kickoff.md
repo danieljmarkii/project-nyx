@@ -18,6 +18,8 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
 
 5. **Sanity-check for doc drift.** Confirm `STATUS.md → Runtime in Use` still agrees with the runbook/CLAUDE.md handoff default. If they disagree (e.g. STATUS.md says TestFlight is live but the handoff docs still call it "blocked"), flag it — a stale handoff means the PM gets the wrong on-device commands. This is a one-line check, not a full audit.
 
+6. **Size trip-wire (B-141, CLAUDE.md § Backlog Protocol).** Check `docs/backlog.md` and `STATUS.md` file size (`wc -c`). If either is at or above ~150KB, flag it in the orientation output and offer to run a `backlog-groomer` reconciliation pass and/or an actual size-reduction prune (archiving old `Done` rows) before new work starts — don't wait to be asked.
+
 ## Output
 
 Emit, in this order:
