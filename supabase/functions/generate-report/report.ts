@@ -1899,26 +1899,37 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
   if (detection.chronicity) {
     const f = detection.chronicity
-    // The engine buckets symptomDays by UTC day — deliberate for the rolling Signal
-    // (detection.ts §2: chronicity is timezone-independent), but on THIS artifact the
-    // number sits one page from appendix A, which a vet tallies in LOCAL days: the first
-    // real report said "on 18 days" beside a trend footnote and appendix showing 19. The
-    // report is the local-day surface, so recount the SAME episode set (deduped window
-    // events of this type from the detector's first onset) in the owner's timezone. If the
-    // report window doesn't cover the detector's full episode set (episode counts differ),
-    // keep the engine's number rather than derive one from a partial set. The worsening
-    // flag's sibling UTC counts are NOT patched here — that reconciliation is a single
-    // adversarial-gated decision (backlog).
+    // The engine buckets by UTC day — deliberate for the rolling Signal (detection.ts §2:
+    // chronicity is timezone-independent), but on THIS artifact the numbers sit one page from
+    // appendix A + the At-a-glance tile, which a vet tallies in LOCAL days: the first real report
+    // said "on 18 days" beside an appendix showing 19, and the re-read caught the flag saying "4
+    // days ago" beside the tile's "5 d since" (same fact, UTC-vs-local off-by-one on the LEAD
+    // safety line — vet-report-cold-read, PR 7). The report is the local-day surface, so BOTH
+    // symptomDays AND daysSinceLastEpisode are recounted over the SAME episode set (deduped window
+    // events of this type from the detector's first onset) in the owner's timezone, so the flag
+    // agrees with the tile it sits beside. If the report window doesn't cover the detector's full
+    // episode set (episode counts differ — the 56d-detector-vs-90d-report gap, B-239), keep the
+    // engine's numbers rather than derive from a partial set. The WORSENING flag's sibling UTC
+    // counts are still NOT patched here — that reconciliation stays the deferred B-219 decision.
     const firstOnsetMs = Date.parse(f.firstOnsetIso)
     const episodes = windowEvents.filter(
       (e) => e.type === f.symptomType && Number.isFinite(firstOnsetMs) && Date.parse(e.occurredAt) >= firstOnsetMs,
     )
     const localDayNums = new Set<number>()
+    let lastLocalDay: number | null = null
     for (const e of episodes) {
       const dn = eventDayNumber(e.occurredAt, tz)
-      if (dn !== null) localDayNums.add(dn)
+      if (dn !== null) {
+        localDayNums.add(dn)
+        if (lastLocalDay === null || dn > lastLocalDay) lastLocalDay = dn
+      }
     }
-    const localSymptomDays = episodes.length === f.episodeCount ? localDayNums.size : f.symptomDays
+    // Only trust the local recount when the report window covers the detector's full episode set
+    // (mirrors the symptomDays guard); else the engine's UTC number is the honest fallback.
+    const episodeSetMatches = episodes.length === f.episodeCount
+    const localSymptomDays = episodeSetMatches ? localDayNums.size : f.symptomDays
+    const localDaysSince =
+      episodeSetMatches && lastLocalDay !== null ? Math.max(0, endDayNum - lastLocalDay) : f.daysSinceLastEpisode
     safetyFlags.push({
       kind: 'chronicity',
       symptomType: f.symptomType,
@@ -1926,7 +1937,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       spanDays: f.spanDays,
       activeWeeks: f.activeWeeks,
       symptomDays: localSymptomDays,
-      daysSinceLastEpisode: f.daysSinceLastEpisode,
+      daysSinceLastEpisode: localDaysSince,
       firstOnsetIso: f.firstOnsetIso,
       tier: f.tier,
       windowDays: f.windowDays,

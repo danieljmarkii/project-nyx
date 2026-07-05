@@ -1434,3 +1434,19 @@ Deno.test('PR7 photos — a vomit with NO analysis and no photo is NOT counted a
   assert.equal(snap.incidentPhotos.length, 0)
   assert.equal(snap.incidentPhotosAnalyzedNoRetained, 0, 'an unphotographed incident is not a removed photo')
 })
+
+Deno.test('PR7/B-239 slice — chronicity flag daysSinceLastEpisode agrees with the At-a-glance tile (local-day, no UTC drift)', () => {
+  // The flag's "days since the most recent episode" and the tile's are the SAME quantity for a
+  // single-symptom chronic course; a UTC-vs-local off-by-one on the LEAD safety line was the
+  // cold-read blocker (flag "4" vs tile "5"). Both must now read the report's local-day value.
+  const days = ['2026-05-15', '2026-05-19', '2026-05-23', '2026-05-27', '2026-05-31', '2026-06-04', '2026-06-09', '2026-06-14', '2026-06-19', '2026-06-23', '2026-06-27']
+  const events = days.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))
+  const snap = assembleReport(baseInput({ events }))
+  const chron = snap.safetyFlags.find((f) => f.kind === 'chronicity')
+  assert.ok(chron && chron.kind === 'chronicity', 'chronicity fires on this course')
+  assert.equal(
+    (chron as { daysSinceLastEpisode: number }).daysSinceLastEpisode,
+    snap.atAGlance.daysSinceLastEpisode,
+    'the lead safety flag and the At-a-glance tile show the same local-day gap',
+  )
+})
