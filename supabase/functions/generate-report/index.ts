@@ -9,20 +9,30 @@
 // PR 5 is the OWNER-FACING MVP: an AUTHENTICATED call returns the rendered HTML,
 // which the app shows in an in-app WebView and hands to the vet as a PDF via the
 // native share sheet. There is deliberately NO public token / no unauthenticated
-// path and NO Storage write here — the immutable snapshot row, the public
-// `view-report` route, and the §8 photo-privacy machinery are PR 6/7 (the first
-// unauthenticated path, gated by rls-privacy-reviewer). Keeping PR 5 authenticated
-// makes it cheap and reversible while the first real-vet reaction lands (spec §12).
+// path and NO Storage WRITE here — the immutable snapshot row and the public
+// `view-report` route are PR 6 (the first unauthenticated path). PR 7 adds the §8
+// incident photos to THIS authenticated flow (all photos baked into the report + PDF),
+// gated by rls-privacy-reviewer.
 //
 // SECURITY — confused-deputy guard (spec §7/§8). The client stub sends a body
 // `petId` (a live trap). We NEVER trust it beyond what the caller's own JWT
-// authorizes: every read runs through a user-scoped client, so RLS enforces pet
+// authorizes: every DATA read runs through a user-scoped client, so RLS enforces pet
 // ownership on every table — exactly like generate-signal. The explicit pet load
 // is the ownership re-check (RLS returns nothing for a pet the caller doesn't own
-// → 404). No service role is used in PR 5: there is no Storage download/write and
-// no cross-user data, so RLS is the whole boundary (its strongest form). The
-// service-role pull + Storage write arrive in PR 6 with the public path and its
-// mandatory rls-privacy-reviewer gate.
+// → 404).
+//
+// PR 7 introduces a service-role client used SOLELY to download incident-photo BYTES
+// from the private nyx-event-attachments bucket. Every path it downloads is drawn ONLY
+// from the user-scoped, RLS-gated `event_attachments` enumeration of the ALREADY-verified
+// owner's pet (RLS binds each row to `pet_id IN (owner's pets)`; ownership is re-checked →
+// 404 before the pull) — never a request-supplied path. NB the RLS binds the attachment
+// ROW to the pet, not the free-text `storage_path` column to a `${pet_id}/` prefix, so the
+// path itself is not cryptographically pet-bound; today that is not exploitable (paths are
+// 3×UUIDv4 and unguessable, and the bucket's own read policy is already broader), but a
+// prefix-binding CHECK is a backlog hardening (rls-privacy-reviewer, PR 7). Photos are
+// fetched through the EXIF-stripping/downscaling image transform (never the raw original)
+// and embedded as data: URIs; NO signed URL is minted or persisted, and there is still NO
+// Storage write. The service-role Storage WRITE (immutable snapshot) arrives in PR 6.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
@@ -41,6 +51,8 @@ import {
   type ReportVetVisitInput,
   type ReportFeedingArrangementInput,
   type ReportConditionInput,
+  type ReportAttachmentInput,
+  type IncidentPhoto,
 } from './report.ts'
 import { renderReport } from './render.ts'
 
@@ -59,6 +71,26 @@ const BASE_LOOKBACK_DAYS = 180
 // covered. report.ts scopes everything to the window itself; this only guarantees
 // the pull is a superset of what assembly needs.
 const CHERRY_PICK_LOOKBACK_DAYS = 90
+
+// ── PR 7 — incident-photo embedding (spec §8 / AC-7) ─────────────────────────────
+// Photos are fetched server-side, EXIF/GPS-stripped + downscaled via Supabase Storage image
+// transforms (imgproxy), and base64-embedded into the report HTML (and thus the on-device PDF).
+// TWO load-bearing invariants:
+//  1. The transform RE-ENCODE is what strips EXIF/GPS. So we fetch ONLY through the transform and
+//     NEVER fall back to the raw original (a raw download carries the camera's GPS tags — a location
+//     leak). A transform failure ⇒ null ⇒ the render shows an honest placeholder, never raw bytes.
+//  2. The bytes go straight into a `data:` URI — no signed URL is ever minted or persisted into the
+//     stored snapshot, so there is no long-TTL URL to outlive expiry/revocation (AC-7).
+const PHOTO_EMBED_EDGE_PX = 1000 // report-figure resolution — ample clinical detail, ~⅓ the analyze-vomit vision size
+const PHOTO_EMBED_QUALITY = 72
+// A downscaled figure is ~100–250 KB; base64 inflates ×4/3. Cap how many are embedded so a very
+// large photo history can't produce a multi-tens-of-MB response/PDF. Safety-flagged photos are
+// embedded FIRST and never dropped; anything beyond the cap renders as a DISCLOSED placeholder
+// (never silently missing — the appendix preamble states the count). Realistic windows are well below.
+const MAX_EMBEDDED_PHOTOS = 40
+// Same base64 ceiling analyze-vomit uses (isolate memory + a sane per-image cap). A 1000px figure is
+// comfortably under it; anything over is skipped (placeholder), never embedded raw.
+const MAX_EMBED_IMAGE_BYTES = 3_900_000
 
 // ── DB row shapes (the raw select results) ────────────────────────────────────
 
@@ -180,6 +212,13 @@ interface ConditionRow {
   condition_name: string
   status: string
   diagnosed_at: string | null
+}
+
+interface AttachmentRow {
+  event_id: string
+  storage_path: string
+  mime_type: string | null
+  sort_order: number | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -407,6 +446,115 @@ export function mapConditionRows(rows: ConditionRow[]): ReportConditionInput[] {
   }))
 }
 
+export function mapAttachmentRows(rows: AttachmentRow[]): ReportAttachmentInput[] {
+  return rows.map((r) => ({
+    eventId: r.event_id,
+    storagePath: r.storage_path,
+    mimeType: r.mime_type ?? null,
+    sortOrder: r.sort_order ?? 0,
+  }))
+}
+
+// ── PR 7 — incident-photo fetch/strip/embed (the ONLY I/O between assemble + render) ──
+
+type PhotoMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+
+/**
+ * Sniff the transform output's real format from its magic bytes. imgproxy may hand back JPEG,
+ * WebP or PNG regardless of the stored mime_type (which we treat as advisory only), so we detect
+ * the actual bytes and label the data: URI accordingly. Pure + exported for offline tests.
+ */
+export function detectPhotoMediaType(bytes: Uint8Array): PhotoMediaType {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif'
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+  ) return 'image/webp'
+  // Unknown → default to jpeg (the transform's usual output); the WebView/PDF sniff the bytes too.
+  return 'image/jpeg'
+}
+
+/** Base64 a Uint8Array in chunks (String.fromCharCode(...bytes) blows the arg limit on a big image). */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+/**
+ * Fetch ONE photo as an EXIF/GPS-stripped, downscaled data: URI — or null on ANY failure.
+ *
+ * The Supabase Storage image transform (imgproxy) RE-ENCODES the image, stripping all EXIF/GPS
+ * metadata AND downscaling it — the load-bearing privacy control (spec §8). We fetch ONLY through
+ * the transform and NEVER fall back to the raw original (which carries the camera's GPS tags), so a
+ * transform failure yields null (→ the render's honest placeholder), never a leaked raw frame.
+ *
+ * Service role is required to read a private-bucket object; it is safe here because `path` came
+ * from an RLS-scoped enumeration of the VERIFIED owner's pet (event_attachments, RLS by ownership),
+ * never a request-supplied path. No signed URL is minted or persisted (AC-7). Paths are never logged.
+ */
+async function fetchStrippedPhotoDataUri(adminClient: SupabaseClient, path: string): Promise<string | null> {
+  try {
+    const { data, error } = await adminClient.storage.from('nyx-event-attachments').download(path, {
+      transform: {
+        width: PHOTO_EMBED_EDGE_PX,
+        height: PHOTO_EMBED_EDGE_PX,
+        resize: 'contain',
+        quality: PHOTO_EMBED_QUALITY,
+      },
+    })
+    if (error || !data) {
+      console.warn(`generate-report: photo transform unavailable (${error?.message ?? 'no data'}) — placeholder`)
+      return null
+    }
+    if (data.size === 0 || data.size > MAX_EMBED_IMAGE_BYTES) {
+      console.warn(`generate-report: transformed photo out of size bounds (${data.size} bytes) — placeholder`)
+      return null
+    }
+    const bytes = new Uint8Array(await data.arrayBuffer())
+    return `data:${detectPhotoMediaType(bytes)};base64,${bytesToBase64(bytes)}`
+  } catch (err) {
+    console.warn(`generate-report: photo fetch failed (${err instanceof Error ? err.message : String(err)}) — placeholder`)
+    return null
+  }
+}
+
+/**
+ * Populate each incident photo's data: URI (mutates the snapshot's manifest in place — the ONE I/O
+ * step between pure assembly and pure render). Safety-flagged photos are attempted FIRST so a blood/
+ * foreign frame is never the one dropped by the cap; the rest follow the manifest's most-recent-first
+ * order. Attempts are capped at MAX_EMBEDDED_PHOTOS (bounds response size + isolate work); photos left
+ * unembedded (over the cap OR a failed transform) keep dataUri=null → a DISCLOSED render placeholder.
+ * Sequential — one transient blob at a time; the accumulated base64 is bounded by the cap.
+ */
+export async function embedIncidentPhotos(
+  adminClient: SupabaseClient,
+  photos: IncidentPhoto[],
+): Promise<{ total: number; embedded: number; omitted: number }> {
+  const total = photos.length
+  if (total === 0) return { total: 0, embedded: 0, omitted: 0 }
+  // Safety-flagged first, else preserve the snapshot's most-recent-first order (stable sort).
+  const order = [...photos].sort((a, b) => (a.safety ? 0 : 1) - (b.safety ? 0 : 1))
+  let embedded = 0
+  let attempts = 0
+  for (const p of order) {
+    if (attempts >= MAX_EMBEDDED_PHOTOS) break
+    attempts++
+    const uri = await fetchStrippedPhotoDataUri(adminClient, p.storagePath)
+    if (uri) {
+      p.dataUri = uri
+      embedded++
+    }
+  }
+  return { total, embedded, omitted: total - embedded }
+}
+
 /**
  * The event-pull floor: far enough back to fully cover the resolved window (even a
  * long since-visit range) plus CHERRY_PICK_LOOKBACK_DAYS of pre-window history for
@@ -439,6 +587,11 @@ export async function generateReportForPet(
   nowMs: number,
   requestedWindow: { startDate: string; endDate: string } | null,
   callerJwt: string | null = null,
+  // PR 7 — service-role client used ONLY to download incident-photo bytes (private bucket) for the
+  // paths RLS already scoped to the verified owner's pet. Null ⇒ photos are not embedded (their
+  // dataUri stays null → the render shows placeholders): the report still generates. The unit tests
+  // pass null (no live Storage); the handler passes a real admin client.
+  adminClient: SupabaseClient | null = null,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const nowIso = new Date(nowMs).toISOString()
 
@@ -522,6 +675,7 @@ export async function generateReportForPet(
     medsRes,
     arrangementsRes,
     conditionsRes,
+    attachmentsRes,
   ] = await Promise.all([
     // All non-deleted events over the lookback (every type — report.ts scopes,
     // dedups and filters by type internally; meals carry their food join).
@@ -580,6 +734,12 @@ export async function generateReportForPet(
       .eq('pet_id', petId)
       .is('deleted_at', null),
     supabase.from('conditions').select('condition_name, status, diagnosed_at').eq('pet_id', petId),
+    // Incident-photo attachments (migration 003, PR 7). RLS-scoped by pet ownership, so this
+    // enumerates ONLY the verified owner's pet's attachments — the trusted path set later handed
+    // to the service-role Storage download. report.ts scopes to window observation incidents; a
+    // meal/food photo pulled here is simply never surfaced as an incident. Metadata rows are tiny,
+    // so no lookback bound is needed (the storage fetch itself is capped in embedIncidentPhotos).
+    supabase.from('event_attachments').select('event_id, storage_path, mime_type, sort_order').eq('pet_id', petId),
   ])
 
   // weight_checks / medication_administrations carry no occurred_at column (it lives on
@@ -603,10 +763,18 @@ export async function generateReportForPet(
     vetVisits,
     feedingArrangements: mapFeedingArrangementRows(rowsOrThrow<ArrangementRow>(arrangementsRes, 'feeding_arrangements')),
     conditions: mapConditionRows(rowsOrThrow<ConditionRow>(conditionsRes, 'conditions')),
+    attachments: mapAttachmentRows(rowsOrThrow<AttachmentRow>(attachmentsRes, 'event_attachments')),
   }
 
-  // 4. Pure assembly → pure render. No LLM, no I/O, no mutation.
+  // 4. Pure assembly → (PR 7) embed the incident-photo bytes → pure render.
+  //    assembleReport builds the photo MANIFEST (which incidents, order, safety class); the ONE I/O
+  //    step is fetching each photo through the EXIF-stripping/downscaling transform (never the raw
+  //    original) and setting its data: URI in place; renderReport then bakes them into the HTML/PDF.
   const snapshot = assembleReport(input)
+  let photoStats = { total: snapshot.incidentPhotos.length, embedded: 0, omitted: snapshot.incidentPhotos.length }
+  if (adminClient && snapshot.incidentPhotos.length > 0) {
+    photoStats = await embedIncidentPhotos(adminClient, snapshot.incidentPhotos)
+  }
   const html = renderReport(snapshot)
 
   return {
@@ -617,6 +785,12 @@ export async function generateReportForPet(
       start_date: snapshot.scope.startDate,
       end_date: snapshot.scope.endDate,
       scope_basis: snapshot.scope.basis,
+      // Owner-visibility (spec §8 "the mitigation is owner visibility"): the app surfaces the count
+      // so the owner knows how many of their photos this report hands to the vet. The interactive
+      // "tap to exclude any" review is the deferred fast-follow (B-243) that builds on this count.
+      photo_count: photoStats.total,
+      photo_embedded: photoStats.embedded,
+      photo_omitted: photoStats.omitted,
     },
   }
 }
@@ -664,10 +838,18 @@ Deno.serve(async (req: Request) => {
     Deno.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: authHeader } } },
   )
+  // PR 7 — service-role client, used SOLELY to download incident-photo bytes from the private
+  // nyx-event-attachments bucket for the paths RLS already scoped to the verified owner's pet (the
+  // enumeration above runs on the user-scoped client; ownership is re-checked before any pull). It
+  // never issues a data query — it only reads the exact object paths the RLS-scoped rows named.
+  const adminClient: SupabaseClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  )
 
   try {
     const callerJwt = authHeader.replace(/^Bearer\s+/i, '').trim() || null
-    const { status, body } = await generateReportForPet(supabase, petId, Date.now(), requestedWindow, callerJwt)
+    const { status, body } = await generateReportForPet(supabase, petId, Date.now(), requestedWindow, callerJwt, adminClient)
     return Response.json(body, {
       status,
       // no-store: the report is a snapshot of health data; never cache it at any hop.

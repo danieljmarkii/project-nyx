@@ -26,6 +26,11 @@ export interface VetReport {
   startDate: string;
   endDate: string;
   scopeBasis: string;
+  // PR 7 — the count of photographed incidents baked into this report + PDF. Surfaced to the owner
+  // as a visibility line before sending (spec §8: "the mitigation is owner visibility"). The photo
+  // bytes themselves are already embedded in `html` (EXIF-stripped, downscaled server-side), so
+  // they flow into both the in-app WebView and the on-device PDF with no extra client wiring.
+  photoCount: number;
 }
 
 export async function generateVetReport(params: VetReportParams): Promise<VetReport> {
@@ -42,6 +47,7 @@ export async function generateVetReport(params: VetReportParams): Promise<VetRep
     startDate: typeof data.start_date === 'string' ? data.start_date : '',
     endDate: typeof data.end_date === 'string' ? data.end_date : '',
     scopeBasis: typeof data.scope_basis === 'string' ? data.scope_basis : '',
+    photoCount: typeof data.photo_count === 'number' ? data.photo_count : 0,
   };
 }
 

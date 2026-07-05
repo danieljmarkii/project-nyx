@@ -1279,3 +1279,174 @@ Deno.test('R2-2 ADVERSARIAL — days-since is the most recent episode of ANY sym
   assert.equal(ag.primarySymptom?.type, 'vomit', 'vomiting is the higher-count primary symptom')
   assert.equal(ag.daysSinceLastEpisode, 0, 'diarrhea today is the most recent episode of ANY symptom — the gap is 0, not 30')
 })
+
+// ── Incident photos — Appendix E manifest (PR 7) ────────────────────────────────
+
+function mkAttachment(
+  eventId: string,
+  storagePath: string,
+  o: { sortOrder?: number; mimeType?: string | null } = {},
+): import('./report.ts').ReportAttachmentInput {
+  return { eventId, storagePath, mimeType: o.mimeType ?? 'image/jpeg', sortOrder: o.sortOrder ?? 0 }
+}
+
+Deno.test('PR7 photos — one entry per attachment, most-recent-first, dataUri null in pure assembly', () => {
+  const v1 = makeEvent({ id: 'v1', type: 'vomit', occurredAt: at('2026-06-10') })
+  const v2 = makeEvent({ id: 'v2', type: 'vomit', occurredAt: at('2026-06-20') })
+  const snap = assembleReport(
+    baseInput({
+      events: [v1, v2],
+      attachments: [
+        mkAttachment('v1', 'pet/v1-a.jpg', { sortOrder: 0 }),
+        mkAttachment('v2', 'pet/v2-a.jpg', { sortOrder: 0 }),
+        mkAttachment('v2', 'pet/v2-b.jpg', { sortOrder: 1 }),
+      ],
+    }),
+  )
+  assert.equal(snap.incidentPhotos.length, 3, 'one entry per attachment')
+  // Most-recent-first: both v2 photos (Jun 20) precede the v1 photo (Jun 10).
+  assert.deepEqual(
+    snap.incidentPhotos.map((p) => p.storagePath),
+    ['pet/v2-a.jpg', 'pet/v2-b.jpg', 'pet/v1-a.jpg'],
+  )
+  assert.ok(snap.incidentPhotos.every((p) => p.dataUri === null), 'no image bytes in the pure layer')
+})
+
+Deno.test('PR7 photos — ONLY observation incidents; meal/med/weight photos are never incident photos', () => {
+  const vomit = makeEvent({ id: 'v', type: 'vomit', occurredAt: at('2026-06-10') })
+  const stool = makeEvent({ id: 's', type: 'stool_normal', occurredAt: at('2026-06-11') })
+  const meal = makeEvent({
+    id: 'm',
+    type: 'meal',
+    occurredAt: at('2026-06-12'),
+    meal: { foodItemId: 'f1', intakeRating: 'all', quantity: null, foodType: 'meal', format: 'wet_canned', primaryProtein: 'duck', brand: 'B', productName: 'P' },
+  })
+  const weight = makeEvent({ id: 'w', type: 'weight_check', occurredAt: at('2026-06-13') })
+  const snap = assembleReport(
+    baseInput({
+      events: [vomit, stool, meal, weight],
+      attachments: [
+        mkAttachment('v', 'p/v.jpg'),
+        mkAttachment('s', 'p/s.jpg'),
+        mkAttachment('m', 'p/m.jpg'), // a food photo — must NOT be an incident photo
+        mkAttachment('w', 'p/w.jpg'),
+      ],
+    }),
+  )
+  assert.deepEqual(
+    snap.incidentPhotos.map((p) => p.type).sort(),
+    ['stool_normal', 'vomit'],
+    'only the vomit + normal-stool photos are incidents; the meal + weight photos are excluded',
+  )
+})
+
+Deno.test('PR7 photos — present blood/foreign sets the safety class; matches the safety band exactly', () => {
+  const bloody = makeEvent({ id: 'vb', type: 'vomit', occurredAt: at('2026-06-20') })
+  const foreign = makeEvent({ id: 'vf', type: 'vomit', occurredAt: at('2026-06-18') })
+  const plain = makeEvent({ id: 'vp', type: 'vomit', occurredAt: at('2026-06-16') })
+  const snap = assembleReport(
+    baseInput({
+      events: [bloody, foreign, plain],
+      aiAnalyses: [
+        mkAnalysis('vb', { status: 'completed', bloodPresent: 'fresh_red', contents: ['bile'], consistency: 'foamy' }),
+        mkAnalysis('vf', { status: 'completed', foreignMaterialPresent: 'yes', foreignMaterialNote: 'string', contents: ['partially_digested_food'], consistency: 'chunky' }),
+        mkAnalysis('vp', { status: 'completed', bloodPresent: 'none_visible', foreignMaterialPresent: 'no', contents: ['partially_digested_food'], consistency: 'chunky' }),
+      ],
+      attachments: [mkAttachment('vb', 'p/vb.jpg'), mkAttachment('vf', 'p/vf.jpg'), mkAttachment('vp', 'p/vp.jpg')],
+    }),
+  )
+  const byEvent = new Map(snap.incidentPhotos.map((p) => [p.eventId, p]))
+  assert.equal(byEvent.get('vb')!.safety, 'blood')
+  assert.equal(byEvent.get('vf')!.safety, 'foreign')
+  assert.equal(byEvent.get('vp')!.safety, null, 'none_visible/no NEVER sets a safety class')
+  // The flagged photos are exactly the incidents that lead the safety band.
+  const bandBloodIds = snap.safetyFlags.filter((f) => f.kind === 'present_blood').flatMap((f: any) => f.incidents.map((i: any) => i.eventId))
+  const bandForeignIds = snap.safetyFlags.filter((f) => f.kind === 'present_foreign').flatMap((f: any) => f.incidents.map((i: any) => i.eventId))
+  assert.deepEqual(bandBloodIds, ['vb'])
+  assert.deepEqual(bandForeignIds, ['vf'])
+})
+
+Deno.test('PR7 photos — an `unsure` foreign read NEVER sets a safety class (present-only, §5.9)', () => {
+  const v = makeEvent({ id: 'vu', type: 'vomit', occurredAt: at('2026-06-20') })
+  const snap = assembleReport(
+    baseInput({
+      events: [v],
+      aiAnalyses: [mkAnalysis('vu', { status: 'completed', bloodPresent: 'unsure', foreignMaterialPresent: 'unsure', contents: ['bile'], consistency: 'foamy' })],
+      attachments: [mkAttachment('vu', 'p/vu.jpg')],
+    }),
+  )
+  assert.equal(snap.incidentPhotos[0].safety, null, 'unsure is not presence — never leads the band')
+  assert.equal(snap.incidentPhotos[0].phenotype?.foreignPresent, null, 'unsure renders as null, never a positive "no"')
+})
+
+Deno.test('PR7 photos — a photo on a DROPPED same-minute duplicate still belongs to the surviving incident (§5.11)', () => {
+  // Two same-minute vomit logs collapse to one incident; the photo + completed read live on the
+  // log that loses the representative race. The manifest must still carry that photo + its flag.
+  const rep = makeEvent({ id: 'dup-rep', type: 'vomit', occurredAt: at('2026-06-20', '10:00:00') })
+  const twin = makeEvent({ id: 'dup-twin', type: 'vomit', occurredAt: at('2026-06-20', '10:00:20') })
+  const snap = assembleReport(
+    baseInput({
+      events: [rep, twin],
+      aiAnalyses: [mkAnalysis('dup-twin', { status: 'completed', bloodPresent: 'coffee_ground', contents: ['bile'], consistency: 'foamy' })],
+      attachments: [mkAttachment('dup-twin', 'p/twin.jpg')],
+    }),
+  )
+  assert.equal(snap.incidentPhotos.length, 1, 'the collapsed bout carries its one photo')
+  assert.equal(snap.incidentPhotos[0].safety, 'blood', 'the flag on the dropped twin still fires')
+})
+
+Deno.test('PR7 photos — out-of-window incident photos are excluded (window-scoped like Appendix A)', () => {
+  const inWin = makeEvent({ id: 'in', type: 'vomit', occurredAt: at('2026-06-20') })
+  const outWin = makeEvent({ id: 'out', type: 'vomit', occurredAt: at('2026-01-05') }) // before the 90d fallback
+  const snap = assembleReport(
+    baseInput({ events: [inWin, outWin], attachments: [mkAttachment('in', 'p/in.jpg'), mkAttachment('out', 'p/out.jpg')] }),
+  )
+  assert.deepEqual(snap.incidentPhotos.map((p) => p.eventId), ['in'], 'only the in-window incident photo is carried')
+})
+
+Deno.test('PR7 photos — no attachments ⇒ an EMPTY manifest (Appendix E simply will not render)', () => {
+  const snap = assembleReport(baseInput({ events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-20') })] }))
+  assert.deepEqual(snap.incidentPhotos, [])
+})
+
+Deno.test('PR7 photos — an analyzed vomit whose photo was REMOVED is disclosed, not silently dropped', () => {
+  // Owner removed the photo after it was analysed (attachment gone, event_ai_analysis persists).
+  const kept = makeEvent({ id: 'kept', type: 'vomit', occurredAt: at('2026-06-20') })
+  const removed = makeEvent({ id: 'removed', type: 'vomit', occurredAt: at('2026-06-18') })
+  const snap = assembleReport(
+    baseInput({
+      events: [kept, removed],
+      aiAnalyses: [
+        mkAnalysis('kept', { status: 'completed', contents: ['bile'], consistency: 'foamy' }),
+        mkAnalysis('removed', { status: 'completed', contents: ['partially_digested_food'], consistency: 'chunky' }),
+      ],
+      attachments: [mkAttachment('kept', 'p/kept.jpg')], // only the kept one has a retained photo
+    }),
+  )
+  assert.equal(snap.incidentPhotos.length, 1, 'only the retained photo is a card')
+  assert.equal(snap.incidentPhotos[0].eventId, 'kept')
+  assert.equal(snap.incidentPhotosAnalyzedNoRetained, 1, 'the removed-photo incident is counted for disclosure')
+})
+
+Deno.test('PR7 photos — a vomit with NO analysis and no photo is NOT counted as removed (never photographed)', () => {
+  const noPhoto = makeEvent({ id: 'np', type: 'vomit', occurredAt: at('2026-06-20') })
+  const snap = assembleReport(baseInput({ events: [noPhoto] })) // no analysis, no attachment
+  assert.equal(snap.incidentPhotos.length, 0)
+  assert.equal(snap.incidentPhotosAnalyzedNoRetained, 0, 'an unphotographed incident is not a removed photo')
+})
+
+Deno.test('PR7/B-246 slice — chronicity flag daysSinceLastEpisode agrees with the At-a-glance tile (local-day, no UTC drift)', () => {
+  // The flag's "days since the most recent episode" and the tile's are the SAME quantity for a
+  // single-symptom chronic course; a UTC-vs-local off-by-one on the LEAD safety line was the
+  // cold-read blocker (flag "4" vs tile "5"). Both must now read the report's local-day value.
+  const days = ['2026-05-15', '2026-05-19', '2026-05-23', '2026-05-27', '2026-05-31', '2026-06-04', '2026-06-09', '2026-06-14', '2026-06-19', '2026-06-23', '2026-06-27']
+  const events = days.map((d) => makeEvent({ type: 'vomit', occurredAt: at(d) }))
+  const snap = assembleReport(baseInput({ events }))
+  const chron = snap.safetyFlags.find((f) => f.kind === 'chronicity')
+  assert.ok(chron && chron.kind === 'chronicity', 'chronicity fires on this course')
+  assert.equal(
+    (chron as { daysSinceLastEpisode: number }).daysSinceLastEpisode,
+    snap.atAGlance.daysSinceLastEpisode,
+    'the lead safety flag and the At-a-glance tile show the same local-day gap',
+  )
+})

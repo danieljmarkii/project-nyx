@@ -317,6 +317,14 @@ export default function ReportScreen() {
             )}
           </View>
           <View style={[styles.bar, { paddingBottom: insets.bottom + theme.space2 }]}>
+            {report.photoCount > 0 && (
+              // Owner visibility (spec §8): before sending, the owner sees how many of their own
+              // incident photos this report hands to the vet. The interactive "tap to exclude any"
+              // review is the deferred fast-follow (B-243) that builds on this.
+              <Text style={styles.barPhotos}>
+                Includes {report.photoCount} photo{report.photoCount === 1 ? '' : 's'} from logged incidents.
+              </Text>
+            )}
             <PrimaryButton
               // Disabled while regenerating — the visible report is the PREVIOUS
               // window; never let the owner share a stale range to the vet.
@@ -463,6 +471,12 @@ const styles = StyleSheet.create({
     fontFamily: theme.fontBody,
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
+    textAlign: 'center',
+  },
+  barPhotos: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
     textAlign: 'center',
   },
 });

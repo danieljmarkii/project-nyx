@@ -285,6 +285,20 @@ export interface ReportConditionInput {
 }
 
 /**
+ * event_attachments row (migration 003), keyed by eventId — the Appendix E incident-photo
+ * source (PR 7). The pure layer only needs the storage PATH + ordering; the actual image
+ * bytes are fetched, EXIF-stripped, downscaled and base64-embedded by the index.ts I/O shell
+ * (never here — report.ts stays pure). mimeType is the stored declared type (advisory only;
+ * index.ts re-sniffs the transform output).
+ */
+export interface ReportAttachmentInput {
+  eventId: string
+  storagePath: string
+  mimeType: string | null
+  sortOrder: number
+}
+
+/**
  * The full pure-assembly input. The caller pulls a GENEROUS lookback (≥ the
  * report window; the live Signal pulls 180d) so the detection reuse has enough
  * history for its natural sub-windows; report.ts scopes everything to the resolved
@@ -306,6 +320,12 @@ export interface ReportInput {
   vetVisits: ReportVetVisitInput[]
   feedingArrangements: ReportFeedingArrangementInput[]
   conditions: ReportConditionInput[]
+  /**
+   * PR 7 — event_attachments for the pet (photo incident source). Optional so every
+   * pre-PR-7 test fixture + the resolveScope() pre-pull in index.ts keep compiling;
+   * absent ⇒ no incident photos (an empty Appendix E, which simply does not render).
+   */
+  attachments?: ReportAttachmentInput[]
 }
 
 // ── Date / window helpers (tz-aware calendar-day math) ───────────────────────
@@ -764,6 +784,48 @@ export interface StoolCharacteristics {
   loggedDays: number
 }
 
+/** Present-only safety class carried by a photographed incident — also LEADS the safety band. */
+export type IncidentPhotoSafety = 'blood' | 'foreign'
+
+/**
+ * One photographed incident, for Appendix E (PR 7). Built PURELY here (which incidents, order,
+ * per-photo metadata + the present-only safety class); the actual image bytes are fetched,
+ * EXIF/GPS-stripped, downscaled and base64-embedded by the index.ts I/O shell into `dataUri`
+ * AFTER assembly, so report.ts stays I/O-free and unit-testable. One entry per attachment (an
+ * incident with two photos yields two entries sharing the incident's date/type/phenotype/safety).
+ */
+export interface IncidentPhoto {
+  eventId: string
+  /** Storage object path (nyx-event-attachments). Consumed only by index.ts for the signed fetch — NEVER rendered. */
+  storagePath: string
+  /** event_type of the incident (drives the caption label). */
+  type: string
+  occurredAt: string
+  occurredAtConfidence: OccurredAtConfidence | null
+  occurredAtEarliest: string | null
+  occurredAtLatest: string | null
+  /** Owner note on the incident (may be null). */
+  notes: string | null
+  /**
+   * Present-only safety class (§5.9) on THIS incident — a photo the render also surfaces IN the
+   * safety band on page 1 (prominence is orthogonal to inclusion, §2). Null = no safety flag.
+   */
+  safety: IncidentPhotoSafety | null
+  /**
+   * Owner-reviewable AI phenotype for the incident (vomit only; present-only fields). NEVER an
+   * n=1 verdict/recommendation — the single-incident read stays in the app, off the report (§4).
+   * Null for a non-vomit photo or a vomit with no analysis.
+   */
+  phenotype: SymptomLogPhenotype | null
+  /**
+   * The EXIF/GPS-stripped, downscaled image as a `data:` URI — populated by index.ts (I/O) after
+   * pure assembly. NULL in pure assembly, and NULL when the server-side transform fetch failed: a
+   * null-dataUri photo renders as an honest "photo could not be embedded" placeholder (metadata +
+   * AI read still shown), and the raw original (which may carry GPS) is NEVER embedded as a fallback.
+   */
+  dataUri: string | null
+}
+
 export interface WeightTrendView {
   readingCount: number
   seriesLbs: number[]
@@ -1088,6 +1150,18 @@ export interface ReportSnapshot {
   concurrentChanges: ConcurrentChange[]
   proteinTimeline: ProteinTimeline
   provenance: Provenance
+  /**
+   * PR 7 — every photographed in-window incident, most-recent-first (Appendix E). `dataUri` is
+   * populated by the index.ts I/O shell after assembly.
+   */
+  incidentPhotos: IncidentPhoto[]
+  /**
+   * PR 7 — count of in-window incidents that have an AI read but NO retained photo (owner removed
+   * the photo post-analysis). Appendix E DISCLOSES these so its "every photographed incident" claim
+   * never silently contradicts Appendix A's "Photo:" lines / the phenotype counts (which are
+   * analysis-scoped). Appendix E renders when `incidentPhotos.length > 0 OR this > 0`.
+   */
+  incidentPhotosAnalyzedNoRetained: number
 }
 
 // ── Small pure helpers ────────────────────────────────────────────────────────
@@ -1207,6 +1281,34 @@ function unionPresentFlags(
     }
   }
   return { bloodKind, foreignPresent, foreignNote }
+}
+
+/**
+ * The owner-reviewable per-incident phenotype (present-only fields), shared by Appendix A's
+ * symptom log AND Appendix E's incident-photo manifest so the two can never drift. Vomit only
+ * (the sole analyzed type today); null for any other type or a vomit with no analysis. Reads the
+ * BEST-status member for the four-state disclosure and UNIONS present blood/foreign across all
+ * members (§5.9 escalate-on-presence — a flag on a dropped duplicate still shows), NEVER folding
+ * `unsure`/`none_visible`/`no` into a positive "no" (that is the reassurance-on-absence §5.9 forbids).
+ */
+function buildIncidentPhenotype(
+  type: string,
+  memberEventIds: string[],
+  analysisByEvent: Map<string, ReportAiAnalysisInput>,
+): SymptomLogPhenotype | null {
+  const a = type === 'vomit' ? pickIncidentAnalysis(memberEventIds, analysisByEvent) : null
+  if (!a) return null
+  const present = unionPresentFlags(memberEventIds, analysisByEvent)
+  return {
+    status: a.status,
+    contentsCategory: a.status === 'completed' ? classifyVomitContents(a) : null,
+    consistency: a.consistency,
+    colour: a.colour,
+    bloodPresent: present.bloodKind,
+    foreignPresent: present.foreignPresent ? true : null,
+    foreignNote: present.foreignNote,
+    edited: a.editedAt != null,
+  }
 }
 
 // ── Detection reuse (spec §7 / §8.5) ─────────────────────────────────────────
@@ -1797,26 +1899,37 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
   if (detection.chronicity) {
     const f = detection.chronicity
-    // The engine buckets symptomDays by UTC day — deliberate for the rolling Signal
-    // (detection.ts §2: chronicity is timezone-independent), but on THIS artifact the
-    // number sits one page from appendix A, which a vet tallies in LOCAL days: the first
-    // real report said "on 18 days" beside a trend footnote and appendix showing 19. The
-    // report is the local-day surface, so recount the SAME episode set (deduped window
-    // events of this type from the detector's first onset) in the owner's timezone. If the
-    // report window doesn't cover the detector's full episode set (episode counts differ),
-    // keep the engine's number rather than derive one from a partial set. The worsening
-    // flag's sibling UTC counts are NOT patched here — that reconciliation is a single
-    // adversarial-gated decision (backlog).
+    // The engine buckets by UTC day — deliberate for the rolling Signal (detection.ts §2:
+    // chronicity is timezone-independent), but on THIS artifact the numbers sit one page from
+    // appendix A + the At-a-glance tile, which a vet tallies in LOCAL days: the first real report
+    // said "on 18 days" beside an appendix showing 19, and the re-read caught the flag saying "4
+    // days ago" beside the tile's "5 d since" (same fact, UTC-vs-local off-by-one on the LEAD
+    // safety line — vet-report-cold-read, PR 7). The report is the local-day surface, so BOTH
+    // symptomDays AND daysSinceLastEpisode are recounted over the SAME episode set (deduped window
+    // events of this type from the detector's first onset) in the owner's timezone, so the flag
+    // agrees with the tile it sits beside. If the report window doesn't cover the detector's full
+    // episode set (episode counts differ — the 56d-detector-vs-90d-report gap, B-246), keep the
+    // engine's numbers rather than derive from a partial set. The WORSENING flag's sibling UTC
+    // counts are still NOT patched here — that reconciliation stays the deferred B-219 decision.
     const firstOnsetMs = Date.parse(f.firstOnsetIso)
     const episodes = windowEvents.filter(
       (e) => e.type === f.symptomType && Number.isFinite(firstOnsetMs) && Date.parse(e.occurredAt) >= firstOnsetMs,
     )
     const localDayNums = new Set<number>()
+    let lastLocalDay: number | null = null
     for (const e of episodes) {
       const dn = eventDayNumber(e.occurredAt, tz)
-      if (dn !== null) localDayNums.add(dn)
+      if (dn !== null) {
+        localDayNums.add(dn)
+        if (lastLocalDay === null || dn > lastLocalDay) lastLocalDay = dn
+      }
     }
-    const localSymptomDays = episodes.length === f.episodeCount ? localDayNums.size : f.symptomDays
+    // Only trust the local recount when the report window covers the detector's full episode set
+    // (mirrors the symptomDays guard); else the engine's UTC number is the honest fallback.
+    const episodeSetMatches = episodes.length === f.episodeCount
+    const localSymptomDays = episodeSetMatches ? localDayNums.size : f.symptomDays
+    const localDaysSince =
+      episodeSetMatches && lastLocalDay !== null ? Math.max(0, endDayNum - lastLocalDay) : f.daysSinceLastEpisode
     safetyFlags.push({
       kind: 'chronicity',
       symptomType: f.symptomType,
@@ -1824,7 +1937,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       spanDays: f.spanDays,
       activeWeeks: f.activeWeeks,
       symptomDays: localSymptomDays,
-      daysSinceLastEpisode: f.daysSinceLastEpisode,
+      daysSinceLastEpisode: localDaysSince,
       firstOnsetIso: f.firstOnsetIso,
       tier: f.tier,
       windowDays: f.windowDays,
@@ -1848,25 +1961,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const symptomLog: SymptomLogEntry[] = windowEvents
     .filter((e) => REPORT_SYMPTOM_SET.has(e.type))
     .map((e) => {
-      const a = e.type === 'vomit' ? pickIncidentAnalysis(e.memberEventIds, analysisByEvent) : null
-      // Present blood/foreign union over ALL members (§5.9), same as the aggregate — so the
-      // appendix row for a de-duplicated bout still shows a flag carried by a dropped twin.
-      const present = a ? unionPresentFlags(e.memberEventIds, analysisByEvent) : null
-      const phenotype: SymptomLogPhenotype | null = a
-        ? {
-            status: a.status,
-            contentsCategory: a.status === 'completed' ? classifyVomitContents(a) : null,
-            consistency: a.consistency,
-            colour: a.colour,
-            // PRESENT-only, per-event (§5.9): render nothing on absence/uncertainty.
-            bloodPresent: present!.bloodKind,
-            // null (not false) when absent OR unsure OR not-yet-assessed — never a positive
-            // "no foreign material" on a read the AI could not clear (adversarial finding 2).
-            foreignPresent: present!.foreignPresent ? true : null,
-            foreignNote: present!.foreignNote,
-            edited: a.editedAt != null,
-          }
-        : null
+      // Shared with Appendix E's photo manifest (buildIncidentPhenotype) — present blood/foreign
+      // unioned over ALL members (§5.9) so a de-duplicated bout still shows a flag carried by a
+      // dropped twin, and never a positive "no" on an unsure/absent read.
+      const phenotype = buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)
       return {
         eventId: e.id,
         type: e.type,
@@ -1998,6 +2096,76 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     })),
   }
 
+  // ── Incident photos (Appendix E, PR 7) ───────────────────────────────────────
+  // Every photographed IN-WINDOW health incident. Scoped to observation events only
+  // (DEDUP_OBSERVATION_TYPES = symptoms + normal stool) — a meal/med/weight/"other" photo is not
+  // a clinical incident and never surfaces as one. One entry per attachment, most-recent-first
+  // (§3 Appendix E). The present-only safety class is derived from the SAME per-incident phenotype
+  // the symptom log + safety band use (single source), so a blood/foreign photo that leads the
+  // safety band is exactly the one flagged here. `dataUri` is populated by the index.ts I/O shell.
+  const attachmentsByEvent = new Map<string, ReportAttachmentInput[]>()
+  for (const at of input.attachments ?? []) {
+    const arr = attachmentsByEvent.get(at.eventId)
+    if (arr) arr.push(at)
+    else attachmentsByEvent.set(at.eventId, [at])
+  }
+  const incidentPhotos: IncidentPhoto[] = []
+  // An incident with a persisted AI read but NO retained photo — the owner removed the photo after
+  // it was analysed (app/event/[id].tsx deletes the event_attachments row + storage object but keeps
+  // the event_ai_analysis). Its read still prints in Appendix A + counts in the vomit phenotype, so
+  // Appendix E MUST disclose it or the "every photographed incident" appendix silently contradicts
+  // them — the exact "photos silently missing → erodes trust" failure the §4 all-photos rule exists
+  // to prevent (vet-report-cold-read finding, PR 7). Counted here for the disclosure; no card (there
+  // is no image to show).
+  let incidentPhotosAnalyzedNoRetained = 0
+  for (const e of windowEvents) {
+    if (!DEDUP_OBSERVATION_TYPES.has(e.type)) continue
+    // Union attachments across every member of a de-duplicated bout (§5.11) — a photo logged on a
+    // dropped twin still belongs to the surviving incident. Deterministic per-incident order.
+    const atts: ReportAttachmentInput[] = []
+    for (const mid of e.memberEventIds) {
+      const a = attachmentsByEvent.get(mid)
+      if (a) atts.push(...a)
+    }
+    if (atts.length === 0) {
+      if (buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)) incidentPhotosAnalyzedNoRetained++
+      continue
+    }
+    atts.sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder ||
+        (a.storagePath < b.storagePath ? -1 : a.storagePath > b.storagePath ? 1 : 0),
+    )
+    const phenotype = buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)
+    const safety: IncidentPhotoSafety | null = phenotype?.bloodPresent
+      ? 'blood'
+      : phenotype?.foreignPresent
+        ? 'foreign'
+        : null
+    for (const at of atts) {
+      incidentPhotos.push({
+        eventId: e.id,
+        storagePath: at.storagePath,
+        type: e.type,
+        occurredAt: e.occurredAt,
+        occurredAtConfidence: e.occurredAtConfidence,
+        occurredAtEarliest: e.occurredAtEarliest,
+        occurredAtLatest: e.occurredAtLatest,
+        notes: e.notes,
+        safety,
+        phenotype,
+        dataUri: null,
+      })
+    }
+  }
+  // Most-recent-first (§3 Appendix E); stable, deterministic tiebreaks so the same data always
+  // renders in the same order (and the index.ts embed cap, if ever hit, drops the same tail).
+  incidentPhotos.sort((a, b) => {
+    if (a.occurredAt !== b.occurredAt) return b.occurredAt.localeCompare(a.occurredAt)
+    if (a.eventId !== b.eventId) return a.eventId < b.eventId ? -1 : 1
+    return a.storagePath < b.storagePath ? -1 : a.storagePath > b.storagePath ? 1 : 0
+  })
+
   // ── Cherry-pick guard (§6) — custom window only ──────────────────────────────
   let outOfWindowSymptomCount = 0
   let outOfWindowMostRecent: string | null = null
@@ -2106,6 +2274,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     concurrentChanges,
     proteinTimeline,
     provenance,
+    incidentPhotos,
+    incidentPhotosAnalyzedNoRetained,
   }
 }
 

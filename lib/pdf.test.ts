@@ -76,7 +76,17 @@ describe('generateVetReport', () => {
     expect(r.html).toContain('Nyx');
     expect(r.startDate).toBe('2026-04-04');
     expect(r.scopeBasis).toBe('fallback_90d');
+    expect(r.photoCount).toBe(0); // absent photo_count → 0, never undefined (owner-visibility line hides)
     expect(mockedInvoke).toHaveBeenCalledWith('generate-report', { body: { petId: 'p1' } });
+  });
+
+  it('parses photo_count for the owner-visibility line (PR 7)', async () => {
+    mockedInvoke.mockResolvedValue({
+      data: { html: '<html>Nyx</html>', pet_name: 'Nyx', start_date: '2026-04-04', end_date: '2026-07-03', scope_basis: 'fallback_90d', photo_count: 3 },
+      error: null,
+    });
+    const r = await generateVetReport({ petId: 'p1' });
+    expect(r.photoCount).toBe(3);
   });
 
   it('throws on an Edge Function error', async () => {
@@ -100,7 +110,7 @@ describe('generateVetReport', () => {
 
 describe('shareReportPdf', () => {
   const report: VetReport = {
-    html: '<html>Nyx</html>', petName: 'Nyx', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'fallback_90d',
+    html: '<html>Nyx</html>', petName: 'Nyx', startDate: '2026-04-04', endDate: '2026-07-03', scopeBasis: 'fallback_90d', photoCount: 0,
   };
   beforeEach(() => {
     mockedIsAvailable.mockReset();
