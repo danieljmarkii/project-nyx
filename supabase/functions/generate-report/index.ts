@@ -22,13 +22,17 @@
 // → 404).
 //
 // PR 7 introduces a service-role client used SOLELY to download incident-photo BYTES
-// from the private nyx-event-attachments bucket. This is safe because the photo PATHS
-// come from the user-scoped, RLS-gated event_attachments enumeration of the ALREADY-
-// verified owner's pet — never a request-supplied path — so the service role only ever
-// reads objects the caller was already authorized to see. Photos are fetched through
-// the EXIF-stripping/downscaling image transform (never the raw original) and embedded
-// as data: URIs; NO signed URL is minted or persisted, and there is still NO Storage
-// write. The service-role Storage WRITE (immutable snapshot) arrives in PR 6.
+// from the private nyx-event-attachments bucket. Every path it downloads is drawn ONLY
+// from the user-scoped, RLS-gated `event_attachments` enumeration of the ALREADY-verified
+// owner's pet (RLS binds each row to `pet_id IN (owner's pets)`; ownership is re-checked →
+// 404 before the pull) — never a request-supplied path. NB the RLS binds the attachment
+// ROW to the pet, not the free-text `storage_path` column to a `${pet_id}/` prefix, so the
+// path itself is not cryptographically pet-bound; today that is not exploitable (paths are
+// 3×UUIDv4 and unguessable, and the bucket's own read policy is already broader), but a
+// prefix-binding CHECK is a backlog hardening (rls-privacy-reviewer, PR 7). Photos are
+// fetched through the EXIF-stripping/downscaling image transform (never the raw original)
+// and embedded as data: URIs; NO signed URL is minted or persisted, and there is still NO
+// Storage write. The service-role Storage WRITE (immutable snapshot) arrives in PR 6.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
@@ -783,7 +787,7 @@ export async function generateReportForPet(
       scope_basis: snapshot.scope.basis,
       // Owner-visibility (spec §8 "the mitigation is owner visibility"): the app surfaces the count
       // so the owner knows how many of their photos this report hands to the vet. The interactive
-      // "tap to exclude any" review is the deferred fast-follow (B-227) that builds on this count.
+      // "tap to exclude any" review is the deferred fast-follow (B-236) that builds on this count.
       photo_count: photoStats.total,
       photo_embedded: photoStats.embedded,
       photo_omitted: photoStats.omitted,

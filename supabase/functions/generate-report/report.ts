@@ -1152,9 +1152,16 @@ export interface ReportSnapshot {
   provenance: Provenance
   /**
    * PR 7 — every photographed in-window incident, most-recent-first (Appendix E). `dataUri` is
-   * populated by the index.ts I/O shell after assembly. Empty ⇒ Appendix E does not render.
+   * populated by the index.ts I/O shell after assembly.
    */
   incidentPhotos: IncidentPhoto[]
+  /**
+   * PR 7 — count of in-window incidents that have an AI read but NO retained photo (owner removed
+   * the photo post-analysis). Appendix E DISCLOSES these so its "every photographed incident" claim
+   * never silently contradicts Appendix A's "Photo:" lines / the phenotype counts (which are
+   * analysis-scoped). Appendix E renders when `incidentPhotos.length > 0 OR this > 0`.
+   */
+  incidentPhotosAnalyzedNoRetained: number
 }
 
 // ── Small pure helpers ────────────────────────────────────────────────────────
@@ -2092,6 +2099,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     else attachmentsByEvent.set(at.eventId, [at])
   }
   const incidentPhotos: IncidentPhoto[] = []
+  // An incident with a persisted AI read but NO retained photo — the owner removed the photo after
+  // it was analysed (app/event/[id].tsx deletes the event_attachments row + storage object but keeps
+  // the event_ai_analysis). Its read still prints in Appendix A + counts in the vomit phenotype, so
+  // Appendix E MUST disclose it or the "every photographed incident" appendix silently contradicts
+  // them — the exact "photos silently missing → erodes trust" failure the §4 all-photos rule exists
+  // to prevent (vet-report-cold-read finding, PR 7). Counted here for the disclosure; no card (there
+  // is no image to show).
+  let incidentPhotosAnalyzedNoRetained = 0
   for (const e of windowEvents) {
     if (!DEDUP_OBSERVATION_TYPES.has(e.type)) continue
     // Union attachments across every member of a de-duplicated bout (§5.11) — a photo logged on a
@@ -2101,7 +2116,10 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       const a = attachmentsByEvent.get(mid)
       if (a) atts.push(...a)
     }
-    if (atts.length === 0) continue
+    if (atts.length === 0) {
+      if (buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)) incidentPhotosAnalyzedNoRetained++
+      continue
+    }
     atts.sort(
       (a, b) =>
         a.sortOrder - b.sortOrder ||
@@ -2246,6 +2264,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     proteinTimeline,
     provenance,
     incidentPhotos,
+    incidentPhotosAnalyzedNoRetained,
   }
 }
 

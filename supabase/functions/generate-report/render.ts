@@ -1607,8 +1607,14 @@ function mealsAppendixVisible(snap: ReportSnapshot): boolean {
  * unlettered. Kept as ONE source of truth so the letterhead orient line, the appendix divider,
  * this appendix's own heading, and the legend never drift apart.
  */
+/**
+ * The incident-photos appendix renders when there is a retained photo OR an incident that was
+ * photographed + read but whose photo the owner has since removed (which must be DISCLOSED so the
+ * "every photographed incident" claim never silently contradicts the analysis-scoped counts on
+ * page 1 / Appendix A — vet-report-cold-read finding, PR 7).
+ */
 function hasIncidentPhotos(snap: ReportSnapshot): boolean {
-  return snap.incidentPhotos.length > 0
+  return snap.incidentPhotos.length > 0 || snap.incidentPhotosAnalyzedNoRetained > 0
 }
 function photosAppendixLetter(snap: ReportSnapshot): string {
   return mealsAppendixVisible(snap) ? 'F' : 'E'
@@ -1844,7 +1850,10 @@ function intakeLogRow(e: IntakeLogEntry, tz: string | null): string {
  * photos are baked into the artifact (and the PDF), so the record the vet reviews is complete; the
  * bytes are EXIF/GPS-stripped and downscaled server-side (index.ts). A photo whose server-side
  * fetch failed still lists its incident + AI read, with an honest "could not be embedded"
- * placeholder — its metadata is not silently dropped.
+ * placeholder — its metadata is not silently dropped. Incidents that were photographed + read but
+ * whose photo the owner has since removed are DISCLOSED (not shown as a card — there is no image),
+ * so this appendix's "every photographed incident" claim never silently contradicts the
+ * analysis-scoped "Photo:" lines in Appendix A / the phenotype counts on page 1.
  */
 function incidentPhotosAppendix(snap: ReportSnapshot): string {
   if (!hasIncidentPhotos(snap)) return ''
@@ -1858,14 +1867,29 @@ function incidentPhotosAppendix(snap: ReportSnapshot): string {
           missing === 1 ? 'is' : 'are'
         } shown as a labelled placeholder rather than dropped.`
       : ''
-  const cards = photos.map((p) => incidentPhotoCard(p, snap.timezone)).join('')
+  // The analysis↔attachment divergence disclosure (cold-read fix): reconciles a vet's "N reads but
+  // fewer photos?" cross-check without dropping the reads (which remain in Appendix A).
+  const removed = snap.incidentPhotosAnalyzedNoRetained
+  const removedNote =
+    removed > 0
+      ? ` ${num(removed)} further incident${removed === 1 ? ' was' : 's were'} photographed and read but ${
+          removed === 1 ? 'its' : 'their'
+        } photo is no longer retained (removed by the owner); the read${removed === 1 ? '' : 's'} ${
+          removed === 1 ? 'remains' : 'remain'
+        } in appendix&nbsp;A.`
+      : ''
+  const lead =
+    n > 0
+      ? `<span class="num">${n}</span> photographed incident${
+          n === 1 ? '' : 's'
+        } with a retained photo in this window, most recent first`
+      : `No photographed incident in this window still has a retained photo`
+  const cards = n > 0 ? `<div class="phgrid">${photos.map((p) => incidentPhotoCard(p, snap.timezone)).join('')}</div>` : ''
   return `
 <section class="page">
   <p class="appx-title serif">Appendix ${letter} — Incident photos</p>
-  <p class="appx-sub"><span class="num">${n}</span> photographed incident${
-    n === 1 ? '' : 's'
-  } in this window, most recent first — the owner's own photos, attached when the event was logged. For vomiting incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}</p>
-  <div class="phgrid">${cards}</div>
+  <p class="appx-sub">${lead} — the owner's own photos, attached when the event was logged. For vomiting incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}${removedNote}</p>
+  ${cards}
   ${footer(snap, `Appendix ${letter} — incident photos`)}
 </section>`
 }

@@ -102,6 +102,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       conditions: [],
     },
     incidentPhotos: [],
+    incidentPhotosAnalyzedNoRetained: 0,
     ...overrides,
   }
 }
@@ -1476,4 +1477,24 @@ Deno.test('PR7 render — the owner-reviewable AI read shows present-only fields
   // The IncidentPhoto phenotype has no recommendation field by construction; assert the analyze-vomit
   // n=1 verdict vocabulary (recommendation enum labels) never surfaces as a per-photo verdict.
   assert.ok(!/worth a call|not enough to say|worth_a_call/i.test(html), 'no single-incident recommendation leaks onto the report')
+})
+
+Deno.test('PR7 render — the removed-photo divergence is DISCLOSED in Appendix E (reconciles the read/photo count)', () => {
+  const html = renderReport(
+    base({
+      incidentPhotos: [photo({ eventId: 'v1', occurredAt: '2026-06-20T14:00:00Z', dataUri: PNG_1PX })],
+      incidentPhotosAnalyzedNoRetained: 3,
+    }),
+  )
+  assert.ok(html.includes('Appendix E — Incident photos'))
+  assert.ok(/photo is no longer retained \(removed by the owner\)/.test(html), 'the divergence is disclosed, not silent')
+  assert.ok(/read.{0,20}remain.{0,20}appendix/i.test(html), 'points the vet to the reads that remain in Appendix A')
+  assert.ok(/with a retained photo/.test(html), 'the card lead is scoped to retained photos, not an absolute "every photographed"')
+})
+
+Deno.test('PR7 render — Appendix E STILL renders (disclosure only, no grid) when every photo was removed', () => {
+  const html = renderReport(base({ incidentPhotos: [], incidentPhotosAnalyzedNoRetained: 2 }))
+  assert.ok(html.includes('Appendix E — Incident photos'), 'the section renders to reconcile the phenotype counts')
+  assert.ok(/No photographed incident in this window still has a retained photo/.test(html))
+  assert.ok(!html.includes('<div class="phgrid">'), 'no empty photo grid element when there are no cards')
 })

@@ -1408,3 +1408,29 @@ Deno.test('PR7 photos — no attachments ⇒ an EMPTY manifest (Appendix E simpl
   const snap = assembleReport(baseInput({ events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-20') })] }))
   assert.deepEqual(snap.incidentPhotos, [])
 })
+
+Deno.test('PR7 photos — an analyzed vomit whose photo was REMOVED is disclosed, not silently dropped', () => {
+  // Owner removed the photo after it was analysed (attachment gone, event_ai_analysis persists).
+  const kept = makeEvent({ id: 'kept', type: 'vomit', occurredAt: at('2026-06-20') })
+  const removed = makeEvent({ id: 'removed', type: 'vomit', occurredAt: at('2026-06-18') })
+  const snap = assembleReport(
+    baseInput({
+      events: [kept, removed],
+      aiAnalyses: [
+        mkAnalysis('kept', { status: 'completed', contents: ['bile'], consistency: 'foamy' }),
+        mkAnalysis('removed', { status: 'completed', contents: ['partially_digested_food'], consistency: 'chunky' }),
+      ],
+      attachments: [mkAttachment('kept', 'p/kept.jpg')], // only the kept one has a retained photo
+    }),
+  )
+  assert.equal(snap.incidentPhotos.length, 1, 'only the retained photo is a card')
+  assert.equal(snap.incidentPhotos[0].eventId, 'kept')
+  assert.equal(snap.incidentPhotosAnalyzedNoRetained, 1, 'the removed-photo incident is counted for disclosure')
+})
+
+Deno.test('PR7 photos — a vomit with NO analysis and no photo is NOT counted as removed (never photographed)', () => {
+  const noPhoto = makeEvent({ id: 'np', type: 'vomit', occurredAt: at('2026-06-20') })
+  const snap = assembleReport(baseInput({ events: [noPhoto] })) // no analysis, no attachment
+  assert.equal(snap.incidentPhotos.length, 0)
+  assert.equal(snap.incidentPhotosAnalyzedNoRetained, 0, 'an unphotographed incident is not a removed photo')
+})
