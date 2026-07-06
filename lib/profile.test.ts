@@ -1,4 +1,11 @@
-import { fetchDisplayName, getDeviceTimezone, syncUserTimezone, updateDisplayName } from './profile';
+import {
+  deriveDisplayName,
+  fetchDisplayName,
+  getDeviceTimezone,
+  syncUserTimezone,
+  updateDisplayName,
+  updateOwnerName,
+} from './profile';
 import { supabase } from './supabase';
 
 // Mock the Supabase client module wholesale — replacing it before profile.ts
@@ -230,6 +237,85 @@ describe('updateDisplayName', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockNameTable({ upsertResult: { error: { message: 'rls denied' } } });
     expect(await updateDisplayName(USER_ID, 'X')).toEqual({ status: 'error' });
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+// ── Owner first / last name (onboarding account step, B-251 PR 1) ────────────────
+
+describe('deriveDisplayName', () => {
+  it('joins a trimmed first + last with a single space', () => {
+    expect(deriveDisplayName('  Daniel ', ' Mark ')).toBe('Daniel Mark');
+  });
+
+  it('drops a missing part rather than leaving a stray space', () => {
+    // "First " || " Last" semantics: a blank half must not produce " Mark" / "Daniel ".
+    expect(deriveDisplayName('Daniel', '')).toBe('Daniel');
+    expect(deriveDisplayName('', 'Mark')).toBe('Mark');
+    expect(deriveDisplayName('Daniel', '   ')).toBe('Daniel');
+    expect(deriveDisplayName('   ', 'Mark')).toBe('Mark');
+  });
+
+  it('both parts blank → null (report then falls back to the email)', () => {
+    expect(deriveDisplayName('', '')).toBeNull();
+    expect(deriveDisplayName('   ', '  ')).toBeNull();
+  });
+
+  it('preserves internal spacing / multi-part names', () => {
+    expect(deriveDisplayName('Mary Jane', 'van der Berg')).toBe('Mary Jane van der Berg');
+  });
+});
+
+describe('updateOwnerName', () => {
+  it('upserts trimmed first/last + a derived display_name (upsert — a pre-trigger account has no row)', async () => {
+    const t = mockNameTable({});
+    const result = await updateOwnerName(USER_ID, '  Daniel ', ' Mark ');
+    expect(result).toEqual({
+      status: 'written',
+      firstName: 'Daniel',
+      lastName: 'Mark',
+      displayName: 'Daniel Mark',
+    });
+    expect(t.upsert).toHaveBeenCalledWith(
+      { id: USER_ID, first_name: 'Daniel', last_name: 'Mark', display_name: 'Daniel Mark' },
+      { onConflict: 'id' },
+    );
+  });
+
+  it('a blank part is stored as NULL, and display_name is derived from the present part', async () => {
+    const t = mockNameTable({});
+    const result = await updateOwnerName(USER_ID, 'Daniel', '   ');
+    expect(result).toEqual({
+      status: 'written',
+      firstName: 'Daniel',
+      lastName: null,
+      displayName: 'Daniel',
+    });
+    expect(t.upsert).toHaveBeenCalledWith(
+      { id: USER_ID, first_name: 'Daniel', last_name: null, display_name: 'Daniel' },
+      { onConflict: 'id' },
+    );
+  });
+
+  it('both parts blank → all three columns NULL', async () => {
+    const t = mockNameTable({});
+    const result = await updateOwnerName(USER_ID, '  ', '');
+    expect(result).toEqual({
+      status: 'written',
+      firstName: null,
+      lastName: null,
+      displayName: null,
+    });
+    expect(t.upsert).toHaveBeenCalledWith(
+      { id: USER_ID, first_name: null, last_name: null, display_name: null },
+      { onConflict: 'id' },
+    );
+  });
+
+  it('write failure → error status, no silent failure', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockNameTable({ upsertResult: { error: { message: 'rls denied' } } });
+    expect(await updateOwnerName(USER_ID, 'Daniel', 'Mark')).toEqual({ status: 'error' });
     expect(warn).toHaveBeenCalled();
   });
 });

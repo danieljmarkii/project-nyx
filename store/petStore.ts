@@ -7,6 +7,14 @@ export interface Pet {
   species: 'dog' | 'cat' | 'other';
   breed: string | null;
   date_of_birth: string | null;
+  // Whether `date_of_birth` is a witnessed birthday the owner entered on a
+  // calendar ('exact') or a date COMPUTED from an approximate age ('approximate',
+  // e.g. onboarding's "~2 years" → today − duration). Non-null (migration 028
+  // defaults 'exact'); only meaningful when `date_of_birth` is set. Honesty
+  // contract: never render an 'approximate' DOB as an exact birthday — surfaces
+  // show it as an estimate ("~2 years old"). See docs/nyx-onboarding-requirements.md
+  // §4/§6 (S2) — the clinical-honesty reason this field exists.
+  date_of_birth_precision: 'exact' | 'approximate';
   sex: 'male' | 'female' | 'unknown';
   weight_kg: number | null;
   photo_path: string | null;

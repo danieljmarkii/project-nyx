@@ -4,6 +4,21 @@
 
 import { supabase } from './supabase';
 
+// A row of user_profiles as the app consumes it. Replaces the ad-hoc inlined
+// shapes at each call site (the report reads display_name, the engine reads
+// timezone, onboarding routing reads onboarding_completed_at, personalization
+// reads first/last). TIMESTAMPTZ arrives as an ISO string over the wire.
+// first_name / last_name / onboarding_completed_at were added in migration 027
+// (B-251 PR 1); every field is nullable except timezone, which carries a
+// NOT NULL DEFAULT in the schema.
+export interface UserProfile {
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+  timezone: string;
+  onboarding_completed_at: string | null;
+}
+
 export type TimezoneSyncResult =
   | { status: 'written'; timezone: string }
   | { status: 'unchanged'; timezone: string }
@@ -126,4 +141,54 @@ export async function updateDisplayName(
     return { status: 'error' };
   }
   return { status: 'written', displayName };
+}
+
+// ── Owner first / last name (onboarding account step, B-251 PR 1) ──────────────
+// The account-creation screen captures first + last name; this helper persists
+// both AND derives a `display_name` from them, so generate-report's existing
+// display_name read (fetchDisplayName / the vet-report "Owner:" line) keeps
+// working with no report-side change — the same reason migration 027's comment
+// pins display_name to trim(first || ' ' || last). This is the write side of the
+// two structured columns; updateDisplayName above stays the single-field Profile
+// edit and is deliberately left untouched.
+
+// The derived display name: trimmed first + last joined by a single space, with a
+// missing part dropped ("First" / "Last" / "First Last"), or null when both are
+// blank (matching updateDisplayName's empty-clears-to-NULL semantics, so the
+// report falls back to the account email). Exported for direct unit testing of
+// the derivation, independent of the network write.
+export function deriveDisplayName(firstName: string, lastName: string): string | null {
+  return [firstName.trim(), lastName.trim()].filter(Boolean).join(' ') || null;
+}
+
+export type OwnerNameWriteResult =
+  | { status: 'written'; firstName: string | null; lastName: string | null; displayName: string | null }
+  | { status: 'error' };
+
+// Upsert, not update, for the same reason as syncUserTimezone / updateDisplayName:
+// an account created before the signup trigger existed has no user_profiles row,
+// and an UPDATE would silently match zero rows. RLS (auth.uid() = id) scopes the
+// write to the caller's own row. A blank part is stored as NULL rather than '' so
+// the columns stay clean (an absent name is null, never an empty string).
+export async function updateOwnerName(
+  userId: string,
+  firstName: string,
+  lastName: string,
+): Promise<OwnerNameWriteResult> {
+  const first = firstName.trim() || null;
+  const last = lastName.trim() || null;
+  const displayName = deriveDisplayName(firstName, lastName);
+
+  const { error } = await supabase
+    .from('user_profiles')
+    .upsert(
+      { id: userId, first_name: first, last_name: last, display_name: displayName },
+      { onConflict: 'id' },
+    );
+
+  if (error) {
+    console.warn('[profile] owner name write failed:', error.message);
+    return { status: 'error' };
+  }
+  return { status: 'written', firstName: first, lastName: last, displayName };
 }

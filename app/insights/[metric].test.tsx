@@ -44,7 +44,7 @@ const A = analytics as jest.Mocked<typeof analytics>;
 function setActivePet() {
   const pet = {
     id: 'p1', name: 'Nyx', species: 'cat' as const, breed: null, date_of_birth: null,
-    sex: 'unknown' as const, weight_kg: null, photo_path: null,
+    date_of_birth_precision: 'exact' as const, sex: 'unknown' as const, weight_kg: null, photo_path: null,
   };
   usePetStore.setState({ pets: [pet], activePet: pet, isOnboarded: true });
 }
