@@ -44,10 +44,12 @@ export default function RootLayout() {
       setSession(session);
       setLoading(false);
       if (!session) {
-        router.replace('/(auth)/login');
+        // The Signal-led Landing (app/(auth)/index) is the unauthenticated entry
+        // point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in" from
+        // there. A live session skips straight past auth; the usePet hook (in the
+        // tabs layout) then fetches the pet and redirects to onboarding if none.
+        router.replace('/(auth)');
       }
-      // If session exists, usePet hook (in tabs layout) will fetch the pet
-      // and redirect to onboarding if none exists.
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -65,7 +67,12 @@ export default function RootLayout() {
       }
       setSession(session);
       if (!session) {
-        router.replace('/(auth)/login');
+        // Route to the new Landing on sign-out (B-251 PR 5) — EXCEPT a just-deleted
+        // account, which goes to login so the B-039 "your account has been deleted"
+        // confirmation banner (armed on the auth store, shown on the login screen)
+        // still surfaces immediately instead of behind the Landing's swipe cards.
+        const justDeleted = useAuthStore.getState().justDeletedAccount;
+        router.replace(justDeleted ? '/(auth)/login' : '/(auth)');
       }
     });
 

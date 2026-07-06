@@ -1,4 +1,5 @@
 import { render, fireEvent } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { PrimaryButton } from './PrimaryButton';
 import { theme } from '../../constants/theme';
 
@@ -61,5 +62,24 @@ describe('PrimaryButton', () => {
       <PrimaryButton label="Create account" onPress={() => {}} loading testID="btn" />,
     );
     expect(getByTestId('btn-spinner').props.color).toBe(theme.colorTextOnDark);
+  });
+
+  // The accent variant (B-251 PR 5 Landing hero) fills teal with a near-black
+  // label — white would fail contrast on the bright accent.
+  it('paints the accent variant teal with a near-black label', () => {
+    const { getByTestId, getByText } = render(
+      <PrimaryButton label="Create account" onPress={() => {}} variant="accent" testID="btn" />,
+    );
+    const btnBg = StyleSheet.flatten(getByTestId('btn').props.style).backgroundColor;
+    const labelColor = StyleSheet.flatten(getByText('Create account').props.style).color;
+    expect(btnBg).toBe(theme.colorAccent);
+    expect(labelColor).toBe(theme.colorNeutralDark);
+  });
+
+  it('tints the accent spinner near-black to read on the teal fill', () => {
+    const { getByTestId } = render(
+      <PrimaryButton label="Create account" onPress={() => {}} variant="accent" loading testID="btn" />,
+    );
+    expect(getByTestId('btn-spinner').props.color).toBe(theme.colorNeutralDark);
   });
 });
