@@ -2,6 +2,7 @@ export { Card } from './Card';
 export { Header } from './Header';
 export { SectionLabel } from './SectionLabel';
 export { PrimaryButton } from './PrimaryButton';
+export { TextField } from './TextField';
 export { FilterChip } from './FilterChip';
 export { Badge } from './Badge';
 export { Divider } from './Divider';
