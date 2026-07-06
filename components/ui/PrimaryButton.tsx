@@ -1,7 +1,12 @@
 import { TouchableOpacity, Text, ViewStyle, StyleSheet, ActivityIndicator } from 'react-native';
 import { theme } from '../../constants/theme';
 
-type Variant = 'primary' | 'secondary' | 'destructive';
+// 'accent' is the teal marketing/acquisition-hero fill (B-251 PR 5 Landing CTA,
+// PM-ratified over near-black). Distinct from 'primary' (near-black, every in-app
+// submit) so the hero action on an acquisition surface can carry the interactive
+// accent the rest of that screen speaks. Label rides near-black for contrast on
+// the bright teal (white would fail on #00C2A8).
+type Variant = 'primary' | 'secondary' | 'destructive' | 'accent';
 
 interface Props {
   label: string;
@@ -22,6 +27,8 @@ const SPINNER_COLOR: Record<Variant, string> = {
   primary: theme.colorTextOnDark,
   secondary: theme.colorTextSecondary,
   destructive: theme.colorDestructive,
+  // Matches the accent variant's near-black label on the teal fill.
+  accent: theme.colorNeutralDark,
 };
 
 export function PrimaryButton({
@@ -43,6 +50,7 @@ export function PrimaryButton({
         styles.btn,
         variant === 'secondary' && styles.btnSecondary,
         variant === 'destructive' && styles.btnDestructive,
+        variant === 'accent' && styles.btnAccent,
         disabled && styles.btnDisabled,
         style,
       ]}
@@ -67,6 +75,7 @@ export function PrimaryButton({
             styles.label,
             variant === 'secondary' && styles.labelSecondary,
             variant === 'destructive' && styles.labelDestructive,
+            variant === 'accent' && styles.labelAccent,
             disabled && styles.labelDisabled,
           ]}
         >
@@ -93,6 +102,9 @@ const styles = StyleSheet.create({
   btnDestructive: {
     backgroundColor: 'transparent',
   },
+  btnAccent: {
+    backgroundColor: theme.colorAccent,
+  },
   btnDisabled: {
     backgroundColor: theme.colorBorder,
   },
@@ -107,6 +119,9 @@ const styles = StyleSheet.create({
   },
   labelDestructive: {
     color: theme.colorDestructive,
+  },
+  labelAccent: {
+    color: theme.colorNeutralDark,
   },
   labelDisabled: {
     color: theme.colorTextTertiary,
