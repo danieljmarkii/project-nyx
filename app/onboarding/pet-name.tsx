@@ -17,7 +17,7 @@ import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
 // age, PR 8–9) update. Continue is gated on a non-empty name.
 export default function PetNameScreen() {
   const { user } = useAuthStore();
-  const { addPet, setOnboarded } = usePetStore();
+  const { addPet, setOnboarded, updatePet } = usePetStore();
   // Type + name both live in the shared onboarding draft so re-advancing after a
   // back doesn't drop them (code-review, PR 7). The species is chosen on the type
   // step; the name is edited in place here.
@@ -39,26 +39,51 @@ export default function PetNameScreen() {
     if (!canSubmit || loading || !user || !species) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('pets')
-        .insert({ user_id: user.id, name: name.trim(), species })
-        .select()
-        .single();
+      // Insert-or-update. The optional steps (breed/gender, PR 8) are PUSHED after
+      // this one, so back-navigation can return the owner here; onboarding begins
+      // with zero pets, so an active pet on this screen can only be the one this
+      // flow just created — never a pre-existing pet. When it exists, UPDATE that
+      // row (the name/species may have changed on the way back) instead of
+      // inserting a second pet. This is what makes the pushed back-navigation
+      // single-pet-safe.
+      const existing = usePetStore.getState().activePet;
+      if (existing) {
+        const { error } = await supabase
+          .from('pets')
+          .update({ name: name.trim(), species })
+          .eq('id', existing.id);
+        if (error) {
+          // Log the raw cause; owner sees calm copy (nyx-voice Pattern 8).
+          console.warn('[pet-name] pet update failed:', error.message);
+          Alert.alert('Something went wrong', 'Please try again.');
+          return;
+        }
+        updatePet({ name: name.trim(), species });
+      } else {
+        const { data, error } = await supabase
+          .from('pets')
+          .insert({ user_id: user.id, name: name.trim(), species })
+          .select()
+          .single();
 
-      if (error || !data) {
-        Alert.alert('Something went wrong', error?.message ?? 'Please try again.');
-        return;
+        if (error || !data) {
+          // Log the raw cause; owner sees calm copy (nyx-voice Pattern 8).
+          if (error) console.warn('[pet-name] pet insert failed:', error.message);
+          Alert.alert('Something went wrong', 'Please try again.');
+          return;
+        }
+
+        addPet(data, { select: true });
+        // Mark the session onboarded so the tabs gate (usePet) doesn't bounce back
+        // to onboarding once the flow reaches Home. The durable
+        // onboarding_completed_at flag is written at the "All set" step (PR 10);
+        // until it lands, a created pet is treated complete by the §6 legacy rule.
+        setOnboarded(true);
       }
-
-      addPet(data, { select: true });
-      // Mark the session onboarded so the tabs gate (usePet) doesn't bounce back
-      // to onboarding on the way to Home. The durable onboarding_completed_at flag
-      // is written at the "All set" step (PR 10); until it lands, a created pet is
-      // treated complete by the §6 legacy rule on the next cold start.
-      setOnboarded(true);
-      // Breed/gender/age (PR 8–9) slot in between here and Home as they land; for
-      // now the required pair is enough to reach the (designed-empty) home.
-      router.replace('/(tabs)');
+      // Breed → gender → age (PR 8–9) UPDATE this same row before Home; push so
+      // back-navigation returns through them step-by-step. PR 8 wires breed +
+      // gender; age (PR 9) + the paywall/done terminus (PR 10) slot in later.
+      router.push('/onboarding/pet-breed');
     } catch {
       Alert.alert('Something went wrong', 'Please check your connection and try again.');
     } finally {
