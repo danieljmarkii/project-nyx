@@ -1,0 +1,36 @@
+-- Migration 029 — vet_reports.updated_at (B-250)
+--
+-- (Renumbered 027 → 029: a parallel onboarding session landed 027_user_profile_names
+-- and 028_pet_dob_precision in main first. Content unchanged. Already applied to prod
+-- by the PM on 2026-07-06 via the dashboard SQL Editor — dashboard-paste applies DDL
+-- but does not record migration history, so this file exists for repo/fresh-setup
+-- ordering; the live column is present.)
+--
+-- Fixes a PRE-EXISTING schema/trigger mismatch authored in 001_schema.sql: the
+-- `vet_reports` table was created WITHOUT an `updated_at` column, yet
+-- `trg_vet_reports_updated_at` (BEFORE UPDATE) runs `set_updated_at()`, which
+-- assigns `NEW.updated_at`. Any UPDATE on a vet_reports row therefore raises
+--   record "new" has no field "updated_at"
+--
+-- The trigger's very existence shows the original author INTENDED an `updated_at`
+-- column — every other table in 001 carries the column AND this trigger; the column
+-- was simply omitted from the vet_reports body. We complete that intent by ADDING
+-- the column (rather than dropping the stray trigger) so:
+--   • vet_reports matches the schema-wide updated_at + set_updated_at() convention, and
+--   • the table is safe for ANY future UPDATE — `token_expires_at` is a MUTABLE control
+--     field by design (spec §7), so the table must accept an UPDATE cleanly. The Step 9
+--     public-link mint that would exercise this is DEFERRED (B-253, Supabase serves HTML
+--     as text/plain), so today this simply clears the latent landmine rather than
+--     unblocking a live UPDATE — but it clears it correctly for the future rebuild.
+--
+-- Additive + non-destructive: a NOT NULL column with DEFAULT NOW() backfills every
+-- existing row atomically (the table is empty today regardless). Nothing is dropped,
+-- renamed, or altered. `IF NOT EXISTS` keeps the migration idempotent.
+--
+-- Migration Safety Pre-flight
+--   Rollback plan : ALTER TABLE vet_reports DROP COLUMN updated_at;
+--   Destructive   : n (purely additive — no column dropped/renamed/altered)
+--   Backfill      : N/A — DEFAULT NOW() populates the column; the table has 0 rows.
+
+ALTER TABLE vet_reports
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
