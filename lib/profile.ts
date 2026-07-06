@@ -192,3 +192,46 @@ export async function updateOwnerName(
   }
   return { status: 'written', firstName: first, lastName: last, displayName };
 }
+
+// ── Onboarding completion gate (B-251 PR 10) ───────────────────────────────────
+// The durable "onboarding is finished" marker (§6 / D12). Written once, when the
+// "All set" screen (app/onboarding/done.tsx) is reached, so decideOnboarding
+// (lib/onboarding.ts) can gate on a real flag instead of the fragile "has >=1 pet"
+// inference that silently treated a mid-flow quit as done.
+
+export type OnboardingCompleteResult =
+  | { status: 'written'; completedAt: string }
+  | { status: 'error' };
+
+// Marks onboarding complete by stamping user_profiles.onboarding_completed_at.
+//
+// The value is a client-side ISO timestamp, not a server now(): decideOnboarding
+// only ever reads this column for truthiness (set ⇒ complete, null ⇒ not), so the
+// exact instant is not load-bearing and clock skew is irrelevant — not worth an
+// RPC round-trip to have Postgres generate it. A valid ISO string is all the gate
+// needs.
+//
+// Upsert on `id`, not update — same rationale as updateOwnerName above: the write
+// only ever touches this one column, so ON CONFLICT DO UPDATE leaves first/last/
+// display_name/timezone untouched, and an account with no profile row yet still
+// gets one. RLS (auth.uid() = id) scopes the write to the caller's own row.
+//
+// A failure here is non-fatal by design: the §6 legacy rule treats a has-pet /
+// null-completion account as complete, so an owner who finishes the flow but whose
+// completion write fails is never re-onboarded — they just fall through the legacy
+// path on the next cold start. We still surface the error (no silent failure) so
+// the miss is visible, rather than pretending the durable flag was set.
+export async function markOnboardingComplete(
+  userId: string,
+): Promise<OnboardingCompleteResult> {
+  const completedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from('user_profiles')
+    .upsert({ id: userId, onboarding_completed_at: completedAt }, { onConflict: 'id' });
+
+  if (error) {
+    console.warn('[profile] onboarding-complete write failed:', error.message);
+    return { status: 'error' };
+  }
+  return { status: 'written', completedAt };
+}
