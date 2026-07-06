@@ -33,7 +33,14 @@ export function usePet() {
     // empty-and-uncompleted result — a false onboarding bounce risks a duplicate pet.
     async function loadState(attempt: number): Promise<void> {
       const persistedId = await loadPersistedActivePetId();
-      const [profileRes, petsRes] = await Promise.all([
+
+      // A genuine THROW (not a resolved {data, error}) — e.g. a network-layer
+      // failure on a zero-connectivity cold start — would otherwise reject
+      // loadState unhandled and skip the retry/never-bounce machinery below.
+      // Catch it here and fold it into the same blocking-error path: retry once,
+      // else leave state as-is. Never onboard on a throw (a false bounce risks a
+      // duplicate pet) — the no-silent-failure rule for API calls.
+      const reads = await Promise.all([
         supabase
           .from('user_profiles')
           .select('onboarding_completed_at')
@@ -45,9 +52,22 @@ export function usePet() {
           .eq('user_id', userId)
           .eq('is_active', true)
           .order('created_at', { ascending: true }),
-      ]);
+      ]).catch((e: unknown) => {
+        console.warn('[usePet] state fetch threw:', e);
+        return null;
+      });
       if (cancelled) return;
 
+      if (!reads) {
+        if (attempt === 0) {
+          setTimeout(() => {
+            if (!cancelled) loadState(1);
+          }, 600);
+        }
+        return;
+      }
+
+      const [profileRes, petsRes] = reads;
       const { data: profile, error: profileError } = profileRes;
       const { data: petData, error: petsError } = petsRes;
 
