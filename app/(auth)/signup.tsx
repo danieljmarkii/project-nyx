@@ -20,6 +20,7 @@ import { theme } from '../../constants/theme';
 import { SOCIAL_AUTH_ENABLED } from '../../constants/flags';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
+import { Divider } from '../../components/ui/Divider';
 import { emailError, passwordError, requiredNameError } from '../../lib/authValidation';
 
 // Account creation — the first screen that captures OWNER identity (B-251 PR 6,
@@ -156,6 +157,22 @@ export default function SignupScreen() {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.verifyBody}>
+          {/* Escape hatch back to the form (§10 "no dead ends"): a mistyped email
+              would otherwise strand the owner here. Returning drops verifyEmail,
+              re-rendering the form with every entered value intact (they're still
+              in state), so they can correct the address and resubmit. */}
+          <View style={styles.verifyHeaderRow}>
+            <TouchableOpacity
+              onPress={() => setVerifyEmail(null)}
+              style={styles.back}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back and edit your details"
+              testID="verify-back"
+            >
+              <ChevronLeft size={24} color={theme.colorTextPrimary} strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
           <View style={styles.grow} />
           <View style={styles.verifyIcon}>
             <Mail size={44} color={theme.colorAccent} strokeWidth={1.5} />
@@ -290,9 +307,9 @@ export default function SignupScreen() {
           {SOCIAL_AUTH_ENABLED ? (
             <View testID="signup-social">
               <View style={styles.orRow}>
-                <View style={styles.orLine} />
+                <Divider style={styles.orLine} />
                 <Text style={styles.orText}>or</Text>
-                <View style={styles.orLine} />
+                <Divider style={styles.orLine} />
               </View>
               <PrimaryButton
                 label="Continue with Apple"
@@ -399,10 +416,9 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     marginVertical: theme.space2,
   },
+  // Divider owns the hairline (height + colour); the row just stretches it.
   orLine: {
     flex: 1,
-    height: 1,
-    backgroundColor: theme.colorBorder,
   },
   orText: {
     fontSize: theme.textSM,
@@ -426,8 +442,10 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   loginLink: {
+    minHeight: theme.space5,
     alignItems: 'center',
-    marginTop: theme.space3,
+    justifyContent: 'center',
+    marginTop: theme.space2,
   },
   loginText: {
     fontSize: theme.textSM,
@@ -438,6 +456,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingBottom: theme.space2,
+  },
+  // Full-width so the back chevron sits top-left despite the body centring its
+  // column.
+  verifyHeaderRow: {
+    width: '100%',
+    alignItems: 'flex-start',
   },
   grow: {
     flexGrow: 1,

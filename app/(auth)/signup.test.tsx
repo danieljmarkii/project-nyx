@@ -78,6 +78,23 @@ describe('SignupScreen — session present (email confirmation off)', () => {
     expect(mockSignUp).toHaveBeenCalledWith({ email: 'jordan@email.com', password: 'password123' });
     expect(mockUpdateOwnerName).toHaveBeenCalledWith('u1', 'Jordan', 'Rivera');
   });
+
+  it('still routes to onboarding when the owner-name write fails (best-effort, non-blocking)', async () => {
+    // The name write is intentionally best-effort — a hiccup on it must not trap
+    // the user on the account screen (the name is re-enterable in Profile, and
+    // updateOwnerName logs its own failure). Routing must proceed regardless.
+    mockSignUp.mockResolvedValue({
+      data: { session: { access_token: 't' }, user: { id: 'u1', identities: [{}] } },
+      error: null,
+    });
+    mockUpdateOwnerName.mockResolvedValue({ status: 'error' });
+    const utils = render(<SignupScreen />);
+    fillValidForm(utils);
+    fireEvent.press(utils.getByTestId('signup-submit'));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/pet'));
+    expect(mockUpdateOwnerName).toHaveBeenCalled();
+  });
 });
 
 describe('SignupScreen — no session (email confirmation on)', () => {
@@ -97,6 +114,22 @@ describe('SignupScreen — no session (email confirmation on)', () => {
     expect(mockReplace).not.toHaveBeenCalled();
     expect(utils.getByTestId('verify-resend')).toBeTruthy();
     expect(utils.getByTestId('verify-continue')).toBeTruthy();
+  });
+
+  it('lets a stranded user go back from verify to fix a mistyped email (no dead end)', async () => {
+    mockSignUp.mockResolvedValue({
+      data: { session: null, user: { id: 'u1', identities: [{}] } },
+      error: null,
+    });
+    const utils = render(<SignupScreen />);
+    fillValidForm(utils);
+    fireEvent.press(utils.getByTestId('signup-submit'));
+    await waitFor(() => expect(utils.getByText('Check your inbox')).toBeTruthy());
+
+    fireEvent.press(utils.getByTestId('verify-back'));
+    // Back on the form (email field is present again), not stranded on verify.
+    expect(utils.getByTestId('signup-email')).toBeTruthy();
+    expect(utils.queryByText('Check your inbox')).toBeNull();
   });
 
   it('redirects an already-registered email to login instead of the verify state', async () => {
