@@ -15,6 +15,7 @@ function makePet(id: string, name = id): Pet {
     species: 'cat',
     breed: null,
     date_of_birth: null,
+    date_of_birth_precision: 'exact',
     sex: 'unknown',
     weight_kg: null,
     photo_path: null,
