@@ -74,7 +74,7 @@ describe('SignupScreen — session present (email confirmation off)', () => {
     fillValidForm(utils, '  jordan@email.com  ');
     fireEvent.press(utils.getByTestId('signup-submit'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/pet'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/pet-type'));
     expect(mockSignUp).toHaveBeenCalledWith({ email: 'jordan@email.com', password: 'password123' });
     expect(mockUpdateOwnerName).toHaveBeenCalledWith('u1', 'Jordan', 'Rivera');
   });
@@ -92,7 +92,7 @@ describe('SignupScreen — session present (email confirmation off)', () => {
     fillValidForm(utils);
     fireEvent.press(utils.getByTestId('signup-submit'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/pet'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/pet-type'));
     expect(mockUpdateOwnerName).toHaveBeenCalled();
   });
 });

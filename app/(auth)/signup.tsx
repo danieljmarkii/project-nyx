@@ -116,7 +116,7 @@ export default function SignupScreen() {
     }
     // The user_profiles row itself is created by the Supabase trigger on the
     // auth.users insert; the upsert in updateOwnerName also creates it if absent.
-    router.replace('/onboarding/pet');
+    router.replace('/onboarding/pet-type');
   }
 
   async function handleResend() {

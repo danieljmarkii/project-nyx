@@ -133,7 +133,7 @@ export function usePet() {
 
       // Genuinely a new, petless account that never completed onboarding.
       setOnboarded(false);
-      router.replace('/onboarding/pet');
+      router.replace('/onboarding/pet-type');
     }
 
     loadState(0);
