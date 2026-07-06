@@ -10,6 +10,13 @@ interface Props {
   // The pet-setup flow is 5 steps (type, name, breed, gender, age); paywall/done
   // sit outside the bar (spec §3 / S5).
   totalSteps?: number;
+  // When set, a prominent Skip affordance sits top-right — the skippable optional
+  // steps (breed / gender / age, mockup 08–10) render it; the required steps
+  // (type / name) omit it. Skipping is the field-level advance, so it lives in the
+  // chrome beside back, not as a second button competing with Continue.
+  onSkip?: () => void;
+  // Skip copy (default "Skip"); the age step overrides it ("Not sure? Skip").
+  skipLabel?: string;
 }
 
 /**
@@ -30,7 +37,7 @@ interface Props {
  * preserves entered values"). This component owns only the back affordance, not
  * that persistence.
  */
-export function OnboardingHeader({ step, totalSteps = 5 }: Props) {
+export function OnboardingHeader({ step, totalSteps = 5, onSkip, skipLabel = 'Skip' }: Props) {
   const canGoBack = router.canGoBack();
 
   return (
@@ -53,6 +60,19 @@ export function OnboardingHeader({ step, totalSteps = 5 }: Props) {
           // between an entry step (no back) and a pushed step (back present).
           <View style={styles.back} />
         )}
+
+        {onSkip ? (
+          <TouchableOpacity
+            onPress={onSkip}
+            accessibilityRole="button"
+            accessibilityLabel={skipLabel}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={styles.skip}
+            testID="onboarding-skip"
+          >
+            <Text style={styles.skipText}>{skipLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <ProgressBar current={step} total={totalSteps} />
@@ -75,6 +95,10 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    // Back hugs the left, Skip the right. With a single child (back or its
+    // spacer, on a step with no Skip) this is equivalent to flex-start, so the
+    // required steps are visually unchanged.
+    justifyContent: 'space-between',
     minHeight: theme.space4, // 32 — a stable top row whether back shows or not
     marginBottom: theme.space1,
   },
@@ -85,6 +109,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'flex-start',
     marginLeft: -theme.space1, // optical-align the chevron to the content edge
+  },
+  skip: {
+    // ≥44pt target; right-aligned so the label hugs the screen edge. hitSlop
+    // carries the rest of the touch floor around the short text.
+    height: theme.space5,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  skipText: {
+    // Prominent (mockup "skip strong") — the single interactive accent + a
+    // semibold weight, so the optional tail stays fast to move through.
+    fontSize: theme.textMD,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorAccent,
   },
   stepLabel: {
     fontSize: theme.textXS,
