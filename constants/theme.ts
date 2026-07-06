@@ -60,7 +60,17 @@ export const theme = {
   colorTextDisabled: '#A3A3A3',
   colorTextOnDark: '#FFFFFF',                 // text/icons on a dark button or photo scrim
   colorTextOnDarkMuted: 'rgba(255,255,255,0.92)', // secondary text on a dark scrim
+  colorTextOnDarkSecondary: '#B4B8B4',        // dimmer body/label text on a solid dark surface
   colorScrimDark: 'rgba(0,0,0,0.55)',         // gradient/overlay scrim over a photo hero
+
+  // Dark premium/marketing surfaces. The onboarding paywall (B-251 PR 10) is the
+  // first full solid dark screen (a premium feel leans dark). These are solid
+  // surface fills — distinct from colorScrimDark, which is a translucent overlay
+  // over a photo. colorTextOnDark (#FFF) + colorTextOnDarkSecondary + colorAccent
+  // cover the type and accent marks on top of them.
+  colorSurfaceDark: '#101312',                // the dark canvas of a premium surface
+  colorSurfaceDarkElevated: '#16201E',        // an elevated tile/card on the dark canvas
+  colorBorderOnDark: '#33383A',               // hairline border/divider on a dark surface
 
   // Borders
   colorBorder: '#EAEAEA',

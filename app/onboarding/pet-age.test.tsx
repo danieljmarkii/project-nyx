@@ -3,10 +3,12 @@ import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import PetAgeScreen from './pet-age';
 
-// Locks the age step (B-251 PR 9): the escape hatch when no pet exists, Skip
-// advancing to Home with no write, Age mode writing an APPROXIMATE DOB, and
-// Birthday mode writing an EXACT DOB. The date math itself is covered exhaustively
-// in lib/age.test.ts — here we only assert the write carries the right precision.
+// Locks the age step (B-251 PR 9; terminus repointed in PR 10): the escape hatch
+// when no pet exists, Skip advancing with no write, Age mode writing an APPROXIMATE
+// DOB, and Birthday mode writing an EXACT DOB. Age now PUSHES the paywall step (was
+// replace → Home) so back-nav returns here. The date math itself is covered
+// exhaustively in lib/age.test.ts — here we only assert the write carries the right
+// precision and the step advances to the paywall.
 
 const mockUpdatePet = jest.fn();
 let mockActivePet: unknown = { id: 'pet-1', name: 'Luna', species: 'cat', date_of_birth: null, date_of_birth_precision: 'exact' };
@@ -40,6 +42,7 @@ jest.mock('@react-native-community/datetimepicker', () => {
 
 const mockedFrom = supabase.from as jest.Mock;
 const mockedReplace = router.replace as jest.Mock;
+const mockedPush = router.push as jest.Mock;
 
 // pets update chain: .update(...).eq(...) → { error }.
 function mockUpdate() {
@@ -61,11 +64,11 @@ describe('PetAgeScreen', () => {
     expect(mockedReplace).toHaveBeenCalledWith('/onboarding/pet-type');
   });
 
-  it('Skip advances to Home with no write (date_of_birth stays null)', () => {
+  it('Skip advances to the paywall with no write (date_of_birth stays null)', () => {
     mockUpdate();
     const { getByTestId } = render(<PetAgeScreen />);
     fireEvent.press(getByTestId('onboarding-skip'));
-    expect(mockedReplace).toHaveBeenCalledWith('/(tabs)');
+    expect(mockedPush).toHaveBeenCalledWith('/onboarding/paywall');
     expect(mockedFrom).not.toHaveBeenCalled();
   });
 
@@ -93,7 +96,7 @@ describe('PetAgeScreen', () => {
     expect(mockUpdatePet).toHaveBeenCalledWith(
       expect.objectContaining({ date_of_birth_precision: 'approximate' }),
     );
-    expect(mockedReplace).toHaveBeenCalledWith('/(tabs)');
+    expect(mockedPush).toHaveBeenCalledWith('/onboarding/paywall');
   });
 
   it('Birthday mode writes an EXACT date_of_birth from the picked date', async () => {
@@ -109,6 +112,6 @@ describe('PetAgeScreen', () => {
         date_of_birth_precision: 'exact',
       }),
     );
-    expect(mockedReplace).toHaveBeenCalledWith('/(tabs)');
+    expect(mockedPush).toHaveBeenCalledWith('/onboarding/paywall');
   });
 });

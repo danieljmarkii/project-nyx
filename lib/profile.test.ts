@@ -2,6 +2,7 @@ import {
   deriveDisplayName,
   fetchDisplayName,
   getDeviceTimezone,
+  markOnboardingComplete,
   syncUserTimezone,
   updateDisplayName,
   updateOwnerName,
@@ -316,6 +317,35 @@ describe('updateOwnerName', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockNameTable({ upsertResult: { error: { message: 'rls denied' } } });
     expect(await updateOwnerName(USER_ID, 'Daniel', 'Mark')).toEqual({ status: 'error' });
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
+// ── Onboarding completion gate (B-251 PR 10 — the durable §6 flag) ───────────────
+
+describe('markOnboardingComplete', () => {
+  it('upserts a completion timestamp scoped to the caller (only the flag column)', async () => {
+    const t = mockNameTable({});
+    const result = await markOnboardingComplete(USER_ID);
+
+    expect(result.status).toBe('written');
+    // The value is a client ISO timestamp — assert it's a real ISO string and that
+    // the SAME value is both returned and written (the gate only reads truthiness).
+    const completedAt = (result as { status: 'written'; completedAt: string }).completedAt;
+    expect(completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(t.upsert).toHaveBeenCalledTimes(1);
+    // Only { id, onboarding_completed_at } — so ON CONFLICT DO UPDATE never wipes
+    // first/last/display_name/timezone (the reason this is an upsert, not update).
+    expect(t.upsert).toHaveBeenCalledWith(
+      { id: USER_ID, onboarding_completed_at: completedAt },
+      { onConflict: 'id' },
+    );
+  });
+
+  it('write failure → error status, no silent failure (legacy rule is the fallback)', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockNameTable({ upsertResult: { error: { message: 'rls denied' } } });
+    expect(await markOnboardingComplete(USER_ID)).toEqual({ status: 'error' });
     expect(warn).toHaveBeenCalled();
   });
 });

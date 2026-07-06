@@ -85,12 +85,11 @@ export default function PetAgeScreen() {
   }
 
   function finish() {
-    // Interim terminus: age is the last built pet-setup step today. PR 10 (paywall
-    // → "All set", which writes the durable onboarding_completed_at) slots between
-    // here and Home; until it lands, a created pet reaches the designed-empty Home
-    // (the §6 legacy rule treats a has-pet/null-completion account as complete).
-    // Replace so the owner can't swipe back into onboarding from Home.
-    router.replace('/(tabs)');
+    // Age is the last pet-setup step; the paywall + "All set" close the flow (PR 10).
+    // Push (not replace) so back from the paywall returns here with this step intact,
+    // matching gender → age. The paywall's "Maybe later" advances to done, which
+    // writes the durable onboarding_completed_at and hands off to Home.
+    router.push('/onboarding/paywall');
   }
 
   async function handleContinue() {
