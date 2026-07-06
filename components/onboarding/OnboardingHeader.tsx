@@ -17,6 +17,9 @@ interface Props {
   onSkip?: () => void;
   // Skip copy (default "Skip"); the age step overrides it ("Not sure? Skip").
   skipLabel?: string;
+  // Disables Skip while a Continue save is in flight, so a stray Skip tap can't
+  // race the save into a double-navigation (code-review, PR 8).
+  skipDisabled?: boolean;
 }
 
 /**
@@ -37,7 +40,13 @@ interface Props {
  * preserves entered values"). This component owns only the back affordance, not
  * that persistence.
  */
-export function OnboardingHeader({ step, totalSteps = 5, onSkip, skipLabel = 'Skip' }: Props) {
+export function OnboardingHeader({
+  step,
+  totalSteps = 5,
+  onSkip,
+  skipLabel = 'Skip',
+  skipDisabled = false,
+}: Props) {
   const canGoBack = router.canGoBack();
 
   return (
@@ -64,13 +73,15 @@ export function OnboardingHeader({ step, totalSteps = 5, onSkip, skipLabel = 'Sk
         {onSkip ? (
           <TouchableOpacity
             onPress={onSkip}
+            disabled={skipDisabled}
             accessibilityRole="button"
             accessibilityLabel={skipLabel}
+            accessibilityState={{ disabled: skipDisabled }}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             style={styles.skip}
             testID="onboarding-skip"
           >
-            <Text style={styles.skipText}>{skipLabel}</Text>
+            <Text style={[styles.skipText, skipDisabled && styles.skipTextDisabled]}>{skipLabel}</Text>
           </TouchableOpacity>
         ) : null}
       </View>
@@ -123,6 +134,10 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     fontWeight: theme.weightSemibold,
     color: theme.colorAccent,
+  },
+  skipTextDisabled: {
+    // Muted while a Continue save is in flight (see skipDisabled).
+    color: theme.colorTextDisabled,
   },
   stepLabel: {
     fontSize: theme.textXS,

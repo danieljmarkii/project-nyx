@@ -72,13 +72,17 @@ export default function PetGenderScreen() {
   }
 
   function handleSkip() {
-    // Sex stays 'unknown' (its insert default) — no write needed.
+    // Guard against a Skip tap racing an in-flight Continue save (code-review,
+    // PR 8) — the header also disables Skip while saving.
+    if (saving) return;
+    // No write: leaves sex as-is — 'unknown' on the first pass (its insert
+    // default), or a value kept if one was already saved on a prior pass.
     finish();
   }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <OnboardingHeader step={4} onSkip={handleSkip} />
+      <OnboardingHeader step={4} onSkip={handleSkip} skipDisabled={saving} />
 
       <View style={styles.body}>
         <Text style={styles.title}>{`What's ${activePet.name}'s gender?`}</Text>

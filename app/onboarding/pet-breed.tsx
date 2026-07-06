@@ -6,8 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { usePetStore, type Pet } from '../../store/petStore';
-import { breedsForSpecies } from '../../constants/breeds';
+import { usePetStore } from '../../store/petStore';
+import { breedsForSpecies, resolveBreedFieldState } from '../../constants/breeds';
 import { theme } from '../../constants/theme';
 import { BreedPicker } from '../../components/pet/BreedPicker';
 import { TextField } from '../../components/ui/TextField';
@@ -20,18 +20,6 @@ import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
 // disease risk (constants/breeds.ts), so an accurate value has clinical value on
 // the vet report — but it's optional, backfillable in-app, and never a wall.
 
-// Seed the local breed state from the created pet so a value written on a prior
-// pass (backing here from gender) is restored, and a free-text breed reopens in
-// the text field. On the first pass the pet's breed is null (pet-name inserts
-// only name+species), so this yields the empty picker state.
-function initBreed(pet: Pet | null): { breed: string; isOther: boolean } {
-  if (!pet || !pet.breed) return { breed: '', isOther: false };
-  const list = breedsForSpecies(pet.species);
-  return list.includes(pet.breed)
-    ? { breed: pet.breed, isOther: false }
-    : { breed: pet.breed, isOther: true };
-}
-
 export default function PetBreedScreen() {
   const { activePet, updatePet } = usePetStore();
 
@@ -42,8 +30,12 @@ export default function PetBreedScreen() {
     if (!activePet) router.replace('/onboarding/pet-type');
   }, [activePet]);
 
-  const [breed, setBreed] = useState(() => initBreed(activePet).breed);
-  const [isOther, setIsOther] = useState(() => initBreed(activePet).isOther);
+  // Seed from the created pet so a value written on a prior pass (backing here
+  // from gender) is restored, and a free-text breed reopens in the text field.
+  // On the first pass the pet's breed is null (pet-name inserts only
+  // name+species), so this yields the empty picker state.
+  const [breed, setBreed] = useState(() => resolveBreedFieldState(activePet?.breed ?? null, activePet?.species ?? 'cat').breed);
+  const [isOther, setIsOther] = useState(() => resolveBreedFieldState(activePet?.breed ?? null, activePet?.species ?? 'cat').isOther);
   const [saving, setSaving] = useState(false);
 
   if (!activePet) return null;
@@ -94,14 +86,18 @@ export default function PetBreedScreen() {
   }
 
   function handleSkip() {
-    // Breed stays null (its insert default) — no write needed. The owner can add
-    // it anytime from the profile.
+    // Guard against a Skip tap racing an in-flight Continue save into a double
+    // navigation (code-review, PR 8) — the header also disables Skip while saving.
+    if (saving) return;
+    // No write: leaves breed as-is — null on the first pass (its insert default),
+    // or a value kept if one was already saved on a prior pass (we don't destroy
+    // data the owner gave us). The owner can add/change it anytime from the profile.
     goNext();
   }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <OnboardingHeader step={3} onSkip={handleSkip} />
+      <OnboardingHeader step={3} onSkip={handleSkip} skipDisabled={saving} />
 
       <KeyboardAvoidingView
         style={styles.flex}

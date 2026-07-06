@@ -175,6 +175,22 @@ export function breedsForSpecies(species: BreedSpecies): readonly string[] {
   return [];
 }
 
+// Seed a breed picker's { selected-breed, is-free-text } state from a stored
+// breed. Shared by the onboarding breed step (app/onboarding/pet-breed.tsx) and
+// EditPetModal so the "is this breed in our species list, or a free-text entry?"
+// rule lives in one place (code-review, PR 8). A breed absent from the species
+// list — including any breed on an 'other'-species pet, whose list is empty —
+// opens in the free-text field; a null/empty breed is the fresh picker state.
+export function resolveBreedFieldState(
+  breed: string | null,
+  species: BreedSpecies,
+): { breed: string; isOther: boolean } {
+  if (!breed) return { breed: '', isOther: false };
+  return breedsForSpecies(species).includes(breed)
+    ? { breed, isOther: false }
+    : { breed, isOther: true };
+}
+
 // Strip combining diacritical marks so an owner typing plain ASCII ("lowchen",
 // "vendeen") still finds accented breeds ("Löwchen", "…Vendéen") — otherwise
 // search, the only real navigation for a list this long, silently sends them to

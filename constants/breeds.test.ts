@@ -1,4 +1,4 @@
-import { CAT_BREEDS, DOG_BREEDS, breedsForSpecies, filterBreeds } from './breeds';
+import { CAT_BREEDS, DOG_BREEDS, breedsForSpecies, filterBreeds, resolveBreedFieldState } from './breeds';
 
 // The exact strings the v0.1 lists shipped. Every one must survive into the new
 // list — otherwise an existing pet carrying that breed silently drops to the
@@ -93,6 +93,34 @@ describe('breedsForSpecies', () => {
 
   it('returns an empty list for "other" (the free-text path)', () => {
     expect(breedsForSpecies('other')).toEqual([]);
+  });
+});
+
+describe('resolveBreedFieldState', () => {
+  it('opens empty (not free-text) when no breed is stored', () => {
+    expect(resolveBreedFieldState(null, 'cat')).toEqual({ breed: '', isOther: false });
+    expect(resolveBreedFieldState('', 'dog')).toEqual({ breed: '', isOther: false });
+  });
+
+  it('keeps an in-list breed on the picker path (not free-text)', () => {
+    expect(resolveBreedFieldState('Maine Coon', 'cat')).toEqual({ breed: 'Maine Coon', isOther: false });
+    expect(resolveBreedFieldState('Labrador Retriever', 'dog')).toEqual({
+      breed: 'Labrador Retriever',
+      isOther: false,
+    });
+  });
+
+  it('routes a breed absent from the species list to the free-text field', () => {
+    // A real breed, but on the wrong species → not in that list → free text.
+    expect(resolveBreedFieldState('Maine Coon', 'dog')).toEqual({ breed: 'Maine Coon', isOther: true });
+    expect(resolveBreedFieldState('Wolfhound mix', 'dog')).toEqual({
+      breed: 'Wolfhound mix',
+      isOther: true,
+    });
+  });
+
+  it('routes any breed on an "other"-species pet to free text (empty list)', () => {
+    expect(resolveBreedFieldState('Rabbit', 'other')).toEqual({ breed: 'Rabbit', isOther: true });
   });
 });
 

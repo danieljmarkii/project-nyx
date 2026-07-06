@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
-import { breedsForSpecies } from '../../constants/breeds';
+import { breedsForSpecies, resolveBreedFieldState } from '../../constants/breeds';
 import { SectionLabel } from '../ui/SectionLabel';
 import { FilterChip } from '../ui/FilterChip';
 import { BreedPicker } from '../pet/BreedPicker';
@@ -30,15 +30,9 @@ const SEX_OPTIONS: { value: Sex; label: string }[] = [
 ];
 
 // kg<->lbs conversion lives in lib/weight.ts now (B-186) so the log step and this
-// edit form share one rounding rule and can't drift.
-
-function initBreedState(pet: Pet): { breed: string; isOtherBreed: boolean } {
-  if (!pet.breed) return { breed: '', isOtherBreed: false };
-  if (pet.species === 'other') return { breed: pet.breed, isOtherBreed: true };
-  const list = breedsForSpecies(pet.species);
-  if (list.includes(pet.breed)) return { breed: pet.breed, isOtherBreed: false };
-  return { breed: pet.breed, isOtherBreed: true };
-}
+// edit form share one rounding rule and can't drift. The breed field-state seed
+// (in-list vs free-text) lives in resolveBreedFieldState (constants/breeds.ts),
+// shared with the onboarding breed step (B-251 PR 8) so the rule has one home.
 
 interface Props {
   visible: boolean;
@@ -70,7 +64,7 @@ export function EditPetModal({ visible, onClose }: Props) {
       setEditingPetId(activePet.id);
       setName(activePet.name);
       setSpecies(activePet.species);
-      const { breed: b, isOtherBreed: isOther } = initBreedState(activePet);
+      const { breed: b, isOther } = resolveBreedFieldState(activePet.breed, activePet.species);
       setBreed(b);
       setIsOtherBreed(isOther);
       setShowBreedPicker(false);
