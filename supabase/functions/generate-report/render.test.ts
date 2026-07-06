@@ -54,6 +54,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       ageYears: 6,
       ageMonths: 2,
       dateOfBirth: '2020-04-01',
+      dateOfBirthPrecision: 'exact',
       ownerName: 'Daniel Mark',
       latestWeight: null,
     },
@@ -676,6 +677,25 @@ Deno.test('proportion bars use a grayscale ramp only (no load-bearing colour)', 
   // No saturated wellness/alarm colours anywhere in the artifact.
   assert.ok(!/#[0-9a-f]*(00ff00|ff0000)/i.test(html))
   assert.ok(!/(green|crimson|tomato)\b/i.test(html))
+})
+
+// ── Signalment age honesty (B-251 PR 9 — approximate DOB never a witnessed birthday) ──
+
+Deno.test('signalment: an EXACT DOB prints the born-year "(b. YYYY)"', () => {
+  const html = renderReport(base()) // exact, dob 2020-04-01, ageYears 6
+  const text = html.replace(/&nbsp;/g, ' ')
+  assert.ok(/6 yr \(b\. 2020\)/.test(text), 'exact DOB shows the witnessed birth year')
+  assert.ok(!text.includes('~6'), 'no estimate hedge on an exact age')
+})
+
+Deno.test('signalment: an APPROXIMATE DOB renders "~N yr" and NEVER a birth year', () => {
+  const s = base()
+  s.signalment.dateOfBirthPrecision = 'approximate'
+  const html = renderReport(s)
+  const text = html.replace(/&nbsp;/g, ' ')
+  assert.ok(text.includes('~6 yr'), 'estimated age is hedged with ~')
+  assert.ok(!/\(b\./.test(text), 'no witnessed birth year for an approximate DOB')
+  assert.ok(!/b\. 2020/.test(text), 'the anchor year is never surfaced as a birth year')
 })
 
 // ── HTML escaping of owner free text ───────────────────────────────────────────────

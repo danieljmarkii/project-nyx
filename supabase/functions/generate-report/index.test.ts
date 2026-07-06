@@ -53,6 +53,17 @@ Deno.test('mapPet: coerces NUMERIC weight string, passes enums, forces neuter nu
   assert.equal(pet.sex, 'female')
   assert.equal(pet.neuterStatus, null) // not stored on pets (§7.1)
   assert.equal(pet.dateOfBirth, '2020-01-15')
+  // A legacy row without the precision column reads as 'exact' (all pre-028 DOBs
+  // came from the calendar picker) — never accidentally hedged (B-251 PR 9).
+  assert.equal(pet.dateOfBirthPrecision, 'exact')
+})
+
+Deno.test('mapPet: date_of_birth_precision "approximate" passes through (B-251 honesty)', () => {
+  const pet = mapPet({
+    id: 'p1', name: 'Nyx', species: 'cat', breed: null, sex: 'female',
+    date_of_birth: '2024-07-06', date_of_birth_precision: 'approximate', weight_kg: null,
+  })
+  assert.equal(pet.dateOfBirthPrecision, 'approximate')
 })
 
 Deno.test('mapPet: null weight stays null (never fabricated)', () => {
@@ -61,6 +72,7 @@ Deno.test('mapPet: null weight stays null (never fabricated)', () => {
   })
   assert.equal(pet.weightKg, null)
   assert.equal(pet.breed, null)
+  assert.equal(pet.dateOfBirthPrecision, 'exact') // null precision → exact default
 })
 
 // ── mapEventRows ────────────────────────────────────────────────────────────

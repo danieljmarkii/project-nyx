@@ -162,6 +162,8 @@ export interface ReportPetInput {
   breed: string | null
   sex: 'male' | 'female' | 'unknown'
   dateOfBirth: string | null // DATE 'YYYY-MM-DD'
+  /** 'approximate' ⇒ DOB is a computed anchor from an entered age, not a witnessed birthday (B-251). Absent ⇒ 'exact'. */
+  dateOfBirthPrecision?: 'exact' | 'approximate'
   neuterStatus?: 'neutered' | 'intact' | null
   /** pets.weight_kg onboarding snapshot. NOT a weigh-in — never rendered as the weight trend (spec §7.1). */
   weightKg: number | null
@@ -663,7 +665,8 @@ export interface Signalment {
   ageYears: number | null
   ageMonths: number | null
   dateOfBirth: string | null
-  /** Owner/client name for PIMS filing (spec §7.1). Null ⇒ render "not recorded". */
+  /** 'approximate' ⇒ age was estimated, not born-on a witnessed date → the renderer omits the birth year (B-251 honesty rule). */
+  dateOfBirthPrecision: 'exact' | 'approximate'
   ownerName: string | null
   /** Latest weigh-in overall (weight_checks), NEVER the pets.weight_kg onboarding snapshot (spec §7.1). */
   latestWeight: { kg: number; lbs: number; date: string } | null
@@ -2191,6 +2194,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     ageYears: age.years,
     ageMonths: age.months,
     dateOfBirth: input.pet.dateOfBirth,
+    dateOfBirthPrecision: input.pet.dateOfBirthPrecision ?? 'exact',
     ownerName: input.ownerName,
     latestWeight: latestOverall
       ? {

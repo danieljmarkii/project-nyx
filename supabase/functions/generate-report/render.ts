@@ -559,10 +559,15 @@ function signalmentBlock(snap: ReportSnapshot): string {
   const sexBit = s.sex === 'unknown' ? 'sex not recorded' : s.sex
   const neuterBit =
     s.neuterStatus === 'not_recorded' ? 'neuter not recorded' : s.neuterStatus
+  // An approximate DOB is a computed anchor from an entered age, not a witnessed
+  // birthday (B-251) — render it as an estimated age ("~2 yr") and NEVER a birth
+  // year, which would present false precision to the vet. Exact DOBs keep "(b. YYYY)".
   const ageBit =
     s.ageYears === null
       ? 'age not recorded'
-      : `${s.ageYears}&nbsp;yr${s.dateOfBirth ? ` (b.&nbsp;${h(dayParts(s.dateOfBirth)?.y ?? '')})` : ''}`
+      : s.dateOfBirthPrecision === 'approximate'
+        ? `~${s.ageYears}&nbsp;yr`
+        : `${s.ageYears}&nbsp;yr${s.dateOfBirth ? ` (b.&nbsp;${h(dayParts(s.dateOfBirth)?.y ?? '')})` : ''}`
   const sig = [speciesLabel(s.species), s.breed ? h(s.breed) : 'breed not recorded', `${h(sexBit)}, ${h(neuterBit)}`, ageBit].join(
     ' &middot; ',
   )
