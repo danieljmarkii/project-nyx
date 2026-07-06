@@ -1,5 +1,6 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import { PrimaryButton } from './PrimaryButton';
+import { theme } from '../../constants/theme';
 
 describe('PrimaryButton', () => {
   it('renders its label and fires onPress when tapped', () => {
@@ -43,5 +44,22 @@ describe('PrimaryButton', () => {
     expect(btn.props.accessibilityRole).toBe('button');
     expect(btn.props.accessibilityLabel).toBe('Create account');
     expect(btn.props.accessibilityState).toMatchObject({ busy: true, disabled: true });
+  });
+
+  // disabled + loading is plausible on a submit button (`disabled={!valid || submitting}
+  // loading={submitting}`). The spinner must not stay white on the greyed fill, or it
+  // vanishes — it takes the disabled label tint instead.
+  it('tints the spinner for contrast on the greyed fill when disabled + loading', () => {
+    const { getByTestId } = render(
+      <PrimaryButton label="Create account" onPress={() => {}} disabled loading testID="btn" />,
+    );
+    expect(getByTestId('btn-spinner').props.color).toBe(theme.colorTextTertiary);
+  });
+
+  it('uses the variant spinner tint while loading but not disabled', () => {
+    const { getByTestId } = render(
+      <PrimaryButton label="Create account" onPress={() => {}} loading testID="btn" />,
+    );
+    expect(getByTestId('btn-spinner').props.color).toBe(theme.colorTextOnDark);
   });
 });

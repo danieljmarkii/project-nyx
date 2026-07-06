@@ -56,7 +56,9 @@ export function PrimaryButton({
     >
       {loading ? (
         <ActivityIndicator
-          color={SPINNER_COLOR[variant]}
+          // Mirror the label's disabled branch — a white spinner on the greyed
+          // (disabled) fill would be near-invisible when disabled + loading.
+          color={disabled ? theme.colorTextTertiary : SPINNER_COLOR[variant]}
           testID={testID ? `${testID}-spinner` : undefined}
         />
       ) : (
@@ -97,7 +99,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: theme.textMD,
     fontWeight: theme.weightMedium,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     letterSpacing: theme.trackingNormal,
   },
   labelSecondary: {

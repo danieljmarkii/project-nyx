@@ -132,5 +132,25 @@ describe('TextField', () => {
       expect(getByTestId('pw').props.secureTextEntry).toBe(true);
       expect(getByLabelText('Show password')).toBeTruthy();
     });
+
+    // The realistic signup case: a password field showing a validation error.
+    // The reveal toggle and the error state must coexist — masked, with the
+    // destructive border and message both present.
+    it('shows the reveal toggle and the error together on a secure field', () => {
+      const { getByText, getByTestId } = render(
+        <TextField
+          label="Password"
+          value="short"
+          onChangeText={() => {}}
+          secureTextEntry
+          error="Use at least 8 characters"
+          testID="pw"
+        />,
+      );
+      expect(getByTestId('pw').props.secureTextEntry).toBe(true);
+      expect(getByTestId('pw-reveal')).toBeTruthy();
+      expect(getByText('Use at least 8 characters')).toBeTruthy();
+      expect(fieldBorderColor(getByTestId('pw-field'))).toBe(theme.colorDestructive);
+    });
   });
 });

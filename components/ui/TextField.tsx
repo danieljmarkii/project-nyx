@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   StyleProp,
   ViewStyle,
   TextInputProps,
+  AccessibilityInfo,
+  Platform,
 } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
@@ -77,6 +79,15 @@ export function TextField({
   const [revealed, setRevealed] = useState(false);
 
   const hasError = !!error;
+
+  // `accessibilityLiveRegion` on the error text is Android-only; announce
+  // imperatively on iOS (Nyx ships iOS-first) so VoiceOver reads a newly
+  // surfaced validation error too. Fires only when the error changes.
+  useEffect(() => {
+    if (error && Platform.OS === 'ios') {
+      AccessibilityInfo.announceForAccessibility(error);
+    }
+  }, [error]);
   // Error is the loudest state and wins the border; focus is the calm accent
   // ring; resting is the neutral hairline.
   const borderColor = hasError
