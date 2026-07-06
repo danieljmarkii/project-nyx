@@ -101,6 +101,7 @@ interface PetRow {
   breed: string | null
   sex: string
   date_of_birth: string | null
+  date_of_birth_precision?: string | null
   weight_kg: number | string | null
 }
 
@@ -270,6 +271,11 @@ export function mapPet(row: PetRow): ReportPetInput {
     breed: row.breed ?? null,
     sex: row.sex as ReportPetInput['sex'],
     dateOfBirth: row.date_of_birth ?? null,
+    // Whether the DOB is a witnessed birthday ('exact') or a computed anchor from an
+    // approximate age entered at onboarding ('approximate', B-251 PR 9 / migration
+    // 028). The report must not print a birth year for an approximate DOB. Legacy
+    // rows / a null → 'exact' (every pre-028 DOB came from the calendar picker).
+    dateOfBirthPrecision: row.date_of_birth_precision === 'approximate' ? 'approximate' : 'exact',
     // Neuter status is NOT stored on `pets` (spec §7.1) → render "not recorded".
     neuterStatus: null,
     // pets.weight_kg is the onboarding snapshot, NOT a weigh-in — report.ts never
@@ -602,7 +608,7 @@ export async function generateReportForPet(
   const [petRes, profileRes, vetVisitsRes, dietTrialsRes] = await Promise.all([
     supabase
       .from('pets')
-      .select('id, name, species, breed, sex, date_of_birth, weight_kg')
+      .select('id, name, species, breed, sex, date_of_birth, date_of_birth_precision, weight_kg')
       .eq('id', petId)
       .maybeSingle(),
     supabase.from('user_profiles').select('display_name, timezone').maybeSingle(),

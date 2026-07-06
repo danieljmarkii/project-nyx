@@ -12,6 +12,7 @@ import { FilterChip } from '../ui/FilterChip';
 import { BreedPicker } from '../pet/BreedPicker';
 import { supabase } from '../../lib/supabase';
 import { kgToLbs, lbsToKg } from '../../lib/weight';
+import { dateToYmd, formatBirthdayField, DobPrecision } from '../../lib/age';
 import { usePetStore, Pet } from '../../store/petStore';
 
 type Species = 'dog' | 'cat' | 'other';
@@ -34,6 +35,17 @@ const SEX_OPTIONS: { value: Sex; label: string }[] = [
 // (in-list vs free-text) lives in resolveBreedFieldState (constants/breeds.ts),
 // shared with the onboarding breed step (B-251 PR 8) so the rule has one home.
 
+// Parse a stored 'YYYY-MM-DD' into a LOCAL Date (midnight local), so the picker's
+// components and the dateToYmd round-trip on save match the stored day exactly —
+// `new Date('YYYY-MM-DD')` parses as UTC and can render/save a day off in some
+// timezones. Null/malformed → null.
+function parseDobLocal(dob: string | null): Date | null {
+  if (!dob) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dob);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -51,6 +63,13 @@ export function EditPetModal({ visible, onClose }: Props) {
   const [weightStr, setWeightStr] = useState('');
   const [dob, setDob] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  // Precision the DOB was loaded with, and whether the owner has since picked a
+  // concrete date on the calendar (B-251 PR 9). A DOB entered as an age at
+  // onboarding is 'approximate' — an anchored stand-in, not a witnessed birthday —
+  // so it must never render as a precise date here. The moment the owner touches
+  // the picker they ARE asserting a real calendar date, which flips it to 'exact'.
+  const [dobPrecision, setDobPrecision] = useState<DobPrecision>('exact');
+  const [dobTouched, setDobTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   // The pet this form was seeded FOR. Unlike the log paths (which stamp the
   // pet active at write time, spec §6), an edit must land on the pet whose
@@ -70,7 +89,11 @@ export function EditPetModal({ visible, onClose }: Props) {
       setShowBreedPicker(false);
       setSex(activePet.sex);
       setWeightStr(activePet.weight_kg != null ? kgToLbs(activePet.weight_kg) : '');
-      setDob(activePet.date_of_birth ? new Date(activePet.date_of_birth) : null);
+      // Parse the stored 'YYYY-MM-DD' to a LOCAL date so its components (and the
+      // dateToYmd round-trip on save) match the stored day exactly, timezone-agnostic.
+      setDob(parseDobLocal(activePet.date_of_birth));
+      setDobPrecision(activePet.date_of_birth_precision);
+      setDobTouched(false);
       setShowDatePicker(false);
     }
   }, [visible]);
@@ -115,7 +138,14 @@ export function EditPetModal({ visible, onClose }: Props) {
         breed: breed.trim() || null,
         sex,
         weight_kg: lbs != null && !isNaN(lbs) ? lbsToKg(lbs) : null,
-        date_of_birth: dob ? dob.toISOString().split('T')[0] : null,
+        // dateToYmd (local components) round-trips the picked day exactly — unlike
+        // toISOString(), which shifts a local-midnight date across the UTC boundary.
+        date_of_birth: dob ? dateToYmd(dob) : null,
+        // Honesty write: a freshly picked date is 'exact'; an untouched approximate
+        // DOB stays approximate (editing weight must not silently promote it to a
+        // witnessed birthday). Precision is meaningless without a date, so a null
+        // DOB preserves the loaded value rather than asserting anything.
+        date_of_birth_precision: dob ? effectiveDobPrecision : dobPrecision,
       };
 
       const { error } = await supabase
@@ -139,6 +169,12 @@ export function EditPetModal({ visible, onClose }: Props) {
   const hasBreedList = breeds.length > 0;
   const breedDisplayValue = breed.trim() || null;
   const canSave = name.trim().length > 0;
+  // A touched date is a witnessed pick ('exact'); otherwise keep the loaded
+  // precision. The field label reflects it: 'exact' → the full date, 'approximate'
+  // → "About {Month YYYY}" (no fabricated day) — the honesty contract (lib/age).
+  const effectiveDobPrecision: DobPrecision = dobTouched ? 'exact' : dobPrecision;
+  const dobLabel = formatBirthdayField(dob ? dateToYmd(dob) : null, effectiveDobPrecision);
+  const dobIsEstimated = dob != null && effectiveDobPrecision === 'approximate';
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -255,13 +291,16 @@ export function EditPetModal({ visible, onClose }: Props) {
               onPress={() => setShowDatePicker(!showDatePicker)}
               activeOpacity={0.7}
             >
-              <Text style={dob ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
-                {dob
-                  ? dob.toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' })
-                  : 'Not set'}
+              <Text style={dobLabel ? styles.fieldBtnText : styles.fieldBtnPlaceholder}>
+                {dobLabel ?? 'Not set'}
               </Text>
               <Text style={styles.changeLabel}>{showDatePicker ? 'Done' : 'Change'}</Text>
             </TouchableOpacity>
+            {dobIsEstimated && !showDatePicker && (
+              // Explain why an approximate DOB shows as a month/year, not a day —
+              // and that picking a date makes it a real birthday (honesty, PR 9).
+              <Text style={styles.dobEstimateNote}>Estimated from age — pick a date to set an exact birthday.</Text>
+            )}
             {dob && !showDatePicker && (
               <TouchableOpacity onPress={() => setDob(null)} style={styles.clearBtn} hitSlop={8}>
                 <Text style={styles.clearBtnText}>Clear date</Text>
@@ -275,7 +314,8 @@ export function EditPetModal({ visible, onClose }: Props) {
                 maximumDate={new Date()}
                 onChange={(_e: unknown, date?: Date) => {
                   if (Platform.OS === 'android') setShowDatePicker(false);
-                  if (date) setDob(date);
+                  // A concrete calendar pick is a witnessed birthday → 'exact'.
+                  if (date) { setDob(date); setDobTouched(true); }
                 }}
               />
             )}
@@ -379,6 +419,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
+  },
+  dobEstimateNote: {
+    fontSize: 13,
+    color: theme.colorTextSecondary,
+    lineHeight: theme.lineHeightSM,
+    marginTop: 6,
   },
   clearBtn: {
     alignSelf: 'flex-start',

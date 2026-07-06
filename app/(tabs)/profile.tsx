@@ -14,6 +14,7 @@ import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, getPublicUrl } from '../../lib/storage';
 import { archiveBlockedCopy } from '../../lib/utils';
+import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
 import { useAuthStore } from '../../store/authStore';
 import { useMomentStore } from '../../store/momentStore';
@@ -103,19 +104,9 @@ function regimenDaysElapsed(startedAt: string): number {
   return Math.max(1, Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 }
 
-function calculateAge(dob: string | null): string {
-  if (!dob) return '—';
-  const birth = new Date(dob);
-  const now = new Date();
-  const totalMonths =
-    (now.getFullYear() - birth.getFullYear()) * 12 +
-    (now.getMonth() - birth.getMonth());
-  if (totalMonths < 1) return 'Under 1mo';
-  if (totalMonths < 12) return `${totalMonths}mo`;
-  const years = Math.floor(totalMonths / 12);
-  const months = totalMonths % 12;
-  return months > 0 ? `${years}yr ${months}mo` : `${years}yr`;
-}
+// Age display lives in lib/age.formatAge now (B-251 PR 9) so the honesty rule has
+// one home: an APPROXIMATE date_of_birth (entered as an age at onboarding, never a
+// witnessed birthday) reads with a "~" hedge, never as a precise age.
 
 function formatSex(sex: string): string {
   if (sex === 'male') return 'Male';
@@ -615,7 +606,9 @@ export default function ProfileScreen() {
         <Card noPadding style={styles.infoRow}>
           <View style={styles.infoChip}>
             <Text style={styles.infoChipLabel}>Age</Text>
-            <Text style={styles.infoChipValue}>{calculateAge(activePet.date_of_birth)}</Text>
+            <Text style={styles.infoChipValue}>
+              {formatAge(activePet.date_of_birth, activePet.date_of_birth_precision)}
+            </Text>
           </View>
           <View style={styles.infoChipDivider} />
           <View style={styles.infoChip}>

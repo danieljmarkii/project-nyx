@@ -39,12 +39,11 @@ export default function PetGenderScreen() {
 
   if (!activePet) return null;
 
-  function finish() {
-    // Interim terminus: gender is the last built pet-setup step today. PR 9 (age)
-    // slots between here and Home; until it lands, a created pet with the required
-    // pair + optional breed/gender reaches the designed-empty Home. Replace so the
-    // owner can't swipe back into onboarding from Home.
-    router.replace('/(tabs)');
+  function goNext() {
+    // Age (PR 9) is the last pet-setup step. Push (not replace) so back from age
+    // returns here with this step intact — matching breed → gender. Age owns the
+    // interim terminus to Home until PR 10's paywall/done chain lands.
+    router.push('/onboarding/pet-age');
   }
 
   async function handleContinue() {
@@ -63,7 +62,7 @@ export default function PetGenderScreen() {
         return;
       }
       updatePet({ sex });
-      finish();
+      goNext();
     } catch {
       Alert.alert('Something went wrong', 'Please check your connection and try again.');
     } finally {
@@ -77,7 +76,7 @@ export default function PetGenderScreen() {
     if (saving) return;
     // No write: leaves sex as-is — 'unknown' on the first pass (its insert
     // default), or a value kept if one was already saved on a prior pass.
-    finish();
+    goNext();
   }
 
   return (
