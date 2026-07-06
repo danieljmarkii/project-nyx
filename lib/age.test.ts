@@ -15,6 +15,7 @@ import {
   dateToYmd,
   formatAge,
   formatBirthdayField,
+  resolveDobPrecisionOnSave,
 } from './age';
 
 // 2026-07-06, local midnight.
@@ -134,6 +135,26 @@ describe('formatBirthdayField — edit-surface field value', () => {
   it('null / unparseable → null (caller shows its own placeholder)', () => {
     expect(formatBirthdayField(null)).toBeNull();
     expect(formatBirthdayField('garbage')).toBeNull();
+  });
+});
+
+describe('resolveDobPrecisionOnSave — edit-surface precision merge (EditPetModal)', () => {
+  it('a concrete calendar pick this session → exact (regardless of loaded precision)', () => {
+    expect(resolveDobPrecisionOnSave(true, true, 'approximate')).toBe('exact');
+    expect(resolveDobPrecisionOnSave(true, true, 'exact')).toBe('exact');
+  });
+
+  it('an untouched approximate DOB is PRESERVED — editing an unrelated field never promotes it', () => {
+    expect(resolveDobPrecisionOnSave(true, false, 'approximate')).toBe('approximate');
+  });
+
+  it('an untouched exact DOB stays exact', () => {
+    expect(resolveDobPrecisionOnSave(true, false, 'exact')).toBe('exact');
+  });
+
+  it('no date → the loaded precision is preserved unchanged (precision is moot)', () => {
+    expect(resolveDobPrecisionOnSave(false, true, 'approximate')).toBe('approximate');
+    expect(resolveDobPrecisionOnSave(false, false, 'exact')).toBe('exact');
   });
 });
 

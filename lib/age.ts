@@ -97,6 +97,24 @@ export function formatAge(
 }
 
 /**
+ * The precision to persist when an EDIT surface (EditPetModal) saves a DOB. A
+ * concrete calendar pick made this edit session (`dobTouched`) is a witnessed
+ * birthday → 'exact'. Otherwise the loaded precision is PRESERVED, so editing an
+ * unrelated field (weight, breed) never silently promotes an approximate anchor to
+ * a witnessed birthday. With no date at all, precision is meaningless — the loaded
+ * value is preserved unchanged. Pure so the honesty-critical merge is unit-tested,
+ * not proven only by reading the component.
+ */
+export function resolveDobPrecisionOnSave(
+  hasDob: boolean,
+  dobTouched: boolean,
+  loadedPrecision: DobPrecision,
+): DobPrecision {
+  if (!hasDob) return loadedPrecision;
+  return dobTouched ? 'exact' : loadedPrecision;
+}
+
+/**
  * Honest date-of-birth field value for an EDIT surface (EditPetModal), where the
  * stored date itself is shown (not just a derived age). An EXACT DOB renders the
  * full calendar date ("January 15, 2020"); an APPROXIMATE one renders only the

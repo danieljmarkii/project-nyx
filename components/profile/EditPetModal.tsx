@@ -12,7 +12,7 @@ import { FilterChip } from '../ui/FilterChip';
 import { BreedPicker } from '../pet/BreedPicker';
 import { supabase } from '../../lib/supabase';
 import { kgToLbs, lbsToKg } from '../../lib/weight';
-import { dateToYmd, formatBirthdayField, DobPrecision } from '../../lib/age';
+import { dateToYmd, formatBirthdayField, resolveDobPrecisionOnSave, DobPrecision } from '../../lib/age';
 import { usePetStore, Pet } from '../../store/petStore';
 
 type Species = 'dog' | 'cat' | 'other';
@@ -141,11 +141,11 @@ export function EditPetModal({ visible, onClose }: Props) {
         // dateToYmd (local components) round-trips the picked day exactly — unlike
         // toISOString(), which shifts a local-midnight date across the UTC boundary.
         date_of_birth: dob ? dateToYmd(dob) : null,
-        // Honesty write: a freshly picked date is 'exact'; an untouched approximate
-        // DOB stays approximate (editing weight must not silently promote it to a
-        // witnessed birthday). Precision is meaningless without a date, so a null
-        // DOB preserves the loaded value rather than asserting anything.
-        date_of_birth_precision: dob ? effectiveDobPrecision : dobPrecision,
+        // Honesty write (resolveDobPrecisionOnSave): a freshly picked date is
+        // 'exact'; an untouched approximate DOB stays approximate (editing weight
+        // must not silently promote it to a witnessed birthday); a null DOB
+        // preserves the loaded value rather than asserting anything.
+        date_of_birth_precision: savePrecision,
       };
 
       const { error } = await supabase
@@ -169,12 +169,13 @@ export function EditPetModal({ visible, onClose }: Props) {
   const hasBreedList = breeds.length > 0;
   const breedDisplayValue = breed.trim() || null;
   const canSave = name.trim().length > 0;
-  // A touched date is a witnessed pick ('exact'); otherwise keep the loaded
-  // precision. The field label reflects it: 'exact' → the full date, 'approximate'
-  // → "About {Month YYYY}" (no fabricated day) — the honesty contract (lib/age).
-  const effectiveDobPrecision: DobPrecision = dobTouched ? 'exact' : dobPrecision;
-  const dobLabel = formatBirthdayField(dob ? dateToYmd(dob) : null, effectiveDobPrecision);
-  const dobIsEstimated = dob != null && effectiveDobPrecision === 'approximate';
+  // The precision this save would persist (pure, unit-tested): a witnessed pick →
+  // 'exact', else the loaded precision preserved. The field label reflects it too:
+  // 'exact' → the full date, 'approximate' → "About {Month YYYY}" (no fabricated
+  // day) — the honesty contract (lib/age).
+  const savePrecision: DobPrecision = resolveDobPrecisionOnSave(dob != null, dobTouched, dobPrecision);
+  const dobLabel = formatBirthdayField(dob ? dateToYmd(dob) : null, savePrecision);
+  const dobIsEstimated = dob != null && savePrecision === 'approximate';
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -421,10 +422,10 @@ const styles = StyleSheet.create({
     fontWeight: theme.fontWeightMedium,
   },
   dobEstimateNote: {
-    fontSize: 13,
+    fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightSM,
-    marginTop: 6,
+    marginTop: 6, // matches the sibling clearBtn/changeLabel spacing in this file
   },
   clearBtn: {
     alignSelf: 'flex-start',
