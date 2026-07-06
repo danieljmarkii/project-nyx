@@ -42,7 +42,7 @@ export default function SignupScreen() {
     }
     // Session present (email confirmation disabled): straight into onboarding.
     // The user_profiles row is created by the Supabase trigger on auth.users insert.
-    router.replace('/onboarding/pet');
+    router.replace('/onboarding/pet-type');
   }
 
   return (

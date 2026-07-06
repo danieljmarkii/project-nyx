@@ -101,7 +101,7 @@ describe('usePet gate wiring', () => {
       profile: { data: { onboarding_completed_at: null }, error: null },
     });
     renderHook(() => usePet());
-    await waitFor(() => expect(mockedReplace).toHaveBeenCalledWith('/onboarding/pet'), {
+    await waitFor(() => expect(mockedReplace).toHaveBeenCalledWith('/onboarding/pet-type'), {
       timeout: 3000,
     });
     expect(setOnboarded).toHaveBeenCalledWith(false);
