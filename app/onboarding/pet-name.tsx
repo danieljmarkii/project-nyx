@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { usePetStore } from '../../store/petStore';
+import { useOnboardingDraftStore } from '../../store/onboardingDraftStore';
 import { theme } from '../../constants/theme';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -17,14 +18,20 @@ import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
 export default function PetNameScreen() {
   const { user } = useAuthStore();
   const { addPet, setOnboarded } = usePetStore();
+  // Type + name both live in the shared onboarding draft so re-advancing after a
+  // back doesn't drop them (code-review, PR 7). The species is chosen on the type
+  // step; the name is edited in place here.
+  const { species, name, setName } = useOnboardingDraftStore();
 
-  // The chosen species arrives from the type step. Guard the value rather than
-  // trusting the param blindly — the insert must never write a garbage species.
-  const params = useLocalSearchParams<{ species?: string }>();
-  const species = params.species === 'cat' || params.species === 'dog' ? params.species : null;
-
-  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Escape hatch: this screen is only reachable from the type step, which sets the
+  // species. If it's somehow entered without one — a deep link straight to
+  // /onboarding/pet-name — route back to pick a type rather than trap the owner
+  // behind a Continue that can never enable (code-review NIT).
+  useEffect(() => {
+    if (species === null) router.replace('/onboarding/pet-type');
+  }, [species]);
 
   const canSubmit = name.trim().length > 0 && species !== null;
 

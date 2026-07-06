@@ -24,8 +24,11 @@ interface Props {
  * the account step once PR 6 lands) and has no back entry, so it renders an
  * equal-size spacer instead — the progress row keeps identical vertical rhythm
  * whether or not a back button is present. On a pushed step (name onward) the
- * gesture-back and this button both pop to the previous step with its entered
- * values intact (§6 / AC "back preserves entered values").
+ * gesture-back and this button both pop to the previous step, which keeps its own
+ * state; the pet-setup values themselves (type/name) are backed by the shared
+ * onboarding draft so they also survive a back-then-forward loop (§6 / AC "back
+ * preserves entered values"). This component owns only the back affordance, not
+ * that persistence.
  */
 export function OnboardingHeader({ step, totalSteps = 5 }: Props) {
   const canGoBack = router.canGoBack();

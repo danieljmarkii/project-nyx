@@ -1,6 +1,7 @@
 import { notifySignedOut } from './sync';
 import { clearLocalData } from './db';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
+import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 
 // The local teardown that must run on sign-out AND on post-deletion sign-out
 // (B-054 FR-9): abort in-flight hydration, wipe the synced SQLite copy + the
@@ -21,4 +22,7 @@ export async function wipeLocalSession(): Promise<void> {
   // in-memory pet list so the next sign-in starts clean (FR-9 parity).
   await clearPersistedActivePetId();
   usePetStore.getState().reset();
+  // Clear any half-finished onboarding entry (a typed pet name/type) so it can't
+  // carry into the next account's onboarding on this device (B-251 PR 7).
+  useOnboardingDraftStore.getState().reset();
 }

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -6,12 +5,11 @@ import { Cat, Dog, Check, type LucideIcon } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { OnboardingHeader } from '../../components/onboarding/OnboardingHeader';
+import { useOnboardingDraftStore, type OnboardingSpecies } from '../../store/onboardingDraftStore';
 
 // Onboarding captures only Cat/Dog — the pets enum's third value ('other') stays
 // for the in-app add-pet path but is intentionally dropped here (spec §2 / D5).
-type PetType = 'cat' | 'dog';
-
-const TYPES: { value: PetType; label: string; subtitle: string; Icon: LucideIcon }[] = [
+const TYPES: { value: OnboardingSpecies; label: string; subtitle: string; Icon: LucideIcon }[] = [
   { value: 'cat', label: 'Cat', subtitle: 'Whiskers, grazing, the works', Icon: Cat },
   { value: 'dog', label: 'Dog', subtitle: 'Walks, treats, tail wags', Icon: Dog },
 ];
@@ -22,11 +20,14 @@ const TYPES: { value: PetType; label: string; subtitle: string; Icon: LucideIcon
 // species to the name step. The pet row itself is written on the name step (§4:
 // insert type+name, later steps update breed/gender/age).
 export default function PetTypeScreen() {
-  const [selected, setSelected] = useState<PetType | null>(null);
+  // The chosen type lives in the shared onboarding draft (not local state) so it
+  // survives backing up from the name step and re-advancing — a fresh mount of
+  // this screen restores the selection from the draft (code-review, PR 7).
+  const { species: selected, setSpecies } = useOnboardingDraftStore();
 
   function handleContinue() {
     if (!selected) return;
-    router.push({ pathname: '/onboarding/pet-name', params: { species: selected } });
+    router.push('/onboarding/pet-name');
   }
 
   return (
@@ -41,14 +42,14 @@ export default function PetTypeScreen() {
           Built for every pet in your home — you can add the rest anytime.
         </Text>
 
-        <View style={styles.tiles}>
+        <View style={styles.tiles} accessibilityRole="radiogroup">
           {TYPES.map(({ value, label, subtitle, Icon }) => {
             const isSelected = selected === value;
             return (
               <TouchableOpacity
                 key={value}
                 style={[styles.tile, isSelected && styles.tileSelected]}
-                onPress={() => setSelected(value)}
+                onPress={() => setSpecies(value)}
                 activeOpacity={0.8}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: isSelected }}
