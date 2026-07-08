@@ -1,0 +1,500 @@
+<!--
+  Culprit — Brand & Icon Direction (product-team review)
+  Deliberately committed to a single "night" world: the brand IS the moon/night,
+  so the page is the night sky rather than a document about it. Theme toggle is
+  intentionally not honored — this is one committed visual world.
+  All icon renders are INDICATIVE geometric mocks (carve-circle crescents),
+  a spec for design to execute — not final art.
+-->
+<style>
+  :root{
+    color-scheme: dark;
+    --night:   #13112E;   /* ground — proposed colorBrandNight */
+    --night-2: #1B1743;   /* elevated card */
+    --night-3: #251F57;   /* hover / higher */
+    --line:    rgba(196,190,255,0.14);
+    --line-2:  rgba(196,190,255,0.22);
+    --signal:  #00C2A8;   /* colorAccent — the ONE accent */
+    --signal-soft:#86D9CC;
+    --signal-glow: rgba(0,194,168,0.45);
+    --crescent:#F2EEE4;   /* warm moonlight — moon fill only */
+    --text:    #ECEAF6;
+    --muted:   #A6A2CE;
+    --faint:   #706BA6;
+    --ink:     #0B0A1A;   /* dot on teal badge / text on light chip */
+    --paper:   #F6F6FB;   /* cool paper — inside light chip only */
+    --hold:    #8A85C0;
+
+    --serif: 'Iowan Old Style','Palatino Linotype',Palatino,Cambria,Georgia,'Times New Roman',serif;
+    --sans: -apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,system-ui,sans-serif;
+    --mono: 'SF Mono',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
+
+    --maxw: 1080px;
+    --pad: clamp(20px,5vw,64px);
+  }
+
+  *{box-sizing:border-box;}
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    margin:0;
+    background:
+      radial-gradient(1100px 620px at 78% -8%, #221c56 0%, rgba(34,28,86,0) 60%),
+      radial-gradient(900px 520px at 8% 4%, #191449 0%, rgba(25,20,73,0) 55%),
+      var(--night);
+    color:var(--text);
+    font-family:var(--sans);
+    font-size:17px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .wrap{ max-width:var(--maxw); margin:0 auto; padding:0 var(--pad); }
+
+  /* ---------- type ---------- */
+  h1,h2,h3{ font-family:var(--serif); font-weight:600; text-wrap:balance; letter-spacing:-0.01em; margin:0; }
+  .eyebrow{
+    font-family:var(--mono); font-size:.72rem; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--signal-soft); margin:0 0 .9rem;
+  }
+  p{ margin:0 0 1rem; }
+  .lede{ color:var(--muted); font-size:1.12rem; max-width:60ch; }
+  a{ color:var(--signal-soft); }
+  strong{ color:#fff; font-weight:600; }
+
+  /* ---------- hero ---------- */
+  .hero{ padding:clamp(48px,9vw,120px) 0 clamp(40px,6vw,72px); position:relative; }
+  .hero-grid{ display:grid; grid-template-columns:1.15fr .85fr; gap:clamp(28px,5vw,64px); align-items:center; }
+  .hero h1{ font-size:clamp(2.5rem,6.2vw,4.5rem); line-height:1.02; letter-spacing:-0.02em; }
+  .hero h1 em{ font-style:italic; color:var(--crescent); }
+  .hero .dot-word{ color:var(--signal); font-style:normal; }
+  .hero .lede{ margin-top:1.4rem; }
+  .credit{ margin-top:1.8rem; font-family:var(--mono); font-size:.74rem; letter-spacing:.06em; color:var(--faint); }
+
+  /* hero mark stage */
+  .stage{
+    position:relative; aspect-ratio:1/1; border-radius:28px;
+    background:
+      radial-gradient(60% 60% at 66% 46%, rgba(0,194,168,0.10), rgba(0,194,168,0) 70%),
+      linear-gradient(160deg,#1a1550,#100e2a 78%);
+    border:1px solid var(--line);
+    overflow:hidden; box-shadow:0 40px 90px -50px rgba(0,0,0,.8);
+  }
+  .stars{ position:absolute; inset:0;
+    background-image:
+      radial-gradient(1.4px 1.4px at 20% 30%, rgba(255,255,255,.55), transparent),
+      radial-gradient(1.2px 1.2px at 72% 20%, rgba(255,255,255,.4), transparent),
+      radial-gradient(1px 1px at 40% 70%, rgba(255,255,255,.35), transparent),
+      radial-gradient(1.6px 1.6px at 84% 62%, rgba(255,255,255,.45), transparent),
+      radial-gradient(1px 1px at 15% 82%, rgba(255,255,255,.3), transparent),
+      radial-gradient(1.1px 1.1px at 58% 44%, rgba(255,255,255,.28), transparent);
+  }
+  .stage svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .ping{ transform-origin:66px 53px; }
+  @keyframes ping{ 0%{ r:9; opacity:1;} 70%{ r:26; opacity:0;} 100%{ r:26; opacity:0;} }
+  @keyframes glowpulse{ 0%,100%{ opacity:.5;} 50%{ opacity:.95;} }
+  .signal-glow{ animation:glowpulse 3.4s ease-in-out infinite; }
+  .ping-ring{ animation:ping 3.4s ease-out infinite; }
+  @media (prefers-reduced-motion:reduce){ .signal-glow,.ping-ring{ animation:none; } .ping-ring{ display:none; } }
+
+  /* ---------- sections ---------- */
+  section{ padding:clamp(40px,6vw,76px) 0; border-top:1px solid var(--line); }
+  .sec-head{ max-width:64ch; margin-bottom:2.2rem; }
+  .sec-head h2{ font-size:clamp(1.5rem,3.2vw,2.2rem); line-height:1.1; }
+  .sec-head p{ color:var(--muted); margin-top:.7rem; }
+
+  /* badge trio */
+  .badges{ display:grid; grid-template-columns:repeat(3,1fr); gap:clamp(14px,2.4vw,26px); }
+  .badge-card{ text-align:center; }
+  .badge-card .chip{ width:100%; max-width:220px; margin:0 auto; }
+  .badge-card figcaption{ margin-top:.85rem; font-size:.82rem; color:var(--muted); }
+  .badge-card b{ display:block; color:var(--text); font-weight:600; font-size:.9rem; margin-bottom:.15rem; }
+
+  /* size ladder */
+  .ladder{ display:flex; align-items:flex-end; gap:clamp(16px,3vw,40px); flex-wrap:wrap; margin-top:2.4rem;
+    padding:26px; background:var(--night-2); border:1px solid var(--line); border-radius:16px; }
+  .ladder .rung{ text-align:center; }
+  .ladder .rung svg{ display:block; margin:0 auto 10px; border-radius:22%; }
+  .ladder .rung span{ font-family:var(--mono); font-size:.68rem; color:var(--faint); letter-spacing:.04em; }
+  .ladder .note{ color:var(--muted); font-size:.86rem; max-width:24ch; margin-left:auto; align-self:center; }
+
+  /* lockup / wordmark */
+  .lockup-row{ display:flex; align-items:center; gap:clamp(28px,5vw,60px); flex-wrap:wrap;
+    padding:clamp(28px,5vw,52px); background:var(--night-2); border:1px solid var(--line); border-radius:18px; }
+  .wordmark{ display:flex; align-items:center; gap:.05em; font-family:var(--serif);
+    font-size:clamp(3rem,8vw,5rem); line-height:1; color:var(--crescent); font-weight:600; letter-spacing:-.01em; }
+  .wordmark .cres-lock{ height:.86em; width:auto; margin-right:.06em; }
+  .i-wrap{ position:relative; display:inline-block; }
+  .i-wrap .tittle{ position:absolute; left:50%; transform:translateX(-50%); top:-.30em;
+    width:.16em; height:.16em; background:var(--signal); border-radius:50%; box-shadow:0 0 .18em var(--signal-glow); }
+  .lockup-note{ color:var(--muted); font-size:.9rem; max-width:34ch; }
+  .lockup-note code{ font-family:var(--mono); font-size:.82em; color:var(--signal-soft); }
+
+  /* palette */
+  .pal{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+  .sw{ border:1px solid var(--line); border-radius:14px; overflow:hidden; background:var(--night-2); }
+  .sw .chipc{ height:96px; }
+  .sw .meta{ padding:12px 14px; }
+  .sw .meta b{ font-size:.9rem; }
+  .sw .meta .hex{ font-family:var(--mono); font-size:.76rem; color:var(--muted); display:block; margin-top:2px; }
+  .sw .meta .role{ font-size:.76rem; color:var(--faint); display:block; margin-top:6px; line-height:1.4; }
+  .rules{ margin-top:2rem; display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .rule{ padding:18px 20px; border:1px solid var(--line); border-radius:14px; background:var(--night-2); }
+  .rule b{ color:#fff; } .rule p{ margin:.4rem 0 0; color:var(--muted); font-size:.92rem; }
+  .rule.warn{ border-color:rgba(244,63,94,.35); }
+  .rule.warn .tag{ color:#ff8fa3; }
+  .tag{ font-family:var(--mono); font-size:.7rem; letter-spacing:.14em; text-transform:uppercase; color:var(--signal-soft); }
+
+  /* marketing */
+  .mkt{ display:grid; grid-template-columns:.9fr 1.1fr; gap:clamp(20px,4vw,40px); align-items:stretch; }
+  .whorl-card,.store-card{ border:1px solid var(--line); border-radius:18px; overflow:hidden; background:var(--night-2); }
+  .whorl-card .art{ display:grid; place-items:center; padding:34px; background:linear-gradient(160deg,#1a1550,#120f30); }
+  .whorl-card .cap,.store-card .cap{ padding:16px 20px; border-top:1px solid var(--line); }
+  .whorl-card .cap b,.store-card .cap b{ display:block; font-size:.92rem; }
+  .whorl-card .cap span,.store-card .cap span{ font-size:.84rem; color:var(--muted); }
+  .store-card .art{ padding:28px; display:flex; flex-direction:column; gap:14px; background:linear-gradient(160deg,#17123f,#100d2a); }
+  .app-row{ display:flex; align-items:center; gap:14px; }
+  .app-row svg{ border-radius:22%; flex:none; }
+  .app-row .txt b{ display:block; font-size:.98rem; color:#fff; }
+  .app-row .txt span{ font-size:.82rem; color:var(--muted); }
+  .app-row .cta{ margin-left:auto; font-family:var(--sans); font-weight:600; font-size:.8rem; color:var(--ink);
+    background:var(--signal); padding:7px 16px; border-radius:20px; }
+  .app-row.ghost{ opacity:.42; }
+
+  /* why it wins */
+  .why{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+  .why .card{ padding:22px; border:1px solid var(--line); border-radius:14px; background:var(--night-2); }
+  .why .card .n{ font-family:var(--mono); font-size:.72rem; color:var(--signal); letter-spacing:.1em; }
+  .why .card h3{ font-family:var(--sans); font-size:1.02rem; font-weight:600; margin:.5rem 0 .4rem; letter-spacing:0; }
+  .why .card p{ color:var(--muted); font-size:.9rem; margin:0; }
+
+  /* the field of 24 */
+  .field{ overflow-x:auto; border:1px solid var(--line); border-radius:16px; }
+  table{ border-collapse:collapse; width:100%; min-width:640px; font-size:.9rem; }
+  thead th{ text-align:left; font-family:var(--mono); font-weight:500; font-size:.68rem; letter-spacing:.12em;
+    text-transform:uppercase; color:var(--faint); padding:14px 18px; border-bottom:1px solid var(--line-2); }
+  tbody td{ padding:12px 18px; border-bottom:1px solid var(--line); color:var(--muted); vertical-align:top; }
+  tbody tr:last-child td{ border-bottom:none; }
+  td .opt{ color:var(--text); font-weight:600; white-space:nowrap; }
+  .turnrow td{ background:rgba(255,255,255,.02); font-family:var(--mono); font-size:.7rem; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--signal-soft); }
+  .pill{ display:inline-block; font-family:var(--mono); font-size:.66rem; letter-spacing:.08em; text-transform:uppercase;
+    padding:3px 9px; border-radius:20px; white-space:nowrap; border:1px solid var(--line-2); color:var(--muted); }
+  .pill.lead{ background:var(--signal); color:var(--ink); border-color:transparent; font-weight:700; }
+  .pill.keep{ color:var(--signal-soft); border-color:rgba(0,194,168,.4); }
+  .pill.hold{ color:var(--hold); }
+
+  /* reserve + next */
+  .two{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .resv{ padding:22px; border:1px solid var(--line); border-radius:14px; background:var(--night-2); }
+  .resv .tag{ margin-bottom:.5rem; display:block; }
+  .resv h3{ font-family:var(--sans); font-size:1.05rem; font-weight:600; letter-spacing:0; margin-bottom:.4rem; }
+  .resv p{ color:var(--muted); font-size:.9rem; margin:0; }
+  .checklist{ list-style:none; padding:0; margin:1.4rem 0 0; display:grid; gap:10px; }
+  .checklist li{ padding-left:30px; position:relative; color:var(--muted); }
+  .checklist li::before{ content:""; position:absolute; left:0; top:.5em; width:12px; height:12px;
+    border:1.5px solid var(--signal); border-radius:50%; }
+  .checklist li b{ color:var(--text); }
+  .steps{ counter-reset:s; list-style:none; padding:0; margin:1.4rem 0 0; display:grid; gap:12px; }
+  .steps li{ counter-increment:s; padding-left:44px; position:relative; }
+  .steps li::before{ content:counter(s); position:absolute; left:0; top:-2px; width:30px; height:30px;
+    display:grid; place-items:center; border-radius:50%; background:var(--night-3); color:var(--signal-soft);
+    font-family:var(--mono); font-size:.82rem; border:1px solid var(--line-2); }
+  .steps li b{ color:var(--text); }
+
+  footer{ padding:48px 0 72px; border-top:1px solid var(--line); color:var(--faint); font-size:.84rem; }
+  footer .signoff{ font-family:var(--mono); font-size:.76rem; color:var(--muted); line-height:1.9; }
+  footer .disc{ margin-top:1rem; max-width:70ch; }
+
+  @media (max-width:820px){
+    .hero-grid,.mkt{ grid-template-columns:1fr; }
+    .stage{ max-width:360px; }
+    .rules,.two{ grid-template-columns:1fr; }
+    .badges{ grid-template-columns:1fr; max-width:280px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <!-- ================= HERO ================= -->
+  <header class="hero">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">Culprit · Brand &amp; Icon Direction</p>
+        <h1>The moon that finds<br>the <em>one thing</em> in the <span class="dot-word">dark<span aria-hidden="true">.</span></span></h1>
+        <p class="lede">The crescent is the night — calm, premium, the equity we already own. The single teal dot is the <strong>Signal</strong>: the one thing the app found in the noise. The one thing that did it. <strong>Moon &amp; Signal</strong> is the team's aligned direction — one mark that is both the moon and the culprit.</p>
+        <p class="credit">Product-team review · 2026-07-08 · resolved from 24 explorations across 4 turns</p>
+      </div>
+
+      <!-- HERO MARK — indicative render -->
+      <div class="stage" role="img" aria-label="The Culprit app icon: a warm moonlight crescent on a midnight-indigo field, cradling a single glowing teal dot.">
+        <div class="stars"></div>
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <!-- moon disc -->
+          <circle cx="45" cy="50" r="33" fill="var(--crescent)"/>
+          <!-- carve with the night ground -->
+          <circle cx="61" cy="43" r="29" fill="#120f30"/>
+          <!-- signal glow + ping -->
+          <circle class="ping-ring" cx="66" cy="53" r="9" fill="none" stroke="var(--signal)" stroke-width="1.4" opacity="0"/>
+          <circle class="signal-glow" cx="66" cy="53" r="15" fill="var(--signal-glow)"/>
+          <!-- the signal dot -->
+          <circle cx="66" cy="53" r="9" fill="var(--signal)"/>
+        </svg>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= THE MARK AS A SYSTEM ================= -->
+  <section>
+    <div class="sec-head">
+      <h2>One mark, three grounds</h2>
+      <p>An app icon lives on a light home screen, next to competitors, and in a dark tray. It must hold on all three — and survive shrinking to 40&nbsp;px. Here it is on each, then down the size ladder.</p>
+    </div>
+
+    <div class="badges">
+      <figure class="badge-card">
+        <svg class="chip" viewBox="0 0 100 100" aria-label="Icon on a light ground: indigo crescent, teal dot.">
+          <rect width="100" height="100" rx="23" fill="var(--paper)"/>
+          <circle cx="45" cy="50" r="33" fill="#211E4E"/>
+          <circle cx="61" cy="43" r="29" fill="var(--paper)"/>
+          <circle cx="66" cy="53" r="9" fill="var(--signal)"/>
+        </svg>
+        <figcaption><b>Light</b> indigo crescent · teal dot</figcaption>
+      </figure>
+
+      <figure class="badge-card">
+        <svg class="chip" viewBox="0 0 100 100" aria-label="Icon on teal: moonlight crescent, indigo dot.">
+          <rect width="100" height="100" rx="23" fill="var(--signal)"/>
+          <circle cx="45" cy="50" r="33" fill="var(--crescent)"/>
+          <circle cx="61" cy="43" r="29" fill="var(--signal)"/>
+          <circle cx="66" cy="53" r="9" fill="#141131"/>
+        </svg>
+        <figcaption><b>Teal badge</b> the high-contrast home-screen pop</figcaption>
+      </figure>
+
+      <figure class="badge-card">
+        <svg class="chip" viewBox="0 0 100 100" aria-label="Icon on midnight indigo: moonlight crescent, teal dot.">
+          <rect width="100" height="100" rx="23" fill="var(--night)"/>
+          <circle cx="45" cy="50" r="33" fill="var(--crescent)"/>
+          <circle cx="61" cy="43" r="29" fill="var(--night)"/>
+          <circle cx="66" cy="53" r="9" fill="var(--signal)"/>
+        </svg>
+        <figcaption><b>Night</b> the primary / App&nbsp;Store face</figcaption>
+      </figure>
+    </div>
+
+    <div class="ladder">
+      <div class="rung">
+        <svg width="88" height="88" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="var(--night)"/><circle cx="45" cy="50" r="33" fill="var(--crescent)"/><circle cx="61" cy="43" r="29" fill="var(--night)"/><circle cx="66" cy="53" r="9" fill="var(--signal)"/></svg>
+        <span>88 px</span>
+      </div>
+      <div class="rung">
+        <svg width="60" height="60" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="var(--night)"/><circle cx="45" cy="50" r="33" fill="var(--crescent)"/><circle cx="61" cy="43" r="29" fill="var(--night)"/><circle cx="66" cy="53" r="9" fill="var(--signal)"/></svg>
+        <span>60 px</span>
+      </div>
+      <div class="rung">
+        <svg width="40" height="40" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="var(--night)"/><circle cx="45" cy="50" r="33" fill="var(--crescent)"/><circle cx="61" cy="43" r="29" fill="var(--night)"/><circle cx="66" cy="53" r="9" fill="var(--signal)"/></svg>
+        <span>40 px</span>
+      </div>
+      <div class="rung">
+        <svg width="29" height="29" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="var(--night)"/><circle cx="45" cy="50" r="33" fill="var(--crescent)"/><circle cx="61" cy="43" r="29" fill="var(--night)"/><circle cx="66" cy="53" r="10.5" fill="var(--signal)"/></svg>
+        <span>29 px</span>
+      </div>
+      <p class="note">The dot is nudged larger at the smallest sizes so the Signal never drops below a legible point — a refinement to lock with design.</p>
+    </div>
+  </section>
+
+  <!-- ================= WORDMARK ================= -->
+  <section>
+    <div class="sec-head">
+      <h2>The wordmark shares the atom</h2>
+      <p>The crescent becomes the <strong>C</strong>; the dot over the <strong>i</strong> is the same teal Signal. One brand atom lives in the icon, the wordmark, and — literally — in the product's Signal engine.</p>
+    </div>
+
+    <div class="lockup-row">
+      <div class="wordmark" aria-label="Culprit wordmark: crescent as the C, teal dot as the i's tittle">
+        <svg class="cres-lock" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="42" fill="var(--crescent)"/>
+          <circle cx="68" cy="41" r="37" fill="var(--night-2)"/>
+        </svg><span>ulpr<span class="i-wrap">ı<span class="tittle"></span></span>t</span>
+      </div>
+      <p class="lockup-note">Shown in a system serif standing in for <code>Newsreader</code>, our locked display face. Body/labels stay <code>Geist</code>. The lockup speaks the type system we already ship — no new typeface to adopt (unlike the Turn&nbsp;4 routes).</p>
+    </div>
+  </section>
+
+  <!-- ================= PALETTE ================= -->
+  <section>
+    <div class="sec-head">
+      <h2>A colour world, not just an accent</h2>
+      <p>Teal alone gives us a mark. Adding <strong>midnight indigo</strong> as a brand-night gives us a <em>world</em> to market with — night sky plus one point of light. Indigo is additive and does not break the design system, because it is a <strong>background</strong> colour, never an interactive one.</p>
+    </div>
+
+    <div class="pal">
+      <div class="sw"><div class="chipc" style="background:#13112E"></div><div class="meta"><b>Midnight Indigo</b><span class="hex">#13112E · proposed colorBrandNight</span><span class="role">New. Brand / night ground &amp; App-Store face.</span></div></div>
+      <div class="sw"><div class="chipc" style="background:#251F57"></div><div class="meta"><b>Indigo Elevated</b><span class="hex">#251F57 · proposed</span><span class="role">Cards / depth on the night.</span></div></div>
+      <div class="sw"><div class="chipc" style="background:#00C2A8"></div><div class="meta"><b>Signal Teal</b><span class="hex">#00C2A8 · colorAccent</span><span class="role">Unchanged. The one interactive accent.</span></div></div>
+      <div class="sw"><div class="chipc" style="background:#F2EEE4"></div><div class="meta"><b>Moonlight</b><span class="hex">#F2EEE4</span><span class="role">The crescent on dark grounds.</span></div></div>
+      <div class="sw"><div class="chipc" style="background:#0A0A0A"></div><div class="meta"><b>Ink</b><span class="hex">#0A0A0A · colorNeutralDark</span><span class="role">Unchanged. Type on light.</span></div></div>
+    </div>
+
+    <div class="rules">
+      <div class="rule">
+        <span class="tag">The rule that keeps the system intact</span>
+        <p style="margin-top:.6rem"><b>Teal stays the single interactive accent</b> — buttons, the trend line, live state. <b>Indigo is a world colour</b> — grounds, heroes, the icon field. Never a tappable accent. The "one accent, never decorative" rule survives.</p>
+      </div>
+      <div class="rule warn">
+        <span class="tag">Guardrail</span>
+        <p style="margin-top:.6rem"><b>Red stays off the brand.</b> <code style="font-family:var(--mono);font-size:.82em;color:#ff8fa3">#F43F5E</code> already means <em>symptom</em> in-app (and <code style="font-family:var(--mono);font-size:.82em;color:#ff8fa3">#DC2626</code> means destructive). Every red-forward Turn&nbsp;4 mark would read faintly as a warning. We keep teal as the "gotcha".</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MARKETING ================= -->
+  <section>
+    <div class="sec-head">
+      <h2>Beyond the icon</h2>
+      <p>A great icon that can't extend isn't a brand. The dot scales up into hero art and store presence; the <strong>Whorl</strong> — the crescent drawn as a fingerprint — is the secondary "whodunit" texture the icon never has to carry.</p>
+    </div>
+
+    <div class="mkt">
+      <div class="whorl-card">
+        <div class="art">
+          <svg width="200" height="200" viewBox="0 0 200 200" aria-label="Whorl motif: concentric crescent ridges like a fingerprint.">
+            <g fill="none" stroke-linecap="round">
+              <path d="M138 44 A70 70 0 1 0 138 156" stroke="var(--signal)" stroke-width="6" opacity=".95"/>
+              <path d="M132 60 A54 54 0 1 0 132 140" stroke="var(--crescent)" stroke-width="5" opacity=".8"/>
+              <path d="M126 76 A38 38 0 1 0 126 124" stroke="var(--signal-soft)" stroke-width="4.5" opacity=".7"/>
+              <path d="M120 92 A22 22 0 1 0 120 108" stroke="var(--crescent)" stroke-width="4" opacity=".55"/>
+            </g>
+            <circle cx="108" cy="100" r="6.5" fill="var(--signal)"/>
+          </svg>
+        </div>
+        <div class="cap"><b>The Whorl</b><span>Marketing motif, loading, section breaks — the detective texture, kept out of the app icon.</span></div>
+      </div>
+
+      <div class="store-card">
+        <div class="art">
+          <div class="app-row">
+            <svg width="58" height="58" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="23" fill="var(--night)"/><circle cx="45" cy="50" r="33" fill="var(--crescent)"/><circle cx="61" cy="43" r="29" fill="var(--night)"/><circle cx="66" cy="53" r="9" fill="var(--signal)"/></svg>
+            <div class="txt"><b>Culprit — Pet Health Tracker</b><span>Track symptoms, find triggers · Lifestyle</span></div>
+            <span class="cta">Get</span>
+          </div>
+          <div class="app-row ghost">
+            <svg width="42" height="42" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="23" fill="#2b2b30"/><circle cx="50" cy="50" r="26" fill="none" stroke="#7c7c86" stroke-width="6"/></svg>
+            <div class="txt"><b>A calm meditation app</b><span>Another crescent in the grid</span></div>
+          </div>
+          <div class="app-row ghost">
+            <svg width="42" height="42" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="23" fill="#0e2a4a"/><path d="M50 30 a20 20 0 1 0 6 39 16 16 0 1 1 -6 -39z" fill="#cfe0f0"/></svg>
+            <div class="txt"><b>A sleep tracker</b><span>…and another</span></div>
+          </div>
+        </div>
+        <div class="cap"><b>The differentiation test</b><span>In a grid of generic crescents, the single teal Signal is what the eye lands on.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WHY IT WINS ================= -->
+  <section>
+    <div class="sec-head"><h2>Why the team landed here</h2></div>
+    <div class="why">
+      <div class="card"><span class="n">01</span><h3>It says what the app does</h3><p>The only mark in 24 that encodes the Signal — our actual differentiator. The dot is the one finding, the culprit, caught.</p></div>
+      <div class="card"><span class="n">02</span><h3>It's distinct in a moon-crowded category</h3><p>Calm, Sleep Cycle and friends own the plain crescent. The teal point of light is what makes ours un-mistakable in the grid.</p></div>
+      <div class="card"><span class="n">03</span><h3>It bridges the fork</h3><p>Keeps the moon's calm equity (Jordan, Sam, Dr.&nbsp;Chen) and answers the name (the culprit) — without the cost of picking a pole.</p></div>
+      <div class="card"><span class="n">04</span><h3>It's a system, not a logo</h3><p>One atom recurs across icon, wordmark, colour world, and product. That coherence is what makes marketing cheap and consistent.</p></div>
+      <div class="card"><span class="n">05</span><h3>It's an evolution, not a reset</h3><p>Keeps teal and the incumbent moon; adds indigo. No new typeface, no abandoned equity — unlike every Turn&nbsp;4 route.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= THE FIELD OF 24 ================= -->
+  <section>
+    <div class="sec-head">
+      <h2>The field we chose from</h2>
+      <p>All 24, with the team's verdict on each — so the pick is grounded, not asserted. <span class="pill lead">Lead</span> advances now · <span class="pill keep">Keep</span> has a role · <span class="pill hold">Hold</span> parked, with the reason.</p>
+    </div>
+
+    <div class="field">
+      <table>
+        <thead><tr><th>Option</th><th>Verdict</th><th>The team's one line</th></tr></thead>
+        <tbody>
+          <tr class="turnrow"><td colspan="3">Turn 1 · Six moon marks</td></tr>
+          <tr><td class="opt">1a Classic Crescent</td><td><span class="pill hold">Hold</span></td><td>Clean, but "just a moon" — superseded by the teal-badge refinement (2a).</td></tr>
+          <tr><td class="opt">1b The Crescent-C</td><td><span class="pill keep">Keep</span></td><td>The "C" idea is real — it graduates into the chosen wordmark (3f).</td></tr>
+          <tr><td class="opt">1c Moon &amp; Signal</td><td><span class="pill lead">Lead</span></td><td>The concept. Night + the one insight in a single mark.</td></tr>
+          <tr><td class="opt">1d Night Mode</td><td><span class="pill hold">Hold</span></td><td>Premium, but a dark field + tiny star reads "sleep app".</td></tr>
+          <tr><td class="opt">1e Eclipse</td><td><span class="pill hold">Hold</span></td><td>Reads as a pie/loading shape; loses the moon's warmth.</td></tr>
+          <tr><td class="opt">1f Nyx the Cat</td><td><span class="pill keep">Keep</span></td><td>Charming — but pet-warmth belongs in secondary surfaces, not the icon.</td></tr>
+
+          <tr class="turnrow"><td colspan="3">Turn 2 · Night indigo &amp; refinements</td></tr>
+          <tr><td class="opt">2a Classic Teal Badge</td><td><span class="pill keep">Keep</span></td><td>The safe, max-legibility production fallback. Held in reserve.</td></tr>
+          <tr><td class="opt">2b Signal — Indigo</td><td><span class="pill lead">Lead</span></td><td>1c recast in the new indigo — the exact direction we're advancing.</td></tr>
+          <tr><td class="opt">2c Midnight</td><td><span class="pill hold">Hold</span></td><td>Beautiful, but the most generic "meditation" reading of the set.</td></tr>
+          <tr><td class="opt">2d Afterglow</td><td><span class="pill hold">Hold</span></td><td>Two overlapping crescents muddy at icon size.</td></tr>
+          <tr><td class="opt">2e Moontail</td><td><span class="pill keep">Keep</span></td><td>Pet homage — secondary/merch, not primary.</td></tr>
+          <tr><td class="opt">2f Paw Constellation</td><td><span class="pill keep">Keep</span></td><td>The most restrained paw — still a paw. Empty-states / merch.</td></tr>
+
+          <tr class="turnrow"><td colspan="3">Turn 3 · Swing for the fences</td></tr>
+          <tr><td class="opt">3a Moonpaw</td><td><span class="pill hold">Hold</span></td><td>Reads as a smiley face — not a paw, not a moon.</td></tr>
+          <tr><td class="opt">3b Caught Looking</td><td><span class="pill hold">Hold</span></td><td>Eyes read "surveillance" — wrong tone for a caring app.</td></tr>
+          <tr><td class="opt">3c Red-Pawed</td><td><span class="pill hold">Hold</span></td><td>Red + paw — two guardrails at once. Murky small.</td></tr>
+          <tr><td class="opt">3d Whorl</td><td><span class="pill keep">Keep</span></td><td>Best moon↔detective bridge — adopted as the marketing motif.</td></tr>
+          <tr><td class="opt">3e Nyx Constellation</td><td><span class="pill keep">Keep</span></td><td>Self-flagged as not-the-icon. Merch / avatars / empty states.</td></tr>
+          <tr><td class="opt">3f Crescent Logotype</td><td><span class="pill lead">Lead</span></td><td>Adopted as the wordmark — crescent-C + the teal tittle.</td></tr>
+
+          <tr class="turnrow"><td colspan="3">Turn 4 · The name is the brief</td></tr>
+          <tr><td class="opt">4a The Lineup</td><td><span class="pill hold">Hold</span></td><td>Reads as a generic bar chart at icon size; kraft is off-palette.</td></tr>
+          <tr><td class="opt">4b Red Thread</td><td><span class="pill hold">Hold</span></td><td>Rich idea, illegible small; red guardrail.</td></tr>
+          <tr><td class="opt">4c The Interrobang</td><td><span class="pill hold">Hold</span></td><td>"Heist energy" clashes with calm/caring; "?!" reads as error.</td></tr>
+          <tr><td class="opt">4d Circled</td><td><span class="pill hold">Hold</span></td><td>Purest concept, but reads as an eye/target or a UI radio.</td></tr>
+          <tr><td class="opt">4e Chalk Outline</td><td><span class="pill hold">Hold</span></td><td>A chalk outline evokes a body — dangerous for an app about sick pets.</td></tr>
+          <tr><td class="opt">4f The Verdict</td><td><span class="pill keep">Keep</span></td><td>Strongest non-moon identity — held as the strategic alternate.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= HELD IN RESERVE ================= -->
+  <section>
+    <div class="sec-head"><h2>Held in reserve</h2><p>Two options we deliberately keep on the table as the direction is tightened.</p></div>
+    <div class="two">
+      <div class="resv">
+        <span class="tag">Safe fallback · 2a</span>
+        <h3>Classic Teal Badge</h3>
+        <p>If the indigo path needs more bake time, the white-crescent-on-teal badge ships today with zero brand risk and maximum legibility. It de-risks the App-Store deadline.</p>
+      </div>
+      <div class="resv">
+        <span class="tag">Strategic alternate · 4f</span>
+        <h3>The Verdict</h3>
+        <p>The one to pressure-test <em>if</em> we ever decide to lead with the name over the moon. Grown-up, editorial, distinct — but it abandons teal and needs a brand accent that isn't the symptom red.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= REFINE + NEXT ================= -->
+  <section>
+    <div class="sec-head"><h2>To tighten before it's final</h2></div>
+    <ul class="checklist">
+      <li><b>Finalise the indigo token.</b> Lock the exact <code style="font-family:var(--mono);font-size:.85em;color:var(--signal-soft)">colorBrandNight</code> value and reconcile it with the existing <code style="font-family:var(--mono);font-size:.85em;color:var(--signal-soft)">colorSurfaceDark #101312</code>.</li>
+      <li><b>Size the Signal dot for the smallest sizes.</b> Confirm it holds as a legible point at 29&nbsp;px in the app tray.</li>
+      <li><b>Draw the crescent as a true squircle-aligned mark</b> and set the wordmark in real Newsreader (these renders are indicative geometry).</li>
+      <li><b>Produce the iOS-18 variants</b> — dark and tinted — plus the 1024&nbsp;px master with no alpha.</li>
+      <li><b>Build the Whorl and pet-warmth as a documented secondary system</b> so the primary mark stays clean.</li>
+    </ul>
+
+    <div class="sec-head" style="margin-top:3rem"><h2>Next steps</h2></div>
+    <ol class="steps">
+      <li><b>Hand this direction to design</b> to execute the tightened Moon &amp; Signal mark + Newsreader wordmark in the design tool.</li>
+      <li><b>Tokenise midnight indigo</b> in <code style="font-family:var(--mono);font-size:.85em;color:var(--signal-soft)">constants/theme.ts</code> as a brand/background colour (its own PR — no interactive-accent change).</li>
+      <li><b>Fold into the Nyx → Culprit rebrand (B-274)</b> — the <code style="font-family:var(--mono);font-size:.85em;color:var(--signal-soft)">app.json</code> name + icon asset swap, before the Step-10 build.</li>
+      <li><b>Ship the icon into App-Store submission</b> — it's on the critical path for the readiness project.</li>
+    </ol>
+  </section>
+
+  <footer>
+    <p class="signoff">
+      Designer ✓ (calm/premium, Principle 6, legibility) — Data Scientist ✓ (the mark = the Signal; red-vs-symptom) —<br>
+      Dr. Chen ✓ (no pet-brand cutesiness near clinical trust) — Jordan + Sam ✓ (reassuring, not "gotcha") —<br>
+      App-Store lens ✓ (differentiated, category-honest) — Eng ✓ (design-system intact; asset pipeline named)
+    </p>
+    <p class="disc">All icon renders on this page are <strong>indicative geometric mocks</strong> — a spec for design to execute, not final artwork. Direction resolved by the product team on 2026-07-08 from the Culprit Logo Explorations (4 turns, 24 options). Colours cite <code style="font-family:var(--mono);font-size:.85em">constants/theme.ts</code>; midnight indigo is a proposed new brand token.</p>
+  </footer>
+
+</div>
