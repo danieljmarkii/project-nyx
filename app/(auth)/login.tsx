@@ -46,7 +46,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.inner}>
-        <Text style={styles.wordmark}>Nyx</Text>
+        <Text style={styles.wordmark}>Culprit</Text>
         <Text style={styles.subtitle}>Health tracking for the pets you love.</Text>
 
         {showDeletedConfirmation && (

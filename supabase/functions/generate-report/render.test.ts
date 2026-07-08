@@ -184,8 +184,9 @@ const emptyPhenotype = (over: Partial<VomitPhenotype> = {}): VomitPhenotype => (
 Deno.test('empty safetyFlags → NO safety band (never a fabricated all-clear)', () => {
   const html = renderReport(base())
   assert.ok(!html.includes('class="safetyband"'), 'no safety band when no flags')
-  // The document still renders (letterhead + pet name).
-  assert.ok(html.includes('>Nyx<'))
+  // The document still renders — brand letterhead + the (dynamic) patient name.
+  assert.ok(html.includes('>Culprit<'))
+  assert.ok(/Patient: Nyx/.test(html), 'brand changed to Culprit; patient name still renders')
   assert.ok(html.includes('Owner-reported'))
 })
 
