@@ -18,7 +18,7 @@
 | # | Step | Type | Backlog | Status |
 |---|---|---|---|---|
 | 1 | Verify the App Store Connect record + lock the name | PM | B-272 | ✅ Done 2026-07-08 — name "Culprit — Pet Health Tracker", category Lifestyle/Health & Fitness |
-| 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | ⬜ Not started |
+| 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | ✅ Done 2026-07-08 — drafts in `docs/legal/` (branded Culprit per B-274); PM review + placeholder fill (operator name, contact email, jurisdiction) before hosting (step 3) |
 | 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | ⬜ Not started |
 | 4 | Pick + configure the production SMTP provider | PM | B-152 (part 1) | ⬜ Not started |
 | 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | ⬜ Not started |
