@@ -2,7 +2,7 @@
 
 **Status:** Team-aligned direction (v1) — awaiting design execution + PM ratification of the two open decisions below.
 **Date:** 2026-07-08 · **Session:** product-team review of the *Culprit Logo Explorations* (4 turns, 24 options)
-**Rendered pitch (indicative):** Claude artifact — "Moon & Signal" direction (see session; favicon 🌙)
+**Rendered pitch (indicative):** [`docs/brand/culprit-direction.html`](./brand/culprit-direction.html) — self-contained; open in a browser. Also published as a Claude artifact (favicon 🌙).
 **Indicative master asset:** [`docs/brand/culprit-icon-moon-signal.svg`](./brand/culprit-icon-moon-signal.svg)
 
 > All icon renders referenced here are **indicative geometric mocks** — a spec for design to execute, not final artwork.
