@@ -39,6 +39,7 @@ If a referenced document does not exist yet, stop and flag it to the PM. Do not 
 | `docs/nyx-competitive-landscape-v1_0.md` | When evaluating feature positioning or vet-facing strategy. |
 | `docs/backlog.md` | When the PM asks to `view backlog` / `show backlog`. Also read at session start to surface any backlog item whose **Blocks** column matches the Current Phase. See the Backlog Protocol section below. |
 | `docs/research/README.md` | When making product decisions in a domain a prior research brief covers (feeding behavior, symptom correlation windows, etc.). The README indexes all briefs; read the relevant brief directly before designing in that domain. |
+| `docs/culprit-rename-requirements.md` | Any session executing the Nyx → Culprit name rebrand (B-274) or touching a user-facing brand string. The string-level what-changes — the brand-vs-pet-name-vs-infra split that keeps it from being a search-and-replace. Pairs with `docs/culprit-icon-brand-direction.md` (the icon/visual half, B-275) for the combined "name + icon" brand pass. |
 
 ---
 
