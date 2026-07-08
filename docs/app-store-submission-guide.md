@@ -19,7 +19,7 @@
 |---|---|---|---|---|
 | 1 | Verify the App Store Connect record + lock the name | PM | B-272 | ✅ Done 2026-07-08 — name "Culprit — Pet Health Tracker", category Lifestyle/Health & Fitness |
 | 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | ⬜ Not started |
-| 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | ⬜ Not started |
+| 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | 🔵 Spec'd 2026-07-08 — domain `getculprit.app` purchased (Cloudflare); build-ready spec `docs/culprit-website-requirements.md`; awaiting PM repo + Email Routing setup |
 | 4 | Pick + configure the production SMTP provider | PM | B-152 (part 1) | ⬜ Not started |
 | 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | ⬜ Not started |
 | 6 | Ratify + flag off the paywall for v1 | Mixed | B-263–266 (deferral) | ⬜ Not started |
@@ -78,18 +78,20 @@
 
 ### Step 3 — Stand up the web presence **[Mixed]** (B-273)
 
-**Summary:** App Review *visits* the support URL — it must resolve to a real page with a way to contact you — and the listing requires a privacy-policy URL. One static page covers support + privacy policy + terms in a single deliverable. Nyx currently has no web presence at all.
+**Summary:** App Review *visits* the support URL — it must resolve to a real page with a way to contact you — and the listing requires a privacy-policy URL. One site covers support + privacy policy + terms. Nyx currently has no web presence at all.
 
-**How (PM part — pick a host):**
-- **GitHub Pages** (free, needs a *public* repo — make a separate tiny `nyx-site` repo, don't publicize this one): <https://pages.github.com>
-- **Carrd** (fastest, ~free): <https://carrd.co>
-- **Netlify / Vercel** free tiers also work.
+**⬆ Scope upgraded 2026-07-08 — host + domain now decided.** The PM purchased the custom domain **`getculprit.app`** (Cloudflare Registrar) and wants a real branded Culprit landing page, not just a legal stub. The build-ready spec is **`docs/culprit-website-requirements.md`** — read it for the full plan. Headline decisions: hosting = **Cloudflare Pages** (free; DNS already at Cloudflare), framework = **Astro**, a **separate `culprit-web` repo**, email = **Cloudflare Email Routing** (`support@getculprit.app` → PM Gmail), cookieless analytics. The spec's §10 phase plan separates the submission gate (3 URLs live) from the brand landing so neither blocks the other. The GitHub Pages/Carrd options below are superseded by that spec but kept for context.
 
-You need three URLs by the end (they can be anchors on one page): `…/support`, `…/privacy`, `…/terms`.
+**How (PM part — now, per the spec §13):**
+- **Create the `culprit-web` GitHub repo** (public) + grant session access (GitHub scope is `project-nyx`-only today).
+- **Enable Cloudflare Email Routing** on `getculprit.app`: route `support@` (+ optionally `privacy@`) → your Gmail.
+- _(Superseded host options, for reference: GitHub Pages / Carrd / Netlify free tiers — no longer the plan now that the domain + Cloudflare Pages are chosen.)_
+
+You need three URLs by the end (anchors/pages on the site): `getculprit.app/support`, `/privacy`, `/terms`.
 
 **Tips:**
-- The support page needs, at minimum: the app name, a contact email, and a sentence about what the app is. That's genuinely enough.
-- A custom domain is nice but **not required** — `username.github.io/nyx` passes review fine.
+- The support page needs, at minimum: the app name, a contact email, and a sentence about what the app is. That's genuinely enough for review — the branded landing (spec Job B) is extra.
+- Brand hygiene (**B-274**): every public string is **Culprit**, never "Nyx".
 
 **Claude part (after hosting exists + step 2 is merged) — kickoff prompt:**
 
