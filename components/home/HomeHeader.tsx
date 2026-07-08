@@ -9,7 +9,7 @@ import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 
 // Home identity strip (B-076) — a thin orienting band above the Signal: a quiet
-// "Project Nyx" wordmark + the active pet's avatar, name, and one slim line.
+// "Culprit" wordmark + the active pet's avatar, name, and one slim line.
 // Deliberately NOT a profile card (Principle 3): the AI Signal must keep leading
 // and the full profile (sex/weight/conditions/diet trial) stays the Pet tab's
 // job. The identity row is the switcher tap-target (multi-pet spec §3.1):
@@ -34,7 +34,7 @@ export function HomeHeader() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
-      <Text style={styles.wordmark}>Project Nyx</Text>
+      <Text style={styles.wordmark}>Culprit</Text>
       <TouchableOpacity
         style={styles.identityRow}
         onPress={() => setSwitcherVisible(true)}
@@ -76,8 +76,8 @@ const styles = StyleSheet.create({
     // fills the status-bar inset (no grey strip above the header).
     paddingBottom: 12,
   },
-  // Quiet brand mark in the display face — identity, not a banner. "Project Nyx"
-  // is a placeholder name; swaps out with no layout change when it's decided.
+  // Quiet brand mark in the display face — identity, not a banner. "Culprit"
+  // (the decided product name) reads at a glance without competing with the Signal.
   wordmark: {
     fontFamily: theme.fontDisplay,
     fontSize: theme.textMD,

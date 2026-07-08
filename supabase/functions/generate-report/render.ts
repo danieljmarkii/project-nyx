@@ -512,7 +512,7 @@ function letterhead(snap: ReportSnapshot): string {
   return `
   <div class="letter">
     <div class="brand">
-      <span class="wordmark">Nyx</span>
+      <span class="wordmark">Culprit</span>
       <span class="kind">Owner-reported<br/>pet-health summary</span>
     </div>
     <div class="stamp">
@@ -664,8 +664,10 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
       return flagRow(
         'Possible blood',
         // R2-6 — attribute to the mechanism ("automated photo analysis"), never the brand ("a photo
-        // Nyx flagged"), since the app name collides with the patient's name (Nyx). R2-4 — the AI
-        // provenance sentence collapses into the uniform badge; the present-only qualifier stays.
+        // Culprit flagged"). This originally guarded an app-name/patient-name collision (both "Nyx");
+        // with the brand now "Culprit" the collision is gone, but mechanism-not-brand is still the
+        // correct clinical voice, so the attribution stands. R2-4 — the AI provenance sentence
+        // collapses into the uniform badge; the present-only qualifier stays.
         // PR 7 — the flagged photo also leads the band (thumbnail), impossible to miss.
         `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — ${h(kindPhrase)} on automated photo analysis. ${aiBadge()} Shown because it is present; a photo cannot exclude bleeding.${safetyBandThumbs(
           snap,
@@ -802,7 +804,7 @@ function weightBlock(snap: ReportSnapshot): string {
     return `
   <div class="weight weight-empty">
     <div class="wt-read"><span class="v">No home weigh-ins recorded.</span><br/>
-    <span class="l">A weight trend is a useful GI bellwether; the owner can log weigh-ins in Nyx.</span></div>
+    <span class="l">A weight trend is a useful GI bellwether; the owner can log weigh-ins in Culprit.</span></div>
   </div>`
   }
   const t = w.trend
@@ -1571,14 +1573,16 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
 // ── Footer (per page/section) ────────────────────────────────────────────────────
 
 function footer(snap: ReportSnapshot, sectionLabel: string): string {
-  // R2-6 — an explicit "Patient:" label disambiguates the pet's name from the app name (both "Nyx"
-  // on the first real artifact); the owner is the client, labelled as such for PIMS filing.
+  // R2-6 — an explicit "Patient:" label. It originally disambiguated the pet's name from the app
+  // name (both "Nyx" on the first real artifact); with the brand now "Culprit" that collision is
+  // gone, but the label is good PIMS practice so it stays. The owner is the client, labelled as
+  // such for PIMS filing.
   const owner = snap.signalment.ownerName ? ` &middot; Owner: ${h(snap.signalment.ownerName)}` : ''
   return `
   <div class="foot">
     <div class="fbrand">
       <div class="fw">
-        <span class="w">Nyx</span>
+        <span class="w">Culprit</span>
         <div class="scan">Patient: ${h(snap.signalment.name)}${owner} &middot; owner-reported observations &middot; associational, not a diagnosis.</div>
       </div>
     </div>
@@ -1666,7 +1670,7 @@ function appendixA(snap: ReportSnapshot): string {
     </thead>
     <tbody>${rows || `<tr><td colspan="5">No symptom events in this window.</td></tr>`}</tbody>
   </table>
-  <p class="note" style="margin-top:9px"><b>Why a range and not a time:</b> a vomit found at 07:44 but occurring around 04:00 changes the interval from the prior meal from minutes to hours — a clinically different picture. Where the owner did not witness the event, the window it occurred in is shown, not the time it was noticed. Photo findings are Nyx's read of the owner's photo, owner-reviewable; they never carry a diagnosis or a single-incident verdict (that stays in the app, off this report).</p>
+  <p class="note" style="margin-top:9px"><b>Why a range and not a time:</b> a vomit found at 07:44 but occurring around 04:00 changes the interval from the prior meal from minutes to hours — a clinically different picture. Where the owner did not witness the event, the window it occurred in is shown, not the time it was noticed. Photo findings are Culprit's read of the owner's photo, owner-reviewable; they never carry a diagnosis or a single-incident verdict (that stays in the app, off this report).</p>
   ${footer(snap, 'Appendix A — event log')}
 </section>`
 }
