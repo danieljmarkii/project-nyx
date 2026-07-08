@@ -105,7 +105,13 @@ async function getItem(key: string): Promise<string | null> {
 }
 
 async function setItem(key: string, value: string): Promise<void> {
-  const prev = await readPointer(key).catch(() => null);
+  const prev = await readPointer(key).catch((e) => {
+    // A failed pointer read here is safe (the live pointer is untouched until the
+    // commit below, so a crash still degrades to the old session), but log it
+    // rather than swallow it — no silent failures.
+    console.warn('[secureStore] pointer read before write failed:', e);
+    return null;
+  });
   // A brand-new generation number, so the chunks we write share no key with the
   // generation a concurrent reader is following — no in-place overwrite, ever.
   const gen = prev ? prev.gen + 1 : 0;
