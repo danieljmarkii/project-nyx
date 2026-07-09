@@ -17,6 +17,7 @@ import { theme } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
+import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { emailError } from '../../lib/authValidation';
 
 // Returning-owner sign-in (B-251). Rebuilt on the same design system as the
@@ -97,16 +98,22 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <TouchableOpacity
-            onPress={goBack}
-            style={styles.back}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            testID="login-back"
-          >
-            <ChevronLeft size={24} color={theme.colorTextPrimary} strokeWidth={2} />
-          </TouchableOpacity>
+          {/* Top bar: back chevron pinned left, the Culprit brand mark centred — so
+              the login form reads as part of the branded Landing flow, not a plain
+              utility screen dropped in after it (TestFlight feedback 2026-07-09). */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={goBack}
+              style={styles.back}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              testID="login-back"
+            >
+              <ChevronLeft size={24} color={theme.colorTextPrimary} strokeWidth={2} />
+            </TouchableOpacity>
+            <AuthBrandMark />
+          </View>
 
           <Text style={styles.title}>Welcome back</Text>
           {showDeletedConfirmation ? (
@@ -165,7 +172,10 @@ export default function LoginScreen() {
             accessibilityLabel="Create a new account"
             testID="login-to-signup"
           >
-            <Text style={styles.signupText}>Don't have an account? Sign up</Text>
+            <Text style={styles.signupText}>
+              Don't have an account?{' '}
+              <Text style={styles.signupTextAccent}>Sign up</Text>
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -186,13 +196,26 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: theme.space4,
   },
-  back: {
-    width: theme.space5,
+  // Standard top-bar height so the centred brand mark and the absolutely-pinned
+  // back chevron share one clean row (the chevron overlays the row's left edge
+  // without shoving the mark off-centre).
+  header: {
     height: theme.space5,
-    marginLeft: -theme.space1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: theme.space1,
+    marginBottom: theme.space4,
+  },
+  back: {
+    position: 'absolute',
+    left: -theme.space1,
+    top: 0,
+    bottom: 0,
+    width: theme.space5,
     justifyContent: 'center',
     // Left-align the glyph within the tap box.
     alignItems: 'flex-start',
+    zIndex: 1,
   },
   title: {
     fontSize: theme.text2XL,
@@ -236,5 +259,12 @@ const styles = StyleSheet.create({
   signupText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
+  },
+  // The tappable half of the prompt carries the teal accent so it reads as the
+  // link it is (the whole row was flat grey before) — matching signup's accented
+  // Terms/Privacy treatment and the Landing's accent language.
+  signupTextAccent: {
+    color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
   },
 });
