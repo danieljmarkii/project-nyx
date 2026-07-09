@@ -11,9 +11,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Moon } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
+import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { ValuePreview, ValuePreviewVariant } from '../../components/onboarding/ValuePreview';
 
 // The Signal-led Landing (B-251 PR 5, spec §3.0, mockup 01–03) — the new
@@ -64,10 +64,9 @@ export default function LandingScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <View style={styles.logo}>
-        <Moon size={24} color={theme.colorAccent} strokeWidth={1.75} />
-        <Text style={styles.wordmark}>Culprit</Text>
-      </View>
+      {/* Hero-scale brand lockup — the same AuthBrandMark the login/signup forms
+          anchor with, so the whole unauthenticated flow shares one lockup. */}
+      <AuthBrandMark size="hero" style={styles.logo} />
 
       <View style={styles.stage} onLayout={onStageLayout}>
         {stage.width > 0 ? (
@@ -143,20 +142,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorNeutralLight,
     paddingHorizontal: theme.space3,
   },
+  // AuthBrandMark owns the row layout; the Landing only adds its vertical rhythm.
   logo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.space1,
     paddingVertical: theme.space2,
-  },
-  // "Culprit" in the Newsreader display face (the brand face) — no fontWeight set, as
-  // only the 400 face is loaded (constants/theme.ts note).
-  wordmark: {
-    fontFamily: theme.fontDisplay,
-    fontSize: theme.text2XL,
-    color: theme.colorTextPrimary,
-    letterSpacing: theme.trackingTight,
   },
   stage: {
     flex: 1,

@@ -15,4 +15,9 @@ describe('AuthBrandMark', () => {
     const { getByLabelText } = render(<AuthBrandMark />);
     expect(getByLabelText('Culprit')).toBeTruthy();
   });
+
+  it('renders the wordmark at hero scale too (the Landing lockup)', () => {
+    const { getByText } = render(<AuthBrandMark size="hero" />);
+    expect(getByText('Culprit')).toBeTruthy();
+  });
 });
