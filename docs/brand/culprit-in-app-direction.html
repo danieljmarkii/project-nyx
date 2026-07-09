@@ -1,0 +1,1112 @@
+<!--
+  Culprit — In-App Brand Direction (Sr. Product Designer proposal, 2026-07-09)
+  Sibling of culprit-direction.html (the icon/brand pitch). This page carries the
+  brand INTO the app: where the night world lives on real screens, the Whorl as a
+  loading system, the living mark, the Patterns calendar redesign (B-226), and a
+  reimagined Home. Every mock is indicative and interactive — a spec to ratify,
+  not final art. Deliberately one committed night world (no theme toggle), same
+  as its sibling: the brand IS the night.
+  All in-mock UI copy follows nyx-voice; all encodings follow the shipped design
+  system (teal = the one interactive accent; indigo = world/ground only).
+-->
+<title>Culprit — In-App Brand Direction</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --night:   #13112E;
+    --night-2: #1B1743;
+    --night-3: #251F57;
+    --line:    rgba(196,190,255,0.14);
+    --line-2:  rgba(196,190,255,0.24);
+    --signal:  #00C2A8;
+    --signal-soft:#86D9CC;
+    --signal-glow: rgba(0,194,168,0.45);
+    --crescent:#F2EEE4;
+    --text:    #ECEAF6;
+    --muted:   #A6A2CE;
+    --faint:   #706BA6;
+    --ink:     #0B0A1A;
+    --rose-night:#FB7185;   /* proposed colorEventSymptomOnNight — 6.8:1 on night */
+
+    /* the day register (the shipped light system, used inside phone mocks) */
+    --day-bg:  #FAFAFA;
+    --day-card:#FFFFFF;
+    --day-ink: #0A0A0A;
+    --day-2nd: #525252;
+    --day-3rd: #737373;
+    --day-dis: #A3A3A3;
+    --day-line:#EAEAEA;
+    --day-sub: #F5F5F5;
+    --rose:    #F43F5E;
+    --rose-lt: #FFE4E6;
+    --mint-lt: #E0FBF7;
+    --chart-0: #F0F0F0;
+
+    --serif: 'Iowan Old Style','Palatino Linotype',Palatino,Cambria,Georgia,'Times New Roman',serif;
+    --sans: -apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,system-ui,sans-serif;
+    --mono: 'SF Mono',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
+
+    --maxw: 1120px;
+    --pad: clamp(20px,5vw,64px);
+  }
+
+  *{box-sizing:border-box;}
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    margin:0;
+    background:
+      radial-gradient(1100px 620px at 80% -8%, #221c56 0%, rgba(34,28,86,0) 60%),
+      radial-gradient(900px 520px at 6% 6%, #191449 0%, rgba(25,20,73,0) 55%),
+      var(--night);
+    color:var(--text);
+    font-family:var(--sans);
+    font-size:17px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .wrap{ max-width:var(--maxw); margin:0 auto; padding:0 var(--pad); }
+
+  h1,h2,h3{ font-family:var(--serif); font-weight:600; text-wrap:balance; letter-spacing:-0.01em; margin:0; }
+  .eyebrow{ font-family:var(--mono); font-size:.72rem; letter-spacing:.2em; text-transform:uppercase; color:var(--signal-soft); margin:0 0 .9rem; }
+  p{ margin:0 0 1rem; }
+  .lede{ color:var(--muted); font-size:1.12rem; max-width:62ch; }
+  strong{ color:#fff; font-weight:600; }
+  a{ color:var(--signal-soft); }
+  code{ font-family:var(--mono); font-size:.84em; color:var(--signal-soft); }
+
+  section{ padding:clamp(40px,6vw,76px) 0; border-top:1px solid var(--line); }
+  .sec-head{ max-width:66ch; margin-bottom:2.2rem; }
+  .sec-head h2{ font-size:clamp(1.5rem,3.2vw,2.1rem); line-height:1.12; }
+  .sec-head p{ color:var(--muted); margin-top:.7rem; }
+  .ptag{ font-family:var(--mono); font-size:.7rem; letter-spacing:.16em; text-transform:uppercase; color:var(--signal); display:block; margin-bottom:.6rem; }
+
+  /* ---------- hero ---------- */
+  .hero{ padding:clamp(48px,9vw,110px) 0 clamp(40px,6vw,64px); }
+  .hero-grid{ display:grid; grid-template-columns:1.12fr .88fr; gap:clamp(28px,5vw,60px); align-items:center; }
+  .hero h1{ font-size:clamp(2.4rem,5.8vw,4.1rem); line-height:1.04; letter-spacing:-0.02em; }
+  .hero h1 em{ font-style:italic; color:var(--crescent); }
+  .credit{ margin-top:1.8rem; font-family:var(--mono); font-size:.74rem; letter-spacing:.06em; color:var(--faint); }
+
+  .stage{
+    position:relative; aspect-ratio:1/1; border-radius:28px; overflow:hidden;
+    background:
+      radial-gradient(70% 70% at 70% 24%, #2a2264 0%, rgba(42,34,100,0) 62%),
+      radial-gradient(56% 56% at 22% 78%, #1a1550 0%, rgba(26,21,80,0) 60%),
+      radial-gradient(46% 46% at 66% 50%, rgba(0,194,168,0.10), rgba(0,194,168,0) 70%),
+      linear-gradient(160deg,#1a1550,#100e2a 82%);
+    border:1px solid var(--line);
+    box-shadow:0 40px 90px -50px rgba(0,0,0,.8);
+  }
+  .stars{ position:absolute; inset:0;
+    background-image:
+      radial-gradient(1.4px 1.4px at 20% 30%, rgba(255,255,255,.55), transparent),
+      radial-gradient(1.2px 1.2px at 72% 18%, rgba(255,255,255,.4), transparent),
+      radial-gradient(1px 1px at 40% 72%, rgba(255,255,255,.35), transparent),
+      radial-gradient(1.6px 1.6px at 86% 60%, rgba(255,255,255,.45), transparent),
+      radial-gradient(1px 1px at 13% 84%, rgba(255,255,255,.3), transparent),
+      radial-gradient(1.1px 1.1px at 56% 44%, rgba(255,255,255,.28), transparent);
+  }
+  .stage svg{ position:absolute; inset:0; width:100%; height:100%; }
+
+  @keyframes ping{ 0%{ transform:scale(.66); opacity:.9; } 70%{ transform:scale(2.1); opacity:0; } 100%{ transform:scale(2.1); opacity:0; } }
+  @keyframes glowpulse{ 0%,100%{ opacity:.45; } 50%{ opacity:.95; } }
+  @keyframes dotbreathe{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.12); } }
+  .g-ping{ animation:ping 3.4s ease-out infinite; }
+  .g-glow{ animation:glowpulse 3.4s ease-in-out infinite; }
+  .g-dot{ animation:dotbreathe 3.4s ease-in-out infinite; }
+
+  /* ---------- the carve receipt ---------- */
+  .carve{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:2rem; }
+  .carve figure{ margin:0; border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--night-2); }
+  .carve figure.bad{ border-color:rgba(244,63,94,.35); }
+  .carve .art{ aspect-ratio:16/9; position:relative; overflow:hidden;
+    background: radial-gradient(80% 120% at 76% -10%, #2a2264 0%, rgba(42,34,100,0) 62%), linear-gradient(160deg,#1a1550,#100e2a 82%); }
+  .carve .art svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .carve figcaption{ padding:14px 18px; font-size:.86rem; color:var(--muted); border-top:1px solid var(--line); }
+  .carve figcaption b{ color:var(--text); display:block; margin-bottom:2px; font-size:.9rem; }
+  .carve .tag-bad{ font-family:var(--mono); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; color:#ff8fa3; }
+  .carve .tag-good{ font-family:var(--mono); font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; color:var(--signal-soft); }
+
+  /* ---------- register table ---------- */
+  .register{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .reg-card{ border:1px solid var(--line); border-radius:16px; padding:22px; background:var(--night-2); }
+  .reg-card.day-card{ background:var(--day-bg); border-color:#E5E4EF; }
+  .reg-card h3{ font-family:var(--sans); font-size:1rem; letter-spacing:0; margin-bottom:.35rem; }
+  .reg-card.day-card h3{ color:var(--day-ink); }
+  .reg-card.day-card p{ color:var(--day-2nd); }
+  .reg-card p{ color:var(--muted); font-size:.92rem; margin:0 0 .8rem; }
+  .reg-card ul{ margin:0; padding:0; list-style:none; display:grid; gap:6px; }
+  .reg-card li{ font-size:.88rem; color:var(--muted); padding-left:20px; position:relative; }
+  .reg-card.day-card li{ color:var(--day-2nd); }
+  .reg-card li::before{ content:""; position:absolute; left:0; top:.55em; width:8px; height:8px; border-radius:50%; }
+  .reg-card.night-card li::before{ background:var(--signal); }
+  .reg-card.day-card li::before{ background:#0A0A0A; opacity:.75; }
+  .reg-rule{ margin-top:1.6rem; padding:16px 20px; border:1px solid var(--line-2); border-radius:14px; background:rgba(0,194,168,.05); font-size:.92rem; color:var(--muted); }
+
+  /* ---------- phones ---------- */
+  .demo-row{ display:flex; gap:clamp(18px,3vw,36px); flex-wrap:wrap; align-items:flex-start; }
+  .phone{
+    width:312px; flex:none; border-radius:42px; border:1px solid var(--line-2);
+    background:#000; padding:10px; box-shadow:0 30px 70px -40px rgba(0,0,0,.85);
+  }
+  .screen{ border-radius:34px; overflow:hidden; position:relative; min-height:560px; display:flex; flex-direction:column; }
+  .screen.day{ background:var(--day-bg); }
+  .screen.night-scr{
+    background:
+      radial-gradient(90% 50% at 82% -6%, #2a2264 0%, rgba(42,34,100,0) 60%),
+      radial-gradient(70% 44% at 10% 10%, #191449 0%, rgba(25,20,73,0) 55%),
+      var(--night);
+  }
+  .statusbar{ display:flex; justify-content:space-between; align-items:center; padding:12px 22px 4px; font-family:var(--mono); font-size:.68rem; }
+  .screen.day .statusbar{ color:var(--day-2nd); }
+  .screen.night-scr .statusbar{ color:var(--muted); }
+  .phone-label{ margin-top:12px; text-align:center; font-family:var(--mono); font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
+  .demo-note{ flex:1 1 300px; min-width:280px; color:var(--muted); font-size:.94rem; }
+  .demo-note h3{ font-family:var(--sans); font-size:1.02rem; letter-spacing:0; margin-bottom:.5rem; }
+  .demo-note ul{ padding-left:18px; margin:.6rem 0 1rem; display:grid; gap:8px; }
+  .demo-note li{ font-size:.9rem; }
+  .demo-note .fine{ font-size:.8rem; color:var(--faint); }
+
+  /* day-register UI atoms (inside phones) */
+  .d-header{ background:var(--day-card); border-bottom:1px solid var(--day-line); padding:10px 16px 10px; }
+  .d-scroll{ padding:14px 14px 20px; display:grid; gap:14px; }
+  .d-card{ background:var(--day-card); border-radius:14px; padding:14px; box-shadow:0 2px 10px rgba(0,0,0,.05); }
+  .d-zone{ font-size:.6rem; letter-spacing:.14em; text-transform:uppercase; color:var(--day-3rd); font-weight:600; margin-bottom:8px; }
+  .d-title{ color:var(--day-ink); font-size:.86rem; font-weight:600; }
+  .d-body{ color:var(--day-2nd); font-size:.8rem; line-height:1.45; }
+  .d-link{ color:var(--signal); font-size:.74rem; font-weight:600; }
+  .d-row{ display:flex; align-items:center; gap:9px; padding:7px 0; }
+  .d-row + .d-row{ border-top:1px solid var(--day-line); }
+  .d-ico{ width:26px; height:26px; border-radius:50%; background:var(--day-bg); display:grid; place-items:center; font-size:.7rem; flex:none; }
+  .d-ico.meal{ background:var(--mint-lt); }
+  .d-ico.symp{ background:var(--rose-lt); }
+  .d-ico.med{ background:#EEF2FF; }
+  .d-meta{ flex:1; min-width:0; }
+  .d-lab{ color:var(--day-ink); font-size:.78rem; font-weight:600; }
+  .d-sub{ color:var(--day-2nd); font-size:.7rem; }
+  .d-time{ color:var(--day-2nd); font-size:.7rem; }
+
+  /* night signal card (inside phones) */
+  .n-card{
+    border-radius:16px; padding:16px 16px 12px; position:relative; overflow:hidden;
+    background:
+      radial-gradient(120% 90% at 84% -14%, #2a2264 0%, rgba(42,34,100,0) 58%),
+      radial-gradient(60% 60% at 12% 108%, rgba(0,194,168,.10) 0%, rgba(0,194,168,0) 62%),
+      linear-gradient(158deg,#1c1747,#13112E 78%);
+    border:1px solid rgba(196,190,255,.16);
+  }
+  .n-stars{ position:absolute; inset:0; pointer-events:none;
+    background-image:
+      radial-gradient(1.2px 1.2px at 84% 22%, rgba(255,255,255,.4), transparent),
+      radial-gradient(1px 1px at 64% 12%, rgba(255,255,255,.3), transparent),
+      radial-gradient(1.1px 1.1px at 92% 58%, rgba(255,255,255,.28), transparent);
+  }
+  .n-label{ display:flex; align-items:center; gap:6px; font-size:.6rem; letter-spacing:.14em; text-transform:uppercase; color:var(--signal-soft); font-weight:600; margin-bottom:9px; }
+  .n-label .dot{ width:6px; height:6px; border-radius:50%; background:var(--signal); box-shadow:0 0 6px var(--signal-glow); }
+  .n-head{ font-family:var(--serif); font-size:1.06rem; line-height:1.32; letter-spacing:-.01em; color:var(--crescent); margin-bottom:8px; }
+  .n-meta{ display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:4px; }
+  .n-badge{ font-size:.58rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); border:1px solid var(--line-2); border-radius:999px; padding:2px 8px; }
+  .n-sample{ font-size:.64rem; color:var(--faint); }
+  .n-why{ font-size:.66rem; color:var(--signal-soft); font-weight:600; margin-top:6px; }
+  .n-divider{ height:1px; background:rgba(196,190,255,.13); margin:11px 0; }
+  .n-saferow{ display:flex; gap:9px; }
+  .n-rail{ width:3px; border-radius:2px; background:var(--rose-night); flex:none; }
+  .n-safetext{ font-size:.78rem; color:var(--text); line-height:1.45; }
+  .n-safetext b{ color:var(--rose-night); font-weight:600; }
+  .n-foot{ border-top:1px solid rgba(196,190,255,.13); margin-top:12px; padding-top:9px; font-size:.7rem; font-weight:600; color:var(--signal-soft); }
+  .n-ghost{ border-radius:9px; background:rgba(196,190,255,.06); padding:9px 10px; display:flex; gap:8px; margin-top:7px; }
+  .n-ghostbar{ width:2px; border-radius:1px; background:var(--signal); opacity:.5; flex:none; }
+  .n-ghosttext{ font-size:.7rem; color:var(--muted); line-height:1.45; opacity:.85; }
+
+  /* header lockup (living mark) */
+  .lockup-demo{ display:flex; align-items:center; gap:7px; }
+  .lockup-demo .word{ font-family:var(--serif); font-size:.92rem; letter-spacing:-.01em; }
+  .mini-mark{ position:relative; width:20px; height:20px; flex:none; }
+  .mini-mark svg{ width:100%; height:100%; display:block; }
+
+  /* pulse states for the living mark */
+  .mark-stage{ border:1px solid var(--line); background:var(--night-2); border-radius:16px; padding:22px; display:flex; flex-direction:column; gap:18px; }
+  .mark-stage .hdr-mock{ background:var(--day-card); border-radius:12px; padding:12px 16px; display:flex; flex-direction:column; gap:8px; }
+  .mark-stage .hdr-mock .word{ color:var(--day-3rd); }
+  .mark-stage .idrow{ display:flex; align-items:center; gap:9px; }
+  .mark-stage .avatar{ width:30px; height:30px; border-radius:50%; background:linear-gradient(140deg,#3b365f,#191449); display:grid; place-items:center; color:var(--crescent); font-family:var(--serif); font-size:.8rem; }
+  .mark-stage .petname{ color:var(--day-ink); font-weight:600; font-size:.95rem; }
+  .mark-stage .petline{ color:var(--day-3rd); font-size:.72rem; }
+  .pulse-dot{ transform-origin:center; transform-box:fill-box; }
+  .pulse-ring{ transform-origin:center; transform-box:fill-box; opacity:0; }
+  .is-live .pulse-dot{ animation:dotbreathe 2.6s ease-in-out infinite; }
+  .is-live .pulse-ring{ animation:ping 2.6s ease-out infinite; }
+  .demo-btnrow{ display:flex; gap:10px; flex-wrap:wrap; }
+  .demo-btn{
+    font-family:var(--sans); font-size:.82rem; font-weight:600; color:var(--text);
+    background:var(--night-3); border:1px solid var(--line-2); border-radius:999px;
+    padding:8px 18px; cursor:pointer;
+  }
+  .demo-btn:hover{ border-color:var(--signal-soft); }
+  .demo-btn:focus-visible{ outline:2px solid var(--signal); outline-offset:2px; }
+  .demo-btn.active{ background:var(--signal); color:var(--ink); border-color:transparent; }
+
+  /* ---------- whorl ---------- */
+  .whorl-tiers{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; }
+  .tier{ border:1px solid var(--line); border-radius:16px; background:var(--night-2); overflow:hidden; display:flex; flex-direction:column; }
+  .tier .art{ min-height:190px; display:grid; place-items:center; padding:22px; }
+  .tier .art.on-day{ background:var(--day-bg); }
+  .tier .art.on-night{ background:linear-gradient(160deg,#1a1550,#110e2c 80%); }
+  .tier .cap{ padding:14px 18px; border-top:1px solid var(--line); font-size:.84rem; color:var(--muted); }
+  .tier .cap b{ display:block; color:var(--text); font-size:.9rem; margin-bottom:2px; }
+  .tier .cap .use{ font-family:var(--mono); font-size:.66rem; letter-spacing:.08em; text-transform:uppercase; color:var(--faint); display:block; margin-top:6px; }
+
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  @keyframes spin-r{ to{ transform:rotate(-360deg); } }
+  .whorl-anim .arc1{ transform-origin:center; transform-box:fill-box; animation:spin 7s linear infinite; }
+  .whorl-anim .arc2{ transform-origin:center; transform-box:fill-box; animation:spin-r 11s linear infinite; }
+  .whorl-anim .arc3{ transform-origin:center; transform-box:fill-box; animation:spin 15s linear infinite; }
+  .whorl-anim .arc4{ transform-origin:center; transform-box:fill-box; animation:spin-r 21s linear infinite; }
+  .whorl-anim .core{ transform-origin:center; transform-box:fill-box; animation:dotbreathe 2.6s ease-in-out infinite; }
+
+  @keyframes shimmer{ 0%{ background-position:-160px 0; } 100%{ background-position:200px 0; } }
+  .skel{ border-radius:8px; background:#EEEDEA; background-image:linear-gradient(90deg, rgba(255,255,255,0) 0, rgba(255,255,255,.85) 44px, rgba(255,255,255,0) 88px); background-size:200px 100%; background-repeat:no-repeat; animation:shimmer 1.4s ease-in-out infinite; }
+  .skel-card{ width:100%; max-width:220px; background:var(--day-card); border-radius:12px; padding:12px; display:grid; gap:9px; box-shadow:0 2px 10px rgba(0,0,0,.06); }
+
+  .sweep{ margin-top:1.6rem; padding:16px 20px; border:1px solid var(--line); border-radius:14px; background:var(--night-2); font-size:.9rem; color:var(--muted); display:flex; gap:14px; align-items:baseline; flex-wrap:wrap; }
+  .sweep .big{ font-family:var(--serif); font-size:1.7rem; color:var(--crescent); }
+
+  /* ---------- signal state tabs ---------- */
+  .tabrow{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .sigstate{ display:none; }
+  .sigstate.shown{ display:block; }
+
+  /* ---------- calendar ---------- */
+  .cal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .cal-title{ color:var(--day-ink); font-size:.8rem; font-weight:600; }
+  .cal-navbtn{ width:30px; height:30px; border-radius:8px; border:1px solid var(--day-line); background:var(--day-card); color:var(--day-2nd); font-size:.85rem; cursor:pointer; display:grid; place-items:center; }
+  .cal-navbtn:disabled{ opacity:.35; cursor:default; }
+  .cal-navbtn:focus-visible{ outline:2px solid var(--signal); outline-offset:2px; }
+  .cal-week{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; margin-bottom:3px; }
+  .cal-wd{ text-align:center; font-size:.56rem; color:var(--day-dis); }
+  .cal-cell{
+    aspect-ratio:1/1.06; border-radius:7px; background:var(--day-sub); border:none; padding:2px 0 3px;
+    display:flex; flex-direction:column; align-items:center; justify-content:space-between; cursor:pointer;
+    font-family:inherit;
+  }
+  .cal-cell:focus-visible{ outline:2px solid var(--signal); outline-offset:1px; }
+  .cal-cell.blank{ background:transparent; cursor:default; }
+  .cal-cell.today{ box-shadow:inset 0 0 0 1.5px var(--signal); }
+  .cal-cell.selected{ background:#ECEBFA; }
+  .cal-cell .dnum{ font-size:.6rem; color:var(--day-3rd); line-height:1; margin-top:2px; }
+  .cal-cell.has-symptom .dnum{ color:var(--day-ink); font-weight:600; }
+  .pips{ display:flex; gap:2px; align-items:center; height:6px; }
+  .pip{ width:5px; height:5px; border-radius:50%; background:var(--rose); }
+  .pip-more{ font-size:.55rem; font-weight:700; color:var(--rose); line-height:1; }
+  .cal-legend{ display:flex; align-items:center; gap:6px; margin-top:8px; font-size:.62rem; color:var(--day-3rd); }
+  .day-sheet{ margin-top:10px; border-top:1px solid var(--day-line); padding-top:9px; }
+  .day-sheet .ds-title{ color:var(--day-ink); font-size:.74rem; font-weight:600; margin-bottom:2px; }
+  .day-sheet .ds-hint{ color:var(--day-3rd); font-size:.62rem; margin-bottom:5px; }
+
+  .before-after{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:1.8rem; }
+  .ba{ border:1px solid var(--line); border-radius:16px; background:var(--night-2); overflow:hidden; }
+  .ba .art{ background:var(--day-bg); padding:22px; display:grid; gap:9px; justify-items:center; }
+  .ba .strip{ display:flex; gap:5px; }
+  .ba .sq{ width:34px; height:34px; border-radius:6px; display:grid; place-items:center; font-size:.68rem; font-weight:600; }
+  .ba figcaption{ padding:13px 18px; border-top:1px solid var(--line); font-size:.84rem; color:var(--muted); }
+  .ba figcaption b{ color:var(--text); display:block; font-size:.9rem; }
+  .ba figure{ margin:0; }
+
+  .b226{ margin-top:1.6rem; display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+  .b226 .item{ border:1px solid var(--line-2); border-radius:12px; padding:14px 16px; background:rgba(0,194,168,.05); font-size:.86rem; color:var(--muted); }
+  .b226 .item b{ color:var(--text); display:block; margin-bottom:2px; }
+  .b226 .item .ok{ color:var(--signal-soft); font-family:var(--mono); font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; }
+
+  /* ---------- completion ping ---------- */
+  .moment-stage{ border:1px solid var(--line); border-radius:16px; background:var(--day-bg); min-height:300px; position:relative; display:grid; place-items:center; overflow:hidden; }
+  .moment-inner{ display:grid; justify-items:center; gap:12px; }
+  .check-wrap{ position:relative; width:120px; height:120px; display:grid; place-items:center; }
+  .check-ring{ width:72px; height:72px; border-radius:50%; background:var(--day-card); border:2px solid var(--signal); display:grid; place-items:center; }
+  .check-ring svg{ width:32px; height:32px; }
+  .ping-el{ position:absolute; inset:0; margin:auto; width:72px; height:72px; border-radius:50%; border:2px solid var(--signal); opacity:0; pointer-events:none; }
+  .logged-line{ color:var(--day-ink); font-weight:600; font-size:1.05rem; }
+  .replay .check-ring{ animation:checkpop .5s cubic-bezier(.2,1.4,.4,1) both; }
+  .replay .ping-el{ animation:momping .9s ease-out .12s both; }
+  @keyframes checkpop{ 0%{ transform:scale(.6); opacity:0; } 100%{ transform:scale(1); opacity:1; } }
+  @keyframes momping{ 0%{ transform:scale(1); opacity:.85; } 100%{ transform:scale(2.6); opacity:0; } }
+
+  /* ---------- decisions table ---------- */
+  .decisions{ overflow-x:auto; border:1px solid var(--line); border-radius:16px; }
+  table{ border-collapse:collapse; width:100%; min-width:720px; font-size:.9rem; }
+  thead th{ text-align:left; font-family:var(--mono); font-weight:500; font-size:.66rem; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); padding:14px 18px; border-bottom:1px solid var(--line-2); }
+  tbody td{ padding:13px 18px; border-bottom:1px solid var(--line); color:var(--muted); vertical-align:top; }
+  tbody tr:last-child td{ border-bottom:none; }
+  td .opt{ color:var(--text); font-weight:600; white-space:nowrap; }
+  .pill{ display:inline-block; font-family:var(--mono); font-size:.64rem; letter-spacing:.08em; text-transform:uppercase; padding:3px 9px; border-radius:20px; white-space:nowrap; border:1px solid var(--line-2); color:var(--muted); }
+  .pill.rec{ background:var(--signal); color:var(--ink); border-color:transparent; font-weight:700; }
+  .pill.opt2{ color:var(--signal-soft); border-color:rgba(0,194,168,.4); }
+
+  .steps{ counter-reset:s; list-style:none; padding:0; margin:1.4rem 0 0; display:grid; gap:12px; }
+  .steps li{ counter-increment:s; padding-left:44px; position:relative; color:var(--muted); font-size:.94rem; }
+  .steps li::before{ content:counter(s); position:absolute; left:0; top:-2px; width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:var(--night-3); color:var(--signal-soft); font-family:var(--mono); font-size:.82rem; border:1px solid var(--line-2); }
+  .steps li b{ color:var(--text); }
+
+  footer{ padding:48px 0 72px; border-top:1px solid var(--line); color:var(--faint); font-size:.84rem; }
+  footer .signoff{ font-family:var(--mono); font-size:.76rem; color:var(--muted); line-height:1.9; }
+  footer .disc{ margin-top:1rem; max-width:72ch; }
+
+  @media (max-width:880px){
+    .hero-grid,.register,.carve,.before-after{ grid-template-columns:1fr; }
+    .stage{ max-width:380px; }
+  }
+  @media (prefers-reduced-motion:reduce){
+    .g-ping,.g-glow,.g-dot,.is-live .pulse-dot,.is-live .pulse-ring,
+    .whorl-anim .arc1,.whorl-anim .arc2,.whorl-anim .arc3,.whorl-anim .arc4,.whorl-anim .core,
+    .skel,.replay .check-ring,.replay .ping-el{ animation:none; }
+    .g-ping,.is-live .pulse-ring{ display:none; }
+    .replay .ping-el{ opacity:0; }
+    .replay .check-ring{ opacity:1; transform:none; }
+  }
+</style>
+
+<div class="wrap">
+
+  <!-- ================= HERO ================= -->
+  <header class="hero">
+    <div class="hero-grid">
+      <div>
+        <p class="eyebrow">Culprit · In-App Brand Direction</p>
+        <h1>The night<br>comes <em>inside</em>.</h1>
+        <p class="lede">The icon promises <strong>the moon that finds the one thing in the dark</strong>. This is the designer's pass at keeping that promise on real screens: one rule for where the night world lives in-app, the Whorl as a working loading system, a living brand mark, the Patterns calendar redesigned, and a Home that briefs instead of stacking three fixed boxes.</p>
+        <p class="credit">Sr. Product Designer · 2026-07-09 · every mock below is interactive &amp; indicative — a spec to ratify, not final art</p>
+      </div>
+
+      <!-- HERO — the corrected mark: the sky passes through the carve -->
+      <div class="stage" role="img" aria-label="The Culprit mark drawn correctly: a moonlight crescent carved by a true cutout, so the indigo night and its purple glow pass through the opening. A teal Signal dot pulses in the crescent's cradle.">
+        <div class="stars"></div>
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <defs>
+            <mask id="carve-hero">
+              <circle cx="45" cy="50" r="33" fill="#fff"/>
+              <circle cx="61" cy="43" r="29" fill="#000"/>
+            </mask>
+          </defs>
+          <!-- one moonlight disc, carved by a mask — nothing is painted over the sky -->
+          <circle cx="45" cy="50" r="33" fill="var(--crescent)" mask="url(#carve-hero)"/>
+          <circle class="g-glow" cx="66" cy="53" r="15" fill="var(--signal-glow)"/>
+          <circle class="g-ping" cx="66" cy="53" r="9" fill="none" stroke="var(--signal)" stroke-width="1.4"/>
+          <circle class="g-dot" cx="66" cy="53" r="9" fill="var(--signal)"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- the carve receipt -->
+    <div class="carve">
+      <figure class="bad">
+        <div class="art">
+          <svg viewBox="0 0 160 90" aria-label="The old drawing: a solid dark circle laid on top of the gradient sky, so the moon appears to be eating a darker disc.">
+            <circle cx="72" cy="45" r="30" fill="var(--crescent)"/>
+            <circle cx="86.5" cy="38.6" r="26.4" fill="#120f30"/>
+            <circle cx="91" cy="47.7" r="8.2" fill="var(--signal)"/>
+          </svg>
+        </div>
+        <figcaption><span class="tag-bad">The bug you called</span><b>Carved with a filled circle</b>A solid dark disc sits <em>on top of</em> the sky, so the gradient dies inside the crescent — the moon reads as eating a darker circle.</figcaption>
+      </figure>
+      <figure>
+        <div class="art">
+          <svg viewBox="0 0 160 90" aria-label="The corrected drawing: the crescent is a true cutout, so the gradient sky passes through the opening uninterrupted.">
+            <defs>
+              <mask id="carve-fix">
+                <circle cx="72" cy="45" r="30" fill="#fff"/>
+                <circle cx="86.5" cy="38.6" r="26.4" fill="#000"/>
+              </mask>
+            </defs>
+            <circle cx="72" cy="45" r="30" fill="var(--crescent)" mask="url(#carve-fix)"/>
+            <circle cx="91" cy="47.7" r="8.2" fill="var(--signal)"/>
+          </svg>
+        </div>
+        <figcaption><span class="tag-good">The fix — now a brand rule</span><b>Carved with a true cutout</b>The crescent is a single masked shape; the sky — and your purple glow — passes through the opening. <strong>The crescent is a mask, never a filled circle.</strong> Every render on this page follows it.</figcaption>
+      </figure>
+    </div>
+  </header>
+
+  <!-- ================= THE RULE ================= -->
+  <section>
+    <div class="sec-head">
+      <span class="ptag">The organizing idea</span>
+      <h2>Night is when Culprit thinks</h2>
+      <p>Not "add dark mode." One principled rule for where the night world appears: <strong>whenever the app is working on the pet's behalf</strong> — finding, analyzing, building — the surface is night. Whenever the owner is <strong>capturing or reading records</strong>, the surface stays the calm, clinical day system we shipped. The 3am log stays light, fast, and boring on purpose; the intelligence gets the sky it was drawn in.</p>
+    </div>
+
+    <div class="register">
+      <div class="reg-card night-card">
+        <h3 style="color:var(--crescent);font-family:var(--serif);font-size:1.15rem;">Night — the app thinking</h3>
+        <p>Indigo world, aurora glow, moonlight serif, the Signal dot.</p>
+        <ul>
+          <li>The <strong>Signal</strong> zone on Home — what the moon found</li>
+          <li>The Patterns <strong>AI summary</strong> — same voice, same sky</li>
+          <li><strong>Loading beyond a beat</strong> — cold start, report build, photo reads</li>
+          <li>The unauthenticated <strong>landing</strong> — the brand's front door</li>
+        </ul>
+      </div>
+      <div class="reg-card day-card">
+        <h3>Day — the owner acting</h3>
+        <p>The shipped light system, untouched: calm, glanceable, 10-second fast.</p>
+        <ul>
+          <li><strong>Quick-log</strong> — zero decisions at the moment of event</li>
+          <li><strong>History, Foods, Profile</strong> — records read like records</li>
+          <li><strong>Patterns cards</strong> — deterministic numbers on white</li>
+          <li><strong>The vet report</strong> — clinical-grade, no decoration, out of scope here</li>
+        </ul>
+      </div>
+    </div>
+    <div class="reg-rule"><strong>The system survives intact:</strong> teal stays the only tappable accent in both registers; indigo is only ever a ground (never a button, never a trend line); symptom rose keeps meaning symptom — on night grounds it lifts one step to <code>#FB7185</code> for contrast (6.8:1), the same move the photo viewer already makes with <code>colorDestructiveOnDark</code>.</div>
+  </section>
+
+  <!-- ================= P1 LIVING MARK ================= -->
+  <section id="p1">
+    <div class="sec-head">
+      <span class="ptag">Proposal 1 · the C and the dot, in the app</span>
+      <h2>The mark lives in the header — and the dot is a status light</h2>
+      <p>Home's header currently says "Culprit" in quiet gray text. It becomes the real lockup — crescent-C plus the teal tittle. The dot you loved pulsing on the brand page earns its motion here: <strong>it breathes only when the Signal has something new you haven't seen</strong>, and goes still the moment you look. Quiet by default; alive exactly when the product has done its job.</p>
+    </div>
+
+    <div class="demo-row">
+      <div class="mark-stage" style="flex:1 1 340px;max-width:430px;">
+        <div class="hdr-mock" id="hdr-demo">
+          <div class="lockup-demo">
+            <span class="mini-mark" aria-hidden="true">
+              <svg viewBox="0 0 100 100">
+                <defs>
+                  <mask id="carve-hdr">
+                    <circle cx="45" cy="50" r="36" fill="#fff"/>
+                    <circle cx="63" cy="42" r="31" fill="#000"/>
+                  </mask>
+                </defs>
+                <circle cx="45" cy="50" r="36" fill="#211E4E" mask="url(#carve-hdr)"/>
+                <circle class="pulse-ring" cx="68" cy="55" r="10" fill="none" stroke="var(--signal)" stroke-width="3"/>
+                <circle class="pulse-dot" cx="68" cy="55" r="10" fill="var(--signal)"/>
+              </svg>
+            </span>
+            <span class="word" style="color:#737373;">Culprit</span>
+          </div>
+          <div class="idrow">
+            <span class="avatar" aria-hidden="true">N</span>
+            <span>
+              <span class="petname" style="display:block;">Nyx</span>
+              <span class="petline">Cat · 4 yrs · diet trial, day 12</span>
+            </span>
+          </div>
+        </div>
+        <div class="demo-btnrow" role="group" aria-label="Living mark demo states">
+          <button class="demo-btn" id="btn-fresh" type="button">A fresh finding lands</button>
+          <button class="demo-btn active" id="btn-ack" type="button">Acknowledged — quiet</button>
+        </div>
+      </div>
+
+      <div class="demo-note">
+        <h3>How it behaves</h3>
+        <ul>
+          <li><strong>Quiet state (default):</strong> static dot. The mark is identity, not a banner — the header stays subordinate to the Signal headline (Principle&nbsp;3).</li>
+          <li><strong>Fresh-signal state:</strong> the dot breathes with one soft ping ring — teal-as-live-state, which the one-accent rule explicitly sanctions. Tapping it scrolls to the Signal; the pulse stops once the finding is seen.</li>
+          <li><strong>Never for safety:</strong> a safety finding leads the Signal zone itself with its own rail — the header dot is a gentle "something new," not an alarm channel.</li>
+          <li><strong>Same component everywhere:</strong> replaces the generic <code>lucide Moon</code> in <code>AuthBrandMark</code> and the text-only header wordmark — one <code>CulpritMark</code>, one carve rule.</li>
+        </ul>
+        <p class="fine">Reduced-motion: the dot holds a static soft glow; the ping ring never renders. Engineering: <code>react-native-svg</code> + native-driver scale/opacity — both already in the stack.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P2 WHORL LOADING ================= -->
+  <section id="p2">
+    <div class="sec-head">
+      <span class="ptag">Proposal 2 · the Whorl at work</span>
+      <h2>Loading becomes a signature, not a spinner</h2>
+      <p>Twenty-five surfaces currently show the stock <code>ActivityIndicator</code>. The Whorl — the crescent drawn as a fingerprint, already sanctioned for "loading and section breaks" — becomes the app's <strong>thinking gesture</strong>, in three deliberate tiers so motion stays purposeful, never ambient noise.</p>
+    </div>
+
+    <div class="whorl-tiers">
+      <div class="tier">
+        <div class="art on-day">
+          <div class="skel-card" aria-label="Skeleton placeholder card">
+            <div class="skel" style="height:10px;width:38%;"></div>
+            <div class="skel" style="height:26px;width:55%;"></div>
+            <div class="skel" style="height:9px;width:80%;"></div>
+            <div class="skel" style="height:9px;width:64%;"></div>
+          </div>
+        </div>
+        <div class="cap"><b>Tier 1 — a beat (&lt;1s): skeleton, no Whorl</b>Content shapes shimmer in place; the page never blanks. Restraint is the brand here — the Whorl would be noise at this duration.<span class="use">Patterns cards · History · detail screens</span></div>
+      </div>
+
+      <div class="tier">
+        <div class="art on-day">
+          <svg class="whorl-anim" width="96" height="96" viewBox="0 0 200 200" role="img" aria-label="Whorl spinner: concentric crescent ridges slowly counter-rotating around a pulsing teal dot.">
+            <g fill="none" stroke-linecap="round">
+              <path class="arc1" d="M138 44 A70 70 0 1 0 138 156" stroke="var(--signal)" stroke-width="7" opacity=".95"/>
+              <path class="arc2" d="M132 60 A54 54 0 1 0 132 140" stroke="#B9B4E4" stroke-width="6" opacity=".65"/>
+              <path class="arc3" d="M126 76 A38 38 0 1 0 126 124" stroke="var(--signal-soft)" stroke-width="5.5" opacity=".7"/>
+              <path class="arc4" d="M120 92 A22 22 0 1 0 120 108" stroke="#B9B4E4" stroke-width="5" opacity=".5"/>
+            </g>
+            <circle class="core" cx="108" cy="100" r="7" fill="var(--signal)"/>
+          </svg>
+        </div>
+        <div class="cap"><b>Tier 2 — a real wait (1–10s): the WhorlSpinner</b>The ridges counter-rotate at different speeds — tracing, searching — while the Signal dot breathes at the core. One component, <code>sm/md</code>, on day or night grounds. Replaces every bare spinner.<span class="use">pull-to-refresh · saves · uploads · retries</span></div>
+      </div>
+
+      <div class="tier">
+        <div class="art on-night" style="position:relative;overflow:hidden;">
+          <div class="stars" style="position:absolute;inset:0;"></div>
+          <div style="display:grid;justify-items:center;gap:12px;position:relative;">
+            <svg class="whorl-anim" width="84" height="84" viewBox="0 0 200 200" aria-hidden="true">
+              <g fill="none" stroke-linecap="round">
+                <path class="arc1" d="M138 44 A70 70 0 1 0 138 156" stroke="var(--signal)" stroke-width="7" opacity=".95"/>
+                <path class="arc2" d="M132 60 A54 54 0 1 0 132 140" stroke="var(--crescent)" stroke-width="6" opacity=".75"/>
+                <path class="arc3" d="M126 76 A38 38 0 1 0 126 124" stroke="var(--signal-soft)" stroke-width="5.5" opacity=".7"/>
+                <path class="arc4" d="M120 92 A22 22 0 1 0 120 108" stroke="var(--crescent)" stroke-width="5" opacity=".5"/>
+              </g>
+              <circle class="core" cx="108" cy="100" r="7" fill="var(--signal)"/>
+            </svg>
+            <div style="text-align:center;">
+              <div style="color:var(--crescent);font-weight:600;font-size:.92rem;">Catching up on Nyx's history…</div>
+              <div style="color:var(--muted);font-size:.76rem;margin-top:3px;">Restoring everything you've logged. This only takes a moment.</div>
+            </div>
+          </div>
+        </div>
+        <div class="cap"><b>Tier 3 — the app is thinking: the night takeover</b>Cold start, report generation, photo reads — the moments Culprit is genuinely working get the full world: night ground, aurora, Whorl, warm copy. Waiting becomes watching the brand do its job.<span class="use">cold-start hydration · vet-report build · food &amp; med photo extraction</span></div>
+      </div>
+    </div>
+
+    <div class="sweep"><span class="big">25 → 1</span><span>twenty-five stock <code>ActivityIndicator</code>s today become one branded system — a mechanical sweep once <code>WhorlSpinner</code> exists. Skeletons stay skeletons; the Whorl marks real work.</span></div>
+  </section>
+
+  <!-- ================= P3 SIGNAL AT NIGHT ================= -->
+  <section id="p3">
+    <div class="sec-head">
+      <span class="ptag">Proposal 3 · the marquee move</span>
+      <h2>The Signal card is the night sky</h2>
+      <p>The Signal is the product's namesake — the one thing found in the dark — yet it renders as one more white card. Proposal: it becomes <strong>the single night surface on Home</strong>. The aurora you loved is its ground, the headline wears moonlight Newsreader, and the found thing gets a literal Signal dot. Everything else on Home stays day — the contrast is the point: one piece of sky in a calm, light room.</p>
+    </div>
+
+    <div class="demo-row">
+      <div>
+        <div class="tabrow" role="tablist" aria-label="Signal card states">
+          <button class="demo-btn active" data-sig="live" type="button">Live — findings</button>
+          <button class="demo-btn" data-sig="building" type="button">Building</button>
+          <button class="demo-btn" data-sig="quiet" type="button">Quiet night</button>
+        </div>
+
+        <div class="phone">
+          <div class="screen day">
+            <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+            <div class="d-header">
+              <div class="lockup-demo">
+                <span class="mini-mark" aria-hidden="true">
+                  <svg viewBox="0 0 100 100">
+                    <defs><mask id="carve-p3"><circle cx="45" cy="50" r="36" fill="#fff"/><circle cx="63" cy="42" r="31" fill="#000"/></mask></defs>
+                    <circle cx="45" cy="50" r="36" fill="#211E4E" mask="url(#carve-p3)"/>
+                    <circle cx="68" cy="55" r="10" fill="var(--signal)"/>
+                  </svg>
+                </span>
+                <span class="word" style="color:#737373;font-size:.8rem;">Culprit</span>
+              </div>
+              <div class="idrow" style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+                <span class="avatar" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(140deg,#3b365f,#191449);display:grid;place-items:center;color:var(--crescent);font-family:var(--serif);font-size:.74rem;">N</span>
+                <span>
+                  <span style="display:block;color:var(--day-ink);font-weight:600;font-size:.88rem;">Nyx</span>
+                  <span style="color:#737373;font-size:.66rem;">Cat · 4 yrs · diet trial, day 12</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="d-scroll">
+              <!-- THE NIGHT CARD -->
+              <div class="n-card">
+                <div class="n-stars"></div>
+
+                <!-- live -->
+                <div class="sigstate shown" data-state="live">
+                  <div class="n-label"><span class="dot"></span> Signal</div>
+                  <div class="n-saferow" style="margin-bottom:4px;">
+                    <div class="n-rail"></div>
+                    <div>
+                      <div class="n-head" style="margin-bottom:5px;">Nyx has vomited on 5 days in the last 3 weeks — this has gone on long enough to bring to a vet.</div>
+                      <div class="n-meta"><span class="n-badge" style="color:var(--rose-night);border-color:rgba(251,113,133,.4);">Ongoing</span><span class="n-sample">5 episodes · 3 of 3 weeks</span></div>
+                      <div class="n-why">Why we're showing this</div>
+                    </div>
+                  </div>
+                  <div class="n-divider"></div>
+                  <div style="display:flex;gap:9px;">
+                    <div style="width:3px;border-radius:2px;background:var(--signal);opacity:.85;flex:none;"></div>
+                    <div>
+                      <div style="font-size:.78rem;color:var(--text);line-height:1.5;">Vomiting has followed chicken meals 4 of 5 times this month.</div>
+                      <div class="n-meta" style="margin-top:4px;"><span class="n-badge">Early pattern</span><span class="n-sample">5 chicken meals · 4 within 12h</span></div>
+                    </div>
+                  </div>
+                  <div class="n-foot">See all of Nyx's patterns →</div>
+                </div>
+
+                <!-- building -->
+                <div class="sigstate" data-state="building">
+                  <div class="n-label"><span class="dot"></span> Signal</div>
+                  <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px;">
+                    <svg class="whorl-anim" width="44" height="44" viewBox="0 0 200 200" aria-hidden="true">
+                      <g fill="none" stroke-linecap="round">
+                        <path class="arc1" d="M138 44 A70 70 0 1 0 138 156" stroke="var(--signal)" stroke-width="9" opacity=".95"/>
+                        <path class="arc3" d="M126 76 A38 38 0 1 0 126 124" stroke="var(--crescent)" stroke-width="8" opacity=".6"/>
+                      </g>
+                      <circle class="core" cx="108" cy="100" r="9" fill="var(--signal)"/>
+                    </svg>
+                    <div style="font-size:.8rem;color:var(--text);line-height:1.45;">Still building Nyx's signal. A few more days of logs and patterns can start to show.</div>
+                  </div>
+                  <div style="font-size:.58rem;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:600;">What the signal looks like</div>
+                  <div class="n-ghost"><div class="n-ghostbar"></div><div class="n-ghosttext">Vomiting dropped 60% in the two weeks after switching proteins — the diet trial appears to be working.</div></div>
+                  <div class="n-ghost"><div class="n-ghostbar"></div><div class="n-ghosttext">Itching tends to follow meals containing chicken. No reaction logged after salmon.</div></div>
+                  <div class="n-foot">See all of Nyx's patterns →</div>
+                </div>
+
+                <!-- quiet -->
+                <div class="sigstate" data-state="quiet">
+                  <div class="n-label"><span class="dot"></span> Signal</div>
+                  <div style="position:relative;padding:6px 0 2px;">
+                    <svg width="54" height="54" viewBox="0 0 100 100" style="display:block;margin-bottom:8px;" aria-hidden="true">
+                      <defs><mask id="carve-quiet"><circle cx="45" cy="50" r="33" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs>
+                      <circle cx="45" cy="50" r="33" fill="var(--crescent)" opacity=".9" mask="url(#carve-quiet)"/>
+                      <circle cx="66" cy="53" r="7" fill="var(--signal)" opacity=".55"/>
+                    </svg>
+                    <div class="n-head" style="font-size:.95rem;">A quiet night so far.</div>
+                    <div style="font-size:.76rem;color:var(--muted);line-height:1.5;">No pattern in Nyx's last month of logs has cleared our evidence bar. That isn't an all-clear — it means nothing established yet. Keep logging; we'll say so the moment something is.</div>
+                  </div>
+                  <div class="n-foot">See all of Nyx's patterns →</div>
+                </div>
+              </div>
+
+              <!-- day cards below -->
+              <div class="d-card">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;"><div class="d-zone">Today</div><span class="d-link">History ›</span></div>
+                <div class="d-row"><span class="d-ico symp" aria-hidden="true">▲</span><span class="d-meta"><span class="d-lab">Vomit</span></span><span class="d-time">6:12 AM</span></div>
+                <div class="d-row"><span class="d-ico meal" aria-hidden="true">●</span><span class="d-meta"><span class="d-lab">Meal</span><span class="d-sub" style="display:block;">Salmon &amp; rice — finished</span></span><span class="d-time">7:30 AM</span></div>
+              </div>
+              <div class="d-card">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;"><div class="d-zone">Trend</div><span class="d-link">All patterns ›</span></div>
+                <div class="d-title" style="margin-bottom:2px;">Vomiting</div>
+                <div class="d-body" style="margin-bottom:8px;">2 this week · ↓ from 3 last week</div>
+                <div style="display:flex;align-items:flex-end;gap:2px;height:40px;" aria-hidden="true">
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--rose);height:45%;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--rose);height:100%;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--rose);height:45%;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--rose);height:45%;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--rose);height:45%;border-radius:2px;"></div>
+                  <div style="flex:1;background:var(--chart-0);height:100%;opacity:.35;border-radius:2px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-label">Proposed Home — tap the states above</div>
+      </div>
+
+      <div class="demo-note">
+        <h3>What changed, what didn't</h3>
+        <ul>
+          <li><strong>Ground only:</strong> indigo is the card's world; every tappable thing on it is still teal. The "one accent" rule survives by construction.</li>
+          <li><strong>Safety stays legible:</strong> the safety rail and its tag lift to <code>#FB7185</code> on night (6.8:1 — vs 4.98:1 for the day rose). Ranking, phrasing, and never-reassure guardrails are untouched — this is paint, not logic.</li>
+          <li><strong>The lead finding keeps Newsreader</strong> — now in moonlight on the sky it was designed for. Secondary findings stay in the body face, exactly like today.</li>
+          <li><strong>Empty states become features</strong> (Principle 5): "building" gets the mini-Whorl doing visible work; "quiet night" gets the moon itself — honest copy, no all-clear.</li>
+          <li><strong>The conservative alternate</strong> (if the full night card feels heavy on-device): keep the white card, give only the "Signal" label row the night treatment as a thin band. It's reversible either way — same content, two grounds.</li>
+        </ul>
+        <p class="fine">Watch-out we'll verify on-device: a dark card on a light screen must read as <em>the intelligence surface</em>, not an ad slot — the section label, identical typography, and zero CTA styling are what keep it editorial. Jordan test: nothing about the 10-second log path changes.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P4 HOME BRIEFING ================= -->
+  <section id="p4">
+    <div class="sec-head">
+      <span class="ptag">Proposal 4 · beyond three boxes</span>
+      <h2>Home becomes a briefing, not a fixed layout</h2>
+      <p>Today Home is three hard-coded zones. The principle ("a curated, prioritized set of insight cards") never demanded three — the layout did. Proposal: <strong>cards appear only when they have something to say</strong>, in a strict priority order, and disappear when they don't. Still curated, still capped by relevance, still never a feed — but a pet on two medications with a diet trial running gets a fuller briefing than a healthy pet on kibble.</p>
+    </div>
+
+    <div class="demo-row">
+      <div class="phone">
+        <div class="screen day">
+          <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+          <div class="d-scroll" style="padding-top:10px;">
+            <div class="n-card" style="padding:13px 14px 10px;">
+              <div class="n-stars"></div>
+              <div class="n-label"><span class="dot"></span> Signal</div>
+              <div class="n-head" style="font-size:.92rem;margin-bottom:4px;">Vomiting has followed chicken meals 4 of 5 times this month.</div>
+              <div class="n-meta"><span class="n-badge">Early pattern</span><span class="n-sample">5 chicken meals · 4 within 12h</span></div>
+            </div>
+
+            <div class="d-card">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;"><div class="d-zone">Today</div><span class="d-link">History ›</span></div>
+              <div class="d-row"><span class="d-ico meal" aria-hidden="true">●</span><span class="d-meta"><span class="d-lab">Meal</span><span class="d-sub" style="display:block;">Salmon &amp; rice — finished</span></span><span class="d-time">7:30 AM</span></div>
+              <div class="d-row"><span class="d-ico med" aria-hidden="true">◆</span><span class="d-meta"><span class="d-lab">Medication</span><span class="d-sub" style="display:block;">Amoxicillin 50mg — given</span></span><span class="d-time">7:32 AM</span></div>
+            </div>
+
+            <div class="d-card">
+              <div class="d-zone">Care</div>
+              <div class="d-row" style="border:none;">
+                <span class="d-ico med" aria-hidden="true">◆</span>
+                <span class="d-meta"><span class="d-lab">Amoxicillin — evening dose</span><span class="d-sub" style="display:block;">Usually given with food</span></span>
+                <span class="d-link">Log dose</span>
+              </div>
+            </div>
+
+            <div class="d-card">
+              <div class="d-zone">Diet trial</div>
+              <div class="d-title" style="margin-bottom:2px;">Day 12 of 28 — salmon &amp; rice</div>
+              <div style="height:5px;border-radius:3px;background:var(--chart-0);margin:7px 0 5px;overflow:hidden;"><div style="width:43%;height:100%;background:var(--signal);border-radius:3px;"></div></div>
+              <div class="d-body">11 of 12 days logged</div>
+            </div>
+
+            <div class="d-card">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;"><div class="d-zone">Trend</div><span class="d-link">All patterns ›</span></div>
+              <div class="d-title" style="margin-bottom:2px;">Vomiting</div>
+              <div class="d-body">2 this week · ↓ from 3 last week</div>
+            </div>
+
+            <div class="d-card">
+              <div class="d-zone">Weight</div>
+              <div class="d-title" style="margin-bottom:2px;">8.4 lbs</div>
+              <div class="d-body">Down 0.3 lbs since May 12 · 6 readings</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="max-width:60px;flex:none;" aria-hidden="true"></div>
+
+      <div class="demo-note">
+        <h3>The briefing rules (what keeps this from becoming a feed)</h3>
+        <ul>
+          <li><strong>Fixed priority order, content-gated:</strong> cross-pet safety → Signal → Today → Care due → Diet trial → Trend → Weight. A card renders only when it carries information <em>today</em> — no meds, no Care card; no trial, no trial card.</li>
+          <li><strong>Safety is never dropped</strong> to honor any cap — unchanged from the revised Principle 3.</li>
+          <li><strong>Every card is a doorway</strong> to a real surface (History, the regimen, Patterns) — never a dead end, never an upsell.</li>
+          <li><strong>Care due is intelligence, not a nag:</strong> it states a fact about today's regimen with a one-tap log — it appears at most once and never pushes.</li>
+        </ul>
+        <p class="fine">This is a Tier-2 change: the three-zone text lives in <code>design-principles.md</code> §3, so adopting the briefing model is a PM ratification, not a silent edit. Shown with everything firing — a healthy, unmedicated pet sees exactly today's three zones.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P5 PATTERNS + CALENDAR ================= -->
+  <section id="p5">
+    <div class="sec-head">
+      <span class="ptag">Proposal 5 · Patterns, decoded (B-226)</span>
+      <h2>Count the dots, not the shades</h2>
+      <p>Your calendar disappointment is a real encoding bug: opacity ramps ask people to <em>measure</em> a shade; nobody can. Episode counts are 1, 2, 3 — <strong>countable things get countable marks</strong>. Each day shows one dot per episode. And the card grows what B-226 asked for: real month paging and a tap on any day that shows <em>everything</em> logged that day, not just the card's symptom. Try it — the calendar below works.</p>
+    </div>
+
+    <div class="demo-row">
+      <div class="phone">
+        <div class="screen day">
+          <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+          <div class="d-scroll" style="padding-top:10px;">
+            <div class="n-card" style="padding:13px 14px 11px;">
+              <div class="n-stars"></div>
+              <div class="n-label"><span class="dot"></span> This month</div>
+              <div class="n-head" style="font-size:.9rem;margin-bottom:4px;">Vomiting is holding at about twice a week, and chicken keeps appearing in the 12 hours before it.</div>
+              <div class="n-sample">Based on the cards below ↓</div>
+            </div>
+
+            <div class="d-card" id="cal-card">
+              <div class="cal-head">
+                <span class="cal-title">Vomiting</span>
+                <span style="display:flex;gap:5px;">
+                  <button class="cal-navbtn" id="cal-prev" type="button" aria-label="Previous month">‹</button>
+                  <button class="cal-navbtn" id="cal-next" type="button" aria-label="Next month">›</button>
+                </span>
+              </div>
+              <div class="d-body" id="cal-month" style="font-weight:600;color:var(--day-ink);margin-bottom:7px;">June 2026</div>
+              <div class="cal-week" aria-hidden="true">
+                <span class="cal-wd">S</span><span class="cal-wd">M</span><span class="cal-wd">T</span><span class="cal-wd">W</span><span class="cal-wd">T</span><span class="cal-wd">F</span><span class="cal-wd">S</span>
+              </div>
+              <div id="cal-grid"></div>
+              <div class="cal-legend"><span class="pip" aria-hidden="true"></span><span>1 dot = 1 episode · tap any day for everything logged</span></div>
+              <div class="day-sheet" id="day-sheet" hidden>
+                <div class="ds-title" id="ds-title"></div>
+                <div class="ds-hint" id="ds-sub"></div>
+                <div id="ds-rows"></div>
+                <div class="d-link" style="margin-top:5px;">Open in History ›</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="phone-label">Working demo — page months, tap days</div>
+      </div>
+
+      <div class="demo-note">
+        <h3>The three B-226 complaints, answered</h3>
+        <div class="b226" style="margin-top:.4rem;">
+          <div class="item"><span class="ok">① Day drill-in</span><b>Tap a day, see the whole day</b>Every logged event that day — meals, doses, symptoms — with times. The card is scoped to one symptom; the day is not.</div>
+          <div class="item"><span class="ok">② Month navigation</span><b>True paginated months</b>‹ › steps calendar months; the current month is the default and the future is disabled. Swipe on-device.</div>
+          <div class="item"><span class="ok">③ Encoding rethink</span><b>Pips replace the shade ramp</b>1–3 episodes = 1–3 dots; 4+ = a compact count. Exact at a glance, no legend decoding, colorblind-safe by construction (count, not hue-step).</div>
+        </div>
+        <p class="fine" style="margin-top:1rem;">Dot color stays the one symptom rose — it marks status, never magnitude. Days keep ≥44pt touch targets at real scale. The old opacity ramp below, for the receipt:</p>
+        <div class="before-after" style="margin-top:.8rem;">
+          <figure class="ba">
+            <div class="art">
+              <div class="strip" aria-hidden="true">
+                <span class="sq" style="background:rgba(244,63,94,.25);color:#0A0A0A;">3</span>
+                <span class="sq" style="background:rgba(244,63,94,.45);color:#0A0A0A;">9</span>
+                <span class="sq" style="background:rgba(244,63,94,.7);color:#fff;">17</span>
+                <span class="sq" style="background:#F43F5E;color:#fff;">24</span>
+              </div>
+            </div>
+            <figcaption><b>Before — the shade quiz</b>Which day had two episodes? You can't say without the legend, and barely with it.</figcaption>
+          </figure>
+          <figure class="ba">
+            <div class="art">
+              <div class="strip" aria-hidden="true">
+                <span class="sq" style="background:var(--day-sub);flex-direction:column;display:flex;align-items:center;justify-content:space-between;padding:4px 0;"><span style="font-size:.6rem;color:#0A0A0A;font-weight:600;">3</span><span style="display:flex;gap:2px;"><span class="pip"></span></span></span>
+                <span class="sq" style="background:var(--day-sub);flex-direction:column;display:flex;align-items:center;justify-content:space-between;padding:4px 0;"><span style="font-size:.6rem;color:#0A0A0A;font-weight:600;">9</span><span style="display:flex;gap:2px;"><span class="pip"></span><span class="pip"></span></span></span>
+                <span class="sq" style="background:var(--day-sub);flex-direction:column;display:flex;align-items:center;justify-content:space-between;padding:4px 0;"><span style="font-size:.6rem;color:#0A0A0A;font-weight:600;">17</span><span style="display:flex;gap:2px;"><span class="pip"></span><span class="pip"></span><span class="pip"></span></span></span>
+                <span class="sq" style="background:var(--day-sub);flex-direction:column;display:flex;align-items:center;justify-content:space-between;padding:4px 0;"><span style="font-size:.6rem;color:#0A0A0A;font-weight:600;">24</span><span style="font-size:.55rem;font-weight:700;color:#F43F5E;">×4</span></span>
+              </div>
+            </div>
+            <figcaption><b>After — countable marks</b>One dot per episode. The read is instant, exact, and survives greyscale.</figcaption>
+          </figure>
+        </div>
+        <p class="fine">The Patterns AI summary (top of the phone) joins the night family — it's the same voice as the Signal, so it wears the same sky. The deterministic cards below it stay day-white: numbers read like records.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P6 COMPLETION PING ================= -->
+  <section id="p6">
+    <div class="sec-head">
+      <span class="ptag">Proposal 6 · the smallest, most-felt one</span>
+      <h2>Every log lands like a signal</h2>
+      <p>The log-completion moment already springs a mint check. One addition: <strong>a single teal ping ring</strong> — the same gesture as the icon's dot — ripples once as the check lands. Every data point the owner gives us <em>is</em> a future signal; now saving one feels like it. The gold celebrate glow stays for the moments that earn it.</p>
+    </div>
+
+    <div class="demo-row">
+      <div class="moment-stage" style="flex:1 1 380px;max-width:520px;">
+        <div class="moment-inner replay" id="moment">
+          <div class="check-wrap">
+            <div class="ping-el"></div>
+            <div class="check-ring">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--signal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            </div>
+          </div>
+          <div class="logged-line">Logged</div>
+        </div>
+      </div>
+      <div class="demo-note">
+        <h3>Why this one matters most</h3>
+        <ul>
+          <li>The quick-log is the single most-repeated act in the app — the brand atom lands exactly where the data lands, ~1,000 times a year for an active owner.</li>
+          <li>One ripple, ~700ms, native-driver scale + opacity — inside the existing <code>CompletionMoment</code> animation budget. Symptom logs keep the calm tone: check + ping, no gold, no festivity.</li>
+          <li>Reduced-motion: the ping never renders; the check simply appears.</li>
+        </ul>
+        <div class="demo-btnrow"><button class="demo-btn" id="btn-replay" type="button">Replay the moment</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= DECISIONS ================= -->
+  <section id="decisions">
+    <div class="sec-head">
+      <h2>Decisions for the PM</h2>
+      <p>Nothing on this page ships until ratified. Each row is independently adoptable; D4 is the only prerequisite (tokens first).</p>
+    </div>
+    <div class="decisions">
+      <table>
+        <thead><tr><th>#</th><th>Decision</th><th>Designer's recommendation</th><th>Unblocks</th></tr></thead>
+        <tbody>
+          <tr><td class="opt">D1</td><td>Signal zone ground — full night card, night label-band only, or stay light?</td><td><span class="pill rec">Full night card</span> — the brand's one marquee surface; the band variant is the documented fallback if on-device it reads heavy.</td><td>P3, and the Patterns AI-summary twin in P5</td></tr>
+          <tr><td class="opt">D2</td><td>Home briefing model — adaptive, content-gated cards replacing the fixed three zones (Tier-2 <code>design-principles.md</code> §3 edit)</td><td><span class="pill rec">Adopt</span> — the principle already says curated + prioritized; the fixed count was layout, not principle. Safety-never-dropped unchanged.</td><td>P4; Care-due &amp; diet-trial surfaces on Home</td></tr>
+          <tr><td class="opt">D3</td><td>Calendar encoding — pips + month paging + whole-day drill-in</td><td><span class="pill rec">Adopt</span> — resolves all three B-226 complaints; exact, legend-free, CVD-safe.</td><td>P5; closes B-226</td></tr>
+          <tr><td class="opt">D4</td><td>Night-surface tokens — <code>colorEventSymptomOnNight #FB7185</code>, night text/line/star tokens, aurora gradient stops</td><td><span class="pill rec">Adopt first</span> — pure additive theme PR; the <code>colorDestructiveOnDark</code> precedent already exists.</td><td>Every night surface (P2 tier 3, P3, P5)</td></tr>
+          <tr><td class="opt">D5</td><td>Motion budget — at most one ambient loop per screen; the header dot pulses only on a fresh unseen finding; reduced-motion disables all loops</td><td><span class="pill rec">Adopt</span> as a design-principles motion note — it's what keeps "delight" from becoming noise.</td><td>P1, P2; the calm bar for every future animation</td></tr>
+          <tr><td class="opt">D6</td><td>Completion ping — teal ripple joins the log moment</td><td><span class="pill opt2">Adopt</span> — smallest change, most-felt; ships inside the existing component.</td><td>P6</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sec-head" style="margin-top:3rem"><h2>If ratified — the build, in order</h2></div>
+    <ol class="steps">
+      <li><b>PR N1 — night tokens</b> (<code>constants/theme.ts</code>, additive only; D4). Tiny, unblocks everything.</li>
+      <li><b>PR N2 — <code>CulpritMark</code></b> + header/auth swap + the fresh-signal pulse (P1). The carve rule lands in code once, correctly.</li>
+      <li><b>PR N3 — <code>WhorlSpinner</code> + the night takeover</b>, then the mechanical 25-spinner sweep (P2).</li>
+      <li><b>PR N4 — the Signal night card</b> (P3, per D1) — paint only; detection, ranking, and copy pipelines untouched.</li>
+      <li><b>PR N5 — the calendar</b> (P5 / B-226) — independent of N2–N4; can run in parallel on a separate branch.</li>
+      <li><b>PR N6 — the Home briefing</b> (P4) — last, after D2 ratifies the §3 doc edit; composes with everything above.</li>
+    </ol>
+    <p style="color:var(--muted);font-size:.9rem;margin-top:1.2rem;">Engineering notes: <code>react-native-svg 15.12.1</code> and <code>expo-linear-gradient</code> are already dependencies (the completion moment already draws SVG radial gradients) — <strong>no new packages</strong>. All loops are native-driver transforms, paused on blur. The vet report is deliberately untouched by this entire direction (Principle 6: clinical-grade, no decoration).</p>
+  </section>
+
+  <footer>
+    <p class="signoff">
+      Designer ✓ (proposals P1–P6; principles 1, 3, 4, 5 re-checked) — Jordan ✓ (the 10-second log path is untouched; the 3am flow stays light) —<br>
+      Sam ✓ (the calendar finally answers "how often, exactly?") — Dr. Chen ✓ (no clinical semantics moved; report untouched; safety contrast improves on night) —<br>
+      Data Scientist ✓ (encodings got MORE exact — counts render as counts; no new verdict colors) — Dir. of Eng ✓ (zero new deps; one-accent rule intact; tokens-first) —<br>
+      QA ✓ (contrast receipts: moonlight 15.8:1 · teal 8.1:1 · muted 7.6:1 · rose-on-night 6.8:1; reduced-motion path on every animation)
+    </p>
+    <p class="disc">All mocks are <strong>indicative and interactive</strong> — a spec for ratification, not final art. In-mock copy follows nyx-voice; encodings follow the shipped design system. Colours cite <code>constants/theme.ts</code> (<code>colorBrandNight #13112E</code> / <code>colorBrandNightElevated #251F57</code> shipped in PR C #310); <code>#FB7185</code> is the one proposed new token. Sibling document: <code>culprit-direction.html</code> (the icon &amp; brand system). Prepared for PM review, 2026-07-09.</p>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- P1: living mark states ---------- */
+  var hdr = document.getElementById('hdr-demo');
+  var btnFresh = document.getElementById('btn-fresh');
+  var btnAck = document.getElementById('btn-ack');
+  function setLive(live){
+    if (!hdr) return;
+    hdr.classList.toggle('is-live', live);
+    btnFresh.classList.toggle('active', live);
+    btnAck.classList.toggle('active', !live);
+  }
+  if (btnFresh && btnAck){
+    btnFresh.addEventListener('click', function(){ setLive(true); });
+    btnAck.addEventListener('click', function(){ setLive(false); });
+  }
+
+  /* ---------- P3: signal state tabs ---------- */
+  var sigBtns = document.querySelectorAll('[data-sig]');
+  var sigStates = document.querySelectorAll('.sigstate');
+  sigBtns.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      sigBtns.forEach(function(b){ b.classList.toggle('active', b === btn); });
+      var want = btn.getAttribute('data-sig');
+      sigStates.forEach(function(s){ s.classList.toggle('shown', s.getAttribute('data-state') === want); });
+    });
+  });
+
+  /* ---------- P5: working calendar ---------- */
+  // Mock months: symptom episode counts by day + a few full-day event lists.
+  // June 2026 starts Monday (lead 1, getUTCDay of Jun 1 2026 = 1); May 2026 starts Friday (5); April 2026 starts Wednesday (3).
+  var MONTHS = [
+    { name:'April 2026', days:30, lead:3, symp:{ 8:1, 22:1 } },
+    { name:'May 2026', days:31, lead:5, symp:{ 2:1, 6:2, 11:1, 15:1, 19:2, 23:1, 27:1, 30:1 } },
+    { name:'June 2026', days:30, lead:1, symp:{ 3:1, 9:2, 17:3, 24:4, 28:1 }, today:30 }
+  ];
+  // Full-day drill-in mocks (what a tap reveals — everything, not just the scoped symptom).
+  var DAY_EVENTS = {
+    'June 2026|17': [
+      ['symp','Vomit','6:12 AM'], ['symp','Vomit','6:41 AM'], ['meal','Meal — salmon & rice, finished','7:30 AM'],
+      ['med','Amoxicillin 50mg — given','7:32 AM'], ['symp','Vomit','2:05 PM'], ['meal','Meal — salmon & rice, some left','6:15 PM']
+    ],
+    'June 2026|24': [
+      ['symp','Vomit','5:48 AM'], ['symp','Vomit','6:20 AM'], ['meal','Meal — salmon & rice, refused','7:35 AM'],
+      ['symp','Vomit','9:02 AM'], ['med','Amoxicillin 50mg — given','9:10 AM'], ['symp','Vomit','4:44 PM'], ['meal','Meal — salmon & rice, finished','6:30 PM']
+    ],
+    'June 2026|9': [
+      ['symp','Vomit','7:02 AM'], ['meal','Meal — salmon & rice, finished','7:45 AM'], ['symp','Vomit','8:15 PM'], ['meal','Treat — freeze-dried minnow','3:10 PM']
+    ]
+  };
+  var mi = 2; // start on June
+  var grid = document.getElementById('cal-grid');
+  var monthEl = document.getElementById('cal-month');
+  var prevBtn = document.getElementById('cal-prev');
+  var nextBtn = document.getElementById('cal-next');
+  var sheet = document.getElementById('day-sheet');
+  var dsTitle = document.getElementById('ds-title');
+  var dsSub = document.getElementById('ds-sub');
+  var dsRows = document.getElementById('ds-rows');
+  var selected = null;
+
+  function defaultDay(m, d){
+    // Un-mocked days get a plausible routine day so the drill-in never dead-ends.
+    var rows = [ ['meal','Meal — salmon & rice, finished','7:30 AM'], ['meal','Meal — salmon & rice, finished','6:30 PM'] ];
+    var s = m.symp[d] || 0;
+    var times = ['6:20 AM','11:40 AM','3:15 PM','8:05 PM'];
+    for (var i=0;i<s;i++) rows.unshift(['symp','Vomit', times[i % times.length]]);
+    return rows;
+  }
+
+  function openDay(m, d){
+    selected = d;
+    var key = m.name + '|' + d;
+    var rows = DAY_EVENTS[key] || defaultDay(m, d);
+    var sympCount = m.symp[d] || 0;
+    dsTitle.textContent = m.name.split(' ')[0] + ' ' + d;
+    dsSub.textContent = sympCount > 0
+      ? (sympCount + ' vomiting episode' + (sympCount === 1 ? '' : 's') + ' · everything logged this day:')
+      : 'No vomiting logged · everything this day:';
+    dsRows.innerHTML = '';
+    rows.forEach(function(r){
+      var row = document.createElement('div');
+      row.className = 'd-row';
+      var glyph = r[0] === 'symp' ? '▲' : r[0] === 'med' ? '◆' : '●';
+      row.innerHTML = '<span class="d-ico ' + r[0] + '" aria-hidden="true">' + glyph + '</span>' +
+        '<span class="d-meta"><span class="d-sub" style="color:var(--day-ink);">' + r[1] + '</span></span>' +
+        '<span class="d-time">' + r[2] + '</span>';
+      dsRows.appendChild(row);
+    });
+    sheet.hidden = false;
+    render();
+  }
+
+  function render(){
+    var m = MONTHS[mi];
+    monthEl.textContent = m.name;
+    prevBtn.disabled = (mi === 0);
+    nextBtn.disabled = (mi === MONTHS.length - 1);
+    grid.innerHTML = '';
+    var cells = [];
+    for (var b=0;b<m.lead;b++) cells.push(null);
+    for (var d=1;d<=m.days;d++) cells.push(d);
+    while (cells.length % 7 !== 0) cells.push(null);
+    for (var w=0;w<cells.length;w+=7){
+      var row = document.createElement('div');
+      row.className = 'cal-week';
+      for (var i=w;i<w+7;i++){
+        var d2 = cells[i];
+        if (d2 === null){
+          var blank = document.createElement('span');
+          blank.className = 'cal-cell blank';
+          row.appendChild(blank);
+          continue;
+        }
+        var count = m.symp[d2] || 0;
+        var cell = document.createElement('button');
+        cell.type = 'button';
+        cell.className = 'cal-cell' + (count > 0 ? ' has-symptom' : '') + (m.today === d2 ? ' today' : '') + (selected === d2 ? ' selected' : '');
+        cell.setAttribute('aria-label', m.name.split(' ')[0] + ' ' + d2 + (count > 0 ? ', ' + count + ' vomiting episode' + (count===1?'':'s') : ', no vomiting logged'));
+        var pips = '';
+        if (count > 0 && count <= 3){
+          pips = '<span class="pips">';
+          for (var p=0;p<count;p++) pips += '<span class="pip"></span>';
+          pips += '</span>';
+        } else if (count > 3){
+          pips = '<span class="pips"><span class="pip-more">×' + count + '</span></span>';
+        } else {
+          pips = '<span class="pips"></span>';
+        }
+        cell.innerHTML = '<span class="dnum">' + d2 + '</span>' + pips;
+        (function(dd){ cell.addEventListener('click', function(){ openDay(MONTHS[mi], dd); }); })(d2);
+        row.appendChild(cell);
+      }
+      grid.appendChild(row);
+    }
+  }
+  if (grid){
+    prevBtn.addEventListener('click', function(){ if (mi > 0){ mi--; selected = null; sheet.hidden = true; render(); } });
+    nextBtn.addEventListener('click', function(){ if (mi < MONTHS.length - 1){ mi++; selected = null; sheet.hidden = true; render(); } });
+    render();
+    openDay(MONTHS[2], 17); // open on a rich day so the drill-in shows itself
+  }
+
+  /* ---------- P6: completion replay ---------- */
+  var moment = document.getElementById('moment');
+  var replay = document.getElementById('btn-replay');
+  if (moment && replay){
+    replay.addEventListener('click', function(){
+      moment.classList.remove('replay');
+      void moment.offsetWidth; // restart the animation
+      moment.classList.add('replay');
+    });
+  }
+})();
+</script>
