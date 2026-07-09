@@ -11,11 +11,16 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#13112E"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.projectnyx.app",
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png",
+        "tinted": "./assets/icon-tinted.png"
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -24,7 +29,7 @@
       "package": "com.projectnyx.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#13112E"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
