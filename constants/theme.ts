@@ -72,6 +72,22 @@ export const theme = {
   colorSurfaceDarkElevated: '#16201E',        // an elevated tile/card on the dark canvas
   colorBorderOnDark: '#33383A',               // hairline border/divider on a dark surface
 
+  // Brand "night" — the Culprit world/ground colour (B-275 palette half; Moon &
+  // Signal icon field). This is a WORLD colour, not an accent: it is only ever a
+  // ground/backdrop (icon field, marketing heroes, dark brand surfaces) — never a
+  // tappable/interactive fill. Teal (colorAccent #00C2A8) stays the SOLE
+  // interactive accent (buttons, trend line, live state), so the "one accent,
+  // never decorative" rule above survives. Additive only — no component adopts
+  // these yet.
+  //
+  // Two dark tokens, two distinct roles (the colorSurfaceDark reconciliation —
+  // resolved: KEEP BOTH): colorBrandNight is the indigo *brand* night (Culprit's
+  // identity ground); colorSurfaceDark #101312 stays the *neutral* near-black
+  // photo/premium canvas (paywall, photo viewer). Not repointed — a repoint would
+  // need on-device dark-surface QA and buys nothing here (indigo is additive).
+  colorBrandNight: '#13112E',                 // midnight-indigo brand/night ground
+  colorBrandNightElevated: '#251F57',         // cards/depth on the brand night
+
   // Borders
   colorBorder: '#EAEAEA',
   colorBorderStrong: '#D4D4D4',
