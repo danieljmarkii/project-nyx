@@ -109,12 +109,15 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Log in to pick up where you left off.</Text>
-
-          {showDeletedConfirmation && (
+          {showDeletedConfirmation ? (
+            // Post-deletion the banner IS the context line — it stands in for the
+            // "pick up where you left off" subtitle, which would contradict having
+            // just wiped the account (B-039 banner + the login-rebuild PM review).
             <View style={styles.deletedBanner}>
               <Text style={styles.deletedBannerText}>{ACCOUNT_DELETED_MSG}</Text>
             </View>
+          ) : (
+            <Text style={styles.subtitle}>Pick up right where you left off.</Text>
           )}
 
           <TextField

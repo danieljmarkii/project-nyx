@@ -81,20 +81,45 @@ describe('LoginScreen — sign in', () => {
   });
 });
 
+describe('LoginScreen — back navigation', () => {
+  it('pops to the previous screen when there is back history (push-entered from the Landing)', () => {
+    (router.canGoBack as jest.Mock).mockReturnValue(true);
+    const utils = render(<LoginScreen />);
+    fireEvent.press(utils.getByTestId('login-back'));
+    expect(router.back).toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalledWith('/(auth)');
+  });
+
+  it('falls back to the Landing when there is no back history (replace-entered)', () => {
+    // The post-deletion sign-out and signup's already-registered redirect both
+    // reach login via a replace, which can leave no back entry — the fallback
+    // must route to the Landing rather than dead-no-op.
+    (router.canGoBack as jest.Mock).mockReturnValue(false);
+    const utils = render(<LoginScreen />);
+    fireEvent.press(utils.getByTestId('login-back'));
+    expect(router.replace).toHaveBeenCalledWith('/(auth)');
+    expect(router.back).not.toHaveBeenCalled();
+  });
+});
+
 describe('LoginScreen — post-deletion banner (B-039)', () => {
-  it('shows the deletion confirmation when the one-shot flag is armed', () => {
+  it('shows the deletion confirmation (in place of the subtitle) when the flag is armed', () => {
     useAuthStore.setState({ justDeletedAccount: true });
     const utils = render(<LoginScreen />);
     expect(
       utils.getByText('Your account and everything in it has been deleted.'),
     ).toBeTruthy();
+    // The banner stands in for the subtitle — "pick up where you left off" would
+    // contradict having just wiped the account.
+    expect(utils.queryByText('Pick up right where you left off.')).toBeNull();
     // The flag is a one-shot: reading it on mount clears it so a later remount
     // (an ordinary sign-out) won't resurface the banner.
     expect(useAuthStore.getState().justDeletedAccount).toBe(false);
   });
 
-  it('hides the banner on an ordinary login (flag clear)', () => {
+  it('shows the subtitle and hides the banner on an ordinary login (flag clear)', () => {
     const utils = render(<LoginScreen />);
+    expect(utils.getByText('Pick up right where you left off.')).toBeTruthy();
     expect(
       utils.queryByText('Your account and everything in it has been deleted.'),
     ).toBeNull();
