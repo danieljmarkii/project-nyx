@@ -18,13 +18,13 @@
 
 **In scope:** domain/DNS/TLS wiring on Cloudflare; hosting; the landing page; the three legal/support pages; email on the domain (receiving + sending); SEO/social meta; privacy-respecting analytics; the in-app link wiring that step 3 already specced.
 
-**Out of scope (this pass):** the actual legal *copy* (that's step 2 / B-229/B-230/B-270 — this site hosts it, doesn't write it); a blog/CMS; e-commerce; account portal; localization; a marketing waitlist with stored emails (deferred — §12, B-275); Universal Links / `apple-app-site-association` deep-linking (future, noted §8).
+**Out of scope (this pass):** the actual legal *copy* (that's step 2 / B-229/B-230/B-270 — this site hosts it, doesn't write it); a blog/CMS; e-commerce; account portal; localization; a marketing waitlist with stored emails (deferred — §12, B-282); Universal Links / `apple-app-site-association` deep-linking (future, noted §8).
 
 ### 1.1 What you might be missing — flagged (per the PM's ask)
 
 | # | Flag | Where handled |
 |---|---|---|
-| 1 | **Brand hygiene: zero "Nyx" anywhere public.** The repo, app, and all internal docs are still "Nyx"; the public brand is **Culprit**. Every string, meta tag, email address, and asset on this domain must say Culprit. | §6.4 (B-274) |
+| 1 | **Brand hygiene: zero "Nyx" anywhere public.** The app is now rebranded **Culprit** (rebrand PRs #307/#309/#310); the repo + internal docs still use the "Nyx" codename (B-276/B-277 deferred). Every string, meta tag, email address, and asset on this domain must say Culprit — inherit the shipped brand. | §6.4 (B-274) |
 | 2 | **"Email" is two different things.** A *support/contact address you receive at* (for the App Store contact + user help) is separate from *sending transactional mail* (Supabase auth emails). Both live on this domain but use different mechanisms. | §5 |
 | 3 | **The submission gate ≠ the landing page.** Only the 3 resolving URLs + a contact path are *required*. The marketing landing is brand, not gate — build so the gate can go live even if the marketing copy is still cooking. | §1, §10 |
 | 4 | **The legal pages depend on step 2.** `/privacy` and `/terms` are empty shells until the B-229/B-230 drafting pass produces content. The site *shell* can ship first; content drops in when step 2 lands. | §9 |
@@ -201,7 +201,7 @@ vs. a Squarespace-style bundle at ~$200–280/yr. The decoupled approach holds.
 ## 12. Open decisions for PM
 
 1. **D1–D5** (§3): ratify or overrule. Defaults proceed if silent.
-2. **Waitlist / email capture on the landing page?** Adds a form + somewhere to store addresses + a privacy-policy line. Recommendation: **defer** — a "coming soon" + `support@` contact is enough for v1; revisit if pre-launch demand-collection becomes a goal. → backlog **B-275**.
+2. **Waitlist / email capture on the landing page?** Adds a form + somewhere to store addresses + a privacy-policy line. Recommendation: **defer** — a "coming soon" + `support@` contact is enough for v1; revisit if pre-launch demand-collection becomes a goal. → backlog **B-282**.
 3. **Reply-as-`support@`** (§5.3): set up Gmail "send-as" now, or reply from personal until launch? Recommendation: **defer** to a send-as setup once Resend exists (step 4).
 4. **Canonical host:** apex `getculprit.app` (recommended) vs `www.` — pick one; the other 301-redirects.
 

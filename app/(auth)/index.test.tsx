@@ -20,9 +20,9 @@ const mockedPush = router.push as jest.Mock;
 describe('LandingScreen', () => {
   beforeEach(() => mockedPush.mockClear());
 
-  it('anchors the Nyx wordmark and both persistent auth CTAs', () => {
+  it('anchors the Culprit wordmark and both persistent auth CTAs', () => {
     const { getByText, getByTestId } = render(<LandingScreen />);
-    expect(getByText('Nyx')).toBeTruthy();
+    expect(getByText('Culprit')).toBeTruthy();
     expect(getByTestId('landing-create-account')).toBeTruthy();
     expect(getByTestId('landing-log-in')).toBeTruthy();
   });

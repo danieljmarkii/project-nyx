@@ -25,7 +25,7 @@ import { ValuePreview, ValuePreviewVariant } from '../../components/onboarding/V
 // Users with a live session + completed onboarding are routed straight to the
 // tabs by app/_layout, so they never see this.
 
-// Order matters — the Signal opens (the "is she getting better?" answer only Nyx
+// Order matters — the Signal opens (the "is she getting better?" answer only Culprit
 // gives), then the effortless log, then the free vet report closes the story.
 const PREVIEWS: { variant: ValuePreviewVariant; label: string }[] = [
   { variant: 'signal', label: "Patterns you can't see" },
@@ -66,7 +66,7 @@ export default function LandingScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <View style={styles.logo}>
         <Moon size={24} color={theme.colorAccent} strokeWidth={1.75} />
-        <Text style={styles.wordmark}>Nyx</Text>
+        <Text style={styles.wordmark}>Culprit</Text>
       </View>
 
       <View style={styles.stage} onLayout={onStageLayout}>
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     gap: theme.space1,
     paddingVertical: theme.space2,
   },
-  // "Nyx" in the Newsreader display face (the brand face) — no fontWeight set, as
+  // "Culprit" in the Newsreader display face (the brand face) — no fontWeight set, as
   // only the 400 face is loaded (constants/theme.ts note).
   wordmark: {
     fontFamily: theme.fontDisplay,

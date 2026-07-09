@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Culprit app icon — "Moon & Signal" (INDICATIVE master, primary/night face).
+  A warm moonlight crescent cradling a single teal Signal dot.
+  This is geometric direction art for design to execute, NOT final artwork:
+  the crescent should be redrawn true-curve + squircle-aligned for production.
+  Colours: crescent #F2EEE4 (moonlight) · dot #00C2A8 (colorAccent / Signal).
+  Transparent background — sits on the midnight-indigo ground (proposed #13112E).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Culprit — a moonlight crescent cradling a teal signal dot">
+  <defs>
+    <mask id="crescent">
+      <rect width="1024" height="1024" fill="black"/>
+      <circle cx="461" cy="512" r="338" fill="white"/>
+      <circle cx="625" cy="440" r="297" fill="black"/>
+    </mask>
+  </defs>
+  <g mask="url(#crescent)">
+    <rect width="1024" height="1024" fill="#F2EEE4"/>
+  </g>
+  <circle cx="676" cy="543" r="92" fill="#00C2A8"/>
+</svg>

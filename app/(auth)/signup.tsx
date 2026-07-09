@@ -138,7 +138,7 @@ export default function SignupScreen() {
     try {
       await Linking.openURL('message://');
     } catch {
-      Alert.alert('Open your mail app', 'Check your inbox for the link from Nyx.');
+      Alert.alert('Open your mail app', 'Check your inbox for the link from Culprit.');
     }
   }
 
@@ -338,7 +338,7 @@ export default function SignupScreen() {
           />
 
           <Text style={styles.tos}>
-            By continuing you agree to Nyx's{' '}
+            By continuing you agree to Culprit's{' '}
             <Text style={styles.tosLink} onPress={openTerms} accessibilityRole="link">
               Terms
             </Text>{' '}

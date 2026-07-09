@@ -105,7 +105,7 @@ export default function PaywallScreen() {
         contentContainerStyle={styles.body}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Nyx Premium</Text>
+        <Text style={styles.title}>Culprit Premium</Text>
         <Text style={styles.subtitle}>
           {`Everything that keeps ${activePet.name} healthy is free. Premium just adds convenience.`}
         </Text>

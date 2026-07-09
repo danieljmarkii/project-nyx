@@ -46,7 +46,7 @@
 
 **How:**
 1. Sign in at <https://appstoreconnect.apple.com> → **My Apps** → open the Nyx app record.
-2. Check **App Information → Name**. This is the *App Store display name* (max 30 chars), independent of the on-device name (`app.json` `name: "Nyx"` — that one stays as is). If plain "Nyx" was accepted when the record was created, the name is reserved — done. If it's something placeholder-ish, or you want a more searchable name, set it now — e.g. **"Nyx — Pet Health Tracker"** (name + subtitle real estate is also the strongest App Store search signal).
+2. Check **App Information → Name**. This is the *App Store display name* (max 30 chars), independent of the on-device name (`app.json` `name: "Culprit"` — set by the B-274 rebrand). If plain "Nyx" was accepted when the record was created, the name is reserved — done. If it's something placeholder-ish, or you want a more searchable name, set it now — e.g. **"Nyx — Pet Health Tracker"** (name + subtitle real estate is also the strongest App Store search signal).
 3. While there, note what's already filled in vs. empty (category, subtitle, content rights) — you'll come back for the rest in steps 12–14.
 
 **Tips:**

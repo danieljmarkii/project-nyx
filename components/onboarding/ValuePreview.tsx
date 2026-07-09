@@ -6,7 +6,7 @@ import { EventIcon } from '../event/EventIcon';
 import type { EventTypeKey } from '../../constants/eventTypes';
 
 // The three Landing value previews (B-251 PR 5, spec §3.0 / §5, mockup 01–03).
-// Each is a tangible Nyx UI — a Signal insight, the quick-log, a vet summary —
+// Each is a tangible Culprit UI — a Signal insight, the quick-log, a vet summary —
 // modelled on the real product's component styles (elevated surface, the
 // Newsreader display headline that InsightCard uses, the EVENT_TYPES glyphs,
 // theme tokens only) so a marketing preview never drifts into promising a product
@@ -25,11 +25,11 @@ export type ValuePreviewVariant = 'signal' | 'log' | 'report';
 const COPY: Record<ValuePreviewVariant, { headline: string; body: string }> = {
   signal: {
     headline: "Patterns you can't see.",
-    body: 'Nyx tells you what the data means — not just what happened.',
+    body: 'Culprit tells you what the data means — not just what happened.',
   },
   log: {
     headline: 'A couple of taps today.\nA clearer picture tomorrow.',
-    body: "Log a meal or a symptom in seconds — it's what lets Nyx catch what's changing.",
+    body: "Log a meal or a symptom in seconds — it's what lets Culprit catch what's changing.",
   },
   report: {
     headline: 'Ready for the vet.',
@@ -41,9 +41,9 @@ const COPY: Record<ValuePreviewVariant, { headline: string; body: string }> = {
 // hears the value of the preview once, rather than reading the illustrative
 // sample numbers cell-by-cell (which would sound like real, enterable data).
 const A11Y_LABEL: Record<ValuePreviewVariant, string> = {
-  signal: 'Preview of a Nyx insight: vomiting is down 60% over the last two weeks.',
-  log: 'Preview of the Nyx quick-log: a meal or a symptom logged in a couple of taps.',
-  report: 'Preview of a Nyx vet summary: a clear, clinical one-tap report.',
+  signal: 'Preview of a Culprit insight: vomiting is down 60% over the last two weeks.',
+  log: 'Preview of the Culprit quick-log: a meal or a symptom logged in a couple of taps.',
+  report: 'Preview of a Culprit vet summary: a clear, clinical one-tap report.',
 };
 
 // The quick-log tiles mirror the real quick-log entry points (constants/eventTypes).
