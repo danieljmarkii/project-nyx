@@ -102,6 +102,14 @@ describe('LoginScreen — back navigation', () => {
   });
 });
 
+describe('LoginScreen — brand mark', () => {
+  it('carries the Culprit brand mark so the form matches the branded Landing flow', () => {
+    const utils = render(<LoginScreen />);
+    // The mark exposes one grouped "Culprit" label (AuthBrandMark).
+    expect(utils.getByLabelText('Culprit')).toBeTruthy();
+  });
+});
+
 describe('LoginScreen — post-deletion banner (B-039)', () => {
   it('shows the deletion confirmation (in place of the subtitle) when the flag is armed', () => {
     useAuthStore.setState({ justDeletedAccount: true });

@@ -20,6 +20,7 @@ import { theme } from '../../constants/theme';
 import { SOCIAL_AUTH_ENABLED } from '../../constants/flags';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
+import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { Divider } from '../../components/ui/Divider';
 import { emailError, passwordError, requiredNameError } from '../../lib/authValidation';
 
@@ -232,16 +233,22 @@ export default function SignupScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.back}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-            testID="signup-back"
-          >
-            <ChevronLeft size={24} color={theme.colorTextPrimary} strokeWidth={2} />
-          </TouchableOpacity>
+          {/* Top bar: back chevron pinned left, the Culprit brand mark centred — so
+              the account form shares the Landing's brand presence (TestFlight
+              feedback 2026-07-09; the auth forms read as one branded flow). */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.headerBack}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              testID="signup-back"
+            >
+              <ChevronLeft size={24} color={theme.colorTextPrimary} strokeWidth={2} />
+            </TouchableOpacity>
+            <AuthBrandMark />
+          </View>
 
           <Text style={styles.title}>Create your account</Text>
           <Text style={styles.subtitle}>This is you — we'll set up your pet next.</Text>
@@ -356,7 +363,10 @@ export default function SignupScreen() {
             accessibilityRole="button"
             accessibilityLabel="Log in to an existing account"
           >
-            <Text style={styles.loginText}>Already have an account? Log in</Text>
+            <Text style={styles.loginText}>
+              Already have an account?{' '}
+              <Text style={styles.loginTextAccent}>Log in</Text>
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -384,6 +394,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     // Left-align the glyph within the tap box.
     alignItems: 'flex-start',
+  },
+  // Form top bar: centred brand mark with the back chevron pinned to the left edge.
+  // A dedicated style (not the shared `back` above, which the verify sub-screen
+  // still uses in normal flow) so absolute positioning can't leak into that screen.
+  header: {
+    height: theme.space5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: theme.space1,
+    marginBottom: theme.space4,
+  },
+  headerBack: {
+    position: 'absolute',
+    left: -theme.space1,
+    top: 0,
+    bottom: 0,
+    width: theme.space5,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    zIndex: 1,
   },
   title: {
     fontSize: theme.text2XL,
@@ -450,6 +480,12 @@ const styles = StyleSheet.create({
   loginText: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
+  },
+  // The tappable half of the prompt carries the teal accent so it reads as a link
+  // (matching the accented Terms/Privacy line above and login's Sign-up prompt).
+  loginTextAccent: {
+    color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
   },
   // ── Verify state ──
   verifyBody: {
