@@ -285,6 +285,10 @@
   /* closing */
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(20px, 4vw, 40px); margin-top: 28px; }
   @media (max-width: 680px) { .cols { grid-template-columns: 1fr; } }
+  .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(238px, 1fr)); gap: clamp(16px, 3vw, 26px); margin-top: 20px; }
+  .block.approved { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); background: color-mix(in srgb, var(--accent-tint) 45%, var(--panel)); }
+  .block.caution { border-color: color-mix(in srgb, var(--rose) 32%, var(--line)); }
+  .bid { font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--accent); background: var(--accent-tint); border-radius: 5px; padding: 1px 6px; font-weight: 600; white-space: nowrap; }
   .block { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px; box-shadow: var(--shadow); }
   .block h3 { margin: 0 0 14px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; }
   .lst { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
@@ -317,15 +321,15 @@
       The Pet tab quietly does two jobs today: it holds <em>pet</em> data (conditions,
       medications, weight, the vet report) and, jammed at the bottom, <em>account</em>
       actions that have nowhere else to live — your name, sign out, delete account.
-      This proposal pulls those user actions into a dedicated <b>Settings</b> screen,
+      This proposal pulls those user actions into a screen of their own — <b>You</b> —
       and gives the support email and legal links the home four App-Store items are
       already waiting on.
     </p>
     <div class="rec-note">
-      <b>Where this landed (provisional).</b> The team recommends an <b>avatar in the Home
-      header</b> as the entry point (a doorway, not a fifth tab) and naming the screen
-      <b>Settings</b>. Both are shown below alongside the alternatives — react to the
-      visuals and I'll re-cut any of it.
+      <b>Decided this round (PM, 2026-07-09).</b> Entry point <b>✓ avatar in the Home
+      header</b> (a doorway, not a fifth tab). Screen mock <b>✓ approved</b>. Name <b>✓
+      "You"</b> — the squad's pick over "Profile," which in a pet-first app collides with
+      the pet's own profile. The alternatives are kept below for the record.
     </div>
   </header>
 
@@ -425,7 +429,7 @@
           </div>
         </div>
         <div class="opt-cap">
-          <span class="k">Avatar in the Home header <span class="tag tag-rec">Recommended</span></span>
+          <span class="k">Avatar in the Home header <span class="tag tag-rec">Chosen ✓</span></span>
           <div class="callout"><span class="up"></span>tap the "D" avatar, top-right</div>
           <p>A doorway in the header chrome — not a Signal card, so Principle 3 holds.
             Keeps navigation flat and matches the pattern owners already know.</p>
@@ -505,8 +509,8 @@
   <!-- ====================== THE SCREEN ====================== -->
   <section class="fade">
     <div class="sec-head">
-      <p class="sec-eyebrow">Decision 2 · The screen</p>
-      <h2 class="serif">Settings — v1</h2>
+      <p class="sec-eyebrow">The screen · named "You"</p>
+      <h2 class="serif">You — v1</h2>
       <p class="sec-lede">
         Identity at the top, support and legal in the middle, the two account actions
         that used to live on the Pet tab pulled down to their own quiet zone, and the
@@ -520,7 +524,7 @@
         <div class="screen">
           <div class="statusbar"><span>9:41</span><span class="sb-icons"><span class="sb-bars" style="background:var(--a-text)"></span><span class="sb-bat"></span></span></div>
           <div class="scr-nav"><div class="back"></div></div>
-          <div class="scr-title">Settings</div>
+          <div class="scr-title">You</div>
           <div class="app-scroll">
 
             <!-- Account -->
@@ -616,46 +620,71 @@
     </div>
   </section>
 
-  <!-- ====================== SCOPE / NEXT ====================== -->
+  <!-- ====================== WHAT ELSE COULD LIVE HERE ====================== -->
   <section class="fade">
     <div class="sec-head">
-      <p class="sec-eyebrow">Scope</p>
-      <h2 class="serif">What's in v1, and what waits</h2>
+      <p class="sec-eyebrow">The question · what else belongs here</p>
+      <h2 class="serif">Room to grow, without getting loud</h2>
+      <p class="sec-lede">
+        The screen should scale to hold more without becoming a firehose. The way it stays
+        calm is structure: as rows accrue, group them under quiet labels —
+        <b>Account · Preferences · Your data · Support · About</b> — so it always reads at a
+        glance. Here's the menu the squad would pull from.
+      </p>
     </div>
-    <div class="cols">
+
+    <div class="block approved" style="margin-top:22px;">
+      <h3>In v1 — approved this round</h3>
+      <p style="margin:0;font-size:14.5px;color:var(--ink-soft);">
+        Account (name + email) · Contact support · Privacy / Terms / disclaimer ·
+        Sign out + Delete account (moved off the Pet tab) · app version.
+      </p>
+    </div>
+
+    <div class="board">
       <div class="block">
-        <h3>In v1 — ships together</h3>
+        <h3>Near-term adds — worth designing in soon</h3>
         <ul class="lst">
-          <li><span class="m">·</span><span><b>Account</b> — name (editable) + email (read-only)</span></li>
-          <li><span class="m">·</span><span><b>Contact support</b> → support@getculprit.app</span></li>
-          <li><span class="m">·</span><span><b>Privacy · Terms · disclaimer</b> (placeholder-safe)</span></li>
-          <li><span class="m">·</span><span><b>Sign out + Delete account</b>, moved off the Pet tab</span></li>
-          <li><span class="m">·</span><span><b>App version</b> at the foot</span></li>
+          <li><span class="m">·</span><span><b>Export my data</b> — sits beside Delete under a "Your data" group; completes the data-rights story (Pets &gt; $). <span class="bid">B-041</span></span></li>
+          <li><span class="m">·</span><span><b>Units</b> — lbs ⁄ kg. The app hardcodes lbs today; cheap, real for non-US owners.</span></li>
+          <li><span class="m">·</span><span><b>Culprit Premium</b> — manage plan + Restore Purchases. An App Store requirement the moment Premium wires. <span class="bid">B-264</span></span></li>
+          <li><span class="m">·</span><span><b>Notifications</b> — reserve the slot; the content is gated on the push-provider call. <span class="bid">B-015</span></span></li>
         </ul>
       </div>
       <div class="block">
-        <h3>Waits for a later pass</h3>
+        <h3>Roadmap — when its condition is met</h3>
         <ul class="lst">
-          <li><span class="m">·</span><span><b>Change email / password</b> — needs a reauth flow</span></li>
-          <li><span class="m">·</span><span><b>Notification preferences</b> — gated on the push provider</span></li>
-          <li><span class="m">·</span><span><b>Export my data</b> (B-041) — the natural next tenant</span></li>
-          <li><span class="m">·</span><span><b>Units / appearance</b> — when there's more than one</span></li>
+          <li><span class="m">·</span><span><b>Connected sign-in</b> (Apple / Google) — when social auth lands. <span class="bid">B-281</span></span></li>
+          <li><span class="m">·</span><span><b>Change email / password</b> — needs a reauth flow first.</span></li>
+          <li><span class="m">·</span><span><b>Manage / archived pets</b> — a home for the archived-pets screen we already have.</span></li>
+          <li><span class="m">·</span><span><b>Share a pet with a co-owner</b> — household caregiving.</span></li>
+          <li><span class="m">·</span><span><b>Help &amp; FAQ</b> — once getculprit.app has a help page.</span></li>
+          <li><span class="m">·</span><span><b>Rate / share Culprit</b> — low-key growth, never an upsell.</span></li>
+          <li><span class="m">·</span><span><b>Diagnostics opt-out</b> — when error reporting lands. <span class="bid">B-016</span></span></li>
+        </ul>
+      </div>
+      <div class="block caution">
+        <h3>Not here — on purpose</h3>
+        <ul class="lst">
+          <li><span class="m" style="color:var(--rose)">·</span><span>No insight or Patterns surfaces — those stay Home / Patterns (Principle 3).</span></li>
+          <li><span class="m" style="color:var(--rose)">·</span><span>No Premium <em>pitch</em> wall — the entry is a calm "manage", never an upsell (Pets &gt; $).</span></li>
+          <li><span class="m" style="color:var(--rose)">·</span><span>No per-pet clinical settings — those live on the Pet tab.</span></li>
         </ul>
       </div>
     </div>
 
     <div class="signoff">
-      <b>Team read.</b>
-      Designer <span class="ok">✓</span> (doorway over tab; header ≠ Signal; empty-state-free by design) —
-      Engineer <span class="ok">✓</span> (pushed route, zero schema, moves 3 existing pieces) —
-      Trust &amp; Safety <span class="ok">✓</span> (one canonical account-and-data home; delete keeps type-to-confirm) —
-      Product Owner <span class="ok">✓</span> (unblocks B-229 / B-230 / B-231 / B-270; new row <b>B-283</b> to file) —
-      Data / Dr. Chen N/A.
+      <b>Decisions this round.</b>
+      Entry point <span class="ok">✓</span> avatar in the Home header (PM) —
+      Screen mock <span class="ok">✓</span> approved (PM) —
+      Name <span class="ok">✓</span> <b>You</b> (squad's pick — dodges the "Profile = the pet's profile" collision and pairs with the avatar; a one-word flip to Profile if you'd rather) —
+      Designer / Engineer / Trust &amp; Safety / Product Owner ✓ · Data / Dr. Chen N/A.
     </div>
 
     <div class="open-call">
-      <b>Your call before build.</b> Confirm the entry point (avatar-in-header vs. the two
-      alternatives) and the name (Settings vs. Account / Profile / You). Everything else is
+      <b>Open for your call.</b> Which of the near-term adds ride the first build?
+      <b>Export my data</b> and <b>Units</b> look like clean early wins; Premium &amp;
+      Notifications naturally wait on their own decisions. Everything else is
       recommend-and-proceed.
     </div>
   </section>
