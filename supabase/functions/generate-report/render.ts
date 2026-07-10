@@ -56,6 +56,7 @@ import type {
   WeightSection,
   DietSummary,
   MedicationAdherence,
+  UnlinkedMedicationGroup,
   CorrelationSummary,
   ConcurrentChange,
   SymptomLogEntry,
@@ -502,6 +503,88 @@ function weightSpark(seriesKg: number[]): string {
 
 // ── Page-1 sections ──────────────────────────────────────────────────────────────
 
+// The Culprit "Moon & Signal" brand QR, encoding https://getculprit.app so a vet who reads the
+// report can scan through to learn about Culprit (the distribution wedge — vets recommend the app).
+// The URL is STATIC across every report, so the module matrix is generated once, offline, and
+// embedded as a constant — the Edge Function needs no runtime QR dependency, and the code prints
+// black-on-white (§5.8 B&W-safe, carries no data colour). To regenerate if the URL ever changes
+// (e.g. to getculprit.app/vets): run scripts/gen-report-qr.mjs and paste its output here.
+// Source: "https://getculprit.app", errorCorrectionLevel "Q", 29×29 modules.
+const GETCULPRIT_QR: readonly string[] = [
+  '11111110000011101010101111111',
+  '10000010101001111111101000001',
+  '10111010111110101000101011101',
+  '10111010000000111101101011101',
+  '10111010001001111101001011101',
+  '10000010010001010001101000001',
+  '11111110101010101010101111111',
+  '00000000010110101110000000000',
+  '01110110000010110001100000110',
+  '01101001101101110000010011001',
+  '01100110010010101000001100110',
+  '00110001000100110011000001001',
+  '10001011011010100100010100111',
+  '00100101111011101011001101111',
+  '11001010110101100111110111011',
+  '01111100010010110111111011000',
+  '00000111111111111110111011001',
+  '01001101111010101001101100100',
+  '10111010001101011001001010100',
+  '00011001011010100111011101101',
+  '01000110010001100110111111111',
+  '00000000111000001010100011011',
+  '11111110001111100101101010110',
+  '10000010111100001010100010000',
+  '10111010000101010010111111110',
+  '10111010101010001011000010110',
+  '10111010110110111010100100001',
+  '10000010101000001011010011010',
+  '11111110011001111010110101010',
+]
+
+/** Render a QR module matrix as inline SVG (horizontal run-length merged; a 2-module quiet zone). */
+function qrSvg(matrix: readonly string[], sizePx: number): string {
+  const n = matrix.length
+  const quiet = 2
+  const dim = n + quiet * 2
+  let rects = ''
+  for (let y = 0; y < n; y++) {
+    const row = matrix[y]
+    let x = 0
+    while (x < n) {
+      if (row[x] === '1') {
+        let run = 1
+        while (x + run < n && row[x + run] === '1') run++
+        rects += `<rect x="${x + quiet}" y="${y + quiet}" width="${run}" height="1"/>`
+        x += run
+      } else {
+        x++
+      }
+    }
+  }
+  return (
+    `<svg class="hqr" width="${sizePx}" height="${sizePx}" viewBox="0 0 ${dim} ${dim}" ` +
+    `role="img" aria-label="QR code linking to getculprit.app">` +
+    `<rect width="${dim}" height="${dim}" fill="#fff"/><g fill="#111">${rects}</g></svg>`
+  )
+}
+
+/**
+ * The "Moon & Signal" brand mark — a moonlight crescent (mask cut-out) + the Signal dot. Rendered
+ * MONOCHROME in the letterhead ink (--brand): the report is a clinical artifact and §5.8 keeps
+ * colour off the page, so the mark carries the brand by SHAPE, not the app's teal accent (which
+ * would read as the "consumer-app" tell the cold-reads flagged). Degrades to dark gray in B&W.
+ */
+function brandMark(): string {
+  return (
+    `<svg class="cmark" viewBox="0 0 32 32" aria-hidden="true">` +
+    `<defs><mask id="cmMoon"><rect width="32" height="32" fill="#fff"/>` +
+    `<circle cx="21" cy="13" r="9.4" fill="#000"/></mask></defs>` +
+    `<circle cx="16" cy="16" r="12.4" fill="var(--brand)" mask="url(#cmMoon)"/>` +
+    `<circle cx="23.4" cy="22.6" r="2.5" fill="var(--brand)"/></svg>`
+  )
+}
+
 function letterhead(snap: ReportSnapshot): string {
   // The lettered appendices run A–D, plus a conditional meals appendix (E, whenever the owner
   // logged meals or an intake flag fired) and a conditional incident-photos appendix (PR 7, the
@@ -512,13 +595,20 @@ function letterhead(snap: ReportSnapshot): string {
   return `
   <div class="letter">
     <div class="brand">
+      ${brandMark()}
       <span class="wordmark">Culprit</span>
       <span class="kind">Owner-reported<br/>pet-health summary</span>
     </div>
-    <div class="stamp">
-      <div><b>Prepared for veterinary review</b></div>
-      <div>Not a diagnosis · owner-reported observations</div>
-      <div>Generated ${h(fmtDayYear(localDayKeyOf(snap.generatedAt, snap.timezone)))}</div>
+    <div class="lh-right">
+      <div class="stamp">
+        <div><b>Prepared for veterinary review</b></div>
+        <div>Not a diagnosis · owner-reported observations</div>
+        <div>Generated ${h(fmtDayYear(localDayKeyOf(snap.generatedAt, snap.timezone)))}</div>
+      </div>
+      <div class="hqrblock">
+        ${qrSvg(GETCULPRIT_QR, 66)}
+        <span class="hqrcap">About Culprit<br/>getculprit.app</span>
+      </div>
     </div>
   </div>
   <div class="rule-brand"></div>
@@ -1456,11 +1546,16 @@ function dietMeds(snap: ReportSnapshot): string {
   // Medications (B-117) + supplements as concurrent interventions.
   const meds = snap.medications.filter((m) => m.overlapsWindow && !m.isSupplement)
   const supps = snap.medications.filter((m) => m.overlapsWindow && m.isSupplement)
-  if (meds.length === 0 && supps.length === 0) {
+  // Ad-hoc / OTC doses with no configured regimen (§3.8 orphan-dose gap). Already window-scoped.
+  const unlinked = snap.unlinkedMedications
+  if (meds.length === 0 && supps.length === 0 && unlinked.length === 0) {
     right.push(kv('Medication', 'None logged in this window.'))
   }
   for (const m of meds) {
     right.push(kv(h(m.drugName), medicationLine(m)))
+  }
+  for (const u of unlinked) {
+    right.push(kv(h(u.drugName), unlinkedMedLine(u)))
   }
   for (const m of supps) {
     right.push(
@@ -1541,6 +1636,35 @@ function medicationLine(m: MedicationAdherence): string {
   return `${regimen}. Adherence: ${num(administered)}${expected} dose${administered === 1 ? '' : 's'} on ${num(
     m.daysWithDose,
   )} of ${num(m.elapsedDaysInWindow)} days; ${extras.join(', ')}.`
+}
+
+/** Date range for an unlinked-dose group — "on Jul 10" for a single day, else "Jul 2 – Jul 10". */
+function unlinkedSpan(u: UnlinkedMedicationGroup): string {
+  return u.firstDate === u.lastDate
+    ? `on ${h(fmtDay(u.lastDate))}`
+    : `${h(fmtDay(u.firstDate))}&ndash;${h(fmtDay(u.lastDate))}`
+}
+
+/** Page-1 line for a drug the owner dosed with no configured regimen (§3.8). Factual counts only —
+ *  no adherence RATE (no schedule to divide by), and an unconfirmed dose is never read as given. */
+function unlinkedMedLine(u: UnlinkedMedicationGroup): string {
+  const meta = [u.strength ? h(u.strength) : null, u.route ? `by ${h(u.route)}` : null]
+    .filter(Boolean)
+    .join(' &middot; ')
+  const prefix = meta ? `${meta}. ` : ''
+  const span = unlinkedSpan(u)
+  const head =
+    u.administeredDoses > 0
+      ? `${num(u.administeredDoses)} dose${u.administeredDoses === 1 ? '' : 's'} given ${span}`
+      : `${num(u.totalDoses)} dose${u.totalDoses === 1 ? '' : 's'} logged ${span}`
+  const extras: string[] = []
+  if (u.partialDoses) extras.push(`${num(u.partialDoses)} partial`)
+  if (u.unconfirmedDoses) extras.push(`${num(u.unconfirmedDoses)} unconfirmed`)
+  if (u.refusedDoses) extras.push(`${num(u.refusedDoses)} refused`)
+  if (u.missedDoses) extras.push(`${num(u.missedDoses)} missed`)
+  const extrasBit = extras.length ? ` ${extras.join(', ')}.` : ''
+  const src = u.isSupplement ? 'owner-reported, OTC' : 'owner-reported'
+  return `${prefix}${head} (${src}; no regimen configured).${extrasBit}`
 }
 
 function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
@@ -2148,7 +2272,8 @@ function dietHistoryAppendix(snap: ReportSnapshot): string {
 
 function medicationAppendix(snap: ReportSnapshot): string {
   const meds = snap.medications.filter((m) => !m.isSupplement && m.overlapsWindow)
-  const rows = meds
+  const unlinked = snap.unlinkedMedications
+  const regimenRows = meds
     .map((m) => {
       const regimen = [
         m.strength ? h(m.strength) : null,
@@ -2172,12 +2297,33 @@ function medicationAppendix(snap: ReportSnapshot): string {
       } &middot; ${regimenDates(m)}</td><td class="c num">${logged}</td><td>${adherence}</td></tr>`
     })
     .join('')
+  // Ad-hoc / OTC doses with no regimen (§3.8) — logged but never configured as a course. Reported
+  // here so nothing the owner logged is dropped; the "Regimen" cell states plainly there is none.
+  const unlinkedRows = unlinked
+    .map((u) => {
+      const regimen = [`No regimen configured`, u.route ? `by ${h(u.route)}` : null, u.isSupplement ? 'OTC' : null]
+        .filter(Boolean)
+        .join(' &middot; ')
+      const extras: string[] = []
+      if (u.partialDoses) extras.push(`${num(u.partialDoses)} partial`)
+      if (u.unconfirmedDoses) extras.push(`${num(u.unconfirmedDoses)} unconfirmed`)
+      if (u.refusedDoses) extras.push(`${num(u.refusedDoses)} refused`)
+      if (u.missedDoses) extras.push(`${num(u.missedDoses)} missed`)
+      const adherence = `Owner-logged ad-hoc dose${u.totalDoses === 1 ? '' : 's'}, ${unlinkedSpan(u)} — not part of a configured regimen.${
+        extras.length ? ` ${extras.join(', ')}.` : ''
+      }`
+      return `<tr><td>${h(u.drugName)}${u.strength ? ` ${h(u.strength)}` : ''}</td><td>${regimen}</td><td class="c num">${num(
+        u.administeredDoses,
+      )}</td><td>${adherence}</td></tr>`
+    })
+    .join('')
+  const rows = regimenRows + unlinkedRows
+  const hasAny = meds.length > 0 || unlinked.length > 0
   // R2-6 — the preamble referenced a page-1 adherence line that does not exist on a no-meds report;
   // make it conditional so an empty Appendix D never points at a section that isn't there.
-  const sub =
-    meds.length === 0
-      ? 'No prescription medications overlap this window. Over-the-counter supplements, if any, are listed in the diet history (appendix&nbsp;B).'
-      : 'Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Over-the-counter supplements are listed in the diet history (appendix&nbsp;B).'
+  const sub = !hasAny
+    ? 'No prescription medications overlap this window. Over-the-counter supplements, if any, are listed in the diet history (appendix&nbsp;B).'
+    : 'Doses are owner-logged. The page-1 adherence line is computed from these entries; with no doses logged a drug reads &ldquo;adherence not tracked,&rdquo; never &ldquo;given.&rdquo; Doses logged without a configured regimen (including over-the-counter medications) appear as ad-hoc entries below; supplements taken as food are listed in the diet history (appendix&nbsp;B).'
   return `
   <p class="appx-title serif" style="margin-top:22px">Appendix D — Medication log</p>
   <p class="appx-sub">${sub}</p>
@@ -2305,11 +2451,17 @@ const STYLE = `
 
   /* Letterhead */
   .letter{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;}
-  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand .cmark{width:30px;height:30px;flex:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .wordmark{font-family:"Newsreader",Georgia,serif;font-weight:600;font-size:27px;letter-spacing:.005em;color:var(--brand);line-height:1;}
-  .brand .kind{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;padding-bottom:2px;}
+  .brand .kind{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:600;}
+  .lh-right{display:flex;align-items:flex-start;gap:16px;}
   .letter .stamp{text-align:right;font-size:11px;line-height:1.55;color:var(--muted);}
   .letter .stamp b{color:var(--ink);font-weight:600;}
+  /* Brand QR → getculprit.app. Black-on-white, crisp modules, prints exact. Carries no data (§5.8). */
+  .hqrblock{display:flex;flex-direction:column;align-items:center;gap:3px;flex:none;}
+  .hqr{display:block;shape-rendering:crispEdges;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .hqrcap{font-size:8px;line-height:1.32;letter-spacing:.02em;color:var(--faint);text-align:center;white-space:nowrap;}
   .rule-brand{height:2px;background:var(--brand);margin:9px 0 0;border-radius:2px;opacity:.9;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 
   /* Signalment + range */
@@ -2487,7 +2639,7 @@ const STYLE = `
     thead{display:table-header-group;}
     /* Only ATOMIC units resist breaking — never a whole .sec (that fragments the page). */
     tr,.trend,.tile,.callout,.weight,.safetyband,.present,.divider,.phcard{page-break-inside:avoid;}
-    .rule-brand,.wordmark,.foot .fbrand .fw .w{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .rule-brand,.wordmark,.foot .fbrand .fw .w,.hqr,.cmark{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   }
   @page{size:A4 portrait;margin:11mm;}
 `

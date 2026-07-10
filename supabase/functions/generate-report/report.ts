@@ -227,6 +227,23 @@ export interface ReportDoseInput {
   pairedEventId: string | null // B-156 combo: the meal/treat this dose rode inside
 }
 
+/**
+ * medication_items row (global catalog, migration 019) — the drug IDENTITY behind a dose. A dose
+ * carries only `medicationItemId`; a REGIMEN carries the human-readable `drugName`. So an ad-hoc dose
+ * logged with NO regimen (`medicationId` null) has no name until we resolve it through this lookup —
+ * the gap that made a real owner's daily OTC antihistamine invisible on the report (it had doses but
+ * no regimen). index.ts fetches these for the item ids referenced by doses; report.ts names the
+ * unlinked-dose groups from them.
+ */
+export interface ReportMedicationItemInput {
+  id: string
+  genericName: string | null
+  brandName: string | null
+  strength: string | null
+  route: string | null
+  isPrescription: boolean | null
+}
+
 /** medications regimen row (migration 020). `isPrescription`/`strength` come from the joined item. */
 export interface ReportMedicationInput {
   id: string
@@ -318,6 +335,12 @@ export interface ReportInput {
   weightChecks: ReportWeightCheckInput[]
   doses: ReportDoseInput[]
   medications: ReportMedicationInput[]
+  /**
+   * Names/metadata for the medication_items referenced by `doses` — so an ad-hoc dose with no
+   * regimen can still be reported by drug name (§3.8, the orphan-dose gap). Optional so every
+   * pre-existing fixture keeps compiling; absent ⇒ unlinked doses render as "Unspecified medication".
+   */
+  medicationItems?: ReportMedicationItemInput[]
   dietTrials: ReportDietTrialInput[]
   vetVisits: ReportVetVisitInput[]
   feedingArrangements: ReportFeedingArrangementInput[]
@@ -1134,6 +1157,30 @@ export interface ProteinTimeline {
   totalFeedings: number
 }
 
+/**
+ * A drug the owner dosed WITHOUT a configured regimen — logged doses whose `medicationId` matches no
+ * regimen (§3.8). Grouped by drug so a daily OTC antihistamine reads as one line ("3 doses, Jul 2–10")
+ * instead of vanishing. Counts mirror MedicationAdherence exactly: `administeredDoses` = given +
+ * partial only (an UNCONFIRMED dose is never bundled as given — the compliance-over-read trap), the
+ * others stay itemised so the render is honest about what's uncertain. No adherence RATE is computed
+ * (there's no regimen schedule to divide by — a rate here would be fabricated).
+ */
+export interface UnlinkedMedicationGroup {
+  itemId: string | null
+  drugName: string // resolved from medicationItems, else "Unspecified medication"
+  isSupplement: boolean // is_prescription === false ⇒ OTC/supplement
+  strength: string | null
+  route: string | null
+  administeredDoses: number // given + partial
+  partialDoses: number
+  unconfirmedDoses: number
+  refusedDoses: number
+  missedDoses: number
+  totalDoses: number
+  firstDate: string // local day key of the earliest dose in window
+  lastDate: string // local day key of the latest dose in window
+}
+
 export interface ReportSnapshot {
   generatedAt: string
   timezone: string | null
@@ -1149,6 +1196,12 @@ export interface ReportSnapshot {
   stool: StoolCharacteristics | null
   diet: DietSummary
   medications: MedicationAdherence[]
+  /**
+   * §3.8 — doses the owner logged that belong to NO configured regimen (ad-hoc / OTC). Distinct
+   * from `medications` (regimens) so the regimen adherence math is untouched; these are surfaced
+   * separately on page 1 + Appendix D so nothing logged goes unreported. Empty ⇒ nothing to show.
+   */
+  unlinkedMedications: UnlinkedMedicationGroup[]
   correlation: CorrelationSummary
   concurrentChanges: ConcurrentChange[]
   proteinTimeline: ProteinTimeline
@@ -1851,6 +1904,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   const medications = input.medications.map((m) =>
     buildMedicationAdherence(m, liveDoses, scope, tz),
   )
+  // Ad-hoc / OTC doses that belong to no configured regimen — surfaced separately so a drug the
+  // owner logged (but never set up as a regimen) is still reported, not silently dropped (§3.8).
+  const unlinkedMedications = buildUnlinkedMedications(
+    liveDoses,
+    new Set(input.medications.map((m) => m.id)),
+    input.medicationItems ?? [],
+    scope,
+    tz,
+  )
 
   // ── Detection reuse (§7 / §8.5) ──────────────────────────────────────────────
   const detInput = buildDetectionInput(input, scope, windowEvents, droppedEventIds)
@@ -2274,6 +2336,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     stool,
     diet,
     medications,
+    unlinkedMedications,
     correlation,
     concurrentChanges,
     proteinTimeline,
@@ -2411,6 +2474,114 @@ function buildMedicationAdherence(
     refusedDoses: refused,
     unconfirmedDoses: unconfirmed,
   }
+}
+
+/**
+ * §3.8 orphan-dose gap — doses the owner logged that belong to NO configured regimen, grouped by
+ * drug so each reads as one line. A dose carries only `medicationItemId`; its name is resolved
+ * through `items` (medication_items). A dose whose `medicationId` points at a regimen we DID load is
+ * already counted under that regimen (buildMedicationAdherence) and is excluded here — no double
+ * count. A dose whose `medicationId` points at a regimen we somehow did NOT load is treated as
+ * unlinked (surfaced) rather than dropped, so nothing logged is silently lost. Counts mirror the
+ * regimen path exactly (administered = given + partial; unconfirmed never bundled as given).
+ */
+function buildUnlinkedMedications(
+  liveDoses: ReportDoseInput[],
+  regimenIds: Set<string>,
+  items: ReportMedicationItemInput[],
+  scope: ReportScope,
+  tz: string | null,
+): UnlinkedMedicationGroup[] {
+  const itemById = new Map(items.map((i) => [i.id, i]))
+  const orphan = liveDoses.filter((d) => {
+    if (d.medicationId !== null && regimenIds.has(d.medicationId)) return false
+    const dn = eventDayNumber(d.occurredAt, tz)
+    return dn !== null && dn >= scope.startDayNum && dn <= scope.endDayNum
+  })
+
+  // Group by medication_item_id; doses with no item id fold into a single "unspecified" bucket.
+  const groups = new Map<string, ReportDoseInput[]>()
+  for (const d of orphan) {
+    const key = d.medicationItemId ?? ''
+    const arr = groups.get(key)
+    if (arr) arr.push(d)
+    else groups.set(key, [d])
+  }
+
+  const out: UnlinkedMedicationGroup[] = []
+  for (const [key, doses] of groups) {
+    const item = key === '' ? null : itemById.get(key) ?? null
+    let administered = 0
+    let partial = 0
+    let unconfirmed = 0
+    let refused = 0
+    let missed = 0
+    let firstDn = Infinity
+    let lastDn = -Infinity
+    let firstKey = ''
+    let lastKey = ''
+    for (const d of doses) {
+      switch (d.adherence) {
+        case 'given':
+          administered++
+          break
+        case 'partial':
+          administered++
+          partial++
+          break
+        case 'missed':
+          missed++
+          break
+        case 'refused':
+          refused++
+          break
+        default:
+          unconfirmed++
+          break
+      }
+      const dk = localDayKey(d.occurredAt, tz) ?? d.occurredAt.slice(0, 10)
+      const dn = eventDayNumber(d.occurredAt, tz)
+      if (dn !== null) {
+        if (dn < firstDn) {
+          firstDn = dn
+          firstKey = dk
+        }
+        if (dn > lastDn) {
+          lastDn = dn
+          lastKey = dk
+        }
+      }
+    }
+    out.push({
+      itemId: item?.id ?? null,
+      drugName: medicationItemName(item),
+      isSupplement: item?.isPrescription === false,
+      strength: item?.strength ?? null,
+      route: item?.route ?? null,
+      administeredDoses: administered,
+      partialDoses: partial,
+      unconfirmedDoses: unconfirmed,
+      refusedDoses: refused,
+      missedDoses: missed,
+      totalDoses: doses.length,
+      firstDate: firstKey || lastKey,
+      lastDate: lastKey || firstKey,
+    })
+  }
+  // Deterministic: most-recently dosed first, then by name (stable render + snapshot tests).
+  out.sort((a, b) =>
+    a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : a.drugName.localeCompare(b.drugName),
+  )
+  return out
+}
+
+/** Clinical convention: generic name leads, brand in parens — "Cetirizine HCl (Zyrtec)". */
+function medicationItemName(item: ReportMedicationItemInput | null): string {
+  if (!item) return 'Unspecified medication'
+  const g = item.genericName?.trim() || null
+  const b = item.brandName?.trim() || null
+  if (g && b && g.toLowerCase() !== b.toLowerCase()) return `${g} (${b})`
+  return g || b || 'Unspecified medication'
 }
 
 /**
