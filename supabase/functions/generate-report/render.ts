@@ -607,7 +607,7 @@ function letterhead(snap: ReportSnapshot): string {
       </div>
       <div class="hqrblock">
         ${qrSvg(GETCULPRIT_QR, 66)}
-        <span class="hqrcap">About Culprit<br/>getculprit.app</span>
+        <span class="hqrcap">getculprit.app</span>
       </div>
     </div>
   </div>
@@ -1648,7 +1648,7 @@ function unlinkedSpan(u: UnlinkedMedicationGroup): string {
 /** Page-1 line for a drug the owner dosed with no configured regimen (§3.8). Factual counts only —
  *  no adherence RATE (no schedule to divide by), and an unconfirmed dose is never read as given. */
 function unlinkedMedLine(u: UnlinkedMedicationGroup): string {
-  const meta = [u.strength ? h(u.strength) : null, u.route ? `by ${h(u.route)}` : null]
+  const meta = [u.strength ? h(u.strength) : null, u.route ? h(u.route) : null]
     .filter(Boolean)
     .join(' &middot; ')
   const prefix = meta ? `${meta}. ` : ''

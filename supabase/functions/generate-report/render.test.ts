@@ -1527,8 +1527,8 @@ Deno.test('PR7 render — Appendix E STILL renders (disclosure only, no grid) wh
 Deno.test('letterhead — Culprit brand mark + getculprit.app QR render, monochrome (no data colour, §5.8)', () => {
   const html = renderReport(base())
   assert.ok(/aria-label="QR code linking to getculprit.app"/.test(html), 'the QR svg is present')
-  assert.ok(/getculprit\.app/.test(html), 'the caption links to getculprit.app')
-  assert.ok(/About Culprit/.test(html), 'restrained caption, not a "scan me" CTA')
+  assert.ok(/getculprit\.app/.test(html), 'the caption is a plain web address (letterhead furniture, not a CTA)')
+  assert.ok(!/About Culprit/.test(html), 'no imperative "About Culprit" CTA in the clinical masthead')
   assert.ok(/class="cmark"/.test(html), 'the Moon & Signal brand mark is present')
   // The mark + QR must NOT reintroduce the app teal accent onto the clinical page (cold-read guard).
   assert.ok(!/#00C2A8/i.test(html), 'no teal accent leaks onto the clinical page')
