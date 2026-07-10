@@ -1,4 +1,4 @@
-import { buildSupportMailto, formatAppVersion } from './support';
+import { buildFeedbackSubject, buildSupportMailto, formatAppVersion } from './support';
 
 // Pull the decoded subject/body back out of a mailto: URL so assertions read
 // against the real content the mail client will show, not the escaped bytes.
@@ -117,5 +117,41 @@ describe('buildSupportMailto', () => {
       }),
     );
     expect(body).toContain('App version: unknown');
+  });
+});
+
+describe('buildFeedbackSubject', () => {
+  it('tags the subject with the chosen category (spec §D8)', () => {
+    expect(buildFeedbackSubject('Idea')).toBe('[Feedback] Idea');
+    expect(buildFeedbackSubject('Problem')).toBe('[Feedback] Problem');
+    expect(buildFeedbackSubject('Praise')).toBe('[Feedback] Praise');
+  });
+
+  it('degrades to the brand word when no category is chosen — never a bare tag', () => {
+    // The ChipGroup is optional, so "no category" is a real state; the subject
+    // must not read as "[Feedback] " (an empty-looking subject).
+    expect(buildFeedbackSubject(null)).toBe('[Feedback] Culprit');
+    expect(buildFeedbackSubject(undefined)).toBe('[Feedback] Culprit');
+    expect(buildFeedbackSubject('')).toBe('[Feedback] Culprit');
+    expect(buildFeedbackSubject('   ')).toBe('[Feedback] Culprit');
+  });
+
+  it('always leads with the [Feedback] filter key so one inbox can route it', () => {
+    expect(buildFeedbackSubject('Idea').startsWith('[Feedback]')).toBe(true);
+    expect(buildFeedbackSubject(null).startsWith('[Feedback]')).toBe(true);
+  });
+
+  it('composes through buildSupportMailto and survives URL encoding', () => {
+    const url = buildSupportMailto('support@getculprit.app', {
+      version: '1.0.0',
+      build: '1',
+      platform: 'ios',
+      subject: buildFeedbackSubject('Problem'),
+      body: 'The camera hangs on capture.',
+    });
+    const { subject, body } = parseMailto(url);
+    expect(subject).toBe('[Feedback] Problem');
+    // The owner's note rides above the diagnostic footer, same as Contact support.
+    expect(body.indexOf('The camera hangs on capture.')).toBeLessThan(body.indexOf('App version:'));
   });
 });

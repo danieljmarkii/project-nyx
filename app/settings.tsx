@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import Constants from 'expo-constants';
-import * as Application from 'expo-application';
 import { theme } from '../constants/theme';
 import { Card, Header } from '../components/ui';
 import { OwnerAvatar } from '../components/settings/OwnerAvatar';
@@ -13,6 +11,7 @@ import { OwnerNameRow } from '../components/profile/OwnerNameRow';
 import { DeleteAccountSheet } from '../components/profile/DeleteAccountSheet';
 import { supabase } from '../lib/supabase';
 import { buildSupportMailto, formatAppVersion } from '../lib/support';
+import { APP_VERSION, APP_BUILD, PLATFORM } from '../lib/appInfo';
 import {
   SUPPORT_EMAIL,
   PRIVACY_POLICY_URL,
@@ -30,34 +29,15 @@ import { useAuthStore } from '../store/authStore';
 // (B-273) that were waiting on a screen that didn't exist.
 //
 // PR 2 builds Account / Support / About / account-actions / version. The
-// Preferences→Notifications row (PR 3) and the Share-feedback row (PR 4) each drop
-// one SettingsRow into their card later — kept out here so no row points at a
-// screen that doesn't exist yet (§10 PR plan; the "no dead ends" rule).
-
-// The live app version + native build, read at the UI boundary (B-231) and
-// formatted by the pure PR-1 helper. Module-scope: these are immutable for the
-// app's lifetime, so there's no reason to re-read per render.
+// Preferences→Notifications row (PR 3) drops one SettingsRow into its card later —
+// kept out here so no row points at a screen that doesn't exist yet (§10 PR plan;
+// the "no dead ends" rule). The Share-feedback row (PR 4) is wired below.
 //
-// Version comes from the manifest (`Constants.expoConfig.version` = app.json
-// "1.0.0") — correct in Expo Go AND standalone (in Expo Go the *native* value
-// would be Expo Go's own version, not ours). The BUILD number comes from the
-// runtime native binary via expo-application: with eas.json's remote
-// appVersionSource + autoIncrement, the build number is assigned server-side and
-// is NOT written back into the embedded manifest, so `Constants.expoConfig.ios.
-// buildNumber` is unreliable — `Application.nativeBuildVersion` reads the actual
-// CFBundleVersion / Android versionCode baked into the build. (The removed
-// `Constants.nativeBuildVersion` / `nativeAppVersion` APIs — gone in
-// expo-constants v16 — were inert here; code-reviewer catch.) A missing build
-// degrades to "Culprit v1.0.0" via formatAppVersion, never blank (§4.5).
-const APP_VERSION = Constants.expoConfig?.version ?? Application.nativeApplicationVersion ?? null;
-const APP_BUILD =
-  Application.nativeBuildVersion ??
-  Constants.expoConfig?.ios?.buildNumber ??
-  Constants.expoConfig?.android?.versionCode ??
-  null;
-// Diagnostic platform string for the support mailto (§D6) so triage never starts
-// with "what device / OS?". e.g. "ios 17.2" / "android 34".
-const PLATFORM = `${Platform.OS} ${Platform.Version}`;
+// APP_VERSION / APP_BUILD / PLATFORM are read once at the UI boundary in
+// lib/appInfo and formatted by the pure lib/support helpers — shared with the
+// Share-feedback composer (§D8) so the two support-path mailtos read one source
+// of truth for what "version" means (§4.5: a missing build degrades to
+// "Culprit v1.0.0", never blank).
 
 export default function SettingsScreen() {
   const email = useAuthStore((s) => s.user?.email);
@@ -183,7 +163,15 @@ export default function SettingsScreen() {
             chevron
             accessibilityHint="Opens an email to our support team, prefilled with your app version"
           />
-          {/* Share feedback row → PR 4 */}
+          {/* Share feedback (§6/§D8) — product input, not a help ticket, so it
+              pushes its own composer rather than opening a mailto straight away. */}
+          <SettingsRow
+            label="Share feedback"
+            sublabel="Tell us what's working, or what could be better"
+            onPress={() => router.push('/settings/feedback')}
+            chevron
+            accessibilityHint="Opens a screen to write feedback and send it from your mail app"
+          />
         </Card>
 
         {/* ── About ── */}
