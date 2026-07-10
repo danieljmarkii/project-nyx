@@ -2502,7 +2502,7 @@ function buildUnlinkedMedications(
   // Group by medication_item_id; doses with no item id fold into a single "unspecified" bucket.
   // A null item id is only reachable via medication_items ON DELETE SET NULL (migration 020) and
   // there is no delete-item UI today, so in practice every ad-hoc dose carries an id. If item
-  // deletion ever ships, revisit so two genuinely-distinct unknown drugs don't pool here (B-304).
+  // deletion ever ships, revisit so two genuinely-distinct unknown drugs don't pool here (B-305).
   const groups = new Map<string, ReportDoseInput[]>()
   for (const d of orphan) {
     const key = d.medicationItemId ?? ''

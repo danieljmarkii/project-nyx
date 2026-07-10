@@ -97,6 +97,31 @@ export function deriveDisplayState(
   return hasSubstantialHistory ? 'no_pattern' : 'building';
 }
 
+// ── CulpritMark pulse contract (B-284 PR N2 §3) ──────────────────────────────
+// "A fresh finding set exists" is defined structurally, not by a timestamp: the
+// ranked TYPES change (a finding appears, resolves, or is reordered by rank).
+// Two reads that happen to land the exact same ranked set are the SAME signature
+// — re-reading unchanged findings on every focus must not re-arm the pulse.
+export function signalFindingsSignature(findings: CachedFinding[]): string {
+  return [...findings]
+    .sort((a, b) => a.rank - b.rank)
+    .map((f) => `${f.rank}:${f.finding.type}`)
+    .join('|');
+}
+
+// The pulse is live only while there IS a live finding set the owner hasn't
+// seen yet — building/stale/no_pattern never pulse (there is nothing fresh to
+// flag), and an empty live signature ('' — findings.length === 0) never counts
+// as "seen" the moment it appears, since seenSignature also starts unset.
+export function hasUnseenFinding(
+  displayState: DisplayState,
+  findings: CachedFinding[],
+  seenSignature: string | undefined,
+): boolean {
+  if (displayState !== 'live' || findings.length === 0) return false;
+  return signalFindingsSignature(findings) !== seenSignature;
+}
+
 // ── Empty-state intros ────────────────────────────────────────────────────────
 export function buildingIntro(petName: string): string {
   return `We're getting to know ${petName}. Keep logging and the first patterns start to surface in a few days.`;
