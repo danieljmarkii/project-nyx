@@ -41,13 +41,24 @@ const TEAL_ID = 'landingAuroraTeal';
 export function NightHeroGround() {
   const { width, height } = useWindowDimensions();
   return (
-    <View style={styles.fill} pointerEvents="none">
+    // Decorative only — non-interactive (CTAs beneath stay tappable) and hidden
+    // from screen readers (the hero's "Culprit" group carries the meaning), per
+    // the OnboardingHeader precedent for full-bleed decorative art.
+    <View
+      style={styles.fill}
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
       <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
         <Defs>
           {/* objectBoundingBox → each radial fills its host ellipse's bounding
               box, so a circular gradient stretches into the soft elliptical glow
               the direction calls for. Fades to zero before the ellipse edge, so
-              the shape's own boundary never shows as a hard line. */}
+              the shape's own boundary never shows as a hard line. iOS/Core
+              Graphics renders the non-uniform stretch natively (our only shipping
+              runtime); if Android becomes a target, verify the elliptical falloff
+              there — some react-native-svg builds fall back to a circular glow. */}
           <RadialGradient id={VIOLET_ID} cx={0.5} cy={0.5} r={0.5} gradientUnits="objectBoundingBox">
             <Stop offset="0" stopColor={theme.colorAuroraViolet} stopOpacity={1} />
             <Stop offset="0.62" stopColor={theme.colorAuroraViolet} stopOpacity={0} />
