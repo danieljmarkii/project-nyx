@@ -29,4 +29,7 @@ Conventions established by these documents:
   theme PR.
 - Related specs elsewhere: `docs/culprit-icon-brand-direction.md` (the icon
   decision record), `docs/culprit-rename-requirements.md` (B-274 naming),
-  `docs/culprit-rebrand-execution-plan.md` (rebrand PR plan).
+  `docs/culprit-rebrand-execution-plan.md` (rebrand PR plan), and — the
+  culmination of the rounds indexed above — **`docs/culprit-in-app-brand-requirements.md`**
+  (B-284, build-ready: PRs N1–N7, per-PR acceptance criteria, verbatim copy,
+  the D8 on-device ground gate and D9 Tier-2 edit gate).
