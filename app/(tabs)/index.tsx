@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useEvents } from '../../hooks/useEvents';
@@ -15,6 +15,10 @@ export default function HomeScreen() {
   // B-054 §6 — reactive refresh-after-hydrate: re-read Today whenever a sync
   // cycle finishes, so rows another device pushed appear without a reload.
   const hydrationTick = useSyncStore((s) => s.hydrationTick);
+  // CulpritMark tap-to-view (B-284 §3): the Signal zone is the FIRST thing in the
+  // scroll body (right under the banner), so "scroll to the Signal zone" is just
+  // scrolling to top — no measured y-offset/onLayout tracking needed.
+  const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     loadTodayEvents();
@@ -28,8 +32,9 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       {/* Pinned identity strip (B-076) — stays put while the zones scroll, so
           the AI Signal still leads the scrollable intelligence surface. */}
-      <HomeHeader />
+      <HomeHeader onPressMark={() => scrollRef.current?.scrollTo({ y: 0, animated: true })} />
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >

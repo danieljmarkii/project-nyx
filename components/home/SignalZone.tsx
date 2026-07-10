@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -17,11 +18,27 @@ const PREVIEW_INSIGHTS = [
 ];
 
 export function SignalZone() {
-  const { findings, coverage, displayState, petName, isLoading } = useSignal();
+  const { findings, coverage, displayState, petName, isLoading, markSeen } = useSignal();
 
   // While the first cache read is in flight, hold the warm building state rather
   // than letting the empty findings flash 'stale' for a frame.
   const state = isLoading && findings.length === 0 ? 'building' : displayState;
+
+  // The CulpritMark pulse contract (B-284 §3): "flips false when the Signal zone
+  // is viewed (screen focus with the zone on-screen)". This card is always on-
+  // screen whenever Home is focused (it isn't behind a scroll gate), so marking
+  // seen here — once findings have actually landed — satisfies that trigger. The
+  // "See all patterns" footer tap-through is the spec's second trigger; it
+  // navigates away, which itself re-focuses Home (and re-marks seen) on return.
+  // `markSeen` comes straight off THIS `useSignal()` call, not a separately-read
+  // pet id — it always closes over the SAME petId+findings pair this hook just
+  // derived `state` from, so a pet switch can never pair the wrong pet's id with
+  // stale findings (a code-reviewed multi-pet-safety regression this PR fixed).
+  useEffect(() => {
+    if (state === 'live') {
+      markSeen();
+    }
+  }, [state, markSeen]);
 
   return (
     // Signal is the dominant zone — one elevated container holding the ordered
