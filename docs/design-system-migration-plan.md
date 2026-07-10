@@ -1,6 +1,6 @@
 # Design System v1.2 ("Linear Clean") — Migration Plan
 
-**Status:** Plan of record. Approved by PM 2026-06-07. Build not yet started.
+**Status:** Executed. All four PRs shipped — palette (#99), fonts Geist+Newsreader (#100), event icons Lucide (#101), completion "moment" (#103, + folded meal card #105). Retained as the historical rationale for the token-value decisions (§3.1's value map, the destructive-on-dark call, the declined nested-`theme.ts` API). Open follow-ups tracked in STATUS.md: B-061 (app-wide Geist body rollout) and B-063 (tone-aware-moment design-principles line, pending PM sign-off).
 **Source bundle:** `docs/design-system/` (merged via PR #95 — reference material only).
 **Owning tracks:** four scoped PRs (see Sequencing). Schema changes: none anywhere.
 

@@ -639,8 +639,31 @@ export default function EventDetailScreen() {
             <>
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>MEDICATION</Text>
-                <Text style={styles.foodProduct}>{drugPrimary}</Text>
-                {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                {/* The drug name/strength links to the drug-library screen where a
+                    correction (fixing a mis-extracted strength) fixes every dose of
+                    that drug at once — the only path to that edit from History. Only
+                    a library-backed dose has a target; a free-text dose (null
+                    medication_item_id) renders the same text, non-tappable. */}
+                {dose.medicationItemId ? (
+                  <TouchableOpacity
+                    style={styles.drugLibraryLink}
+                    onPress={() => router.push(`/medication/${dose.medicationItemId}`)}
+                    activeOpacity={0.7}
+                    accessibilityRole="link"
+                    accessibilityLabel={`View drug details for ${drugPrimary}`}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.foodProduct}>{drugPrimary}</Text>
+                      {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                    </View>
+                    <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
+                  </TouchableOpacity>
+                ) : (
+                  <>
+                    <Text style={styles.foodProduct}>{drugPrimary}</Text>
+                    {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                  </>
+                )}
                 {/* B-156 PR B4 — dose → vehicle cross-link. On a dose given inside a
                     meal/treat, a tap opens that vehicle (where its intake is edited).
                     Drops cleanly if the vehicle is soft-deleted (paired_food_name nulls). */}
@@ -820,6 +843,15 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginTop: 2,
+  },
+  // The drug-name row as a link to the drug-library screen. Row layout so the
+  // chevron sits at the trailing edge; minHeight clears the 44pt tap-target floor
+  // without padding overshoot over the two-line name/strength block.
+  drugLibraryLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    minHeight: 44,
   },
   // The combo cross-link (B-156 PR B4). Accent text + chevron so it reads as a
   // navigation affordance to the paired event. alignSelf flex-start so the tap target

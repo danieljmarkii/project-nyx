@@ -18,10 +18,10 @@
 | # | Step | Type | Backlog | Status |
 |---|---|---|---|---|
 | 1 | Verify the App Store Connect record + lock the name | PM | B-272 | ✅ Done 2026-07-08 — name "Culprit — Pet Health Tracker", category Lifestyle/Health & Fitness |
-| 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | ⬜ Not started |
+| 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | 🟡 In progress — draft PR #302 open |
 | 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | 🔵 Spec'd 2026-07-08 — domain `getculprit.app` purchased (Cloudflare); build-ready spec `docs/culprit-website-requirements.md`; awaiting PM repo + Email Routing setup |
 | 4 | Pick + configure the production SMTP provider | PM | B-152 (part 1) | ⬜ Not started |
-| 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | ⬜ Not started |
+| 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | 🟡 In progress — draft PR #299 open, **permission strings only** (B-267); confirmed it does **not** include the `supportsTablet: false` flip (B-269) — that half still needs its own change, either folded into #299 before merge or a follow-up |
 | 6 | Ratify + flag off the paywall for v1 | Mixed | B-263–266 (deferral) | ⬜ Not started |
 | 7 | In-app version display | PR | B-231 | ⬜ Not started |
 | 8 | On-device deletion QA + logout-wipe (email confirm still OFF) | PM | B-039 + AC-6 | ⬜ Not started |

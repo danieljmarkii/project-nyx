@@ -1,6 +1,6 @@
 # Culprit Rebrand — Execution Plan (name + icon + branding)
 
-**Status:** Plan for review (v1) — awaiting PM greenlight to execute. No app code changed by this doc.
+**Status:** Executed. All three PRs shipped — A (#307, 2026-07-08), B (#309, 2026-07-09), C (#310, 2026-07-09). Retained as the historical plan-of-record / rationale for the PR split and the sequencing decisions below.
 **Date:** 2026-07-08 · **Tracks:** [`B-274`](./backlog.md) (name) · [`B-275`](./backlog.md) (icon/brand)
 **Purpose:** operationalize all the naming + branding work done so far into a concrete PR-by-PR sequence. This is the *orchestration* layer; it does **not** re-derive the detail that already lives in:
 
@@ -19,17 +19,17 @@
 | **Midnight-indigo token** | **Include now** | PM greenlights `colorBrandNight`. This **resolves** the CLAUDE.md open question ("adopt midnight indigo?") to **yes — additive & background-only** (teal stays the sole interactive accent). Exact value + `colorSurfaceDark` reconciliation lock inside PR C. |
 | **This session** | **Plan only** | Deliver this doc for review; touch no app code. Execution (and the CLAUDE.md / STATUS.md / backlog updates that ride with it) happens on greenlight. |
 
-**Doc updates deferred to greenlight** (flagged, not silently held): mark the CLAUDE.md indigo Open Question **Resolved**; advance **B-274 → in-progress**, **B-275 → in-progress**; correct `app-store-submission-guide.md:49` (rides PR A per rename-spec §3.7).
+**Doc updates deferred to greenlight — since completed:** the CLAUDE.md indigo Open Question was marked **Resolved** (2026-07-08); **B-274** and **B-275** both closed out as PRs A/B/C shipped; `app-store-submission-guide.md:49` was corrected in PR A per rename-spec §3.7.
 
 ---
 
 ## 2. The plan at a glance
 
-| PR | Scope | Ready to build? | Schema | Deploy |
+| PR | Scope | Status | Schema | Deploy |
 |---|---|---|---|---|
-| **A — Name + brand strings** | `app.json` `name`; all in-app wordmarks/copy; the vet-report brand strings; the 3 test files; the submission-guide doc line | ✅ **now** — no external dependency | none | **yes** — `generate-report` Edge Function |
-| **B — App icon + splash** | Swap the 4 asset PNGs for the Moon & Signal master; night-ground splash/adaptive bg; iOS-18 dark/tinted config | ⛔ **gated** on the design master | none | no |
-| **C — `colorBrandNight` token** | Tokenise midnight indigo in `theme.ts`; reconcile with `colorSurfaceDark` | ✅ **now** — PM greenlit; disjoint from A | none | no |
+| **A — Name + brand strings** | `app.json` `name`; all in-app wordmarks/copy; the vet-report brand strings; the 3 test files; the submission-guide doc line | ✅ **Shipped #307** (2026-07-08) | none | **yes** — `generate-report` Edge Function, deployed |
+| **B — App icon + splash** | Swap the 4 asset PNGs for the Moon & Signal master; night-ground splash/adaptive bg; iOS-18 dark/tinted config | ✅ **Shipped #309** (2026-07-09) | none | no |
+| **C — `colorBrandNight` token** | Tokenise midnight indigo in `theme.ts`; reconcile with `colorSurfaceDark` | ✅ **Shipped #310** (2026-07-09) | none | no |
 
 **Why three PRs, not one.** The rename spec's §10 imagines a single combined "name + icon" pass — that assumes the icon asset is in hand. Since the icon is the long pole (we chose "wait for a master"), collapsing everything into one PR would hold the trivial, submission-important, low-risk name flip hostage to studio artwork. Splitting lets PR A + PR C ship immediately and PR B land the moment the asset arrives. All three are in before the store build (guide step 10), which has other blockers ahead of it anyway (B-267, B-269).
 

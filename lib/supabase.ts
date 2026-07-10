@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import { ChunkedSecureStoreAdapter } from './secureStore';
+import { logAuth } from './authDebug';
 
 // Fail fast with an actionable message if config is missing. Without this
 // guard, an absent/placeholder env var builds a client that sends an empty
@@ -46,6 +47,10 @@ export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
 // the JWT when the app returns to the foreground. Without this, the access
 // token expires after 1 hour and all authenticated writes fail with RLS 42501.
 AppState.addEventListener('change', (state) => {
+  // Diagnostic breadcrumb: the foreground/background transitions bound the
+  // windows in which autoRefresh runs — the idle gap where the session is lost
+  // sits between a 'background' and the next cold start.
+  logAuth('appstate', { state });
   if (state === 'active') {
     supabase.auth.startAutoRefresh();
   } else {

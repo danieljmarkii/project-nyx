@@ -9,6 +9,8 @@ import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { wipeLocalSession } from '../lib/session';
+import { logAuth } from '../lib/authDebug';
+import { APP_BUILD, PLATFORM } from '../lib/appInfo';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
@@ -38,9 +40,25 @@ export default function RootLayout() {
   useSyncTimezone();
 
   useEffect(() => {
+    // Diagnostic breadcrumb marking the start of this launch, so the on-device
+    // log is grouped per process lifetime (build + platform for cross-device
+    // correlation). See lib/authDebug.ts — temporary auth-persistence probe.
+    logAuth('launch', { build: APP_BUILD, platform: PLATFORM });
+
     initDb().catch(console.error);
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // The single most diagnostic moment: did the persisted session survive to
+      // this cold start? `expiresInSec < 0` means it was read back but already
+      // expired (a refresh would follow); no session means the storage read (see
+      // the immediately-preceding `sec.get` breadcrumb) came back empty.
+      logAuth('coldstart.getSession', {
+        hasSession: !!session,
+        expiresInSec:
+          session?.expires_at != null
+            ? session.expires_at - Math.floor(Date.now() / 1000)
+            : null,
+      });
       setSession(session);
       setLoading(false);
       if (!session) {
@@ -53,6 +71,17 @@ export default function RootLayout() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Diagnostic breadcrumb: every auth transition (INITIAL_SESSION, SIGNED_IN,
+      // TOKEN_REFRESHED, SIGNED_OUT). A SIGNED_OUT that is NOT the user's own tap
+      // is the fingerprint of the bug — the app deciding the session is gone.
+      logAuth('authchange', {
+        event,
+        hasSession: !!session,
+        expiresInSec:
+          session?.expires_at != null
+            ? session.expires_at - Math.floor(Date.now() / 1000)
+            : null,
+      });
       // FR-9 (B-054 Trust & Safety gate): wipe the local pet-data copy on an
       // explicit sign-out before routing away. Gated on the SIGNED_OUT event
       // specifically — NOT on a null session generally — so a transient token
@@ -115,6 +144,7 @@ export default function RootLayout() {
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
         <Stack.Screen name="settings/feedback" />
+        <Stack.Screen name="settings/diagnostics" />
       </Stack>
       <MealCompletionCard />
       <MedicationCompletionCard />

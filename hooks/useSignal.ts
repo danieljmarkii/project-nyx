@@ -3,6 +3,7 @@ import { useFocusEffect } from 'expo-router';
 import { getDb } from '../lib/db';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
+import { useSignalMarkStore } from '../store/signalMarkStore';
 import {
   readSignalCache,
   isSignalCacheStale,
@@ -14,7 +15,9 @@ import {
 import {
   bannerCopy,
   deriveDisplayState,
+  hasUnseenFinding,
   selectCrossPetSafetyFinding,
+  signalFindingsSignature,
   validateBannerPhrasing,
   type DisplayState,
 } from '../lib/signalCopy';
@@ -27,6 +30,17 @@ export interface SignalState {
   signalText: string | null;
   petName: string;
   isLoading: boolean;
+  /** The CulpritMark pulse contract (B-284 §3) — true while this pet has a live,
+   * unseen finding set. */
+  hasUnseenSignal: boolean;
+  /** Marks THIS pet's current finding set as seen (spec §3 — "flips false when
+   * the Signal zone is viewed"). Bound to this hook instance's own petId +
+   * findings — always a consistent pair by construction, so callers never have
+   * to re-derive "which pet do these findings belong to" from a separate store
+   * (that mismatch is exactly the multi-pet leak this contract must not allow:
+   * one pet's signature must never land under another pet's key). No-op before
+   * a pet is loaded. */
+  markSeen: () => void;
 }
 
 // Window for "recent activity" — distinguishes building/no_pattern (still active)
@@ -91,29 +105,34 @@ export function useSignal(): SignalState {
     hasSubstantialHistory: false,
   });
   const [isLoading, setIsLoading] = useState(false);
-  const loadedPetRef = useRef<string | null>(null);
 
   const petId = activePet?.id ?? null;
   const petName = activePet?.name ?? 'your pet';
+
+  // Synchronous reset on a pet SWITCH — React's documented "adjust state while
+  // rendering" pattern (a ref-compared setState call in the render body, not an
+  // effect). This must happen in the SAME render pass as the petId change, not
+  // a tick later in an effect: `hasUnseenSignal`/`markSeen` below are derived
+  // from `petId` and `findings` together, and if `findings` still held the
+  // PREVIOUS pet's live data while `petId` already pointed at the new pet, a
+  // consumer that reads both in that window (e.g. a sibling's own effect) could
+  // pair pet B's id with pet A's findings — writing pet A's finding signature
+  // into pet B's `seenSignatures` entry (a real cross-pet leak, code-reviewed
+  // regression on this PR). Clearing here closes that window entirely instead
+  // of narrowing it.
+  const resetPetRef = useRef<string | null>(null);
+  if (petId !== resetPetRef.current) {
+    resetPetRef.current = petId;
+    setFindings([]);
+    setCoverage([]);
+    setSignalText(null);
+    if (petId) setIsLoading(true);
+  }
 
   useFocusEffect(
     useCallback(() => {
       if (!petId) return;
       let cancelled = false;
-      // Only show the loading state on the first read for a pet — on later focuses
-      // we keep the last cached cards visible to avoid a flicker.
-      const firstLoad = loadedPetRef.current !== petId;
-      loadedPetRef.current = petId;
-      // On a pet SWITCH, clear the previous pet's cached data so its findings or
-      // coverage diagnostic can't flash on the new pet during the async read
-      // (multi-pet safety — coverage names a real protein, so a stale flash is
-      // especially conspicuous).
-      if (firstLoad) {
-        setIsLoading(true);
-        setFindings([]);
-        setCoverage([]);
-        setSignalText(null);
-      }
 
       (async () => {
         if (!cancelled) setLocalCtx(getLocalSignalContext(petId));
@@ -155,7 +174,21 @@ export function useSignal(): SignalState {
     localCtx.hasRecentActivity,
     localCtx.hasSubstantialHistory,
   );
-  return { findings, coverage, displayState, signalText, petName, isLoading };
+  const seenSignature = useSignalMarkStore((s) => (petId ? s.seenSignatures[petId] : undefined));
+  const hasUnseenSignal = hasUnseenFinding(displayState, findings, seenSignature);
+  // Closes over THIS render's petId + findings — always the pair the render-time
+  // reset above guarantees are consistent, so a caller can never accidentally
+  // re-pair a stale findings array with the wrong pet's id (see the comment above).
+  // Guards on findings.length itself (not just trusting the caller checked
+  // displayState === 'live') — there is nothing to mark seen for an empty set,
+  // and writing an empty-signature entry would be a wasted store write with no
+  // useful meaning.
+  const markSeen = useCallback(() => {
+    if (!petId || findings.length === 0) return;
+    useSignalMarkStore.getState().markSeen(petId, signalFindingsSignature(findings));
+  }, [petId, findings]);
+
+  return { findings, coverage, displayState, signalText, petName, isLoading, hasUnseenSignal, markSeen };
 }
 
 export interface CrossPetBanner {

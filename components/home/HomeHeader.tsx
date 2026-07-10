@@ -10,6 +10,8 @@ import { petIdentityLine } from '../../lib/utils';
 import { PetAvatar } from '../pet/PetAvatar';
 import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
+import { CulpritMark } from '../brand/CulpritMark';
+import { useSignal } from '../../hooks/useSignal';
 
 // Home identity strip (B-076) — a thin orienting band above the Signal: a quiet
 // "Culprit" wordmark + the active pet's avatar, name, and one slim line.
@@ -20,7 +22,7 @@ import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 // pets.length > 1 — single-pet households see no multi-pet chrome (Jordan's
 // condition) — but the row stays tappable for everyone because the sheet is
 // also the only "Add a pet" entry point (an owner's path to pet #2).
-export function HomeHeader() {
+export function HomeHeader({ onPressMark }: { onPressMark?: () => void }) {
   const { pets, activePet } = usePetStore();
   // The owner email seeds the account-avatar monogram (§D10). Home renders only
   // behind a live session, so it's populated whenever this strip is on screen.
@@ -28,6 +30,9 @@ export function HomeHeader() {
   // Own the top safe-area inset so the white surface bleeds up behind the
   // status bar — otherwise the screen's grey bg shows above the strip.
   const insets = useSafeAreaInsets();
+  // The CulpritMark pulse (B-284 §3) — same cache read SignalZone/CrossPetSafetyBanner
+  // already each own independently; a fresh, unseen finding lights the header mark.
+  const { hasUnseenSignal } = useSignal();
 
   const [switcherVisible, setSwitcherVisible] = useState(false);
 
@@ -45,7 +50,27 @@ export function HomeHeader() {
           not a Signal card, so Principle 3's "no settings shortcut on Home"
           holds. Sits opposite the wordmark, aligned with it. */}
       <View style={styles.topRow}>
-        <Text style={styles.wordmark}>Culprit</Text>
+        <TouchableOpacity
+          onPress={onPressMark}
+          disabled={!onPressMark}
+          hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+          accessibilityRole={onPressMark ? 'button' : undefined}
+          accessibilityLabel={onPressMark ? 'Culprit — jump to your Signal' : undefined}
+        >
+          <CulpritMark
+            size={16}
+            ground="light"
+            live={hasUnseenSignal}
+            withWordmark
+            wordmarkStyle={styles.wordmark}
+            // The wrapping TouchableOpacity already carries the accessible
+            // label/role whenever it's a real button (onPressMark set) — the
+            // mark must stay a silent child then, or a screen reader hits two
+            // "Culprit" nodes for one control (code-reviewed regression).
+            // Falls back to self-labelling only in the unwired/disabled case.
+            accessible={!onPressMark}
+          />
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => router.push('/settings')}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
