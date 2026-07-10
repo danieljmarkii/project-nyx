@@ -565,7 +565,7 @@ function qrSvg(matrix: readonly string[], sizePx: number): string {
   return (
     `<svg class="hqr" width="${sizePx}" height="${sizePx}" viewBox="0 0 ${dim} ${dim}" ` +
     `role="img" aria-label="QR code linking to getculprit.app">` +
-    `<rect width="${dim}" height="${dim}" fill="#fff"/><g fill="#111">${rects}</g></svg>`
+    `<rect width="${dim}" height="${dim}" fill="var(--surface)"/><g fill="var(--ink)">${rects}</g></svg>`
   )
 }
 

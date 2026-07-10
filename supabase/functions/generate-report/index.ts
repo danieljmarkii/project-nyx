@@ -781,15 +781,14 @@ export async function generateReportForPet(
   // from the report). Fetched by the exact item ids present on the doses — the global catalog, the
   // same RLS the regimen→medication_items join already relies on. Skipped when there are no doses.
   const doseItemIds = [...new Set(doses.map((d) => d.medicationItemId).filter((v): v is string => v !== null))]
-  const medItemsRes = doseItemIds.length
-    ? await supabase
-        .from('medication_items')
-        .select('id, generic_name, brand_name, strength, default_route, is_prescription')
-        .in('id', doseItemIds)
-    : { data: [] as unknown, error: null }
-  const medicationItems = mapMedicationItemRows(
-    rowsOrThrow<MedicationItemRow>(medItemsRes, 'medication_items'),
-  )
+  let medicationItems: ReportMedicationItemInput[] = []
+  if (doseItemIds.length > 0) {
+    const medItemsRes = await supabase
+      .from('medication_items')
+      .select('id, generic_name, brand_name, strength, default_route, is_prescription')
+      .in('id', doseItemIds)
+    medicationItems = mapMedicationItemRows(rowsOrThrow<MedicationItemRow>(medItemsRes, 'medication_items'))
+  }
 
   const input: ReportInput = {
     now: nowIso,
