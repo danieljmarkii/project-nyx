@@ -58,3 +58,15 @@ export function buildSupportMailto(email: string, ctx: SupportMailContext): stri
   const query = `subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   return `mailto:${email}?${query}`;
 }
+
+// The subject for the §D8 "Share feedback" mail: a leading `[Feedback]` tag (the
+// filter key that routes product input to the same one inbox as support, via the
+// Cloudflare `[Feedback]` rule) plus the chosen category so triage can sort at a
+// glance. Category is optional (the composer's ChipGroup allows no selection), so
+// an absent category degrades to the brand word — the tag is never left bare
+// ("[Feedback] " reads as an empty subject). Pure so it's unit-tested with the
+// mailto helper rather than as untested logic inside the screen.
+export function buildFeedbackSubject(category: string | null | undefined): string {
+  const c = (category ?? '').trim();
+  return c ? `[Feedback] ${c}` : '[Feedback] Culprit';
+}

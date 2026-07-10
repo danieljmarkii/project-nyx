@@ -114,6 +114,7 @@ export default function RootLayout() {
         <Stack.Screen name="report" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
+        <Stack.Screen name="settings/feedback" />
       </Stack>
       <MealCompletionCard />
       <MedicationCompletionCard />
