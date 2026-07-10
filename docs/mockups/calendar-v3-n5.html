@@ -1,0 +1,599 @@
+<title>Calendar v3 — PR N5 mock</title>
+<style>
+  /* ————————————————————————————————————————————————————————————
+     Calendar v3 (PR N5 · B-284) — review mock.
+     Doc chrome is theme-aware. The phone CONTENT is pinned to the real
+     light app tokens (constants/theme.ts) because the Patterns calendar
+     is a *records* surface — it ships light per the register rule §1.2.
+     ———————————————————————————————————————————————————————————— */
+
+  :root{
+    /* doc chrome — light */
+    --bg:#F5F7F8;              /* cool-neutral ground, faint teal bias */
+    --panel:#FFFFFF;
+    --ink:#0E1513;
+    --ink-2:#4B5551;
+    --ink-3:#75807B;
+    --line:#E4E8E7;
+    --line-2:#EEF1F0;
+    --accent:#00A892;         /* teal, dropped a touch for text contrast on light */
+    --accent-bg:#E0FBF7;
+    --rose:#F43F5E;
+    --shadow:0 1px 2px rgba(10,20,18,.04),0 8px 24px rgba(10,20,18,.06);
+
+    /* app tokens — FIXED (the shipped card is light on every theme) */
+    --app-surface:#FFFFFF;
+    --app-sub:#F5F5F5;
+    --app-empty:#F0F0F0;
+    --app-line:#EAEAEA;
+    --app-ink:#0A0A0A;
+    --app-2nd:#525252;
+    --app-3rd:#737373;
+    --app-dis:#A3A3A3;
+    --app-accent:#00C2A8;
+    --app-rose:#F43F5E;
+    --app-tick:#C4C9C7;       /* neutral coverage tick — not the symptom hue */
+
+    --font-sans:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --font-serif:'Newsreader',Georgia,'Times New Roman',serif;
+    --font-mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#13112E;           /* the brand night ground — doc chrome only */
+      --panel:#1C1942;
+      --ink:#ECEAF6;
+      --ink-2:#A6A2CE;
+      --ink-3:#807BB4;
+      --line:#2C2960;
+      --line-2:#242155;
+      --accent:#2FD9C2;
+      --accent-bg:#1B2A44;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#F5F7F8;--panel:#FFFFFF;--ink:#0E1513;--ink-2:#4B5551;--ink-3:#75807B;
+    --line:#E4E8E7;--line-2:#EEF1F0;--accent:#00A892;--accent-bg:#E0FBF7;
+    --shadow:0 1px 2px rgba(10,20,18,.04),0 8px 24px rgba(10,20,18,.06);
+  }
+  :root[data-theme="dark"]{
+    --bg:#13112E;--panel:#1C1942;--ink:#ECEAF6;--ink-2:#A6A2CE;--ink-3:#807BB4;
+    --line:#2C2960;--line-2:#242155;--accent:#2FD9C2;--accent-bg:#1B2A44;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  .wrap{
+    font-family:var(--font-sans);
+    background:var(--bg);color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    padding:clamp(20px,5vw,64px) 20px 72px;
+    min-height:100vh;
+  }
+  .col{max-width:960px;margin:0 auto;}
+
+  /* masthead */
+  .eyebrow{
+    font-family:var(--font-mono);font-size:.7rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--accent);margin:0 0 14px;
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+  }
+  .eyebrow .dot{width:4px;height:4px;border-radius:50%;background:var(--ink-3);}
+  h1{
+    font-family:var(--font-serif);font-weight:500;
+    font-size:clamp(2.1rem,6vw,3.4rem);line-height:1.04;letter-spacing:-.01em;
+    margin:0 0 16px;text-wrap:balance;
+  }
+  .lede{
+    font-size:clamp(1rem,2.4vw,1.18rem);line-height:1.55;color:var(--ink-2);
+    max-width:60ch;margin:0 0 22px;
+  }
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px;}
+  .chip{
+    font-size:.76rem;font-weight:500;color:var(--ink-2);
+    background:var(--panel);border:1px solid var(--line);
+    padding:5px 11px;border-radius:999px;
+  }
+  .chip b{color:var(--ink);font-weight:600;}
+  .callout{
+    display:flex;gap:12px;align-items:flex-start;
+    background:var(--accent-bg);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);
+    border-radius:14px;padding:14px 16px;font-size:.9rem;line-height:1.5;color:var(--ink-2);
+    max-width:64ch;
+  }
+  .callout b{color:var(--ink);}
+  .callout .mk{color:var(--accent);font-weight:700;flex:none;font-family:var(--font-mono);}
+
+  /* sections */
+  section{margin-top:clamp(40px,7vw,72px);}
+  .kicker{
+    font-family:var(--font-mono);font-size:.68rem;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--ink-3);margin:0 0 8px;
+  }
+  h2{
+    font-family:var(--font-serif);font-weight:500;
+    font-size:clamp(1.4rem,3.4vw,2rem);line-height:1.12;letter-spacing:-.01em;
+    margin:0 0 8px;text-wrap:balance;
+  }
+  .sub{font-size:.98rem;line-height:1.55;color:var(--ink-2);max-width:60ch;margin:0 0 26px;}
+
+  /* phones */
+  .phones{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+    gap:26px;align-items:start;
+  }
+  figure{margin:0;}
+  figcaption{
+    display:flex;align-items:center;gap:8px;
+    font-size:.82rem;font-weight:600;color:var(--ink);margin:0 0 12px;
+  }
+  figcaption .tag{
+    font-family:var(--font-mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;
+    padding:2px 7px;border-radius:5px;font-weight:600;
+  }
+  .tag.old{background:color-mix(in srgb,var(--rose) 16%,transparent);color:var(--rose);}
+  .tag.new{background:var(--accent-bg);color:var(--accent);}
+  .fig-note{font-size:.84rem;line-height:1.5;color:var(--ink-3);margin:14px 2px 0;}
+  .fig-note b{color:var(--ink-2);}
+
+  .phone{
+    background:#EDEFF1;border-radius:34px;padding:12px;
+    box-shadow:var(--shadow);border:1px solid rgba(0,0,0,.05);
+    max-width:340px;margin-inline:auto;
+  }
+  @media (prefers-color-scheme:dark){.phone{background:#0C0A22;border-color:rgba(255,255,255,.05);}}
+  :root[data-theme="dark"] .phone{background:#0C0A22;border-color:rgba(255,255,255,.05);}
+  :root[data-theme="light"] .phone{background:#EDEFF1;border-color:rgba(0,0,0,.05);}
+  .screen{
+    background:#FAFAFA;border-radius:24px;overflow:hidden;
+    padding:16px 14px 18px;position:relative;
+  }
+  .statusbar{
+    display:flex;justify-content:space-between;align-items:center;
+    font-size:.66rem;color:var(--app-3rd);font-weight:600;margin:0 4px 12px;
+    font-variant-numeric:tabular-nums;
+  }
+  .patterns-h{font-size:.82rem;font-weight:700;color:var(--app-ink);margin:0 4px 12px;}
+
+  /* the card (FrequencyCalendarCard) — real app tokens */
+  .card{
+    background:var(--app-surface);border-radius:14px;padding:14px;
+    box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 14px rgba(0,0,0,.05);
+    font-family:var(--font-sans);
+  }
+  .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .card-title{font-size:.8rem;font-weight:600;color:var(--app-2nd);}
+  .card-chev{color:var(--app-dis);font-size:1rem;line-height:1;}
+
+  /* nav (after only) */
+  .nav{display:flex;align-items:center;gap:6px;}
+  .navbtn{
+    width:28px;height:28px;border-radius:8px;border:1px solid var(--app-line);
+    background:var(--app-surface);color:var(--app-2nd);font-size:.9rem;
+    display:grid;place-items:center;cursor:pointer;font-family:inherit;padding:0;
+  }
+  .navbtn:disabled{opacity:.34;cursor:default;}
+  .navbtn:focus-visible{outline:2px solid var(--app-accent);outline-offset:2px;}
+  .monthlbl{font-size:.74rem;font-weight:600;color:var(--app-ink);margin-bottom:6px;}
+
+  .summary{
+    font-size:.72rem;font-weight:600;color:var(--app-ink);
+    line-height:1.4;margin-bottom:12px;
+  }
+  .summary .q{color:var(--app-2nd);font-weight:400;}
+
+  .week{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .wd{text-align:center;font-size:.58rem;color:var(--app-dis);padding-bottom:2px;}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .cell{
+    aspect-ratio:1/1.16;border-radius:8px;background:var(--app-sub);border:none;
+    padding:3px 0 4px;display:flex;flex-direction:column;align-items:center;
+    justify-content:space-between;position:relative;font-family:inherit;cursor:pointer;
+  }
+  .cell.blank{background:transparent;cursor:default;}
+  .cell:focus-visible{outline:2px solid var(--app-accent);outline-offset:1px;}
+  .cell.today{box-shadow:inset 0 0 0 1.5px var(--app-accent);}
+  .cell.sel{background:#ECEBFA;}
+  .dnum{font-size:.62rem;color:var(--app-3rd);line-height:1;margin-top:2px;}
+  .cell.symp .dnum{color:var(--app-ink);font-weight:700;}
+  .pips{display:flex;gap:2px;align-items:center;height:6px;justify-content:center;}
+  .pip{width:5px;height:5px;border-radius:50%;background:var(--app-rose);}
+  .pip-more{font-size:.58rem;font-weight:700;color:var(--app-rose);line-height:1;}
+  .tick{
+    position:absolute;bottom:3px;left:26%;right:26%;height:2px;border-radius:1px;
+    background:var(--app-tick);opacity:0;
+  }
+  .show-all .tick.on{opacity:1;}
+
+  /* before: opacity heat cell */
+  .hcell{
+    aspect-ratio:1/1.16;border-radius:8px;position:relative;overflow:hidden;
+    display:grid;place-items:center;background:transparent;
+  }
+  .hcell .fill{position:absolute;inset:0;border-radius:8px;}
+  .hnum{font-size:.62rem;font-weight:600;position:relative;z-index:1;}
+  .legend{
+    display:flex;align-items:center;justify-content:flex-end;gap:5px;
+    margin-top:10px;font-size:.6rem;color:var(--app-3rd);
+  }
+  .swatch{width:12px;height:12px;border-radius:4px;background:var(--app-rose);}
+  .caption{font-size:.6rem;color:var(--app-3rd);margin-top:8px;}
+
+  /* toggle + legend (after) */
+  .toggle{
+    display:flex;align-items:center;gap:7px;margin-top:11px;
+    font-size:.66rem;color:var(--app-2nd);cursor:pointer;user-select:none;
+  }
+  .toggle input{accent-color:var(--app-accent);width:14px;height:14px;}
+  .callhint{
+    display:flex;align-items:center;gap:6px;margin-top:9px;
+    font-size:.62rem;color:var(--app-3rd);
+  }
+  .callhint .pip{flex:none;}
+
+  /* day sheet */
+  .sheet{margin-top:12px;border-top:1px solid var(--app-line);padding-top:11px;}
+  .sheet[hidden]{display:none;}
+  .sheet-title{font-size:.76rem;font-weight:700;color:var(--app-ink);margin-bottom:2px;}
+  .sheet-sub{font-size:.62rem;color:var(--app-3rd);margin-bottom:9px;line-height:1.4;}
+  .drow{display:flex;align-items:center;gap:9px;padding:5px 0;}
+  .dico{
+    flex:none;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;
+    font-size:.6rem;font-weight:700;
+  }
+  .dico.symp{background:#FFE4E6;color:var(--app-rose);}
+  .dico.meal{background:#E0FBF7;color:#0E9E8A;}
+  .dico.med{background:#EEF0FF;color:#5B63C4;}
+  .dlabel{flex:1;font-size:.7rem;color:var(--app-ink);line-height:1.3;}
+  .dtime{font-size:.62rem;color:var(--app-3rd);font-variant-numeric:tabular-nums;flex:none;}
+  .sheet-link{
+    display:inline-flex;align-items:center;gap:4px;margin-top:10px;
+    font-size:.68rem;font-weight:600;color:var(--app-accent);
+    background:none;border:none;padding:0;cursor:pointer;font-family:inherit;
+  }
+
+  .try-tip{
+    display:inline-flex;align-items:center;gap:8px;margin:18px auto 0;
+    font-size:.82rem;color:var(--ink-3);
+  }
+  .kbd{
+    font-family:var(--font-mono);font-size:.72rem;background:var(--panel);
+    border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;color:var(--ink-2);
+  }
+
+  /* mapping table */
+  .maptable{overflow-x:auto;border:1px solid var(--line);border-radius:16px;background:var(--panel);}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-size:.9rem;}
+  thead th{
+    text-align:left;font-family:var(--font-mono);font-weight:500;font-size:.64rem;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+    padding:14px 18px;border-bottom:1px solid var(--line);
+  }
+  td{padding:14px 18px;border-bottom:1px solid var(--line-2);color:var(--ink-2);vertical-align:top;line-height:1.5;}
+  tr:last-child td{border-bottom:none;}
+  td.c{color:var(--ink);font-weight:600;white-space:nowrap;}
+  td .arrow{color:var(--accent);font-weight:700;}
+
+  /* notes list */
+  .notes-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;}
+  .note-card{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:16px 18px;box-shadow:var(--shadow);
+  }
+  .note-card h3{
+    font-size:.82rem;margin:0 0 6px;color:var(--ink);
+    display:flex;align-items:center;gap:8px;
+  }
+  .note-card h3 .m{font-family:var(--font-mono);font-size:.64rem;color:var(--accent);}
+  .note-card p{margin:0;font-size:.86rem;line-height:1.55;color:var(--ink-2);}
+
+  footer{
+    margin-top:64px;padding-top:22px;border-top:1px solid var(--line);
+    font-size:.8rem;color:var(--ink-3);line-height:1.7;font-family:var(--font-mono);
+  }
+
+  @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;}}
+</style>
+
+<main class="wrap">
+  <div class="col">
+
+    <header>
+      <p class="eyebrow">PR N5 <span class="dot"></span> B-284 in-app brand <span class="dot"></span> resolves B-226 <span class="dot"></span> spec §8.1</p>
+      <h1>Calendar v3</h1>
+      <p class="lede">The Patterns frequency calendar, rebuilt around three things the current grid can't do: read counts at a glance, move between months, and answer "what actually happened that day?". A review mock — same theme tokens the app ships, so what you see here is what lands.</p>
+      <div class="chips">
+        <span class="chip"><b>Count-pips</b> replace the opacity ramp</span>
+        <span class="chip"><b>‹ ›</b> month paging</span>
+        <span class="chip"><b>Tap a day</b> → everything logged</span>
+        <span class="chip"><b>Coverage layer</b>, off by default</span>
+      </div>
+      <p class="callout"><span class="mk">i</span><span><b>Nothing is built yet.</b> This is the "review first" pass you asked for — no change to <code>FrequencyCalendarCard.tsx</code> or any test. Approve the look and interactions here and I'll implement it exactly, then send the on-device build.</span></p>
+    </header>
+
+    <!-- ————— BEFORE / AFTER ————— -->
+    <section>
+      <p class="kicker">The core change</p>
+      <h2>Same month, two ways to read it</h2>
+      <p class="sub">The heat-ramp asks you to decode a shade against a legend to recover a number. Pips just show the number. Both grids below render the exact same June data — five symptom days, worst on the 24th.</p>
+
+      <div class="phones">
+        <figure>
+          <figcaption><span class="tag old">Now</span> Opacity heat-ramp</figcaption>
+          <div class="phone">
+            <div class="screen">
+              <div class="statusbar"><span>9:41</span><span>Patterns</span></div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">Vomiting</span><span class="card-chev">›</span></div>
+                <div class="week" id="before-wd"></div>
+                <div class="grid" id="before-grid" style="margin-top:4px"></div>
+                <div class="legend"><span style="margin-right:2px">Fewer</span><span class="swatch" style="opacity:.25"></span><span class="swatch" style="opacity:.45"></span><span class="swatch" style="opacity:.7"></span><span class="swatch" style="opacity:1"></span><span style="margin-left:2px">More</span></div>
+                <div class="caption">Logged on 5 days · Jun 1 – Jun 30</div>
+              </div>
+            </div>
+          </div>
+          <p class="fig-note"><b>The complaint (B-226 #3):</b> the shade scale has never read as legible, even with the legend. Is that day a 2 or a 3? You have to compare swatches. One fixed month, and tapping does nothing.</p>
+        </figure>
+
+        <figure>
+          <figcaption><span class="tag new">v3</span> Count-pips</figcaption>
+          <div class="phone">
+            <div class="screen">
+              <div class="statusbar"><span>9:41</span><span>Patterns</span></div>
+              <div class="card">
+                <div class="card-head"><span class="card-title">Vomiting</span><span class="card-chev">›</span></div>
+                <div class="summary" id="after-static-sum"></div>
+                <div class="week" id="after-static-wd"></div>
+                <div class="grid" id="after-static-grid"></div>
+                <div class="callhint"><span class="pip"></span><span>1 dot = 1 episode · ×N past three · tap any day for everything logged</span></div>
+              </div>
+            </div>
+          </div>
+          <p class="fig-note"><b>The fix:</b> one to three rose dots count the episodes; four or more shows <b>×N</b>. The day numeral darkens and semibolds on symptom days. No shade to decode, no legend to consult.</p>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ————— INTERACTIVE ————— -->
+    <section>
+      <p class="kicker">Live demo</p>
+      <h2>The new interactions</h2>
+      <p class="sub">This one is real — page through months, tap a day to open its drill-in, and flip on the coverage layer. It's the same logic that will ship.</p>
+
+      <div class="phone" style="max-width:360px">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span>Patterns</span></div>
+          <div class="patterns-h">Vomiting — this month</div>
+          <div class="card" id="demo-card">
+            <div class="card-head">
+              <span class="card-title">Vomiting</span>
+              <div class="nav">
+                <button class="navbtn" id="prev" type="button" aria-label="Previous month">‹</button>
+                <button class="navbtn" id="next" type="button" aria-label="Next month">›</button>
+              </div>
+            </div>
+            <div class="monthlbl" id="monthlbl">June 2026</div>
+            <div class="summary" id="summary"></div>
+            <div class="week" id="demo-wd"></div>
+            <div class="grid" id="demo-grid"></div>
+            <label class="toggle"><input type="checkbox" id="layer"> Show all logging</label>
+            <div class="callhint" id="hint"><span class="pip"></span><span>1 dot = 1 episode · tap any day for everything logged</span></div>
+
+            <div class="sheet" id="sheet" hidden>
+              <div class="sheet-title" id="sheet-title">Jun 24</div>
+              <div class="sheet-sub" id="sheet-sub"></div>
+              <div id="sheet-rows"></div>
+              <button class="sheet-link" type="button" id="sheet-link">Open in History ›</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="text-align:center"><span class="try-tip">Try it — tap <span class="kbd">‹ ›</span>, tap a day, toggle <span class="kbd">Show all logging</span></span></div>
+    </section>
+
+    <!-- ————— MAPPING ————— -->
+    <section>
+      <p class="kicker">Traceability</p>
+      <h2>How it answers B-226</h2>
+      <p class="sub">The PM logged three complaints while dogfooding the Patterns tab. Each maps to a concrete change with its own acceptance criterion.</p>
+      <div class="maptable">
+        <table>
+          <thead><tr><th>PM complaint</th><th>Calendar v3 change</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="c">#1 · Tapping a day<br>does nothing useful</td>
+              <td>Any day cell (≥44pt) opens a <span class="arrow">drill-in sheet</span> listing <b>every</b> event that day — symptom, meal, med — with time, and an "Open in History ›" deep-link filtered to that day. Not just the one symptom the card is scoped to.</td>
+            </tr>
+            <tr>
+              <td class="c">#2 · One fixed<br>window, no nav</td>
+              <td><span class="arrow">‹ › month paging</span> (and swipe), bounded oldest-data → current month; future months disabled. A summary line — "Vomiting on 5 days · most on Jun 24 (×4) · 11 episodes" — sits above the grid.</td>
+            </tr>
+            <tr>
+              <td class="c">#3 · The multi-red<br>heat scale is illegible</td>
+              <td><span class="arrow">Count-pips</span> replace the opacity ramp and its Fewer→More legend, both deleted. Exact counts, no shade decoding. A neutral coverage tick (behind the off-by-default toggle) separates "no symptoms" from "nothing logged".</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ————— NOTES ————— -->
+    <section>
+      <p class="kicker">Also in this PR</p>
+      <h2>The rest of the spec</h2>
+      <div class="notes-grid">
+        <div class="note-card"><h3><span class="m">§8.1</span> Coverage ≠ wellness</h3><p>"Show all logging" is off by default. On, a faint neutral tick marks any day with ≥1 event of any type. A bare day means nothing was logged — never read as "the pet is well".</p></div>
+        <div class="note-card"><h3><span class="m">cut</span> Six-month strip</h3><p>The cumulative strip is gone (you called it low-value). Its "how many months has this run?" read moves to the vet report as a "symptom months" line — the clinician's surface.</p></div>
+        <div class="note-card"><h3><span class="m">a11y</span> VoiceOver</h3><p>Every cell carries a full label — "Jun 24, 4 vomiting episodes" — so the count is spoken, not just shown. Summary and empty states read too.</p></div>
+        <div class="note-card"><h3><span class="m">hold</span> Capture untouched</h3><p>Zero change to logging, History, or the quick-log flow (register rule §1.2 — records stay the shipped light system). This PR is presentation of existing data only.</p></div>
+      </div>
+    </section>
+
+    <footer>
+      Culprit · Calendar v3 mock · PR N5 of B-284 · resolves B-226 · docs/culprit-in-app-brand-requirements.md §8.1<br>
+      Review this, then reply to build. Toggle light/dark with your viewer's theme control.
+    </footer>
+
+  </div>
+</main>
+
+<script>
+  (function(){
+    var MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var WD=['S','M','T','W','T','F','S'];
+
+    // April, May, June 2026 — June default (the month with a ×4 day).
+    var M=[
+      { y:2026,m:3, symp:{8:1,22:1} },
+      { y:2026,m:4, symp:{2:1,6:2,11:1,15:1,19:2,23:1,27:1,30:1} },
+      { y:2026,m:5, symp:{3:1,9:2,17:3,24:4,28:1}, today:30 }
+    ];
+    // Days with NOTHING logged at all (coverage layer reveals the gaps).
+    var NOLOG={ 2:[6,7,14], 1:[3,4], 0:[27] };
+    // Hand-authored drill-ins for two June days; other days synthesise plausibly.
+    var EV={
+      '2|17':[['symp','Vomit','6:12 AM'],['symp','Vomit','6:41 AM'],['meal','Meal — salmon & rice, finished','7:30 AM'],['med','Amoxicillin 50mg — given','7:32 AM'],['symp','Vomit','2:05 PM'],['meal','Meal — salmon & rice, some left','6:15 PM']],
+      '2|24':[['symp','Vomit','5:48 AM'],['symp','Vomit','6:20 AM'],['meal','Meal — salmon & rice, refused','7:35 AM'],['symp','Vomit','9:02 AM'],['med','Amoxicillin 50mg — given','9:10 AM'],['symp','Vomit','4:44 PM'],['meal','Meal — salmon & rice, finished','6:30 PM']]
+    };
+
+    function daysIn(y,m){ return new Date(Date.UTC(y,m+1,0)).getUTCDate(); }
+    function leadOf(y,m){ return new Date(Date.UTC(y,m,1)).getUTCDay(); }
+
+    function weekdayHeader(el){
+      el.innerHTML='';
+      WD.forEach(function(d){ var s=document.createElement('span'); s.className='wd'; s.textContent=d; el.appendChild(s); });
+    }
+
+    function summaryOf(mm){
+      var days=Object.keys(mm.symp);
+      if(!days.length) return '<span class="q">No vomiting logged in '+MN[mm.m]+'.</span>';
+      var worstD=days[0],worstN=0,total=0;
+      days.forEach(function(d){ total+=mm.symp[d]; if(mm.symp[d]>worstN){worstN=mm.symp[d];worstD=d;} });
+      var s='Vomiting on '+days.length+' day'+(days.length===1?'':'s');
+      if(worstN>1) s+=' · most on '+MN[mm.m].slice(0,3)+' '+worstD+' (×'+worstN+')';
+      return s+' · '+total+' episode'+(total===1?'':'s');
+    }
+
+    // ————— BEFORE (opacity heat) —————
+    var HEAT_STEPS=[0.25,0.45,0.7,1];
+    function heatOpacity(count,max){
+      if(!(count>0)||!(max>0)) return 0;
+      var step=Math.ceil((count/max)*HEAT_STEPS.length);
+      return HEAT_STEPS[Math.min(step,HEAT_STEPS.length)-1];
+    }
+    function renderBefore(mm,gridEl){
+      var max=0; Object.keys(mm.symp).forEach(function(d){ if(mm.symp[d]>max) max=mm.symp[d]; });
+      gridEl.innerHTML='';
+      var cells=[],lead=leadOf(mm.y,mm.m),nd=daysIn(mm.y,mm.m);
+      for(var b=0;b<lead;b++) cells.push(null);
+      for(var d=1;d<=nd;d++) cells.push(d);
+      while(cells.length%7!==0) cells.push(null);
+      cells.forEach(function(dd){
+        if(dd===null){ var bl=document.createElement('span'); bl.className='cell blank'; gridEl.appendChild(bl); return; }
+        var count=mm.symp[dd]||0;
+        var c=document.createElement('div'); c.className='hcell';
+        var op=heatOpacity(count,max);
+        var fill=document.createElement('span'); fill.className='fill';
+        fill.style.background = count>0 ? '#F43F5E' : '#F0F0F0';
+        fill.style.opacity = count>0 ? op : 1;
+        c.appendChild(fill);
+        if(count>0){
+          var n=document.createElement('span'); n.className='hnum';
+          n.style.color = op>=0.7 ? '#FFFFFF' : '#0A0A0A';
+          n.textContent=dd; c.appendChild(n);
+        }
+        gridEl.appendChild(c);
+      });
+    }
+
+    // ————— AFTER (pips) — shared cell builder —————
+    function buildCell(mm,dd,opts){
+      var count=mm.symp[dd]||0;
+      var loggedNothing=(NOLOG[opts.mi]||[]).indexOf(dd)!==-1;
+      var cell=document.createElement(opts.interactive?'button':'div');
+      if(opts.interactive) cell.type='button';
+      cell.className='cell'+(count>0?' symp':'')+(mm.today===dd?' today':'')+(opts.selected===dd?' sel':'');
+      cell.setAttribute('aria-label', MN[mm.m].slice(0,3)+' '+dd+
+        (count>0?', '+count+' vomiting episode'+(count===1?'':'s'):', no vomiting logged')+
+        (loggedNothing?', nothing logged':''));
+      var pips='<span class="pips">';
+      if(count>0&&count<=3){ for(var p=0;p<count;p++) pips+='<span class="pip"></span>'; }
+      else if(count>3){ pips+='<span class="pip-more">×'+count+'</span>'; }
+      pips+='</span>';
+      cell.innerHTML='<span class="dnum">'+dd+'</span>'+pips+'<span class="tick'+(loggedNothing?'':' on')+'"></span>';
+      return cell;
+    }
+    function renderAfter(mm,gridEl,opts){
+      gridEl.innerHTML='';
+      var cells=[],lead=leadOf(mm.y,mm.m),nd=daysIn(mm.y,mm.m);
+      for(var b=0;b<lead;b++) cells.push(null);
+      for(var d=1;d<=nd;d++) cells.push(d);
+      while(cells.length%7!==0) cells.push(null);
+      cells.forEach(function(dd){
+        if(dd===null){ var bl=document.createElement('span'); bl.className='cell blank'; gridEl.appendChild(bl); return; }
+        var cell=buildCell(mm,dd,opts);
+        if(opts.interactive){ (function(x){ cell.addEventListener('click',function(){ opts.onDay(x); }); })(dd); }
+        gridEl.appendChild(cell);
+      });
+    }
+
+    // ————— static before/after (June) —————
+    var JUNE=M[2];
+    weekdayHeader(document.getElementById('before-wd'));
+    renderBefore(JUNE,document.getElementById('before-grid'));
+    weekdayHeader(document.getElementById('after-static-wd'));
+    document.getElementById('after-static-sum').innerHTML=summaryOf(JUNE);
+    renderAfter(JUNE,document.getElementById('after-static-grid'),{mi:2,interactive:false,selected:null});
+
+    // ————— interactive demo —————
+    var mi=2, selected=null, showAll=false;
+    var grid=document.getElementById('demo-grid'), monthlbl=document.getElementById('monthlbl'),
+        summary=document.getElementById('summary'), prev=document.getElementById('prev'),
+        next=document.getElementById('next'), layer=document.getElementById('layer'),
+        card=document.getElementById('demo-card'), sheet=document.getElementById('sheet');
+    weekdayHeader(document.getElementById('demo-wd'));
+
+    function eventsFor(mm,d){
+      var key=mi+'|'+d, rows=EV[key];
+      if(rows) return rows;
+      rows=[]; var s=mm.symp[d]||0, times=['6:20 AM','11:40 AM','3:15 PM','8:05 PM'];
+      for(var i=0;i<s;i++) rows.push(['symp','Vomit',times[i%times.length]]);
+      if((NOLOG[mi]||[]).indexOf(d)===-1){
+        rows.push(['meal','Meal — salmon & rice, finished','7:30 AM']);
+        rows.push(['meal','Meal — salmon & rice, finished','6:30 PM']);
+      }
+      return rows;
+    }
+    function openDay(d){
+      selected=d; var mm=M[mi], rows=eventsFor(mm,d), sc=mm.symp[d]||0;
+      document.getElementById('sheet-title').textContent=MN[mm.m].slice(0,3)+' '+d;
+      document.getElementById('sheet-sub').textContent = rows.length===0
+        ? 'Nothing logged this day.'
+        : (sc>0 ? sc+' vomiting episode'+(sc===1?'':'s')+' · everything logged this day:' : 'No vomiting logged · everything this day:');
+      var holder=document.getElementById('sheet-rows'); holder.innerHTML='';
+      rows.forEach(function(r){
+        var el=document.createElement('div'); el.className='drow';
+        var g=r[0]==='symp'?'▲':r[0]==='med'?'◆':'●';
+        el.innerHTML='<span class="dico '+r[0]+'" aria-hidden="true">'+g+'</span>'+
+          '<span class="dlabel">'+r[1]+'</span><span class="dtime">'+r[2]+'</span>';
+        holder.appendChild(el);
+      });
+      document.getElementById('sheet-link').textContent='Open in History · '+MN[mm.m].slice(0,3)+' '+d+' ›';
+      sheet.hidden=false; render();
+    }
+    function render(){
+      var mm=M[mi];
+      monthlbl.textContent=MN[mm.m]+' '+mm.y;
+      summary.innerHTML=summaryOf(mm);
+      prev.disabled=(mi===0); next.disabled=(mi===M.length-1);
+      card.classList.toggle('show-all',showAll);
+      renderAfter(mm,grid,{mi:mi,interactive:true,selected:selected,onDay:openDay});
+    }
+    prev.addEventListener('click',function(){ if(mi>0){ mi--; selected=null; sheet.hidden=true; render(); } });
+    next.addEventListener('click',function(){ if(mi<M.length-1){ mi++; selected=null; sheet.hidden=true; render(); } });
+    layer.addEventListener('change',function(){ showAll=layer.checked; render(); });
+    render();
+  })();
+</script>
