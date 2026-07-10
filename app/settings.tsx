@@ -8,6 +8,7 @@ import { theme } from '../constants/theme';
 import { Card, Header } from '../components/ui';
 import { OwnerAvatar } from '../components/settings/OwnerAvatar';
 import { SettingsRow } from '../components/settings/SettingsRow';
+import { ComingSoonLabel } from '../components/settings/ComingSoonLabel';
 import { OwnerNameRow } from '../components/profile/OwnerNameRow';
 import { DeleteAccountSheet } from '../components/profile/DeleteAccountSheet';
 import { supabase } from '../lib/supabase';
@@ -131,8 +132,6 @@ export default function SettingsScreen() {
     ]);
   }
 
-  const comingSoon = <Text style={styles.comingSoon}>Coming soon</Text>;
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header title="You" leading="back" onLeadingPress={handleBack} />
@@ -155,6 +154,25 @@ export default function SettingsScreen() {
           </Text>
         </Card>
 
+        {/* ── Preferences ── */}
+        <Card noPadding>
+          {/* Notifications is MOCKED in v1 (§5): the row pushes the reserved
+              screen, and the "Coming soon" marker keeps it honest that nothing
+              fires yet — the safety gate lives on the pushed screen (no armed
+              med-reminder, D7). Preferences holds only this row in v1; the
+              Share-feedback row (PR 4) lands in the Support card below (§4.2). */}
+          <SettingsRow
+            first
+            label="Notifications"
+            sublabel="Daily nudge · health insights"
+            trailing={<ComingSoonLabel />}
+            chevron
+            onPress={() => router.push('/settings/notifications')}
+            accessibilityLabel="Notifications — coming soon"
+            accessibilityHint="Opens notifications, which aren’t turned on yet"
+          />
+        </Card>
+
         {/* ── Support ── */}
         <Card noPadding>
           <SettingsRow
@@ -175,7 +193,7 @@ export default function SettingsScreen() {
             label="Privacy policy"
             disabled={!LEGAL_LINKS_ENABLED}
             chevron={LEGAL_LINKS_ENABLED}
-            trailing={LEGAL_LINKS_ENABLED ? undefined : comingSoon}
+            trailing={LEGAL_LINKS_ENABLED ? undefined : <ComingSoonLabel />}
             // Fold the "Coming soon" state into the label for screen readers, so a
             // disabled row announces why it's inert, not just "dimmed".
             accessibilityLabel={LEGAL_LINKS_ENABLED ? undefined : 'Privacy policy — coming soon'}
@@ -189,7 +207,7 @@ export default function SettingsScreen() {
             label="Terms of service"
             disabled={!LEGAL_LINKS_ENABLED}
             chevron={LEGAL_LINKS_ENABLED}
-            trailing={LEGAL_LINKS_ENABLED ? undefined : comingSoon}
+            trailing={LEGAL_LINKS_ENABLED ? undefined : <ComingSoonLabel />}
             accessibilityLabel={LEGAL_LINKS_ENABLED ? undefined : 'Terms of service — coming soon'}
             onPress={
               LEGAL_LINKS_ENABLED ? () => openLegal(TERMS_URL, 'terms of service') : undefined
@@ -271,13 +289,6 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextTertiary,
     lineHeight: theme.lineHeightSM,
-  },
-
-  // ── Trailing "Coming soon" ──
-  comingSoon: {
-    fontFamily: theme.fontBody,
-    fontSize: theme.textSM,
-    color: theme.colorTextDisabled,
   },
 
   // ── Medical disclaimer ──
