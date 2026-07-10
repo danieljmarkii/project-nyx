@@ -88,6 +88,39 @@ export const theme = {
   colorBrandNight: '#13112E',                 // midnight-indigo brand/night ground
   colorBrandNightElevated: '#251F57',         // cards/depth on the brand night
 
+  // ── Night-surface tokens (Culprit in-app brand alignment — B-284 PR N1) ────
+  // Additive only. These paint text/safety/hairline/gradient/starfield onto the
+  // night grounds (colorBrandNight / colorBrandNightElevated) that appear where
+  // the app is *working on the pet's behalf* (Landing, loading, the night moment,
+  // the Signal card's night variant — spec §1.2 the register rule). No component
+  // repoints in this PR — capture & records stay the shipped light system.
+  //
+  // THE ACCENT RULE (spec §1.3, unchanged): teal `colorAccent #00C2A8` remains the
+  // SOLE tappable/live/interactive accent on every ground. Every token below is a
+  // world/ground colour — text, safety rail, hairline, gradient stop, or starfield
+  // — never an interactive fill, so the design-system "one accent, never decorative"
+  // rule holds by construction. Red keeps its shipped meanings (symptom /
+  // destructive); colorEventSymptomOnNight is the night-ground sibling of the
+  // shipped colorDestructiveOnDark, never decorative.
+  //
+  // CONTRAST RECEIPTS — WCAG relative-luminance ratios of each text token on the
+  // primary ground colorBrandNight #13112E (verified, not asserted):
+  //   colorMoonlight            15.80:1  (AAA)
+  //   colorTextOnNight          15.40:1  (AAA)
+  //   colorTextOnNightMuted      7.57:1  (AAA)
+  //   colorEventSymptomOnNight   6.80:1  (AA / AAA-large)
+  //   colorTextOnNightFaint      3.79:1  (AA-large ONLY — hence large/secondary use)
+  colorEventSymptomOnNight: '#FB7185',        // safety rail/tag on night grounds (6.8:1)
+  colorTextOnNight: '#ECEAF6',                // primary text on night grounds (15.4:1)
+  colorTextOnNightMuted: '#A6A2CE',           // secondary text on night grounds (7.6:1)
+  colorTextOnNightFaint: '#706BA6',           // metadata/sample lines — large/secondary only (3.8:1)
+  colorMoonlight: '#F2EEE4',                  // crescent fill + display headlines on night (15.8:1)
+  colorBorderOnNight: 'rgba(196,190,255,0.16)', // hairlines/dividers on night grounds
+  colorAuroraViolet: '#221C56',               // hero radial glow stop 1
+  colorAuroraIndigo: '#191449',               // hero radial glow stop 2
+  colorAuroraTeal: 'rgba(0,194,168,0.10)',    // restrained teal radial near the Signal dot
+  colorStar: 'rgba(255,255,255,0.45)',        // starfield dot base (per-dot opacity varies 0.28–0.55)
+
   // Borders
   colorBorder: '#EAEAEA',
   colorBorderStrong: '#D4D4D4',
