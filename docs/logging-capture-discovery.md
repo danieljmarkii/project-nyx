@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-10 · **Status:** Discovery output — recommendations pending PM ratification (3 open questions filed in CLAUDE.md)
 **Trigger:** PM-initiated product discovery workshop. Prompt: *"Increase logging frequency while making logging require as little effort and attention as possible."* Plus an observation: the PM and his wife, using a competitor app (Dog Recruit) together, naturally became accountability partners — "did you log the treat?" — and consistency improved.
-**Sibling docs:** `docs/vet-report-discovery.md` (the Step 9 analog of this doc). Evidence inputs: `docs/nyx-research-v1_0.md` (Jordan §"Why Jordan doesn't track"), `docs/research/2026-05-feeding-windows-and-partial-eating.md`, backlog B-015 / B-195 / B-227 / B-047 / B-186.
+**Sibling docs:** `docs/vet-report-discovery.md` (the Step 9 analog of this doc); `docs/logging-habit-discovery-kickoff.md` (the PM's parallel ChatGPT-run discovery pass on the same problem — attention/recall framing, Lock Screen surfaces, ambient progress, predictive/confirmation logging — feeds the same B-288/B-290/B-291 tracks). Evidence inputs: `docs/nyx-research-v1_0.md` (Jordan §"Why Jordan doesn't track"), `docs/research/2026-05-feeding-windows-and-partial-eating.md`, backlog B-015 / B-195 / B-227 / B-047 / B-186.
 
 ---
 
