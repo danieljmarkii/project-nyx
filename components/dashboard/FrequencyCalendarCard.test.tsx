@@ -13,7 +13,7 @@ const bucket = (date: string, total: number): DayFrequencyBucket => ({
 });
 
 describe('FrequencyCalendarCard', () => {
-  it('numbers each symptom day + shows the weekday header and shade legend (B-097)', () => {
+  it('shows count-pips, the summary line, and numbers every day (B-284 N5 / B-226)', () => {
     const buckets = [
       bucket('2026-06-07', 0),
       bucket('2026-06-08', 2),
@@ -23,22 +23,47 @@ describe('FrequencyCalendarCard', () => {
       bucket('2026-06-12', 0),
       bucket('2026-06-13', 0),
     ];
-    const { getByText } = render(<FrequencyCalendarCard title="Vomiting" buckets={buckets} />);
+    const { getByText, getAllByTestId, getByLabelText } = render(
+      <FrequencyCalendarCard title="Vomiting" buckets={buckets} symptomType="vomit" />,
+    );
     expect(getByText('Vomiting')).toBeTruthy();
-    expect(getByText(/Logged on 2 days/)).toBeTruthy();
-    // Each symptom day carries its date numeral — the owner can answer "which day?".
+    // Summary line — specific, in-voice ("times", never "episodes"), names the worst day.
+    expect(getByText(/Vomiting on 2 days/)).toBeTruthy();
+    expect(getByText(/most on Jun 8 \(×2\)/)).toBeTruthy();
+    expect(getByText(/· 3 times/)).toBeTruthy();
+    // Every day carries its numeral now (a real calendar) — incl. non-symptom days.
+    expect(getByText('7')).toBeTruthy();
     expect(getByText('8')).toBeTruthy();
     expect(getByText('10')).toBeTruthy();
-    // Weekday header (unique letters) + the shade legend decode the grid.
+    // Pips: 2 on the 8th + 1 on the 10th = 3 rose pips total (each ≤3 → dots, not ×N).
+    expect(getAllByTestId('symptom-pip')).toHaveLength(3);
+    // VoiceOver reads the count on each day, and never reassures on a clean day.
+    expect(getByLabelText('Jun 8, vomiting logged 2 times')).toBeTruthy();
+    expect(getByLabelText('Jun 7, no vomiting logged')).toBeTruthy();
+    // Weekday header orients the columns ('W' is the one unambiguous letter).
     expect(getByText('W')).toBeTruthy();
-    expect(getByText('Fewer')).toBeTruthy();
-    expect(getByText('More')).toBeTruthy();
+    // The old opacity-ramp legend is gone.
+    expect(() => getByText('Fewer')).toThrow();
+  });
+
+  it('collapses a heavy day (≥4) to a ×N numeral instead of pips', () => {
+    const buckets = [bucket('2026-06-08', 5), bucket('2026-06-09', 0)];
+    const { getByText, queryAllByTestId } = render(
+      <FrequencyCalendarCard title="Vomiting" buckets={buckets} symptomType="vomit" />,
+    );
+    expect(getByText('×5')).toBeTruthy(); // the pip-more numeral on the cell
+    expect(queryAllByTestId('symptom-pip')).toHaveLength(0); // no dots on a ×N day
   });
 
   it('shows a warm "none logged" empty state, never an all-clear', () => {
     const buckets = [bucket('2026-06-12', 0), bucket('2026-06-13', 0)];
     const { getByText } = render(
-      <FrequencyCalendarCard title="Vomiting" buckets={buckets} emptyMessage="No vomiting logged this month." />,
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={buckets}
+        symptomType="vomit"
+        emptyMessage="No vomiting logged this month."
+      />,
     );
     expect(getByText('No vomiting logged this month.')).toBeTruthy();
   });
@@ -47,7 +72,7 @@ describe('FrequencyCalendarCard', () => {
     const buckets = [bucket('2026-06-12', 0), bucket('2026-06-13', 0)];
     const def = symptomFrequencyDefinition('vomiting', 'Nyx'); // canonical helper output
     const { getByTestId, queryByText } = render(
-      <FrequencyCalendarCard title="Vomiting" buckets={buckets} definition={def} />,
+      <FrequencyCalendarCard title="Vomiting" buckets={buckets} symptomType="vomit" definition={def} />,
     );
     expect(queryByText(def)).toBeNull();
     fireEvent.press(getByTestId('metric-info-button'));
@@ -55,7 +80,7 @@ describe('FrequencyCalendarCard', () => {
   });
 });
 
-describe('buildHeatRows — weekday-aligned grid arithmetic', () => {
+describe('buildHeatRows — weekday-aligned grid arithmetic + summary aggregates', () => {
   const START = '2026-05-16';
   const buckets: DayFrequencyBucket[] = Array.from({ length: 30 }, (_, i): DayFrequencyBucket => {
     const date = new Date(Date.UTC(2026, 4, 16) + i * 86_400_000).toISOString().slice(0, 10);
@@ -73,9 +98,11 @@ describe('buildHeatRows — weekday-aligned grid arithmetic', () => {
     expect(flat.filter((c) => !c.blank).length).toBe(30); // exactly one cell per real day
   });
 
-  it('summarises max and days-with-events from the chosen symptom type', () => {
-    const { max, daysWithEvents } = buildHeatRows(buckets, 'vomit');
+  it('summarises max, days-with-events, total, and the worst day from the chosen type', () => {
+    const { max, daysWithEvents, total, worstDate } = buildHeatRows(buckets, 'vomit');
     expect(max).toBe(2);
     expect(daysWithEvents).toBe(2);
+    expect(total).toBe(3); // 2 + 1
+    expect(worstDate).toBe('2026-05-18'); // START + 2 days (the i===2 bucket, the busiest)
   });
 });

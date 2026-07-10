@@ -67,6 +67,7 @@
         "npm:@types/jest@^29.5.14",
         "npm:@types/react@19.1",
         "npm:babel-preset-expo@~54.0.10",
+        "npm:expo-application@~7.0.8",
         "npm:expo-constants@~18.0.13",
         "npm:expo-file-system@~19.0.18",
         "npm:expo-font@~14.0.12",

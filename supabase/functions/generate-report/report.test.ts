@@ -707,6 +707,83 @@ Deno.test('medication adherence — a co-started drug is a concurrent change; a 
   assert.equal(pro.givenDoses, 0)
 })
 
+Deno.test('§3.8 orphan-dose — ad-hoc/OTC doses with no regimen surface as an unlinkedMedications group', () => {
+  // A real owner dosed an OTC antihistamine 3× via the one-tap path but never configured a regimen,
+  // so `medicationId` is null on every dose and the regimen table is empty — the doses vanished from
+  // the report. They must now surface, named, grouped, with counts.
+  const doses: ReportDoseInput[] = [
+    { eventId: nextId('dose'), occurredAt: at('2026-06-28', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: 'given', doseAmount: null, pairedEventId: null },
+    { eventId: nextId('dose'), occurredAt: at('2026-06-30', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: 'given', doseAmount: null, pairedEventId: null },
+    { eventId: nextId('dose'), occurredAt: at('2026-07-01', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: 'given', doseAmount: null, pairedEventId: null },
+  ]
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-29') })],
+      doses,
+      medicationItems: [
+        { id: 'mi-zyrtec', genericName: 'Cetirizine HCl', brandName: 'Zyrtec', strength: '5 mg', route: 'oral', isPrescription: false },
+      ],
+    }),
+  )
+  assert.equal(snap.unlinkedMedications.length, 1)
+  const u = snap.unlinkedMedications[0]
+  assert.equal(u.drugName, 'Cetirizine HCl (Zyrtec)') // generic leads, brand in parens
+  assert.equal(u.isSupplement, true) // is_prescription false ⇒ OTC
+  assert.equal(u.administeredDoses, 3)
+  assert.equal(u.totalDoses, 3)
+  assert.equal(u.firstDate, '2026-06-28')
+  assert.equal(u.lastDate, '2026-07-01')
+  assert.equal(snap.medications.length, 0) // never double-surfaced as a regimen
+})
+
+Deno.test('§3.8 orphan-dose — linked doses stay under their regimen; an unconfirmed orphan is never counted as given', () => {
+  const meds: ReportMedicationInput[] = [
+    {
+      id: 'reg-pred', medicationItemId: 'mi-pred', drugName: 'Prednisolone', doseAmount: '5 mg', route: 'oral',
+      dosesPerDay: 1, scheduleNotes: null, indication: 'allergy', prescribedBy: null,
+      startedAt: '2026-06-20', targetDurationDays: null, status: 'active', endedAt: null,
+      isPrescription: true, strength: '5 mg',
+    },
+  ]
+  const doses: ReportDoseInput[] = [
+    { eventId: nextId('dose'), occurredAt: at('2026-06-28', '13:00:00'), medicationId: 'reg-pred', medicationItemId: 'mi-pred', adherence: 'given', doseAmount: null, pairedEventId: null }, // linked → excluded from unlinked
+    { eventId: nextId('dose'), occurredAt: at('2026-06-29', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: null, doseAmount: null, pairedEventId: null }, // orphan, unconfirmed
+    { eventId: nextId('dose'), occurredAt: at('2026-06-30', '13:00:00'), medicationId: null, medicationItemId: 'mi-zyrtec', adherence: 'given', doseAmount: null, pairedEventId: null }, // orphan, given
+  ]
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-29') })],
+      medications: meds,
+      doses,
+      medicationItems: [
+        { id: 'mi-zyrtec', genericName: 'Cetirizine HCl', brandName: 'Zyrtec', strength: '5 mg', route: 'oral', isPrescription: false },
+      ],
+    }),
+  )
+  assert.equal(snap.unlinkedMedications.length, 1)
+  const u = snap.unlinkedMedications[0]
+  assert.equal(u.totalDoses, 2)
+  assert.equal(u.administeredDoses, 1) // the unconfirmed dose is NOT bundled as given (compliance-over-read trap)
+  assert.equal(u.unconfirmedDoses, 1)
+  const reg = snap.medications.find((m) => m.regimenId === 'reg-pred')!
+  assert.equal(reg.givenDoses, 1) // the linked dose stays here, not double-counted
+})
+
+Deno.test('§3.8 orphan-dose — an unresolved item name reads "Unspecified medication", never dropped', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ type: 'vomit', occurredAt: at('2026-06-29') })],
+      doses: [
+        { eventId: nextId('dose'), occurredAt: at('2026-06-30', '13:00:00'), medicationId: null, medicationItemId: 'mi-unknown', adherence: 'given', doseAmount: null, pairedEventId: null },
+      ],
+      // medicationItems intentionally omitted — the name can't be resolved.
+    }),
+  )
+  assert.equal(snap.unlinkedMedications.length, 1)
+  assert.equal(snap.unlinkedMedications[0].drugName, 'Unspecified medication')
+  assert.equal(snap.unlinkedMedications[0].isSupplement, false) // unknown ⇒ never asserted OTC
+})
+
 Deno.test('§5.11/§7 boundary-straddle — a duplicate across local midnight keeps the in-window bout + its phenotype', () => {
   // Adversarial finding 1: a near-simultaneous duplicate straddling the window boundary
   // at local midnight must NOT drop the genuine in-window bout (nor its completed phenotype),

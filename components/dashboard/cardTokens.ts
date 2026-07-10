@@ -24,24 +24,7 @@ export function deltaToneColor(tone: DeltaTone): string {
   return DELTA_TONE_COLOR[tone];
 }
 
-// Frequency heat-grid (FrequencyCalendarCard). Adverse-symptom occurrence is shown in
-// the concern hue at four opacity steps by intensity; a zero-event day is the neutral
-// empty colour, never tinted. This is descriptive OCCURRENCE (where a symptom was
-// logged), not a trend verdict, so it is not gated by the §13 #6 establishment rule —
-// it mirrors how the History timeline and the Trend zone already mark each event.
-export const HEAT_EMPTY_COLOR = theme.colorChartEmpty;
-export const HEAT_COLOR = theme.colorEventSymptom;
-
-/** The four intensity steps (lightest → full) a heat cell can take. Named so a designer
- *  can retune the ramp without re-reading the arithmetic below. */
-export const HEAT_OPACITY_STEPS = [0.25, 0.45, 0.7, 1] as const;
-
-/** Opacity for a heat cell holding `count` events, scaled against the window's busiest
- *  day (`max`). Returns 0 for an empty (or non-finite) day — the caller paints
- *  HEAT_EMPTY_COLOR — so a clean day is never tinted as a symptom day. Four steps so a
- *  single busy day doesn't wash the whole grid to one flat tone. */
-export function heatOpacity(count: number, max: number): number {
-  if (!Number.isFinite(count) || count <= 0 || max <= 0) return 0;
-  const step = Math.ceil((count / max) * HEAT_OPACITY_STEPS.length); // 1..4
-  return HEAT_OPACITY_STEPS[Math.min(step, HEAT_OPACITY_STEPS.length) - 1];
-}
+// The frequency-calendar heat-ramp (HEAT_OPACITY_STEPS / heatOpacity / HEAT_COLOR) was
+// removed in B-284 N5: the opacity ramp never read as legible even with a legend (B-226
+// #3). FrequencyCalendarCard now paints count-PIPS in theme.colorEventSymptom directly,
+// so no shared named ramp lives here anymore.

@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { logAuth } from './authDebug';
 
 // Chunked SecureStore adapter for the Supabase auth session.
 //
@@ -84,7 +85,9 @@ async function getItem(key: string): Promise<string | null> {
       // value persisted by the pre-chunking adapter, so an install upgrading to
       // this build keeps its existing session instead of being logged out. The
       // next setItem re-persists it in chunked form and drops this legacy copy.
-      return await SecureStore.getItemAsync(key);
+      const legacy = await SecureStore.getItemAsync(key);
+      logAuth('sec.get', { ptr: null, path: 'legacy', legacyFound: legacy != null });
+      return legacy;
     }
 
     const parts: string[] = [];
@@ -94,11 +97,17 @@ async function getItem(key: string): Promise<string | null> {
       // Treat the whole value as absent so Supabase re-authenticates cleanly
       // rather than parsing a truncated JSON blob — sign-out is the safe error
       // direction here, never a silently corrupt session.
-      if (part == null) return null;
+      if (part == null) {
+        logAuth('sec.get', { ptr: `${ptr.gen}:${ptr.count}`, path: 'torn', tornAt: i });
+        return null;
+      }
       parts.push(part);
     }
-    return parts.join('');
+    const value = parts.join('');
+    logAuth('sec.get', { ptr: `${ptr.gen}:${ptr.count}`, path: 'ok', chars: value.length });
+    return value;
   } catch (e) {
+    logAuth('sec.get', { path: 'error', msg: String(e) });
     console.warn('[secureStore] read failed:', e);
     return null;
   }
@@ -116,19 +125,35 @@ async function setItem(key: string, value: string): Promise<void> {
   // generation a concurrent reader is following — no in-place overwrite, ever.
   const gen = prev ? prev.gen + 1 : 0;
   const chunks = splitIntoChunks(value);
+  // `chars` is the full session size — the number the #306 fix assumed exceeded
+  // SecureStore's 2048-byte cap. Capturing it lets us confirm (or refute) that
+  // premise against a real device instead of a mock.
+  logAuth('sec.set', {
+    path: 'begin',
+    prevPtr: prev ? `${prev.gen}:${prev.count}` : null,
+    gen,
+    chunks: chunks.length,
+    chars: value.length,
+  });
 
+  // Highest chunk index that got written before a throw, so a partial-write
+  // failure is visible in the breadcrumb trail rather than a bare "it failed".
+  let wroteUpTo = -1;
   try {
     for (let i = 0; i < chunks.length; i++) {
       await SecureStore.setItemAsync(chunkKey(key, gen, i), chunks[i]);
+      wroteUpTo = i;
     }
     // THE COMMIT: one atomic write flips the live generation to the set we just
     // finished writing. A crash before this line leaves the previous generation
     // (still named by the old pointer) fully intact; a crash after it leaves the
     // new generation fully intact. There is no window where a reader sees a mix.
     await SecureStore.setItemAsync(pointerKey(key), `${gen}:${chunks.length}`);
+    logAuth('sec.set', { path: 'ok', gen, chunks: chunks.length });
   } catch (e) {
     // The persist itself failed — the session did NOT get saved. This is the one
     // case that reintroduces the frequent-signin symptom, so log it as such.
+    logAuth('sec.set', { path: 'fail', gen, wroteUpTo, chunks: chunks.length, msg: String(e) });
     console.warn('[secureStore] write failed:', e);
     return;
   }
@@ -147,6 +172,7 @@ async function setItem(key: string, value: string): Promise<void> {
     // stale pre-upgrade session can never shadow the current one on read.
     await SecureStore.deleteItemAsync(key);
   } catch (e) {
+    logAuth('sec.set', { path: 'cleanupfail', msg: String(e) });
     console.warn('[secureStore] post-write cleanup failed (non-fatal):', e);
   }
 }
@@ -154,6 +180,7 @@ async function setItem(key: string, value: string): Promise<void> {
 async function removeItem(key: string): Promise<void> {
   try {
     const ptr = await readPointer(key);
+    logAuth('sec.remove', { hadPtr: ptr != null });
     if (ptr) {
       for (let i = 0; i < ptr.count; i++) {
         await SecureStore.deleteItemAsync(chunkKey(key, ptr.gen, i));
@@ -163,6 +190,7 @@ async function removeItem(key: string): Promise<void> {
     // Also clear any legacy single-key copy so sign-out leaves nothing behind.
     await SecureStore.deleteItemAsync(key);
   } catch (e) {
+    logAuth('sec.remove', { path: 'error', msg: String(e) });
     console.warn('[secureStore] delete failed:', e);
   }
 }
