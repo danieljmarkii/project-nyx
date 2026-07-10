@@ -16,7 +16,6 @@ import { uploadPhoto, getPublicUrl } from '../../lib/storage';
 import { archiveBlockedCopy } from '../../lib/utils';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
-import { useAuthStore } from '../../store/authStore';
 import { useMomentStore } from '../../store/momentStore';
 import { insertMedicationDose } from '../../lib/medicationDose';
 import { EditPetModal } from '../../components/profile/EditPetModal';
@@ -24,8 +23,6 @@ import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
-import { DeleteAccountSheet } from '../../components/profile/DeleteAccountSheet';
-import { OwnerNameRow } from '../../components/profile/OwnerNameRow';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
@@ -125,7 +122,6 @@ function statusLabel(status: string): string {
 
 export default function ProfileScreen() {
   const { pets, activePet, updatePet } = usePetStore();
-  const { user } = useAuthStore();
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -134,7 +130,6 @@ export default function ProfileScreen() {
   // Snapshot of the pet the archive sheet was opened FOR (identity rule, see
   // ArchivePetSheet). Doubles as the sheet's visibility flag.
   const [archivingPet, setArchivingPet] = useState<Pet | null>(null);
-  const [deleteSheetVisible, setDeleteSheetVisible] = useState(false);
 
   const [conditions, setConditions] = useState<Condition[]>([]);
   const [conditionsLoading, setConditionsLoading] = useState(true);
@@ -532,13 +527,6 @@ export default function ProfileScreen() {
     setArchivingPet(activePet);
   }
 
-  async function handleSignOut() {
-    Alert.alert('Sign out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => supabase.auth.signOut() },
-    ]);
-  }
-
   if (!activePet) {
     return (
       <SafeAreaView style={styles.container}>
@@ -800,29 +788,8 @@ export default function ProfileScreen() {
           />
         </Card>
 
-        {/* ── Account ── */}
-        <Card style={styles.sectionGap}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <Divider style={styles.accountDivider} />
-          {/* §7.1 — the vet report's "Owner:" line reads this name (PM, 2026-07-03). */}
-          <OwnerNameRow />
-          <Divider style={styles.accountDivider} />
-          <TouchableOpacity style={styles.accountRow} onPress={handleSignOut} hitSlop={8}>
-            <Text style={styles.accountRowText}>Sign out</Text>
-          </TouchableOpacity>
-          <Divider style={styles.accountDivider} />
-          {/* Delete account (B-039 FR-8): destructive-styled, routed to the
-              heavier type-to-confirm flow — NOT Sign out's lightweight Alert,
-              because the consequence is irreversible. */}
-          <TouchableOpacity
-            style={styles.deleteAccountRow}
-            onPress={() => setDeleteSheetVisible(true)}
-            hitSlop={8}
-            accessibilityRole="button"
-          >
-            <Text style={styles.deleteAccountRowText}>Delete account</Text>
-          </TouchableOpacity>
-        </Card>
+        {/* Account actions (owner name / Sign out / Delete account) moved to the
+            "You" screen (B-283, §4.3) — the Pet tab stays entirely pet-scoped. */}
 
         {/* Quiet archive action (spec §3.5, mock B4) — bottom of the tab,
             styled to recede: removal is a rare lifecycle moment, not a daily
@@ -847,12 +814,6 @@ export default function ProfileScreen() {
           onClose={() => setArchivingPet(null)}
         />
       )}
-
-      <DeleteAccountSheet
-        visible={deleteSheetVisible}
-        petNames={pets.map((p) => p.name)}
-        onClose={() => setDeleteSheetVisible(false)}
-      />
 
       <EditPetModal
         visible={editModalVisible}
@@ -1170,28 +1131,6 @@ const styles = StyleSheet.create({
   medContext: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
-  },
-
-  // ── Account ──
-  accountDivider: {
-    marginVertical: 0,
-  },
-  accountRow: {
-    paddingVertical: 6,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  accountRowText: {
-    fontSize: theme.textMD,
-    color: theme.colorTextSecondary,
-  },
-  deleteAccountRow: {
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  deleteAccountRowText: {
-    fontSize: theme.textMD,
-    color: theme.colorDestructive,
   },
 
   // ── Archive ──
