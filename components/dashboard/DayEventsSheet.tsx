@@ -26,7 +26,11 @@ interface Props {
   symptomCount: number;
   /** The day's events (any type), or null while the fetch is in flight. */
   rows: TimelineRow[] | null;
+  /** The day's events failed to load — show an error + retry, never "Nothing logged". */
+  error?: boolean;
   onClose: () => void;
+  /** Retry the failed day-events fetch. */
+  onRetry?: () => void;
   /** Deep-link History to this day. */
   onOpenInHistory: (dayKey: string) => void;
 }
@@ -37,7 +41,9 @@ export function DayEventsSheet({
   symptomLabel,
   symptomCount,
   rows,
+  error = false,
   onClose,
+  onRetry,
   onOpenInHistory,
 }: Props) {
   const insets = useSafeAreaInsets();
@@ -55,7 +61,24 @@ export function DayEventsSheet({
           <View style={styles.grabber} />
           <Text style={styles.title}>{dayShort}</Text>
 
-          {loading ? (
+          {error ? (
+            // A failed day fetch — NEVER "Nothing logged this day." (a silent failure that
+            // reads as a false all-clear; §11 #2). Offer a retry.
+            <View style={styles.stateBox}>
+              <Text style={styles.subtitle}>Couldn't load this day's log.</Text>
+              {onRetry != null && (
+                <Pressable
+                  style={styles.retryBtn}
+                  onPress={onRetry}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Try again"
+                >
+                  <Text style={styles.retryText}>Try again</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : loading ? (
             <View style={styles.loadingBox}>
               <ActivityIndicator color={theme.colorTextSecondary} />
             </View>
@@ -90,16 +113,20 @@ export function DayEventsSheet({
                 </ScrollView>
               )}
 
-              <Pressable
-                style={styles.link}
-                onPress={() => onOpenInHistory(dayKey)}
-                hitSlop={8}
-                accessibilityRole="link"
-                accessibilityLabel={`Open ${dayShort} in History`}
-              >
-                <Text style={styles.linkText}>Open in History · {dayShort}</Text>
-                <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
-              </Pressable>
+              {/* The History deep-link is suppressed on a day with nothing logged — it would
+                  land on History's empty-filter state, a dead end (pm-feature-review). */}
+              {items.length > 0 && (
+                <Pressable
+                  style={styles.link}
+                  onPress={() => onOpenInHistory(dayKey)}
+                  hitSlop={8}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open ${dayShort} in History`}
+                >
+                  <Text style={styles.linkText}>Open in History · {dayShort}</Text>
+                  <ChevronRight size={16} color={theme.colorAccent} strokeWidth={2} />
+                </Pressable>
+              )}
             </>
           )}
         </View>
@@ -147,6 +174,26 @@ const styles = StyleSheet.create({
   loadingBox: {
     paddingVertical: theme.space4,
     alignItems: 'center',
+  },
+  // The failed-day error block — a message + a retry, never a false "Nothing logged".
+  stateBox: {
+    gap: theme.space2,
+    alignItems: 'flex-start',
+    paddingBottom: theme.space2,
+  },
+  retryBtn: {
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+    borderRadius: theme.radiusSmall,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  retryText: {
+    fontSize: theme.textSM,
+    color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
   },
   // Cap the list height so a heavy day scrolls inside the sheet instead of pushing the
   // link off-screen.

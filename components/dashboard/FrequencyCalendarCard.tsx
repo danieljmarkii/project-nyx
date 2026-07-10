@@ -62,9 +62,15 @@ interface Props {
   onNextMonth?: () => void;
   canGoPrev?: boolean;
   canGoNext?: boolean;
-  /** A month fetch is in flight (paging) — dims the grid so a stale month can't be
-   *  mistaken for the one being loaded. */
+  /** A month fetch is in flight (paging) — the summary shows "Loading…", never a computed
+   *  "No {symptom} logged" (which an empty not-yet-loaded grid would otherwise assert). */
   loading?: boolean;
+  /** The shown month FAILED to load — render an error state with a retry, NEVER a false
+   *  "No {symptom} logged" (a network/DB failure must never read as an observed all-clear;
+   *  §11 #2 / no-silent-failures). Distinct from a genuinely empty (but loaded) month. */
+  error?: boolean;
+  /** Retry the failed month load. */
+  onRetry?: () => void;
 
   // ── Day drill-in (N5b) ──
   /** Tapping a real day cell calls this with its 'YYYY-MM-DD' key. */
@@ -186,6 +192,8 @@ export function FrequencyCalendarCard({
   canGoPrev = false,
   canGoNext = false,
   loading = false,
+  error = false,
+  onRetry,
   onDayPress,
   selectedDay,
 }: Props) {
@@ -251,11 +259,33 @@ export function FrequencyCalendarCard({
 
       {showEmptyBody ? (
         <Text style={styles.stateText}>{emptyMessage ?? `No ${title.toLowerCase()} logged ${range}.`}</Text>
+      ) : error ? (
+        // A failed month load — NEVER "No {symptom} logged" (a fetch failure is not an
+        // observed all-clear; §11 #2). Offer a retry instead of a bare empty grid.
+        <View style={styles.stateBox}>
+          <Text style={styles.summary}>Couldn't load {monthNameOf(monthLabel) ?? 'this month'}.</Text>
+          {onRetry != null && (
+            <Pressable
+              onPress={onRetry}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Try again"
+              style={styles.retryBtn}
+            >
+              <Text style={styles.retryText}>Try again</Text>
+            </Pressable>
+          )}
+        </View>
       ) : (
         <>
           {/* Computed, specific summary (Pattern 2) — answers "how often / worst day / how
-              many times" before the grid is even scanned. */}
-          <Text style={styles.summary}>{summaryLine(title, grid, monthLabel)}</Text>
+              many times" before the grid is even scanned. While a paged month is still
+              loading, an uncached grid is empty, so the summary would flash a false
+              "No {symptom} logged in {month}." — an absence-≠-wellness hazard (§11 #2). Gate
+              it behind `loading` so a not-yet-loaded month never reads as symptom-free. */}
+          <Text style={styles.summary}>
+            {loading ? `Loading ${monthNameOf(monthLabel) ?? 'month'}…` : summaryLine(title, grid, monthLabel)}
+          </Text>
           {/* Weekday header orients the columns; every day carries its numeral (a real
               calendar), symptom days darken + carry pips. `loading` dims a stale month. */}
           <View style={styles.weekdayHeader}>
@@ -398,7 +428,12 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    aspectRatio: 1,
+    // 44pt tall clears the touch-target floor in the VERTICAL axis. Width is structurally
+    // capped by a 7-column grid (7×44 + gaps + card padding > a phone's width), so a full
+    // 44×44 is impossible here — the standard calendar-grid tradeoff (Apple's own Calendar
+    // cells are sub-44 wide too). We grow height to 44 and lean on the inter-cell gap +
+    // hitSlop for the horizontal axis, rather than leave both axes short (code-review).
+    minHeight: 44,
     borderRadius: theme.radiusXS,
     backgroundColor: theme.colorSurfaceSubtle,
     alignItems: 'center',
@@ -452,5 +487,24 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
     lineHeight: theme.lineHeightBody,
+  },
+  // The failed-month error block (paging) — a message + a retry, never a false-empty grid.
+  stateBox: {
+    gap: theme.space2,
+    alignItems: 'flex-start',
+  },
+  retryBtn: {
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space1,
+    borderRadius: theme.radiusSmall,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  retryText: {
+    fontSize: theme.textSM,
+    color: theme.colorAccent,
+    fontWeight: theme.weightMedium,
   },
 });

@@ -99,7 +99,10 @@ describe('SymptomCalendar (B-284 N5b container)', () => {
   });
 
   it('the drill-in "Open in History" deep-links the day', async () => {
-    DB.getTimeline.mockResolvedValueOnce([]);
+    // A day WITH events so the link shows (an empty day suppresses it — see below).
+    DB.getTimeline.mockResolvedValueOnce([
+      { event_type: 'vomit', occurred_at: '2026-06-08T06:00:00.000Z' } as unknown as TimelineRow,
+    ]);
     const { getByLabelText } = renderCalendar();
     fireEvent.press(getByLabelText(/Jun 8, vomiting logged 2 times, opens the day/));
     await waitFor(() => expect(getByLabelText('Open Jun 8 in History')).toBeTruthy());
@@ -110,5 +113,45 @@ describe('SymptomCalendar (B-284 N5b container)', () => {
         params: expect.objectContaining({ date: '2026-06-08' }),
       }),
     );
+  });
+
+  it('a FAILED month fetch shows an error + retry, never a false "No vomiting logged"', async () => {
+    A.getSymptomFrequencyByMonth.mockRejectedValueOnce(new Error('offline'));
+    const { getByText, queryByText, getByLabelText } = renderCalendar();
+    fireEvent.press(getByLabelText('Previous month'));
+    await waitFor(() => expect(getByText(/Couldn't load May/)).toBeTruthy());
+    // The absence-≠-wellness guard: a fetch failure must NOT read as a symptom-free month.
+    expect(queryByText(/No vomiting logged in May/)).toBeNull();
+    // Retry re-fetches (this time succeeds).
+    A.getSymptomFrequencyByMonth.mockResolvedValueOnce([bucket('2026-05-17', 3)]);
+    fireEvent.press(getByLabelText('Try again'));
+    await waitFor(() => expect(getByText(/Vomiting on 1 day/)).toBeTruthy());
+  });
+
+  it('a FAILED day fetch shows an error, never a false "Nothing logged this day"', async () => {
+    DB.getTimeline.mockRejectedValueOnce(new Error('offline'));
+    const { getByText, queryByText, getByLabelText } = renderCalendar();
+    fireEvent.press(getByLabelText(/Jun 8, vomiting logged 2 times, opens the day/));
+    await waitFor(() => expect(getByText(/Couldn't load this day/)).toBeTruthy());
+    expect(queryByText('Nothing logged this day.')).toBeNull();
+  });
+
+  it('reconciles the current month when the parent passes fresh buckets (no stale grid)', () => {
+    const { getByText, rerender } = renderCalendar();
+    // seeded: Jun 8 ×2 → 1 day, 2 times.
+    expect(getByText('Vomiting on 1 day · most on Jun 8 (×2) · 2 times')).toBeTruthy();
+    // Parent reload (focus / background sync) passes a materially different current month.
+    rerender(
+      <SymptomCalendar
+        petId="p1"
+        title="Vomiting"
+        symptomType="vomit"
+        currentMonth={JUNE}
+        earliestMonth={APRIL}
+        initialBuckets={[bucket('2026-06-07', 0), bucket('2026-06-08', 2), bucket('2026-06-09', 3)]}
+      />,
+    );
+    // The grid+summary move with the new data instead of staying stale (2 + 3 = 5 times).
+    expect(getByText('Vomiting on 2 days · most on Jun 9 (×3) · 5 times')).toBeTruthy();
   });
 });

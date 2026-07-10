@@ -166,6 +166,42 @@ describe('FrequencyCalendarCard — month paging + drill-in', () => {
     expect(getByText('No vomiting logged in June.')).toBeTruthy();
     expect(getByLabelText(/Jun 1, no vomiting logged, opens the day/)).toBeTruthy();
   });
+
+  it('while LOADING a month, the summary says "Loading…", never a false "No … logged"', () => {
+    // An uncached month is [] while its fetch is in flight — the summary must not assert
+    // a symptom-free month it hasn't observed (§11 #2).
+    const { getByText, queryByText } = render(
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={[]}
+        symptomType="vomit"
+        monthLabel="May 2026"
+        loading
+        onDayPress={jest.fn()}
+      />,
+    );
+    expect(getByText('Loading May…')).toBeTruthy();
+    expect(queryByText(/No vomiting logged/)).toBeNull();
+  });
+
+  it('on a FAILED month, shows an error + retry, never a false "No … logged"', () => {
+    const onRetry = jest.fn();
+    const { getByText, queryByText, getByLabelText } = render(
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={[]}
+        symptomType="vomit"
+        monthLabel="May 2026"
+        error
+        onRetry={onRetry}
+        onDayPress={jest.fn()}
+      />,
+    );
+    expect(getByText("Couldn't load May.")).toBeTruthy();
+    expect(queryByText(/No vomiting logged/)).toBeNull();
+    fireEvent.press(getByLabelText('Try again'));
+    expect(onRetry).toHaveBeenCalled();
+  });
 });
 
 describe('buildHeatRows — weekday-aligned grid arithmetic + summary aggregates', () => {

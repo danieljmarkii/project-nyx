@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { FrequencyCalendarCard } from './FrequencyCalendarCard';
 import { DayEventsSheet } from './DayEventsSheet';
@@ -72,9 +72,26 @@ export function SymptomCalendar({
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [dayRows, setDayRows] = useState<TimelineRow[] | null>(null);
+  const [dayError, setDayError] = useState(false);
   const dayLoadRef = useRef(0);
 
-  const buckets = cache.get(monthKey(month)) ?? [];
+  // Keep the current month's grid in step with a fresh parent load. The insights screen
+  // re-runs load() on focus / after a background sync and passes a NEW initialBuckets; this
+  // card persists across those re-renders (same petId+symptomType key), so without this its
+  // once-seeded cache entry would go stale against the count card above it (both reviewers).
+  // Only the current month is reconciled — it's always the freshest "today" read; paged
+  // months are point-in-time snapshots.
+  useEffect(() => {
+    setCache((prev) => new Map(prev).set(monthKey(currentMonth), initialBuckets));
+  }, [initialBuckets, currentMonth]);
+
+  const shownKey = monthKey(month);
+  const buckets = cache.get(shownKey) ?? [];
+  // A shown month that is neither loaded (cached) nor loading FAILED to fetch — surface an
+  // error + retry, NEVER a computed "No {symptom} logged" (a fetch failure is not an
+  // observed all-clear; §11 #2 / no-silent-failures). The seeded current month is always
+  // cached, so this only reaches an actually-failed page fetch.
+  const monthErrored = !loading && !cache.has(shownKey);
   const canGoPrev = earliestMonth ? compareCalendarMonth(month, earliestMonth) > 0 : false;
   const canGoNext = compareCalendarMonth(month, currentMonth) < 0;
 
@@ -114,6 +131,7 @@ export function SymptomCalendar({
       const myId = ++dayLoadRef.current;
       setSelectedDay(dayKey);
       setSheetVisible(true);
+      setDayError(false);
       setDayRows(null); // loading
       const bounds = utcDayBounds(dayKey);
       if (!bounds) {
@@ -127,7 +145,9 @@ export function SymptomCalendar({
         if (dayLoadRef.current === myId) setDayRows(rows);
       } catch (e) {
         console.warn('[calendar] day load failed:', e);
-        if (dayLoadRef.current === myId) setDayRows([]);
+        // Distinct error flag — a failed fetch must NOT collapse to an empty [] that reads
+        // as "Nothing logged this day." (a silent failure / false all-clear; §11 #2).
+        if (dayLoadRef.current === myId) setDayError(true);
       }
     },
     [petId],
@@ -166,6 +186,8 @@ export function SymptomCalendar({
         canGoPrev={canGoPrev}
         canGoNext={canGoNext}
         loading={loading}
+        error={monthErrored}
+        onRetry={() => goToMonth(month)}
         onDayPress={openDay}
         selectedDay={selectedDay}
       />
@@ -175,7 +197,9 @@ export function SymptomCalendar({
         symptomLabel={title}
         symptomCount={symptomCount}
         rows={dayRows}
+        error={dayError}
         onClose={closeSheet}
+        onRetry={() => selectedDay && openDay(selectedDay)}
         onOpenInHistory={openInHistory}
       />
     </>

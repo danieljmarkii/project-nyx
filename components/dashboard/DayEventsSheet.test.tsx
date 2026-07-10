@@ -76,8 +76,8 @@ describe('DayEventsSheet (B-284 N5b drill-in)', () => {
     expect(queryByText(/everything this day/)).toBeNull(); // subtitle withheld until loaded
   });
 
-  it('an empty day reads "Nothing logged this day." and still offers the History link', () => {
-    const { getByText, getByLabelText } = render(
+  it('an empty day reads "Nothing logged this day." and SUPPRESSES the dead History link', () => {
+    const { getByText, queryByLabelText } = render(
       <DayEventsSheet
         visible
         dayKey="2026-06-24"
@@ -89,7 +89,29 @@ describe('DayEventsSheet (B-284 N5b drill-in)', () => {
       />,
     );
     expect(getByText('Nothing logged this day.')).toBeTruthy();
-    expect(getByLabelText('Open Jun 24 in History')).toBeTruthy();
+    // The link would land on History's empty-filter state — a dead end — so it's hidden.
+    expect(queryByLabelText('Open Jun 24 in History')).toBeNull();
+  });
+
+  it('a failed day load reads "Couldn\'t load…" + a retry, NEVER a false "Nothing logged"', () => {
+    const onRetry = jest.fn();
+    const { getByText, queryByText, getByLabelText } = render(
+      <DayEventsSheet
+        visible
+        dayKey="2026-06-24"
+        symptomLabel="Vomiting"
+        symptomCount={0}
+        rows={null}
+        error
+        onClose={jest.fn()}
+        onRetry={onRetry}
+        onOpenInHistory={jest.fn()}
+      />,
+    );
+    expect(getByText(/Couldn't load this day/)).toBeTruthy();
+    expect(queryByText('Nothing logged this day.')).toBeNull(); // a failure is not an all-clear
+    fireEvent.press(getByLabelText('Try again'));
+    expect(onRetry).toHaveBeenCalled();
   });
 
   it('renders nothing when there is no selected day', () => {

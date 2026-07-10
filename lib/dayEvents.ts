@@ -21,7 +21,7 @@ import { pluralize } from './dashboardCards';
 // the chip the owner tapped. A refusal is surfaced plainly, never softened (§11 #1).
 const INTAKE_PHRASE: Record<string, string> = {
   refused: 'refused',
-  picked: 'barely touched',
+  picked: 'picked at',
   some: 'some eaten',
   most: 'most eaten',
   all: 'all eaten',
