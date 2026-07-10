@@ -39,6 +39,14 @@ beforeEach(() => {
   mockUpdateOwnerName.mockResolvedValue({ status: 'written' });
 });
 
+describe('SignupScreen — brand mark', () => {
+  it('carries the Culprit brand mark so the account form matches the branded flow', () => {
+    const utils = render(<SignupScreen />);
+    // The shared AuthBrandMark exposes one grouped "Culprit" label.
+    expect(utils.getByLabelText('Culprit')).toBeTruthy();
+  });
+});
+
 describe('SignupScreen — validation gate', () => {
   it('blocks the network call and shows calm inline errors on an empty submit', () => {
     const utils = render(<SignupScreen />);
