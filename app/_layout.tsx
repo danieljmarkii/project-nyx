@@ -113,6 +113,7 @@ export default function RootLayout() {
         <Stack.Screen name="event/[id]" />
         <Stack.Screen name="report" />
         <Stack.Screen name="settings" />
+        <Stack.Screen name="settings/notifications" />
       </Stack>
       <MealCompletionCard />
       <MedicationCompletionCard />
