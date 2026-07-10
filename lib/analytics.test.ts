@@ -9,7 +9,10 @@
 // jest hoists jest.mock() above imports, so any closed-over variable is `mock`-prefixed.
 
 const mockGetAllAsync = jest.fn().mockResolvedValue([]);
-jest.mock('./db', () => ({ getDb: () => ({ getAllAsync: mockGetAllAsync }) }));
+const mockGetFirstAsync = jest.fn().mockResolvedValue(null);
+jest.mock('./db', () => ({
+  getDb: () => ({ getAllAsync: mockGetAllAsync, getFirstAsync: mockGetFirstAsync }),
+}));
 
 const mockGetActiveArrangementsForPet = jest.fn().mockResolvedValue([]);
 jest.mock('./feedingArrangements', () => ({
@@ -20,6 +23,12 @@ import {
   calendarWindow,
   computeSymptomCounts,
   computeSymptomFrequencyByDay,
+  computeSymptomFrequencyForMonth,
+  calendarMonthRange,
+  utcMonthOf,
+  addCalendarMonths,
+  compareCalendarMonth,
+  getEarliestEventMonth,
   computeTopFoods,
   computeTopProteins,
   computeIntakeRate,
@@ -35,6 +44,7 @@ import {
   ANALYTICS_FLOORS,
   type AnalyticsMeal,
   type AnalyticsSymptom,
+  type CalendarMonth,
   type IntakeDeclineResult,
   type RankedFood,
   type RankedProtein,
@@ -69,6 +79,7 @@ function meal(p: Partial<AnalyticsMeal> & { ms: number }): AnalyticsMeal {
 
 beforeEach(() => {
   mockGetAllAsync.mockReset().mockResolvedValue([]);
+  mockGetFirstAsync.mockReset().mockResolvedValue(null);
   mockGetActiveArrangementsForPet.mockReset().mockResolvedValue([]);
 });
 
@@ -153,6 +164,109 @@ describe('computeSymptomFrequencyByDay', () => {
     expect(twoAgo.total).toBe(1);
     expect(twoAgo.byType).toEqual({ diarrhea: 1 });
     expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(3); // the out-of-window vomit excluded
+  });
+});
+
+// ── Calendar-month math (the paginated calendar — B-309 / Calendar v3 N5b) ────────
+// NOW = 2026-06-14T12:00Z, so June is the current (clamped) month and May is a full past
+// month. All UTC — the point of UTC month math is that it is DST-immune (AC-N5 "paging
+// works across month boundaries incl. DST months").
+
+const JUNE: CalendarMonth = { year: 2026, month: 5 }; // current month (0-indexed)
+const MAY: CalendarMonth = { year: 2026, month: 4 };
+const MARCH: CalendarMonth = { year: 2026, month: 2 }; // spans the US DST spring-forward
+const daysInMonth = (m: CalendarMonth) => new Date(Date.UTC(m.year, m.month + 1, 0)).getUTCDate();
+
+describe('utcMonthOf / addCalendarMonths / compareCalendarMonth', () => {
+  it('utcMonthOf reads the UTC month of an instant', () => {
+    expect(utcMonthOf(Date.UTC(2026, 5, 14, 12))).toEqual(JUNE);
+    expect(utcMonthOf(Date.UTC(2026, 0, 1, 0))).toEqual({ year: 2026, month: 0 });
+  });
+
+  it('addCalendarMonths rolls the year over both directions', () => {
+    expect(addCalendarMonths({ year: 2026, month: 11 }, 1)).toEqual({ year: 2027, month: 0 }); // Dec→Jan
+    expect(addCalendarMonths({ year: 2026, month: 0 }, -1)).toEqual({ year: 2025, month: 11 }); // Jan→Dec
+    expect(addCalendarMonths(JUNE, -3)).toEqual(MARCH);
+    expect(addCalendarMonths(MARCH, 15)).toEqual({ year: 2027, month: 5 });
+  });
+
+  it('compareCalendarMonth orders chronologically', () => {
+    expect(compareCalendarMonth(MAY, JUNE)).toBeLessThan(0);
+    expect(compareCalendarMonth(JUNE, MAY)).toBeGreaterThan(0);
+    expect(compareCalendarMonth(JUNE, JUNE)).toBe(0);
+    expect(compareCalendarMonth({ year: 2025, month: 11 }, { year: 2026, month: 0 })).toBeLessThan(0);
+  });
+});
+
+describe('calendarMonthRange', () => {
+  it('spans a full past month (1st → last day), contiguous day indices', () => {
+    const r = calendarMonthRange(MAY, NOW);
+    expect(r.startMs).toBe(Date.UTC(2026, 4, 1));
+    expect(r.endMs).toBe(Date.UTC(2026, 5, 1)); // not clamped — May is entirely in the past
+    expect(r.lastDayIndex - r.firstDayIndex + 1).toBe(31); // May has 31 days
+  });
+
+  it('clamps the CURRENT month to end-of-today (no future cells)', () => {
+    const r = calendarMonthRange(JUNE, NOW);
+    expect(r.startMs).toBe(Date.UTC(2026, 5, 1));
+    expect(r.endMs).toBe((TODAY_IDX + 1) * DAY); // stops at end of today, not Jun 30
+    expect(r.lastDayIndex).toBe(TODAY_IDX); // today is the last cell
+    expect(r.lastDayIndex - r.firstDayIndex + 1).toBe(14); // Jun 1..Jun 14
+  });
+
+  it('a fully-future month is empty (lastDayIndex < firstDayIndex)', () => {
+    const r = calendarMonthRange({ year: 2026, month: 7 }, NOW); // August, after June
+    expect(r.lastDayIndex).toBeLessThan(r.firstDayIndex);
+  });
+
+  it('a DST-transition month (March) still spans exactly 31 UTC days', () => {
+    // UTC month math is unperturbed by the local DST shift — the AC-N5 guarantee.
+    const r = calendarMonthRange(MARCH, NOW);
+    expect(r.lastDayIndex - r.firstDayIndex + 1).toBe(31);
+    expect(daysInMonth(MARCH)).toBe(31);
+  });
+});
+
+describe('computeSymptomFrequencyForMonth', () => {
+  const onMay = (day: number, type = 'vomit', hour = 12): AnalyticsSymptom => ({
+    type,
+    ms: Date.UTC(2026, 4, day, hour),
+  });
+
+  it('one bucket per calendar day, events landing on their UTC day', () => {
+    const rows = [onMay(3), onMay(3, 'vomit', 20), onMay(17, 'diarrhea'), onMay(24)];
+    const buckets = computeSymptomFrequencyForMonth(rows, MAY, NOW);
+    expect(buckets).toHaveLength(31);
+    expect(buckets[0].date).toBe('2026-05-01');
+    expect(buckets[30].date).toBe('2026-05-31');
+    expect(buckets[2]).toMatchObject({ date: '2026-05-03', total: 2, byType: { vomit: 2 } });
+    expect(buckets[16]).toMatchObject({ date: '2026-05-17', total: 1, byType: { diarrhea: 1 } });
+    expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(4);
+  });
+
+  it('the current month stops at today (no future buckets)', () => {
+    const buckets = computeSymptomFrequencyForMonth([], JUNE, NOW);
+    expect(buckets).toHaveLength(14); // Jun 1..Jun 14 (NOW), not all 30
+    expect(buckets[buckets.length - 1].date).toBe('2026-06-14');
+  });
+
+  it('excludes events outside the month and returns [] for a future month', () => {
+    const rows = [onMay(3), { type: 'vomit', ms: Date.UTC(2026, 5, 2, 12) }]; // one in June
+    const buckets = computeSymptomFrequencyForMonth(rows, MAY, NOW);
+    expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(1); // the June event excluded
+    expect(computeSymptomFrequencyForMonth(rows, { year: 2026, month: 7 }, NOW)).toEqual([]);
+  });
+});
+
+describe('getEarliestEventMonth (wrapper wiring)', () => {
+  it('returns the UTC month of the earliest event row', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({ occurred_at: '2026-03-09T04:30:00.000Z' });
+    expect(await getEarliestEventMonth('p1')).toEqual(MARCH);
+  });
+
+  it('returns null when the pet has no events', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce(null);
+    expect(await getEarliestEventMonth('p1')).toBeNull();
   });
 });
 

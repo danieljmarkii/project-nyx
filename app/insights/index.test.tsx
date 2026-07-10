@@ -9,6 +9,15 @@
 // sentinel helpers + types the screen and dashboardScreen rely on); expo-router's Stack
 // is a no-op and useFocusEffect fires its callback once on mount.
 jest.mock('react-native-gifted-charts', () => ({ LineChart: () => null }));
+// The frequency calendar's day drill-in sheet (DayEventsSheet) uses useSafeAreaInsets,
+// which needs a provider jest-expo doesn't stand up by default — stub the module.
+jest.mock('react-native-safe-area-context', () => {
+  const { View } = require('react-native');
+  return {
+    SafeAreaView: View,
+    useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+  };
+});
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 // The AI summary (PR 4) is cache-only network I/O via useSummary → lib/summary → supabase.
@@ -35,6 +44,10 @@ jest.mock('../../lib/analytics', () => {
     ...actual,
     getSymptomCounts: jest.fn(),
     getSymptomFrequencyByDay: jest.fn(),
+    // Calendar v3 N5b — the calendar's month + paging-bound reads (real impls hit the
+    // mocked DB, so stub them like the other getters).
+    getSymptomFrequencyByMonth: jest.fn(),
+    getEarliestEventMonth: jest.fn(),
     getIntakeRateWithPrior: jest.fn(),
     getTopFoods: jest.fn(),
     getTopProteins: jest.fn(),
@@ -84,6 +97,10 @@ function emptyComposition(): MealTreatComposition {
 beforeEach(() => {
   jest.clearAllMocks();
   setActivePet();
+  // Calendar defaults (overridden per-test where the buckets matter). clearAllMocks wipes
+  // resolved values, so seed them here so every test's load() resolves both reads.
+  A.getSymptomFrequencyByMonth.mockResolvedValue([]);
+  A.getEarliestEventMonth.mockResolvedValue(null);
 });
 
 describe('PatternsScreen', () => {

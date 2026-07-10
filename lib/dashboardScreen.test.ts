@@ -65,6 +65,11 @@ function baseInput(over: Partial<Parameters<typeof buildDashboardCards>[0]> = {}
   return {
     symptomCounts: [],
     frequencyBuckets: [],
+    // Calendar v3 N5b — the frequency card's month-paging inputs. Defaults suffice for
+    // these ordering/gating tests (they assert on symptomType/presence, not the calendar).
+    monthBuckets: [],
+    currentMonth: { year: 2026, month: 4 }, // May 2026 (0-indexed month)
+    earliestMonth: null,
     intakeRate: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
     intakeRatePrior: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
     topFoods: NO_FOODS as RankedFood[] | ReturnType<typeof notEnoughData>,

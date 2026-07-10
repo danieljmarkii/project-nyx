@@ -55,6 +55,33 @@ export function dayKeyToLocalDate(key: string): Date | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
+// Format a UTC day key (YYYY-MM-DD) as a short "Mon D" label ("Jun 24"). The Patterns
+// calendar buckets by UTC day (lib/analytics), so its cells, the day drill-in, and the
+// History single-day filter must all NAME the day in UTC — otherwise a near-midnight
+// event would read under one date on the grid and another in the label. Distinct from the
+// LOCAL-day helpers above (toLocalDayKey / dayKeyToLocalDate), which serve the report
+// window; keep the two straight (B-308 / Calendar v3 N5b).
+export function formatUtcDayShort(dayKey: string): string {
+  return new Date(`${dayKey}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+// The [after, before) ISO bounds of one UTC calendar day, for the getTimeline
+// dateAfter/dateBefore single-day filter (B-308) and the calendar drill-in's per-day
+// fetch. UTC so the bounds line up exactly with the calendar's UTC bucketing. Returns
+// null for a malformed key.
+export function utcDayBounds(dayKey: string): { after: string; before: string } | null {
+  const startMs = Date.parse(`${dayKey}T00:00:00.000Z`);
+  if (!Number.isFinite(startMs)) return null;
+  return {
+    after: new Date(startMs).toISOString(),
+    before: new Date(startMs + 86_400_000).toISOString(),
+  };
+}
+
 // Compact pet age for the Home identity strip (B-076) — distinct from the Pet
 // tab's detailed "4yr 2mo": here we want the single coarsest unit ("4 yrs",
 // "8 mo") that reads at a glance above the Signal. Returns null when there's no

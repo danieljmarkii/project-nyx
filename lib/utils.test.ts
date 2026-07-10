@@ -5,10 +5,12 @@ import {
   deriveOccurredAt,
   describeOccurredAt,
   formatTime,
+  formatUtcDayShort,
   petAgeShort,
   petIdentityLine,
   petPronouns,
   toLocalDayKey,
+  utcDayBounds,
 } from './utils';
 
 const at = (iso: string) => new Date(iso);
@@ -264,5 +266,42 @@ describe('dayKeyToLocalDate', () => {
     expect(dayKeyToLocalDate('2026-7-4')).toBeNull(); // unpadded — not the server's YYYY-MM-DD
     expect(dayKeyToLocalDate('garbage')).toBeNull();
     expect(dayKeyToLocalDate('2026-07-04T00:00:00Z')).toBeNull(); // full ISO, not a day key
+  });
+});
+
+describe('formatUtcDayShort (B-308 / Calendar v3)', () => {
+  it('formats a UTC day key as "Mon D" in UTC — never shifted by the runner locale', () => {
+    // UTC, so the label matches the calendar cell regardless of the machine timezone.
+    expect(formatUtcDayShort('2026-06-24')).toBe('Jun 24');
+    expect(formatUtcDayShort('2026-01-01')).toBe('Jan 1');
+    expect(formatUtcDayShort('2026-12-31')).toBe('Dec 31');
+  });
+});
+
+describe('utcDayBounds (B-308 single-day filter)', () => {
+  it('returns the [after, before) ISO bounds of exactly one UTC day', () => {
+    expect(utcDayBounds('2026-06-24')).toEqual({
+      after: '2026-06-24T00:00:00.000Z',
+      before: '2026-06-25T00:00:00.000Z',
+    });
+  });
+
+  it('rolls over a month boundary correctly', () => {
+    expect(utcDayBounds('2026-06-30')).toEqual({
+      after: '2026-06-30T00:00:00.000Z',
+      before: '2026-07-01T00:00:00.000Z',
+    });
+  });
+
+  it('rolls over a leap-day boundary', () => {
+    expect(utcDayBounds('2028-02-29')).toEqual({
+      after: '2028-02-29T00:00:00.000Z',
+      before: '2028-03-01T00:00:00.000Z',
+    });
+  });
+
+  it('returns null for a malformed key', () => {
+    expect(utcDayBounds('garbage')).toBeNull();
+    expect(utcDayBounds('')).toBeNull();
   });
 });

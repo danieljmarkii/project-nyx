@@ -7,7 +7,9 @@ import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../constants/theme';
 import { FilterChip } from '../../components/ui/FilterChip';
-import { DateScopeControl, DatePreset } from '../../components/history/DateScopeControl';
+import { DateScopeControl } from '../../components/history/DateScopeControl';
+import { DAY_KEY_RE, effectiveRange } from '../../lib/historyDateFilter';
+import type { DatePreset } from '../../lib/historyDateFilter';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
 import { EventRow } from '../../components/history/EventRow';
 import { BoundaryMarkerRow } from '../../components/history/BoundaryMarkerRow';
@@ -17,6 +19,7 @@ import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { getTimeline, softDeleteEvent, TimelineRow } from '../../lib/db';
 import { syncPendingEvents, syncNow } from '../../lib/sync';
+import { formatUtcDayShort } from '../../lib/utils';
 import {
   getActiveArrangementsForPet, getBoundaryMarkers,
   ActiveArrangementView, BoundaryMarker,
@@ -49,18 +52,6 @@ const TYPE_FILTERS: { key: EventTypeKey | null; label: string }[] = [
   { key: null, label: 'All' },
   ...TYPE_FILTER_KEYS.map((key) => ({ key, label: EVENT_TYPES[key].label })),
 ];
-
-function dateAfterForPreset(preset: DatePreset): string | null {
-  if (!preset) return null;
-  if (preset === 'today') {
-    // Start of the local calendar day — matches the Home "Today" zone's day boundary.
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString();
-  }
-  const days = preset === '7d' ? 7 : 30;
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-}
 
 function rowToEvent(row: TimelineRow): NyxEvent {
   return {
@@ -100,11 +91,15 @@ function rowToEvent(row: TimelineRow): NyxEvent {
 
 export default function HistoryScreen() {
   const { activePet } = usePetStore();
-  // The Home "Today" doorway (§8) deep-links here with ?date=today; `ts` is a nonce so
-  // the filter re-applies even when this tab is already mounted (a doorway tap is not a
-  // remount). The filter is fully clearable — tapping any other date chip clears it.
+  // Two doorways deep-link here with ?date=…&ts=<nonce>: the Home "Today" doorway (§8,
+  // ?date=today) and the Calendar v3 drill-in (B-308, ?date=YYYY-MM-DD → a single UTC
+  // day). `ts` is a nonce so the filter re-applies even when this tab is already mounted (a
+  // doorway tap is not a remount). Either filter is fully clearable — picking any date
+  // scope clears it.
   const params = useLocalSearchParams<{ date?: string; ts?: string }>();
   const initialDatePreset: DatePreset = params.date === 'today' ? 'today' : null;
+  const initialDay: string | null =
+    params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
   const { removeFromToday, todayEvents } = useEventStore();
   // B-054 §6 — reactive refresh-after-hydrate: re-read the timeline when a sync
   // cycle finishes while this tab is open, so another device's writes appear
@@ -121,6 +116,9 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(false);
   const [typeFilter, setTypeFilter] = useState<EventTypeKey | null>(null);
   const [datePreset, setDatePreset] = useState<DatePreset>(initialDatePreset);
+  // A single-day filter from the Calendar v3 drill-in (B-308). Mutually exclusive with
+  // datePreset — whichever the owner picked last wins; picking a preset clears the day.
+  const [dayFilter, setDayFilter] = useState<string | null>(initialDay);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -132,25 +130,30 @@ export default function HistoryScreen() {
   // the explicit handlers already reload).
   const typeFilterRef = useRef(typeFilter);
   const datePresetRef = useRef(datePreset);
+  const dayFilterRef = useRef(dayFilter);
   typeFilterRef.current = typeFilter;
   datePresetRef.current = datePreset;
+  dayFilterRef.current = dayFilter;
 
   const loadEvents = useCallback(async (
     currentOffset: number,
     type: EventTypeKey | null,
     preset: DatePreset,
+    day: string | null,
     replace: boolean,
   ) => {
     if (!activePet || loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
     try {
+      const { after, before } = effectiveRange(preset, day);
       const rows = await getTimeline(
         activePet.id,
         PAGE_SIZE,
         currentOffset,
         type,
-        dateAfterForPreset(preset),
+        after,
+        before,
       );
       const mapped = rows.map(rowToEvent);
       setEvents((prev: NyxEvent[]) => {
@@ -213,12 +216,12 @@ export default function HistoryScreen() {
       // the local view), and await it so the spinner stays up until the list
       // repaints — no drop-then-fill flicker.
       await Promise.all([
-        loadEvents(0, typeFilter, datePreset, true),
+        loadEvents(0, typeFilter, datePreset, dayFilter, true),
         loadFreeFeeding(),
       ]);
       setRefreshing(false);
     }
-  }, [loadEvents, loadFreeFeeding, typeFilter, datePreset]);
+  }, [loadEvents, loadFreeFeeding, typeFilter, datePreset, dayFilter]);
 
   // Reload fresh on every focus so edits/deletes from the edit modal are reflected
   useFocusEffect(
@@ -226,9 +229,9 @@ export default function HistoryScreen() {
       setOffset(0);
       setHasMore(true);
       setExpandedId(null);
-      loadEvents(0, typeFilter, datePreset, true);
+      loadEvents(0, typeFilter, datePreset, dayFilter, true);
       loadFreeFeeding();
-    }, [activePet, typeFilter, datePreset]),
+    }, [activePet, typeFilter, datePreset, dayFilter]),
   );
 
   // Reactive refresh-after-hydrate (B-054 §6): when a background sync cycle
@@ -241,21 +244,31 @@ export default function HistoryScreen() {
       firstTick.current = false;
       return;
     }
-    loadEvents(0, typeFilterRef.current, datePresetRef.current, true);
+    loadEvents(0, typeFilterRef.current, datePresetRef.current, dayFilterRef.current, true);
     loadFreeFeeding();
   }, [hydrationTick, loadEvents, loadFreeFeeding]);
 
-  // Re-apply the Home-doorway date filter on a fresh navigation (the tab persists across
-  // switches, so a doorway tap doesn't remount). The `ts` nonce changes per tap; the ref
-  // guards against re-applying on unrelated re-renders. Setting datePreset re-runs the
-  // focus effect (which reloads). First mount is handled by initialDatePreset above, so
-  // the ref is seeded to that ts to avoid a redundant re-apply.
-  const appliedDateTsRef = useRef<string | null>(initialDatePreset ? params.ts ?? null : null);
+  // Re-apply a doorway date filter on a fresh navigation (the tab persists across switches,
+  // so a doorway tap doesn't remount). The `ts` nonce changes per tap; the ref guards
+  // against re-applying on unrelated re-renders. Setting datePreset/dayFilter re-runs the
+  // focus effect (which reloads). First mount is handled by initialDatePreset/initialDay
+  // above, so the ref is seeded to that ts to avoid a redundant re-apply. Handles BOTH the
+  // Home "Today" doorway (?date=today) and the Calendar drill-in (?date=YYYY-MM-DD, B-308).
+  const appliedDateTsRef = useRef<string | null>(
+    initialDatePreset || initialDay ? params.ts ?? null : null,
+  );
   useEffect(() => {
-    if (params.date === 'today' && params.ts && params.ts !== appliedDateTsRef.current) {
+    if (!params.date || !params.ts || params.ts === appliedDateTsRef.current) return;
+    if (params.date === 'today') {
       appliedDateTsRef.current = params.ts;
       setTypeFilter(null);
+      setDayFilter(null);
       setDatePreset('today');
+    } else if (DAY_KEY_RE.test(params.date)) {
+      appliedDateTsRef.current = params.ts;
+      setTypeFilter(null);
+      setDatePreset(null);
+      setDayFilter(params.date);
     }
   }, [params.date, params.ts]);
 
@@ -268,10 +281,11 @@ export default function HistoryScreen() {
       const newEvent = todayEvents[0];
       if (!newEvent) return prev;
       if (typeFilter && newEvent.event_type !== typeFilter) return prev;
-      if (datePreset) {
-        const cutoff = dateAfterForPreset(datePreset);
-        if (cutoff && newEvent.occurred_at < cutoff) return prev;
-      }
+      // Respect BOTH the preset cutoff and a single-day filter's upper bound — a freshly
+      // logged event outside the current scope shouldn't jump into a filtered view.
+      const { after, before } = effectiveRange(datePreset, dayFilter);
+      if (after && newEvent.occurred_at < after) return prev;
+      if (before && newEvent.occurred_at >= before) return prev;
       return [newEvent, ...prev];
     });
   }, [latestTodayId]);
@@ -281,20 +295,23 @@ export default function HistoryScreen() {
     setOffset(0);
     setHasMore(true);
     setExpandedId(null);
-    loadEvents(0, key, datePreset, true);
+    loadEvents(0, key, datePreset, dayFilter, true);
   }
 
   function handleDatePreset(preset: DatePreset) {
+    // Picking a preset from the scope menu clears any single-day drill-in filter (the two
+    // are mutually exclusive — last pick wins).
     setDatePreset(preset);
+    setDayFilter(null);
     setOffset(0);
     setHasMore(true);
     setExpandedId(null);
-    loadEvents(0, typeFilter, preset, true);
+    loadEvents(0, typeFilter, preset, null, true);
   }
 
   function handleLoadMore() {
     if (!hasMore || loadingRef.current) return;
-    loadEvents(offset, typeFilter, datePreset, false);
+    loadEvents(offset, typeFilter, datePreset, dayFilter, false);
   }
 
   function handleToggle(id: string) {
@@ -361,8 +378,9 @@ export default function HistoryScreen() {
     const eventItems: ListItem[] = events.map((e) => ({ kind: 'event', event: e }));
     if (typeFilter !== null) return eventItems;
 
-    const cutoff = dateAfterForPreset(datePreset);
-    const cutoffMs = cutoff ? new Date(cutoff).getTime() : null;
+    const { after, before } = effectiveRange(datePreset, dayFilter);
+    const cutoffMs = after ? new Date(after).getTime() : null;
+    const beforeMs = before ? new Date(before).getTime() : null;
     const oldestEventMs = events.length > 0
       ? new Date(events[events.length - 1].occurred_at).getTime()
       : null;
@@ -370,13 +388,15 @@ export default function HistoryScreen() {
     const markerItems: ListItem[] = markers
       .filter((m) => {
         if (cutoffMs !== null && m.sortMs < cutoffMs) return false;
+        // Single-day filter: drop markers past the day's upper bound too (B-308).
+        if (beforeMs !== null && m.sortMs >= beforeMs) return false;
         if (oldestEventMs !== null && hasMore && m.sortMs < oldestEventMs) return false;
         return true;
       })
       .map((m) => ({ kind: 'marker' as const, marker: m }));
 
     return [...eventItems, ...markerItems].sort((a, b) => itemSortMs(b) - itemSortMs(a));
-  }, [events, markers, typeFilter, datePreset, hasMore]);
+  }, [events, markers, typeFilter, datePreset, dayFilter, hasMore]);
 
   const isEmpty = merged.length === 0 && !loading;
 
@@ -390,7 +410,11 @@ export default function HistoryScreen() {
             this is what kills the old clipped, unscrollable date row. */}
         <View style={styles.headerRow}>
           <Text style={styles.title}>History</Text>
-          <DateScopeControl value={datePreset} onChange={handleDatePreset} />
+          <DateScopeControl
+            value={datePreset}
+            onChange={handleDatePreset}
+            dayLabel={dayFilter ? formatUtcDayShort(dayFilter) : null}
+          />
         </View>
 
         {/* Event-type lens — one scrollable row, one visual language (teal), with
@@ -468,7 +492,7 @@ export default function HistoryScreen() {
           ListEmptyComponent={
             isEmpty ? (
               <View style={styles.emptyState}>
-                {typeFilter || datePreset ? (
+                {typeFilter || datePreset || dayFilter ? (
                   <>
                     <Text style={styles.emptyTitle}>Nothing matches that filter</Text>
                     <Text style={styles.emptyBody}>
