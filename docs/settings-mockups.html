@@ -249,6 +249,16 @@
   .chip { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--a-text2); background: var(--a-subtle); border-radius: 999px; padding: 5px 11px; }
   .chip .d { width: 8px; height: 8px; border-radius: 50%; background: var(--a-accent); }
 
+  /* mocked notifications + feedback bits */
+  .note-inline { padding: 12px 15px 13px; font-size: 12.5px; color: var(--a-text2); line-height: 1.5; }
+  .toggle { width: 42px; height: 25px; border-radius: 999px; background: var(--a-border-strong); position: relative; flex: none; opacity: .55; }
+  .toggle::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+  .fb-chips { display: flex; gap: 8px; padding: 4px 2px 2px; }
+  .fb-chip { font-size: 12.5px; color: var(--a-text2); background: var(--a-subtle); border-radius: 999px; padding: 6px 13px; }
+  .fb-chip.on { background: var(--a-accent-light); color: var(--a-accent); font-weight: 500; }
+  .field { border: 1px solid var(--a-border); border-radius: 12px; padding: 12px 13px; min-height: 76px; font-size: 13.5px; color: var(--a-text-dis); background: var(--a-surface); }
+  .send-btn { background: var(--a-accent); color: #fff; text-align: center; padding: 12px; border-radius: 12px; font-size: 15px; font-weight: 600; margin-top: 2px; }
+
   /* tab bar */
   .tabbar { display: flex; background: var(--a-surface); border-top: 1px solid var(--a-border); padding: 9px 0 4px; margin-top: auto; }
   .tabbar .t { flex: 1; text-align: center; font-size: 11.5px; font-weight: 500; letter-spacing: .02em; color: var(--a-text3); }
@@ -538,9 +548,15 @@
               <div class="a-row"><div class="lead"><div class="lbl">Password</div></div><span class="soon">Change · soon</span></div>
             </div>
 
-            <!-- Support -->
+            <!-- Preferences -->
+            <div class="a-card">
+              <div class="a-row"><div class="lead"><div class="lbl">Notifications</div><div class="sub">Daily nudge · health insights</div></div><span class="soon">Soon</span><span class="chev"></span></div>
+            </div>
+
+            <!-- Support & feedback -->
             <div class="a-card">
               <div class="a-row"><div class="lead"><div class="lbl">Contact support</div><div class="sub">We usually reply within a day</div></div><span class="chev"></span></div>
+              <div class="a-row"><div class="lead"><div class="lbl">Share feedback</div><div class="sub">An idea, a problem, or a bit of praise</div></div><span class="chev"></span></div>
             </div>
 
             <!-- About & legal -->
@@ -620,6 +636,59 @@
     </div>
   </section>
 
+  <!-- ====================== NEW MOCKED SURFACES ====================== -->
+  <section class="fade">
+    <div class="sec-head">
+      <p class="sec-eyebrow">New surfaces · mocked in v1</p>
+      <h2 class="serif">Notifications &amp; feedback</h2>
+      <p class="sec-lede">
+        Both are reserved now, wired later. Notifications is shown deliberately as
+        <b>not yet live</b> — an owner must never flip "remind me" and rely on a nudge
+        that isn't sending. The medication case makes that a safety line, not a nicety.
+        Feedback is a light composer, kept distinct from Contact support.
+      </p>
+    </div>
+    <div class="rail" style="grid-template-columns: repeat(auto-fit, minmax(250px, 320px)); justify-content: center;">
+      <div class="opt">
+        <div class="phone" aria-label="Notifications (mocked)">
+          <div class="screen">
+            <div class="statusbar"><span>9:41</span><span class="sb-icons"><span class="sb-bars" style="background:var(--a-text)"></span><span class="sb-bat"></span></span></div>
+            <div class="scr-nav"><div class="back"></div></div>
+            <div class="scr-title" style="font-size:22px;">Notifications</div>
+            <div class="app-scroll">
+              <div class="a-card"><div class="note-inline"><b style="color:var(--a-text)">Not turned on yet.</b> We'll let you know the moment nudges and insights are ready.</div></div>
+              <div class="a-card">
+                <div class="a-row"><div class="lead"><div class="lbl">Daily check-in nudge</div><div class="sub">One gentle nudge a day, only if nothing's logged</div></div><span class="toggle"></span></div>
+                <div class="a-row"><div class="lead"><div class="lbl">Health insights</div><div class="sub">A heads-up when a pattern is worth a look</div></div><span class="toggle"></span></div>
+              </div>
+            </div>
+            <div class="home-ind"><span></span></div>
+          </div>
+        </div>
+        <div class="opt-cap"><span class="k">Notifications <span class="tag tag-alt">Mocked</span></span><p>Categories reserved, shown plainly off. <b>No armed medication reminder</b> — a relied-upon, non-firing dose nudge is a safety risk.</p></div>
+      </div>
+
+      <div class="opt">
+        <div class="phone" aria-label="Share feedback (mocked)">
+          <div class="screen">
+            <div class="statusbar"><span>9:41</span><span class="sb-icons"><span class="sb-bars" style="background:var(--a-text)"></span><span class="sb-bat"></span></span></div>
+            <div class="scr-nav"><div class="back"></div></div>
+            <div class="scr-title" style="font-size:22px;">Share feedback</div>
+            <div class="app-scroll">
+              <div style="font-size:14px;color:var(--a-text2);padding:0 2px 0;line-height:1.5;">What's working? What could be better?</div>
+              <div class="fb-chips"><span class="fb-chip on">Idea</span><span class="fb-chip">Problem</span><span class="fb-chip">Praise</span></div>
+              <div class="field">Tell us anything…</div>
+              <div style="font-size:12px;color:var(--a-text3);padding:2px 2px 0;">We read every note. We can't always reply.</div>
+              <div class="send-btn">Send</div>
+            </div>
+            <div class="home-ind"><span></span></div>
+          </div>
+        </div>
+        <div class="opt-cap"><span class="k">Share feedback <span class="tag tag-alt">Mocked</span></span><p>Product input, not a support ticket. Send composes an email tagged <b>[Feedback]</b> with your app version — no backend in v1.</p></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ====================== WHAT ELSE COULD LIVE HERE ====================== -->
   <section class="fade">
     <div class="sec-head">
@@ -636,7 +705,8 @@
     <div class="block approved" style="margin-top:22px;">
       <h3>In v1 — approved this round</h3>
       <p style="margin:0;font-size:14.5px;color:var(--ink-soft);">
-        Account (name + email) · Contact support · Privacy / Terms / disclaimer ·
+        Account (name + email) · Notifications <em>(mocked)</em> · Contact support ·
+        Share feedback <em>(mocked)</em> · Privacy / Terms / disclaimer ·
         Sign out + Delete account (moved off the Pet tab) · app version.
       </p>
     </div>
@@ -648,8 +718,8 @@
           <li><span class="m">·</span><span><b>Export my data</b> — sits beside Delete under a "Your data" group; completes the data-rights story (Pets &gt; $). <span class="bid">B-041</span></span></li>
           <li><span class="m">·</span><span><b>Units</b> — lbs ⁄ kg. The app hardcodes lbs today; cheap, real for non-US owners.</span></li>
           <li><span class="m">·</span><span><b>Culprit Premium</b> — manage plan + Restore Purchases. An App Store requirement the moment Premium wires. <span class="bid">B-264</span></span></li>
-          <li><span class="m">·</span><span><b>Notifications</b> — reserve the slot; the content is gated on the push-provider call. <span class="bid">B-015</span></span></li>
         </ul>
+        <p style="margin:12px 0 0;font-size:12.5px;color:var(--ink-faint);">Notifications &amp; feedback moved up into v1 (mocked) this round.</p>
       </div>
       <div class="block">
         <h3>Roadmap — when its condition is met</h3>
@@ -682,10 +752,11 @@
     </div>
 
     <div class="open-call">
-      <b>Open for your call.</b> Which of the near-term adds ride the first build?
-      <b>Export my data</b> and <b>Units</b> look like clean early wins; Premium &amp;
-      Notifications naturally wait on their own decisions. Everything else is
-      recommend-and-proceed.
+      <b>Now spec'd.</b> The full build-ready spec + a 5-PR plan lives in
+      <code style="font-family:ui-monospace,monospace;font-size:.9em;color:var(--amber)">docs/nyx-settings-requirements.md</code>.
+      Open PM sub-decisions: feedback routing (reuse <b>support@</b> with a [Feedback] tag
+      vs. a separate <b>feedback@</b>), and which later tenants (Export, Units, Premium)
+      join a subsequent chunk.
     </div>
   </section>
 
