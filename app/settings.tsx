@@ -230,6 +230,7 @@ export default function SettingsScreen() {
         <Pressable
           onLongPress={() => router.push('/settings/diagnostics')}
           delayLongPress={800}
+          hitSlop={12}
           accessibilityRole="text"
         >
           <Text style={styles.version}>Culprit v{formatAppVersion(APP_VERSION, APP_BUILD)}</Text>

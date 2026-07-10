@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   redactDetail,
   trimRing,
@@ -23,7 +24,7 @@ describe('redactDetail', () => {
     expect(redactDetail(undefined)).toBeUndefined();
   });
 
-  it('keeps numbers, booleans, null, and short strings verbatim', () => {
+  it('keeps numbers, booleans, null, and short non-sensitive strings verbatim', () => {
     expect(redactDetail({ n: 42, b: true, z: null, s: 'ok' })).toEqual({
       n: 42,
       b: true,
@@ -32,14 +33,33 @@ describe('redactDetail', () => {
     });
   });
 
-  it('replaces any long string with its length only — never a token verbatim', () => {
-    const token = 'a'.repeat(1200);
-    expect(redactDetail({ jwt: token })).toEqual({ jwt: '<1200 chars>' });
+  it('length-caps a long value under a non-sensitive key', () => {
+    expect(redactDetail({ blob: 'a'.repeat(1200) })).toEqual({ blob: '<1200 chars>' });
   });
 
-  it('keeps a 64-char string but redacts a 65-char one (boundary)', () => {
+  it('keeps a 64-char string but length-caps a 65-char one (boundary)', () => {
     expect(redactDetail({ s: 'a'.repeat(64) })).toEqual({ s: 'a'.repeat(64) });
     expect(redactDetail({ s: 'a'.repeat(65) })).toEqual({ s: '<65 chars>' });
+  });
+
+  it('redacts a value under a sensitive-looking key regardless of type or length', () => {
+    expect(redactDetail({ email: 'a@b.co' })).toEqual({ email: '<redacted>' });
+    expect(redactDetail({ refreshToken: 'short' })).toEqual({ refreshToken: '<redacted>' });
+    expect(redactDetail({ jwt: 'a'.repeat(1200) })).toEqual({ jwt: '<redacted>' });
+    expect(redactDetail({ password: 123 })).toEqual({ password: '<redacted>' });
+  });
+
+  it('still logs hasSession — the load-bearing boolean must survive the guard', () => {
+    expect(redactDetail({ hasSession: true })).toEqual({ hasSession: true });
+  });
+
+  it('never JSON-dumps a structured value — records its shape only', () => {
+    // A whole session/user object passed by mistake must never surface its
+    // embedded token/email — only that it was an object.
+    expect(redactDetail({ obj: { access_token: 'x', user: { email: 'a@b' } } })).toEqual({
+      obj: '<object>',
+    });
+    expect(redactDetail({ arr: [1, 2, 3] })).toEqual({ arr: '<array[3]>' });
   });
 });
 
@@ -69,7 +89,7 @@ describe('buildBreadcrumb', () => {
 
   it('redacts the detail it stores', () => {
     const b = buildBreadcrumb(0, 'e', { secret: 'x'.repeat(100) }, 'l', 0);
-    expect(b.detail).toEqual({ secret: '<100 chars>' });
+    expect(b.detail).toEqual({ secret: '<redacted>' });
   });
 });
 
@@ -93,11 +113,22 @@ describe('logAuth ring buffer (AsyncStorage-backed)', () => {
     expect(log[1].detail).toEqual({ path: 'ok', chars: 3200 });
   });
 
-  it('never stores a long string value even if one is passed by mistake', async () => {
-    logAuth('oops', { accidentalToken: 'y'.repeat(2000) });
+  it('never stores a secret value even if one is passed by mistake', async () => {
+    logAuth('oops', { accidentalToken: 'y'.repeat(2000), session: { email: 'a@b.co' } });
     await flushAuthLog();
     const log = await readAuthLog();
-    expect(log[0].detail).toEqual({ accidentalToken: '<2000 chars>' });
+    expect(log[0].detail).toEqual({ accidentalToken: '<redacted>', session: '<object>' });
+  });
+
+  it('survives a corrupt persisted blob rather than jamming dark', async () => {
+    // Simulate a corrupt/legacy value at the ring key, then confirm the next
+    // append starts a fresh trail instead of throwing on every read forever.
+    await AsyncStorage.setItem('__culprit_auth_debug_v1', 'not-json{');
+    logAuth('recovered', { ok: true });
+    await flushAuthLog();
+    const log = await readAuthLog();
+    expect(log).toHaveLength(1);
+    expect(log[0].event).toBe('recovered');
   });
 
   it('caps the persisted ring at 200 entries, keeping the most recent', async () => {

@@ -47,22 +47,52 @@ export type Breadcrumb = {
 // read back", so grouping by process lifetime is essential.
 export const LAUNCH_ID: string = Math.random().toString(36).slice(2, 10);
 
+// Keys whose VALUE must never be logged, whatever its type or length — defence
+// in depth against a future `logAuth('x', { email })` / `{ refreshToken }` added
+// mid-investigation without review. Deliberately EXCLUDES "session" so the
+// load-bearing `hasSession` boolean still logs (a boolean carries no secret).
+const SENSITIVE_KEY_RE = /token|jwt|refresh|secret|email|password/i;
+
 // Pure: strip anything that could be a secret. We only ever intend to log
 // numbers/booleans/short enums, but redact defensively in case a caller passes a
-// value by mistake — a token must never reach the log even via human error.
+// value by mistake — a token, email, or a whole session object must never reach
+// the log (and from there the Share export) even via human error.
 export function redactDetail(
   detail?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   if (!detail) return undefined;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(detail)) {
-    if (typeof v === 'string' && v.length > MAX_DETAIL_STRING) {
-      out[k] = `<${v.length} chars>`;
-    } else {
+    if (SENSITIVE_KEY_RE.test(k)) {
+      // Never log a value under a sensitive-looking key, whatever its type.
+      out[k] = '<redacted>';
+    } else if (typeof v === 'string') {
+      // A long string is assumed to be a value we must never persist verbatim
+      // (a token, a serialized session) and is reduced to its length only.
+      out[k] = v.length > MAX_DETAIL_STRING ? `<${v.length} chars>` : v;
+    } else if (v === null || typeof v === 'number' || typeof v === 'boolean') {
       out[k] = v;
+    } else {
+      // Objects / arrays / anything structured — NEVER JSON-dump it (it could
+      // embed a token, an email, or the entire session). Record its shape only.
+      out[k] = Array.isArray(v) ? `<array[${v.length}]>` : `<${typeof v}>`;
     }
   }
   return out;
+}
+
+// Parse the persisted ring, tolerating a corrupt blob: a bad value resets to an
+// empty trail rather than jamming the tool dark forever on every subsequent read
+// (only this module writes LOG_KEY, so this is belt-and-braces for a format
+// change or a torn write under extreme low-storage conditions).
+function safeParseLog(raw: string | null): Breadcrumb[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? (v as Breadcrumb[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 // Pure: keep only the most recent `max` entries.
@@ -106,8 +136,7 @@ export function logAuth(event: string, detail?: Record<string, unknown>): void {
   }
   chain = chain
     .then(async () => {
-      const raw = await AsyncStorage.getItem(LOG_KEY);
-      const arr: Breadcrumb[] = raw ? (JSON.parse(raw) as Breadcrumb[]) : [];
+      const arr = safeParseLog(await AsyncStorage.getItem(LOG_KEY));
       arr.push(entry);
       await AsyncStorage.setItem(LOG_KEY, JSON.stringify(trimRing(arr, MAX_ENTRIES)));
     })
@@ -124,8 +153,7 @@ export function flushAuthLog(): Promise<void> {
 
 export async function readAuthLog(): Promise<Breadcrumb[]> {
   try {
-    const raw = await AsyncStorage.getItem(LOG_KEY);
-    return raw ? (JSON.parse(raw) as Breadcrumb[]) : [];
+    return safeParseLog(await AsyncStorage.getItem(LOG_KEY));
   } catch {
     return [];
   }

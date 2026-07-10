@@ -44,8 +44,11 @@ export default function DiagnosticsScreen() {
     const body = entries.map(formatLine).join('\n');
     try {
       await Share.share({ message: header + '\n' + body });
-    } catch {
-      // User dismissed the share sheet, or it failed — nothing to recover.
+    } catch (e) {
+      // A user-cancel resolves (not throws), so reaching here is a genuine share
+      // failure — surface it to the console so a "nothing happened" isn't silent
+      // (this screen's whole job is getting the trail off the device).
+      console.warn('[diagnostics] share failed:', e);
     }
   }
 
