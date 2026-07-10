@@ -47,6 +47,7 @@ import {
   type ReportWeightCheckInput,
   type ReportDoseInput,
   type ReportMedicationInput,
+  type ReportMedicationItemInput,
   type ReportDietTrialInput,
   type ReportVetVisitInput,
   type ReportFeedingArrangementInput,
@@ -163,6 +164,15 @@ interface DoseRow {
 }
 
 type MedItemJoin = { is_prescription: boolean | null; strength: string | null }
+/** medication_items catalog row (migration 019) — resolves an ad-hoc dose's drug name (§3.8). */
+interface MedicationItemRow {
+  id: string
+  generic_name: string | null
+  brand_name: string | null
+  strength: string | null
+  default_route: string | null
+  is_prescription: boolean | null
+}
 interface MedicationRow {
   id: string
   medication_item_id: string | null
@@ -377,6 +387,17 @@ export function mapDoseRows(rows: DoseRow[], lookbackMs?: number): ReportDoseInp
     })
   }
   return out
+}
+
+export function mapMedicationItemRows(rows: MedicationItemRow[]): ReportMedicationItemInput[] {
+  return rows.map((r) => ({
+    id: r.id,
+    genericName: r.generic_name ?? null,
+    brandName: r.brand_name ?? null,
+    strength: r.strength ?? null,
+    route: r.default_route ?? null,
+    isPrescription: r.is_prescription ?? null,
+  }))
 }
 
 export function mapMedicationRows(rows: MedicationRow[]): ReportMedicationInput[] {
@@ -754,6 +775,21 @@ export async function generateReportForPet(
   // process its entire dose/weight history (report.ts scopes to the window regardless).
   const lookbackMs = Date.parse(lookbackIso)
 
+  const doses = mapDoseRows(rowsOrThrow<DoseRow>(dosesRes, 'medication_administrations'), lookbackMs)
+  // §3.8 orphan-dose gap: resolve names for the medication_items behind the doses so an ad-hoc dose
+  // logged with NO regimen still reports by drug name (a daily OTC antihistamine otherwise vanished
+  // from the report). Fetched by the exact item ids present on the doses — the global catalog, the
+  // same RLS the regimen→medication_items join already relies on. Skipped when there are no doses.
+  const doseItemIds = [...new Set(doses.map((d) => d.medicationItemId).filter((v): v is string => v !== null))]
+  let medicationItems: ReportMedicationItemInput[] = []
+  if (doseItemIds.length > 0) {
+    const medItemsRes = await supabase
+      .from('medication_items')
+      .select('id, generic_name, brand_name, strength, default_route, is_prescription')
+      .in('id', doseItemIds)
+    medicationItems = mapMedicationItemRows(rowsOrThrow<MedicationItemRow>(medItemsRes, 'medication_items'))
+  }
+
   const input: ReportInput = {
     now: nowIso,
     timezone,
@@ -763,8 +799,9 @@ export async function generateReportForPet(
     events: mapEventRows(rowsOrThrow<EventRow>(eventsRes, 'events')),
     aiAnalyses: mapAiAnalysisRows(rowsOrThrow<AiAnalysisRow>(aiRes, 'event_ai_analysis')),
     weightChecks: mapWeightRows(rowsOrThrow<WeightRow>(weightRes, 'weight_checks'), lookbackMs),
-    doses: mapDoseRows(rowsOrThrow<DoseRow>(dosesRes, 'medication_administrations'), lookbackMs),
+    doses,
     medications: mapMedicationRows(rowsOrThrow<MedicationRow>(medsRes, 'medications')),
+    medicationItems,
     dietTrials,
     vetVisits,
     feedingArrangements: mapFeedingArrangementRows(rowsOrThrow<ArrangementRow>(arrangementsRes, 'feeding_arrangements')),
