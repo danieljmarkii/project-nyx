@@ -3,6 +3,7 @@ import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
+import * as Application from 'expo-application';
 import { theme } from '../constants/theme';
 import { Card, Header } from '../components/ui';
 import { OwnerAvatar } from '../components/settings/OwnerAvatar';
@@ -32,14 +33,26 @@ import { useAuthStore } from '../store/authStore';
 // one SettingsRow into their card later — kept out here so no row points at a
 // screen that doesn't exist yet (§10 PR plan; the "no dead ends" rule).
 
-// The live app version + native build, read at the UI boundary (expo-constants,
-// B-231) and formatted by the pure PR-1 helper. Module-scope: the manifest is
-// immutable for the app's lifetime, so there's no reason to re-read per render.
-const APP_VERSION = Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? null;
+// The live app version + native build, read at the UI boundary (B-231) and
+// formatted by the pure PR-1 helper. Module-scope: these are immutable for the
+// app's lifetime, so there's no reason to re-read per render.
+//
+// Version comes from the manifest (`Constants.expoConfig.version` = app.json
+// "1.0.0") — correct in Expo Go AND standalone (in Expo Go the *native* value
+// would be Expo Go's own version, not ours). The BUILD number comes from the
+// runtime native binary via expo-application: with eas.json's remote
+// appVersionSource + autoIncrement, the build number is assigned server-side and
+// is NOT written back into the embedded manifest, so `Constants.expoConfig.ios.
+// buildNumber` is unreliable — `Application.nativeBuildVersion` reads the actual
+// CFBundleVersion / Android versionCode baked into the build. (The removed
+// `Constants.nativeBuildVersion` / `nativeAppVersion` APIs — gone in
+// expo-constants v16 — were inert here; code-reviewer catch.) A missing build
+// degrades to "Culprit v1.0.0" via formatAppVersion, never blank (§4.5).
+const APP_VERSION = Constants.expoConfig?.version ?? Application.nativeApplicationVersion ?? null;
 const APP_BUILD =
+  Application.nativeBuildVersion ??
   Constants.expoConfig?.ios?.buildNumber ??
   Constants.expoConfig?.android?.versionCode ??
-  Constants.nativeBuildVersion ??
   null;
 // Diagnostic platform string for the support mailto (§D6) so triage never starts
 // with "what device / OS?". e.g. "ios 17.2" / "android 34".
@@ -99,11 +112,18 @@ export default function SettingsScreen() {
         text: 'Sign out',
         style: 'destructive',
         onPress: async () => {
-          const { error } = await supabase.auth.signOut();
-          // SIGNED_OUT (app/_layout.tsx) runs the FR-9 local wipe + routes away;
-          // surface a failure honestly rather than leaving the owner stuck.
-          if (error) {
-            console.warn('[Settings] sign out failed:', error.message);
+          // signOut can THROW (network reject), not only return { error } — so
+          // try/catch, mirroring DeleteAccountSheet, or a rejection inside this
+          // async Alert handler is unhandled and the owner gets no feedback.
+          // SIGNED_OUT (app/_layout.tsx) runs the FR-9 local wipe + routes away.
+          try {
+            const { error } = await supabase.auth.signOut();
+            if (error) {
+              console.warn('[Settings] sign out failed:', error.message);
+              Alert.alert("Couldn't sign out", 'Check your connection and try again.');
+            }
+          } catch (e) {
+            console.warn('[Settings] sign out threw:', e);
             Alert.alert("Couldn't sign out", 'Check your connection and try again.');
           }
         },
@@ -114,7 +134,7 @@ export default function SettingsScreen() {
   const comingSoon = <Text style={styles.comingSoon}>Coming soon</Text>;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <Header title="You" leading="back" onLeadingPress={handleBack} />
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -156,6 +176,9 @@ export default function SettingsScreen() {
             disabled={!LEGAL_LINKS_ENABLED}
             chevron={LEGAL_LINKS_ENABLED}
             trailing={LEGAL_LINKS_ENABLED ? undefined : comingSoon}
+            // Fold the "Coming soon" state into the label for screen readers, so a
+            // disabled row announces why it's inert, not just "dimmed".
+            accessibilityLabel={LEGAL_LINKS_ENABLED ? undefined : 'Privacy policy — coming soon'}
             onPress={
               LEGAL_LINKS_ENABLED
                 ? () => openLegal(PRIVACY_POLICY_URL, 'privacy policy')
@@ -167,6 +190,7 @@ export default function SettingsScreen() {
             disabled={!LEGAL_LINKS_ENABLED}
             chevron={LEGAL_LINKS_ENABLED}
             trailing={LEGAL_LINKS_ENABLED ? undefined : comingSoon}
+            accessibilityLabel={LEGAL_LINKS_ENABLED ? undefined : 'Terms of service — coming soon'}
             onPress={
               LEGAL_LINKS_ENABLED ? () => openLegal(TERMS_URL, 'terms of service') : undefined
             }
