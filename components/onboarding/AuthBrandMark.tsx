@@ -3,28 +3,33 @@ import { theme } from '../../constants/theme';
 import { CulpritMark } from '../brand/CulpritMark';
 
 // The Culprit brand mark (CulpritMark glyph + Newsreader wordmark) — the single
-// source of truth for the brand lockup across every unauthenticated surface: the
-// Signal-led Landing (hero scale) and the login + signup forms (compact anchor).
-// Extracting it keeps the whole auth flow reading as ONE branded experience rather
-// than dropping to an unbranded utility screen the moment an owner taps "Log in"
-// (TestFlight feedback, 2026-07-09 — login felt off-par with onboarding), and stops
-// the lockup from drifting between hand-maintained copies.
+// source of truth for the COMPACT INLINE lockup on the login + signup forms, so
+// the whole auth flow reads as ONE branded experience rather than dropping to an
+// unbranded utility screen the moment an owner taps "Log in" (TestFlight feedback,
+// 2026-07-09 — login felt off-par with onboarding), and the forms' lockup never
+// drifts between hand-maintained copies.
+//
+// This is the HORIZONTAL row lockup (glyph beside wordmark). The Landing HERO
+// (B-284 PR N2b) is a DIFFERENT, vertical composition — a ~44%-of-screen carved
+// moon with the wordmark stacked below and the Signal-dot pulse live — so it
+// consumes CulpritMark directly in app/(auth)/index.tsx rather than this
+// component; don't fold the two together (different axis, and this one carries no
+// `live` passthrough by design — auth surfaces never pulse).
 //
 // B-284 PR N2: the lucide `Moon` glyph is replaced by the real CulpritMark (the
 // carved-crescent + Signal-dot brand mark) — a GLYPH SWAP ONLY (spec §3
 // "Placements" — no pulse on auth: `live` is left at its default false). The
-// wordmark stays this component's own Text, unchanged, so the existing
-// compact/hero sizing this file already owned isn't re-derived inside the mark.
-// 'hero' matches the Landing's original scale (24px glyph / text2XL wordmark); the
-// default 'compact' anchors the forms one step down (20px / textXL) so the mark
-// never competes with the screen's own text2XL title below it.
+// wordmark stays this component's own Text. 'compact' (default) anchors the forms
+// at a 20px glyph / textXL wordmark, one step below the screen's own text2XL
+// title; 'hero' (24px / text2XL) is retained for a larger inline placement.
 export function AuthBrandMark({
   size = 'compact',
   ground = 'light',
   style,
 }: {
   size?: 'compact' | 'hero';
-  /** The Landing hero (N2b) renders this on the night ground; forms stay light. */
+  /** Retained for a future night-ground inline lockup; the forms render light.
+   * (The Landing hero uses CulpritMark directly, not this component.) */
   ground?: 'light' | 'night';
   style?: StyleProp<ViewStyle>;
 }) {
