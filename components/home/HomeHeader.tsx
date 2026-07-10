@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { usePetStore } from '../../store/petStore';
+import { useAuthStore } from '../../store/authStore';
 import { petIdentityLine } from '../../lib/utils';
 import { PetAvatar } from '../pet/PetAvatar';
+import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 
 // Home identity strip (B-076) — a thin orienting band above the Signal: a quiet
@@ -19,6 +22,9 @@ import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 // also the only "Add a pet" entry point (an owner's path to pet #2).
 export function HomeHeader() {
   const { pets, activePet } = usePetStore();
+  // The owner email seeds the account-avatar monogram (§D10). Home renders only
+  // behind a live session, so it's populated whenever this strip is on screen.
+  const email = useAuthStore((s) => s.user?.email);
   // Own the top safe-area inset so the white surface bleeds up behind the
   // status bar — otherwise the screen's grey bg shows above the strip.
   const insets = useSafeAreaInsets();
@@ -34,7 +40,21 @@ export function HomeHeader() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
-      <Text style={styles.wordmark}>Culprit</Text>
+      {/* Top chrome row: the quiet wordmark, and — top-right — the owner avatar
+          doorway into the "You" screen (§4.1). A doorway in the header chrome,
+          not a Signal card, so Principle 3's "no settings shortcut on Home"
+          holds. Sits opposite the wordmark, aligned with it. */}
+      <View style={styles.topRow}>
+        <Text style={styles.wordmark}>Culprit</Text>
+        <TouchableOpacity
+          onPress={() => router.push('/settings')}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="You — account and settings"
+        >
+          <OwnerAvatar email={email} size={32} />
+        </TouchableOpacity>
+      </View>
       <TouchableOpacity
         style={styles.identityRow}
         onPress={() => setSwitcherVisible(true)}
@@ -75,6 +95,11 @@ const styles = StyleSheet.create({
     // paddingTop is applied inline as insets.top + 10 so the white surface
     // fills the status-bar inset (no grey strip above the header).
     paddingBottom: 12,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   // Quiet brand mark in the display face — identity, not a banner. "Culprit"
   // (the decided product name) reads at a glance without competing with the Signal.
