@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
@@ -116,6 +116,15 @@ export default function EditEventModal() {
   } | null>(null);
   const [adherence, setAdherence] = useState<DoseAdherence | null>(null);
   const [howGiven, setHowGiven] = useState<DoseVehicle | null>(null);
+  // The as-loaded dose values, so Save writes adherence/how-given ONLY when the
+  // owner actually changed them (mirrors the detail screen's `if (next === prev)
+  // return`). An unconditional re-write would (a) re-stamp a fresh updated_at on an
+  // untouched safety field — a latent cross-device clobber of a caregiver's newer
+  // 'refused'/'missed' once household shared-care lands — and (b) round-trip a
+  // legacy out-of-union how_given down to null on an untouched Save. Refs, not
+  // state: these never drive a render, they're only read in handleSave.
+  const loadedAdherenceRef = useRef<DoseAdherence | null>(null);
+  const loadedHowGivenRef = useRef<DoseVehicle | null>(null);
 
   // Weight value in lbs (B-197) — weight_check only; the value IS the entry, so
   // unlike every other field here it must be present and real on save.
@@ -153,12 +162,15 @@ export default function EditEventModal() {
           medicationItemId: d.medication_item_id,
         });
         const a = d.adherence;
-        setAdherence(
-          a === 'given' || a === 'partial' || a === 'missed' || a === 'refused' ? a : null,
-        );
+        const adh: DoseAdherence | null =
+          a === 'given' || a === 'partial' || a === 'missed' || a === 'refused' ? a : null;
+        setAdherence(adh);
+        loadedAdherenceRef.current = adh;
         // Coerce the loose TEXT how_given to the closed vehicle union via the single
         // shared narrower; a legacy/unrecognized value reads as null, never a raw token.
-        setHowGiven(asDoseVehicle(d.how_given));
+        const veh = asDoseVehicle(d.how_given);
+        setHowGiven(veh);
+        loadedHowGivenRef.current = veh;
       }).catch(console.error);
     }
 
@@ -352,11 +364,13 @@ export default function EditEventModal() {
       // Dose adherence + how-given (the meal-intake twin). Only when the dose child
       // hydrated locally (`dose` non-null) — otherwise a partial-hydration device would
       // throw on the zero-row guard and fail the whole edit; time/notes/photo still save.
-      // Adherence has no clear-to-null in the UI, but a legacy null-adherence dose left
-      // untouched writes null back (a no-op under LWW), never a phantom 'given'.
+      // Write each field ONLY if the owner changed it (compare against the as-loaded
+      // value): an untouched adherence is never re-stamped (so a null-adherence dose
+      // stays unrated, never a phantom 'given', and a caregiver's newer state isn't
+      // clobbered), and an untouched legacy how_given isn't round-tripped to null.
       if (isMedication && dose) {
-        await updateDoseAdherence(id, adherence);
-        await updateDoseHowGiven(id, howGiven);
+        if (adherence !== loadedAdherenceRef.current) await updateDoseAdherence(id, adherence);
+        if (howGiven !== loadedHowGivenRef.current) await updateDoseHowGiven(id, howGiven);
       }
 
       if (isWeight && weightKg != null) {
@@ -631,6 +645,7 @@ export default function EditEventModal() {
                   onPress={() => router.push(`/medication/${dose.medicationItemId}`)}
                   activeOpacity={0.7}
                   accessibilityRole="link"
+                  accessibilityLabel={`View drug details for ${dose.genericName ?? config.label}`}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.foodProduct}>{dose.genericName ?? config.label}</Text>
