@@ -21,6 +21,7 @@ import type {
   SymptomAggregate,
   VomitPhenotype,
   MedicationAdherence,
+  UnlinkedMedicationGroup,
   SymptomLogEntry,
   ConfounderExposure,
   IncidentPhoto,
@@ -87,6 +88,7 @@ function base(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
       humanFood: { count: 0, days: 0, items: [] },
     },
     medications: [],
+    unlinkedMedications: [],
     correlation: { established: [], hasEstablished: false, noThreshold: true, stapleProtein: null, timing: [] },
     concurrentChanges: [],
     proteinTimeline: { weekStartDates: [], proteins: [], bins: [], unknownByWeek: [], totalByProtein: {}, hasUnknown: false, totalFeedings: 0 },
@@ -1518,4 +1520,57 @@ Deno.test('PR7 render — Appendix E STILL renders (disclosure only, no grid) wh
   assert.ok(html.includes('Appendix E — Incident photos'), 'the section renders to reconcile the phenotype counts')
   assert.ok(/No photographed incident in this window still has a retained photo/.test(html))
   assert.ok(!html.includes('<div class="phgrid">'), 'no empty photo grid element when there are no cards')
+})
+
+// ── Header revamp: Culprit brand mark + getculprit.app QR (Direction B) ───────────
+
+Deno.test('letterhead — Culprit brand mark + getculprit.app QR render, monochrome (no data colour, §5.8)', () => {
+  const html = renderReport(base())
+  assert.ok(/aria-label="QR code linking to getculprit.app"/.test(html), 'the QR svg is present')
+  assert.ok(/getculprit\.app/.test(html), 'the caption is a plain web address (letterhead furniture, not a CTA)')
+  assert.ok(!/About Culprit/.test(html), 'no imperative "About Culprit" CTA in the clinical masthead')
+  assert.ok(/class="cmark"/.test(html), 'the Moon & Signal brand mark is present')
+  // The mark + QR must NOT reintroduce the app teal accent onto the clinical page (cold-read guard).
+  assert.ok(!/#00C2A8/i.test(html), 'no teal accent leaks onto the clinical page')
+  assert.ok(!/#13112E/i.test(html), 'no indigo brand ground on the page — stays lab-grade')
+})
+
+// ── §3.8 orphan-dose: ad-hoc / OTC doses with no regimen ──────────────────────────
+
+function unlinkedMed(o: Partial<UnlinkedMedicationGroup> = {}): UnlinkedMedicationGroup {
+  return {
+    itemId: o.itemId ?? 'mi-zyrtec',
+    drugName: o.drugName ?? 'Cetirizine HCl (Zyrtec)',
+    isSupplement: o.isSupplement ?? true,
+    strength: o.strength ?? '5 mg',
+    route: o.route ?? 'oral',
+    administeredDoses: o.administeredDoses ?? 3,
+    partialDoses: o.partialDoses ?? 0,
+    unconfirmedDoses: o.unconfirmedDoses ?? 0,
+    refusedDoses: o.refusedDoses ?? 0,
+    missedDoses: o.missedDoses ?? 0,
+    totalDoses: o.totalDoses ?? 3,
+    firstDate: o.firstDate ?? '2026-06-28',
+    lastDate: o.lastDate ?? '2026-07-01',
+  }
+}
+
+Deno.test('§3.8 orphan-dose — an unlinked OTC dose group renders on page 1 + Appendix D', () => {
+  const html = renderReport(base({ unlinkedMedications: [unlinkedMed()] }))
+  assert.ok(/Cetirizine HCl \(Zyrtec\)/.test(html), 'the drug is named')
+  // num() wraps counts in <span class="num">, so match through it.
+  assert.ok(/>3<\/span> doses given Jun 28/.test(html), 'the administered count + span render on page 1')
+  assert.ok(/no regimen configured/.test(html), 'page 1 states plainly there is no regimen')
+  assert.ok(/owner-reported, OTC/.test(html), 'the OTC provenance is labelled')
+  assert.ok(/No regimen configured/.test(html), 'Appendix D row states no regimen in the Regimen column')
+})
+
+Deno.test('§3.8 orphan-dose — an unconfirmed-only group is never read as "given"; the count is honest', () => {
+  const html = renderReport(
+    base({ unlinkedMedications: [unlinkedMed({ administeredDoses: 0, unconfirmedDoses: 2, totalDoses: 2 })] }),
+  )
+  // "doses given" is only ever produced by the unlinked line's administered head — absent at 0.
+  assert.ok(!/doses given/.test(html), 'no "given" claim for a 0-administered group')
+  assert.ok(/>2<\/span> doses logged/.test(html), 'reads "logged", not "given"')
+  assert.ok(/>2<\/span> unconfirmed/.test(html), 'the unconfirmed count is disclosed')
 })

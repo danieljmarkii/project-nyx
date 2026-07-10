@@ -18,6 +18,7 @@ import {
   mapWeightRows,
   mapDoseRows,
   mapMedicationRows,
+  mapMedicationItemRows,
   mapDietTrialRows,
   mapVetVisitRows,
   mapFeedingArrangementRows,
@@ -239,6 +240,21 @@ Deno.test('mapMedicationRows: null item join → null strength/is_prescription, 
   assert.equal(rows[0].dosesPerDay, null)
   assert.equal(rows[0].isPrescription, null)
   assert.equal(rows[0].strength, null)
+})
+
+// ── mapMedicationItemRows (§3.8 orphan-dose name resolution) ──────────────────
+
+Deno.test('mapMedicationItemRows: renames catalog columns, preserving nulls', () => {
+  const rows = mapMedicationItemRows([
+    { id: 'mi1', generic_name: 'Cetirizine HCl', brand_name: 'Zyrtec', strength: '5 mg', default_route: 'oral', is_prescription: false },
+    { id: 'mi2', generic_name: null, brand_name: null, strength: null, default_route: null, is_prescription: null },
+  ])
+  assert.equal(rows[0].genericName, 'Cetirizine HCl')
+  assert.equal(rows[0].brandName, 'Zyrtec')
+  assert.equal(rows[0].route, 'oral')
+  assert.equal(rows[0].isPrescription, false)
+  assert.equal(rows[1].genericName, null)
+  assert.equal(rows[1].isPrescription, null)
 })
 
 // ── mapDietTrialRows / mapFeedingArrangementRows (food label) ────────────────
