@@ -66,7 +66,7 @@ The one brand-mark component. Replaces the lucide `Moon` in `AuthBrandMark` and 
 
 PM (r3): "Genuinely genius. We need to ship this." Iteration 3: **"Perfection if we add a star element in the background."**
 
-**Composition (top → bottom):** full-screen night ground (`colorBrandNight` + the two aurora radials) with a **full-bleed starfield across the entire ground** (the iteration-3 addition — not confined to the stage band): 10–14 dots, sizes 1–1.6px, opacities 0.28–0.55, two slightly brighter "anchor" stars in the upper third; then the hero stage (the carved moon at ~44% width, glow + ping loop on the dot), the "Culprit" wordmark (`fontDisplay`), the one-line positioning sub ("Track symptoms, find triggers. The one thing that did it — found in the noise."), the existing Create-account / Log-in stack unchanged.
+**Composition (top → bottom):** full-screen night ground (`colorBrandNight` + the two aurora radials) with a **full-bleed starfield across the entire ground** (the iteration-3 addition — not confined to the stage band): 10–14 dots, sizes 1–1.6px, opacities 0.28–0.55, two slightly brighter "anchor" stars in the upper third; then the hero stage (the carved moon at ~44% width, glow + ping loop on the dot), the "Culprit" wordmark (`fontDisplay`), the one-line positioning sub ("Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses."), the existing Create-account / Log-in stack unchanged.
 - The starfield is a static SVG (no twinkle animation — the ping is this screen's one ambient loop, rule §1.5).
 - Replaces the current logo row on `app/(auth)/index.tsx`; the ValuePreview pager and CTA behavior are untouched.
 
@@ -150,7 +150,7 @@ Four rounds of reactions: r1 "direction genuinely good, contrast too high" → r
 | Signal — building | *(shipped `buildingIntro` + ghost previews — unchanged)* |
 | Care due | `{Drug} — evening dose` / `Usually given with food` / `Log dose` |
 | Completion — trial tick | `Day {n} of {total} — logged` |
-| Landing sub | `Track symptoms, find triggers. The one thing that did it — found in the noise.` |
+| Landing sub | `Track symptoms, find triggers. Walk into your next vet visit with answers, not guesses.` |
 
 Banned vocabulary (grep gate in every N-PR): weather, rain, forecast, climate, storm — zero occurrences in code, comments, copy, or tests (word-boundary match; "JetBrains" et al. exempt).
 

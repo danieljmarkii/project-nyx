@@ -121,6 +121,13 @@ export const theme = {
   colorAuroraTeal: 'rgba(0,194,168,0.10)',    // restrained teal radial near the Signal dot
   colorStar: 'rgba(255,255,255,0.45)',        // starfield dot base (per-dot opacity varies 0.28–0.55)
 
+  // CulpritMark (B-284 PR N2, §3) — the crescent's LIGHT-ground fill. Additive:
+  // the N1 block above covers night-ground tokens only; this is the one light-side
+  // companion the mark needs. Deep indigo, not colorTextPrimary, so the glyph
+  // reads as the same brand mark on both grounds rather than inheriting whatever
+  // the surrounding text colour happens to be.
+  colorCulpritCrescentOnLight: '#211E4E',
+
   // Borders
   colorBorder: '#EAEAEA',
   colorBorderStrong: '#D4D4D4',

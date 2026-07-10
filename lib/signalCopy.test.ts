@@ -10,6 +10,8 @@ import {
   selectCrossPetSafetyFinding,
   bannerCopy,
   validateBannerPhrasing,
+  signalFindingsSignature,
+  hasUnseenFinding,
   type BannerSafetyFinding,
 } from './signalCopy';
 import type {
@@ -159,6 +161,46 @@ describe('deriveDisplayState', () => {
   it('is stale with no findings and no recent activity (regardless of history)', () => {
     expect(deriveDisplayState([], false, false)).toBe('stale');
     expect(deriveDisplayState([], false, true)).toBe('stale');
+  });
+});
+
+describe('signalFindingsSignature + hasUnseenFinding (B-284 §3 pulse contract)', () => {
+  it('is order-independent by rank — the same ranked set signs identically regardless of array order', () => {
+    const a = [cached(correlation(), 0), cached(intakeDecline(), 1)];
+    const b = [cached(intakeDecline(), 1), cached(correlation(), 0)];
+    expect(signalFindingsSignature(a)).toBe(signalFindingsSignature(b));
+  });
+
+  it('changes when a finding appears, resolves, or reorders by rank', () => {
+    const base = signalFindingsSignature([cached(correlation(), 0)]);
+    const withNew = signalFindingsSignature([cached(correlation(), 0), cached(intakeDecline(), 1)]);
+    const reordered = signalFindingsSignature([cached(intakeDecline(), 0), cached(correlation(), 1)]);
+    expect(withNew).not.toBe(base);
+    expect(reordered).not.toBe(base);
+    expect(reordered).not.toBe(withNew);
+  });
+
+  it('never pulses when nothing has landed (building/no_pattern/stale)', () => {
+    expect(hasUnseenFinding('building', [], undefined)).toBe(false);
+    expect(hasUnseenFinding('no_pattern', [], undefined)).toBe(false);
+    expect(hasUnseenFinding('stale', [], undefined)).toBe(false);
+  });
+
+  it('is unseen on first arrival (no seenSignature recorded yet)', () => {
+    const findings = [cached(correlation())];
+    expect(hasUnseenFinding('live', findings, undefined)).toBe(true);
+  });
+
+  it('flips to seen once the current signature matches what was recorded', () => {
+    const findings = [cached(correlation())];
+    const sig = signalFindingsSignature(findings);
+    expect(hasUnseenFinding('live', findings, sig)).toBe(false);
+  });
+
+  it('re-arms on a genuinely new finding set even if a prior one was seen', () => {
+    const seenSig = signalFindingsSignature([cached(correlation(), 0)]);
+    const nowFindings = [cached(correlation(), 0), cached(intakeDecline(), 1)];
+    expect(hasUnseenFinding('live', nowFindings, seenSig)).toBe(true);
   });
 });
 
