@@ -7,6 +7,9 @@ import { usePetStore } from '../../store/petStore';
 import {
   getSymptomCounts,
   getSymptomFrequencyByDay,
+  getSymptomFrequencyByMonth,
+  getEarliestEventMonth,
+  utcMonthOf,
   getIntakeRateWithPrior,
   getTopFoods,
   getTopProteins,
@@ -35,7 +38,7 @@ import {
 import { symptomLabel } from '../../lib/metricDetail';
 import { MetricCard } from '../../components/dashboard/MetricCard';
 import { RankingCard } from '../../components/dashboard/RankingCard';
-import { FrequencyCalendarCard } from '../../components/dashboard/FrequencyCalendarCard';
+import { SymptomCalendar } from '../../components/dashboard/SymptomCalendar';
 import { CompositionCard } from '../../components/dashboard/CompositionCard';
 import { WeightCard } from '../../components/dashboard/WeightCard';
 import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
@@ -96,10 +99,17 @@ export default function PatternsScreen() {
     if (!pet) return;
     const myId = ++loadIdRef.current;
     if (showLoading) setStatus('loading');
+    // The frequency calendar pages by CALENDAR month (Calendar v3 N5b), so its first paint
+    // is today's calendar month (not the trailing WINDOW the other cards use). Loaded here
+    // alongside everything else so the card paints fully-formed — no mount flash; the
+    // container only shows a loading dim when paging to an un-cached prior month (B-309).
+    const currentMonth = utcMonthOf(Date.now());
     try {
       const [
         symptomCounts,
         frequencyBuckets,
+        monthBuckets,
+        earliestMonth,
         intakeComparison,
         topFoods,
         topProteins,
@@ -108,6 +118,8 @@ export default function PatternsScreen() {
       ] = await Promise.all([
         getSymptomCounts(pet.id, WINDOW),
         getSymptomFrequencyByDay(pet.id, WINDOW),
+        getSymptomFrequencyByMonth(pet.id, currentMonth),
+        getEarliestEventMonth(pet.id),
         getIntakeRateWithPrior(pet.id, WINDOW),
         getTopFoods(pet.id, WINDOW),
         getTopProteins(pet.id, WINDOW),
@@ -123,6 +135,9 @@ export default function PatternsScreen() {
         buildDashboardCards({
           symptomCounts,
           frequencyBuckets,
+          monthBuckets,
+          currentMonth,
+          earliestMonth,
           intakeRate: intakeComparison.current,
           intakeRatePrior: intakeComparison.prior,
           topFoods,
@@ -197,8 +212,9 @@ export default function PatternsScreen() {
                 }}
               >
                 {/* Pass the RAW name (not the 'your pet'-resolved petName) so each card's
-                    definition/calibration copy owns its OWN nyx-voice fallback. */}
-                {cards.map((card) => renderCard(card, activePet?.name))}
+                    definition/calibration copy owns its OWN nyx-voice fallback. petId is
+                    needed by the frequency calendar (paging + drill-in fetch). */}
+                {cards.map((card) => renderCard(card, activePet.id, activePet.name))}
               </View>
             </>
           )}
@@ -220,7 +236,7 @@ function displayProtein(protein: string): string {
 // (§5 #2) — tapping it opens /insights/[metric], the Week/Month/3-Month trend detail
 // (B-093). The other cards stay display-only for now (a rate/ranking/composition detail
 // is its own follow-up — B-093 row); a card with no onPress hides its chevron.
-function renderCard(card: DashboardCard, petName?: string) {
+function renderCard(card: DashboardCard, petId: string, petName?: string) {
   switch (card.kind) {
     case 'symptomCount': {
       const label = symptomLabel(card.symptomType);
@@ -245,11 +261,17 @@ function renderCard(card: DashboardCard, petName?: string) {
     }
     case 'symptomFrequency':
       return (
-        <FrequencyCalendarCard
-          key={card.key}
+        // Keyed on petId + symptomType so a pet switch (or a lead-symptom flip) REMOUNTS
+        // the calendar fresh — seeded from the new pet's month/bounds — instead of carrying
+        // one pet's paging cache into another (the multi-pet stale-state trap).
+        <SymptomCalendar
+          key={`freq:${petId}:${card.symptomType}`}
+          petId={petId}
           title={symptomLabel(card.symptomType)}
-          buckets={card.buckets}
           symptomType={card.symptomType}
+          currentMonth={card.currentMonth}
+          earliestMonth={card.earliestMonth}
+          initialBuckets={card.monthBuckets}
           definition={symptomFrequencyDefinition(symptomLabel(card.symptomType).toLowerCase(), petName)}
         />
       );

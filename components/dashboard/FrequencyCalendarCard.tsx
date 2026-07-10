@@ -1,24 +1,33 @@
 import { useState } from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { MetricInfoButton, MetricDefinition } from './MetricInfo';
 import { pluralize } from '../../lib/dashboardCards';
+import { formatUtcDayShort } from '../../lib/utils';
 import type { DayFrequencyBucket } from '../../lib/analytics';
 
 // FrequencyCalendarCard — a month calendar of an episodic symptom's daily counts
-// (§5 #4 / §6; redesigned for B-284 N5 / B-226). Each cell is one calendar day showing
-// its date; a day with symptoms darkens + semibolds the numeral and carries count-PIPS
-// (1–3 rose dots, ×N beyond) — a countable read that replaced the old opacity heat-ramp,
-// which never read as legible even with a legend (B-226 #3). A computed summary line sits
-// above the grid. This is descriptive OCCURRENCE (the same events History shows), so it is
-// not gated by the §13 #6 establishment rule — but it is NEVER framed as an all-clear: a
-// month of empty cells is "none logged", not wellness (§11 #2 / clinical-guardrails).
+// (§5 #4 / §6; redesigned for B-284 N5 / B-226, extended for N5b). Each cell is one
+// calendar day showing its date; a day with symptoms darkens + semibolds the numeral and
+// carries count-PIPS (1–3 rose dots, ×N beyond) — a countable read that replaced the old
+// opacity heat-ramp, which never read as legible even with a legend (B-226 #3). A computed
+// summary line sits above the grid. This is descriptive OCCURRENCE (the same events History
+// shows), so it is not gated by the §13 #6 establishment rule — but it is NEVER framed as an
+// all-clear: a month of empty cells is "none logged", not wellness (§11 #2 / clinical-guardrails).
 //
-// Deferred to the N5b follow-ups (each needs data/nav the screen doesn't load today):
-// month paging (B-301), the per-day drill-in + History deep-link (B-300), and the
-// "days I logged nothing" coverage layer (needs an any-event-per-day source). The pure
-// buildHeatRows grid math is unchanged and stays the tested surface (AC-N5).
+// N5b adds paging + drill-in as OPTIONAL props (SymptomCalendar owns the state/fetch; this
+// stays a pure, DB-free presentational component so buildHeatRows + rendering stay unit-
+// testable without a store):
+//   • month paging — a ‹ Month YYYY › nav row (shown when monthLabel is set), bounded by
+//     canGoPrev/canGoNext (B-226 #2 / B-309).
+//   • day drill-in — onDayPress makes each real cell a ≥44pt button; the selected cell reads
+//     teal (B-226 #1 / B-311: selection is the sole interactive-accent use here — pips stay
+//     rose, per §1.3 "teal is the only interactive accent").
+//
+// Still deferred to a later N5b follow-up: the "Show all logging" coverage-gap layer (needs
+// a separate any-event-per-day source — filed B-312). The pure buildHeatRows grid math is
+// unchanged and stays the tested surface (AC-N5).
 
 const DAYS_PER_WEEK = 7;
 // Column headers, Sun-first to match weekdayOf (getUTCDay 0=Sun) + the lead padding.
@@ -35,17 +44,33 @@ function dayOfMonth(cell: Cell): number | null {
 interface Props {
   /** "Vomiting", "Loose stool" — the symptom this grid is about. */
   title: string;
-  /** One bucket per calendar day in the window (oldest first) — from analytics. */
+  /** One bucket per calendar day in the shown month/window (oldest first) — from analytics. */
   buckets: DayFrequencyBucket[];
   /** Show one symptom type's count (bucket.byType[type]); omit → the day total. */
   symptomType?: string;
-  /** Warm copy when nothing was logged ("No vomiting logged this month."). */
+  /** Warm copy when nothing was logged ("No vomiting logged this month."). Legacy
+   *  (non-paging) mode only; paging mode uses the computed summary line instead. */
   emptyMessage?: string;
   /** One-line "what does this measure?" definition (B-100). When set, a tap-to-reveal
    *  (i) shows in the header. */
   definition?: string;
-  onPress?: () => void;
-  accessibilityHint?: string;
+
+  // ── Paging (N5b) — all optional; when monthLabel is set the ‹ › nav row shows. ──
+  /** "June 2026" — the shown month. Presence switches the card into paging mode. */
+  monthLabel?: string;
+  onPrevMonth?: () => void;
+  onNextMonth?: () => void;
+  canGoPrev?: boolean;
+  canGoNext?: boolean;
+  /** A month fetch is in flight (paging) — dims the grid so a stale month can't be
+   *  mistaken for the one being loaded. */
+  loading?: boolean;
+
+  // ── Day drill-in (N5b) ──
+  /** Tapping a real day cell calls this with its 'YYYY-MM-DD' key. */
+  onDayPress?: (dayKey: string) => void;
+  /** The currently-open day (teal selection ring), or null. */
+  selectedDay?: string | null;
 }
 
 export interface Cell {
@@ -73,14 +98,6 @@ function countOf(bucket: DayFrequencyBucket, symptomType?: string): number {
 /** UTC weekday (0=Sun..6=Sat) of a 'YYYY-MM-DD' day key. */
 function weekdayOf(dateKey: string): number {
   return new Date(`${dateKey}T00:00:00Z`).getUTCDay();
-}
-
-function formatDay(dateKey: string): string {
-  return new Date(`${dateKey}T00:00:00Z`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
 }
 
 /** Pure: turn day buckets into a weekday-aligned month grid + the summary aggregates.
@@ -117,26 +134,44 @@ export function buildHeatRows(buckets: DayFrequencyBucket[], symptomType?: strin
   return { rows, max, daysWithEvents, total, worstDate };
 }
 
+/** The bare month name ("June") from a "June 2026" label — the empty-month summary reads
+ *  "No vomiting logged in June" (no year, matching the mock). Strips a trailing " YYYY". */
+function monthNameOf(monthLabel?: string): string | null {
+  if (!monthLabel) return null;
+  return monthLabel.replace(/\s+\d{4}$/, '');
+}
+
 /** The summary sentence above the grid — specific (Pattern 2) and in-voice ("times",
  *  never the clinical "episodes"): "Vomiting on 5 days · most on Jun 24 (×4) · 11 times".
  *  The "most on" clause only shows when a single day carried more than one (a flat
- *  1-per-day spread has no meaningful peak to call out). */
-function summaryLine(title: string, grid: HeatGrid): string {
+ *  1-per-day spread has no meaningful peak to call out). An empty month is honest, never
+ *  an all-clear: "No vomiting logged in June." (§11 #2). */
+function summaryLine(title: string, grid: HeatGrid, monthLabel?: string): string {
+  if (grid.daysWithEvents === 0) {
+    const monthName = monthNameOf(monthLabel);
+    return monthName
+      ? `No ${title.toLowerCase()} logged in ${monthName}.`
+      : `No ${title.toLowerCase()} logged.`;
+  }
   const days = `${title} on ${grid.daysWithEvents} ${pluralize(grid.daysWithEvents, 'day')}`;
   const peak =
-    grid.max > 1 && grid.worstDate ? ` · most on ${formatDay(grid.worstDate)} (×${grid.max})` : '';
+    grid.max > 1 && grid.worstDate ? ` · most on ${formatUtcDayShort(grid.worstDate)} (×${grid.max})` : '';
   const times = ` · ${grid.total} ${pluralize(grid.total, 'time')}`;
   return days + peak + times;
 }
 
 /** Per-cell VoiceOver label — the count is spoken, not just shown (AC-N5). Non-reassuring:
- *  a clean day reads "no {symptom} logged", never an all-clear (§11 #2). */
-function dayLabel(cell: Cell, title: string): string {
-  const date = formatDay(cell.key);
+ *  a clean day reads "no {symptom} logged", never an all-clear (§11 #2). A selectable cell
+ *  appends "opens the day" so the drill-in affordance is discoverable to VoiceOver. */
+function dayLabel(cell: Cell, title: string, selectable: boolean, selected: boolean): string {
+  const date = formatUtcDayShort(cell.key);
   const symptom = title.toLowerCase();
-  return cell.count > 0
-    ? `${date}, ${symptom} logged ${cell.count} ${pluralize(cell.count, 'time')}`
-    : `${date}, no ${symptom} logged`;
+  const base =
+    cell.count > 0
+      ? `${date}, ${symptom} logged ${cell.count} ${pluralize(cell.count, 'time')}`
+      : `${date}, no ${symptom} logged`;
+  if (selected) return `${base}, selected`;
+  return selectable ? `${base}, opens the day` : base;
 }
 
 export function FrequencyCalendarCard({
@@ -145,50 +180,84 @@ export function FrequencyCalendarCard({
   symptomType,
   emptyMessage,
   definition,
-  onPress,
-  accessibilityHint,
+  monthLabel,
+  onPrevMonth,
+  onNextMonth,
+  canGoPrev = false,
+  canGoNext = false,
+  loading = false,
+  onDayPress,
+  selectedDay,
 }: Props) {
   const [defOpen, setDefOpen] = useState(false);
   const grid = buildHeatRows(buckets, symptomType);
-  const isEmpty = grid.daysWithEvents === 0;
+  const paging = monthLabel != null;
+  // Legacy (non-paging) mode keeps the swap-body empty state; paging always shows the
+  // grid so the owner can page/drill into a month with no charted symptom.
+  const showEmptyBody = !paging && grid.daysWithEvents === 0;
 
   const range =
     buckets.length > 0
-      ? `${formatDay(buckets[0].date)} – ${formatDay(buckets[buckets.length - 1].date)}`
+      ? `${formatUtcDayShort(buckets[0].date)} – ${formatUtcDayShort(buckets[buckets.length - 1].date)}`
       : '';
 
   return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={8}
-      accessibilityRole={onPress != null ? 'button' : undefined}
-      accessibilityLabel={`${title} calendar`}
-      accessibilityHint={onPress != null ? accessibilityHint ?? 'Opens the full history' : undefined}
-      style={({ pressed }) => [styles.card, pressed && onPress != null && styles.pressed]}
-    >
+    <View style={styles.card}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>{title}</Text>
-        <View style={styles.headerActions}>
-          {definition != null && (
-            <MetricInfoButton
-              open={defOpen}
-              onToggle={() => setDefOpen((v) => !v)}
-              metricLabel={title}
-            />
-          )}
-          {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
-        </View>
+        {definition != null && (
+          <MetricInfoButton
+            open={defOpen}
+            onToggle={() => setDefOpen((v) => !v)}
+            metricLabel={title}
+          />
+        )}
       </View>
 
-      {isEmpty ? (
+      {/* Month nav (paging mode) — ‹ Month YYYY › */}
+      {paging && (
+        <View style={styles.navRow}>
+          <Pressable
+            onPress={onPrevMonth}
+            disabled={!canGoPrev}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Previous month"
+            accessibilityState={{ disabled: !canGoPrev }}
+            style={styles.navBtn}
+          >
+            <ChevronLeft
+              size={20}
+              color={canGoPrev ? theme.colorTextSecondary : theme.colorTextDisabled}
+            />
+          </Pressable>
+          <Text style={styles.monthLabel}>{monthLabel}</Text>
+          <Pressable
+            onPress={onNextMonth}
+            disabled={!canGoNext}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Next month"
+            accessibilityState={{ disabled: !canGoNext }}
+            style={styles.navBtn}
+          >
+            <ChevronRight
+              size={20}
+              color={canGoNext ? theme.colorTextSecondary : theme.colorTextDisabled}
+            />
+          </Pressable>
+        </View>
+      )}
+
+      {showEmptyBody ? (
         <Text style={styles.stateText}>{emptyMessage ?? `No ${title.toLowerCase()} logged ${range}.`}</Text>
       ) : (
         <>
           {/* Computed, specific summary (Pattern 2) — answers "how often / worst day / how
               many times" before the grid is even scanned. */}
-          <Text style={styles.summary}>{summaryLine(title, grid)}</Text>
+          <Text style={styles.summary}>{summaryLine(title, grid, monthLabel)}</Text>
           {/* Weekday header orients the columns; every day carries its numeral (a real
-              calendar), symptom days darken + carry pips. */}
+              calendar), symptom days darken + carry pips. `loading` dims a stale month. */}
           <View style={styles.weekdayHeader}>
             {WEEKDAY_LABELS.map((d, i) => (
               <Text key={i} style={styles.weekdayLabel}>
@@ -196,19 +265,16 @@ export function FrequencyCalendarCard({
               </Text>
             ))}
           </View>
-          <View style={styles.grid}>
+          <View style={[styles.grid, loading && styles.gridLoading]}>
             {grid.rows.map((row) => (
               <View key={row[0].key} style={styles.weekRow}>
                 {row.map((cell) => {
                   const dom = dayOfMonth(cell);
                   const hasSymptom = cell.count > 0;
-                  return (
-                    <View
-                      key={cell.key}
-                      style={[styles.cell, cell.blank && styles.cellBlank]}
-                      accessible={!cell.blank}
-                      accessibilityLabel={cell.blank ? undefined : dayLabel(cell, title)}
-                    >
+                  const selectable = !cell.blank && onDayPress != null;
+                  const selected = !cell.blank && selectedDay === cell.key;
+                  const inner = (
+                    <>
                       {!cell.blank && (
                         <>
                           <Text style={[styles.dayNum, hasSymptom && styles.dayNumSymptom]}>{dom}</Text>
@@ -222,6 +288,35 @@ export function FrequencyCalendarCard({
                           </View>
                         </>
                       )}
+                    </>
+                  );
+                  const cellStyle = [
+                    styles.cell,
+                    cell.blank && styles.cellBlank,
+                    selected && styles.cellSelected,
+                  ];
+                  // A selectable cell is a ≥44pt button (hitSlop clears the touch floor
+                  // without overlapping neighbours, which sit 4px apart). VoiceOver reads
+                  // the count + affordance; a clean day never reads as an all-clear.
+                  return selectable ? (
+                    <Pressable
+                      key={cell.key}
+                      onPress={() => onDayPress?.(cell.key)}
+                      hitSlop={2}
+                      accessibilityRole="button"
+                      accessibilityLabel={dayLabel(cell, title, true, selected)}
+                      style={cellStyle}
+                    >
+                      {inner}
+                    </Pressable>
+                  ) : (
+                    <View
+                      key={cell.key}
+                      style={cellStyle}
+                      accessible={!cell.blank}
+                      accessibilityLabel={cell.blank ? undefined : dayLabel(cell, title, false, false)}
+                    >
+                      {inner}
                     </View>
                   );
                 })}
@@ -233,7 +328,7 @@ export function FrequencyCalendarCard({
 
       {/* B-100 definition reveal — decodes "which days" + the pip count. */}
       {definition != null && defOpen && <MetricDefinition text={definition} />}
-    </Pressable>
+    </View>
   );
 }
 
@@ -246,25 +341,33 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     ...shadows.md,
   },
-  pressed: {
-    backgroundColor: theme.colorSurfaceSubtle,
-  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  // Right-side actions group — the info (i) + the future card→detail chevron sit together.
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.space1,
   },
   title: {
     fontSize: theme.textSM,
     fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
     flexShrink: 1,
+  },
+  // Month paging row — ‹ centered-label › .
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  navBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthLabel: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightSemibold,
+    color: theme.colorTextPrimary,
   },
   summary: {
     fontSize: theme.textXS,
@@ -285,6 +388,10 @@ const styles = StyleSheet.create({
   grid: {
     gap: 4,
   },
+  // Dim a stale month while the next one's buckets load (paging).
+  gridLoading: {
+    opacity: 0.4,
+  },
   weekRow: {
     flexDirection: 'row',
     gap: 4,
@@ -298,10 +405,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 3,
     gap: 2,
+    // Transparent by default so a selected cell can swap the border COLOUR without
+    // shifting the grid's layout (every cell reserves the same 1.5px ring).
+    borderWidth: 1.5,
+    borderColor: 'transparent',
   },
   // A padding cell (before the 1st / after the last of the month) is invisible.
   cellBlank: {
     backgroundColor: 'transparent',
+  },
+  // The drill-in selection — teal, the sole interactive-accent use on this light records
+  // surface (§1.3 / B-311). A ring (not a fill) so the rose pips stay readable inside it.
+  cellSelected: {
+    borderColor: theme.colorAccent,
   },
   dayNum: {
     fontSize: theme.textXS,

@@ -471,11 +471,18 @@ export async function getTimeline(
   offset: number,
   typeFilter: string | null,
   dateAfter: string | null,
+  // Exclusive upper bound (B-308). With dateAfter this expresses ONE arbitrary calendar
+  // day — `[dayStart, dayEnd)` — which a lone "after" cutoff can't. Powers the History
+  // single-day filter and the calendar drill-in's per-day event fetch; both pass UTC-day
+  // bounds so the drill-in count, the History list, and the calendar cell agree. Defaults
+  // null (no upper bound) so every existing caller is unaffected.
+  dateBefore: string | null = null,
 ): Promise<TimelineRow[]> {
   const db = getDb();
   const params: (string | number)[] = [petId];
   let typeClause = '';
   let dateClause = '';
+  let beforeClause = '';
   if (typeFilter) {
     typeClause = 'AND e.event_type = ?';
     params.push(typeFilter);
@@ -483,6 +490,10 @@ export async function getTimeline(
   if (dateAfter) {
     dateClause = 'AND e.occurred_at >= ?';
     params.push(dateAfter);
+  }
+  if (dateBefore) {
+    beforeClause = 'AND e.occurred_at < ?';
+    params.push(dateBefore);
   }
   params.push(limit, offset);
   return db.getAllAsync<TimelineRow>(
@@ -512,7 +523,7 @@ export async function getTimeline(
      LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
      ${PAIRED_DOSE_REVERSE_JOIN}
      WHERE e.pet_id = ? AND e.deleted_at IS NULL
-     ${typeClause} ${dateClause}
+     ${typeClause} ${dateClause} ${beforeClause}
      ORDER BY e.occurred_at DESC
      LIMIT ? OFFSET ?`,
     params,

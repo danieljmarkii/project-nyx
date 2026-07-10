@@ -19,6 +19,7 @@ import {
   type NotEnoughData,
   type SymptomCount,
   type DayFrequencyBucket,
+  type CalendarMonth,
   type IntakeRate,
   type RankedFood,
   type RankedProtein,
@@ -71,7 +72,13 @@ export interface SymptomFrequencyCard {
   key: string;
   priority: 'safety';
   symptomType: string;
-  buckets: DayFrequencyBucket[];
+  /** Current calendar month's buckets (all types) — the calendar's first paint; the
+   *  SymptomCalendar container fetches other months on page (B-309 / Calendar v3 N5b). */
+  monthBuckets: DayFrequencyBucket[];
+  /** Today's UTC calendar month — the calendar's initial view + forward-paging bound. */
+  currentMonth: CalendarMonth;
+  /** The pet's earliest-event month — the backward-paging bound (null → no history). */
+  earliestMonth: CalendarMonth | null;
 }
 
 export interface IntakeRateCard {
@@ -153,8 +160,17 @@ export function sparkFromBuckets(buckets: DayFrequencyBucket[], symptomType: str
 export interface BuildDashboardInput {
   /** Per-symptom current/prior counts (analytics: ranked by current desc). */
   symptomCounts: SymptomCount[];
-  /** One bucket per calendar day in the window (analytics) — heat-grid + sparklines. */
+  /** One bucket per calendar day in the trailing window (analytics) — drives the count
+   *  cards' sparklines (sparkFromBuckets). Distinct from monthBuckets below, which is the
+   *  calendar's calendar-month view. */
   frequencyBuckets: DayFrequencyBucket[];
+  /** Current CALENDAR month's symptom buckets (all types) — the frequency calendar's
+   *  flash-free first paint (the container pages/fetches other months). */
+  monthBuckets: DayFrequencyBucket[];
+  /** Today's UTC calendar month — the calendar's initial view + forward-paging bound. */
+  currentMonth: CalendarMonth;
+  /** The pet's earliest-event month — the calendar's backward-paging bound. */
+  earliestMonth: CalendarMonth | null;
   intakeRate: IntakeRate | NotEnoughData;
   /** Prior comparable window's finished-rate — the intake card's "vs last {window}" delta (B-098). */
   intakeRatePrior: IntakeRate | NotEnoughData;
@@ -204,7 +220,9 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
       key: `freq:${lead.symptomType}`,
       priority: 'safety',
       symptomType: lead.symptomType,
-      buckets: input.frequencyBuckets,
+      monthBuckets: input.monthBuckets,
+      currentMonth: input.currentMonth,
+      earliestMonth: input.earliestMonth,
     });
   }
   // Weight — the health-trajectory vital sign (spec §6 group A: "Is {pet} okay /

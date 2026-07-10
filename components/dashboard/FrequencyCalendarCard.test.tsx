@@ -80,6 +80,94 @@ describe('FrequencyCalendarCard', () => {
   });
 });
 
+// ── Paging + day drill-in (B-284 N5b / B-226 #1, #2) ──────────────────────────────
+
+describe('FrequencyCalendarCard — month paging + drill-in', () => {
+  const monthBuckets = [bucket('2026-06-07', 0), bucket('2026-06-08', 2), bucket('2026-06-09', 0)];
+
+  it('shows the month label and both nav buttons, honouring canGoPrev/canGoNext', () => {
+    const { getByText, getByLabelText } = render(
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={monthBuckets}
+        symptomType="vomit"
+        monthLabel="June 2026"
+        canGoPrev
+        canGoNext={false}
+        onPrevMonth={jest.fn()}
+        onNextMonth={jest.fn()}
+      />,
+    );
+    expect(getByText('June 2026')).toBeTruthy();
+    // Next is at the current month → disabled; prev is enabled.
+    expect(getByLabelText('Previous month').props.accessibilityState).toMatchObject({ disabled: false });
+    expect(getByLabelText('Next month').props.accessibilityState).toMatchObject({ disabled: true });
+  });
+
+  it('a disabled nav arrow does not fire its callback', () => {
+    const onNext = jest.fn();
+    const { getByLabelText } = render(
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={monthBuckets}
+        symptomType="vomit"
+        monthLabel="June 2026"
+        canGoNext={false}
+        onNextMonth={onNext}
+      />,
+    );
+    fireEvent.press(getByLabelText('Next month'));
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it('tapping a day cell fires onDayPress with its UTC day key; the cell reads as a button', () => {
+    const onDayPress = jest.fn();
+    const { getByLabelText } = render(
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={monthBuckets}
+        symptomType="vomit"
+        monthLabel="June 2026"
+        onDayPress={onDayPress}
+      />,
+    );
+    // A selectable cell's VoiceOver label advertises the drill-in affordance.
+    const cell = getByLabelText(/Jun 8, vomiting logged 2 times, opens the day/);
+    fireEvent.press(cell);
+    expect(onDayPress).toHaveBeenCalledWith('2026-06-08');
+  });
+
+  it('the selected day is announced as selected', () => {
+    const { getByLabelText } = render(
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={monthBuckets}
+        symptomType="vomit"
+        monthLabel="June 2026"
+        onDayPress={jest.fn()}
+        selectedDay="2026-06-08"
+      />,
+    );
+    expect(getByLabelText(/Jun 8,.*selected/)).toBeTruthy();
+  });
+
+  it('an empty month still renders the grid (paging) with an honest, non-reassuring summary', () => {
+    const empty = [bucket('2026-06-01', 0), bucket('2026-06-02', 0)];
+    const { getByText, getByLabelText } = render(
+      <FrequencyCalendarCard
+        title="Vomiting"
+        buckets={empty}
+        symptomType="vomit"
+        monthLabel="June 2026"
+        onDayPress={jest.fn()}
+      />,
+    );
+    // Summary is the honest empty read (never an all-clear), and the grid is still tappable.
+    expect(getByText('No vomiting logged in June.')).toBeTruthy();
+    expect(getByLabelText(/Jun 1, no vomiting logged, opens the day/)).toBeTruthy();
+  });
+});
+
 describe('buildHeatRows — weekday-aligned grid arithmetic + summary aggregates', () => {
   const START = '2026-05-16';
   const buckets: DayFrequencyBucket[] = Array.from({ length: 30 }, (_, i): DayFrequencyBucket => {
