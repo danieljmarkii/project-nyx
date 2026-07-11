@@ -39,7 +39,7 @@ Spec `docs/culprit-in-app-brand-requirements.md` (v1.0, §10 = PRs N1–N7). Fou
 | N3 | `WhorlSpinner` + skeleton sweep + PTR + night moment | ⬜ (D7 device-lock at N3 QA; can reuse `hooks/useReducedMotion.ts`) |
 | N4 | Signal card (+ `SIGNAL_NIGHT_GROUND` on-device gate, D8) | ⬜ (ships flag-false) |
 | N5 | Calendar v3 — **presentation slice** (count-pips replace the heat-ramp + summary line + a11y) | 🟡 #326 (pips + summary shipped; `tsc` + 1076 jest green) |
-| N5b | Calendar plumbing — month paging (B-309) · per-day drill-in + History day-filter (B-308) · coverage-gap layer · symptom selector + "Calendar" rebrand (B-310) | ⬜ queued (each needs data/nav the screen doesn't load; designs locked A/A/A) |
+| N5b | Calendar plumbing — month paging (B-309) ✓ · per-day drill-in + History day-filter (B-308) ✓ · symptom selector + "Calendar" rebrand + intake "Meals" lens (B-310) ✓ #331 · coverage-gap layer (B-312) still queued | 🟡 selector/rebrand/intake shipped (#331, draft); coverage-gap + med-colour token (B-311) still open |
 | N6 | Completion moment (ping + trial tick) | ⬜ |
 | N7 | Home briefing (+ Tier-2 `design-principles.md` §3 edit, D9) | ⬜ merge-gated on §3 sign-off |
 
