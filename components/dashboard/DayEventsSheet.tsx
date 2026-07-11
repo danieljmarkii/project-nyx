@@ -8,7 +8,19 @@ import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { formatUtcDayShort } from '../../lib/utils';
 import { describeDayEvents, daySheetSubtitle } from '../../lib/dayEvents';
+import type { EventTintCategory } from '../../lib/dayEvents';
 import type { TimelineRow } from '../../lib/db';
+
+// Category glyph tint (B-311). Each primary event category reads in its own hue so a
+// mixed day is scannable at a glance: symptom rose, meal teal, medication slate. Weight
+// & anything else stay neutral (fg-2). Slate — not indigo — because §1.3 reserves the
+// brand indigo for world/ground use and keeps teal the sole interactive accent.
+const CATEGORY_TINT: Record<EventTintCategory, string> = {
+  symptom: theme.colorEventSymptom,
+  meal: theme.colorEventMeal,
+  medication: theme.colorEventMedication,
+  other: theme.colorTextSecondary,
+};
 
 // The Calendar v3 day drill-in (B-284 N5b / B-226 #1). Tapping a day cell opens this
 // bottom sheet — the answer to "what actually happened that day?" — listing EVERY event
@@ -99,7 +111,7 @@ export function DayEventsSheet({
                         <EventIcon
                           type={it.eventType}
                           size={16}
-                          color={it.isSymptom ? theme.colorEventSymptom : theme.colorTextSecondary}
+                          color={CATEGORY_TINT[it.category]}
                         />
                       </View>
                       <View style={styles.rowText}>

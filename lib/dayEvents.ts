@@ -36,11 +36,17 @@ const ADHERENCE_PHRASE: Record<string, string> = {
   refused: 'refused',
 };
 
+/** The row's event-category, driving its glyph tint in the drill-in (B-311).
+ *  Theme-free on purpose — this module stays pure; DayEventsSheet maps the
+ *  category → theme colour. 'other' (weight, etc.) reads neutral. */
+export type EventTintCategory = 'symptom' | 'meal' | 'medication' | 'other';
+
 export interface DayEventDisplay {
   /** Raw event_type for the EventIcon glyph. */
   eventType: string;
-  /** Symptom rows carry the rose category tint (matches the calendar pips + History). */
-  isSymptom: boolean;
+  /** Event category → the row's glyph tint. Symptom rows carry the rose category
+   *  tint (matches the calendar pips + History); meal teal; medication slate (B-311). */
+  category: EventTintCategory;
   /** Primary line — the food/drug name where there is one, else the type label. */
   title: string;
   /** Muted qualifier (intake / adherence / vehicle), or null when nothing was recorded. */
@@ -61,7 +67,13 @@ function foodLabelOf(row: TimelineRow): string | null {
 export function describeDayEvent(row: TimelineRow): DayEventDisplay {
   const type = row.event_type;
   const config = EVENT_TYPES[type as EventTypeKey];
-  const isSymptom = SYMPTOM_TYPES.has(type as EventTypeKey);
+  const category: EventTintCategory = SYMPTOM_TYPES.has(type as EventTypeKey)
+    ? 'symptom'
+    : type === 'meal'
+      ? 'meal'
+      : type === 'medication'
+        ? 'medication'
+        : 'other';
   const timeMs = Date.parse(row.occurred_at);
   const time = describeOccurredAt({
     confidence: row.occurred_at_confidence as never,
@@ -87,7 +99,7 @@ export function describeDayEvent(row: TimelineRow): DayEventDisplay {
 
   return {
     eventType: type,
-    isSymptom,
+    category,
     title,
     detail,
     time,

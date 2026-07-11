@@ -113,14 +113,17 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
     ? formatDrugLabel(event.drug_generic_name, event.drug_brand_name)
     : null;
 
-  // Tint the glyph to its category so meal vs. symptom reads at a glance — the
-  // mid-tone sits cleanly on the light category-tinted circle (mint/rose) and
-  // is more legible there than a flat gray. Neutral (fg-2) otherwise.
+  // Tint the glyph to its category so meal vs. symptom vs. med reads at a glance —
+  // the mid-tone sits cleanly on the light category-tinted circle (mint/rose/slate)
+  // and is more legible there than a flat gray. Neutral (fg-2) otherwise. Medication
+  // slate is the B-311 token — its own hue, never the reserved brand indigo (§1.3).
   const iconColor = isSymptom
     ? theme.colorEventSymptom
     : isMeal
       ? theme.colorEventMeal
-      : theme.colorTextSecondary;
+      : isMedication
+        ? theme.colorEventMedication
+        : theme.colorTextSecondary;
 
   return (
     <View style={[styles.eventRow, showBorder && styles.eventRowBorder]}>
@@ -128,6 +131,7 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
         styles.iconCircle,
         isMeal && styles.iconMeal,
         isSymptom && styles.iconSymptom,
+        isMedication && styles.iconMedication,
       ]}>
         <EventIcon type={event.event_type} size={16} color={iconColor} />
       </View>
@@ -209,6 +213,9 @@ const styles = StyleSheet.create({
   },
   iconSymptom: {
     backgroundColor: theme.colorEventSymptomLight,
+  },
+  iconMedication: {
+    backgroundColor: theme.colorEventMedicationLight,
   },
   eventMeta: {
     flex: 1,

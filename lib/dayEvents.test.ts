@@ -33,7 +33,7 @@ describe('describeDayEvent (B-284 N5b drill-in labels)', () => {
     );
     expect(d.title).toBe('Acme · Salmon');
     expect(d.detail).toBe('all eaten');
-    expect(d.isSymptom).toBe(false);
+    expect(d.category).toBe('meal'); // meal teal, not the symptom rose (B-311)
   });
 
   it('a treat with no food name reads "Treat"; a plain meal with no rating shows no detail', () => {
@@ -65,19 +65,23 @@ describe('describeDayEvent (B-284 N5b drill-in labels)', () => {
     expect(missed.detail).toBe('missed');
   });
 
-  it('a nameless dose reads "Medication"', () => {
-    expect(describeDayEvent(row({ event_type: 'medication' })).title).toBe('Medication');
+  it('a nameless dose reads "Medication" and carries the medication (slate) category', () => {
+    const d = describeDayEvent(row({ event_type: 'medication' }));
+    expect(d.title).toBe('Medication');
+    expect(d.category).toBe('medication'); // its own slate tint, never indigo/teal (B-311)
   });
 
   it('a symptom carries the type label + the rose (symptom) tint, no detail', () => {
     const d = describeDayEvent(row({ event_type: 'vomit' }));
     expect(d.title).toBe('Vomit');
-    expect(d.isSymptom).toBe(true);
+    expect(d.category).toBe('symptom');
     expect(d.detail).toBeNull();
   });
 
-  it('a weight check reads "Weight"', () => {
-    expect(describeDayEvent(row({ event_type: 'weight_check' })).title).toBe('Weight');
+  it('a weight check reads "Weight" and is neutral (no category tint)', () => {
+    const d = describeDayEvent(row({ event_type: 'weight_check' }));
+    expect(d.title).toBe('Weight');
+    expect(d.category).toBe('other'); // falls back to the neutral fg-2 glyph
   });
 
   it('an estimated time renders honestly (~), not a false-precise point', () => {

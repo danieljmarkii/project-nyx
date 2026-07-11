@@ -150,6 +150,25 @@ export const theme = {
   colorEventSymptomBorder: '#FBCFD6',
   colorEventMeal: '#00C2A8',
   colorEventMealLight: '#E0FBF7',
+  // Medication category tint (B-311) — the third event-category hue, alongside
+  // symptom-rose and meal-teal. First consumed by the Calendar v3 day drill-in
+  // (DayEventsSheet), where a med row previously fell back to the neutral fg-2.
+  // A muted slate-blue: its own hue family, so a med row reads distinctly from a
+  // symptom (rose) or a meal (teal) at a glance. Deliberately NOT indigo/violet —
+  // §1.3 reserves the brand indigo (#13112E family) for world/ground use only, so a
+  // med tint in that family would read as breaking the accent rule (this is why the
+  // N5b mock's #EEF0FF/#5B63C4 indigo chip was rejected). NOT teal — teal is the
+  // sole interactive accent; NOT rose — rose is the safety/symptom colour. This is a
+  // category identity tint, never a verdict (medication is not a "warning" — no
+  // amber/red). Contrast on this glyph (WCAG graphical target 3:1): 4.45:1 on
+  // #FFFFFF, 4.08:1 on colorSurfaceSubtle #F5F5F5, 4.23:1 on colorNeutralLight
+  // #FAFAFA — more legible than the shipped meal-teal glyph (~2.3:1 on white).
+  // colorEventMedicationLight is the very-light circle companion (twin of
+  // colorEventSymptomLight / colorEventMealLight) for surfaces that tint the circle
+  // behind the glyph (the Today strip); the drill-in uses a uniform subtle grey
+  // circle and consumes only the glyph tint.
+  colorEventMedication: '#5B7A9E',
+  colorEventMedicationLight: '#EAF0F7',
   colorChartEmpty: '#F0F0F0',
 
   // Destructive — surface-aware. colorDestructive is tuned for light surfaces;
