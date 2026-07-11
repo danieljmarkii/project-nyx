@@ -1,6 +1,7 @@
 jest.mock('../../lib/db', () => ({ getDb: () => ({}) }));
 jest.mock('../../lib/feedingArrangements', () => ({ getActiveArrangementsForPet: jest.fn() }));
 
+import { Text } from 'react-native';
 import { render, fireEvent } from '@testing-library/react-native';
 import { FrequencyCalendarCard, buildHeatRows } from './FrequencyCalendarCard';
 import { symptomFrequencyDefinition } from '../../lib/dashboardCards';
@@ -201,6 +202,63 @@ describe('FrequencyCalendarCard — month paging + drill-in', () => {
     expect(queryByText(/No vomiting logged/)).toBeNull();
     fireEvent.press(getByLabelText('Try again'));
     expect(onRetry).toHaveBeenCalled();
+  });
+});
+
+// ── B-310: the noun / unit / selector props (a "Calendar"-titled, multi-lens card) ───
+
+describe('FrequencyCalendarCard — noun / unit / selector (B-310)', () => {
+  const monthBuckets = [bucket('2026-06-07', 0), bucket('2026-06-08', 2)];
+
+  it('noun omitted → summary + a11y fall back to the header title (legacy single-symptom copy)', () => {
+    const { getByText, getByLabelText } = render(
+      <FrequencyCalendarCard title="Vomiting" buckets={monthBuckets} symptomType="vomit" monthLabel="June 2026" />,
+    );
+    expect(getByText(/Vomiting on 1 day/)).toBeTruthy();
+    expect(getByText(/· 2 times/)).toBeTruthy(); // unit defaults to "time"
+    expect(getByLabelText(/Jun 8, vomiting logged 2 times/)).toBeTruthy();
+  });
+
+  it('noun + unit override the copy while the HEADER stays the title (the "Calendar" rebrand)', () => {
+    const { getByText, getByLabelText } = render(
+      <FrequencyCalendarCard
+        title="Calendar"
+        noun="Unfinished meals"
+        unit="meal"
+        buckets={monthBuckets}
+        symptomType="vomit"
+        monthLabel="June 2026"
+      />,
+    );
+    // Header is the generic tool name; the noun carries the lens identity in the copy.
+    expect(getByText('Calendar')).toBeTruthy();
+    expect(getByText('Unfinished meals on 1 day · most on Jun 8 (×2) · 2 meals')).toBeTruthy();
+    expect(getByLabelText(/Jun 8, unfinished meals logged 2 times/)).toBeTruthy();
+    // An empty month reads the noun, never the title, and never an all-clear.
+    const { getByText: getByText2 } = render(
+      <FrequencyCalendarCard
+        title="Calendar"
+        noun="Unfinished meals"
+        unit="meal"
+        buckets={[bucket('2026-06-07', 0)]}
+        symptomType="vomit"
+        monthLabel="June 2026"
+      />,
+    );
+    expect(getByText2('No unfinished meals logged in June.')).toBeTruthy();
+  });
+
+  it('renders the selector node under the header when provided', () => {
+    const { getByText } = render(
+      <FrequencyCalendarCard
+        title="Calendar"
+        buckets={monthBuckets}
+        symptomType="vomit"
+        monthLabel="June 2026"
+        selector={<Text>LENS-CHIPS</Text>}
+      />,
+    );
+    expect(getByText('LENS-CHIPS')).toBeTruthy();
   });
 });
 

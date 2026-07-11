@@ -270,13 +270,14 @@ export interface DayFrequencyBucket {
  *  core behind BOTH the trailing-window grid (computeSymptomFrequencyByDay) and the named
  *  calendar-month grid (computeSymptomFrequencyForMonth) so the two can never bucket the
  *  same event onto different days. */
-function fillDayBuckets(
-  rows: AnalyticsSymptom[],
-  startMs: number,
-  endMs: number,
+/** Pure: one empty `{ date, total: 0, byType: {} }` bucket per UTC day index in
+ *  [firstDayIndex, lastDayIndex], plus a day-index → bucket map for O(1) fill. Shared by the
+ *  symptom grid (fillDayBuckets) and the intake-decline grid so the two can never drift on the
+ *  bucket shape. */
+function createDayBuckets(
   firstDayIndex: number,
   lastDayIndex: number,
-): DayFrequencyBucket[] {
+): { buckets: DayFrequencyBucket[]; byIndex: Map<number, DayFrequencyBucket> } {
   const buckets: DayFrequencyBucket[] = [];
   const byIndex = new Map<number, DayFrequencyBucket>();
   for (let idx = firstDayIndex; idx <= lastDayIndex; idx++) {
@@ -284,6 +285,17 @@ function fillDayBuckets(
     buckets.push(bucket);
     byIndex.set(idx, bucket);
   }
+  return { buckets, byIndex };
+}
+
+function fillDayBuckets(
+  rows: AnalyticsSymptom[],
+  startMs: number,
+  endMs: number,
+  firstDayIndex: number,
+  lastDayIndex: number,
+): DayFrequencyBucket[] {
+  const { buckets, byIndex } = createDayBuckets(firstDayIndex, lastDayIndex);
   for (const r of rows) {
     if (!SYMPTOM_SET.has(r.type) || !Number.isFinite(r.ms)) continue;
     if (r.ms < startMs || r.ms >= endMs) continue;
@@ -382,6 +394,59 @@ export function computeSymptomFrequencyForMonth(
   const range = calendarMonthRange(m, nowMs);
   if (range.lastDayIndex < range.firstDayIndex) return [];
   return fillDayBuckets(rows, range.startMs, range.endMs, range.firstDayIndex, range.lastDayIndex);
+}
+
+// ── A. Intake-DECLINE frequency by CALENDAR MONTH (the "Meals" calendar — B-310) ─────
+//
+// Sam's intake-is-not-preference signal made day-by-day. The Patterns calendar (Calendar
+// v3) charts adverse-symptom OCCURRENCE per day; this is its intake sibling — one bucket
+// per day counting the meals the pet did NOT finish. It reuses the exact v3 grid + drill-in
+// (FrequencyCalendarCard) so a diet-trial/picky-eater owner gets the same countable read for
+// intake that they get for vomiting, instead of only the single "Meals finished 82%" stat.
+//
+// SAFETY — this is a clinically load-bearing surface, so two invariants govern it:
+//   • §11 #1 (intake is NOT preference): a not-finished meal is a DECLINE, never softened
+//     to "picky". The qualifying set is the SAME as computeIntakeRate's denominator —
+//     rated, non-treat (a treat's ceiling finish-rate would mask a meal refusal), non-free-
+//     fed (§11 #6, a free-fed bowl's intake isn't directly observed). "Unfinished" is the
+//     exact inverse of the finished-rate's "finished" (score < FINISHED_SCORE), so this
+//     calendar and the "Meals finished" number can never tell different stories.
+//   • §11 #2 (absence ≠ wellness): DESCRIPTIVE occurrence, NOT floored — a single refused
+//     meal is an honest fact worth a cell, exactly like one logged vomit. A clean day means
+//     no unfinished meal was LOGGED (could be finished, unrated, free-fed, or simply not
+//     logged) — never "ate well". The card's copy carries that; this core only counts what
+//     was observed and never manufactures an all-clear.
+
+/** Backend discriminator for the intake-decline "type" inside a day bucket's byType map.
+ *  Not owner-facing — the card reads the bucket TOTAL for this grid (no symptomType). */
+export const INTAKE_DECLINE_TYPE = 'intake_decline';
+
+/** Pure: one bucket per UTC calendar day in the month, each counting the pet's UNFINISHED
+ *  qualifying meals that day (§11 #1/#6 qualifying set; unfinished = score < FINISHED_SCORE).
+ *  Same day-grid honesty as the symptom month grid (a cell for every day through today);
+ *  empty for a future month. NOT floored (descriptive occurrence, §11 #2). */
+export function computeIntakeDeclineFrequencyForMonth(
+  meals: AnalyticsMeal[],
+  freeFed: ReadonlySet<string>,
+  m: CalendarMonth,
+  nowMs: number,
+): DayFrequencyBucket[] {
+  const range = calendarMonthRange(m, nowMs);
+  if (range.lastDayIndex < range.firstDayIndex) return [];
+  const { buckets, byIndex } = createDayBuckets(range.firstDayIndex, range.lastDayIndex);
+  for (const meal of meals) {
+    if (!Number.isFinite(meal.ms) || meal.ms < range.startMs || meal.ms >= range.endMs) continue;
+    // Qualifying = the computeIntakeRate denominator: rated, non-treat, non-free-fed.
+    if (meal.foodType === 'treat' || meal.intakeRating == null || isFreeFedMeal(meal, freeFed)) continue;
+    // Unfinished = the inverse of "finished" (most/all) — one shared definition, so the
+    // calendar's decline days are exactly the meals the finished-rate excludes.
+    if (isFinishedMeal(meal)) continue;
+    const bucket = byIndex.get(Math.floor(meal.ms / MS_PER_DAY));
+    if (!bucket) continue;
+    bucket.total += 1;
+    bucket.byType[INTAKE_DECLINE_TYPE] = (bucket.byType[INTAKE_DECLINE_TYPE] ?? 0) + 1;
+  }
+  return buckets;
 }
 
 // ── B. Per-item finished-rate (the ranking-card bar's intake signal — §11 #1/#5/#6) ──
@@ -1069,6 +1134,23 @@ export async function getSymptomFrequencyByMonth(
   if (range.lastDayIndex < range.firstDayIndex) return [];
   const rows = await readSymptomRows(petId, range.startMs, range.endMs);
   return computeSymptomFrequencyForMonth(rows, m, nowMs);
+}
+
+/** Unfinished-meal frequency buckets for a named UTC calendar month — the "Meals" intake
+ *  calendar's per-month data (B-310). Reads meals + the free-fed set (§11 #6) and delegates
+ *  to the pure core. Empty array for a future month (no query). */
+export async function getIntakeDeclineByMonth(
+  petId: string,
+  m: CalendarMonth,
+  nowMs: number = Date.now(),
+): Promise<DayFrequencyBucket[]> {
+  const range = calendarMonthRange(m, nowMs);
+  if (range.lastDayIndex < range.firstDayIndex) return [];
+  const [meals, freeFedFoodIds] = await Promise.all([
+    readMealRows(petId, range.startMs, range.endMs),
+    readFreeFedFoodIds(petId),
+  ]);
+  return computeIntakeDeclineFrequencyForMonth(meals, freeFedFoodIds, m, nowMs);
 }
 
 /** The UTC calendar month of this pet's earliest non-deleted event — the calendar's

@@ -303,10 +303,20 @@ export function symptomCountDefinition(symptomLower: string, petName?: string): 
   return `How many times you logged ${symptomLower} for ${petNameOrYours(petName)} this month — it matches your History timeline.`;
 }
 
-/** The symptom frequency calendar — which days had the symptom, and what a darker
- *  square means (pairs with the heat legend). */
+/** The symptom frequency calendar — which days had the symptom, and how the per-day count
+ *  reads (dots up to three, then a ×N numeral — the N5 count-pips, not the old heat ramp). */
 export function symptomFrequencyDefinition(symptomLower: string, petName?: string): string {
-  return `Which days you logged ${symptomLower} for ${petNameOrYours(petName)} this month. A darker square means more that day.`;
+  return `Which days you logged ${symptomLower} for ${petNameOrYours(petName)} this month — the dots on a day count how many times.`;
+}
+
+/** The intake-decline ("Meals") calendar (B-310) — which days the pet refused or didn't
+ *  finish a meal (intake-is-not-preference, §11 #1), with the never-reassure rule spelled
+ *  out: a clear day means none were LOGGED, not that every meal was finished (§11 #2). */
+export function intakeDeclineDefinition(petName?: string): string {
+  // "…or even rated" is load-bearing: the commonest reason a picky-eater day looks clear is
+  // a meal that was logged but never rated — which is neither "none logged" nor "finished".
+  // The copy must not let that read as an all-clear (adversarial review, §11 #2).
+  return `Which days ${petNameOrYours(petName)} refused or didn't finish a meal. Treats and free-fed meals aren't counted, and a clear day only means nothing was logged as unfinished — not that every meal was finished or even rated.`;
 }
 
 /** "Top food" — explains BOTH computed parts: the bar (share of the diet) and the

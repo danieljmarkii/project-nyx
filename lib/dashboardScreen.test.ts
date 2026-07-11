@@ -12,6 +12,7 @@ import {
   type DashboardCardPriority,
   type SymptomCountCard,
   type IntakeRateCard,
+  type CalendarCard,
 } from './dashboardScreen';
 import {
   notEnoughData,
@@ -68,6 +69,9 @@ function baseInput(over: Partial<Parameters<typeof buildDashboardCards>[0]> = {}
     // Calendar v3 N5b — the frequency card's month-paging inputs. Defaults suffice for
     // these ordering/gating tests (they assert on symptomType/presence, not the calendar).
     monthBuckets: [],
+    // B-310: current-month intake-decline buckets. Default empty → no "Meals" lens unless a
+    // test supplies a day with an unfinished meal.
+    intakeDeclineMonthBuckets: [] as DayFrequencyBucket[],
     currentMonth: { year: 2026, month: 4 }, // May 2026 (0-indexed month)
     earliestMonth: null,
     intakeRate: notEnoughData(0, 4) as IntakeRate | ReturnType<typeof notEnoughData>,
@@ -195,21 +199,67 @@ describe('buildDashboardCards — ordering & frequency lead', () => {
     expect(firstIntake).toBeLessThan(firstDescriptive);
   });
 
-  it('adds ONE frequency calendar, for the dominant active symptom only', () => {
+  it('adds ONE calendar card with a lens per ACTIVE symptom, dominant first (B-310)', () => {
     const cards = buildDashboardCards(
       baseInput({
         symptomCounts: [sc('vomit', 4, 0), sc('diarrhea', 1, 0)],
         frequencyBuckets: buckets([0, 2, 2]),
       }),
     );
-    const freq = cards.filter((c) => c.kind === 'symptomFrequency');
-    expect(freq).toHaveLength(1);
-    expect(freq[0].kind === 'symptomFrequency' && freq[0].symptomType).toBe('vomit');
+    const cal = cards.filter((c) => c.kind === 'calendar');
+    expect(cal).toHaveLength(1);
+    const card = cal[0] as CalendarCard;
+    // BOTH active symptoms are viewable now (the fix for the invisible-second-symptom gap),
+    // dominant (higher current) first — views[0] is the default lens.
+    expect(card.views.map((v) => v.symptomType)).toEqual(['vomit', 'diarrhea']);
+    expect(card.views.every((v) => v.kind === 'symptom')).toBe(true);
   });
 
-  it('adds NO frequency calendar when every symptom is resolved (current 0)', () => {
+  it('a RESOLVED symptom (current 0) gets its count card but NO calendar lens', () => {
+    const cards = buildDashboardCards(
+      baseInput({ symptomCounts: [sc('vomit', 3, 0), sc('diarrhea', 0, 4)] }),
+    );
+    const card = cards.find((c) => c.kind === 'calendar') as CalendarCard;
+    expect(card.views.map((v) => v.symptomType)).toEqual(['vomit']); // diarrhea is resolved → no lens
+  });
+
+  it('adds NO calendar when every symptom is resolved AND there is no intake decline', () => {
     const cards = buildDashboardCards(baseInput({ symptomCounts: [sc('vomit', 0, 3)] }));
-    expect(cards.some((c) => c.kind === 'symptomFrequency')).toBe(false);
+    expect(cards.some((c) => c.kind === 'calendar')).toBe(false);
+  });
+
+  // ── B-310: the intake ("Meals") lens ────────────────────────────────────────────
+  it('adds a "Meals" (intake) lens AFTER the symptom lenses when the month has a decline', () => {
+    const cards = buildDashboardCards(
+      baseInput({
+        symptomCounts: [sc('vomit', 3, 0)],
+        intakeDeclineMonthBuckets: buckets([0, 1, 0]), // one unfinished-meal day this month
+      }),
+    );
+    const card = cards.find((c) => c.kind === 'calendar') as CalendarCard;
+    expect(card.views.map((v) => v.kind)).toEqual(['symptom', 'intake']);
+    // The intake lens carries the seeded intake buckets for a flash-free first paint.
+    expect(card.intakeDeclineMonthBuckets).toHaveLength(3);
+  });
+
+  it('emits a calendar with ONLY the intake lens for a pet with a decline but no active symptom (Sam)', () => {
+    const cards = buildDashboardCards(
+      baseInput({ intakeDeclineMonthBuckets: buckets([0, 2]) }), // grazing cat, meals left, no vomiting
+    );
+    const card = cards.find((c) => c.kind === 'calendar') as CalendarCard;
+    expect(card).toBeTruthy();
+    expect(card.views).toEqual([{ key: 'intake', kind: 'intake' }]);
+  });
+
+  it('does NOT add the intake lens when the current month is clean (never a reassuring empty field)', () => {
+    const cards = buildDashboardCards(
+      baseInput({
+        symptomCounts: [sc('vomit', 3, 0)],
+        intakeDeclineMonthBuckets: buckets([0, 0, 0]), // meals all finished this month
+      }),
+    );
+    const card = cards.find((c) => c.kind === 'calendar') as CalendarCard;
+    expect(card.views.some((v) => v.kind === 'intake')).toBe(false);
   });
 
   it('always emits the intake + descriptive cards (the seeded set)', () => {
@@ -240,9 +290,9 @@ describe('buildDashboardCards — ordering & frequency lead', () => {
     expect(weight?.priority).toBe('safety');
     const kinds = cards.map((c) => c.kind);
     const weightAt = kinds.indexOf('weightTrend');
-    // After every symptom card (counts + the frequency calendar)…
+    // After every symptom card (counts + the calendar)…
     expect(weightAt).toBeGreaterThan(kinds.lastIndexOf('symptomCount'));
-    expect(weightAt).toBeGreaterThan(kinds.indexOf('symptomFrequency'));
+    expect(weightAt).toBeGreaterThan(kinds.indexOf('calendar'));
     // …and above intake + the descriptive food cards.
     expect(weightAt).toBeLessThan(kinds.indexOf('intakeRate'));
     expect(weightAt).toBeLessThan(kinds.indexOf('topFood'));
