@@ -27,7 +27,7 @@
 | 8 | On-device deletion QA + logout-wipe (email confirm still OFF) | PM | B-039 + AC-6 | ⬜ Not started |
 | 9 | Flip email confirmation ON + verify the signup path | Mixed | B-152 (part 2) | ⬜ Not started |
 | 10 | Cut the production build + built-artifact verification | Mixed | — | ⬜ Not started |
-| 11 | Seed the App Review demo account + reviewer notes | Mixed | B-271 | ⬜ Not started |
+| 11 | Seed the App Review demo account + reviewer notes | Mixed | B-271 | 🔵 Spec'd 2026-07-11 — build-ready spec `docs/nyx-demo-account-requirements.md`; D1–D7 ratified; PR 1 (seed script) next |
 | 12 | Screenshots | PM | B-269 | ⬜ Not started |
 | 13 | Listing copy + age rating | Mixed | B-269 | ⬜ Not started |
 | 14 | App Privacy nutrition label | Mixed | B-268 | ⬜ Not started |
