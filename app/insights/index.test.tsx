@@ -44,9 +44,10 @@ jest.mock('../../lib/analytics', () => {
     ...actual,
     getSymptomCounts: jest.fn(),
     getSymptomFrequencyByDay: jest.fn(),
-    // Calendar v3 N5b — the calendar's month + paging-bound reads (real impls hit the
-    // mocked DB, so stub them like the other getters).
+    // Calendar v3 N5b + B-310 — the calendar's month + paging-bound + intake-decline reads
+    // (real impls hit the mocked DB, so stub them like the other getters).
     getSymptomFrequencyByMonth: jest.fn(),
+    getIntakeDeclineByMonth: jest.fn(),
     getEarliestEventMonth: jest.fn(),
     getIntakeRateWithPrior: jest.fn(),
     getTopFoods: jest.fn(),
@@ -100,6 +101,7 @@ beforeEach(() => {
   // Calendar defaults (overridden per-test where the buckets matter). clearAllMocks wipes
   // resolved values, so seed them here so every test's load() resolves both reads.
   A.getSymptomFrequencyByMonth.mockResolvedValue([]);
+  A.getIntakeDeclineByMonth.mockResolvedValue([]);
   A.getEarliestEventMonth.mockResolvedValue(null);
 });
 
@@ -144,10 +146,12 @@ describe('PatternsScreen', () => {
     expect(getByText('3')).toBeTruthy();
     expect(getByText(/2 more than the previous 30 days/i)).toBeTruthy();
     // B-313: the count card carries an explicit trailing-window frame so it never
-    // reads as contradicting the calendar-month grid under the same "Vomit" title.
+    // reads as contradicting the calendar-month grid under the same symptom.
     expect(getByText('Last 30 days')).toBeTruthy();
-    // "Vomit" appears as both the count-card label and the frequency-calendar title.
+    // "Vomit" appears as the count-card label (the calendar is now titled "Calendar" —
+    // B-310 rebrand — and names the symptom in its summary line instead of its header).
     expect(getAllByText('Vomit').length).toBeGreaterThanOrEqual(1);
+    expect(getByText('Calendar')).toBeTruthy();
     // The health-trajectory weight card is wired into the ready branch — with no readings
     // it renders its forward-looking logging nudge + action (never reassures).
     expect(getByText(/no weigh-ins logged yet/i)).toBeTruthy();
