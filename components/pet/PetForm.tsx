@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ScrollView,
 } from 'react-native';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FilterChip } from '../ui/FilterChip';
 import { SectionLabel } from '../ui/SectionLabel';
 
@@ -78,7 +79,7 @@ export function PetForm({ title, subtitle, submitLabel, loading, onSubmit }: Pet
           activeOpacity={0.85}
         >
           {loading
-            ? <ActivityIndicator color="#fff" />
+            ? <WhorlSpinner size="sm" tint="#fff" />
             : <Text style={styles.buttonText}>{submitLabel}</Text>
           }
         </TouchableOpacity>

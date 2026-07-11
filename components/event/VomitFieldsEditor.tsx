@@ -4,8 +4,9 @@
 // tap another to change, type a note. Emits the full draft on Save; the parent
 // decides whether anything actually changed and owns the write + provenance.
 import { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { FilterChip } from '../ui/FilterChip';
 import { VomitEditableFields } from '../../lib/analysis';
 import {
@@ -126,7 +127,7 @@ export function VomitFieldsEditor({ initial, saving, onSave, onCancel }: Props) 
           style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
         >
           {saving ? (
-            <ActivityIndicator size="small" color={theme.colorTextOnDark} />
+            <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
           ) : (
             <Text style={styles.saveText}>Save</Text>
           )}

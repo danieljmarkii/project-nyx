@@ -217,14 +217,22 @@ export const WINDOW_WORD: Record<AnalyticsWindow, string> = {
 /** Window in "this period" phrasing ("None {phrase}"). */
 export const CURRENT_WINDOW_PHRASE: Record<AnalyticsWindow, string> = {
   week: 'this week',
-  month: 'this month',
+  // The month window is a TRAILING 30 days, not the named calendar month — say so
+  // in words. "this month" read as the calendar month and collided with the
+  // frequency calendar's literal "…in June" directly below it (B-313). "in the last
+  // 30 days" matches the count card's "Last 30 days" caption and never reads as a
+  // calendar month.
+  month: 'in the last 30 days',
   '3month': 'in the last 3 months',
 };
 
 /** Word for the prior comparable window in "vs {phrase}" phrasing. */
 export const PRIOR_WINDOW_PHRASE: Record<AnalyticsWindow, string> = {
   week: 'last week',
-  month: 'last month',
+  // Trailing-window, not the calendar's previous month (B-313): "last month" sat
+  // directly above the frequency calendar's "June 2026" and read as May. "the
+  // previous 30 days" is the honest comparison window and can't be misread.
+  month: 'the previous 30 days',
   '3month': 'the 3 months before',
 };
 
@@ -300,7 +308,9 @@ export function intakeRateDefinition(petName?: string): string {
 /** A symptom count card — a raw "how many times you logged this", and that it lines up
  *  with the History timeline the owner can scroll (not an episode-collapsed statistic). */
 export function symptomCountDefinition(symptomLower: string, petName?: string): string {
-  return `How many times you logged ${symptomLower} for ${petNameOrYours(petName)} this month — it matches your History timeline.`;
+  // "in the last 30 days", not "this month" — this card runs the trailing-30 window
+  // (the "Last 30 days" caption), distinct from the calendar-month grid below it (B-313).
+  return `How many times you logged ${symptomLower} for ${petNameOrYours(petName)} in the last 30 days — it matches your History timeline.`;
 }
 
 /** The symptom frequency calendar — which days had the symptom, and how the per-day count

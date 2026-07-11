@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import {
-  ActivityIndicator, Alert, Image, ScrollView, StyleSheet,
+  Alert, Image, ScrollView, StyleSheet,
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Card } from '../../components/ui/Card';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
@@ -567,7 +568,7 @@ export default function ProfileScreen() {
             )}
             {photoUploading && (
               <View style={styles.photoOverlay}>
-                <ActivityIndicator color="#fff" size="large" />
+                <WhorlSpinner size="md" tint="#fff" />
               </View>
             )}
           </TouchableOpacity>
@@ -629,7 +630,7 @@ export default function ProfileScreen() {
           </View>
 
           {conditionsLoading ? (
-            <ActivityIndicator style={styles.sectionLoader} color={theme.colorTextSecondary} />
+            <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
           ) : conditions.length === 0 ? (
             <Text style={styles.emptyConditionsText}>
               No conditions on file yet. Add anything {activePet.name} has been
@@ -682,7 +683,7 @@ export default function ProfileScreen() {
           </View>
 
           {medicationsLoading ? (
-            <ActivityIndicator style={styles.sectionLoader} color={theme.colorTextSecondary} />
+            <WhorlSpinner size="sm" ground="day" style={styles.sectionLoader} />
           ) : medications.length === 0 ? (
             <Text style={styles.emptyConditionsText}>
               No medications yet. Add a regimen once and logging each dose

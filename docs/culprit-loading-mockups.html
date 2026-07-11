@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Culprit — B-313 + N3 loading system (mock)</title>
+<style>
+  :root{
+    /* Real Nyx theme tokens (constants/theme.ts) */
+    --accent:#00C2A8; --accent-soft:#86D9CC; --accent-light:#E0FBF7;
+    --neutral-light:#FAFAFA; --surface:#FFFFFF; --surface-subtle:#F5F5F5;
+    --text-primary:#0A0A0A; --text-secondary:#525252; --text-tertiary:#737373; --text-disabled:#A3A3A3;
+    --border:#EAEAEA; --border-strong:#D4D4D4; --chart-empty:#F0F0F0;
+    --event-symptom:#F43F5E; --event-symptom-light:#FFE4E6;
+    /* Night tokens (N1) */
+    --brand-night:#13112E; --brand-night-elevated:#251F57;
+    --text-on-night:#ECEAF6; --text-on-night-muted:#A6A2CE; --text-on-night-faint:#706BA6;
+    --moonlight:#F2EEE4; --border-on-night:rgba(196,190,255,0.16);
+    --aurora-violet:#221C56; --aurora-indigo:#191449; --aurora-teal:rgba(0,194,168,0.10);
+    --symptom-on-night:#FB7185;
+    /* Day-ground whorl lavender (proposed N3 ridge colour — see note) */
+    --whorl-lavender:#A6A2CE;
+    --radius-m:12px; --radius-s:8px; --radius-xs:6px;
+    --shadow-md:0 2px 8px rgba(10,10,10,.06), 0 1px 2px rgba(10,10,10,.04);
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --display:"Newsreader",Georgia,"Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--font);color:var(--text-primary);background:#EDEDF2;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 96px}
+  h1{font-size:26px;letter-spacing:-.4px;margin:0 0 6px}
+  h2{font-size:20px;letter-spacing:-.3px;margin:56px 0 4px;padding-top:24px;border-top:1px solid #DADAE2}
+  h3{font-size:15px;color:var(--text-secondary);margin:22px 0 10px;font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+  p.lede{color:var(--text-secondary);margin:0 0 8px;max-width:70ch}
+  .meta{color:var(--text-tertiary);font-size:13px;margin:2px 0 0}
+  .rule{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-s);padding:12px 14px;margin:14px 0;font-size:13.5px;color:var(--text-secondary)}
+  .rule b{color:var(--text-primary)}
+  .toolbar{position:sticky;top:0;z-index:50;background:rgba(237,237,242,.86);backdrop-filter:blur(8px);border-bottom:1px solid #DADAE2;margin:0 -20px 8px;padding:10px 20px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .toolbar label{font-size:13px;color:var(--text-secondary);display:inline-flex;gap:6px;align-items:center;cursor:pointer;user-select:none}
+  .toolbar .sp{flex:1}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-top:12px}
+  .col{display:flex;flex-direction:column;gap:14px}
+
+  /* ---- App card primitives (light "records" surface) ---- */
+  .card{background:var(--surface);border-radius:var(--radius-m);padding:16px;box-shadow:var(--shadow-md)}
+  .card .label{font-size:13px;font-weight:600;color:var(--text-secondary)}
+  .card .caption{font-size:11px;color:var(--text-tertiary);margin-top:1px}
+  .card .value{font-size:28px;font-weight:700;letter-spacing:-.6px;line-height:1.1;margin-top:6px}
+  .card .delta{font-size:13px;font-weight:500;margin-top:6px;display:flex;align-items:center;gap:4px}
+  .delta.up{color:var(--event-symptom)} .delta.flat{color:var(--text-tertiary)} .delta.down{color:var(--text-tertiary)}
+  .spark{height:22px}
+  .headrow{display:flex;justify-content:space-between;align-items:center}
+  .chev{color:var(--text-disabled);font-size:16px}
+
+  /* calendar */
+  .calnav{display:flex;justify-content:space-between;align-items:center;margin:8px 0 6px}
+  .calnav .mo{font-size:13px;font-weight:600}
+  .calnav .ch{color:var(--text-disabled);font-size:16px;width:28px;text-align:center}
+  .calnav .ch.on{color:var(--text-secondary)}
+  .summary{font-size:11px;font-weight:600;color:var(--text-primary);margin:2px 0 8px}
+  .wk{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .wk .h{text-align:center;font-size:11px;color:var(--text-disabled);padding-bottom:2px}
+  .cell{background:var(--surface-subtle);border-radius:var(--radius-xs);min-height:40px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:1.5px solid transparent}
+  .cell.blank{background:transparent}
+  .cell .dn{font-size:11px;color:var(--text-tertiary)}
+  .cell.sym .dn{color:var(--text-primary);font-weight:600}
+  .pips{display:flex;gap:2px;min-height:5px}
+  .pip{width:5px;height:5px;border-radius:2.5px;background:var(--event-symptom)}
+  .cell.sel{border-color:var(--accent)}
+
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;vertical-align:middle}
+  .tag.rec{background:var(--accent-light);color:#04796B}
+  .tag.now{background:var(--event-symptom-light);color:#B4243A}
+  .tag.alt{background:#EFEFF4;color:var(--text-secondary)}
+  .callout{border-left:3px solid var(--accent);background:#F7FCFB;padding:10px 12px;border-radius:0 var(--radius-s) var(--radius-s) 0;font-size:13px;color:var(--text-secondary);margin-top:10px}
+  .callout.warn{border-left-color:var(--event-symptom);background:#FFF6F7}
+  .verdict{font-size:12.5px;color:var(--text-tertiary);margin-top:8px}
+  .verdict b{color:var(--text-primary)}
+
+  /* ---- Night ground ---- */
+  .night{position:relative;overflow:hidden;background:var(--brand-night);border-radius:var(--radius-m)}
+  .night .aurora{position:absolute;inset:0;background:
+     radial-gradient(120% 80% at 72% 18%, var(--aurora-violet) 0%, rgba(34,28,86,0) 60%),
+     radial-gradient(90% 70% at 20% 82%, var(--aurora-indigo) 0%, rgba(25,20,73,0) 62%),
+     radial-gradient(50% 40% at 66% 40%, var(--aurora-teal) 0%, rgba(0,194,168,0) 70%);}
+  .stars{position:absolute;inset:0}
+  .star{position:absolute;width:1.4px;height:1.4px;border-radius:50%;background:#fff}
+  .night > *{position:relative}
+
+  /* ---- Whorl spinner ---- */
+  .whorl{display:inline-block;vertical-align:middle}
+  .whorl svg{display:block;overflow:visible}
+  .bigwhorl{display:block}
+  .bigwhorl svg{width:100%;height:auto}
+  @keyframes spinCW{to{transform:rotate(360deg)}}
+  @keyframes spinCCW{to{transform:rotate(-360deg)}}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
+  .ridge{transform-origin:center;transform-box:fill-box}
+  .r1{animation:spinCW 9s linear infinite}
+  .r2{animation:spinCCW 14s linear infinite}
+  .r3{animation:spinCW 19s linear infinite}
+  .r4{animation:spinCCW 25s linear infinite}
+  .core{transform-origin:center;transform-box:fill-box;animation:breathe 2.6s ease-in-out infinite}
+  /* paused (blur) */
+  body.paused .ridge, body.paused .core, body.paused .star-tw{animation-play-state:paused}
+  /* reduced motion → static frame everywhere */
+  body.reduced .ridge, body.reduced .core{animation:none !important}
+
+  .specrow{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end;background:var(--surface);border-radius:var(--radius-m);padding:20px;box-shadow:var(--shadow-md)}
+  .specrow.dark{background:var(--brand-night)}
+  .sample{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .sample .cap{font-size:11px;color:var(--text-tertiary)}
+  .specrow.dark .sample .cap{color:var(--text-on-night-faint)}
+
+  /* skeleton */
+  .sk{background:linear-gradient(90deg,#EEE 25%,#F6F6F6 37%,#EEE 63%);background-size:400% 100%;border-radius:6px;animation:shimmer 1.4s linear infinite}
+  body.reduced .sk{animation:none;background:#EEE}
+  body.paused .sk{animation-play-state:paused}
+  @keyframes shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+  .sk.line{height:11px} .sk.h{height:20px}
+
+  /* PTR band */
+  .ptrband{height:112px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border-radius:var(--radius-m) var(--radius-m) 0 0}
+  .ptrband .msg{font-size:13px;color:var(--text-on-night-muted)}
+  .phone{max-width:300px;border-radius:22px;overflow:hidden;border:1px solid #DADAE2;box-shadow:var(--shadow-md);background:var(--neutral-light)}
+  .phone .hdr{background:#fff;padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-family:var(--display);font-size:19px}
+  .phone .body{padding:14px;display:flex;flex-direction:column;gap:12px}
+
+  /* night moment full-screen */
+  .moment{position:relative;height:520px;border-radius:22px;overflow:hidden;background:var(--brand-night);display:flex;flex-direction:column;box-shadow:var(--shadow-md)}
+  .moment .bigwhorl{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);width:112%;opacity:.48}
+  .moment .copy{position:absolute;left:0;right:0;bottom:64px;text-align:center;padding:0 28px}
+  .moment .copy .t{font-family:var(--display);font-size:24px;color:var(--moonlight);letter-spacing:-.3px}
+  .moment .copy .s{font-size:14px;color:var(--text-on-night-muted);margin-top:8px}
+  .momentgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px}
+
+  code{background:#EDEDF2;border-radius:4px;padding:1px 5px;font-size:12.5px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .foot{margin-top:40px;color:var(--text-tertiary);font-size:12.5px;border-top:1px solid #DADAE2;padding-top:16px}
+  .pill{display:inline-block;background:#fff;border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--text-secondary);margin:2px 4px 2px 0}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <strong style="font-size:13px">Culprit loading system</strong>
+  <span class="pill">B-313 · N3</span>
+  <span class="sp"></span>
+  <label><input type="checkbox" id="tRed" /> Reduced motion</label>
+  <label><input type="checkbox" id="tPause" /> Pause (app blur)</label>
+</div>
+
+<div class="wrap">
+  <h1>B-313 reconciliation &amp; N3 — WhorlSpinner + loading system</h1>
+  <p class="lede">A working design mock for PM review before any React Native code is written. Colours, type and geometry use the real theme tokens. The spinners are live — toggle <b>Reduced motion</b> (static frame) and <b>Pause</b> (app-blur behaviour) up top.</p>
+
+  <div class="rule">
+    <b>Locked rules honoured throughout:</b> carve (crescent is always a cutout) · register (night grounds only where the app works on the pet's behalf) · one interactive accent (teal is the sole tappable/live colour; indigo/lavender are world-only) · no metaphor framing (loading is described mechanically, never analogically) · motion budget (≤1 ambient loop per screen; native-driver transforms; paused on blur; a static frame under reduced-motion).
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>Part 1 — B-313: the "two months" on Patterns</h2>
+  <p class="lede">The symptom <b>count card</b> runs a <b>trailing-30-day</b> window; the <b>calendar</b> below it opens on the named <b>calendar month</b> (spec §8.1). Early in a month, under the same "Vomiting" title, they visibly contradict — and the count's "last month" collides with the calendar's literal "June". Both windows are spec-locked, so this is a labelling decision, not a bug to flip.</p>
+
+  <h3>The problem, today (scenario: it's June&nbsp;3<sup>rd</sup>)</h3>
+  <div class="grid">
+    <div class="card">
+      <div class="headrow"><span class="label">Vomiting</span><span class="chev">›</span></div>
+      <div class="value">8</div>
+      <svg class="spark" viewBox="0 0 120 22" preserveAspectRatio="none"><polyline points="0,16 20,14 40,17 60,8 80,11 100,4 120,6" fill="none" stroke="var(--event-symptom)" stroke-width="2"/></svg>
+      <div class="delta up">▲ 2 more than last month</div>
+    </div>
+    <div class="card">
+      <div class="headrow"><span class="label">Vomiting</span></div>
+      <div class="calnav"><span class="ch">‹</span><span class="mo">June 2026</span><span class="ch on">›</span></div>
+      <div class="summary">No vomiting logged in June.</div>
+      <div id="calEmpty"></div>
+    </div>
+  </div>
+  <div class="callout warn"><b>The clash:</b> "8, ▲2 more than last month" sits directly above "No vomiting logged in June." Same title, two silent windows → reads as a data bug on the wedge surface.</div>
+
+  <h3>Option A — label the windows <span class="tag rec">Recommended</span></h3>
+  <p class="lede">Give the count card the explicit window frame it's currently missing (<b>"Last 30 days"</b>), and change the shared delta phrase for the month window from "last month" → <b>"the previous 30 days"</b>. The calendar already states "June 2026". Now the two read as two <i>different, complementary</i> views — a responsive rolling KPI and a browsable month archive — not a contradiction. Nothing spec-locked moves; every other trailing-window card (intake rate, top foods) stays consistent.</p>
+  <div class="grid">
+    <div class="card">
+      <div class="headrow"><span class="label">Vomiting</span><span class="chev">›</span></div>
+      <div class="caption">Last 30 days</div>
+      <div class="value">8</div>
+      <svg class="spark" viewBox="0 0 120 22" preserveAspectRatio="none"><polyline points="0,16 20,14 40,17 60,8 80,11 100,4 120,6" fill="none" stroke="var(--event-symptom)" stroke-width="2"/></svg>
+      <div class="delta up">▲ 2 more than the previous 30 days</div>
+    </div>
+    <div class="card">
+      <div class="headrow"><span class="label">Vomiting</span></div>
+      <div class="calnav"><span class="ch">‹</span><span class="mo">June 2026</span><span class="ch on">›</span></div>
+      <div class="summary">No vomiting logged in June.</div>
+      <div id="calEmpty2"></div>
+    </div>
+  </div>
+  <div class="verdict"><b>Why this one:</b> smallest change, preserves both spec-locked windows and the whole-dashboard trailing-30 convention (§13&nbsp;#2), removes the "last month"↔"June" collision, and is more honest everywhere the delta phrase is reused. Touches <code>MetricCard</code> (an optional caption prop, symptom-count only) + <code>dashboardCards.ts</code> (the month prior-window phrase).</div>
+
+  <h3>Option B — accept side-by-side (no code)</h3>
+  <p class="lede">Lean on the labels already present: the calendar says "June&nbsp;2026", the count says "last month". Cheapest, but both N5b reviewers flagged the clash <i>with</i> those labels present — the count card still shows no window frame on the number itself, so "8 above none-in-June" stays confusing. Documents a decision; fixes little.</p>
+  <span class="pill">no build</span><span class="pill">weakest on trust</span>
+
+  <h3>Option C — align the count card to the calendar month</h3>
+  <p class="lede">Make the count card show June's count too (here: <b>0</b>, "▲ vs May"). The two "Vomiting" cards now agree — but the symptom count desyncs from every other card (intake rate, top foods, protein, composition are all trailing-30), the responsive rolling read is lost (a symptom yesterday won't show until it's "this month"), and the Week/Month/3-Month detail screen is inherently trailing. Trades one inconsistency for a bigger one.</p>
+  <div class="grid">
+    <div class="card" style="opacity:.9">
+      <div class="headrow"><span class="label">Vomiting</span><span class="chev">›</span></div>
+      <div class="caption">June 2026</div>
+      <div class="value">0</div>
+      <div class="delta flat">— none logged in June</div>
+      <div class="callout warn" style="margin-top:12px">A vomit <i>yesterday</i> (May 31) wouldn't appear here until it becomes "this month" — the rolling read owners rely on is gone.</div>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>Part 2 — N3: the WhorlSpinner &amp; loading system (spec §5–§6)</h2>
+  <p class="lede">One brand loading mark across three tiers. Four concentric arc ridges counter-rotating at 9&nbsp;/&nbsp;14&nbsp;/&nbsp;19&nbsp;/&nbsp;25s (alternating direction) with a core dot breathing at 2.6s. Two grounds: <b>day</b> (teal + indigo-lavender, for light content surfaces) and <b>night</b> (teal + moonlight, for night grounds). Two sizes: <b>sm</b> (20–24px, inline) and <b>md</b> (44–56px, in-place block).</p>
+
+  <h3>The spinner — both sizes, both grounds</h3>
+  <div class="specrow">
+    <div class="sample"><span class="whorl" data-size="24" data-ground="day"></span><span class="cap">sm · day · 24px</span></div>
+    <div class="sample"><span class="whorl" data-size="56" data-ground="day"></span><span class="cap">md · day · 56px</span></div>
+    <div class="sample"><span class="whorl" data-size="56" data-ground="day" data-static="1"></span><span class="cap">reduced-motion static frame</span></div>
+  </div>
+  <div class="specrow dark" style="margin-top:14px">
+    <div class="sample"><span class="whorl" data-size="24" data-ground="night"></span><span class="cap">sm · night · 24px</span></div>
+    <div class="sample"><span class="whorl" data-size="56" data-ground="night"></span><span class="cap">md · night · 56px</span></div>
+    <div class="sample"><span class="whorl" data-size="56" data-ground="night" data-static="1"></span><span class="cap">reduced-motion static</span></div>
+  </div>
+  <div class="rule" style="margin-top:14px"><b>Note for the theme PR:</b> night ridges reuse shipped tokens (<code>colorAccent</code> + <code>colorMoonlight</code>). The day-ground lavender ridge is the one genuinely new value (<code>#A6A2CE</code>, already the shipped <code>colorTextOnNightMuted</code> — a world/lavender, never interactive, so the one-accent rule holds). I'll tokenise it as <code>colorWhorlRidgeDay</code> rather than hardcode. Flag if you'd rather it be pure-teal (both ridges teal) instead.</div>
+
+  <h3>Tier 1 — skeletons (&lt;~1s)</h3>
+  <p class="lede">Content-shaped shimmer on content surfaces (Patterns cards, History, detail). <b>No</b> Whorl at this duration — the shape of what's coming reads faster than a spinner.</p>
+  <div class="grid">
+    <div class="card">
+      <div class="sk line" style="width:38%"></div>
+      <div class="sk h" style="width:30%;margin-top:12px"></div>
+      <div class="sk line" style="width:100%;margin-top:14px"></div>
+    </div>
+    <div class="card">
+      <div style="display:flex;gap:12px;align-items:center"><div class="sk" style="width:34px;height:34px;border-radius:8px"></div><div style="flex:1"><div class="sk line" style="width:52%"></div><div class="sk line" style="width:34%;margin-top:7px"></div></div></div>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:14px"><div class="sk" style="width:34px;height:34px;border-radius:8px"></div><div style="flex:1"><div class="sk line" style="width:60%"></div><div class="sk line" style="width:28%;margin-top:7px"></div></div></div>
+    </div>
+  </div>
+
+  <h3>Tier 2 — WhorlSpinner in place (~1–10s) &amp; pull-to-refresh sky</h3>
+  <p class="lede">Every bare <code>ActivityIndicator</code> (~25 sites) becomes a WhorlSpinner, sized by expected duration (default sm). Pulling Home reveals a ~112pt night band — stars + <code>WhorlSpinner sm night</code> + one muted line. Zero-text variant is the pre-approved fallback if the line reads busy on-device.</p>
+  <div class="momentgrid">
+    <div class="phone">
+      <div class="night ptrband">
+        <div class="aurora"></div><div class="stars" data-stars="10"></div>
+        <span class="whorl" data-size="24" data-ground="night"></span>
+        <div class="msg">Checking for anything new…</div>
+      </div>
+      <div class="body">
+        <div class="card" style="box-shadow:none;border:1px solid var(--border)"><div class="label">Signal</div><div style="font-family:var(--display);font-size:19px;margin-top:6px">Nyx has vomited on 6 of the last 14 days.</div></div>
+        <div class="card" style="box-shadow:none;border:1px solid var(--border)"><div class="label">Today</div><div style="margin-top:6px;color:var(--text-secondary);font-size:14px">2 meals · 1 symptom</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="card"><div class="label" style="margin-bottom:12px">In-place (md) — report build, food extract</div>
+        <div style="display:flex;align-items:center;gap:12px"><span class="whorl" data-size="44" data-ground="day"></span><span style="color:var(--text-secondary);font-size:14px">Reading the label…</span></div>
+      </div>
+      <div class="card" style="margin-top:14px"><div class="label" style="margin-bottom:12px">Inline (sm) — a row-level wait</div>
+        <div style="display:flex;align-items:center;gap:10px"><span class="whorl" data-size="20" data-ground="day"></span><span style="color:var(--text-tertiary);font-size:13px">Saving…</span></div>
+      </div>
+      <div class="rule" style="margin-top:14px">PTR band shown with text; the pre-approved <b>zero-text</b> fallback is the same band without the line.</div>
+    </div>
+  </div>
+
+  <h3>Tier 3 — the night moment (§6): a full-screen wait becomes a branded screen</h3>
+  <p class="lede">When the app has nothing else to show yet — cold-start hydration, vet-report generation, a photo read — the wait itself is the night: aurora + starfield, the Whorl at <b>medium-large scale as a background texture</b> (0.9–1.1× width, 40–55% stroke opacity; core dot stays full-opacity — the one focal point), one warm line lower-third. Trigger = full-screen blocking wait <b>AND</b> &gt;~2s <b>AND</b> real work on the pet's behalf. (Exact scale/opacity inside the specced ranges is an on-device tuning AC — locked at N3 QA on your phone.)</p>
+  <div class="momentgrid">
+    <div class="moment">
+      <div class="aurora" style="position:absolute;inset:0;background:radial-gradient(120% 80% at 72% 18%, var(--aurora-violet) 0%, rgba(34,28,86,0) 60%),radial-gradient(90% 70% at 20% 82%, var(--aurora-indigo) 0%, rgba(25,20,73,0) 62%),radial-gradient(60% 44% at 50% 34%, var(--aurora-teal) 0%, rgba(0,194,168,0) 72%)"></div>
+      <div class="stars" data-stars="16"></div>
+      <span class="whorl bigwhorl" data-size="420" data-ground="night" data-dim="1"></span>
+      <div class="copy"><div class="t">Catching up on Nyx's history…</div><div class="s">This only takes a moment.</div></div>
+    </div>
+    <div>
+      <div class="card"><div class="label">The three qualifying call sites &amp; copy (§9)</div>
+        <ul style="margin:10px 0 0;padding-left:18px;color:var(--text-secondary);font-size:13.5px;line-height:1.8">
+          <li><b>Cold start</b> — “Catching up on {pet}'s history…” / “This only takes a moment.”</li>
+          <li><b>Vet report</b> — “Building {pet}'s report…” / “Pulling together the full record.”</li>
+          <li><b>Photo read</b> — “Reading the label…” / “A few seconds.”</li>
+        </ul>
+      </div>
+      <div class="rule" style="margin-top:14px"><b>Never</b> the night moment: card loads (skeletons), pull-to-refresh / saves / retries (spinner), anything under ~2s. Minimum hold 600ms; dissolves to the destination over ~700ms. <code>ColdStartOverlay</code> rebuilds onto this.</div>
+      <div class="rule"><b>Reduced motion:</b> the whole composition is static (arcs at rest, dot still) — the copy carries the moment. Every tier defines its static frame; the toggle up top shows all of them at once.</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Mock for PM review · B-313 (PM decision) + B-284 N3 (spec §5–§6, locked). Rendered with real <code>constants/theme.ts</code> tokens. Not the shipped build — the RN port follows PM sign-off.
+  </div>
+</div>
+
+<script>
+  // ---- Whorl spinner renderer (mirrors the planned RN geometry) ----
+  // viewBox 100x100, centre 50,50. Four concentric ridges (arcs) + core dot.
+  const RIDGES = [
+    {cls:'r1', r:44, w:3.0,  frac:0.60, rot:20},
+    {cls:'r2', r:33, w:2.6,  frac:0.52, rot:200},
+    {cls:'r3', r:23, w:2.6,  frac:0.66, rot:110},
+    {cls:'r4', r:13, w:2.2,  frac:0.46, rot:300},
+  ];
+  function ridgeColor(ground, i){
+    if(ground==='night') return (i%2===0) ? '#00C2A8' : '#F2EEE4';
+    return (i%2===0) ? '#00C2A8' : '#A6A2CE'; // day: teal / indigo-lavender
+  }
+  function whorlSVG(size, ground, opts){
+    opts = opts||{};
+    const dim = opts.dim ? 0.5 : 1;      // night-moment background texture opacity
+    const isStatic = !!opts.static;
+    let arcs = '';
+    RIDGES.forEach((rd,i)=>{
+      const c = 2*Math.PI*rd.r;
+      const on = c*rd.frac, off = c-on;
+      const col = ridgeColor(ground,i);
+      arcs += `<circle class="ridge ${isStatic?'':rd.cls}" cx="50" cy="50" r="${rd.r}"
+        fill="none" stroke="${col}" stroke-width="${rd.w}" stroke-linecap="round"
+        stroke-dasharray="${on.toFixed(2)} ${off.toFixed(2)}"
+        transform="rotate(${rd.rot} 50 50)" opacity="${(0.92*dim).toFixed(2)}"/>`;
+    });
+    // core dot — always full opacity even when ridges are dimmed (the focal point)
+    const dot = `<circle class="core ${isStatic?'':''}" cx="50" cy="50" r="5.4" fill="#00C2A8"/>`;
+    // reduced-motion static: add a soft glow behind the dot
+    const glow = isStatic ? `<circle cx="50" cy="50" r="7.4" fill="#00C2A8" opacity="0.22"/>` : '';
+    return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" role="img" aria-label="Loading">${arcs}${glow}${dot}</svg>`;
+  }
+  document.querySelectorAll('.whorl').forEach(el=>{
+    const size = +el.dataset.size, ground = el.dataset.ground;
+    el.innerHTML = whorlSVG(size, ground, {static: el.dataset.static==='1', dim: el.dataset.dim==='1'});
+  });
+
+  // ---- starfields ----
+  document.querySelectorAll('.stars').forEach(box=>{
+    const n = +box.dataset.stars || 12;
+    for(let i=0;i<n;i++){
+      const s=document.createElement('span'); s.className='star';
+      s.style.left=(Math.random()*100)+'%'; s.style.top=(Math.random()*100)+'%';
+      const op=(0.28+Math.random()*0.27).toFixed(2); s.style.opacity=op;
+      const sz=(1+Math.random()*0.6).toFixed(2); s.style.width=sz+'px'; s.style.height=sz+'px';
+      box.appendChild(s);
+    }
+  });
+
+  // ---- empty calendar grids (June, all cells clean) ----
+  function emptyCal(host){
+    const wk=document.createElement('div'); wk.className='wk';
+    ['S','M','T','W','T','F','S'].forEach(h=>{const c=document.createElement('div');c.className='h';c.textContent=h;wk.appendChild(c);});
+    // June 2026 starts on a Monday → 1 lead blank
+    for(let i=0;i<1;i++){const c=document.createElement('div');c.className='cell blank';wk.appendChild(c);}
+    for(let d=1;d<=30;d++){const c=document.createElement('div');c.className='cell';c.innerHTML=`<span class="dn">${d}</span><span class="pips"></span>`;wk.appendChild(c);}
+    host.appendChild(wk);
+  }
+  emptyCal(document.getElementById('calEmpty'));
+  emptyCal(document.getElementById('calEmpty2'));
+
+  // ---- toggles ----
+  document.getElementById('tRed').addEventListener('change',e=>{
+    document.body.classList.toggle('reduced', e.target.checked);
+    // re-render whorls so static frames get the glow
+    document.querySelectorAll('.whorl').forEach(el=>{
+      const size=+el.dataset.size, ground=el.dataset.ground;
+      const forceStatic = e.target.checked || el.dataset.static==='1';
+      el.innerHTML = whorlSVG(size, ground, {static:forceStatic, dim:el.dataset.dim==='1'});
+    });
+  });
+  document.getElementById('tPause').addEventListener('change',e=>{
+    document.body.classList.toggle('paused', e.target.checked);
+  });
+</script>
+</body>
+</html>

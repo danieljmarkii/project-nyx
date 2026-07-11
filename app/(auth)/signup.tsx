@@ -7,7 +7,6 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   Alert,
   Linking,
 } from 'react-native';
@@ -15,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { ChevronLeft, Mail } from 'lucide-react-native';
 import { supabase } from '../../lib/supabase';
+import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { updateOwnerName } from '../../lib/profile';
 import { theme } from '../../constants/theme';
 import { SOCIAL_AUTH_ENABLED } from '../../constants/flags';
@@ -200,7 +200,7 @@ export default function SignupScreen() {
               testID="verify-resend"
             >
               {resending ? (
-                <ActivityIndicator color={theme.colorTextSecondary} />
+                <WhorlSpinner size="md" ground="day" />
               ) : (
                 <Text style={styles.resendText}>Resend link</Text>
               )}

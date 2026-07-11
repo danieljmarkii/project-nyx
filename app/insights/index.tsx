@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -39,6 +39,7 @@ import {
 } from '../../lib/dashboardCards';
 import { symptomLabel } from '../../lib/metricDetail';
 import { MetricCard } from '../../components/dashboard/MetricCard';
+import { SkeletonCard } from '../../components/ui/Skeleton';
 import { RankingCard } from '../../components/dashboard/RankingCard';
 import { PatternCalendar, type CalendarView } from '../../components/dashboard/PatternCalendar';
 import { CompositionCard } from '../../components/dashboard/CompositionCard';
@@ -184,8 +185,13 @@ export default function PatternsScreen() {
           <Text style={styles.stateText}>No pet selected.</Text>
         </View>
       ) : status === 'loading' ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={theme.colorTextSecondary} />
+        // Tier-1 (§5): content-shaped skeletons for the local-SQLite read (<~1s) —
+        // the dashboard's card silhouette, not a spinner, so the surface doesn't flash
+        // empty then reflow.
+        <View style={styles.scroll}>
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </View>
       ) : status === 'error' ? (
         <View style={styles.centered}>
@@ -251,6 +257,9 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
         <MetricCard
           key={card.key}
           label={label}
+          // Explicit trailing-window frame so the count never contradicts the
+          // calendar-month grid under the same title (B-313).
+          caption="Last 30 days"
           value={String(card.current)}
           polarity="adverse"
           established={card.established}
