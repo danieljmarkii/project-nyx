@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable,
+  KeyboardAvoidingView, Modal, Platform, Pressable,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { useIsOnline } from '../../hooks/useIsOnline';
@@ -121,7 +122,7 @@ export function DeleteAccountSheet({ visible, petNames, onClose }: DeleteAccount
             accessibilityState={{ disabled: !canConfirm }}
           >
             {inFlight
-              ? <ActivityIndicator color={theme.colorSurface} />
+              ? <WhorlSpinner size="sm" tint={theme.colorSurface} />
               : <Text style={styles.deleteBtnText}>Delete account</Text>}
           </TouchableOpacity>
 

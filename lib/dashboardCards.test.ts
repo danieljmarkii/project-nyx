@@ -176,7 +176,7 @@ describe('describeCountDelta — honest direction, no verdict word', () => {
   });
   it('fewer this period (calm wording, never "improving")', () => {
     const line = describeCountDelta(3, 5, 'month');
-    expect(line).toBe('2 fewer than last month');
+    expect(line).toBe('2 fewer than the previous 30 days');
     expect(line).not.toMatch(/improv|better|worse|win/i);
   });
   it('same as the prior period', () => {

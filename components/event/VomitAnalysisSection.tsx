@@ -15,8 +15,9 @@
 // flag and NEVER reassures on absence. The recommendation enum has no
 // reassuring value, so this component never renders an "all clear".
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
   triggerVomitAnalysis,
@@ -187,7 +188,7 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>AI READ</Text>
         <View style={styles.pendingBox}>
-          <ActivityIndicator size="small" color={theme.colorAccent} />
+          <WhorlSpinner size="sm" ground="day" />
         </View>
       </View>
     );
@@ -201,7 +202,7 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>AI READ</Text>
         <View style={styles.pendingBox}>
-          <ActivityIndicator size="small" color={theme.colorAccent} />
+          <WhorlSpinner size="sm" ground="day" />
           <Text style={styles.pendingText}>Reading this one…</Text>
         </View>
       </View>
@@ -223,7 +224,7 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
             activeOpacity={0.8}
           >
             {retrying
-              ? <ActivityIndicator size="small" color="#fff" />
+              ? <WhorlSpinner size="sm" tint="#fff" />
               : <Text style={styles.retryBtnText}>Try again</Text>}
           </TouchableOpacity>
         </View>

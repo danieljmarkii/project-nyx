@@ -128,6 +128,14 @@ export const theme = {
   // the surrounding text colour happens to be.
   colorCulpritCrescentOnLight: '#211E4E',
 
+  // WhorlSpinner (B-284 PR N3, §5) — the day-ground ridge lavender. The spinner's
+  // DAY palette is "teal + indigo-lavender": teal (colorAccent) alternates with this
+  // soft lavender on light content surfaces. Same value as colorTextOnNightMuted (a
+  // WORLD lavender), named separately for its role. Never interactive, so the
+  // one-accent rule (§1.3) holds — teal stays the sole tappable/live accent; the
+  // night-ground palette reuses colorAccent + colorMoonlight and needs no token.
+  colorWhorlRidgeDay: '#A6A2CE',
+
   // Borders
   colorBorder: '#EAEAEA',
   colorBorderStrong: '#D4D4D4',

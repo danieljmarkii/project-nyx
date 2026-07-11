@@ -142,7 +142,10 @@ describe('PatternsScreen', () => {
     await waitFor(() => expect(getByText(/still gathering/i)).toBeTruthy());
     // Safety symptom count card: big number + honest delta phrase (no verdict word).
     expect(getByText('3')).toBeTruthy();
-    expect(getByText(/2 more than last month/i)).toBeTruthy();
+    expect(getByText(/2 more than the previous 30 days/i)).toBeTruthy();
+    // B-313: the count card carries an explicit trailing-window frame so it never
+    // reads as contradicting the calendar-month grid under the same "Vomit" title.
+    expect(getByText('Last 30 days')).toBeTruthy();
     // "Vomit" appears as both the count-card label and the frequency-calendar title.
     expect(getAllByText('Vomit').length).toBeGreaterThanOrEqual(1);
     // The health-trajectory weight card is wired into the ready branch — with no readings
@@ -169,8 +172,9 @@ describe('PatternsScreen', () => {
     await waitFor(() => expect(getByText('29%')).toBeTruthy());
     // The shape (proportion bar) — never a bare big number.
     expect(getByTestId('metric-progress')).toBeTruthy();
-    // The factual "vs last month" read (a drop on a positive metric → neutral, not alarmed).
-    expect(getByText('Down from 41% last month')).toBeTruthy();
+    // The factual "vs the previous 30 days" read (a drop on a positive metric → neutral,
+    // not alarmed). Trailing-window wording, not "last month" (B-313).
+    expect(getByText('Down from 41% the previous 30 days')).toBeTruthy();
   });
 
   it('tapping a symptom count card opens its trend detail (B-093 doorway)', async () => {
@@ -188,9 +192,9 @@ describe('PatternsScreen', () => {
 
     const { getByLabelText } = render(<PatternsScreen />);
     // The symptom COUNT card is the only tappable card (a button); its a11y label carries
-    // the value + delta. The frequency calendar and intake card stay display-only.
-    await waitFor(() => expect(getByLabelText(/Vomit: 3/)).toBeTruthy());
-    fireEvent.press(getByLabelText(/Vomit: 3/));
+    // the window caption + value + delta. The frequency calendar and intake card stay display-only.
+    await waitFor(() => expect(getByLabelText(/Vomit, Last 30 days: 3/)).toBeTruthy());
+    fireEvent.press(getByLabelText(/Vomit, Last 30 days: 3/));
     expect(router.push).toHaveBeenCalledWith({
       pathname: '/insights/[metric]',
       params: { metric: 'vomit' },

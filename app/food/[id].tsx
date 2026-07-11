@@ -9,12 +9,13 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
@@ -498,7 +499,7 @@ export default function FoodDetailScreen() {
       <SafeAreaView style={styles.container}>
         <Header leading="back" title="Food" onLeadingPress={() => router.back()} />
         <View style={styles.centerMessage}>
-          <ActivityIndicator color={theme.colorAccent} />
+          <WhorlSpinner size="md" ground="day" />
         </View>
       </SafeAreaView>
     );
@@ -523,7 +524,7 @@ export default function FoodDetailScreen() {
           />
           {addingPhoto && (
             <View style={styles.photoUploadingRow}>
-              <ActivityIndicator size="small" color={theme.colorAccent} />
+              <WhorlSpinner size="sm" ground="day" />
               <Text style={styles.photoUploadingText}>Adding photo…</Text>
             </View>
           )}
@@ -541,7 +542,7 @@ export default function FoodDetailScreen() {
                   activeOpacity={0.8}
                 >
                   {retrying
-                    ? <ActivityIndicator size="small" color="#fff" />
+                    ? <WhorlSpinner size="sm" tint="#fff" />
                     : <Text style={styles.retryBtnText}>Try extraction again</Text>}
                 </TouchableOpacity>
               </View>
@@ -595,7 +596,7 @@ export default function FoodDetailScreen() {
             <SectionLabel label="Ingredients" />
             {isPending ? (
               <View style={styles.pendingBox}>
-                <ActivityIndicator size="small" color={theme.colorAccent} />
+                <WhorlSpinner size="sm" ground="day" />
                 <Text style={styles.pendingText}>Reading the label…</Text>
               </View>
             ) : (
@@ -640,7 +641,7 @@ export default function FoodDetailScreen() {
                 activeOpacity={0.7}
               >
                 {retrying
-                  ? <ActivityIndicator size="small" color={theme.colorAccent} />
+                  ? <WhorlSpinner size="sm" ground="day" />
                   : <Text style={styles.secondaryActionText}>Re-run AI extraction</Text>}
               </TouchableOpacity>
             )}
@@ -653,7 +654,7 @@ export default function FoodDetailScreen() {
               activeOpacity={0.7}
             >
               {deleting
-                ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
+                ? <WhorlSpinner size="sm" tint={theme.colorEventSymptom} />
                 : <Text style={styles.deleteActionText}>Delete this food</Text>}
             </TouchableOpacity>
           </View>
@@ -667,7 +668,7 @@ export default function FoodDetailScreen() {
             activeOpacity={0.85}
           >
             {saving
-              ? <ActivityIndicator size="small" color="#fff" />
+              ? <WhorlSpinner size="sm" tint="#fff" />
               : <Text style={styles.saveBtnText}>Save</Text>}
           </TouchableOpacity>
         </View>

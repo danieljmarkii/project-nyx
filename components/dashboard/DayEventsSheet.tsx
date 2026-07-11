@@ -1,9 +1,10 @@
 import {
-  ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View,
+  Modal, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { formatUtcDayShort } from '../../lib/utils';
 import { describeDayEvents, daySheetSubtitle } from '../../lib/dayEvents';
@@ -80,7 +81,7 @@ export function DayEventsSheet({
             </View>
           ) : loading ? (
             <View style={styles.loadingBox}>
-              <ActivityIndicator color={theme.colorTextSecondary} />
+              <WhorlSpinner size="md" ground="day" />
             </View>
           ) : (
             <>

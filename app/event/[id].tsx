@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Image, Alert, ActivityIndicator,
+  Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
+import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { theme } from '../../constants/theme';
@@ -473,7 +474,7 @@ export default function EventDetailScreen() {
   if (loading && !event) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingState}><ActivityIndicator /></View>
+        <View style={styles.loadingState}><WhorlSpinner size="md" ground="day" /></View>
       </SafeAreaView>
     );
   }
@@ -559,7 +560,7 @@ export default function EventDetailScreen() {
             disabled={uploadingPhoto}
           >
             {uploadingPhoto ? (
-              <ActivityIndicator />
+              <WhorlSpinner size="sm" ground="day" />
             ) : (
               <>
                 {/* B-062 — Lucide Camera (was a 📷 emoji) for a consistent vector

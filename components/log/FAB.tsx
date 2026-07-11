@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   TouchableOpacity, StyleSheet, View, Animated,
-  Text, Pressable, ActivityIndicator,
+  Text, Pressable,
 } from 'react-native';
 import { router } from 'expo-router';
 import { ChevronDown, Plus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { EventIcon } from '../event/EventIcon';
 import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
@@ -191,7 +192,7 @@ export function FAB() {
                     {food.brand} {food.product_name}
                   </Text>
                   {logging === food.id && (
-                    <ActivityIndicator size="small" color={theme.colorTextSecondary} style={styles.spinner} />
+                    <WhorlSpinner size="sm" ground="day" style={styles.spinner} />
                   )}
                 </TouchableOpacity>
               ))

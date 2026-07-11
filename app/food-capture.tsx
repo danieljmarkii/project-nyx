@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  Animated, Image, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
+  Animated, Image, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -21,6 +21,8 @@ import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
 import { ChipGroup } from '../components/ui/ChipGroup';
+import { NightMoment } from '../components/brand/NightMoment';
+import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
@@ -563,12 +565,20 @@ export default function FoodCaptureScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <Header title="Add a food" />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colorAccent} />
-          <Text style={styles.loadingText}>
-            {extracting ? 'Reading the label…' : 'Uploading…'}
-          </Text>
-          <Text style={styles.loadingHint}>This usually takes a few seconds.</Text>
+        <View style={styles.momentBody}>
+          {/* The brief upload precursor is a light in-place Tier-2 spinner (<2s → not the
+              night moment). */}
+          {!extracting && (
+            <View style={styles.loadingContainer}>
+              <WhorlSpinner size="md" ground="day" />
+              <Text style={styles.loadingText}>Uploading…</Text>
+              <Text style={styles.loadingHint}>This usually takes a few seconds.</Text>
+            </View>
+          )}
+          {/* The AI read is the qualifying photo-extraction wait (§6). KEPT MOUNTED and
+              toggled by `visible` so its min-hold runs and it crossfades in from the upload
+              spinner rather than hard-cutting; the flex body keeps the Header/back. */}
+          <NightMoment visible={extracting} title="Reading the label…" subtitle="A few seconds." />
         </View>
       </SafeAreaView>
     );
@@ -966,6 +976,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: theme.space2,
     padding: theme.space3,
+  },
+  // Fills the body below the Header for the extraction night moment (it measures this
+  // box and paints its own night ground into it).
+  momentBody: {
+    flex: 1,
   },
   loadingText: {
     fontSize: theme.textLG,

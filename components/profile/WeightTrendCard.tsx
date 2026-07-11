@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArrowDown, ArrowUp, Minus } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { Sparkline } from '../dashboard/Sparkline';
 import {
   computeWeightTrend,
@@ -87,7 +88,7 @@ export function WeightTrendCard({ petId, petName, snapshotKg }: Props) {
       <Text style={styles.label}>Weight</Text>
 
       {loading && trend === null ? (
-        <ActivityIndicator style={styles.loader} color={theme.colorTextSecondary} />
+        <WhorlSpinner size="sm" ground="day" style={styles.loader} />
       ) : !hasReadings ? (
         <EmptyState petName={petName} snapshotKg={snapshotKg} />
       ) : trend!.readingCount === 1 ? (

@@ -84,7 +84,7 @@ describe('buildSymptomDetailWindow — the "vs your baseline" read', () => {
     expect(d.value).toBe('9');
     expect(d.established).toBe(true);
     expect(d.delta).toBe(5);
-    expect(d.deltaLabel).toBe('5 more than last month');
+    expect(d.deltaLabel).toBe('5 more than the previous 30 days');
     expect(d.baselineRead).toBe('A busier month than usual for Nyx — worth keeping an eye on.');
     expect(d.series).toEqual([1, 2, 3]); // passthrough — the sparkline shape
     assertNoReassurance(d.baselineRead);
@@ -95,7 +95,7 @@ describe('buildSymptomDetailWindow — the "vs your baseline" read', () => {
     expect(d.value).toBe('2');
     expect(d.established).toBe(true);
     expect(d.delta).toBe(-6);
-    expect(d.deltaLabel).toBe('6 fewer than last month');
+    expect(d.deltaLabel).toBe('6 fewer than the previous 30 days');
     expect(d.baselineRead).toBe(
       "Fewer than a usual month for Nyx — a quieter spell isn't the same as an all-clear, so keep logging.",
     );

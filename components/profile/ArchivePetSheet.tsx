@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import {
-  ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text,
+  Alert, Modal, Pressable, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { usePetStore, Pet } from '../../store/petStore';
 import { archiveBlockedCopy, archiveConfirmBody } from '../../lib/utils';
@@ -78,7 +79,7 @@ export function ArchivePetSheet({ visible, pet, onClose }: ArchivePetSheetProps)
             accessibilityRole="button"
           >
             {archiving
-              ? <ActivityIndicator color={theme.colorSurface} />
+              ? <WhorlSpinner size="sm" tint={theme.colorSurface} />
               : <Text style={styles.archiveBtnText}>Archive</Text>}
           </TouchableOpacity>
           <TouchableOpacity
