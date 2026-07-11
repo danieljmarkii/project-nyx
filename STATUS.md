@@ -51,9 +51,9 @@ Spec `docs/nyx-settings-requirements.md` (v0.1, §10 = 5-PR plan) + mockups `doc
 | PR | What | Status |
 |---|---|---|
 | 1 | Support + version primitives — `lib/support.ts` (`buildSupportMailto`, `formatAppVersion`) + `constants/links.ts` (`SUPPORT_EMAIL`, legal URLs, `LEGAL_LINKS_ENABLED=false`); pure, unit-tested, no UI | ✅ #315 (`code-reviewer` ship-ready; +17 tests) |
-| 2 | The "You" screen (`app/settings.tsx`) + Home-header avatar entry + relocation off `app/(tabs)/profile.tsx` + route registration | ✅ #316 (draft; `code-reviewer` fix-before-merge + `pm-feature-review` folded in; +7 owner tests) |
-| 3 | Notifications (mocked — honest not-live state, **no armed med reminder** per D7 safety gate) | ✅ #317 (draft; `code-reviewer` ship-ready; +shared `ComingSoonLabel`) |
-| 4 | App feedback (`mailto` composer reusing PR 1's helper, `[Feedback]` tag) | ✅ #318 (draft; `code-reviewer` ship-ready · `nyx-voice` ✓ · `pm-feature-review` SHIP-SHAPED after mail-hand-off fixes; +4 tests; S1 = reuse `support@`+tag) |
+| 2 | The "You" screen (`app/settings.tsx`) + Home-header avatar entry + relocation off `app/(tabs)/profile.tsx` + route registration | ✅ merged #316 (`code-reviewer` fix-before-merge + `pm-feature-review` folded in; +7 owner tests) |
+| 3 | Notifications (mocked — honest not-live state, **no armed med reminder** per D7 safety gate) | ✅ merged #317 (`code-reviewer` ship-ready; +shared `ComingSoonLabel`) |
+| 4 | App feedback (`mailto` composer reusing PR 1's helper, `[Feedback]` tag) | ✅ merged #318 (`code-reviewer` ship-ready · `nyx-voice` ✓ · `pm-feature-review` SHIP-SHAPED after mail-hand-off fixes; +4 tests; S1 = reuse `support@`+tag) |
 | 5 | Go-live flips (`LEGAL_LINKS_ENABLED` on when hosted docs land; real notif wiring; feedback backend) | ⬜ gated on external items |
 
 **All build PRs (1–4) shipped** (PR 3 #317 · PR 4 #318; S1 resolved — reuse `support@` + `[Feedback]` tag). **Only PR 5 (go-live flips) remains** — external-gated (`LEGAL_LINKS_ENABLED` on when hosted docs land; real notif wiring on the push-provider decision; feedback backend if adopted), not a same-session build. Open PM sub-decisions from PR 4's `pm-feature-review` (spec §9): **B-297** (feedback via `expo-mail-composer` vs. raw `mailto`, applies to Contact support too), **B-298** (copyable no-mail fallback), **B-299** (in-composer support-vs-feedback reminder); plus S2–S4.
