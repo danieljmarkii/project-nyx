@@ -268,8 +268,11 @@ describe('metric definitions (B-100)', () => {
       expect(def).toMatch(/treats/i);
       expect(def).toMatch(/free-fed/i);
     });
-    it('carries the never-reassure rule: a clear day means none LOGGED, not "all finished" (§11 #2)', () => {
+    it('carries the never-reassure rule: a clear day is not "all finished" — and names the unrated case (§11 #2)', () => {
       expect(def).toMatch(/not that every meal was finished/i);
+      // The commonest clean-day cause is a logged-but-UNRATED meal — the copy must not let
+      // that read as an all-clear (adversarial review). It calls out "or even rated".
+      expect(def).toMatch(/rated/i);
     });
     it('threads the pet name, falling back to second-person "your pet"', () => {
       expect(intakeDeclineDefinition('Nyx')).toContain('Nyx');

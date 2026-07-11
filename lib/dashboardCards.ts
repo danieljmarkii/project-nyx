@@ -313,7 +313,10 @@ export function symptomFrequencyDefinition(symptomLower: string, petName?: strin
  *  finish a meal (intake-is-not-preference, §11 #1), with the never-reassure rule spelled
  *  out: a clear day means none were LOGGED, not that every meal was finished (§11 #2). */
 export function intakeDeclineDefinition(petName?: string): string {
-  return `Which days ${petNameOrYours(petName)} refused or didn't finish a meal. Treats and free-fed meals aren't counted, and a clear day means none were logged — not that every meal was finished.`;
+  // "…or even rated" is load-bearing: the commonest reason a picky-eater day looks clear is
+  // a meal that was logged but never rated — which is neither "none logged" nor "finished".
+  // The copy must not let that read as an all-clear (adversarial review, §11 #2).
+  return `Which days ${petNameOrYours(petName)} refused or didn't finish a meal. Treats and free-fed meals aren't counted, and a clear day only means nothing was logged as unfinished — not that every meal was finished or even rated.`;
 }
 
 /** "Top food" — explains BOTH computed parts: the bar (share of the diet) and the

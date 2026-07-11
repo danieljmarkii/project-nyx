@@ -270,13 +270,14 @@ export interface DayFrequencyBucket {
  *  core behind BOTH the trailing-window grid (computeSymptomFrequencyByDay) and the named
  *  calendar-month grid (computeSymptomFrequencyForMonth) so the two can never bucket the
  *  same event onto different days. */
-function fillDayBuckets(
-  rows: AnalyticsSymptom[],
-  startMs: number,
-  endMs: number,
+/** Pure: one empty `{ date, total: 0, byType: {} }` bucket per UTC day index in
+ *  [firstDayIndex, lastDayIndex], plus a day-index → bucket map for O(1) fill. Shared by the
+ *  symptom grid (fillDayBuckets) and the intake-decline grid so the two can never drift on the
+ *  bucket shape. */
+function createDayBuckets(
   firstDayIndex: number,
   lastDayIndex: number,
-): DayFrequencyBucket[] {
+): { buckets: DayFrequencyBucket[]; byIndex: Map<number, DayFrequencyBucket> } {
   const buckets: DayFrequencyBucket[] = [];
   const byIndex = new Map<number, DayFrequencyBucket>();
   for (let idx = firstDayIndex; idx <= lastDayIndex; idx++) {
@@ -284,6 +285,17 @@ function fillDayBuckets(
     buckets.push(bucket);
     byIndex.set(idx, bucket);
   }
+  return { buckets, byIndex };
+}
+
+function fillDayBuckets(
+  rows: AnalyticsSymptom[],
+  startMs: number,
+  endMs: number,
+  firstDayIndex: number,
+  lastDayIndex: number,
+): DayFrequencyBucket[] {
+  const { buckets, byIndex } = createDayBuckets(firstDayIndex, lastDayIndex);
   for (const r of rows) {
     if (!SYMPTOM_SET.has(r.type) || !Number.isFinite(r.ms)) continue;
     if (r.ms < startMs || r.ms >= endMs) continue;
@@ -421,13 +433,7 @@ export function computeIntakeDeclineFrequencyForMonth(
 ): DayFrequencyBucket[] {
   const range = calendarMonthRange(m, nowMs);
   if (range.lastDayIndex < range.firstDayIndex) return [];
-  const buckets: DayFrequencyBucket[] = [];
-  const byIndex = new Map<number, DayFrequencyBucket>();
-  for (let idx = range.firstDayIndex; idx <= range.lastDayIndex; idx++) {
-    const bucket: DayFrequencyBucket = { date: utcDateKey(idx * MS_PER_DAY), total: 0, byType: {} };
-    buckets.push(bucket);
-    byIndex.set(idx, bucket);
-  }
+  const { buckets, byIndex } = createDayBuckets(range.firstDayIndex, range.lastDayIndex);
   for (const meal of meals) {
     if (!Number.isFinite(meal.ms) || meal.ms < range.startMs || meal.ms >= range.endMs) continue;
     // Qualifying = the computeIntakeRate denominator: rated, non-treat, non-free-fed.
