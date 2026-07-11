@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, View, Text, StyleSheet } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
@@ -16,7 +16,7 @@ import type { DayFrequencyBucket } from '../../lib/analytics';
 // shows), so it is not gated by the §13 #6 establishment rule — but it is NEVER framed as an
 // all-clear: a month of empty cells is "none logged", not wellness (§11 #2 / clinical-guardrails).
 //
-// N5b adds paging + drill-in as OPTIONAL props (SymptomCalendar owns the state/fetch; this
+// N5b adds paging + drill-in as OPTIONAL props (PatternCalendar owns the state/fetch; this
 // stays a pure, DB-free presentational component so buildHeatRows + rendering stay unit-
 // testable without a store):
 //   • month paging — a ‹ Month YYYY › nav row (shown when monthLabel is set), bounded by
@@ -42,11 +42,22 @@ function dayOfMonth(cell: Cell): number | null {
 }
 
 interface Props {
-  /** "Vomiting", "Loose stool" — the symptom this grid is about. */
+  /** The card HEADER — "Vomiting" for a single-lens card, or "Calendar" when a selector
+   *  drives which lens is shown (B-310). The counted-thing noun for the copy is `noun`. */
   title: string;
+  /** What the summary / empty / a11y copy calls the counted thing ("Vomiting" / "Unfinished
+   *  meals"). Defaults to `title` — so a legacy single-symptom card (title === the symptom)
+   *  keeps its exact copy; a "Calendar"-titled card passes the selected lens's noun here. */
+  noun?: string;
+  /** The tail count word in the summary ("· 9 times" / "· 6 meals"). Default "time". */
+  unit?: string;
+  /** Optional lens selector (a ChipGroup), rendered under the header — present when the card
+   *  offers more than one lens (multiple active symptoms and/or the intake view, B-310). */
+  selector?: ReactNode;
   /** One bucket per calendar day in the shown month/window (oldest first) — from analytics. */
   buckets: DayFrequencyBucket[];
-  /** Show one symptom type's count (bucket.byType[type]); omit → the day total. */
+  /** Show one symptom type's count (bucket.byType[type]); omit → the day total (the intake
+   *  lens uses the bucket total, its byType being backend-only). */
   symptomType?: string;
   /** Warm copy when nothing was logged ("No vomiting logged this month."). Legacy
    *  (non-paging) mode only; paging mode uses the computed summary line instead. */
@@ -149,29 +160,31 @@ function monthNameOf(monthLabel?: string): string | null {
 
 /** The summary sentence above the grid — specific (Pattern 2) and in-voice ("times",
  *  never the clinical "episodes"): "Vomiting on 5 days · most on Jun 24 (×4) · 11 times".
- *  The "most on" clause only shows when a single day carried more than one (a flat
- *  1-per-day spread has no meaningful peak to call out). An empty month is honest, never
- *  an all-clear: "No vomiting logged in June." (§11 #2). */
-function summaryLine(title: string, grid: HeatGrid, monthLabel?: string): string {
+ *  `noun` is what's counted ("Vomiting" / "Unfinished meals" — a symptom OR the intake-
+ *  decline lens, B-310) and `unit` is the tail count word ("time" / "meal"). The "most on"
+ *  clause only shows when a single day carried more than one (a flat 1-per-day spread has no
+ *  meaningful peak to call out). An empty month is honest, never an all-clear: "No vomiting
+ *  logged in June." (§11 #2). */
+function summaryLine(noun: string, grid: HeatGrid, unit: string, monthLabel?: string): string {
   if (grid.daysWithEvents === 0) {
     const monthName = monthNameOf(monthLabel);
     return monthName
-      ? `No ${title.toLowerCase()} logged in ${monthName}.`
-      : `No ${title.toLowerCase()} logged.`;
+      ? `No ${noun.toLowerCase()} logged in ${monthName}.`
+      : `No ${noun.toLowerCase()} logged.`;
   }
-  const days = `${title} on ${grid.daysWithEvents} ${pluralize(grid.daysWithEvents, 'day')}`;
+  const days = `${noun} on ${grid.daysWithEvents} ${pluralize(grid.daysWithEvents, 'day')}`;
   const peak =
     grid.max > 1 && grid.worstDate ? ` · most on ${formatUtcDayShort(grid.worstDate)} (×${grid.max})` : '';
-  const times = ` · ${grid.total} ${pluralize(grid.total, 'time')}`;
+  const times = ` · ${grid.total} ${pluralize(grid.total, unit)}`;
   return days + peak + times;
 }
 
 /** Per-cell VoiceOver label — the count is spoken, not just shown (AC-N5). Non-reassuring:
  *  a clean day reads "no {symptom} logged", never an all-clear (§11 #2). A selectable cell
  *  appends "opens the day" so the drill-in affordance is discoverable to VoiceOver. */
-function dayLabel(cell: Cell, title: string, selectable: boolean, selected: boolean): string {
+function dayLabel(cell: Cell, noun: string, selectable: boolean, selected: boolean): string {
   const date = formatUtcDayShort(cell.key);
-  const symptom = title.toLowerCase();
+  const symptom = noun.toLowerCase();
   const base =
     cell.count > 0
       ? `${date}, ${symptom} logged ${cell.count} ${pluralize(cell.count, 'time')}`
@@ -182,6 +195,9 @@ function dayLabel(cell: Cell, title: string, selectable: boolean, selected: bool
 
 export function FrequencyCalendarCard({
   title,
+  noun,
+  unit = 'time',
+  selector,
   buckets,
   symptomType,
   emptyMessage,
@@ -198,6 +214,9 @@ export function FrequencyCalendarCard({
   selectedDay,
 }: Props) {
   const [defOpen, setDefOpen] = useState(false);
+  // The copy noun defaults to the header title (legacy single-symptom cards where the two
+  // are the same); a selector-driven "Calendar" card passes the selected lens's noun.
+  const copyNoun = noun ?? title;
   const grid = buildHeatRows(buckets, symptomType);
   const paging = monthLabel != null;
   // Legacy (non-paging) mode keeps the swap-body empty state; paging always shows the
@@ -217,10 +236,15 @@ export function FrequencyCalendarCard({
           <MetricInfoButton
             open={defOpen}
             onToggle={() => setDefOpen((v) => !v)}
-            metricLabel={title}
+            metricLabel={copyNoun}
           />
         )}
       </View>
+
+      {/* Lens selector (B-310) — one chip per active symptom + the intake view. Wraps so
+          every lens stays on-screen (ChipGroup, never a hidden h-scroll); the container owns
+          selection state and passes the ChipGroup in. */}
+      {selector != null && <View style={styles.selectorRow}>{selector}</View>}
 
       {/* Month nav (paging mode) — ‹ Month YYYY › */}
       {paging && (
@@ -258,7 +282,7 @@ export function FrequencyCalendarCard({
       )}
 
       {showEmptyBody ? (
-        <Text style={styles.stateText}>{emptyMessage ?? `No ${title.toLowerCase()} logged ${range}.`}</Text>
+        <Text style={styles.stateText}>{emptyMessage ?? `No ${copyNoun.toLowerCase()} logged ${range}.`}</Text>
       ) : error ? (
         // A failed month load — NEVER "No {symptom} logged" (a fetch failure is not an
         // observed all-clear; §11 #2). Offer a retry instead of a bare empty grid.
@@ -284,7 +308,9 @@ export function FrequencyCalendarCard({
               "No {symptom} logged in {month}." — an absence-≠-wellness hazard (§11 #2). Gate
               it behind `loading` so a not-yet-loaded month never reads as symptom-free. */}
           <Text style={styles.summary}>
-            {loading ? `Loading ${monthNameOf(monthLabel) ?? 'month'}…` : summaryLine(title, grid, monthLabel)}
+            {loading
+              ? `Loading ${monthNameOf(monthLabel) ?? 'month'}…`
+              : summaryLine(copyNoun, grid, unit, monthLabel)}
           </Text>
           {/* Weekday header orients the columns; every day carries its numeral (a real
               calendar), symptom days darken + carry pips. `loading` dims a stale month. */}
@@ -334,7 +360,7 @@ export function FrequencyCalendarCard({
                       onPress={() => onDayPress?.(cell.key)}
                       hitSlop={2}
                       accessibilityRole="button"
-                      accessibilityLabel={dayLabel(cell, title, true, selected)}
+                      accessibilityLabel={dayLabel(cell, copyNoun, true, selected)}
                       style={cellStyle}
                     >
                       {inner}
@@ -344,7 +370,7 @@ export function FrequencyCalendarCard({
                       key={cell.key}
                       style={cellStyle}
                       accessible={!cell.blank}
-                      accessibilityLabel={cell.blank ? undefined : dayLabel(cell, title, false, false)}
+                      accessibilityLabel={cell.blank ? undefined : dayLabel(cell, copyNoun, false, false)}
                     >
                       {inner}
                     </View>
@@ -381,6 +407,11 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
     flexShrink: 1,
+  },
+  // The lens-selector row (B-310) — holds the wrapping ChipGroup between the header and the
+  // month nav. A hair of top space so the chips sit clear of the header label.
+  selectorRow: {
+    marginTop: theme.spaceMicro,
   },
   // Month paging row — ‹ centered-label › .
   navRow: {

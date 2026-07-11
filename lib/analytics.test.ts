@@ -24,6 +24,9 @@ import {
   computeSymptomCounts,
   computeSymptomFrequencyByDay,
   computeSymptomFrequencyForMonth,
+  computeIntakeDeclineFrequencyForMonth,
+  getIntakeDeclineByMonth,
+  INTAKE_DECLINE_TYPE,
   calendarMonthRange,
   utcMonthOf,
   addCalendarMonths,
@@ -255,6 +258,71 @@ describe('computeSymptomFrequencyForMonth', () => {
     const buckets = computeSymptomFrequencyForMonth(rows, MAY, NOW);
     expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(1); // the June event excluded
     expect(computeSymptomFrequencyForMonth(rows, { year: 2026, month: 7 }, NOW)).toEqual([]);
+  });
+});
+
+describe('computeIntakeDeclineFrequencyForMonth (the "Meals" calendar — B-310)', () => {
+  const emptyFF = new Set<string>();
+  // A meal on May `day` at noon UTC, with the given rating + overrides.
+  const onMayMeal = (day: number, rating: string | null, over: Partial<AnalyticsMeal> = {}): AnalyticsMeal =>
+    meal({ ms: Date.UTC(2026, 4, day, 12), intakeRating: rating, ...over });
+
+  it('one bucket per calendar day; counts ONLY unfinished (refused/picked/some) qualifying meals', () => {
+    const rows = [
+      onMayMeal(3, 'refused'), // unfinished → counts
+      onMayMeal(3, 'some'), // unfinished, same day → 2 on the 3rd
+      onMayMeal(10, 'picked'), // unfinished
+      onMayMeal(17, 'most'), // FINISHED → excluded
+      onMayMeal(17, 'all'), // FINISHED → excluded
+    ];
+    const buckets = computeIntakeDeclineFrequencyForMonth(rows, emptyFF, MAY, NOW);
+    expect(buckets).toHaveLength(31);
+    expect(buckets[2]).toMatchObject({ date: '2026-05-03', total: 2, byType: { [INTAKE_DECLINE_TYPE]: 2 } });
+    expect(buckets[9]).toMatchObject({ date: '2026-05-10', total: 1 });
+    expect(buckets[16].total).toBe(0); // the 17th's two finished meals contribute nothing
+    expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(3);
+  });
+
+  it('excludes treats (§11 #1), free-fed (§11 #6), and unrated meals — the finished-rate denominator', () => {
+    const rows = [
+      onMayMeal(5, 'refused', { foodType: 'treat' }), // treat refusal → not an intake-quality decline
+      onMayMeal(5, 'refused', { foodItemId: 'free-1' }), // free-fed → intake not observed
+      onMayMeal(5, null), // unrated → not a decline (a logging gap, not a refusal)
+      onMayMeal(5, 'refused'), // the ONE real qualifying decline
+    ];
+    const buckets = computeIntakeDeclineFrequencyForMonth(rows, new Set(['free-1']), MAY, NOW);
+    expect(buckets[4]).toMatchObject({ date: '2026-05-05', total: 1 });
+    expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(1);
+  });
+
+  it('is NOT floored — a single refused meal is an honest fact worth a cell (§11 #2, descriptive)', () => {
+    const buckets = computeIntakeDeclineFrequencyForMonth([onMayMeal(9, 'refused')], emptyFF, MAY, NOW);
+    expect(buckets[8]).toMatchObject({ date: '2026-05-09', total: 1 });
+  });
+
+  it('the current month stops at today, and a future month is empty', () => {
+    const clean = computeIntakeDeclineFrequencyForMonth([], emptyFF, JUNE, NOW);
+    expect(clean).toHaveLength(14); // Jun 1..Jun 14 (NOW), no future cells
+    expect(computeIntakeDeclineFrequencyForMonth([], emptyFF, { year: 2026, month: 7 }, NOW)).toEqual([]);
+  });
+});
+
+describe('getIntakeDeclineByMonth (wrapper wiring)', () => {
+  it('reads meals joined to the food cache and applies the free-fed exclusion', async () => {
+    mockGetAllAsync.mockResolvedValueOnce([
+      { food_item_id: 'f1', intake_rating: 'refused', occurred_at: '2026-05-03T12:00:00.000Z',
+        food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Dinner' },
+      { food_item_id: 'f1', intake_rating: 'all', occurred_at: '2026-05-04T12:00:00.000Z',
+        food_type: 'meal', primary_protein: null, brand: 'Acme', product_name: 'Dinner' },
+    ]);
+    const buckets = await getIntakeDeclineByMonth('p1', MAY, NOW);
+    expect(buckets.reduce((s, b) => s + b.total, 0)).toBe(1); // only the refusal, not the finished meal
+    expect(buckets[2]).toMatchObject({ date: '2026-05-03', total: 1 });
+  });
+
+  it('returns [] for a future month without querying', async () => {
+    expect(await getIntakeDeclineByMonth('p1', { year: 2026, month: 7 }, NOW)).toEqual([]);
+    expect(mockGetAllAsync).not.toHaveBeenCalled();
   });
 });
 

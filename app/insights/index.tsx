@@ -8,6 +8,7 @@ import {
   getSymptomCounts,
   getSymptomFrequencyByDay,
   getSymptomFrequencyByMonth,
+  getIntakeDeclineByMonth,
   getEarliestEventMonth,
   utcMonthOf,
   getIntakeRateWithPrior,
@@ -29,6 +30,7 @@ import {
   describeRateDelta,
   intakeNotObservedNote,
   intakeRateDefinition,
+  intakeDeclineDefinition,
   symptomCountDefinition,
   symptomFrequencyDefinition,
   topFoodDefinition,
@@ -38,7 +40,7 @@ import {
 import { symptomLabel } from '../../lib/metricDetail';
 import { MetricCard } from '../../components/dashboard/MetricCard';
 import { RankingCard } from '../../components/dashboard/RankingCard';
-import { SymptomCalendar } from '../../components/dashboard/SymptomCalendar';
+import { PatternCalendar, type CalendarView } from '../../components/dashboard/PatternCalendar';
 import { CompositionCard } from '../../components/dashboard/CompositionCard';
 import { WeightCard } from '../../components/dashboard/WeightCard';
 import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
@@ -109,6 +111,7 @@ export default function PatternsScreen() {
         symptomCounts,
         frequencyBuckets,
         monthBuckets,
+        intakeDeclineMonthBuckets,
         earliestMonth,
         intakeComparison,
         topFoods,
@@ -119,6 +122,9 @@ export default function PatternsScreen() {
         getSymptomCounts(pet.id, WINDOW),
         getSymptomFrequencyByDay(pet.id, WINDOW),
         getSymptomFrequencyByMonth(pet.id, currentMonth),
+        // The "Meals" calendar lens's flash-free first paint — same calendar month as the
+        // symptom lenses (B-310); the container pages/fetches other months on demand.
+        getIntakeDeclineByMonth(pet.id, currentMonth),
         getEarliestEventMonth(pet.id),
         getIntakeRateWithPrior(pet.id, WINDOW),
         getTopFoods(pet.id, WINDOW),
@@ -136,6 +142,7 @@ export default function PatternsScreen() {
           symptomCounts,
           frequencyBuckets,
           monthBuckets,
+          intakeDeclineMonthBuckets,
           currentMonth,
           earliestMonth,
           intakeRate: intakeComparison.current,
@@ -259,22 +266,52 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
         />
       );
     }
-    case 'symptomFrequency':
+    case 'calendar': {
+      // Resolve each pure lens descriptor into a display lens (chip label + nyx-voice copy).
+      // Kept here (not in the pure builder) so dashboardScreen.ts stays theme/voice-free.
+      const views: CalendarView[] = card.views.map((v) =>
+        v.kind === 'symptom'
+          ? {
+              key: v.key,
+              kind: 'symptom',
+              symptomType: v.symptomType,
+              chipLabel: symptomLabel(v.symptomType as string),
+              noun: symptomLabel(v.symptomType as string),
+              unit: 'time',
+              definition: symptomFrequencyDefinition(
+                symptomLabel(v.symptomType as string).toLowerCase(),
+                petName,
+              ),
+              drillLabel: symptomLabel(v.symptomType as string),
+            }
+          : {
+              key: v.key,
+              kind: 'intake',
+              // "Meals" reads naturally alongside the symptom chips; the copy noun
+              // "Unfinished meals" carries the precise, non-reassuring meaning (B-310).
+              chipLabel: 'Meals',
+              noun: 'Unfinished meals',
+              unit: 'meal',
+              definition: intakeDeclineDefinition(petName),
+              drillLabel: 'Unfinished meals',
+            },
+      );
       return (
-        // Keyed on petId + symptomType so a pet switch (or a lead-symptom flip) REMOUNTS
-        // the calendar fresh — seeded from the new pet's month/bounds — instead of carrying
-        // one pet's paging cache into another (the multi-pet stale-state trap).
-        <SymptomCalendar
-          key={`freq:${petId}:${card.symptomType}`}
+        // Keyed on petId so a pet switch REMOUNTS the calendar fresh — seeded from the new
+        // pet's month/bounds + reset to its default lens — instead of carrying one pet's
+        // paging cache / lens selection into another (the multi-pet stale-state trap).
+        <PatternCalendar
+          key={`calendar:${petId}`}
           petId={petId}
-          title={symptomLabel(card.symptomType)}
-          symptomType={card.symptomType}
+          title="Calendar"
+          views={views}
           currentMonth={card.currentMonth}
           earliestMonth={card.earliestMonth}
-          initialBuckets={card.monthBuckets}
-          definition={symptomFrequencyDefinition(symptomLabel(card.symptomType).toLowerCase(), petName)}
+          initialSymptomBuckets={card.monthBuckets}
+          initialIntakeBuckets={card.intakeDeclineMonthBuckets}
         />
       );
+    }
     case 'intakeRate': {
       const r = card.result;
       // Narrow via the sentinel guard (no `as`): read the rate only when it's real.
