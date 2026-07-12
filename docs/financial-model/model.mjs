@@ -17,7 +17,7 @@ const MONTHS = 48;
 // everything — see the model doc §5 for the story each one tells.
 // ---------------------------------------------------------------------------
 
-const SCENARIOS = {
+export const SCENARIOS = {
   bootstrap: {
     label: 'Bootstrap (solo founder — the operating plan)',
     launchMonth: 3,
