@@ -239,3 +239,105 @@ Tracks 1 and 2 are disjoint-file parallel. Track 3 is gated on D-M1–D-M6.
 - **B-001** (updated): promoted `Later → Now`; design lives here (§9); execution = Track 2 PR 2.
 - **CLAUDE.md Open Questions**: one consolidated row for D-M1–D-M7 pointing at this doc.
 - B-263/B-264/B-265/B-266 unchanged — they activate on ratification.
+
+---
+
+# RATIFICATION ADDENDUM — 2026-07-12
+
+The PM ratified **all seven decision points** (D-M1–D-M7), several with amendments. This addendum records the rulings, the follow-up analyses the PM requested, and the two items that remain open. The step-by-step spec (separate session) builds on this.
+
+## 13. The rulings
+
+| # | Ruling | Amendment |
+|---|---|---|
+| **D-M1** | ✅ Ratified as proposed | None. This **is** the D9 decision — B-263's bullet reconciliation is now unblocked. |
+| **D-M2** | ✅ Free at launch, escalation free forever | **Generalized to a class rule:** the ruling covers every *future* per-incident AI read too (stool analysis, skin, eye — the `analyze-*` siblings anticipated by `clinical-guardrails`). Standing invariant: **deterministic escalation logic is free forever on every per-incident read, current and future; the descriptive model read launches free; any future gating decision is made for the class, data-informed, never per-feature ad hoc.** Spec must encode this so a future `analyze-stool` doesn't relitigate it. |
+| **D-M3** | ✅ Coffee tier dropped | None. |
+| **D-M4** | ✅ AI on, free, server-capped at submission | PM framing: this is the *initial* posture; revisit after traction. Spec should name the revisit trigger (Premium launch = the natural checkpoint). |
+| **D-M5** | ✅ Pricing placeholder accepted **conditional on research** | Research done (§15). The $4.99/mo anchor sits exactly in the observed market cluster; $39.99/yr is consistent with it. **Monthly-forward presentation** per PM item 5 (§17). |
+| **D-M6** | ✅ "Free during early access" labeling | PM sharpened the intent: the label must signal **both** "free right now" **and** "this may become paid later" — honest dual-signal copy, not just a perk badge. Copy drafted in the spec; `nyx-voice` pass required. |
+| **D-M7** | ✅ Caps ratified as spec inputs | Two required expansions before build: **cap-hit UX** (§16.1) and a **worst-case financial scenario** (§16.2) — both below. |
+
+## 14. Correction to §2 — the Signal/protein finding (PM question, code-verified)
+
+The PM challenged §2's "AI Signal fully works without AI" line: *"I thought that took proteins, which would be read from the AI."* **Correct instinct — the strategy session under-stated the coupling.** Verified 2026-07-12:
+
+- `food_items.primary_protein` is written **only** by `extract-food-from-photo` (`index.ts:178,214`). The manual capture path deliberately excludes it from its upsert (`food-capture.tsx:389` comment: "the AI-extracted primary_protein/flags hydrated from the server — update only what this screen owns"), and the food detail edit screen's update payload (`app/food/[id].tsx:195-203`) carries brand/product/format/type/ingredients/barcode — **no protein field exists anywhere in the owner-facing UI**.
+- The flagship case-crossover correlation keys off exactly that column (`generate-signal/index.ts:463,475`); a null-protein food "injects no named protein exposure" (`detection.ts:172,263`) — it can never be named as a culprit, and in free-fed contexts degrades to a generic standing confounder (`detection.ts:1500`).
+
+**So:** nothing crashes (§2 stands), but **gating extraction would silently degrade the free tier's flagship care insight** for every manually-entered food — care degradation through a convenience gate, a Principle 7 leak. The safety lanes are unaffected (intake-decline keys off `intake_rating`; symptom lanes ④–⑦ don't use protein), but the culprit-finding wedge is protein-dependent.
+
+**Resolution (team unanimous): B-327 — manual protein capture is a hard prerequisite of the extraction gate.** Add a "Primary protein" picker (wrapping `ChipGroup`, closed set derived from the canonical list behind `canonicalizeProtein`, plus an "Other/typed" escape) to (a) the manual food-capture edit step and (b) the food detail edit screen. Cheap, additive, no schema (column exists). Track 3's gate-flip PR is **blocked on B-327 shipping first**. Also worth shipping regardless of the gate — today an extraction *failure* leaves the same hole.
+
+## 15. D-M5 — pricing research (condition satisfied)
+
+July 2026 market scan of pet-health app subscriptions: the premium cluster for pet health/tracking apps sits at **$4.99–$5.99/mo** — [Pet Care Health Tracker at $4.99/mo with a 7-day trial](https://apps.apple.com/us/app/pet-care-health-tracker/id6505061866), 11pets at $4.99/mo, [PetNexa at $5.99/mo (AI-vet access), $8.99 family plan](https://www.petnexa.app/blog/best-pet-health-apps-guide-2026); telehealth-backed services price higher ([Pawp at $19/mo](https://www.beomelo.com/best-pet-health-app)); hardware-tethered subs (Tractive, PetPace) are a different category; and at least one competitor ([Omelo](https://www.beomelo.com/best-pet-health-app)) positions "genuinely free forever" for triage/records — which validates our free-tier-as-moat posture and means our "safety free forever" line must be *at least* as credible as theirs.
+
+**Conclusion:** $4.99/mo is the defensible anchor — mid-cluster, not premium-priced above the category, and our AI conveniences compare well against what the $5–6 apps gate. $39.99/yr (≈33% discount, ≈$3.33/mo effective) is standard shape. The 7-day trial is category-normal. VC-1's "don't underprice at $1.99" holds. **Locked as the spec's working numbers; final price is set at StoreKit-config time (D-M5 checkpoint in the spec).**
+
+## 16. D-M7 expansions
+
+### 16.1 Cap-hit UX (spec input)
+
+Principles, in priority order — the spec turns these into per-surface copy + states:
+
+1. **The cap gates the model call only, never the record.** The event, photo, and structured fields always save — an owner at the cap loses the *read*, never the *log*. For `analyze-vomit` specifically: the deterministic contextual escalation flags are computed **outside** the capped path — the cap check must sit immediately before the Anthropic call, after escalation-flag computation, so a capped incident still escalates when the context warrants (never-reassure survives the cap by construction; `clinical-guardrails` + Dr. Chen review on this path is mandatory).
+2. **Typed response, designed state.** Functions return a typed `cap_reached` payload (cap kind + reset time), never a bare 429/500; the client renders a designed state, not an error banner (rides B-324's flag-aware states).
+3. **Warm, specific, never transactional on care surfaces.** Cap copy never reads as "pay to continue" anywhere near a symptom. Extraction cap-copy points to the manual path in-place ("you can fill it in yourself below — the photo is saved either way"). Read cap-copy must not *reassure* ("probably fine") — it states plainly the read will run when the counter resets, and the standard escalation guidance stays visible. `nyx-voice` + `clinical-guardrails` pass on every string.
+4. **Zero decisions at the moment of event** (Principle 1): the cap state never interrupts capture mid-flow; it appears on the result surface only.
+5. **Counters reset on the UTC day** (house rule: timestamps UTC); copy says "tomorrow," never a clock time.
+6. **Transparency without nagging:** `ai_usage` rows are owner-readable (RLS), but v1 shows no usage meter — a meter invites cap-anxiety for the 99% who never approach it.
+
+### 16.2 Worst-case financial scenario (PM ask: 10 users at full caps, daily, for a month)
+
+Model prices (current, per MTok): Sonnet 4.6 $3 in / $15 out; Haiku 4.5 $1 in / $5 out. A 1600px-compressed photo ≈ up to ~1,600 input tokens. Per-call estimates (uncached, deliberately fat):
+
+| Call | Est. tokens in/out | Est. cost/call |
+|---|---|---|
+| `extract-food-from-photo` (Sonnet, 1 image + prompt) | ~3,000 / ~500 | ~$0.017 |
+| `extract-medication-from-photo` (Sonnet) | ~3,000 / ~500 | ~$0.017 |
+| `analyze-vomit` (Sonnet, image + clinical context) | ~4,500 / ~700 | ~$0.024 |
+| `generate-signal` regen (Haiku, ≤4 phrasing calls) | ~4×1,000 / 4×80 | ~$0.006 |
+
+**One user at every cap, one day:** 15 food ($0.26) + 10 med ($0.17) + 10 vomit ($0.24) + 12 signal regens ($0.07) ≈ **~$0.74/user/day**.
+
+**The PM's scenario — 10 users × 30 days at full caps: ≈ $220/month** (≈$22/user/month; estimate band ~$150–$300 given ±token-count uncertainty). For calibration: a *genuinely heavy real* user (2–3 new foods/day, an incident every few days) runs **$0.02–$0.10/day → 10 such users ≈ $6–$30/month**. And the full-cap pattern is organically impossible (15 *new* foods/day = 450/month — nobody's pantry), so sustained cap-hitting *is* the abuse signature. That's the point of D-M7: **the caps convert the unbounded worst case into a known ceiling of ~$22/user/month**, and a per-account 30-day ceiling (add to spec: e.g. monthly caps ≈ 20× daily, so a determined abuser costs ≈$15/mo, not $22) bounds it further. Verify these estimates against real `usage` fields from the deployed functions' logs during the Track-2 build (the numbers here are pre-spec planning figures).
+
+## 17. PM item 5 — monthly-forward pricing ("we want pets to feel better")
+
+Ratified posture, folded into D-M5: **the subscription is priced and presented so that leaving when your pet is well is a designed outcome, not churn to be fought.** Concretely: monthly is presented first-class (never a buried option under a preselected annual); Jordan's case is the canonical one — an 8-week diet trial should not require a $39.99 annual commitment; cancellation copy is warm ("glad {pet}'s doing better") and never guilt-based; no cancel-flow dark patterns; annual exists as a genuine save for chronic/multi-pet households, not as the default anchor. VC-1 noted the LTV cost and endorsed it anyway: in a trust category, "the app that's happy for you to leave" is acquisition copy money can't buy — and Pets > $ was already the brand.
+
+## 18. PM item 3 — multi-pet workshop (reopened; new decision point D-M8)
+
+PM: "I can see a world where multipet is paid. Don't let semi-placeholder in-app text dictate that call." Team workshopped it honestly — the B-086 "free" call and the completion-screen copy are *inputs*, not vetoes:
+
+> **VC-1 (for gating):** multi-pet is the single cleanest willingness-to-pay segmentation in consumer pet apps — multi-pet households are the highest-LTV users, and "more pets → pay" is a capacity gate the market accepts everywhere. If you never gate it you're leaving the most natural expansion revenue on the table.
+> **Sam + Data Scientist (against a 2-pet gate):** multi-cat households are the *norm* in cat ownership, and the cat wedge (fussy-vs-sick) is disproportionately multi-cat. Worse — it's not just lost reach: in a shared-bowl household, pet #1's *correlation quality depends on* pet #2 being logged (who ate the food?); the free-fed/shared-arrangement confounder logic assumes household visibility, and B-292's discovery already named the household as the unit of care. A 2-pet gate degrades the paying-adjacent free experience and the data.
+> **T&S + Designer (against):** the second pet is a patient. Gating pet #2 wholesale denies that animal logging, alerts, and a vet report — the "always free" promise becomes false for one of the household's animals. That's a care gate wearing a capacity costume.
+> **Dr. Chen:** clinically aligned with Sam — single-tracked multi-pet households produce unreliable intake data.
+> **Dir. of Eng:** whatever is decided, the gate itself is trivial (server-side pet-count check at creation against the entitlements table) — this is purely a product call, no architecture pressure.
+
+**Team recommendation (majority, VC-1 dissenting in part):** pets 1–3 free forever (covers the normal household and the whole wedge); **a "large household" gate at 4+ pets is a legitimate future Premium lever** (breeders, fosters, sanctuaries — genuinely capacity-flavored, rare, and doesn't break the shared-bowl data argument at household norms). Not wired at launch; decided now so the paywall copy and the completion screen can be written to survive it ("add pets anytime" → softened in the spec's copy pass).
+
+**→ D-M8 (PM to rule):** (a) all multi-pet free forever (reaffirm B-086 as-is), (b) **free to 3, Premium at 4+ (team rec)**, or (c) gate at 2+ (VC posture — team advises against). B-086's row gets updated per the ruling.
+
+## 19. PM item 1 — care-first messaging in the app (B-328)
+
+Ratified direction: the monetization *ethics* become product surface. The paywall mock already carries the load-bearing line ("Always free: logging, health alerts, trends & vet reports"). B-328 extends it: the same promise, in Nyx's voice, on the Settings/About surface (B-283's new home) and inside every future gate/cap state ("{pet}'s care is never behind this door" register — exact copy at spec time, `nyx-voice` + `pm-feature-review` pass). Constraint: it must read as a *commitment*, not marketing — one sentence, no exclamation marks, shown where money appears and nowhere else (Principle 3: Home is never an upsell surface).
+
+## 20. PM item 4 — no bugs/regressions (hardening posture for the whole project)
+
+Standing requirements for every Track-2/Track-3 PR, written here so the spec inherits them:
+
+1. **Ship dark.** Flags/caps land default-permissive (caps high, gates off) so behavior is byte-identical until deliberately flipped; the flip is its own reviewed change, not a side effect of a deploy.
+2. **Review matrix:** `code-reviewer` on every PR; `adversarial-reviewer` mandatory on the cap logic touching `analyze-vomit`'s escalation path (§16.1 #1 is exactly the class of subtle safety regression it exists for); `rls-privacy-reviewer` mandatory on `entitlements`, `ai_usage` RLS, and the RevenueCat webhook; `pm-feature-review` on the paywall/gate flows before any flip.
+3. **QA state matrix as fixtures:** (free / premium / capped / flag-off) × (online / offline / mid-sync) enumerated as jest fixtures for every gated surface — QA's §6 demand, made deterministic. Entitlement state is locally cached so an owner doesn't lose Premium in a dead zone (offline-first house rule).
+4. **Migrations additive + isolated** (`app_config`, `ai_usage`, `entitlements` each in their own PR, Migration Safety Pre-flight, `get_advisors` after apply).
+5. **No client-trusted state** (B-252 standing): every gate/cap decision is made server-side in the Edge Function; the client only *renders* state.
+6. **Instrumentation before the paywall** (B-047/B-016 sequencing): conversion and time-to-first-insight tracking must exist before Premium ships, or D-M5's revisit has no data.
+
+## 21. Remaining open + next step
+
+- **D-M8** (multi-pet tiering, §18) — the one new PM ruling needed.
+- **Confirmed working numbers:** $4.99/mo · $39.99/yr · 7-day trial · monthly-forward (§15/§17) — final lock at StoreKit config.
+- **Next session:** the build-ready step-by-step spec (`docs/monetization-and-throttling-requirements.md`) — Track-2 PR plan (B-324 flags → B-001/`ai_usage` throttles → flag-aware client states → B-325 mock flag-off), Track-3 plan (RevenueCat/B-326 + B-327 protein prerequisite + paywall un-mock), and the numbered offline actions (App Store Connect Agreements/Tax/Banking → Small Business Program → RevenueCat account/keys → product config), each with its D-M checkpoint.
