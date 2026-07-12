@@ -319,7 +319,7 @@ PM: "I can see a world where multipet is paid. Don't let semi-placeholder in-app
 
 **Team recommendation (majority, VC-1 dissenting in part):** pets 1–3 free forever (covers the normal household and the whole wedge); **a "large household" gate at 4+ pets is a legitimate future Premium lever** (breeders, fosters, sanctuaries — genuinely capacity-flavored, rare, and doesn't break the shared-bowl data argument at household norms). Not wired at launch; decided now so the paywall copy and the completion screen can be written to survive it ("add pets anytime" → softened in the spec's copy pass).
 
-**→ D-M8 (PM to rule):** (a) all multi-pet free forever (reaffirm B-086 as-is), (b) **free to 3, Premium at 4+ (team rec)**, or (c) gate at 2+ (VC posture — team advises against). B-086's row gets updated per the ruling.
+**→ D-M8 — RULED 2026-07-12: PM chose (b), the team rec — pets 1–3 free forever; "large household" Premium at 4+.** Not wired at launch (Track 3 builds the server-side pet-count check vs entitlements); the completion-screen "add pets anytime" copy and the B-263 paywall bullets are written to this ruling in the spec's copy pass. B-086's row updated.
 
 ## 19. PM item 1 — care-first messaging in the app (B-328)
 
@@ -338,6 +338,6 @@ Standing requirements for every Track-2/Track-3 PR, written here so the spec inh
 
 ## 21. Remaining open + next step
 
-- **D-M8** (multi-pet tiering, §18) — the one new PM ruling needed.
+- ~~D-M8~~ — **ruled same day: free to 3, Premium at 4+** (§18). No open monetization decisions remain.
 - **Confirmed working numbers:** $4.99/mo · $39.99/yr · 7-day trial · monthly-forward (§15/§17) — final lock at StoreKit config.
 - **Next session:** the build-ready step-by-step spec (`docs/monetization-and-throttling-requirements.md`) — Track-2 PR plan (B-324 flags → B-001/`ai_usage` throttles → flag-aware client states → B-325 mock flag-off), Track-3 plan (RevenueCat/B-326 + B-327 protein prerequisite + paywall un-mock), and the numbered offline actions (App Store Connect Agreements/Tax/Banking → Small Business Program → RevenueCat account/keys → product config), each with its D-M checkpoint.
