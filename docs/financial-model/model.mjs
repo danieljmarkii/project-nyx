@@ -18,16 +18,47 @@ const MONTHS = 48;
 // ---------------------------------------------------------------------------
 
 const SCENARIOS = {
+  bootstrap: {
+    label: 'Bootstrap (solo founder — the operating plan)',
+    launchMonth: 3,
+    price: 4.99,
+    annualPrice: 39.99,
+    annualMix: 0.30,
+    // Founder-led organic only: ASO + founder content (Reddit/TikTok/SEO), no spend
+    organicStart: 400, organicGrowth: 0.06, organicCap: 12000,
+    // Paid social is dead at this price point (LTV:CAC ~0.25) — $0 in every scenario
+    paidSpend: () => 0,
+    cpi: 2.5, // retained only for the CAC math in the doc; spend is zero
+    // Vet channel starts with the founder's own GP (the Step-9 real-vet loop
+    // already in flight), grows clinic-by-clinic on artifact quality
+    vetStartOffset: 6,
+    clinicSeed: 2, clinicGrowth: 0.12, clinicCap: 200,
+    downloadsPerClinic: 25,
+    activation: { organic: 0.40, paid: 0.28, vet: 0.55 },
+    retention: { m1: 0.50, floor: 0.10, k: 0.35 },
+    vetRetentionBonus: { m1: 0.08, floor: 0.05 },
+    convEventual: 0.045, vetConvMult: 1.25,
+    paidChurnMonthly: 0.05,
+    cogsPerMAU: 0.11, onboardingBurst: 0.12, fixedInfra: 150,
+    // No payroll: founder pay IS the profit line. Cash costs only.
+    hires: [],
+    tooling: (m) => (m < 13 ? 500 : 700), // Claude Code + Supabase + EAS + Apple + domain
+    content: () => 0,                      // founder time, not spend
+    miscMonthly: 150,                      // accounting/legal minimum
+    // Clinics reprint a PDF QR insert themselves; occasional mailed kit only
+    vetMaterialsPerClinic: 5,
+  },
+
   conservative: {
-    label: 'Conservative',
+    label: 'Funded-scale: Conservative',
     launchMonth: 6,            // App Store launch slips ~2 quarters past raise close
     price: 4.99,
     annualPrice: 39.99,
     annualMix: 0.20,           // share of subscribers on the annual plan
     // Organic (ASO + word of mouth + content)
     organicStart: 800, organicGrowth: 0.05, organicCap: 8000,
-    // Paid social (kept as experiments only — see CAC finding in doc §4.5)
-    paidSpend: (m, launch) => (m >= launch + 3 ? 3000 : 0),
+    // Paid social: $0 — structurally underwater at this price (doc §5); cpi kept for the CAC math only
+    paidSpend: () => 0,
     cpi: 3.5,
     // Vet passive channel (QR on discharge sheets)
     vetStartOffset: 14,        // months after launch before first clinics distribute
@@ -55,14 +86,13 @@ const SCENARIOS = {
   },
 
   base: {
-    label: 'Base',
+    label: 'Funded-scale: Base',
     launchMonth: 4,
     price: 4.99,
     annualPrice: 39.99,
     annualMix: 0.30,
     organicStart: 1500, organicGrowth: 0.08, organicCap: 30000,
-    paidSpend: (m, launch) =>
-      m < launch + 2 ? 0 : m <= 18 ? 8000 : m <= 30 ? 12000 : 15000,
+    paidSpend: () => 0, // dead channel — see doc §5
     cpi: 2.5,
     vetStartOffset: 9,
     clinicSeed: 5, clinicGrowth: 0.20, clinicCap: 1000,
@@ -88,14 +118,13 @@ const SCENARIOS = {
   },
 
   upside: {
-    label: 'Upside',
+    label: 'Funded-scale: Upside',
     launchMonth: 3,
     price: 4.99,
     annualPrice: 39.99,
     annualMix: 0.35,
     organicStart: 2500, organicGrowth: 0.10, organicCap: 60000,
-    paidSpend: (m, launch) =>
-      m < launch + 2 ? 0 : m <= 18 ? 12000 : m <= 30 ? 25000 : 40000,
+    paidSpend: () => 0, // dead channel — see doc §5
     cpi: 2.2,
     vetStartOffset: 6,
     clinicSeed: 8, clinicGrowth: 0.25, clinicCap: 2500,
@@ -223,7 +252,7 @@ export function simulate(p, months = MONTHS) {
     const payroll = p.hires.filter((h) => h.m <= m).reduce((s, h) => s + h.cost, 0);
     const vetMaterials = clinics * p.vetMaterialsPerClinic;
     const marketing = spend + p.content(m, p.launchMonth) + vetMaterials;
-    const opex = payroll + p.tooling(m) + marketing + 3000; // +$3k/mo legal/accounting/misc
+    const opex = payroll + p.tooling(m) + marketing + (p.miscMonthly ?? 3000); // legal/accounting/misc
     const netBurn = grossProfit - opex; // negative = burning
     cumBurn += netBurn;
     minCash = Math.min(minCash, cumBurn);
@@ -280,9 +309,14 @@ function summarize(name, p, sim) {
   for (const r of marks) {
     console.log(`| M${r.m} | ${f0(r.downloads)} | ${f0(r.clinics)} | ${f0(r.mau)} | ${f0(r.payingStock)} | ${f$(r.grossRev)} | ${fk(r.arrRunRate)} | ${fk(r.netBurn)} | ${fk(r.cumBurn)} |`);
   }
-  console.log(`\nPeak cumulative burn: ${fk(sim.peakCumBurn)} · Blended gross ARPU: $${sim.blendedGrossARPU.toFixed(2)} · LTV (paid sub): ${f$(sim.ltv(p))}`);
-  const paidCac = sim.cumPaidSubsFromPaid > 0 ? sim.cumPaidSpend / sim.cumPaidSubsFromPaid : Infinity;
-  console.log(`Paid-social CAC per paying subscriber (cumulative): ${isFinite(paidCac) ? f$(paidCac) : 'n/a'}`);
+  console.log(`\nPeak out-of-pocket cash: ${fk(sim.peakCumBurn)} · Blended gross ARPU: $${sim.blendedGrossARPU.toFixed(2)} · LTV (paid sub): ${f$(sim.ltv(p))}`);
+  // Breakeven: first month of sustained (3+ consecutive) positive net cash flow
+  let be = null;
+  for (let i = 0; i < sim.rows.length - 2; i++) {
+    if (sim.rows[i].netBurn > 0 && sim.rows[i + 1].netBurn > 0 && sim.rows[i + 2].netBurn > 0) { be = sim.rows[i].m; break; }
+  }
+  const m48 = sim.rows[47];
+  console.log(`Sustained cash-flow breakeven: ${be ? 'M' + be : 'not within 48 months'} · M48 monthly net cash flow ("founder take" when no payroll): ${fk(m48.netBurn)} · M48 cumulative cash position: ${fk(m48.cumBurn)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +380,44 @@ if (isMain) {
     { tag: '3.5%', mut: (p) => (p.paidChurnMonthly = 0.035) },
   ]);
 
+  // --- Bootstrap sensitivity: what has to be true for this to pay a salary ---
+  console.log('\n### Bootstrap sensitivity — monthly net cash flow ("founder take") @ M36 / M48, sustained breakeven month\n');
+  console.log('| Variable | Low | Bootstrap | High |');
+  console.log('|---|---|---|---|');
+  const bootSweep = (label, mutations) => {
+    const cells = mutations.map(({ tag, mut }) => {
+      const p = cloneScenario(SCENARIOS.bootstrap);
+      mut(p);
+      const s = simulate(p);
+      let be = null;
+      for (let i = 0; i < s.rows.length - 2; i++) {
+        if (s.rows[i].netBurn > 0 && s.rows[i + 1].netBurn > 0 && s.rows[i + 2].netBurn > 0) { be = s.rows[i].m; break; }
+      }
+      return `${tag}: ${fk(s.rows[35].netBurn)} / ${fk(s.rows[47].netBurn)} · BE ${be ? 'M' + be : '>48'}`;
+    });
+    console.log(`| ${label} | ${cells.join(' | ')} |`);
+  };
+  bootSweep('Organic growth /mo', [
+    { tag: '4%', mut: (p) => (p.organicGrowth = 0.04) },
+    { tag: '6%', mut: () => {} },
+    { tag: '8%', mut: (p) => (p.organicGrowth = 0.08) },
+  ]);
+  bootSweep('Free→paid ceiling (of activated)', [
+    { tag: '2.5%', mut: (p) => (p.convEventual = 0.025) },
+    { tag: '4.5%', mut: () => {} },
+    { tag: '6.5%', mut: (p) => (p.convEventual = 0.065) },
+  ]);
+  bootSweep('Clinic adoption /mo', [
+    { tag: '8%', mut: (p) => (p.clinicGrowth = 0.08) },
+    { tag: '12%', mut: () => {} },
+    { tag: '16%', mut: (p) => (p.clinicGrowth = 0.16) },
+  ]);
+  bootSweep('Retention floor (chronic long tail)', [
+    { tag: '6%', mut: (p) => (p.retention = { ...p.retention, floor: 0.06 }) },
+    { tag: '10%', mut: () => {} },
+    { tag: '16%', mut: (p) => (p.retention = { ...p.retention, floor: 0.16 }) },
+  ]);
+
   // --- Pricing sensitivity (with conversion elasticity assumption) ---
   console.log('\n### Pricing sensitivity (base scenario; conversion elasticity is an ASSUMPTION)\n');
   console.log('| Price | Conv. multiplier | Paying @ M48 | ARR run-rate @ M48 | Peak cum. burn |');
@@ -365,5 +437,5 @@ if (isMain) {
     return { ...base, activation: { ...base.activation }, retention: { ...base.retention }, vetRetentionBonus: { ...base.vetRetentionBonus }, hires: base.hires.map((h) => ({ ...h })), price, annualPrice: annual, convEventual: base.convEventual * mult };
   }
 
-  console.log('\nCSV files written to docs/financial-model/cohorts-{conservative,base,upside}.csv');
+  console.log('\nCSV files written to docs/financial-model/cohorts-{bootstrap,conservative,base,upside}.csv');
 }
