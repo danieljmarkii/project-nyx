@@ -193,18 +193,18 @@ describe('CulpritMark — the pulse contract', () => {
     expect(viewsWithTransform(resting).length).toBe(0);
   });
 
-  it('respects reduced-motion (§1.5): live but reduced shows a static glow + resting dot, no ring', () => {
+  it('respects reduced-motion (§1.5): live but reduced shows a clean resting dot — no ring, no glow halo (B-325)', () => {
     mockedUseReducedMotion.mockReturnValue(true);
     const { toJSON } = render(<CulpritMark size={16} ground="night" live />);
     const circles = findByType(toJSON(), 'RNSVGCircle');
     // No stroked ping ring under reduced motion.
     expect(circles.filter((c) => c.props.stroke != null).length).toBe(0);
-    // The static glow: a same-position, larger, low-opacity accent circle behind
-    // the resting dot (not the ring, not a second full-opacity dot).
+    // The soft glow halo was REMOVED after on-device QA (B-325) — no low-opacity accent
+    // circle behind the dot; teal is the interactive accent, not a decorative haze (§1.3).
     const glow = circles.filter(
       (c) => c.props.cx === 66 && c.props.cy === 53 && c.props.r === 10.5 + 1.5 && c.props.opacity === 0.3,
     );
-    expect(glow.length).toBe(1);
+    expect(glow.length).toBe(0);
     // The resting dot itself is still drawn (full opacity), in the base SVG.
     const restingDot = circles.filter(
       (c) => c.props.cx === 66 && c.props.cy === 53 && c.props.r === 10.5 && c.props.stroke == null,
@@ -212,14 +212,15 @@ describe('CulpritMark — the pulse contract', () => {
     expect(restingDot.length).toBe(1);
   });
 
-  it('app blur (not active) also drops to the static frame — the loop pauses, no ring', () => {
+  it('app blur (not active) also drops to the static frame — the loop pauses, no ring, no glow (B-325)', () => {
     mockedUseAppActive.mockReturnValue(false);
     const circles = findByType(render(<CulpritMark size={16} ground="night" live />).toJSON(), 'RNSVGCircle');
-    // No animated ring while paused; the resting glow + dot stand in.
+    // No animated ring while paused, and no glow halo — a clean resting dot stands in.
     expect(circles.filter((c) => c.props.stroke != null).length).toBe(0);
-    expect(circles.filter((c) => c.props.cx === 66 && c.props.r === 10.5 + 1.5 && c.props.opacity === 0.3).length).toBe(
-      1,
-    );
+    expect(circles.filter((c) => c.props.cx === 66 && c.props.r === 10.5 + 1.5 && c.props.opacity === 0.3).length).toBe(0);
+    expect(
+      circles.filter((c) => c.props.cx === 66 && c.props.cy === 53 && c.props.r === 10.5 && c.props.stroke == null).length,
+    ).toBe(1);
   });
 
   it('still renders exactly one solid dot fill on every state (the dot itself never disappears)', () => {
