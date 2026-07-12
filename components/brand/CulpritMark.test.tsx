@@ -2,9 +2,17 @@ import { render } from '@testing-library/react-native';
 import { CulpritMark } from './CulpritMark';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { useAppActive } from '../../hooks/useAppActive';
 
 jest.mock('../../hooks/useReducedMotion', () => ({ useReducedMotion: jest.fn(() => false) }));
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true) }));
 const mockedUseReducedMotion = useReducedMotion as jest.Mock;
+const mockedUseAppActive = useAppActive as jest.Mock;
+
+afterEach(() => {
+  mockedUseReducedMotion.mockReturnValue(false);
+  mockedUseAppActive.mockReturnValue(true);
+});
 
 // The carve rule (spec §1.1): the crescent MUST be a mask/cutout, never a filled
 // circle overlaid on the ground. These pin the two things that would silently
@@ -130,6 +138,28 @@ describe('CulpritMark — placements and a11y', () => {
   });
 });
 
+// The B-322 fix: the live pulse is driven by native-driver transforms on RN
+// `Animated.View`s, NOT react-native-svg's `<G>` (whose `scale` is a JS-side
+// matrix conversion the native driver bypasses — so an animated `<G scale>`
+// renders FROZEN on a real Fabric build). These pin the structural contract that
+// keeps the pulse on a native-eligible path: NO `<G>` carries the pulse, the ring
+// and dot are stroked/solid circles inside Animated.View wrappers, and both the
+// reduced-motion AND app-blur paths fall back to the same static SVG frame.
+const solidDots = (tree: any) =>
+  findByType(tree, 'RNSVGCircle').filter(
+    (c) => c.props.fill?.payload === argbPayload(theme.colorAccent) && c.props.stroke == null,
+  );
+
+// Does a (possibly nested/array) style carry a `transform`? Animated.View flattens
+// its style to an array in the test renderer, so search recursively.
+function hasTransform(style: any): boolean {
+  if (!style) return false;
+  if (Array.isArray(style)) return style.some(hasTransform);
+  return style.transform != null;
+}
+const viewsWithTransform = (tree: any) =>
+  findByType(tree, 'View').filter((v) => hasTransform(v.props.style));
+
 describe('CulpritMark — the pulse contract', () => {
   it('renders no ping ring when live is false', () => {
     const { toJSON } = render(<CulpritMark size={16} ground="night" live={false} />);
@@ -147,41 +177,62 @@ describe('CulpritMark — the pulse contract', () => {
     expect(ring[0].props.stroke.payload).toBe(argbPayload(theme.colorAccent));
   });
 
-  it('respects reduced-motion (§1.5): live but reduced shows a static glow, no ring, no scale loop', () => {
-    mockedUseReducedMotion.mockReturnValue(true);
-    try {
-      const { toJSON } = render(<CulpritMark size={16} ground="night" live />);
-      const circles = findByType(toJSON(), 'RNSVGCircle');
-      // No stroked ping ring under reduced motion.
-      expect(circles.filter((c) => c.props.stroke != null).length).toBe(0);
-      // The static glow: a same-position, larger, low-opacity solid circle
-      // behind the resting dot (not the ring, not a second dot).
-      const glow = circles.filter(
-        (c) => c.props.cx === 66 && c.props.cy === 53 && c.props.r === 10.5 + 1.5 && c.props.opacity === 0.3,
-      );
-      expect(glow.length).toBe(1);
-      // The dot's own animated wrapper carries no scale transform loop — its
-      // parent group matrix is the untouched identity, not the pulsing value.
-      const groups = findByType(toJSON(), 'RNSVGGroup');
-      const dotGroup = groups.find((g) =>
-        (g.children ?? []).some((c: any) => c.props?.cx === 66 && c.props?.r === 10.5 && c.props?.stroke == null),
-      );
-      // Identity matrix (no active scale transform) — tolerate a signed-zero
-      // (-0 vs 0) float quirk from the rotation math, which is not a real diff.
-      expect((dotGroup?.props.matrix as number[]).map((n) => n + 0)).toEqual([1, 0, 0, 1, 0, 0]);
-    } finally {
-      mockedUseReducedMotion.mockReturnValue(false);
-    }
+  it('drives the pulse via native-driver-eligible RN View transforms, never a react-native-svg <G> matrix (B-322)', () => {
+    // The frozen-on-device regression guard. The old impl scaled the dot/ring via
+    // react-native-svg's <G> — whose `scale`→`matrix` conversion runs in JS and is
+    // bypassed by useNativeDriver, so it never reached the native thread. The fix
+    // carries the motion on RN `Animated.View` transforms (a native-eligible path).
+    // So a LIVE mark must render transform-bearing Views (the ring + dot wrappers)
+    // AND its animated circles must NOT hang off an SVG group carrying a transform.
+    const live = render(<CulpritMark size={64} ground="night" live />).toJSON();
+    expect(viewsWithTransform(live).length).toBeGreaterThanOrEqual(2); // ring + dot
+    // No react-native-svg <G> carries a transform/matrix (the frozen shape).
+    expect(findByType(live, 'RNSVGGroup').every((g) => g.props.matrix == null && g.props.transform == null)).toBe(true);
+    // A resting (non-live) mark has no transform-bearing pulse Views at all.
+    const resting = render(<CulpritMark size={64} ground="night" live={false} />).toJSON();
+    expect(viewsWithTransform(resting).length).toBe(0);
   });
 
-  it('still renders exactly one solid dot fill on both live states (the dot itself never disappears)', () => {
-    for (const live of [false, true]) {
-      const { toJSON } = render(<CulpritMark size={16} ground="night" live={live} />);
-      const circles = findByType(toJSON(), 'RNSVGCircle');
-      const solidDots = circles.filter(
-        (c) => c.props.cx === 66 && c.props.cy === 53 && c.props.fill?.payload === argbPayload(theme.colorAccent),
-      );
-      expect(solidDots.length).toBeGreaterThanOrEqual(1);
-    }
+  it('respects reduced-motion (§1.5): live but reduced shows a static glow + resting dot, no ring', () => {
+    mockedUseReducedMotion.mockReturnValue(true);
+    const { toJSON } = render(<CulpritMark size={16} ground="night" live />);
+    const circles = findByType(toJSON(), 'RNSVGCircle');
+    // No stroked ping ring under reduced motion.
+    expect(circles.filter((c) => c.props.stroke != null).length).toBe(0);
+    // The static glow: a same-position, larger, low-opacity accent circle behind
+    // the resting dot (not the ring, not a second full-opacity dot).
+    const glow = circles.filter(
+      (c) => c.props.cx === 66 && c.props.cy === 53 && c.props.r === 10.5 + 1.5 && c.props.opacity === 0.3,
+    );
+    expect(glow.length).toBe(1);
+    // The resting dot itself is still drawn (full opacity), in the base SVG.
+    const restingDot = circles.filter(
+      (c) => c.props.cx === 66 && c.props.cy === 53 && c.props.r === 10.5 && c.props.stroke == null,
+    );
+    expect(restingDot.length).toBe(1);
+  });
+
+  it('app blur (not active) also drops to the static frame — the loop pauses, no ring', () => {
+    mockedUseAppActive.mockReturnValue(false);
+    const circles = findByType(render(<CulpritMark size={16} ground="night" live />).toJSON(), 'RNSVGCircle');
+    // No animated ring while paused; the resting glow + dot stand in.
+    expect(circles.filter((c) => c.props.stroke != null).length).toBe(0);
+    expect(circles.filter((c) => c.props.cx === 66 && c.props.r === 10.5 + 1.5 && c.props.opacity === 0.3).length).toBe(
+      1,
+    );
+  });
+
+  it('still renders exactly one solid dot fill on every state (the dot itself never disappears)', () => {
+    // Animating (default mocks), non-live, reduced-motion, and blurred — always
+    // exactly one full-opacity teal dot, wherever it lives in the tree.
+    const animating = render(<CulpritMark size={16} ground="night" live />).toJSON();
+    expect(solidDots(animating).filter((c) => c.props.opacity == null).length).toBe(1);
+
+    const notLive = render(<CulpritMark size={16} ground="night" live={false} />).toJSON();
+    expect(solidDots(notLive).filter((c) => c.props.opacity == null).length).toBe(1);
+
+    mockedUseReducedMotion.mockReturnValue(true);
+    const reduced = render(<CulpritMark size={16} ground="night" live />).toJSON();
+    expect(solidDots(reduced).filter((c) => c.props.opacity == null).length).toBe(1);
   });
 });

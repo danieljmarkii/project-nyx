@@ -1,16 +1,9 @@
 import { useEffect, useId, useRef } from 'react';
 import { Animated, StyleSheet, Text, View, StyleProp, TextStyle, ViewStyle } from 'react-native';
-import Svg, { Circle, Defs, G, Mask, Rect } from 'react-native-svg';
+import Svg, { Circle, Defs, Mask, Rect } from 'react-native-svg';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-// Scale/rotate transforms on an SVG primitive pivot around (0,0) by default, not
-// the shape's own centre — wrapping the dot in a <G originX/originY> group (react-
-// native-svg's transform-origin prop) is what lets the pulse grow from the dot's
-// own cx/cy instead of the canvas corner. Native-driver eligible (spec §1.5): `G`
-// exposes `scale` as a first-class animatable prop, not a style-transform hack.
-const AnimatedG = Animated.createAnimatedComponent(G);
+import { useAppActive } from '../../hooks/useAppActive';
 
 // The Culprit brand mark — a moonlight crescent (always a true mask cutout, never
 // a filled circle laid over the ground — the carve rule, spec §1.1) with a single
@@ -19,6 +12,17 @@ const AnimatedG = Animated.createAnimatedComponent(G);
 //
 // viewBox is a fixed 100x100 design space; `size` scales it, so the geometry
 // below (cx/cy/r) is the spec's literal numbers, not a derived ratio.
+//
+// Motion mechanism (B-322): the live-pulse drives native-driver transforms on RN
+// `Animated.View`s, NOT react-native-svg's `<G>`. react-native-svg's Group exposes
+// only `matrix` as a native-animated prop — `scale`/`originX/Y` are converted to a
+// matrix in G's JS render, which `useNativeDriver:true` bypasses, so an animated
+// `<G scale>` never reaches the native thread and renders FROZEN at its static frame
+// on a real (Fabric) build. View transforms ARE native-driver-eligible, so we scale
+// a plain `Animated.View` instead (the same fix N3 shipped for WhorlSpinner). Each
+// pulsing layer sits in an absolutely-positioned box CENTRED on the dot, so scaling
+// the View around its own centre pivots the pulse from the dot's cx/cy — not the
+// canvas corner — reproducing what the old `<G originX/originY>` intended.
 const VIEW_BOX = 100;
 const MOON_CX = 45;
 const MOON_CY = 50;
@@ -33,6 +37,13 @@ const DOT_R = 9;
 // unless it nudges up.
 const DOT_R_SMALL = 10.5;
 const SMALL_SIZE_THRESHOLD = 24;
+const RING_STROKE = 2;
+// The ring/dot are drawn at REST size inside this box, then the whole Animated.View
+// (box + its <Svg> contents) scales as one transform — so an affine scale preserves
+// "fits inside," and the only real constraint is that the resting ring fits the box:
+// boxCentre (0.25·size) must exceed dotR + stroke/2 (≤ ~0.115·size). 0.5·size clears
+// that at every size with margin; the ping's 2.1× growth then rides the View transform.
+const PULSE_BOX_FACTOR = 0.5;
 
 const PULSE_PERIOD_MS = 2600;
 
@@ -69,12 +80,14 @@ export function CulpritMark({
   style,
 }: CulpritMarkProps) {
   const reducedMotion = useReducedMotion();
+  const appActive = useAppActive();
   const scale = useRef(new Animated.Value(1)).current;
   const ringScale = useRef(new Animated.Value(0.66)).current;
   const ringOpacity = useRef(new Animated.Value(0)).current;
-  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
 
-  const animate = live && !reducedMotion;
+  // Pause on app blur (§1.5 motion budget), matching WhorlSpinner — a native-driver
+  // loop would otherwise keep ticking on the UI thread while backgrounded.
+  const animate = live && !reducedMotion && appActive;
 
   useEffect(() => {
     if (!animate) {
@@ -113,11 +126,9 @@ export function CulpritMark({
       ]),
     ]);
     const loop = Animated.loop(cycle);
-    loopRef.current = loop;
     loop.start();
     return () => {
       loop.stop();
-      loopRef.current = null;
     };
   }, [animate, scale, ringScale, ringOpacity]);
 
@@ -135,6 +146,22 @@ export function CulpritMark({
   // wordmark + accessible group around both) must stay a silent child — two
   // "Culprit"-labelled nodes on screen breaks getByLabelText for the parent.
   const selfLabel = accessible ?? withWordmark;
+
+  // The pulse box: an absolutely-positioned square centred on the dot's on-screen
+  // position, so scaling the wrapping View around its own centre pivots from the
+  // dot (px units — the SVG viewBox geometry converted to the rendered size).
+  const scaleFactor = size / VIEW_BOX;
+  const dotRadiusPx = dotR * scaleFactor;
+  const ringStrokePx = RING_STROKE * scaleFactor;
+  const boxPx = size * PULSE_BOX_FACTOR;
+  const boxCentre = boxPx / 2;
+  const pulseBoxStyle = {
+    position: 'absolute' as const,
+    width: boxPx,
+    height: boxPx,
+    left: DOT_CX * scaleFactor - boxCentre,
+    top: DOT_CY * scaleFactor - boxCentre,
+  };
 
   return (
     <View
@@ -162,28 +189,48 @@ export function CulpritMark({
             fill={crescentFill}
             mask={`url(#${maskId})`}
           />
-          {/* Reduced-motion static frame: a soft glow behind the resting dot,
-              no ring, no scale (§1.5). */}
-          {!animate && live && (
-            <Circle cx={DOT_CX} cy={DOT_CY} r={dotR + 1.5} fill={theme.colorAccent} opacity={0.3} />
+          {/* Reduced-motion / paused static frame: a soft glow behind the resting
+              dot, no ring, no scale (§1.5), plus the resting dot itself. Drawn in
+              the base SVG (not an Animated.View) because nothing moves. */}
+          {!animate && (
+            <>
+              {live && (
+                <Circle cx={DOT_CX} cy={DOT_CY} r={dotR + 1.5} fill={theme.colorAccent} opacity={0.3} />
+              )}
+              <Circle cx={DOT_CX} cy={DOT_CY} r={dotR} fill={theme.colorAccent} />
+            </>
           )}
-          {animate && (
-            <AnimatedG originX={DOT_CX} originY={DOT_CY} scale={ringScale}>
-              <AnimatedCircle
-                cx={DOT_CX}
-                cy={DOT_CY}
-                r={dotR}
-                fill="none"
-                stroke={theme.colorAccent}
-                strokeWidth={2}
-                opacity={ringOpacity}
-              />
-            </AnimatedG>
-          )}
-          <AnimatedG originX={DOT_CX} originY={DOT_CY} scale={animate ? scale : 1}>
-            <Circle cx={DOT_CX} cy={DOT_CY} r={dotR} fill={theme.colorAccent} />
-          </AnimatedG>
         </Svg>
+
+        {/* Live pulse — native-driver View transforms (B-322). The ring expands +
+            fades; the dot breathes. Both pivot around the dot via the centred box. */}
+        {animate && (
+          <>
+            <Animated.View
+              pointerEvents="none"
+              style={[pulseBoxStyle, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+            >
+              <Svg width={boxPx} height={boxPx}>
+                <Circle
+                  cx={boxCentre}
+                  cy={boxCentre}
+                  r={dotRadiusPx}
+                  fill="none"
+                  stroke={theme.colorAccent}
+                  strokeWidth={ringStrokePx}
+                />
+              </Svg>
+            </Animated.View>
+            <Animated.View
+              pointerEvents="none"
+              style={[pulseBoxStyle, { transform: [{ scale }] }]}
+            >
+              <Svg width={boxPx} height={boxPx}>
+                <Circle cx={boxCentre} cy={boxCentre} r={dotRadiusPx} fill={theme.colorAccent} />
+              </Svg>
+            </Animated.View>
+          </>
+        )}
       </View>
       {withWordmark && (
         <Text
