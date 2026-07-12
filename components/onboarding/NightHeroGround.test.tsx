@@ -36,12 +36,13 @@ function findByType(node: any, type: string): any[] {
 }
 
 describe('NightHeroGround', () => {
-  it('renders exactly 12 stars over the night field with three aurora radials', () => {
+  it('renders exactly 12 stars over the night field with two aurora radials (no teal glow)', () => {
     const tree = render(<NightHeroGround />).toJSON();
     // 12 stars (Circle) — the PM-locked count within the §4 10–14 band.
     expect(findByType(tree, 'RNSVGCircle')).toHaveLength(12);
-    // Two aurora radials + the restrained teal near the dot = 3 gradients.
-    expect(findByType(tree, 'RNSVGRadialGradient')).toHaveLength(3);
+    // Violet + indigo only. The teal glow radial that sat on the Signal dot was
+    // removed after on-device QA (read as an off-brand glow blob behind the mark).
+    expect(findByType(tree, 'RNSVGRadialGradient')).toHaveLength(2);
     // A single base night rect in colorBrandNight.
     const rects = findByType(tree, 'RNSVGRect');
     expect(rects).toHaveLength(1);

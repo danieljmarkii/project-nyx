@@ -3,8 +3,14 @@ import Svg, { Circle, Defs, Ellipse, RadialGradient, Rect, Stop } from 'react-na
 import { theme } from '../../constants/theme';
 
 // The Landing hero's night ground (B-284 PR N2b, spec §4): the colorBrandNight
-// field, the two aurora radials (violet upper / indigo lower) plus the restrained
-// teal radial near the Signal dot, and a full-bleed starfield of 12 dots.
+// field, the two aurora radials (violet upper / indigo lower), and a full-bleed
+// starfield of 12 dots.
+//
+// The third "restrained teal" radial that used to sit on the Signal dot was REMOVED
+// after on-device QA (2026-07-12): at device scale it read as a prominent teal glow
+// blob behind the mark — off-brand (teal is the interactive accent, not an ambient
+// haze, §1.3) — and the mark's own dot/pulse already carries the teal. The moon now
+// sits on the clean violet/indigo night, no glow behind it.
 //
 // Static by intent — the carved moon's Signal-dot ping is this screen's ONE
 // ambient loop (rule §1.5), so nothing here animates (no twinkle). Rendered as a
@@ -36,7 +42,6 @@ const STARS: { x: number; y: number; r: number; o: number }[] = [
 
 const VIOLET_ID = 'landingAuroraViolet';
 const INDIGO_ID = 'landingAuroraIndigo';
-const TEAL_ID = 'landingAuroraTeal';
 
 export function NightHeroGround() {
   const { width, height } = useWindowDimensions();
@@ -67,21 +72,15 @@ export function NightHeroGround() {
             <Stop offset="0" stopColor={theme.colorAuroraIndigo} stopOpacity={1} />
             <Stop offset="0.66" stopColor={theme.colorAuroraIndigo} stopOpacity={0} />
           </RadialGradient>
-          <RadialGradient id={TEAL_ID} cx={0.5} cy={0.5} r={0.5} gradientUnits="objectBoundingBox">
-            {/* colorAuroraTeal already carries its own low 0.10 alpha — the
-                "restrained" teal near the dot, never a second accent. */}
-            <Stop offset="0" stopColor={theme.colorAuroraTeal} stopOpacity={1} />
-            <Stop offset="0.7" stopColor={theme.colorAuroraTeal} stopOpacity={0} />
-          </RadialGradient>
         </Defs>
 
         {/* Base night field. */}
         <Rect x={0} y={0} width={width} height={height} fill={theme.colorBrandNight} />
 
-        {/* Two aurora radials + the restrained teal near the moon's Signal dot. */}
+        {/* Two aurora radials — violet upper, indigo lower. No teal glow behind the
+            moon (removed after on-device QA — see the header note). */}
         <Ellipse cx={width * 0.5} cy={height * 0.24} rx={width * 0.72} ry={height * 0.4} fill={`url(#${VIOLET_ID})`} />
         <Ellipse cx={width * 0.5} cy={height * 0.99} rx={width * 0.78} ry={height * 0.48} fill={`url(#${INDIGO_ID})`} />
-        <Ellipse cx={width * 0.56} cy={height * 0.42} rx={width * 0.3} ry={height * 0.17} fill={`url(#${TEAL_ID})`} />
 
         {/* Full-bleed starfield (static — the ping is the screen's one loop). */}
         {STARS.map((s, i) => (
