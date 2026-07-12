@@ -43,7 +43,7 @@ Code-verified inventory (Explore pass, 2026-07-11). **Answer: no feature hard-br
 Two concrete findings that reshape step 1 of the PM's plan:
 
 1. **"Flags off" must not ship as error states.** If we submit with AI disabled and no UI awareness, the App Review reviewer (and every early user) hits "Couldn't read the label" banners and dead "Try again" buttons — the app looks broken, which is a Guideline 2.1 (app completeness) rejection pattern and a terrible first impression. A flag needs *flag-aware* UI: hide the photo-capture affordance and default to manual entry; hide the "Try analysis" link. That's real (small) client work per surface.
-2. **The paywall mock cannot go to App Review as-is.** A visible "Start 7-day free trial" button that performs no purchase is a Guideline 2.1 / 3.1.2 mismatch (advertised paid functionality that doesn't exist). Whatever else we decide, **the mock must be flagged out of the submission build** until real IAP is wired. (New backlog item B-325.)
+2. **The paywall mock cannot go to App Review as-is.** A visible "Start 7-day free trial" button that performs no purchase is a Guideline 2.1 / 3.1.2 mismatch (advertised paid functionality that doesn't exist). Whatever else we decide, **the mock must be flagged out of the submission build** until real IAP is wired. (New backlog item B-330.)
 
 ---
 
@@ -168,7 +168,7 @@ Ship the App Store v1 **free**, with AI surfaces **on but server-capped** (not f
 | **D-M7** | Throttle caps (§9 table) | — | Ratify the proposed numbers as spec inputs; they're deliberately generous (abuse-tail, not median). |
 
 ### Answers to the PM's three questions
-1. **"Are there features that genuinely break without AI?"** No — verified in code (§2). Signal degrades invisibly by design; extraction surfaces have manual paths; vomit logging is AI-independent and even keeps deterministic escalation. The real cost of "off" is that today's fallbacks *look like errors*, so flag-off requires flag-aware UI states (B-324).
+1. **"Are there features that genuinely break without AI?"** No — verified in code (§2). Signal degrades invisibly by design; extraction surfaces have manual paths; vomit logging is AI-independent and even keeps deterministic escalation. The real cost of "off" is that today's fallbacks *look like errors*, so flag-off requires flag-aware UI states (B-329).
 2. **"Is this a good monetization strategy? Gate other areas?"** The skeleton is right (flags → free submission → paid AI → throttles); the session's corrections: drop the coffee tier (D-M3), reorder to throttle-before-submission rather than payments-before-AI (D-M4), and gate by the care/convenience line rather than "AI vs non-AI" — the Signal is AI-branded but deterministic care (free), while the strongest additional gates are non-AI conveniences (widgets/themes) and the *future* Ask-AI chat. Do not gate history, correlation views, export, or the report (§3.2).
 3. **"What other questions should we have?"** Collected in §10.
 
@@ -215,7 +215,7 @@ Product/policy questions to answer in or before the spec:
 
 ## 11. Sequencing (respects "no hard date"; monetization never blocks submission)
 
-**Track 1 — Submission (unchanged critical path, independent of this session):** B-039 → B-229/230/270 → B-267/268/269/271/272/273 → B-280. Plus from this session: **B-325** (paywall mock flagged out of the submission build).
+**Track 1 — Submission (unchanged critical path, independent of this session):** B-039 → B-229/230/270 → B-267/268/269/271/272/273 → B-280. Plus from this session: **B-330** (paywall mock flagged out of the submission build).
 
 **Track 2 — AI infrastructure (this session's new work, small, before submission):**
 1. **PR 1** — `app_config` flag table + migration (own PR, additive, pre-flight clean).
@@ -233,9 +233,9 @@ Tracks 1 and 2 are disjoint-file parallel. Track 3 is gated on D-M1–D-M6.
 
 ## 12. Backlog + record changes made this session
 
-- **B-324** (new): server-authoritative feature-flag/config mechanism + flag-aware client states.
-- **B-325** (new): flag the non-functional paywall mock out of the submission build (2.1/3.1.2 risk).
-- **B-326** (new): RevenueCat + server-side `entitlements` (satisfies B-252's constraint for paid features).
+- **B-329** (new): server-authoritative feature-flag/config mechanism + flag-aware client states.
+- **B-330** (new): flag the non-functional paywall mock out of the submission build (2.1/3.1.2 risk).
+- **B-331** (new): RevenueCat + server-side `entitlements` (satisfies B-252's constraint for paid features).
 - **B-001** (updated): promoted `Later → Now`; design lives here (§9); execution = Track 2 PR 2.
 - **CLAUDE.md Open Questions**: one consolidated row for D-M1–D-M7 pointing at this doc.
 - B-263/B-264/B-265/B-266 unchanged — they activate on ratification.
@@ -267,7 +267,7 @@ The PM challenged §2's "AI Signal fully works without AI" line: *"I thought tha
 
 **So:** nothing crashes (§2 stands), but **gating extraction would silently degrade the free tier's flagship care insight** for every manually-entered food — care degradation through a convenience gate, a Principle 7 leak. The safety lanes are unaffected (intake-decline keys off `intake_rating`; symptom lanes ④–⑦ don't use protein), but the culprit-finding wedge is protein-dependent.
 
-**Resolution (team unanimous): B-327 — manual protein capture is a hard prerequisite of the extraction gate.** Add a "Primary protein" picker (wrapping `ChipGroup`, closed set derived from the canonical list behind `canonicalizeProtein`, plus an "Other/typed" escape) to (a) the manual food-capture edit step and (b) the food detail edit screen. Cheap, additive, no schema (column exists). Track 3's gate-flip PR is **blocked on B-327 shipping first**. Also worth shipping regardless of the gate — today an extraction *failure* leaves the same hole.
+**Resolution (team unanimous): B-332 — manual protein capture is a hard prerequisite of the extraction gate.** Add a "Primary protein" picker (wrapping `ChipGroup`, closed set derived from the canonical list behind `canonicalizeProtein`, plus an "Other/typed" escape) to (a) the manual food-capture edit step and (b) the food detail edit screen. Cheap, additive, no schema (column exists). Track 3's gate-flip PR is **blocked on B-332 shipping first**. Also worth shipping regardless of the gate — today an extraction *failure* leaves the same hole.
 
 ## 15. D-M5 — pricing research (condition satisfied)
 
@@ -282,7 +282,7 @@ July 2026 market scan of pet-health app subscriptions: the premium cluster for p
 Principles, in priority order — the spec turns these into per-surface copy + states:
 
 1. **The cap gates the model call only, never the record.** The event, photo, and structured fields always save — an owner at the cap loses the *read*, never the *log*. For `analyze-vomit` specifically: the deterministic contextual escalation flags are computed **outside** the capped path — the cap check must sit immediately before the Anthropic call, after escalation-flag computation, so a capped incident still escalates when the context warrants (never-reassure survives the cap by construction; `clinical-guardrails` + Dr. Chen review on this path is mandatory).
-2. **Typed response, designed state.** Functions return a typed `cap_reached` payload (cap kind + reset time), never a bare 429/500; the client renders a designed state, not an error banner (rides B-324's flag-aware states).
+2. **Typed response, designed state.** Functions return a typed `cap_reached` payload (cap kind + reset time), never a bare 429/500; the client renders a designed state, not an error banner (rides B-329's flag-aware states).
 3. **Warm, specific, never transactional on care surfaces.** Cap copy never reads as "pay to continue" anywhere near a symptom. Extraction cap-copy points to the manual path in-place ("you can fill it in yourself below — the photo is saved either way"). Read cap-copy must not *reassure* ("probably fine") — it states plainly the read will run when the counter resets, and the standard escalation guidance stays visible. `nyx-voice` + `clinical-guardrails` pass on every string.
 4. **Zero decisions at the moment of event** (Principle 1): the cap state never interrupts capture mid-flow; it appears on the result surface only.
 5. **Counters reset on the UTC day** (house rule: timestamps UTC); copy says "tomorrow," never a clock time.
@@ -321,9 +321,9 @@ PM: "I can see a world where multipet is paid. Don't let semi-placeholder in-app
 
 **→ D-M8 — RULED 2026-07-12: PM chose (b), the team rec — pets 1–3 free forever; "large household" Premium at 4+.** Not wired at launch (Track 3 builds the server-side pet-count check vs entitlements); the completion-screen "add pets anytime" copy and the B-263 paywall bullets are written to this ruling in the spec's copy pass. B-086's row updated.
 
-## 19. PM item 1 — care-first messaging in the app (B-328)
+## 19. PM item 1 — care-first messaging in the app (B-333)
 
-Ratified direction: the monetization *ethics* become product surface. The paywall mock already carries the load-bearing line ("Always free: logging, health alerts, trends & vet reports"). B-328 extends it: the same promise, in Nyx's voice, on the Settings/About surface (B-283's new home) and inside every future gate/cap state ("{pet}'s care is never behind this door" register — exact copy at spec time, `nyx-voice` + `pm-feature-review` pass). Constraint: it must read as a *commitment*, not marketing — one sentence, no exclamation marks, shown where money appears and nowhere else (Principle 3: Home is never an upsell surface).
+Ratified direction: the monetization *ethics* become product surface. The paywall mock already carries the load-bearing line ("Always free: logging, health alerts, trends & vet reports"). B-333 extends it: the same promise, in Nyx's voice, on the Settings/About surface (B-283's new home) and inside every future gate/cap state ("{pet}'s care is never behind this door" register — exact copy at spec time, `nyx-voice` + `pm-feature-review` pass). Constraint: it must read as a *commitment*, not marketing — one sentence, no exclamation marks, shown where money appears and nowhere else (Principle 3: Home is never an upsell surface).
 
 ## 20. PM item 4 — no bugs/regressions (hardening posture for the whole project)
 
@@ -340,4 +340,4 @@ Standing requirements for every Track-2/Track-3 PR, written here so the spec inh
 
 - ~~D-M8~~ — **ruled same day: free to 3, Premium at 4+** (§18). No open monetization decisions remain.
 - **Confirmed working numbers:** $4.99/mo · $39.99/yr · 7-day trial · monthly-forward (§15/§17) — final lock at StoreKit config.
-- **Next session:** the build-ready step-by-step spec (`docs/monetization-and-throttling-requirements.md`) — Track-2 PR plan (B-324 flags → B-001/`ai_usage` throttles → flag-aware client states → B-325 mock flag-off), Track-3 plan (RevenueCat/B-326 + B-327 protein prerequisite + paywall un-mock), and the numbered offline actions (App Store Connect Agreements/Tax/Banking → Small Business Program → RevenueCat account/keys → product config), each with its D-M checkpoint.
+- **Next session:** the build-ready step-by-step spec (`docs/monetization-and-throttling-requirements.md`) — Track-2 PR plan (B-329 flags → B-001/`ai_usage` throttles → flag-aware client states → B-330 mock flag-off), Track-3 plan (RevenueCat/B-331 + B-332 protein prerequisite + paywall un-mock), and the numbered offline actions (App Store Connect Agreements/Tax/Banking → Small Business Program → RevenueCat account/keys → product config), each with its D-M checkpoint.
