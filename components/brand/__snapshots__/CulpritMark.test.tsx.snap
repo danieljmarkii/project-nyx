@@ -125,41 +125,22 @@ exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carv
           }
           r={33}
         />
-        <RNSVGGroup
+        <RNSVGCircle
+          cx={66}
+          cy={53}
           fill={
             {
-              "payload": 4278190080,
+              "payload": 4278239912,
               "type": 0,
             }
           }
-          matrix={
+          propList={
             [
-              1,
-              0,
-              -0,
-              1,
-              0,
-              0,
+              "fill",
             ]
           }
-        >
-          <RNSVGCircle
-            cx={66}
-            cy={53}
-            fill={
-              {
-                "payload": 4278239912,
-                "type": 0,
-              }
-            }
-            propList={
-              [
-                "fill",
-              ]
-            }
-            r={10.5}
-          />
-        </RNSVGGroup>
+          r={10.5}
+        />
       </RNSVGGroup>
     </RNSVGSvgView>
   </View>
@@ -291,41 +272,22 @@ exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carv
           }
           r={33}
         />
-        <RNSVGGroup
+        <RNSVGCircle
+          cx={66}
+          cy={53}
           fill={
             {
-              "payload": 4278190080,
+              "payload": 4278239912,
               "type": 0,
             }
           }
-          matrix={
+          propList={
             [
-              1,
-              0,
-              -0,
-              1,
-              0,
-              0,
+              "fill",
             ]
           }
-        >
-          <RNSVGCircle
-            cx={66}
-            cy={53}
-            fill={
-              {
-                "payload": 4278239912,
-                "type": 0,
-              }
-            }
-            propList={
-              [
-                "fill",
-              ]
-            }
-            r={10.5}
-          />
-        </RNSVGGroup>
+          r={10.5}
+        />
       </RNSVGGroup>
     </RNSVGSvgView>
   </View>
