@@ -38,10 +38,11 @@ const DOT_R = 9;
 const DOT_R_SMALL = 10.5;
 const SMALL_SIZE_THRESHOLD = 24;
 const RING_STROKE = 2;
-// The ping ring expands to 2.1× the dot radius; the pulse box must be large enough
-// to hold that at full scale without the inner <Svg> clipping it. Half the box
-// (the pivot-to-edge distance) must exceed dotR·2.1 + stroke — 0.5·size gives a
-// generous margin at every size (dotR ≤ ~0.105·size ⇒ max ring reach ~0.23·size).
+// The ring/dot are drawn at REST size inside this box, then the whole Animated.View
+// (box + its <Svg> contents) scales as one transform — so an affine scale preserves
+// "fits inside," and the only real constraint is that the resting ring fits the box:
+// boxCentre (0.25·size) must exceed dotR + stroke/2 (≤ ~0.115·size). 0.5·size clears
+// that at every size with margin; the ping's 2.1× growth then rides the View transform.
 const PULSE_BOX_FACTOR = 0.5;
 
 const PULSE_PERIOD_MS = 2600;
