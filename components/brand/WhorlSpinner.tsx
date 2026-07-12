@@ -18,7 +18,7 @@ import { useAppActive } from '../../hooks/useAppActive';
 // `scale` transform. We rotate the *View*, not react-native-svg's <G>, on purpose —
 // react-native-svg's G exposes only `matrix` (not `rotation`/`scale`) as a native
 // prop, so animating G's rotation with useNativeDriver never reaches the native thread
-// and renders frozen (found in N3 review; B-320 tracks the same fix for CulpritMark).
+// and renders frozen (found in N3 review; B-322 shipped the same fix for CulpritMark).
 // View transforms ARE native-driver-eligible, so the whorl actually turns on device.
 //
 // Motion budget (§1.5): native-driver transforms only, PAUSED on app blur
