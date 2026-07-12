@@ -189,16 +189,14 @@ export function CulpritMark({
             fill={crescentFill}
             mask={`url(#${maskId})`}
           />
-          {/* Reduced-motion / paused static frame: a soft glow behind the resting
-              dot, no ring, no scale (§1.5), plus the resting dot itself. Drawn in
-              the base SVG (not an Animated.View) because nothing moves. */}
+          {/* Reduced-motion / paused / non-animating static frame: just the resting dot
+              — a crisp teal tittle, NO soft glow halo behind it. The halo (a low-opacity
+              accent circle) was removed after on-device QA (2026-07-12): at the header's
+              16px it read as a "weird glow behind the logo," off-brand — teal is the
+              interactive accent, not a decorative haze (§1.3). The live cue is the dynamic
+              pulse (below) where it animates; the static frame stays a clean dot. */}
           {!animate && (
-            <>
-              {live && (
-                <Circle cx={DOT_CX} cy={DOT_CY} r={dotR + 1.5} fill={theme.colorAccent} opacity={0.3} />
-              )}
-              <Circle cx={DOT_CX} cy={DOT_CY} r={dotR} fill={theme.colorAccent} />
-            </>
+            <Circle cx={DOT_CX} cy={DOT_CY} r={dotR} fill={theme.colorAccent} />
           )}
         </Svg>
 

@@ -1,28 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, useWindowDimensions } from 'react-native';
+import { Animated, StyleSheet, Text } from 'react-native';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
-import { NightGround } from '../brand/NightGround';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 
-// The Home pull-to-refresh sky (B-284 §5): while a manual refresh runs, a night band
-// slides down over the top of the feed — stars + a small night WhorlSpinner + one
-// muted line — then retracts on settle. The RefreshControl owns the pull gesture (its
-// native indicator is hidden so this band is the only feedback); this band is driven
-// by the `active` (refreshing) flag, so it's fully controlled and cross-platform
-// rather than depending on iOS overscroll math.
+// The Home pull-to-refresh strip (B-284 §5, REVISED 2026-07-12 after on-device QA). A
+// light, quiet band slides down over the top of the feed while a manual refresh runs —
+// the brand's teal WhorlSpinner (day ground) over a soft elevated surface + one muted
+// line — then retracts on settle.
 //
-// Sits BELOW the pinned HomeHeader (which owns the top safe-area inset), so the band
-// is already clear of the notch (AC-N3). Reduced-motion: instant show/hide + the
-// WhorlSpinner's static frame. The copy is the §9 string; ZERO_TEXT flips to the
-// pre-approved text-free fallback without a code round-trip.
+// Revised from the original dark "night sky" band (NightGround aurora + starfield + a
+// night whorl). On device that treatment failed three ways for a *routine* refresh: the
+// near-black band dropping over the light Home was a jarring contrast whiplash, the aurora
+// glow read as unpolished, and the animated starfield dropped frames (janky). This light
+// strip fixes all three by construction — minimal contrast against the light Home, no
+// glow, and nothing heavy to render (the WhorlSpinner is the only motion, already
+// native-driver + reduced-motion aware). Revises the §5 "night band" treatment (Tier-2
+// doc edit flagged for the PM).
+//
+// The RefreshControl owns the pull gesture (its native indicator is hidden so this band is
+// the only feedback); the band is driven by the `active` (refreshing) flag, so it's fully
+// controlled and cross-platform rather than depending on iOS overscroll math. Sits BELOW
+// the pinned HomeHeader (which owns the top safe-area inset), so the band is already clear
+// of the notch. Reduced motion: instant show/hide + the WhorlSpinner's own static frame.
+// The copy is the §9 string; ZERO_TEXT flips to the pre-approved text-free fallback.
 
-const BAND_HEIGHT = 112;
+const BAND_HEIGHT = 96;
 const ZERO_TEXT = false; // pre-approved fallback: set true to drop the line (§9)
 
 export function PullToRefreshSky({ active }: { active: boolean }) {
   const reduced = useReducedMotion();
-  const { width } = useWindowDimensions();
   const [mounted, setMounted] = useState(active);
   const p = useRef(new Animated.Value(active ? 1 : 0)).current;
   const alive = useRef(true);
@@ -58,11 +65,8 @@ export function PullToRefreshSky({ active }: { active: boolean }) {
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      <NightGround width={width} height={BAND_HEIGHT} maxStars={6} />
-      <Animated.View style={styles.inner}>
-        <WhorlSpinner size="sm" ground="night" />
-        {!ZERO_TEXT && <Text style={styles.msg}>Checking for anything new…</Text>}
-      </Animated.View>
+      <WhorlSpinner size="sm" ground="day" />
+      {!ZERO_TEXT && <Text style={styles.msg}>Checking for anything new…</Text>}
     </Animated.View>
   );
 }
@@ -74,17 +78,19 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: BAND_HEIGHT,
-    overflow: 'hidden',
-    zIndex: 5,
-  },
-  inner: {
-    flex: 1,
+    // A soft elevated surface (the "pulled-down" strip), not a dark sky — a hairline
+    // bottom edge crisps it against the white feed without a heavy shadow.
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colorBorder,
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.space1,
+    overflow: 'hidden',
+    zIndex: 5,
   },
   msg: {
     fontSize: theme.textSM,
-    color: theme.colorTextOnNightMuted,
+    color: theme.colorTextSecondary,
   },
 });
