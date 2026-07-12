@@ -138,6 +138,10 @@ export default function EventDetailScreen() {
   const [transformFailed, setTransformFailed] = useState(false);
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
+  // B-325 — the food's usage class (meal | treat | other). Gates the retroactive
+  // "add a med given with this" entry to real vehicles (meal/treat), mirroring the
+  // completion card's own showIntake gate; 'other'/unclassified foods never show it.
+  const [foodType, setFoodType] = useState<string | null>(null);
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
   // Medication (dose) detail — B-117 PR 8. `dose` carries the drug-library display
   // fields; `adherence` is the mutable rating (the intakeRating analog); `doubleDose`
@@ -163,6 +167,7 @@ export default function EventDetailScreen() {
     // Reset per-event state up-front so navigating from event A → event B
     // doesn't briefly flash A's food label / rating until B's queries return.
     setFoodLabel(null);
+    setFoodType(null);
     setIntakeRating(null);
     setDose(null);
     setAdherence(null);
@@ -200,6 +205,7 @@ export default function EventDetailScreen() {
         const meal = await getMealForEvent(id);
         if (meal) {
           setFoodLabel({ brand: meal.food_brand, product: meal.food_product_name });
+          setFoodType(meal.food_type);
           const rating = meal.intake_rating;
           setIntakeRating(
             rating === 'refused' || rating === 'picked' || rating === 'some'
@@ -315,6 +321,30 @@ export default function EventDetailScreen() {
       setHowGiven(prev);
       Alert.alert('Could not save', 'Try again in a moment.');
     }
+  }
+
+  // B-325 — the retroactive combo entry: add a med to THIS already-logged meal/treat.
+  // Mirrors MealCompletionCard.handleAddMed exactly (same route + params) so the two entry
+  // points converge on one pre-bound picker → linked-dose write path — plus comboSource
+  // 'detail', which tells /log to skip the completion card and return here instead (and, if
+  // this treat wasn't finished, to run the confirm sheet). The dose binds to THIS event's
+  // pet (never a possibly-switched active pet), making the paired_event_id link same-pet by
+  // construction; the food type seeds the inferred vehicle. Never mints a phantom vehicle —
+  // it links to this real, owner-logged event.
+  function handleAddMed() {
+    if (!event) return;
+    const foodName = [foodLabel?.brand, foodLabel?.product].filter(Boolean).join(' ').trim();
+    router.push({
+      pathname: '/log',
+      params: {
+        type: 'medication',
+        pairedEventId: event.id,
+        pairedPetId: event.pet_id,
+        pairedFoodType: foodType ?? '',
+        pairedFoodName: foodName,
+        comboSource: 'detail',
+      },
+    });
   }
 
   function handleEdit() {
@@ -506,6 +536,10 @@ export default function EventDetailScreen() {
   // Meals' clinical artifact is the food name, not a photo — never beg for one
   // (Dr. Chen + Jordan, on-device review). If a meal has a photo, the hero renders.
   const isMeal = event.event_type === 'meal';
+  // B-325 — show the retroactive "add a med given with this" entry only on a real vehicle:
+  // a meal/treat food (never 'other'/unclassified), matching the completion card's showIntake
+  // gate. A dose event's own screen never shows it — that's direction ② (held).
+  const showAddMed = isMeal && (foodType === 'meal' || foodType === 'treat');
   // Which photo the hero + viewer render, and whether to show the add-photo empty
   // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
   // flashes an add-photo target over an existing photo mid-fallback). B-207.
@@ -634,6 +668,23 @@ export default function EventDetailScreen() {
               })}
               targetEventId={event.paired_dose_event_id}
             />
+          ) : null}
+
+          {/* B-325 — the retroactive combo entry (Option A: a quiet inline line under intake,
+              the exact twin of the completion card's forward "+ Add a med given with this").
+              Adds a med to THIS already-logged meal/treat via the same pre-bound picker; runs
+              the same intake→adherence safety coupling. Sits below any existing paired-dose
+              cross-link, so it reads as "and here's how to add one (more)". */}
+          {showAddMed ? (
+            <TouchableOpacity
+              style={styles.addMedRow}
+              onPress={handleAddMed}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Add a medication given with this ${foodType === 'treat' ? 'treat' : 'meal'}`}
+            >
+              <Text style={styles.addMedText}>+ Add a med given with this</Text>
+            </TouchableOpacity>
           ) : null}
 
           {isMedication && dose ? (
@@ -872,6 +923,23 @@ const styles = StyleSheet.create({
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
+  },
+  // The retroactive combo entry (B-325). Accent text, ≥44pt tap target (the 3am-test
+  // floor) via minHeight; a top hairline so it reads as a distinct, optional add-on beneath
+  // the intake/cross-link block, never a peer of the logged act. The quietest actionable
+  // line on the screen (Principle 1 — the no-med majority reads past it).
+  addMedRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorder,
+    marginTop: theme.space2,
+    paddingTop: theme.space2,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  addMedText: {
+    fontSize: theme.textMD,
+    color: theme.colorAccent,
+    fontWeight: theme.fontWeightMedium,
   },
   notes: {
     fontSize: theme.textMD,

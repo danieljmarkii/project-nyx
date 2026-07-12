@@ -43,6 +43,7 @@ import {
   isComboDoseInDoubt,
   comboAdherencePrompt,
   comboInDoubtReason,
+  comboConfirmHeadsUp,
   doseInDoubtNote,
   DOSE_IN_DOUBT_TAG,
   pairedVehicleLinkLabel,
@@ -1186,6 +1187,10 @@ describe('combo safety copy — never reassures, never softens to fussy, no excl
     comboAdherencePrompt({ petName: 'Pixel', inDoubt: true }),
     comboAdherencePrompt({ petName: 'Pixel', inDoubt: false }),
     comboInDoubtReason({ petName: 'Pixel' }),
+    // B-325 — the retroactive confirm sheet's heads-up line.
+    comboConfirmHeadsUp({ petName: 'Pixel', foodName: 'Churu' }),
+    comboConfirmHeadsUp({ petName: 'Pixel', foodName: null }),
+    comboConfirmHeadsUp({ petName: 'Pixel', foodName: '' }),
   ];
   const notes = [
     doseInDoubtNote({ petName: 'Pixel', foodName: 'Churu' }),
@@ -1200,6 +1205,18 @@ describe('combo safety copy — never reassures, never softens to fussy, no excl
 
   it('the card reason states the fact plainly and names the pet', () => {
     expect(comboInDoubtReason({ petName: 'Pixel' })).toBe("Pixel didn't finish the food.");
+  });
+
+  it('the retroactive heads-up names the specific food and falls back to "the food" (B-325)', () => {
+    expect(comboConfirmHeadsUp({ petName: 'Pixel', foodName: 'Churu' })).toBe(
+      "Pixel didn't finish Churu.",
+    );
+    expect(comboConfirmHeadsUp({ petName: 'Pixel', foodName: null })).toBe(
+      "Pixel didn't finish the food.",
+    );
+    expect(comboConfirmHeadsUp({ petName: 'Pixel', foodName: '   ' })).toBe(
+      "Pixel didn't finish the food.",
+    );
   });
 
   it('the detail note names the food, falls back to "the food", and asks (never asserts)', () => {

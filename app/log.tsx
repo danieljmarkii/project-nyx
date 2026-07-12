@@ -11,6 +11,7 @@ import { Camera } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { FoodPicker } from '../components/log/FoodPicker';
 import { MedicationPicker } from '../components/log/MedicationPicker';
+import { ComboDoseConfirmSheet } from '../components/log/ComboDoseConfirmSheet';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
@@ -19,13 +20,13 @@ import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
 import { useMomentStore } from '../store/momentStore';
-import { getDb, getActiveRegimenForDrug, getMealForEvent, PickerFood, PickerMedication } from '../lib/db';
+import { getDb, getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { syncPendingEvents, syncPendingMeals } from '../lib/sync';
+import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../lib/sync';
 import { insertMeal } from '../lib/meals';
 import { insertMedicationDose } from '../lib/medicationDose';
 import { insertWeightCheck, getLatestWeightKg, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
-import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, type DoseAdherence } from '../lib/medications';
+import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFinished, type DoseAdherence } from '../lib/medications';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
@@ -63,15 +64,24 @@ export default function LogModal() {
   // dose given WITH a just-logged meal/treat (entered from its completion card): the
   // dose binds to the meal's pet (pairedPetId) and links to the meal event, and
   // how_given is inferred from pairedFoodType. Absent on every standalone log path.
-  const { type: typeParam, pairedEventId, pairedPetId, pairedFoodType, pairedFoodName } =
+  const { type: typeParam, pairedEventId, pairedPetId, pairedFoodType, pairedFoodName, comboSource } =
     useLocalSearchParams<{
       type?: string;
       pairedEventId?: string;
       pairedPetId?: string;
       pairedFoodType?: string;
       pairedFoodName?: string;
+      comboSource?: string;
     }>();
   const isComboMode = !!pairedEventId;
+  // B-325 — a RETROACTIVE combo: the med is being added to an ALREADY-logged meal/treat
+  // from that event's detail screen (comboSource='detail'), not from the in-the-moment
+  // completion card (the B-156 PR B2b forward path). The two differ only in what happens
+  // AFTER the dose is written: the forward path plays the completion card over Home; the
+  // retroactive path suppresses that card and returns to the treat detail screen — and,
+  // when the vehicle wasn't finished, first shows the deliberate confirm sheet in place of
+  // the card's sharpened prompt. Everything up to and including the dose write is shared.
+  const isRetroactiveCombo = isComboMode && comboSource === 'detail';
 
   const [step, setStep] = useState<Step>('type');
   const [selectedType, setSelectedType] = useState<EventTypeKey | null>(null);
@@ -84,6 +94,16 @@ export default function LogModal() {
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [selectedFoodBrand, setSelectedFoodBrand] = useState<string | null>(null);
   const [selectedFoodProduct, setSelectedFoodProduct] = useState<string | null>(null);
+
+  // B-325 — the retroactive combo-confirm sheet. Set (with the just-written dose's event
+  // id + the food/pet it rode in) when a retroactive combo dose lands UNCONFIRMED because
+  // its vehicle wasn't finished; the sheet lets the owner resolve it before returning to
+  // the treat. Null the rest of the time (finished/standalone paths never show it).
+  const [comboConfirm, setComboConfirm] = useState<{
+    doseEventId: string;
+    petName: string;
+    foodName: string | null;
+  } | null>(null);
 
   // Symptom state
   const [severity, setSeverity] = useState<number | null>(null);
@@ -387,6 +407,38 @@ export default function LogModal() {
         drug_brand_name: med.brand_name,
       });
     }
+    // B-325 — RETROACTIVE combo (added from the treat's detail screen). No completion card
+    // here (that card is the moment-of-logging warmth for a FRESH log on Home; a retroactive
+    // add is a reflective edit). Instead we return to the treat detail screen, whose
+    // focus-refetch renders the paired-dose cross-link — the pairing lives there, persistent
+    // and editable-later on the dose's own screen (the G2 model; PM steer). When the vehicle
+    // was NOT finished, first present the deliberate confirm sheet (the discoverable home for
+    // PR B3's "still get it?" prompt): the dose is already written UNCONFIRMED, so the sheet
+    // only RESOLVES it — a dismiss leaves it unconfirmed (never a false 'given'), resurfaced
+    // calmly by History + the dose detail. Gate on the vehicle actually being not-finished
+    // (isVehicleNotFinished), NOT on adherence===null: a vehicle-read FAILURE also yields a
+    // null adherence, but there we have no evidence the food went unfinished, so we must not
+    // claim it did — skip the sheet and let the calm resurface handle it.
+    if (isRetroactiveCombo) {
+      if (isVehicleNotFinished(vehicleIntake)) {
+        // Keep /log mounted so the sheet renders over the picker; the sheet's handlers own
+        // the router.back() to the treat once the owner answers or dismisses.
+        const comboPetName =
+          (pairedPetId ? pets.find((p) => p.id === pairedPetId)?.name : null)
+          ?? usePetStore.getState().activePet?.name
+          ?? 'your pet';
+        setComboConfirm({
+          doseEventId: result.eventId,
+          petName: comboPetName,
+          foodName: pairedFoodName?.trim() || null,
+        });
+      } else {
+        // Finished / unrated vehicle → the dose is cleanly 'given'; just return to the treat.
+        router.back();
+      }
+      return;
+    }
+
     // Dismiss the picker, then play the dose completion card at the root layer (delayMs
     // clears the dismissing modal so the card isn't briefly occluded on iOS). A combo
     // dose frames the card as "Logged together · {drug} · with {food}" (the link made
@@ -408,6 +460,37 @@ export default function LogModal() {
       },
       { delayMs: 450 },
     );
+  }
+
+  // B-325 — resolve a retroactive in-doubt combo dose from the confirm sheet, then return
+  // to the treat. The owner's explicit tap is authoritative (never an inference): persist
+  // it, sync, and dismiss. A write failure keeps the dose UNCONFIRMED (the safe direction —
+  // it never lands a false 'given') and still returns the owner to the treat, where the
+  // dose detail's chips can resolve it later. The read-time resurface join self-corrects
+  // either way.
+  async function handleComboConfirmAnswer(next: DoseAdherence) {
+    const target = comboConfirm;
+    setComboConfirm(null);
+    if (target) {
+      try {
+        await updateDoseAdherence(target.doseEventId, next);
+        syncPendingMedicationAdministrations().catch(console.error);
+      } catch (e) {
+        console.error('[log] combo dose confirm failed; dose stays unconfirmed:', e);
+        // Tell the owner it didn't save (matching the sibling adherence-write sites) and,
+        // crucially, that the dose is UNCONFIRMED — never let a failed save read as done.
+        // The dose is safely null and resolvable from its detail screen.
+        Alert.alert('Could not save', "That didn't save — the dose is marked unconfirmed. Set it from the dose's detail screen.");
+      }
+    }
+    router.back();
+  }
+
+  // "Not sure yet" / backdrop dismiss — leave the dose UNCONFIRMED (never coerced to
+  // 'given') and return to the treat; the History tag + dose-detail note resurface it.
+  function handleComboConfirmDismiss() {
+    setComboConfirm(null);
+    router.back();
   }
 
   // Weight log from the numeric step — the weight twin of handlePickFood /
@@ -906,6 +989,16 @@ export default function LogModal() {
             onOpenDetail={(med) => router.push(`/medication/${med.id}`)}
           />
         )}
+        {/* B-325 — the retroactive combo-confirm sheet, over the picker. Only mounts when a
+            retroactive combo dose landed unconfirmed (vehicle not finished); its handlers own
+            the return to the treat. */}
+        <ComboDoseConfirmSheet
+          visible={!!comboConfirm}
+          petName={comboConfirm?.petName ?? 'your pet'}
+          foodName={comboConfirm?.foodName ?? null}
+          onAnswer={handleComboConfirmAnswer}
+          onNotSure={handleComboConfirmDismiss}
+        />
       </SafeAreaView>
     );
   }

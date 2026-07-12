@@ -637,6 +637,22 @@ export function doseInDoubtNote(params: {
   return `This dose was given in ${vehicle}, which ${params.petName} didn't finish — confirm above whether it still got in.`;
 }
 
+// The heads-up line atop the retroactive combo-confirm sheet (B-325) — shown when an
+// owner adds a med to an ALREADY-logged meal/treat the pet didn't finish. Names the
+// specific food (nyx-voice Pattern 2 — specific over generic), so the owner knows which
+// not-finished vehicle we're asking about; falls back to "the food". Mirrors
+// doseInDoubtNote's no-article vehicle handling. States the fact ONLY — never reassures,
+// never softens the refusal to "picky"/"fussy" (clinical-guardrails Pattern 6/8); the
+// food is "the food" (an object, so nyx-voice Pattern 1's "the pet" ban doesn't apply).
+export function comboConfirmHeadsUp(params: {
+  petName: string;
+  foodName: string | null | undefined;
+}): string {
+  const food = (params.foodName ?? '').trim();
+  const vehicle = food.length > 0 ? food : 'the food';
+  return `${params.petName} didn't finish ${vehicle}.`;
+}
+
 // The terse rose state tag for an in-doubt dose on a scan surface (History row). Calm,
 // never an alarm word; the row tag flags that the dose's adherence is unresolved, and
 // the detail screen carries the full ask. A constant (not interpolated) so the History
