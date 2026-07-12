@@ -1,5 +1,5 @@
 # Monetization & AI Gating Strategy — Session Record
-**Date:** 2026-07-11 | **Status:** Strategy for PM ratification (spec follows in a separate session) | **Decision points:** D-M1–D-M7 (§8)
+**Date:** 2026-07-11 (session) / 2026-07-12 (ratification, §13+) | **Status:** RATIFIED — all decision points closed (D-M1–D-M7 §13, D-M8 §18); next = the build-ready spec session | **Decision points:** D-M1–D-M8
 
 ---
 
