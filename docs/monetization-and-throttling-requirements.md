@@ -1,6 +1,8 @@
 # Culprit — Monetization & AI Throttling Requirements
 **Version:** 1.0 | **Date:** 2026-07-12 | **Status:** Build-ready — every governing decision is ratified (D-M1–D-M8; strategy doc §13/§18)
 
+> **Review amendments — 2026-07-13** (PM review pass, no ratified ruling changed): §4.4 records the clinical ratification of the `analyze-vomit` daily cap value + adds the per-pet-enforcement-vs-per-user-cost note; §9 T3-E + §16 flag B-047/B-016 as an **unowned dependency** (PM action item); §4.2 adds the server-side config-read failure fallback (Dir. of Eng sign-off, T2-3); §4.7 flags the entitlement **grace-window duration** as an open product decision for T3-C. Still open from the review, not yet actioned: the mandated shared client-side response decoder for the §4.5 typed contract (parked pending PM call).
+
 ---
 
 ## 1. What this is
@@ -103,6 +105,7 @@ Keys, seeded in the migration. **Ship-dark rule (§20 #1): every seeded value ma
 | `ai_caps` | `{}` (empty — code defaults apply) | code defaults | Optional per-function cap overrides, same shape as §4.4. Lets the PM tighten/loosen a cap without a deploy |
 
 - **Server read:** each Edge Function reads its own key(s) at request time via its existing Supabase client (the `authenticated` SELECT policy covers the anon+JWT clients; service-role bypasses RLS anyway). The **function's check is authoritative** — the client's copy only shapes UI.
+- **Server-side read-failure fallback (⚠ Dir. of Eng sign-off required, T2-3):** the client fallbacks are tabled above, but the *authoritative* path needs its own defined behavior for when the **function's own `app_config` read errors** (DB blip, timeout, transient RLS failure). The read must never hard-fail the request. Provisional rule — **mirror the client's per-key posture: AI keys fail *open* (proceed as if enabled) so a transient config blip never dark-holes a working feature; the paywall key is client-only so it has no server path.** This keeps the authoritative and rendered behaviors consistent, and it errs toward the feature working rather than a spurious "disabled" state. The Dir. of Eng owns confirming this (and whether a read error should be logged/observable) before T2-3 merges — it is currently *unspecified* in the ratified strategy, so it is an engineering call to ratify, not a re-decision of a PM ruling.
 - **Client read:** new `lib/appConfig.ts` + `hooks/useAppConfig` (mirror the existing `hooks/` pattern — `useIsOnline`, `usePet`, etc.). Fetch on app start + on foreground (`useAppActive`); cache last-known-good locally so offline uses the last fetched values, falling back to the per-key shipped defaults above on first-ever run. Storage mechanism is build-time (S1, §15).
 - `constants/flags.ts` (`SOCIAL_AUTH_ENABLED`, build-time const) stays as-is — that's a build-time flag; `app_config` is for server-flippable state. Don't merge them.
 
@@ -155,11 +158,13 @@ Daily caps below are the **ratified D-M7 numbers verbatim**. Monthly ceilings: f
 |---|---|---|---|---|---|
 | `extract-food-from-photo` | 15 | 60 | 40 | 160 | Bounded naturally — re-logging a known food is zero-AI |
 | `extract-medication-from-photo` | 10 | 40 | 20 | 80 | Same shape |
-| `analyze-vomit` | 10 | 200 | 10 | 200 | **Deliberately identical across tiers** (D-M2). Monthly is 20× — a chronic-vomiting month (~90 reads) never hits it |
-| `generate-signal` | 12/pet | 240/pet | same | same | Backstop against a client bug loop; the 24h cache + debounce do the real work. Scoped per-pet via `scope_id` |
+| `analyze-vomit` | 10 | 200 | 10 | 200 | **Deliberately identical across tiers** (D-M2). Monthly is 20× — a chronic-vomiting month (~90 reads) never hits it. **Cap value clinically ratified (PM, 2026-07-13):** ≥10 incidents *in a single day* is past the domain of at-home logging — it is emergency-room territory, and the deterministic escalation floor fires on incident #11 regardless of whether the descriptive model read is capped (§5.4), so the cap can never suppress a safety signal |
+| `generate-signal` | 12/pet | 240/pet | same | same | Backstop against a client bug loop; the 24h cache + debounce do the real work. Scoped per-pet via `scope_id`. This is an **enforcement scope**, not a billing unit — see the per-pet-vs-per-user note below |
 | Ask-AI chat (future) | n/a (premium-only) | — | sized in its own spec (B-228) | — | Born-premium, hardest-throttled |
 
-**Cost ceiling check** (per §16.2 call estimates): a determined abuser pinned at every monthly ceiling costs ≈ 60×$0.017 + 40×$0.017 + 200×$0.024 + 240×$0.006 ≈ **$8/user/month** — under the §16.2 ~$15 target. A genuinely heavy honest user stays at $0.60–$3/month. **Build-time task (T2-3):** verify the per-call token estimates against real `usage` fields from the deployed functions' logs; adjust the table if reality diverges >2×.
+**Cost ceiling check** (per §16.2 call estimates): a determined abuser pinned at every monthly ceiling costs ≈ 60×$0.017 + 40×$0.017 + 200×$0.024 + 240×$0.006 ≈ **$8/user/month** — under the §16.2 ~$15 target. A genuinely heavy honest user stays at $0.60–$3/month. The ceiling is **accounted per user**, not per pet: a multi-pet household multiplies the `generate-signal` line (a 3-pet home ≈ 3× the $1.44 signal component), and the PM has accepted this as an intentionally generous headroom (2026-07-13) — the ceiling still clears the target. **Build-time task (T2-3):** verify the per-call token estimates against real `usage` fields from the deployed functions' logs; adjust the table if reality diverges >2×.
+
+**Per-pet cap vs per-user cost — the two are different axes, not a contradiction.** The `generate-signal` cap is *enforced* per pet (`scope_id = pet_id`) so a 3-pet household isn't throttled to one pet's regeneration budget; every pet gets its own 12/day backstop. Cost, by contrast, is *summed* per user across their pets — which is how the ceiling above is stated. For the modal single-pet owner the two are identical. Enforcement scope (per-pet) answers "who gets throttled"; cost accounting (per-user aggregate) answers "what could a user cost." *(Build guard, tracked for T2-3: the RPC's `p_scope_id` defaults to the sentinel zero-UUID; the signal path MUST pass `petId` or every pet silently collapses onto one shared counter — cover it with a matrix row asserting two pets keep independent counters.)*
 
 **Track 2 ships the free column only, applied to everyone** (there is no entitlement yet). T3-E activates the Premium column via the entitlement read.
 
@@ -213,6 +218,7 @@ CREATE TABLE entitlements (
 - **Written only by** the new `revenuecat-webhook` Edge Function (T3-C) — the one function deployed with `verify_jwt = false` (external caller), authenticated instead by the shared `Authorization` header configured in RevenueCat (`REVENUECAT_WEBHOOK_SECRET`, → Secrets Register). Idempotent upsert keyed on the webhook event id. `rls-privacy-reviewer` mandatory.
 - **Read server-side** by the gated functions at request time (tier → cap column; T3-E: tier → allow/deny extraction). Missing row = `free`.
 - **Read client-side** for rendering only, cached locally with the entitlement's `expires_at` + a grace window — an owner never loses Premium in a dead zone (QA's §6 demand; offline-first house rule). RevenueCat's SDK cache covers the purchase surface; our row covers gated-feature rendering.
+  - **⚠ Grace-window duration is an open product decision — flagged, resolve at T3-C build time (PM, 2026-07-13).** The window length has money on *both* sides: too long invites free-riding after a cancellation; too short breaks the "never loses Premium in a dead zone" promise. It is therefore **not** a pure engineer's call — unlike the *storage mechanism* for the cache (S1), the *duration* is a product decision. Provisional default to react to: **72h offline grace keyed to `expires_at`** (covers a weekend dead zone; bounds post-cancel free access to three days). The PM confirms or adjusts the number when T3-C is built — do not lock it silently in code.
 - **Lapse behavior (confirmed invariant, strategy §10 #6):** previously-extracted data is the owner's and stays; only the ability to run *new* extractions gates.
 
 ---
@@ -415,6 +421,7 @@ Order is strict; each PR is independently shippable and ship-dark (§12). Migrat
 ### T3-E — the gate flip (extraction surfaces go Premium)
 - **Contents:** extraction functions check `entitlements` server-side (free tier → designed "not included" state routing to manual entry; premium → premium caps from §4.4); early-access labels retired (D-M6); "entitlement expired" client state (QA's third state); B-333 line inside the gate state.
 - **HARD-blocked on:** **T3-A (B-332)** merged + verified, and the **B-047/B-016 instrumentation gate** (§20 #6 — conversion + time-to-first-insight tracking must exist first, or D-M5's revisit has no data).
+- **⚠ Unowned-dependency flag (surfaced 2026-07-13):** B-047 (AI-Signal instrumentation) and B-016 (error observability) are **both Open and unbuilt** (B-047 = `Next`, B-016 = `Later` in `docs/backlog.md`) and **neither appears in Track 2's or Track 3's PR plan**. T3-E therefore has a hard prerequisite on work no one currently owns inside this spec. Before T3-E is scheduled, the PM must decide one of: (a) pull the minimum conversion + time-to-first-insight events into Track 3 as an explicit PR with an owner, or (b) run B-047/B-016 as a named parallel prerequisite track. Left unresolved, T3-E will silently slip — a gate cannot flip against instrumentation that does not exist. **PM action item.**
 - **AC:** free user hits a designed gate (never an error), record/photo still saves, manual path in-place; premium user unaffected; lapse honors §4.7's invariant (old data stays); the §11 matrix passes for both tiers.
 - **Review:** `code-reviewer`; `pm-feature-review` on the full free-tier flow; `adversarial-reviewer` re-run on `analyze-vomit` **only if** its path changed (it should not — vomit reads are tier-identical, D-M2).
 - **This is also checkpoint C1 (D-M4 revisit):** Premium launch is the named checkpoint to revisit the AI-on-free-server-capped posture with real usage data.
@@ -533,7 +540,7 @@ Track 3:  T3-A ─────────────────────�
 | B-263 | Resolved by T3-D's bullet swap (§7.5) |
 | B-264 / B-265 / B-266 | Folded into T3-D |
 | B-252 | Satisfied structurally (§4.6, §4.7) — cite on close |
-| B-047 / B-016 | Unchanged, but now **gate T3-E** (§12 #6) |
+| B-047 / B-016 | Unchanged, but now **gate T3-E** (§12 #6) — and **both are still Open/unbuilt with no PR in either track** (§9 T3-E unowned-dependency flag). Needs a PM ownership decision before T3-E is scheduled |
 | B-086 | Row already amended for D-M8; T3-F is the build |
 | B-228 | Unchanged (Later); §14 notes its born-premium posture |
 
