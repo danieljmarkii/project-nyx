@@ -96,7 +96,7 @@ Disagreement is information. Surface it. Never resolve a persona conflict silent
 - All timestamps stored UTC; convert at the app layer only.
 - Last-write-wins on sync conflicts; no merge logic.
 - Correlation engine + PDF generation are server-side (Edge Functions), never on-device/client.
-- `food_items` are globally scoped (no `user_id`); every other new table includes `pet_id` and RLS.
+- `food_items` and `app_config` are globally scoped (no `user_id`/`pet_id`) — the two sanctioned exceptions (a shared food catalog; app-wide product config). Every other new table includes `pet_id` and RLS.
 
 ### Two safety invariants that govern every relevant surface (full text in `docs/personas.md`)
 - **Intake is not preference.** Decline / refusal is frequently a *disease* signal — treat preference as a rate over N samples, route decline toward a health flag, never soften to "picky," never reassure an owner whose pet may be unwell.
