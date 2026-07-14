@@ -6,7 +6,7 @@
 // regardless of the per-row creator check. Caller JWT is still validated to
 // ensure only authenticated users can trigger extraction.
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -219,6 +219,157 @@ export function normaliseConfidence(raw: Partial<ConfidenceScores>): ConfidenceS
   }
 }
 
+// ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
+// docs/monetization-and-throttling-requirements.md §4–§5. This block is the
+// per-function COPY of the shared-shape gate logic (S6: the functions carry no
+// _shared/ module; the convention here is copy-paste per function, exactly like
+// detectImageMediaType — consolidation into _shared/gate.ts is a future refactor).
+// All four AI functions carry an identical copy so the shape can't drift. The
+// pure pieces (resolveGateState / resolveFlagValue / resolveCaps / computeResetsAt
+// / validateFoodPhotoPaths) are exported + Deno-tested; the impure readGateConfig
+// / recordUsage wrappers touch the client and are integration-verified.
+
+// This function's code-default caps (§4.4 free tier). Track 2 ships the free
+// column only, applied to everyone (no entitlement yet). Overridable at runtime
+// via app_config.ai_caps without a deploy.
+const CAPS: FunctionCaps = { daily: 15, monthly: 60 }
+// The record_ai_usage / ai_caps key for this function (migration 031).
+const FUNCTION_KEY = 'extract_food'
+const FLAG_KEY = 'ai_food_extraction_enabled'
+
+export interface FunctionCaps { daily: number; monthly: number }
+
+export type GateState =
+  | { allow: true }
+  | { allow: false; reason: 'feature_disabled' }
+  | { allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' }
+
+// The pure gate decision. `flagEnabled` is the resolved app_config flag (the
+// reader fails OPEN on a config read error — §4.2). `counts` are the
+// POST-INCREMENT day/month counters from record_ai_usage; pass null ONLY when the
+// flag is off (the caller skips the increment then, so a flagged-off call burns
+// no counter unit — §5.1). Over-cap is strictly-greater because record_ai_usage
+// increments-then-returns: the cap-th call of the day returns count === cap and
+// proceeds; the (cap+1)-th returns cap+1 and is blocked — so exactly `caps.daily`
+// model calls land per UTC day.
+export function resolveGateState(
+  flagEnabled: boolean,
+  counts: { dayCount: number; monthCount: number } | null,
+  caps: FunctionCaps,
+): GateState {
+  if (!flagEnabled) return { allow: false, reason: 'feature_disabled' }
+  if (!counts) return { allow: true }
+  if (counts.dayCount > caps.daily) return { allow: false, reason: 'cap_reached', cap: 'daily' }
+  if (counts.monthCount > caps.monthly) return { allow: false, reason: 'cap_reached', cap: 'monthly' }
+  return { allow: true }
+}
+
+// Resolve a boolean flag from a raw app_config JSONB value; `fallback` for a
+// missing / non-boolean value. The read wrapper applies the same fallback on a
+// query error (fail-open for the AI keys — §4.2).
+export function resolveFlagValue(raw: unknown, fallback: boolean): boolean {
+  return typeof raw === 'boolean' ? raw : fallback
+}
+
+// Code-default caps overridden by app_config.ai_caps[functionKey] when the PM
+// sets one (shape: { "<functionKey>": { "daily": N, "monthly": N } }). A missing
+// key / partial / malformed object keeps the code defaults — an override can
+// never accidentally tighten a cap to zero.
+export function resolveCaps(aiCaps: unknown, functionKey: string, defaults: FunctionCaps): FunctionCaps {
+  if (!aiCaps || typeof aiCaps !== 'object') return defaults
+  const entry = (aiCaps as Record<string, unknown>)[functionKey]
+  if (!entry || typeof entry !== 'object') return defaults
+  const e = entry as Record<string, unknown>
+  return {
+    daily: typeof e.daily === 'number' && Number.isFinite(e.daily) ? e.daily : defaults.daily,
+    monthly: typeof e.monthly === 'number' && Number.isFinite(e.monthly) ? e.monthly : defaults.monthly,
+  }
+}
+
+// resets_at for the typed cap-reached body (§4.5): next UTC midnight (daily) or
+// first-of-next-UTC-month (monthly). Pure over nowMs so it's unit-testable.
+export function computeResetsAt(cap: 'daily' | 'monthly', nowMs: number): string {
+  const d = new Date(nowMs)
+  if (cap === 'daily') {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)).toISOString()
+  }
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString()
+}
+
+// S3 hardening (§4.6, rls-privacy-reviewer input): the caller supplies photo_paths
+// directly (unlike medication, which derives the path from the uid). What this
+// guard IS: a traversal / self-consistency check — every path must sit under the
+// `${food_item_id}/` the caller claimed, and no `..` / backslash / leading-slash
+// can smuggle the service-role download out to another bucket or key. What it is
+// NOT: a cross-tenant boundary — `food_item_id` is itself an unauthenticated body
+// value, so this only enforces "the paths match the id you claimed," not ownership.
+// The actual reason there is no cross-user READ escalation is that nyx-food-photos
+// is globally-readable-authenticated (migration 008): the service-role download
+// exposes nothing the caller's own JWT couldn't already read. (rls-privacy-reviewer
+// PASS 2026-07-14 — if that bucket is ever made private/per-user-scoped, this
+// validator would NOT be the boundary; the bucket ACL is.) Client paths are
+// `${foodId}/${slot}.jpg` with food_item_id === foodId, so this is byte-identical
+// for the real client. Pure + exported for the unit test.
+export function validateFoodPhotoPaths(foodItemId: string, paths: string[]): boolean {
+  const prefix = `${foodItemId}/`
+  return paths.every((p) =>
+    typeof p === 'string' &&
+    p.startsWith(prefix) &&
+    !p.includes('..') &&
+    !p.includes('\\') &&
+    !p.startsWith('/'),
+  )
+}
+
+// Read this function's flag + the ai_caps override in ONE round trip. Fail-OPEN:
+// any read error / missing rows → flag defaults to true and caps to the code
+// defaults (§4.2 — a transient config blip must never dark-hole a working feature).
+async function readGateConfig(
+  client: SupabaseClient,
+): Promise<{ flagEnabled: boolean; caps: FunctionCaps }> {
+  try {
+    const { data, error } = await client
+      .from('app_config')
+      .select('key, value')
+      .in('key', [FLAG_KEY, 'ai_caps'])
+    if (error || !data) return { flagEnabled: true, caps: CAPS }
+    const byKey = new Map(data.map((r) => [(r as { key: string }).key, (r as { value: unknown }).value]))
+    return {
+      flagEnabled: resolveFlagValue(byKey.get(FLAG_KEY), true),
+      caps: resolveCaps(byKey.get('ai_caps'), FUNCTION_KEY, CAPS),
+    }
+  } catch {
+    return { flagEnabled: true, caps: CAPS }
+  }
+}
+
+// Increment + read this caller's usage counters (§4.3). Returns null on RPC error
+// — the caller treats null as "under cap" (fail-open: the cap is a generous abuse
+// backstop, not a billing gate). The uid is derived INSIDE the SECURITY DEFINER
+// RPC from auth.uid(), never a body value (B-252).
+async function recordUsage(
+  client: SupabaseClient,
+): Promise<{ dayCount: number; monthCount: number } | null> {
+  const { data, error } = await client.rpc('record_ai_usage', { p_function: FUNCTION_KEY, p_scope_id: null })
+  if (error) {
+    console.warn(`record_ai_usage(${FUNCTION_KEY}) failed — proceeding under cap:`, error.message)
+    return null
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { day_count?: number; month_count?: number } | null
+  if (!row || typeof row.day_count !== 'number' || typeof row.month_count !== 'number') return null
+  return { dayCount: row.day_count, monthCount: row.month_count }
+}
+
+function capReachedResponse(cap: 'daily' | 'monthly'): Response {
+  return Response.json(
+    { cap_reached: true, cap, function: FUNCTION_KEY, resets_at: computeResetsAt(cap, Date.now()) },
+    { headers: CORS_HEADERS },
+  )
+}
+function featureDisabledResponse(): Response {
+  return Response.json({ feature_disabled: true, function: FUNCTION_KEY }, { headers: CORS_HEADERS })
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -249,6 +400,36 @@ Deno.serve(async (req: Request) => {
   if (photo_paths.length > 3) {
     return Response.json({ error: 'Maximum 3 photos per extraction' }, { status: 400, headers: CORS_HEADERS })
   }
+  // S3 (§4.6): bind the caller-supplied paths to this food_item_id + reject
+  // traversal, so the extractor can't be pointed at a different food's photos.
+  if (!validateFoodPhotoPaths(food_item_id, photo_paths)) {
+    return Response.json({ error: 'photo_paths must belong to food_item_id' }, { status: 400, headers: CORS_HEADERS })
+  }
+
+  // User-scoped client (caller JWT): used to VERIFY the uid (§4.6 — the counter
+  // keys on a JWT-verified id, never a body value) and to read app_config /
+  // record_ai_usage as the `authenticated` role. This function previously ran
+  // entirely on the service role with no uid; T2-3 adds the verified identity.
+  const userClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: authHeader } } },
+  )
+  const { data: { user }, error: authErr } = await userClient.auth.getUser()
+  if (authErr || !user) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
+  }
+
+  // Flag → (nothing to preserve for extraction) → cap → Anthropic call (§5.1).
+  // Flag off: return the typed 200 WITHOUT touching ai_extraction_status — the
+  // food row + photo are already saved; a stale client routes to manual entry.
+  const { flagEnabled, caps } = await readGateConfig(userClient)
+  if (!flagEnabled) return featureDisabledResponse()
+  // Increment-then-check. Cap reached: typed 200, extraction status untouched —
+  // the record is never gated, only the model call (§5.1 step 3).
+  const counts = await recordUsage(userClient)
+  const gate = resolveGateState(flagEnabled, counts, caps)
+  if (!gate.allow && gate.reason === 'cap_reached') return capReachedResponse(gate.cap)
 
   // Service role client: bypasses RLS for storage reads and food_items writes.
   // The caller's JWT was validated above; the service role is only used here

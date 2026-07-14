@@ -19,9 +19,121 @@ import {
   STRUCTURED_FIELD_KEYS,
   detectImageMediaType,
   bytesToBase64,
+  resolveGateState,
+  resolveFlagValue,
+  resolveCaps,
   type ContextInput,
   type VomitAnalysis,
+  type FunctionCaps,
 } from './index.ts'
+
+// ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
+// analyze-vomit free caps are daily 10 / monthly 200, identical across tiers (D-M2).
+
+const VOMIT_CAPS: FunctionCaps = { daily: 10, monthly: 200 }
+
+Deno.test('resolveGateState (vomit) — flag off → feature_disabled (no increment)', () => {
+  assertEquals(resolveGateState(false, null, VOMIT_CAPS), { allow: false, reason: 'feature_disabled' })
+})
+
+Deno.test('resolveGateState (vomit) — 10th read proceeds, 11th capped; monthly at 200/201', () => {
+  assertEquals(resolveGateState(true, { dayCount: 10, monthCount: 15 }, VOMIT_CAPS), { allow: true })
+  assertEquals(resolveGateState(true, { dayCount: 11, monthCount: 15 }, VOMIT_CAPS), {
+    allow: false, reason: 'cap_reached', cap: 'daily',
+  })
+  assertEquals(resolveGateState(true, { dayCount: 2, monthCount: 200 }, VOMIT_CAPS), { allow: true })
+  assertEquals(resolveGateState(true, { dayCount: 2, monthCount: 201 }, VOMIT_CAPS), {
+    allow: false, reason: 'cap_reached', cap: 'monthly',
+  })
+})
+
+Deno.test('resolveGateState (vomit) — RPC error (null counts) fails open to allow', () => {
+  assertEquals(resolveGateState(true, null, VOMIT_CAPS), { allow: true })
+})
+
+Deno.test('resolveFlagValue / resolveCaps (vomit) — fallbacks + partial override', () => {
+  assertStrictEquals(resolveFlagValue(undefined, true), true)
+  assertStrictEquals(resolveFlagValue(false, true), false)
+  assertEquals(resolveCaps({ analyze_vomit: { daily: 3 } }, 'analyze_vomit', VOMIT_CAPS), { daily: 3, monthly: 200 })
+})
+
+// ── The reorder invariant: escalation SURVIVES the cap (§5.4, adversarial target) ──
+// When capped/flagged-off the handler skips vision and runs the floor with NO
+// visual flags. These pin, at the pure-helper level the handler composes, that a
+// fired CONTEXTUAL flag still forces worth_a_call and that NO capped path can
+// produce a reassuring verdict — the never-reassure guarantee under the cap.
+
+Deno.test('capped path — a fired contextual flag still forces worth_a_call (no vision, no visual flags)', () => {
+  // Exactly the call the capped branch makes: modelRecommendation=not_enough_to_say,
+  // appearsToShowVomit=false, visualFlags=[], but a contextual flag is present.
+  const rec = applyEscalationFloor({
+    modelRecommendation: 'not_enough_to_say',
+    appearsToShowVomit: false,
+    hasPhoto: true,
+    visualFlags: [],
+    contextualFlags: ['repeated_vomiting'],
+  })
+  assertStrictEquals(rec, 'worth_a_call')
+  // And the read names the contextual reason (never the model's words, never reassurance).
+  const read = selectReadText({
+    petName: 'Nyx',
+    recommendation: rec,
+    contextualFlags: ['repeated_vomiting'],
+    visualFlags: [],
+    modelReadText: 'this looks totally fine and healthy', // must NOT surface on this path
+    photoUnreadable: false,
+    hasPhoto: true,
+  })
+  assertStrictEquals(read.includes('fine'), false)
+  assertStrictEquals(read.includes('healthy'), false)
+  assertStrictEquals(read, buildContextualReadText('Nyx', ['repeated_vomiting']))
+})
+
+Deno.test('capped escalation over a prior real analysis — update mode, structured red flags PRESERVED (never-clobber)', () => {
+  // The blocker adversarial + code review caught: a capped/flag-off contextual
+  // escalation carries analysis=null (no model ran). If it took the full-upsert
+  // path it would NULL blood_present/foreign_material_present, silently erasing a
+  // prior model-detected red flag from the vet report. The fix routes a prior REAL
+  // analysis (humanEdited OR completed/uncertain) through preserveStructured=true →
+  // update-read-fields-only. This pins that shape: update mode, and NOT one
+  // structured column is written (so the prior blood/foreign finding survives).
+  const readFields = {
+    recommendation: 'worth_a_call' as const,
+    read_text: 'Nyx has thrown up more than once in a short window.',
+    visual_flags: [] as string[],
+    contextual_flags: ['repeated_vomiting' as const],
+    status: 'completed',
+    error: null,
+  }
+  const wb = buildAnalysisWriteBack({
+    humanEdited: true, // preserveStructured (humanEdited || existingRealAnalysis)
+    eventId: 'evt-1',
+    petId: 'pet-1',
+    analysis: null,
+    readFields,
+  })
+  assertStrictEquals(wb.mode, 'update')
+  for (const k of STRUCTURED_FIELD_KEYS) {
+    assertStrictEquals(Object.prototype.hasOwnProperty.call(wb.values, k), false)
+  }
+  // And the escalation still refreshes: worth_a_call + the contextual read land.
+  assertStrictEquals(wb.values.recommendation, 'worth_a_call')
+})
+
+Deno.test('capped path — no contextual flag → floor is NOT an escalation (state row, not worth_a_call)', () => {
+  // The other capped branch: no flags. The floor with hasPhoto + no flags + not
+  // appears-to-show-vomit collapses to not_enough_to_say — i.e. no escalation is
+  // fabricated. The handler writes status=capped/read_disabled here (verified in
+  // the reorder), never a reassuring recommendation.
+  const rec = applyEscalationFloor({
+    modelRecommendation: 'not_enough_to_say',
+    appearsToShowVomit: false,
+    hasPhoto: true,
+    visualFlags: [],
+    contextualFlags: [],
+  })
+  assertStrictEquals(rec, 'not_enough_to_say')
+})
 
 // ── bytesToBase64 ─────────────────────────────────────────────────────────────
 // The chunked encoder that replaced the rope-building encodeBase64 whose ~250 MB
