@@ -1,0 +1,684 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Food picker findability — design exploration</title>
+<style>
+  /* ── Tokens ──────────────────────────────────────────────────────────── */
+  :root {
+    --ground: #F6F6F3;
+    --card: #FFFFFF;
+    --ink: #131312;
+    --ink-2: #565652;
+    --ink-3: #7B7B75;
+    --hairline: #E7E7E2;
+    --accent: #00A38D;        /* teal deepened for text on light ground */
+    --accent-fill: #00C2A8;   /* the app's interactive teal, for marks/fills */
+    --accent-tint: #E0FBF7;
+    --night: #13112E;
+    --night-elev: #251F57;
+    --moonlight: #F2EEE4;
+    --night-muted: #A6A2CE;
+    --warn: #B45309;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #141320;
+      --card: #1C1B2A;
+      --ink: #ECEAF6;
+      --ink-2: #B7B3D9;
+      --ink-3: #8B87B4;
+      --hairline: #2C2A42;
+      --accent: #35D6BE;
+      --accent-tint: #12332F;
+      --warn: #E5A155;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #141320; --card: #1C1B2A; --ink: #ECEAF6; --ink-2: #B7B3D9;
+    --ink-3: #8B87B4; --hairline: #2C2A42; --accent: #35D6BE;
+    --accent-tint: #12332F; --warn: #E5A155;
+  }
+  :root[data-theme="light"] {
+    --ground: #F6F6F3; --card: #FFFFFF; --ink: #131312; --ink-2: #565652;
+    --ink-3: #7B7B75; --hairline: #E7E7E2; --accent: #00A38D;
+    --accent-tint: #E0FBF7; --warn: #B45309;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ── Doc header ──────────────────────────────────────────────────────── */
+  .masthead {
+    background: var(--night);
+    color: var(--moonlight);
+    border-radius: 0 0 20px 20px;
+    padding: 44px 40px 40px;
+    margin-bottom: 44px;
+  }
+  .masthead .eyebrow {
+    font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--night-muted); margin-bottom: 14px; font-weight: 600;
+  }
+  .masthead h1 {
+    font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.5vw, 42px);
+    line-height: 1.15; margin: 0 0 16px; text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .masthead p { max-width: 62ch; color: #CFCBE8; margin: 0 0 6px; }
+  .masthead .meta { margin-top: 18px; font-size: 13px; color: var(--night-muted); display: flex; gap: 20px; flex-wrap: wrap; }
+  .masthead .meta b { color: var(--moonlight); font-weight: 600; }
+
+  /* ── Prose & sections ───────────────────────────────────────────────── */
+  h2 {
+    font-family: var(--serif); font-weight: 500; font-size: 27px; line-height: 1.25;
+    margin: 64px 0 8px; letter-spacing: -0.01em; text-wrap: balance;
+  }
+  h2 .opt-tag {
+    display: inline-block; vertical-align: 4px; margin-right: 10px;
+    font-family: var(--sans); font-size: 11.5px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--accent-tint); color: var(--accent);
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .kicker { color: var(--ink-2); max-width: 70ch; margin: 0 0 26px; }
+  p { max-width: 70ch; }
+  .fileref { font-family: var(--mono); font-size: 0.86em; background: var(--card); border: 1px solid var(--hairline); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+
+  .verdicts { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 20px; }
+  .verdict {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+    border: 1px solid var(--hairline); background: var(--card);
+    color: var(--ink-2); border-radius: 999px; padding: 4px 12px;
+  }
+  .verdict.hot { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Option layout: frame + notes ───────────────────────────────────── */
+  .option { display: grid; grid-template-columns: 400px minmax(0,1fr); gap: 36px; align-items: start; }
+  @media (max-width: 900px) { .option { grid-template-columns: 1fr; } }
+
+  .frame-col { position: relative; }
+  .frame-caption { font-size: 12.5px; color: var(--ink-3); margin-top: 12px; max-width: 380px; }
+
+  /* ── Callout notes ──────────────────────────────────────────────────── */
+  .callouts { list-style: none; margin: 0 0 26px; padding: 0; display: grid; gap: 12px; }
+  .callouts li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: baseline; }
+  .co-num, .co-badge {
+    width: 22px; height: 22px; border-radius: 999px; background: var(--accent-fill);
+    color: #fff; font-size: 12px; font-weight: 700; display: inline-flex;
+    align-items: center; justify-content: center; transform: translateY(3px);
+  }
+  .callouts b { font-weight: 600; }
+
+  /* team takes */
+  .takes { display: grid; gap: 10px; margin: 22px 0 0; }
+  .take {
+    background: var(--card); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 12px 16px; font-size: 14px; color: var(--ink-2);
+  }
+  .take .who {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); margin-right: 8px;
+  }
+  .take.flag { border-left: 3px solid var(--warn); }
+  .take.flag .who { color: var(--warn); }
+
+  .cost { margin-top: 18px; font-size: 13.5px; color: var(--ink-3); }
+  .cost b { color: var(--ink-2); font-weight: 600; }
+
+  /* ── Plain content cards ────────────────────────────────────────────── */
+  .panel {
+    background: var(--card); border: 1px solid var(--hairline); border-radius: 16px;
+    padding: 24px 28px; margin: 24px 0;
+  }
+  .panel h3 { margin: 0 0 10px; font-size: 16.5px; }
+  .panel ul { margin: 0; padding-left: 20px; }
+  .panel li { margin: 7px 0; color: var(--ink-2); }
+  .panel li b { color: var(--ink); font-weight: 600; }
+
+  table.qs { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.qs th, table.qs td { text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  table.qs th { font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  table.qs td:first-child { font-weight: 600; white-space: nowrap; }
+
+  /* ═══ PHONE FRAME — renders the app's shipped LIGHT theme, deliberately ═══
+     Everything inside .phone uses fixed values from constants/theme.ts, not the
+     page tokens, so frames read identically in the doc's light and dark themes. */
+  .phone {
+    width: 372px; max-width: 100%; height: 748px; overflow: hidden;
+    background: #FFFFFF; border-radius: 34px; position: relative;
+    border: 1px solid rgba(0,0,0,0.10);
+    box-shadow: 0 24px 48px -24px rgba(19,17,46,0.35), 0 2px 8px rgba(19,17,46,0.08);
+    font-size: 15px; color: #0A0A0A;
+  }
+  :root[data-theme="dark"] .phone, .phone { color-scheme: light; }
+  .p-hdr {
+    display: flex; align-items: center; padding: 18px 16px 12px;
+    border-bottom: 1px solid #EAEAEA;
+  }
+  .p-hdr .back { width: 32px; font-size: 20px; color: #0A0A0A; }
+  .p-hdr .ttl { flex: 1; text-align: center; font-size: 16px; font-weight: 500; color: #0A0A0A; }
+  .p-hdr .sp { width: 32px; }
+  .p-body { padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+
+  .p-fade {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 84px;
+    background: linear-gradient(rgba(255,255,255,0), #FFFFFF 78%);
+    border-radius: 0 0 34px 34px; pointer-events: none;
+  }
+  .p-scrollhint {
+    position: absolute; bottom: 14px; left: 0; right: 0; text-align: center;
+    font-size: 11px; color: #A3A3A3; letter-spacing: 0.06em;
+  }
+
+  .add-cta {
+    display: flex; align-items: center; gap: 12px; background: #E0FBF7;
+    border-radius: 16px; padding: 13px 14px;
+  }
+  .add-cta .cam { width: 24px; text-align: center; color: #00C2A8; font-size: 17px; }
+  .add-cta .t1 { font-size: 14.5px; font-weight: 500; color: #0A0A0A; }
+  .add-cta .t2 { font-size: 12.5px; color: #525252; margin-top: 1px; }
+
+  .sec-label {
+    font-size: 11px; font-weight: 500; letter-spacing: 0.8px;
+    text-transform: uppercase; color: #737373; margin-bottom: 8px;
+  }
+  .zone { position: relative; }
+
+  /* Recent h-scroll row (baseline) */
+  .recent-row { display: flex; gap: 12px; overflow: hidden; position: relative; }
+  .recent-row .tile { width: 152px; flex: none; }
+  .r-fade {
+    position: absolute; top: 0; bottom: 0; right: -16px; width: 44px;
+    background: linear-gradient(90deg, rgba(255,255,255,0), #FFFFFF);
+    pointer-events: none;
+  }
+
+  /* Text-only tile (shipped) */
+  .tile {
+    border: 1px solid #EAEAEA; border-radius: 16px; background: #FFFFFF;
+    padding: 12px; min-height: 88px; display: flex; flex-direction: column; gap: 5px;
+  }
+  .t-meta { font-size: 10.5px; font-weight: 500; letter-spacing: 0.8px; color: #737373; }
+  .t-name { font-size: 14px; font-weight: 500; line-height: 1.32; color: #0A0A0A; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .p-search {
+    background: #FAFAFA; border-radius: 8px; height: 42px; display: flex;
+    align-items: center; padding: 0 12px; color: #737373; font-size: 14.5px; gap: 8px;
+  }
+  .p-sec-title { font-size: 20px; font-weight: 600; color: #0A0A0A; }
+  .brand-label { font-size: 13px; font-weight: 500; color: #0A0A0A; margin: 2px 0 6px; }
+  .always { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+  .always .dot { width: 8px; height: 8px; border-radius: 99px; background: #00C2A8; }
+  .always .a1 { font-size: 14px; color: #0A0A0A; }
+  .always .a2 { font-size: 11px; color: #737373; }
+
+  /* Option A: thumbnail tiles */
+  .tile.with-thumb { min-height: 128px; }
+  .thumb {
+    width: 44px; height: 44px; border-radius: 8px; flex: none;
+    background: #F5F5F5; position: relative; overflow: hidden;
+  }
+  .thumb.mono {
+    display: flex; align-items: center; justify-content: center;
+    background: #E0FBF7; color: #009B86; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+  /* Illustrative packaging stand-ins (real photos in the app) */
+  .ph::after { content: ""; position: absolute; inset: 0; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
+  .ph-salmon  { background: linear-gradient(160deg,#F9D9D2 0%, #E8967F 55%, #C96A52 100%); }
+  .ph-chicken { background: linear-gradient(160deg,#FBEBC8 0%, #E8B558 55%, #B97F2C 100%); }
+  .ph-turkey  { background: linear-gradient(160deg,#EBDDCB 0%, #B98F62 55%, #7E5A38 100%); }
+  .ph-fish    { background: linear-gradient(160deg,#DCE9F2 0%, #8FB4CC 55%, #55809E 100%); }
+  .ph-tiki    { background: linear-gradient(160deg,#D8F2EA 0%, #6BC0A8 55%, #2E8A72 100%); }
+  .ph-temp    { background: linear-gradient(160deg,#FDE6C2 0%, #F2A93B 55%, #C97B12 100%); }
+  .ph-churu   { background: linear-gradient(160deg,#F4F9F0 0%, #C4E0AC 55%, #8CBB6A 100%); }
+  .ph-kibble  { background: linear-gradient(160deg,#E9E4F4 0%, #9E8FC9 55%, #6A5AA0 100%); }
+  .ph .lid { position: absolute; top: 0; left: 0; right: 0; height: 9px; background: rgba(255,255,255,0.5); }
+  .ph .band { position: absolute; bottom: 8px; left: 0; right: 0; height: 12px; background: rgba(255,255,255,0.72); }
+
+  .tile .thumbrow { display: flex; align-items: flex-start; justify-content: space-between; }
+
+  /* Option B: pinned search + chips */
+  .pin {
+    position: sticky; top: 0; background: #FFFFFF; margin: -16px -16px 0; padding: 12px 16px 10px;
+    border-bottom: 1px solid #EAEAEA; display: flex; flex-direction: column; gap: 10px;
+  }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    font-size: 12.5px; font-weight: 500; color: #525252; border: 1px solid #EAEAEA;
+    border-radius: 999px; padding: 5px 13px; background: #FFFFFF;
+  }
+  .chip.on { background: #0A0A0A; border-color: #0A0A0A; color: #FFFFFF; }
+
+  /* Option C: rotation shelf compact tiles */
+  .grid2.compact .tile { min-height: 62px; padding: 10px 12px; gap: 3px; }
+  .grid2.compact .t-name { font-size: 13.5px; }
+
+  /* callout dots on frames */
+  .co {
+    position: absolute; z-index: 3; width: 24px; height: 24px; border-radius: 999px;
+    background: #00C2A8; color: #fff; font-size: 12.5px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; font-family: var(--sans);
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.85), 0 2px 6px rgba(0,0,0,0.25);
+  }
+
+  .divider { border: none; border-top: 1px solid var(--hairline); margin: 56px 0 0; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .phone { transition: transform 0.25s ease; }
+  }
+</style>
+
+<div class="masthead">
+  <div class="wrap" style="padding:0;">
+    <div class="eyebrow">Project Nyx · Design exploration · For PM reaction — nothing here is built</div>
+    <h1>Finding a food in the picker</h1>
+    <p>Household feedback (2026-07-15): logging from <b>FAB&nbsp;→ Recent</b> is quick, but when the food isn't in Recent, picking it out of the long library list is hard. Photos made the Foods tab easier to scan — what would make the <i>picker's</i> library findable?</p>
+    <p>Three independent levers below, each mocked against today's picker, plus the composite we recommend. React to any of them — they're separable PRs.</p>
+    <div class="meta">
+      <span><b>Surface</b> FoodPicker library zone (app/log.tsx → components/log/FoodPicker.tsx)</span>
+      <span><b>Explored by</b> Sr. Product Designer, synced with the team</span>
+      <span><b>Date</b> 2026-07-15</span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="panel" style="border-left:3px solid var(--accent-fill);">
+    <h3>Decision record — PM rulings, 2026-07-15</h3>
+    <ul>
+      <li><b>Q1 · Photos (Option A): held.</b> Not now — this doc stays as the revisit reference (backlog B-348).</li>
+      <li><b>Q2 · Rotation parameters: approved</b> — 30-day window, cap 12, labeled "{Pet}'s rotation".</li>
+      <li><b>Q3 · Sequence ratified: C → B</b> — B-346 (rotation shelf) then B-347 (pinned search + scope chips; executes B-020). Sequenced, not parallel — same <span class="fileref">components/log/FoodPicker.tsx</span>.</li>
+      <li><b>Q4 · B-009 dedup: not folded in</b> for now.</li>
+    </ul>
+  </div>
+
+  <h2>Where the friction actually is</h2>
+  <p class="kicker">Before proposing anything, the team walked the failure case: the food you want isn't in Recent, so you scroll. Four separate things make that scroll slow — and only one of them is "no photos."</p>
+
+  <div class="panel">
+    <ul>
+      <li><b>Recent is capped at 5 foods from the last 14 days, in a horizontal scroll.</b> A rotation of 8–12 foods means the one you want <i>just missed the cut</i> — constantly. This is likely the single biggest contributor to falling into the long list at all.</li>
+      <li><b>Search sits mid-screen, below Add-new + Recent + Always available.</b> Already filed as B-020. The fastest findability tool in the picker is the one you have to scroll to reach.</li>
+      <li><b>Every library tile is the same white rectangle.</b> Text-only tiles mean scanning = reading every label. The redesign doc's own premise (§1): image recognition ~13&nbsp;ms vs ~250&nbsp;ms to parse a text row. Photos were deliberately retired from the picker in May 2026 — more on that under Option A, because the reason they were retired has since been solved.</li>
+      <li><b>The list itself is longer than it should be.</b> Duplicate foods (B-009, dedup spec drafted and awaiting ratification) pad the list. Not a picker-UI fix, but every duplicate row is findability tax.</li>
+    </ul>
+  </div>
+
+  <div class="option" style="margin-top:36px;">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="co" style="top:196px; left:340px;">1</div>
+        <div class="co" style="top:404px; left:12px;">2</div>
+        <div class="co" style="top:530px; left:340px;">3</div>
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">What did Nyx eat?</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="add-cta"><div class="cam">📷</div><div><div class="t1">Snap a new food</div><div class="t2">Or choose from your photos</div></div></div>
+          <div class="zone">
+            <div class="sec-label">Recent</div>
+            <div class="recent-row">
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Salmon Pâté</div></div>
+              <div class="tile"><div class="t-meta">TEMPTATIONS · TREAT</div><div class="t-name">Chicken Flavor</div></div>
+              <div class="tile"><div class="t-meta">TIKI CAT · WET</div><div class="t-name">Luau Wild Sal…</div></div>
+              <div class="r-fade"></div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="sec-label">Always available</div>
+            <div class="always"><div class="dot"></div><div><div class="a1">Purrfect Bistro Kibble</div><div class="a2">Free-choice · since Jun 2</div></div></div>
+          </div>
+          <div class="zone">
+            <div class="p-search">⌕&nbsp; Search brand or product</div>
+          </div>
+          <div class="zone">
+            <div class="p-sec-title" style="margin-bottom:8px;">Meals</div>
+            <div class="brand-label">Fancy Feast</div>
+            <div class="grid2">
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Salmon Pâté</div></div>
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Chicken Feast Grilled</div></div>
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Turkey &amp; Giblets Pâté</div></div>
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Ocean Whitefish</div></div>
+            </div>
+            <div class="brand-label" style="margin-top:12px;">Tiki Cat</div>
+            <div class="grid2">
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Luau Wild Salmon</div></div>
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">After Dark Chicken</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">list continues — Treats, Unclassified below</div>
+      </div>
+      <div class="frame-caption">Today's shipped picker, drawn from <span class="fileref">components/log/FoodPicker.tsx</span>. Frames throughout show the app's light theme.</div>
+    </div>
+    <div>
+      <h3 style="font-size:18px; margin:4px 0 14px;">Baseline — the picker today</h3>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><span><b>Recent hides its tail.</b> Five tiles, horizontal scroll, 14-day window. The B-166 edge-fade says "there's more," but the more is still off-screen — and anything older than two weeks isn't here at all.</span></li>
+        <li><span class="co-num">2</span><span><b>Search is below the fold</b> once Recent and Always-available render (B-020, filed 2026-05-21 and still open — this exploration is its natural home).</span></li>
+        <li><span class="co-num">3</span><span><b>The wall of Fancy Feast.</b> Brand grouping (B-113) helps, but within a brand every variant is an identical rectangle distinguished only by flavor text. This is Sam's daily reality.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="opt-tag">Option A</span>Photos come back — the calm way</h2>
+  <div class="verdicts">
+    <span class="verdict hot">Biggest recognition lever</span>
+    <span class="verdict">Reverses a May-2026 decision — needs PM ratification</span>
+    <span class="verdict">Medium build</span>
+  </div>
+  <p class="kicker">Each library tile gains a small fixed-slot thumbnail — the Foods-tab treatment, not the retired photo-grid. Photo when there is one, quiet monogram when there isn't, never a hole and never a spinner.</p>
+
+  <div class="option">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="co" style="top:214px; left:36px;">1</div>
+        <div class="co" style="top:214px; left:214px;">2</div>
+        <div class="co" style="top:560px; left:340px;">3</div>
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">What did Nyx eat?</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="p-search">⌕&nbsp; Search brand or product</div>
+          <div class="zone">
+            <div class="p-sec-title" style="margin-bottom:8px;">Meals</div>
+            <div class="brand-label">Fancy Feast</div>
+            <div class="grid2">
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-salmon"><div class="lid"></div><div class="band"></div></div></div>
+                <div class="t-meta">WET</div><div class="t-name">Salmon Pâté</div>
+              </div>
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-chicken"><div class="lid"></div><div class="band"></div></div></div>
+                <div class="t-meta">WET</div><div class="t-name">Chicken Feast Grilled</div>
+              </div>
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-turkey"><div class="lid"></div><div class="band"></div></div></div>
+                <div class="t-meta">WET</div><div class="t-name">Turkey &amp; Giblets Pâté</div>
+              </div>
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-fish"><div class="lid"></div><div class="band"></div></div></div>
+                <div class="t-meta">WET</div><div class="t-name">Ocean Whitefish</div>
+              </div>
+            </div>
+            <div class="brand-label" style="margin-top:12px;">Tiki Cat</div>
+            <div class="grid2">
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-tiki"><div class="band"></div></div></div>
+                <div class="t-meta">WET</div><div class="t-name">Luau Wild Salmon</div>
+              </div>
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb mono">AD</div></div>
+                <div class="t-meta">WET</div><div class="t-name">After Dark Chicken</div>
+              </div>
+            </div>
+            <div class="p-sec-title" style="margin:16px 0 8px;">Treats</div>
+            <div class="grid2">
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-temp"><div class="band"></div></div></div>
+                <div class="t-meta">TEMPTATIONS · TREAT</div><div class="t-name">Chicken Flavor</div>
+              </div>
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-churu"><div class="band"></div></div></div>
+                <div class="t-meta">INABA · TREAT</div><div class="t-name">Churu Chicken</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">packaging art is illustrative — real photos in the app</div>
+      </div>
+      <div class="frame-caption">Search shown pinned here only to fit the frame; Option A is just the tiles. The 44&nbsp;pt thumbnail slot and its three states come straight from <span class="fileref">components/foods/FoodRow.tsx</span>.</div>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><span><b>Fixed 44 pt slot, three states</b> — photo / quiet neutral tile while the signed URL resolves / calm monogram placeholder. Identical footprint in every state, so the grid never becomes the "uneven state machine" that got photos retired.</span></li>
+        <li><span class="co-num">2</span><span><b>Text stays primary.</b> The thumb sits above the eyebrow; product name keeps the visual center. Color/shape says "the pink can"; the flavor text confirms it.</span></li>
+        <li><span class="co-num">3</span><span><b>Photo-less foods get a monogram</b>, not a broken-image glyph — folds in B-114 (already backlogged for the Foods tab; same component serves both).</span></li>
+      </ul>
+      <div class="takes">
+        <div class="take flag"><span class="who">Decision flag</span>The May-2026 note retired picker thumbnails because owner-snapped photos in a dense grid made "a chaotic surface and uneven empty/photo state machine." B-004 PR 6 then <i>solved exactly that</i> for the Foods tab: one fixed-size slot, batch-signed URLs, never a hole, never a spinner. The grounds for the retirement no longer exist — but reversing a recorded decision is the PM's call, not ours.</div>
+        <div class="take"><span class="who">Sam (cat owner)</span>Honest caveat: a wall of Fancy Feast cans looks alike <i>as photos</i> too — same brand trade dress. Photos are strongest across brands and formats (can vs pouch vs bag reads instantly); within a brand the flavor text still does the work. That's why the thumb is small and the name stays big.</div>
+        <div class="take"><span class="who">Engineer</span>Reuses <span class="fileref">getSignedUrls</span> batch-signing + the 24&nbsp;h URL cache from the Foods tab, and the same thumbnail component. Offline (the picker is offline-first) it degrades to monograms — acceptable, progressive enhancement. Density cost: tiles grow ~40&nbsp;pt, so ~1 fewer row per screen.</div>
+        <div class="take"><span class="who">QA</span>10-second test unaffected — tap behavior and layout order unchanged. Needs the on-device pass on a real library with mixed photo/no-photo foods.</div>
+      </div>
+      <p class="cost"><b>Build:</b> one PR. FoodTile gains the thumb slot (shared component extracted from FoodRow), FoodPicker batch-signs like foods.tsx already does. No schema.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="opt-tag">Option B</span>Search meets you at the top</h2>
+  <div class="verdicts">
+    <span class="verdict hot">Resolves B-020</span>
+    <span class="verdict">Small build</span>
+    <span class="verdict">Helps the "I know its name" case</span>
+  </div>
+  <p class="kicker">Search moves to a pinned bar directly under the header — always visible, never scrolled to — with a single row of scope chips for the no-typing case. Two letters of "tur" beats any amount of scrolling.</p>
+
+  <div class="option">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="co" style="top:76px; left:340px;">1</div>
+        <div class="co" style="top:128px; left:340px;">2</div>
+        <div class="co" style="top:236px; left:12px;">3</div>
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">What did Nyx eat?</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="pin">
+            <div class="p-search" style="background:#F5F5F5;">⌕&nbsp; Search brand or product</div>
+            <div class="chips">
+              <div class="chip on">All</div><div class="chip">Meals</div><div class="chip">Treats</div><div class="chip">Wet</div><div class="chip">Dry</div>
+            </div>
+          </div>
+          <div class="add-cta"><div class="cam">📷</div><div><div class="t1">Snap a new food</div><div class="t2">Or choose from your photos</div></div></div>
+          <div class="zone">
+            <div class="sec-label">Recent</div>
+            <div class="recent-row">
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Salmon Pâté</div></div>
+              <div class="tile"><div class="t-meta">TEMPTATIONS · TREAT</div><div class="t-name">Chicken Flavor</div></div>
+              <div class="tile"><div class="t-meta">TIKI CAT · WET</div><div class="t-name">Luau Wild Sal…</div></div>
+              <div class="r-fade"></div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="p-sec-title" style="margin-bottom:8px;">Meals</div>
+            <div class="brand-label">Fancy Feast</div>
+            <div class="grid2">
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Salmon Pâté</div></div>
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Chicken Feast Grilled</div></div>
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Turkey &amp; Giblets Pâté</div></div>
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Ocean Whitefish</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">bar stays pinned as the list scrolls</div>
+      </div>
+      <div class="frame-caption">Chips are a closed single-select set — five options, all visible, no hidden overflow (the B-146 convention). "Always available" moves below the library (it's standing facts, not a hot path).</div>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><span><b>Search is the first thing under the header</b> and stays pinned while the list scrolls. The moment the picker opens, typing is available — no hunting for the field.</span></li>
+        <li><span class="co-num">2</span><span><b>Scope chips for the one-handed case:</b> All / Meals / Treats / Wet / Dry. One tap cuts the list by ~half without the keyboard. Data already exists (<span class="fileref">food_type</span> + <span class="fileref">format</span> on every food).</span></li>
+        <li><span class="co-num">3</span><span><b>Nothing else moves.</b> Add-new keeps its first-field-of-view slot (the May-2026 zone-ordering PM call is preserved — search pins <i>above</i> it as chrome, not as a zone).</span></li>
+      </ul>
+      <div class="takes">
+        <div class="take"><span class="who">Designer</span>Search is the fallback lane, not the hero — Principle 1 wants zero decisions, and typing is a decision. But when the fallback is needed it should be <i>instant</i>. Deliberately no autofocus: popping the keyboard would cover the Recent tiles that serve the 80% case.</div>
+        <div class="take"><span class="who">Jordan (dog owner)</span>This is the one that works with a squirming dog under one arm — chip "Dry", tap the kibble, done.</div>
+        <div class="take"><span class="who">Data Scientist</span>Chips filter on facts (type/format), never on inferred preference — no conflict with intake-is-not-preference.</div>
+      </div>
+      <p class="cost"><b>Build:</b> one small PR. Move + pin the existing search state, add a chip row over the existing <span class="fileref">groupFoodsByType</span>/format fields. No schema. Closes B-020.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="opt-tag">Option C</span>The shelf that holds the whole rotation</h2>
+  <div class="verdicts">
+    <span class="verdict hot">Cheapest · likely fixes the actual reported case</span>
+    <span class="verdict">Small build</span>
+  </div>
+  <p class="kicker">The quiet insight from the team sync: your wife's friction starts <i>before</i> the long list — it starts when the food she wants isn't in Recent. Recent holds 5 foods from 14 days; a real household rotation is 8–12. Widen the shelf to hold the rotation, and the long list becomes a rare destination instead of a daily one.</p>
+
+  <div class="option">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="co" style="top:172px; left:340px;">1</div>
+        <div class="co" style="top:300px; left:12px;">2</div>
+        <div class="co" style="top:472px; left:340px;">3</div>
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">What did Nyx eat?</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="add-cta"><div class="cam">📷</div><div><div class="t1">Snap a new food</div><div class="t2">Or choose from your photos</div></div></div>
+          <div class="zone">
+            <div class="sec-label">Nyx's rotation</div>
+            <div class="grid2 compact">
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Salmon Pâté</div></div>
+              <div class="tile"><div class="t-meta">TEMPTATIONS · TREAT</div><div class="t-name">Chicken Flavor</div></div>
+              <div class="tile"><div class="t-meta">TIKI CAT · WET</div><div class="t-name">Luau Wild Salmon</div></div>
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Turkey &amp; Giblets Pâté</div></div>
+              <div class="tile"><div class="t-meta">INABA · TREAT</div><div class="t-name">Churu Chicken</div></div>
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Chicken Feast Grilled</div></div>
+              <div class="tile"><div class="t-meta">TIKI CAT · WET</div><div class="t-name">After Dark Chicken</div></div>
+              <div class="tile"><div class="t-meta">PURRFECT BISTRO · DRY</div><div class="t-name">Kibble — Salmon</div></div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="p-search">⌕&nbsp; Search brand or product</div>
+          </div>
+          <div class="zone">
+            <div class="p-sec-title" style="margin-bottom:8px;">Meals</div>
+            <div class="brand-label">Fancy Feast</div>
+            <div class="grid2">
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Salmon Pâté</div></div>
+              <div class="tile"><div class="t-meta">WET</div><div class="t-name">Chicken Feast Grilled</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">full library continues below, unchanged</div>
+      </div>
+      <div class="frame-caption">"Recent" becomes "Nyx's rotation": every food logged in the last 30 days (cap ~12), newest first, in a <i>wrapped</i> grid of compact tiles — nothing hidden off-screen.</div>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><span><b>Wrapped, not scrolled.</b> The horizontal shelf becomes a 2-up wrapped grid — every rotation food visible at once. Kills the picker's last silent h-scroll (the B-146/B-166 direction, completed).</span></li>
+        <li><span class="co-num">2</span><span><b>Compact single-line tiles</b> keep 8 foods inside the space 5 used to take. Ordered by recency — the morning food is always the first tile at breakfast.</span></li>
+        <li><span class="co-num">3</span><span><b>The library below is untouched</b> — it just gets visited far less often.</span></li>
+      </ul>
+      <div class="takes">
+        <div class="take"><span class="who">Data Scientist</span>Recency is a fact, so this stays clean of intake-is-not-preference — but hold that line in the copy: "Nyx's rotation" describes what was <i>logged</i>, never what Nyx <i>loves</i>. No hearts, no favorites framing on a one-tap-log surface (the B-112 guardrail).</div>
+        <div class="take"><span class="who">Engineer</span>Cheapest option on the table: <span class="fileref">getRecentFoods(petId, 14, 5)</span> → <span class="fileref">(petId, 30, 12)</span> plus a layout swap to the existing wrapped-grid pattern. One PR, no schema, no new queries.</div>
+        <div class="take"><span class="who">Sam (cat owner)</span>This is my actual fix. My six staples plus this month's experiments all fit — I'd stop seeing the long list on weekdays entirely.</div>
+        <div class="take"><span class="who">QA</span>Watch the empty/sparse state: a new user with 2 foods should see a shelf of 2, not a grid of holes. (The wrapped grid handles this by construction.)</div>
+      </div>
+      <p class="cost"><b>Build:</b> one small PR. Query params + shelf layout. No schema.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="opt-tag">Recommended</span>The composite — C, then B, then A</h2>
+  <div class="verdicts">
+    <span class="verdict hot">Team recommendation</span>
+    <span class="verdict">Three small PRs, in that order</span>
+  </div>
+  <p class="kicker">The three options attack different failure points and compose without fighting: the rotation shelf absorbs the everyday case, pinned search catches the known-name case, photos make the true browse case scannable. Sequenced cheapest-first, so value lands even if we stop early.</p>
+
+  <div class="option">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">What did Nyx eat?</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="pin">
+            <div class="p-search" style="background:#F5F5F5;">⌕&nbsp; Search brand or product</div>
+            <div class="chips">
+              <div class="chip on">All</div><div class="chip">Meals</div><div class="chip">Treats</div><div class="chip">Wet</div><div class="chip">Dry</div>
+            </div>
+          </div>
+          <div class="add-cta"><div class="cam">📷</div><div><div class="t1">Snap a new food</div><div class="t2">Or choose from your photos</div></div></div>
+          <div class="zone">
+            <div class="sec-label">Nyx's rotation</div>
+            <div class="grid2 compact">
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Salmon Pâté</div></div>
+              <div class="tile"><div class="t-meta">TEMPTATIONS · TREAT</div><div class="t-name">Chicken Flavor</div></div>
+              <div class="tile"><div class="t-meta">TIKI CAT · WET</div><div class="t-name">Luau Wild Salmon</div></div>
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Turkey &amp; Giblets Pâté</div></div>
+              <div class="tile"><div class="t-meta">INABA · TREAT</div><div class="t-name">Churu Chicken</div></div>
+              <div class="tile"><div class="t-meta">TIKI CAT · WET</div><div class="t-name">After Dark Chicken</div></div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="p-sec-title" style="margin-bottom:8px;">Meals</div>
+            <div class="brand-label">Fancy Feast</div>
+            <div class="grid2">
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-salmon"><div class="lid"></div><div class="band"></div></div></div>
+                <div class="t-meta">WET</div><div class="t-name">Salmon Pâté</div>
+              </div>
+              <div class="tile with-thumb">
+                <div class="thumbrow"><div class="thumb ph ph-chicken"><div class="lid"></div><div class="band"></div></div></div>
+                <div class="t-meta">WET</div><div class="t-name">Chicken Feast Grilled</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">rotation absorbs the everyday · search catches the rest · photos make browsing scannable</div>
+      </div>
+      <div class="frame-caption">All three levers in one screen. "Always available" relocates below the library; everything else keeps today's order.</div>
+    </div>
+    <div>
+      <div class="panel" style="margin-top:0;">
+        <h3>Suggested sequence — three independent PRs</h3>
+        <ul>
+          <li><b>PR 1 — Rotation shelf (Option C).</b> Smallest diff, highest odds of dissolving the reported friction. Ships alone; measurable immediately in the household.</li>
+          <li><b>PR 2 — Pinned search + scope chips (Option B).</b> Closes B-020. Independent files from PR 1's shelf work aside from FoodPicker itself — sequence, don't parallelize, to avoid rebasing the same component.</li>
+          <li><b>PR 3 — Tile thumbnails (Option A).</b> The biggest visual change and the one carrying a decision reversal — gated on your ratification below. Extracting the shared thumbnail component also positions B-114's monogram for the Foods tab.</li>
+        </ul>
+      </div>
+      <div class="takes">
+        <div class="take"><span class="who">Product Owner</span>Backlog reconciliation if ratified: B-020 closes with PR 2; B-114 folds into PR 3; B-007 (FAB revamp) and B-019 stay open — this exploration doesn't touch the FAB itself. B-009 dedup remains the orthogonal "shorter list" half, still awaiting its own ratification.</div>
+        <div class="take"><span class="who">QA</span>Each PR re-runs the §10 acceptance bar: 10-second test on an already-logged food, one-handed, unchanged or better.</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2>What we deliberately didn't propose</h2>
+  <div class="panel">
+    <ul>
+      <li><b>Full-width photo rows in the picker (the Foods-tab layout).</b> It's the layout your wife finds pleasant — but it halves candidate density on the hot path and reopens B-113, which you ruled as Option C (keep the tile/row split, harmonize structure). Small thumbs on tiles capture most of the recognition benefit without the density cost.</li>
+      <li><b>Favorites / "loved foods" shelf in the picker.</b> Intake is not preference — a finished bowl next to a one-tap-log control must never read as "she loves this" (the B-112 line). The rotation shelf is recency-factual instead.</li>
+      <li><b>Alphabet index rail.</b> Right tool for a 500-item contact list, overkill for a personal library of 20–60 foods with brand grouping already in place.</li>
+      <li><b>Reordering the library by frequency.</b> Frecency sorting churns spatial memory — the food that was "bottom left under Tiki Cat" yesterday shouldn't teleport overnight. The rotation shelf gives recency a home without destabilizing the browse list.</li>
+    </ul>
+  </div>
+
+  <h2>Questions for you</h2>
+  <div class="panel">
+    <table class="qs">
+      <tr><th>#</th><th>Decision</th><th>Context</th></tr>
+      <tr><td>Q1</td><td>Ratify photos returning to picker tiles?</td><td>Reverses the May-2026 retirement note. The stated grounds (uneven state machine) were solved by B-004 PR 6's fixed-slot pattern — but it's a recorded decision, so the reversal is yours to make, not ours to assume.</td></tr>
+      <tr><td>Q2</td><td>Rotation shelf parameters</td><td>Proposed: last 30 days, cap 12, recency-ordered, labeled "{Pet}'s rotation". Happy to tune window/cap after a week of household use.</td></tr>
+      <tr><td>Q3</td><td>Sequence C → B → A as three PRs?</td><td>Or cut A if the first two dissolve the friction — each ships standalone.</td></tr>
+      <tr><td>Q4</td><td>Promote B-009 dedup alongside?</td><td>The spec (<span class="fileref">docs/nyx-food-dedup-requirements.md</span>) awaits your ratification; every duplicate removed is findability gained, independent of any picker UI change.</td></tr>
+    </table>
+  </div>
+
+</div>

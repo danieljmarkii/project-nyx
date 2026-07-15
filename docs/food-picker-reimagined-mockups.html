@@ -1,0 +1,631 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reimagining the food picker — blue-sky exploration</title>
+<style>
+  /* ── Tokens (shared language with food-picker-findability-mockups.html) ── */
+  :root {
+    --ground: #F6F6F3;
+    --card: #FFFFFF;
+    --ink: #131312;
+    --ink-2: #565652;
+    --ink-3: #7B7B75;
+    --hairline: #E7E7E2;
+    --accent: #00A38D;
+    --accent-fill: #00C2A8;
+    --accent-tint: #E0FBF7;
+    --night: #13112E;
+    --night-elev: #251F57;
+    --moonlight: #F2EEE4;
+    --night-muted: #A6A2CE;
+    --warn: #B45309;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #141320; --card: #1C1B2A; --ink: #ECEAF6; --ink-2: #B7B3D9;
+      --ink-3: #8B87B4; --hairline: #2C2A42; --accent: #35D6BE;
+      --accent-tint: #12332F; --warn: #E5A155;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #141320; --card: #1C1B2A; --ink: #ECEAF6; --ink-2: #B7B3D9;
+    --ink-3: #8B87B4; --hairline: #2C2A42; --accent: #35D6BE;
+    --accent-tint: #12332F; --warn: #E5A155;
+  }
+  :root[data-theme="light"] {
+    --ground: #F6F6F3; --card: #FFFFFF; --ink: #131312; --ink-2: #565652;
+    --ink-3: #7B7B75; --hairline: #E7E7E2; --accent: #00A38D;
+    --accent-tint: #E0FBF7; --warn: #B45309;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 15.5px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+
+  .masthead {
+    background: var(--night); color: var(--moonlight);
+    border-radius: 0 0 20px 20px; padding: 44px 40px 40px; margin-bottom: 44px;
+  }
+  .masthead .eyebrow {
+    font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--night-muted); margin-bottom: 14px; font-weight: 600;
+  }
+  .masthead h1 {
+    font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.5vw, 42px);
+    line-height: 1.15; margin: 0 0 16px; text-wrap: balance; letter-spacing: -0.01em;
+  }
+  .masthead p { max-width: 64ch; color: #CFCBE8; margin: 0 0 6px; }
+  .masthead .meta { margin-top: 18px; font-size: 13px; color: var(--night-muted); display: flex; gap: 20px; flex-wrap: wrap; }
+  .masthead .meta b { color: var(--moonlight); font-weight: 600; }
+
+  h2 {
+    font-family: var(--serif); font-weight: 500; font-size: 27px; line-height: 1.25;
+    margin: 64px 0 8px; letter-spacing: -0.01em; text-wrap: balance;
+  }
+  h2 .opt-tag {
+    display: inline-block; vertical-align: 4px; margin-right: 10px;
+    font-family: var(--sans); font-size: 11.5px; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--accent-tint); color: var(--accent);
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .kicker { color: var(--ink-2); max-width: 70ch; margin: 0 0 26px; }
+  p { max-width: 70ch; }
+  .fileref { font-family: var(--mono); font-size: 0.86em; background: var(--card); border: 1px solid var(--hairline); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+
+  .verdicts { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 20px; }
+  .verdict {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+    border: 1px solid var(--hairline); background: var(--card);
+    color: var(--ink-2); border-radius: 999px; padding: 4px 12px;
+  }
+  .verdict.hot { border-color: var(--accent); color: var(--accent); }
+  .verdict.warn { border-color: var(--warn); color: var(--warn); }
+
+  .option { display: grid; grid-template-columns: 400px minmax(0,1fr); gap: 36px; align-items: start; }
+  @media (max-width: 900px) { .option { grid-template-columns: 1fr; } }
+  .frame-col { position: relative; }
+  .frame-caption { font-size: 12.5px; color: var(--ink-3); margin-top: 12px; max-width: 380px; }
+
+  .callouts { list-style: none; margin: 0 0 26px; padding: 0; display: grid; gap: 12px; }
+  .callouts li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: baseline; }
+  .co-num {
+    width: 22px; height: 22px; border-radius: 999px; background: var(--accent-fill);
+    color: #fff; font-size: 12px; font-weight: 700; display: inline-flex;
+    align-items: center; justify-content: center; transform: translateY(3px);
+  }
+  .callouts b { font-weight: 600; }
+
+  .takes { display: grid; gap: 10px; margin: 22px 0 0; }
+  .take {
+    background: var(--card); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 12px 16px; font-size: 14px; color: var(--ink-2);
+  }
+  .take .who {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-3); margin-right: 8px;
+  }
+  .take.flag { border-left: 3px solid var(--warn); }
+  .take.flag .who { color: var(--warn); }
+  .cost { margin-top: 18px; font-size: 13.5px; color: var(--ink-3); }
+  .cost b { color: var(--ink-2); font-weight: 600; }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--hairline); border-radius: 16px;
+    padding: 24px 28px; margin: 24px 0;
+  }
+  .panel h3 { margin: 0 0 10px; font-size: 16.5px; }
+  .panel ul { margin: 0; padding-left: 20px; }
+  .panel li { margin: 7px 0; color: var(--ink-2); }
+  .panel li b { color: var(--ink); font-weight: 600; }
+
+  .mtx-scroll { overflow-x: auto; }
+  table.mtx { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 760px; }
+  table.mtx th, table.mtx td { text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  table.mtx th { font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  table.mtx td:first-child { font-weight: 600; white-space: nowrap; }
+
+  table.qs { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.qs th, table.qs td { text-align: left; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  table.qs th { font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+  table.qs td:first-child { font-weight: 600; white-space: nowrap; }
+
+  /* ═══ PHONE FRAME — the app's shipped LIGHT theme, deliberately fixed ═══ */
+  .phone {
+    width: 372px; max-width: 100%; height: 748px; overflow: hidden;
+    background: #FFFFFF; border-radius: 34px; position: relative;
+    border: 1px solid rgba(0,0,0,0.10);
+    box-shadow: 0 24px 48px -24px rgba(19,17,46,0.35), 0 2px 8px rgba(19,17,46,0.08);
+    font-size: 15px; color: #0A0A0A; color-scheme: light;
+  }
+  .p-hdr { display: flex; align-items: center; padding: 18px 16px 12px; border-bottom: 1px solid #EAEAEA; }
+  .p-hdr .back { width: 32px; font-size: 20px; color: #0A0A0A; }
+  .p-hdr .ttl { flex: 1; text-align: center; font-size: 16px; font-weight: 500; color: #0A0A0A; }
+  .p-hdr .sp { width: 32px; }
+  .p-body { padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+  .p-fade {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 84px;
+    background: linear-gradient(rgba(255,255,255,0), #FFFFFF 78%);
+    border-radius: 0 0 34px 34px; pointer-events: none;
+  }
+  .p-scrollhint { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: 11px; color: #A3A3A3; letter-spacing: 0.06em; }
+
+  .sec-label { font-size: 11px; font-weight: 500; letter-spacing: 0.8px; text-transform: uppercase; color: #737373; margin-bottom: 8px; }
+  .zone { position: relative; }
+  .tile { border: 1px solid #EAEAEA; border-radius: 16px; background: #FFFFFF; padding: 12px; min-height: 88px; display: flex; flex-direction: column; gap: 5px; }
+  .t-meta { font-size: 10.5px; font-weight: 500; letter-spacing: 0.8px; color: #737373; }
+  .t-name { font-size: 14px; font-weight: 500; line-height: 1.32; color: #0A0A0A; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid2.compact .tile { min-height: 62px; padding: 10px 12px; gap: 3px; }
+  .grid2.compact .t-name { font-size: 13.5px; }
+  .p-search { background: #FAFAFA; border-radius: 8px; height: 42px; display: flex; align-items: center; padding: 0 12px; color: #737373; font-size: 14.5px; gap: 8px; }
+  .p-sec-title { font-size: 20px; font-weight: 600; color: #0A0A0A; }
+
+  /* packaging stand-ins */
+  .ph { position: relative; overflow: hidden; }
+  .ph::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); border-radius: inherit; }
+  .ph-salmon  { background: linear-gradient(160deg,#F9D9D2 0%, #E8967F 55%, #C96A52 100%); }
+  .ph-chicken { background: linear-gradient(160deg,#FBEBC8 0%, #E8B558 55%, #B97F2C 100%); }
+  .ph-turkey  { background: linear-gradient(160deg,#EBDDCB 0%, #B98F62 55%, #7E5A38 100%); }
+  .ph-fish    { background: linear-gradient(160deg,#DCE9F2 0%, #8FB4CC 55%, #55809E 100%); }
+  .ph-tiki    { background: linear-gradient(160deg,#D8F2EA 0%, #6BC0A8 55%, #2E8A72 100%); }
+  .ph-temp    { background: linear-gradient(160deg,#FDE6C2 0%, #F2A93B 55%, #C97B12 100%); }
+  .ph-churu   { background: linear-gradient(160deg,#F4F9F0 0%, #C4E0AC 55%, #8CBB6A 100%); }
+  .ph-kibble  { background: linear-gradient(160deg,#E9E4F4 0%, #9E8FC9 55%, #6A5AA0 100%); }
+  .ph .lid { position: absolute; top: 0; left: 0; right: 0; height: 10px; background: rgba(255,255,255,0.5); }
+  .ph .band { position: absolute; bottom: 10px; left: 0; right: 0; height: 14px; background: rgba(255,255,255,0.72); }
+  .thumb { width: 44px; height: 44px; border-radius: 8px; flex: none; background: #F5F5F5; }
+
+  /* R1 — prediction card */
+  .predict {
+    border: 1px solid #EAEAEA; border-radius: 20px; overflow: hidden; background: #FFFFFF;
+  }
+  .predict .hero { height: 150px; position: relative; }
+  .predict .hero .scrim {
+    position: absolute; inset: auto 0 0 0; padding: 12px 16px;
+    background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.45));
+  }
+  .predict .hero .scrim .pm { font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; color: rgba(255,255,255,0.92); }
+  .predict .hero .scrim .pn { font-size: 21px; font-weight: 600; color: #FFFFFF; line-height: 1.2; }
+  .predict .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .predict .why { font-size: 12.5px; color: #525252; }
+  .btn-log {
+    background: #00C2A8; color: #FFFFFF; border-radius: 12px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15.5px; font-weight: 600;
+  }
+  .btn-quiet { text-align: center; font-size: 13.5px; color: #525252; padding: 2px 0 0; }
+
+  /* R2 — scanner */
+  .viewfinder {
+    height: 268px; border-radius: 20px; background: #101312; position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .vf-can {
+    width: 110px; height: 150px; border-radius: 12px;
+    background: linear-gradient(160deg,#D8F2EA 0%, #6BC0A8 55%, #2E8A72 100%);
+    opacity: 0.9; position: relative;
+  }
+  .vf-can .band { position: absolute; bottom: 22px; left: 0; right: 0; height: 20px; background: rgba(255,255,255,0.75); }
+  .vf-can .bars {
+    position: absolute; bottom: 26px; left: 18px; right: 18px; height: 12px;
+    background: repeating-linear-gradient(90deg, #1a1a1a 0 2px, transparent 2px 5px);
+  }
+  .reticle { position: absolute; inset: 26px; pointer-events: none; }
+  .reticle i { position: absolute; width: 26px; height: 26px; border: 2.5px solid #00C2A8; }
+  .reticle i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-radius: 8px 0 0 0; }
+  .reticle i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; }
+  .reticle i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; border-radius: 0 0 0 8px; }
+  .reticle i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-radius: 0 0 8px 0; }
+  .vf-hint { position: absolute; bottom: 12px; left: 0; right: 0; text-align: center; font-size: 12.5px; color: rgba(255,255,255,0.92); }
+  .match {
+    border: 1px solid #EAEAEA; border-radius: 16px; padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px; background: #FFFFFF;
+  }
+  .match .m-meta { font-size: 10.5px; font-weight: 500; letter-spacing: 0.8px; color: #737373; }
+  .match .m-name { font-size: 15px; font-weight: 600; color: #0A0A0A; }
+  .match .m-btn {
+    margin-left: auto; background: #00C2A8; color: #fff; font-size: 13px; font-weight: 600;
+    border-radius: 999px; padding: 9px 16px; flex: none;
+  }
+
+  /* R3 — day board slots */
+  .slot { border: 1px solid #EAEAEA; border-radius: 16px; padding: 13px 14px; background: #FFFFFF; display: flex; flex-direction: column; gap: 8px; }
+  .slot .s-head { display: flex; align-items: baseline; gap: 8px; }
+  .slot .s-title { font-size: 15px; font-weight: 600; color: #0A0A0A; }
+  .slot .s-time { font-size: 12px; color: #737373; }
+  .slot .s-state { margin-left: auto; font-size: 12px; font-weight: 600; }
+  .slot .s-state.done { color: #00A38D; }
+  .slot .s-state.open { color: #737373; }
+  .slot .s-row { display: flex; align-items: center; gap: 10px; }
+  .slot .s-food { font-size: 14px; color: #0A0A0A; }
+  .slot .s-sub { font-size: 12px; color: #737373; }
+  .slot .s-cta {
+    background: #E0FBF7; color: #00806F; font-size: 13px; font-weight: 600;
+    border-radius: 10px; padding: 10px; text-align: center;
+  }
+  .slot .s-swap { text-align: center; font-size: 12.5px; color: #525252; }
+  .slot.done { background: #FAFAFA; }
+
+  /* R4 — pantry */
+  .shelf { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pantry-tile { border-radius: 16px; height: 128px; position: relative; overflow: hidden; }
+  .pantry-tile .scrim {
+    position: absolute; inset: auto 0 0 0; padding: 8px 11px 9px;
+    background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.52));
+  }
+  .pantry-tile .pt-m { font-size: 9.5px; font-weight: 600; letter-spacing: 0.7px; color: rgba(255,255,255,0.88); }
+  .pantry-tile .pt-n { font-size: 13.5px; font-weight: 600; color: #FFF; line-height: 1.25; }
+  .pantry-tile .pin {
+    position: absolute; top: 8px; right: 8px; width: 22px; height: 22px; border-radius: 999px;
+    background: rgba(0,0,0,0.35); color: #fff; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .co {
+    position: absolute; z-index: 3; width: 24px; height: 24px; border-radius: 999px;
+    background: #00C2A8; color: #fff; font-size: 12.5px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; font-family: var(--sans);
+    box-shadow: 0 0 0 3px rgba(255,255,255,0.85), 0 2px 6px rgba(0,0,0,0.25);
+  }
+
+  .divider { border: none; border-top: 1px solid var(--hairline); margin: 56px 0 0; }
+</style>
+
+<div class="masthead">
+  <div class="wrap" style="padding:0;">
+    <div class="eyebrow">Project Nyx · Design exploration, round 2 — blue sky · For PM reaction, nothing here is built</div>
+    <h1>What if the food picker didn't have to be a picker?</h1>
+    <p>Round 1 (<b>docs/food-picker-findability-mockups.html</b>, PR&nbsp;#351) tuned the existing list: rotation shelf, pinned search, photos. This round takes the brief you actually gave — <i>significant resources, reimagine it</i> — and lets the squad question the premise.</p>
+    <p>The premise worth questioning: a picker assumes the owner arrives knowing nothing. But by week two, Nyx knows the household's feeding rhythm better than any list can express. Every direction below spends that knowledge differently.</p>
+    <div class="meta">
+      <span><b>Grounded in</b> docs/logging-capture-discovery.md (2026-07-10) · Principles 1–2 · the capture-fidelity north star</span>
+      <span><b>Squad</b> full product team, conflicts surfaced inline</span>
+      <span><b>Date</b> 2026-07-15</span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="panel" style="border-left:3px solid var(--accent-fill);">
+    <h3>Decision record — PM close-out, 2026-07-15</h3>
+    <ul>
+      <li>Round-1's <b>C → B greenlit</b> as the near-term build (B-346 → B-347; see the round-1 doc's decision record). This round is <b>held as a documented exploration</b> — revisit gate logged as B-349 (after C+B ship and the B-288 pilot returns data). Q5–Q9 remain open for that revisit.</li>
+      <li><b>R3 reframe (PM):</b> the Dir.-of-Engineering concern centered on the <span class="fileref">feeding_schedules</span> table — what if the day board were purely <b>display organization</b> of existing data (meals bucketed into learned windows for presentation), with no schedule object and no rigorous tracking? Logged as B-350 for a Designer/Data pass — the open honesty question being whether an empty display bucket can avoid reading as a missed meal when no schedule was ever declared.</li>
+    </ul>
+  </div>
+
+  <h2>The squad's shared frame before diverging</h2>
+  <p class="kicker">Three constraints from the July-10 logging-friction discovery bind every direction here — they're what keeps blue-sky from becoming off-brand:</p>
+  <div class="panel">
+    <ul>
+      <li><b>Nothing is ever assumed into existence.</b> A prediction, a schedule slot, a scan — all of them lower the cost of <i>confirming</i>; none may record an event from silence (the B-156 G1 rule, generalized). A slot nobody answered renders as a gap, not a meal.</li>
+      <li><b>Capture fidelity, not logging frequency.</b> A fabricated meal poisons the correlation engine's control windows. Every new lane carries <span class="fileref">logged_via</span> provenance (B-289) so the engine and the vet report always know how a record was born.</li>
+      <li><b>Answering beats initiating.</b> The discovery's core behavioral finding. The picker today is an <i>initiation</i> surface; the deepest reimagining flips it to a <i>response</i> surface — which is also what makes it compose with the B-288 notification pilot instead of competing with it.</li>
+    </ul>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="opt-tag">R1</span>The picker that already knows</h2>
+  <div class="verdicts">
+    <span class="verdict hot">Squad favorite — the core reimagining</span>
+    <span class="verdict">No schema</span>
+    <span class="verdict warn">Carries a genuine Data-vs-Designer conflict</span>
+  </div>
+  <p class="kicker">Open the picker at 7:30am and it leads with one card: the food this pet gets most mornings, photo big enough to be unmistakable, one tap to log. The list still exists — below, as the fallback. Principle 2 ("after week one, no meal log requires typing") taken to its end state: after week one, most meal logs don't even require <i>choosing</i>.</p>
+
+  <div class="option">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="co" style="top:120px; left:340px;">1</div>
+        <div class="co" style="top:322px; left:12px;">2</div>
+        <div class="co" style="top:436px; left:340px;">3</div>
+        <div class="co" style="top:560px; left:12px;">4</div>
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">Nyx · this morning</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="predict">
+            <div class="hero ph ph-salmon"><div class="lid"></div>
+              <div class="scrim">
+                <div class="pm">FANCY FEAST · WET</div>
+                <div class="pn">Salmon Pâté</div>
+              </div>
+            </div>
+            <div class="body">
+              <div class="why">Nyx's usual breakfast — logged 11 of the last 14 mornings around this time.</div>
+              <div class="btn-log">Yes — log it now</div>
+              <div class="btn-quiet">Something different today?</div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="sec-label">Also likely this morning</div>
+            <div class="grid2 compact">
+              <div class="tile"><div class="t-meta">TIKI CAT · WET</div><div class="t-name">Luau Wild Salmon</div></div>
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Chicken Feast Grilled</div></div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="p-search">⌕&nbsp; Search brand or product</div>
+          </div>
+          <div class="zone">
+            <div class="p-sec-title" style="margin-bottom:8px;">Everything else</div>
+            <div class="grid2 compact">
+              <div class="tile"><div class="t-meta">FANCY FEAST · WET</div><div class="t-name">Turkey &amp; Giblets Pâté</div></div>
+              <div class="tile"><div class="t-meta">TEMPTATIONS · TREAT</div><div class="t-name">Chicken Flavor</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">full library + add-new below, unchanged</div>
+      </div>
+      <div class="frame-caption">The prediction is deterministic and computed on-device: per-pet food frequencies inside the current learned time window (trailing 30 days). No LLM, no server call, works offline.</div>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><span><b>One unmistakable card.</b> The photo is large precisely so a lazy confirm is hard to get wrong — you can't tap "yes" to the salmon can while holding the turkey can without noticing. The "why" line shows the receipts (11 of 14 mornings), never "Nyx's favorite."</span></li>
+        <li><span class="co-num">2</span><span><b>Never auto-logged, never pre-armed on ambiguity.</b> If the window's history is mixed (no food ≥60% of recent logs in this window), the hero collapses to the "Also likely" row and the picker behaves like today. Silence records nothing.</span></li>
+        <li><span class="co-num">3</span><span><b>The full picker survives underneath</b> — search, library, add-new. The prediction is a layer, not a replacement, so the worst case is exactly today's screen.</span></li>
+        <li><span class="co-num">4</span><span><b>Provenance travels:</b> <span class="fileref">logged_via='predicted_confirm'</span> on every record born here, so the engine can weight it and the funnel can measure it.</span></li>
+      </ul>
+      <div class="takes">
+        <div class="take flag"><span class="who">Persona conflict — PM call</span><b>Data Scientist:</b> prediction-confirm is the one direction that can <i>fabricate</i> exposure data — an owner who taps "yes" out of habit while actually feeding something else corrupts the very record the flagship protein correlation keys off. <b>Designer/Jordan:</b> that risk exists today too (tapping the wrong Recent tile) and the big photo makes it <i>less</i> likely, not more. <b>Data's conditions for supporting R1:</b> the unmistakable-photo card, the ≥60% confidence floor before a hero renders, provenance tagging, and a dogfood check comparing predicted-confirm error rates against Recent-tile error rates before the engine trusts them equally. The squad did not resolve this — it's yours.</div>
+        <div class="take"><span class="who">Data Scientist</span>The rhythm model itself is the discovery doc's assumption-audit #1, unfunded until now: cluster <span class="fileref">meals.occurred_at</span> per pet on our own dogfood data and measure window tightness. That analysis is the go/no-go for R1 <i>and</i> for B-288's learned windows — one analysis session, two consumers.</div>
+        <div class="take"><span class="who">Sam (cat owner)</span>Works for my wet-food rituals; useless for the grazing bowl — and it must never predict the kibble into a "meal." The free-choice arrangement (B-040) stays an ambient fact, excluded from prediction candidacy.</div>
+        <div class="take"><span class="who">Engineer</span>Smallest of the four: a pure selector over data we already hold locally (<span class="fileref">getFoodIntakeStats</span>-adjacent query + a time-window bucketing), one new card component, no schema, no server. The same model later feeds B-288's notification copy — one model, two channels.</div>
+      </div>
+      <p class="cost"><b>Build:</b> ~2 PRs (rhythm selector w/ tests → picker card + provenance). No schema. Prerequisite: the meal-time clustering analysis on dogfood data.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="opt-tag">R2</span>Point at it — the package is the picker</h2>
+  <div class="verdicts">
+    <span class="verdict hot">Resurrects the deferred barcode lane as a hero</span>
+    <span class="verdict">No schema</span>
+    <span class="verdict">Physical-cue alignment with the capture discovery</span>
+  </div>
+  <p class="kicker">The can is already in your hand when you feed. Point the camera at it: barcode decodes on-device (free, offline), matches <span class="fileref">upc_barcode</span> in the library, meal logs. Unknown package? The same viewfinder flows straight into the existing capture-and-extract pipeline — one flow for known and unknown foods, instead of today's fork between "pick from list" and "snap a new food."</p>
+
+  <div class="option">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="co" style="top:180px; left:340px;">1</div>
+        <div class="co" style="top:392px; left:12px;">2</div>
+        <div class="co" style="top:492px; left:340px;">3</div>
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">Scan a food</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="viewfinder">
+            <div class="vf-can"><div class="band"></div><div class="bars"></div></div>
+            <div class="reticle"><i></i><i></i><i></i><i></i></div>
+            <div class="vf-hint">Point at the package — barcode or front label</div>
+          </div>
+          <div class="match">
+            <div class="thumb ph ph-tiki"><div class="band"></div></div>
+            <div>
+              <div class="m-meta">TIKI CAT · WET · IN YOUR LIBRARY</div>
+              <div class="m-name">Luau Wild Salmon</div>
+            </div>
+            <div class="m-btn">Log meal</div>
+          </div>
+          <div class="zone">
+            <div class="sec-label">No barcode? No problem</div>
+            <div class="tile" style="min-height:0; flex-direction:row; align-items:center; gap:10px;">
+              <div class="t-name" style="font-weight:400; font-size:13.5px; color:#525252;">A package we don't recognize becomes a new library food right here — same photos, same AI extraction, meal logged when you confirm.</div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="p-search">⌕&nbsp; Or search the library</div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">rotation shelf + library below for the no-camera path</div>
+      </div>
+      <div class="frame-caption">Scan is a <i>lane</i>, not the whole picker — the shelf and library stay one swipe below for staples, where a tap will always beat a scan.</div>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><span><b>Barcode first, on-device, offline, $0 per scan.</b> <span class="fileref">upc_barcode</span> has been in the schema (indexed, unique) since the food-library migration — it's been waiting for exactly this. Photo-match against library photos is the fallback for barcode-less packages; a perceptual-hash spike decides on-device vs Edge.</span></li>
+        <li><span class="co-num">2</span><span><b>Match card confirms before logging</b> — never scan-and-silently-log. Wrong match is one tap from the library below.</span></li>
+        <li><span class="co-num">3</span><span><b>Unknown packages merge the two flows.</b> Today "log a known food" and "add a new food" are different doors; here the viewfinder is one door and the system sorts out which case you're in.</span></li>
+      </ul>
+      <div class="takes">
+        <div class="take"><span class="who">Designer</span>The discovery doc's environmental-cue principle, applied in-app: the strongest cue is the physical object, and this makes the object itself the affordance. It also finally gives the barcode-encouraged capture step (§4.2 of the redesign) a daily payoff — owners who snapped barcodes get rewarded every meal.</div>
+        <div class="take"><span class="who">Jordan (dog owner)</span>Skeptical for staples: aiming a camera one-handed with a dog underfoot loses to tapping a Recent tile every time. Where it wins: the new bag, the rotation of prescription cans that all look alike, the pet-sitter week.</div>
+        <div class="take"><span class="who">Dr. Chen</span>Quietly the strongest data-quality direction: a barcode match is <i>ground-truth</i> food identity — no mis-tap, no duplicate, exact SKU. Every scan-logged meal hardens the exposure record the report leans on.</div>
+        <div class="take"><span class="who">Product Owner</span>Composes with, and partly delivers, B-009 dedup phase 1: a scan that hits an existing UPC <i>cannot</i> create a duplicate — match-and-steer by construction.</div>
+        <div class="take"><span class="who">Trust &amp; Safety</span>Camera frames for matching stay on-device unless the food is new (then the existing upload consent applies). No always-on camera; viewfinder only while the lane is open.</div>
+      </div>
+      <p class="cost"><b>Build:</b> ~2–3 PRs (barcode decode + UPC match lane → unknown-package merge into food-capture → photo-match spike, optional). No schema. Note: barcode-only scan was explicitly deferred post-MVP in the May-2026 requirements — promoting it is a scope call for you.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="opt-tag">R3</span>The day board — feeding is a ritual, not a search</h2>
+  <div class="verdicts">
+    <span class="verdict hot">The deepest reimagining — the picker stops being a picker</span>
+    <span class="verdict warn">New schema — feeding schedule as a first-class object</span>
+    <span class="verdict">Gated on the B-288 pilot by the discovery's own sequencing</span>
+  </div>
+  <p class="kicker">Owners don't select from a catalog three times a day — they run a routine. R3 makes the routine the surface: today's feeding board, slots pre-staged with the usual food, each slot one tap to confirm when it happens. The board, the B-288 notification, the future widget, and the reconciliation card become four views of the same object.</p>
+
+  <div class="option">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="co" style="top:128px; left:340px;">1</div>
+        <div class="co" style="top:262px; left:12px;">2</div>
+        <div class="co" style="top:436px; left:340px;">3</div>
+        <div class="co" style="top:560px; left:12px;">4</div>
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">Today · Nyx</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="slot done">
+            <div class="s-head"><div class="s-title">Breakfast</div><div class="s-time">~7:30 am</div><div class="s-state done">✓ 7:42</div></div>
+            <div class="s-row">
+              <div class="thumb ph ph-salmon"><div class="lid"></div></div>
+              <div>
+                <div class="s-food">Salmon Pâté</div>
+                <div class="s-sub">Finished it all · logged by you</div>
+              </div>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="s-head"><div class="s-title">Dinner</div><div class="s-time">~6:00 pm</div><div class="s-state open">upcoming</div></div>
+            <div class="s-row">
+              <div class="thumb ph ph-tiki"><div class="band"></div></div>
+              <div>
+                <div class="s-food">Luau Wild Salmon</div>
+                <div class="s-sub">The usual — 9 of the last 12 dinners</div>
+              </div>
+            </div>
+            <div class="s-cta">Fed — log it</div>
+            <div class="s-swap">Something else tonight?</div>
+          </div>
+          <div class="slot">
+            <div class="s-head"><div class="s-title">Treats</div><div class="s-state open">1 today</div></div>
+            <div class="s-row">
+              <div class="thumb ph ph-temp"><div class="band"></div></div>
+              <div>
+                <div class="s-food">Temptations Chicken · 2:10 pm</div>
+                <div class="s-sub">Tap to add another</div>
+              </div>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="s-head"><div class="s-title">Always out</div><div class="s-state open">free-choice</div></div>
+            <div class="s-row">
+              <div class="thumb ph ph-kibble"></div>
+              <div>
+                <div class="s-food">Purrfect Bistro Kibble</div>
+                <div class="s-sub">Bowl check at day close — never counted as a meal</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">library + scan + add-new live behind "Something else"</div>
+      </div>
+      <div class="frame-caption">An unanswered slot renders tomorrow as a gap in the reconciliation card — never as a meal. The board is also where a partner's log appears the moment B-292 household sharing lands ("✓ 7:42 — logged by Sarah").</div>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><span><b>Slots, not lists.</b> Breakfast/dinner declared once at setup (or learned, then confirmed) — the implementation-intention moment from the discovery: configuring the schedule <i>is</i> forming the habit plan.</span></li>
+        <li><span class="co-num">2</span><span><b>Confirm, swap, or leave open.</b> The staged food is R1's prediction wearing a schedule; "Something else" drops into the classic picker. Silence = a gap, honestly rendered.</span></li>
+        <li><span class="co-num">3</span><span><b>Treats stay slot-less</b> — they're the spontaneous class from the taxonomy; the board gives them a counter, not a schedule, and the widget/NFC lanes (B-290/291) remain their real fix.</span></li>
+        <li><span class="co-num">4</span><span><b>Grazing gets its honest home:</b> the free-choice row folds B-040 and the B-341 grazer-deferred-intake mechanic into the board's day-close ritual instead of bolting them onto a picker they never fit.</span></li>
+      </ul>
+      <div class="takes">
+        <div class="take flag"><span class="who">Persona conflict — PM call</span><b>Designer:</b> this is the honest end-state — every other direction is an approximation of it, and it's the only one that makes "scheduled-slot coverage" (the discovery's north-star proxy) a thing the owner can <i>see</i>. <b>Dir. of Engineering:</b> it's also the only one with real structural cost — a <span class="fileref">feeding_schedules</span> table (own migration PR, pet_id + RLS, local mirror, sync), plus a new Home-adjacent surface to maintain. Building it <i>before</i> B-288's pilot proves the answering-beats-initiating hypothesis inverts the discovery's own sequencing. Both are right; the resolution is sequencing, and that's yours.</div>
+        <div class="take"><span class="who">Data Scientist</span>The quiet prize: declared slots turn capture fidelity from unmeasurable into a real denominator — meals logged ÷ slots declared. That single number is what the week-6 retention conversation, the B-047 instrumentation plan, and the vet report's "completeness" line all want.</div>
+        <div class="take"><span class="who">QA</span>Biggest state machine of the four (slot × confirmed/unanswered/swapped/skipped × grazer × multi-pet × partner writes). Needs its own spec before a line of code.</div>
+      </div>
+      <p class="cost"><b>Build:</b> a track, not a PR — spec → schema migration → board UI → picker integration → B-288 wiring. Sequence after the pilot per the discovery's own §6 logic.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2><span class="opt-tag">R4</span>The pantry — recognition, maximal</h2>
+  <div class="verdicts">
+    <span class="verdict">The direct extrapolation of the household feedback</span>
+    <span class="verdict">No schema (pinning: one column or reuse favorites-free ordering)</span>
+    <span class="verdict warn">Squad-ranked last as a standalone — best as a visual layer</span>
+  </div>
+  <p class="kicker">The full-photo version: your library as a pantry of packages, big photo tiles with the name on a scrim, pinned staples up top. Maximum recognition, minimum reading — the Foods-tab feeling, amplified, on the log path.</p>
+
+  <div class="option">
+    <div class="frame-col">
+      <div class="phone">
+        <div class="co" style="top:150px; left:340px;">1</div>
+        <div class="co" style="top:330px; left:12px;">2</div>
+        <div class="p-hdr"><div class="back">←</div><div class="ttl">What did Nyx eat?</div><div class="sp"></div></div>
+        <div class="p-body">
+          <div class="zone">
+            <div class="sec-label">Pinned</div>
+            <div class="shelf">
+              <div class="pantry-tile ph ph-salmon"><div class="lid"></div><div class="pin">★</div><div class="scrim"><div class="pt-m">FANCY FEAST · WET</div><div class="pt-n">Salmon Pâté</div></div></div>
+              <div class="pantry-tile ph ph-tiki"><div class="band"></div><div class="pin">★</div><div class="scrim"><div class="pt-m">TIKI CAT · WET</div><div class="pt-n">Luau Wild Salmon</div></div></div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="p-sec-title" style="margin-bottom:8px;">Wet meals</div>
+            <div class="shelf">
+              <div class="pantry-tile ph ph-chicken"><div class="lid"></div><div class="scrim"><div class="pt-m">FANCY FEAST</div><div class="pt-n">Chicken Feast Grilled</div></div></div>
+              <div class="pantry-tile ph ph-turkey"><div class="lid"></div><div class="scrim"><div class="pt-m">FANCY FEAST</div><div class="pt-n">Turkey &amp; Giblets</div></div></div>
+              <div class="pantry-tile ph ph-fish"><div class="lid"></div><div class="scrim"><div class="pt-m">FANCY FEAST</div><div class="pt-n">Ocean Whitefish</div></div></div>
+              <div class="pantry-tile" style="background:#F5F5F5; display:flex; align-items:center; justify-content:center;"><div style="font-size:13px; color:#737373; text-align:center; padding:0 10px;">After Dark Chicken<br><span style="font-size:11px;">no photo yet — add one?</span></div></div>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="p-sec-title" style="margin-bottom:8px;">Treats</div>
+            <div class="shelf">
+              <div class="pantry-tile ph ph-temp"><div class="band"></div><div class="scrim"><div class="pt-m">TEMPTATIONS</div><div class="pt-n">Chicken Flavor</div></div></div>
+              <div class="pantry-tile ph ph-churu"><div class="band"></div><div class="scrim"><div class="pt-m">INABA</div><div class="pt-n">Churu Chicken</div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="p-fade"></div>
+        <div class="p-scrollhint">packaging art is illustrative — real owner photos in the app</div>
+      </div>
+      <div class="frame-caption">Pin = long-press, capped at ~4 — a deliberate arrangement affordance, not a drag-anywhere canvas (arranging is a decision, and decisions at moment of event are the enemy).</div>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><span><b>Photo-as-tile, name-on-scrim.</b> The strongest possible version of "the Foods tab feels easier" — trade density for recognition. Roughly half the candidates per screen vs today's grid.</span></li>
+        <li><span class="co-num">2</span><span><b>The honest weakness, shown, not hidden:</b> photo-less foods and low-quality owner snaps make the wall uneven at full-photo scale — the May-2026 chaos objection returns <i>in proportion to tile size</i>. Small fixed thumbs (round 1, Option A) dodge this; hero tiles cannot.</span></li>
+      </ul>
+      <div class="takes">
+        <div class="take"><span class="who">Designer</span>Beautiful when the library is well-photographed; fragile when it isn't. My honest read: R4 is not a direction, it's a <i>coat of paint</i> — its best ideas (scrim tiles for the rotation shelf, pinning) graft onto R1 or round-1's Option C without betting the whole surface on photo quality.</div>
+        <div class="take"><span class="who">Sam (cat owner)</span>Same caveat as round 1, amplified: my wall of Fancy Feast is a wall of near-identical cans at any tile size. The scrim name still does the work.</div>
+        <div class="take"><span class="who">QA</span>If this proceeds standalone, it needs the mixed-library test matrix from day one: all-photos, no-photos, half-and-half, dark kitchen photos, portrait cans in landscape crops.</div>
+      </div>
+      <p class="cost"><b>Build:</b> 1–2 PRs as a layer (scrim-tile component + pinning); a bigger visual-QA bill than any code bill. No schema if pinning rides a local preference; one additive column if it should sync.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <h2>How the squad compares them</h2>
+  <div class="panel">
+    <div class="mtx-scroll">
+    <table class="mtx">
+      <tr><th>Direction</th><th>Kills which friction</th><th>Schema</th><th>Cost</th><th>Composes with</th><th>Main risk</th><th>Squad verdict</th></tr>
+      <tr><td>R1 · Already knows</td><td>Choosing at all (the 80% case)</td><td>None</td><td>S–M</td><td>B-288 (same rhythm model), round-1 C</td><td>Lazy-confirm data corruption (Data's conditions)</td><td><b>Do — the core</b></td></tr>
+      <tr><td>R2 · Point at it</td><td>Identity errors, new-food fork, duplicates</td><td>None</td><td>M</td><td>B-009 dedup by construction; existing capture flow</td><td>Slower than a tap for staples (it's a lane, not the picker)</td><td><b>Do — as a lane</b></td></tr>
+      <tr><td>R3 · Day board</td><td>Initiation itself; makes fidelity measurable</td><td><b>New table</b></td><td>L (a track)</td><td>B-288/290/291 (it's their shared object), B-040, B-341, B-292</td><td>Builds ahead of the pilot evidence; biggest state machine</td><td><b>North star — spec after B-288 pilot</b></td></tr>
+      <tr><td>R4 · Pantry</td><td>Reading instead of recognizing</td><td>None</td><td>S–M</td><td>Round-1 A/C as their visual layer</td><td>Photo-quality fragility at hero scale</td><td><b>Fold in — not standalone</b></td></tr>
+    </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>The squad's recommended end-state, in one sentence each</h3>
+    <ul>
+      <li><b>Now:</b> ship round-1's C→B→A (they're the substrate every direction here sits on), and run the <b>meal-time clustering analysis</b> on our own data — it's the cheap go/no-go for both R1 and B-288.</li>
+      <li><b>Next:</b> R1's prediction card (with Data's four conditions) + R2's scan lane — together they cover the two big cases: "the usual" becomes one tap with zero choosing, "anything else" becomes point-and-confirm.</li>
+      <li><b>North star:</b> R3's board, specced only after the B-288 pilot returns evidence that answering-beats-initiating holds in this household — at which point the board, the notification, the widget, and the reconciliation card are one object with four faces.</li>
+      <li><b>Throughout:</b> R4's craft (scrim tiles, pinning) grafts onto whichever surfaces win.</li>
+    </ul>
+  </div>
+
+  <h2>Questions for you</h2>
+  <div class="panel">
+    <table class="qs">
+      <tr><th>#</th><th>Decision</th><th>Context</th></tr>
+      <tr><td>Q5</td><td>Resolve the R1 conflict</td><td>Data Scientist vs Designer on prediction-confirm fabrication risk. Data's four conditions (unmistakable photo, ≥60% floor, provenance, dogfood error-rate check) are on the table — accept R1 under those conditions, harden further, or hold?</td></tr>
+      <tr><td>Q6</td><td>Promote the barcode lane?</td><td>R2 reverses the May-2026 "barcode-only scan path: deferred post-MVP" ruling — but the schema was built ready for it, and it delivers B-009 prevention by construction.</td></tr>
+      <tr><td>Q7</td><td>R3 sequencing</td><td>Confirm the squad's read: spec the day board only after B-288 pilot data exists (consistent with your existing "decide after pilot" ruling on the native-targets question) — or pull it forward as its own bet?</td></tr>
+      <tr><td>Q8</td><td>Which direction(s) get a requirements doc?</td><td>Whatever you greenlight here graduates from mocks to a build-ready spec (the usual PR-planned, persona-gated document) before any code.</td></tr>
+      <tr><td>Q9</td><td>Fund the clustering analysis?</td><td>One analysis session on dogfood data (discovery §8 assumption #1). Cheap, and it de-risks R1, R3, and B-288 at once. Recommend yes regardless of the other answers.</td></tr>
+    </table>
+  </div>
+
+</div>
