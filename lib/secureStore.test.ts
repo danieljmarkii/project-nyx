@@ -12,6 +12,9 @@ jest.mock('expo-secure-store', () => ({
   getItemAsync: jest.fn(),
   setItemAsync: jest.fn(),
   deleteItemAsync: jest.fn(),
+  // Sentinel for the accessibility constant so the locked-device-fix test can
+  // assert writes carry it without depending on the native numeric value.
+  AFTER_FIRST_UNLOCK: 'after-first-unlock',
 }));
 
 const utf8Bytes = (v: string) => Buffer.byteLength(v, 'utf8');
@@ -192,6 +195,24 @@ describe('torn / partial writes (atomicity)', () => {
     // "3.5:2" and "0:3.5" must not be coerced into a valid read.
     store.set(pointerKeyFor(KEY), '0:3.5');
     expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBeNull();
+  });
+});
+
+describe('keychain accessibility (locked-device fix)', () => {
+  it('writes every chunk AND the pointer with AFTER_FIRST_UNLOCK', async () => {
+    // WHEN_UNLOCKED (the expo-secure-store default) makes an item unreadable and
+    // unwritable while the device is locked, so a background token refresh that
+    // fires on a locked phone throws errSecInteractionNotAllowed → the session
+    // reads back null and the owner is bounced to login. Every key we persist
+    // must therefore carry AFTER_FIRST_UNLOCK; a regression that drops it on any
+    // write (a chunk OR the pointer commit) reintroduces the frequent-logout bug.
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'a'.repeat(3000)); // multi-chunk
+
+    const calls = (SecureStore.setItemAsync as jest.Mock).mock.calls;
+    expect(calls.length).toBeGreaterThan(1); // several chunks + the pointer commit
+    for (const call of calls) {
+      expect(call[2]).toEqual({ keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK });
+    }
   });
 });
 
