@@ -21,6 +21,7 @@ import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { FilterChip } from '../components/ui/FilterChip';
 import { ChipGroup } from '../components/ui/ChipGroup';
+import { ProteinPicker } from '../components/food/ProteinPicker';
 import { NightMoment } from '../components/brand/NightMoment';
 import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { usePetStore } from '../store/petStore';
@@ -138,6 +139,14 @@ export default function FoodCaptureScreen() {
   // Default to 'meal' — the common case. User taps a chip to override.
   const [foodType, setFoodType] = useState<FoodType>('meal');
   const [extractionFailed, setExtractionFailed] = useState(false);
+
+  // B-332 manual protein capture. Seeded from the AI extraction (if any) so the
+  // edit step shows the detected protein, but `proteinTouched` only flips on an
+  // owner interaction — an untouched picker must never null-clobber the
+  // AI-hydrated primary_protein on the food_items row (mirrors the deliberate
+  // primary_protein omission in commitFoodInner's cache upsert, see :387-390).
+  const [primaryProtein, setPrimaryProtein] = useState<string | null>(null);
+  const proteinTouched = useRef(false);
 
   // Meal-time override on the confirm screen. Initialised lazily on entry to
   // the confirm step — see runUploadAndExtract. Provenance is 'exif' when the
@@ -388,6 +397,10 @@ export default function FoodCaptureScreen() {
       setExtractedBrand(ex.brand ?? '');
       setExtractedProduct(ex.product_name ?? '');
       setExtractedFormat(mapAiFormat(ex.format));
+      // Seed the protein picker from the AI read, but leave `proteinTouched`
+      // false so saving without editing preserves the server's AI value.
+      setPrimaryProtein(ex.primary_protein ?? null);
+      proteinTouched.current = false;
       // Seed meal time from EXIF if available; otherwise fall back to now.
       if (front.exifIso) {
         setMealOccurredAt(new Date(front.exifIso));
@@ -447,6 +460,18 @@ export default function FoodCaptureScreen() {
       [foodId, brand.trim(), product.trim(), format, type, frontStoragePath, now],
     );
 
+    // B-332: mirror the protein into the local cache only when the owner picked
+    // one — an untouched picker leaves the AI-hydrated cache value (and the
+    // server value below) intact. The cache row was just written above without a
+    // primary_protein column, so a separate targeted UPDATE keeps that omission
+    // deliberate rather than threading a conditional into the INSERT's VALUES.
+    if (proteinTouched.current) {
+      await db.runAsync(
+        `UPDATE food_items_cache SET primary_protein = ? WHERE id = ?`,
+        [primaryProtein, foodId],
+      );
+    }
+
     // If extraction didn't run (manual path), the row may not exist remotely
     // yet — upsert with the user-confirmed values. If it does exist (AI path),
     // the Edge Function already wrote richer fields; we only patch when user
@@ -455,7 +480,7 @@ export default function FoodCaptureScreen() {
     // (or flag-off) commit routes exactly as the failure path (§6.1) — the photo is
     // saved but extraction didn't run, so it must NOT be recorded as 'completed'.
     const aiRead = !!frontPhoto && !extractionFailed && !capReached;
-    supabase.from('food_items').upsert({
+    const foodUpsert: Record<string, unknown> = {
       id: foodId,
       brand: brand.trim(),
       product_name: product.trim(),
@@ -465,7 +490,15 @@ export default function FoodCaptureScreen() {
       photo_paths: frontPhoto ? [frontPhoto.storagePath, ingredientsPhoto?.storagePath, barcodePhoto?.storagePath].filter(Boolean) : [],
       ai_extraction_status: frontPhoto ? (aiRead ? 'completed' : 'failed') : 'manual',
       source: aiRead ? 'ai_extracted' : 'user',
-    }, { onConflict: 'id' }).then(({ error }) => {
+    };
+    // Only include primary_protein when the owner actually touched the picker.
+    // Omitting the key leaves the column untouched on an ON CONFLICT update, so
+    // an AI-extracted protein survives the owner saving the confirm screen
+    // without editing it (B-332 AC: an untouched picker never overwrites AI).
+    if (proteinTouched.current) {
+      foodUpsert.primary_protein = primaryProtein;
+    }
+    supabase.from('food_items').upsert(foodUpsert, { onConflict: 'id' }).then(({ error }) => {
       if (error) console.warn('[food-capture] upsert failed:', error.message);
     });
 
@@ -511,6 +544,8 @@ export default function FoodCaptureScreen() {
     setExtractedBrand('');
     setExtractedProduct('');
     setExtractedFormat('dry_kibble');
+    setPrimaryProtein(null);
+    proteinTouched.current = false;
     setStep('edit');
   }
 
@@ -781,6 +816,12 @@ export default function FoodCaptureScreen() {
               allowDeselect={false}
               accessibilityLabel="Format"
               style={styles.formatRow}
+            />
+            <SectionLabel label="Primary protein" />
+            <ProteinPicker
+              value={primaryProtein}
+              onChange={(next) => { proteinTouched.current = true; setPrimaryProtein(next); }}
+              accessibilityLabel="Primary protein"
             />
             <SectionLabel label="Type" />
             <View style={styles.foodTypeRow}>
