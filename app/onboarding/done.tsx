@@ -88,8 +88,10 @@ export default function DoneScreen() {
           onPress={() => router.replace('/(tabs)')}
           testID="done-go-home"
         />
+        {/* §7.4 (D-M8): "another" is true forever for every free household (pets
+            1–3 free) without promising unbounded capacity the future 4+ gate breaks. */}
         <Text style={styles.closing}>
-          Got more than one pet? You can add them anytime from your profile.
+          Got another pet? You can add them anytime from your profile.
         </Text>
       </View>
     </SafeAreaView>
