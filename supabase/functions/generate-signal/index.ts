@@ -94,8 +94,12 @@ interface ClaudeToolResponse {
 
 // Phrase one finding. Returns the model sentence if it passes validation,
 // otherwise the deterministic template — so this never throws and never blanks.
-async function phraseFinding(finding: Finding, petName: string): Promise<string> {
+async function phraseFinding(finding: Finding, petName: string, phrasingEnabled = true): Promise<string> {
   const fallback = templateForFinding(finding, petName)
+  // T2-3 (§5.3): ai_signal_phrasing_enabled off ⇒ template-only phrasing (the
+  // existing invisible degradation). Detection is untouched — the flag never gates
+  // whether a finding surfaces, only whether the LLM renders its copy.
+  if (!phrasingEnabled) return fallback
   // Reflections (③, B-051), symptom-worsening (④), postprandial-timing (⑤, B-078) AND
   // time-of-day clustering (⑥, B-079) are phrased DETERMINISTICALLY — never sent to the LLM.
   // All are count statements ("4 episodes of vomiting this week — same as last week" /
@@ -167,13 +171,17 @@ async function phraseFinding(finding: Finding, petName: string): Promise<string>
 // in the packet, any reassurance/causal/disease/preference drift, and (on a safety summary)
 // the silent removal of vet-routing. Any failure → the deterministic template. Never throws,
 // never reassures, never blank.
-async function phraseSummaryText(packet: SummaryFactPacket): Promise<CachedSummary> {
+async function phraseSummaryText(packet: SummaryFactPacket, phrasingEnabled = true): Promise<CachedSummary> {
   const template = summaryTemplate(packet)
   const base: Omit<CachedSummary, 'text' | 'source'> = {
     evidence: packet.evidence,
     hasSafety: packet.hasSafety,
     quiet: packet.quiet,
   }
+  // T2-3 (§5.3): the phrasing flag also forces the summary to its template. (v1
+  // ships template-only anyway via SUMMARY_MODEL_PHRASING_ENABLED; this keeps the
+  // flag authoritative if the model path is ever re-enabled.)
+  if (!phrasingEnabled) return { ...base, text: template, source: 'template' }
   // Restraint (PR-4 adversarial review). v1 ships TEMPLATE-ONLY — SUMMARY_MODEL_PHRASING_ENABLED
   // is false, so the model is never called (the summary is a descriptive count statement, phrased
   // template-only like ③/④/⑤/⑥; see the kill-switch doc). Even when re-enabled, the model stays
@@ -411,6 +419,111 @@ function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): MealEve
   })
 }
 
+// ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
+// docs/monetization-and-throttling-requirements.md §4–§5. Per-function COPY of the
+// shared-shape gate logic (S6: no _shared/ module; copy-paste per function —
+// consolidation is a future refactor). generate-signal differs from the extraction
+// functions in TWO ways (§5.3):
+//   • the flag (ai_signal_phrasing_enabled) does NOT gate the function — off simply
+//     forces TEMPLATE phrasing (an invisible degradation). Detection is NEVER gated:
+//     the Signal is care (§3). So the flag is threaded into phraseFinding, not used
+//     to short-circuit — resolveGateState is used for the CAP only (flagEnabled=true).
+//   • the cap is a per-PET bug-loop backstop (scope_id = petId): over cap ⇒ skip
+//     regeneration and let the client keep rendering the cached signal (no UI ships).
+// Pure pieces are exported + Deno-tested.
+
+// Free caps (§4.4): 12/pet/day, 240/pet/month. The 24h cache + client debounce do
+// the real work; this is a backstop against a client regeneration loop. Same across
+// tiers. Overridable via app_config.ai_caps.
+const CAPS: FunctionCaps = { daily: 12, monthly: 240 }
+const FUNCTION_KEY = 'generate_signal'
+const FLAG_KEY = 'ai_signal_phrasing_enabled'
+
+export interface FunctionCaps { daily: number; monthly: number }
+
+export type GateState =
+  | { allow: true }
+  | { allow: false; reason: 'feature_disabled' }
+  | { allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' }
+
+// The pure gate decision. Over-cap is strictly-greater because record_ai_usage
+// increments-then-returns: the cap-th call returns count === cap and proceeds; the
+// (cap+1)-th returns cap+1 and is blocked. For generate-signal the caller always
+// passes flagEnabled=true (the phrasing flag doesn't gate the function), so only
+// the cap arm can deny. `counts` null (RPC error) ⇒ fail-open to allow.
+export function resolveGateState(
+  flagEnabled: boolean,
+  counts: { dayCount: number; monthCount: number } | null,
+  caps: FunctionCaps,
+): GateState {
+  if (!flagEnabled) return { allow: false, reason: 'feature_disabled' }
+  if (!counts) return { allow: true }
+  if (counts.dayCount > caps.daily) return { allow: false, reason: 'cap_reached', cap: 'daily' }
+  if (counts.monthCount > caps.monthly) return { allow: false, reason: 'cap_reached', cap: 'monthly' }
+  return { allow: true }
+}
+
+export function resolveFlagValue(raw: unknown, fallback: boolean): boolean {
+  return typeof raw === 'boolean' ? raw : fallback
+}
+
+export function resolveCaps(aiCaps: unknown, functionKey: string, defaults: FunctionCaps): FunctionCaps {
+  if (!aiCaps || typeof aiCaps !== 'object') return defaults
+  const entry = (aiCaps as Record<string, unknown>)[functionKey]
+  if (!entry || typeof entry !== 'object') return defaults
+  const e = entry as Record<string, unknown>
+  return {
+    daily: typeof e.daily === 'number' && Number.isFinite(e.daily) ? e.daily : defaults.daily,
+    monthly: typeof e.monthly === 'number' && Number.isFinite(e.monthly) ? e.monthly : defaults.monthly,
+  }
+}
+
+// resets_at (§4.5): next UTC midnight (daily) / first-of-next-UTC-month (monthly).
+export function computeResetsAt(cap: 'daily' | 'monthly', nowMs: number): string {
+  const d = new Date(nowMs)
+  if (cap === 'daily') {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)).toISOString()
+  }
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString()
+}
+
+async function readGateConfig(
+  client: SupabaseClient,
+): Promise<{ flagEnabled: boolean; caps: FunctionCaps }> {
+  try {
+    const { data, error } = await client
+      .from('app_config')
+      .select('key, value')
+      .in('key', [FLAG_KEY, 'ai_caps'])
+    if (error || !data) return { flagEnabled: true, caps: CAPS }
+    const byKey = new Map(data.map((r) => [(r as { key: string }).key, (r as { value: unknown }).value]))
+    return {
+      flagEnabled: resolveFlagValue(byKey.get(FLAG_KEY), true),
+      caps: resolveCaps(byKey.get('ai_caps'), FUNCTION_KEY, CAPS),
+    }
+  } catch {
+    return { flagEnabled: true, caps: CAPS }
+  }
+}
+
+// Increment + read the caller's per-PET usage counters (§4.3, scope_id = petId).
+// Null on RPC error → treated as under-cap (fail-open). uid derived inside the RPC
+// (B-252). NOTE: petId MUST be passed as scope_id or every pet collapses onto one
+// shared per-user counter (§4.4 build guard).
+async function recordUsage(
+  client: SupabaseClient,
+  petId: string,
+): Promise<{ dayCount: number; monthCount: number } | null> {
+  const { data, error } = await client.rpc('record_ai_usage', { p_function: FUNCTION_KEY, p_scope_id: petId })
+  if (error) {
+    console.warn(`record_ai_usage(${FUNCTION_KEY}) failed — proceeding under cap:`, error.message)
+    return null
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { day_count?: number; month_count?: number } | null
+  if (!row || typeof row.day_count !== 'number' || typeof row.month_count !== 'number') return null
+  return { dayCount: row.day_count, monthCount: row.month_count }
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -443,6 +556,34 @@ Deno.serve(async (req: Request) => {
   try {
     const nowMs = Date.now()
     const lookbackIso = new Date(nowMs - LOOKBACK_DAYS * MS_PER_DAY).toISOString()
+
+    // 0. Verify the caller uid (§4.6). The reads below are already RLS-scoped by
+    //    this JWT; getUser is defense-in-depth + a clean 401 when the token is
+    //    absent/expired (rather than an RPC RAISE surfacing as a 500).
+    const { data: { user }, error: authErr } = await supabase.auth.getUser()
+    if (authErr || !user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
+    }
+
+    // 0b. Cap + phrasing-flag gate (§5.3). The cap is a per-PET bug-loop backstop:
+    //     over cap ⇒ skip the whole regeneration and let the client keep rendering
+    //     its cached signal (no UI state ships — invisible by design). Checked BEFORE
+    //     the expensive detection pipeline. The phrasing flag does NOT gate the
+    //     function; it only forces template phrasing below.
+    const { flagEnabled: phrasingEnabled, caps } = await readGateConfig(supabase)
+    const counts = await recordUsage(supabase, petId)
+    const gate = resolveGateState(true, counts, caps) // flagEnabled=true: cap-only
+    if (!gate.allow && gate.reason === 'cap_reached') {
+      return Response.json(
+        {
+          cap_reached: true,
+          cap: gate.cap,
+          function: FUNCTION_KEY,
+          resets_at: computeResetsAt(gate.cap, nowMs),
+        },
+        { headers: CORS_HEADERS },
+      )
+    }
 
     // 1. Load pet, symptom events, meal events, active diet trial — all
     //    ownership-scoped by RLS via the caller's JWT. Soft-deleted rows are
@@ -567,7 +708,7 @@ Deno.serve(async (req: Request) => {
     const cachedFindings: CachedFinding[] = await Promise.all(
       curated.map(async (r) => ({
         rank: r.rank,
-        text: await phraseFinding(r.finding, petName),
+        text: await phraseFinding(r.finding, petName, phrasingEnabled),
         finding: r.finding,
       })),
     )
@@ -586,7 +727,7 @@ Deno.serve(async (req: Request) => {
       freeFedFoodIds,
       nowMs,
     })
-    const summary: CachedSummary | null = summaryPacket ? await phraseSummaryText(summaryPacket) : null
+    const summary: CachedSummary | null = summaryPacket ? await phraseSummaryText(summaryPacket, phrasingEnabled) : null
 
     // 5. Cache. Empty findings = building/stale (§3.3), NEVER an all-clear (§9).
     const isBuilding = cachedFindings.length === 0

@@ -656,6 +656,97 @@ async function runVisionCall(images: ImagePart[]): Promise<VomitAnalysis | null>
   return parseAnalysisToolResult(await res.json() as ClaudeResponse)
 }
 
+// ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
+// docs/monetization-and-throttling-requirements.md §4–§5. Per-function COPY of the
+// shared-shape gate logic (S6: no _shared/ module; copy-paste per function like
+// detectImageMediaType — consolidation is a future refactor). analyze-vomit is
+// ROW-BASED (§4.5): flag-off / cap write a STATE into event_ai_analysis.status
+// ('read_disabled' / 'capped'), not an HTTP typed body — so this copy carries the
+// pure gate decision + config/usage readers, but not the HTTP response builders.
+// Pure pieces are exported + Deno-tested.
+
+// analyze-vomit free caps (§4.4): daily 10 / monthly 200. DELIBERATELY identical
+// across tiers (D-M2) — the cap gates the descriptive read only; the deterministic
+// escalation floor fires regardless (§5.4). Overridable via app_config.ai_caps.
+const CAPS: FunctionCaps = { daily: 10, monthly: 200 }
+const FUNCTION_KEY = 'analyze_vomit'
+const FLAG_KEY = 'ai_vomit_read_enabled'
+
+export interface FunctionCaps { daily: number; monthly: number }
+
+export type GateState =
+  | { allow: true }
+  | { allow: false; reason: 'feature_disabled' }
+  | { allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' }
+
+// The pure gate decision. `flagEnabled` is the resolved app_config flag (the
+// reader fails OPEN on a config read error — §4.2). `counts` are the
+// POST-INCREMENT day/month counters from record_ai_usage; pass null ONLY when the
+// flag is off (the caller skips the increment then — §5.4). Over-cap is
+// strictly-greater because record_ai_usage increments-then-returns: the cap-th
+// call returns count === cap and proceeds; the (cap+1)-th returns cap+1 and is
+// blocked — exactly `caps.daily` model reads per UTC day.
+export function resolveGateState(
+  flagEnabled: boolean,
+  counts: { dayCount: number; monthCount: number } | null,
+  caps: FunctionCaps,
+): GateState {
+  if (!flagEnabled) return { allow: false, reason: 'feature_disabled' }
+  if (!counts) return { allow: true }
+  if (counts.dayCount > caps.daily) return { allow: false, reason: 'cap_reached', cap: 'daily' }
+  if (counts.monthCount > caps.monthly) return { allow: false, reason: 'cap_reached', cap: 'monthly' }
+  return { allow: true }
+}
+
+export function resolveFlagValue(raw: unknown, fallback: boolean): boolean {
+  return typeof raw === 'boolean' ? raw : fallback
+}
+
+export function resolveCaps(aiCaps: unknown, functionKey: string, defaults: FunctionCaps): FunctionCaps {
+  if (!aiCaps || typeof aiCaps !== 'object') return defaults
+  const entry = (aiCaps as Record<string, unknown>)[functionKey]
+  if (!entry || typeof entry !== 'object') return defaults
+  const e = entry as Record<string, unknown>
+  return {
+    daily: typeof e.daily === 'number' && Number.isFinite(e.daily) ? e.daily : defaults.daily,
+    monthly: typeof e.monthly === 'number' && Number.isFinite(e.monthly) ? e.monthly : defaults.monthly,
+  }
+}
+
+async function readGateConfig(
+  client: SupabaseClient,
+): Promise<{ flagEnabled: boolean; caps: FunctionCaps }> {
+  try {
+    const { data, error } = await client
+      .from('app_config')
+      .select('key, value')
+      .in('key', [FLAG_KEY, 'ai_caps'])
+    if (error || !data) return { flagEnabled: true, caps: CAPS }
+    const byKey = new Map(data.map((r) => [(r as { key: string }).key, (r as { value: unknown }).value]))
+    return {
+      flagEnabled: resolveFlagValue(byKey.get(FLAG_KEY), true),
+      caps: resolveCaps(byKey.get('ai_caps'), FUNCTION_KEY, CAPS),
+    }
+  } catch {
+    return { flagEnabled: true, caps: CAPS }
+  }
+}
+
+// Increment + read the caller's usage counters (§4.3). Null on RPC error →
+// treated as under-cap (fail-open). uid derived inside the RPC (B-252).
+async function recordUsage(
+  client: SupabaseClient,
+): Promise<{ dayCount: number; monthCount: number } | null> {
+  const { data, error } = await client.rpc('record_ai_usage', { p_function: FUNCTION_KEY, p_scope_id: null })
+  if (error) {
+    console.warn(`record_ai_usage(${FUNCTION_KEY}) failed — proceeding under cap:`, error.message)
+    return null
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { day_count?: number; month_count?: number } | null
+  if (!row || typeof row.day_count !== 'number' || typeof row.month_count !== 'number') return null
+  return { dayCount: row.day_count, monthCount: row.month_count }
+}
+
 // ── Handler ─────────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -696,6 +787,15 @@ Deno.serve(async (req: Request) => {
   let petIdForFailure: string | null = null
 
   try {
+    // 0. Verify the caller uid from the JWT (§4.6). record_ai_usage derives the
+    //    uid inside its SECURITY DEFINER body, so this is defense-in-depth + a
+    //    clean 401 (rather than an RPC RAISE surfacing as a 500) when the token is
+    //    absent/expired. The reads below are already RLS-scoped by this same JWT.
+    const { data: { user }, error: authErr } = await userClient.auth.getUser()
+    if (authErr || !user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
+    }
+
     // 1. Load the event (ownership-scoped) and confirm it is an active vomit event.
     const { data: event } = await userClient
       .from('events')
@@ -728,7 +828,120 @@ Deno.serve(async (req: Request) => {
     const photoPaths = (attachments ?? []).map((a) => a.storage_path as string)
     const hasPhoto = photoPaths.length > 0
 
-    // 3. Vision call (only if there is a usable photo).
+    // 3. Deterministic contextual flags FIRST (§5.4 step 2 — the reorder). These
+    //    are DB reads (assembleContext), fully independent of the vision result
+    //    (they already run for photo-less logs), so they compute BEFORE the model
+    //    call and therefore SURVIVE the cap. This is what guarantees a capped /
+    //    flagged-off incident still escalates when the context warrants it — the
+    //    invariant the adversarial review must try to break.
+    const context = await assembleContext(userClient, petId, occurredAt, species)
+    const contextualFlags = computeContextualFlags(context)
+
+    // 3b. Existing analysis row — honors the never-clobber guard (B-028) in every
+    //     write path below, and decides whether a cap/disabled STATE may be written
+    //     (it must never bury an already-completed or owner-edited read).
+    const { data: existing } = await adminClient
+      .from('event_ai_analysis')
+      .select('id, edited_at, status')
+      .eq('event_id', eventId)
+      .maybeSingle()
+    const humanEdited = !!existing?.edited_at
+    const existingRealAnalysis =
+      !!existing && existing.status !== 'pending' && existing.status !== 'failed'
+
+    // 4. Flag + cap gate (§5.4 step 3) — immediately before the vision call, AFTER
+    //    the escalation-flag computation above. The cap/flag gate the MODEL CALL, so
+    //    the gate only runs when there IS a photo to read: a photo-less log makes no
+    //    vision call, so it burns no counter unit and takes the byte-identical
+    //    pre-diff path (its contextual escalation still fires below via the "under
+    //    cap" branch, and the descriptive-read flag is moot with no read to disable).
+    //    Flag off ⇒ NO increment (a flagged-off call burns no unit). Flag on ⇒
+    //    increment-then-check.
+    let gate: GateState = { allow: true }
+    if (hasPhoto) {
+      const { flagEnabled, caps } = await readGateConfig(userClient)
+      const counts = flagEnabled ? await recordUsage(userClient) : null
+      gate = resolveGateState(flagEnabled, counts, caps)
+    }
+
+    // 5. Capped or flagged off (§5.4 step 4): SKIP the vision call. The escalation
+    //    floor still runs with NO visual flags (no model ran); a fired contextual
+    //    flag STILL forces worth_a_call — never-reassure survives the cap BY
+    //    CONSTRUCTION: there is no code path from "capped" to a reassuring verdict.
+    if (!gate.allow) {
+      const cappedRec = applyEscalationFloor({
+        modelRecommendation: 'not_enough_to_say',
+        appearsToShowVomit: false,
+        hasPhoto,
+        visualFlags: [],
+        contextualFlags,
+      })
+      if (contextualFlags.length > 0) {
+        // Escalation survives the cap → write a COMPLETED escalation row. CRITICAL
+        // never-clobber guard (B-028; caught by adversarial + code review 2026-07-14):
+        // this write carries analysis=null (no model ran), so a FULL upsert would null
+        // the structured clinical fields (blood_present / foreign_material_present /
+        // colour / …). A prior REAL analysis's facts must survive untouched — so we
+        // route through update-read-fields-only whenever the row is already a real
+        // analysis (humanEdited OR completed/uncertain), exactly the protection the
+        // no-flags branch below gives via existingRealAnalysis. Only a truly-fresh row
+        // (no prior real analysis) takes the full upsert, where null structured fields
+        // are correct (there is nothing to preserve — same as a photo-less escalation).
+        const preserveStructured = humanEdited || existingRealAnalysis
+        const readText = selectReadText({
+          petName,
+          recommendation: cappedRec, // worth_a_call
+          contextualFlags,
+          visualFlags: [],
+          modelReadText: null,
+          photoUnreadable: false,
+          hasPhoto,
+        })
+        const readFields: AnalysisReadFields = {
+          recommendation: cappedRec,
+          read_text: readText,
+          visual_flags: [],
+          contextual_flags: contextualFlags,
+          status: 'completed',
+          error: null,
+        }
+        const writeBack = buildAnalysisWriteBack({ humanEdited: preserveStructured, eventId, petId, analysis: null, readFields })
+        const { error: writeError } = writeBack.mode === 'update'
+          ? await adminClient.from('event_ai_analysis').update(writeBack.values).eq('event_id', eventId)
+          : await adminClient.from('event_ai_analysis').upsert(writeBack.values, { onConflict: 'event_id' })
+        if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+      } else if (!existingRealAnalysis) {
+        // No escalation AND no prior real analysis to protect → record the cap /
+        // disabled STATE (§4.5) so the client renders its designed state (T2-4).
+        // No recommendation, no read, no flags — nothing reassuring is written. A
+        // pre-existing completed/edited analysis is left UNTOUCHED (the cap must
+        // never downgrade a real read).
+        const status = gate.reason === 'feature_disabled' ? 'read_disabled' : 'capped'
+        const { error: writeError } = await adminClient
+          .from('event_ai_analysis')
+          .upsert(
+            { event_id: eventId, pet_id: petId, incident_type: 'vomit', status, error: null },
+            { onConflict: 'event_id' },
+          )
+        if (writeError) throw new Error(`DB write failed: ${writeError.message}`)
+      }
+      // else: capped/disabled, no new flags, but a real analysis already exists →
+      // leave it exactly as-is (success, no write).
+      return Response.json(
+        {
+          success: true,
+          gated: gate.reason,
+          recommendation: contextualFlags.length > 0 ? cappedRec : null,
+          contextual_flags: contextualFlags,
+          visual_flags: [],
+        },
+        { headers: CORS_HEADERS },
+      )
+    }
+
+    // 6. Under cap + enabled — the vision path (unchanged behavior). Only runs a
+    //    usable photo through the model; an oversized/undecodable photo degrades to
+    //    photoUnreadable, exactly as before.
     let analysis: VomitAnalysis | null = null
     let photoUnreadable = false
     if (hasPhoto) {
@@ -767,9 +980,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 4. Deterministic contextual flags + escalation floor.
-    const context = await assembleContext(userClient, petId, occurredAt, species)
-    const contextualFlags = computeContextualFlags(context)
+    // 7. Escalation floor (contextual flags from step 3 + the model's visual flags).
     const visualFlags = analysis?.visual_flags ?? []
     const recommendation = applyEscalationFloor({
       modelRecommendation: analysis?.recommendation ?? 'not_enough_to_say',
@@ -779,7 +990,7 @@ Deno.serve(async (req: Request) => {
       contextualFlags,
     })
 
-    // 5. Read text — the load-bearing never-reassure selection (B-060), pure + tested.
+    // 8. Read text — the load-bearing never-reassure selection (B-060), pure + tested.
     // The model's free text reaches the owner ONLY on the worth_a_call (visual-flag)
     // escalation path; the monitor / no-flag path is a deterministic template, so a
     // single sample can never assert an all-clear (the n=1 invariant, made structural
@@ -796,18 +1007,10 @@ Deno.serve(async (req: Request) => {
 
     const status = recommendation === 'not_enough_to_say' ? 'uncertain' : 'completed'
 
-    // 6. Write-back, never clobbering a human-edited row. If the owner has
-    // edited any structured field (edited_at set), preserve all editable facts
-    // and the cached original; only refresh the (non-editable) read + flags so
-    // the deterministic floor can still escalate on worsening context.
-    const { data: existing } = await adminClient
-      .from('event_ai_analysis')
-      .select('id, edited_at')
-      .eq('event_id', eventId)
-      .maybeSingle()
-
-    const humanEdited = !!existing?.edited_at
-
+    // 9. Write-back, never clobbering a human-edited row (existing read at step 3b).
+    // If the owner has edited any structured field (edited_at set), preserve all
+    // editable facts and the cached original; only refresh the (non-editable) read +
+    // flags so the deterministic floor can still escalate on worsening context.
     const readFields: AnalysisReadFields = {
       recommendation,
       read_text: readText,

@@ -34,7 +34,7 @@
 //    + per-field confidence); the client confirm gate is layer two. No AI value
 //    reaches the catalog without passing that gate.
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
 
 const CORS_HEADERS = {
@@ -319,6 +319,111 @@ async function runVisionCall(image: ImagePart): Promise<MedicationExtraction | n
   return parseMedicationToolResult(await res.json() as ClaudeResponse)
 }
 
+// ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
+// docs/monetization-and-throttling-requirements.md §4–§5. Per-function COPY of the
+// shared-shape gate logic (S6: no _shared/ module; copy-paste per function like
+// detectImageMediaType — consolidation is a future refactor). Identical shape
+// across all four AI functions. Pure pieces are exported + Deno-tested.
+
+// Med free caps (§4.4): daily 10 / monthly 40. Overridable via app_config.ai_caps.
+const CAPS: FunctionCaps = { daily: 10, monthly: 40 }
+const FUNCTION_KEY = 'extract_medication'
+const FLAG_KEY = 'ai_med_extraction_enabled'
+
+export interface FunctionCaps { daily: number; monthly: number }
+
+export type GateState =
+  | { allow: true }
+  | { allow: false; reason: 'feature_disabled' }
+  | { allow: false; reason: 'cap_reached'; cap: 'daily' | 'monthly' }
+
+// The pure gate decision. `flagEnabled` is the resolved app_config flag (the
+// reader fails OPEN on a config read error — §4.2). `counts` are the
+// POST-INCREMENT day/month counters from record_ai_usage; pass null ONLY when the
+// flag is off (the caller skips the increment then — §5.1). Over-cap is
+// strictly-greater because record_ai_usage increments-then-returns: the cap-th
+// call returns count === cap and proceeds; the (cap+1)-th returns cap+1 and is
+// blocked — exactly `caps.daily` model calls land per UTC day.
+export function resolveGateState(
+  flagEnabled: boolean,
+  counts: { dayCount: number; monthCount: number } | null,
+  caps: FunctionCaps,
+): GateState {
+  if (!flagEnabled) return { allow: false, reason: 'feature_disabled' }
+  if (!counts) return { allow: true }
+  if (counts.dayCount > caps.daily) return { allow: false, reason: 'cap_reached', cap: 'daily' }
+  if (counts.monthCount > caps.monthly) return { allow: false, reason: 'cap_reached', cap: 'monthly' }
+  return { allow: true }
+}
+
+export function resolveFlagValue(raw: unknown, fallback: boolean): boolean {
+  return typeof raw === 'boolean' ? raw : fallback
+}
+
+export function resolveCaps(aiCaps: unknown, functionKey: string, defaults: FunctionCaps): FunctionCaps {
+  if (!aiCaps || typeof aiCaps !== 'object') return defaults
+  const entry = (aiCaps as Record<string, unknown>)[functionKey]
+  if (!entry || typeof entry !== 'object') return defaults
+  const e = entry as Record<string, unknown>
+  return {
+    daily: typeof e.daily === 'number' && Number.isFinite(e.daily) ? e.daily : defaults.daily,
+    monthly: typeof e.monthly === 'number' && Number.isFinite(e.monthly) ? e.monthly : defaults.monthly,
+  }
+}
+
+// resets_at (§4.5): next UTC midnight (daily) / first-of-next-UTC-month (monthly).
+export function computeResetsAt(cap: 'daily' | 'monthly', nowMs: number): string {
+  const d = new Date(nowMs)
+  if (cap === 'daily') {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)).toISOString()
+  }
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString()
+}
+
+async function readGateConfig(
+  client: SupabaseClient,
+): Promise<{ flagEnabled: boolean; caps: FunctionCaps }> {
+  try {
+    const { data, error } = await client
+      .from('app_config')
+      .select('key, value')
+      .in('key', [FLAG_KEY, 'ai_caps'])
+    if (error || !data) return { flagEnabled: true, caps: CAPS }
+    const byKey = new Map(data.map((r) => [(r as { key: string }).key, (r as { value: unknown }).value]))
+    return {
+      flagEnabled: resolveFlagValue(byKey.get(FLAG_KEY), true),
+      caps: resolveCaps(byKey.get('ai_caps'), FUNCTION_KEY, CAPS),
+    }
+  } catch {
+    return { flagEnabled: true, caps: CAPS }
+  }
+}
+
+// Increment + read the caller's usage counters (§4.3). Null on RPC error →
+// treated as under-cap (fail-open). uid derived inside the RPC (B-252).
+async function recordUsage(
+  client: SupabaseClient,
+): Promise<{ dayCount: number; monthCount: number } | null> {
+  const { data, error } = await client.rpc('record_ai_usage', { p_function: FUNCTION_KEY, p_scope_id: null })
+  if (error) {
+    console.warn(`record_ai_usage(${FUNCTION_KEY}) failed — proceeding under cap:`, error.message)
+    return null
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { day_count?: number; month_count?: number } | null
+  if (!row || typeof row.day_count !== 'number' || typeof row.month_count !== 'number') return null
+  return { dayCount: row.day_count, monthCount: row.month_count }
+}
+
+function capReachedResponse(cap: 'daily' | 'monthly'): Response {
+  return Response.json(
+    { cap_reached: true, cap, function: FUNCTION_KEY, resets_at: computeResetsAt(cap, Date.now()) },
+    { headers: CORS_HEADERS },
+  )
+}
+function featureDisabledResponse(): Response {
+  return Response.json({ feature_disabled: true, function: FUNCTION_KEY }, { headers: CORS_HEADERS })
+}
+
 // ── Handler ─────────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -365,6 +470,16 @@ Deno.serve(async (req: Request) => {
     if (authErr || !user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
     }
+
+    // 1b. Flag → cap → Anthropic call (§5.2). Stateless function: on flag-off /
+    //     cap the client routes to manual entry with the label photo still saved
+    //     (its own designed state, T2-4), exactly like today's failure path but
+    //     rendered as a calm state rather than an error. No DB write on either.
+    const { flagEnabled, caps } = await readGateConfig(userClient)
+    if (!flagEnabled) return featureDisabledResponse()
+    const counts = await recordUsage(userClient)
+    const gate = resolveGateState(flagEnabled, counts, caps)
+    if (!gate.allow && gate.reason === 'cap_reached') return capReachedResponse(gate.cap)
 
     // 2. Build the label path SERVER-SIDE from the verified caller uid. The body
     //    never supplies a path; a hostile caller cannot read another owner's label

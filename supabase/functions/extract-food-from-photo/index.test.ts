@@ -16,8 +16,96 @@ import {
   mapFormatToDb,
   blobToBase64,
   FORMAT_ENUM,
+  resolveGateState,
+  resolveFlagValue,
+  resolveCaps,
+  computeResetsAt,
+  validateFoodPhotoPaths,
   type ExtractionResult,
+  type FunctionCaps,
 } from './index.ts'
+
+// ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
+// The shared-shape gate helpers. Food's free caps are daily 15 / monthly 60 (§4.4).
+
+const FOOD_CAPS: FunctionCaps = { daily: 15, monthly: 60 }
+
+Deno.test('resolveGateState — flag off short-circuits to feature_disabled (no counts needed)', () => {
+  assertEquals(resolveGateState(false, null, FOOD_CAPS), { allow: false, reason: 'feature_disabled' })
+  // Even if counts happen to be present, flag-off wins.
+  assertEquals(resolveGateState(false, { dayCount: 1, monthCount: 1 }, FOOD_CAPS), {
+    allow: false, reason: 'feature_disabled',
+  })
+})
+
+Deno.test('resolveGateState — flag on, null counts (RPC error / fail-open) → allow', () => {
+  assertEquals(resolveGateState(true, null, FOOD_CAPS), { allow: true })
+})
+
+Deno.test('resolveGateState — the cap-th call proceeds, the (cap+1)-th is blocked (increment-then-return)', () => {
+  // record_ai_usage increments THEN returns: the 15th call of the day returns
+  // dayCount=15 and must proceed; the 16th returns 16 and is blocked.
+  assertEquals(resolveGateState(true, { dayCount: 15, monthCount: 20 }, FOOD_CAPS), { allow: true })
+  assertEquals(resolveGateState(true, { dayCount: 16, monthCount: 20 }, FOOD_CAPS), {
+    allow: false, reason: 'cap_reached', cap: 'daily',
+  })
+})
+
+Deno.test('resolveGateState — daily is checked before monthly', () => {
+  // Both over: daily wins (the sooner-resetting, more actionable message).
+  assertEquals(resolveGateState(true, { dayCount: 16, monthCount: 61 }, FOOD_CAPS), {
+    allow: false, reason: 'cap_reached', cap: 'daily',
+  })
+  // Only monthly over (day under): monthly.
+  assertEquals(resolveGateState(true, { dayCount: 3, monthCount: 61 }, FOOD_CAPS), {
+    allow: false, reason: 'cap_reached', cap: 'monthly',
+  })
+})
+
+Deno.test('resolveFlagValue — only a real boolean overrides the fallback', () => {
+  assertStrictEquals(resolveFlagValue(true, true), true)
+  assertStrictEquals(resolveFlagValue(false, true), false)
+  // Missing / wrong-typed JSONB → fail to the fallback (fail-open for AI keys).
+  assertStrictEquals(resolveFlagValue(undefined, true), true)
+  assertStrictEquals(resolveFlagValue(null, true), true)
+  assertStrictEquals(resolveFlagValue('true', true), true)
+  assertStrictEquals(resolveFlagValue(1, false), false)
+})
+
+Deno.test('resolveCaps — empty / missing / malformed override keeps code defaults', () => {
+  assertEquals(resolveCaps({}, 'extract_food', FOOD_CAPS), FOOD_CAPS)
+  assertEquals(resolveCaps(null, 'extract_food', FOOD_CAPS), FOOD_CAPS)
+  assertEquals(resolveCaps({ extract_food: {} }, 'extract_food', FOOD_CAPS), FOOD_CAPS)
+  assertEquals(resolveCaps({ other_fn: { daily: 1 } }, 'extract_food', FOOD_CAPS), FOOD_CAPS)
+  // A partial override fills only the present field, keeping the other default.
+  assertEquals(resolveCaps({ extract_food: { daily: 5 } }, 'extract_food', FOOD_CAPS), { daily: 5, monthly: 60 })
+  assertEquals(resolveCaps({ extract_food: { daily: 5, monthly: 25 } }, 'extract_food', FOOD_CAPS), {
+    daily: 5, monthly: 25,
+  })
+})
+
+Deno.test('computeResetsAt — daily = next UTC midnight, monthly = first of next UTC month', () => {
+  const mid = Date.parse('2026-07-14T15:30:00Z')
+  assertStrictEquals(computeResetsAt('daily', mid), '2026-07-15T00:00:00.000Z')
+  assertStrictEquals(computeResetsAt('monthly', mid), '2026-08-01T00:00:00.000Z')
+  // Year/month rollover.
+  const dec = Date.parse('2026-12-31T23:59:00Z')
+  assertStrictEquals(computeResetsAt('daily', dec), '2027-01-01T00:00:00.000Z')
+  assertStrictEquals(computeResetsAt('monthly', dec), '2027-01-01T00:00:00.000Z')
+})
+
+Deno.test('validateFoodPhotoPaths — the real client shape passes; a cross-food / traversal path is rejected', () => {
+  const foodId = 'abc-123'
+  // Real client: `${foodId}/${slot}.jpg`.
+  assertStrictEquals(validateFoodPhotoPaths(foodId, [`${foodId}/0-front.jpg`, `${foodId}/1-ingredients.jpg`]), true)
+  // A different food's photos — rejected (can't point the extractor elsewhere).
+  assertStrictEquals(validateFoodPhotoPaths(foodId, [`other-food/0-front.jpg`]), false)
+  // Traversal / absolute — rejected.
+  assertStrictEquals(validateFoodPhotoPaths(foodId, [`${foodId}/../secret.jpg`]), false)
+  assertStrictEquals(validateFoodPhotoPaths(foodId, [`/etc/passwd`]), false)
+  // A single bad path in an otherwise-valid set fails the whole set.
+  assertStrictEquals(validateFoodPhotoPaths(foodId, [`${foodId}/0.jpg`, `evil/1.jpg`]), false)
+})
 
 // ── mapFormatToDb ─────────────────────────────────────────────────────────────
 
