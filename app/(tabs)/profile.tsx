@@ -13,7 +13,7 @@ import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
-import { uploadPhoto, getPublicUrl } from '../../lib/storage';
+import { uploadPhoto, compressForUpload, getPublicUrl } from '../../lib/storage';
 import { archiveBlockedCopy } from '../../lib/utils';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
@@ -364,7 +364,12 @@ export default function ProfileScreen() {
     setPhotoUploading(true);
     try {
       const storagePath = `${activePet.id}/profile.jpg`;
-      await uploadPhoto(PET_PHOTO_BUCKET, storagePath, localUri);
+      // Compress + EXIF/GPS-strip before upload. `exif: false` above only drops
+      // EXIF from the picker's JS result, NOT from the file on disk — a raw upload
+      // of a camera-roll photo would still carry its GPS metadata to storage.
+      // compressForUpload re-encodes to a stripped JPEG (privacy-hardening sweep).
+      const uploadUri = await compressForUpload(localUri);
+      await uploadPhoto(PET_PHOTO_BUCKET, storagePath, uploadUri);
 
       const { error } = await supabase
         .from('pets')

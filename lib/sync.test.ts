@@ -8,6 +8,11 @@
 // compresses images before (re)upload while leaving non-images and already-remote
 // rows untouched, and never blocks an upload on a compression failure.
 //
+// The same guard now also fronts the vet-attachment sync re-upload
+// (syncPendingVetVisits), so the re-encode that strips a photo's EXIF/GPS metadata
+// covers vet attachments too — the privacy-hardening sweep's shared-utility path.
+// The vet case is the image/jpeg row asserted below (compressed + mime forced to jpeg).
+//
 // sync.ts pulls a heavy native import graph (supabase / expo-sqlite / expo), and
 // ./supabase fail-fasts on missing env, so we stub every sibling module. The
 // function under test only depends on compressForUpload. jest hoists jest.mock()
