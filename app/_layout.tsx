@@ -77,9 +77,6 @@ export default function RootLayout() {
       });
       setSession(session);
       setLoading(false);
-      // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
-      // session exists — refresh the moment a persisted session is confirmed.
-      if (session) refreshAppConfig().catch(() => {});
       if (!session) {
         // The Signal-led Landing (app/(auth)/index) is the unauthenticated entry
         // point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in" from
@@ -114,7 +111,11 @@ export default function RootLayout() {
         await wipeLocalSession();
       }
       setSession(session);
-      // A fresh sign-in is the other moment config becomes fetchable (see above).
+      // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
+      // session exists. This one listener covers every fetchable transition:
+      // INITIAL_SESSION (cold start with a persisted session), SIGNED_IN, and
+      // TOKEN_REFRESHED — so it's the single authoritative "on start"/sign-in fetch,
+      // with no duplicate SELECTs from initAppConfig or the getSession callback.
       if (session) refreshAppConfig().catch(() => {});
       if (!session) {
         // Route to the new Landing on sign-out (B-251 PR 5) — EXCEPT a just-deleted

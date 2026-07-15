@@ -33,20 +33,21 @@ function subscribe(cb: () => void): () => void {
 }
 
 // Call once at app start. Seeds from the last-known-good cache immediately (so an
-// offline cold start renders the last real values, not defaults), then fetches
-// fresh. Idempotent — a second call just re-fetches.
+// offline cold start renders the last real values, not defaults). It does NOT
+// fetch: the authoritative "on start" fetch is auth-driven (the Supabase
+// `INITIAL_SESSION` event fires refreshAppConfig once the persisted session has
+// hydrated — before then a fetch is RLS-denied anyway), so a fetch here would just
+// race that and duplicate the SELECT. Idempotent.
 export async function initAppConfig(): Promise<void> {
-  if (!started) {
-    started = true;
-    const cached = await loadCachedAppConfig();
-    if (cached) setConfig(cached);
-  }
-  await refreshAppConfig();
+  if (started) return;
+  started = true;
+  const cached = await loadCachedAppConfig();
+  if (cached) setConfig(cached);
 }
 
 // Re-fetch and update if it succeeds; a failed fetch is a no-op (holds the current
-// value). Wired to app-foreground and to sign-in, since an unauthenticated fetch is
-// RLS-denied and returns null.
+// value). Wired to app-foreground and to sign-in/initial-session, since an
+// unauthenticated fetch is RLS-denied and returns null.
 export async function refreshAppConfig(): Promise<void> {
   const fresh = await fetchAppConfig();
   if (fresh) {
