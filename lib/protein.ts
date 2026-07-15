@@ -33,6 +33,32 @@
 // supabase/functions/generate-signal/protein.test.ts (deno) — kept green by the
 // re-export — and exercised again client-side in lib/analytics.test.ts.
 
+// The closed set offered by the manual "Primary protein" picker (B-332 /
+// monetization spec §9 T3-A, sub-decision S5). Derived from the live
+// `food_items.primary_protein` distinct values plus the common clinical protein
+// set a diet-trial owner reaches for. Every value is canonicalizeProtein-STABLE
+// (canonicalize(v) === v) and non-junk, so an owner-picked chip keys IDENTICALLY
+// to an AI-extracted value — both enter ranking/correlation through the same
+// canonicalizeProtein() below and can never fragment. Rarer or compound proteins
+// fall to the picker's "Other" typed escape, which also runs through
+// canonicalizeProtein on read: the set is a convenience, never a limit. Stored
+// lowercase (matching how extraction writes "chicken"/"salmon"); the picker
+// Title-cases for display only. Ordered common-first, then the fish group, then
+// the novel-diet tail — the order the picker renders them in.
+export const COMMON_PROTEINS: readonly string[] = [
+  'chicken',
+  'turkey',
+  'duck',
+  'beef',
+  'lamb',
+  'pork',
+  'salmon',
+  'tuna',
+  'whitefish',
+  'rabbit',
+  'venison',
+];
+
 // Sentinel / placeholder strings that are not a real protein. A meal whose
 // protein canonicalizes to one of these is treated as protein-unknown (returns
 // null) and excluded from ranking/correlation — never carried as a junk protein

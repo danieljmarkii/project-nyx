@@ -20,6 +20,7 @@ import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { ChipGroup } from '../../components/ui/ChipGroup';
+import { ProteinPicker } from '../../components/food/ProteinPicker';
 import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
@@ -86,7 +87,9 @@ export default function FoodDetailScreen() {
   const [foodType, setFoodType] = useState<FoodType | null>(null);
   const [ingredients, setIngredients] = useState('');
   const [barcode, setBarcode] = useState('');
-  const baseline = useRef<Pick<FoodRow, 'brand' | 'product_name' | 'format' | 'food_type' | 'ingredients_notes' | 'upc_barcode'> | null>(null);
+  // B-332: primary_protein is now owner-editable here (was extraction-only).
+  const [primaryProtein, setPrimaryProtein] = useState<string | null>(null);
+  const baseline = useRef<Pick<FoodRow, 'brand' | 'product_name' | 'format' | 'food_type' | 'ingredients_notes' | 'upc_barcode' | 'primary_protein'> | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -150,6 +153,7 @@ export default function FoodDetailScreen() {
       food_type: next.food_type,
       ingredients_notes: next.ingredients_notes,
       upc_barcode: next.upc_barcode,
+      primary_protein: next.primary_protein,
     };
     const nextIngredients = next.ingredients_notes ?? '';
     const nextBarcode = next.upc_barcode ?? '';
@@ -159,6 +163,10 @@ export default function FoodDetailScreen() {
     setFoodType((cur) => (!prev || cur === prev.food_type) ? next.food_type : cur);
     setIngredients((cur) => (!prev || cur === (prev.ingredients_notes ?? '')) ? nextIngredients : cur);
     setBarcode((cur) => (!prev || cur === (prev.upc_barcode ?? '')) ? nextBarcode : cur);
+    // Reseed protein only when the owner hasn't diverged from the last loaded
+    // value — so an AI completion landing via realtime shows the read protein,
+    // but an in-progress owner edit is never stomped.
+    setPrimaryProtein((cur) => (!prev || cur === prev.primary_protein) ? next.primary_protein : cur);
   }
 
   // ── Save ──
@@ -178,7 +186,8 @@ export default function FoodDetailScreen() {
       format !== base.format ||
       foodType !== base.food_type ||
       trimmedIngredients !== base.ingredients_notes ||
-      trimmedBarcode !== base.upc_barcode;
+      trimmedBarcode !== base.upc_barcode ||
+      primaryProtein !== base.primary_protein;
 
     if (!changed) {
       router.back();
@@ -199,6 +208,7 @@ export default function FoodDetailScreen() {
         food_type: foodType,
         ingredients_notes: trimmedIngredients,
         upc_barcode: trimmedBarcode,
+        primary_protein: primaryProtein,
         source: nextSource,
       })
       .eq('id', row.id);
@@ -215,9 +225,9 @@ export default function FoodDetailScreen() {
       const db = getDb();
       await db.runAsync(
         `UPDATE food_items_cache
-           SET brand = ?, product_name = ?, format = ?, food_type = ?
+           SET brand = ?, product_name = ?, format = ?, food_type = ?, primary_protein = ?
          WHERE id = ?`,
-        [brand.trim(), productName.trim(), format, foodType, row.id],
+        [brand.trim(), productName.trim(), format, foodType, primaryProtein, row.id],
       );
     } catch (err) {
       console.warn('[food-detail] cache update failed:', err);
@@ -578,6 +588,13 @@ export default function FoodDetailScreen() {
               allowDeselect={false}
               accessibilityLabel="Format"
               style={styles.formatRow}
+            />
+
+            <SectionLabel label="Primary protein" />
+            <ProteinPicker
+              value={primaryProtein}
+              onChange={setPrimaryProtein}
+              accessibilityLabel="Primary protein"
             />
 
             <SectionLabel label="Type" />
