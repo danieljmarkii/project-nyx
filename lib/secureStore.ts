@@ -34,6 +34,24 @@ import { logAuth } from './authDebug';
 // chunk over the limit.
 const MAX_CHUNK_CHARS = 512;
 
+// Keychain accessibility for every key we write. This is the SECOND half of the
+// frequent-logout fix (the first was chunking, #306). expo-secure-store defaults
+// to `WHEN_UNLOCKED`, which makes an item UNREADABLE and UNWRITABLE while the
+// device is locked — so `autoRefreshToken`'s ~hourly background refresh, if it
+// fires while the phone is locked, throws `errSecInteractionNotAllowed`: getItem
+// returns null (client sees "no session") and the refreshed token can't be saved.
+// The diagnostic build 33 caught exactly this — three `sec.get {path:"error"}`
+// breadcrumbs mid-background, recovering to `path:"ok"` the instant the app was
+// unlocked. `AFTER_FIRST_UNLOCK` keeps the session readable while locked once the
+// device has been unlocked at least once since boot — the correct class for a
+// credential a background task must refresh. Backup-migration posture is
+// unchanged from the old `WHEN_UNLOCKED` default (both are iCloud-migratable); a
+// stricter `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY` is a Trust & Safety follow-up if
+// we decide session tokens should never ride an encrypted backup to a new device.
+const WRITE_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+};
+
 // Sibling keys derived from the logical key. The suffixes use only characters
 // SecureStore allows ([A-Za-z0-9._-]); the Supabase key (`sb-<ref>-auth-token`)
 // already satisfies that, so the derived keys do too.
@@ -141,14 +159,14 @@ async function setItem(key: string, value: string): Promise<void> {
   let wroteUpTo = -1;
   try {
     for (let i = 0; i < chunks.length; i++) {
-      await SecureStore.setItemAsync(chunkKey(key, gen, i), chunks[i]);
+      await SecureStore.setItemAsync(chunkKey(key, gen, i), chunks[i], WRITE_OPTIONS);
       wroteUpTo = i;
     }
     // THE COMMIT: one atomic write flips the live generation to the set we just
     // finished writing. A crash before this line leaves the previous generation
     // (still named by the old pointer) fully intact; a crash after it leaves the
     // new generation fully intact. There is no window where a reader sees a mix.
-    await SecureStore.setItemAsync(pointerKey(key), `${gen}:${chunks.length}`);
+    await SecureStore.setItemAsync(pointerKey(key), `${gen}:${chunks.length}`, WRITE_OPTIONS);
     logAuth('sec.set', { path: 'ok', gen, chunks: chunks.length });
   } catch (e) {
     // The persist itself failed — the session did NOT get saved. This is the one
