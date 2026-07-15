@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -13,6 +13,8 @@ import { logAuth } from '../lib/authDebug';
 import { APP_BUILD, PLATFORM } from '../lib/appInfo';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
+import { useAppActive } from '../hooks/useAppActive';
+import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
 import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
 import { CompletionMoment } from '../components/ui/CompletionMoment';
@@ -39,6 +41,20 @@ export default function RootLayout() {
   // detection engine's detector ⑥ can run (engine input only — never surfaced).
   useSyncTimezone();
 
+  // B-329: load the server-flippable app_config flags on start, then refresh on
+  // every foreground (a PM flag flip reaches the client without a reinstall). Values
+  // are render-only — every gate is re-checked server-side (B-252). Refresh is also
+  // fired on sign-in below, since an unauthenticated fetch is RLS-denied.
+  const appActive = useAppActive();
+  const prevActive = useRef(appActive);
+  useEffect(() => {
+    initAppConfig().catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (appActive && !prevActive.current) refreshAppConfig().catch(() => {});
+    prevActive.current = appActive;
+  }, [appActive]);
+
   useEffect(() => {
     // Diagnostic breadcrumb marking the start of this launch, so the on-device
     // log is grouped per process lifetime (build + platform for cross-device
@@ -61,6 +77,9 @@ export default function RootLayout() {
       });
       setSession(session);
       setLoading(false);
+      // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
+      // session exists — refresh the moment a persisted session is confirmed.
+      if (session) refreshAppConfig().catch(() => {});
       if (!session) {
         // The Signal-led Landing (app/(auth)/index) is the unauthenticated entry
         // point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in" from
@@ -95,6 +114,8 @@ export default function RootLayout() {
         await wipeLocalSession();
       }
       setSession(session);
+      // A fresh sign-in is the other moment config becomes fetchable (see above).
+      if (session) refreshAppConfig().catch(() => {});
       if (!session) {
         // Route to the new Landing on sign-out (B-251 PR 5) — EXCEPT a just-deleted
         // account, which goes to login so the B-039 "your account has been deleted"

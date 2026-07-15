@@ -29,6 +29,7 @@ import {
   EditableVomitField,
 } from '../../lib/analysis';
 import { VomitFieldsEditor } from './VomitFieldsEditor';
+import { vomitCapCopy } from '../../constants/monetizationCopy';
 import {
   labelFor,
   COLOUR_OPTIONS,
@@ -37,7 +38,13 @@ import {
   BLOOD_OPTIONS,
 } from './vomitFields';
 
-type Status = 'pending' | 'completed' | 'failed' | 'uncertain';
+// 'capped' / 'read_disabled' are the two states the analyze-vomit function writes
+// into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
+// contextual escalation flags fired (§4.5). If a flag HAD fired, the function writes
+// a normal 'completed' escalation instead — so these two never carry a red flag, and
+// the never-reassure invariant survives the cap by construction (there is no path
+// from either to a reassuring verdict).
+type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
 type Recommendation = 'worth_a_call' | 'monitor' | 'not_enough_to_say';
 
 interface AnalysisRow {
@@ -72,7 +79,7 @@ const REC_LABEL: Record<Recommendation, string> = {
   not_enough_to_say: 'Not enough to say yet',
 };
 
-export function VomitAnalysisSection({ eventId }: { eventId: string }) {
+export function VomitAnalysisSection({ eventId, petName }: { eventId: string; petName?: string | null }) {
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
   const [working, setWorking] = useState(false); // analysis in flight (triggered or polling)
   const [retrying, setRetrying] = useState(false);
@@ -227,6 +234,30 @@ export function VomitAnalysisSection({ eventId }: { eventId: string }) {
               ? <WhorlSpinner size="sm" tint="#fff" />
               : <Text style={styles.retryBtnText}>Try again</Text>}
           </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Descriptive read flagged off with NO escalation flags fired (§4.5) → render
+  // nothing. No dead "Try again", no empty frame. (If a flag had fired, the row is a
+  // normal 'completed' escalation and falls through to the render below.)
+  if (status === 'read_disabled') {
+    return null;
+  }
+
+  // Cap reached with NO escalation flags fired → the calm §7.3 cap state. Never
+  // error styling, never a retry, never a Premium mention, never reassurance. The
+  // read runs tomorrow; everything logged is saved; the "when to call your vet"
+  // guidance is in the copy. The row carries no daily/monthly discriminator, so we
+  // use the daily wording — the monthly cap (200) is effectively unreachable at the
+  // daily cap of 10.
+  if (status === 'capped') {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>AI READ</Text>
+        <View style={styles.capBox}>
+          <Text style={styles.capText}>{vomitCapCopy(petName, 'daily')}</Text>
         </View>
       </View>
     );
@@ -596,6 +627,21 @@ const styles = StyleSheet.create({
     borderRadius: theme.radiusMedium,
     padding: theme.space2,
     gap: theme.space1,
+  },
+  // §7.3 vomit cap — a calm neutral surface, deliberately identical in weight to
+  // the neutral/failed cards (NOT the attention card, no accent border). It must
+  // never read as alarm and never as an error.
+  capBox: {
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderColor: theme.colorBorder,
+    borderWidth: 1,
+    borderRadius: theme.radiusMedium,
+    padding: theme.space2,
+  },
+  capText: {
+    fontSize: theme.textMD,
+    color: theme.colorTextPrimary,
+    lineHeight: theme.lineHeightBody,
   },
   failedText: {
     fontSize: theme.textMD,

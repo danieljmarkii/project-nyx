@@ -634,7 +634,7 @@ export default function EventDetailScreen() {
           ) : null}
 
           {event.event_type === 'vomit' ? (
-            <VomitAnalysisSection eventId={event.id} />
+            <VomitAnalysisSection eventId={event.id} petName={activePet?.name} />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (

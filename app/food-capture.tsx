@@ -31,6 +31,9 @@ import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
+import { useAppConfig } from '../hooks/useAppConfig';
+import { parseGateResponse } from '../lib/appConfig';
+import { EARLY_ACCESS_LABEL, foodCapCopy, careFirstLine } from '../constants/monetizationCopy';
 
 type CaptureStep =
   | 'intro'
@@ -100,8 +103,17 @@ export default function FoodCaptureScreen() {
   const { fromLog } = useLocalSearchParams<{ fromLog?: string }>();
   const cameFromMealLog = fromLog === '1';
 
+  // B-329 flag-aware state. Render-only: the Edge Function re-checks the flag + cap
+  // server-side (B-252), so this only shapes what's shown, never what's allowed.
+  const config = useAppConfig();
+  const extractionEnabled = config.ai_food_extraction_enabled;
+
   const [step, setStep] = useState<CaptureStep>('intro');
   const [foodId] = useState<string>(() => uuid());
+
+  // Set from a typed cap_reached response (§4.5). Drives the calm §7.3 cap band on
+  // the edit step in place of the retryable failure banner.
+  const [capReached, setCapReached] = useState<{ cap: 'daily' | 'monthly' } | null>(null);
 
   const [frontPhoto, setFrontPhoto] = useState<CapturedPhoto | null>(null);
   const [ingredientsPhoto, setIngredientsPhoto] = useState<CapturedPhoto | null>(null);
@@ -153,6 +165,14 @@ export default function FoodCaptureScreen() {
     const t = setTimeout(() => router.dismissAll(), 900);
     return () => clearTimeout(t);
   }, [step]);
+
+  // §6.1 flag-off: when photo extraction is disabled the flow has no camera path —
+  // it opens directly on the manual edit step (no banner, no dead affordance). We
+  // fail open, so this only fires on a deliberate PM flip reaching the client.
+  useEffect(() => {
+    if (step === 'intro' && !extractionEnabled) handleManualEntry();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, extractionEnabled]);
 
   // Captures a photo for a slot. When `presetSource` is supplied (the intro
   // screen, where Take photo / Choose from library are explicit on-screen
@@ -283,6 +303,7 @@ export default function FoodCaptureScreen() {
     setStep('uploading');
     setExtracting(true);
     setExtractionFailed(false);
+    setCapReached(null);
 
     // Seed the meal time up-front from the front photo's EXIF (if any) so the
     // manual-edit fallback path inherits the right provenance even when AI
@@ -332,8 +353,32 @@ export default function FoodCaptureScreen() {
         body: { food_item_id: foodId, photo_paths: storagePaths },
       });
 
-      if (error || !data?.extraction) {
-        console.warn('[food-capture] extraction failed:', error?.message);
+      // Genuine transport/function fault → the retryable failure banner (unchanged).
+      if (error) {
+        console.warn('[food-capture] extraction failed:', error.message);
+        setExtractionFailed(true);
+        setStep('edit');
+        return;
+      }
+
+      // §4.5 typed product states (HTTP 200, so `error` is null) — branch on the
+      // body, never an error string. Both route to the manual edit step with the
+      // photo already saved; neither is an error.
+      const gate = parseGateResponse(data);
+      if (gate.kind === 'cap_reached') {
+        setCapReached({ cap: gate.cap });
+        setStep('edit');
+        return;
+      }
+      if (gate.kind === 'feature_disabled') {
+        // Stale-client path: config said enabled but the server has since flagged it
+        // off. Route to manual with no banner (the flag-off designed state, §6.1).
+        setStep('edit');
+        return;
+      }
+
+      if (!data?.extraction) {
+        console.warn('[food-capture] extraction returned no data');
         setExtractionFailed(true);
         setStep('edit');
         return;
@@ -406,6 +451,10 @@ export default function FoodCaptureScreen() {
     // yet — upsert with the user-confirmed values. If it does exist (AI path),
     // the Edge Function already wrote richer fields; we only patch when user
     // edited via the "Edit" screen.
+    // AI actually produced data only when the extraction ran and returned. A capped
+    // (or flag-off) commit routes exactly as the failure path (§6.1) — the photo is
+    // saved but extraction didn't run, so it must NOT be recorded as 'completed'.
+    const aiRead = !!frontPhoto && !extractionFailed && !capReached;
     supabase.from('food_items').upsert({
       id: foodId,
       brand: brand.trim(),
@@ -414,8 +463,8 @@ export default function FoodCaptureScreen() {
       food_type: type,
       created_by_user_id: user?.id ?? null,
       photo_paths: frontPhoto ? [frontPhoto.storagePath, ingredientsPhoto?.storagePath, barcodePhoto?.storagePath].filter(Boolean) : [],
-      ai_extraction_status: frontPhoto ? (extractionFailed ? 'failed' : 'completed') : 'manual',
-      source: frontPhoto && !extractionFailed ? 'ai_extracted' : 'user',
+      ai_extraction_status: frontPhoto ? (aiRead ? 'completed' : 'failed') : 'manual',
+      source: aiRead ? 'ai_extracted' : 'user',
     }, { onConflict: 'id' }).then(({ error }) => {
       if (error) console.warn('[food-capture] upsert failed:', error.message);
     });
@@ -490,6 +539,9 @@ export default function FoodCaptureScreen() {
             A clear shot of the front lets us read the label. The ingredients
             and barcode are optional but make the entry more useful later.
           </Text>
+          {/* D-M6 early-access label (§7.2) — quiet, small, no badge. Dual-signals
+              free-now and may-be-paid-later. Retired in T3-E when the gate flips. */}
+          <Text style={styles.earlyAccessLabel}>{EARLY_ACCESS_LABEL}</Text>
           {/* B-062 — Lucide Camera/Images (were 📷/🖼 emoji). Both glyphs on the
               screen convert together so the two buttons don't end up one vector +
               one emoji. */}
@@ -686,13 +738,21 @@ export default function FoodCaptureScreen() {
         />
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
-            {extractionFailed && (
+            {/* §6.1 cap-reached: a calm informational band (never error styling), with
+                the first B-333 care-first surface (§16). Distinct from the retryable
+                failure banner below, which is a genuine fault. */}
+            {capReached ? (
+              <View style={styles.capBand}>
+                <Text style={styles.capBandText}>{foodCapCopy(capReached.cap)}</Text>
+                <Text style={styles.careLine}>{careFirstLine(activePet?.name)}</Text>
+              </View>
+            ) : extractionFailed ? (
               <View style={styles.failedBanner}>
                 <Text style={styles.failedBannerText}>
                   Couldn't read the label automatically. You can fill it in below — we'll retry extraction in the background.
                 </Text>
               </View>
-            )}
+            ) : null}
             <SectionLabel label="Brand" />
             <TextInput
               style={styles.textInput}
@@ -1089,6 +1149,34 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
     lineHeight: 18,
+  },
+  // D-M6 early-access label — quiet tertiary line, no badge/pill styling (§7.2).
+  earlyAccessLabel: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.lineHeightSM,
+    marginBottom: theme.space2,
+  },
+  // §6.1 cap band — a calm neutral surface, NEVER error red. Reads as an
+  // informational note; the record is already saved.
+  capBand: {
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    padding: theme.space2,
+    gap: theme.space1,
+  },
+  capBandText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    lineHeight: 18,
+  },
+  // The first B-333 care-first surface — quieter than the cap copy above it.
+  careLine: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+    lineHeight: 16,
   },
 
   completeContainer: {
