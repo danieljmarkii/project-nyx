@@ -12,9 +12,15 @@ import PetAgeScreen from './pet-age';
 
 const mockUpdatePet = jest.fn();
 let mockActivePet: unknown = { id: 'pet-1', name: 'Luna', species: 'cat', date_of_birth: null, date_of_birth_precision: 'exact' };
+// T2-5: the last step routes past the paywall when it's flagged off. Default the
+// flag ON so the existing paywall-routing assertions hold; individual tests flip it.
+let mockPaywallEnabled = true;
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
+}));
+jest.mock('../../hooks/useAppConfig', () => ({
+  useAppConfig: jest.fn(() => ({ paywall_enabled: mockPaywallEnabled })),
 }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -56,6 +62,7 @@ describe('PetAgeScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockActivePet = { id: 'pet-1', name: 'Luna', species: 'cat', date_of_birth: null, date_of_birth_precision: 'exact' };
+    mockPaywallEnabled = true;
   });
 
   it('bounces to the type step when there is no active pet (stray entry)', () => {
@@ -113,5 +120,24 @@ describe('PetAgeScreen', () => {
       }),
     );
     expect(mockedPush).toHaveBeenCalledWith('/onboarding/paywall');
+  });
+
+  it('T2-5: when the paywall is flagged off, Skip routes straight to done (paywall never mounts)', () => {
+    mockPaywallEnabled = false;
+    mockUpdate();
+    const { getByTestId } = render(<PetAgeScreen />);
+    fireEvent.press(getByTestId('onboarding-skip'));
+    expect(mockedPush).toHaveBeenCalledWith('/onboarding/done');
+    expect(mockedPush).not.toHaveBeenCalledWith('/onboarding/paywall');
+  });
+
+  it('T2-5: when the paywall is flagged off, Continue routes past it to done after the write', async () => {
+    mockPaywallEnabled = false;
+    mockUpdate();
+    const { getByTestId } = render(<PetAgeScreen />);
+    fireEvent.changeText(getByTestId('pet-age-years'), '2');
+    fireEvent.press(getByTestId('pet-age-continue'));
+    await waitFor(() => expect(mockedPush).toHaveBeenCalledWith('/onboarding/done'));
+    expect(mockedPush).not.toHaveBeenCalledWith('/onboarding/paywall');
   });
 });

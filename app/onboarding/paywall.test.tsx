@@ -9,11 +9,18 @@ import PaywallScreen from './paywall';
 // Principle-7 free-tier line, the one load-bearing invariant on this screen.
 
 let mockActivePet: unknown = { id: 'pet-1', name: 'Luna', species: 'cat' };
+// T2-5: the screen bounces to done when the paywall is flagged off. Default the flag
+// ON so the existing render/interaction tests exercise the real paywall; the bounce
+// test flips it.
+let mockPaywallEnabled = true;
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
   // The status-bar focus effect is not under test — no-op it so it doesn't run.
   useFocusEffect: jest.fn(),
+}));
+jest.mock('../../hooks/useAppConfig', () => ({
+  useAppConfig: jest.fn(() => ({ paywall_enabled: mockPaywallEnabled })),
 }));
 jest.mock('react-native-safe-area-context', () => {
   const { View } = require('react-native');
@@ -31,12 +38,24 @@ describe('PaywallScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockActivePet = { id: 'pet-1', name: 'Luna', species: 'cat' };
+    mockPaywallEnabled = true;
   });
 
   it('bounces to the type step when there is no active pet (stray entry)', () => {
     mockActivePet = null;
     render(<PaywallScreen />);
     expect(mockedReplace).toHaveBeenCalledWith('/onboarding/pet-type');
+  });
+
+  it('T2-5: bounces to done when the paywall is flagged off (stale client / deep link)', () => {
+    mockPaywallEnabled = false;
+    const { queryByTestId } = render(<PaywallScreen />);
+    // No dead trial CTA renders while the guard bounces...
+    expect(queryByTestId('paywall-start-trial')).toBeNull();
+    // ...and it hands straight to the completion screen (not back to pet-type: the
+    // pet exists, so the no-pet escape hatch doesn't fire).
+    expect(mockedReplace).toHaveBeenCalledWith('/onboarding/done');
+    expect(mockedReplace).not.toHaveBeenCalledWith('/onboarding/pet-type');
   });
 
   it('"Maybe later" advances to the completion screen', () => {

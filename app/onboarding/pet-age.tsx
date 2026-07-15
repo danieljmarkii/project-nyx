@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { usePetStore } from '../../store/petStore';
 import { ageToDob, birthdayToDob } from '../../lib/age';
 import { theme } from '../../constants/theme';
+import { useAppConfig } from '../../hooks/useAppConfig';
 import { ChipGroup, type ChipGroupOption } from '../../components/ui/ChipGroup';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
@@ -44,6 +45,27 @@ function sanitizeInt(text: string, max: number): string {
 
 export default function PetAgeScreen() {
   const { activePet, updatePet } = usePetStore();
+
+  // T2-5 — the paywall is gated on the server-flippable `paywall_enabled` flag
+  // (monetization spec §6.5). When it's off we route the last pet-setup step
+  // straight to the completion screen, so the mocked paywall never mounts. This is
+  // RENDER-ONLY routing (the paywall has no server-enforced path — it's a client
+  // mock, §4.2), and it fails CLOSED: the shipped client default is `false`
+  // (lib/appConfig.ts), so a config-unreachable build skips the non-functional
+  // trial CTA rather than showing a dead one (a Guideline 2.1/3.1.2 rejection risk).
+  //
+  // Ship-dark note (the config-load race): `useAppConfig` resolves the real flag
+  // asynchronously (auth-driven fetch, cached last-known-good). On a brand-new
+  // signup with no cache yet, a session that reaches this screen before that fetch
+  // lands reads the fail-closed default and skips the (seeded-`true`) paywall. That
+  // is the spec AC's THIRD clause — "config-unreachable → hidden (fail-closed)" —
+  // not a violation of the "flag-on → byte-identical" clause, which governs the
+  // steady state once config has resolved (returning users hydrate from cache
+  // instantly; the single SELECT beats five screens of typing on any real network).
+  // The failure direction is soft by design: a mock CTA is shown less often, never
+  // a dead or broken screen. Strict byte-identical for the first-run-in-flight
+  // window is tracked as a hardening follow-up (B-345) if the PM wants it.
+  const { paywall_enabled: paywallEnabled } = useAppConfig();
 
   // Escape hatch: only reachable after the pet exists (pushed from gender); if it's
   // somehow entered without one — a deep link straight here — restart pet setup.
@@ -89,7 +111,12 @@ export default function PetAgeScreen() {
     // Push (not replace) so back from the paywall returns here with this step intact,
     // matching gender → age. The paywall's "Maybe later" advances to done, which
     // writes the durable onboarding_completed_at and hands off to Home.
-    router.push('/onboarding/paywall');
+    //
+    // T2-5: when the paywall is flagged off, skip it entirely and push straight to
+    // done — done is the flow terminus either way, so back-from-done is already
+    // locked (done.tsx) and no progress math changes (the paywall sits outside the
+    // 5-step bar). Both taps that call finish() (Continue + Skip) inherit this.
+    router.push(paywallEnabled ? '/onboarding/paywall' : '/onboarding/done');
   }
 
   async function handleContinue() {
