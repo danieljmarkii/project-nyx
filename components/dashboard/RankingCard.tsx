@@ -68,7 +68,7 @@ export function RankingCard({
   title,
   entries,
   state = { kind: 'populated' },
-  calibrationUnit = 'meal',
+  calibrationUnit = 'food',
   emptyMessage,
   definition,
   petName,

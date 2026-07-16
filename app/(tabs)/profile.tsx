@@ -772,7 +772,7 @@ export default function ProfileScreen() {
               />
             </View>
             <Text style={styles.trialCompliance}>
-              {dietTrial.compliance}% compliance · {dietTrial.daysLogged} days with a meal logged
+              {dietTrial.compliance}% compliance · {dietTrial.daysLogged} days with food logged
             </Text>
             {dietTrial.vet_name && (
               <Text style={styles.trialVet}>Vet: {dietTrial.vet_name}</Text>

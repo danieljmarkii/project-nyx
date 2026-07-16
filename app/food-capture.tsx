@@ -842,7 +842,7 @@ export default function FoodCaptureScreen() {
               activeOpacity={0.85}
             >
               <Text style={styles.primaryBtnText}>
-                {cameFromMealLog ? 'Save and log meal' : 'Save'}
+                {cameFromMealLog ? 'Save and log food' : 'Save'}
               </Text>
             </TouchableOpacity>
           </ScrollView>
