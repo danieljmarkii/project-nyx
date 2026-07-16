@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
+import { ChunkedSecureStoreAdapter } from './secureStore';
+import { logAuth } from './authDebug';
 
 // Fail fast with an actionable message if config is missing. Without this
 // guard, an absent/placeholder env var builds a client that sends an empty
@@ -26,18 +27,16 @@ if (isPlaceholder(supabaseUrl) || isPlaceholder(supabaseAnonKey)) {
   );
 }
 
-// SecureStore adapter so Supabase auth tokens are encrypted at rest
-const ExpoSecureStoreAdapter = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
-  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
-};
-
 // Non-null assertions are safe here: the guard above throws on any
 // missing/placeholder value before execution reaches this point.
 export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
   auth: {
-    storage: ExpoSecureStoreAdapter,
+    // Chunked SecureStore: keeps the session encrypted at rest in the OS keystore
+    // while sidestepping expo-secure-store's 2048-byte-per-value limit, which a
+    // raw single-key adapter silently blew past on every token refresh — the
+    // session then failed to persist and the owner was forced to sign in again
+    // (see lib/secureStore.ts).
+    storage: ChunkedSecureStoreAdapter,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
@@ -48,6 +47,10 @@ export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
 // the JWT when the app returns to the foreground. Without this, the access
 // token expires after 1 hour and all authenticated writes fail with RLS 42501.
 AppState.addEventListener('change', (state) => {
+  // Diagnostic breadcrumb: the foreground/background transitions bound the
+  // windows in which autoRefresh runs — the idle gap where the session is lost
+  // sits between a 'background' and the next cold start.
+  logAuth('appstate', { state });
   if (state === 'active') {
     supabase.auth.startAutoRefresh();
   } else {

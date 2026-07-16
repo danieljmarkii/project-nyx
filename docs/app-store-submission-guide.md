@@ -18,16 +18,16 @@
 | # | Step | Type | Backlog | Status |
 |---|---|---|---|---|
 | 1 | Verify the App Store Connect record + lock the name | PM | B-272 | ✅ Done 2026-07-08 — name "Culprit — Pet Health Tracker", category Lifestyle/Health & Fitness |
-| 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | ✅ Done 2026-07-08 — drafts in `docs/legal/` (branded Culprit per B-274); PM review + placeholder fill (operator name, contact email, jurisdiction) before hosting (step 3) |
-| 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | ⬜ Not started |
+| 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | 🟡 In progress — draft PR #302 open |
+| 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | 🔵 Spec'd 2026-07-08 — domain `getculprit.app` purchased (Cloudflare); build-ready spec `docs/culprit-website-requirements.md`; awaiting PM repo + Email Routing setup |
 | 4 | Pick + configure the production SMTP provider | PM | B-152 (part 1) | ⬜ Not started |
-| 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | ⬜ Not started |
+| 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | 🟡 In progress — draft PR #299 open, **permission strings only** (B-267); confirmed it does **not** include the `supportsTablet: false` flip (B-269) — that half still needs its own change, either folded into #299 before merge or a follow-up |
 | 6 | Ratify + flag off the paywall for v1 | Mixed | B-263–266 (deferral) | ⬜ Not started |
 | 7 | In-app version display | PR | B-231 | ⬜ Not started |
 | 8 | On-device deletion QA + logout-wipe (email confirm still OFF) | PM | B-039 + AC-6 | ⬜ Not started |
 | 9 | Flip email confirmation ON + verify the signup path | Mixed | B-152 (part 2) | ⬜ Not started |
 | 10 | Cut the production build + built-artifact verification | Mixed | — | ⬜ Not started |
-| 11 | Seed the App Review demo account + reviewer notes | Mixed | B-271 | ⬜ Not started |
+| 11 | Seed the App Review demo account + reviewer notes | Mixed | B-271 | 🔵 Spec'd 2026-07-11 — build-ready spec `docs/nyx-demo-account-requirements.md`; D1–D7 ratified; PR 1 (seed script) next |
 | 12 | Screenshots | PM | B-269 | ⬜ Not started |
 | 13 | Listing copy + age rating | Mixed | B-269 | ⬜ Not started |
 | 14 | App Privacy nutrition label | Mixed | B-268 | ⬜ Not started |
@@ -46,7 +46,7 @@
 
 **How:**
 1. Sign in at <https://appstoreconnect.apple.com> → **My Apps** → open the Nyx app record.
-2. Check **App Information → Name**. This is the *App Store display name* (max 30 chars), independent of the on-device name (`app.json` `name: "Nyx"` — that one stays as is). If plain "Nyx" was accepted when the record was created, the name is reserved — done. If it's something placeholder-ish, or you want a more searchable name, set it now — e.g. **"Nyx — Pet Health Tracker"** (name + subtitle real estate is also the strongest App Store search signal).
+2. Check **App Information → Name**. This is the *App Store display name* (max 30 chars), independent of the on-device name (`app.json` `name: "Culprit"` — set by the B-274 rebrand). If plain "Nyx" was accepted when the record was created, the name is reserved — done. If it's something placeholder-ish, or you want a more searchable name, set it now — e.g. **"Nyx — Pet Health Tracker"** (name + subtitle real estate is also the strongest App Store search signal).
 3. While there, note what's already filled in vs. empty (category, subtitle, content rights) — you'll come back for the rest in steps 12–14.
 
 **Tips:**
@@ -78,18 +78,20 @@
 
 ### Step 3 — Stand up the web presence **[Mixed]** (B-273)
 
-**Summary:** App Review *visits* the support URL — it must resolve to a real page with a way to contact you — and the listing requires a privacy-policy URL. One static page covers support + privacy policy + terms in a single deliverable. Nyx currently has no web presence at all.
+**Summary:** App Review *visits* the support URL — it must resolve to a real page with a way to contact you — and the listing requires a privacy-policy URL. One site covers support + privacy policy + terms. Nyx currently has no web presence at all.
 
-**How (PM part — pick a host):**
-- **GitHub Pages** (free, needs a *public* repo — make a separate tiny `nyx-site` repo, don't publicize this one): <https://pages.github.com>
-- **Carrd** (fastest, ~free): <https://carrd.co>
-- **Netlify / Vercel** free tiers also work.
+**⬆ Scope upgraded 2026-07-08 — host + domain now decided.** The PM purchased the custom domain **`getculprit.app`** (Cloudflare Registrar) and wants a real branded Culprit landing page, not just a legal stub. The build-ready spec is **`docs/culprit-website-requirements.md`** — read it for the full plan. Headline decisions: hosting = **Cloudflare Pages** (free; DNS already at Cloudflare), framework = **Astro**, a **separate `culprit-web` repo**, email = **Cloudflare Email Routing** (`support@getculprit.app` → PM Gmail), cookieless analytics. The spec's §10 phase plan separates the submission gate (3 URLs live) from the brand landing so neither blocks the other. The GitHub Pages/Carrd options below are superseded by that spec but kept for context.
 
-You need three URLs by the end (they can be anchors on one page): `…/support`, `…/privacy`, `…/terms`.
+**How (PM part — now, per the spec §13):**
+- **Create the `culprit-web` GitHub repo** (public) + grant session access (GitHub scope is `project-nyx`-only today).
+- **Enable Cloudflare Email Routing** on `getculprit.app`: route `support@` (+ optionally `privacy@`) → your Gmail.
+- _(Superseded host options, for reference: GitHub Pages / Carrd / Netlify free tiers — no longer the plan now that the domain + Cloudflare Pages are chosen.)_
+
+You need three URLs by the end (anchors/pages on the site): `getculprit.app/support`, `/privacy`, `/terms`.
 
 **Tips:**
-- The support page needs, at minimum: the app name, a contact email, and a sentence about what the app is. That's genuinely enough.
-- A custom domain is nice but **not required** — `username.github.io/nyx` passes review fine.
+- The support page needs, at minimum: the app name, a contact email, and a sentence about what the app is. That's genuinely enough for review — the branded landing (spec Job B) is extra.
+- Brand hygiene (**B-274**): every public string is **Culprit**, never "Nyx".
 
 **Claude part (after hosting exists + step 2 is merged) — kickoff prompt:**
 

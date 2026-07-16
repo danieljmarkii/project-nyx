@@ -1,11 +1,12 @@
 import { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Image, Alert, ActivityIndicator,
+  Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { ChevronRight, Camera } from 'lucide-react-native';
+import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import { theme } from '../../constants/theme';
@@ -137,6 +138,10 @@ export default function EventDetailScreen() {
   const [transformFailed, setTransformFailed] = useState(false);
   const [occurredAtSource, setOccurredAtSource] = useState<'manual' | 'exif' | 'now'>('manual');
   const [foodLabel, setFoodLabel] = useState<{ brand: string | null; product: string | null } | null>(null);
+  // B-325 — the food's usage class (meal | treat | other). Gates the retroactive
+  // "add a med given with this" entry to real vehicles (meal/treat), mirroring the
+  // completion card's own showIntake gate; 'other'/unclassified foods never show it.
+  const [foodType, setFoodType] = useState<string | null>(null);
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
   // Medication (dose) detail — B-117 PR 8. `dose` carries the drug-library display
   // fields; `adherence` is the mutable rating (the intakeRating analog); `doubleDose`
@@ -162,6 +167,7 @@ export default function EventDetailScreen() {
     // Reset per-event state up-front so navigating from event A → event B
     // doesn't briefly flash A's food label / rating until B's queries return.
     setFoodLabel(null);
+    setFoodType(null);
     setIntakeRating(null);
     setDose(null);
     setAdherence(null);
@@ -199,6 +205,7 @@ export default function EventDetailScreen() {
         const meal = await getMealForEvent(id);
         if (meal) {
           setFoodLabel({ brand: meal.food_brand, product: meal.food_product_name });
+          setFoodType(meal.food_type);
           const rating = meal.intake_rating;
           setIntakeRating(
             rating === 'refused' || rating === 'picked' || rating === 'some'
@@ -314,6 +321,30 @@ export default function EventDetailScreen() {
       setHowGiven(prev);
       Alert.alert('Could not save', 'Try again in a moment.');
     }
+  }
+
+  // B-325 — the retroactive combo entry: add a med to THIS already-logged meal/treat.
+  // Mirrors MealCompletionCard.handleAddMed exactly (same route + params) so the two entry
+  // points converge on one pre-bound picker → linked-dose write path — plus comboSource
+  // 'detail', which tells /log to skip the completion card and return here instead (and, if
+  // this treat wasn't finished, to run the confirm sheet). The dose binds to THIS event's
+  // pet (never a possibly-switched active pet), making the paired_event_id link same-pet by
+  // construction; the food type seeds the inferred vehicle. Never mints a phantom vehicle —
+  // it links to this real, owner-logged event.
+  function handleAddMed() {
+    if (!event) return;
+    const foodName = [foodLabel?.brand, foodLabel?.product].filter(Boolean).join(' ').trim();
+    router.push({
+      pathname: '/log',
+      params: {
+        type: 'medication',
+        pairedEventId: event.id,
+        pairedPetId: event.pet_id,
+        pairedFoodType: foodType ?? '',
+        pairedFoodName: foodName,
+        comboSource: 'detail',
+      },
+    });
   }
 
   function handleEdit() {
@@ -473,7 +504,7 @@ export default function EventDetailScreen() {
   if (loading && !event) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingState}><ActivityIndicator /></View>
+        <View style={styles.loadingState}><WhorlSpinner size="md" ground="day" /></View>
       </SafeAreaView>
     );
   }
@@ -505,6 +536,10 @@ export default function EventDetailScreen() {
   // Meals' clinical artifact is the food name, not a photo — never beg for one
   // (Dr. Chen + Jordan, on-device review). If a meal has a photo, the hero renders.
   const isMeal = event.event_type === 'meal';
+  // B-325 — show the retroactive "add a med given with this" entry only on a real vehicle:
+  // a meal/treat food (never 'other'/unclassified), matching the completion card's showIntake
+  // gate. A dose event's own screen never shows it — that's direction ② (held).
+  const showAddMed = isMeal && (foodType === 'meal' || foodType === 'treat');
   // Which photo the hero + viewer render, and whether to show the add-photo empty
   // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
   // flashes an add-photo target over an existing photo mid-fallback). B-207.
@@ -559,7 +594,7 @@ export default function EventDetailScreen() {
             disabled={uploadingPhoto}
           >
             {uploadingPhoto ? (
-              <ActivityIndicator />
+              <WhorlSpinner size="sm" ground="day" />
             ) : (
               <>
                 {/* B-062 — Lucide Camera (was a 📷 emoji) for a consistent vector
@@ -599,7 +634,7 @@ export default function EventDetailScreen() {
           ) : null}
 
           {event.event_type === 'vomit' ? (
-            <VomitAnalysisSection eventId={event.id} />
+            <VomitAnalysisSection eventId={event.id} petName={activePet?.name} />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (
@@ -635,12 +670,52 @@ export default function EventDetailScreen() {
             />
           ) : null}
 
+          {/* B-325 — the retroactive combo entry (Option A: a quiet inline line under intake,
+              the exact twin of the completion card's forward "+ Add a med given with this").
+              Adds a med to THIS already-logged meal/treat via the same pre-bound picker; runs
+              the same intake→adherence safety coupling. Sits below any existing paired-dose
+              cross-link, so it reads as "and here's how to add one (more)". */}
+          {showAddMed ? (
+            <TouchableOpacity
+              style={styles.addMedRow}
+              onPress={handleAddMed}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Add a medication given with this ${foodType === 'treat' ? 'treat' : 'meal'}`}
+            >
+              <Text style={styles.addMedText}>+ Add a med given with this</Text>
+            </TouchableOpacity>
+          ) : null}
+
           {isMedication && dose ? (
             <>
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>MEDICATION</Text>
-                <Text style={styles.foodProduct}>{drugPrimary}</Text>
-                {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                {/* The drug name/strength links to the drug-library screen where a
+                    correction (fixing a mis-extracted strength) fixes every dose of
+                    that drug at once — the only path to that edit from History. Only
+                    a library-backed dose has a target; a free-text dose (null
+                    medication_item_id) renders the same text, non-tappable. */}
+                {dose.medicationItemId ? (
+                  <TouchableOpacity
+                    style={styles.drugLibraryLink}
+                    onPress={() => router.push(`/medication/${dose.medicationItemId}`)}
+                    activeOpacity={0.7}
+                    accessibilityRole="link"
+                    accessibilityLabel={`View drug details for ${drugPrimary}`}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.foodProduct}>{drugPrimary}</Text>
+                      {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                    </View>
+                    <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
+                  </TouchableOpacity>
+                ) : (
+                  <>
+                    <Text style={styles.foodProduct}>{drugPrimary}</Text>
+                    {drugSecondary ? <Text style={styles.foodBrand}>{drugSecondary}</Text> : null}
+                  </>
+                )}
                 {/* B-156 PR B4 — dose → vehicle cross-link. On a dose given inside a
                     meal/treat, a tap opens that vehicle (where its intake is edited).
                     Drops cleanly if the vehicle is soft-deleted (paired_food_name nulls). */}
@@ -821,6 +896,15 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     marginTop: 2,
   },
+  // The drug-name row as a link to the drug-library screen. Row layout so the
+  // chevron sits at the trailing edge; minHeight clears the 44pt tap-target floor
+  // without padding overshoot over the two-line name/strength block.
+  drugLibraryLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    minHeight: 44,
+  },
   // The combo cross-link (B-156 PR B4). Accent text + chevron so it reads as a
   // navigation affordance to the paired event. alignSelf flex-start so the tap target
   // hugs the label; minHeight clears the 44pt floor without padding overshoot; maxWidth
@@ -839,6 +923,23 @@ const styles = StyleSheet.create({
     color: theme.colorAccent,
     fontWeight: theme.fontWeightMedium,
     flexShrink: 1,
+  },
+  // The retroactive combo entry (B-325). Accent text, ≥44pt tap target (the 3am-test
+  // floor) via minHeight; a top hairline so it reads as a distinct, optional add-on beneath
+  // the intake/cross-link block, never a peer of the logged act. The quietest actionable
+  // line on the screen (Principle 1 — the no-med majority reads past it).
+  addMedRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colorBorder,
+    marginTop: theme.space2,
+    paddingTop: theme.space2,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  addMedText: {
+    fontSize: theme.textMD,
+    color: theme.colorAccent,
+    fontWeight: theme.fontWeightMedium,
   },
   notes: {
     fontSize: theme.textMD,

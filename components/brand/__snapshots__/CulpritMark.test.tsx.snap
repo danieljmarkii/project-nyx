@@ -1,0 +1,295 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carve geometry regression guard): light ground 1`] = `
+<View
+  accessible={false}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "gap": 8,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "height": 24,
+        "width": 24,
+      }
+    }
+  >
+    <RNSVGSvgView
+      align="xMidYMid"
+      bbHeight={24}
+      bbWidth={24}
+      focusable={false}
+      height={24}
+      meetOrSlice={0}
+      minX={0}
+      minY={0}
+      style={
+        [
+          {
+            "backgroundColor": "transparent",
+            "borderWidth": 0,
+          },
+          {
+            "flex": 0,
+            "height": 24,
+            "width": 24,
+          },
+        ]
+      }
+      vbHeight={100}
+      vbWidth={100}
+      width={24}
+    >
+      <RNSVGGroup
+        fill={
+          {
+            "payload": 4278190080,
+            "type": 0,
+          }
+        }
+      >
+        <RNSVGDefs>
+          <RNSVGMask
+            fill={
+              {
+                "payload": 4278190080,
+                "type": 0,
+              }
+            }
+            height="100%"
+            maskContentUnits={1}
+            maskType={0}
+            maskUnits={0}
+            name="culpritMarkCarve-«r3»"
+            width="100%"
+            x="0%"
+            y="0%"
+          >
+            <RNSVGRect
+              fill={
+                {
+                  "payload": 4294967295,
+                  "type": 0,
+                }
+              }
+              height={100}
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              width={100}
+              x={0}
+              y={0}
+            />
+            <RNSVGCircle
+              cx={61}
+              cy={43}
+              fill={
+                {
+                  "payload": 4278190080,
+                  "type": 0,
+                }
+              }
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              r={29}
+            />
+          </RNSVGMask>
+        </RNSVGDefs>
+        <RNSVGCircle
+          cx={45}
+          cy={50}
+          fill={
+            {
+              "payload": 4280360526,
+              "type": 0,
+            }
+          }
+          mask="culpritMarkCarve-«r3»"
+          propList={
+            [
+              "fill",
+            ]
+          }
+          r={33}
+        />
+        <RNSVGCircle
+          cx={66}
+          cy={53}
+          fill={
+            {
+              "payload": 4278239912,
+              "type": 0,
+            }
+          }
+          propList={
+            [
+              "fill",
+            ]
+          }
+          r={10.5}
+        />
+      </RNSVGGroup>
+    </RNSVGSvgView>
+  </View>
+</View>
+`;
+
+exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carve geometry regression guard): night ground 1`] = `
+<View
+  accessible={false}
+  style={
+    [
+      {
+        "alignItems": "center",
+        "flexDirection": "row",
+        "gap": 8,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    style={
+      {
+        "height": 24,
+        "width": 24,
+      }
+    }
+  >
+    <RNSVGSvgView
+      align="xMidYMid"
+      bbHeight={24}
+      bbWidth={24}
+      focusable={false}
+      height={24}
+      meetOrSlice={0}
+      minX={0}
+      minY={0}
+      style={
+        [
+          {
+            "backgroundColor": "transparent",
+            "borderWidth": 0,
+          },
+          {
+            "flex": 0,
+            "height": 24,
+            "width": 24,
+          },
+        ]
+      }
+      vbHeight={100}
+      vbWidth={100}
+      width={24}
+    >
+      <RNSVGGroup
+        fill={
+          {
+            "payload": 4278190080,
+            "type": 0,
+          }
+        }
+      >
+        <RNSVGDefs>
+          <RNSVGMask
+            fill={
+              {
+                "payload": 4278190080,
+                "type": 0,
+              }
+            }
+            height="100%"
+            maskContentUnits={1}
+            maskType={0}
+            maskUnits={0}
+            name="culpritMarkCarve-«r4»"
+            width="100%"
+            x="0%"
+            y="0%"
+          >
+            <RNSVGRect
+              fill={
+                {
+                  "payload": 4294967295,
+                  "type": 0,
+                }
+              }
+              height={100}
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              width={100}
+              x={0}
+              y={0}
+            />
+            <RNSVGCircle
+              cx={61}
+              cy={43}
+              fill={
+                {
+                  "payload": 4278190080,
+                  "type": 0,
+                }
+              }
+              propList={
+                [
+                  "fill",
+                ]
+              }
+              r={29}
+            />
+          </RNSVGMask>
+        </RNSVGDefs>
+        <RNSVGCircle
+          cx={45}
+          cy={50}
+          fill={
+            {
+              "payload": 4294110948,
+              "type": 0,
+            }
+          }
+          mask="culpritMarkCarve-«r4»"
+          propList={
+            [
+              "fill",
+            ]
+          }
+          r={33}
+        />
+        <RNSVGCircle
+          cx={66}
+          cy={53}
+          fill={
+            {
+              "payload": 4278239912,
+              "type": 0,
+            }
+          }
+          propList={
+            [
+              "fill",
+            ]
+          }
+          r={10.5}
+        />
+      </RNSVGGroup>
+    </RNSVGSvgView>
+  </View>
+</View>
+`;

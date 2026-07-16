@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Image, StyleSheet, ScrollView, ActivityIndicator,
+  View, Image, StyleSheet, ScrollView,
   Dimensions, TouchableOpacity, Text,
   NativeSyntheticEvent, NativeScrollEvent,
 } from 'react-native';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { getSignedUrl } from '../../lib/storage';
 import { PhotoViewer } from '../ui';
 
@@ -65,7 +66,7 @@ export function PhotoCarousel({ photoPaths, onAddPhoto }: Props) {
   if (loading) {
     return (
       <View style={[styles.hero, styles.heroLoading]}>
-        <ActivityIndicator color={theme.colorAccent} />
+        <WhorlSpinner size="sm" ground="day" />
       </View>
     );
   }

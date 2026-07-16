@@ -10,7 +10,7 @@ describe('ValuePreview', () => {
   it('leads with the Signal — renders its value copy', () => {
     const { getByText, getByTestId } = render(<ValuePreview variant="signal" />);
     expect(getByText("Patterns you can't see.")).toBeTruthy();
-    expect(getByText(/Nyx tells you what the data means/)).toBeTruthy();
+    expect(getByText(/Culprit tells you what the data means/)).toBeTruthy();
     expect(getByTestId('value-preview-signal')).toBeTruthy();
   });
 
@@ -28,6 +28,6 @@ describe('ValuePreview', () => {
 
   it('exposes each mock as one described image, not cell-by-cell sample data', () => {
     const { getByLabelText } = render(<ValuePreview variant="report" />);
-    expect(getByLabelText(/Preview of a Nyx vet summary/)).toBeTruthy();
+    expect(getByLabelText(/Preview of a Culprit vet summary/)).toBeTruthy();
   });
 });

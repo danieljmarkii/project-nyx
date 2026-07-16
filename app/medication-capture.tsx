@@ -22,7 +22,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView,
-  Animated, Image, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
+  Animated, Image, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -32,6 +32,8 @@ import { theme } from '../constants/theme';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { MedicationNameChips } from '../components/medication/MedicationNameChips';
+import { NightMoment } from '../components/brand/NightMoment';
+import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
@@ -46,6 +48,9 @@ import {
   uploadPhoto, compressForUpload, buildMedicationPhotoPath, MEDICATION_PHOTOS_BUCKET,
 } from '../lib/storage';
 import { uuid } from '../lib/utils';
+import { useAppConfig } from '../hooks/useAppConfig';
+import { parseGateResponse } from '../lib/appConfig';
+import { EARLY_ACCESS_LABEL, medicationCapCopy, careFirstLine } from '../constants/monetizationCopy';
 
 type CaptureStep = 'intro' | 'uploading' | 'confirm' | 'edit' | 'complete';
 
@@ -82,8 +87,17 @@ export default function MedicationCaptureScreen() {
   // library-only add (forward-compat for a future Meds tab).
   const logFirstDose = fromLog === '1';
 
+  // B-329 flag-aware state. Render-only — the Edge Function re-checks flag + cap
+  // server-side (B-252). The §6.5 strength-confirm safety gate is independent of all
+  // of this and always applies.
+  const config = useAppConfig();
+  const extractionEnabled = config.ai_med_extraction_enabled;
+
   const [step, setStep] = useState<CaptureStep>('intro');
   const [medicationItemId] = useState<string>(() => uuid());
+
+  // Set from a typed cap_reached response (§4.5) → the calm §7.3 cap band on edit.
+  const [capReached, setCapReached] = useState<{ cap: 'daily' | 'monthly' } | null>(null);
 
   const [labelPhoto, setLabelPhoto] = useState<CapturedPhoto | null>(null);
 
@@ -123,6 +137,14 @@ export default function MedicationCaptureScreen() {
     const t = setTimeout(() => router.dismissAll(), 900);
     return () => clearTimeout(t);
   }, [step]);
+
+  // §6.2 flag-off: no camera path when med extraction is disabled — open directly on
+  // the manual edit step (+ MedicationNameChips there). We fail open, so this only
+  // fires on a deliberate PM flip reaching the client.
+  useEffect(() => {
+    if (step === 'intro' && !extractionEnabled) handleManualEntry();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, extractionEnabled]);
 
   // Editing the strength INVALIDATES any prior confirmation — a changed value is an
   // unverified value, so the §6.5 gate re-closes and the owner must tick to confirm
@@ -206,6 +228,7 @@ export default function MedicationCaptureScreen() {
     setStep('uploading');
     setExtracting(true);
     setExtractionFailed(false);
+    setCapReached(null);
 
     try {
       const compressedUri = await compressForUpload(photo.localUri, photo.width, photo.height);
@@ -217,8 +240,30 @@ export default function MedicationCaptureScreen() {
         body: { medication_item_id: medicationItemId },
       });
 
-      if (error || !data?.extraction) {
-        console.warn('[medication-capture] extraction failed:', error?.message);
+      // Genuine fault → the retryable failure banner (unchanged).
+      if (error) {
+        console.warn('[medication-capture] extraction failed:', error.message);
+        setExtractionFailed(true);
+        setStep('edit');
+        return;
+      }
+
+      // §4.5 typed product states (HTTP 200) — branch on the body. Both route to the
+      // manual edit step with the label photo saved; neither is an error. The §6.5
+      // strength-confirm gate applies identically to the hand-typed values there.
+      const gate = parseGateResponse(data);
+      if (gate.kind === 'cap_reached') {
+        setCapReached({ cap: gate.cap });
+        setStep('edit');
+        return;
+      }
+      if (gate.kind === 'feature_disabled') {
+        setStep('edit');
+        return;
+      }
+
+      if (!data?.extraction) {
+        console.warn('[medication-capture] extraction returned no data');
         setExtractionFailed(true);
         setStep('edit');
         return;
@@ -298,6 +343,10 @@ export default function MedicationCaptureScreen() {
     // globally-readable catalog row (the extractor writes nothing). Fire-and-forget
     // (mirrors food-capture); the dose's presyncMedicationItems uses
     // ignoreDuplicates so it never clobbers this richer row.
+    // AI actually produced data only when extraction ran and returned. A capped
+    // (or flag-off) commit routes as the failure path (§6.2) — the label photo is
+    // saved but extraction didn't run, so it must NOT be recorded as 'completed'.
+    const aiRead = !!labelPhoto && !extractionFailed && !capReached;
     supabase.from('medication_items').upsert({
       id: medicationItemId,
       generic_name: trimmedGeneric,
@@ -308,7 +357,7 @@ export default function MedicationCaptureScreen() {
       is_prescription: isRx,
       created_by_user_id: user?.id ?? null,
       photo_paths: labelPath ? [labelPath] : [],
-      ai_extraction_status: labelPhoto ? (extractionFailed ? 'failed' : 'completed') : 'manual',
+      ai_extraction_status: labelPhoto ? (aiRead ? 'completed' : 'failed') : 'manual',
       ai_extraction_error: null,
     }, { onConflict: 'id' }).then(({ error }) => {
       if (error) console.warn('[medication-capture] upsert failed:', error.message);
@@ -383,6 +432,9 @@ export default function MedicationCaptureScreen() {
             A clear photo of the label lets us read the name and strength, so you
             can confirm them instead of typing. You can also enter it by hand.
           </Text>
+          {/* D-M6 early-access label (§7.2) — quiet, small, no badge. Same line as
+              the food surface. Retired in T3-E when the gate flips. */}
+          <Text style={styles.earlyAccessLabel}>{EARLY_ACCESS_LABEL}</Text>
           {/* B-062 — Lucide Camera/Images (were 📷/🖼 emoji), matching the food-capture
               twin so both glyphs on the screen are vector. */}
           <TouchableOpacity style={styles.primaryBtn} onPress={() => handleSnap('camera')} activeOpacity={0.85}>
@@ -406,10 +458,18 @@ export default function MedicationCaptureScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <Header title="Add a medication" />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colorAccent} />
-          <Text style={styles.loadingText}>{extracting ? 'Reading the label…' : 'Uploading…'}</Text>
-          <Text style={styles.loadingHint}>This usually takes a few seconds.</Text>
+        <View style={styles.momentBody}>
+          {/* Brief upload precursor — a light in-place spinner (<2s → not the moment). */}
+          {!extracting && (
+            <View style={styles.loadingContainer}>
+              <WhorlSpinner size="md" ground="day" />
+              <Text style={styles.loadingText}>Uploading…</Text>
+              <Text style={styles.loadingHint}>This usually takes a few seconds.</Text>
+            </View>
+          )}
+          {/* The AI drug-label read is the qualifying photo-extraction wait (§6). KEPT
+              MOUNTED and toggled so its min-hold runs and it crossfades in; flex body keeps Header/back. */}
+          <NightMoment visible={extracting} title="Reading the label…" subtitle="A few seconds." />
         </View>
       </SafeAreaView>
     );
@@ -508,14 +568,22 @@ export default function MedicationCaptureScreen() {
         />
         <KeyboardAvoidingView style={styles.kav} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled">
-            {extractionFailed && (
+            {/* §6.2 cap-reached: a calm informational band (never error styling) +
+                the first B-333 care-first surface (§16). Distinct from the retryable
+                failure banner below. */}
+            {capReached ? (
+              <View style={styles.capBand}>
+                <Text style={styles.capBandText}>{medicationCapCopy(capReached.cap)}</Text>
+                <Text style={styles.careLine}>{careFirstLine(activePet?.name)}</Text>
+              </View>
+            ) : extractionFailed ? (
               <View style={styles.failedBanner}>
                 <Text style={styles.failedBannerText}>
                   Couldn't read the label automatically. You can fill it in below —
                   the label photo is saved either way.
                 </Text>
               </View>
-            )}
+            ) : null}
             <SectionLabel label="Medication name" />
             <TextInput
               style={styles.textInput}
@@ -756,6 +824,10 @@ const styles = StyleSheet.create({
     gap: theme.space2,
     padding: theme.space3,
   },
+  // Fills the body below the Header for the extraction night moment.
+  momentBody: {
+    flex: 1,
+  },
   loadingText: {
     fontSize: theme.textLG,
     color: theme.colorTextPrimary,
@@ -879,6 +951,33 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextPrimary,
     lineHeight: 18,
+  },
+  // D-M6 early-access label — quiet tertiary line, no badge/pill (§7.2).
+  earlyAccessLabel: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
+    lineHeight: theme.lineHeightSM,
+    marginBottom: theme.space2,
+  },
+  // §6.2 cap band — calm neutral surface, NEVER error red. The label photo is saved.
+  capBand: {
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    borderRadius: theme.radiusSmall,
+    padding: theme.space2,
+    gap: theme.space1,
+  },
+  capBandText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
+    lineHeight: 18,
+  },
+  // The first B-333 care-first surface — quieter than the cap copy above it.
+  careLine: {
+    fontSize: theme.textXS,
+    color: theme.colorTextSecondary,
+    lineHeight: 16,
   },
 
   completeContainer: {

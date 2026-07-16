@@ -22,8 +22,56 @@ import {
   MEDICATION_ROUTE_ENUM,
   EXTRACTION_TOOL,
   SYSTEM_PROMPT,
+  resolveGateState,
+  resolveFlagValue,
+  resolveCaps,
+  computeResetsAt,
   type MedicationExtraction,
+  type FunctionCaps,
 } from './index.ts'
+
+// ── Cap + flag gate (T2-3) ────────────────────────────────────────────────────
+// Med free caps are daily 10 / monthly 40 (§4.4).
+
+const MED_CAPS: FunctionCaps = { daily: 10, monthly: 40 }
+
+Deno.test('resolveGateState (med) — flag off → feature_disabled without an increment', () => {
+  assertEquals(resolveGateState(false, null, MED_CAPS), { allow: false, reason: 'feature_disabled' })
+})
+
+Deno.test('resolveGateState (med) — 10th call proceeds, 11th blocked; monthly at 40/41', () => {
+  assertEquals(resolveGateState(true, { dayCount: 10, monthCount: 12 }, MED_CAPS), { allow: true })
+  assertEquals(resolveGateState(true, { dayCount: 11, monthCount: 12 }, MED_CAPS), {
+    allow: false, reason: 'cap_reached', cap: 'daily',
+  })
+  assertEquals(resolveGateState(true, { dayCount: 3, monthCount: 40 }, MED_CAPS), { allow: true })
+  assertEquals(resolveGateState(true, { dayCount: 3, monthCount: 41 }, MED_CAPS), {
+    allow: false, reason: 'cap_reached', cap: 'monthly',
+  })
+})
+
+Deno.test('resolveGateState (med) — null counts (RPC fail-open) proceeds', () => {
+  assertEquals(resolveGateState(true, null, MED_CAPS), { allow: true })
+})
+
+Deno.test('resolveFlagValue (med) — non-boolean falls back', () => {
+  assertStrictEquals(resolveFlagValue(false, true), false)
+  assertStrictEquals(resolveFlagValue(undefined, true), true)
+  assertStrictEquals(resolveFlagValue('false', true), true)
+})
+
+Deno.test('resolveCaps (med) — partial override keeps the untouched default', () => {
+  assertEquals(resolveCaps({ extract_medication: { monthly: 20 } }, 'extract_medication', MED_CAPS), {
+    daily: 10, monthly: 20,
+  })
+  assertEquals(resolveCaps({}, 'extract_medication', MED_CAPS), MED_CAPS)
+})
+
+Deno.test('computeResetsAt (med) — UTC day / month boundaries', () => {
+  const t = Date.parse('2026-02-14T09:00:00Z')
+  assertStrictEquals(computeResetsAt('daily', t), '2026-02-15T00:00:00.000Z')
+  assertStrictEquals(computeResetsAt('monthly', t), '2026-03-01T00:00:00.000Z')
+})
 
 const makeToolUseResponse = (input: Record<string, unknown>) => ({
   content: [

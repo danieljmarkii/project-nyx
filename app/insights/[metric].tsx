@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { usePetStore } from '../../store/petStore';
 import {
   getSymptomCounts,
@@ -108,7 +109,7 @@ export default function MetricDetailRoute() {
         </View>
       ) : status === 'loading' ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={theme.colorTextSecondary} />
+          <WhorlSpinner size="md" ground="day" />
         </View>
       ) : status === 'error' || !windows ? (
         <View style={styles.centered}>

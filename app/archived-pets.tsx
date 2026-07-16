@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, ScrollView, StyleSheet, Text,
+  Alert, ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '../constants/theme';
+import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { supabase } from '../lib/supabase';
 import { usePetStore, Pet } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
@@ -111,7 +112,7 @@ export default function ArchivedPetsScreen() {
         </Text>
 
         {loading ? (
-          <ActivityIndicator style={styles.loader} color={theme.colorTextSecondary} />
+          <WhorlSpinner size="md" ground="day" style={styles.loader} />
         ) : archivedPets.length === 0 ? (
           <Text style={styles.emptyText}>
             No archived pets right now. Any pet you archive from their Pet tab
@@ -138,7 +139,7 @@ export default function ArchivedPetsScreen() {
                   accessibilityLabel={`Bring ${pet.name} back`}
                 >
                   {restoringId === pet.id ? (
-                    <ActivityIndicator size="small" color={theme.colorTextSecondary} />
+                    <WhorlSpinner size="sm" ground="day" />
                   ) : (
                     <Text style={styles.restoreBtnText}>Bring back</Text>
                   )}

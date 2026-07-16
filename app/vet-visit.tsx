@@ -11,7 +11,7 @@ import { theme } from '../constants/theme';
 import { usePetStore } from '../store/petStore';
 import { useAuthStore } from '../store/authStore';
 import { getDb } from '../lib/db';
-import { uploadPhoto, persistCapture } from '../lib/storage';
+import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { syncPendingVetVisits } from '../lib/sync';
 import { uuid, exifDateToISO } from '../lib/utils';
@@ -143,7 +143,12 @@ export default function VetVisitModal() {
          VALUES (?, ?, ?, ?, ?, 'image/jpeg', ?, 0, ?)`,
         [attId, visitId, pet.id, localUri, storagePath, photoTakenAt ?? null, now]
       );
-      uploadPhoto('nyx-vet-attachments', storagePath, photoUri)
+      // Compress + EXIF/GPS-strip before upload. The EXIF date-taken was already
+      // read at pick time (handlePickPhoto reads asset.exif), so re-encoding here
+      // only affects the stored file — a camera-roll document photo's GPS metadata
+      // never reaches storage. 1600px/q75 keeps a photographed document legible.
+      compressForUpload(photoUri)
+        .then((uploadUri) => uploadPhoto('nyx-vet-attachments', storagePath, uploadUri))
         .then(async () => {
           // Only mark synced if the row actually landed — supabase-js returns
           // errors, it doesn't throw, so an unchecked upsert here would flag a

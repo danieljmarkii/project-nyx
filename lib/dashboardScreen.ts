@@ -19,6 +19,7 @@ import {
   type NotEnoughData,
   type SymptomCount,
   type DayFrequencyBucket,
+  type CalendarMonth,
   type IntakeRate,
   type RankedFood,
   type RankedProtein,
@@ -66,12 +67,35 @@ export interface SymptomCountCard {
   sparkData: number[];
 }
 
-export interface SymptomFrequencyCard {
-  kind: 'symptomFrequency';
+/** One selectable lens in the Calendar card (B-310). Data-only — the screen resolves each
+ *  lens's chip label / copy noun / definition from symptomLabel + the dashboardCards helpers,
+ *  keeping this module free of theme + nyx-voice strings (the established pure-descriptor
+ *  contract). A symptom lens charts one symptom type; the single intake lens charts the daily
+ *  count of unfinished meals (Sam's intake-is-not-preference signal). */
+export interface CalendarViewDescriptor {
+  key: string;
+  kind: 'symptom' | 'intake';
+  /** Set for kind === 'symptom' — which symptom's per-day count to chart. */
+  symptomType?: string;
+}
+
+export interface CalendarCard {
+  kind: 'calendar';
   key: string;
   priority: 'safety';
-  symptomType: string;
-  buckets: DayFrequencyBucket[];
+  /** ≥1 lens, ordered; views[0] is the default (the dominant active symptom, else intake).
+   *  Multiple lenses fixes the invisible-second-symptom gap + earns the "Calendar" rebrand. */
+  views: CalendarViewDescriptor[];
+  /** Current calendar month's SYMPTOM buckets (all types) — the symptom lenses' first paint;
+   *  the PatternCalendar container fetches other months on page (B-309 / Calendar v3 N5b). */
+  monthBuckets: DayFrequencyBucket[];
+  /** Current calendar month's intake-decline buckets — the "Meals" lens's first paint (B-310).
+   *  [] when there's no intake lens. */
+  intakeDeclineMonthBuckets: DayFrequencyBucket[];
+  /** Today's UTC calendar month — the calendar's initial view + forward-paging bound. */
+  currentMonth: CalendarMonth;
+  /** The pet's earliest-event month — the backward-paging bound (null → no history). */
+  earliestMonth: CalendarMonth | null;
 }
 
 export interface IntakeRateCard {
@@ -128,7 +152,7 @@ export interface WeightTrendCardDescriptor {
 
 export type DashboardCard =
   | SymptomCountCard
-  | SymptomFrequencyCard
+  | CalendarCard
   | IntakeRateCard
   | TopFoodCard
   | TopProteinCard
@@ -153,8 +177,20 @@ export function sparkFromBuckets(buckets: DayFrequencyBucket[], symptomType: str
 export interface BuildDashboardInput {
   /** Per-symptom current/prior counts (analytics: ranked by current desc). */
   symptomCounts: SymptomCount[];
-  /** One bucket per calendar day in the window (analytics) — heat-grid + sparklines. */
+  /** One bucket per calendar day in the trailing window (analytics) — drives the count
+   *  cards' sparklines (sparkFromBuckets). Distinct from monthBuckets below, which is the
+   *  calendar's calendar-month view. */
   frequencyBuckets: DayFrequencyBucket[];
+  /** Current CALENDAR month's symptom buckets (all types) — the frequency calendar's
+   *  flash-free first paint (the container pages/fetches other months). */
+  monthBuckets: DayFrequencyBucket[];
+  /** Current CALENDAR month's intake-decline buckets — the "Meals" lens's flash-free first
+   *  paint AND the trigger for whether the intake lens appears at all (B-310). */
+  intakeDeclineMonthBuckets: DayFrequencyBucket[];
+  /** Today's UTC calendar month — the calendar's initial view + forward-paging bound. */
+  currentMonth: CalendarMonth;
+  /** The pet's earliest-event month — the calendar's backward-paging bound. */
+  earliestMonth: CalendarMonth | null;
   intakeRate: IntakeRate | NotEnoughData;
   /** Prior comparable window's finished-rate — the intake card's "vs last {window}" delta (B-098). */
   intakeRatePrior: IntakeRate | NotEnoughData;
@@ -169,9 +205,10 @@ export interface BuildDashboardInput {
 
 /**
  * Assemble the ordered, seeded dashboard card set from the PR 1 analytics results.
- * Safety (adverse symptom counts + one frequency calendar for the dominant active
- * symptom) → intake (meals-only finished-rate) → descriptive (top food / top protein /
- * meals-vs-treats). Each verdict-colour card derives `established` honestly here.
+ * Safety (adverse symptom counts + ONE "Calendar" card whose lenses cover every active
+ * symptom AND, when there's a decline this month, intake — B-310) → intake (meals-only
+ * finished-rate) → descriptive (top food / top protein / meals-vs-treats). Each
+ * verdict-colour card derives `established` honestly here.
  */
 export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[] {
   const cards: DashboardCard[] = [];
@@ -193,18 +230,35 @@ export function buildDashboardCards(input: BuildDashboardInput): DashboardCard[]
       sparkData: sparkFromBuckets(input.frequencyBuckets, sc.symptomType),
     });
   }
-  // One frequency calendar for the dominant ACTIVE symptom (the highest current count).
-  // symptomCounts is already ranked by current desc, so the first with current > 0 is
-  // the lead; a resolved symptom (current 0, prior > 0) gets a count card but no grid
-  // (an all-empty grid would be manufacturing a symptom view for a quiet month).
-  const lead = input.symptomCounts.find((s) => s.current > 0);
-  if (lead) {
+  // ONE "Calendar" card with a lens per active signal (B-310) — replacing the old single
+  // auto-picked "dominant symptom" grid that made a two-symptom diet-trial dog's second
+  // symptom invisible. Lenses, in order:
+  //   • one per ACTIVE symptom (current > 0), ranked by current desc — symptomCounts is
+  //     already in that order, so views[0] is the dominant symptom (the default lens). A
+  //     resolved symptom (current 0) gets its count card but no lens (an all-empty grid
+  //     would manufacture a symptom view for a quiet month).
+  //   • the intake-decline ("Meals") lens, IFF the current month actually carries an
+  //     unfinished meal. Gating on a real decline (not merely "has meals") keeps the lens an
+  //     ADVERSE-signal surface that only appears when there's something to see — it never
+  //     presents a clean month as a reassuring green field (§11 #2 absence ≠ wellness), and
+  //     it aligns with intake-is-not-preference (surface the decline, §11 #1).
+  const views: CalendarViewDescriptor[] = input.symptomCounts
+    .filter((s) => s.current > 0)
+    .map((s) => ({ key: `symptom:${s.symptomType}`, kind: 'symptom' as const, symptomType: s.symptomType }));
+  const hasIntakeDecline = input.intakeDeclineMonthBuckets.some((b) => b.total > 0);
+  if (hasIntakeDecline) {
+    views.push({ key: 'intake', kind: 'intake' });
+  }
+  if (views.length > 0) {
     cards.push({
-      kind: 'symptomFrequency',
-      key: `freq:${lead.symptomType}`,
+      kind: 'calendar',
+      key: 'calendar',
       priority: 'safety',
-      symptomType: lead.symptomType,
-      buckets: input.frequencyBuckets,
+      views,
+      monthBuckets: input.monthBuckets,
+      intakeDeclineMonthBuckets: input.intakeDeclineMonthBuckets,
+      currentMonth: input.currentMonth,
+      earliestMonth: input.earliestMonth,
     });
   }
   // Weight — the health-trajectory vital sign (spec §6 group A: "Is {pet} okay /

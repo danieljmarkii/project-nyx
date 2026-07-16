@@ -9,16 +9,18 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { ChipGroup } from '../../components/ui/ChipGroup';
+import { ProteinPicker } from '../../components/food/ProteinPicker';
 import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
@@ -85,7 +87,9 @@ export default function FoodDetailScreen() {
   const [foodType, setFoodType] = useState<FoodType | null>(null);
   const [ingredients, setIngredients] = useState('');
   const [barcode, setBarcode] = useState('');
-  const baseline = useRef<Pick<FoodRow, 'brand' | 'product_name' | 'format' | 'food_type' | 'ingredients_notes' | 'upc_barcode'> | null>(null);
+  // B-332: primary_protein is now owner-editable here (was extraction-only).
+  const [primaryProtein, setPrimaryProtein] = useState<string | null>(null);
+  const baseline = useRef<Pick<FoodRow, 'brand' | 'product_name' | 'format' | 'food_type' | 'ingredients_notes' | 'upc_barcode' | 'primary_protein'> | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -149,6 +153,7 @@ export default function FoodDetailScreen() {
       food_type: next.food_type,
       ingredients_notes: next.ingredients_notes,
       upc_barcode: next.upc_barcode,
+      primary_protein: next.primary_protein,
     };
     const nextIngredients = next.ingredients_notes ?? '';
     const nextBarcode = next.upc_barcode ?? '';
@@ -158,6 +163,10 @@ export default function FoodDetailScreen() {
     setFoodType((cur) => (!prev || cur === prev.food_type) ? next.food_type : cur);
     setIngredients((cur) => (!prev || cur === (prev.ingredients_notes ?? '')) ? nextIngredients : cur);
     setBarcode((cur) => (!prev || cur === (prev.upc_barcode ?? '')) ? nextBarcode : cur);
+    // Reseed protein only when the owner hasn't diverged from the last loaded
+    // value — so an AI completion landing via realtime shows the read protein,
+    // but an in-progress owner edit is never stomped.
+    setPrimaryProtein((cur) => (!prev || cur === prev.primary_protein) ? next.primary_protein : cur);
   }
 
   // ── Save ──
@@ -177,7 +186,8 @@ export default function FoodDetailScreen() {
       format !== base.format ||
       foodType !== base.food_type ||
       trimmedIngredients !== base.ingredients_notes ||
-      trimmedBarcode !== base.upc_barcode;
+      trimmedBarcode !== base.upc_barcode ||
+      primaryProtein !== base.primary_protein;
 
     if (!changed) {
       router.back();
@@ -198,6 +208,7 @@ export default function FoodDetailScreen() {
         food_type: foodType,
         ingredients_notes: trimmedIngredients,
         upc_barcode: trimmedBarcode,
+        primary_protein: primaryProtein,
         source: nextSource,
       })
       .eq('id', row.id);
@@ -214,9 +225,9 @@ export default function FoodDetailScreen() {
       const db = getDb();
       await db.runAsync(
         `UPDATE food_items_cache
-           SET brand = ?, product_name = ?, format = ?, food_type = ?
+           SET brand = ?, product_name = ?, format = ?, food_type = ?, primary_protein = ?
          WHERE id = ?`,
-        [brand.trim(), productName.trim(), format, foodType, row.id],
+        [brand.trim(), productName.trim(), format, foodType, primaryProtein, row.id],
       );
     } catch (err) {
       console.warn('[food-detail] cache update failed:', err);
@@ -498,7 +509,7 @@ export default function FoodDetailScreen() {
       <SafeAreaView style={styles.container}>
         <Header leading="back" title="Food" onLeadingPress={() => router.back()} />
         <View style={styles.centerMessage}>
-          <ActivityIndicator color={theme.colorAccent} />
+          <WhorlSpinner size="md" ground="day" />
         </View>
       </SafeAreaView>
     );
@@ -523,7 +534,7 @@ export default function FoodDetailScreen() {
           />
           {addingPhoto && (
             <View style={styles.photoUploadingRow}>
-              <ActivityIndicator size="small" color={theme.colorAccent} />
+              <WhorlSpinner size="sm" ground="day" />
               <Text style={styles.photoUploadingText}>Adding photo…</Text>
             </View>
           )}
@@ -541,7 +552,7 @@ export default function FoodDetailScreen() {
                   activeOpacity={0.8}
                 >
                   {retrying
-                    ? <ActivityIndicator size="small" color="#fff" />
+                    ? <WhorlSpinner size="sm" tint="#fff" />
                     : <Text style={styles.retryBtnText}>Try extraction again</Text>}
                 </TouchableOpacity>
               </View>
@@ -579,6 +590,13 @@ export default function FoodDetailScreen() {
               style={styles.formatRow}
             />
 
+            <SectionLabel label="Primary protein" />
+            <ProteinPicker
+              value={primaryProtein}
+              onChange={setPrimaryProtein}
+              accessibilityLabel="Primary protein"
+            />
+
             <SectionLabel label="Type" />
             <View style={styles.foodTypeRow}>
               {FOOD_TYPES.map((t) => (
@@ -595,7 +613,7 @@ export default function FoodDetailScreen() {
             <SectionLabel label="Ingredients" />
             {isPending ? (
               <View style={styles.pendingBox}>
-                <ActivityIndicator size="small" color={theme.colorAccent} />
+                <WhorlSpinner size="sm" ground="day" />
                 <Text style={styles.pendingText}>Reading the label…</Text>
               </View>
             ) : (
@@ -640,7 +658,7 @@ export default function FoodDetailScreen() {
                 activeOpacity={0.7}
               >
                 {retrying
-                  ? <ActivityIndicator size="small" color={theme.colorAccent} />
+                  ? <WhorlSpinner size="sm" ground="day" />
                   : <Text style={styles.secondaryActionText}>Re-run AI extraction</Text>}
               </TouchableOpacity>
             )}
@@ -653,7 +671,7 @@ export default function FoodDetailScreen() {
               activeOpacity={0.7}
             >
               {deleting
-                ? <ActivityIndicator size="small" color={theme.colorEventSymptom} />
+                ? <WhorlSpinner size="sm" tint={theme.colorEventSymptom} />
                 : <Text style={styles.deleteActionText}>Delete this food</Text>}
             </TouchableOpacity>
           </View>
@@ -667,7 +685,7 @@ export default function FoodDetailScreen() {
             activeOpacity={0.85}
           >
             {saving
-              ? <ActivityIndicator size="small" color="#fff" />
+              ? <WhorlSpinner size="sm" tint="#fff" />
               : <Text style={styles.saveBtnText}>Save</Text>}
           </TouchableOpacity>
         </View>

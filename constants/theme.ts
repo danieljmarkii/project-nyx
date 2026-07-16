@@ -72,6 +72,70 @@ export const theme = {
   colorSurfaceDarkElevated: '#16201E',        // an elevated tile/card on the dark canvas
   colorBorderOnDark: '#33383A',               // hairline border/divider on a dark surface
 
+  // Brand "night" — the Culprit world/ground colour (B-275 palette half; Moon &
+  // Signal icon field). This is a WORLD colour, not an accent: it is only ever a
+  // ground/backdrop (icon field, marketing heroes, dark brand surfaces) — never a
+  // tappable/interactive fill. Teal (colorAccent #00C2A8) stays the SOLE
+  // interactive accent (buttons, trend line, live state), so the "one accent,
+  // never decorative" rule above survives. Additive only — no component adopts
+  // these yet.
+  //
+  // Two dark tokens, two distinct roles (the colorSurfaceDark reconciliation —
+  // resolved: KEEP BOTH): colorBrandNight is the indigo *brand* night (Culprit's
+  // identity ground); colorSurfaceDark #101312 stays the *neutral* near-black
+  // photo/premium canvas (paywall, photo viewer). Not repointed — a repoint would
+  // need on-device dark-surface QA and buys nothing here (indigo is additive).
+  colorBrandNight: '#13112E',                 // midnight-indigo brand/night ground
+  colorBrandNightElevated: '#251F57',         // cards/depth on the brand night
+
+  // ── Night-surface tokens (Culprit in-app brand alignment — B-284 PR N1) ────
+  // Additive only. These paint text/safety/hairline/gradient/starfield onto the
+  // night grounds (colorBrandNight / colorBrandNightElevated) that appear where
+  // the app is *working on the pet's behalf* (Landing, loading, the night moment,
+  // the Signal card's night variant — spec §1.2 the register rule). No component
+  // repoints in this PR — capture & records stay the shipped light system.
+  //
+  // THE ACCENT RULE (spec §1.3, unchanged): teal `colorAccent #00C2A8` remains the
+  // SOLE tappable/live/interactive accent on every ground. Every token below is a
+  // world/ground colour — text, safety rail, hairline, gradient stop, or starfield
+  // — never an interactive fill, so the design-system "one accent, never decorative"
+  // rule holds by construction. Red keeps its shipped meanings (symptom /
+  // destructive); colorEventSymptomOnNight is the night-ground sibling of the
+  // shipped colorDestructiveOnDark, never decorative.
+  //
+  // CONTRAST RECEIPTS — WCAG relative-luminance ratios of each text token on the
+  // primary ground colorBrandNight #13112E (verified, not asserted):
+  //   colorMoonlight            15.80:1  (AAA)
+  //   colorTextOnNight          15.40:1  (AAA)
+  //   colorTextOnNightMuted      7.57:1  (AAA)
+  //   colorEventSymptomOnNight   6.80:1  (AA / AAA-large)
+  //   colorTextOnNightFaint      3.79:1  (AA-large ONLY — hence large/secondary use)
+  colorEventSymptomOnNight: '#FB7185',        // safety rail/tag on night grounds (6.8:1)
+  colorTextOnNight: '#ECEAF6',                // primary text on night grounds (15.4:1)
+  colorTextOnNightMuted: '#A6A2CE',           // secondary text on night grounds (7.6:1)
+  colorTextOnNightFaint: '#706BA6',           // metadata/sample lines — large/secondary only (3.8:1)
+  colorMoonlight: '#F2EEE4',                  // crescent fill + display headlines on night (15.8:1)
+  colorBorderOnNight: 'rgba(196,190,255,0.16)', // hairlines/dividers on night grounds
+  colorAuroraViolet: '#221C56',               // hero radial glow stop 1
+  colorAuroraIndigo: '#191449',               // hero radial glow stop 2
+  colorAuroraTeal: 'rgba(0,194,168,0.10)',    // restrained teal radial near the Signal dot
+  colorStar: 'rgba(255,255,255,0.45)',        // starfield dot base (per-dot opacity varies 0.28–0.55)
+
+  // CulpritMark (B-284 PR N2, §3) — the crescent's LIGHT-ground fill. Additive:
+  // the N1 block above covers night-ground tokens only; this is the one light-side
+  // companion the mark needs. Deep indigo, not colorTextPrimary, so the glyph
+  // reads as the same brand mark on both grounds rather than inheriting whatever
+  // the surrounding text colour happens to be.
+  colorCulpritCrescentOnLight: '#211E4E',
+
+  // WhorlSpinner (B-284 PR N3, §5) — the day-ground ridge lavender. The spinner's
+  // DAY palette is "teal + indigo-lavender": teal (colorAccent) alternates with this
+  // soft lavender on light content surfaces. Same value as colorTextOnNightMuted (a
+  // WORLD lavender), named separately for its role. Never interactive, so the
+  // one-accent rule (§1.3) holds — teal stays the sole tappable/live accent; the
+  // night-ground palette reuses colorAccent + colorMoonlight and needs no token.
+  colorWhorlRidgeDay: '#A6A2CE',
+
   // Borders
   colorBorder: '#EAEAEA',
   colorBorderStrong: '#D4D4D4',
@@ -86,6 +150,25 @@ export const theme = {
   colorEventSymptomBorder: '#FBCFD6',
   colorEventMeal: '#00C2A8',
   colorEventMealLight: '#E0FBF7',
+  // Medication category tint (B-311) — the third event-category hue, alongside
+  // symptom-rose and meal-teal. First consumed by the Calendar v3 day drill-in
+  // (DayEventsSheet), where a med row previously fell back to the neutral fg-2.
+  // A muted slate-blue: its own hue family, so a med row reads distinctly from a
+  // symptom (rose) or a meal (teal) at a glance. Deliberately NOT indigo/violet —
+  // §1.3 reserves the brand indigo (#13112E family) for world/ground use only, so a
+  // med tint in that family would read as breaking the accent rule (this is why the
+  // N5b mock's #EEF0FF/#5B63C4 indigo chip was rejected). NOT teal — teal is the
+  // sole interactive accent; NOT rose — rose is the safety/symptom colour. This is a
+  // category identity tint, never a verdict (medication is not a "warning" — no
+  // amber/red). Contrast on this glyph (WCAG graphical target 3:1): 4.45:1 on
+  // #FFFFFF, 4.08:1 on colorSurfaceSubtle #F5F5F5, 4.23:1 on colorNeutralLight
+  // #FAFAFA — more legible than the shipped meal-teal glyph (~2.3:1 on white).
+  // colorEventMedicationLight is the very-light circle companion (twin of
+  // colorEventSymptomLight / colorEventMealLight) for surfaces that tint the circle
+  // behind the glyph (the Today strip); the drill-in uses a uniform subtle grey
+  // circle and consumes only the glyph tint.
+  colorEventMedication: '#5B7A9E',
+  colorEventMedicationLight: '#EAF0F7',
   colorChartEmpty: '#F0F0F0',
 
   // Destructive — surface-aware. colorDestructive is tuned for light surfaces;

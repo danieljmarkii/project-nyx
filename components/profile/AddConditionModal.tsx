@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
+  Alert, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 
 export interface Condition {
@@ -121,7 +122,7 @@ export function AddConditionModal({
           <Text style={styles.headerTitle}>{isEditing ? 'Edit condition' : 'Add condition'}</Text>
           <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
             {saving
-              ? <ActivityIndicator size="small" color={theme.colorAccent} />
+              ? <WhorlSpinner size="sm" ground="day" />
               : <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
                   {isEditing ? 'Save' : 'Add'}
                 </Text>

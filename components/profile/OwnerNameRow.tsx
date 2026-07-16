@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  Alert, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import { fetchDisplayName, updateDisplayName } from '../../lib/profile';
 
@@ -68,7 +69,7 @@ export function OwnerNameRow() {
     return (
       <View style={styles.row}>
         <Text style={styles.label}>Your name</Text>
-        <ActivityIndicator size="small" color={theme.colorTextSecondary} />
+        <WhorlSpinner size="sm" ground="day" />
       </View>
     );
   }
@@ -92,7 +93,7 @@ export function OwnerNameRow() {
         {dirty && (
           <TouchableOpacity onPress={handleSave} disabled={saving} hitSlop={8}>
             {saving ? (
-              <ActivityIndicator size="small" color={theme.colorAccent} />
+              <WhorlSpinner size="sm" ground="day" />
             ) : (
               <Text style={styles.saveText}>Save</Text>
             )}

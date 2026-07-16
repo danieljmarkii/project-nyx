@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ScrollView, KeyboardAvoidingView, Platform, Image, Alert,
@@ -7,20 +7,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera } from 'lucide-react-native';
+import { Camera, ChevronRight } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { Header } from '../components/ui/Header';
 import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
-import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
-import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks } from '../lib/sync';
-import { uploadPhoto, persistCapture } from '../lib/storage';
+import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
+import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations } from '../lib/sync';
+import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
 import { uuid, formatExifAttribution, formatTime, deriveOccurredAt } from '../lib/utils';
 import { getWeightKgForEvent, updateWeightCheck, parseWeightLbsToKg, kgToLbs, MAX_WEIGHT_LBS } from '../lib/weight';
 import { usePetStore } from '../store/petStore';
 import { IntakeChipRow, IntakeRating } from '../components/log/IntakeChipRow';
+import { AdherenceChipRow, DoseAdherence } from '../components/log/AdherenceChipRow';
+import { VehicleChipRow } from '../components/log/VehicleChipRow';
+import { asDoseVehicle, type DoseVehicle } from '../lib/medications';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
 import { PhotoViewer } from '../components/ui';
 
@@ -45,6 +48,13 @@ export default function EditEventModal() {
   const eventType = type as EventTypeKey;
   const config = EVENT_TYPES[eventType] ?? { label: 'Event', hasSeverity: false, hasFood: false };
   const isWeight = eventType === 'weight_check';
+  // A dose is an administration act — always witnessed by whoever gave it, exactly
+  // like a meal ("you see yourself put the bowl down") or a weight check ("you read
+  // the scale"). It must NOT inherit the symptom Saw-it/Found-it model: you don't
+  // "discover" that you gave a pill, and a mis-classified administration time would
+  // degrade the timing the §6.4 double-dose check + the Signal confounder pass rely
+  // on. So medication joins meals/weight on the plain witnessed point picker.
+  const isMedication = eventType === 'medication';
 
   const [occurredAt, setOccurredAt] = useState(() =>
     occurredAtParam ? new Date(occurredAtParam) : new Date(),
@@ -60,7 +70,7 @@ export default function EditEventModal() {
   // witnessed — and so is a weight check (you read the scale), so it uses the
   // plain point picker too and never the Saw-it/Found-it control (B-197).
   // Reconstructed from stored fields on mount. Mirrors log.tsx.
-  const showConfidenceControl = !config.hasFood && !isWeight;
+  const showConfidenceControl = !config.hasFood && !isWeight && !isMedication;
   const [timeMode, setTimeMode] = useState<TimeMode>('saw');
   const [foundMode, setFoundMode] = useState<FoundMode>('before');
   const [earliest, setEarliest] = useState<Date | null>(null);
@@ -90,6 +100,32 @@ export default function EditEventModal() {
   // every other field here.
   const [intakeRating, setIntakeRating] = useState<IntakeRating | null>(null);
 
+  // Medication (dose) state — the parity twin of the meal food/intake block, so the
+  // Edit modal for a dose carries the fields a dose actually has (drug identity +
+  // adherence + how-given), not just time/photo/notes. `dose` holds the drug-library
+  // display fields for the read-only context line (with a link to the library screen);
+  // `adherence` + `howGiven` are the editable states, held here and persisted on Save
+  // with the same discard-on-Cancel semantics as intake. Loaded only for medication
+  // events; `dose` staying null (child not hydrated) means we skip the dose writes on
+  // Save so a partial-hydration device never fails the whole edit.
+  const [dose, setDose] = useState<{
+    genericName: string | null;
+    brandName: string | null;
+    strength: string | null;
+    medicationItemId: string | null;
+  } | null>(null);
+  const [adherence, setAdherence] = useState<DoseAdherence | null>(null);
+  const [howGiven, setHowGiven] = useState<DoseVehicle | null>(null);
+  // The as-loaded dose values, so Save writes adherence/how-given ONLY when the
+  // owner actually changed them (mirrors the detail screen's `if (next === prev)
+  // return`). An unconditional re-write would (a) re-stamp a fresh updated_at on an
+  // untouched safety field — a latent cross-device clobber of a caregiver's newer
+  // 'refused'/'missed' once household shared-care lands — and (b) round-trip a
+  // legacy out-of-union how_given down to null on an untouched Save. Refs, not
+  // state: these never drive a render, they're only read in handleSave.
+  const loadedAdherenceRef = useRef<DoseAdherence | null>(null);
+  const loadedHowGivenRef = useRef<DoseVehicle | null>(null);
+
   // Weight value in lbs (B-197) — weight_check only; the value IS the entry, so
   // unlike every other field here it must be present and real on save.
   const [weightLbsStr, setWeightLbsStr] = useState('');
@@ -113,6 +149,28 @@ export default function EditEventModal() {
               || r === 'most' || r === 'all' ? r : null,
           );
         }
+      }).catch(console.error);
+    }
+
+    if (isMedication) {
+      getDoseForEvent(id).then((d) => {
+        if (!d) return;
+        setDose({
+          genericName: d.drug_generic_name,
+          brandName: d.drug_brand_name,
+          strength: d.drug_strength,
+          medicationItemId: d.medication_item_id,
+        });
+        const a = d.adherence;
+        const adh: DoseAdherence | null =
+          a === 'given' || a === 'partial' || a === 'missed' || a === 'refused' ? a : null;
+        setAdherence(adh);
+        loadedAdherenceRef.current = adh;
+        // Coerce the loose TEXT how_given to the closed vehicle union via the single
+        // shared narrower; a legacy/unrecognized value reads as null, never a raw token.
+        const veh = asDoseVehicle(d.how_given);
+        setHowGiven(veh);
+        loadedHowGivenRef.current = veh;
       }).catch(console.error);
     }
 
@@ -303,6 +361,18 @@ export default function EditEventModal() {
         await updateMealIntake(id, intakeRating);
       }
 
+      // Dose adherence + how-given (the meal-intake twin). Only when the dose child
+      // hydrated locally (`dose` non-null) — otherwise a partial-hydration device would
+      // throw on the zero-row guard and fail the whole edit; time/notes/photo still save.
+      // Write each field ONLY if the owner changed it (compare against the as-loaded
+      // value): an untouched adherence is never re-stamped (so a null-adherence dose
+      // stays unrated, never a phantom 'given', and a caregiver's newer state isn't
+      // clobbered), and an untouched legacy how_given isn't round-tripped to null.
+      if (isMedication && dose) {
+        if (adherence !== loadedAdherenceRef.current) await updateDoseAdherence(id, adherence);
+        if (howGiven !== loadedHowGivenRef.current) await updateDoseHowGiven(id, howGiven);
+      }
+
       if (isWeight && weightKg != null) {
         const res = await updateWeightCheck(id, weightKg);
         // A weight_check must have its child row; a null return means nothing was
@@ -339,8 +409,12 @@ export default function EditEventModal() {
              VALUES (?, ?, ?, ?, ?, 'image/jpeg', 0, ?)`,
             [attId, id, petResult.pet_id, localUri, storagePath, now],
           );
-          // Fire-and-forget: if upload fails offline, the synced=0 row is retried by background sync
-          uploadPhoto('nyx-event-attachments', storagePath, newAttachmentUri)
+          // Fire-and-forget: if upload fails offline, the synced=0 row is retried by background sync.
+          // Compress + EXIF/GPS-strip before upload — parity with log.tsx / event/[id].tsx.
+          // The local_uri persisted above keeps the original for the durable hero; only the
+          // uploaded object is re-encoded, so a camera-roll photo's GPS metadata never reaches storage.
+          compressForUpload(newAttachmentUri)
+            .then((uploadUri) => uploadPhoto('nyx-event-attachments', storagePath, uploadUri))
             .then(async () => {
               const { error } = await supabase.from('event_attachments').upsert(
                 { id: attId, event_id: id, pet_id: petResult.pet_id, storage_path: storagePath, mime_type: 'image/jpeg' },
@@ -368,6 +442,7 @@ export default function EditEventModal() {
         food_brand: currentFoodBrand,
         food_product_name: currentFoodProduct,
         intake_rating: intakeRating,
+        ...(isMedication && dose ? { adherence, how_given: howGiven } : {}),
         ...(isWeight && weightKg != null ? { weight_kg: weightKg } : {}),
       });
 
@@ -377,7 +452,11 @@ export default function EditEventModal() {
       // synced=1 (lib/sync.ts), so they must follow the event push. updateWeightCheck
       // deliberately does NOT self-sync for exactly this reason (B-197 review).
       syncPendingEvents()
-        .then(() => Promise.all([syncPendingMeals(), syncPendingWeightChecks()]))
+        .then(() => Promise.all([
+          syncPendingMeals(),
+          syncPendingWeightChecks(),
+          syncPendingMedicationAdministrations(),
+        ]))
         .catch(console.error);
       router.back();
     } catch (e) {
@@ -553,6 +632,53 @@ export default function EditEventModal() {
                 onChange={setIntakeRating}
                 label={null}
               />
+            </>
+          ) : null}
+
+          {/* Medication (dose events only) — parity with the meal Food + Intake
+              blocks. Drug identity is read-only here (a per-dose drug swap is a
+              mislog → Remove + re-log, not a field edit); the row links to the
+              drug-library screen where a name/strength correction fixes every dose.
+              Adherence + how-given are the editable dose fields. */}
+          {isMedication && dose ? (
+            <>
+              <SectionLabel label="Medication" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              {dose.medicationItemId ? (
+                <TouchableOpacity
+                  style={styles.foodRow}
+                  onPress={() => router.push(`/medication/${dose.medicationItemId}`)}
+                  activeOpacity={0.7}
+                  accessibilityRole="link"
+                  accessibilityLabel={`View drug details for ${dose.genericName ?? config.label}`}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.foodProduct}>{dose.genericName ?? config.label}</Text>
+                    {[dose.brandName, dose.strength].filter(Boolean).length > 0 ? (
+                      <Text style={styles.foodBrand}>
+                        {[dose.brandName, dose.strength].filter(Boolean).join(' · ')}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <ChevronRight size={18} color={theme.colorAccent} strokeWidth={2} />
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.foodRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.foodProduct}>{dose.genericName ?? config.label}</Text>
+                    {[dose.brandName, dose.strength].filter(Boolean).length > 0 ? (
+                      <Text style={styles.foodBrand}>
+                        {[dose.brandName, dose.strength].filter(Boolean).join(' · ')}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              )}
+
+              <SectionLabel label="Adherence" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <AdherenceChipRow value={adherence} onChange={setAdherence} label={null} />
+
+              <SectionLabel label="How given" style={{ marginTop: theme.space3, marginBottom: 4 }} />
+              <VehicleChipRow value={howGiven} onChange={setHowGiven} label={null} />
             </>
           ) : null}
 

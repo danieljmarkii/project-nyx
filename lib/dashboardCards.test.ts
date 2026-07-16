@@ -15,6 +15,7 @@ import {
   pluralize,
   intakeNotObservedNote,
   intakeRateDefinition,
+  intakeDeclineDefinition,
   symptomCountDefinition,
   symptomFrequencyDefinition,
   topFoodDefinition,
@@ -176,7 +177,7 @@ describe('describeCountDelta — honest direction, no verdict word', () => {
   });
   it('fewer this period (calm wording, never "improving")', () => {
     const line = describeCountDelta(3, 5, 'month');
-    expect(line).toBe('2 fewer than last month');
+    expect(line).toBe('2 fewer than the previous 30 days');
     expect(line).not.toMatch(/improv|better|worse|win/i);
   });
   it('same as the prior period', () => {
@@ -222,6 +223,7 @@ describe('metric definitions (B-100)', () => {
   // voice sweep below can't miss an "!" that only appears on the fallback path.
   const all = [
     intakeRateDefinition('Nyx'), intakeRateDefinition(),
+    intakeDeclineDefinition('Nyx'), intakeDeclineDefinition(),
     symptomCountDefinition('vomiting', 'Nyx'), symptomCountDefinition('vomiting'),
     symptomFrequencyDefinition('vomiting', 'Nyx'), symptomFrequencyDefinition('vomiting'),
     topFoodDefinition('Nyx'), topFoodDefinition(),
@@ -253,6 +255,28 @@ describe('metric definitions (B-100)', () => {
       const def = intakeRateDefinition('your pet');
       expect(def).toContain("your pet's");
       expect(def).not.toContain("pet's's");
+    });
+  });
+
+  describe('intakeDeclineDefinition — the "Meals" calendar (B-310, §11 #1/#2)', () => {
+    const def = intakeDeclineDefinition('Nyx');
+    it('frames a not-finished meal as a decline (refused/didn\'t finish), never a preference', () => {
+      expect(def).toMatch(/refused|didn't finish/i);
+      expect(def).not.toMatch(PREFERENCE_WORDS);
+    });
+    it('names the exclusions (treats + free-fed) so it matches the finished-rate denominator', () => {
+      expect(def).toMatch(/treats/i);
+      expect(def).toMatch(/free-fed/i);
+    });
+    it('carries the never-reassure rule: a clear day is not "all finished" — and names the unrated case (§11 #2)', () => {
+      expect(def).toMatch(/not that every meal was finished/i);
+      // The commonest clean-day cause is a logged-but-UNRATED meal — the copy must not let
+      // that read as an all-clear (adversarial review). It calls out "or even rated".
+      expect(def).toMatch(/rated/i);
+    });
+    it('threads the pet name, falling back to second-person "your pet"', () => {
+      expect(intakeDeclineDefinition('Nyx')).toContain('Nyx');
+      expect(intakeDeclineDefinition()).toContain('your pet');
     });
   });
 
@@ -288,10 +312,11 @@ describe('metric definitions (B-100)', () => {
       expect(def).toMatch(/Nyx/);
       expect(def).toMatch(/History/);
     });
-    it('the frequency calendar decodes "which days" + the darker = more scale', () => {
+    it('the frequency calendar decodes "which days" + the per-day count (pips, not the old ramp)', () => {
       const def = symptomFrequencyDefinition('vomiting', 'Nyx');
       expect(def).toMatch(/which days/i);
-      expect(def).toMatch(/darker/i);
+      expect(def).toMatch(/dots/i);
+      expect(def).not.toMatch(/darker/i); // the heat-ramp copy is gone (N5 count-pips)
     });
     it('falls back to "your pet" with no name (Pattern 1)', () => {
       expect(symptomCountDefinition('vomiting')).toContain('your pet');

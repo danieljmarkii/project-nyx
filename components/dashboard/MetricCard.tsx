@@ -43,6 +43,10 @@ function clamp01(n: number): number {
 interface Props {
   /** Layer 1 — plain, muted label ("Vomiting", "Meals finished"). */
   label: string;
+  /** Optional window caption under the label ("Last 30 days"). Makes the card's
+   *  trailing-window read explicit so it doesn't contradict a calendar-month card
+   *  sitting under the same title (B-313). Symptom-count card only for now. */
+  caption?: string;
   /** Layer 2 — the pre-formatted big number ("3", "85%"). */
   value: string;
   /** Drives the §13 #6 colour direction. Default 'neutral' (no verdict). */
@@ -77,6 +81,7 @@ interface Props {
 
 export function MetricCard({
   label,
+  caption,
   value,
   polarity = 'neutral',
   established = false,
@@ -99,10 +104,11 @@ export function MetricCard({
   const dir = deltaDirection(delta ?? 0);
   const progressFraction = progress != null ? clamp01(progress) : null;
 
+  const labelWithCaption = caption != null ? `${label}, ${caption}` : label;
   const accessibilityLabel =
     state.kind === 'populated'
-      ? `${label}: ${value}${deltaLabel ? `, ${deltaLabel}` : ''}`
-      : `${label}`;
+      ? `${labelWithCaption}: ${value}${deltaLabel ? `, ${deltaLabel}` : ''}`
+      : `${labelWithCaption}`;
 
   return (
     <Pressable
@@ -126,6 +132,8 @@ export function MetricCard({
           {onPress != null && <ChevronRight size={18} color={theme.colorTextDisabled} />}
         </View>
       </View>
+
+      {caption != null && <Text style={styles.caption}>{caption}</Text>}
 
       {state.kind === 'calibrating' ? (
         <Text style={styles.stateText}>
@@ -200,6 +208,13 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
     flexShrink: 1,
+  },
+  // Window frame under the label ("Last 30 days") — quiet, subordinate to both the
+  // label and the number; sits just above the value (B-313).
+  caption: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    marginTop: -2,
   },
   valueRow: {
     flexDirection: 'row',

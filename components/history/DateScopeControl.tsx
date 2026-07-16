@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronDown } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
+import type { DatePreset } from '../../lib/historyDateFilter';
 
 // The History time-scope control. Scope (when) is a single mutually-exclusive
 // choice with long labels, so it's a quiet menu — NOT a chip rail. The old
@@ -13,7 +14,10 @@ import { SectionLabel } from '../ui/SectionLabel';
 // "Last 30 days" off-screen with no way to scroll to it. A pill + bottom sheet
 // (the same pattern as PetSwitcherSheet) never clips, keeps the full friendly
 // labels, and frees the chip language for the event-type lens alone.
-export type DatePreset = 'today' | '7d' | '30d' | null;
+//
+// DatePreset is defined in lib/historyDateFilter (with the pure range logic) and
+// re-exported here so existing importers (app/(tabs)/history) keep working.
+export type { DatePreset };
 
 const DATE_PRESETS: { key: DatePreset; label: string }[] = [
   { key: null, label: 'All time' },
@@ -25,13 +29,20 @@ const DATE_PRESETS: { key: DatePreset; label: string }[] = [
 interface Props {
   value: DatePreset;
   onChange: (preset: DatePreset) => void;
+  // A single-day drill-in filter's label ("Jun 24", B-308). When set it's the active
+  // scope shown on the pill; it isn't a menu option (it arrives via the Calendar deep-link),
+  // so picking any preset from the sheet switches away from it (onChange clears it upstream).
+  dayLabel?: string | null;
 }
 
-export function DateScopeControl({ value, onChange }: Props) {
+export function DateScopeControl({ value, onChange, dayLabel }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
 
   const active = DATE_PRESETS.find((p) => p.key === value) ?? DATE_PRESETS[0];
+  // The day filter is a transient scope, not a preset — it labels the pill but never marks
+  // a menu row selected (there is no "Jun 24" row to select).
+  const pillLabel = dayLabel ?? active.label;
 
   function handleSelect(preset: DatePreset) {
     onChange(preset);
@@ -48,9 +59,9 @@ export function DateScopeControl({ value, onChange }: Props) {
         // (Designer anti-pattern: sub-44pt targets without hitSlop).
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         accessibilityRole="button"
-        accessibilityLabel={`Date range: ${active.label}`}
+        accessibilityLabel={`Date range: ${pillLabel}`}
       >
-        <Text style={styles.pillLabel}>{active.label}</Text>
+        <Text style={styles.pillLabel}>{pillLabel}</Text>
         <ChevronDown size={15} color={theme.colorTextTertiary} strokeWidth={2} />
       </TouchableOpacity>
 
@@ -61,7 +72,8 @@ export function DateScopeControl({ value, onChange }: Props) {
             <View style={styles.grabber} />
             <SectionLabel label="Show events from" style={styles.sheetLabel} />
             {DATE_PRESETS.map((p, i) => {
-              const selected = p.key === value;
+              // With a day filter active, no preset row is selected (the day is the scope).
+              const selected = !dayLabel && p.key === value;
               const isLast = i === DATE_PRESETS.length - 1;
               return (
                 <TouchableOpacity

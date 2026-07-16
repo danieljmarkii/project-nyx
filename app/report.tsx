@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, Alert, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { router } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../constants/theme';
 import { Header, PrimaryButton, SectionLabel } from '../components/ui';
+import { NightMoment } from '../components/brand/NightMoment';
+import { WhorlSpinner } from '../components/brand/WhorlSpinner';
 import { ChipGroup } from '../components/ui/ChipGroup';
 import { usePetStore } from '../store/petStore';
 import { toLocalDayKey, dayKeyToLocalDate } from '../lib/utils';
@@ -276,15 +278,10 @@ export default function ReportScreen() {
         </View>
       )}
 
-      {status === 'loading' && !report && (
-        <View style={styles.center}>
-          <ActivityIndicator color={theme.colorTextSecondary} />
-          <Text style={styles.muted}>
-            Putting together {activePet ? `${activePet.name}’s` : 'the'} report…
-          </Text>
-        </View>
-      )}
-
+      {/* Body below the Header + range bar. The night moment stays MOUNTED here (toggled
+          by `visible`) so its min-hold + dissolve-to-report actually run instead of a hard
+          cut; it sits in this flex body so the Header/back is never trapped. */}
+      <View style={styles.body}>
       {status === 'error' && (
         <View style={styles.center}>
           <Text style={styles.errorTitle}>Couldn’t prepare the report</Text>
@@ -310,7 +307,7 @@ export default function ReportScreen() {
               // pointerEvents=none so the report stays scrollable underneath.
               <View style={styles.updatingOverlay} pointerEvents="none">
                 <View style={styles.updatingPill}>
-                  <ActivityIndicator size="small" color={theme.colorTextSecondary} />
+                  <WhorlSpinner size="sm" ground="day" />
                   <Text style={styles.updatingText}>Updating…</Text>
                 </View>
               </View>
@@ -338,6 +335,14 @@ export default function ReportScreen() {
           </View>
         </>
       )}
+      {/* First build — a full-screen wait with nothing to show yet → the night moment
+          (§6). Real work on the pet's behalf, expected >~2s. */}
+      <NightMoment
+        visible={status === 'loading' && !report}
+        title={activePet ? `Building ${activePet.name}’s report…` : 'Building the report…'}
+        subtitle="Pulling together the full record."
+      />
+      </View>
     </SafeAreaView>
   );
 }
@@ -444,6 +449,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: theme.space3,
     gap: theme.space2,
+  },
+  // The body below the Header/range bar — holds the report/error content and the
+  // persistent night-moment overlay (which measures this box and paints into it).
+  body: {
+    flex: 1,
   },
   muted: {
     fontFamily: theme.fontBody,

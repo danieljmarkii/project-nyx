@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
+  Alert, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { breedsForSpecies, resolveBreedFieldState } from '../../constants/breeds';
 import { SectionLabel } from '../ui/SectionLabel';
 import { FilterChip } from '../ui/FilterChip';
@@ -187,7 +188,7 @@ export function EditPetModal({ visible, onClose }: Props) {
           <Text style={styles.headerTitle}>Edit profile</Text>
           <TouchableOpacity onPress={handleSave} disabled={saving || !canSave} hitSlop={8}>
             {saving
-              ? <ActivityIndicator size="small" color={theme.colorAccent} />
+              ? <WhorlSpinner size="sm" ground="day" />
               : <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>Save</Text>
             }
           </TouchableOpacity>

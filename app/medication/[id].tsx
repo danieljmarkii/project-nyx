@@ -36,12 +36,13 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Image,
+  KeyboardAvoidingView, Platform, Alert, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../../constants/theme';
+import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
@@ -337,7 +338,7 @@ export default function MedicationDetailScreen() {
       <SafeAreaView style={styles.container}>
         <Header leading="back" title="Medication" onLeadingPress={() => router.back()} />
         <View style={styles.centerMessage}>
-          <ActivityIndicator color={theme.colorAccent} />
+          <WhorlSpinner size="md" ground="day" />
         </View>
       </SafeAreaView>
     );
@@ -362,7 +363,7 @@ export default function MedicationDetailScreen() {
             disabled={!photoUrl && !isOwner}
           >
             {photoLoading ? (
-              <ActivityIndicator color={theme.colorAccent} />
+              <WhorlSpinner size="sm" ground="day" />
             ) : photoUrl ? (
               <Image source={{ uri: photoUrl }} style={styles.heroImage} resizeMode="cover" />
             ) : (
@@ -385,7 +386,7 @@ export default function MedicationDetailScreen() {
               activeOpacity={0.7}
             >
               {replacingPhoto
-                ? <ActivityIndicator size="small" color={theme.colorAccent} />
+                ? <WhorlSpinner size="sm" ground="day" />
                 : <Text style={styles.photoActionText}>{photoPath ? 'Replace label photo' : 'Add label photo'}</Text>}
             </TouchableOpacity>
           )}
@@ -466,7 +467,7 @@ export default function MedicationDetailScreen() {
               activeOpacity={0.85}
             >
               {saving
-                ? <ActivityIndicator size="small" color={theme.colorTextOnDark} />
+                ? <WhorlSpinner size="sm" tint={theme.colorTextOnDark} />
                 : <Text style={styles.saveBtnText}>Save</Text>}
             </TouchableOpacity>
           </View>

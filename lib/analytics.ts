@@ -264,6 +264,49 @@ export interface DayFrequencyBucket {
   byType: Record<string, number>;
 }
 
+/** Pure: one DayFrequencyBucket per UTC calendar day from firstDayIndex..lastDayIndex
+ *  (inclusive), each seeded to zero, then filled from the symptom rows that fall inside
+ *  [startMs, endMs). Every day gets an honest cell (zero-event days included). The shared
+ *  core behind BOTH the trailing-window grid (computeSymptomFrequencyByDay) and the named
+ *  calendar-month grid (computeSymptomFrequencyForMonth) so the two can never bucket the
+ *  same event onto different days. */
+/** Pure: one empty `{ date, total: 0, byType: {} }` bucket per UTC day index in
+ *  [firstDayIndex, lastDayIndex], plus a day-index → bucket map for O(1) fill. Shared by the
+ *  symptom grid (fillDayBuckets) and the intake-decline grid so the two can never drift on the
+ *  bucket shape. */
+function createDayBuckets(
+  firstDayIndex: number,
+  lastDayIndex: number,
+): { buckets: DayFrequencyBucket[]; byIndex: Map<number, DayFrequencyBucket> } {
+  const buckets: DayFrequencyBucket[] = [];
+  const byIndex = new Map<number, DayFrequencyBucket>();
+  for (let idx = firstDayIndex; idx <= lastDayIndex; idx++) {
+    const bucket: DayFrequencyBucket = { date: utcDateKey(idx * MS_PER_DAY), total: 0, byType: {} };
+    buckets.push(bucket);
+    byIndex.set(idx, bucket);
+  }
+  return { buckets, byIndex };
+}
+
+function fillDayBuckets(
+  rows: AnalyticsSymptom[],
+  startMs: number,
+  endMs: number,
+  firstDayIndex: number,
+  lastDayIndex: number,
+): DayFrequencyBucket[] {
+  const { buckets, byIndex } = createDayBuckets(firstDayIndex, lastDayIndex);
+  for (const r of rows) {
+    if (!SYMPTOM_SET.has(r.type) || !Number.isFinite(r.ms)) continue;
+    if (r.ms < startMs || r.ms >= endMs) continue;
+    const bucket = byIndex.get(Math.floor(r.ms / MS_PER_DAY));
+    if (!bucket) continue;
+    bucket.total += 1;
+    bucket.byType[r.type] = (bucket.byType[r.type] ?? 0) + 1;
+  }
+  return buckets;
+}
+
 /** Pure: one bucket per calendar day in the CURRENT window (oldest first, exactly
  *  windowDays buckets), so the heat-grid has an honest cell for every day including
  *  zero-event days. No floor — frequency is always honest. */
@@ -272,20 +315,136 @@ export function computeSymptomFrequencyByDay(
   range: WindowRange,
 ): DayFrequencyBucket[] {
   const startIndex = Math.floor(range.currentStartMs / MS_PER_DAY);
-  const buckets: DayFrequencyBucket[] = [];
-  const byIndex = new Map<number, DayFrequencyBucket>();
-  for (let idx = startIndex; idx <= range.todayIndex; idx++) {
-    const bucket: DayFrequencyBucket = { date: utcDateKey(idx * MS_PER_DAY), total: 0, byType: {} };
-    buckets.push(bucket);
-    byIndex.set(idx, bucket);
-  }
-  for (const r of rows) {
-    if (!SYMPTOM_SET.has(r.type) || !Number.isFinite(r.ms)) continue;
-    if (r.ms < range.currentStartMs || r.ms >= range.currentEndMs) continue;
-    const bucket = byIndex.get(Math.floor(r.ms / MS_PER_DAY));
+  return fillDayBuckets(rows, range.currentStartMs, range.currentEndMs, startIndex, range.todayIndex);
+}
+
+// ── A. Symptom frequency by CALENDAR MONTH (the paginated month calendar — B-309) ────
+//
+// The trailing-window grid above answers "the last 30 days"; the Patterns calendar
+// (Calendar v3, B-284 N5b) pages through NAMED calendar months instead ("June", "May").
+// Months are UTC calendar months — the same UTC day bucketing the rest of this module
+// uses (detection.ts, hooks/useTrend.ts) — so a day tapped in the calendar, its drill-in,
+// and the History single-day filter all agree on which events belong to which day.
+// (Owner-local-day bucketing stays the deliberately-deferred B-084-family refinement;
+// introducing it here alone would desync the three surfaces.)
+
+/** A UTC calendar month. `month` is 0-indexed (0 = January), matching JS Date + Date.UTC,
+ *  so the helpers below lean on Date's own year-rollover normalization instead of
+ *  hand-rolled modulo math. */
+export interface CalendarMonth {
+  year: number;
+  month: number; // 0–11
+}
+
+/** The UTC calendar month containing a ms instant. */
+export function utcMonthOf(ms: number): CalendarMonth {
+  const d = new Date(ms);
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() };
+}
+
+/** Shift a calendar month by `delta` months (may be negative), normalizing the year
+ *  rollover via Date.UTC (December + 1 → next January; January − 1 → prior December). */
+export function addCalendarMonths(m: CalendarMonth, delta: number): CalendarMonth {
+  return utcMonthOf(Date.UTC(m.year, m.month + delta, 1));
+}
+
+/** Chronological comparator: <0 if a is earlier, 0 if same month, >0 if later. */
+export function compareCalendarMonth(a: CalendarMonth, b: CalendarMonth): number {
+  return a.year - b.year || a.month - b.month;
+}
+
+export interface MonthRange {
+  /** Inclusive UTC-day-aligned start ms — the 1st of the month at 00:00Z. */
+  startMs: number;
+  /** Exclusive end ms — min(1st of next month, start of tomorrow), so the CURRENT
+   *  month renders only through today. Future days are simply absent (no bare cell that
+   *  could read as "nothing logged" for a day that hasn't happened — coverage ≠ wellness). */
+  endMs: number;
+  /** UTC day index of the 1st (the grid's first real day). */
+  firstDayIndex: number;
+  /** UTC day index of the last day rendered (inclusive). < firstDayIndex when the whole
+   *  month is in the future (empty grid). */
+  lastDayIndex: number;
+}
+
+/** Pure: the [start, end) ms range + inclusive day-index bounds for a calendar month,
+ *  clamped so the current month stops at end-of-today. */
+export function calendarMonthRange(m: CalendarMonth, nowMs: number): MonthRange {
+  const startMs = Date.UTC(m.year, m.month, 1);
+  const nextMonthMs = Date.UTC(m.year, m.month + 1, 1);
+  const endOfTodayMs = (Math.floor(nowMs / MS_PER_DAY) + 1) * MS_PER_DAY;
+  const endMs = Math.min(nextMonthMs, endOfTodayMs);
+  return {
+    startMs,
+    endMs,
+    firstDayIndex: Math.floor(startMs / MS_PER_DAY),
+    lastDayIndex: Math.floor(endMs / MS_PER_DAY) - 1,
+  };
+}
+
+/** Pure: one bucket per UTC calendar day in the month, from the 1st through
+ *  min(last-day, today). Mirrors computeSymptomFrequencyByDay's honesty (a cell for every
+ *  day, zero-event days included) but over a named calendar month. Empty for a future
+ *  month. */
+export function computeSymptomFrequencyForMonth(
+  rows: AnalyticsSymptom[],
+  m: CalendarMonth,
+  nowMs: number,
+): DayFrequencyBucket[] {
+  const range = calendarMonthRange(m, nowMs);
+  if (range.lastDayIndex < range.firstDayIndex) return [];
+  return fillDayBuckets(rows, range.startMs, range.endMs, range.firstDayIndex, range.lastDayIndex);
+}
+
+// ── A. Intake-DECLINE frequency by CALENDAR MONTH (the "Meals" calendar — B-310) ─────
+//
+// Sam's intake-is-not-preference signal made day-by-day. The Patterns calendar (Calendar
+// v3) charts adverse-symptom OCCURRENCE per day; this is its intake sibling — one bucket
+// per day counting the meals the pet did NOT finish. It reuses the exact v3 grid + drill-in
+// (FrequencyCalendarCard) so a diet-trial/picky-eater owner gets the same countable read for
+// intake that they get for vomiting, instead of only the single "Meals finished 82%" stat.
+//
+// SAFETY — this is a clinically load-bearing surface, so two invariants govern it:
+//   • §11 #1 (intake is NOT preference): a not-finished meal is a DECLINE, never softened
+//     to "picky". The qualifying set is the SAME as computeIntakeRate's denominator —
+//     rated, non-treat (a treat's ceiling finish-rate would mask a meal refusal), non-free-
+//     fed (§11 #6, a free-fed bowl's intake isn't directly observed). "Unfinished" is the
+//     exact inverse of the finished-rate's "finished" (score < FINISHED_SCORE), so this
+//     calendar and the "Meals finished" number can never tell different stories.
+//   • §11 #2 (absence ≠ wellness): DESCRIPTIVE occurrence, NOT floored — a single refused
+//     meal is an honest fact worth a cell, exactly like one logged vomit. A clean day means
+//     no unfinished meal was LOGGED (could be finished, unrated, free-fed, or simply not
+//     logged) — never "ate well". The card's copy carries that; this core only counts what
+//     was observed and never manufactures an all-clear.
+
+/** Backend discriminator for the intake-decline "type" inside a day bucket's byType map.
+ *  Not owner-facing — the card reads the bucket TOTAL for this grid (no symptomType). */
+export const INTAKE_DECLINE_TYPE = 'intake_decline';
+
+/** Pure: one bucket per UTC calendar day in the month, each counting the pet's UNFINISHED
+ *  qualifying meals that day (§11 #1/#6 qualifying set; unfinished = score < FINISHED_SCORE).
+ *  Same day-grid honesty as the symptom month grid (a cell for every day through today);
+ *  empty for a future month. NOT floored (descriptive occurrence, §11 #2). */
+export function computeIntakeDeclineFrequencyForMonth(
+  meals: AnalyticsMeal[],
+  freeFed: ReadonlySet<string>,
+  m: CalendarMonth,
+  nowMs: number,
+): DayFrequencyBucket[] {
+  const range = calendarMonthRange(m, nowMs);
+  if (range.lastDayIndex < range.firstDayIndex) return [];
+  const { buckets, byIndex } = createDayBuckets(range.firstDayIndex, range.lastDayIndex);
+  for (const meal of meals) {
+    if (!Number.isFinite(meal.ms) || meal.ms < range.startMs || meal.ms >= range.endMs) continue;
+    // Qualifying = the computeIntakeRate denominator: rated, non-treat, non-free-fed.
+    if (meal.foodType === 'treat' || meal.intakeRating == null || isFreeFedMeal(meal, freeFed)) continue;
+    // Unfinished = the inverse of "finished" (most/all) — one shared definition, so the
+    // calendar's decline days are exactly the meals the finished-rate excludes.
+    if (isFinishedMeal(meal)) continue;
+    const bucket = byIndex.get(Math.floor(meal.ms / MS_PER_DAY));
     if (!bucket) continue;
     bucket.total += 1;
-    bucket.byType[r.type] = (bucket.byType[r.type] ?? 0) + 1;
+    bucket.byType[INTAKE_DECLINE_TYPE] = (bucket.byType[INTAKE_DECLINE_TYPE] ?? 0) + 1;
   }
   return buckets;
 }
@@ -962,6 +1121,54 @@ export async function getSymptomFrequencyByDay(
   const range = calendarWindow(window, nowMs);
   const rows = await readSymptomRows(petId, range.currentStartMs, range.currentEndMs);
   return computeSymptomFrequencyByDay(rows, range);
+}
+
+/** Symptom-frequency buckets for a named UTC calendar month — the paginated calendar's
+ *  per-month data (B-309, Calendar v3 N5b). Empty array for a future month (no query). */
+export async function getSymptomFrequencyByMonth(
+  petId: string,
+  m: CalendarMonth,
+  nowMs: number = Date.now(),
+): Promise<DayFrequencyBucket[]> {
+  const range = calendarMonthRange(m, nowMs);
+  if (range.lastDayIndex < range.firstDayIndex) return [];
+  const rows = await readSymptomRows(petId, range.startMs, range.endMs);
+  return computeSymptomFrequencyForMonth(rows, m, nowMs);
+}
+
+/** Unfinished-meal frequency buckets for a named UTC calendar month — the "Meals" intake
+ *  calendar's per-month data (B-310). Reads meals + the free-fed set (§11 #6) and delegates
+ *  to the pure core. Empty array for a future month (no query). */
+export async function getIntakeDeclineByMonth(
+  petId: string,
+  m: CalendarMonth,
+  nowMs: number = Date.now(),
+): Promise<DayFrequencyBucket[]> {
+  const range = calendarMonthRange(m, nowMs);
+  if (range.lastDayIndex < range.firstDayIndex) return [];
+  const [meals, freeFedFoodIds] = await Promise.all([
+    readMealRows(petId, range.startMs, range.endMs),
+    readFreeFedFoodIds(petId),
+  ]);
+  return computeIntakeDeclineFrequencyForMonth(meals, freeFedFoodIds, m, nowMs);
+}
+
+/** The UTC calendar month of this pet's earliest non-deleted event — the calendar's
+ *  "page back to here" floor (bounded oldest-data → current month). null when the pet has
+ *  no events at all. Reads ALL event types (not just symptoms): the drill-in makes a
+ *  meal-only month meaningful, so paging should reach the whole logging history, not just
+ *  months that happen to carry the charted symptom. */
+export async function getEarliestEventMonth(petId: string): Promise<CalendarMonth | null> {
+  const db = getDb();
+  const row = await db.getFirstAsync<{ occurred_at: string }>(
+    `SELECT occurred_at FROM events
+     WHERE pet_id = ? AND deleted_at IS NULL
+     ORDER BY occurred_at ASC LIMIT 1`,
+    [petId],
+  );
+  if (!row) return null;
+  const ms = Date.parse(row.occurred_at);
+  return Number.isFinite(ms) ? utcMonthOf(ms) : null;
 }
 
 export async function getTopFoods(

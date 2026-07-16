@@ -6,6 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { usePetStore } from '../../store/petStore';
 import { theme } from '../../constants/theme';
+import { useAppConfig } from '../../hooks/useAppConfig';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 
 // Paywall — the mocked upgrade screen (B-251 PR 10, spec §3.7, mockup 11). It sits
@@ -44,6 +45,14 @@ const PREMIUM_FEATURES = [
 export default function PaywallScreen() {
   const { activePet } = usePetStore();
 
+  // T2-5 — the paywall is gated on `paywall_enabled` (monetization spec §6.5). The
+  // primary gate lives one screen back (pet-age routes past the paywall when it's
+  // off), so this screen normally only mounts when the flag is on. This is the
+  // defensive backstop: a stale client or a stray deep link straight here must not
+  // land on a dead, non-functional trial CTA — bounce to the completion screen
+  // instead. Fails CLOSED (shipped client default `false`, lib/appConfig.ts).
+  const { paywall_enabled: paywallEnabled } = useAppConfig();
+
   // This is the only solid dark surface in the flow, so the status-bar icons must
   // flip to light while it's focused — and flip BACK when it blurs, whether the
   // owner goes forward to the (light) done screen or swipes back to the (light) age
@@ -58,12 +67,20 @@ export default function PaywallScreen() {
   );
 
   // Escape hatch: the paywall is only reachable after the pet exists (pushed from
-  // the age step); a stray deep link straight here restarts pet setup.
+  // the age step); a stray deep link straight here restarts pet setup. A no-pet
+  // entry is the more broken state, so it takes precedence over the flag bounce.
   useEffect(() => {
-    if (!activePet) router.replace('/onboarding/pet-type');
-  }, [activePet]);
+    if (!activePet) {
+      router.replace('/onboarding/pet-type');
+      return;
+    }
+    // Paywall flagged off but reached anyway (stale client / deep link): don't show
+    // the dead mock — hand straight to the completion screen (T2-5).
+    if (!paywallEnabled) router.replace('/onboarding/done');
+  }, [activePet, paywallEnabled]);
 
-  if (!activePet) return null;
+  // Render nothing while either guard bounces, so no dead paywall flashes.
+  if (!activePet || !paywallEnabled) return null;
 
   // "Maybe later" advances to the completion screen. Push (not replace) so the flow
   // stack stays intact; the done screen locks its own back gesture, so this can't be
@@ -105,7 +122,7 @@ export default function PaywallScreen() {
         contentContainerStyle={styles.body}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>Nyx Premium</Text>
+        <Text style={styles.title}>Culprit Premium</Text>
         <Text style={styles.subtitle}>
           {`Everything that keeps ${activePet.name} healthy is free. Premium just adds convenience.`}
         </Text>

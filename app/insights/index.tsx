@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, useFocusEffect, router } from 'expo-router';
 import { theme } from '../../constants/theme';
@@ -7,6 +7,10 @@ import { usePetStore } from '../../store/petStore';
 import {
   getSymptomCounts,
   getSymptomFrequencyByDay,
+  getSymptomFrequencyByMonth,
+  getIntakeDeclineByMonth,
+  getEarliestEventMonth,
+  utcMonthOf,
   getIntakeRateWithPrior,
   getTopFoods,
   getTopProteins,
@@ -26,6 +30,7 @@ import {
   describeRateDelta,
   intakeNotObservedNote,
   intakeRateDefinition,
+  intakeDeclineDefinition,
   symptomCountDefinition,
   symptomFrequencyDefinition,
   topFoodDefinition,
@@ -34,8 +39,9 @@ import {
 } from '../../lib/dashboardCards';
 import { symptomLabel } from '../../lib/metricDetail';
 import { MetricCard } from '../../components/dashboard/MetricCard';
+import { SkeletonCard } from '../../components/ui/Skeleton';
 import { RankingCard } from '../../components/dashboard/RankingCard';
-import { FrequencyCalendarCard } from '../../components/dashboard/FrequencyCalendarCard';
+import { PatternCalendar, type CalendarView } from '../../components/dashboard/PatternCalendar';
 import { CompositionCard } from '../../components/dashboard/CompositionCard';
 import { WeightCard } from '../../components/dashboard/WeightCard';
 import { AiSummaryCard } from '../../components/dashboard/AiSummaryCard';
@@ -96,10 +102,18 @@ export default function PatternsScreen() {
     if (!pet) return;
     const myId = ++loadIdRef.current;
     if (showLoading) setStatus('loading');
+    // The frequency calendar pages by CALENDAR month (Calendar v3 N5b), so its first paint
+    // is today's calendar month (not the trailing WINDOW the other cards use). Loaded here
+    // alongside everything else so the card paints fully-formed — no mount flash; the
+    // container only shows a loading dim when paging to an un-cached prior month (B-309).
+    const currentMonth = utcMonthOf(Date.now());
     try {
       const [
         symptomCounts,
         frequencyBuckets,
+        monthBuckets,
+        intakeDeclineMonthBuckets,
+        earliestMonth,
         intakeComparison,
         topFoods,
         topProteins,
@@ -108,6 +122,11 @@ export default function PatternsScreen() {
       ] = await Promise.all([
         getSymptomCounts(pet.id, WINDOW),
         getSymptomFrequencyByDay(pet.id, WINDOW),
+        getSymptomFrequencyByMonth(pet.id, currentMonth),
+        // The "Meals" calendar lens's flash-free first paint — same calendar month as the
+        // symptom lenses (B-310); the container pages/fetches other months on demand.
+        getIntakeDeclineByMonth(pet.id, currentMonth),
+        getEarliestEventMonth(pet.id),
         getIntakeRateWithPrior(pet.id, WINDOW),
         getTopFoods(pet.id, WINDOW),
         getTopProteins(pet.id, WINDOW),
@@ -123,6 +142,10 @@ export default function PatternsScreen() {
         buildDashboardCards({
           symptomCounts,
           frequencyBuckets,
+          monthBuckets,
+          intakeDeclineMonthBuckets,
+          currentMonth,
+          earliestMonth,
           intakeRate: intakeComparison.current,
           intakeRatePrior: intakeComparison.prior,
           topFoods,
@@ -162,8 +185,13 @@ export default function PatternsScreen() {
           <Text style={styles.stateText}>No pet selected.</Text>
         </View>
       ) : status === 'loading' ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={theme.colorTextSecondary} />
+        // Tier-1 (§5): content-shaped skeletons for the local-SQLite read (<~1s) —
+        // the dashboard's card silhouette, not a spinner, so the surface doesn't flash
+        // empty then reflow.
+        <View style={styles.scroll}>
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
         </View>
       ) : status === 'error' ? (
         <View style={styles.centered}>
@@ -197,8 +225,9 @@ export default function PatternsScreen() {
                 }}
               >
                 {/* Pass the RAW name (not the 'your pet'-resolved petName) so each card's
-                    definition/calibration copy owns its OWN nyx-voice fallback. */}
-                {cards.map((card) => renderCard(card, activePet?.name))}
+                    definition/calibration copy owns its OWN nyx-voice fallback. petId is
+                    needed by the frequency calendar (paging + drill-in fetch). */}
+                {cards.map((card) => renderCard(card, activePet.id, activePet.name))}
               </View>
             </>
           )}
@@ -220,7 +249,7 @@ function displayProtein(protein: string): string {
 // (§5 #2) — tapping it opens /insights/[metric], the Week/Month/3-Month trend detail
 // (B-093). The other cards stay display-only for now (a rate/ranking/composition detail
 // is its own follow-up — B-093 row); a card with no onPress hides its chevron.
-function renderCard(card: DashboardCard, petName?: string) {
+function renderCard(card: DashboardCard, petId: string, petName?: string) {
   switch (card.kind) {
     case 'symptomCount': {
       const label = symptomLabel(card.symptomType);
@@ -228,6 +257,9 @@ function renderCard(card: DashboardCard, petName?: string) {
         <MetricCard
           key={card.key}
           label={label}
+          // Explicit trailing-window frame so the count never contradicts the
+          // calendar-month grid under the same title (B-313).
+          caption="Last 30 days"
           value={String(card.current)}
           polarity="adverse"
           established={card.established}
@@ -243,16 +275,52 @@ function renderCard(card: DashboardCard, petName?: string) {
         />
       );
     }
-    case 'symptomFrequency':
+    case 'calendar': {
+      // Resolve each pure lens descriptor into a display lens (chip label + nyx-voice copy).
+      // Kept here (not in the pure builder) so dashboardScreen.ts stays theme/voice-free.
+      const views: CalendarView[] = card.views.map((v) =>
+        v.kind === 'symptom'
+          ? {
+              key: v.key,
+              kind: 'symptom',
+              symptomType: v.symptomType,
+              chipLabel: symptomLabel(v.symptomType as string),
+              noun: symptomLabel(v.symptomType as string),
+              unit: 'time',
+              definition: symptomFrequencyDefinition(
+                symptomLabel(v.symptomType as string).toLowerCase(),
+                petName,
+              ),
+              drillLabel: symptomLabel(v.symptomType as string),
+            }
+          : {
+              key: v.key,
+              kind: 'intake',
+              // "Meals" reads naturally alongside the symptom chips; the copy noun
+              // "Unfinished meals" carries the precise, non-reassuring meaning (B-310).
+              chipLabel: 'Meals',
+              noun: 'Unfinished meals',
+              unit: 'meal',
+              definition: intakeDeclineDefinition(petName),
+              drillLabel: 'Unfinished meals',
+            },
+      );
       return (
-        <FrequencyCalendarCard
-          key={card.key}
-          title={symptomLabel(card.symptomType)}
-          buckets={card.buckets}
-          symptomType={card.symptomType}
-          definition={symptomFrequencyDefinition(symptomLabel(card.symptomType).toLowerCase(), petName)}
+        // Keyed on petId so a pet switch REMOUNTS the calendar fresh — seeded from the new
+        // pet's month/bounds + reset to its default lens — instead of carrying one pet's
+        // paging cache / lens selection into another (the multi-pet stale-state trap).
+        <PatternCalendar
+          key={`calendar:${petId}`}
+          petId={petId}
+          title="Calendar"
+          views={views}
+          currentMonth={card.currentMonth}
+          earliestMonth={card.earliestMonth}
+          initialSymptomBuckets={card.monthBuckets}
+          initialIntakeBuckets={card.intakeDeclineMonthBuckets}
         />
       );
+    }
     case 'intakeRate': {
       const r = card.result;
       // Narrow via the sentinel guard (no `as`): read the rate only when it's real.
