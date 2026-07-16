@@ -64,17 +64,17 @@ describe('RankingCard', () => {
   it('shows the calibration state below the ranking floor (no fabricated top-N)', () => {
     const state = selectCardState(notEnoughData(2, 4));
     const { getByText, queryByText } = render(
-      <RankingCard title="Top protein" entries={[]} state={state} calibrationUnit="meal" petName="Nyx" />,
+      <RankingCard title="Top protein" entries={[]} state={state} calibrationUnit="food" petName="Nyx" />,
     );
-    expect(getByText("Still learning Nyx's baseline — 2 more meals to log.")).toBeTruthy();
+    expect(getByText("Still learning Nyx's baseline — 2 more foods to log.")).toBeTruthy();
     expect(queryByText('Tiki Cat Tuna')).toBeNull();
   });
 
   it('shows the empty copy when there is nothing logged', () => {
     const { getByText } = render(
-      <RankingCard title="Top food" entries={[]} emptyMessage="No meals logged yet." />,
+      <RankingCard title="Top food" entries={[]} emptyMessage="No foods logged yet." />,
     );
-    expect(getByText('No meals logged yet.')).toBeTruthy();
+    expect(getByText('No foods logged yet.')).toBeTruthy();
   });
 
   it('reveals the metric definition on tapping the info affordance (B-100)', () => {

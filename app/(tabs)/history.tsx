@@ -506,8 +506,8 @@ export default function HistoryScreen() {
                     <Text style={styles.emptyTitle}>Nothing logged yet</Text>
                     <Text style={styles.emptyBody}>
                       {activePet
-                        ? `Tap + anywhere to log ${activePet.name}'s first meal or symptom. Everything you log builds up here.`
-                        : 'Tap + anywhere to log a first meal or symptom. Everything you log builds up here.'}
+                        ? `Tap + anywhere to log ${activePet.name}'s first food or symptom. Everything you log builds up here.`
+                        : 'Tap + anywhere to log a first food or symptom. Everything you log builds up here.'}
                     </Text>
                   </>
                 )}

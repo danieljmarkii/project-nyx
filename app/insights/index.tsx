@@ -380,7 +380,7 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
           title="Top food"
           entries={entries}
           state={card.state}
-          calibrationUnit="meal"
+          calibrationUnit="food"
           definition={topFoodDefinition(petName)}
           petName={petName}
         />
@@ -407,7 +407,7 @@ function renderCard(card: DashboardCard, petId: string, petName?: string) {
           title="Top protein"
           entries={entries}
           state={card.state}
-          calibrationUnit="meal"
+          calibrationUnit="food"
           definition={topProteinDefinition(petName)}
           petName={petName}
         />
