@@ -1,0 +1,50 @@
+-- ============================================================
+-- food_items — archive (tombstone) support for "remove from library"
+-- B-005 PR 1 (docs/nyx-food-dedup-requirements.md §1/§5 — repoint/tombstone,
+-- never hard-delete). Ratified this planning cycle (STATUS.md 2026-07-16):
+-- removing a food from the library ARCHIVES it rather than cascading a delete,
+-- so its past meals keep their name and stay in the correlation/vet-report
+-- record. Archive is undo-capable (an "Archived" library section + Restore).
+-- ============================================================
+-- Additive, schema-isolated. Two nullable columns on the global food_items
+-- catalog:
+--
+--   archived_at          — the tombstone timestamp. NULL = live (in the
+--                          library); non-NULL = archived (hidden from picker /
+--                          library reads only). The load-bearing invariant
+--                          (STATUS.md): filter archived_at ONLY at picker /
+--                          library reads, NEVER on history / analytics /
+--                          vet-report joins — else an archived food's past
+--                          meals lose their name and drop out of the protein
+--                          exposure set. Restore = set archived_at back to
+--                          NULL.
+--   archived_by_user_id  — attribution only (who archived it), mirroring the
+--                          existing created_by_user_id. ON DELETE SET NULL so
+--                          deleting the actor's account never removes the
+--                          globally-shared food. Not read on-device (the cache
+--                          only mirrors archived_at, the field it filters on).
+--
+-- Both columns are NULLABLE with NO default:
+--   • Existing rows stay live (archived_at NULL) — no backfill needed.
+--   • food_items already has an owner-scoped INSERT/UPDATE RLS policy keyed on
+--     created_by_user_id (001_schema.sql). These columns inherit the table's
+--     policies; this migration adds no policy and widens nothing.
+--   • food_items is globally scoped (a sanctioned no-pet_id/no-user_id table);
+--     the per-account re-scope (B-354) is a separate, later migration and is
+--     not foreclosed by these additive columns.
+--
+-- Merge (B-018) uses a separate merged_into/merged_at pair (§5.4) — archive
+-- (owner removes a food) and merge (dedupe two rows) are distinct lifecycles.
+--
+-- Migration Safety Pre-flight (CLAUDE.md):
+--   Destructive: n  (two ADD COLUMNs; no drop, rename, or type change)
+--   Nullable, no default: yes
+--   Backfill: N/A  (existing rows keep archived_at NULL = live)
+--   Rollback:
+--     ALTER TABLE food_items DROP COLUMN archived_by_user_id;
+--     ALTER TABLE food_items DROP COLUMN archived_at;
+-- ============================================================
+
+ALTER TABLE food_items
+  ADD COLUMN archived_at         TIMESTAMPTZ,
+  ADD COLUMN archived_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
