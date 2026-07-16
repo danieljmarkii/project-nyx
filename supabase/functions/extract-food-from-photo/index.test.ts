@@ -10,11 +10,13 @@ import {
   assertStrictEquals,
   assertNotStrictEquals,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts'
 import {
   parseToolResult,
   normaliseConfidence,
   mapFormatToDb,
   blobToBase64,
+  bytesToBase64,
   FORMAT_ENUM,
   resolveGateState,
   resolveFlagValue,
@@ -316,6 +318,44 @@ Deno.test('parseToolResult — confidence values are clamped', () => {
   const result = parseToolResult(response) as ExtractionResult
   assertStrictEquals(result.confidence.brand, 1)
   assertStrictEquals(result.confidence.product_name, 0)
+})
+
+// ── bytesToBase64 (B-204) ─────────────────────────────────────────────────────
+// The chunked encoder that replaced the rope-building btoa(Array.from(...)) whose
+// ~250 MB blowup on a multi-MB image hard-killed the worker with a 546 (the same
+// OOM that hit analyze-vomit, PR #255). These pin that it is byte-correct —
+// including ACROSS the 32 KB chunk boundary, the one place a chunked encoder can
+// go wrong — using deno-std encodeBase64 as the oracle.
+
+Deno.test('bytesToBase64 — empty input', () => {
+  assertStrictEquals(bytesToBase64(new Uint8Array([])), '')
+})
+
+Deno.test('bytesToBase64 — known vectors incl. 1- and 2-byte padding', () => {
+  const enc = (s: string) => bytesToBase64(new TextEncoder().encode(s))
+  assertStrictEquals(enc('Man'), 'TWFu')      // no padding
+  assertStrictEquals(enc('Ma'), 'TWE=')       // one '='
+  assertStrictEquals(enc('M'), 'TQ==')        // two '='
+  assertStrictEquals(enc('hello world'), 'aGVsbG8gd29ybGQ=')
+})
+
+Deno.test('bytesToBase64 — all 256 byte values match std', () => {
+  const bytes = new Uint8Array(256)
+  for (let i = 0; i < 256; i++) bytes[i] = i
+  assertStrictEquals(bytesToBase64(bytes), encodeBase64(bytes))
+})
+
+Deno.test('bytesToBase64 — matches std across the 32 KB chunk boundary', () => {
+  // ~100 KB of deterministic pseudo-random bytes spans several 32 KB windows, so
+  // any off-by-one at a chunk seam (the classic chunked-encoder bug) shows up.
+  const n = 100_003 // deliberately not a multiple of 3 or 0x8000
+  const bytes = new Uint8Array(n)
+  let x = 0x9e3779b9
+  for (let i = 0; i < n; i++) {
+    x = (x * 1664525 + 1013904223) >>> 0
+    bytes[i] = x & 0xff
+  }
+  assertStrictEquals(bytesToBase64(bytes), encodeBase64(bytes))
 })
 
 // ── blobToBase64 ──────────────────────────────────────────────────────────────

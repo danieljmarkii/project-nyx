@@ -11,7 +11,7 @@ _This is the synthesis the PM asked for: a single "what stands between us and th
 
 ## Bottom line
 
-**The single hardest App Store blocker — in-app account deletion (B-039, Apple 5.1.1(v)) — is code-complete and merged.** Only its on-device QA gate remains. That is the good news.
+**The single hardest App Store blocker — in-app account deletion (B-039, Apple 5.1.1(v)) — is DONE (verified 2026-07-16).** Code-complete, merged, deployed, and now confirmed end-to-end: a real account's deletion was verified against the live DB (auth user gone, 0 rows across all 13 cascade tables, no residual Storage, `food_items` SET-NULL intact). The hardest blocker is closed. That is the good news.
 
 The gap between "code-complete" and "submittable" is **six things**, most of which are cheap and none of which are large:
 
@@ -32,13 +32,13 @@ Everything else (observability, AI cost caps, SecureStore hardening, storage-ret
 
 | ID | Item | Status | Owner lens | What's left |
 |---|---|---|---|---|
-| **B-039** | In-app account deletion (Apple **5.1.1(v)**) | **Partial — code-complete + merged** (#191 backend, #193 client) | Trust & Safety | On-device end-to-end deletion QA on a throwaway account. **This is the ship gate.** Depends on the B-152 email toggle to create the account. |
+| **B-039** | In-app account deletion (Apple **5.1.1(v)**) | **✅ Done — verified 2026-07-16** (#191 backend, #193 client) | Trust & Safety | End-to-end deletion **verified against the live DB** on a real account: auth user gone, 0 rows across all 13 cascade tables, no residual Storage, `food_items` SET-NULL intact. **The ship gate is cleared.** Rider (separate): AC-6 cross-account logout-wipe. |
 | **B-267** | iOS camera + photo-library **usage strings** missing from `app.json` | **Config fixed — #299** (introspect-verified); on-build verify pending | Dir. of Engineering | ✅ `expo-image-picker` config plugin added — injects Culprit-branded, purpose-stating `NSCameraUsageDescription` + `NSPhotoLibraryUsageDescription`. `NSMicrophoneUsageDescription` intentionally **suppressed** (`microphonePermission: false`): every image-picker call site is `mediaTypes: ['images']` — no video capture — so the mic string would be unused (an unused permission string is its own review risk). `expo config --type introspect` confirms both keys + the suppression. **Residuals on the built artifact (introspect can't check):** verify both keys on the real `Info.plist`, **and** that the aggregated `PrivacyInfo.xcprivacy` privacy manifest is present — Expo SDK 54 auto-aggregates; verify, don't assume. iOS **crashes** without the usage strings. |
 | **B-229** | Privacy Policy (published URL + in-app link) | **Open** — in-app link is a stub (`signup.tsx` alerts "on its way") | Trust & Safety | Draft + host the document; wire a real Settings/onboarding link; supply the store-listing URL. The App Store listing **requires** a privacy-policy URL. |
 | **B-268** | App Store Connect **App Privacy** disclosure (nutrition label) | **Open — newly surfaced** | Trust & Safety | Complete the mandatory data-collection questionnaire (email, owner name, pet-health photos/events; processors Supabase + Anthropic). Distinct from B-229. |
 | **B-152** | Re-enable email confirmation + **production SMTP** | **Open** — "Confirm email" toggled OFF for testing | Dir. of Engineering / T&S | Flip it on before real users; back `resend` with a production SMTP provider; harden the soft-verify login path (B-251 PR 6 residual). |
 
-> **QA note (Sr. QA Associate):** B-039's on-device pass is the last thing standing between the hardest blocker and "done." It cannot be verified from code — it needs a throwaway account, a real device, and a confirmed empty-state after deletion + a clean cross-account sign-in (the AC-6 logout-wipe check rides along). Run these together.
+> **QA note (Sr. QA Associate):** B-039's deletion pass is **done** — verified 2026-07-16 end-to-end (in-app delete on a real account → live-DB confirmation of a complete, cascade-clean erasure with no residual Storage). What still rides separately is the **AC-6 cross-account logout-wipe** (sign into a *different* account → confirm no prior-pet bleed): the deletion path exercises the same `SIGNED_OUT`→`clearLocalData` wipe, but the distinct cross-account no-bleed assertion hasn't been run. Close that with the next on-device session.
 
 ---
 
@@ -73,7 +73,7 @@ These are **Open Questions**, not deferrals — a decision here unblocks a clust
 |---|---|---|---|
 | **B-001** | AI cost & rate-limit strategy (per-user/day cap, caching, cost-per-active-user) | Engineering | Real users hitting Claude vision/phrasing = unbounded cost + abuse surface. PM previously deferred "until pre-shipping" — that's now. |
 | **B-016** | App-wide error observability (Sentry-style) | Engineering | You cannot triage a TestFlight crash or an App Review "it crashed" blind. Wire before wide distribution. Feeds B-047 retention instrumentation. |
-| **B-199 / B-021** | SecureStore session-token chunking (>2048-byte warning → future throw) | Engineering | Benign today, but a future expo-secure-store SDK throw = silent logout / failed session restore. Cheap chunking adapter. |
+| **B-199 / B-021** ✓ SHIPPED | SecureStore session-token chunking (>2048-byte warning → future throw) | Engineering | **Done 2026-07-16** — shipped via the frequent-signin fix chain #306/#327/#350: `lib/secureStore.ts` `ChunkedSecureStoreAdapter` splits the session across N sub-2048-byte keys (verified `lib/secureStore.test.ts`). Was benign today, but a future expo-secure-store SDK throw would have been a silent logout / failed session restore — now pre-empted. |
 | **B-002** | Pre-prod readiness checklist (EAS env, observability, error reporting, push provider) | Engineering / PM | The parent checklist; this register is its App-Store slice. Keep the non-store bullets (push provider, EAS env verification) tracked here. |
 | — | **Whole-system aesthetic + household TestFlight QA pass** | Designer / QA | STATUS lists these as open on-device gates; a first-impression pass matters for a public launch and for App Review's "quality" bar. |
 
@@ -111,7 +111,7 @@ The tiers above say **what** gates submission; the order of attack — with long
 ## Persona sign-off on this register
 
 - **Product Owner / Backlog Steward** — reconciled B-039 (draft→merged head); added B-267–B-270 as proactive tracking rows (sanctioned, not scope-invention); flagged one structural cleanup: rows B-253–B-266 sit below the `## Done` header in `docs/backlog.md` and should migrate up in the next slim pass (B-141).
-- **Trust & Safety / Privacy** — deletion (B-039) is the gate and is nearly closed; the privacy *documents* (B-229/B-268/B-270) are the exposed edge and are all still Open. Retention hardening (Tier 5) is real but not a launch gate.
+- **Trust & Safety / Privacy** — deletion (B-039) is **closed** (verified end-to-end 2026-07-16); the exposed edge is now the privacy *documents* (B-229/B-268/B-270 — in-app halves shipped via #362, hosting/label work remains). Retention hardening (Tier 5) is real but not a launch gate — though the B-039 verification did surface a concrete B-121 instance (14 orphaned event-attachment objects under a soft-deleted pet).
 - **Dir. of Engineering** — B-267 is the one genuinely-new hard blocker and it's a config fix; B-152/B-001/B-016 are the launch-config trio. Verify permission strings and hidden social buttons **on the built artifact**, not from source.
 - **Sr. Product Manager** — two decisions own the critical path: the freemium gate (unblocks the paywall cluster + de-risks a 2.1/3.1.2 rejection) and the v1 social-auth scope (email-only is fine; confirm the mocked buttons are hidden).
-- **Sr. QA Associate** — the B-039 + AC-6 logout-wipe on-device pass is the terminal gate for the hardest blocker; run them as one session on a throwaway account.
+- **Sr. QA Associate** — B-039's deletion pass is **done** (verified 2026-07-16); only the AC-6 cross-account logout-wipe rider remains, and it's a quick next-session check, not a blocker.
