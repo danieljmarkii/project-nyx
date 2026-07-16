@@ -89,6 +89,23 @@ describe('DisclaimerScreen', () => {
     openSpy.mockRestore();
   });
 
+  it('a failed link open falls back to naming the URL — never silent', async () => {
+    const openSpy = jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no handler'));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { getByTestId } = render(<DisclaimerScreen />);
+    fireEvent.press(getByTestId('disclaimer-full-link'));
+    await waitFor(() =>
+      expect(alertSpy).toHaveBeenCalledWith(
+        "Couldn't open link",
+        `You can find the full disclaimer at ${DISCLAIMER_URL}.`,
+      ),
+    );
+    openSpy.mockRestore();
+    alertSpy.mockRestore();
+    warn.mockRestore();
+  });
+
   it('renders nothing without a session (stray render mid-signout)', () => {
     mockUser = null;
     const { toJSON } = render(<DisclaimerScreen />);

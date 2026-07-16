@@ -61,6 +61,24 @@ describe('SignupScreen — legal links (B-229/B-230)', () => {
     await waitFor(() => expect(openSpy).toHaveBeenCalledWith(PRIVACY_POLICY_URL));
     openSpy.mockRestore();
   });
+
+  it('a failed link open falls back to naming the URL — never silent', async () => {
+    const { Alert } = require('react-native');
+    const openSpy = jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no handler'));
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const utils = render(<SignupScreen />);
+    fireEvent.press(utils.getByText('Terms'));
+    await waitFor(() =>
+      expect(alertSpy).toHaveBeenCalledWith(
+        "Couldn't open link",
+        `You can find our terms of service at ${TERMS_URL}.`,
+      ),
+    );
+    openSpy.mockRestore();
+    alertSpy.mockRestore();
+    warn.mockRestore();
+  });
 });
 
 describe('SignupScreen — validation gate', () => {
