@@ -379,7 +379,7 @@ export default function FoodDetailScreen() {
     if (!row) return;
     Alert.alert(
       'Delete this food?',
-      'This will also remove every meal you\'ve logged for it. This can\'t be undone.',
+      'This will also remove everything you\'ve logged for it. This can\'t be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => runDelete() },

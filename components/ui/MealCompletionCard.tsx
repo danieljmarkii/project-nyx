@@ -166,7 +166,7 @@ export function MealCompletionCard() {
       // SQLite and confirm ground truth.
       patchIntakeRating(prevRating);
       patchInToday(eventId, { intake_rating: prevRating });
-      Alert.alert('Could not save intake', 'Try again from the meal\'s detail screen.');
+      Alert.alert('Could not save intake', 'Try again from the food\'s detail screen.');
     }
   }
 
