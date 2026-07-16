@@ -112,6 +112,15 @@ CREATE POLICY "legal_acceptances_read_own" ON legal_acceptances
 -- auth.uid() is null — but denying at the grant layer is the cleaner boundary,
 -- the same posture as migration 031's record_ai_usage). service_role keeps its
 -- default grant (server-only, bypasses RLS regardless — standard posture).
+--
+-- MAINTENANCE WARNING (rls-privacy-reviewer): the column-level grant below is
+-- the ONLY thing preventing a client from forging accepted_at. A future
+-- migration or dashboard action doing a bare table-level
+-- `GRANT INSERT ON legal_acceptances TO authenticated` would silently re-cover
+-- ALL columns — including accepted_at — and reopen the forgery. If this table
+-- ever needs another client-writable column, extend the COLUMN list; never
+-- re-grant at the table level. (ALTER TABLE alone does not re-grant; only an
+-- explicit GRANT does.)
 
 REVOKE ALL ON legal_acceptances FROM anon;
 REVOKE INSERT, UPDATE, DELETE ON legal_acceptances FROM authenticated;
