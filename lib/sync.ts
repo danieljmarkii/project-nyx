@@ -370,10 +370,17 @@ export async function syncPendingVetVisits(): Promise<void> {
 
   for (const att of unsyncedAtts) {
     try {
-      await uploadPhoto('nyx-vet-attachments', att.storage_path, att.local_uri, att.mime_type);
+      // Compress + EXIF/GPS-strip before (re)upload — parity with the event
+      // attachment path below. A vet attachment is a camera photo of a document
+      // whose GPS EXIF would otherwise reach storage untouched; prepareAttachmentUpload
+      // re-encodes it to a stripped JPEG (and passes a non-image through unchanged).
+      // Privacy-hardening sweep — makes the privacy-policy "no photo location
+      // metadata" claim true across the vet-attachment re-upload path too.
+      const prep = await prepareAttachmentUpload(att.local_uri, att.mime_type);
+      await uploadPhoto('nyx-vet-attachments', att.storage_path, prep.uri, prep.mimeType);
       const { error } = await supabase.from('vet_visit_attachments').upsert({
         id: att.id, vet_visit_id: att.vet_visit_id, pet_id: att.pet_id,
-        storage_path: att.storage_path, mime_type: att.mime_type, taken_at: att.taken_at,
+        storage_path: att.storage_path, mime_type: prep.mimeType, taken_at: att.taken_at,
       }, { onConflict: 'id' });
       // Only mark synced when the row actually landed — supabase-js returns
       // errors rather than throwing, so an ignored error here would flag the row

@@ -14,7 +14,7 @@ import { SectionLabel } from '../components/ui/SectionLabel';
 import { EVENT_TYPES, EventTypeKey } from '../constants/eventTypes';
 import { getDb, updateEvent, updateMealFood, updateMealIntake, getMealForEvent, getDoseForEvent, updateDoseAdherence, updateDoseHowGiven, getEventAttachment, getEventSource, getEventTimeFields } from '../lib/db';
 import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendingMedicationAdministrations } from '../lib/sync';
-import { uploadPhoto, persistCapture } from '../lib/storage';
+import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
 import { uuid, formatExifAttribution, formatTime, deriveOccurredAt } from '../lib/utils';
@@ -409,8 +409,12 @@ export default function EditEventModal() {
              VALUES (?, ?, ?, ?, ?, 'image/jpeg', 0, ?)`,
             [attId, id, petResult.pet_id, localUri, storagePath, now],
           );
-          // Fire-and-forget: if upload fails offline, the synced=0 row is retried by background sync
-          uploadPhoto('nyx-event-attachments', storagePath, newAttachmentUri)
+          // Fire-and-forget: if upload fails offline, the synced=0 row is retried by background sync.
+          // Compress + EXIF/GPS-strip before upload — parity with log.tsx / event/[id].tsx.
+          // The local_uri persisted above keeps the original for the durable hero; only the
+          // uploaded object is re-encoded, so a camera-roll photo's GPS metadata never reaches storage.
+          compressForUpload(newAttachmentUri)
+            .then((uploadUri) => uploadPhoto('nyx-event-attachments', storagePath, uploadUri))
             .then(async () => {
               const { error } = await supabase.from('event_attachments').upsert(
                 { id: attId, event_id: id, pet_id: petResult.pet_id, storage_path: storagePath, mime_type: 'image/jpeg' },
