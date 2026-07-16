@@ -73,7 +73,7 @@ These are **Open Questions**, not deferrals — a decision here unblocks a clust
 |---|---|---|---|
 | **B-001** | AI cost & rate-limit strategy (per-user/day cap, caching, cost-per-active-user) | Engineering | Real users hitting Claude vision/phrasing = unbounded cost + abuse surface. PM previously deferred "until pre-shipping" — that's now. |
 | **B-016** | App-wide error observability (Sentry-style) | Engineering | You cannot triage a TestFlight crash or an App Review "it crashed" blind. Wire before wide distribution. Feeds B-047 retention instrumentation. |
-| **B-199 / B-021** | SecureStore session-token chunking (>2048-byte warning → future throw) | Engineering | Benign today, but a future expo-secure-store SDK throw = silent logout / failed session restore. Cheap chunking adapter. |
+| **B-199 / B-021** ✓ SHIPPED | SecureStore session-token chunking (>2048-byte warning → future throw) | Engineering | **Done 2026-07-16** — shipped via the frequent-signin fix chain #306/#327/#350: `lib/secureStore.ts` `ChunkedSecureStoreAdapter` splits the session across N sub-2048-byte keys (verified `lib/secureStore.test.ts`). Was benign today, but a future expo-secure-store SDK throw would have been a silent logout / failed session restore — now pre-empted. |
 | **B-002** | Pre-prod readiness checklist (EAS env, observability, error reporting, push provider) | Engineering / PM | The parent checklist; this register is its App-Store slice. Keep the non-store bullets (push provider, EAS env verification) tracked here. |
 | — | **Whole-system aesthetic + household TestFlight QA pass** | Designer / QA | STATUS lists these as open on-device gates; a first-impression pass matters for a public launch and for App Review's "quality" bar. |
 
