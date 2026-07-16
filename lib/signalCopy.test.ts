@@ -754,6 +754,12 @@ const ALL_BANNER_FINDINGS: BannerSafetyFinding[] = [
       worsening({ trigger: 'more_days', symptomType }),
     ],
   ),
+  ...(['vomit', 'diarrhea', 'itch', 'scratch', 'skin_reaction'] as const).flatMap(
+    (symptomType) => [
+      chronicity({ tier: 'firm', symptomType }),
+      chronicity({ tier: 'standard', symptomType }),
+    ],
+  ),
 ];
 
 describe('selectCrossPetSafetyFinding', () => {
@@ -784,6 +790,13 @@ describe('selectCrossPetSafetyFinding', () => {
     expect(sel?.finding.type).toBe('symptom_worsening');
   });
 
+  it('selects a single symptom_chronicity candidate — the lane can now cross over (B-191)', () => {
+    // The whole point of B-191: a secondary pet whose ONLY safety finding is a
+    // weeks-long unresolved course must raise the banner, not stay silent.
+    const sel = selectCrossPetSafetyFinding([candidate('A', [chronicity()])]);
+    expect(sel?.finding.type).toBe('symptom_chronicity');
+  });
+
   it('within one pet with BOTH safety findings, picks intake_decline over worsening (§4 ranking)', () => {
     // worsening passed FIRST (rank 0) — class priority must still pick intake_decline,
     // never the lower-priority finding just because it leads the pet's own stack.
@@ -791,11 +804,32 @@ describe('selectCrossPetSafetyFinding', () => {
     expect(selectCrossPetSafetyFinding([both])?.finding.type).toBe('intake_decline');
   });
 
+  it('within one pet, chronicity outranks worsening but yields to intake_decline (SAFETY_TYPE_ORDER)', () => {
+    // The banner priority mirrors the engine's per-pet SAFETY_TYPE_ORDER exactly:
+    // intake_decline (0) > symptom_chronicity (1) > symptom_worsening (2).
+    const chronicVsWorsen = candidate('A', [worsening(), chronicity()]);
+    expect(selectCrossPetSafetyFinding([chronicVsWorsen])?.finding.type).toBe('symptom_chronicity');
+    const declineVsChronic = candidate('B', [chronicity(), intakeDecline()]);
+    expect(selectCrossPetSafetyFinding([declineVsChronic])?.finding.type).toBe('intake_decline');
+  });
+
   it('across two pets, intake_decline outranks worsening regardless of list order (§4)', () => {
     const declinePet = candidate('decline', [intakeDecline()]);
     const worsenPet = candidate('worsen', [worsening()]);
     expect(selectCrossPetSafetyFinding([worsenPet, declinePet])?.pet.id).toBe('decline');
     expect(selectCrossPetSafetyFinding([declinePet, worsenPet])?.pet.id).toBe('decline');
+  });
+
+  it('across pets, chronicity beats worsening but loses to intake_decline, order-independent (B-191)', () => {
+    const chronicPet = candidate('chronic', [chronicity()]);
+    const worsenPet = candidate('worsen', [worsening()]);
+    const declinePet = candidate('decline', [intakeDecline()]);
+    // chronicity > worsening
+    expect(selectCrossPetSafetyFinding([worsenPet, chronicPet])?.pet.id).toBe('chronic');
+    expect(selectCrossPetSafetyFinding([chronicPet, worsenPet])?.pet.id).toBe('chronic');
+    // intake_decline > chronicity
+    expect(selectCrossPetSafetyFinding([chronicPet, declinePet])?.pet.id).toBe('decline');
+    expect(selectCrossPetSafetyFinding([declinePet, chronicPet])?.pet.id).toBe('decline');
   });
 
   it('never stacks — returns exactly one finding even when several pets qualify', () => {
@@ -873,6 +907,23 @@ describe('bannerCopy', () => {
     expect(days).toContain('vomiting on more days this week than last');
     const eps = bannerCopy(worsening({ trigger: 'more_episodes', symptomType: 'itch' }), 'Pixel').text;
     expect(eps).toContain('more itching this week than last');
+  });
+
+  it('symptom_chronicity — names the symptom + onset month, reads as a recurring course (B-191)', () => {
+    // Anchored to the onset MONTH (matching the pet's own chronicity Signal copy),
+    // so the teaser reads as duration, not a week-over-week delta.
+    const c = bannerCopy(
+      chronicity({ symptomType: 'vomit', firstOnsetIso: '2026-05-15T08:00:00.000Z' }),
+      'Pixel',
+    );
+    expect(c.text).toBe('Pixel has had recurring vomiting since May — worth a look.');
+    expect(c.text.startsWith('Pixel')).toBe(true);
+  });
+
+  it('symptom_chronicity — a bad onset ISO degrades to "then", never crashes or leaks a raw date', () => {
+    const c = bannerCopy(chronicity({ firstOnsetIso: 'not-a-date' }), 'Pixel');
+    expect(c.text).toContain('since then');
+    expect(validateBannerPhrasing(c.text)).toBe(true);
   });
 
   it('text === petName + rest for every variant (the bold-name render invariant)', () => {
