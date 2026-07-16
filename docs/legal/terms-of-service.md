@@ -3,8 +3,8 @@
 **Status: DRAFT** — pending PM review and legal review before hosting (B-273). Placeholders marked `[...]` must be filled before publication.
 
 **Effective date:** [SET WHEN HOSTED]
-**Operator:** [LEGAL OPERATOR NAME — the individual or entity that publishes Culprit] ("we", "us")
-**Contact:** [CONTACT EMAIL]
+**Operator:** [YOUR FULL LEGAL NAME], an individual ("we", "us")
+**Contact:** support@getculprit.app
 
 These Terms of Service ("Terms") govern your use of the Culprit mobile app and any related web pages we operate ("Culprit", "the service"). By creating an account or using Culprit, you agree to these Terms and to the [Privacy Policy](./privacy-policy.md). If you don't agree, don't use the service.
 
@@ -20,13 +20,13 @@ Culprit is an informational pet health tracking tool. It helps you record what y
 
 - You must be at least 13 years old (or the higher minimum age where you live) to create an account.
 - Provide accurate account information and keep your credentials secure. You are responsible for activity under your account.
-- One person per account. Don't share credentials or use someone else's account.
+- Culprit is built around your household's pets. If people you live with help care for them and use your account, that's fine — but you remain responsible for everything done under it. Don't use an account that isn't yours, and don't share your credentials outside your household.
 
 ## 3. Your content
 
 - **You own what you log.** Your pet profiles, events, notes, photos, and documents remain yours.
 - You grant us the limited license needed to operate the service: to host, store, process, back up, display your content back to you, and pass the specific items described in the Privacy Policy to our service providers (for example, sending a food label photo to our AI provider for extraction) — solely to provide and improve the service's operation for you, and never to sell it or use it for advertising.
-- **Shared food catalog:** food entries you create from commercial packaging (product name, brand, ingredients, package photo) become part of Culprit's shared catalog available to other users. If you delete your account, those catalog entries remain, with your identity removed.
+- **Shared food catalog:** when you create a food entry from commercial packaging, you grant us a perpetual, irrevocable, worldwide, royalty-free license to store that contribution — the product name, brand, ingredients, and package photo — and to make it available to all Culprit users, so others logging the same commercial product don't have to re-enter it. This license covers commercial-product information only, never anything about you or your pet, and it **survives the deletion or termination of your account**: your catalog contributions remain after you leave, with your identity removed.
 - Only upload content you have the right to upload. Don't log information about people, or someone else's pet, without permission.
 
 ## 4. Acceptable use
@@ -47,6 +47,7 @@ Some features use AI (described in the Privacy Policy, Section 3). AI output can
 - **Always verify extracted medication details against the physical label.** The app asks you to confirm them for a reason; a mis-extracted drug name or dose that you confirm without checking is a real hazard to your pet.
 - AI reads of symptom photos describe a single photo. They are observational, not diagnostic, and the absence of a flag is not an all-clear — see the Veterinary Disclaimer.
 - Pattern findings are statistical associations in your own logs. An association is not a cause, and it is only as good as what you logged.
+- AI features may be subject to usage limits to keep the service available for everyone. If you reach a limit, that AI feature pauses and becomes available again later; your logging, alerts, trends, and reports keep working.
 
 ## 6. Fees
 
@@ -58,7 +59,7 @@ We may change, add, or remove features, and we don't promise uninterrupted avail
 
 ## 8. Termination
 
-- **You** can stop using Culprit at any time, and can permanently delete your account and data from inside the app (Profile → Account → Delete account) — see the Privacy Policy, Section 7.
+- **You** can stop using Culprit at any time, and can permanently delete your account and data from inside the app (open the **You** screen from your avatar in the top-right of the Home screen, then **Delete account**) — see the Privacy Policy, Section 7.
 - **We** may suspend or terminate your access for violation of these Terms, or discontinue the service with reasonable notice, in which case you'll have the opportunity to export your data first.
 
 ## 9. Disclaimers
@@ -75,10 +76,34 @@ Nothing in these Terms limits liability that cannot be limited by law, and nothi
 
 We may update these Terms. For material changes we will tell you in the app before they take effect. Continuing to use Culprit after changes take effect means you accept them.
 
-## 12. Governing law
+## 12. Apple App Store
 
-These Terms are governed by the laws of [JURISDICTION — PM to set, e.g. the operator's state/country], excluding its conflict-of-law rules. Disputes will be resolved in the courts of [VENUE], unless the law where you live gives you the right to sue at home.
+If you downloaded Culprit from the Apple App Store, the following also applies, and these Terms serve as the "Licensed Application End User License Agreement" for Culprit:
 
-## 13. Contact
+- **This agreement is with us, not Apple.** These Terms are between you and us ([YOUR FULL LEGAL NAME]), not Apple, and Apple is not responsible for Culprit or its content.
+- **Scope of license.** Your license to use Culprit is a non-transferable license to use it on any Apple-branded products that you own or control, as permitted by the Usage Rules in the Apple Media Services Terms and Conditions.
+- **Maintenance and support.** We alone are responsible for providing maintenance and support for Culprit. Apple has no obligation to furnish any maintenance or support.
+- **Warranty.** We are solely responsible for any product warranties, whether express or implied by law, to the extent not effectively disclaimed. If Culprit fails to conform to any applicable warranty, you may notify Apple, and Apple will refund the purchase price (if any) you paid for Culprit; to the maximum extent permitted by law, Apple has no other warranty obligation for Culprit.
+- **Product claims.** We, not Apple, are responsible for addressing any claims from you or a third party relating to Culprit or your use of it — including product liability claims, claims that Culprit fails to meet a legal or regulatory requirement, and claims under consumer protection or similar law.
+- **Intellectual property claims.** If a third party claims that Culprit or your use of it infringes their intellectual property rights, we, not Apple, will be solely responsible for the investigation, defense, settlement, and discharge of that claim.
+- **Legal compliance.** You represent and warrant that you are not located in a country subject to a U.S. Government embargo or designated by the U.S. Government as a "terrorist-supporting" country, and that you are not listed on any U.S. Government list of prohibited or restricted parties.
+- **Contact.** Questions, complaints, or claims about Culprit should be directed to us at support@getculprit.app.
+- **Third-party terms.** You must comply with any applicable third-party terms of agreement when using Culprit.
+- **Third-party beneficiary.** Apple and its subsidiaries are third-party beneficiaries of these Terms, and upon your acceptance of these Terms, Apple will have the right (and will be deemed to have accepted the right) to enforce these Terms against you as a third-party beneficiary.
 
-Questions about these Terms: [CONTACT EMAIL].
+## 13. General
+
+- **Severability.** If any provision of these Terms is held unenforceable, that provision will be limited or removed to the minimum extent necessary, and the rest of these Terms will stay in full effect.
+- **Entire agreement.** These Terms, together with the Privacy Policy and the Veterinary Disclaimer, are the entire agreement between you and us about Culprit, and they replace any earlier agreements on that subject.
+- **Assignment.** You may not assign or transfer these Terms or your account. We may assign these Terms — for example, in connection with a merger, acquisition, or sale of assets — and they will bind any permitted successor.
+- **No waiver.** If we don't enforce a provision of these Terms, that is not a waiver of our right to enforce it later.
+- **Notices.** We give you notices by email to the address on your account, or inside the app. Keep your account email current so you receive them.
+- **Force majeure.** We are not liable for any delay or failure to perform caused by events beyond our reasonable control, including outages at our infrastructure providers, network failures, or acts of God.
+
+## 14. Governing law
+
+These Terms are governed by the laws of the State of Nebraska, United States, excluding its conflict-of-law rules. Disputes will be resolved in the state and federal courts located in Nebraska, unless the law where you live gives you the right to bring a claim where you live.
+
+## 15. Contact
+
+Questions about these Terms: support@getculprit.app.
