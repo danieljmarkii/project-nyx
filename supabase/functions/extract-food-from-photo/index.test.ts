@@ -23,6 +23,7 @@ import {
   resolveCaps,
   computeResetsAt,
   validateFoodPhotoPaths,
+  resolveFoodOwnership,
   type ExtractionResult,
   type FunctionCaps,
 } from './index.ts'
@@ -107,6 +108,40 @@ Deno.test('validateFoodPhotoPaths — the real client shape passes; a cross-food
   assertStrictEquals(validateFoodPhotoPaths(foodId, [`/etc/passwd`]), false)
   // A single bad path in an otherwise-valid set fails the whole set.
   assertStrictEquals(validateFoodPhotoPaths(foodId, [`${foodId}/0.jpg`, `evil/1.jpg`]), false)
+})
+
+// ── resolveFoodOwnership (FR-6 / B-354 PR 3, closes B-343 server half) ─────────
+// The service-role write bypasses RLS, so this is the ownership boundary. It must
+// allow ONLY a row whose created_by_user_id equals the JWT-verified caller uid,
+// and fail closed on everything else (missing row, foreign row, null creator).
+
+const UID_A = '11111111-1111-1111-1111-111111111111'
+const UID_B = '22222222-2222-2222-2222-222222222222'
+
+Deno.test('resolveFoodOwnership — caller owns the row → ok', () => {
+  assertEquals(resolveFoodOwnership({ created_by_user_id: UID_A }, UID_A), { ok: true })
+})
+
+Deno.test('resolveFoodOwnership — another account\'s row → forbidden (B-343 server half)', () => {
+  // The whole point: account B cannot drive extraction against account A's food.
+  assertEquals(resolveFoodOwnership({ created_by_user_id: UID_A }, UID_B), {
+    ok: false, reason: 'forbidden',
+  })
+})
+
+Deno.test('resolveFoodOwnership — no row for the id → not_found', () => {
+  assertEquals(resolveFoodOwnership(null, UID_A), { ok: false, reason: 'not_found' })
+})
+
+Deno.test('resolveFoodOwnership — a null/blank creator is never treated as owned (fail closed)', () => {
+  // created_by_user_id is NOT NULL post-033, but a defensive read must still
+  // refuse rather than let a caller claim an unowned row.
+  assertEquals(resolveFoodOwnership({ created_by_user_id: null }, UID_A), {
+    ok: false, reason: 'forbidden',
+  })
+  assertEquals(resolveFoodOwnership({ created_by_user_id: '' }, UID_A), {
+    ok: false, reason: 'forbidden',
+  })
 })
 
 // ── mapFormatToDb ─────────────────────────────────────────────────────────────

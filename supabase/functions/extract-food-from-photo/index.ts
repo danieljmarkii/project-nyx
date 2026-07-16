@@ -5,6 +5,17 @@
 // Runs with service role key so it can read storage and write food_items
 // regardless of the per-row creator check. Caller JWT is still validated to
 // ensure only authenticated users can trigger extraction.
+//
+// FR-6 ownership gate (B-354 PR 3 — closes B-343's server half). food_items is
+// now per-account (migration 033): created_by_user_id is the ownership scope and
+// RLS is owner-only. But the extraction write runs on the SERVICE ROLE, which
+// bypasses RLS — so this function must enforce ownership itself. Before any
+// billable work, it verifies the row named by the caller-supplied food_item_id
+// is owned by the JWT-verified caller uid; a foreign or missing id is refused
+// (a uniform 404, so ownership is not an existence oracle) rather than
+// overwritten. The write predicates are scoped to the
+// owner too (defense in depth), so no service-role write can ever touch another
+// account's row — including the catch-block 'failed' status stamp.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -373,13 +384,14 @@ export function computeResetsAt(cap: 'daily' | 'monthly', nowMs: number): string
 // can smuggle the service-role download out to another bucket or key. What it is
 // NOT: a cross-tenant boundary — `food_item_id` is itself an unauthenticated body
 // value, so this only enforces "the paths match the id you claimed," not ownership.
-// The actual reason there is no cross-user READ escalation is that nyx-food-photos
-// is globally-readable-authenticated (migration 008): the service-role download
-// exposes nothing the caller's own JWT couldn't already read. (rls-privacy-reviewer
-// PASS 2026-07-14 — if that bucket is ever made private/per-user-scoped, this
-// validator would NOT be the boundary; the bucket ACL is.) Client paths are
-// `${foodId}/${slot}.jpg` with food_item_id === foodId, so this is byte-identical
-// for the real client. Pure + exported for the unit test.
+// The cross-tenant READ boundary is now the FR-6 ownership gate in the handler
+// (B-354 PR 3): fetchUsableImageBlob is reached only AFTER the caller is proven to
+// own `food_item_id`, and this validator then pins every path under that owned id.
+// (Migration 033 also scoped the nyx-food-photos SELECT policy to the food's owner,
+// so even a direct signed-in read is owner-locked — the pre-033 "globally-readable
+// bucket" rationale no longer applies.) Client paths are `${foodId}/${slot}.jpg`
+// with food_item_id === foodId, so this is byte-identical for the real client.
+// Pure + exported for the unit test.
 export function validateFoodPhotoPaths(foodItemId: string, paths: string[]): boolean {
   const prefix = `${foodItemId}/`
   return paths.every((p) =>
@@ -389,6 +401,38 @@ export function validateFoodPhotoPaths(foodItemId: string, paths: string[]): boo
     !p.includes('\\') &&
     !p.startsWith('/'),
   )
+}
+
+// ── FR-6 ownership gate (B-354 PR 3 / closes B-343's server half) ─────────────
+// The extraction write runs on the SERVICE ROLE, which bypasses the owner-only
+// RLS migration 033 added to food_items — so an explicit ownership check is the
+// only thing standing between an authenticated caller and another account's food
+// row. Without it, a caller could POST a food_item_id they do not own and the
+// service role would overwrite that row's extracted fields (and, on failure,
+// stamp ai_extraction_status='failed' on it). This closes B-343's server half
+// (the client half closed with the RLS rewrite). Unlike validateFoodPhotoPaths
+// (a path self-consistency check that is NOT a tenancy boundary), this compares
+// the row's persisted owner against the JWT-verified caller uid — the actual
+// cross-tenant boundary.
+//
+// `row` is the fetched food_items row (null when no row exists for the id). A row
+// whose creator is null/blank cannot be proven owned, so it is refused rather
+// than treated as owned (created_by_user_id is NOT NULL post-033, but fail closed
+// regardless). Pure + exported for the unit test.
+export type OwnershipResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' }
+  | { ok: false; reason: 'forbidden' }
+
+export function resolveFoodOwnership(
+  row: { created_by_user_id: string | null } | null,
+  callerUid: string,
+): OwnershipResult {
+  if (!row) return { ok: false, reason: 'not_found' }
+  if (!row.created_by_user_id || row.created_by_user_id !== callerUid) {
+    return { ok: false, reason: 'forbidden' }
+  }
+  return { ok: true }
 }
 
 // Read this function's flag + the ai_caps override in ONE round trip. Fail-OPEN:
@@ -490,6 +534,39 @@ const handler = async (req: Request): Promise<Response> => {
     return Response.json({ error: 'Unauthorized' }, { status: 401, headers: CORS_HEADERS })
   }
 
+  // Service role client: bypasses RLS for storage reads and food_items writes.
+  // The caller's JWT was validated above; the service role is only used here
+  // because the Edge Function is the trusted extraction pipeline, not an
+  // arbitrary user action. Created up front because the FR-6 ownership gate below
+  // needs it BEFORE any billable work (or any write that could touch a row).
+  const adminClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  )
+
+  // FR-6 ownership gate (B-354 PR 3): the writes below run on the service role
+  // and bypass RLS, so verify the caller OWNS this food_item_id before spending a
+  // usage unit or a Claude call — and, critically, before the catch-block failure
+  // write could stamp ai_extraction_status='failed' on a foreign row. A read
+  // error is a 500 (can't verify → don't proceed). Both a missing row AND another
+  // account's row return a UNIFORM 404: the 403-vs-404 split would be an existence
+  // oracle (confirming a food_items UUID is real), so the reason is logged
+  // server-side only and never disclosed to a non-owner. Closes B-343's server half.
+  const { data: ownerRow, error: ownerErr } = await adminClient
+    .from('food_items')
+    .select('created_by_user_id')
+    .eq('id', food_item_id)
+    .maybeSingle()
+  if (ownerErr) {
+    console.error(`extract-food-from-photo: ownership check failed for ${food_item_id}:`, ownerErr.message)
+    return Response.json({ error: 'Could not verify food ownership' }, { status: 500, headers: CORS_HEADERS })
+  }
+  const ownership = resolveFoodOwnership(ownerRow, user.id)
+  if (!ownership.ok) {
+    console.warn(`extract-food-from-photo: ownership denied (${ownership.reason}) for ${food_item_id}`)
+    return Response.json({ error: 'food_item not found' }, { status: 404, headers: CORS_HEADERS })
+  }
+
   // Flag → (nothing to preserve for extraction) → cap → Anthropic call (§5.1).
   // Flag off: return the typed 200 WITHOUT touching ai_extraction_status — the
   // food row + photo are already saved; a stale client routes to manual entry.
@@ -500,15 +577,6 @@ const handler = async (req: Request): Promise<Response> => {
   const counts = await recordUsage(userClient)
   const gate = resolveGateState(flagEnabled, counts, caps)
   if (!gate.allow && gate.reason === 'cap_reached') return capReachedResponse(gate.cap)
-
-  // Service role client: bypasses RLS for storage reads and food_items writes.
-  // The caller's JWT was validated above; the service role is only used here
-  // because the Edge Function is the trusted extraction pipeline, not an
-  // arbitrary user action.
-  const adminClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-  )
 
   try {
     // 1. Fetch each photo at a size Claude can accept. An already-small object is
@@ -607,15 +675,20 @@ const handler = async (req: Request): Promise<Response> => {
     }
     if (dbFormat) updatePayload.format = dbFormat
 
+    // Ownership was verified above; the created_by_user_id predicate is kept on
+    // every write as defense in depth, so a service-role write can never reach a
+    // foreign row even if the pre-check were bypassed.
     let { error: updateError } = await adminClient
       .from('food_items')
       .update(updatePayload)
       .eq('id', food_item_id)
+      .eq('created_by_user_id', user.id)
 
-    // UPC collision: another row already owns this barcode (food_items is
-    // globally scoped, so any user's prior scan can collide). Retry with
-    // upc_barcode nulled so the rest of the extraction still lands. Proper
-    // merge-to-existing is tracked in docs/backlog.md.
+    // UPC collision: another of THIS account's rows already owns this barcode
+    // (food_items is per-account now — migration 033 made UPC uniqueness
+    // (created_by_user_id, upc_barcode), so a collision is always within-account).
+    // Retry with upc_barcode nulled so the rest of the extraction still lands.
+    // Proper within-account merge-to-existing is tracked in docs/backlog.md (B-009).
     if (updateError && (updateError as { code?: string }).code === '23505') {
       console.warn(
         `UPC collision on food_item ${food_item_id} (upc=${extraction.upc_barcode}); retrying with null upc_barcode`,
@@ -624,7 +697,8 @@ const handler = async (req: Request): Promise<Response> => {
       ;({ error: updateError } = await adminClient
         .from('food_items')
         .update(updatePayload)
-        .eq('id', food_item_id))
+        .eq('id', food_item_id)
+        .eq('created_by_user_id', user.id))
     }
 
     if (updateError) {
@@ -638,7 +712,9 @@ const handler = async (req: Request): Promise<Response> => {
     console.error('extract-food-from-photo error:', message)
 
     // Best-effort failure write — if this also fails, the row stays 'pending'
-    // and the retry CTA on the food detail screen will surface it.
+    // and the retry CTA on the food detail screen will surface it. Ownership was
+    // verified before the try block, so this only ever reaches the caller's own
+    // row; the created_by_user_id predicate keeps that true by construction.
     await adminClient
       .from('food_items')
       .update({
@@ -646,6 +722,7 @@ const handler = async (req: Request): Promise<Response> => {
         ai_extraction_error:  message,
       })
       .eq('id', food_item_id)
+      .eq('created_by_user_id', user.id)
       .then(() => undefined)
 
     return Response.json(
