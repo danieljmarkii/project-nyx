@@ -3,7 +3,6 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
@@ -15,9 +14,18 @@ import { getRecentMedications, getLibraryMedications, PickerMedication } from '.
 // a medication" CTA (B-117 PR 5 — the CTA opens app/medication-capture, which
 // snaps the label and falls back to manual entry, exactly like FoodPicker's
 // onAddNew → food-capture). Tap a tile → onPickMedication logs a dose in one tap.
-// The two pickers share their structure (Add CTA on top → Recent strip → Library)
+// The two pickers share their structure (Add CTA on top → Recent grid → Library)
 // so they read as one family.
 
+// B-355 — Recent is a WRAPPED compact 2-up grid, not a hidden horizontal scroll.
+// Mirrors the B-346 fix to FoodPicker's rotation shelf: a horizontal ScrollView +
+// edge-fade silently hid tiles off-screen (the B-146 no-hidden-overflow direction),
+// so every Recent/Library tile now wraps and stays visible. Deliberately NOT widened
+// past 14d/5 the way food's rotation was (30/12): a drug list is small, so 5 already
+// holds the whole set, and a wider window would surface a *discontinued* drug one tap
+// from the top of the log surface — the med analog of the diet-trial seam (B-357), an
+// unwanted re-log affordance a "recent doses" shelf shouldn't grow. The wrap is the
+// point here; the widen isn't warranted.
 const RECENT_DAYS = 14;
 const RECENT_LIMIT = 5;
 const SCREEN_PADDING = theme.space2;
@@ -103,37 +111,17 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
         {recent.length > 0 && (
           <View style={styles.zone}>
             <SectionLabel label="Recent" />
-            {/* Wrapper is the positioning context for the absolute edge-fade below
-                (a View is position:relative by default — matches History's lens row). */}
-            <View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.recentRow}
-              >
-                {recent.map((m) => (
-                  <View key={m.id} style={styles.recentTile}>
-                    <MedTile
-                      med={m}
-                      onPress={() => onPickMedication(m)}
-                      onLongPress={onOpenDetail ? () => onOpenDetail(m) : undefined}
-                    />
-                  </View>
-                ))}
-              </ScrollView>
-              {/* B-166 — right-edge "there's more →" fade, mirroring the History lens
-                  row and the FoodPicker twin. A Recent shelf is a BROWSE row (the full
-                  library sits below), so a fade is the right cue. The 0-alpha stop is
-                  white's zero-alpha form, NOT 'transparent' (RN fades 'transparent'
-                  through black); keep in sync with the picker surface (colorSurface). */}
-              <LinearGradient
-                colors={['rgba(255,255,255,0)', theme.colorSurface]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.recentFade}
-                pointerEvents="none"
-              />
-            </View>
+            {/* B-355 — a wrapped compact 2-up grid (not a horizontal scroll): every
+                recent drug is visible at once, no hidden off-screen overflow (the
+                B-146 direction, mirroring FoodPicker's B-346 rotation shelf). Compact
+                tiles keep the small recent set short so the full library below stays
+                reachable. Recency-ordered (newest first) by getRecentMedications. */}
+            <MedGrid
+              meds={recent}
+              compact
+              onPickMedication={onPickMedication}
+              onOpenDetail={onOpenDetail}
+            />
           </View>
         )}
 
@@ -158,37 +146,67 @@ export function MedicationPicker({ petId, onPickMedication, onAddNew, onOpenDeta
                 : 'No matches.'}
             </Text>
           ) : (
-            <View style={styles.grid}>
-              {chunkPairs(filteredLibrary).map((row) => (
-                <View key={row[0].id} style={styles.gridRow}>
-                  {row.map((m) => (
-                    <MedTile
-                      key={m.id}
-                      med={m}
-                      onPress={() => onPickMedication(m)}
-                      onLongPress={onOpenDetail ? () => onOpenDetail(m) : undefined}
-                    />
-                  ))}
-                  {row.length === 1 && <View style={styles.gridSpacer} />}
-                </View>
-              ))}
-            </View>
+            <MedGrid
+              meds={filteredLibrary}
+              onPickMedication={onPickMedication}
+              onOpenDetail={onOpenDetail}
+            />
           )}
         </View>
     </ScrollView>
   );
 }
 
+// The 2-up tile grid shared by the Recent shelf (compact) and the Library. Chunks
+// the meds into 2-col rows so tiles in a row share a height; a trailing odd tile gets
+// a spacer to keep the last row left-aligned. Mirrors FoodPicker's TileGrid — one
+// wrapped-grid renderer, so Recent and Library read as one family and neither hides
+// tiles off-screen (B-355 / B-146).
+function MedGrid({
+  meds, compact = false, onPickMedication, onOpenDetail,
+}: {
+  meds: PickerMedication[];
+  // Compact tiles for the Recent shelf — smaller footprint, same tap target.
+  compact?: boolean;
+  onPickMedication: (med: PickerMedication) => void;
+  onOpenDetail?: (med: PickerMedication) => void;
+}) {
+  return (
+    <View style={styles.grid}>
+      {/* Key on the row's first med id (rows are never empty) rather than the index,
+          so a search filter that changes the list can't make React reuse a row view
+          and miss a re-layout. */}
+      {chunkPairs(meds).map((row) => (
+        <View key={row[0].id} style={styles.gridRow}>
+          {row.map((m) => (
+            <MedTile
+              key={m.id}
+              med={m}
+              compact={compact}
+              onPress={() => onPickMedication(m)}
+              onLongPress={onOpenDetail ? () => onOpenDetail(m) : undefined}
+            />
+          ))}
+          {row.length === 1 && <View style={styles.gridSpacer} />}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // Text-only drug tile — drug name owns the centre (the disambiguator), with
 // brand · strength · form on a quiet tertiary eyebrow. Mirrors FoodTile: the whole
 // tile is one button that LOGS on tap (≥44pt via minHeight), labelled with the
-// drug's plain name for screen readers.
+// drug's plain name for screen readers. The compact variant (B-355 Recent shelf)
+// shrinks only the vertical footprint — same eyebrow, same two-line name, same tap
+// target — matching FoodTile's compact prop.
 function MedTile({
-  med, onPress, onLongPress,
+  med, onPress, onLongPress, compact = false,
 }: {
   med: PickerMedication;
   onPress: () => void;
   onLongPress?: () => void;
+  compact?: boolean;
 }) {
   const metaLine = [med.brand_name, med.strength, formatForm(med.form)]
     .filter(Boolean)
@@ -196,9 +214,10 @@ function MedTile({
     .toUpperCase();
   return (
     <TouchableOpacity
-      style={styles.tile}
+      style={[styles.tile, compact && styles.tileCompact]}
       onPress={onPress}
       onLongPress={onLongPress}
+      delayLongPress={350}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={med.generic_name}
@@ -265,22 +284,6 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     marginTop: 2,
   },
-  // B-166 — the right-edge "there's more →" fade over the Recent shelf (top/bottom 0
-  // spans the shelf's content height; no explicit height needed).
-  recentFade: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 28,
-  },
-  recentRow: {
-    gap: theme.space2,
-    paddingRight: theme.space2,
-  },
-  recentTile: {
-    width: 160,
-  },
   search: {
     fontSize: theme.textMD,
     color: theme.colorTextPrimary,
@@ -314,6 +317,15 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
     padding: theme.space2,
     gap: theme.space1,
+  },
+  // B-355 Recent shelf — a shorter tile (min-height stays above the 44pt tap floor)
+  // with tighter vertical padding, matching FoodTile's tileCompact. Longhand
+  // paddingVertical wins over the base `padding` shorthand in RN's style merge, so
+  // horizontal padding is kept.
+  tileCompact: {
+    minHeight: 62,
+    paddingVertical: theme.space1,
+    gap: theme.spaceMicro,
   },
   tileMeta: {
     fontSize: theme.textXS,
