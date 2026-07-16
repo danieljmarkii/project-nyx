@@ -3,12 +3,15 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
+import { ChipGroup } from '../ui/ChipGroup';
 import { getRecentFoods, getLibraryFoods, PickerFood } from '../../lib/db';
-import { groupFoodsByType, toFoodRows, splitBrandGroupsForPicker } from '../../lib/food';
+import {
+  groupFoodsByType, toFoodRows, splitBrandGroupsForPicker,
+  filterFoodsByScope, FOOD_SCOPE_OPTIONS, FoodScope,
+} from '../../lib/food';
 import {
   getActiveArrangementsForPets, confirmArrangementFresh, endFreeChoice,
   groupArrangementsByFood, arrangementPetsLine, petNameList, FoodArrangementGroup,
@@ -31,15 +34,24 @@ interface Props {
   onOpenDetail?: (food: PickerFood) => void;
 }
 
-const RECENT_DAYS = 14;
-const RECENT_LIMIT = 5;
+// B-346 — the "{Pet}'s rotation" shelf. Recent was 5 foods / 14 days in a hidden
+// horizontal scroll, so a household rotation of 8–12 foods meant the one you wanted
+// just missed the cut — the daily trigger for falling into the long library list.
+// Widen the window + cap to hold the whole rotation, and render it wrapped (below)
+// so nothing hides off-screen. Recency-ordered by getRecentFoods (newest first).
+const ROTATION_DAYS = 30;
+const ROTATION_LIMIT = 12;
 const SCREEN_PADDING = theme.space2;
 
 export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail }: Props) {
-  const [recent, setRecent] = useState<PickerFood[]>([]);
+  const [rotation, setRotation] = useState<PickerFood[]>([]);
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [arrangements, setArrangements] = useState<FoodArrangementGroup[]>([]);
   const [search, setSearch] = useState('');
+  // B-347 — the pinned scope chip. A closed single-select set (All/Meals/Treats/
+  // Wet/Dry); 'all' is the default no-op. Filters the library by a FACT (food_type
+  // / format), never a preference read.
+  const [scope, setScope] = useState<FoodScope>('all');
 
   // Multi-pet spec §3.4: the "Always available" section is a HOUSEHOLD view —
   // it shows every active pet's standing facts, each entry labeled with its
@@ -94,12 +106,12 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
       (async () => {
         try {
           const [r, l, a] = await Promise.all([
-            getRecentFoods(petId, RECENT_DAYS, RECENT_LIMIT),
+            getRecentFoods(petId, ROTATION_DAYS, ROTATION_LIMIT),
             getLibraryFoods(),
             loadArrangements(),
           ]);
           if (!cancelled) {
-            setRecent(r);
+            setRotation(r);
             setLibrary(l);
             setArrangements(a);
           }
@@ -146,15 +158,19 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
     }
   }, [reloadArrangements]);
 
+  // Compose the two library filters: the scope chip (a fact — food_type/format)
+  // first, then the free-text search over brand + product. Both are AND-ed, so
+  // "Wet" + "tur" narrows to wet turkey foods.
   const filteredLibrary = useMemo(() => {
+    const scoped = filterFoodsByScope(library, scope);
     const q = search.trim().toLowerCase();
-    if (!q) return library;
-    return library.filter(
+    if (!q) return scoped;
+    return scoped.filter(
       (f) =>
         f.brand.toLowerCase().includes(q) ||
         f.product_name.toLowerCase().includes(q),
     );
-  }, [library, search]);
+  }, [library, search, scope]);
 
   // Group the (filtered) library by food_type via the shared helper (lib/food,
   // tested there + reused by the standalone Foods tab). B-011: treats and meals
@@ -163,186 +179,22 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
   // third bucket so nothing is hidden from the picker.
   const groupedLibrary = useMemo(() => groupFoodsByType(filteredLibrary), [filteredLibrary]);
 
+  // B-346 — "{Pet}'s rotation". The shelf names what THIS pet was actually fed in
+  // the window, so it stays recency-factual and never crosses into favorites /
+  // preference framing (the B-112 intake-is-not-preference guardrail; recency is a
+  // fact, "loves" is a preference read a one-tap-log surface must never assert). A
+  // neutral fallback covers the brief window before the pet's name is known.
+  const rotationLabel = petName ? `${petName}'s rotation` : 'Rotation';
+
   return (
-    <ScrollView
-      style={styles.scroll}
-      contentContainerStyle={styles.scrollContent}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.zone}>
-        <TouchableOpacity
-          style={styles.addCta}
-          onPress={onAddNew}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Snap a new food"
-        >
-          {/* B-062 — Lucide Camera (was a 📷 emoji), matching MedicationPicker's
-              identical "Add" CTA so the two pickers read as one family of vector
-              glyphs rather than mixed emoji/icon. */}
-          <View style={styles.addCtaIcon}>
-            <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
-          </View>
-          <View style={styles.addCtaText}>
-            <Text style={styles.addCtaTitle}>Snap a new food</Text>
-            <Text style={styles.addCtaHint}>Or choose from your photos</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {recent.length > 0 && (
-        <View style={styles.zone}>
-          <SectionLabel label="Recent" />
-          {/* Wrapper is the positioning context for the absolute edge-fade below
-              (a View is position:relative by default — matches History's lens row). */}
-          <View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.recentRow}
-            >
-              {recent.map((f) => (
-                <View key={f.id} style={styles.recentTile}>
-                  <FoodTile
-                    brand={f.brand}
-                    productName={f.product_name}
-                    format={f.format}
-                    onPress={() => onPickFood(f)}
-                    onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-            {/* B-166 — right-edge "there's more →" fade, mirroring the History lens
-                row. A Recent shelf is a BROWSE row (the full library sits right
-                below), so a fade is the correct cue — unlike the option pickers,
-                where hidden overflow was wrong and B-146 switched them to a wrap.
-                The 0-alpha stop is white's zero-alpha form, NOT 'transparent' (RN
-                fades 'transparent' through black and dirties the edge); keep in
-                sync with the surface the picker sits on (log.tsx = colorSurface). */}
-            <LinearGradient
-              colors={['rgba(255,255,255,0)', theme.colorSurface]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.recentFade}
-              pointerEvents="none"
-            />
-          </View>
-        </View>
-      )}
-
-      {/* B-040 R1 — "Always available" (free-choice) standing facts. Pinned above
-          the regular food grid (§5). Styled distinctly from log-tap tiles: a quiet
-          dot + label, NOT a loud chip (§11), and a tap opens the food's detail
-          (where the toggle lives) rather than logging a meal — these are standing
-          facts, not events. A designed empty state when there are none (P5). */}
-      <View style={styles.zone}>
-        <SectionLabel label="Always available" />
-        {arrangements.length === 0 ? (
-          <Text style={styles.alwaysEmpty}>
-            Nothing always-out yet. If {multiPet
-              ? petNameList(householdPets.map((p) => p.name), 'or')
-              : petName ?? 'your pet'} grazes a bowl that's
-            down all day, open a food and turn on “Always available” — we'll note it
-            as free-choice for the vet.
-          </Text>
-        ) : (
-          <View style={styles.alwaysList}>
-            {arrangements.map((g) => {
-              // Single-pet: today's unlabeled meta line. Multi-pet: each entry
-              // labeled with the pet(s) it's down for (spec §3.4).
-              const since = formatCalendarDate(g.perPet[0]?.active_from ?? null);
-              const metaLine = multiPet
-                ? `Free-choice · ${arrangementPetsLine(g.perPet)}`
-                : `Free-choice${since ? ` · since ${since}` : ''}`;
-              // §6a staleness stays per-arrangement: the nudge shows when ANY
-              // pet's row is stale, and the answer below asks per stale pet.
-              const staleEntries = g.perPet.filter((p) => isArrangementStale(p.updated_at));
-              return (
-                <View key={g.food_item_id} style={styles.alwaysItem}>
-                  <View style={styles.alwaysRow}>
-                    <TouchableOpacity
-                      style={styles.alwaysMain}
-                      // food_type/photo_path are null because this is a display-only
-                      // view shape — the detail screen re-fetches the full food row.
-                      onPress={() =>
-                        onOpenDetail?.({
-                          id: g.food_item_id,
-                          brand: g.brand,
-                          product_name: g.product_name,
-                          format: g.format,
-                          food_type: null,
-                          photo_path: null,
-                        })
-                      }
-                      activeOpacity={0.7}
-                      hitSlop={8}
-                    >
-                      <View style={styles.alwaysDot} />
-                      <View style={styles.alwaysRowText}>
-                        <Text style={styles.alwaysRowTitle} numberOfLines={1}>
-                          {g.brand} {g.product_name}
-                        </Text>
-                        <Text style={styles.alwaysRowMeta}>{metaLine}</Text>
-                      </View>
-                    </TouchableOpacity>
-                    {/* §6a passive freshness — a NUDGE, not a persistent link: the
-                        re-attest shows only once an arrangement is stale, so a fresh
-                        bowl stays quiet. Tapping it opens a two-way answer (below)
-                        rather than silently auto-confirming "yes"; never a push. */}
-                    {justConfirmedId === g.food_item_id ? (
-                      <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
-                    ) : staleEntries.length > 0 && choosingId !== g.food_item_id ? (
-                      <TouchableOpacity
-                        onPress={() => setChoosingId(g.food_item_id)}
-                        hitSlop={10}
-                        activeOpacity={0.7}
-                        style={styles.alwaysConfirm}
-                      >
-                        <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-
-                  {choosingId === g.food_item_id && staleEntries.map((entry) => (
-                    <View key={entry.pet_id} style={styles.freshnessChoices}>
-                      <Text style={styles.freshnessPrompt}>
-                        Still always out for {multiPet ? entry.petName : petName ?? 'your pet'}?
-                      </Text>
-                      <View style={styles.freshnessChoiceBtns}>
-                        <TouchableOpacity
-                          onPress={() => handleConfirmYes(entry.pet_id, g.food_item_id)}
-                          hitSlop={8}
-                          activeOpacity={0.7}
-                          style={styles.freshnessChoiceBtn}
-                        >
-                          <Text style={styles.choiceYes}>Yes, still out</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() => handleStopped(entry.pet_id, g.food_item_id)}
-                          hitSlop={8}
-                          activeOpacity={0.7}
-                          style={styles.freshnessChoiceBtn}
-                        >
-                          <Text style={styles.choiceNo}>No, it's stopped</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </View>
-
-      {/* No "LIBRARY" zone label here (B-113 Option C): the per-type section
-          titles below ("Meals"/"Treats") ARE the headers, matching the Foods tab's
-          two-level structure (section → brand → items). A small all-caps "LIBRARY"
-          eyebrow above a prominent "Meals" title would re-create the inverted
-          hierarchy the Foods tab just fixed. The search field opens the zone. */}
-      <View style={styles.zone}>
+    <View style={styles.root}>
+      {/* B-347 / B-020 — search + scope chips pinned directly under the picker
+          header: always visible, never scrolled to (search used to sit mid-screen
+          below Recent + Always-available — the fastest findability tool was the one
+          you had to scroll to reach). Deliberately NO autofocus: popping the
+          keyboard would cover the rotation tiles that serve the 80% confirm-don't-
+          search case (Designer — search is the fallback lane, not the hero). */}
+      <View style={styles.pin}>
         <TextInput
           style={styles.search}
           placeholder="Search brand or product"
@@ -354,25 +206,203 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
           returnKeyType="search"
           clearButtonMode="while-editing"
         />
-        {filteredLibrary.length === 0 ? (
-          <Text style={styles.empty}>
-            {library.length === 0
-              ? 'No foods yet. Snap one above.'
-              : 'No matches.'}
-          </Text>
-        ) : (
-          <View style={styles.groups}>
-            <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
-              onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
-            <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
-              onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
-            <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
-              onPickFood={onPickFood} onOpenDetail={onOpenDetail}
-              hint="Long-press a tile to classify it." />
+        {/* Scope chips for the no-typing, one-handed case (All/Meals/Treats/Wet/
+            Dry) — a closed single-select set rendered through the wrapping ChipGroup
+            so all five stay on screen (never a hidden h-scroll; the B-146
+            convention). Filters on facts (food_type / format), never on inferred
+            preference (Data Scientist — no conflict with intake-is-not-preference). */}
+        <ChipGroup
+          options={FOOD_SCOPE_OPTIONS}
+          value={scope}
+          // A closed set — one scope is always active ('all' is the default no-op),
+          // so a second tap on the active chip must NOT clear to null (allowDeselect
+          // off, as food format does). Non-null by construction; fall back to 'all'.
+          onChange={(next) => setScope((next as FoodScope) ?? 'all')}
+          allowDeselect={false}
+          accessibilityLabel="Filter foods by type"
+        />
+      </View>
+
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.zone}>
+          <TouchableOpacity
+            style={styles.addCta}
+            onPress={onAddNew}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Snap a new food"
+          >
+            {/* B-062 — Lucide Camera (was a 📷 emoji), matching MedicationPicker's
+                identical "Add" CTA so the two pickers read as one family of vector
+                glyphs rather than mixed emoji/icon. */}
+            <View style={styles.addCtaIcon}>
+              <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
+            </View>
+            <View style={styles.addCtaText}>
+              <Text style={styles.addCtaTitle}>Snap a new food</Text>
+              <Text style={styles.addCtaHint}>Or choose from your photos</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {rotation.length > 0 && (
+          <View style={styles.zone}>
+            <SectionLabel label={rotationLabel} />
+            {/* B-346 — the rotation shelf is a WRAPPED 2-up grid, not a horizontal
+                scroll: every food in the window is visible at once (no hidden
+                off-screen overflow), which kills the picker's last silent h-scroll
+                (the B-146 direction). Compact tiles keep the ~12-food rotation short
+                so the full library below stays reachable. Recency-ordered (newest
+                first) by getRecentFoods, so the morning food is the first tile at
+                breakfast. Reuses the same TileGrid the library groups use. */}
+            <TileGrid
+              foods={rotation}
+              compact
+              onPickFood={onPickFood}
+              onOpenDetail={onOpenDetail}
+            />
           </View>
         )}
-      </View>
-    </ScrollView>
+
+        {/* No "LIBRARY" zone label here (B-113 Option C): the per-type section
+            titles below ("Meals"/"Treats") ARE the headers, matching the Foods tab's
+            two-level structure (section → brand → items). A small all-caps "LIBRARY"
+            eyebrow above a prominent "Meals" title would re-create the inverted
+            hierarchy the Foods tab just fixed. Search + scope now live in the pinned
+            bar above, so this zone opens straight on the results. */}
+        <View style={styles.zone}>
+          {filteredLibrary.length === 0 ? (
+            <Text style={styles.empty}>
+              {library.length === 0
+                ? 'No foods yet. Snap one above.'
+                : 'No matches.'}
+            </Text>
+          ) : (
+            <View style={styles.groups}>
+              <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
+                onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
+              <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
+                onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
+              <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
+                onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                hint="Long-press a tile to classify it." />
+            </View>
+          )}
+        </View>
+
+        {/* B-040 R1 — "Always available" (free-choice) standing facts. B-347 moves
+            it BELOW the library: these are standing facts, not a hot log path, so
+            they no longer sit between the pinned search and the food the owner came
+            to log. Styled distinctly from log-tap tiles: a quiet dot + label, NOT a
+            loud chip (§11), and a tap opens the food's detail (where the toggle
+            lives) rather than logging a meal. A designed empty state when there are
+            none (P5). */}
+        <View style={styles.zone}>
+          <SectionLabel label="Always available" />
+          {arrangements.length === 0 ? (
+            <Text style={styles.alwaysEmpty}>
+              Nothing always-out yet. If {multiPet
+                ? petNameList(householdPets.map((p) => p.name), 'or')
+                : petName ?? 'your pet'} grazes a bowl that's
+              down all day, open a food and turn on “Always available” — we'll note it
+              as free-choice for the vet.
+            </Text>
+          ) : (
+            <View style={styles.alwaysList}>
+              {arrangements.map((g) => {
+                // Single-pet: today's unlabeled meta line. Multi-pet: each entry
+                // labeled with the pet(s) it's down for (spec §3.4).
+                const since = formatCalendarDate(g.perPet[0]?.active_from ?? null);
+                const metaLine = multiPet
+                  ? `Free-choice · ${arrangementPetsLine(g.perPet)}`
+                  : `Free-choice${since ? ` · since ${since}` : ''}`;
+                // §6a staleness stays per-arrangement: the nudge shows when ANY
+                // pet's row is stale, and the answer below asks per stale pet.
+                const staleEntries = g.perPet.filter((p) => isArrangementStale(p.updated_at));
+                return (
+                  <View key={g.food_item_id} style={styles.alwaysItem}>
+                    <View style={styles.alwaysRow}>
+                      <TouchableOpacity
+                        style={styles.alwaysMain}
+                        // food_type/photo_path are null because this is a display-only
+                        // view shape — the detail screen re-fetches the full food row.
+                        onPress={() =>
+                          onOpenDetail?.({
+                            id: g.food_item_id,
+                            brand: g.brand,
+                            product_name: g.product_name,
+                            format: g.format,
+                            food_type: null,
+                            photo_path: null,
+                          })
+                        }
+                        activeOpacity={0.7}
+                        hitSlop={8}
+                      >
+                        <View style={styles.alwaysDot} />
+                        <View style={styles.alwaysRowText}>
+                          <Text style={styles.alwaysRowTitle} numberOfLines={1}>
+                            {g.brand} {g.product_name}
+                          </Text>
+                          <Text style={styles.alwaysRowMeta}>{metaLine}</Text>
+                        </View>
+                      </TouchableOpacity>
+                      {/* §6a passive freshness — a NUDGE, not a persistent link: the
+                          re-attest shows only once an arrangement is stale, so a fresh
+                          bowl stays quiet. Tapping it opens a two-way answer (below)
+                          rather than silently auto-confirming "yes"; never a push. */}
+                      {justConfirmedId === g.food_item_id ? (
+                        <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
+                      ) : staleEntries.length > 0 && choosingId !== g.food_item_id ? (
+                        <TouchableOpacity
+                          onPress={() => setChoosingId(g.food_item_id)}
+                          hitSlop={10}
+                          activeOpacity={0.7}
+                          style={styles.alwaysConfirm}
+                        >
+                          <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+
+                    {choosingId === g.food_item_id && staleEntries.map((entry) => (
+                      <View key={entry.pet_id} style={styles.freshnessChoices}>
+                        <Text style={styles.freshnessPrompt}>
+                          Still always out for {multiPet ? entry.petName : petName ?? 'your pet'}?
+                        </Text>
+                        <View style={styles.freshnessChoiceBtns}>
+                          <TouchableOpacity
+                            onPress={() => handleConfirmYes(entry.pet_id, g.food_item_id)}
+                            hitSlop={8}
+                            activeOpacity={0.7}
+                            style={styles.freshnessChoiceBtn}
+                          >
+                            <Text style={styles.choiceYes}>Yes, still out</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleStopped(entry.pet_id, g.food_item_id)}
+                            hitSlop={8}
+                            activeOpacity={0.7}
+                            style={styles.freshnessChoiceBtn}
+                          >
+                            <Text style={styles.choiceNo}>No, it's stopped</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -440,10 +470,12 @@ function LibraryGroup({
 // foods into 2-col rows (toFoodRows) so tiles in a row share a height; a trailing
 // odd tile gets a spacer to keep the last row left-aligned.
 function TileGrid({
-  foods, hideBrand = false, onPickFood, onOpenDetail,
+  foods, hideBrand = false, compact = false, onPickFood, onOpenDetail,
 }: {
   foods: PickerFood[];
   hideBrand?: boolean;
+  // Renders compact tiles — used by the B-346 rotation shelf, not the library.
+  compact?: boolean;
   onPickFood: (food: PickerFood) => void;
   onOpenDetail?: (food: PickerFood) => void;
 }) {
@@ -461,6 +493,7 @@ function TileGrid({
               productName={f.product_name}
               format={f.format}
               hideBrand={hideBrand}
+              compact={compact}
               onPress={() => onPickFood(f)}
               onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
             />
@@ -473,6 +506,21 @@ function TileGrid({
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  // B-347 — the pinned search + scope-chip bar. Sits above the ScrollView (a flex
+  // sibling, not an overlay) so it stays put while the list scrolls beneath it. A
+  // hairline bottom border separates the fixed chrome from the scrolling content.
+  pin: {
+    paddingHorizontal: SCREEN_PADDING,
+    paddingTop: theme.space2,
+    paddingBottom: theme.space2,
+    gap: theme.space2,
+    backgroundColor: theme.colorSurface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colorBorder,
+  },
   scroll: {
     flex: 1,
   },
@@ -483,22 +531,6 @@ const styles = StyleSheet.create({
   },
   zone: {
     gap: theme.space2,
-  },
-  // B-166 — the right-edge "there's more →" fade over the Recent shelf (top/bottom 0
-  // spans the shelf's content height; no explicit height needed).
-  recentFade: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 28,
-  },
-  recentRow: {
-    gap: theme.space2,
-    paddingRight: theme.space2,
-  },
-  recentTile: {
-    width: 160,
   },
   search: {
     fontSize: theme.textMD,

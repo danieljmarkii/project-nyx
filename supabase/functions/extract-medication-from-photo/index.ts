@@ -426,7 +426,7 @@ function featureDisabledResponse(): Response {
 
 // ── Handler ─────────────────────────────────────────────────────────────────────
 
-Deno.serve(async (req: Request) => {
+const handler = async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS })
   }
@@ -522,4 +522,11 @@ Deno.serve(async (req: Request) => {
       { status: 500, headers: CORS_HEADERS },
     )
   }
-})
+}
+
+// Guard the listener so importing this module for `deno test` does not try to
+// bind a server (which crashes the test runner). `import.meta.main` is true only
+// when this file is the deployed entrypoint, false on test import (B-180).
+if (import.meta.main) {
+  Deno.serve(handler)
+}
