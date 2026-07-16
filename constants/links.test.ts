@@ -1,4 +1,5 @@
 import {
+  DISCLAIMER_URL,
   LEGAL_LINKS_ENABLED,
   PRIVACY_POLICY_URL,
   SUPPORT_EMAIL,
@@ -16,9 +17,10 @@ describe('constants/links', () => {
   it('points legal links at the canonical getculprit.app paths (web-presence spec)', () => {
     expect(PRIVACY_POLICY_URL).toBe('https://getculprit.app/privacy');
     expect(TERMS_URL).toBe('https://getculprit.app/terms');
+    expect(DISCLAIMER_URL).toBe('https://getculprit.app/disclaimer');
   });
 
-  it('keeps the legal links gated OFF until the hosted docs are live (spec §D5)', () => {
-    expect(LEGAL_LINKS_ENABLED).toBe(false);
+  it('keeps the legal links ON now the hosted docs are live (5.1.1(i) — flipped 2026-07-16)', () => {
+    expect(LEGAL_LINKS_ENABLED).toBe(true);
   });
 });

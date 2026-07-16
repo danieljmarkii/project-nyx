@@ -101,7 +101,9 @@ describe('usePet gate wiring', () => {
       profile: { data: { onboarding_completed_at: null }, error: null },
     });
     renderHook(() => usePet());
-    await waitFor(() => expect(mockedReplace).toHaveBeenCalledWith('/onboarding/pet-type'), {
+    // Entry is the disclaimer acknowledgment (B-270), so a resumed mid-flow quit
+    // still passes the acceptance point before pet setup.
+    await waitFor(() => expect(mockedReplace).toHaveBeenCalledWith('/onboarding/disclaimer'), {
       timeout: 3000,
     });
     expect(setOnboarded).toHaveBeenCalledWith(false);

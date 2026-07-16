@@ -16,6 +16,7 @@ import {
   SUPPORT_EMAIL,
   PRIVACY_POLICY_URL,
   TERMS_URL,
+  DISCLAIMER_URL,
   LEGAL_LINKS_ENABLED,
 } from '../constants/links';
 import { usePetStore } from '../store/petStore';
@@ -199,6 +200,23 @@ export default function SettingsScreen() {
             accessibilityLabel={LEGAL_LINKS_ENABLED ? undefined : 'Terms of service — coming soon'}
             onPress={
               LEGAL_LINKS_ENABLED ? () => openLegal(TERMS_URL, 'terms of service') : undefined
+            }
+          />
+          {/* The hosted disclaimer document (B-270's Settings/About link — the
+              onboarding acknowledgment's Settings counterpart). Same gate as the
+              other legal rows so the three flip together. */}
+          <SettingsRow
+            label="Veterinary disclaimer"
+            disabled={!LEGAL_LINKS_ENABLED}
+            chevron={LEGAL_LINKS_ENABLED}
+            trailing={LEGAL_LINKS_ENABLED ? undefined : <ComingSoonLabel />}
+            accessibilityLabel={
+              LEGAL_LINKS_ENABLED ? undefined : 'Veterinary disclaimer — coming soon'
+            }
+            onPress={
+              LEGAL_LINKS_ENABLED
+                ? () => openLegal(DISCLAIMER_URL, 'veterinary disclaimer')
+                : undefined
             }
           />
           {/* Always-visible medical disclaimer (B-270). Neutral, never reassuring

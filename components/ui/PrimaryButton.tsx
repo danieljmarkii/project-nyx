@@ -113,6 +113,9 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextOnDark,
     letterSpacing: theme.trackingNormal,
+    // A long label wraps (e.g. the onboarding acknowledgment); the block is
+    // centred by the button, but the lines inside it need centring too.
+    textAlign: 'center',
   },
   labelSecondary: {
     color: theme.colorTextSecondary,
