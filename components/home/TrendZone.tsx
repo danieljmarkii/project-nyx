@@ -120,7 +120,9 @@ function SymptomChart({ data }: { data: TrendData }) {
   );
 }
 
-// 7-day meal consistency dot chart (filled = meal logged, empty = no meal)
+// 7-day food-logging consistency dot chart (filled = food logged, empty = none).
+// Counts all food events (event_type='meal' fires for meals AND treats), so the
+// owner-facing label is "Food", not "Meals" (B-242).
 function FeedingChart({ data, petName }: { data: TrendData; petName: string }) {
   const last7 = data.buckets.slice(-7);
   const { thisWeekMealDays, lastWeekMealDays } = data;
@@ -137,7 +139,7 @@ function FeedingChart({ data, petName }: { data: TrendData; petName: string }) {
   return (
     <View>
       <View style={styles.chartHeadRow}>
-        <Text style={styles.chartHeadType}>Meals</Text>
+        <Text style={styles.chartHeadType}>Food</Text>
         <Text style={styles.chartHeadCount}>
           {thisWeekMealDays} of 7 days
         </Text>
@@ -185,7 +187,7 @@ function ComplianceChart({ data }: { data: TrendData }) {
         <View style={[styles.progressFill, { flex: progressPct }]} />
         <View style={{ flex: 1 - progressPct }} />
       </View>
-      <Text style={styles.complianceNote}>{compliancePct}% meal compliance</Text>
+      <Text style={styles.complianceNote}>{compliancePct}% food compliance</Text>
     </View>
   );
 }

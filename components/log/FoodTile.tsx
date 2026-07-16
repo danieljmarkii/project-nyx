@@ -69,7 +69,7 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress, hid
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`${brand} ${productName}`}
-      accessibilityHint="Logs a meal"
+      accessibilityHint="Logs this food"
     >
       {/* Guarded so a hideBrand tile with an unlabeled format ('other') doesn't
           render an empty eyebrow line above the product name. */}

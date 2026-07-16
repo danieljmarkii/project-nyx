@@ -76,6 +76,6 @@ describe('FoodTile', () => {
     );
     const tile = getByLabelText('Fancy Feast Salmon Pâté');
     expect(tile.props.accessibilityRole).toBe('button');
-    expect(tile.props.accessibilityHint).toBe('Logs a meal');
+    expect(tile.props.accessibilityHint).toBe('Logs this food');
   });
 });
