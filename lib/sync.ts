@@ -491,11 +491,26 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
 export async function refreshFoodCache(): Promise<void> {
   const db = getDb();
 
+  // FR-5 (B-354) — scope the catalog pull to this account. Belt-and-braces with
+  // the per-account RLS: the SELECT already returns only the caller's own foods,
+  // but filtering explicitly is self-documenting and keeps the cache correct even
+  // if a client ever runs ahead of the RLS migration (it would otherwise re-cache
+  // the whole catalog). No session → nothing to scope the pull to (mirrors the
+  // other sync writers' getSession guard).
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
   const { data, error } = await supabase
     .from('food_items')
-    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths');
+    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths')
+    .eq('created_by_user_id', session.user.id);
 
-  if (error || !data) return;
+  // Log on failure (CLAUDE.md "no silent failures in sync") — parity with the
+  // medication twin below. A null data with no error is a non-error empty catalog.
+  if (error || !data) {
+    if (error) console.warn('[sync] refreshFoodCache failed:', error.message);
+    return;
+  }
 
   const now = new Date().toISOString();
   for (const item of data) {
@@ -529,9 +544,10 @@ export async function refreshFoodCache(): Promise<void> {
   }
 }
 
-// Refresh the global medication_items library cache (B-117). The drug-catalog
-// twin of refreshFoodCache: a pull-only sync of the global catalog (no `synced`
-// flag, no watermark — it's a shared read-through cache, not a per-device queue).
+// Refresh the account's medication_items library cache (B-117; per-account since
+// B-354). The drug-catalog twin of refreshFoodCache: a pull-only sync of the
+// account's catalog (no `synced` flag, no watermark — a read-through cache, not a
+// per-device queue).
 // ON CONFLICT DO UPDATE (never INSERT OR REPLACE) so a future local-only column
 // is never silently nulled — the exact footgun refreshFoodCache documents for
 // last_used_at. Booleans are coerced BOOLEAN→INTEGER for SQLite; photo_path takes
@@ -541,9 +557,16 @@ export async function refreshFoodCache(): Promise<void> {
 export async function refreshMedicationCache(): Promise<void> {
   const db = getDb();
 
+  // FR-5 (B-354, D2) — same per-account scoping as refreshFoodCache: the drug
+  // catalog is now account-owned too, so pull only this account's medication_items.
+  // No session → nothing to scope the pull to.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return;
+
   const { data, error } = await supabase
     .from('medication_items')
-    .select('id, generic_name, brand_name, strength, form, default_route, is_prescription, is_critical, photo_paths, notes');
+    .select('id, generic_name, brand_name, strength, form, default_route, is_prescription, is_critical, photo_paths, notes')
+    .eq('created_by_user_id', session.user.id);
 
   // Log on failure (don't silently swallow — CLAUDE.md "no silent failures in
   // sync"). A null data is a non-error empty catalog; only `error` is worth a warn.

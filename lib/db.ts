@@ -22,6 +22,75 @@ export function getDb(): SQLite.SQLiteDatabase {
   return db;
 }
 
+// Local cache-schema version (SQLite's built-in PRAGMA user_version — unused
+// until now, so it reads 0 on every existing install). Bump this to force a
+// one-time flush of the catalog caches on the next launch. See
+// flushLegacyCatalogCachesIfNeeded.
+//
+// v1 (B-354 PR 2, FR-5): the catalog went per-account. Before this build,
+// refreshFoodCache/refreshMedicationCache pulled the ENTIRE global catalog into
+// food_items_cache / medication_items_cache, so a device signed in before the
+// per-account migration still holds OTHER accounts' foods + drugs in SQLite. RLS
+// (and the new owner filter) stops new foreign rows arriving, but never DELETEs
+// the rows already cached — ON CONFLICT DO UPDATE only ever adds/updates. Without
+// this flush, strangers' foods linger in the picker indefinitely.
+export const CACHE_SCHEMA_VERSION = 1;
+
+// The subset of the expo-sqlite database surface the flush needs — narrowed so
+// the real SQLiteDatabase satisfies it AND a node:sqlite adapter can in the unit
+// test, letting the production function itself run against a real engine.
+interface CacheFlushDb {
+  getFirstAsync<T>(sql: string): Promise<T | null>;
+  execAsync(sql: string): Promise<void>;
+}
+
+// One-time flush of the per-account catalog caches when the local cache-schema
+// version lags CACHE_SCHEMA_VERSION (FR-5). Returns whether it flushed. Fires once
+// per version bump — user_version persists across the sign-out wipe (a DELETE, not
+// a DB drop), so this runs once per build, not once per login (the wipe already
+// clears the caches on sign-out). Both caches together: medication_items rides the
+// same per-account re-scope (D2). The next refresh*Cache repopulates them with
+// only this account's own rows.
+//
+// NOT a blind truncate. A food/drug captured OFFLINE lives ONLY in its cache row
+// until the queued write that references it syncs — its capture-time remote upsert
+// is best-effort/fire-and-forget, and the recovery path (syncPendingMeals /
+// syncPendingFeedingArrangements / presyncMedicationItems) re-upserts it FROM the
+// cache before the dependent row. Dropping such a row would orphan that queued
+// write's FK forever (sign-out avoids this only because it wipes the queues AND the
+// caches together; this flush wipes just the caches). So we preserve any row still
+// referenced by an UNSYNCED local write, and drop the rest — foreign rows are never
+// referenced by this account's pending writes, and this account's already-synced
+// rows are re-supplied by the server on the next refresh. targetVersion is an
+// internal integer constant, safe to interpolate into the PRAGMA (which can't take
+// a bound parameter); Math.trunc is belt-and-braces against a non-integer reaching
+// the SQL.
+export async function flushLegacyCatalogCachesIfNeeded(
+  database: CacheFlushDb,
+  targetVersion: number = CACHE_SCHEMA_VERSION,
+): Promise<boolean> {
+  const target = Math.trunc(targetVersion);
+  const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+  const current = row?.user_version ?? 0;
+  if (current >= target) return false;
+  await database.execAsync(
+    `DELETE FROM food_items_cache
+       WHERE id NOT IN (
+         SELECT food_item_id FROM meals WHERE synced = 0 AND food_item_id IS NOT NULL
+         UNION
+         SELECT food_item_id FROM feeding_arrangements WHERE synced = 0 AND food_item_id IS NOT NULL
+       );
+     DELETE FROM medication_items_cache
+       WHERE id NOT IN (
+         SELECT medication_item_id FROM medications WHERE synced = 0 AND medication_item_id IS NOT NULL
+         UNION
+         SELECT medication_item_id FROM medication_administrations WHERE synced = 0 AND medication_item_id IS NOT NULL
+       );
+     PRAGMA user_version = ${target};`,
+  );
+  return true;
+}
+
 export async function initDb(): Promise<void> {
   const database = getDb();
 
@@ -308,6 +377,19 @@ export async function initDb(): Promise<void> {
     );
   } catch (e) {
     console.warn('[db] paired_event_id index create failed:', e);
+  }
+
+  // FR-5 (B-354 PR 2) — one-time flush of the pre-per-account catalog caches.
+  // Runs LAST: both food_items_cache (first block above) and medication_items_cache
+  // (MEDICATION_SCHEMA_SQL) must already exist, or the DELETEs throw. Guarded by
+  // user_version so it fires exactly once per version bump. Best-effort: a failure
+  // here must not abort init (the caches self-heal — a stale foreign row is a
+  // privacy/UX wart, not a crash; the next successful launch retries the flush
+  // because user_version was never bumped).
+  try {
+    await flushLegacyCatalogCachesIfNeeded(database);
+  } catch (e) {
+    console.warn('[db] catalog cache flush failed:', e);
   }
 }
 

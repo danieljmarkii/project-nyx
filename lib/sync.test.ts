@@ -19,13 +19,25 @@
 // above imports, so the control fn the factory closes over is mock-prefixed.
 
 const mockCompress = jest.fn();
+const mockGetSession = jest.fn();
+const mockFrom = jest.fn();
+const mockRunAsync = jest.fn();
 
 jest.mock('./storage', () => ({
   uploadPhoto: jest.fn(),
   compressForUpload: (...args: unknown[]) => mockCompress(...args),
 }));
-jest.mock('./supabase', () => ({ supabase: {} }));
-jest.mock('./db', () => ({ getDb: jest.fn(), getWatermark: jest.fn(), setWatermark: jest.fn() }));
+jest.mock('./supabase', () => ({
+  supabase: {
+    auth: { getSession: (...args: unknown[]) => mockGetSession(...args) },
+    from: (...args: unknown[]) => mockFrom(...args),
+  },
+}));
+jest.mock('./db', () => ({
+  getDb: () => ({ runAsync: (...args: unknown[]) => mockRunAsync(...args) }),
+  getWatermark: jest.fn(),
+  setWatermark: jest.fn(),
+}));
 jest.mock('./hydration', () => ({
   reconcileBatch: jest.fn(),
   advanceWatermark: jest.fn(),
@@ -38,7 +50,7 @@ jest.mock('./medications', () => ({
   administrationRowToRemote: jest.fn(),
 }));
 
-import { prepareAttachmentUpload } from './sync';
+import { prepareAttachmentUpload, refreshFoodCache, refreshMedicationCache } from './sync';
 
 describe('prepareAttachmentUpload (attachment re-upload compression guard)', () => {
   let warnSpy: jest.SpyInstance;
@@ -78,5 +90,46 @@ describe('prepareAttachmentUpload (attachment re-upload compression guard)', () 
     const out = await prepareAttachmentUpload('file:///orig.jpg', 'image/jpeg');
     expect(out).toEqual({ uri: 'file:///orig.jpg', mimeType: 'image/jpeg' });
     expect(warnSpy).toHaveBeenCalled();
+  });
+});
+
+// B-354 PR 2 (FR-5) — the catalog caches are pulled scoped to the account. Belt-
+// and-braces with the per-account RLS: the SELECT must carry an explicit
+// created_by_user_id filter so a client can never re-cache the whole catalog, and
+// a missing session short-circuits the pull entirely.
+describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-5)', () => {
+  let eqSpy: jest.Mock;
+  let selectSpy: jest.Mock;
+
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockFrom.mockReset();
+    mockRunAsync.mockReset();
+    // supabase.from(t).select(cols).eq(col, val) — .eq is the awaited terminal.
+    eqSpy = jest.fn().mockResolvedValue({ data: [], error: null });
+    selectSpy = jest.fn().mockReturnValue({ eq: eqSpy });
+    mockFrom.mockReturnValue({ select: selectSpy });
+  });
+
+  it('refreshFoodCache scopes the pull to the signed-in account', async () => {
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    await refreshFoodCache();
+    expect(mockFrom).toHaveBeenCalledWith('food_items');
+    expect(eqSpy).toHaveBeenCalledWith('created_by_user_id', 'user-A');
+  });
+
+  it('refreshMedicationCache scopes the pull to the signed-in account', async () => {
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    await refreshMedicationCache();
+    expect(mockFrom).toHaveBeenCalledWith('medication_items');
+    expect(eqSpy).toHaveBeenCalledWith('created_by_user_id', 'user-A');
+  });
+
+  it('both short-circuit with no session — never pull, never write', async () => {
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+    await refreshFoodCache();
+    await refreshMedicationCache();
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRunAsync).not.toHaveBeenCalled();
   });
 });
