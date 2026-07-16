@@ -1,7 +1,9 @@
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { Linking } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { updateOwnerName } from '../../lib/profile';
+import { PRIVACY_POLICY_URL, TERMS_URL } from '../../constants/links';
 import SignupScreen from './signup';
 
 // Covers the load-bearing auth path (B-251 PR 6 AC): validation gate, the
@@ -47,6 +49,20 @@ describe('SignupScreen — brand mark', () => {
   });
 });
 
+describe('SignupScreen — legal links (B-229/B-230)', () => {
+  it('opens the hosted Terms and Privacy Policy from the acceptance line — no more stubs', async () => {
+    const openSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const utils = render(<SignupScreen />);
+
+    fireEvent.press(utils.getByText('Terms'));
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith(TERMS_URL));
+
+    fireEvent.press(utils.getByText('Privacy Policy'));
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith(PRIVACY_POLICY_URL));
+    openSpy.mockRestore();
+  });
+});
+
 describe('SignupScreen — validation gate', () => {
   it('blocks the network call and shows calm inline errors on an empty submit', () => {
     const utils = render(<SignupScreen />);
@@ -82,7 +98,7 @@ describe('SignupScreen — session present (email confirmation off)', () => {
     fillValidForm(utils, '  jordan@email.com  ');
     fireEvent.press(utils.getByTestId('signup-submit'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/pet-type'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/disclaimer'));
     expect(mockSignUp).toHaveBeenCalledWith({ email: 'jordan@email.com', password: 'password123' });
     expect(mockUpdateOwnerName).toHaveBeenCalledWith('u1', 'Jordan', 'Rivera');
   });
@@ -100,7 +116,7 @@ describe('SignupScreen — session present (email confirmation off)', () => {
     fillValidForm(utils);
     fireEvent.press(utils.getByTestId('signup-submit'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/pet-type'));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/onboarding/disclaimer'));
     expect(mockUpdateOwnerName).toHaveBeenCalled();
   });
 });

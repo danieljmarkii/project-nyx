@@ -18,6 +18,7 @@ import { WhorlSpinner } from '../../components/brand/WhorlSpinner';
 import { updateOwnerName } from '../../lib/profile';
 import { theme } from '../../constants/theme';
 import { SOCIAL_AUTH_ENABLED } from '../../constants/flags';
+import { PRIVACY_POLICY_URL, TERMS_URL } from '../../constants/links';
 import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
@@ -117,7 +118,9 @@ export default function SignupScreen() {
     }
     // The user_profiles row itself is created by the Supabase trigger on the
     // auth.users insert; the upsert in updateOwnerName also creates it if absent.
-    router.replace('/onboarding/pet-type');
+    // First stop is the veterinary-disclaimer acknowledgment (B-270) — before any
+    // pet data is entered — which then hands off to pet setup.
+    router.replace('/onboarding/disclaimer');
   }
 
   async function handleResend() {
@@ -143,14 +146,16 @@ export default function SignupScreen() {
     }
   }
 
-  function openTerms() {
-    // Mocked acceptance point (B-230). The real document is built separately.
-    Alert.alert('Terms of Service', 'The full document is on its way.');
-  }
-
-  function openPrivacy() {
-    // Mocked acceptance point (B-229). The real document is built separately.
-    Alert.alert('Privacy Policy', 'The full document is on its way.');
+  async function openLegal(url: string, title: string) {
+    // Real hosted documents (B-229/B-230 — the "on its way" stubs are retired).
+    // A failed open is honest, never silent: show the address so the owner can
+    // still find the document (mirrors app/settings.tsx).
+    try {
+      await Linking.openURL(url);
+    } catch (e) {
+      console.warn('[Signup] open legal link failed:', e);
+      Alert.alert("Couldn't open link", `You can find our ${title} at ${url}.`);
+    }
   }
 
   // ── Soft verify state ────────────────────────────────────────────────────────
@@ -346,11 +351,19 @@ export default function SignupScreen() {
 
           <Text style={styles.tos}>
             By continuing you agree to Culprit's{' '}
-            <Text style={styles.tosLink} onPress={openTerms} accessibilityRole="link">
+            <Text
+              style={styles.tosLink}
+              onPress={() => openLegal(TERMS_URL, 'terms of service')}
+              accessibilityRole="link"
+            >
               Terms
             </Text>{' '}
             and{' '}
-            <Text style={styles.tosLink} onPress={openPrivacy} accessibilityRole="link">
+            <Text
+              style={styles.tosLink}
+              onPress={() => openLegal(PRIVACY_POLICY_URL, 'privacy policy')}
+              accessibilityRole="link"
+            >
               Privacy Policy
             </Text>
             .

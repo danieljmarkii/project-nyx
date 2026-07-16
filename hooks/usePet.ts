@@ -131,9 +131,13 @@ export function usePet() {
       // (Adversarial-review find, multi-pet PR 2.)
       if (usePetStore.getState().pets.length > 0) return;
 
-      // Genuinely a new, petless account that never completed onboarding.
+      // Genuinely a new, petless account that never completed onboarding. Enter
+      // at the disclaimer acknowledgment (B-270), not pet-type: a mid-flow quit
+      // that never acknowledged must pass the acceptance point on resume. An
+      // account that already acknowledged just re-taps — the write maps a PK
+      // conflict to already-recorded, and the first acceptance stands.
       setOnboarded(false);
-      router.replace('/onboarding/pet-type');
+      router.replace('/onboarding/disclaimer');
     }
 
     loadState(0);
