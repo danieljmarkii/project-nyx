@@ -20,6 +20,7 @@ import type {
   SignalFinding,
   SignalSymptomType,
   StapleSource,
+  SymptomChronicityFinding,
   SymptomWorseningFinding,
 } from './signal';
 
@@ -403,25 +404,42 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
 // in lib/signal.ts; the focus-effect + render live in the hook + component.
 
 // The banner-eligible safety types, in cross-pet priority order (lower wins).
-// intake_decline outranks symptom_worsening, matching the engine's per-pet rank
-// (§4). An explicit allow-list, NOT `priorityClass === 'safety'`: a future safety
-// detector must be added here deliberately (with its own template + guardrail
-// review) before it can reach this clinical escalation surface.
-const BANNER_SAFETY_PRIORITY: Record<'intake_decline' | 'symptom_worsening', number> = {
+// intake_decline > symptom_chronicity > symptom_worsening — mirroring the engine's
+// per-pet SAFETY_TYPE_ORDER (detection.ts §5), so the cross-pet surface can never
+// imply a precedence between two safety lanes that contradicts the pet's own Signal.
+// An explicit allow-list, NOT `priorityClass === 'safety'`: a future safety detector
+// must be added here deliberately (with its own template + guardrail review) before
+// it can reach this clinical escalation surface. chronicity (⑦, B-182/B-191) is the
+// council's top clinically-established concern, but intake_decline stays rank 0 for
+// the acute-anorexia window (unchanged from detection.ts) — chronicity slots between
+// it and worsening. The point of B-191: a secondary pet whose only flag is a
+// weeks-long unresolved course must be able to raise the banner, not stay silent.
+const BANNER_SAFETY_PRIORITY: Record<
+  'intake_decline' | 'symptom_chronicity' | 'symptom_worsening',
+  number
+> = {
   intake_decline: 0,
-  symptom_worsening: 1,
+  symptom_chronicity: 1,
+  symptom_worsening: 2,
 };
 
-export type BannerSafetyFinding = IntakeDeclineFinding | SymptomWorseningFinding;
+export type BannerSafetyFinding =
+  | IntakeDeclineFinding
+  | SymptomChronicityFinding
+  | SymptomWorseningFinding;
 
 function isBannerSafetyFinding(f: SignalFinding): f is BannerSafetyFinding {
-  // Type-narrow via the explicit allow-list. Both are priorityClass 'safety' by
+  // Type-narrow via the explicit allow-list. All three are priorityClass 'safety' by
   // construction (asserted in the tests); the type union is the contract here.
-  return f.type === 'intake_decline' || f.type === 'symptom_worsening';
+  return (
+    f.type === 'intake_decline' ||
+    f.type === 'symptom_chronicity' ||
+    f.type === 'symptom_worsening'
+  );
 }
 
 // A pet's representative banner finding = its highest-priority banner-safety
-// finding (intake_decline preferred). Returns null if it has none — a pet whose
+// finding (intake_decline preferred, then chronicity). Returns null if it has none — a pet whose
 // only findings are reflections/correlations/descriptive can never raise a banner.
 function petTopSafetyFinding(findings: CachedFinding[]): BannerSafetyFinding | null {
   let best: BannerSafetyFinding | null = null;
@@ -447,7 +465,7 @@ export interface SelectedBanner<P> {
 
 // Pick the ONE cross-pet banner to show (§4: at most one, never stack). Across all
 // candidate pets that have a banner-safety finding, choose the highest-priority
-// finding (intake_decline > symptom_worsening). Ties (two same-class flags) break
+// finding (intake_decline > symptom_chronicity > symptom_worsening). Ties (two same-class flags) break
 // by candidate order: the caller passes pets oldest-first, so the choice is
 // deterministic and implies no false clinical precedence between them — the owner
 // reaches the other pet via the switcher. Returns null if none qualifies.
@@ -519,6 +537,17 @@ function bannerRest(finding: BannerSafetyFinding): string {
     const span =
       finding.daysBelowBaseline <= 1 ? 'today' : `for ${finding.daysBelowBaseline} days`;
     return ` has eaten less than usual ${span} — worth a look.`;
+  }
+  if (finding.type === 'symptom_chronicity') {
+    // ⑦ (B-182/B-191) — DURATION, not a week-over-week delta. Anchor to the onset
+    // month (matching the pet's own chronicity Signal copy, "Since {month}, …") so
+    // the teaser reads as a recurring, still-unresolved course — the whole point of
+    // the lane. "recurring … since {month}" is descriptive: never a cause, never a
+    // severity verdict, never a resolution/reassurance claim (validateBannerPhrasing
+    // screens it as defense-in-depth). The tap-through lands on the full Signal where
+    // the tiered vet ask ("booking a vet visit" / "a word with your vet") lives.
+    const symptom = SYMPTOM_LABEL[finding.symptomType];
+    return ` has had recurring ${symptom} since ${onsetMonth(finding.firstOnsetIso)} — worth a look.`;
   }
   // symptom_worsening — name the symptom + the axis that actually rose, week over
   // week. Frequency only: "more ... this week than last", never "worse" (a severity
