@@ -117,7 +117,7 @@ Applies the 31 on-disk migrations to staging in order via MCP `apply_migration` 
 Parameterizes the deploy path by environment and deploys all six functions to staging. Updates `docs/edge-deploy-runbook.md` (two-ref env table, staging-first rule per D5), CLAUDE.md (Secrets Register staging rows; D5 under the engineering constraints), and `scripts/deploy-edge.sh` (env-aware output).
 
 > **Kickoff prompt:**
-> Read `docs/staging-environment-requirements.md` and execute **Step 4 (B-354)** — Edge Functions to staging + deploy tooling. B-353 (schema parity) is done. Deploy all six Edge Functions to the staging project via the runbook path (`scripts/deploy-edge.sh` bundle → MCP `deploy_edge_function`, `verify_jwt=true` preserved, sha read-back + clean-4xx boot smoke each — the smoke-test curl needs staging's URL + anon key via `get_publishable_keys`). Verify the staging `ANTHROPIC_API_KEY` is live (e.g. `generate-signal` degrades to templates if unset — check `get_logs`). Then codify: update `docs/edge-deploy-runbook.md` with the staging/prod project-ref table + the D5 staging-first rule, update `scripts/deploy-edge.sh` to name both refs in its printed instructions, and update CLAUDE.md's Secrets Register with the staging rows. One PR.
+> Read `docs/staging-environment-requirements.md` and execute **Step 4 (B-354)** — Edge Functions to staging + deploy tooling. B-353 (schema parity) is done. Deploy all six Edge Functions to the staging project via the runbook path (`scripts/deploy-edge.sh` bundle → MCP `deploy_edge_function`, `verify_jwt=true` preserved, sha read-back + clean-4xx boot smoke each — the smoke-test curl needs staging's URL + anon key via `get_publishable_keys`). Verify the staging `ANTHROPIC_API_KEY` is live (e.g. `generate-signal` degrades to templates if unset — check `get_logs`). Then codify: update `docs/edge-deploy-runbook.md` with the staging/prod project-ref table, the D5 staging-first rule, and the §10.4 prod promotion checklist; update `scripts/deploy-edge.sh` to name both refs in its printed instructions, and update CLAUDE.md's Secrets Register with the staging rows. One PR.
 
 ### Step 5 — Claude session: client env wiring (B-355) — parallel with Step 3
 The client-side seam: env files + scripts + `eas.json`.
@@ -178,3 +178,61 @@ Two live refs exist after Step 1. Guardrails: D5's explicit-`project_id` rule, t
 
 ### 9.4 Config drift between envs
 Dashboard-side config (buckets, auth toggles) is mirrored by hand and can drift. Accepted at this scale; the parity checklist in §2/Step 2 is the source of truth, and any deliberate divergence (B-152 rehearsal) is recorded in STATUS.md.
+
+## 10. The day-to-day deploy lifecycle (how deploys change)
+
+The current workflow is *build → test on Expo Go (against prod) → deploy to prod*. With staging live, the lifecycle depends on what kind of change the PR carries. One property makes all of this work: **the client env selects the whole backend.** Expo Go pointed at staging (`start:staging`) calls staging's Edge Functions, staging's database, staging's buckets — there is no cross-wiring, because every backend call goes through the one baked-in Supabase URL.
+
+### 10.1 Client-only PR (most PRs — UI, stores, copy)
+
+| | Today | After staging |
+|---|---|---|
+| Build | branch + PR | unchanged |
+| On-device QA (Runtime B) | Metro + tunnel against **prod** (real data is the test substrate) | **`npm run start:staging`** against seeded/fake data — the default QA substrate. A **read-only** real-data pass (e.g. "does the Signal render right on Nyx's real history?") stays available as a deliberate `npm run start:prod`. |
+| "Deploy" | merge | merge — client JS reaches phones only via Runtime A later; nothing else to do |
+
+Net change: one word in the Dev Handoff (`start:staging` instead of `npx expo start --tunnel`). Handoffs name the env explicitly from B-355 on.
+
+### 10.2 Backend PR (Edge Function and/or migration) — the flow that really changes
+
+Today the session deploys straight to prod mid-build, then QA happens against prod. New flow (D5):
+
+1. **Build session → staging deploy.** Migration (if any): `apply_migration` → **staging** → `get_advisors` → verify. Function (if any): bundle → `deploy_edge_function` → **staging** → sha read-back + boot smoke. (Work-branch deploys to staging are always fine — that's what staging is for.)
+2. **On-device QA against staging.** `npm run start:staging` — the staging client exercises the staging function against the staging schema end-to-end. The Manual QA Script in the handoff targets staging.
+3. **Merge** the PR.
+4. **Promote to prod** — the checklist in §10.4, from merged `main`.
+
+Data-dependent backend work (Signal detection lanes) still gets its primary verification from the offline test fixtures, as today; staging QA proves boot/wiring, and a lane that only Nyx's real history exercises is verified read-only on prod post-promotion. A prod→staging anonymized-timeline clone tool (seeding staging with a real pet's shape, via `scripts/export-pet-timeline.sql`) is logged as **B-358** for when fixtures aren't enough.
+
+### 10.3 Config flips (`app_config`, auth toggles)
+
+Rehearse on staging (flip → observe the client state via `start:staging`) → apply to prod → record in STATUS.md. This is exactly the pre-submission `paywall_enabled=false` path.
+
+### 10.4 The prod promotion checklist (the new ritual)
+
+Runs after merge, per backend-touching PR (or batched at a natural point for low-risk changes — Engineer's call, recorded either way):
+
+1. PR merged to `main`; staging already verified (steps 1–2 above).
+2. Migration → `apply_migration` to **prod** → `get_advisors` → verify. *(Migrate-before-deploy gate, as today.)*
+3. Function → bundle from `main` → `deploy_edge_function` to **prod** (`verify_jwt` preserved) → sha read-back + clean-4xx boot smoke.
+4. Config flips applied + recorded.
+5. `npm run start:prod` → golden-path smoke of the changed surface.
+6. STATUS.md records the promotion (versions bumped, verified).
+
+### 10.5 Where Expo Go and TestFlight sit
+
+- **Expo Go / Metro (Runtime B)** stays the per-push QA runtime — it just gains an env switch. Staging by default, prod deliberately.
+- **TestFlight (Runtime A)** is unchanged in cadence and **stays a prod client, full stop**. It is the release-candidate surface, not a staging surface: cut a build / publish OTA (via the guarded `npm run update:prod`) when a body of merged work warrants it, exactly as today. A staging TestFlight variant is B-357, deliberately deferred.
+- **The one new hard rule for Runtime A:** never publish an OTA update whose client code depends on a migration or function that hasn't been promoted to prod yet (§10.4 before `update:prod`). In the Metro world you control both ends; an OTA update goes to a device you don't babysit.
+
+### 10.6 The shape at a glance
+
+```
+build PR ──► deploy backend to STAGING ──► QA on-device via start:staging ──► merge
+                                                                                │
+                              (backend PRs) promote to PROD (§10.4 checklist) ◄─┘
+                                                    │
+       (when a release is warranted) TestFlight: eas build / npm run update:prod
+```
+
+Client-only PRs skip the promotion box; config flips are §10.3. The extra cost per backend PR is one more MCP deploy call and a checklist — the win is that nothing reaches the database with real pet data un-rehearsed.
