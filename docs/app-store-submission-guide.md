@@ -24,7 +24,7 @@
 | 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | 🟡 In progress — draft PR #299 open, **permission strings only** (B-267); confirmed it does **not** include the `supportsTablet: false` flip (B-269) — that half still needs its own change, either folded into #299 before merge or a follow-up |
 | 6 | Ratify + flag off the paywall for v1 | Mixed | B-263–266 (deferral) | ⬜ Not started |
 | 7 | In-app version display | PR | B-231 | ⬜ Not started |
-| 8 | On-device deletion QA + logout-wipe (email confirm still OFF) | PM | B-039 + AC-6 | ⬜ Not started |
+| 8 | On-device deletion QA + logout-wipe (email confirm still OFF) | PM | B-039 + AC-6 | 🟡 B-039 deletion ✅ verified 2026-07-16 (live-DB, real account); AC-6 cross-account logout-wipe rider still open |
 | 9 | Flip email confirmation ON + verify the signup path | Mixed | B-152 (part 2) | ⬜ Not started |
 | 10 | Cut the production build + built-artifact verification | Mixed | — | ⬜ Not started |
 | 11 | Seed the App Review demo account + reviewer notes | Mixed | B-271 | 🔵 Spec'd 2026-07-11 — build-ready spec `docs/nyx-demo-account-requirements.md`; D1–D7 ratified; PR 1 (seed script) next |
@@ -159,7 +159,7 @@ You need three URLs by the end (anchors/pages on the site): `getculprit.app/supp
 
 ### Step 8 — Deletion QA + logout-wipe **[PM]** (B-039 + AC-6 — *the ship gate*)
 
-**Summary:** The hardest App Store blocker (in-app account deletion, Guideline 5.1.1(v)) is code-complete and merged; this on-device pass is the only thing left. Run it **while email confirmation is still OFF** (throwaway-account creation depends on that). The AC-6 logout-wipe check rides along in the same session.
+**Summary:** The hardest App Store blocker (in-app account deletion, Guideline 5.1.1(v)) is **DONE** — the deletion path was verified end-to-end on 2026-07-16 (in-app delete on a real account → live-DB confirmation of a complete, cascade-clean erasure with no residual Storage; steps 3–5 below). **What still rides here is only the AC-6 cross-account logout-wipe (step 6)** — a distinct "sign into a *different* account → no bleed" check the deletion didn't exercise. Run that on a device with your real account; email-confirmation state doesn't matter for it.
 
 **How:**
 1. Runtime B: `git checkout main && git pull --ff-only && npx expo start --tunnel`, scan the QR.
@@ -171,7 +171,7 @@ You need three URLs by the end (anchors/pages on the site): `getculprit.app/supp
 
 **Reference:** Apple's account-deletion requirement: <https://developer.apple.com/support/offering-account-deletion-in-your-app/>
 
-**Confirm with:** `Guide step 8 complete: B-039 deletion verified end-to-end on device, AC-6 logout-wipe clean.` (Claude closes the B-039 row — the App Store's hardest blocker goes green.)
+**Confirm with:** `Guide step 8 complete: AC-6 cross-account logout-wipe clean.` (B-039 deletion is already verified & closed as of 2026-07-16 — the hardest blocker is green; this confirmation closes only the remaining AC-6 rider.)
 
 ---
 
