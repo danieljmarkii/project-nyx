@@ -55,6 +55,20 @@ describe('FoodTile', () => {
     expect(queryByText(/·/)).toBeNull();
   });
 
+  // B-346 rotation shelf: the compact variant still renders the same eyebrow +
+  // product name and logs on tap — only its footprint changes, so a rotation tile
+  // is functionally identical to a library tile (no favorites/preference framing,
+  // no dropped metadata).
+  it('compact tile renders brand + product and logs on tap', () => {
+    const onPress = jest.fn();
+    const { getByText } = render(
+      <FoodTile brand="Tiki Cat" productName="Puka Puka Luau" format="wet_canned" compact onPress={onPress} />,
+    );
+    expect(getByText('TIKI CAT · WET')).toBeTruthy();
+    fireEvent.press(getByText('Puka Puka Luau'));
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
   it('fires onPress when the tile is tapped', () => {
     const onPress = jest.fn();
     const { getByText } = render(

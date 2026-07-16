@@ -15,6 +15,16 @@ interface Props {
   // exactly, so the two surfaces handle a brand-grouped item identically. Defaults
   // to showing the brand (the flat Recent strip + single-variant tiles).
   hideBrand?: boolean;
+  // Compact height for the "{Pet}'s rotation" shelf (B-346): a shorter tile (smaller
+  // min-height + tighter vertical padding) so a 12-food rotation fits in roughly the
+  // space the old 5-item Recent strip took and the library below stays reachable.
+  // Same tap target (≥44pt), same one-tap-log behavior — only the vertical footprint
+  // shrinks. The product name still wraps to two lines: the rotation shelf is a FLAT
+  // recency list (not brand-grouped), so a same-brand cluster is told apart solely by
+  // the flavor in the product name — clipping it to one line would make "…Chicken &
+  // Liver" and "…Chicken & Tuna" read identically on the exact picky-eater shelf this
+  // widening serves. Legible-when-needed beats maximally-short-but-ambiguous.
+  compact?: boolean;
 }
 
 // Exported so the standalone Foods-tab row (components/foods/FoodRow) renders
@@ -48,7 +58,7 @@ export const FORMAT_LABEL: Record<string, string> = {
 // WET" eyebrow and the product name as two separate fragments. The hint names the
 // action because here a tap LOGS (the picker is the quick-log surface), whereas a
 // FoodRow tap navigates to detail.
-export function FoodTile({ brand, productName, format, onPress, onLongPress, hideBrand = false }: Props) {
+export function FoodTile({ brand, productName, format, onPress, onLongPress, hideBrand = false, compact = false }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const formatMeta = typeLabel.toUpperCase();
   // Under a brand header the brand is redundant — show the format alone (or
@@ -62,7 +72,7 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress, hid
 
   return (
     <TouchableOpacity
-      style={styles.tile}
+      style={[styles.tile, compact && styles.tileCompact]}
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={350}
@@ -78,6 +88,10 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress, hid
           {metaLine}
         </Text>
       ) : null}
+      {/* Two lines on both variants: the flavor in the product name is what tells a
+          same-brand cluster apart, so compact tiles must not clip it (see the prop
+          comment). The compactness comes from the shorter min-height + padding, not
+          from truncating the disambiguating text. */}
       <Text style={styles.product} numberOfLines={2}>
         {productName}
       </Text>
@@ -95,6 +109,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorSurface,
     padding: theme.space2,
     gap: theme.space1,
+  },
+  // B-346 rotation shelf — a shorter tile (min-height stays above the 44pt tap
+  // floor) with tighter vertical padding. Longhand paddingVertical wins over the
+  // base `padding` shorthand in RN's style merge, so horizontal padding is kept.
+  tileCompact: {
+    minHeight: 62,
+    paddingVertical: theme.space1,
+    gap: theme.spaceMicro,
   },
   meta: {
     fontSize: theme.textXS,
