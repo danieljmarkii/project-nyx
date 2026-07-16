@@ -143,11 +143,11 @@ The engineering hard constraint "two sanctioned global exceptions (`food_items`,
 | # | Decision | Status |
 |---|---|---|
 | D1 | Per-account direction (library scoped to account; shared catalog is a future curated layer) | **PM-ratified 2026-07-16** (this session's directive) |
-| D2 | `medication_items` rides the same track — same migration PR, same RLS/storage/deletion treatment | **Team rec (unanimous; T&S insists)** — PM ratify |
+| D2 | `medication_items` rides the same track — same migration PR, same RLS/storage/deletion treatment | **PM-ratified 2026-07-16** ("we need to bundle meds into this as well") |
 | D3 | Scope in place on `created_by_user_id` (NOT NULL + DEFAULT `auth.uid()` + CASCADE), no new column | Build-time (Dir. of Eng call) — recommend-and-proceed |
-| D4 | Deletion flips preserve→purge + terms §3 / privacy-policy rewrite + hosted-doc republish | **PM ratify** (legal Tier-2 + a PM republish action) |
+| D4 | Deletion flips preserve→purge + terms §3 / privacy-policy rewrite + hosted-doc republish | **PM-ratified 2026-07-16** (small rewrite acknowledged; republish stays a PM action at PR 5) |
 | D5 | Re-globalization only ever via a separate curated canonical layer, never un-scoping user rows | Recorded intent (FR-9) — PM acknowledge |
-| D6 | B-354 precedes B-005; `archived_at` deliberately NOT bundled into the re-scoping migration | **Team rec** — PM ratify sequencing |
+| D6 | B-354 precedes B-005; `archived_at` deliberately NOT bundled into the re-scoping migration | **PM-ratified 2026-07-16** (back-to-back B-354 → B-005 workflow) |
 
 ## 10. PR plan
 
@@ -163,7 +163,4 @@ Order matters: PR 1's RLS must land **with or before** PR 2 (an old client selec
 
 ## 11. Open questions routed to the PM
 
-1. **D2** — confirm `medication_items` bundles into PR 1 (vs a sibling backlog item).
-2. **D4** — confirm the deletion flip + authorize the legal §3/privacy rewrite for republish.
-3. **D6** — confirm B-354 → B-005 sequencing (B-005's requirements-doc write starts once this doc is ratified).
-4. Non-blocking: acknowledge D5 (future catalog = curated layer) so FR-9 is on record as ratified intent.
+**All resolved 2026-07-16 (same day):** D2 ratified (meds bundle into PR 1), D4 ratified (deletion flip + the small legal rewrite; hosted-doc republish stays a PM action at PR 5), D6 ratified (B-354 → B-005 back to back). D5 remains recorded intent (FR-9). **PR 1 is ready to build.**
