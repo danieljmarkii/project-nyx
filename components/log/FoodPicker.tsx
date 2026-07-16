@@ -3,7 +3,6 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Camera } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
@@ -31,12 +30,17 @@ interface Props {
   onOpenDetail?: (food: PickerFood) => void;
 }
 
-const RECENT_DAYS = 14;
-const RECENT_LIMIT = 5;
+// B-346 — the "{Pet}'s rotation" shelf. Recent was 5 foods / 14 days in a hidden
+// horizontal scroll, so a household rotation of 8–12 foods meant the one you wanted
+// just missed the cut — the daily trigger for falling into the long library list.
+// Widen the window + cap to hold the whole rotation, and render it wrapped (below)
+// so nothing hides off-screen. Recency-ordered by getRecentFoods (newest first).
+const ROTATION_DAYS = 30;
+const ROTATION_LIMIT = 12;
 const SCREEN_PADDING = theme.space2;
 
 export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail }: Props) {
-  const [recent, setRecent] = useState<PickerFood[]>([]);
+  const [rotation, setRotation] = useState<PickerFood[]>([]);
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [arrangements, setArrangements] = useState<FoodArrangementGroup[]>([]);
   const [search, setSearch] = useState('');
@@ -94,12 +98,12 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
       (async () => {
         try {
           const [r, l, a] = await Promise.all([
-            getRecentFoods(petId, RECENT_DAYS, RECENT_LIMIT),
+            getRecentFoods(petId, ROTATION_DAYS, ROTATION_LIMIT),
             getLibraryFoods(),
             loadArrangements(),
           ]);
           if (!cancelled) {
-            setRecent(r);
+            setRotation(r);
             setLibrary(l);
             setArrangements(a);
           }
@@ -163,6 +167,13 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
   // third bucket so nothing is hidden from the picker.
   const groupedLibrary = useMemo(() => groupFoodsByType(filteredLibrary), [filteredLibrary]);
 
+  // B-346 — "{Pet}'s rotation". The shelf names what THIS pet was actually fed in
+  // the window, so it stays recency-factual and never crosses into favorites /
+  // preference framing (the B-112 intake-is-not-preference guardrail; recency is a
+  // fact, "loves" is a preference read a one-tap-log surface must never assert). A
+  // neutral fallback covers the brief window before the pet's name is known.
+  const rotationLabel = petName ? `${petName}'s rotation` : 'Rotation';
+
   return (
     <ScrollView
       style={styles.scroll}
@@ -191,44 +202,22 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
         </TouchableOpacity>
       </View>
 
-      {recent.length > 0 && (
+      {rotation.length > 0 && (
         <View style={styles.zone}>
-          <SectionLabel label="Recent" />
-          {/* Wrapper is the positioning context for the absolute edge-fade below
-              (a View is position:relative by default — matches History's lens row). */}
-          <View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.recentRow}
-            >
-              {recent.map((f) => (
-                <View key={f.id} style={styles.recentTile}>
-                  <FoodTile
-                    brand={f.brand}
-                    productName={f.product_name}
-                    format={f.format}
-                    onPress={() => onPickFood(f)}
-                    onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-            {/* B-166 — right-edge "there's more →" fade, mirroring the History lens
-                row. A Recent shelf is a BROWSE row (the full library sits right
-                below), so a fade is the correct cue — unlike the option pickers,
-                where hidden overflow was wrong and B-146 switched them to a wrap.
-                The 0-alpha stop is white's zero-alpha form, NOT 'transparent' (RN
-                fades 'transparent' through black and dirties the edge); keep in
-                sync with the surface the picker sits on (log.tsx = colorSurface). */}
-            <LinearGradient
-              colors={['rgba(255,255,255,0)', theme.colorSurface]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.recentFade}
-              pointerEvents="none"
-            />
-          </View>
+          <SectionLabel label={rotationLabel} />
+          {/* B-346 — the rotation shelf is a WRAPPED 2-up grid, not a horizontal
+              scroll: every food in the window is visible at once (no hidden
+              off-screen overflow), which kills the picker's last silent h-scroll
+              (the B-146 direction). Compact tiles keep the ~12-food rotation short
+              so the full library below stays reachable. Recency-ordered (newest
+              first) by getRecentFoods, so the morning food is the first tile at
+              breakfast. Reuses the same TileGrid the library groups use. */}
+          <TileGrid
+            foods={rotation}
+            compact
+            onPickFood={onPickFood}
+            onOpenDetail={onOpenDetail}
+          />
         </View>
       )}
 
@@ -440,10 +429,12 @@ function LibraryGroup({
 // foods into 2-col rows (toFoodRows) so tiles in a row share a height; a trailing
 // odd tile gets a spacer to keep the last row left-aligned.
 function TileGrid({
-  foods, hideBrand = false, onPickFood, onOpenDetail,
+  foods, hideBrand = false, compact = false, onPickFood, onOpenDetail,
 }: {
   foods: PickerFood[];
   hideBrand?: boolean;
+  // Renders compact tiles — used by the B-346 rotation shelf, not the library.
+  compact?: boolean;
   onPickFood: (food: PickerFood) => void;
   onOpenDetail?: (food: PickerFood) => void;
 }) {
@@ -461,6 +452,7 @@ function TileGrid({
               productName={f.product_name}
               format={f.format}
               hideBrand={hideBrand}
+              compact={compact}
               onPress={() => onPickFood(f)}
               onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
             />
@@ -483,22 +475,6 @@ const styles = StyleSheet.create({
   },
   zone: {
     gap: theme.space2,
-  },
-  // B-166 — the right-edge "there's more →" fade over the Recent shelf (top/bottom 0
-  // spans the shelf's content height; no explicit height needed).
-  recentFade: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 28,
-  },
-  recentRow: {
-    gap: theme.space2,
-    paddingRight: theme.space2,
-  },
-  recentTile: {
-    width: 160,
   },
   search: {
     fontSize: theme.textMD,
