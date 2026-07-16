@@ -87,7 +87,7 @@ If you downloaded Culprit from the Apple App Store, the following also applies, 
 - **Product claims.** We, not Apple, are responsible for addressing any claims from you or a third party relating to Culprit or your use of it — including product liability claims, claims that Culprit fails to meet a legal or regulatory requirement, and claims under consumer protection or similar law.
 - **Intellectual property claims.** If a third party claims that Culprit or your use of it infringes their intellectual property rights, we, not Apple, will be solely responsible for the investigation, defense, settlement, and discharge of that claim.
 - **Legal compliance.** You represent and warrant that you are not located in a country subject to a U.S. Government embargo or designated by the U.S. Government as a "terrorist-supporting" country, and that you are not listed on any U.S. Government list of prohibited or restricted parties.
-- **Contact.** Questions, complaints, or claims about Culprit should be directed to us at support@getculprit.app.
+- **Contact.** Questions, complaints, or claims about Culprit should be directed to us — [YOUR FULL LEGAL NAME], [OPERATOR MAILING ADDRESS] — at support@getculprit.app. (Apple's Minimum Terms require the developer's name and address here; fill both before publication.)
 - **Third-party terms.** You must comply with any applicable third-party terms of agreement when using Culprit.
 - **Third-party beneficiary.** Apple and its subsidiaries are third-party beneficiaries of these Terms, and upon your acceptance of these Terms, Apple will have the right (and will be deemed to have accepted the right) to enforce these Terms against you as a third-party beneficiary.
 
@@ -100,9 +100,15 @@ If you downloaded Culprit from the Apple App Store, the following also applies, 
 - **Notices.** We give you notices by email to the address on your account, or inside the app. Keep your account email current so you receive them.
 - **Force majeure.** We are not liable for any delay or failure to perform caused by events beyond our reasonable control, including outages at our infrastructure providers, network failures, or acts of God.
 
-## 14. Governing law
+## 14. Governing law and disputes
 
-These Terms are governed by the laws of the State of Nebraska, United States, excluding its conflict-of-law rules. Disputes will be resolved in the state and federal courts located in Nebraska, unless the law where you live gives you the right to bring a claim where you live.
+These Terms are governed by the laws of the State of Nebraska, United States, excluding its conflict-of-law rules.
+
+**Try to resolve it with us first.** Most problems can be sorted out quickly. Before starting a formal court proceeding, please contact us at support@getculprit.app, describe the issue, and give us 30 days to try to resolve it. We'll do the same before bringing any claim against you. (This step doesn't apply to a small-claims case, or to a request for a court order to stop misuse of the service.)
+
+**Small claims.** Either of us may bring an individual claim in a small-claims court of competent jurisdiction, as an alternative to the courts named below.
+
+**Where disputes go.** Except for small-claims matters, disputes relating to these Terms or the service will be resolved exclusively in the state or federal courts located in Nebraska, and you and we submit to the personal jurisdiction of those courts — unless the law where you live gives you the right to bring a claim in your home jurisdiction. These Terms contain no mandatory arbitration clause and no class-action waiver.
 
 ## 15. Contact
 
