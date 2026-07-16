@@ -4,7 +4,8 @@
 // and the standalone Foods tab inherits the same contract.
 import {
   groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand,
-  splitBrandGroupsForPicker,
+  splitBrandGroupsForPicker, filterFoodsByScope, FOOD_SCOPE_OPTIONS,
+  type FoodScope,
   foodIntakeKey, indexIntakeStats, relativeDayLabel, foodIntakeNote,
   selectReliableFavorites, foodFavoriteNote, shouldSuppressFavorites,
   FAVORITE_MIN_RATED_MEALS, FAVORITE_MIN_RATE, FAVORITE_SHELF_LIMIT,
@@ -73,6 +74,61 @@ describe('groupFoodsByType', () => {
     const snapshot = [...input];
     groupFoodsByType(input);
     expect(input).toEqual(snapshot);
+  });
+});
+
+describe('filterFoodsByScope (B-347 picker scope chips)', () => {
+  // A food carrying both facts the chips key on — food_type (Meals/Treats) and
+  // format (Wet/Dry). id doubles as a readable label.
+  const scoped = (id: string, food_type: string | null, format: string): PickerFood => ({
+    id,
+    food_type,
+    format,
+    brand: 'Brand',
+    product_name: id,
+    photo_path: null,
+  });
+
+  const lib = [
+    scoped('wet-meal', 'meal', 'wet_canned'),
+    scoped('dry-meal', 'meal', 'dry_kibble'),
+    scoped('wet-treat', 'treat', 'wet_canned'),
+    scoped('jerky-treat', 'treat', 'jerky'),
+    scoped('unclassified', null, 'raw'),
+  ];
+
+  it('returns the list unchanged for the default "all" scope', () => {
+    expect(filterFoodsByScope(lib, 'all')).toBe(lib);
+  });
+
+  it('filters Meals / Treats on food_type', () => {
+    expect(ids(filterFoodsByScope(lib, 'meal'))).toEqual(['wet-meal', 'dry-meal']);
+    expect(ids(filterFoodsByScope(lib, 'treat'))).toEqual(['wet-treat', 'jerky-treat']);
+  });
+
+  it('filters Wet / Dry on the physical format enum, across food types', () => {
+    // Wet spans a meal AND a treat — the chip keys on format, not usage, so a wet
+    // treat is not excluded by the Wet chip.
+    expect(ids(filterFoodsByScope(lib, 'wet'))).toEqual(['wet-meal', 'wet-treat']);
+    expect(ids(filterFoodsByScope(lib, 'dry'))).toEqual(['dry-meal']);
+  });
+
+  it('preserves input order and does not mutate the input', () => {
+    const snapshot = [...lib];
+    const out = filterFoodsByScope(lib, 'treat');
+    expect(out).not.toBe(lib);
+    expect(lib).toEqual(snapshot);
+  });
+
+  it('exposes exactly the five closed-set chip options in order', () => {
+    // The chips are a closed single-select set (B-146) — guard the roster + labels
+    // so a stray addition can't silently reintroduce a hidden-overflow row.
+    expect(FOOD_SCOPE_OPTIONS.map((o) => o.value)).toEqual(
+      ['all', 'meal', 'treat', 'wet', 'dry'] satisfies FoodScope[],
+    );
+    expect(FOOD_SCOPE_OPTIONS.map((o) => o.label)).toEqual(
+      ['All', 'Meals', 'Treats', 'Wet', 'Dry'],
+    );
   });
 });
 

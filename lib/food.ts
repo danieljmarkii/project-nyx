@@ -32,6 +32,48 @@ export function groupFoodsByType(foods: PickerFood[]): GroupedFoods {
   return { meals, treats, other };
 }
 
+// ── Picker scope chips (B-347 / B-020) ─────────────────────────────────────────
+// The pinned scope-chip row filters the picker's library by a FACT the food
+// already carries — its usage classification (food_type) or physical form
+// (format) — never by an inferred preference (intake-is-not-preference: the chips
+// cut the list, they never read "loved"/"refused"). A closed single-select set of
+// five, rendered through the wrapping ChipGroup so every option stays on screen
+// (the B-146 no-hidden-overflow convention). 'all' is the default no-op.
+export type FoodScope = 'all' | 'meal' | 'treat' | 'wet' | 'dry';
+
+export const FOOD_SCOPE_OPTIONS: { value: FoodScope; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'meal', label: 'Meals' },
+  { value: 'treat', label: 'Treats' },
+  { value: 'wet', label: 'Wet' },
+  { value: 'dry', label: 'Dry' },
+];
+
+// Filter a food list to the selected scope. 'all' returns the input unchanged.
+// Meals/Treats key on food_type (the B-011 usage bucket); Wet/Dry key on the
+// physical `format` enum (wet_canned / dry_kibble) — both facts on every row, so
+// the filter never touches inferred preference. Pure; input not mutated; order
+// preserved. An unknown scope falls through to the unfiltered list (never hides
+// foods on a bad value).
+export function filterFoodsByScope<T extends { food_type: string | null; format: string }>(
+  foods: T[],
+  scope: FoodScope,
+): T[] {
+  switch (scope) {
+    case 'meal':
+      return foods.filter((f) => f.food_type === 'meal');
+    case 'treat':
+      return foods.filter((f) => f.food_type === 'treat');
+    case 'wet':
+      return foods.filter((f) => f.format === 'wet_canned');
+    case 'dry':
+      return foods.filter((f) => f.format === 'dry_kibble');
+    case 'all':
+    default:
+      return foods;
+  }
+}
+
 // Chunk a flat list of foods into fixed-size rows so each rendered row is a
 // 2-col grid with matching tile heights (driven by the tallest tile in the
 // row). A trailing odd tile lands in a one-element row, which the caller pads
