@@ -15,10 +15,15 @@ interface Props {
   // exactly, so the two surfaces handle a brand-grouped item identically. Defaults
   // to showing the brand (the flat Recent strip + single-variant tiles).
   hideBrand?: boolean;
-  // Compact height for the "{Pet}'s rotation" shelf (B-346): a shorter tile with a
-  // single-line product name, so a 12-food rotation fits in roughly the space the
-  // old 5-item Recent strip took and the library below stays reachable. Same tap
-  // target (≥44pt), same one-tap-log behavior — only the vertical footprint shrinks.
+  // Compact height for the "{Pet}'s rotation" shelf (B-346): a shorter tile (smaller
+  // min-height + tighter vertical padding) so a 12-food rotation fits in roughly the
+  // space the old 5-item Recent strip took and the library below stays reachable.
+  // Same tap target (≥44pt), same one-tap-log behavior — only the vertical footprint
+  // shrinks. The product name still wraps to two lines: the rotation shelf is a FLAT
+  // recency list (not brand-grouped), so a same-brand cluster is told apart solely by
+  // the flavor in the product name — clipping it to one line would make "…Chicken &
+  // Liver" and "…Chicken & Tuna" read identically on the exact picky-eater shelf this
+  // widening serves. Legible-when-needed beats maximally-short-but-ambiguous.
   compact?: boolean;
 }
 
@@ -83,9 +88,11 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress, hid
           {metaLine}
         </Text>
       ) : null}
-      {/* Compact tiles keep the name to one line so the rotation shelf stays short;
-          the full tile allows two lines for a long flavor name. */}
-      <Text style={styles.product} numberOfLines={compact ? 1 : 2}>
+      {/* Two lines on both variants: the flavor in the product name is what tells a
+          same-brand cluster apart, so compact tiles must not clip it (see the prop
+          comment). The compactness comes from the shorter min-height + padding, not
+          from truncating the disambiguating text. */}
+      <Text style={styles.product} numberOfLines={2}>
         {productName}
       </Text>
     </TouchableOpacity>
