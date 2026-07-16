@@ -86,7 +86,7 @@ These are **Open Questions**, not deferrals — a decision here unblocks a clust
 | **B-041** | User data export (GDPR Art. 20) | Legal/GDPR, **not** an Apple gate (Apple requires deletion, not export). Inverse of B-039; build as an Edge Function extension. |
 | **B-248 / B-249 / B-255** | Storage access + retention hardening (`nyx-vet-attachments` bucket read; orphaned event-photo objects; expired vet-report reaping) | T&S / data-minimization. Not live leaks (B-244 closed the exploitable one), but retention hygiene before scale. |
 | **B-119 / B-120 / B-121** | Account-deletion hardening (re-auth; Apple-token revocation; orphaned-Storage sweep) | Post-B-039. **B-120 becomes hard the day Apple Sign-In ships.** |
-| **B-118** | Delete the leftover `smart-worker` Edge Function (stock template, RLS-bypass `secret` path) | `Now`, PM-only dashboard action; a security-review loose end (sibling of the already-closed B-043). |
+| **B-118** ✅ | ~~Delete the leftover `smart-worker` Edge Function (stock template, RLS-bypass `secret` path)~~ | **Done 2026-07-16** — deleted from the dashboard; verified gone via `list_edge_functions`. Sibling of the closed B-043. |
 | **B-178 / B-180** | Edge-Function post-merge deploy-drift guard + runnable deno suites | Reliability: a merged clinical fix can sit un-deployed (bit `analyze-vomit` once). Not a store gate, but a "don't ship a silently-stale function" guard. |
 
 ---
