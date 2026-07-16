@@ -200,6 +200,18 @@ export async function initDb(): Promise<void> {
     // Column already exists — safe to ignore
   }
 
+  // archived_at — archive (tombstone) stamp for "remove from library". B-005.
+  // NULL = live (shown in picker/library); non-NULL = archived (filtered out of
+  // picker/library reads ONLY, never off history/analytics joins — an archived
+  // food's past meals must keep their name and exposure). Only archived_at is
+  // mirrored on-device: it's the field the client filters on. archived_by_user_id
+  // (server attribution) is not needed locally. Mirrors migration 033.
+  try {
+    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN archived_at TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   // occurred_at_source records the provenance of an event's timestamp:
   // 'manual' (user chose), 'exif' (from photo metadata), 'now' (auto-set when
   // we couldn't read EXIF). Surfaced in the UI as a subtle attribution. Mirrors

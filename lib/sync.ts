@@ -493,7 +493,7 @@ export async function refreshFoodCache(): Promise<void> {
 
   const { data, error } = await supabase
     .from('food_items')
-    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths');
+    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths, archived_at');
 
   if (error || !data) return;
 
@@ -510,8 +510,8 @@ export async function refreshFoodCache(): Promise<void> {
     // leaves last_used_at intact.
     await db.runAsync(
       `INSERT INTO food_items_cache
-        (id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, archived_at, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          brand = excluded.brand,
          product_name = excluded.product_name,
@@ -522,9 +522,10 @@ export async function refreshFoodCache(): Promise<void> {
          is_grain_free = excluded.is_grain_free,
          is_prescription = excluded.is_prescription,
          photo_path = excluded.photo_path,
+         archived_at = excluded.archived_at,
          cached_at = excluded.cached_at`,
       [item.id, item.brand, item.product_name, item.format, item.food_type ?? null, item.primary_protein ?? null,
-       item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, now]
+       item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, item.archived_at ?? null, now]
     );
   }
 }
