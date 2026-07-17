@@ -135,4 +135,61 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
     expect(mockFrom).not.toHaveBeenCalled();
     expect(mockRunAsync).not.toHaveBeenCalled();
   });
+
+  // B-005 regression: the refreshFoodCache upsert gained `archived_at` in its
+  // ON CONFLICT SET list. lib/sync.ts:520 documents the EXACT footgun this class of
+  // change risks — an INSERT OR REPLACE (or a stray column in the SET) silently
+  // nulls the LOCAL-ONLY `last_used_at`, resetting the recent-foods ordering with no
+  // server column to re-hydrate it. This test runs the REAL SQL string + params
+  // refreshFoodCache emits (captured from the mock, so a change to the production
+  // upsert is exercised, not a copy) against a real SQLite: `archived_at` must be
+  // written from the server value while `last_used_at` survives untouched.
+  it('refreshFoodCache upsert writes archived_at but preserves the local-only last_used_at', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { DatabaseSync } = require('node:sqlite');
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    eqSpy.mockResolvedValueOnce({
+      data: [{
+        id: 'f1', brand: 'Blue Buffalo', product_name: 'Wilderness',
+        format: 'dry_kibble', food_type: 'meal', primary_protein: 'chicken',
+        is_novel_protein: false, is_grain_free: true, is_prescription: false,
+        photo_paths: ['f1/0-front.jpg'], archived_at: '2026-07-17T00:00:00Z',
+      }],
+      error: null,
+    });
+
+    await refreshFoodCache();
+
+    // The single upsert refreshFoodCache emitted for the row above.
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE food_items_cache (
+      id TEXT PRIMARY KEY, brand TEXT, product_name TEXT, format TEXT,
+      food_type TEXT, primary_protein TEXT, is_novel_protein INTEGER,
+      is_grain_free INTEGER, is_prescription INTEGER, photo_path TEXT,
+      last_used_at TEXT, archived_at TEXT, cached_at TEXT
+    );`);
+    // Pre-existing cached row: the user fed this food recently (last_used_at set),
+    // it is NOT archived yet, and its metadata is stale — the state a sync must
+    // reconcile without stomping the local recency stamp.
+    db.exec(`INSERT INTO food_items_cache
+      (id, brand, product_name, format, last_used_at, archived_at, cached_at)
+      VALUES ('f1', 'Old Brand', 'Old Name', 'dry_kibble',
+              '2026-01-01T00:00:00Z', NULL, '2026-01-01T00:00:00Z');`);
+
+    db.prepare(sql).run(...(params as (string | number | null)[]));
+
+    const row = db.prepare('SELECT * FROM food_items_cache WHERE id = ?').get('f1') as Record<string, unknown>;
+    db.close();
+
+    // archived_at pulled from the server (the food is now archived) …
+    expect(row.archived_at).toBe('2026-07-17T00:00:00Z');
+    // … the server-owned metadata refreshed …
+    expect(row.brand).toBe('Blue Buffalo');
+    expect(row.product_name).toBe('Wilderness');
+    // … and the LOCAL-ONLY last_used_at untouched (the footgun that must not regress).
+    expect(row.last_used_at).toBe('2026-01-01T00:00:00Z');
+  });
 });

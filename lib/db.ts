@@ -869,7 +869,7 @@ export async function getRecentFoods(
     // picker read, so an archived food drops out of the re-offer set. This is the
     // one archive filter that lives on a meals JOIN; it's still a PICKER read (it
     // offers foods to log next), not a history/analytics read, so the invariant
-    // holds. The meal HISTORY itself (getDailyMealsForPet, getMealForEvent) is a
+    // holds. The meal HISTORY itself (getTimeline, getMealForEvent) is a
     // separate join and stays unfiltered.
     `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path
      FROM meals m
