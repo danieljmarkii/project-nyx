@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
@@ -13,6 +13,7 @@ import {
 import { getReliableFavorites } from '../../lib/foodFavorites';
 import { getSignedUrls } from '../../lib/storage';
 import { usePetStore } from '../../store/petStore';
+import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 
 // The thumbnail props a row needs (B-004 PR 6), resolved per-food by `thumbFor`
 // in the screen and spread onto FoodRow by both the group list and the shelf.
@@ -144,12 +145,19 @@ export default function FoodsScreen() {
     }
   }, [activePetId, activePetSpecies, resolveThumbnails]);
 
-  // Reload on every focus so foods added, edited, or deleted from the capture
+  // Reload on every focus so foods added, edited, or archived from the capture
   // flow or the detail screen are reflected when the tab comes back into view —
   // the tab persists across switches, so a mount-only effect would go stale.
   // Keying load on activePetId also refreshes annotations when the active pet
   // changes while focused (useFocusEffect re-runs when its callback changes).
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // B-005: reload when the library changes while this tab is already focused —
+  // an Undo fired from the root snackbar restores a food without a re-focus
+  // event, so focus alone wouldn't bring the tile back. `load` is idempotent, so
+  // the redundant fire alongside a focus reload is harmless.
+  const libraryVersion = useFoodLibraryStore((s) => s.version);
+  useEffect(() => { load(); }, [libraryVersion, load]);
 
   // Resolve a row's per-pet note: pure lookup + format. null leaves the row clean.
   const noteFor = useCallback(

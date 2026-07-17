@@ -18,6 +18,7 @@ import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
 import { MedicationCompletionCard } from '../components/ui/MedicationCompletionCard';
 import { CompletionMoment } from '../components/ui/CompletionMoment';
+import { Snackbar } from '../components/ui/Snackbar';
 import { ColdStartOverlay } from '../components/ColdStartOverlay';
 
 // Hold the native splash until the font gate releases, so the first painted
@@ -171,6 +172,7 @@ export default function RootLayout() {
       <MealCompletionCard />
       <MedicationCompletionCard />
       <CompletionMoment />
+      <Snackbar />
       <ColdStartOverlay />
     </>
   );
