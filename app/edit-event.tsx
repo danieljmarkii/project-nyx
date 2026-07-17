@@ -224,8 +224,13 @@ export default function EditEventModal() {
   async function loadFoods() {
     const db = getDb();
     const rows = await db.getAllAsync<CachedFood>(
+      // B-005: archived foods are not pickable when re-selecting an event's food —
+      // a picker read, so `archived_at IS NULL` filters them (invariant: filter at
+      // picker/library reads only). The event's own already-set food is displayed
+      // separately and is unaffected by this list.
       `SELECT id, brand, product_name, format
        FROM food_items_cache
+       WHERE archived_at IS NULL
        GROUP BY LOWER(brand), LOWER(product_name)
        ORDER BY MAX(COALESCE(last_used_at, '')) DESC, brand ASC
        LIMIT 30`,

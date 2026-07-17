@@ -21,21 +21,23 @@ interface LibRow {
   photo_path: string | null;
 }
 
-// [id, brand, product_name, format, food_type, photo_path]
-type Fixture = [string, string, string, string, string | null, string | null];
+// [id, brand, product_name, format, food_type, photo_path, archived_at?]
+// archived_at is optional (defaults to null = active) so the pre-B-005 fixtures
+// read unchanged; only the archive-filter tests pass the 7th element.
+type Fixture = [string, string, string, string, string | null, string | null, (string | null)?];
 
 function runLibraryQuery(rows: Fixture[]): LibRow[] {
   const db = new DatabaseSync(':memory:');
   // Minimal mirror of the columns getLibraryFoods reads (lib/db.ts food_items_cache).
   db.exec(`CREATE TABLE food_items_cache (
     id TEXT PRIMARY KEY, brand TEXT, product_name TEXT, format TEXT,
-    food_type TEXT, photo_path TEXT
+    food_type TEXT, photo_path TEXT, archived_at TEXT
   );`);
   const insert = db.prepare(
-    `INSERT INTO food_items_cache (id, brand, product_name, format, food_type, photo_path)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO food_items_cache (id, brand, product_name, format, food_type, photo_path, archived_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
-  for (const r of rows) insert.run(...r);
+  for (const r of rows) insert.run(r[0], r[1], r[2], r[3], r[4], r[5], r[6] ?? null);
   const out = db.prepare(LIBRARY_FOODS_QUERY).all() as unknown as LibRow[];
   db.close();
   return out;
@@ -106,5 +108,39 @@ describe('LIBRARY_FOODS_QUERY — B-108 photo dedup', () => {
     expect(rows.map((r) => `${r.brand}/${r.product_name}`)).toEqual([
       'Apple/alpha', 'Apple/Beta', 'zebra/Bravo',
     ]);
+  });
+});
+
+describe('LIBRARY_FOODS_QUERY — B-005 archive filter', () => {
+  it('hides an archived food from the library list', () => {
+    const rows = runLibraryQuery([
+      ['active', 'Acme', 'Kept', 'dry_kibble', 'meal', null, null],
+      ['gone', 'Acme', 'Archived', 'dry_kibble', 'meal', null, '2026-07-17T00:00:00Z'],
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('active');
+    expect(rows[0].product_name).toBe('Kept');
+  });
+
+  it('drops a food only when ALL of its duplicate captures are archived', () => {
+    // Two captures of the same food; one archived, one active. The food is still
+    // in the pantry (its active capture forms the displayed group) — a per-row
+    // archive of a duplicate must not evict a still-active food. The WHERE runs
+    // pre-aggregation, so only the active row enters the GROUP.
+    const rows = runLibraryQuery([
+      ['dup-archived', 'Tiki', 'after DARK', 'wet_canned', 'meal', null, '2026-07-17T00:00:00Z'],
+      ['dup-active', 'Tiki', 'after DARK', 'wet_canned', 'meal', 'dup-active/0.jpg', null],
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe('dup-active');
+    expect(rows[0].photo_path).toBe('dup-active/0.jpg');
+  });
+
+  it('drops a food entirely when every capture of it is archived', () => {
+    const rows = runLibraryQuery([
+      ['a1', 'Solo', 'All Gone', 'raw', 'meal', null, '2026-07-17T00:00:00Z'],
+      ['a2', 'Solo', 'All Gone', 'raw', 'meal', 'a2/0.jpg', '2026-07-17T00:00:00Z'],
+    ]);
+    expect(rows).toHaveLength(0);
   });
 });

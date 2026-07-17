@@ -116,6 +116,9 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
     await refreshFoodCache();
     expect(mockFrom).toHaveBeenCalledWith('food_items');
     expect(eqSpy).toHaveBeenCalledWith('created_by_user_id', 'user-A');
+    // B-005: archived_at must be pulled so archived rows stay cached (for the
+    // future Archived section) and a Restore round-trips archived_at -> NULL.
+    expect(selectSpy).toHaveBeenCalledWith(expect.stringContaining('archived_at'));
   });
 
   it('refreshMedicationCache scopes the pull to the signed-in account', async () => {
