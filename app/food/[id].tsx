@@ -412,7 +412,12 @@ export default function FoodDetailScreen() {
   function armUndo(result: ArchiveResult, foodName: string) {
     useSnackbarStore.getState().show(
       {
-        message: `Removed ${foodName} from your library`,
+        // Reassure at the moment of removal that this is NOT the old destructive
+        // delete — the pet's logged meals + reports survive (B-005 invariant). The
+        // owner's live anxiety ("did I just erase weeks of diet-trial history?")
+        // is answered here, not only in the Archived-section hint they'd have to
+        // go find (pm-feature-review, B-005 PR 3).
+        message: `Removed ${foodName} — your logged meals stay in your history`,
         actionLabel: 'Undo',
         onAction: async () => {
           try {
