@@ -235,6 +235,71 @@ Deno.test('parseAnalysisToolResult — appears_to_show_stool defaults false', ()
   assertStrictEquals(r.contents, null)
 })
 
+// ── Adversarial ① (2026-07-17): the floor must escalate on the STRUCTURED red
+// flag, not the model's (droppable) visual_flags array. A model that records
+// blood/foreign but omits the flag AND self-selects monitor must still escalate,
+// and must NOT surface its (soft, monitor-written) read on the escalation. ──
+
+Deno.test('parseAnalysisToolResult — derives "blood" from blood_present=yes even when the model omits the visual flag', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    blood_present: 'yes',
+    blood_type: 'fresh_red',
+    visual_flags: [],          // model dropped the flag...
+    recommendation: 'monitor', // ...and under-called the recommendation
+    read_text: 'A soft stool with a little colour — keep an eye out.', // must NOT surface
+  }))!
+  assertEquals(r.visual_flags, ['blood'])            // derived from the structured field
+  assertStrictEquals(r.read_text, null)              // model's non-escalation read suppressed
+  // The floor now escalates, and the read names the concern deterministically —
+  // never the soft model line.
+  const rec = applyEscalationFloor({
+    modelRecommendation: r.recommendation,
+    appearsToShowStool: r.appears_to_show_stool,
+    hasPhoto: true,
+    visualFlags: r.visual_flags,
+    contextualFlags: [],
+  })
+  assertStrictEquals(rec, 'worth_a_call')
+  const read = selectReadText({
+    petName: 'Cooper', recommendation: rec, contextualFlags: [],
+    visualFlags: r.visual_flags, modelReadText: r.read_text, photoUnreadable: false, hasPhoto: true,
+  })
+  assertEquals(read.toLowerCase().includes('blood'), true)
+  assertEquals(read.toLowerCase().includes('keep an eye out'), false)
+})
+
+Deno.test('parseAnalysisToolResult — derives "suspected_foreign_material" from foreign_material_present=yes when the flag is omitted', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    foreign_material_present: 'yes',
+    foreign_material_note: 'looks like a strip of fabric',
+    visual_flags: [],
+    recommendation: 'monitor',
+  }))!
+  assertEquals(r.visual_flags, ['suspected_foreign_material'])
+})
+
+Deno.test('parseAnalysisToolResult — the model\'s OWN worth_a_call read is preserved (surfaces on escalation)', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true,
+    blood_present: 'yes',
+    blood_type: 'dark_tarry',
+    visual_flags: ['blood'],
+    recommendation: 'worth_a_call',
+    read_text: 'I can see what looks like very dark, tarry stool. That is worth a call to your vet.',
+  }))!
+  assertEquals(r.visual_flags, ['blood'])
+  assertStrictEquals(r.read_text, 'I can see what looks like very dark, tarry stool. That is worth a call to your vet.')
+})
+
+Deno.test('parseAnalysisToolResult — no double-count when the model sets both the field and the flag', () => {
+  const r = parseAnalysisToolResult(makeToolUse({
+    appears_to_show_stool: true, blood_present: 'yes', visual_flags: ['blood'], recommendation: 'worth_a_call',
+  }))!
+  assertEquals(r.visual_flags, ['blood']) // union, not append — exactly one entry
+})
+
 // ── computeContextualFlags ────────────────────────────────────────────────────
 
 const baseCtx = (over: Partial<StoolContextInput>): StoolContextInput => ({

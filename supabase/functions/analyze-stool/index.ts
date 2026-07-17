@@ -260,9 +260,37 @@ export function parseAnalysisToolResult(response: ClaudeResponse): StoolAnalysis
 
   const appears = input.appears_to_show_stool === true
   const contents = sanitizeEnumArray(input.contents, CONTENTS)
-  const visualFlags = sanitizeEnumArray(input.visual_flags, VISUAL_FLAGS)
-  const recommendation = (sanitizeEnum(input.recommendation, RECOMMENDATIONS) ?? 'not_enough_to_say') as Recommendation
+  const modelRecommendation = sanitizeEnum(input.recommendation, RECOMMENDATIONS) as Recommendation | null
+  const recommendation = (modelRecommendation ?? 'not_enough_to_say') as Recommendation
   const bloodPresent = sanitizeEnum(input.blood_present, TRISTATE)
+  const foreignPresent = sanitizeEnum(input.foreign_material_present, TRISTATE)
+
+  // Escalating visual flags are DERIVED from the structured clinical fields, then
+  // unioned with any the model set — NEVER the model's array alone (adversarial ①,
+  // 2026-07-17). A recorded red flag (blood present either type, or foreign
+  // material) forces its visual flag even when the model omits it from
+  // visual_flags, so the deterministic floor escalates on the PRESENCE of the
+  // finding rather than trusting the weaker of the two signals the model emits.
+  // This aligns the floor with generate-report, which likewise derives blood/
+  // foreign from the owner-editable structured fields, never the (possibly stale)
+  // visual_flags array (B-340 ruling, 2026-07-13). Mucus is deliberately NOT
+  // derived — it is monitor-tier and must not force worth_a_call.
+  const visualFlags = Array.from(new Set(sanitizeEnumArray(input.visual_flags, VISUAL_FLAGS)))
+  if (bloodPresent === 'yes' && !visualFlags.includes('blood')) visualFlags.push('blood')
+  if (foreignPresent === 'yes' && !visualFlags.includes('suspected_foreign_material')) {
+    visualFlags.push('suspected_foreign_material')
+  }
+
+  // The model's free-text read may surface (on the escalation path) ONLY when the
+  // MODEL ITSELF escalated (its own worth_a_call). If the floor escalates via a
+  // DERIVED flag the model did not reflect in its own recommendation, the model's
+  // read was written for a non-escalation and must not surface — null it so the
+  // deterministic visualFlagFallback names the concern instead. Without this, a
+  // derived-blood escalation could pair a "Worth a call" banner with a soft/benign
+  // model read (a reassurance leak on an escalation). B-060 safe direction.
+  const readText = modelRecommendation === 'worth_a_call' && typeof input.read_text === 'string'
+    ? input.read_text
+    : null
 
   return {
     appears_to_show_stool: appears,
@@ -272,12 +300,12 @@ export function parseAnalysisToolResult(response: ClaudeResponse): StoolAnalysis
     blood_present: bloodPresent,
     blood_type: bloodPresent === 'yes' ? sanitizeEnum(input.blood_type, BLOOD_TYPES) : null,
     mucus_present: sanitizeEnum(input.mucus_present, TRISTATE),
-    foreign_material_present: sanitizeEnum(input.foreign_material_present, TRISTATE),
+    foreign_material_present: foreignPresent,
     foreign_material_note: typeof input.foreign_material_note === 'string' ? input.foreign_material_note : null,
     description: typeof input.description === 'string' ? input.description : null,
     visual_flags: visualFlags,
     recommendation,
-    read_text: typeof input.read_text === 'string' ? input.read_text : null,
+    read_text: readText,
     confidence: input.confidence && typeof input.confidence === 'object' ? input.confidence : null,
   }
 }
