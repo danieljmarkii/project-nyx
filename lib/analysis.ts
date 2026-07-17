@@ -24,6 +24,53 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
   }
 }
 
+// Kicks off per-incident AI analysis for a stool event (B-247). Structurally
+// identical to triggerVomitAnalysis — flush pending sync so the event row lands,
+// force THIS event's attachment rows up (ignoring the local `synced` flag, same
+// recovery reasoning as vomit), then fire-and-forget invoke analyze-stool with
+// { event_id }. The caller only reaches this on a photographed stool event (the
+// invoke happens inside app/log.tsx's attachment-upload block), so we never
+// round-trip a photoless stool for a guaranteed-empty read. Idempotent: the
+// function upserts event_ai_analysis keyed by event_id, so auto-on-log and a
+// later detail-open re-run are both safe.
+export async function triggerStoolAnalysis(eventId: string): Promise<{ error: string | null }> {
+  try {
+    await syncPendingEvents().catch(() => {});
+    await ensureEventAttachmentsSynced(eventId).catch(() => {});
+    const { error } = await supabase.functions.invoke('analyze-stool', {
+      body: { event_id: eventId },
+    });
+    return { error: error ? error.message : null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// The owner-editable structured fields for a stool read (B-247, mirrors
+// EDITABLE_VOMIT_FIELDS). These are the descriptive/clinical columns on
+// event_ai_analysis that feed the vet report — an owner edit is human-reviewed
+// and so more-trusted than the raw AI value (raw AI < human). The n=1 read
+// columns (recommendation / read_text / visual_flags / contextual_flags /
+// status) are deliberately NOT here: an owner edit can never alter the read,
+// only the owner-reviewed facts. Values are the stool-prefixed DB column names
+// (the stool payload keys are un-prefixed — the PR 6 detail screen owns the
+// payload↔column mapping and the diff/save machinery; this constant just names
+// the editable set). `stool_blood_type` rides with `stool_blood_present` since
+// the fresh-vs-tarry discriminator is part of the same owner-editable finding.
+export const EDITABLE_STOOL_FIELDS = [
+  'stool_consistency',
+  'stool_colour',
+  'stool_content',
+  'stool_blood_present',
+  'stool_blood_type',
+  'stool_mucus_present',
+  'foreign_material_present',
+  'foreign_material_note',
+  'description',
+] as const;
+
+export type EditableStoolField = (typeof EDITABLE_STOOL_FIELDS)[number];
+
 // ── Owner edits to the structured fields (B-028) ──────────────────────────────
 // The n=1 read (recommendation / read_text) is DISMISSIBLE, never editable; only
 // these descriptive/clinical fields are owner-editable. They feed the vet report
