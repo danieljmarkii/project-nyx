@@ -130,4 +130,14 @@ describe('restoreFood', () => {
     ).rejects.toEqual({ message: 'nope' });
     expect(mockRunAsync).not.toHaveBeenCalled();
   });
+
+  it('throws on a silent no-op (revert affected 0 rows) so Undo surfaces a failure, not a false success', async () => {
+    // The guard that makes an Undo that didn't take reach armUndo's catch instead
+    // of resolving quietly and leaving the food archived.
+    resultQueue = [{ data: [], error: null }];
+    await expect(
+      restoreFood({ foodIds: ['f1'], archivedAt: 's', descriptor: ROW }),
+    ).rejects.toThrow(/permission denied/i);
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
 });

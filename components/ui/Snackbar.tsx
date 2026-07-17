@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     fontSize: theme.textMD,
-    color: '#fff',
+    color: theme.colorTextOnDark,
     fontWeight: theme.weightRegular,
   },
   // 44pt min touch target (the 3am-test floor) — the label alone is ~15pt.

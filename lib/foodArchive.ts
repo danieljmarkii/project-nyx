@@ -108,13 +108,22 @@ export async function archiveFood(row: FoodDescriptor): Promise<ArchiveResult> {
 export async function restoreFood(result: ArchiveResult): Promise<void> {
   const { foodIds, archivedAt, descriptor } = result;
 
-  const { error: updErr } = await supabase
+  // Revert by the exact id set this archive flipped — the ids already scope the
+  // revert precisely (a re-archived duplicate never shares these ids), so no
+  // archived_at filter is needed here. .select('id') + the 0-row guard so a
+  // genuine failure (RLS denial, expired session) surfaces to the caller's catch
+  // instead of resolving as a silent no-op that leaves the food archived after
+  // Undo — the same guard archiveFood carries. Within the ~5s Undo window the
+  // rows can't legitimately vanish, so 0 rows means the revert didn't take.
+  const { data: reverted, error: updErr } = await supabase
     .from('food_items')
     .update({ archived_at: null })
     .in('id', foodIds)
-    .eq('archived_at', archivedAt)
     .select('id');
   if (updErr) throw updErr;
+  if (!reverted || reverted.length === 0) {
+    throw new Error('Server rejected the change (permission denied).');
+  }
 
   const db = getDb();
   await db.runAsync(

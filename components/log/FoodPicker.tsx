@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
 } from 'react-native';
@@ -18,6 +18,7 @@ import {
   formatCalendarDate, isArrangementStale,
 } from '../../lib/feedingArrangements';
 import { usePetStore, orderPetsActiveFirst } from '../../store/petStore';
+import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 import { FoodTile } from './FoodTile';
 
 interface Props {
@@ -124,6 +125,30 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
       return () => { cancelled = true; };
     }, [petId, loadArrangements]),
   );
+
+  // B-005: also reload when the library changes while the picker is already
+  // focused. Archiving happens on the food detail screen (opened via onOpenDetail
+  // → /food/[id]); an Undo tapped on the root snackbar afterward restores the food
+  // without a re-focus event, so useFocusEffect alone wouldn't bring the tile back.
+  // Only the two archive-affected reads (recents + library) — arrangements are
+  // unaffected by archive. Idempotent, so a redundant fire alongside a focus reload
+  // is harmless.
+  const libraryVersion = useFoodLibraryStore((s) => s.version);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [r, l] = await Promise.all([
+          getRecentFoods(petId, ROTATION_DAYS, ROTATION_LIMIT),
+          getLibraryFoods(),
+        ]);
+        if (!cancelled) { setRotation(r); setLibrary(l); }
+      } catch (err) {
+        console.warn('[FoodPicker] library-version reload failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [libraryVersion, petId]);
 
   // §6a passive freshness — "Yes, still out": re-attest the bowl is still down
   // (never a push). The re-read settles the row back to fresh (so the nudge
