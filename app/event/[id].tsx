@@ -44,6 +44,12 @@ import {
 } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
 import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSection';
+
+// The two owner-classified stool event types share the analyze-stool read (D1 keeps
+// the stool_normal/diarrhea split). One predicate so the render + photo-retrigger
+// gates can't drift.
+const isStoolEvent = (t: string | null | undefined): boolean =>
+  t === 'stool_normal' || t === 'diarrhea';
 import { Header, PhotoViewer } from '../../components/ui';
 
 const HERO_HEIGHT = 320;
@@ -494,9 +500,7 @@ export default function EventDetailScreen() {
           // with a compressed one) — the per-incident section triggers on mount, but
           // a photo added after mount needs this nudge to get its first read.
           if (event.event_type === 'vomit') triggerVomitAnalysis(event.id).catch(() => {});
-          if (event.event_type === 'stool_normal' || event.event_type === 'diarrhea') {
-            triggerStoolAnalysis(event.id).catch(() => {});
-          }
+          if (isStoolEvent(event.event_type)) triggerStoolAnalysis(event.id).catch(() => {});
         })
         .catch(console.error);
     } catch (e) {
@@ -643,7 +647,7 @@ export default function EventDetailScreen() {
             <VomitAnalysisSection eventId={event.id} petName={activePet?.name} />
           ) : null}
 
-          {event.event_type === 'stool_normal' || event.event_type === 'diarrhea' ? (
+          {isStoolEvent(event.event_type) ? (
             <StoolAnalysisSection eventId={event.id} petName={activePet?.name} />
           ) : null}
 

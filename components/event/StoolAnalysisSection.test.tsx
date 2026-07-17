@@ -55,7 +55,7 @@ describe('StoolAnalysisSection — cap/flag render states', () => {
     const { findByText, queryByText } = render(<StoolAnalysisSection eventId="e1" petName="Rex" />);
 
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
-    expect(await findByText(/If Rex keeps having diarrhea/)).toBeTruthy();
+    expect(await findByText(/If Rex's stool keeps looking off/)).toBeTruthy();
     expect(await findByText(/check in with your vet/i)).toBeTruthy();
 
     // No retry affordance on a cap state.
