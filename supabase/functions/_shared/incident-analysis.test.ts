@@ -216,6 +216,26 @@ Deno.test('write-back — identity keys are framework-owned: a descriptor struct
   assertStrictEquals(wb.values.colour, 'yellow') // non-identity keys still land
 })
 
+Deno.test('write-back — read-field keys are framework-owned too: a structuredValues collision cannot override the floor verdict', () => {
+  // Same attack, aimed at the clinical outcome instead of row identity: a
+  // descriptor emitting recommendation/status/read_text in structuredValues must
+  // lose to the floor-computed readFields (spread last). Locks the spread order
+  // against a future refactor that would let a descriptor downgrade an
+  // escalation — the exact hole the escalation floor exists to close.
+  const wb = buildAnalysisWriteBack({
+    humanEdited: false,
+    eventId: 'evt',
+    petId: 'pet',
+    incidentType: 'vomit',
+    structuredValues: { recommendation: 'monitor', status: 'uncertain', read_text: 'MODEL SAYS ALL CLEAR', colour: 'yellow' },
+    readFields: READ_FIELDS, // recommendation: worth_a_call, status: completed
+  })
+  assertStrictEquals(wb.values.recommendation, 'worth_a_call')
+  assertStrictEquals(wb.values.status, 'completed')
+  assertStrictEquals(wb.values.read_text, 'read')
+  assertStrictEquals(wb.values.colour, 'yellow') // non-colliding structured keys still land
+})
+
 // ── getToolUseInput / sanitize helpers ─────────────────────────────────────────
 
 Deno.test('getToolUseInput — finds the named tool block, null otherwise', () => {

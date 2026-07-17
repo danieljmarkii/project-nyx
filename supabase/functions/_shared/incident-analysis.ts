@@ -22,9 +22,11 @@
 //   - The deterministic escalation floor cannot be downgraded by the model:
 //     contextual and visual flags force worth_a_call (Pattern 2).
 //   - Contextual flags are server-computed SQL, never model-reasoned (Pattern 3).
-//   - The model's free text reaches the owner ONLY on the visual-flag
-//     escalation path; every other read is a deterministic per-type template
-//     (B-060 — the guarantee is STRUCTURAL, enforced by selectReadText).
+//   - The model's free text reaches the owner ONLY on the worth_a_call
+//     escalation path — a model-raised visual flag or the model's own
+//     worth_a_call, either way a PRESENT-concern read; every other path is a
+//     deterministic per-type template (B-060 — the guarantee is STRUCTURAL,
+//     enforced by selectReadText).
 //   - Re-analysis never clobbers a human-edited row (Pattern 7).
 //   - Unreadable input degrades honestly — never 500s, never reassures (Pattern 5).
 // A descriptor cannot weaken any of the above: it controls which findings
@@ -114,8 +116,9 @@ export function applyEscalationFloor(params: {
 // ── Read-text selection (B-060 — the mechanism, framework-owned) ──────────────
 // The per-type templates are the descriptor's; the selection ORDER — above all
 // the guarantee that the model's free text reaches the owner ONLY on the
-// worth_a_call visual-flag escalation path (naming a PRESENT concern, the safe
-// direction) — is owned here. The monitor / no-flag path is the
+// worth_a_call escalation path (a model-raised visual flag or the model's own
+// worth_a_call — either way it names a PRESENT concern, the safe direction) —
+// is owned here. The monitor / no-flag path is the
 // reassurance-on-absence risk and is ALWAYS a deterministic template. (A regex
 // denylist was tried and rejected: it missed ~86% of plausible model
 // reassurance phrasings — adversarial review 2026-06-24. The guarantee is
@@ -154,7 +157,8 @@ export function selectReadText<TFlag extends string>(
   if (contextualFlags.length > 0) return copy.contextual(petName, contextualFlags)
   // 2. Unreadable photo — honest failure, never reassures, never the model's words.
   if (photoUnreadable) return copy.photoUnreadable(petName)
-  // 3. Escalation on a VISUAL flag — the ONLY path that surfaces the model's free text.
+  // 3. Escalation — the ONLY path that surfaces the model's free text (a model-
+  //    raised visual flag, or the model's own worth_a_call; a present-concern read).
   if (recommendation === 'worth_a_call') return modelReadText ?? copy.visualFlagFallback(petName, visualFlags)
   // 4. monitor — a clear photo, no flag. NEVER the model's read (the reassurance-
   //    on-absence risk); a deterministic forward-looking template instead.
@@ -415,6 +419,9 @@ async function fetchUsableImageBlob(
 // is preserved verbatim as ai_raw_payload via the descriptor's
 // buildStructuredValues — the pipeline only touches these generic fields.
 export interface IncidentAnalysisBase {
+  // ESCALATING flags ONLY — any entry here forces worth_a_call (Pattern 2).
+  // A monitor-tier observation (e.g. stool's mucus-without-blood, D5) must NOT
+  // be emitted here; surface it via the per-type structured fields instead.
   visual_flags: string[]
   recommendation: Recommendation
   read_text: string | null

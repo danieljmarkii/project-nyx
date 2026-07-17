@@ -50,8 +50,9 @@ import {
 } from '../_shared/incident-analysis.ts'
 
 // The incident-agnostic pure helpers moved to the shared pipeline module in the
-// D2 refactor; re-export them under their shipped names so this file remains
-// the test suite's (and any future reader's) single import surface for vomit.
+// D2 refactor; re-export them — and their parameter/return types, i.e. the full
+// shipped signatures, of which index.test.ts consumes a subset — under their
+// historical names so this file remains vomit's single import surface.
 export {
   detectImageMediaType,
   bytesToBase64,
@@ -330,9 +331,10 @@ function buildNoFlagReadText(petName: string, hasPhoto: boolean): string {
 // presence of a visible flag, never reassure on its absence (absence ≠ wellness —
 // the foam-cat hepatic-lipidosis miss). The model's free-text read_text is the only
 // owner-facing string a template doesn't produce, so the guarantee is STRUCTURAL, not
-// lexical: the model's words reach the owner ONLY when the recommendation escalates on
-// a visual flag it raised (there the read NAMES a present concern — the safe
-// "escalate on presence" direction). On the monitor / no-flag path — the
+// lexical: the model's words reach the owner ONLY when the recommendation is the
+// worth_a_call escalation (a visual flag it raised, or its own worth_a_call —
+// either way the read NAMES a present concern, the safe "escalate on presence"
+// direction). On the monitor / no-flag path — the
 // reassurance-on-absence risk — the read is a deterministic template, never the
 // model's words. (A regex denylist was tried and rejected: it can't enumerate the
 // open vocabulary of "the model asserted wellness" — it missed ~86% of plausible

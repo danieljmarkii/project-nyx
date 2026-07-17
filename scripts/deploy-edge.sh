@@ -103,10 +103,18 @@ DENO="$(command -v deno >/dev/null 2>&1 && command -v deno || echo "$BIN/deno")"
 #   ran and reported failures -> ✗ HARD FAIL (a real regression)
 #   timed out / couldn't fetch deps -> ⚠ WARN (env limit; verify where networked)
 if [ "$RUN_TESTS" = 1 ] && ls "$FUNC_DIR"/*.test.ts >/dev/null 2>&1; then
-  log "Verifying: deno test $FUNC_DIR"
+  # The function's own suite — plus the _shared suite whenever the entrypoint
+  # imports _shared/: the bundle INLINES that module, so a _shared regression
+  # ships with this function even if the function's own tests never hit it.
+  TEST_DIRS=("$FUNC_DIR/")
+  if grep -qE "from ['\"]\.\./_shared/" "$FUNC_DIR"/*.ts 2>/dev/null \
+     && ls supabase/functions/_shared/*.test.ts >/dev/null 2>&1; then
+    TEST_DIRS+=("supabase/functions/_shared/")
+  fi
+  log "Verifying: deno test ${TEST_DIRS[*]}"
   test_log="$(mktemp)"
   trap '[ -n "${test_log:-}" ] && rm -f "$test_log"' EXIT
-  if timeout 180 "$DENO" test "$FUNC_DIR/" >"$test_log" 2>&1; then
+  if timeout 180 "$DENO" test "${TEST_DIRS[@]}" >"$test_log" 2>&1; then
     # `|| true` keeps the count-extraction from tripping set -e/pipefail if a
     # suite somehow prints no "N passed" line.
     ok "tests passed ($(grep -oE '[0-9]+ passed' "$test_log" | tail -1 || true))"
