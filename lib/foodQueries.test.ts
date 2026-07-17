@@ -10,7 +10,7 @@
 // jest run (probed before adding this test).
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
-import { LIBRARY_FOODS_QUERY } from './foodQueries';
+import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY } from './foodQueries';
 
 interface LibRow {
   id: string;
@@ -140,6 +140,94 @@ describe('LIBRARY_FOODS_QUERY — B-005 archive filter', () => {
     const rows = runLibraryQuery([
       ['a1', 'Solo', 'All Gone', 'raw', 'meal', null, '2026-07-17T00:00:00Z'],
       ['a2', 'Solo', 'All Gone', 'raw', 'meal', 'a2/0.jpg', '2026-07-17T00:00:00Z'],
+    ]);
+    expect(rows).toHaveLength(0);
+  });
+});
+
+interface ArchRow {
+  id: string;
+  brand: string;
+  product_name: string;
+  format: string;
+  food_type: string | null;
+  archived_ids: string;
+  archived_at: string;
+}
+
+function runArchivedQuery(rows: Fixture[]): ArchRow[] {
+  const db = new DatabaseSync(':memory:');
+  db.exec(`CREATE TABLE food_items_cache (
+    id TEXT PRIMARY KEY, brand TEXT, product_name TEXT, format TEXT,
+    food_type TEXT, photo_path TEXT, archived_at TEXT
+  );`);
+  const insert = db.prepare(
+    `INSERT INTO food_items_cache (id, brand, product_name, format, food_type, photo_path, archived_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const r of rows) insert.run(r[0], r[1], r[2], r[3], r[4], r[5], r[6] ?? null);
+  const out = db.prepare(ARCHIVED_FOODS_QUERY).all() as unknown as ArchRow[];
+  db.close();
+  return out;
+}
+
+describe('ARCHIVED_FOODS_QUERY — B-005 PR 3 Archived section', () => {
+  it('returns only archived foods, never active ones', () => {
+    const rows = runArchivedQuery([
+      ['active', 'Acme', 'Kept', 'dry_kibble', 'meal', null, null],
+      ['gone', 'Acme', 'Removed', 'dry_kibble', 'meal', null, '2026-07-17T00:00:00Z'],
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].product_name).toBe('Removed');
+  });
+
+  it('collapses duplicate captures of one food into a single unit, concatenating their ids', () => {
+    // archiveFood stamps a whole brand+product+format group at once, so both
+    // captures carry the same stamp and Restore must revert both — GROUP_CONCAT
+    // hands the id set back to the server revert.
+    const rows = runArchivedQuery([
+      ['x1', 'Tiki', 'after DARK', 'wet_canned', 'meal', null, '2026-07-17T00:00:00Z'],
+      ['x2', 'Tiki', 'after DARK', 'wet_canned', 'meal', 'x2/0.jpg', '2026-07-17T00:00:00Z'],
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].archived_ids.split(',').sort()).toEqual(['x1', 'x2']);
+    expect(rows[0].archived_at).toBe('2026-07-17T00:00:00Z');
+  });
+
+  it('does NOT surface a food that still has an active capture (mutual exclusivity with the library)', () => {
+    // One capture archived, one active, same brand+product+format. The food is
+    // still in the library via its active capture — it must NOT also appear here,
+    // or it would show in both lists at once. HAVING drops the partial group.
+    const rows = runArchivedQuery([
+      ['dup-archived', 'Tiki', 'after DARK', 'wet_canned', 'meal', null, '2026-07-17T00:00:00Z'],
+      ['dup-active', 'Tiki', 'after DARK', 'wet_canned', 'meal', 'dup-active/0.jpg', null],
+    ]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('keeps a same-named food in different formats as separate archive-units', () => {
+    // Format is part of the grouping (archiveFood's unit), so a food removed as a
+    // treat is distinct from one removed as kibble — each restores independently.
+    const rows = runArchivedQuery([
+      ['k', 'House', 'Chicken', 'dry_kibble', 'meal', null, '2026-07-17T00:00:00Z'],
+      ['t', 'House', 'Chicken', 'treat', 'treat', null, '2026-07-16T00:00:00Z'],
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.format)).toEqual(['dry_kibble', 'treat']); // most-recent stamp first
+  });
+
+  it('orders most-recently-archived first (easiest mistake to undo on top)', () => {
+    const rows = runArchivedQuery([
+      ['old', 'A', 'Older', 'raw', 'meal', null, '2026-07-10T00:00:00Z'],
+      ['new', 'B', 'Newer', 'raw', 'meal', null, '2026-07-17T00:00:00Z'],
+    ]);
+    expect(rows.map((r) => r.product_name)).toEqual(['Newer', 'Older']);
+  });
+
+  it('returns nothing when no food is archived', () => {
+    const rows = runArchivedQuery([
+      ['a', 'A', 'One', 'raw', 'meal', null, null],
+      ['b', 'B', 'Two', 'raw', 'meal', null, null],
     ]);
     expect(rows).toHaveLength(0);
   });

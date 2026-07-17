@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
-import { Plus } from 'lucide-react-native';
+import { Plus, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 import { FoodRow } from '../../components/foods/FoodRow';
-import { getLibraryFoods, getFoodIntakeStats, PickerFood, FoodIntakeStat } from '../../lib/db';
+import { ArchivedFoodRow } from '../../components/foods/ArchivedFoodRow';
+import {
+  getLibraryFoods, getArchivedFoods, getFoodIntakeStats,
+  PickerFood, ArchivedFood, FoodIntakeStat,
+} from '../../lib/db';
 import {
   groupFoodsByType, groupFoodsByBrand, foodIntakeKey, foodIntakeNote, indexIntakeStats,
   foodFavoriteNote, type ReliableFavorite,
 } from '../../lib/food';
 import { getReliableFavorites } from '../../lib/foodFavorites';
 import { getSignedUrls } from '../../lib/storage';
+import { restoreFood } from '../../lib/foodArchive';
 import { usePetStore } from '../../store/petStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { useSnackbarStore } from '../../store/snackbarStore';
 
 // The thumbnail props a row needs (B-004 PR 6), resolved per-food by `thumbFor`
 // in the screen and spread onto FoodRow by both the group list and the shelf.
@@ -33,6 +39,17 @@ type ThumbProps = { hasPhoto: boolean; photoUrl: string | null; photoLoading: bo
 // used here — these are full-width rows, one food per line, not a 2-col grid.)
 export default function FoodsScreen() {
   const [library, setLibrary] = useState<PickerFood[]>([]);
+  // Archived foods (B-005 PR 3) — the removed-from-library set, shown in a
+  // collapsed-by-default section at the bottom of the tab. Its own read so a
+  // failure to load it never blanks the active library above it.
+  const [archived, setArchived] = useState<ArchivedFood[]>([]);
+  const [archivedExpanded, setArchivedExpanded] = useState(false);
+  // The archive-units currently being restored, keyed by representative id — a
+  // PER-ROW lock, not a global one, so restoring one food never freezes the
+  // Restore on another (an owner cleaning up several accidental removals can tap
+  // them in a row and each acknowledges independently). A row is disabled + shows
+  // a spinner only while its own id is in the set.
+  const [restoringIds, setRestoringIds] = useState<Set<string>>(new Set());
   // Gate the empty state on a completed load so the first paint (before the
   // local read resolves) never flashes "No foods yet" at an owner who has foods.
   const [loaded, setLoaded] = useState(false);
@@ -117,6 +134,14 @@ export default function FoodsScreen() {
       // Fire-and-forget: it owns its own loading/error state and must not delay
       // the per-pet annotations below (getSignedUrls never throws).
       resolveThumbnails(foods);
+      // Archived section (B-005 PR 3). A separate try so a failure here leaves
+      // the (loaded) active library intact rather than blanking the whole tab.
+      try {
+        setArchived(await getArchivedFoods());
+      } catch (archErr) {
+        console.warn('[foods] archived load failed:', archErr);
+        setArchived([]);
+      }
     } catch (err) {
       // No silent failures in the data path (house rule). Surface a retry rather
       // than stranding the owner on a blank tab with no feedback or recovery.
@@ -179,6 +204,41 @@ export default function FoodsScreen() {
     [photoUrls, photosLoading],
   );
 
+  // Restore an archived food (B-005 PR 3). Rebuilds the exact ArchiveResult
+  // restoreFood expects from the archive-unit's row (the id set + its uniform
+  // stamp) and reuses PR 2's revert — so the picker/library filter, the cache
+  // clear, and the server write all match what an Undo would have done. On
+  // success, notifyChanged() reloads both lists (the food leaves Archived and
+  // reappears in its type group) and a calm confirmation snackbar acknowledges it.
+  const handleRestore = useCallback(async (food: ArchivedFood) => {
+    if (restoringIds.has(food.id)) return;
+    setRestoringIds((prev) => new Set(prev).add(food.id));
+    try {
+      await restoreFood({
+        foodIds: food.archived_ids.split(','),
+        archivedAt: food.archived_at,
+        descriptor: {
+          id: food.id,
+          brand: food.brand,
+          product_name: food.product_name,
+          format: food.format,
+        },
+      });
+      useFoodLibraryStore.getState().notifyChanged();
+      const name = food.product_name.trim() || food.brand.trim() || 'that food';
+      useSnackbarStore.getState().show({ message: `Restored ${name} to your library` });
+    } catch (err) {
+      console.warn('[foods] restore failed:', err);
+      Alert.alert('Could not restore', 'Try again in a moment.');
+    } finally {
+      setRestoringIds((prev) => {
+        const next = new Set(prev);
+        next.delete(food.id);
+        return next;
+      });
+    }
+  }, [restoringIds]);
+
   const grouped = groupFoodsByType(library);
   // Map each favorite (keyed on case-folded brand+product) back to its library row,
   // so the shelf reuses FoodRow + opens the SAME detail screen, and skips any
@@ -194,7 +254,16 @@ export default function FoodsScreen() {
   // History's "leave prior state intact" behavior — rather than yanking the
   // library out from under the owner for a transient read error.
   const showError = loadError && library.length === 0;
-  const isEmpty = loaded && !loadError && library.length === 0;
+  // Only truly empty when there's nothing to show OR restore — an owner who has
+  // archived every food must still reach the Archived section to put one back,
+  // so archived foods keep the tab out of the empty state.
+  const isEmpty = loaded && !loadError && library.length === 0 && archived.length === 0;
+  // The in-between state: nothing in the active library, but archived foods exist
+  // (an owner who's removed everything). Not the designed first-run empty state,
+  // and left un-handled it's a near-blank page with a lone collapsed disclosure —
+  // so it gets its own warm line AND the Archived section opens by default, so the
+  // one thing the owner can do (restore) is right there (pm-feature-review, P5).
+  const onlyArchived = loaded && !loadError && library.length === 0 && archived.length > 0;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -245,6 +314,15 @@ export default function FoodsScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {onlyArchived ? (
+            <View style={styles.onlyArchivedNote}>
+              <Text style={styles.stateTitle}>Your library is empty right now</Text>
+              <Text style={styles.stateBody}>
+                Everything's been removed. Restore a food below to feed it again, or tap
+                Add food to start fresh.
+              </Text>
+            </View>
+          ) : null}
           {favoriteRows.length > 0 ? (
             <FavoritesShelf rows={favoriteRows} petName={activePetName} thumbFor={thumbFor} />
           ) : null}
@@ -257,6 +335,17 @@ export default function FoodsScreen() {
             noteFor={noteFor}
             thumbFor={thumbFor}
           />
+          {archived.length > 0 ? (
+            <ArchivedSection
+              foods={archived}
+              // Open by default when it's the only thing on the tab, so a
+              // library-empty owner sees their restorable foods without a tap.
+              expanded={archivedExpanded || onlyArchived}
+              onToggle={() => setArchivedExpanded((v) => !v)}
+              onRestore={handleRestore}
+              restoringIds={restoringIds}
+            />
+          ) : null}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -368,6 +457,62 @@ function FoodGroup({
   );
 }
 
+// The Archived section (B-005 PR 3) — removed-from-library foods, parked at the
+// bottom of the tab under a collapsed-by-default header. Collapsed by default so
+// a tidy-up an owner already made stays out of the way of the active library; the
+// count on the header ("Archived · 3") says it's there to reopen when a removal
+// was a mistake. Restore lives on each row (ArchivedFoodRow), reusing PR 2's
+// reversible flip — nothing here erases a meal, so no confirm, just Restore.
+function ArchivedSection({
+  foods, expanded, onToggle, onRestore, restoringIds,
+}: {
+  foods: ArchivedFood[];
+  expanded: boolean;
+  onToggle: () => void;
+  onRestore: (f: ArchivedFood) => void;
+  restoringIds: Set<string>;
+}) {
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  return (
+    <View style={styles.group}>
+      <TouchableOpacity
+        style={styles.archivedHeader}
+        onPress={onToggle}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={`Archived foods, ${foods.length}`}
+        hitSlop={{ top: 8, bottom: 8, left: 0, right: 0 }}
+      >
+        <Chevron size={18} color={theme.colorTextTertiary} strokeWidth={2} />
+        <Text style={styles.sectionTitle}>Archived</Text>
+        <Text style={styles.archivedCount}>{`· ${foods.length}`}</Text>
+      </TouchableOpacity>
+      {expanded ? (
+        <>
+          <Text style={styles.groupHint}>
+            Foods you've removed from your library. Your logged meals and reports still show them —
+            restore one anytime to log it again.
+          </Text>
+          <View style={styles.card}>
+            {foods.map((f, i) => (
+              <View key={f.id} style={i > 0 ? styles.rowDivider : undefined}>
+                <ArchivedFoodRow
+                  brand={f.brand}
+                  productName={f.product_name}
+                  format={f.format}
+                  restoring={restoringIds.has(f.id)}
+                  onRestore={() => onRestore(f)}
+                />
+              </View>
+            ))}
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -435,6 +580,30 @@ const styles = StyleSheet.create({
     fontSize: theme.textXL,
     fontWeight: theme.weightSemibold,
     color: theme.colorNeutralDark,
+  },
+  // Archived section header (B-005 PR 3) — a tappable expand/collapse row. The
+  // chevron + "Archived" title + count sit on one line; the whole row is the
+  // 44pt-plus toggle (paddingVertical + hitSlop). Title reuses sectionTitle so it
+  // reads as a peer of Meals/Treats, just gated behind a disclosure.
+  archivedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+    paddingVertical: theme.space1,
+    minHeight: 44,
+  },
+  archivedCount: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextTertiary,
+  },
+  // The library-empty-but-has-archived note (B-005 PR 3). A calm, forward-looking
+  // block above the (auto-opened) Archived section — a designed in-between state,
+  // not the near-blank page it would otherwise be.
+  onlyArchivedNote: {
+    paddingHorizontal: theme.space2,
+    paddingTop: theme.space2,
+    gap: theme.space1,
   },
   groupHint: {
     fontSize: theme.textXS,
