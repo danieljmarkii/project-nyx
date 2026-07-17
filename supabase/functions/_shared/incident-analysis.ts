@@ -456,10 +456,15 @@ export interface IncidentDescriptor<TAnalysis extends IncidentAnalysisBase, TFla
   // Per-type contextual flags, computed deterministically from SQL over the
   // owner's RLS-scoped data (Pattern 3 — never model-reasoned). Any flag that
   // keys off ABSENCE of a logged signal must carry its own tracking guard
-  // (Pattern 6) inside this computation.
+  // (Pattern 6) inside this computation. `eventType` is the analysed event's own
+  // events.event_type (= the row's incident_type), passed so a per-type
+  // repeat-count can include THIS event when it is itself a countable event
+  // (stool's repeated_loose_stool needs to know if this event is 'diarrhea' —
+  // B-247 PR 3). It is PRE-vision context, so it neither reaches the model nor
+  // depends on the vision result: escalation still survives the cap.
   computeContextualFlags(
     userClient: SupabaseClient,
-    event: { petId: string; occurredAt: string; species: string },
+    event: { petId: string; occurredAt: string; species: string; eventType: string },
   ): Promise<TFlag[]>
   // Per-type owner-facing read templates. Every new descriptor's strings need
   // their own reassurance-word regex test (Pattern 8) — not inherited.
@@ -609,7 +614,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     //    therefore SURVIVE the cap. This is what guarantees a capped /
     //    flagged-off incident still escalates when the context warrants it — the
     //    invariant the adversarial review must try to break.
-    const contextualFlags = await descriptor.computeContextualFlags(userClient, { petId, occurredAt, species })
+    const contextualFlags = await descriptor.computeContextualFlags(userClient, { petId, occurredAt, species, eventType: incidentType })
 
     // 3b. Existing analysis row — honors the never-clobber guard (B-028) in every
     //     write path below, and decides whether a cap/disabled STATE may be written
