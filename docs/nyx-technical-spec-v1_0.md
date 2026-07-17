@@ -268,7 +268,7 @@ These are decided. Do not revisit without a PM decision.
 
 **Soft deletes on events.** `deleted_at` is set on delete; rows are never removed. The correlation engine requires the full history.
 
-**Food items are globally scoped.** No `user_id` on `food_items`. Any authenticated user can read any food item. Creators can update their own entries. This is architected for a shared catalog post-MVP.
+**Food items are per-account.** *(Was: globally scoped, no `user_id`. Re-scoped by B-354, migration 033 — `docs/nyx-per-account-food-library-requirements.md`.)* `created_by_user_id` is the ownership scope: `NOT NULL`, RLS default-deny to other accounts (`= auth.uid()` on all four commands), `ON DELETE CASCADE`. An account reads/writes only its own foods; `medication_items` is the identical twin. A shared/canonical catalog returns post-MVP only as a **separate curated layer** (FR-9), never by un-scoping user rows.
 
 **Multi-pet ready, single-pet at launch.** Every table has `pet_id`. The UI exposes one pet. Adding a pet selector in a future sprint must not require schema changes.
 
