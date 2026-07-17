@@ -42,3 +42,13 @@ export function vomitCapCopy(petName: string | null | undefined, cap: 'daily' | 
   const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
   return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name} keeps vomiting or seems off, don't wait for the read — check in with your vet.`;
 }
+
+// §7.3 stool read cap (B-247) — the sibling of the vomit cap, same sensitive class.
+// No reassurance, no transaction word, record-is-saved plain, escalation guidance
+// present. The symptom wording is stool-specific ("keeps having diarrhea"). Carries
+// NO B-333/care-first line (money-adjacent copy never sits next to a symptom, §16.1 #3).
+export function stoolCapCopy(petName: string | null | undefined, cap: 'daily' | 'monthly'): string {
+  const name = petName?.trim() || 'your pet';
+  const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
+  return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name} keeps having diarrhea or seems off, don't wait for the read — check in with your vet.`;
+}

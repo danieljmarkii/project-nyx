@@ -16,10 +16,15 @@ import {
   EDITABLE_VOMIT_FIELDS,
   EDITABLE_STOOL_FIELDS,
   VomitEditableFields,
+  StoolEditableFields,
   normalizeVomitEdits,
+  normalizeStoolEdits,
   extractEditableFromPayload,
+  extractStoolEditableFromPayload,
   deriveEditedFields,
+  deriveEditedStoolFields,
   buildVomitEditWrite,
+  buildStoolEditWrite,
   triggerStoolAnalysis,
 } from './analysis';
 import { supabase } from './supabase';
@@ -267,5 +272,167 @@ describe('buildVomitEditWrite — client-side never-clobber guarantee', () => {
     );
     expect(w.description).toBeNull();
     expect(w.contents).toBeNull();
+  });
+});
+
+// ── Stool edit machinery (B-247 PR 6) ─────────────────────────────────────────
+const blankStool = (): StoolEditableFields => ({
+  stool_consistency: null,
+  stool_colour: null,
+  stool_content: null,
+  stool_blood_present: null,
+  stool_blood_type: null,
+  stool_mucus_present: null,
+  foreign_material_present: null,
+  foreign_material_note: null,
+  description: null,
+});
+
+describe('normalizeStoolEdits', () => {
+  it('collapses empty strings and empty arrays to null (blank === absent)', () => {
+    const n = normalizeStoolEdits({
+      ...blankStool(),
+      stool_content: [],
+      foreign_material_note: '   ',
+      description: '',
+    });
+    expect(n.stool_content).toBeNull();
+    expect(n.foreign_material_note).toBeNull();
+    expect(n.description).toBeNull();
+  });
+
+  it('de-dups stool_content (a set), preserving order', () => {
+    const n = normalizeStoolEdits({ ...blankStool(), stool_content: ['hair', 'grass', 'hair'] });
+    expect(n.stool_content).toEqual(['hair', 'grass']);
+  });
+
+  it('clears stool_blood_type when blood is not present (server-parity)', () => {
+    // A "Dark / tarry" type left behind after the owner corrects blood → "None"
+    // would let colour/blood corroboration drift — clear it (matches analyze-stool).
+    expect(normalizeStoolEdits({ ...blankStool(), stool_blood_present: 'no', stool_blood_type: 'dark_tarry' }).stool_blood_type).toBeNull();
+    expect(normalizeStoolEdits({ ...blankStool(), stool_blood_present: 'unsure', stool_blood_type: 'fresh_red' }).stool_blood_type).toBeNull();
+    // Preserved when blood IS present.
+    expect(normalizeStoolEdits({ ...blankStool(), stool_blood_present: 'yes', stool_blood_type: 'fresh_red' }).stool_blood_type).toBe('fresh_red');
+  });
+});
+
+describe('extractStoolEditableFromPayload', () => {
+  it('returns null when there is no payload (no AI baseline)', () => {
+    expect(extractStoolEditableFromPayload(null)).toBeNull();
+    expect(extractStoolEditableFromPayload(undefined)).toBeNull();
+  });
+
+  it('maps the UN-prefixed payload keys onto the prefixed editable fields, normalized', () => {
+    const got = extractStoolEditableFromPayload({
+      // Real ai_raw_payload shape (StoolAnalysis) — un-prefixed keys, carries read
+      // fields too; they must be ignored.
+      appears_to_show_stool: true,
+      consistency: 'type_6_mushy',
+      colour: 'brown',
+      contents: ['hair'],
+      blood_present: 'yes',
+      blood_type: 'fresh_red',
+      mucus_present: 'no',
+      foreign_material_present: 'no',
+      foreign_material_note: null,
+      description: 'Soft and unformed.',
+      recommendation: 'monitor',
+      read_text: 'Keep an eye on things.',
+    });
+    expect(got).toEqual({
+      stool_consistency: 'type_6_mushy',
+      stool_colour: 'brown',
+      stool_content: ['hair'],
+      stool_blood_present: 'yes',
+      stool_blood_type: 'fresh_red',
+      stool_mucus_present: 'no',
+      foreign_material_present: 'no',
+      foreign_material_note: null,
+      description: 'Soft and unformed.',
+    });
+    // Read fields must not leak into the editable set.
+    expect(got).not.toHaveProperty('recommendation');
+    expect(got).not.toHaveProperty('read_text');
+  });
+});
+
+describe('deriveEditedStoolFields', () => {
+  const ai: StoolEditableFields = {
+    stool_consistency: 'type_6_mushy',
+    stool_colour: 'brown',
+    stool_content: ['hair'],
+    stool_blood_present: 'no',
+    stool_blood_type: null,
+    stool_mucus_present: 'no',
+    foreign_material_present: 'no',
+    foreign_material_note: null,
+    description: 'Soft and unformed.',
+  };
+
+  it('reports no edits when current matches the AI read exactly', () => {
+    expect(deriveEditedStoolFields({ ...ai }, ai)).toEqual([]);
+  });
+
+  it('reports no edits with no AI baseline to diff against', () => {
+    expect(deriveEditedStoolFields({ ...ai }, null)).toEqual([]);
+  });
+
+  it('flags the clinically load-bearing blood correction (the B-028 case)', () => {
+    // AI mis-read "Blood: none", owner corrects it to fresh red — the escalation-
+    // driving field is owner-editable and the edit must be attributable.
+    const edited = deriveEditedStoolFields(
+      { ...ai, stool_blood_present: 'yes', stool_blood_type: 'fresh_red' },
+      ai,
+    );
+    expect(edited.sort()).toEqual(['stool_blood_present', 'stool_blood_type']);
+  });
+
+  it('treats stool_content as a set — reorder is not an edit, add/remove is', () => {
+    expect(deriveEditedStoolFields({ ...ai, stool_content: ['hair'] }, ai)).toEqual([]);
+    expect(deriveEditedStoolFields({ ...ai, stool_content: ['hair', 'grass'] }, ai)).toEqual(['stool_content']);
+  });
+
+  it('does not flag an orphan blood_type once blood is cleared (normalize parity)', () => {
+    // Owner sets blood present + fresh, then reverts presence to "no": both the
+    // presence AND the type collapse back to the AI original (no spurious edit).
+    const withBlood = { ...ai, stool_blood_present: 'no' as string | null, stool_blood_type: 'fresh_red' as string | null };
+    expect(deriveEditedStoolFields(withBlood, ai)).toEqual([]);
+  });
+});
+
+describe('buildStoolEditWrite — client-side never-clobber guarantee', () => {
+  const NOW = '2026-07-17T10:00:00.000Z';
+  const edits: StoolEditableFields = {
+    stool_consistency: 'type_7_watery',
+    stool_colour: 'red_streaked',
+    stool_content: ['undigested_food'],
+    stool_blood_present: 'yes',
+    stool_blood_type: 'fresh_red',
+    stool_mucus_present: 'yes',
+    foreign_material_present: 'no',
+    foreign_material_note: null,
+    description: 'Looked different this time.',
+  };
+
+  it('always stamps edited_at (this is what arms the re-analysis guard)', () => {
+    expect(buildStoolEditWrite(blankStool(), NOW).edited_at).toBe(NOW);
+    expect(buildStoolEditWrite(edits, NOW).edited_at).toBe(NOW);
+  });
+
+  it('writes ONLY the editable fields + edited_at — never a read column', () => {
+    const w = buildStoolEditWrite(edits, NOW);
+    expect(Object.keys(w).sort()).toEqual([...EDITABLE_STOOL_FIELDS, 'edited_at'].sort());
+    for (const forbidden of [
+      'recommendation',
+      'read_text',
+      'visual_flags',
+      'contextual_flags',
+      'status',
+      'ai_raw_payload',
+      'ai_confidence',
+      'dismissed_at',
+    ]) {
+      expect(w).not.toHaveProperty(forbidden);
+    }
   });
 });

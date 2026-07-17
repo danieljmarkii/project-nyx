@@ -30,7 +30,7 @@ import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_
 import { resolveEventPhotoDisplay } from '../../lib/eventPhoto';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
-import { triggerVomitAnalysis } from '../../lib/analysis';
+import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
 import { uuid, formatExifAttribution, describeOccurredAt } from '../../lib/utils';
@@ -43,6 +43,7 @@ import {
   pairedVehicleLinkLabel, pairedDoseLinkLabel, type DoseVehicle,
 } from '../../lib/medications';
 import { VomitAnalysisSection } from '../../components/event/VomitAnalysisSection';
+import { StoolAnalysisSection } from '../../components/event/StoolAnalysisSection';
 import { Header, PhotoViewer } from '../../components/ui';
 
 const HERO_HEIGHT = 320;
@@ -488,9 +489,14 @@ export default function EventDetailScreen() {
           // synced when the row truly landed, else leave it for the retry queue.
           if (error) { console.warn('[event-detail] attachment upsert failed:', error.message); return; }
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
-          // Re-analyze a vomit event whose photo just changed (e.g. replacing an
-          // oversized historic photo with a compressed one).
+          // Re-analyze a vomit / stool event whose photo just changed (e.g. adding a
+          // photo to a photoless event, or replacing an oversized historic photo
+          // with a compressed one) — the per-incident section triggers on mount, but
+          // a photo added after mount needs this nudge to get its first read.
           if (event.event_type === 'vomit') triggerVomitAnalysis(event.id).catch(() => {});
+          if (event.event_type === 'stool_normal' || event.event_type === 'diarrhea') {
+            triggerStoolAnalysis(event.id).catch(() => {});
+          }
         })
         .catch(console.error);
     } catch (e) {
@@ -635,6 +641,10 @@ export default function EventDetailScreen() {
 
           {event.event_type === 'vomit' ? (
             <VomitAnalysisSection eventId={event.id} petName={activePet?.name} />
+          ) : null}
+
+          {event.event_type === 'stool_normal' || event.event_type === 'diarrhea' ? (
+            <StoolAnalysisSection eventId={event.id} petName={activePet?.name} />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (
