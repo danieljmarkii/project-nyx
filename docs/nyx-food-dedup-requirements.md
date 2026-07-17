@@ -6,6 +6,8 @@
 
 > **ID note (read first):** "B-142" was renamed to **B-158** (medication *Ongoing* vs fixed-course framing) and "B-162" is the migration-history backfill — **neither is the food-dedup item.** The work is B-009 / B-018 / B-005. This spec is the single home for the direction; those rows now point here.
 
+> **B-354 reconciliation (2026-07-17).** This spec was written against a **globally shared** `food_items` catalog. B-354 (`docs/nyx-per-account-food-library-requirements.md`, shipped PRs 1–4) de-globalized it: `food_items` + `medication_items` are now **per-account** (`created_by_user_id` is the ownership scope, RLS default-deny to other accounts, cache filtered per-account). The global-scope premises below (§2b, §2e, §5.1, §5.3, §6) are corrected inline and marked **[B-354]**. Net effect on this track: **dedup becomes within-account** — strictly easier — and the parked **§5.3 multi-user merge-authorization question dissolves by construction** (a merge only ever touches your own rows). None of the mechanics (repoint-then-tombstone, the reference graph, the tiered steer) change.
+
 ---
 
 ## 1. Problem & Vision
@@ -40,13 +42,13 @@ The vision has **two parts**, deliberately sequenced:
 
 A merge repoints all three from loser→survivor, then tombstones the loser. `feeding_arrangements` is the one with a `UNIQUE(pet_id, food_item_id)` collision risk (see §5.2) and a CASCADE delete (so a naive hard-delete of the loser would silently drop the arrangement — another reason to tombstone, not delete).
 
-**(b) `food_items` is globally scoped** — no `user_id`; `created_by_user_id` is attribution only (`ON DELETE SET NULL`). Merge therefore mutates *shared* state — moot at single-user MVP, load-bearing for the multi-user authorization question (§5.3, parked).
+**(b) [B-354] `food_items` is per-account** — ~~globally scoped, `created_by_user_id` attribution only~~ — `created_by_user_id` is now the **ownership scope** (`NOT NULL`, RLS `= auth.uid()`, `ON DELETE CASCADE`; migration 033). Merge therefore only ever mutates the actor's **own** rows — the multi-user authorization question (§5.3) dissolves.
 
 **(c) Normalization helpers already exist.** `canonicalizeBrand` (`lib/food.ts:77`) strips trademark glyphs, normalizes apostrophes, NFKC-folds, lowercases, collapses whitespace — built for *grouping*, reusable for *matching*. `foodIntakeKey` (`lib/food.ts:163`) already folds brand+product into a key. Prevention needs only a product-name twin of `canonicalizeBrand` (a pure function — no schema).
 
 **(d) `upc_barcode` is `UNIQUE` and indexed** (`007_food_library_redesign.sql:17,43`). It is the strongest match signal and the source of B-009's current bug: on a UPC collision the Edge Function retries with `upc_barcode: null`, landing a duplicate instead of resolving to the existing row.
 
-**(e) The catalog is fully mirrored on-device.** `food_items_cache` (`lib/db.ts:59`) is a read-through mirror of the *entire* global catalog, refreshed by `refreshFoodCache` (`lib/sync.ts:390`). So **proactive matching can run client-side, offline, against the local cache** — covering every add path (photo-capture, onboarding, manual create) with no Edge Function round-trip.
+**(e) [B-354] The account's catalog is fully mirrored on-device.** `food_items_cache` (`lib/db.ts:59`) is a read-through mirror of ~~the *entire* global catalog~~ **the account's own foods** (`refreshFoodCache`, `lib/sync.ts`, now filters `.eq('created_by_user_id', uid)` since B-354 PR 2). So **proactive matching can run client-side, offline, against the local cache** — covering every add path (photo-capture, onboarding, manual create) with no Edge Function round-trip. Matching is now inherently **within-account** (the only foods in the cache are yours), which is exactly dedup's target.
 
 **(f) The service-role Edge Function pattern exists** (B-039 `delete-account`, `analyze-vomit`): a dual client (`userClient` from the JWT + `adminClient` from `SUPABASE_SERVICE_ROLE_KEY`, already provisioned). Merge's bulk cross-row repoint reuses this shape exactly.
 
@@ -142,7 +144,7 @@ Directional merge — the owner picks the **survivor** (Asana-style "merge B int
 4. Apply field survivorship to A (§5.3, parked)
 5. Tombstone B: set `merged_into = A` + `merged_at = now()`; B drops out of every catalog read but the row survives (auditable, undo-capable). **Never a hard delete.**
 
-This belongs server-side (local-first + global catalog → a client-side bulk repoint across the sync queue is fragile under LWW/partial-flush). It reuses the B-039 dual-client pattern (§2f), and the repoints hydrate to other devices via existing rails (§2g).
+This belongs server-side (local-first + a bulk cross-row repoint across the sync queue is fragile under LWW/partial-flush). It reuses the B-039 dual-client pattern (§2f), and the repoints hydrate to other devices via existing rails (§2g). **[B-354]** With a per-account catalog the service role only ever touches the actor's own rows, so the confused-deputy surface shrinks to "did this repoint stay inside the caller's account?" (still `rls-privacy-reviewer`-gated — §5.3).
 
 **Surface:** a "Manage library" affordance (not the hot path) — multi-select two foods → pick the keeper → confirm. Off the 10-second path entirely.
 
@@ -158,7 +160,7 @@ This belongs server-side (local-first + global catalog → a client-side bulk re
 |---|---|
 | **Survivorship — what we keep** | **Survivor wins + gap-fill from loser, confirm clinical conflicts.** Survivor wins every field, but blanks are filled from the loser (ingredients, UPC, photos, protein) and photo sets are unioned — never discard data the survivor was missing. **`food_type` (meal/treat) or differing UPC → stop and confirm, never auto-resolve** (clinically load-bearing; differing UPC is a strong "not the same product — don't merge" signal). |
 | **Reversibility** | Tombstone-with-pointer makes the data model **undo-capable** in v1; ship the actual undo *button* only if needed. Record which event ids were repointed so an undo can reverse them. |
-| **Multi-user authorization** | At multi-user, merge mutates a *global* food through the service role and could touch rows that aren't the actor's. Needs a real authorization story (who may merge a global food?) **before** multi-user. Mandatory `rls-privacy-reviewer` pass on the Edge Function (confused-deputy). Flagged now; not foreclosed. |
+| **Multi-user authorization** | **[B-354] Dissolved by construction.** With a per-account catalog, a merge only ever touches the actor's own rows — there is no "global food" to authorize across accounts. What remains is a narrower, concrete gate: the `merge-foods` Edge Function must verify **both** foods' `created_by_user_id = auth.uid()` before any repoint (a service-role function must not become a confused deputy that repoints across accounts). Still a **mandatory `rls-privacy-reviewer` pass**, but the open policy *question* is gone. The future curated/canonical catalog (per-account spec FR-9) would reopen a version of this — merges into a shared canonical layer — as its own track, not here. |
 
 ### 5.4 Schema (Phase 2 — its own migration PR)
 
@@ -177,7 +179,7 @@ Additive on `food_items`: `merged_into UUID REFERENCES food_items(id)` + `merged
 - **`food_type` is clinically load-bearing, not cosmetic.** It gates diet-trial compliance and intake semantics and flows to the vet report. Prevention's steer must not silently adopt a conflicting `food_type`; merge must confirm a `food_type` conflict, never auto-resolve it.
 - **Repoint, never delete** (D5). Real feedings stay attached to history through the survivor.
 - **A wrong merge corrupts the record.** High match bar; differing UPC blocks; merge is owner-confirmed and (by data model) reversible.
-- **Merge mutates global, shared state** — the multi-user authorization question (§5.3) is on record before any multi-user release.
+- **[B-354] Merge stays within the actor's account** — per-account scoping means a merge only ever touches your own rows; the `merge-foods` Edge Function must still verify both foods belong to the caller (§5.3, `rls-privacy-reviewer`-gated), but the old "who may merge a *global* food?" cross-account question is dissolved.
 
 ---
 
@@ -200,4 +202,4 @@ Additive on `food_items`: `merged_into UUID REFERENCES food_items(id)` + `merged
 
 ## 9. Persona sign-off (direction review)
 
-Dir. of Eng ✓ (reference graph, service-role architecture, hydration-for-free) — Data Scientist ✓ (the masking/arbitrary-`food_type` integrity case; diet-trial repoint) — Designer ✓ (steer-not-block, hot-path untouched; Principles 1, 4) — Jordan + Sam ✓ (no nag on weak matches; "use existing" one-tap) — Dr. Chen ✓ (`food_type`/UPC conflict confirmed, not auto-resolved) — Trust & Safety ✓ (global-catalog mutation + multi-user auth flagged; tombstone is auditable) — Product Owner ✓ (ID reconciliation; B-009/B-018/B-005 converged). Backstops scheduled for build: `rls-privacy-reviewer` (merge Edge Function), `code-reviewer` (all PRs), `pm-feature-review` (P3 steer UX).
+Dir. of Eng ✓ (reference graph, service-role architecture, hydration-for-free) — Data Scientist ✓ (the masking/arbitrary-`food_type` integrity case; diet-trial repoint) — Designer ✓ (steer-not-block, hot-path untouched; Principles 1, 4) — Jordan + Sam ✓ (no nag on weak matches; "use existing" one-tap) — Dr. Chen ✓ (`food_type`/UPC conflict confirmed, not auto-resolved) — Trust & Safety ✓ (**[B-354]** merge is now within-account; the confused-deputy gate is a both-foods-owned check on the Edge Function, not a cross-account policy question; tombstone is auditable) — Product Owner ✓ (ID reconciliation; B-009/B-018/B-005 converged). Backstops scheduled for build: `rls-privacy-reviewer` (merge Edge Function), `code-reviewer` (all PRs), `pm-feature-review` (P3 steer UX).

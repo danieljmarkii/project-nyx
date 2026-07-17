@@ -26,7 +26,7 @@ Culprit is an informational pet health tracking tool. It helps you record what y
 
 - **You own what you log.** Your pet profiles, events, notes, photos, and documents remain yours.
 - You grant us the limited license needed to operate the service: to host, store, process, back up, display your content back to you, and pass the specific items described in the Privacy Policy to our service providers (for example, sending a food label photo to our AI provider for extraction) — solely to provide and improve the service's operation for you, and never to sell it or use it for advertising.
-- **Shared food catalog:** when you create a food entry from commercial packaging, you grant us a perpetual, irrevocable, worldwide, royalty-free license to store that contribution — the product name, brand, ingredients, and package photo — and to make it available to all Culprit users, so others logging the same commercial product don't have to re-enter it. This license covers commercial-product information only, never anything about you or your pet, and it **survives the deletion or termination of your account**: your catalog contributions remain after you leave, with your identity removed.
+- **Your food library is yours.** When you create a food entry from commercial packaging — the product name, brand, ingredients, and package photo — it goes into *your own* food library, visible only to your account, and is covered by the same limited operating license as the rest of your content. It is not shared with other users, and it is **deleted with your account** when you delete it.
 - Only upload content you have the right to upload. Don't log information about people, or someone else's pet, without permission.
 
 ## 4. Acceptable use
@@ -34,7 +34,7 @@ Culprit is an informational pet health tracking tool. It helps you record what y
 Don't:
 - use Culprit for anything unlawful, or upload unlawful, infringing, or malicious content;
 - probe, disrupt, or overload the service, or attempt to access another user's data;
-- scrape the service or harvest the shared food catalog in bulk;
+- scrape the service or harvest its content in bulk;
 - reverse engineer the app except where the law says we can't stop you;
 - misrepresent Culprit's output as a veterinary diagnosis or professional advice — to anyone.
 

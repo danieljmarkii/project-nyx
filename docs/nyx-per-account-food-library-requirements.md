@@ -1,6 +1,6 @@
 # Per-Account Food Library — Requirements (B-354)
 
-**Version:** 1.0 | 2026-07-16 | Status: build-ready pending the §9 PM ratifications
+**Version:** 1.1 | 2026-07-17 | Status: **shipped** — PRs 1–5 merged (#374/#377/#378/#381 + this PR-5 docs pass). Only open item: the PM republishes the hosted legal docs (§7.4).
 **Reads with:** `docs/food-library-redesign-requirements.md` (the surface being re-scoped), `docs/nyx-food-dedup-requirements.md` (the track this reshapes), `docs/nyx-account-deletion-requirements.md` (the survival rule this inverts), B-005 backlog row (the archive plan this unblocks).
 
 ---
@@ -122,11 +122,12 @@ The engineering hard constraint "two sanctioned global exceptions (`food_items`,
 - **B-009/B-018** — within-account rescope noted on the rows.
 - **B-292** — future scope-unit note (§5).
 
-### 7.4 Legal + deletion docs (Tier 2 — PM confirmation, then republish hosted docs)
-- `terms-of-service.md` §3: the shared-catalog license paragraph (perpetual/irrevocable, "available to all Culprit users," survives deletion) is **removed/rewritten** — contributions are per-account content covered by the standard operating license, deleted with the account. §4's "harvest the shared food catalog" line adjusts.
-- `privacy-policy.md`: the three shared-catalog passages (incl. "the one thing that survives") rewritten to match FR-7.
-- `nyx-account-deletion-requirements.md` FR-4/AC-5 inverted per FR-7.
-- **Timing:** the hosted docs are live but pre-launch with no external users; the rewrite must land **before** first submission and ideally rides the same window as the B-354 deploy so the docs never describe a catalog that no longer exists.
+### 7.4 Legal + deletion docs (Tier 2 — **rewritten in PR 5, 2026-07-17**; hosted republish = PM action)
+- ✅ `terms-of-service.md` §3: the shared-catalog license paragraph (perpetual/irrevocable, "available to all Culprit users," survives deletion) **rewritten** — your food library is per-account content under the standard operating license, deleted with the account. §4's "harvest the shared food catalog" line adjusted to "harvest its content."
+- ✅ `privacy-policy.md`: the three shared-catalog passages (§2 catalog bullet, §5 sharing exception, §7 "the one thing that survives") rewritten to match FR-7 (per-account library, deleted with the account).
+- ✅ `nyx-account-deletion-requirements.md` FR-4/AC-5 (+ the §2a FK, §7 edge case, §9 default, §11 sign-off) inverted per FR-7.
+- ✅ Also reconciled in PR 5: dedup-spec global-scope premises (§7.2), `food-library-redesign` D1/D8, `technical-spec` §"Food items are per-account", CLAUDE.md global-exception line.
+- **⚠️ PM ACTION — republish the hosted docs.** The `docs/legal/*.md` sources are now correct, but the **live hosted** terms + privacy policy still describe the shared catalog. Republish them (same window as the B-354 deploy) so no live doc describes a catalog that no longer exists — **before** first App Store submission. This is the one remaining B-354 item that Claude Code cannot do.
 
 ## 8. Acceptance criteria
 
@@ -157,10 +158,10 @@ The engineering hard constraint "two sanctioned global exceptions (`food_items`,
 | 2 | **Client**: `refreshFoodCache` filter + cache-version truncate (FR-5); no picker/UI changes | code-reviewer; two-account QA (AC-1) |
 | 3 | **`extract-food-from-photo` ownership gate** (FR-6) + med twin; deploy via MCP | rls-privacy-reviewer; deno tests |
 | 4 | **`delete-account` purge flip** (FR-7); deploy | rls-privacy-reviewer; deletion-requirements doc edit flagged Tier-2 |
-| 5 | **Docs/legal**: terms + privacy rewrite (PM-confirmed), dedup-spec reconciliation, technical-spec + food-library-redesign D1 updates | PM confirms each Tier-2 edit; PM republishes hosted docs |
+| 5 | ✅ **Docs/legal** (shipped 2026-07-17): terms §3/§4 + privacy §2/§5/§7 rewrite, deletion FR-4/AC-5 inversion, dedup-spec reconciliation, technical-spec + food-library-redesign D1/D8 + CLAUDE.md updates | PM confirms each Tier-2 edit; **PM republishes hosted docs (open action)** |
 
 Order matters: PR 1's RLS must land **with or before** PR 2 (an old client selecting unfiltered simply receives fewer rows — safe), and PR 3/4 are independent of PR 2. `generate-signal`/`generate-report`: **no PR** (FR-8).
 
 ## 11. Open questions routed to the PM
 
-**All resolved 2026-07-16 (same day):** D2 ratified (meds bundle into PR 1), D4 ratified (deletion flip + the small legal rewrite; hosted-doc republish stays a PM action at PR 5), D6 ratified (B-354 → B-005 back to back). D5 remains recorded intent (FR-9). **PR 1 is ready to build.**
+**All resolved 2026-07-16 (same day):** D2 ratified (meds bundle into PR 1), D4 ratified (deletion flip + the small legal rewrite; hosted-doc republish stays a PM action at PR 5), D6 ratified (B-354 → B-005 back to back). D5 remains recorded intent (FR-9). **PRs 1–5 shipped (2026-07-16/17).** The one remaining action is the PM's hosted-doc republish (§7.4). Next track: **B-005** (archive/restore), unblocked and simplified by per-account (§6).

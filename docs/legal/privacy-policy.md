@@ -46,7 +46,7 @@ A note on scope: almost everything Culprit stores is information **about your pe
 - **To run the app:** store your logs, sync them across your devices, and compute the trends, pattern findings, and vet reports the app shows you. Pattern detection (which foods or times correlate with which symptoms) is computed by our own deterministic code on our servers.
 - **AI features:** described fully in Section 3.
 - **Account email:** we send transactional email only — account confirmation and similar. We do not send marketing email.
-- **Shared food catalog:** when you add a food by photographing its package, the food's name, brand, ingredients, and package photo become part of Culprit's shared food catalog so other users logging the same commercial product don't have to re-enter it. Catalog entries describe commercial products, not you or your pet.
+- **Your food library:** when you add a food by photographing its package, the food's name, brand, ingredients, and package photo are saved to your own food library so you can log it again with one tap. Your library is private to your account — no other user can see it — and it is deleted when you delete your account.
 - **Support:** when you email us for support or send feedback from inside the app, your message includes your app version and device operating system (for example, "Culprit v1.0.0" and "iOS 17.2") so we can help without asking. It does not include your logs, photos, or pet data.
 
 We do not sell your data. We do not share it with advertisers or data brokers. We do not use your data to train AI models, and our AI provider does not either (Section 3).
@@ -76,7 +76,7 @@ Culprit is offered in the United States, and your data is processed in the Unite
 ## 5. Sharing you control
 
 - **Vet reports:** you generate a report in the app and choose how to share it — for example, handing your vet a PDF from your device's share sheet. Whatever you send contains what the report shows (including any photos it includes, with metadata stripped); once you send it, the recipient controls their copy.
-- Nothing in Culprit is shared publicly, and no other user can see your pets or logs. The one exception is the shared food catalog (Section 2), which contains commercial product information — never anything about you or your pet.
+- Nothing in Culprit is shared publicly, and no other user can see your pets, your logs, or your food library.
 
 ## 6. Retention
 
@@ -90,9 +90,9 @@ Culprit is offered in the United States, and your data is processed in the Unite
 You can delete your account from inside the app: open the **You** screen by tapping your avatar in the top-right corner of the Home screen, then choose **Delete account** and confirm. Deletion is immediate, permanent, and honest:
 
 - Your account, your name and email, your pets, and every log, event, report, and analysis are hard-deleted — removed, not hidden or "deactivated".
-- Your photos and attachments are purged from file storage, including symptom photos and vet documents.
+- Your photos and attachments are purged from file storage, including symptom photos, vet documents, and the food-package photos in your food library.
+- Your food library — the foods you added and their package photos — is deleted along with everything else.
 - The local copy on your device is wiped.
-- The one thing that survives: food catalog entries you contributed (names, ingredients, and package photos of commercial products) remain in the shared catalog with your identity removed. They contain no information about you or your pet.
 
 There is no grace period and no recovery. If deletion cannot complete (for example, you're offline), the app tells you so — it never claims success it can't verify.
 
