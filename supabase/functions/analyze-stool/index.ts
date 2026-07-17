@@ -399,14 +399,40 @@ function buildNoFlagReadText(petName: string, hasPhoto: boolean): string {
 // model's words. The selection ORDER lives in the shared module's selectReadText;
 // these are the stool-specific templates it selects among.
 
-// monitor: a clear photo with no visible/contextual flag (incl. a single loose
-// stool, or mucus without blood). One sample is never an all-clear, so this
-// acknowledges the limit and stays forward-looking — it does NOT comment on the
-// absence of concern, and it does NOT name the benign finding (naming it here
-// flirts with reassurance; the structured field carries it to the detail screen).
+// monitor: a clear photo with no visible/contextual flag. This bucket spans the
+// FULL healthy→loose range — a formed Bristol Type 3/4 (the most-logged stool,
+// and the diet-trial owner's happy path) AND a single loose/watery stool or
+// mucus-without-blood. The copy must therefore work for BOTH without (a)
+// reassuring on the normal one (absence ≠ wellness) or (b) presuming the current
+// stool is a symptom. The old "if it happens again" phrasing did (b): it read as
+// a warning about a normal poop recurring, which is exactly backwards on the
+// happy path (B-362 — pm-feature-review's highest-value catch, 2026-07-17).
+//
+// The fix reframes n=1 as a DATA POINT the owner is building a trend from — which
+// is precisely the wedge (an owner logging a good stool during a diet trial is
+// doing the right thing, tracking progress). It affirms the ACTION (keep logging)
+// without reassuring about the STATE. "Logging the next few" is change-neutral, so
+// it fits a normal stool (build the picture) and a single loose one equally, and it
+// does NOT comment on the absence of concern or name the benign finding (the
+// structured field carries that to the detail screen).
+//
+// The persistence + systemic escalation cues are BOTH kept, but stated
+// STATE-SILENTLY so they serve the whole monitor range (formed Type 3/4 → single
+// loose Type 6/7 → mucus) without the old misfire. The old "if it happens again"
+// presumed THIS stool was the problem — backwards for a normal poop; "if {p} keeps
+// having loose stools" instead names the concerning FUTURE pattern to watch for,
+// which reads correctly for a normal stool (watch for loose ones) AND for a single
+// loose one (watch for it continuing). Crucially it is an OWNER-FACING instruction
+// robust to under-logging — it does not silently delegate recurrence-escalation to
+// the logging-dependent repeated_loose_stool flag (adversarial Axis-2, 2026-07-17:
+// dropping the owner-side cue narrowed the single-loose-stool net for a non-logging
+// owner). The deterministic flag still REINFORCES this when the owner does log the
+// recurrence — it is a backstop, not the sole path. B-362 rides into this PR-3
+// function pre-deploy; own adversarial + Dr. Chen pass. The sanctioned "Keep an eye
+// out" monitor HEADER (clinical-guardrails Pattern 1) is unchanged.
 function buildMonitorReadText(petName: string): string {
   const p = petName || 'your pet'
-  return `A single photo on its own can't tell you how ${p}'s gut is doing. Keep an eye on ${p} — if it happens again, or ${p} seems unwell or goes off food, your vet is the best call.`
+  return `One stool on its own is just a single snapshot — it can't show how ${p}'s gut is doing over time. That fuller picture comes from logging the next few. If ${p} keeps having loose stools, seems unwell, or goes off food, your vet is the best call.`
 }
 
 // Escalation on a model-raised visual flag, used when the model didn't write its
