@@ -11,6 +11,7 @@ import { assert, assertEquals, assertThrows } from 'https://deno.land/std@0.224.
 import {
   cleanPaths,
   scopeMedicationPaths,
+  scopeFoodPaths,
   collectStoragePaths,
   buildDeletionPlan,
   chunk,
@@ -24,13 +25,17 @@ import {
 // emptyOwned's ownerUserId is 'user-1', matching the `user-1/med-9/label.jpg`
 // fixtures below, so the B-128 prefix guard (scopeMedicationPaths) passes those
 // legitimate, owner-prefixed paths through untouched. The cross-tenant cases set a
-// different ownerUserId explicitly via owned({ ... }).
+// different ownerUserId explicitly via owned({ ... }). Food fixtures similarly pass
+// `ownedFoodItemIds` explicitly when they exercise a food path (scopeFoodPaths fails
+// closed on an empty owned-id set, so a food path with no matching id is dropped).
 const emptyOwned: OwnedStoragePaths = {
   petPhotoPaths: [],
   eventAttachmentPaths: [],
   vetAttachmentPaths: [],
   vetReportPaths: [],
   medicationPhotoPaths: [],
+  foodPhotoPaths: [],
+  ownedFoodItemIds: [],
   ownerUserId: 'user-1',
 }
 
@@ -103,6 +108,54 @@ Deno.test('scopeMedicationPaths — drops nulls/blanks alongside cross-uid paths
   )
 })
 
+// ── scopeFoodPaths (B-354 FR-7 cross-tenant owned-id guard) ───────────────────
+
+Deno.test('scopeFoodPaths — keeps only paths whose first segment is an owned food id', () => {
+  assertEquals(
+    scopeFoodPaths(
+      ['food-1/0-front.jpg', 'food-9/0-front.jpg', 'food-2/1-ingredients.jpg'],
+      ['food-1', 'food-2'],
+    ),
+    ['food-1/0-front.jpg', 'food-2/1-ingredients.jpg'],
+  )
+})
+
+Deno.test('scopeFoodPaths — B-354: a crafted path under ANOTHER account\'s food id is dropped', () => {
+  // The attack: an attacker-owned food_items row whose photo_paths references a VICTIM's
+  // food id. victim-food is not in the attacker's owned-id set, so it never reaches the
+  // service-role purge. (The food twin of the B-128 medication guard.)
+  assertEquals(scopeFoodPaths(['victim-food/0-front.jpg'], ['attacker-food']), [])
+})
+
+Deno.test('scopeFoodPaths — exact-segment match: a food id that is a string prefix of another does not leak', () => {
+  // owned id 'food-1' must NOT authorize 'food-12/…' — first-segment SET membership is
+  // exact (split('/')[0] === 'food-12'), so a naive startsWith can't over-match here.
+  assertEquals(scopeFoodPaths(['food-12/0-front.jpg'], ['food-1']), [])
+  assertEquals(scopeFoodPaths(['food-1/0-front.jpg'], ['food-1']), ['food-1/0-front.jpg'])
+})
+
+Deno.test('scopeFoodPaths — an empty owned-id set fails CLOSED (drops everything)', () => {
+  // Defense-in-depth: a user with no food rows has no food photos to purge, and no path
+  // can legitimately name a food id that isn't theirs. index.ts throws on a food_items
+  // read error rather than passing an empty set that would silently drop real paths.
+  assertEquals(scopeFoodPaths(['food-1/0-front.jpg'], []), [])
+  assertEquals(scopeFoodPaths(['food-1/0-front.jpg'], ['', '   ']), [])
+})
+
+Deno.test('scopeFoodPaths — a bare/malformed key with no slash is dropped', () => {
+  // A key that is not `{foodId}/…` has a first segment equal to the whole string, which
+  // is not an owned food id, so it never matches.
+  assertEquals(scopeFoodPaths(['food-1'], ['food-1']), [])
+  assertEquals(scopeFoodPaths(['just-a-file.jpg'], ['food-1']), [])
+})
+
+Deno.test('scopeFoodPaths — drops nulls/blanks alongside cross-tenant paths', () => {
+  assertEquals(
+    scopeFoodPaths(['food-1/a.jpg', null, undefined, '', 'victim-food/b.jpg'], ['food-1']),
+    ['food-1/a.jpg'],
+  )
+})
+
 // ── collectStoragePaths ───────────────────────────────────────────────────────
 
 Deno.test('collectStoragePaths — maps each owned list to its correct bucket', () => {
@@ -114,6 +167,9 @@ Deno.test('collectStoragePaths — maps each owned list to its correct bucket', 
     // {user_id}/{medication_item_id}/{slot}.jpg — the per-user-prefix convention
     // from migration 021 (buildMedicationPhotoPath).
     medicationPhotoPaths: ['user-1/med-9/label.jpg'],
+    // {food_item_id}/{slot}.jpg — the per-food-id convention (app/food-capture.tsx).
+    foodPhotoPaths: ['food-1/0-front.jpg'],
+    ownedFoodItemIds: ['food-1'],
   }))
   const byBucket = Object.fromEntries(purges.map((p) => [p.bucket, p.paths]))
   assertEquals(byBucket[STORAGE_BUCKETS.petPhotos], ['pets/p1.jpg'])
@@ -121,6 +177,7 @@ Deno.test('collectStoragePaths — maps each owned list to its correct bucket', 
   assertEquals(byBucket[STORAGE_BUCKETS.vetAttachments], ['vet/v1.jpg'])
   assertEquals(byBucket[STORAGE_BUCKETS.vetReports], ['rep/r1.pdf'])
   assertEquals(byBucket[STORAGE_BUCKETS.medicationPhotos], ['user-1/med-9/label.jpg'])
+  assertEquals(byBucket[STORAGE_BUCKETS.foodPhotos], ['food-1/0-front.jpg'])
 })
 
 Deno.test('collectStoragePaths — omits buckets that have no objects', () => {
@@ -139,18 +196,68 @@ Deno.test('collectStoragePaths — a pet with a null photo_path produces no pet-
   assertEquals(purges, [])
 })
 
-Deno.test('collectStoragePaths — FR-4: never emits a preserved (food) bucket', () => {
-  // Even with every list populated, nyx-food-photos is unreachable by construction.
+Deno.test('collectStoragePaths — never emits a PRESERVED bucket (invariant survives an empty list)', () => {
+  // PRESERVED_BUCKETS is now empty (B-354 FR-7 moved nyx-food-photos into the purge
+  // list), so this loop asserts nothing today — but the invariant + its test are kept
+  // so that re-introducing any preserve-on-delete carve-out is guarded from day one.
   const purges = collectStoragePaths(owned({
     petPhotoPaths: ['pets/p1.jpg'],
     eventAttachmentPaths: ['ev/a1.jpg'],
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetReportPaths: ['rep/r1.pdf'],
     medicationPhotoPaths: ['user-1/med-9/label.jpg'],
+    foodPhotoPaths: ['food-1/0-front.jpg'],
+    ownedFoodItemIds: ['food-1'],
   }))
   for (const preserved of PRESERVED_BUCKETS) {
     assertEquals(purges.some((p) => p.bucket === preserved), false)
   }
+})
+
+Deno.test('collectStoragePaths — B-354 FR-7: an owned food-label photo lands in the nyx-food-photos purge', () => {
+  // The inversion of the old FR-4 carve-out: once the catalog went per-account, a food
+  // label photo is the user's own data and is PURGED, riding the same path-collection
+  // lane as pet/medication photos.
+  const purges = collectStoragePaths(owned({
+    foodPhotoPaths: ['food-1/0-front.jpg'],
+    ownedFoodItemIds: ['food-1'],
+  }))
+  assertEquals(purges.length, 1)
+  assertEquals(purges[0].bucket, STORAGE_BUCKETS.foodPhotos)
+  assertEquals(purges[0].bucket, 'nyx-food-photos')
+  assertEquals(purges[0].paths, ['food-1/0-front.jpg'])
+})
+
+Deno.test('collectStoragePaths — B-354 FR-7: a cross-tenant food path never reaches a purge', () => {
+  // End-to-end through the collector: a crafted path naming ANOTHER account's food id is
+  // filtered out BEFORE the service-role purge is built, so account deletion can only ever
+  // remove the deleting user's OWN food photos.
+  const purges = collectStoragePaths(owned({
+    foodPhotoPaths: ['food-mine/0-front.jpg', 'food-victim/0-front.jpg'],
+    ownedFoodItemIds: ['food-mine'],
+  }))
+  const food = purges.find((p) => p.bucket === STORAGE_BUCKETS.foodPhotos)
+  assert(food, "expected a food-photos purge for the owner's own path")
+  assertEquals(food.paths, ['food-mine/0-front.jpg'])
+})
+
+Deno.test('collectStoragePaths — B-354 FR-7: an all-cross-tenant food list yields NO food purge', () => {
+  const purges = collectStoragePaths(owned({
+    foodPhotoPaths: ['food-victim/0-front.jpg'],
+    ownedFoodItemIds: ['food-mine'],
+  }))
+  assertEquals(purges.some((p) => p.bucket === STORAGE_BUCKETS.foodPhotos), false)
+})
+
+Deno.test('PRESERVED_BUCKETS — B-354 FR-7: nyx-food-photos is now PURGED, never preserved', () => {
+  // Pins the inversion: post per-account re-scope, food-label photos are the user's own
+  // data (migration 033 CASCADE-deletes the rows), so the bucket sits in STORAGE_BUCKETS,
+  // NOT PRESERVED_BUCKETS. A regression that restored the old "preserve the global catalog"
+  // carve-out would leave a deleted user's food photos behind; this fails loudly if so.
+  assertEquals((PRESERVED_BUCKETS as readonly string[]).includes('nyx-food-photos'), false)
+  assert((Object.values(STORAGE_BUCKETS) as string[]).includes('nyx-food-photos'))
+  // And nothing is preserved any more.
+  assertEquals(PRESERVED_BUCKETS.length, 0)
 })
 
 Deno.test('collectStoragePaths — B-127: a medication-label path lands in the nyx-medication-photos purge', () => {
@@ -196,7 +303,7 @@ Deno.test('PRESERVED_BUCKETS — B-127: nyx-medication-photos is PURGED, never p
   assert((Object.values(STORAGE_BUCKETS) as string[]).includes('nyx-medication-photos'))
 })
 
-Deno.test('collectStoragePaths — output buckets are always a subset of the five purgeable buckets', () => {
+Deno.test('collectStoragePaths — output buckets are always a subset of the six purgeable buckets', () => {
   const allowed = new Set<string>(Object.values(STORAGE_BUCKETS))
   const purges = collectStoragePaths(owned({
     petPhotoPaths: ['pets/p1.jpg'],
@@ -204,6 +311,8 @@ Deno.test('collectStoragePaths — output buckets are always a subset of the fiv
     vetAttachmentPaths: ['vet/v1.jpg'],
     vetReportPaths: ['rep/r1.pdf'],
     medicationPhotoPaths: ['user-1/med-9/label.jpg'],
+    foodPhotoPaths: ['food-1/0-front.jpg'],
+    ownedFoodItemIds: ['food-1'],
   }))
   for (const p of purges) assert(allowed.has(p.bucket), `unexpected bucket ${p.bucket}`)
 })
@@ -270,6 +379,34 @@ Deno.test('buildDeletionPlan — B-128: a crafted cross-tenant medication path i
   const plan = buildDeletionPlan(owned({
     ownerUserId: 'attacker-uid',
     medicationPhotoPaths: ['victim-uid/med-9/0-label.jpg'],
+  }))
+  assertEquals(plan, [{ kind: 'delete-auth-user' }])
+})
+
+Deno.test('buildDeletionPlan — B-354 FR-7: a food photo is purged BEFORE the terminal auth delete', () => {
+  // End-to-end ordering for the food bucket: migration 033 CASCADE-deletes the food row
+  // with the auth-user delete, so the label-photo purge must precede it (FR-6) or the
+  // photo is orphaned with no row to find it by. A food-only account still purges then
+  // deletes, exactly like a pet-only or med-only one.
+  const plan = buildDeletionPlan(owned({
+    foodPhotoPaths: ['food-1/0-front.jpg'],
+    ownedFoodItemIds: ['food-1'],
+  }))
+  assertEquals(plan.length, 2)
+  assertEquals(plan[0], {
+    kind: 'purge-bucket',
+    bucket: STORAGE_BUCKETS.foodPhotos,
+    paths: ['food-1/0-front.jpg'],
+  })
+  assert(isAuthDelete(plan[1]))
+})
+
+Deno.test('buildDeletionPlan — B-354 FR-7: a crafted cross-tenant food path is never purged', () => {
+  // The food twin of the B-128 case: an attacker-owned food row whose only photo_paths
+  // value names a VICTIM's food id produces NO purge step — just the terminal auth delete.
+  const plan = buildDeletionPlan(owned({
+    foodPhotoPaths: ['food-victim/0-front.jpg'],
+    ownedFoodItemIds: ['food-attacker'],
   }))
   assertEquals(plan, [{ kind: 'delete-auth-user' }])
 })
