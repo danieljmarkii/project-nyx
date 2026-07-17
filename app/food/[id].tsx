@@ -26,7 +26,9 @@ import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
-import { useEventStore } from '../../store/eventStore';
+import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
+import { useSnackbarStore } from '../../store/snackbarStore';
+import { useFoodLibraryStore } from '../../store/foodLibraryStore';
 
 const FOOD_FORMATS = [
   { value: 'dry_kibble', label: 'Dry kibble' },
@@ -94,8 +96,7 @@ export default function FoodDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [addingPhoto, setAddingPhoto] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const removeFromToday = useEventStore((s) => s.removeFromToday);
+  const [removing, setRemoving] = useState(false);
 
   // ── Fetch + realtime subscription ──
   useEffect(() => {
@@ -369,127 +370,63 @@ export default function FoodDetailScreen() {
     }
   }
 
-  // ── Delete food + all logged meals of it ──────────────────────────────────
-  // PM call (May 2026): deleting a food from the library also kills every
-  // meal log that referenced it. Engineering anti-pattern says "never DELETE
-  // events" — so we hard-delete food_items + meals (no soft-delete column on
-  // either) and soft-delete the parent events (set deleted_at). The net
-  // owner-visible effect is "the food and its history are gone."
-  function handleDelete() {
-    if (!row) return;
-    Alert.alert(
-      'Delete this food?',
-      'This will also remove everything you\'ve logged for it. This can\'t be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: () => runDelete() },
-      ],
-    );
-  }
-
-  async function runDelete() {
-    if (!row) return;
-    setDeleting(true);
+  // ── Remove from library (archive) ─────────────────────────────────────────
+  // B-005 PR 2: replaces the old destructive delete cascade. "Remove from
+  // library" now ARCHIVES the food — a reversible flag flip (archiveFood) that
+  // hides it from the picker/library while leaving every logged meal, diet trial,
+  // and the vet report untouched (the load-bearing invariant: archive filters
+  // picker/library reads only). Erasing a specific meal's history stays a
+  // per-event Timeline action, as before.
+  //
+  // No confirmation dialog: the undo snackbar is the safety net (the Linear/Gmail
+  // undo-over-confirm pattern), and nothing is destroyed, so a modal asking
+  // "are you sure?" for a reversible tidy-up would be friction, not safety.
+  async function handleArchive() {
+    if (!row || removing) return;
+    setRemoving(true);
     try {
-      const nowIso = new Date().toISOString();
-
-      // 1. Collect every food_items row with the same brand+product+format.
-      //    Captures of the same package via food-capture produce distinct
-      //    rows (fresh uuid per capture); the library tile collapses them
-      //    via GROUP BY in getLibraryFoods, so deleting by the current row's
-      //    id alone would leave the duplicates visible.
-      const { data: dupFoods, error: dupErr } = await supabase
-        .from('food_items')
-        .select('id')
-        .eq('brand', row.brand)
-        .eq('product_name', row.product_name)
-        .eq('format', row.format);
-      if (dupErr) throw dupErr;
-      const allFoodIds = Array.from(
-        new Set([row.id, ...(dupFoods ?? []).map((f) => f.id as string)]),
-      );
-
-      // 2. Collect event_ids of meals referencing any of those foods.
-      const { data: remoteMeals, error: mealQueryErr } = await supabase
-        .from('meals')
-        .select('event_id')
-        .in('food_item_id', allFoodIds);
-      if (mealQueryErr) throw mealQueryErr;
-      const remoteEventIds = (remoteMeals ?? []).map((m) => m.event_id as string);
-
-      const db = getDb();
-      const foodPlaceholders = allFoodIds.map(() => '?').join(',');
-      const localMeals = await db.getAllAsync<{ event_id: string }>(
-        `SELECT event_id FROM meals WHERE food_item_id IN (${foodPlaceholders})`,
-        allFoodIds,
-      );
-      const localEventIds = localMeals.map((m) => m.event_id);
-      const allEventIds = Array.from(new Set([...remoteEventIds, ...localEventIds]));
-
-      // 3. Soft-delete the parent events (remote + local). Anti-pattern says
-      //    never DELETE events, so we soft-delete.
-      if (allEventIds.length > 0) {
-        const { error: remoteSoftErr } = await supabase
-          .from('events')
-          .update({ deleted_at: nowIso })
-          .in('id', allEventIds);
-        if (remoteSoftErr) throw remoteSoftErr;
-
-        const eventPlaceholders = allEventIds.map(() => '?').join(',');
-        await db.runAsync(
-          `UPDATE events SET deleted_at = ?, updated_at = ?, synced = 0
-             WHERE id IN (${eventPlaceholders})`,
-          [nowIso, nowIso, ...allEventIds],
-        );
-      }
-
-      // 4. Hard-delete meals (no soft-delete column on meals).
-      const { error: mealsDelErr } = await supabase
-        .from('meals')
-        .delete()
-        .in('food_item_id', allFoodIds);
-      if (mealsDelErr) throw mealsDelErr;
-      await db.runAsync(
-        `DELETE FROM meals WHERE food_item_id IN (${foodPlaceholders})`,
-        allFoodIds,
-      );
-
-      // 5. Hard-delete every matching food_items row. Use .select() so we
-      //    detect a silent RLS block (supabase-js returns success with 0
-      //    rows affected when the DELETE policy is missing).
-      const { data: deletedFoods, error: foodDelErr } = await supabase
-        .from('food_items')
-        .delete()
-        .in('id', allFoodIds)
-        .select('id');
-      if (foodDelErr) throw foodDelErr;
-      if (!deletedFoods || deletedFoods.length === 0) {
-        throw new Error(
-          'Server rejected the delete (permission denied). Make sure migration 009_food_items_delete_policy.sql has been applied in the Supabase SQL Editor.',
-        );
-      }
-
-      // 6. Sweep the local cache by brand+product+format too, so duplicates
-      //    with the same descriptive fields but different ids are removed
-      //    even if they hadn't synced to the server yet.
-      await db.runAsync(
-        `DELETE FROM food_items_cache
-           WHERE LOWER(brand) = LOWER(?)
-             AND LOWER(product_name) = LOWER(?)
-             AND format = ?`,
-        [row.brand, row.product_name, row.format],
-      );
-
-      // 7. Drop any of the affected events from the in-memory event store
-      //    so Home / Timeline update without a remount.
-      allEventIds.forEach((id) => removeFromToday(id));
-
+      const result = await archiveFood({
+        id: row.id,
+        brand: row.brand,
+        product_name: row.product_name,
+        format: row.format,
+      });
+      // Refresh the (mounted-but-unfocused) Foods tab / picker so the tile drops
+      // out, then dismiss this modal and arm Undo over the surface underneath.
+      useFoodLibraryStore.getState().notifyChanged();
+      const foodName = row.product_name.trim() || row.brand.trim() || 'this food';
+      armUndo(result, foodName);
       router.back();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('Could not delete food', msg);
-      setDeleting(false);
+      Alert.alert('Could not remove food', msg);
+      setRemoving(false);
     }
+  }
+
+  // Arm the undo snackbar. Factored out so an Undo that fails (network) can
+  // re-arm itself, keeping the reversal retryable rather than stranding the food
+  // as silently archived. Reads the stores via getState so the closure stays
+  // valid after this modal unmounts (router.back). delayMs lets the dismissing
+  // modal clear before the root overlay reveals (the momentStore pattern).
+  function armUndo(result: ArchiveResult, foodName: string) {
+    useSnackbarStore.getState().show(
+      {
+        message: `Removed ${foodName} from your library`,
+        actionLabel: 'Undo',
+        onAction: async () => {
+          try {
+            await restoreFood(result);
+            useFoodLibraryStore.getState().notifyChanged();
+          } catch (err) {
+            console.warn('[food-detail] restore failed:', err);
+            Alert.alert('Could not undo', 'Something went wrong. Try again in a moment.');
+            armUndo(result, foodName);
+          }
+        },
+      },
+      { delayMs: 300 },
+    );
   }
 
   // ── Render ──
@@ -663,16 +600,21 @@ export default function FoodDetailScreen() {
               </TouchableOpacity>
             )}
 
+            {/* B-005 PR 2 — "Remove from library" ARCHIVES (reversible); it no
+                longer erases meal history. Styled calm, not alarm-red: the action
+                is undoable and destroys nothing. */}
             <TouchableOpacity
-              style={styles.deleteAction}
-              onPress={handleDelete}
-              disabled={deleting}
+              style={styles.removeAction}
+              onPress={handleArchive}
+              disabled={removing}
               hitSlop={8}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Remove this food from your library"
             >
-              {deleting
-                ? <WhorlSpinner size="sm" tint={theme.colorEventSymptom} />
-                : <Text style={styles.deleteActionText}>Delete this food</Text>}
+              {removing
+                ? <WhorlSpinner size="sm" ground="day" />
+                : <Text style={styles.removeActionText}>Remove from library</Text>}
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -797,16 +739,16 @@ const styles = StyleSheet.create({
     fontSize: theme.textMD,
     color: theme.colorAccent,
   },
-  deleteAction: {
+  removeAction: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: theme.space2,
     marginTop: theme.space1,
     minHeight: 44,
   },
-  deleteActionText: {
+  removeActionText: {
     fontSize: theme.textMD,
-    color: theme.colorEventSymptom,
+    color: theme.colorTextSecondary,
   },
   photoUploadingRow: {
     flexDirection: 'row',
