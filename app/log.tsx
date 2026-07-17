@@ -28,7 +28,7 @@ import { insertMedicationDose } from '../lib/medicationDose';
 import { insertWeightCheck, getLatestWeightKg, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
 import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFinished, type DoseAdherence } from '../lib/medications';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
-import { triggerVomitAnalysis } from '../lib/analysis';
+import { triggerVomitAnalysis, triggerStoolAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
@@ -677,6 +677,8 @@ export default function LogModal() {
         [attId, eventId, pet.id, localUri, storagePath, attachmentTakenAt ?? null, now]
       );
       const isVomit = selectedType === 'vomit';
+      // Both stool event_type values (formed + loose) carry a photographed read.
+      const isStool = selectedType === 'stool_normal' || selectedType === 'diarrhea';
       // Compress before upload (longest edge ≤1600px, JPEG q75) so the file
       // stays well under Claude's 5 MB image cap and bounds storage. Runs in an
       // async block so it doesn't delay the completion animation below.
@@ -696,8 +698,10 @@ export default function LogModal() {
           if (attErr) { console.warn('[log] event_attachment upsert failed:', attErr.message); return; }
           await db.runAsync('UPDATE event_attachments SET synced = 1 WHERE id = ?', [attId]);
           // B-027: cache-on-log. The photo + attachment row are now in Supabase,
-          // so the analyze-vomit function can read them. Fire-and-forget.
+          // so the analyze-vomit / analyze-stool function can read them.
+          // Fire-and-forget. B-247: stool gets the same cache-on-log path.
           if (isVomit) triggerVomitAnalysis(eventId).catch(() => {});
+          else if (isStool) triggerStoolAnalysis(eventId).catch(() => {});
         } catch (e) {
           console.error('[log] photo upload failed:', e);
         }

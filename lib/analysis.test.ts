@@ -14,12 +14,19 @@ jest.mock('./sync', () => ({
 
 import {
   EDITABLE_VOMIT_FIELDS,
+  EDITABLE_STOOL_FIELDS,
   VomitEditableFields,
   normalizeVomitEdits,
   extractEditableFromPayload,
   deriveEditedFields,
   buildVomitEditWrite,
+  triggerStoolAnalysis,
 } from './analysis';
+import { supabase } from './supabase';
+
+// Grab a typed handle to the mocked invoke AFTER import (referencing it inside
+// the jest.mock factory hits a TDZ/hoisting trap).
+const mockInvoke = supabase.functions.invoke as jest.Mock;
 
 const blank = (): VomitEditableFields => ({
   colour: null,
@@ -29,6 +36,49 @@ const blank = (): VomitEditableFields => ({
   foreign_material_present: null,
   foreign_material_note: null,
   description: null,
+});
+
+describe('triggerStoolAnalysis (B-247)', () => {
+  beforeEach(() => mockInvoke.mockReset());
+
+  it('invokes the analyze-stool function with the event id', async () => {
+    mockInvoke.mockResolvedValue({ error: null });
+    const res = await triggerStoolAnalysis('evt-1');
+    // A typo in the function name silently means no stool read ever runs — lock it.
+    expect(mockInvoke).toHaveBeenCalledWith('analyze-stool', { body: { event_id: 'evt-1' } });
+    expect(res.error).toBeNull();
+  });
+
+  it('surfaces the invoke error message rather than throwing', async () => {
+    mockInvoke.mockResolvedValue({ error: new Error('boom') });
+    const res = await triggerStoolAnalysis('evt-2');
+    expect(res.error).toBe('boom');
+  });
+});
+
+describe('EDITABLE_STOOL_FIELDS (B-247)', () => {
+  it('names the stool structured columns, never an n=1 read column', () => {
+    // The editable set feeds the vet report and gates the client edit write —
+    // it must never include a read/pipeline column, mirroring the vomit
+    // never-clobber guarantee (a client edit can never alter the read).
+    for (const forbidden of [
+      'recommendation',
+      'read_text',
+      'visual_flags',
+      'contextual_flags',
+      'status',
+      'ai_raw_payload',
+      'ai_confidence',
+      'dismissed_at',
+      'edited_at',
+    ]) {
+      expect(EDITABLE_STOOL_FIELDS as readonly string[]).not.toContain(forbidden);
+    }
+    // The escalation-driving structured fields ARE owner-editable (the B-028
+    // blood-correction case), so they must be present.
+    expect(EDITABLE_STOOL_FIELDS as readonly string[]).toContain('stool_blood_present');
+    expect(EDITABLE_STOOL_FIELDS as readonly string[]).toContain('stool_blood_type');
+  });
 });
 
 describe('normalizeVomitEdits', () => {
