@@ -531,8 +531,10 @@
       <div class="note rose"><b>Data-gap honesty</b> "How was her appetite last week?" with 2 logged meals →
         "Only 2 meals were logged last week — not enough to read appetite from. I'd rather tell you that than guess."
         Never inferred, never smoothed. (Free-fed pets additionally carry the "intake not directly observed" caveat.)</div>
-      <div class="note rose"><b>Notes &amp; photos stay out</b> "What did my note say on Tuesday?" → "I can't read
-        your notes — here's the event." (Under either D2 tier; see §5.) Photos never cross the boundary in v1.</div>
+      <div class="note rose"><b>Notes &amp; photos are in scope — scoped to the question (D2, ratified)</b> "What did
+        my note say on Tuesday?" gets your note back, verbatim. Photos answer via their AI read — cached first, or a
+        live read through the same analyze-vomit path the detail screen uses (stripped transform, shared 10/day read
+        cap, result saved to the event). Never a bulk dump: the question picks the events, and nothing else crosses.</div>
       <div class="note"><b>Deleted events stay deleted</b> Every query tool filters <code>deleted_at IS NULL</code> —
         the B-071 lesson, carried as a hard contract + test fixture ("more deleted than live" pet).</div>
     </div>
@@ -540,11 +542,11 @@
 
   <!-- ============================================================ -->
   <section>
-    <p class="sec-eyebrow">§5 · The D2 decision aid</p>
-    <h2 class="serif">Same question, two boundaries — your call</h2>
-    <p class="sec-lede">What the model is allowed to see about Pixel. Tier 1: computed aggregates only. Tier 2
-      (team rec): + the bounded structured fields you log via chips and enums. Under <i>both</i>, free-text notes
-      and photos never cross.</p>
+    <p class="sec-eyebrow">§5 · The D2 decision record</p>
+    <h2 class="serif">Same question, two boundaries — resolved</h2>
+    <p class="sec-lede">What the model is allowed to see about Pixel. <b>D2 is RATIFIED (PM, 2026-07-18) — and goes
+      further than either tier shown here:</b> notes and photos are data points the engine runs on, under the
+      spec's scoped-retrieval contract. These two frames are kept as the decision record.</p>
 
     <div class="rail rail-2">
       <div class="opt">
@@ -560,7 +562,7 @@
           </div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">Tier 1 — aggregates only</span>
+          <span class="k">Tier 1 — aggregates only <span class="tag open">Not chosen</span></span>
           <p>Counts, rates, dates. Honest but blunt: the second half of the question is
           <span style="color:var(--rose);font-weight:600;">unanswerable</span> — every recall question ends in a redirect.
           Holds the strictest prior posture (findings + counts).</p>
@@ -574,25 +576,28 @@
             <div class="ans-line" style="font-size:16px;">July 9, early morning — you logged it as yellow bile, with no blood or foreign material flagged.</div>
             <div style="font-size:12.5px;color:var(--a-text2);">That's 7 in the last 30 days; 6 of 7 landed between midnight and 8am.</div>
             <div class="prov">
-              <span class="n">From your structured log · notes &amp; photos not read</span>
+              <span class="n">From Pixel's record — fields, your note, the photo's read</span>
               <span class="go">Open July 9 →</span>
             </div>
           </div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">Tier 2 — + structured fields <span class="tag rec">Team rec</span></span>
-          <p>Event type, time, the chip/enum observations (color, blood, foreign material), food &amp; med names,
-          ratings, weights, engine findings. A factual recount of what <i>you</i> logged — never a wellness verdict
-          from it. The exam-room use case only works at this tier.</p>
+          <span class="k">Tier 2+ — the full record, scoped <span class="tag rec">Ratified &amp; extended</span></span>
+          <p>Event fields, chip/enum observations, food &amp; med names, ratings, weights, engine findings —
+          <b>plus the event's note and its photo's AI read</b> (PM ruling: they're data points; the report leads
+          with photos). Always a factual recount of what <i>you</i> logged — never a wellness verdict from it.</p>
         </div>
       </div>
     </div>
 
-    <div class="rec-note amber" style="margin-top:26px;">
-      <b>D2 — open for your ruling.</b> Tier 2 moves the prior LLM-boundary posture (set for the council-report
-      idea) from "findings + counts" to "findings + counts + whitelisted structured fields" for this surface.
-      The whitelist is enumerated in the spec, field by field; the privacy-policy sentence stays simple either way:
-      <i>"your structured logging data — never your notes or photos."</i>
+    <div class="rec-note">
+      <b>D2 — RATIFIED (PM, 2026-07-18; spec v2.1 §6).</b> The full logged record is in scope — including notes and
+      photos — under three mechanisms that replace field-tier exclusion: <b>scoped retrieval</b> (the question picks
+      the events; no bulk tool exists), <b>transform-only photo access</b> (the report's EXIF/GPS-stripping path,
+      never raw originals), and <b>one read path</b> (photo reads run through the analyze-vomit machinery, so Ask
+      and the detail screen can never disagree about what a photo showed). T&amp;S's tier-2 recommendation and
+      dissent are recorded in the spec; the privacy-policy line becomes <i>"your logged data — including your
+      notes, and photos when your question needs them."</i>
     </div>
   </section>
 
@@ -709,8 +714,9 @@
   </section>
 
   <footer class="doc">
-    <b>Next:</b> rule on D2 (tier 1 vs 2), the entry point (A alone vs A+C), and the name — then the requirements
-    doc locks these, with the PR-by-PR plan and per-session kickoff prompts. · Built from
+    <b>Decisions locked (2026-07-18):</b> D2 ratified (full record, scoped — spec v2.1 §6) · entry = Home header
+    pill (D5) · name = "Ask" placeholder, workshop later (D7). <b>Next:</b> build A1 (the config-seed migration) —
+    kickoff prompts in `docs/nyx-ask-requirements.md` §12. · Built from
     <code>constants/theme.ts</code> tokens (Geist/Newsreader scale, accent #00C2A8, pips &amp; spark from the shipped
     Calendar v3 / Trend patterns) · Copy register: nyx-voice + <code>constants/monetizationCopy.ts</code> ·
     B-228 · 2026-07-18.
