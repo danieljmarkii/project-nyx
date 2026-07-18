@@ -850,6 +850,22 @@ export type IncidentFlagKind = 'blood' | 'foreign_material'
 export type IncidentCategory = 'vomit' | 'stool'
 
 /**
+ * Fixed display/rank order for the per-incident red-flag families: vomit leads stool. The SINGLE
+ * source of truth for BOTH the detector's emission order (detectIncidentRedFlags) and the ranker's
+ * incident_red_flag/incident_red_flag tie-break (rankFindings) — so a future family (e.g. skin) is
+ * ordered in exactly one place, not two hand-kept-in-sync lists.
+ */
+export const INCIDENT_CATEGORY_ORDER: readonly IncidentCategory[] = ['vomit', 'stool']
+
+/**
+ * The raw `event_ai_analysis.incident_type` values that carry a per-incident red-flag lane — exactly
+ * the values `incidentCategory()` maps to a non-null family. The generate-signal query filters on
+ * this; keep it in sync with `incidentCategory` below (a future stool-schema consolidation — see the
+ * CLAUDE.md open question — would touch both).
+ */
+export const RED_FLAG_INCIDENT_TYPES = ['vomit', 'stool_normal', 'diarrhea'] as const
+
+/**
  * Map a raw `event_ai_analysis.incident_type` to its coarse red-flag category. 'vomit' → vomit;
  * 'stool_normal' / 'diarrhea' → stool (migration 034 keeps the two stool event types split — D1 —
  * so both must map here); anything else (itch/scratch/skin_reaction, or an unknown future value)
@@ -3826,7 +3842,7 @@ export function detectIncidentRedFlags(
   // (vomit before stool) — the ranker also breaks the incident_red_flag/incident_red_flag tie this
   // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear").
   const out: IncidentRedFlagFinding[] = []
-  for (const cat of ['vomit', 'stool'] as const) {
+  for (const cat of INCIDENT_CATEGORY_ORDER) {
     const acc = byFamily.get(cat)
     if (!acc || acc.flagKinds.size === 0) continue
 
@@ -3988,8 +4004,10 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
       // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also
       // the detector's emission order), so the surface never reorders on re-run. Neither is dropped.
       if (x.type === 'incident_red_flag' && y.type === 'incident_red_flag') {
-        const catOrder: Record<IncidentCategory, number> = { vomit: 0, stool: 1 }
-        return catOrder[x.incidentType] - catOrder[y.incidentType]
+        return (
+          INCIDENT_CATEGORY_ORDER.indexOf(x.incidentType) -
+          INCIDENT_CATEGORY_ORDER.indexOf(y.incidentType)
+        )
       }
       if (x.type === 'intake_decline' && y.type === 'intake_decline') {
         const order: Record<IntakeDeclineTrigger, number> = {

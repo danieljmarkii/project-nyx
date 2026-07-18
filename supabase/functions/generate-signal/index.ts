@@ -31,6 +31,7 @@ import {
   doseToMedicationWindow,
   DEFAULT_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
+  RED_FLAG_INCIDENT_TYPES,
   type Finding,
   type CoverageDiagnostic,
   type SymptomEvent,
@@ -702,7 +703,7 @@ const handler = async (req: Request): Promise<Response> => {
           'event_id, incident_type, blood_present, stool_blood_present, foreign_material_present, events!inner(occurred_at)',
         )
         .eq('pet_id', petId)
-        .in('incident_type', ['vomit', 'stool_normal', 'diarrhea'])
+        .in('incident_type', [...RED_FLAG_INCIDENT_TYPES])
         .is('events.deleted_at', null)
         .gte('events.occurred_at', lookbackIso),
     ])
