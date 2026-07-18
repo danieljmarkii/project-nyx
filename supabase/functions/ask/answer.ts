@@ -96,6 +96,14 @@ export const MAX_TOOL_ITERATIONS = 5
 // durable artifact, not the transcript (§10, D8).
 export const MAX_CONTEXT_TURNS = 6
 
+// Per-MESSAGE scoped-recall budget (rls-privacy A4 residual a). The per-tool cap (MAX_RECALL
+// = 25) bounds ONE recentEvents call; this bounds the WHOLE question so a crafted/injected
+// prompt can't page many recall calls across the 5-iteration loop and relay a large fraction
+// of the pet's notes across the Anthropic boundary in one turn. Matches the single-tool cap:
+// one question surfaces at most this many scoped events (incl. their notes/reads). The owner's
+// own data (D2), so this is defense-in-depth on the "one question → scoped answer" claim.
+export const MAX_RECALLED_EVENTS_PER_MESSAGE = 25
+
 // ── The fetched working set the pure tools run over ───────────────────────────────
 // index.ts fetches these once (RLS-scoped by the caller's JWT, ownership-gated) and hands
 // them here; dispatchTool runs the tools.ts cores over them with no further I/O.
@@ -180,6 +188,12 @@ export interface AskAnswerBody {
   detail: string
   component: ComponentDescriptor | null
   provenance: AnswerProvenance | null
+  /** A live engine SAFETY finding, relayed VERBATIM, that leads the answer (§7.2 — safety
+   *  insights always lead and are never dropped; Principle 3). Set STRUCTURALLY by the I/O
+   *  layer from the engine's cached findings — NOT model-discretionary — so a symptom
+   *  question can never return a bare count without the live safety finding beside it (the
+   *  A4 adversarial #6 fix). Null when the engine is silent (silence ≠ wellness). */
+  safetyLead: string | null
   followups: string[]
   /** Whether THIS conversation has now committed its free credit (client echoes it back
    *  so a follow-up in the same conversation does not commit a second — D8/D9). */
@@ -471,11 +485,23 @@ function floored(result: unknown): ToolCallResult {
 // validateAnswer — the output gate (§7.3, G8)
 // ══════════════════════════════════════════════════════════════════════════════════
 
-// Reused verbatim from generate-signal/phrasing.ts so Ask and the Signal reject the same
-// drift vocabulary — one guardrail lexicon across the product.
+// Reused from generate-signal/phrasing.ts (one guardrail lexicon across the product) and
+// EXTENDED for Ask after the A4 adversarial pass. The added terms — `stable`/`steady`/
+// `normal`/`unchanged`/`no change`/`no need to worry`/etc. — close the exact wellness-verdict
+// words the tool docs ban (weightSummary's "never 'stable'/'improving'", §7.3's "normal for
+// her") that the base Signal lexicon didn't carry, since the Signal never phrases a weight or
+// a raw count. `\bnormal\b` requires a word boundary, so "normally eats" is NOT matched.
 const REASSURANCE_RE =
-  /\b(fine|okay|ok|healthy|all clear|nothing to worry|nothing serious|probably fine|no concern|don'?t worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|back to normal|right track|she'?s well|he'?s well|they'?re well)\b/i
+  /\b(fine|okay|ok|healthy|all clear|nothing to worry|no need to worry|nothing serious|nothing wrong|no issues?|no problems?|probably fine|no concern|no cause for concern|not a concern|don'?t worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|back to normal|right track|she'?s well|he'?s well|they'?re well|stable|steady|holding steady|unchanged|no change|normal|nothing to change|no need to (?:change|do anything))\b/i
 const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i
+// Flagrant spelled-out quantities that assert a count the tools never returned — the
+// number-word bypass of the numeral-subset check (A4 adversarial #2). A count claim must be
+// a digit traceable to a tool result, so a fabricated word-quantity in a DATA answer is
+// drift. Deliberately NARROW: only phrases that never appear in honest count prose. Softer
+// words ("a few", "a couple", "several") are left OUT — they legitimately describe time
+// spans ("a few more days") and would false-positive good answers into deflections; the
+// prompt already instructs digits, and A7's copy pass hardens the tail.
+const VAGUE_QUANTITY_RE = /\b(a dozen|dozens|numerous|countless|many times|a bunch of|loads of|tons of)\b/i
 const CAUSAL_RE =
   /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic)|intoleran(?:t|ce)|reacts? to|leads? to|results? in)\b/i
 // A diagnosis assertion — the app never diagnoses (G1). Screens the obvious disease-claim
@@ -518,6 +544,8 @@ export function validateAnswer(params: ValidateAnswerParams): ValidateResult {
   if (params.mode === 'data') {
     // Associational only (G4/§7.2): the model may not assert causation from the log.
     if (CAUSAL_RE.test(t)) return { ok: false, reason: 'causal' }
+    // A spelled-out quantity is an un-traceable count — the number-word bypass (A4 #2).
+    if (VAGUE_QUANTITY_RE.test(t)) return { ok: false, reason: 'vague_quantity' }
     // D2/§5.4 — every numeral must trace to a tool result. The model never does arithmetic.
     const stray = strayNumerals(t, params.allowedNumerals)
     if (stray.length > 0) return { ok: false, reason: `unverified_number:${stray[0]}` }
@@ -565,6 +593,44 @@ export function collectNumerals(value: unknown, into: Set<string> = new Set()): 
     return into
   }
   return into
+}
+
+/** Sanitize model-authored follow-up chips (A4 adversarial #5 — the followups path had no
+ *  gate). A follow-up is a SUGGESTED QUESTION the owner may tap, so it must never ASSERT
+ *  wellness ("everything looks healthy — …") or frame intake as "picky", and never shout.
+ *  Drops any failing chip (keeps the clean ones), trims to `max`. A diagnosis-SHAPED question
+ *  ("Does she have IBD?") is NOT dropped — it is a legitimate question the surface answers
+ *  with the clinical_judgment deflection when tapped. Numeral-subset does NOT apply (a
+ *  question is not a claim). */
+export function sanitizeFollowups(followups: unknown, max = 3): string[] {
+  if (!Array.isArray(followups)) return []
+  const out: string[] = []
+  for (const f of followups) {
+    if (typeof f !== 'string') continue
+    const t = f.trim()
+    if (t.length < 3 || t.length > 120) continue
+    if (t.includes('!')) continue
+    if (REASSURANCE_RE.test(t) || DISMISSIVE_RE.test(t)) continue
+    out.push(t)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+/** The verbatim text of the leading live SAFETY finding in the engine's cached findings, or
+ *  null. Operates on the ctx.engineFindingsRaw shape ([{ type, priorityClass, payload:{text} }])
+ *  so the I/O layer can attach it STRUCTURALLY to every model-path answer (the A4 adversarial
+ *  #6 fix — a live safety finding is never model-discretionary). The text is the engine's own
+ *  (produced + validated by generate-signal), relayed as-is. */
+export function leadingSafetyText(
+  raw: { type?: unknown; priorityClass?: unknown; payload?: unknown }[] | null | undefined,
+): string | null {
+  for (const f of raw ?? []) {
+    if (f?.priorityClass !== 'safety') continue
+    const text = (f.payload as { text?: unknown } | null)?.text
+    if (typeof text === 'string' && text.trim()) return text.trim()
+  }
+  return null
 }
 
 /** The numerals in `text` that are NOT in `allowed` (canonicalized). A non-empty return is
@@ -717,6 +783,7 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
     detail,
     component: null,
     provenance: null,
+    safetyLead: null, // set structurally by the I/O layer from the engine's live findings
     followups,
     conversationCredited: false,
     generalMode: false,

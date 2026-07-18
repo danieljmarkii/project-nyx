@@ -28,10 +28,12 @@ import {
   conversationAlreadyCredited,
   dispatchTool,
   isSubstantiveOutcome,
+  leadingSafetyText,
   priorAssistantTurns,
   resolveAskCaps,
   resolveMessageCap,
   resolvePreModelGate,
+  sanitizeFollowups,
   strayNumerals,
   validateAnswer,
   type AskDataContext,
@@ -88,6 +90,32 @@ Deno.test('validateAnswer: rejects reassurance vocabulary (AC-2, never reassure)
     const r = validateAnswer({ text: bad, allowedNumerals: allowed, mode: 'data' })
     assert.equal(r.ok, false, `should reject: ${bad}`)
   }
+})
+
+Deno.test('validateAnswer: rejects the weight/count wellness verdicts stable/steady/normal/unchanged (A4 #3)', () => {
+  // The A4 adversarial pass broke on these — the tool docs ban them but the base Signal
+  // lexicon didn't carry them (the Signal never phrases a weight or a raw count).
+  for (const bad of [
+    "Her weight has been stable at 4.6 lbs.",
+    "Weight is holding steady.",
+    "That's a normal number for her.",
+    "Her weight is unchanged.",
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(['4.6']), mode: 'data' }).ok, false, bad)
+  }
+  // But a word that merely CONTAINS a banned token must pass (no false positive).
+  assert.equal(validateAnswer({ text: 'She turned down a food she normally eats.', allowedNumerals: new Set(), mode: 'data' }).ok, true)
+})
+
+Deno.test('validateAnswer: rejects a flagrant spelled-out quantity — the number-word bypass (A4 #2)', () => {
+  for (const bad of ['She vomited a dozen times.', 'It happened many times.', 'There were a bunch of episodes.']) {
+    const r = validateAnswer({ text: bad, allowedNumerals: new Set(), mode: 'data' })
+    assert.equal(r.ok, false, bad)
+    assert.equal((r as { reason: string }).reason, 'vague_quantity')
+  }
+  // Narrow by design: "a few more days"/"a couple of weeks" are legit time spans, NOT counts —
+  // they must pass so a good answer/deflection isn't dumped (they false-positived at first).
+  assert.equal(validateAnswer({ text: 'A few more days of logging and I can say.', allowedNumerals: new Set(), mode: 'data' }).ok, true)
 })
 
 Deno.test('validateAnswer: rejects "picky"/fussy (AC-5, intake ≠ preference)', () => {
@@ -251,6 +279,39 @@ Deno.test('buildDeflection: every deflection is non-substantive, no-credit, and 
 Deno.test('buildDeflection: ambiguous uses the clarifier when provided', () => {
   const d = buildDeflection('ambiguous', 'Biscuit', 'Which pet did you mean — Biscuit or Mochi?')
   assert.match(d.detail, /Biscuit or Mochi/)
+})
+
+Deno.test('sanitizeFollowups: drops unguarded model chips, keeps clean ones (A4 #5)', () => {
+  const out = sanitizeFollowups([
+    'How many times has she vomited this month?', // clean
+    'Everything looks healthy — check her weight', // reassurance ASSERTION → dropped
+    "Is she just being picky?", // dismissive framing → dropped
+    'What day is the trial on!', // exclamation → dropped
+    42, // non-string → dropped
+    'Does she have IBD?', // a diagnosis-SHAPED question is legitimate (deflected when tapped) → kept
+  ])
+  assert.deepEqual(out, ['How many times has she vomited this month?', 'Does she have IBD?'])
+})
+
+Deno.test('sanitizeFollowups: caps at max and handles non-arrays', () => {
+  assert.deepEqual(sanitizeFollowups(undefined), [])
+  assert.equal(sanitizeFollowups(['a?', 'b?', 'c?', 'd?'].map((s) => `question ${s}`), 2).length, 2)
+})
+
+Deno.test('leadingSafetyText: returns the first live safety finding verbatim, else null (A4 #6)', () => {
+  assert.equal(leadingSafetyText([]), null)
+  assert.equal(leadingSafetyText([{ type: 'reflection', priorityClass: 'insight', payload: { text: 'noted' } }]), null)
+  assert.equal(
+    leadingSafetyText([
+      { type: 'reflection', priorityClass: 'insight', payload: { text: 'insight text' } },
+      { type: 'symptom_worsening', priorityClass: 'safety', payload: { text: 'Biscuit has had loose stool on 5 of the last 7 days — worth a word with your vet.' } },
+    ]),
+    'Biscuit has had loose stool on 5 of the last 7 days — worth a word with your vet.',
+  )
+})
+
+Deno.test('buildDeflection: carries a null safetyLead (the handler sets it structurally)', () => {
+  assert.equal(buildDeflection('unsupported', 'Biscuit').safetyLead, null)
 })
 
 Deno.test('isSubstantiveOutcome: only answer/relayed_safety/general commit the credit (D9)', () => {

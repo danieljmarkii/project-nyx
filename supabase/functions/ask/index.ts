@@ -44,6 +44,7 @@ import {
   ASK_MODEL,
   MAX_TOOL_ITERATIONS,
   MAX_CONTEXT_TURNS,
+  MAX_RECALLED_EVENTS_PER_MESSAGE,
   MODEL_TOOLS,
   SYSTEM_PROMPT,
   GENERAL_SYSTEM_PROMPT,
@@ -53,6 +54,8 @@ import {
   buildProvenance,
   buildComponent,
   buildDeflection,
+  sanitizeFollowups,
+  leadingSafetyText,
   isSubstantiveOutcome,
   conversationAlreadyCredited,
   priorAssistantTurns,
@@ -188,6 +191,11 @@ async function runAskLoop(
   // provenance/component source. Keyed by tool name (last-wins for featuring).
   const captured: { name: string; result: unknown }[] = []
   let sawSafetyFinding = false
+  // Per-message scoped-recall budget (rls-privacy A4 residual a). Once the whole question has
+  // surfaced this many scoped events (across all recall-family calls), further recall calls
+  // return an empty, budget-exhausted result — so one question can't page the record.
+  let recalledEvents = 0
+  const RECALL_TOOLS = new Set(['recent_events', 'recall_event', 'last_symptom'])
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     let res: Response
@@ -238,9 +246,20 @@ async function runAskLoop(
     // Preserve the assistant turn verbatim (required so the tool_result ids line up).
     messages.push({ role: 'assistant', content: data.content ?? [] })
     for (const b of blocks) {
-      const call = dispatchTool(b.name ?? '', b.input, ctx)
-      captured.push({ name: b.name ?? '', result: call.result })
-      if (b.name === 'engine_findings' && findingsHaveSafety(call.result)) sawSafetyFinding = true
+      const name = b.name ?? ''
+      // Enforce the per-message recall budget (rls-privacy #a): once exhausted, a recall
+      // tool returns a budget-exhausted stub instead of more scoped events. Aggregates are
+      // never budgeted (they carry no note/read). The tool layer already caps ONE call at
+      // MAX_RECALL; this caps the SUM across the whole question.
+      let call
+      if (RECALL_TOOLS.has(name) && recalledEvents >= MAX_RECALLED_EVENTS_PER_MESSAGE) {
+        call = { ok: false, result: { error: 'recall budget for this question is exhausted — ask a narrower question or open the vet report for the full record', budget_exhausted: true } }
+      } else {
+        call = dispatchTool(name, b.input, ctx)
+        recalledEvents += countRecalledEvents(name, call.result)
+      }
+      captured.push({ name, result: call.result })
+      if (name === 'engine_findings' && findingsHaveSafety(call.result)) sawSafetyFinding = true
       toolResultBlocks.push({
         type: 'tool_result',
         // @ts-ignore — tool_result carries tool_use_id + content (Anthropic shape)
@@ -273,9 +292,8 @@ function finalizeAnswer(
   const headline = typeof input.headline === 'string' ? input.headline.trim() : ''
   const detail = typeof input.detail === 'string' ? input.detail.trim() : ''
   const featureName = typeof input.feature_tool === 'string' ? (input.feature_tool as string) : null
-  const followups = Array.isArray(input.followups)
-    ? (input.followups as unknown[]).filter((f): f is string => typeof f === 'string').slice(0, 3)
-    : []
+  // Sanitize model-authored follow-up chips (A4 adversarial #5 — they were unguarded).
+  const followups = sanitizeFollowups(input.followups)
 
   // An answer is "grounded" iff the model actually read ≥1 tool result this turn. An
   // ungrounded answer (no tool calls) is a general-knowledge answer — permitted only in
@@ -296,27 +314,11 @@ function finalizeAnswer(
   const combined = `${headline} ${detail}`.trim()
   const verdict = validateAnswer({ text: combined, allowedNumerals, mode, safety: sawSafetyFinding })
   if (!verdict.ok) {
-    console.warn(`ask: answer failed validation (${verdict.reason}) — using safe fallback`)
-    // A live safety finding must NOT vanish because the model's phrasing failed the gate
-    // (§7.2 — safety leads, never dropped). Relay the ENGINE's own verbatim text instead
-    // (it already passed generate-signal's validatePhrasing, so it is guardrail-clean by
-    // construction) as a substantive relayed-safety answer. This is the safe direction: the
-    // finding is the engine's, not Ask-minted, and it is already on Home/Signal for free.
-    const safetyText = firstSafetyText(captured)
-    if (safetyText) {
-      return {
-        outcome: 'relayed_safety',
-        substantive: true,
-        headline: safetyText,
-        detail: '',
-        component: null,
-        provenance: null,
-        followups: [`Put together a vet-visit rundown`],
-        conversationCredited: false,
-        generalMode: false,
-      }
-    }
-    // No safety finding to relay → a designed deflection (drives the wedge), never a blank.
+    console.warn(`ask: answer failed validation (${verdict.reason}) — using deflection fallback`)
+    // A failed model sentence never reaches the owner (never blank, never unguarded). Route to
+    // a designed deflection (drives the wedge). A live safety finding does NOT vanish here: the
+    // handler attaches it STRUCTURALLY as `safetyLead` on EVERY model-path response, deflections
+    // included (§7.2 — safety leads, never dropped; the A4 adversarial #6 fix).
     return buildDeflection(isGeneral ? 'general' : 'unsupported', petName)
   }
 
@@ -334,6 +336,7 @@ function finalizeAnswer(
     detail: headline ? detail : '',
     component,
     provenance,
+    safetyLead: null, // attached structurally by the handler from the engine's live findings
     followups,
     conversationCredited: false, // set by the caller when the credit actually commits (D9)
     generalMode: isGeneral,
@@ -354,22 +357,13 @@ function pickFeatured(featureName: string | null, captured: { name: string; resu
   return null
 }
 
-// The verbatim text of the first live SAFETY engine finding across the captured results,
-// or null. Used as the never-drop fallback when a model answer fails validation (§7.2).
-// The text is the engine's own (produced + validated by generate-signal), relayed as-is.
-function firstSafetyText(captured: { name: string; result: unknown }[]): string | null {
-  for (const c of captured) {
-    if (c.name !== 'engine_findings' || !c.result || typeof c.result !== 'object') continue
-    const findings = (c.result as { findings?: unknown }).findings
-    if (!Array.isArray(findings)) continue
-    for (const f of findings) {
-      const finding = f as { priorityClass?: unknown; payload?: { text?: unknown } }
-      if (finding?.priorityClass === 'safety' && typeof finding.payload?.text === 'string' && finding.payload.text.trim()) {
-        return finding.payload.text.trim()
-      }
-    }
-  }
-  return null
+// How many scoped events a recall-family result surfaced (for the per-message budget).
+function countRecalledEvents(name: string, result: unknown): number {
+  if (!result || typeof result !== 'object') return 0
+  const r = result as Record<string, unknown>
+  if (name === 'recent_events') return Array.isArray(r.events) ? r.events.length : 0
+  if (name === 'recall_event' || name === 'last_symptom') return r.event ? 1 : 0
+  return 0
 }
 
 function findingsHaveSafety(result: unknown): boolean {
@@ -722,7 +716,15 @@ const handler = async (req: Request): Promise<Response> => {
 
     // 6. Fetch the working set (RLS-scoped) and run the bounded plan-loop.
     const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs)
-    const { body: answerBody } = await runAskLoop(ctx, question, conversation, generalEnabled, apiKey, model)
+    const { body: loopBody } = await runAskLoop(ctx, question, conversation, generalEnabled, apiKey, model)
+
+    // 6b. STRUCTURALLY attach a live engine SAFETY finding as the leading card (§7.2 — safety
+    //     leads, never dropped). This is NOT model-discretionary: whatever the model did (a
+    //     bare count, a deflection, a general answer), a live safety finding from the engine's
+    //     cached findings is surfaced beside the answer. The engine is the only minter (relay-
+    //     only), so this can never fabricate an escalation; it only refuses to hide one (the A4
+    //     adversarial #6 fix). Engine silent ⇒ null (silence ≠ wellness).
+    const answerBody = { ...loopBody, safetyLead: leadingSafetyText(ctx.engineFindingsRaw) }
 
     // 7. Commit the VALUE grain (D9): ONLY on a substantive answer in a not-yet-credited
     //    conversation. A deflection / floor / fallback is free on this grain; a follow-up in
