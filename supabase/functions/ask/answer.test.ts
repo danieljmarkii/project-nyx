@@ -40,6 +40,9 @@ import {
   buildPhotoReadResult,
   buildReadLine,
   redactReadForModel,
+  featuredNoFlagRead,
+  mentionsPhotoAppearance,
+  SCRUBBED_READ_HEADLINE,
   photoReadIncidentType,
   PHOTO_READ_EVENT_TYPES,
   MAX_LIVE_PHOTO_READS_PER_MESSAGE,
@@ -716,20 +719,69 @@ Deno.test('buildReadLine: a present red flag is NAMED (escalate-on-presence), a 
   assert.equal(validateAnswer({ text: noFlag, allowedNumerals: new Set(), mode: 'data' }).ok, true)
 })
 
-Deno.test('redactReadForModel: strips the benign clinical detail the model could editorialize; keeps escalation signal', () => {
+Deno.test('redactReadForModel: strips benign detail AND the no-flag absence signal; keeps only escalation', () => {
   const redacted = redactReadForModel(photoResult('ran', projected({ readText: 'benign monitor text the model must NOT see' })))
   // No benign specifics reach the model.
   for (const leaked of ['colour', 'contents', 'description', 'read_text', 'readText', 'recommendation', 'fields']) {
     assert.equal(leaked in redacted, false, `redacted result leaks ${leaked}`)
   }
-  // Keeps only what's needed to escalate + frame.
+  // The re-review fix: a NO-FLAG read carries NO red_flags field at all — no absence signal
+  // for the model to read as "nothing wrong" and editorialize (the sibling-channel leak).
+  assert.equal('red_flags' in redacted, false)
   assert.equal(redacted.status, 'ran')
-  assert.deepEqual(redacted.red_flags, [])
-  assert.match(String(redacted.guidance), /do not|don'?t|only the recall/i)
-  // A red flag IS surfaced to the model (so it can lead the escalation — the safe direction).
+  assert.match(String(redacted.guidance), /no information|do not|don'?t/i)
+  // A red flag IS surfaced (so the model can lead the escalation — the safe direction).
   const flagged = redactReadForModel(photoResult('ran', projected({ flags: ['blood'] })))
   assert.deepEqual(flagged.red_flags, ['blood'])
   assert.match(String(flagged.guidance), /red flag|concern|vet/i)
+})
+
+Deno.test('mentionsPhotoAppearance: catches the 15 sibling-channel leak headlines the re-review found', () => {
+  // These are model HEADLINES/DETAIL on a no-flag read — the D6 line the owner reads first.
+  // All leaked the reassurance denylist in the 2026-07-18 re-review; the CATEGORICAL photo/read
+  // reference bar catches them (they all reference the photo / its appearance / the read verdict).
+  for (const leak of [
+    'I took a look — all seems well with that one.',
+    'The read came back with nothing.',
+    'The read is negative.',
+    'Nothing turned up when I looked.',
+    'Nothing stood out in that photo.',
+    "That one's clean.",
+    'The photo came out clean.',
+    "There's nothing to flag here.",
+    'No flags on that one.',
+    "The read didn't flag anything on that one.",
+    'The photo looked clean.',
+    'It looked clear to me.',
+    'That one appears clear.',
+    'Nothing to note in the picture.',
+    'The image showed nothing concerning.',
+  ]) {
+    assert.equal(mentionsPhotoAppearance(leak), true, `should bar the photo reference: ${leak}`)
+  }
+  // Recall-only prose (what the model SHOULD write) is NOT a photo reference — no false positive.
+  for (const recall of [
+    'Most recently July 9 — that is 7 in the last 30 days.',
+    "Biscuit's last vomit was on the 9th; 6 of 7 landed overnight.",
+    'That was the third one this week.',
+  ]) {
+    assert.equal(mentionsPhotoAppearance(recall), false, `recall prose must pass: ${recall}`)
+  }
+})
+
+Deno.test('featuredNoFlagRead: true only for a real ran/cached read with NO present flags', () => {
+  assert.equal(featuredNoFlagRead([{ name: 'read_photo', result: photoResult('ran', projected({ flags: [] })) }]), true)
+  assert.equal(featuredNoFlagRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [] })) }]), true)
+  // A present flag is EXEMPT — the model should name the concern (escalate), not be scrubbed.
+  assert.equal(featuredNoFlagRead([{ name: 'read_photo', result: photoResult('ran', projected({ flags: ['blood'] })) }]), false)
+  // No read to relay → not the reassurance-on-absence case.
+  assert.equal(featuredNoFlagRead([{ name: 'read_photo', result: photoResult('capped') }]), false)
+  assert.equal(featuredNoFlagRead([{ name: 'count_symptom', result: { kind: 'count_symptom', count: 3 } }]), false)
+  assert.equal(featuredNoFlagRead([]), false)
+})
+
+Deno.test('SCRUBBED_READ_HEADLINE never reassures (the deterministic fallback for a photo-referencing headline)', () => {
+  assert.equal(validateAnswer({ text: SCRUBBED_READ_HEADLINE, allowedNumerals: new Set(), mode: 'data' }).ok, true)
 })
 
 Deno.test('REASSURANCE_RE: the demonstrated A8 leak phrasings are now blocked (defense-in-depth)', () => {

@@ -58,6 +58,9 @@ import {
   buildPhotoReadResult,
   buildReadLine,
   redactReadForModel,
+  featuredNoFlagRead,
+  mentionsPhotoAppearance,
+  SCRUBBED_READ_HEADLINE,
   validateAnswer,
   collectNumerals,
   buildProvenance,
@@ -355,7 +358,19 @@ function finalizeAnswer(
   const allowedNumerals = new Set<string>()
   for (const c of captured) collectNumerals(c.result, allowedNumerals)
 
-  const combined = `${headline} ${detail}`.trim()
+  // Structural bar (the §7.7 re-review fix): on a NO-FLAG read turn the model must not deliver
+  // a photo verdict in its own prose (the deterministic readLine carries the photo). Scrub any
+  // photo/read/appearance reference to a guaranteed-clean line, per field — a recall-only
+  // headline/detail is kept; a photo-referencing one is replaced. Done BEFORE validation so the
+  // scrubbed text is what's gated. The redaction already denies the model the absence signal;
+  // this closes the sibling channel (headline/detail) the re-review found (15/15 leaks).
+  let headlineOut = headline
+  let detailOut = detail
+  if (featuredNoFlagRead(captured)) {
+    if (mentionsPhotoAppearance(headline)) headlineOut = SCRUBBED_READ_HEADLINE
+    if (mentionsPhotoAppearance(detail)) detailOut = ''
+  }
+  const combined = `${headlineOut} ${detailOut}`.trim()
   const verdict = validateAnswer({ text: combined, allowedNumerals, mode, safety: sawSafetyFinding })
   if (!verdict.ok) {
     console.warn(`ask: answer failed validation (${verdict.reason}) — using deflection fallback`)
@@ -382,8 +397,8 @@ function finalizeAnswer(
   return {
     outcome,
     substantive: isSubstantiveOutcome(outcome),
-    headline: headline || detail,
-    detail: headline ? detail : '',
+    headline: headlineOut || detailOut,
+    detail: headlineOut ? detailOut : '',
     component,
     provenance,
     safetyLead: null, // attached structurally by the handler from the engine's live findings

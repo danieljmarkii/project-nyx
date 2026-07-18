@@ -689,30 +689,70 @@ export function buildReadLine(result: PhotoReadResult, petName: string): string 
   }
 }
 
-/** The REDACTED view of a read_photo result handed to the MODEL (never the benign clinical
- *  details). It keeps only what the model needs to ESCALATE (present red flags) and to
- *  frame the recall — colour/contents/description/read_text are withheld so the model has
- *  no benign specifics to editorialize into reassurance-on-absence. `guidance` is
- *  SERVER-authored (trusted, not owner data) and tells the model the read summary is shown
- *  to the owner directly, so it must not restate or interpret the photo. */
+/** The REDACTED view of a read_photo result handed to the MODEL. It never carries the benign
+ *  clinical details (colour/contents/description/read_text) — and, critically, for a NO-FLAG
+ *  read it carries NO absence signal either: `red_flags` is present ONLY when a red flag is
+ *  actually present (so the model can lead the escalation — the safe direction). A no-flag
+ *  read hands the model NOTHING to editorialize — no `red_flags:[]` to read as "nothing
+ *  wrong" (the sibling-channel leak the 2026-07-18 re-review found: `red_flags:[]` IS the
+ *  absence signal, and the model's own headline/detail then reassured past the denylist).
+ *  `guidance` is SERVER-authored (trusted, not owner data). The deterministic buildReadLine
+ *  carries the actual read to the owner; the model's job is the recall framing only. */
 export function redactReadForModel(result: PhotoReadResult): Record<string, unknown> {
   const redFlags = result.read?.flags ?? []
-  const guidance =
-    redFlags.length > 0
-      ? 'A red flag is present in this photo — lead by naming that concern plainly and routing to the vet. The factual read summary is shown to the owner directly; do not add a wellness verdict.'
-      : result.status === 'ran' || result.status === 'cached'
-        ? "The photo's factual read is shown to the owner directly. Do NOT describe, interpret, or comment on how the photo looked, and do NOT say it looked fine/clear/normal or that nothing was wrong — give ONLY the recall context (when, how often)."
-        : 'No read is available for this photo right now. State that plainly and point to the event; never fill the gap with reassurance.'
-  return {
-    kind: 'read_photo',
-    eventId: result.eventId,
-    eventType: result.eventType,
-    status: result.status,
-    ranLiveRead: result.ranLiveRead,
-    red_flags: redFlags,
-    guidance,
+  const hasRead = result.status === 'ran' || result.status === 'cached'
+  const base = { kind: 'read_photo', eventId: result.eventId, eventType: result.eventType, status: result.status, ranLiveRead: result.ranLiveRead }
+  if (hasRead && redFlags.length > 0) {
+    // Escalation — the model IS told the present flag so it can lead with the concern.
+    return { ...base, red_flags: redFlags, guidance: 'A red flag is present in this photo — lead by naming that concern plainly and route to the vet. The factual read summary is shown to the owner directly; do not add a wellness verdict.' }
   }
+  if (hasRead) {
+    // NO absence signal — no red_flags field at all. The model is told it has no appearance
+    // information and must not mention the photo; there is no factual hook for a wellness verdict.
+    return { ...base, guidance: "The photo's read is complete and its factual summary is shown to the owner directly, separately from your text. You have NO information about how the photo looked and did not see it — do NOT describe, characterize, or comment on the photo or its read in any way. Answer ONLY the recall context (when it happened, how often)." }
+  }
+  // no_photo / capped / unavailable / budget_exhausted / not_found / unsupported_type.
+  return { ...base, guidance: 'No read is available for this photo right now. State that plainly and point to the event; never fill any gap with reassurance.' }
 }
+
+// ── Structural bar: the model may not reference a NO-FLAG photo read in its own prose ────
+// The re-review's residual: the deterministic readLine is safe, but the model still authors
+// headline/detail (the D6 TLDR the owner reads FIRST), and on a no-flag read it can slip a
+// wellness verdict past the reassurance denylist ("that one's clean", "the read is negative",
+// "all seems well" — 15/15 leaked). We do NOT trust model + denylist on this exact hazard
+// (that is why readLine is deterministic), so we do not trust it for the surrounding sentence
+// either: when a no-flag read was featured, the model must not reference the photo/read/its
+// appearance AT ALL (the readLine carries it). This is a bounded, CATEGORICAL reference bar
+// — reference nouns/verbs/verdict words for "the photo/read" — not the open-ended wellness
+// vocabulary the denylist can't enumerate; paired with the redaction above (no absence
+// signal), the model has neither the hook nor the channel. finalizeAnswer scrubs a
+// photo-referencing headline/detail to a deterministic line and keeps the safe readLine.
+const PHOTO_REFERENCE_RE =
+  /\b(photos?|image|picture|pic|snapshot|the shot|the read|read (?:came|is|was|did|didn'?t|shows?|showed)|looke?d?|looking|appears?|appeared|seems?|seemed|clean|clear|negative|flag(?:s|ged)?|(?:turn(?:s|ed)?|stood|jump(?:s|ed)?|came|show(?:s|ed)?) (?:up|out|back|anything|nothing)|nothing (?:turned|stood|jumped|showed|to flag|to note))\b/i
+
+/** Does this text reference the photo / its appearance / the read verdict? Used ONLY when a
+ *  no-flag read was featured, to bar the model from delivering a photo verdict the deterministic
+ *  readLine already carries. Pure. */
+export function mentionsPhotoAppearance(text: string): boolean {
+  return PHOTO_REFERENCE_RE.test(text ?? '')
+}
+
+/** True when the most-recent read_photo captured this turn is a REAL read (ran/cached) with
+ *  NO present red flags — the reassurance-on-absence risk case that triggers the reference
+ *  bar. A present-flag read is exempt (the model SHOULD name the concern — escalate). */
+export function featuredNoFlagRead(captured: { name: string; result: unknown }[]): boolean {
+  for (let i = captured.length - 1; i >= 0; i--) {
+    if (captured[i].name !== 'read_photo') continue
+    const r = captured[i].result as PhotoReadResult
+    return (r.status === 'ran' || r.status === 'cached') && !!r.read && r.read.flags.length === 0
+  }
+  return false
+}
+
+/** The deterministic, guaranteed-clean headline a photo-referencing model sentence is scrubbed
+ *  to on a no-flag-read turn (the recall data still rides in component/provenance, the photo in
+ *  readLine). Never reassures by construction. */
+export const SCRUBBED_READ_HEADLINE = "Here's what's logged for that one."
 
 /** Build the read_photo tool result for every NON-run plan (the run branch's result is
  *  assembled by index.ts from the machinery's persisted row). Pure. */
