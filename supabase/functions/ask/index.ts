@@ -724,7 +724,7 @@ const handler = async (req: Request): Promise<Response> => {
     //     cached findings is surfaced beside the answer. The engine is the only minter (relay-
     //     only), so this can never fabricate an escalation; it only refuses to hide one (the A4
     //     adversarial #6 fix). Engine silent ⇒ null (silence ≠ wellness).
-    const answerBody = { ...loopBody, safetyLead: leadingSafetyText(ctx.engineFindingsRaw) }
+    const answerBody = { ...loopBody, safetyLead: leadingSafetyText(ctx.engineFindingsRaw, ctx.petName) }
 
     // 7. Commit the VALUE grain (D9): ONLY on a substantive answer in a not-yet-credited
     //    conversation. A deflection / floor / fallback is free on this grain; a follow-up in

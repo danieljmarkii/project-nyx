@@ -617,20 +617,30 @@ export function sanitizeFollowups(followups: unknown, max = 3): string[] {
   return out
 }
 
+/** A generic safe lead used when a live SAFETY-class finding exists but carries no usable
+ *  prose — so the guarantee keys on the CLASS, never the text (a safety finding is never
+ *  silently skipped just because its `text` is absent; A4 adversarial re-review note). */
+export const GENERIC_SAFETY_LEAD =
+  "The Signal has a safety flag up for {pet} right now — open Home to see it, and your vet is the best call if you're worried."
+
 /** The verbatim text of the leading live SAFETY finding in the engine's cached findings, or
  *  null. Operates on the ctx.engineFindingsRaw shape ([{ type, priorityClass, payload:{text} }])
  *  so the I/O layer can attach it STRUCTURALLY to every model-path answer (the A4 adversarial
- *  #6 fix — a live safety finding is never model-discretionary). The text is the engine's own
- *  (produced + validated by generate-signal), relayed as-is. */
+ *  #6 fix — a live safety finding is never model-discretionary). Keys on the safety CLASS:
+ *  the engine's own text (produced + validated by generate-signal) when present, else the
+ *  generic lead — so a safety finding with empty prose still surfaces, never vanishes. */
 export function leadingSafetyText(
   raw: { type?: unknown; priorityClass?: unknown; payload?: unknown }[] | null | undefined,
+  petName = 'your pet',
 ): string | null {
+  let hasSafetyClass = false
   for (const f of raw ?? []) {
     if (f?.priorityClass !== 'safety') continue
+    hasSafetyClass = true
     const text = (f.payload as { text?: unknown } | null)?.text
     if (typeof text === 'string' && text.trim()) return text.trim()
   }
-  return null
+  return hasSafetyClass ? GENERIC_SAFETY_LEAD.replace('{pet}', petName) : null
 }
 
 /** The numerals in `text` that are NOT in `allowed` (canonicalized). A non-empty return is

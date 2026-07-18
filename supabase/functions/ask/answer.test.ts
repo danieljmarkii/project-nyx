@@ -310,6 +310,13 @@ Deno.test('leadingSafetyText: returns the first live safety finding verbatim, el
   )
 })
 
+Deno.test('leadingSafetyText: a safety-class finding with no text still surfaces (keys on class, not prose)', () => {
+  const lead = leadingSafetyText([{ type: 'symptom_worsening', priorityClass: 'safety', payload: {} }], 'Biscuit')
+  assert.ok(lead && lead.includes('safety flag') && lead.includes('Biscuit'))
+  // No safety class present ⇒ still null (silence ≠ wellness, never a manufactured lead).
+  assert.equal(leadingSafetyText([{ type: 'reflection', priorityClass: 'insight', payload: {} }], 'Biscuit'), null)
+})
+
 Deno.test('buildDeflection: carries a null safetyLead (the handler sets it structurally)', () => {
   assert.equal(buildDeflection('unsupported', 'Biscuit').safetyLead, null)
 })
