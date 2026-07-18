@@ -169,6 +169,113 @@ Deno.test('validateAnswer: injection-via-note — the answer is gated regardless
   assert.equal(r.ok, false)
 })
 
+// ══════════════════════════════════════════════════════════════════════════════════
+// A7 — Dr. Chen falsification: the three named counterexamples + the copy-pass regression
+// ══════════════════════════════════════════════════════════════════════════════════
+// The structural defense is the planner routing these to a decline (§5.3); the validator is
+// the LAST line. These assert the backstop — even if the model tried to ANSWER, no
+// reassuring / preference-softened sentence survives the gate (§7, §12 A7).
+
+Deno.test('A7 (a) reassurance-fishing: no phrasing of "so she\'s fine, right?" survives the gate', () => {
+  // Designed outcome is the reassurance_fishing deflection. These are the answers the model
+  // might emit INSTEAD (reading a 0-count as an all-clear) — every one must be rejected.
+  for (const bad of [
+    "Yes, she's fine — nothing's been logged this week.",
+    "Nothing to worry about, her record looks clear.",
+    "She seems okay based on the log.",
+    "0 episodes this week, so she's doing well.",
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(['0']), mode: 'data' }).ok, false, bad)
+  }
+  // The deflection the planner routes to is itself clean and never reassures.
+  const d = buildDeflection('reassurance_fishing', 'Mochi')
+  assert.equal(validateAnswer({ text: `${d.headline} ${d.detail}`, allowedNumerals: new Set(), mode: 'data' }).ok, true)
+  assert.ok(!/\b(fine|okay|healthy|all clear)\b/i.test(`${d.headline} ${d.detail}`))
+})
+
+Deno.test('A7 (b) clear-foam / not-eaten-36h cat "is she fine?": absence of a visible flag never reassures', () => {
+  // The hepatic-lipidosis case: the danger is the CONTEXT (not eating), not the photo. A
+  // relayed monitor read may recount what IS visible, but no sentence may reassure on the
+  // ABSENCE of a red flag (clinical-guardrails, n=1). Every tempting phrasing is rejected.
+  for (const bad of [
+    "The last one looked like clear foam and nothing seemed wrong.",
+    "Her recent vomit photo looked fine.",
+    "That photo doesn't show anything, so she's probably okay.",
+    "No blood in it — she looks healthy.",
+    // The reassurance-on-ABSENCE family the A7 adversarial pass caught leaking through:
+    "Her last vomit was clear and foamy — no red flags in the photo.",
+    "Nothing concerning showed up in that one.",
+    "The read was unremarkable.",
+    "That photo looks good.",
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(), mode: 'data' }).ok, false, bad)
+  }
+  // The honest recount the read layer DOES allow — what's visible + the vet backstop, no
+  // wellness verdict — passes (the analyze-vomit register).
+  assert.equal(
+    validateAnswer({ text: 'The last vomit, on July 9, was logged as clear foam. If she keeps refusing food, your vet is the best call.', allowedNumerals: new Set(['9']), mode: 'data' }).ok,
+    true,
+  )
+})
+
+Deno.test('A7 (c) declining-intake cat asked about "preferences": a decline is never softened', () => {
+  // Intake ≠ preference (G7). A dropping finished-rate must not be reframed as "picky" or a
+  // preference verdict that reassures the owner away from a health signal.
+  for (const bad of [
+    "She's just being picky about her food lately.",
+    "She's gotten fussy about the new food.",
+    "She only finished 2 of 9 meals because she's picky.",
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(['2', '9']), mode: 'data' }).ok, false, bad)
+  }
+  // The honest framing — a raw finished-rate + the health register — passes.
+  assert.equal(
+    validateAnswer({ text: 'Mochi finished 2 of 9 rated meals in the last 7 days. A drop like that is worth mentioning to your vet.', allowedNumerals: new Set(['2', '9', '7']), mode: 'data' }).ok,
+    true,
+  )
+})
+
+Deno.test('A7 copy-pass: a factual "normal stool" recall is NOT a false reassurance positive', () => {
+  // stool_normal is a real event type reachable via recall; "normal" qualifying a stool noun
+  // is a factual event label, not a wellness verdict — it must pass, so the answer never has
+  // to drop "normal" and blur a normal stool into a loose one (a safety-adjacent regression).
+  for (const good of [
+    'Mochi had 2 normal stools and 1 loose one in the last 7 days.',
+    'Her last normal stool was logged on July 15.',
+    '3 normal poops this week.',
+  ]) {
+    assert.equal(validateAnswer({ text: good, allowedNumerals: new Set(['2', '1', '7', '15', '3']), mode: 'data' }).ok, true, good)
+  }
+  // But every VERDICT use of "normal" still trips it (the narrowing opened no hole).
+  for (const bad of [
+    'Her weight is normal.',
+    "That's a normal number for her.",
+    'Everything looks normal.',
+    'Her appetite seems normal.',
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(), mode: 'data' }).ok, false, bad)
+  }
+})
+
+Deno.test('A7 copy-pass: "improving" and a computed percent are barred in data mode (A7 adversarial)', () => {
+  // weightSummary's own doc + migration-024 ban "improving" — the base lexicon never carried
+  // it, so a wellness-trend verdict slipped through. And no tool returns a percentage, so a
+  // spelled-out percent is a computed (forbidden) figure that also dodged the digit-only check.
+  for (const bad of [
+    'Her weight is improving.',
+    'Vomiting is getting better.',
+    'She finished about seventy-five percent of her meals.',
+    'Roughly forty percent of her stools were loose.',
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(), mode: 'data' }).ok, false, bad)
+  }
+  // "an ESCALATION that NAMES a red flag" is not the reassuring negation — it must still pass.
+  assert.equal(
+    validateAnswer({ text: 'The read flagged a possible red flag — worth a call to your vet.', allowedNumerals: new Set(), mode: 'data' }).ok,
+    true,
+  )
+})
+
 // ── numeral machinery ──
 Deno.test('canonicalNumeral: strips leading zeros on integers, keeps decimals', () => {
   assert.equal(canonicalNumeral('09'), '9')

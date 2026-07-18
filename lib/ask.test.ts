@@ -3,11 +3,13 @@ import {
   resolveTapThrough,
   tapThroughLabel,
   isSymptomShapedQuestion,
+  isRundownRequest,
   formatResetLabel,
   buildSuggestionChips,
   buildOfflineDeflection,
   loadAskSuggestions,
   askQuestion,
+  RUNDOWN_CTA,
 } from './ask';
 import { supabase } from './supabase';
 import { getDb } from './db';
@@ -228,5 +230,26 @@ describe('buildOfflineDeflection — the online-only designed state', () => {
     expect(b.component).toBeNull();
     expect(b.safetyLead).toBeNull();
     expect(b.headline.includes('!')).toBe(false);
+  });
+
+  it('offers the rundown as its follow-up — a real offline escape (G3)', () => {
+    // The rundown works with no connection, and the surface routes this CTA to /rundown
+    // rather than round-tripping the model, so the offline deflection never dead-ends.
+    expect(buildOfflineDeflection('Pixel').followups).toEqual([RUNDOWN_CTA]);
+  });
+});
+
+describe('isRundownRequest — routes the rundown CTAs to /rundown, not the model (G3)', () => {
+  it('matches the app-emitted rundown CTA strings (case/whitespace-insensitive)', () => {
+    expect(isRundownRequest(RUNDOWN_CTA)).toBe(true);
+    expect(isRundownRequest('  put together a vet-visit rundown  ')).toBe(true);
+    expect(isRundownRequest('Heading to the vet? Build the visit rundown')).toBe(true);
+  });
+
+  it('does NOT hijack a freeform question that merely mentions "rundown"', () => {
+    // Must still reach the model (which deflects unsupported) — never silently navigate away.
+    expect(isRundownRequest('give me a rundown of her vomiting this month')).toBe(false);
+    expect(isRundownRequest('How many times has she vomited?')).toBe(false);
+    expect(isRundownRequest('')).toBe(false);
   });
 });
