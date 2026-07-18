@@ -16,6 +16,7 @@
 import type {
   CachedFinding,
   CoverageDiagnostic,
+  IncidentCategory,
   IncidentFlagKind,
   IncidentRedFlagFinding,
   IntakeDeclineFinding,
@@ -36,6 +37,15 @@ const SYMPTOM_LABEL: Record<SignalSymptomType, string> = {
   itch: 'itching',
   scratch: 'scratching',
   skin_reaction: 'skin irritation',
+};
+
+// Owner-facing noun for a per-incident red-flag card, by family (B-340 vomit / B-364 stool). NOT
+// SYMPTOM_LABEL: stool reads the NEUTRAL "stool", never "loose stool" — blood is a red flag in a
+// FORMED stool too, so the card must not assert a consistency it didn't measure. Mirrors
+// INCIDENT_NOUN in the generate-signal phrasing module (the server template must match this).
+const INCIDENT_NOUN: Record<IncidentCategory, string> = {
+  vomit: 'vomiting',
+  stool: 'stool',
 };
 
 function count(n: number, one: string, many: string): string {
@@ -309,7 +319,7 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // clause is a provenance disclaimer, immediately followed by the vet ask, never an all-clear),
     // NEVER diagnoses, NEVER assigns a cause. The date lives in the main card sentence, so the
     // tap-through adds the provenance + why-it-matters rather than repeating it.
-    const symptom = SYMPTOM_LABEL[finding.incidentType]; // v1: 'vomiting'
+    const symptom = INCIDENT_NOUN[finding.incidentType]; // 'vomiting' | 'stool' (neutral, never "loose stool")
     const phrase = incidentFlagPhrase(finding.flags);
     const single = finding.flaggedIncidentCount === 1;
     const lead = single

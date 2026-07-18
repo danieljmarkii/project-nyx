@@ -777,6 +777,32 @@ Deno.test('templateIncidentRedFlag — blood and both-flags variants, and plural
   assert.ok(/most recently on/i.test(plural), 'anchors the most-recent flagged incident')
 })
 
+Deno.test('templateIncidentRedFlag — B-364: a STOOL flag reads the NEUTRAL "stool", never "loose stool"', () => {
+  const t = templateIncidentRedFlag(incidentRedFlag({ incidentType: 'stool', flags: ['blood'] }), 'Mochi')
+  assert.ok(/Mochi's stool/i.test(t), 'neutral stool noun')
+  assert.equal(/loose stool/i.test(t), false, 'never asserts consistency on a safety card (formed stool can bleed)')
+  assert.ok(/possible blood/i.test(t))
+  assert.ok(/call to your vet/i.test(t), 'escalates')
+  assert.ok(/not a diagnosis/i.test(t))
+  assert.ok(validatePhrasing(t, incidentRedFlag({ incidentType: 'stool', flags: ['blood'] })))
+})
+
+Deno.test('every incident-red-flag STOOL template — never reassures/dismissive/causal, no "!" (B-364)', () => {
+  const flagSets: IncidentFlagKind[][] = [['blood'], ['foreign_material'], ['blood', 'foreign_material']]
+  for (const flags of flagSets) {
+    for (const flaggedIncidentCount of [1, 2, 5]) {
+      const f = incidentRedFlag({ incidentType: 'stool', flags, flaggedIncidentCount })
+      const t = templateIncidentRedFlag(f, 'Mochi')
+      assert.equal(REASSURE.test(t), false, `no reassurance: ${t}`)
+      assert.equal(DISMISSIVE.test(t), false, `no dismissive: ${t}`)
+      assert.equal(CAUSAL.test(t), false, `no causal: ${t}`)
+      assert.equal(/loose stool/i.test(t), false, `neutral noun: ${t}`)
+      assert.equal(t.includes('!'), false)
+      assert.ok(validatePhrasing(t, f), `validates: ${t}`)
+    }
+  }
+})
+
 // clinical-guardrails Pattern 8: scan EVERY red-flag string the function can emit — safety
 // finding, so never reassures, never dismissive, never causal, no "!".
 Deno.test('every incident-red-flag template — never reassures/dismissive/causal, no "!"', () => {

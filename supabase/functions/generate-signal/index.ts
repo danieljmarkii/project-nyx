@@ -31,6 +31,7 @@ import {
   doseToMedicationWindow,
   DEFAULT_CONFIG,
   CORRELATION_SYMPTOM_TYPES,
+  RED_FLAG_INCIDENT_TYPES,
   type Finding,
   type CoverageDiagnostic,
   type SymptomEvent,
@@ -428,17 +429,19 @@ function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): MealEve
 // event_ai_analysis (RLS-scoped by the caller's JWT, like every read here — the row's own
 // event_ai_analysis_owner policy), INNER-joined to events so we get the incident's occurred_at AND
 // enforce the two contracts the pure engine relies on: the analyzed event must be NON-soft-deleted
-// (deleted_at IS NULL) and within the lookback. We filter to incident_type='vomit' (v1 scope; the
-// B-247 stool rows in the same table are B-364). We do NOT filter on status or on the cached
-// visual_flags/recommendation — the engine DERIVES the flag from the owner-editable structured
-// fields (blood_present / foreign_material_present), which is exactly what makes an owner override
-// clear the Home card by construction (B-339). Absent rows ⇒ [] ⇒ the detector is silent.
+// (deleted_at IS NULL) and within the lookback. We filter to the analysed incident families —
+// 'vomit' (B-340) and the two stool event types 'stool_normal' / 'diarrhea' (B-364, migration 034).
+// We do NOT filter on status or on the cached visual_flags/recommendation — the engine DERIVES the
+// flag from the owner-editable structured fields (blood_present for vomit, stool_blood_present for
+// stool, foreign_material_present shared), which is exactly what makes an owner override clear the
+// Home card by construction (B-339). Absent rows ⇒ [] ⇒ the detector is silent.
 type IncidentEventJoin = { occurred_at: string } | { occurred_at: string }[] | null
 interface IncidentAnalysisRow {
   event_id: string
   incident_type: string
-  blood_present: string | null
-  foreign_material_present: string | null
+  blood_present: string | null // vomit blood (vomit_blood)
+  stool_blood_present: string | null // stool blood (stool_tristate, migration 034) — B-364
+  foreign_material_present: string | null // shared across families (013)
   events: IncidentEventJoin
 }
 
@@ -449,9 +452,10 @@ function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalysisInput
     if (!ev?.occurred_at) continue // no joined (non-deleted, in-window) event → skip defensively
     out.push({
       eventId: r.event_id,
-      incidentType: r.incident_type as SymptomType,
+      incidentType: r.incident_type, // raw ('vomit'|'stool_normal'|'diarrhea'); the engine maps → family
       occurredAt: ev.occurred_at,
-      bloodPresent: r.blood_present,
+      bloodPresent: r.blood_present, // read only for the vomit family
+      stoolBloodPresent: r.stool_blood_present, // read only for the stool family (B-364)
       foreignMaterialPresent: r.foreign_material_present,
     })
   }
@@ -687,17 +691,19 @@ const handler = async (req: Request): Promise<Response> => {
         .eq('event_type', 'medication')
         .is('deleted_at', null)
         .gte('occurred_at', lookbackIso),
-      // Per-incident visual red flags (B-340) — the owner-editable structured fields from
-      // event_ai_analysis for this pet's VOMIT incidents, INNER-joined to events so a soft-deleted
-      // or out-of-lookback incident is excluded (the engine's contract) and we get occurred_at.
-      // incident_type='vomit' scopes out the B-247 stool rows (B-364). No status filter — the
-      // engine derives the flag from the structured fields (override-aware), never the cached
-      // visual_flags. Empty ⇒ detectIncidentRedFlags is silent (byte-identical to pre-B-340).
+      // Per-incident visual red flags (B-340 vomit + B-364 stool) — the owner-editable structured
+      // fields from event_ai_analysis for this pet's analysed incidents, INNER-joined to events so a
+      // soft-deleted or out-of-lookback incident is excluded (the engine's contract) and we get
+      // occurred_at. incident_type IN (vomit, stool_normal, diarrhea) scopes to the analysed families
+      // (itch/scratch/… carry no red-flag lane). No status filter — the engine derives the flag from
+      // the structured fields (override-aware), never the cached visual_flags. Empty ⇒ silent.
       supabase
         .from('event_ai_analysis')
-        .select('event_id, incident_type, blood_present, foreign_material_present, events!inner(occurred_at)')
+        .select(
+          'event_id, incident_type, blood_present, stool_blood_present, foreign_material_present, events!inner(occurred_at)',
+        )
         .eq('pet_id', petId)
-        .eq('incident_type', 'vomit')
+        .in('incident_type', [...RED_FLAG_INCIDENT_TYPES])
         .is('events.deleted_at', null)
         .gte('events.occurred_at', lookbackIso),
     ])

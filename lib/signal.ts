@@ -39,6 +39,10 @@ export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'ski
 // The visible red-flag kinds a per-incident photo read can surface (B-340). Mirror of
 // IncidentFlagKind in detection.ts; blood before foreign_material is the engine's stable order.
 export type IncidentFlagKind = 'blood' | 'foreign_material';
+// Mirror of detection.ts IncidentCategory — the coarse family a per-incident red flag belongs to.
+// Stool ('stool_normal' + 'diarrhea' server-side) collapses to 'stool' with a NEUTRAL noun, so a
+// blood flag on a formed stool never reads as "loose stool". Picks the owner-facing noun only.
+export type IncidentCategory = 'vomit' | 'stool';
 export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food';
 export type ReflectionDirection = 'flat' | 'improving';
 export type WorseningTrigger = 'more_episodes' | 'more_days';
@@ -67,12 +71,14 @@ export interface CorrelationFinding {
 // visible flag and routes to the vet; its absence is silence, never an all-clear. The main card
 // sentence is the server template (templateIncidentRedFlag); the client composes the sample line +
 // tap-to-expand evidence around it (lib/signalCopy.ts). Ranks at the TOP of the safety band.
-// Mirror of detection.ts IncidentRedFlagFinding (rendered fields). v1: incidentType is 'vomit'
-// only; B-364 reuses this type with 'diarrhea' for stool, so the renderer already extends to it.
+// Mirror of detection.ts IncidentRedFlagFinding (rendered fields). incidentType is the coarse
+// family ('vomit' B-340 / 'stool' B-364) — the same InsightType + renderer serve both; the
+// category only picks the noun. The server emits at most one finding per family (a bloody vomit AND
+// a bloody stool render as two cards — distinct nouns, keyed by `${type}-${rank}`, neither dropped).
 export interface IncidentRedFlagFinding {
   type: 'incident_red_flag';
   priorityClass: 'safety';
-  incidentType: SignalSymptomType;
+  incidentType: IncidentCategory;
   flags: IncidentFlagKind[];
   mostRecentFlaggedIso: string;
   flaggedIncidentCount: number;
