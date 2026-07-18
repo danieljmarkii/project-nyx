@@ -69,6 +69,11 @@ function mkAnalysis(eventId: string, o: Partial<ReportAiAnalysisInput> = {}): Re
     bilePresent: o.bilePresent ?? null,
     foreignMaterialPresent: o.foreignMaterialPresent ?? null,
     foreignMaterialNote: o.foreignMaterialNote ?? null,
+    stoolConsistency: o.stoolConsistency ?? null,
+    stoolColour: o.stoolColour ?? null,
+    stoolBloodPresent: o.stoolBloodPresent ?? null,
+    stoolBloodType: o.stoolBloodType ?? null,
+    stoolMucusPresent: o.stoolMucusPresent ?? null,
     editedAt: o.editedAt ?? null,
   }
 }
@@ -175,6 +180,7 @@ function buildNyxInput(): ReportInput {
       bilePresent: spec.category === 'bile' ? 'yes' : spec.category === 'food' ? 'no' : null,
       foreignMaterialPresent: spec.foreign ?? null,
       foreignMaterialNote: spec.foreignNote ?? null,
+      stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null,
       editedAt: spec.edited ? at(day, '15:00:00') : null,
     })
   })
@@ -803,6 +809,7 @@ Deno.test('§5.11/§7 boundary-straddle — a duplicate across local midnight ke
       bilePresent: 'no',
       foreignMaterialPresent: 'no',
       foreignMaterialNote: null,
+      stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null,
       editedAt: null,
     },
   ]
@@ -884,6 +891,7 @@ Deno.test('§5.9 per-event — an `unsure` foreign read renders as null, never a
       bilePresent: 'no',
       foreignMaterialPresent: 'unsure',
       foreignMaterialNote: null,
+      stoolConsistency: null, stoolColour: null, stoolBloodPresent: null, stoolBloodType: null, stoolMucusPresent: null,
       editedAt: null,
     },
   ]
@@ -1415,6 +1423,87 @@ Deno.test('PR7 photos — ONLY observation incidents; meal/med/weight photos are
     ['stool_normal', 'vomit'],
     'only the vomit + normal-stool photos are incidents; the meal + weight photos are excluded',
   )
+})
+
+// ── B-247 PR 7 — stool AI-read aggregate on StoolCharacteristics.ai ───────────────
+
+Deno.test('stool ai: null when stool events exist but none has an analysis', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ id: 's1', type: 'stool_normal', occurredAt: at('2026-06-11') })],
+    }),
+  )
+  assert.ok(snap.stool)
+  assert.equal(snap.stool!.total, 1)
+  assert.equal(snap.stool!.ai, null, 'no analysis ⇒ ai layer is null, counts still render')
+})
+
+Deno.test('stool ai: Bristol/colour distributed over ASSESSED only; unsure + non-completed excluded', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        makeEvent({ id: 's1', type: 'stool_normal', occurredAt: at('2026-06-11') }),
+        makeEvent({ id: 's2', type: 'diarrhea', occurredAt: at('2026-06-12') }),
+        makeEvent({ id: 's3', type: 'stool_normal', occurredAt: at('2026-06-13') }),
+        makeEvent({ id: 's4', type: 'stool_normal', occurredAt: at('2026-06-14') }),
+      ],
+      aiAnalyses: [
+        mkAnalysis('s1', { status: 'completed', stoolConsistency: 'type_4_smooth_soft', stoolColour: 'brown' }),
+        mkAnalysis('s2', { status: 'completed', stoolConsistency: 'type_6_mushy', stoolColour: 'brown' }),
+        // 'unsure' consistency must NOT enter the distribution (not a legible read).
+        mkAnalysis('s3', { status: 'completed', stoolConsistency: 'unsure', stoolColour: 'unsure' }),
+        // a non-completed read contributes to the four-state count but NOT the descriptive aggregate.
+        mkAnalysis('s4', { status: 'uncertain', stoolConsistency: 'type_7_watery', stoolColour: 'green' }),
+      ],
+    }),
+  )
+  const ai = snap.stool!.ai!
+  assert.equal(ai.totalIncidents, 4)
+  assert.equal(ai.withAnalysis, 4)
+  assert.deepEqual(ai.states, { completed: 3, uncertain: 1, failed: 0, pending: 0 })
+  assert.equal(ai.assessedCount, 3)
+  assert.deepEqual(ai.consistencyDistribution, { type_4_smooth_soft: 1, type_6_mushy: 1 })
+  assert.deepEqual(ai.colourDistribution, { brown: 2 })
+})
+
+Deno.test('stool ai: present-only blood/mucus — never folds no/unsure into presence', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        makeEvent({ id: 's1', type: 'diarrhea', occurredAt: at('2026-06-11') }),
+        makeEvent({ id: 's2', type: 'diarrhea', occurredAt: at('2026-06-12') }),
+      ],
+      aiAnalyses: [
+        mkAnalysis('s1', { status: 'completed', stoolBloodPresent: 'yes', stoolBloodType: 'dark_tarry', stoolMucusPresent: 'yes' }),
+        mkAnalysis('s2', { status: 'completed', stoolBloodPresent: 'no', stoolMucusPresent: 'unsure' }),
+      ],
+    }),
+  )
+  const ai = snap.stool!.ai!
+  assert.equal(ai.bloodPresent.length, 1, 'only the yes-blood incident')
+  assert.equal(ai.bloodPresent[0].kind, 'dark_tarry', 'melena subtype carried')
+  assert.equal(ai.mucusPresent.length, 1, 'no/unsure mucus never manufactured into presence')
+  assert.equal(ai.mucusPresent[0].eventId, 's1')
+})
+
+Deno.test('stool ai: §5.9 — a blood flag on a DROPPED same-minute duplicate still surfaces', () => {
+  // Two stool logs 30s apart collapse to one incident; the fresh_red rides the dropped member.
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        makeEvent({ id: 'a', type: 'diarrhea', occurredAt: at('2026-06-15', '10:00:00') }),
+        makeEvent({ id: 'b', type: 'diarrhea', occurredAt: at('2026-06-15', '10:00:30') }),
+      ],
+      aiAnalyses: [
+        mkAnalysis('a', { status: 'completed', stoolBloodPresent: 'no' }),
+        mkAnalysis('b', { status: 'completed', stoolBloodPresent: 'yes', stoolBloodType: 'fresh_red' }),
+      ],
+    }),
+  )
+  const ai = snap.stool!.ai!
+  assert.equal(ai.totalIncidents, 1, 'the two logs collapsed to one incident')
+  assert.equal(ai.bloodPresent.length, 1, 'the flag on the dropped duplicate is unioned in')
+  assert.equal(ai.bloodPresent[0].kind, 'fresh_red')
 })
 
 Deno.test('PR7 photos — present blood/foreign sets the safety class; matches the safety band exactly', () => {

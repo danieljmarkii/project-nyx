@@ -262,6 +262,32 @@ function contentsLabel(cat: VomitContentCategory): string {
 /** Fixed render order for the phenotype mix (deterministic segment order). */
 const CONTENTS_ORDER: VomitContentCategory[] = ['food', 'bile', 'foam_liquid', 'hairball', 'grass', 'unsure']
 
+/**
+ * Bristol Stool Scale plain-language labels (§3.4). Vets think in Bristol, but the report shows
+ * "Type N — <plain words>" so both the vet AND an owner relaying the page can read it (never the
+ * bare number). Keyed by the stool_consistency enum (migration 034); 'unsure' is filtered upstream.
+ */
+const BRISTOL_LABEL: Record<string, string> = {
+  type_1_hard_lumps: 'Type 1 — separate hard lumps',
+  type_2_lumpy: 'Type 2 — lumpy, sausage-shaped',
+  type_3_cracked: 'Type 3 — sausage with cracked surface',
+  type_4_smooth_soft: 'Type 4 — smooth, soft',
+  type_5_soft_blobs: 'Type 5 — soft blobs, clear edges',
+  type_6_mushy: 'Type 6 — mushy, ragged edges',
+  type_7_watery: 'Type 7 — watery, no solid pieces',
+}
+
+/** stool_colour enum → plain label. black_tarry / grey_pale / red_streaked are the clinically loud ones. */
+const STOOL_COLOUR_LABEL: Record<string, string> = {
+  brown: 'brown',
+  dark_brown: 'dark brown',
+  yellow: 'yellow',
+  green: 'green',
+  black_tarry: 'black / tarry',
+  grey_pale: 'pale / clay-coloured',
+  red_streaked: 'red-streaked',
+}
+
 /** A grayscale ramp for proportion-bar segments — NEVER colour (§5.8). Cycles if >6. */
 // A calm mid-to-light grayscale ramp for the phenotype proportion bar + its key swatches. The
 // dominant segment used to render near-black (#1a1c22), which read as a heavy "chart" slab on the
@@ -1411,7 +1437,32 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   </div>`
 }
 
-/** Stool characteristics (§3.7) — normal vs loose + present-only blood/mucus note. */
+/**
+ * Predominant-category line with a tie-safe majority (mirrors vomitCharacteristics). Names the
+ * single most-common entry, or says "no single predominant" on a tie — never asserts a false
+ * majority. `label` maps the enum key to display text. Empty distribution ⇒ ''.
+ */
+function predominantBit(
+  dist: Record<string, number>,
+  lead: string,
+  label: (k: string) => string,
+): string {
+  const entries = Object.entries(dist).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  if (entries.length === 0) return ''
+  const maxN = entries[0][1]
+  const tied = entries.filter(([, n]) => n === maxN).map(([k]) => label(k))
+  return tied.length === 1
+    ? ` ${lead} was most often ${h(tied[0])}.`
+    : ` ${lead} had no single predominant reading (${h(tied.slice(0, 3).join(', '))}).`
+}
+
+/**
+ * Stool characteristics (§3.7). Owner-described normal/loose bar (always) + the automated photo
+ * read (§3.4, PR 7) when any stool incident had a legible AI read: Bristol consistency + colour
+ * descriptively over the assessed set, and blood/mucus PRESENT-only (§5.9 — never "0 of N"), with
+ * the four-state denominator disclosure (§5.10). Mucus is surfaced but framed as monitor-tier, not
+ * an escalation (D5). When no stool photo was read, the pre-AI-source limitation note stands.
+ */
 function stoolCharacteristics(snap: ReportSnapshot): string {
   const st: StoolCharacteristics | null = snap.stool
   if (!st) return ''
@@ -1425,22 +1476,93 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
     segs.push(`<div class="seg" style="flex:${st.looseCount};background:#1a1c22">${st.looseCount}</div>`)
     key.push(`<span class="sw" style="background:#1a1c22"></span>Loose / watery &times;${st.looseCount}`)
   }
+
+  const ai = st.ai
+  const aiTag = ai
+    ? '<span class="aitag">Automated photo analysis &middot; owner-reviewable</span>'
+    : `<span class="aside">${num(st.total)} stool event${st.total === 1 ? '' : 's'} · owner-described</span>`
+
+  // The right-hand column: present-only blood/mucus when a photo was read; else the pre-AI limitation.
+  let sideHtml: string
+  if (!ai) {
+    sideHtml = `
+      <div class="limit">
+        <span class="h">Blood &amp; mucus</span>
+        <b>No photos were read</b> for a blood or mucus finding. This is <b>not</b> an exam finding — large-bowel signs like fresh blood or mucus are not reliably owner-detected without a photo or a fecal check. Absence here is not evidence of their absence.
+      </div>`
+  } else if (ai.bloodPresent.length === 0 && ai.mucusPresent.length === 0) {
+    const openLine =
+      ai.assessedCount > 0
+        ? '<b>Not seen</b> in the legible photos.'
+        : '<b>No photos were legible</b> for a blood or mucus read.'
+    sideHtml = `
+      <div class="limit">
+        <span class="h">Blood &amp; mucus</span>
+        ${openLine} This is <b>not</b> a clearance — a photo cannot exclude bleeding, digested (melena) blood darkens the whole stool rather than showing as red, and these are AI reads. Fresh blood or dark tarry stool warrants a vet conversation regardless of a photo.
+      </div>`
+  } else {
+    const lines: string[] = []
+    if (ai.bloodPresent.length > 0) {
+      const dates = ai.bloodPresent
+        .map((b) => {
+          const kind = b.kind === 'fresh_red'
+            ? 'fresh red — haematochezia'
+            : b.kind === 'dark_tarry'
+            ? 'black / tarry — possible melena'
+            : 'subtype unread'
+          return `${fmtLocalDay(b.occurredAt, snap.timezone)} (${kind})`
+        })
+        .join(', ')
+      lines.push(
+        `<b>Possible blood — ${num(ai.bloodPresent.length)} incident${
+          ai.bloodPresent.length === 1 ? '' : 's'
+        }:</b> ${h(dates)}. A large-bowel red flag — worth a vet conversation.`,
+      )
+    }
+    if (ai.mucusPresent.length > 0) {
+      const dates = ai.mucusPresent.map((m) => fmtLocalDay(m.occurredAt, snap.timezone)).join(', ')
+      // D5: mucus alone is monitor-tier — surfaced, never dropped, never framed as an escalation.
+      lines.push(
+        `<b>Mucus — ${num(ai.mucusPresent.length)} incident${
+          ai.mucusPresent.length === 1 ? '' : 's'
+        }:</b> ${h(dates)}. Common and often benign on its own; shown because present.`,
+      )
+    }
+    sideHtml = `
+      <div class="present">
+        <span class="h">Present findings</span>
+        ${lines.join('<br/>')}<br/>${aiBadge()}
+      </div>`
+  }
+
+  // The automated descriptive line (Bristol + colour + four-state denominator), when a photo was read.
+  let aiLine = ''
+  if (ai) {
+    const bristolBit = predominantBit(ai.consistencyDistribution, 'Consistency, where legible,', (k) => BRISTOL_LABEL[k] ?? k.replace(/_/g, ' '))
+    const colourBit = predominantBit(ai.colourDistribution, 'Colour, where legible,', (k) => STOOL_COLOUR_LABEL[k] ?? k.replace(/_/g, ' '))
+    const noPhoto = ai.totalIncidents - ai.withAnalysis
+    const stateBits: string[] = []
+    if (ai.states.uncertain) stateBits.push(`${ai.states.uncertain} uncertain`)
+    if (ai.states.failed) stateBits.push(`${ai.states.failed} not legible`)
+    if (ai.states.pending) stateBits.push(`${ai.states.pending} still processing`)
+    if (noPhoto > 0) stateBits.push(`${noPhoto} without a photo`)
+    const stateDisclosure = stateBits.length ? ` (${stateBits.join(', ')})` : ''
+    aiLine = `<br/>Across all ${num(ai.totalIncidents)} stool event${
+      ai.totalIncidents === 1 ? '' : 's'
+    }; ${num(ai.assessedCount)} ${ai.assessedCount === 1 ? 'has' : 'have'} a legible AI read${stateDisclosure}.${bristolBit}${colourBit} Bristol type is the AI's read of the photo, for the owner to confirm; it is not a diagnosis.`
+  }
+
   return `
   <div class="sec">
-    <h2>Stool characteristics <span class="aside">${num(st.total)} stool event${
-      st.total === 1 ? '' : 's'
-    } · owner-described</span></h2>
+    <h2>Stool characteristics ${aiTag}</h2>
     <div class="pheno">
       <div>
         <div class="barmix">${segs.join('')}</div>
         <div class="mixkey">${key.join('&nbsp;&middot;&nbsp; ')}<br/>Owner-described over ${num(st.loggedDays)} of ${num(
     st.windowDays,
-  )} days logged. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.</div>
+  )} days logged. Loose-stool events are itemised in the symptom log (appendix&nbsp;A); normal stools are counted from the owner's logs, not itemised.${aiLine}</div>
       </div>
-      <div class="limit">
-        <span class="h">Blood &amp; mucus</span>
-        <b>Not reported</b> by the owner. This is <b>not</b> an exam finding — large-bowel signs like fresh blood or mucus are not reliably owner-detected without a photo or a fecal check. Absence here is not evidence of their absence.
-      </div>
+      ${sideHtml}
     </div>
   </div>`
 }

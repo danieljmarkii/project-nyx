@@ -732,11 +732,73 @@ Deno.test('an out-of-range date degrades to the raw string, never leaks "undefin
 
 // ── Coverage: stool characteristics (present-only for blood/mucus) ─────────────────
 
-Deno.test('stool characteristics render normal vs loose + a present-only blood/mucus note', () => {
-  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48 } }))
+Deno.test('stool: no photo read → owner-described bar + the pre-AI limitation note', () => {
+  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48, ai: null } }))
   assert.ok(/Stool characteristics/.test(html))
-  assert.ok(/Blood &amp; mucus/.test(html) && /Not reported/.test(html), 'present-only blood/mucus limitation note')
+  assert.ok(/owner-described/.test(html))
+  assert.ok(/No photos were read/.test(html), 'pre-AI limitation note stands when ai is null')
   assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
+})
+
+Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" (never "0 of N")', () => {
+  const html = renderReport(base({
+    stool: {
+      total: 4, normalCount: 3, looseCount: 1, windowDays: 30, loggedDays: 28,
+      ai: {
+        totalIncidents: 4, withAnalysis: 3,
+        states: { completed: 3, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 3,
+        consistencyDistribution: { type_4_smooth_soft: 2, type_6_mushy: 1 },
+        colourDistribution: { brown: 3 },
+        bloodPresent: [], mucusPresent: [], reviewedCount: 0,
+      },
+    },
+  }))
+  assert.ok(/Automated photo analysis/.test(html), 'aitag when a read exists')
+  assert.ok(/Type 4 — smooth, soft/.test(html), 'Bristol most-common named with plain label')
+  assert.ok(/most often brown/.test(html), 'colour predominant line')
+  assert.ok(/Not seen/.test(html) && /not<\/b> a clearance/.test(html), 'present-only absence framed as non-clearance')
+  assert.ok(/1 without a photo/.test(html), 'four-state denominator discloses the no-photo incident')
+  assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
+})
+
+Deno.test('stool: melena blood + mucus present → present findings, melena named, mucus is monitor-tier', () => {
+  const html = renderReport(base({
+    stool: {
+      total: 2, normalCount: 0, looseCount: 2, windowDays: 14, loggedDays: 10,
+      ai: {
+        totalIncidents: 2, withAnalysis: 2,
+        states: { completed: 2, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 2,
+        consistencyDistribution: { type_7_watery: 2 },
+        colourDistribution: { black_tarry: 1, brown: 1 },
+        bloodPresent: [{ eventId: 'e1', occurredAt: '2026-06-15T12:00:00Z', kind: 'dark_tarry' }],
+        mucusPresent: [{ eventId: 'e2', occurredAt: '2026-06-16T12:00:00Z' }],
+        reviewedCount: 0,
+      },
+    },
+  }))
+  assert.ok(/Present findings/.test(html))
+  assert.ok(/possible melena/.test(html), 'dark_tarry blood named as melena')
+  assert.ok(/large-bowel red flag/.test(html), 'blood framed as a red flag worth a vet conversation')
+  assert.ok(/Mucus (&mdash;|—)/.test(html), 'mucus surfaced')
+  assert.ok(/often benign on its own/.test(html), 'mucus framed monitor-tier, never an escalation')
+  assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
+})
+
+Deno.test('stool: haematochezia (fresh_red) blood named distinctly from melena', () => {
+  const html = renderReport(base({
+    stool: {
+      total: 1, normalCount: 0, looseCount: 1, windowDays: 7, loggedDays: 7,
+      ai: {
+        totalIncidents: 1, withAnalysis: 1,
+        states: { completed: 1, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 1,
+        consistencyDistribution: { type_6_mushy: 1 }, colourDistribution: { red_streaked: 1 },
+        bloodPresent: [{ eventId: 'e1', occurredAt: '2026-06-15T12:00:00Z', kind: 'fresh_red' }],
+        mucusPresent: [], reviewedCount: 0,
+      },
+    },
+  }))
+  assert.ok(/haematochezia/.test(html), 'fresh_red named as haematochezia')
+  assert.ok(!/melena/.test(html.replace(/digested \(melena\)/g, '')), 'fresh_red not mislabelled melena')
 })
 
 // ── Coverage: full diet/meds — trial + human food + established association ─────────

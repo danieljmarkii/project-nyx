@@ -142,6 +142,12 @@ interface AiAnalysisRow {
   bile_present: string | null
   foreign_material_present: string | null
   foreign_material_note: string | null
+  // Stool AI-read fields (migration 034 / analyze-stool). Null on non-stool rows.
+  stool_consistency: string | null
+  stool_colour: string | null
+  stool_blood_present: string | null
+  stool_blood_type: string | null
+  stool_mucus_present: string | null
   edited_at: string | null
 }
 
@@ -337,6 +343,11 @@ export function mapAiAnalysisRows(rows: AiAnalysisRow[]): ReportAiAnalysisInput[
     bilePresent: r.bile_present ?? null,
     foreignMaterialPresent: r.foreign_material_present ?? null,
     foreignMaterialNote: r.foreign_material_note ?? null,
+    stoolConsistency: r.stool_consistency ?? null,
+    stoolColour: r.stool_colour ?? null,
+    stoolBloodPresent: r.stool_blood_present ?? null,
+    stoolBloodType: r.stool_blood_type ?? null,
+    stoolMucusPresent: r.stool_mucus_present ?? null,
     editedAt: r.edited_at ?? null,
   }))
 }
@@ -722,7 +733,9 @@ export async function generateReportForPet(
       .from('event_ai_analysis')
       .select(
         'event_id, status, colour, contents, consistency, blood_present, bile_present, ' +
-          'foreign_material_present, foreign_material_note, edited_at',
+          'foreign_material_present, foreign_material_note, ' +
+          'stool_consistency, stool_colour, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
+          'edited_at',
       )
       .eq('pet_id', petId),
     // Weigh-ins (migration 024) — timing + soft-delete come from the parent event.

@@ -138,12 +138,29 @@ Deno.test('mapAiAnalysisRows: fields renamed, editedAt drives owner-reviewed', (
   const rows = mapAiAnalysisRows([{
     event_id: 'e1', status: 'completed', colour: 'yellow', contents: ['bile'], consistency: 'foamy',
     blood_present: 'none_visible', bile_present: 'yes', foreign_material_present: 'no',
-    foreign_material_note: null, edited_at: '2026-07-01T00:00:00Z',
+    foreign_material_note: null,
+    stool_consistency: null, stool_colour: null, stool_blood_present: null,
+    stool_blood_type: null, stool_mucus_present: null,
+    edited_at: '2026-07-01T00:00:00Z',
   }])
   assert.equal(rows[0].bloodPresent, 'none_visible')
   assert.equal(rows[0].bilePresent, 'yes')
   assert.deepEqual(rows[0].contents, ['bile'])
   assert.equal(rows[0].editedAt, '2026-07-01T00:00:00Z')
+})
+
+Deno.test('mapAiAnalysisRows: stool AI-read columns map through', () => {
+  const rows = mapAiAnalysisRows([{
+    event_id: 's1', status: 'completed', colour: null, contents: null, consistency: null,
+    blood_present: null, bile_present: null, foreign_material_present: null, foreign_material_note: null,
+    stool_consistency: 'type_6_mushy', stool_colour: 'brown', stool_blood_present: 'yes',
+    stool_blood_type: 'dark_tarry', stool_mucus_present: 'no', edited_at: null,
+  }])
+  assert.equal(rows[0].stoolConsistency, 'type_6_mushy')
+  assert.equal(rows[0].stoolColour, 'brown')
+  assert.equal(rows[0].stoolBloodPresent, 'yes')
+  assert.equal(rows[0].stoolBloodType, 'dark_tarry')
+  assert.equal(rows[0].stoolMucusPresent, 'no')
 })
 
 // ── mapWeightRows (parent-event join + soft-delete drop) ─────────────────────
@@ -337,7 +354,8 @@ Deno.test('integration: mapped rows assemble + render to HTML naming the pet', (
     events,
     aiAnalyses: mapAiAnalysisRows([{ event_id: 'e1', status: 'completed', colour: 'yellow', contents: ['bile'],
       consistency: 'foamy', blood_present: 'none_visible', bile_present: 'yes', foreign_material_present: 'no',
-      foreign_material_note: null, edited_at: null }]),
+      foreign_material_note: null, stool_consistency: null, stool_colour: null, stool_blood_present: null,
+      stool_blood_type: null, stool_mucus_present: null, edited_at: null }]),
     weightChecks: [], doses: [], medications: [], dietTrials: [], vetVisits: [],
     feedingArrangements: [], conditions: [],
   }
