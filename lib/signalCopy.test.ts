@@ -17,6 +17,7 @@ import {
 import type {
   CachedFinding,
   CorrelationFinding,
+  IncidentRedFlagFinding,
   IntakeDeclineFinding,
   ReflectionFinding,
   SymptomWorseningFinding,
@@ -49,6 +50,19 @@ const intakeDecline = (over: Partial<IntakeDeclineFinding> = {}): IntakeDeclineF
   daysBelowBaseline: 2,
   refusedFoodLabel: null,
   ratedMealsConsidered: 9,
+  ...over,
+});
+
+const incidentRedFlag = (
+  over: Partial<IncidentRedFlagFinding> = {},
+): IncidentRedFlagFinding => ({
+  type: 'incident_red_flag',
+  priorityClass: 'safety',
+  incidentType: 'vomit',
+  flags: ['blood'],
+  mostRecentFlaggedIso: '2026-07-16T08:00:00.000Z',
+  flaggedIncidentCount: 1,
+  windowDays: 14,
   ...over,
 });
 
@@ -124,6 +138,7 @@ const timeofday = (over: Partial<TimeOfDayClusteringFinding> = {}): TimeOfDayClu
 const cached = (
   finding:
     | CorrelationFinding
+    | IncidentRedFlagFinding
     | IntakeDeclineFinding
     | ReflectionFinding
     | SymptomWorseningFinding
@@ -292,6 +307,67 @@ describe('evidenceText — intake-decline safety flag', () => {
     expect(s).toContain('Tiki Cat salmon');
     expect(REASSURANCE_RE.test(s)).toBe(false);
     expect(DISMISSIVE_RE.test(s)).toBe(false);
+  });
+});
+
+describe('incident_red_flag (B-340) — client copy', () => {
+  it('sampleLine shows the AI-read provenance + the episode-collapsed count, singular/plural', () => {
+    expect(sampleLine(incidentRedFlag({ flaggedIncidentCount: 1 }))).toBe(
+      'From an AI read of 1 logged photo',
+    );
+    expect(sampleLine(incidentRedFlag({ flaggedIncidentCount: 2 }))).toBe(
+      'From an AI read of 2 logged photos',
+    );
+  });
+
+  it('sampleLine never reassures, never causal, never shouts', () => {
+    for (const n of [1, 2, 5]) {
+      const s = sampleLine(incidentRedFlag({ flaggedIncidentCount: n }));
+      expect(REASSURANCE_RE.test(s)).toBe(false);
+      expect(CAUSAL_RE.test(s)).toBe(false);
+      expect(s.includes('!')).toBe(false);
+    }
+  });
+
+  it('evidenceText names the flag + symptom + pet, is honest about the AI read, points to the vet', () => {
+    const s = evidenceText(incidentRedFlag({ flags: ['blood'] }), 'Pixel');
+    expect(s).toContain('Pixel');
+    expect(s).toContain('vomiting');
+    expect(s).toContain('possible blood');
+    expect(s.toLowerCase()).toContain('not a diagnosis');
+    expect(s).toContain('vet');
+  });
+
+  it('evidenceText phrases foreign material and the both-flags union (blood before foreign)', () => {
+    expect(evidenceText(incidentRedFlag({ flags: ['foreign_material'] }), 'Pixel')).toContain(
+      'possible foreign material',
+    );
+    const both = evidenceText(incidentRedFlag({ flags: ['blood', 'foreign_material'] }), 'Pixel');
+    expect(both).toContain('possible blood and possible foreign material');
+  });
+
+  it('evidenceText reads a single photo (n=1) distinctly from multiple flagged bouts', () => {
+    expect(evidenceText(incidentRedFlag({ flaggedIncidentCount: 1 }), 'Pixel')).toContain(
+      'a single photo',
+    );
+    const plural = evidenceText(incidentRedFlag({ flaggedIncidentCount: 3 }), 'Pixel');
+    expect(plural).toContain('Photos you logged');
+  });
+
+  it('evidenceText is guardrail-clean across flag sets and counts (never reassures/causal/shouts)', () => {
+    for (const flags of [['blood'], ['foreign_material'], ['blood', 'foreign_material']] as const) {
+      for (const flaggedIncidentCount of [1, 2]) {
+        const s = evidenceText(incidentRedFlag({ flags: [...flags], flaggedIncidentCount }), 'Nyx');
+        expect(REASSURANCE_RE.test(s)).toBe(false);
+        expect(DISMISSIVE_RE.test(s)).toBe(false);
+        expect(CAUSAL_RE.test(s)).toBe(false);
+        expect(s.includes('!')).toBe(false);
+      }
+    }
+  });
+
+  it('carries no confidence tag (a safety flag shows weight by the rail + lead, not a tag)', () => {
+    expect(confidenceTag(incidentRedFlag())).toBeNull();
   });
 });
 
@@ -744,6 +820,9 @@ const candidate = (id: string, findings: AnyFinding[]) => ({
 
 // Every banner copy variant, for the guardrail sweep.
 const ALL_BANNER_FINDINGS: BannerSafetyFinding[] = [
+  incidentRedFlag({ flags: ['blood'], flaggedIncidentCount: 1 }),
+  incidentRedFlag({ flags: ['foreign_material'], flaggedIncidentCount: 1 }),
+  incidentRedFlag({ flags: ['blood', 'foreign_material'], flaggedIncidentCount: 2 }),
   intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: 'salmon pâté' }),
   intakeDecline({ trigger: 'refused_normal_food', refusedFoodLabel: null }),
   intakeDecline({ trigger: 'consecutive_low', daysBelowBaseline: 1 }),
@@ -795,6 +874,24 @@ describe('selectCrossPetSafetyFinding', () => {
     // weeks-long unresolved course must raise the banner, not stay silent.
     const sel = selectCrossPetSafetyFinding([candidate('A', [chronicity()])]);
     expect(sel?.finding.type).toBe('symptom_chronicity');
+  });
+
+  it('selects a single incident_red_flag candidate — a photographed red flag can cross over (B-340)', () => {
+    // A secondary pet whose only flag is a photographed blood / foreign-body red flag must be able
+    // to raise the banner (same rationale as B-191), not stay silent on a detail screen.
+    const sel = selectCrossPetSafetyFinding([candidate('A', [incidentRedFlag()])]);
+    expect(sel?.finding.type).toBe('incident_red_flag');
+  });
+
+  it('incident_red_flag leads every other safety lane, within a pet and across pets (SAFETY_TYPE_ORDER)', () => {
+    // Mirrors the engine: incident_red_flag (0) > intake_decline (1) > chronicity (2) > worsening (3).
+    const within = candidate('A', [worsening(), intakeDecline(), chronicity(), incidentRedFlag()]);
+    expect(selectCrossPetSafetyFinding([within])?.finding.type).toBe('incident_red_flag');
+    // Across pets, order-independent: the red-flag pet wins over an intake_decline pet either way.
+    const flagPet = candidate('flag', [incidentRedFlag()]);
+    const declinePet = candidate('decline', [intakeDecline()]);
+    expect(selectCrossPetSafetyFinding([declinePet, flagPet])?.pet.id).toBe('flag');
+    expect(selectCrossPetSafetyFinding([flagPet, declinePet])?.pet.id).toBe('flag');
   });
 
   it('within one pet with BOTH safety findings, picks intake_decline over worsening (§4 ranking)', () => {
@@ -924,6 +1021,20 @@ describe('bannerCopy', () => {
     const c = bannerCopy(chronicity({ firstOnsetIso: 'not-a-date' }), 'Pixel');
     expect(c.text).toContain('since then');
     expect(validateBannerPhrasing(c.text)).toBe(true);
+  });
+
+  it('incident_red_flag — names what the photo showed, starts with the pet name, singular/plural', () => {
+    const one = bannerCopy(incidentRedFlag({ flags: ['blood'], flaggedIncidentCount: 1 }), 'Pixel');
+    expect(one.text).toBe('Pixel has a logged photo showing possible blood — worth a look.');
+    const many = bannerCopy(
+      incidentRedFlag({ flags: ['blood', 'foreign_material'], flaggedIncidentCount: 2 }),
+      'Pixel',
+    );
+    expect(many.text).toBe(
+      'Pixel has logged photos showing possible blood and possible foreign material — worth a look.',
+    );
+    expect(validateBannerPhrasing(one.text)).toBe(true);
+    expect(validateBannerPhrasing(many.text)).toBe(true);
   });
 
   it('text === petName + rest for every variant (the bold-name render invariant)', () => {

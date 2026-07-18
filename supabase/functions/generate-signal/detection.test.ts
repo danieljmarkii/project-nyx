@@ -2481,6 +2481,106 @@ Deno.test('detectIncidentRedFlags — UNIONS flags across incidents into ONE cal
   assert.equal(f.mostRecentFlaggedIso, at(27, 14), 'anchored to the most-recent flagged incident')
 })
 
+Deno.test('detectIncidentRedFlags — B-368: a seconds-apart re-log of ONE incident collapses to a single count', () => {
+  // The same vomit double-tapped / sync-replayed into two events (two analyses) ~30s apart is ONE
+  // flagged incident — collapsed by the 60s near-duplicate window (matching generate-report §5.11),
+  // so the copy never reads "Photos… " (plural) / miscounts one re-logged photo. It still FIRES.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:00.000Z', foreignMaterialPresent: 'yes' }),
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:30.000Z', foreignMaterialPresent: 'yes' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 1, 'the two same-instant re-logs collapse to one')
+})
+
+Deno.test('detectIncidentRedFlags — B-368: two GENUINELY distinct bouts 30 min apart count as 2 (parity with generate-report, never understated)', () => {
+  // The adversarial counterexample (B-340 PR 2 review): two separate bloody-vomit bouts 30 min
+  // apart, each photographed. generate-report's 60s dedup counts these as TWO incidents; this lane
+  // must agree — a safety card must never understate distinct photographed red-flag bouts to "a
+  // single photo". (The 3h symptomEpisodeGapHours collapse it briefly used would wrongly fold these.)
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: at(29, 9, 0), bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ occurredAt: at(29, 9, 30), bloodPresent: 'fresh_red' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 2, '30 min apart is two distinct bouts, not one')
+})
+
+Deno.test('detectIncidentRedFlags — B-368: the 60s window is anchor-fixed, so a sub-window chain cannot collapse a long run', () => {
+  // 09:00:00 / 09:00:40 / 09:01:20 — each 40s from the previous (single-linkage would fold all three
+  // into one), but anchored to the cluster's FIRST member the third is 80s out → a distinct incident.
+  // Mirrors generate-report's anchor-fixed guard (report.ts §5.11) so a slow drip never understates.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:00.000Z', foreignMaterialPresent: 'yes' }),
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:40.000Z', foreignMaterialPresent: 'yes' }),
+        incidentAnalysis({ occurredAt: '2026-05-29T09:01:20.000Z', foreignMaterialPresent: 'yes' }),
+      ],
+    }),
+  )
+  assert.equal(findings[0].flaggedIncidentCount, 2, 'anchor-fixed 60s window: first two collapse, third is distinct')
+})
+
+Deno.test('detectIncidentRedFlags — B-368: an UNFLAGGED vomit anchoring a cluster does not shift the count off generate-report (dedup over ALL incidents)', () => {
+  // The adversarial residual: three vomits in ~90s where the FIRST reads clean. generate-report
+  // dedups over all vomit events (clean anchor A + B → one cluster; C → a second), unions flags per
+  // cluster → 2 flagged incidents. This lane must agree — deduping only the flagged subset would
+  // wrongly count 1. A clean read is NOT a flag (never manufactures presence), but it still
+  // participates in clustering as the report's anchor would.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:00.000Z' }), // clean read (default nulls)
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:50.000Z', bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ occurredAt: '2026-05-29T09:01:30.000Z', bloodPresent: 'fresh_red' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 2, 'clean anchor A+B = one flagged cluster, C = a second')
+})
+
+Deno.test('detectIncidentRedFlags — B-368: a clean vomit within 60s of the ONLY flagged one folds into its cluster (count 1, not a second bout)', () => {
+  // A clean read seconds before the flagged one is the same re-log cluster — it must not add a count,
+  // and (being unflagged) it must not create a separate incident either. One flagged bout → 1.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:00.000Z' }), // clean read
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:30.000Z', bloodPresent: 'fresh_red' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 1)
+  assert.deepEqual(findings[0].flags, ['blood'])
+})
+
+Deno.test('detectIncidentRedFlags — B-368: distinct bouts across days stay counted separately, flags still union', () => {
+  // A day-28 bout re-logged twice within 60s (collapses to 1) PLUS a day-25 bout → two distinct.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: '2026-05-28T09:00:00.000Z', bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ occurredAt: '2026-05-28T09:00:20.000Z', bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ occurredAt: at(25, 14, 0), foreignMaterialPresent: 'yes' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 2, 'the day-28 bout (re-logged within 60s) + the day-25 bout = 2')
+  assert.deepEqual(findings[0].flags, ['blood', 'foreign_material'], 'flags still union across bouts')
+})
+
 Deno.test('detectIncidentRedFlags — an owner override that clears the field clears the card by construction', () => {
   // The whole point (B-339): derive from the owner-editable structured fields, so a cleared
   // foreign_material_present='no' (or blood='none_visible') emits nothing — no stale visual_flags.
