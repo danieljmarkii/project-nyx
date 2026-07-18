@@ -850,7 +850,15 @@ export interface IncidentRedFlagFinding extends FindingBase {
   flags: IncidentFlagKind[]
   /** ISO-8601 UTC occurred_at of the MOST RECENT in-window incident carrying a red flag — the recency anchor for copy. */
   mostRecentFlaggedIso: string
-  /** How many distinct in-window incidents carry a red flag (drives singular/plural copy + evidence). ≥1. */
+  /**
+   * How many in-window analyzed incidents carry a red flag (drives singular/plural copy + evidence). ≥1.
+   * NOTE: this counts distinct `event_ai_analysis` ROWS, NOT deduped bouts — a single vomiting bout
+   * re-logged as N events with N analyses counts as N (so the copy may read "Photos… " for what was
+   * one bout). Safe direction for a SAFETY lane (it over-states presence, never reassures, and there
+   * is no escalation THRESHOLD it can inflate — a single flag already fires). generate-report collapses
+   * re-logs into one incident (unionPresentFlags over memberEventIds); this lane deliberately does NOT
+   * in v1. Episode-collapse to match is deferred to PR 2 (B-368).
+   */
   flaggedIncidentCount: number
   /** The recency window in days actually applied (a flag older than this no longer leads Home). */
   windowDays: number
@@ -3683,6 +3691,10 @@ export function detectIncidentRedFlags(
     if (Number.isNaN(ms)) continue
     // Recency: only flags on an incident within the window lead Home. A future-dated occurred_at
     // (nowMs - ms < 0) still passes the ≤ windowMs test, which is correct — it is trivially recent.
+    // KNOWN LIMIT (B-361 inheritance): recency anchors on occurred_at, so a red flag the owner logs
+    // TODAY but back-dates > windowDays ago (B-010 estimated/window edge) never leads Home. Safe
+    // direction (silence, never reassurance), shared with vomit/stool; the B-361 fix (anchor on
+    // max(occurred_at, created_at)) would fix this lane too. Not addressed in PR 1.
     if (nowMs - ms > windowMs) continue
     const flags = deriveIncidentFlags(a)
     if (flags.length === 0) continue // no PRESENT flag on this incident — silence, never a "clear"

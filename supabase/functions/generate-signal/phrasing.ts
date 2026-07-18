@@ -342,9 +342,11 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // Detector — per-incident visual red flag (B-340) is a SAFETY finding naming what a photo
     // VISIBLY showed, routed to the vet. Reassurance/"picky" are already barred by the safety
     // branch above; it ALSO may not assert a CAUSE — it reports a visible finding ("showed
-    // possible blood"), never "the food caused it". Template-only (index.ts) so the model is
-    // never in this loop, but if that ever changes this screen holds the never-causal line.
-    if (CAUSAL_RE.test(t)) return false
+    // possible blood"), never "the food caused it" — nor drift into a MECHANISM verdict or name a
+    // FOOD/protein (a visible read is not an attribution). Template-only (index.ts) so the model is
+    // never in this loop, but if that ever changes this screen holds all three lines (parity with
+    // ⑤/⑦'s screens — defense-in-depth even for a currently-dormant path).
+    if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t)) return false
   }
   return true
 }
