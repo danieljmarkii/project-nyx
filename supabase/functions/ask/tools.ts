@@ -200,6 +200,13 @@ export function resolveWindow(
   nowMs: number,
   trialStartMs?: number | null,
 ): ResolvedWindow {
+  // Defense-in-depth (adversarial review, A3): coerce FIRST so an off-enum string a model
+  // could emit ('90d', '6m') can never reach the FIXED_WINDOW_DAYS lookup and yield a NaN
+  // span — which `inSpan` would read as an UNBOUNDED all-time window (masking acute
+  // worsening — the exact §3.4 hazard). The bounded-enum guarantee is owned HERE, inside the
+  // pure layer, exactly as `deleted_at` is owned by `liveEvents`, not delegated to the A4
+  // caller. `window` is typed AskWindow, but the type is not a runtime guard.
+  window = coerceWindow(window as string)
   const todayIndex = Math.floor(nowMs / MS_PER_DAY)
   const endMs = (todayIndex + 1) * MS_PER_DAY
 
@@ -316,9 +323,17 @@ export interface AskWeightRow {
 export interface AskRegimenRow {
   id: string
   drugLabel: string
-  /** ISO/DATE start; the regimen is active from here. */
+  /**
+   * The AUTHORITATIVE lifecycle field (`medications.status`: 'active' | 'ended') — the
+   * same source of truth lib/medications.ts and the `idx_medications_active` index key
+   * on. "Currently on this drug" is `status === 'active'`, NEVER a computed now ∈
+   * [startedAt, endedAt] membership test: started_at/ended_at are DATE-only, so an
+   * interval check drifts by the owner's UTC offset for hours around a state change.
+   */
+  status: string | null
+  /** ISO/DATE start (a historical boundary marker; not used for the active test). */
   startedAt: string | null
-  /** ISO/DATE end; null = still active. */
+  /** ISO/DATE end; null = still active. Fallback active signal when `status` is absent. */
   endedAt: string | null
   doseAmount: string | null
   deletedAt: string | null
@@ -635,7 +650,10 @@ export interface RecalledEvent {
   /** The event's own free-text note (D2), or null. Scoped to this event only. */
   note: string | null
   hasPhoto: boolean
-  /** The override-aware cached AI read for this event, or null when none/pending/dismissed. */
+  /** The override-aware cached AI read for this event, or null when no read row exists. A
+   *  DISMISSED read still projects (its structured facts / present-only flags remain a
+   *  recountable fact — dismissal must never hide a present red flag); only its n=1
+   *  interpretive text is nulled (see projectCachedRead). */
   cachedRead: ProjectedRead | null
 }
 
@@ -693,7 +711,9 @@ export function recentEvents(
   },
 ): RecentEventsResult {
   const w = resolveWindow(params.window, params.nowMs, params.trialStartMs)
-  const cap = Math.max(1, Math.min(params.limit ?? MAX_RECALL, MAX_RECALL))
+  // Number.isInteger guards NaN/Infinity/floats (which `??` lets through) → default cap.
+  const requested = Number.isInteger(params.limit) ? (params.limit as number) : MAX_RECALL
+  const cap = Math.max(1, Math.min(requested, MAX_RECALL))
   const matches = liveEvents(events)
     .filter((e) => inSpan(e.occurredAt, w))
     .filter((e) => (params.type ? e.type === params.type : true))
@@ -1120,13 +1140,15 @@ export interface DietTrialStatusResult {
   complete: boolean
 }
 
-/** Diet-trial progress — a faithful port of lib/analytics.ts getDietTrialProgress. Null
- *  trial ⇒ inactive (no trial to report), never an invented span. */
+/** Diet-trial progress — a faithful port of lib/analytics.ts getDietTrialProgress. A null OR
+ *  soft-deleted trial ⇒ inactive (no trial to report), never an invented span. The trial
+ *  carries its own `deletedAt` so this core enforces the soft-delete contract itself (§5.2 /
+ *  B-071), rather than trusting the caller — matching `liveEvents` everywhere else. */
 export function dietTrialStatus(
-  trial: { startedAt: string; targetDurationDays: number; status?: string | null } | null,
+  trial: { startedAt: string; targetDurationDays: number; status?: string | null; deletedAt?: string | null } | null,
   nowMs: number,
 ): DietTrialStatusResult {
-  if (!trial) {
+  if (!trial || trial.deletedAt != null) {
     return { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
   }
   const startMs = Date.parse(trial.startedAt)
@@ -1152,20 +1174,14 @@ export interface FreeFedResult {
   intakeNotDirectlyObserved: boolean
 }
 
-/** Which foods are currently free-fed (active `free_choice` arrangements as of `now`).
- *  An arrangement is active when now ∈ [activeFrom, activeUntil] (null edges = unbounded).
- *  The protein is canonicalized so it pools with logged meals (matching detection.ts). */
-export function freeFedStatus(
-  arrangements: AskFeedingArrangementRow[],
-  nowMs: number,
-): FreeFedResult {
-  const active = liveEvents(arrangements).filter((a) => {
-    const from = a.activeFrom != null ? Date.parse(a.activeFrom) : null
-    const until = a.activeUntil != null ? Date.parse(a.activeUntil) : null
-    if (from != null && Number.isFinite(from) && nowMs < from) return false
-    if (until != null && Number.isFinite(until) && nowMs > until) return false
-    return true
-  })
+/** Which foods are currently free-fed. "Currently active" is `active_until IS NULL` — the
+ *  DB's authoritative lifecycle (migration 018 / lib/feedingArrangements.ts isFreeChoiceActive),
+ *  NOT a now ∈ [activeFrom, activeUntil] interval check: active_from/until are DATE-only, so an
+ *  interval test drifts by the owner's UTC offset for hours around a toggle (code review, A3).
+ *  active_from is a historical boundary marker, never a future-dated schedule. The protein is
+ *  canonicalized so it pools with logged meals (matching detection.ts). */
+export function freeFedStatus(arrangements: AskFeedingArrangementRow[]): FreeFedResult {
+  const active = liveEvents(arrangements).filter((a) => a.activeUntil == null)
   return {
     kind: 'free_fed',
     arrangements: active.map((a) => ({ foodLabel: a.foodLabel, protein: canonicalizeProtein(a.primaryProtein) })),
@@ -1214,11 +1230,10 @@ export function medications(
   const seenAdHoc = new Set<string>()
 
   for (const reg of liveRegimens) {
-    const from = reg.startedAt != null ? Date.parse(reg.startedAt) : null
-    const until = reg.endedAt != null ? Date.parse(reg.endedAt) : null
-    const active =
-      (from == null || (Number.isFinite(from) && params.nowMs >= from)) &&
-      (until == null || (Number.isFinite(until) && params.nowMs <= until))
+    // Authoritative lifecycle: `status === 'active'` (the DB's own field + index), with a
+    // `endedAt == null` fallback when status is absent. NOT a now ∈ [started_at, ended_at]
+    // interval test — those are DATE-only and drift by the owner's UTC offset (code review, A3).
+    const active = reg.status != null ? reg.status === 'active' : reg.endedAt == null
     const drugDoses = windowDoses.filter((d) => d.medicationId === reg.id)
     entries.push(buildMedicationEntry(reg.id, reg.drugLabel, active, reg.doseAmount, drugDoses))
   }
@@ -1388,7 +1403,7 @@ function collapseTreatRelogs(rows: AskMealRow[]): AskMealRow[] {
   for (const m of rows) {
     const ms = Date.parse(m.occurredAt)
     if (m.foodType === 'treat' && m.foodItemId !== null && Number.isFinite(ms)) {
-      const key = `${m.foodItemId} ${ms}`
+      const key = `${m.foodItemId}\u0000${ms}`
       if (seen.has(key)) continue
       seen.add(key)
     }

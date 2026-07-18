@@ -127,6 +127,22 @@ Deno.test('coerceWindow — unknown strings resolve to the default 7d, never an 
   assert.equal(coerceWindow('DROP TABLE events'), '7d')
 })
 
+Deno.test('resolveWindow — an off-enum string coerces to 7d, never a NaN unbounded span (adversarial A3)', () => {
+  // The break the adversarial pass found: '90d' → FIXED_WINDOW_DAYS miss → startMs=NaN →
+  // inSpan reads it as an unbounded all-time window. resolveWindow must coerce FIRST.
+  const w = resolveWindow('90d' as unknown as '7d', NOW_MS)
+  assert.equal(w.window, '7d')
+  assert.equal(Number.isFinite(w.startMs as number), true)
+  assert.equal(w.label, 'the last 7 days')
+  // And a windowed tool must therefore bound to 7d, not silently widen to all-time.
+  const events = [
+    ev({ type: 'vomit', occurredAt: '2026-07-14T09:00:00Z' }), // in 7d
+    ev({ type: 'vomit', occurredAt: '2024-01-01T09:00:00Z' }), // 2+ years ago — must be excluded
+  ]
+  const c = countSymptom(events, { symptomType: 'vomit', window: '90d' as unknown as '7d', nowMs: NOW_MS })
+  assert.equal(c.count, 1)
+})
+
 // ════════════════════════════════════════════════════════════════════════════════════
 // deleted_at contract (§5.2 / B-071) — the more-deleted-than-live fixture
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -442,23 +458,41 @@ Deno.test('dietTrialStatus — day counter is inclusive from the start day; null
   assert.equal(dietTrialStatus(null, NOW_MS).active, false)
 })
 
-Deno.test('freeFedStatus — active arrangements set the not-directly-observed caveat', () => {
-  const r = freeFedStatus(
-    [
-      { id: 'a', foodItemId: 'ff', foodLabel: 'Grazing Kibble', primaryProtein: 'Chicken', activeFrom: '2026-07-01T00:00:00Z', activeUntil: null, deletedAt: null },
-      { id: 'b', foodItemId: 'old', foodLabel: 'Old Bowl', primaryProtein: 'beef', activeFrom: '2026-05-01T00:00:00Z', activeUntil: '2026-06-01T00:00:00Z', deletedAt: null }, // ended → inactive
-      { id: 'c', foodItemId: 'del', foodLabel: 'Deleted', primaryProtein: 'lamb', activeFrom: null, activeUntil: null, deletedAt: '2026-07-01T00:00:00Z' },
-    ],
-    NOW_MS,
-  )
+Deno.test('dietTrialStatus — a soft-deleted or unparseable trial is inactive', () => {
+  assert.equal(dietTrialStatus({ startedAt: '2026-07-01', targetDurationDays: 21, deletedAt: '2026-07-10T00:00:00Z' }, NOW_MS).active, false)
+  assert.equal(dietTrialStatus({ startedAt: 'not-a-date', targetDurationDays: 21 }, NOW_MS).active, false)
+})
+
+Deno.test('resolveWindow — 14d / 30d state their windows', () => {
+  assert.equal(resolveWindow('14d', NOW_MS).label, 'the last 14 days')
+  assert.equal(resolveWindow('30d', NOW_MS).label, 'the last 30 days')
+})
+
+Deno.test('freeFedStatus — active = active_until IS NULL (DB semantics, not an interval check)', () => {
+  const r = freeFedStatus([
+    { id: 'a', foodItemId: 'ff', foodLabel: 'Grazing Kibble', primaryProtein: 'Chicken', activeFrom: '2026-07-01', activeUntil: null, deletedAt: null },
+    { id: 'b', foodItemId: 'old', foodLabel: 'Old Bowl', primaryProtein: 'beef', activeFrom: '2026-05-01', activeUntil: '2026-06-01', deletedAt: null }, // ended → inactive
+    { id: 'c', foodItemId: 'del', foodLabel: 'Deleted', primaryProtein: 'lamb', activeFrom: null, activeUntil: null, deletedAt: '2026-07-01T00:00:00Z' },
+  ])
   assert.equal(r.arrangements.length, 1)
   assert.equal(r.arrangements[0].protein, 'chicken') // canonicalized
   assert.equal(r.intakeNotDirectlyObserved, true)
 })
 
+Deno.test('freeFedStatus — an ended-TODAY arrangement (DATE active_until) reads inactive, no UTC drift', () => {
+  // The code-review bug: a now ∈ [from, until] check against a DATE-only active_until would
+  // read this as still-active for hours in a +UTC zone. Keying on active_until != null is
+  // timezone-independent: an ended arrangement (any non-null active_until) is inactive.
+  const r = freeFedStatus([
+    { id: 'a', foodItemId: 'ff', foodLabel: 'Bowl', primaryProtein: 'chicken', activeFrom: '2026-07-10', activeUntil: '2026-07-15', deletedAt: null },
+  ])
+  assert.equal(r.arrangements.length, 0)
+  assert.equal(r.intakeNotDirectlyObserved, false)
+})
+
 Deno.test('medications — active regimen, last-given ignores refused/missed doses', () => {
   const regimens = [
-    { id: 'r1', drugLabel: 'Apoquel', startedAt: '2026-07-01T00:00:00Z', endedAt: null, doseAmount: '16mg', deletedAt: null },
+    { id: 'r1', drugLabel: 'Apoquel', status: 'active', startedAt: '2026-07-01', endedAt: null, doseAmount: '16mg', deletedAt: null },
   ]
   const doses = [
     { id: 'd1', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-14T08:00:00Z', adherence: 'given', deletedAt: null },
@@ -471,6 +505,21 @@ Deno.test('medications — active regimen, last-given ignores refused/missed dos
   assert.equal(apoquel?.dosesGiven, 2) // given + null
   assert.equal(apoquel?.dosesMissed, 1) // refused
   assert.equal(apoquel?.lastDoseAt, '2026-07-14T08:00:00Z') // NOT the 07-15 refusal
+})
+
+Deno.test('medications — active keys on status, not a [started,ended] interval (no UTC drift)', () => {
+  // Ended-TODAY regimen (DATE ended_at == today): an interval check against UTC-midnight
+  // ended_at would read it active for hours in a +UTC zone. status==='ended' is authoritative.
+  const regimens = [
+    { id: 'ended', drugLabel: 'Metronidazole', status: 'ended', startedAt: '2026-07-01', endedAt: '2026-07-15', doseAmount: null, deletedAt: null },
+    { id: 'nostatus', drugLabel: 'Legacy', status: null, startedAt: '2026-07-01', endedAt: null, doseAmount: null, deletedAt: null }, // fallback: endedAt null → active
+    { id: 'gone', drugLabel: 'Deleted', status: 'active', startedAt: '2026-07-01', endedAt: null, doseAmount: null, deletedAt: '2026-07-10T00:00:00Z' },
+  ]
+  const r = medications(regimens, [], { window: '30d', nowMs: NOW_MS })
+  assert.equal(r.medications.find((m) => m.medicationId === 'ended')?.active, false)
+  assert.equal(r.medications.find((m) => m.medicationId === 'nostatus')?.active, true)
+  // soft-deleted regimen never surfaces at all
+  assert.equal(r.medications.some((m) => m.medicationId === 'gone'), false)
 })
 
 // ════════════════════════════════════════════════════════════════════════════════════
