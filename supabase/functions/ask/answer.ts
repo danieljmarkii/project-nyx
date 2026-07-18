@@ -491,8 +491,36 @@ function floored(result: unknown): ToolCallResult {
 // words the tool docs ban (weightSummary's "never 'stable'/'improving'", §7.3's "normal for
 // her") that the base Signal lexicon didn't carry, since the Signal never phrases a weight or
 // a raw count. `\bnormal\b` requires a word boundary, so "normally eats" is NOT matched.
+//
+// A7 false-positive fix: bare `normal` collided with the ONE legitimate factual use in Ask —
+// a recall/count answer about `stool_normal` events ("2 normal stools and 1 loose one this
+// week"). `stool_normal` is a real event type reachable via recall (recentEvents/lastSymptom
+// take free-form types), and dropping "normal" to satisfy the gate would blur a normal stool
+// into a loose one — a safety-adjacent degradation on a stool question. So "normal" is
+// excluded ONLY when it directly qualifies a stool/poop/bowel noun; every VERDICT use — "is
+// normal", "looks normal", "a normal number for her", "back to normal", "normal range/weight
+// /appetite" — still trips it (those don't precede a stool noun). This narrows nothing on the
+// relayed photo reads: the analyze-vomit/-stool templates are already forbidden from saying
+// "normal" at all (they describe what IS visible), so no relayed read depends on this.
+//
+// A7 absence-reassurance additions (the A7 adversarial pass, the counterexample-(b) break):
+// the base lexicon was built around PRESENCE words (fine/healthy/thriving) but missed the
+// reassurance-on-ABSENCE family — which is the half the n=1 invariant is actually about
+// (§7.7: "no blood was flagged" is a recount; "it looked fine / no red flags" is unsayable).
+// Added: "no red flag(s)", "nothing concerning/alarming/unusual/out of the ordinary", "in the
+// clear", "clean bill", "unremarkable", "benign", "looks/looking good". Also added "improv*"
+// and "getting/gotten/gets better" — weightSummary's own doc + migration-024 ban "improving",
+// but the base lexicon never carried it, so "her weight is improving" slipped the gate. These
+// do NOT collide with a relayed read: the analyze-vomit/-stool prompts forbid the model from
+// commenting on the absence of a red flag at all ("never 'nothing concerning/alarming', 'no
+// red flags', 'looks fine/normal'"), so a relayed monitor read never contains these — only a
+// model trying to reassure would, which is exactly what we gate. An ESCALATION that names "a
+// red flag" still passes (only the negation "no red flag(s)" is barred).
+// The "nothing … wrong/concerning" family allows ONE optional intervening word so an
+// absence-reassurance verb ("nothing SEEMED wrong", "nothing LOOKED concerning") can't slip
+// the gate the adjacent form catches.
 const REASSURANCE_RE =
-  /\b(fine|okay|ok|healthy|all clear|nothing to worry|no need to worry|nothing serious|nothing wrong|no issues?|no problems?|probably fine|no concern|no cause for concern|not a concern|don'?t worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|back to normal|right track|she'?s well|he'?s well|they'?re well|stable|steady|holding steady|unchanged|no change|normal|nothing to change|no need to (?:change|do anything))\b/i
+  /\b(fine|okay|ok|healthy|all clear|nothing to worry|no need to worry|nothing serious|no issues?|no problems?|probably fine|no concern|no cause for concern|not a concern|no red flags?|nothing (?:\w+ )?(?:wrong|concerning|alarming|unusual|amiss|out of the ordinary)|in the clear|clean bill|unremarkable|benign|look(?:s|ing)? good|don'?t worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|get(?:ting|s)? better|gotten better|improv(?:e|es|ed|ing)|back to normal|right track|she'?s well|he'?s well|they'?re well|stable|steady|holding steady|unchanged|no change|normal(?!\s+(?:stools?|poops?|bowels?|movements?))|nothing to change|no need to (?:change|do anything))\b/i
 const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i
 // Flagrant spelled-out quantities that assert a count the tools never returned — the
 // number-word bypass of the numeral-subset check (A4 adversarial #2). A count claim must be
@@ -501,7 +529,14 @@ const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i
 // words ("a few", "a couple", "several") are left OUT — they legitimately describe time
 // spans ("a few more days") and would false-positive good answers into deflections; the
 // prompt already instructs digits, and A7's copy pass hardens the tail.
-const VAGUE_QUANTITY_RE = /\b(a dozen|dozens|numerous|countless|many times|a bunch of|loads of|tons of)\b/i
+//
+// A7 addition: "percent"/"per cent" (and "percentage") — no tool returns a percentage (they
+// return "N of M" / raw rates), so ANY percent word in a DATA answer is a model-COMPUTED
+// figure (arithmetic, forbidden) that also slips the digit-only numeral check when spelled
+// out ("seventy-five percent"). The digit form "75%" is already caught by the numeral-subset
+// (0.75 ≠ 75); this closes the word form. Data-mode only (checked below), so general-mode
+// guidance can still speak in general terms.
+const VAGUE_QUANTITY_RE = /\b(a dozen|dozens|numerous|countless|many times|a bunch of|loads of|tons of|per ?cent|percentages?)\b/i
 const CAUSAL_RE =
   /\b(cause[sd]?|causing|because|due to|trigger(?:s|ed|ing)?|responsible for|allerg(?:y|ic)|intoleran(?:t|ce)|reacts? to|leads? to|results? in)\b/i
 // A diagnosis assertion — the app never diagnoses (G1). Screens the obvious disease-claim
@@ -843,9 +878,14 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
         [`Log something for ${p}`, `What has ${p} eaten most this month?`],
       )
     case 'llm_unavailable':
+      // Cause-neutral on purpose: this fires whether the network dropped or the model was
+      // unreachable server-side — the owner can't tell the two apart, and "the assistant"
+      // reified a chatbot character Ask deliberately is not (§1). The client mirror
+      // (buildOfflineDeflection) is kept verbatim-identical so the copy reads the same
+      // whether the miss happened before or during the call.
       return base(
         'llm_unavailable',
-        `I couldn't reach the assistant just now.`,
+        `I couldn't answer that just now.`,
         `${p}'s record is still all here. Try again in a moment, or open the vet-visit rundown — it works without a connection.`,
         ['Put together a vet-visit rundown'],
       )
@@ -870,8 +910,8 @@ export const SYSTEM_PROMPT =
   "The pet's name and species are given. Hard rules: " +
   "(1) Every number in your answer MUST come from a tool result. Never estimate, never do arithmetic (no percentages the tools didn't return — phrase as 'N of M'). " +
   "(2) Plan first: call the tools you need (you may call several), then call provide_answer. If a needed fact isn't available from any tool, or the question is unclear, call decline instead — NEVER guess. " +
-  "(3) NEVER diagnose, name a disease, or say what caused something. NEVER reassure: do not say the pet is fine/okay/healthy/normal, and a count of zero means 'nothing logged', never 'she's well' — absence of a symptom is not wellness. " +
-  "(4) A pet eating less is a health signal, never 'picky' or 'fussy'. Frame declines calmly and route to the vet if it continues. " +
+  "(3) NEVER diagnose, name a disease, or say what caused something. NEVER reassure: do not say the pet is fine/okay/healthy/normal, and a count of zero means 'nothing logged', never 'she's well' — absence of a symptom is not wellness. Never describe the ABSENCE of a red flag as reassuring — do NOT say 'no red flags', 'nothing concerning', 'looks good/fine', or 'in the clear'; only state what IS present in the record, and if a photo read is relayed, recount what it shows, never that it looked okay. " +
+  "(4) A pet eating less is a health signal, never 'picky', 'fussy', or a 'preference' — never explain eating less by saying she 'prefers' or 'has gone off' a food. Frame declines calmly and route to the vet if it continues. When asked what a pet 'prefers', answer only with which foods are fed/finished most (a positive rate over many meals), never as a verdict that a decline is just taste. " +
   "(5) If a data tool returns not_enough_data, decline with a data-gap; don't invent a rate. " +
   "(6) If engine_findings returns a SAFETY finding relevant to the question, lead with it — relay it verbatim, never soften it. " +
   "(7) Plain, warm language; address the owner as 'you'; use the pet's name; no exclamation marks; never cute. One or two sentences of detail. " +

@@ -264,24 +264,50 @@ export function tapThroughLabel(tp: AskTapThrough | null | undefined): string | 
 }
 
 /** The client-built deflection body for the online-only designed-offline / transport-
- *  failure state (§3.2). Mirrors the server's `llm_unavailable` deflection so the copy
- *  reads identically whether the network dropped before or during the call. Non-
- *  substantive (no credit), no component/provenance/safety — an honest "couldn't reach
- *  it", never an error toast, never blank. */
+ *  failure state (§3.2). Copy is kept VERBATIM-IDENTICAL to the server's `llm_unavailable`
+ *  deflection (supabase/functions/ask/answer.ts) so it reads the same whether the network
+ *  dropped before the call or the model was unreachable during it — the owner can't tell
+ *  the two apart. Non-substantive (no credit), no component/provenance/safety — an honest
+ *  "couldn't answer it", never an error toast, never blank. The rundown follow-up is a real
+ *  offline escape: the surface routes a rundown-intent send to /rundown (client-only, no
+ *  model call), so this CTA works even with no connection (isRundownRequest). */
 export function buildOfflineDeflection(petName: string): AskAnswerBody {
   const p = petName?.trim() || 'your pet';
   return {
     outcome: 'llm_unavailable',
     substantive: false,
-    headline: 'Ask needs a connection.',
-    detail: `${p}'s record is still all here to look through. Try again in a moment.`,
+    headline: `I couldn't answer that just now.`,
+    detail: `${p}'s record is still all here. Try again in a moment, or open the vet-visit rundown — it works without a connection.`,
     component: null,
     provenance: null,
     safetyLead: null,
-    followups: [],
+    followups: [RUNDOWN_CTA],
     conversationCredited: false,
     generalMode: false,
   };
+}
+
+// ── Rundown-intent interception (§3.3 / G3 — the deflection drives the wedge) ───────
+
+/** The vet-visit-rundown CTA label the deflection follow-ups emit (server, answer.ts's
+ *  buildDeflection) and the offline deflection above. Centralized here so the client can
+ *  recognize a rundown-intent send and OPEN the deterministic rundown (client-only, §3.3)
+ *  instead of round-tripping the model — which has no rundown tool and would deflect
+ *  `unsupported`, dead-ending the CTA. Keep this string in sync with answer.ts. */
+export const RUNDOWN_CTA = 'Put together a vet-visit rundown';
+
+// The fresh-state accent chip's label (app/ask.tsx) — it already navigates directly, but
+// matching it here too means every rundown affordance resolves the same way.
+const FRESH_RUNDOWN_CTA = 'Heading to the vet? Build the visit rundown';
+
+/** Is this send the app's own request to build the vet-visit rundown? True ONLY for the
+ *  app-emitted rundown CTA strings — never an arbitrary owner question that merely contains
+ *  "rundown" (e.g. "give me a rundown of her vomiting"), which must still reach the model.
+ *  Pure; case/whitespace-insensitive. The surface uses this to navigate to /rundown so the
+ *  rundown works offline and capped, and the deflection CTA never dead-ends (G3). */
+export function isRundownRequest(text: string): boolean {
+  const t = (text ?? '').trim().toLowerCase();
+  return t === RUNDOWN_CTA.toLowerCase() || t === FRESH_RUNDOWN_CTA.toLowerCase();
 }
 
 // ── Cap-state helpers (§9.3 / §16.1) ───────────────────────────────────────────────

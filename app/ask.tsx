@@ -25,6 +25,7 @@ import {
   loadAskSuggestions,
   buildOfflineDeflection,
   isSymptomShapedQuestion,
+  isRundownRequest,
   formatResetLabel,
   type AskNav,
   type AskSuggestions,
@@ -95,6 +96,15 @@ export default function AskScreen() {
       const question = raw.trim();
       if (!question || thinking || !petId) return;
       setInput('');
+
+      // Rundown-intent (a deflection follow-up or the offline CTA) opens the deterministic
+      // rundown directly — no model call, so it works offline and capped (§3.3), and the
+      // deflection CTA never dead-ends against a model with no rundown tool (G3). It is a
+      // navigation, not a Q&A turn, so no question bubble is pushed.
+      if (isRundownRequest(question)) {
+        router.push('/rundown');
+        return;
+      }
 
       // Snapshot the PRIOR turns before the optimistic push — the server takes the new
       // question separately and `conversation` as prior context only (D8/D9).
@@ -366,6 +376,11 @@ function CapBand({
         {copy.care ? <Text style={styles.capCare}>{copy.care}</Text> : null}
       </View>
       <Text style={styles.capNavLabel}>These still open directly:</Text>
+      {/* The rundown leads — it's the capped-safe core (§3.3/§9.3: the cap gates only the
+          model call; the deterministic rundown always works). Accent-marked as the featured
+          action, mirroring the fresh state, so a capped owner heading to the vet isn't
+          stranded. */}
+      <AskChip label="Heading to the vet? Build the visit rundown" variant="accent" block onPress={() => router.push('/rundown')} />
       <View style={styles.capNav}>
         <AskChip label="Patterns" onPress={() => onNavigate({ pathname: '/insights' })} />
         <AskChip label="History" onPress={() => router.push({ pathname: '/(tabs)/history', params: { date: 'today', ts: String(Date.now()) } })} />
