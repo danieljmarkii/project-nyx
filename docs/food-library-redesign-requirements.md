@@ -20,14 +20,14 @@ This replaces the typeahead-from-third-party-catalog approach (OPFF / Chewy) tha
 
 | # | Decision | Notes |
 |---|---|---|
-| D1 | Food library is **globally shared** across all users at MVP | Defer multi-tenant overrides. Schema must remain compatible with future per-user overrides (i.e. do **not** add `user_id` to `food_items`). |
+| D1 | ~~Food library is **globally shared** across all users at MVP~~ **SUPERSEDED by B-354 (2026-07-16).** The library is now **per-account**: `created_by_user_id` is the ownership scope (RLS default-deny to other accounts; migration 033). | Original bet was a shared network-effect catalog; T&S flagged cross-tenant exposure as a pre-launch blocker. A shared/canonical catalog returns only as a separate curated layer, never by un-scoping user rows (`docs/nyx-per-account-food-library-requirements.md`, FR-9). |
 | D2 | **Photos-first** food entry. AI extraction populates structured fields async. | No reliance on third-party catalogs. No scraping. |
 | D3 | **One photo required** (front of package). Barcode + ingredients photos are encouraged but optional. | The UI should heavily encourage all three but not block on the latter two. |
 | D4 | **Confirm extracted brand + product name** in one tap on first-add. Ingredients & barcode extracted silently and shown editable on the food detail screen. | "Tier the trust by stakes" — high-stakes / high-accuracy fields confirmed, low-stakes / async fields verified post-hoc. |
 | D5 | EXIF timestamp from food photo populates the **meal event time** when photo is added via the log flow; populates the **catalog entry time** when added via library management. | EXIF fallback to `new Date()` on malformed/absent EXIF (existing pattern). Source recorded as `occurred_at_source`. |
 | D6 | Time-from-EXIF must be **surfaced in the UX** so the user knows we pre-populated it. | Inline subtle attribution beside the time selector: `"5:26 PM · from your photo"` (same-day) or `"5:26 PM · from your photo (Mon May 12)"` (back-dated library pick). Applies to **both** food and vomit photo flows for consistency. |
 | D7 | Async extraction via Edge Function. **Never block logging on extraction.** | Meal logs immediately; library entry shows `ai_extraction_status='pending'` until completed. |
-| D8 | Resolution of the Designer × Data Scientist conflict on user-edits-to-catalog: | Per-user overrides via additive `food_item_overrides` table — *deferred post-MVP*. MVP has direct edit on the (single-user) global library, which is acceptable because there is one user. |
+| D8 | Resolution of the Designer × Data Scientist conflict on user-edits-to-catalog: | Per-user overrides via additive `food_item_overrides` table — *deferred post-MVP*. **[B-354] Mooted while per-account** — your row is yours to edit directly, so the overrides layer isn't needed unless/until the future canonical catalog lands (`docs/nyx-per-account-food-library-requirements.md` §5). |
 
 ---
 

@@ -206,6 +206,13 @@ export interface ReportAiAnalysisInput {
   bilePresent: string | null // vomit_tristate
   foreignMaterialPresent: string | null // vomit_tristate
   foreignMaterialNote: string | null
+  // Stool AI-read fields (migration 034 / analyze-stool). Present only on stool rows; null on
+  // vomit rows. The event_ai_analysis table is incident-agnostic, so these ride the same input.
+  stoolConsistency: string | null // stool_consistency: Bristol 'type_1_hard_lumps'…'type_7_watery'|'unsure'
+  stoolColour: string | null // stool_colour: 'brown'…'black_tarry'|'grey_pale'|'red_streaked'|'unsure'
+  stoolBloodPresent: string | null // stool_tristate: 'yes'|'no'|'unsure'
+  stoolBloodType: string | null // 'fresh_red' (haematochezia) | 'dark_tarry' (melena) | null
+  stoolMucusPresent: string | null // stool_tristate: 'yes'|'no'|'unsure'
   editedAt: string | null // owner-edited ⇒ "owner-reviewed"; else raw AI ("owner-reviewable")
 }
 
@@ -715,8 +722,14 @@ export interface ClinicalQuestion {
 export type SafetyFlag =
   | {
       kind: 'present_blood'
-      /** PRESENT-only (§5.9): the incidents where blood was actually seen; never a "0 of N". */
-      incidents: Array<{ eventId: string; occurredAt: string; kind: 'fresh_red' | 'coffee_ground' }>
+      /** Which incident family this blood was seen in — selects the anatomy framing + noun in the band row. */
+      source: 'vomit' | 'stool'
+      /**
+       * PRESENT-only (§5.9): the incidents where blood was actually seen; never a "0 of N". Vomit uses
+       * fresh_red/coffee_ground; stool uses fresh_red (haematochezia) / dark_tarry (melena), or `null`
+       * when present but the subtype was unread.
+       */
+      incidents: Array<{ eventId: string; occurredAt: string; kind: 'fresh_red' | 'coffee_ground' | 'dark_tarry' | null }>
     }
   | {
       kind: 'present_foreign'
@@ -808,6 +821,43 @@ export interface StoolCharacteristics {
   looseCount: number
   windowDays: number
   loggedDays: number
+  /**
+   * AI photo-read enrichment (migration 034 / analyze-stool). Null when NO stool incident has a
+   * photo the AI could read — the section then renders the owner-described counts + an honest "not
+   * an exam finding" limitation, exactly as before this data source existed (§3.7 gating). The
+   * counts above are always owner-described; this sub-object is the automated photo read layered on.
+   */
+  ai: StoolAiReads | null
+}
+
+/**
+ * The automated stool photo-read aggregate — the stool sibling of VomitPhenotype, scoped to the
+ * two AI-read dimensions the vet report carries (Bristol consistency + colour descriptively;
+ * blood + mucus present-only). Same §5.9/§5.10 discipline as vomit: descriptive aggregates are
+ * over the ASSESSED (completed) set only; blood/mucus are PRESENT-only (never "0 of N"), unioned
+ * across every member of a collapsed incident so a flag on a dropped duplicate still surfaces.
+ */
+export interface StoolAiReads {
+  totalIncidents: number // stool incidents in window (normal + loose), = StoolCharacteristics.total
+  withAnalysis: number
+  /** The four AI-pipeline states, kept DISTINCT (§5.10). Sum === withAnalysis. */
+  states: { completed: number; uncertain: number; failed: number; pending: number }
+  /** The assessed denominator = states.completed (a legible AI read). */
+  assessedCount: number
+  /** Bristol type distribution over ASSESSED incidents; 'unsure' excluded (no legible type). */
+  consistencyDistribution: Record<string, number>
+  /** Colour distribution over ASSESSED incidents; 'unsure' excluded. */
+  colourDistribution: Record<string, number>
+  /**
+   * PRESENT-only (§5.9) — the incidents where blood was actually seen. `kind` distinguishes
+   * haematochezia (fresh_red) from melena (dark_tarry); null when present but the subtype is
+   * unread. Empty ⇒ render a de-weighted limitation note, NEVER "0 of N".
+   */
+  bloodPresent: Array<{ eventId: string; occurredAt: string; kind: 'fresh_red' | 'dark_tarry' | null }>
+  /** PRESENT-only — incidents where mucus was seen. Monitor-tier (D5): surfaced, never dropped, never an escalation on its own. */
+  mucusPresent: Array<{ eventId: string; occurredAt: string }>
+  /** Assessed analyses the owner has edited (owner-reviewed); the rest are raw AI. */
+  reviewedCount: number
 }
 
 /** Present-only safety class carried by a photographed incident — also LEADS the safety band. */
@@ -1004,14 +1054,25 @@ export interface ConcurrentChange {
 }
 
 export interface SymptomLogPhenotype {
+  /** Which analyzed incident type this phenotype describes — selects the field subset the renderer shows. */
+  kind: 'vomit' | 'stool'
   status: string
   contentsCategory: VomitContentCategory | null
   consistency: string | null
   colour: string | null
-  bloodPresent: 'fresh_red' | 'coffee_ground' | null // PRESENT-only; null when not present or not assessed
+  bloodPresent: 'fresh_red' | 'coffee_ground' | null // vomit blood, PRESENT-only; null when not present or not assessed
   /** PRESENT-only: true when foreign material was seen; null on absence/uncertainty (never a positive "no", §5.9). */
   foreignPresent: boolean | null
   foreignNote: string | null
+  // Stool fields (migration 034); null on a vomit phenotype. Same present-only discipline.
+  /** Bristol Stool Scale type key (stool_consistency); null when not a legible read. */
+  bristol: string | null
+  /** stool_colour enum; null when not a legible read. */
+  stoolColour: string | null
+  /** PRESENT-only stool blood: 'fresh_red' (haematochezia) / 'dark_tarry' (melena) / 'unread' (present, subtype unread); null on absence/uncertainty. */
+  stoolBlood: 'fresh_red' | 'dark_tarry' | 'unread' | null
+  /** PRESENT-only: true when mucus was seen; null on absence/uncertainty. Monitor-tier (D5), never an escalation. */
+  mucusPresent: boolean | null
   /** edited_at present ⇒ owner-reviewed; else raw AI (owner-reviewable). */
   edited: boolean
 }
@@ -1340,22 +1401,79 @@ function unionPresentFlags(
 }
 
 /**
+ * Stool sibling of unionPresentFlags — union present blood / mucus across ALL members of a
+ * collapsed stool incident (§5.9 escalate-on-presence). ANY member's flag counts regardless of
+ * that member's status; only `'yes'` folds, never `'no'`/`'unsure'` (absence is never manufactured).
+ * Blood kind is derived from the structured `stoolBloodType` (fresh_red = haematochezia,
+ * dark_tarry = melena) exactly as generate-report derives vomit blood from its structured field —
+ * NEVER from a stale visual_flags array (the B-247 seam / B-340 override-aware rule); fresh_red
+ * (acute) outranks dark_tarry when both appear across duplicates, and a present-but-unread subtype
+ * stays `null` (still counts as blood, unknown kind).
+ */
+function stoolUnionPresentFlags(
+  memberEventIds: string[],
+  analysisByEvent: Map<string, ReportAiAnalysisInput>,
+): { bloodPresent: boolean; bloodKind: 'fresh_red' | 'dark_tarry' | null; mucusPresent: boolean } {
+  let bloodPresent = false
+  let bloodKind: 'fresh_red' | 'dark_tarry' | null = null
+  let mucusPresent = false
+  for (const id of memberEventIds) {
+    const a = analysisByEvent.get(id)
+    if (!a) continue
+    if (a.stoolBloodPresent === 'yes') {
+      bloodPresent = true
+      if (a.stoolBloodType === 'fresh_red') bloodKind = 'fresh_red'
+      else if (a.stoolBloodType === 'dark_tarry' && bloodKind !== 'fresh_red') bloodKind = 'dark_tarry'
+    }
+    if (a.stoolMucusPresent === 'yes') mucusPresent = true
+  }
+  return { bloodPresent, bloodKind, mucusPresent }
+}
+
+const STOOL_PHENOTYPE_TYPES = new Set<string>([STOOL_NORMAL_TYPE, DIARRHEA_TYPE])
+
+/**
  * The owner-reviewable per-incident phenotype (present-only fields), shared by Appendix A's
- * symptom log AND Appendix E's incident-photo manifest so the two can never drift. Vomit only
- * (the sole analyzed type today); null for any other type or a vomit with no analysis. Reads the
- * BEST-status member for the four-state disclosure and UNIONS present blood/foreign across all
- * members (§5.9 escalate-on-presence — a flag on a dropped duplicate still shows), NEVER folding
- * `unsure`/`none_visible`/`no` into a positive "no" (that is the reassurance-on-absence §5.9 forbids).
+ * symptom log AND Appendix E's incident-photo manifest so the two can never drift. Built for the
+ * two analyzed incident families — vomit and stool (migration 034) — as a `kind`-discriminated
+ * shape; null for any other type or an incident with no analysis. Reads the BEST-status member for
+ * the four-state disclosure and UNIONS present blood/foreign/mucus across all members (§5.9
+ * escalate-on-presence — a flag on a dropped duplicate still shows), NEVER folding
+ * `unsure`/`none_visible`/`no` into a positive "no" (the reassurance-on-absence §5.9 forbids).
  */
 function buildIncidentPhenotype(
   type: string,
   memberEventIds: string[],
   analysisByEvent: Map<string, ReportAiAnalysisInput>,
 ): SymptomLogPhenotype | null {
+  if (STOOL_PHENOTYPE_TYPES.has(type)) {
+    const a = pickIncidentAnalysis(memberEventIds, analysisByEvent)
+    if (!a) return null
+    const present = stoolUnionPresentFlags(memberEventIds, analysisByEvent)
+    const stoolBlood: SymptomLogPhenotype['stoolBlood'] = present.bloodPresent
+      ? present.bloodKind ?? 'unread'
+      : null
+    return {
+      kind: 'stool',
+      status: a.status,
+      contentsCategory: null,
+      consistency: null,
+      colour: null,
+      bloodPresent: null,
+      foreignPresent: null,
+      foreignNote: null,
+      bristol: a.status === 'completed' && a.stoolConsistency !== 'unsure' ? a.stoolConsistency : null,
+      stoolColour: a.status === 'completed' && a.stoolColour !== 'unsure' ? a.stoolColour : null,
+      stoolBlood,
+      mucusPresent: present.mucusPresent ? true : null,
+      edited: a.editedAt != null,
+    }
+  }
   const a = type === 'vomit' ? pickIncidentAnalysis(memberEventIds, analysisByEvent) : null
   if (!a) return null
   const present = unionPresentFlags(memberEventIds, analysisByEvent)
   return {
+    kind: 'vomit',
     status: a.status,
     contentsCategory: a.status === 'completed' ? classifyVomitContents(a) : null,
     consistency: a.consistency,
@@ -1363,6 +1481,10 @@ function buildIncidentPhenotype(
     bloodPresent: present.bloodKind,
     foreignPresent: present.foreignPresent ? true : null,
     foreignNote: present.foreignNote,
+    bristol: null,
+    stoolColour: null,
+    stoolBlood: null,
+    mucusPresent: null,
     edited: a.editedAt != null,
   }
 }
@@ -1746,12 +1868,73 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
 
   // ── Stool characteristics (§3.7) — normal vs loose; null when no stool events ─
+  // Counts are over COLLAPSED incidents (survivors), owner-described. The AI photo-read layer
+  // (migration 034 / analyze-stool, PR 7) is aggregated below with the same §5.9/§5.10 discipline
+  // as vomit: descriptive Bristol/colour over the assessed set only; blood/mucus present-only,
+  // unioned across every member of a collapsed incident so a flag on a dropped duplicate surfaces.
+  const stoolIncidents = windowEvents.filter((e) => e.type === STOOL_NORMAL_TYPE || e.type === DIARRHEA_TYPE)
   const stoolNormal = windowEvents.filter((e) => e.type === STOOL_NORMAL_TYPE).length
   const stoolLoose = windowEvents.filter((e) => e.type === DIARRHEA_TYPE).length
-  const stool: StoolCharacteristics | null =
-    stoolNormal + stoolLoose > 0
-      ? { total: stoolNormal + stoolLoose, normalCount: stoolNormal, looseCount: stoolLoose, windowDays, loggedDays }
-      : null
+  let stool: StoolCharacteristics | null = null
+  if (stoolNormal + stoolLoose > 0) {
+    const states = { completed: 0, uncertain: 0, failed: 0, pending: 0 }
+    const consistencyDistribution: Record<string, number> = {}
+    const colourDistribution: Record<string, number> = {}
+    const bloodPresent: StoolAiReads['bloodPresent'] = []
+    const mucusPresent: StoolAiReads['mucusPresent'] = []
+    let withAnalysis = 0
+    let reviewedCount = 0
+    for (const e of stoolIncidents) {
+      // §5.9 present-only — blood/mucus present in ANY member of the collapsed bout (any status).
+      const present = stoolUnionPresentFlags(e.memberEventIds, analysisByEvent)
+      if (present.bloodPresent) bloodPresent.push({ eventId: e.id, occurredAt: e.occurredAt, kind: present.bloodKind })
+      if (present.mucusPresent) mucusPresent.push({ eventId: e.id, occurredAt: e.occurredAt })
+
+      // Four-state disclosure + descriptive aggregate use the incident's BEST-status member.
+      const a = pickIncidentAnalysis(e.memberEventIds, analysisByEvent)
+      if (!a) continue
+      withAnalysis++
+      switch (a.status) {
+        case 'completed':
+          states.completed++
+          break
+        case 'uncertain':
+          states.uncertain++
+          break
+        case 'failed':
+          states.failed++
+          break
+        default:
+          states.pending++
+          break
+      }
+      // §5.10 — Bristol/colour aggregate over ASSESSED (completed) only; 'unsure' is not a legible read.
+      if (a.status === 'completed') {
+        if (a.stoolConsistency && a.stoolConsistency !== 'unsure') {
+          consistencyDistribution[a.stoolConsistency] = (consistencyDistribution[a.stoolConsistency] ?? 0) + 1
+        }
+        if (a.stoolColour && a.stoolColour !== 'unsure') {
+          colourDistribution[a.stoolColour] = (colourDistribution[a.stoolColour] ?? 0) + 1
+        }
+        if (a.editedAt) reviewedCount++
+      }
+    }
+    const ai: StoolAiReads | null =
+      withAnalysis > 0
+        ? {
+            totalIncidents: stoolNormal + stoolLoose,
+            withAnalysis,
+            states,
+            assessedCount: states.completed,
+            consistencyDistribution,
+            colourDistribution,
+            bloodPresent,
+            mucusPresent,
+            reviewedCount,
+          }
+        : null
+    stool = { total: stoolNormal + stoolLoose, normalCount: stoolNormal, looseCount: stoolLoose, windowDays, loggedDays, ai }
+  }
 
   // ── Weight (§3.3, B-186) ──────────────────────────────────────────────────────
   // Weigh-ins arrive in their OWN array (weightChecks), NOT in input.events, so the
@@ -1931,9 +2114,16 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
 
   // ── Safety flags (§3.1 order; §5.3 empty when none) ──────────────────────────
   const safetyFlags: SafetyFlag[] = []
-  // Present blood / foreign LEAD the safety band (§2 present-only decision).
+  // Present blood / foreign LEAD the safety band (§2 present-only decision). Stool blood
+  // (melena/haematochezia) leads exactly as vomit blood does — the report's 60-second scan surface
+  // must not bury a large-/upper-GI bleed signal in §3.7 (B-247 PR 7 vet-report-cold-read). Derived
+  // from the SAME present-only structured aggregate the §3.7 section uses (single source), so the
+  // band and the section can never disagree.
   if (vomitPhenotype && vomitPhenotype.bloodPresent.length > 0) {
-    safetyFlags.push({ kind: 'present_blood', incidents: vomitPhenotype.bloodPresent })
+    safetyFlags.push({ kind: 'present_blood', source: 'vomit', incidents: vomitPhenotype.bloodPresent })
+  }
+  if (stool?.ai && stool.ai.bloodPresent.length > 0) {
+    safetyFlags.push({ kind: 'present_blood', source: 'stool', incidents: stool.ai.bloodPresent })
   }
   if (vomitPhenotype && vomitPhenotype.foreignPresent.length > 0) {
     safetyFlags.push({ kind: 'present_foreign', incidents: vomitPhenotype.foreignPresent })
@@ -2202,7 +2392,11 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         (a.storagePath < b.storagePath ? -1 : a.storagePath > b.storagePath ? 1 : 0),
     )
     const phenotype = buildIncidentPhenotype(e.type, e.memberEventIds, analysisByEvent)
-    const safety: IncidentPhotoSafety | null = phenotype?.bloodPresent
+    // Present blood (vomit OR stool) sets the 'blood' safety class so the photo LEADS the band +
+    // Appendix E (§2 present-only). Stool carries blood on `stoolBlood`, vomit on `bloodPresent`;
+    // mucus is monitor-tier (D5) and never a safety-band lead.
+    const phBlood = phenotype?.kind === 'stool' ? phenotype.stoolBlood != null : phenotype?.bloodPresent != null
+    const safety: IncidentPhotoSafety | null = phBlood
       ? 'blood'
       : phenotype?.foreignPresent
         ? 'foreign'

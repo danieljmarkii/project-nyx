@@ -1,7 +1,9 @@
 # In-App Account Deletion (B-039) — Requirements
 
-**Status:** Build-ready. Gating decision resolved 2026-06-19 (hard-delete — see §9).
+**Status:** Shipped. Gating decision resolved 2026-06-19 (hard-delete — see §9).
 **Backlog:** B-039 (priority **Now**, App Store hard blocker).
+
+> **B-354 amendment (2026-07-17, PR 4 shipped #381 / PR 5 doc reconciliation).** `food_items` + `nyx-food-photos` were de-globalized to **per-account** ownership (`docs/nyx-per-account-food-library-requirements.md`, FR-1/FR-7). A user's foods and food-label photos are now their own data, so account deletion **purges** them instead of preserving them. This inverts the original FR-4 + AC-5 (and the §2a FK, the §7 edge case, the §9 default, and the §11 sign-off), all corrected inline below and marked **[B-354]**.
 **Build phase:** Independent of the formal build sequence; a launch gate that must land before App Store submission. File-disjoint from Step 9 (vet report) — parallelizable as its own session/branch.
 
 ---
@@ -38,9 +40,9 @@ Two findings from reading the schema (migrations `001`–`019`) shape the whole 
 | `ai_signals` | `pet_id → pets(id)` | **CASCADE** | 005 |
 | `event_ai_analysis` | `event_id → events(id)`, `pet_id → pets(id)` | **CASCADE** | 013 |
 | `feeding_arrangements` | `pet_id → pets(id)`, `food_item_id → food_items(id)` | **CASCADE** | 018 |
-| `food_items` | `created_by_user_id → auth.users(id)` | **SET NULL** | 001 |
+| `food_items` | `created_by_user_id → auth.users(id)` | ~~**SET NULL**~~ → **CASCADE** **[B-354]** | 001 → 033 |
 
-Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing blocks `auth.admin.deleteUser`. `food_items` is the deliberate exception — globally scoped (no `user_id`), so it survives with attribution nulled. **Consequence: hard-delete needs NO new schema and NO table-by-table delete loop in app code** — the database does it.
+Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing blocks `auth.admin.deleteUser`. **[B-354]** `food_items` was originally the deliberate exception — globally scoped (no `user_id`), surviving with attribution nulled — but migration 033 re-scoped it per-account and flipped the FK to `ON DELETE CASCADE`, so the user's food rows now tear down with the account like every other table. `medication_items` got the same treatment. **Consequence: hard-delete needs NO new schema and NO table-by-table delete loop in app code** — the database does it.
 
 **(b) Soft-deleted events get hard-purged for free.** `events` use `deleted_at` (soft delete, never `DELETE` — a CLAUDE.md hard constraint). The cascade deletes those rows regardless of `deleted_at`, so account deletion is the one documented place the soft-delete-only rule yields to a legal hard-delete. No special handling.
 
@@ -90,7 +92,7 @@ Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing bloc
   - vet-report PDFs ← `vet_reports.storage_path` for the user's pets *(forward-looking; the bucket lands with Step 9 — tolerate its absence today)*
 
   Paths are derived only from rows the user owns — **never** from client input. This must run before the cascade, which will destroy the rows that hold these paths.
-- **FR-4 — `nyx-food-photos` is NOT purged.** Food label photos belong to the global `food_items` catalog (which survives via `SET NULL`). They are commercial-package images, not pet-health PII. Leave them. (PM-confirmable default — §9.)
+- **FR-4 [B-354] — `nyx-food-photos` IS purged.** *(Inverted by B-354 FR-7 — was "NOT purged" while the catalog was global.)* Food-label photos now belong to the deleting account's per-account `food_items` rows, so they are the user's own data and must be removed with the account. Collect them alongside the other buckets (FR-3): the food-photo paths come from `food_items.photo_paths` for rows where `created_by_user_id = userId`, and every path is kept only if its first folder segment is a `food_items.id` **this user created** (`scopeFoodPaths` — a by-hand port of the migration-033 food-photo SELECT RLS, so a crafted `photo_paths` value can't name another account's object; empty owned-id set fails closed). The `food_items` **rows** themselves are torn down by the FR-1/033 CASCADE; FR-5 removes the Storage objects. *(The medication-photo bucket follows the same already-coded pattern.)*
 - **FR-5 — purge Storage (best-effort, collect failures).** Remove the FR-3 objects per bucket. Aggregate failures; do not abort the run on a single missing/failed object.
 - **FR-6 — delete the auth user LAST.** Only after the Storage purge, call `adminClient.auth.admin.deleteUser(userId)`. This fires the FK cascade (§2a) that erases all DB rows. Deleting last makes the operation **idempotent and retryable**: a failed/partial run leaves the account intact and re-runnable (paths can be re-collected), so no health photos are orphaned with their DB references already cascaded away.
 - **FR-7 — honest result.** Return `{ ok: true }` only when the auth user is deleted. On failure, return a non-200 the client surfaces as "couldn't finish — try again," never a false success.
@@ -119,7 +121,7 @@ Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing bloc
 - **Partial Storage failure** → auth user not deleted; account re-runnable (FR-6); user sees retryable error.
 - **In-flight sync queue** at deletion → irrelevant; cascade removes the server target and the local wipe clears the queue.
 - **Second device on the same account** (post-B-054) → its session token is now invalid → next call 401 → treated as signed-out → local wipe. No stale access.
-- **User's food contributions** → `food_items` rows + `nyx-food-photos` survive with `created_by_user_id = NULL`; another account's correlation query still resolves them.
+- **User's food contributions [B-354]** → `food_items` rows + `nyx-food-photos` are the user's per-account data now → deleted with the account (033 CASCADE + Storage purge). No other account references them (0 cross-account refs).
 - **Re-signup with the same email** → a clean new account; no resurrected data.
 - **No pets yet / empty account** → deletion still works (no rows to cascade; auth user + `user_profiles` removed).
 - **Network drop after auth-user delete but before client learns** → account is gone; stale token 401s on next call → signed-out path. Acceptable.
@@ -130,8 +132,8 @@ Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing bloc
 - **AC-1.** A "Delete account" affordance is reachable from within the app (profile → Account), not buried — satisfies Apple 5.1.1(v).
 - **AC-2.** The confirmation requires typing `DELETE`; copy states permanence; no dark patterns (no pre-checked deactivate, no hidden button, no guilt copy).
 - **AC-3.** On confirm, the auth user is deleted and all DB rows cascade away — verify in the Supabase dashboard that `pets`, `events`, `meals`, `conditions`, `diet_trials`, `vet_visits`, `vet_reports`, `event_attachments`, `vet_visit_attachments`, `ai_signals`, `event_ai_analysis`, `feeding_arrangements`, `user_profiles` hold **0 rows** for that user.
-- **AC-4.** The user's objects in `nyx-pet-photos`, `nyx-event-attachments`, `nyx-vet-attachments` (and vet-report PDFs, when Step 9's bucket exists) are removed; `nyx-food-photos` is untouched.
-- **AC-5.** `food_items` rows the user created survive with `created_by_user_id = NULL`; another account's correlation query still resolves them.
+- **AC-4 [B-354].** The user's objects in `nyx-pet-photos`, `nyx-event-attachments`, `nyx-vet-attachments` (and vet-report PDFs, when Step 9's bucket exists) **and `nyx-food-photos`** are removed. *(Was: `nyx-food-photos` untouched.)*
+- **AC-5 [B-354].** `food_items` rows the user created are **deleted** by the 033 CASCADE, and their label photos are purged from `nyx-food-photos`; because the catalog is per-account with **0 cross-account references** (B-354 §2.3), no other account's correlation query ever pointed at them. *(Was: rows survive with `created_by_user_id = NULL`, resolvable by another account.)*
 - **AC-6.** After success the client signs out and local SQLite is wiped (FR-9 reuse) — relaunch shows the auth screen with no residual data.
 - **AC-7.** A user can only delete their own account — identity from the JWT, never the request body.
 - **AC-8.** Offline, the delete action is guarded and never reports false success.
@@ -143,7 +145,7 @@ Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing bloc
 
 ## 9. Open questions / PM decisions consolidated
 - **[RESOLVED 2026-06-19] Cascade strategy = hard-delete.** Resolves the long-open GDPR-cascade Open Question. Rationale: ~all data is pet-health, not classic PII, so anonymization buys nothing legally and would need a migration; hard-delete is the cleaner Art. 17 story and the schema already cascades. Documented exception to the soft-delete-only constraint. Team rec unanimous (Trust & Safety lead).
-- **[DEFAULT — override welcome] Food catalog treatment (FR-4).** Keep `food_items` + `nyx-food-photos` (attribution nulled). Consistent with the existing `created_by_user_id → SET NULL` and the "global catalog" architecture. Building proceeds on this default unless the PM rules otherwise.
+- **[RESOLVED 2026-07-16 — inverted by B-354] Food catalog treatment (FR-4).** Originally kept `food_items` + `nyx-food-photos` (attribution nulled) on the "global catalog" architecture. B-354 de-globalized the catalog to per-account, so the PM ratified flipping preserve→purge: the user's foods + food photos are now deleted with the account (D4, `docs/nyx-per-account-food-library-requirements.md` §9). Shipped in PR 4 (#381).
 - **[DEFAULT] Confirmation friction (FR-9).** Type-to-confirm `DELETE`; full re-auth deferred to B-119.
 - **[DEFAULT] No grace period.** v1 is immediate and irreversible; no deactivate-instead, no undo window.
 
@@ -163,7 +165,7 @@ Verified: **no FK to `auth.users` uses `RESTRICT`/`NO ACTION`**, so nothing bloc
 - **Dir. of Engineering ✓** — cascade does the work; one Edge Function + one screen section; no schema; soft-delete-constraint override flagged on the record.
 - **Designer ✓** — discoverable, single destructive confirm, no dark patterns, theme tokens.
 - **Jordan ✓** — type-to-confirm is the right friction; honest "can't be undone" copy.
-- **Data Scientist ✓** — global `food_items` rows/queries survive cleanly (FR-4, AC-5).
+- **Data Scientist ✓** — ~~global `food_items` rows/queries survive cleanly~~ **[B-354]** per-account `food_items` rows + food photos purge cleanly with 0 cross-account references (FR-4, AC-5).
 - **QA ✓** — edge cases + ACs enumerated; idempotency AC-9 is the one to actually exercise.
 - **Dr. Chen — N/A** (no clinical read; health photos covered by the Storage purge).
 

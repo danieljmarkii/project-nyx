@@ -1,47 +1,55 @@
-// Per-incident vomit AI analysis, rendered on the event detail screen (B-027,
-// under B-013). Self-contained: reads the event_ai_analysis row from Supabase
-// (written server-side by the analyze-vomit Edge Function), triggers analysis
-// lazily if none exists yet, and polls while it runs.
+// Per-incident stool AI analysis, rendered on the event detail screen (B-247 PR 6,
+// second child of B-013, sibling of VomitAnalysisSection). Self-contained: reads
+// the event_ai_analysis row from Supabase (written server-side by the analyze-stool
+// Edge Function), triggers analysis lazily if none exists yet, and polls while it
+// runs.
 //
 // Scope of THIS component: display the AI read + structured observations,
-// dismiss/undismiss the read, retry on failure, the pending / uncertain /
-// failed states, AND owner editing of the structured fields with a per-field
-// "edited" marker + a single calm "Edited [date]" line (B-028). The n=1 read
-// (recommendation/read_text) stays DISMISSIBLE, never editable; only the facts
+// dismiss/undismiss the read, retry on failure, the pending / uncertain / failed /
+// capped / read_disabled states, AND owner editing of the structured fields with a
+// per-field "edited" marker + a single calm "Edited [date]" line (B-028). The n=1
+// read (recommendation/read_text) stays DISMISSIBLE, never editable; only the facts
 // that feed the vet report are editable. An owner edit is the more-trusted value
 // (human-reviewed > raw AI) and re-analysis never clobbers it (Edge Function).
 //
-// Guardrail (Dr. Chen, B-013): the read ESCALATES on a visible/contextual red
-// flag and NEVER reassures on absence. The recommendation enum has no
-// reassuring value, so this component never renders an "all clear".
+// Guardrail (Dr. Chen, clinical-guardrails, inherited in full): the read ESCALATES
+// on a visible/contextual red flag and NEVER reassures on absence. The
+// recommendation enum has no reassuring value, so this component never renders an
+// "all clear".
+//
+// Bristol framing (spec §3.4, Designer call): the consistency observation leads
+// with plain language ("Soft and mushy") and shows the numeric Bristol type only as
+// a small, muted secondary annotation — owners don't think in the Bristol scale, so
+// the number is a detail for relaying to a vet, never the primary framing.
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
 import { supabase } from '../../lib/supabase';
 import {
-  triggerVomitAnalysis,
-  saveVomitFieldEdits,
-  deriveEditedFields,
-  extractEditableFromPayload,
-  normalizeVomitEdits,
-  VomitEditableFields,
-  EditableVomitField,
+  triggerStoolAnalysis,
+  saveStoolFieldEdits,
+  deriveEditedStoolFields,
+  extractStoolEditableFromPayload,
+  normalizeStoolEdits,
+  StoolEditableFields,
+  EditableStoolField,
 } from '../../lib/analysis';
-import { VomitFieldsEditor } from './VomitFieldsEditor';
-import { vomitCapCopy } from '../../constants/monetizationCopy';
+import { StoolFieldsEditor } from './StoolFieldsEditor';
+import { stoolCapCopy } from '../../constants/monetizationCopy';
 import {
   labelFor,
+  bristolFor,
+  bloodLabel,
+  CONSISTENCY_OPTIONS,
   COLOUR_OPTIONS,
   CONTENT_OPTIONS,
-  CONSISTENCY_OPTIONS,
-  BLOOD_OPTIONS,
-} from './vomitFields';
+} from './stoolFields';
 
-// 'capped' / 'read_disabled' are the two states the analyze-vomit function writes
+// 'capped' / 'read_disabled' are the two states the analyze-stool function writes
 // into the row when the DESCRIPTIVE read is skipped (cap hit / flag off) AND no
-// contextual escalation flags fired (§4.5). If a flag HAD fired, the function writes
-// a normal 'completed' escalation instead — so these two never carry a red flag, and
+// contextual escalation flags fired. If a flag HAD fired, the function writes a
+// normal 'completed' escalation instead — so these two never carry a red flag, and
 // the never-reassure invariant survives the cap by construction (there is no path
 // from either to a reassuring verdict).
 type Status = 'pending' | 'completed' | 'failed' | 'uncertain' | 'capped' | 'read_disabled';
@@ -52,11 +60,12 @@ interface AnalysisRow {
   recommendation: Recommendation | null;
   read_text: string | null;
   description: string | null;
-  colour: string | null;
-  contents: string[] | null;
-  consistency: string | null;
-  blood_present: string | null;
-  bile_present: string | null;
+  stool_consistency: string | null;
+  stool_colour: string | null;
+  stool_content: string[] | null;
+  stool_blood_present: string | null;
+  stool_blood_type: string | null;
+  stool_mucus_present: string | null;
   foreign_material_present: string | null;
   foreign_material_note: string | null;
   ai_raw_payload: Record<string, unknown> | null;
@@ -66,9 +75,9 @@ interface AnalysisRow {
 }
 
 const SELECT_COLS =
-  'status, recommendation, read_text, description, colour, contents, consistency, ' +
-  'blood_present, bile_present, foreign_material_present, foreign_material_note, ' +
-  'ai_raw_payload, edited_at, dismissed_at, error';
+  'status, recommendation, read_text, description, stool_consistency, stool_colour, ' +
+  'stool_content, stool_blood_present, stool_blood_type, stool_mucus_present, ' +
+  'foreign_material_present, foreign_material_note, ai_raw_payload, edited_at, dismissed_at, error';
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 12; // ~36s — covers a slow vision call without spinning forever
@@ -79,7 +88,7 @@ const REC_LABEL: Record<Recommendation, string> = {
   not_enough_to_say: 'Not enough to say yet',
 };
 
-export function VomitAnalysisSection(
+export function StoolAnalysisSection(
   { eventId, petName, hasPhoto }: { eventId: string; petName?: string | null; hasPhoto: boolean },
 ) {
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
@@ -126,9 +135,9 @@ export function VomitAnalysisSection(
     // No row yet, or a stale 'pending' — (re)trigger and poll.
     setRow(first ?? null);
     setWorking(true);
-    const { error } = await triggerVomitAnalysis(eventId);
+    const { error } = await triggerStoolAnalysis(eventId);
     if (cancelled.current) return;
-    if (error) console.warn('[vomit-analysis] trigger error:', error);
+    if (error) console.warn('[stool-analysis] trigger error:', error);
     await pollUntilResolved();
   }, [eventId, fetchRow, pollUntilResolved]);
 
@@ -141,7 +150,7 @@ export function VomitAnalysisSection(
     setRetrying(true);
     cancelled.current = false;
     setRow((r) => (r ? { ...r, status: 'pending', error: null } : r));
-    const { error } = await triggerVomitAnalysis(eventId);
+    const { error } = await triggerStoolAnalysis(eventId);
     setRetrying(false);
     if (error) {
       Alert.alert('Could not start analysis', error);
@@ -169,16 +178,16 @@ export function VomitAnalysisSection(
   // Persist owner edits to the structured fields (B-028). A no-op save (nothing
   // changed vs the persisted values) just closes the editor — it never stamps
   // edited_at, so the never-clobber guard stays armed only by a real edit.
-  async function handleSaveEdits(next: VomitEditableFields) {
+  async function handleSaveEdits(next: StoolEditableFields) {
     if (!row) return;
     const current = currentEditable(row);
-    if (deriveEditedFields(next, current).length === 0) {
+    if (deriveEditedStoolFields(next, current).length === 0) {
       setEditing(false);
       return;
     }
     setSaving(true);
-    const norm = normalizeVomitEdits(next);
-    const { error } = await saveVomitFieldEdits(eventId, norm);
+    const norm = normalizeStoolEdits(next);
+    const { error } = await saveStoolFieldEdits(eventId, norm);
     setSaving(false);
     if (error) {
       Alert.alert('Could not save', 'Try again in a moment.');
@@ -244,50 +253,50 @@ export function VomitAnalysisSection(
     );
   }
 
-  // Descriptive read flagged off with NO escalation flags fired (§4.5) → render
-  // nothing. No dead "Try again", no empty frame. (If a flag had fired, the row is a
-  // normal 'completed' escalation and falls through to the render below.)
+  // Descriptive read flagged off with NO escalation flags fired → render nothing.
+  // No dead "Try again", no empty frame. (If a flag had fired, the row is a normal
+  // 'completed' escalation and falls through to the render below.)
   if (status === 'read_disabled') {
     return null;
   }
 
-  // Cap reached with NO escalation flags fired → the calm §7.3 cap state. Never
-  // error styling, never a retry, never a Premium mention, never reassurance. The
-  // read runs tomorrow; everything logged is saved; the "when to call your vet"
-  // guidance is in the copy. The row carries no daily/monthly discriminator, so we
-  // use the daily wording — the monthly cap (200) is effectively unreachable at the
-  // daily cap of 10.
+  // Cap reached with NO escalation flags fired → the calm cap state. Never error
+  // styling, never a retry, never a Premium mention, never reassurance. The read
+  // runs tomorrow; everything logged is saved; the "when to call your vet" guidance
+  // is in the copy. The row carries no daily/monthly discriminator, so we use the
+  // daily wording — the monthly cap (200) is effectively unreachable at the daily
+  // cap of 10.
   if (status === 'capped') {
     return (
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>AI READ</Text>
         <View style={styles.capBox}>
-          <Text style={styles.capText}>{vomitCapCopy(petName, 'daily')}</Text>
+          <Text style={styles.capText}>{stoolCapCopy(petName, 'daily')}</Text>
         </View>
       </View>
     );
   }
 
-  // A photoless vomit can never produce a descriptive read: with no photo the
+  // A photoless stool can never produce a descriptive read: with no photo the
   // escalation floor collapses to not_enough_to_say (a real CONTEXTUAL escalation —
-  // repeated vomiting, concurrent lethargy — still returns worth_a_call and falls
-  // through to the render below, never suppressed). So suppress the dead "Not enough
-  // to say · Try analysis" frame and its looping retry when there's no photo —
-  // re-running without one just loops back to the same empty read. The detail screen
-  // shows an "Add photo" empty hero directly above this section; once a photo is
-  // added the section un-suppresses (hasPhoto flips) and a real read is one tap on
-  // its retry away (the add-photo flow also kicks a re-analysis). Analysis still
-  // fires on mount regardless of photo (the trigger is unchanged), so a photoless
-  // contextual escalation is never hidden. Auto-refreshing the section the instant a
-  // photo lands is a tracked follow-up (B-370). Matches the read_disabled branch: no
-  // dead affordance, no empty frame (B-363).
+  // repeated loose stool, concurrent vomiting/lethargy — still returns worth_a_call
+  // and falls through to the render below, never suppressed). So suppress the dead
+  // "Not enough to say · Try analysis" frame and its looping retry when there's no
+  // photo — re-running without one just loops back to the same empty read. The
+  // detail screen shows an "Add photo" empty hero directly above this section; once a
+  // photo is added the section un-suppresses (hasPhoto flips) and a real read is one
+  // tap on its retry away (the add-photo flow also kicks a re-analysis). Analysis
+  // still fires on mount regardless of photo (the trigger is unchanged), so a
+  // photoless contextual escalation is never hidden. Auto-refreshing the section the
+  // instant a photo lands is a tracked follow-up (B-370). Matches the read_disabled
+  // branch: no dead affordance, no empty frame (B-363).
   if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say')) {
     return null;
   }
 
   // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
   // reached WITH a photo now — the retry is legitimate (the photo may not have
-  // synced yet, the documented race triggerVomitAnalysis guards against).
+  // synced yet, the documented race triggerStoolAnalysis guards against).
   if (!row || !row.recommendation) {
     return (
       <View style={styles.section}>
@@ -316,8 +325,8 @@ export function VomitAnalysisSection(
 
   const observations = buildObservations(row);
   const canEdit = !dismissed && (row.status === 'completed' || row.status === 'uncertain');
-  const editedSet = new Set<EditableVomitField>(
-    deriveEditedFields(currentEditable(row), extractEditableFromPayload(row.ai_raw_payload)),
+  const editedSet = new Set<EditableStoolField>(
+    deriveEditedStoolFields(currentEditable(row), extractStoolEditableFromPayload(row.ai_raw_payload)),
   );
 
   return (
@@ -359,7 +368,7 @@ export function VomitAnalysisSection(
           </View>
 
           {editing ? (
-            <VomitFieldsEditor
+            <StoolFieldsEditor
               initial={currentEditable(row)}
               saving={saving}
               onSave={handleSaveEdits}
@@ -372,6 +381,7 @@ export function VomitAnalysisSection(
                   <Text style={styles.obsKey}>{o.label}</Text>
                   <View style={styles.obsValWrap}>
                     <Text style={styles.obsVal}>{o.value}</Text>
+                    {o.secondary ? <Text style={styles.obsSecondary}>{o.secondary}</Text> : null}
                     {isObsRowEdited(editedSet, o.field) ? (
                       <Text style={styles.editedTag}>Edited</Text>
                     ) : null}
@@ -411,25 +421,41 @@ export function VomitAnalysisSection(
 }
 
 interface Observation {
-  field: EditableVomitField;
+  field: EditableStoolField;
   label: string;
   value: string;
+  // Small, muted secondary annotation (consistency's Bristol type only).
+  secondary?: string;
 }
 
 function buildObservations(row: AnalysisRow): Observation[] {
   const out: Observation[] = [];
-  const colour = labelFor(COLOUR_OPTIONS, row.colour);
-  if (colour) out.push({ field: 'colour', label: 'Colour', value: colour });
-  const consistency = labelFor(CONSISTENCY_OPTIONS, row.consistency);
-  if (consistency) out.push({ field: 'consistency', label: 'Consistency', value: consistency });
-  if (row.contents && row.contents.length > 0) {
-    const labels = row.contents.map((c) => labelFor(CONTENT_OPTIONS, c) ?? c).filter(Boolean);
-    if (labels.length > 0) out.push({ field: 'contents', label: 'Contents', value: labels.join(', ') });
+  // Consistency leads with the plain-language label; the Bristol type is a small
+  // secondary detail (§3.4).
+  const consistency = labelFor(CONSISTENCY_OPTIONS, row.stool_consistency);
+  if (consistency) {
+    out.push({
+      field: 'stool_consistency',
+      label: 'Consistency',
+      value: consistency,
+      secondary: bristolFor(row.stool_consistency) ?? undefined,
+    });
+  }
+  const colour = labelFor(COLOUR_OPTIONS, row.stool_colour);
+  if (colour) out.push({ field: 'stool_colour', label: 'Colour', value: colour });
+  if (row.stool_content && row.stool_content.length > 0) {
+    const labels = row.stool_content.map((c) => labelFor(CONTENT_OPTIONS, c) ?? c).filter(Boolean);
+    if (labels.length > 0) out.push({ field: 'stool_content', label: 'Contents', value: labels.join(', ') });
   }
   // Blood is clinically central — show it even when none is visible (a factual
   // observation feeding the report, distinct from the n=1 read's reassurance ban).
-  const blood = labelFor(BLOOD_OPTIONS, row.blood_present);
-  if (blood) out.push({ field: 'blood_present', label: 'Blood', value: blood });
+  const blood = bloodLabel(row.stool_blood_present, row.stool_blood_type);
+  if (blood) out.push({ field: 'stool_blood_present', label: 'Blood', value: blood });
+  // Mucus surfaces present-only (mucus alone is monitor-tier and common; it must
+  // never be silently dropped when present, but "None visible" every time is noise).
+  if (row.stool_mucus_present === 'yes') {
+    out.push({ field: 'stool_mucus_present', label: 'Mucus', value: 'Present' });
+  }
   if (row.foreign_material_present === 'yes') {
     out.push({
       field: 'foreign_material_present',
@@ -440,9 +466,12 @@ function buildObservations(row: AnalysisRow): Observation[] {
   return out;
 }
 
-// The 'Foreign material' row is driven by presence but shows the note, so an
-// edit to EITHER marks the row.
-function isObsRowEdited(editedSet: Set<EditableVomitField>, field: EditableVomitField): boolean {
+// The 'Blood' row is driven by presence but shows the type, so an edit to EITHER
+// marks the row; likewise 'Foreign material' with its note.
+function isObsRowEdited(editedSet: Set<EditableStoolField>, field: EditableStoolField): boolean {
+  if (field === 'stool_blood_present') {
+    return editedSet.has('stool_blood_present') || editedSet.has('stool_blood_type');
+  }
   if (field === 'foreign_material_present') {
     return editedSet.has('foreign_material_present') || editedSet.has('foreign_material_note');
   }
@@ -450,13 +479,15 @@ function isObsRowEdited(editedSet: Set<EditableVomitField>, field: EditableVomit
 }
 
 // The live editable fields, pulled off the analysis row for the editor + the
-// vs-AI diff.
-function currentEditable(row: AnalysisRow): VomitEditableFields {
+// vs-AI diff. Column names mirror EDITABLE_STOOL_FIELDS.
+function currentEditable(row: AnalysisRow): StoolEditableFields {
   return {
-    colour: row.colour,
-    consistency: row.consistency,
-    contents: row.contents,
-    blood_present: row.blood_present,
+    stool_consistency: row.stool_consistency,
+    stool_colour: row.stool_colour,
+    stool_content: row.stool_content,
+    stool_blood_present: row.stool_blood_present,
+    stool_blood_type: row.stool_blood_type,
+    stool_mucus_present: row.stool_mucus_present,
     foreign_material_present: row.foreign_material_present,
     foreign_material_note: row.foreign_material_note,
     description: row.description,
@@ -617,6 +648,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'right',
   },
+  // The Bristol type — deliberately tertiary + small so the plain-language label
+  // stays the primary framing and the number reads as a quiet clinical annotation
+  // (§3.4, Designer).
+  obsSecondary: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+    fontWeight: theme.fontWeightMedium,
+  },
   // Per-field provenance marker — deliberately tertiary + small so it reads as a
   // quiet annotation, never an alarm (Designer / nyx-voice).
   editedTag: {
@@ -652,9 +691,9 @@ const styles = StyleSheet.create({
     padding: theme.space2,
     gap: theme.space1,
   },
-  // §7.3 vomit cap — a calm neutral surface, deliberately identical in weight to
-  // the neutral/failed cards (NOT the attention card, no accent border). It must
-  // never read as alarm and never as an error.
+  // The cap state — a calm neutral surface, deliberately identical in weight to the
+  // neutral/failed cards (NOT the attention card, no accent border). It must never
+  // read as alarm and never as an error.
   capBox: {
     backgroundColor: theme.colorSurfaceSubtle,
     borderColor: theme.colorBorder,

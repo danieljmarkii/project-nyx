@@ -500,9 +500,14 @@ export async function refreshFoodCache(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return;
 
+  // B-005: pull archived_at too. Archived foods stay in the cache on purpose —
+  // they populate the future Archived library section + Restore, and the picker/
+  // library reads filter them out locally (archived is NOT filtered on the server
+  // pull). ON CONFLICT DO UPDATE below writes archived_at every sync, so a Restore
+  // (server archived_at -> NULL) round-trips back to an active cached row.
   const { data, error } = await supabase
     .from('food_items')
-    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths')
+    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths, archived_at')
     .eq('created_by_user_id', session.user.id);
 
   // Log on failure (CLAUDE.md "no silent failures in sync") — parity with the
@@ -525,8 +530,8 @@ export async function refreshFoodCache(): Promise<void> {
     // leaves last_used_at intact.
     await db.runAsync(
       `INSERT INTO food_items_cache
-        (id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, archived_at, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          brand = excluded.brand,
          product_name = excluded.product_name,
@@ -537,9 +542,10 @@ export async function refreshFoodCache(): Promise<void> {
          is_grain_free = excluded.is_grain_free,
          is_prescription = excluded.is_prescription,
          photo_path = excluded.photo_path,
+         archived_at = excluded.archived_at,
          cached_at = excluded.cached_at`,
       [item.id, item.brand, item.product_name, item.format, item.food_type ?? null, item.primary_protein ?? null,
-       item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, now]
+       item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, item.archived_at ?? null, now]
     );
   }
 }

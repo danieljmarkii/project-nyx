@@ -22,6 +22,7 @@ import {
   templateChronicity,
   templatePostprandialTiming,
   templateTimeOfDayClustering,
+  templateIncidentRedFlag,
   clockHourLabel,
   localHourBand,
   templateForFinding,
@@ -43,6 +44,8 @@ import type {
   ChronicityTier,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
+  IncidentRedFlagFinding,
+  IncidentFlagKind,
   Finding,
   RankedFinding,
   SymptomType,
@@ -155,6 +158,17 @@ const timeofday = (over: Partial<TimeOfDayClusteringFinding> = {}): TimeOfDayClu
   timezone: 'America/New_York',
   associationalOnly: true,
   windowDays: 60,
+  ...over,
+})
+
+const incidentRedFlag = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFinding => ({
+  type: 'incident_red_flag',
+  priorityClass: 'safety',
+  incidentType: 'vomit',
+  flags: ['foreign_material'],
+  mostRecentFlaggedIso: '2026-05-28T09:00:00.000Z',
+  flaggedIncidentCount: 1,
+  windowDays: 14,
   ...over,
 })
 
@@ -738,6 +752,56 @@ Deno.test('validatePhrasing — accepts a plain clock-band timeofday sentence', 
 
 // ── templateForFinding dispatch ─────────────────────────────────────────────────
 
+// ── templateIncidentRedFlag (B-340 — safety; escalate-on-presence, never reassure/causal) ─────
+
+Deno.test('templateIncidentRedFlag — names the visible flag, routes to the vet, disclaims diagnosis', () => {
+  const t = templateIncidentRedFlag(incidentRedFlag({ flags: ['foreign_material'] }), 'Nyx')
+  assert.ok(t.includes('Nyx'))
+  assert.ok(t.includes('vomiting'), 'plain-language incident word, not the enum')
+  assert.ok(/possible foreign material/i.test(t), 'names what the photo showed')
+  assert.ok(/A photo you logged/i.test(t), 'attributes it to the owner-logged photo, singular')
+  assert.ok(/call to your vet/i.test(t), 'escalates — routes to the vet')
+  assert.ok(/not a diagnosis/i.test(t), 'descriptive disclaimer')
+  assert.equal(CAUSAL.test(t), false, 'a visible finding is not a cause')
+  assert.equal(REASSURE.test(t), false, 'never reassures')
+  assert.equal(t.includes('!'), false)
+  assert.ok(validatePhrasing(t, incidentRedFlag()), 'own template passes validation')
+})
+
+Deno.test('templateIncidentRedFlag — blood and both-flags variants, and plural (multiple incidents)', () => {
+  assert.ok(/possible blood/i.test(templateIncidentRedFlag(incidentRedFlag({ flags: ['blood'] }), 'Nyx')))
+  const both = templateIncidentRedFlag(incidentRedFlag({ flags: ['blood', 'foreign_material'] }), 'Nyx')
+  assert.ok(/possible blood and possible foreign material/i.test(both), 'both flags, stable order')
+  const plural = templateIncidentRedFlag(incidentRedFlag({ flaggedIncidentCount: 2 }), 'Nyx')
+  assert.ok(/Photos you logged/i.test(plural), 'plural lead when >1 incident is flagged')
+  assert.ok(/most recently on/i.test(plural), 'anchors the most-recent flagged incident')
+})
+
+// clinical-guardrails Pattern 8: scan EVERY red-flag string the function can emit — safety
+// finding, so never reassures, never dismissive, never causal, no "!".
+Deno.test('every incident-red-flag template — never reassures/dismissive/causal, no "!"', () => {
+  const flagSets: IncidentFlagKind[][] = [['blood'], ['foreign_material'], ['blood', 'foreign_material']]
+  for (const flags of flagSets) {
+    for (const flaggedIncidentCount of [1, 2, 5]) {
+      const t = templateIncidentRedFlag(incidentRedFlag({ flags, flaggedIncidentCount }), 'Mochi')
+      assert.equal(REASSURE.test(t), false, `no reassurance: ${t}`)
+      assert.equal(DISMISSIVE.test(t), false, `no dismissive: ${t}`)
+      assert.equal(CAUSAL.test(t), false, `no causal: ${t}`)
+      assert.equal(t.includes('!'), false)
+      assert.ok(validatePhrasing(t, incidentRedFlag({ flags, flaggedIncidentCount })), `validates: ${t}`)
+    }
+  }
+})
+
+Deno.test('validatePhrasing — an incident-red-flag sentence that reassures or asserts cause is REJECTED', () => {
+  // Defense-in-depth even though this path is template-only: a hypothetical model drift is caught.
+  assert.equal(validatePhrasing("Nyx's vomiting is fine, nothing to worry about.", incidentRedFlag()), false)
+  assert.equal(validatePhrasing('The chicken caused blood in the vomit.', incidentRedFlag()), false)
+  assert.ok(
+    validatePhrasing('A photo you logged of Nyx’s vomiting showed possible blood, on May 28 — worth a call to your vet.', incidentRedFlag()),
+  )
+})
+
 Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(templateForFinding(correlation(), 'Mochi').includes('tended to follow'))
   assert.ok(/vet/i.test(templateForFinding(intakeDecline(), 'Pixel')))
@@ -746,4 +810,5 @@ Deno.test('templateForFinding — dispatches by type', () => {
   assert.ok(/keeps recurring over weeks/i.test(templateForFinding(chronicity(), 'Nyx')))
   assert.ok(/we could time/.test(templateForFinding(postprandial(), 'Nyx')))
   assert.ok(/between 4am and 8am/.test(templateForFinding(timeofday(), 'Nyx')))
+  assert.ok(/call to your vet/i.test(templateForFinding(incidentRedFlag(), 'Nyx')))
 })

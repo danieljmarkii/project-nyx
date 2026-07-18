@@ -1,7 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import { File } from 'expo-file-system';
 import { LOCAL_WIPE_TABLES } from './hydration';
-import { LIBRARY_FOODS_QUERY } from './foodQueries';
+import { LIBRARY_FOODS_QUERY, ARCHIVED_FOODS_QUERY } from './foodQueries';
 import {
   MEDICATION_SCHEMA_SQL,
   doubleDoseWindowHours,
@@ -146,6 +146,10 @@ export async function initDb(): Promise<void> {
       is_grain_free   INTEGER NOT NULL DEFAULT 0,
       is_prescription INTEGER NOT NULL DEFAULT 0,
       last_used_at    TEXT,
+      -- B-005: mirrors food_items.archived_at (server). When non-null the food is
+      -- archived — filtered out of picker/library reads ONLY, never history/
+      -- analytics/report joins. Per-user by construction (row is account-scoped).
+      archived_at     TEXT,
       cached_at       TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -265,6 +269,15 @@ export async function initDb(): Promise<void> {
   // classifies them on the food detail screen. Mirrors migration 010.
   try {
     await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN food_type TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
+  // archived_at — B-005 food-library archive flag. Mirrors food_items.archived_at
+  // (migration 035). Nullable; legacy rows stay NULL (= active/feedable). Filtered
+  // at picker/library reads only, never on history/analytics/report joins.
+  try {
+    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN archived_at TEXT`);
   } catch {
     // Column already exists — safe to ignore
   }
@@ -852,12 +865,19 @@ export async function getRecentFoods(
   }
   params.push(limit);
   return db.getAllAsync<PickerFood>(
+    // B-005: `AND f.archived_at IS NULL` — the picker/FAB "recent foods" is a
+    // picker read, so an archived food drops out of the re-offer set. This is the
+    // one archive filter that lives on a meals JOIN; it's still a PICKER read (it
+    // offers foods to log next), not a history/analytics read, so the invariant
+    // holds. The meal HISTORY itself (getTimeline, getMealForEvent) is a
+    // separate join and stays unfiltered.
     `SELECT f.id, f.brand, f.product_name, f.format, f.food_type, f.photo_path
      FROM meals m
      JOIN events e ON e.id = m.event_id
      JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE m.pet_id = ?
        AND e.deleted_at IS NULL
+       AND f.archived_at IS NULL
        ${windowClause}
      GROUP BY f.id
      ORDER BY MAX(e.occurred_at) DESC
@@ -872,6 +892,29 @@ export async function getRecentFoods(
 export async function getLibraryFoods(): Promise<PickerFood[]> {
   const db = getDb();
   return db.getAllAsync<PickerFood>(LIBRARY_FOODS_QUERY);
+}
+
+// One archived (removed-from-library) food per restorable archive-unit — the
+// backing read for the Foods-tab Archived section (B-005 PR 3). See
+// ARCHIVED_FOODS_QUERY for the grouping/mutual-exclusivity rationale. Each row
+// carries `archived_ids` (a comma-joined GROUP_CONCAT of every food_items id in
+// the unit) + the `archived_at` stamp, which together let the section rebuild the
+// exact ArchiveResult restoreFood needs — no re-derivation of the dedup group in
+// the UI. This is a library-management read, so the archive filter belongs here;
+// history/analytics/report joins stay unfiltered (the B-005 invariant).
+export interface ArchivedFood {
+  id: string;                // representative id (React key + descriptor; unused by the revert itself)
+  brand: string;
+  product_name: string;
+  format: string;
+  food_type: string | null;
+  archived_ids: string;      // GROUP_CONCAT(id) — comma-joined ids of every capture in the unit
+  archived_at: string;       // MAX(archived_at) — the uniform stamp for the unit
+}
+
+export async function getArchivedFoods(): Promise<ArchivedFood[]> {
+  const db = getDb();
+  return db.getAllAsync<ArchivedFood>(ARCHIVED_FOODS_QUERY);
 }
 
 // Logged-meal history per food for one pet — count + most recent — so the Foods

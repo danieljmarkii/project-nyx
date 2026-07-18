@@ -42,3 +42,16 @@ export function vomitCapCopy(petName: string | null | undefined, cap: 'daily' | 
   const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
   return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name} keeps vomiting or seems off, don't wait for the read — check in with your vet.`;
 }
+
+// §7.3 stool read cap (B-247) — the sibling of the vomit cap, same sensitive class.
+// No reassurance, no transaction word, record-is-saved plain, escalation guidance
+// present. Carries NO B-333/care-first line (money-adjacent copy never sits next to
+// a symptom, §16.1 #3). The escalation cue is deliberately EVENT-NEUTRAL: this cap
+// state renders for `stool_normal` too, so it must NOT presume diarrhea — a Normal-
+// stool owner who hits the cap must not be told "if {pet} keeps having diarrhea".
+// Matches the analyze-stool templates, which are all generic for the same reason.
+export function stoolCapCopy(petName: string | null | undefined, cap: 'daily' | 'monthly'): string {
+  const name = petName?.trim() || 'your pet';
+  const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
+  return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name}'s stool keeps looking off or ${name} seems unwell, don't wait for the read — check in with your vet.`;
+}

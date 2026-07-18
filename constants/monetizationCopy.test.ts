@@ -8,6 +8,7 @@ import {
   foodCapCopy,
   medicationCapCopy,
   vomitCapCopy,
+  stoolCapCopy,
 } from './monetizationCopy';
 
 const NO_EXCLAMATION = /!/;
@@ -77,5 +78,40 @@ describe('vomit cap copy (§7.3) — the sensitive one', () => {
   });
   it('falls back to "your pet" when the name is absent', () => {
     expect(vomitCapCopy(null, 'daily')).toMatch(/If your pet keeps vomiting/);
+  });
+});
+
+describe('stool cap copy (§7.3, B-247) — the sensitive sibling', () => {
+  const daily = stoolCapCopy('Rex', 'daily');
+  const monthly = stoolCapCopy('Rex', 'monthly');
+
+  it('contains NO reassurance (n=1 never reassures on absence)', () => {
+    expect(daily).not.toMatch(REASSURANCE);
+    expect(monthly).not.toMatch(REASSURANCE);
+  });
+  it('contains NO transaction word near the symptom (§16.1 #3)', () => {
+    expect(daily).not.toMatch(TRANSACTION);
+    expect(monthly).not.toMatch(TRANSACTION);
+  });
+  it('states the record is saved and gives escalation guidance', () => {
+    expect(daily).toMatch(/everything you logged is saved/i);
+    expect(daily).toMatch(/check in with your vet/i);
+    expect(daily).toMatch(/seems unwell/i);
+  });
+  it('is EVENT-NEUTRAL — never presumes diarrhea (renders for stool_normal too)', () => {
+    // The cap state renders for both stool_normal and diarrhea, so it must not tell
+    // a Normal-stool owner "if {pet} keeps having diarrhea" (code-reviewer +
+    // pm-feature-review fix-before-merge, 2026-07-17).
+    expect(daily).not.toMatch(/diarrhea/i);
+    expect(monthly).not.toMatch(/diarrhea/i);
+  });
+  it('uses the pet name and the right reset wording, no exclamation', () => {
+    expect(daily).toMatch(/If Rex's stool keeps looking off/);
+    expect(daily).toMatch(/run tomorrow/i);
+    expect(monthly).toMatch(/at the start of next month/i);
+    expect(daily).not.toMatch(NO_EXCLAMATION);
+  });
+  it('falls back to "your pet" when the name is absent', () => {
+    expect(stoolCapCopy(null, 'daily')).toMatch(/If your pet's stool keeps looking off/);
   });
 });

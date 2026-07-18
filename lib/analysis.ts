@@ -24,6 +24,57 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
   }
 }
 
+// Kicks off per-incident AI analysis for a stool event (B-247). Structurally
+// identical to triggerVomitAnalysis — flush pending sync so the event row lands,
+// force THIS event's attachment rows up (ignoring the local `synced` flag, same
+// recovery reasoning as vomit), then fire-and-forget invoke analyze-stool with
+// { event_id }. On log, app/log.tsx only invokes this for a PHOTOGRAPHED stool;
+// but StoolAnalysisSection ALSO triggers on detail-screen mount regardless of
+// photo, so a photoless stool IS round-tripped there — deliberately, because the
+// server computes contextual escalation flags (repeated loose stool, concurrent
+// vomiting/lethargy) with no photo needed, and that escalation must run. A
+// photoless-and-no-flag read collapses to not_enough_to_say; the detail section
+// suppresses that dead result (B-363). Idempotent: the function upserts
+// event_ai_analysis keyed by event_id, so auto-on-log and a later detail-open
+// re-run are both safe.
+export async function triggerStoolAnalysis(eventId: string): Promise<{ error: string | null }> {
+  try {
+    await syncPendingEvents().catch(() => {});
+    await ensureEventAttachmentsSynced(eventId).catch(() => {});
+    const { error } = await supabase.functions.invoke('analyze-stool', {
+      body: { event_id: eventId },
+    });
+    return { error: error ? error.message : null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// The owner-editable structured fields for a stool read (B-247, mirrors
+// EDITABLE_VOMIT_FIELDS). These are the descriptive/clinical columns on
+// event_ai_analysis that feed the vet report — an owner edit is human-reviewed
+// and so more-trusted than the raw AI value (raw AI < human). The n=1 read
+// columns (recommendation / read_text / visual_flags / contextual_flags /
+// status) are deliberately NOT here: an owner edit can never alter the read,
+// only the owner-reviewed facts. Values are the stool-prefixed DB column names
+// (the stool payload keys are un-prefixed — the PR 6 detail screen owns the
+// payload↔column mapping and the diff/save machinery; this constant just names
+// the editable set). `stool_blood_type` rides with `stool_blood_present` since
+// the fresh-vs-tarry discriminator is part of the same owner-editable finding.
+export const EDITABLE_STOOL_FIELDS = [
+  'stool_consistency',
+  'stool_colour',
+  'stool_content',
+  'stool_blood_present',
+  'stool_blood_type',
+  'stool_mucus_present',
+  'foreign_material_present',
+  'foreign_material_note',
+  'description',
+] as const;
+
+export type EditableStoolField = (typeof EDITABLE_STOOL_FIELDS)[number];
+
 // ── Owner edits to the structured fields (B-028) ──────────────────────────────
 // The n=1 read (recommendation / read_text) is DISMISSIBLE, never editable; only
 // these descriptive/clinical fields are owner-editable. They feed the vet report
@@ -171,6 +222,123 @@ export async function saveVomitFieldEdits(
     const { error } = await supabase
       .from('event_ai_analysis')
       .update(buildVomitEditWrite(edits, new Date().toISOString()))
+      .eq('event_id', eventId);
+    return { error: error ? error.message : null };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// ── Owner edits to the STOOL structured fields (B-247 PR 6, B-028) ─────────────
+// The stool twin of the vomit edit machinery above — same never-clobber contract:
+// the n=1 read (recommendation / read_text) is DISMISSIBLE, never editable; only
+// the descriptive/clinical facts that feed the vet report are owner-editable, and
+// an owner-edited field is the more-trusted value (raw AI < human).
+//
+// Key shape difference from vomit: the DB columns are stool-PREFIXED
+// (stool_consistency, …) — so this interface is keyed on the column names in
+// EDITABLE_STOOL_FIELDS, and extractStoolEditableFromPayload maps the UN-prefixed
+// keys of the cached ai_raw_payload (StoolAnalysis: consistency, colour, …) onto
+// them. foreign_material_present/_note + description reuse migration 013's columns
+// (not stool-prefixed), matching the analyze-stool write-back.
+export interface StoolEditableFields {
+  stool_consistency: string | null;
+  stool_colour: string | null;
+  stool_content: string[] | null;
+  stool_blood_present: string | null;
+  stool_blood_type: string | null;
+  stool_mucus_present: string | null;
+  foreign_material_present: string | null;
+  foreign_material_note: string | null;
+  description: string | null;
+}
+
+// Canonical form for write + compare. Mirrors normalizeVomitEdits, plus one
+// stool-specific rule: stool_blood_type is meaningful ONLY when blood is present,
+// so a stray type is cleared when blood_present ≠ 'yes' (matches the analyze-stool
+// server rule — keeps colour/blood corroboration from drifting, and stops a
+// blood→"None" correction leaving an orphan "Dark / tarry" behind).
+export function normalizeStoolEdits(edits: StoolEditableFields): StoolEditableFields {
+  const content = normArray(edits.stool_content);
+  const bloodPresent = edits.stool_blood_present ?? null;
+  const bloodType = bloodPresent === 'yes' ? (edits.stool_blood_type ?? null) : null;
+  return {
+    stool_consistency: edits.stool_consistency ?? null,
+    stool_colour: edits.stool_colour ?? null,
+    stool_content: content.length > 0 ? content : null,
+    stool_blood_present: bloodPresent,
+    stool_blood_type: bloodType,
+    stool_mucus_present: edits.stool_mucus_present ?? null,
+    foreign_material_present: edits.foreign_material_present ?? null,
+    foreign_material_note: normText(edits.foreign_material_note),
+    description: normText(edits.description),
+  };
+}
+
+// Pull the editable fields out of the cached raw AI payload (ai_raw_payload, a
+// JSONB blob of the original StoolAnalysis with UN-prefixed keys). Returns null
+// when there's no usable payload — the "no baseline to compare against" case.
+export function extractStoolEditableFromPayload(
+  payload: Record<string, unknown> | null | undefined,
+): StoolEditableFields | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const p = payload as Record<string, unknown>;
+  const str = (k: string): string | null => (typeof p[k] === 'string' ? (p[k] as string) : null);
+  const arr = (k: string): string[] | null =>
+    Array.isArray(p[k]) ? (p[k] as unknown[]).filter((x): x is string => typeof x === 'string') : null;
+  return normalizeStoolEdits({
+    stool_consistency: str('consistency'),
+    stool_colour: str('colour'),
+    stool_content: arr('contents'),
+    stool_blood_present: str('blood_present'),
+    stool_blood_type: str('blood_type'),
+    stool_mucus_present: str('mucus_present'),
+    foreign_material_present: str('foreign_material_present'),
+    foreign_material_note: str('foreign_material_note'),
+    description: str('description'),
+  });
+}
+
+// Which editable fields differ from the original AI read. Single derivation behind
+// BOTH the per-field "edited" marker and the vet report's "owner-confirmed fields
+// only" rule (§8.7). Returns [] with no AI baseline — an edit can't be attributed
+// without an original to diff against (see the deriveEditedFields note above; the
+// same under-claim safety applies to the stool report author).
+export function deriveEditedStoolFields(
+  current: StoolEditableFields,
+  original: StoolEditableFields | null,
+): EditableStoolField[] {
+  if (!original) return [];
+  const cur = normalizeStoolEdits(current);
+  const orig = normalizeStoolEdits(original);
+  return EDITABLE_STOOL_FIELDS.filter((f) => {
+    if (f === 'stool_content') return !sameSet(cur.stool_content ?? [], orig.stool_content ?? []);
+    return cur[f] !== orig[f];
+  });
+}
+
+export interface StoolEditWrite extends StoolEditableFields {
+  edited_at: string;
+}
+
+// The exact column set a stool client edit writes: the editable fields plus the
+// single `edited_at` provenance stamp — and NONE of the n=1 read/pipeline columns.
+// `edited_at` being set is what ARMS the Edge Function's never-clobber guard on the
+// next re-analysis. Pure (takes `nowIso`) so the write shape is unit-testable.
+export function buildStoolEditWrite(edits: StoolEditableFields, nowIso: string): StoolEditWrite {
+  return { ...normalizeStoolEdits(edits), edited_at: nowIso };
+}
+
+// Persist an owner's edits to the stool structured fields. Direct Supabase write
+// (RLS scopes it to the owner via pet_id), mirroring saveVomitFieldEdits.
+export async function saveStoolFieldEdits(
+  eventId: string,
+  edits: StoolEditableFields,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase
+      .from('event_ai_analysis')
+      .update(buildStoolEditWrite(edits, new Date().toISOString()))
       .eq('event_id', eventId);
     return { error: error ? error.message : null };
   } catch (e) {
