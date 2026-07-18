@@ -351,11 +351,18 @@ export default function FoodCaptureScreen() {
         source: 'ai_extracted',
       });
       if (insertError) {
-        // A conflict here is the retry path (the row was created on a prior
-        // attempt) — the row still exists and satisfies the upload policy, so
-        // continue. A genuine insert failure instead surfaces below as an upload
-        // 42501 that routes to the same manual-edit fallback (setExtractionFailed).
-        console.warn('[food-capture] food_items insert:', insertError.message);
+        // A 23505 duplicate-key here is the benign retry path (the row was
+        // created on a prior attempt) — the row still exists and satisfies the
+        // upload policy, so continue. Any OTHER code (RLS 42501, NOT NULL 23502,
+        // network) is a genuine root-cause failure worth surfacing at error
+        // level so it isn't masked below as an "upload/extract error" symptom;
+        // we still continue, since a missing owned row makes the upload 42501
+        // and routes to the same manual-edit fallback (setExtractionFailed).
+        if (insertError.code === '23505') {
+          console.warn('[food-capture] food_items insert conflict (retry):', insertError.message);
+        } else {
+          console.error('[food-capture] food_items insert failed:', insertError.code, insertError.message);
+        }
       }
 
       // Compress + upload all photos in parallel. Runs AFTER the insert so the
