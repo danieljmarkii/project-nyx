@@ -24,6 +24,8 @@ import type {
   SymptomChronicityFinding,
   PostprandialTimingFinding,
   TimeOfDayClusteringFinding,
+  IncidentRedFlagFinding,
+  IncidentFlagKind,
   RankedFinding,
   SymptomType,
 } from './detection.ts'
@@ -133,6 +135,43 @@ function onsetMonth(iso: string): string {
   return Number.isNaN(d.getTime()) ? 'then' : MONTH_NAMES[d.getUTCMonth()]
 }
 
+// A concrete "Month Day" anchor (UTC, matching onsetMonth's UTC bucketing) for the red-flag card.
+// UTC here can be off-by-one from the owner's local date at the day boundary; the PR-2 copy pass
+// (with the pet's timezone in hand) localizes it — this template ships the safe, honest UTC day.
+function onsetDay(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 'a recent day'
+  return `${MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCDate()}`
+}
+
+// Plain, calm phrasing for each visible red-flag kind — "possible" because these are AI reads of
+// a single photo, not confirmed findings (matches the detail-screen "AI · unconfirmed" register).
+const INCIDENT_FLAG_PHRASE: Record<IncidentFlagKind, string> = {
+  blood: 'possible blood',
+  foreign_material: 'possible foreign material',
+}
+
+export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: string): string {
+  // Detector — per-incident visual red flag (B-340). SAFETY class, template-only (no LLM, like
+  // ③–⑦) — a structural never-reassure guarantee. ESCALATE-ON-PRESENCE: it names what the photo
+  // showed and routes to the vet. NEVER reassures, NEVER diagnoses, NEVER assigns a cause ("showed
+  // possible blood" is a visible finding, not "the food caused it"). "Possible" keeps it an
+  // unconfirmed AI read. Derived upstream from the owner-editable structured fields, so an owner
+  // override clears the card by construction. Finalized voice is PR 2 (Designer + Dr. Chen +
+  // nyx-voice); this template is the guardrail-clean floor + the deterministic fallback.
+  const symptom = SYMPTOM_LABEL[f.incidentType] // v1: 'vomiting'
+  const phrase =
+    f.flags.length === 2
+      ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
+      : INCIDENT_FLAG_PHRASE[f.flags[0]]
+  const when = onsetDay(f.mostRecentFlaggedIso)
+  const lead =
+    f.flaggedIncidentCount === 1
+      ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}, on ${when}`
+      : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}, most recently on ${when}`
+  return `${lead} — worth a call to your vet. This is a read of your logs, not a diagnosis.`
+}
+
 export function templateChronicity(f: SymptomChronicityFinding, petName: string): string {
   // Detector ⑦ (B-182) — template-only (no LLM, like ③/④/⑤/⑥), a structural never-reassure
   // guarantee. Names DURATION + RECURRENCE + COUNT, routed to the vet. NEVER causal, never a
@@ -205,6 +244,8 @@ export function templateForFinding(finding: Finding, petName: string): string {
       return templatePostprandialTiming(finding, petName)
     case 'timeofday_clustering':
       return templateTimeOfDayClustering(finding, petName)
+    case 'incident_red_flag':
+      return templateIncidentRedFlag(finding, petName)
   }
 }
 
@@ -296,6 +337,16 @@ export function validatePhrasing(text: string, finding: Finding): boolean {
     // Template-only (index.ts) so the model is never in this loop — but if that ever
     // changes, this screen holds the line.
     if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || REASSURANCE_RE.test(t)) return false
+  }
+  if (finding.type === 'incident_red_flag') {
+    // Detector — per-incident visual red flag (B-340) is a SAFETY finding naming what a photo
+    // VISIBLY showed, routed to the vet. Reassurance/"picky" are already barred by the safety
+    // branch above; it ALSO may not assert a CAUSE — it reports a visible finding ("showed
+    // possible blood"), never "the food caused it" — nor drift into a MECHANISM verdict or name a
+    // FOOD/protein (a visible read is not an attribution). Template-only (index.ts) so the model is
+    // never in this loop, but if that ever changes this screen holds all three lines (parity with
+    // ⑤/⑦'s screens — defense-in-depth even for a currently-dormant path).
+    if (CAUSAL_RE.test(t) || MECHANISM_RE.test(t) || FOOD_NAMING_RE.test(t)) return false
   }
   return true
 }
@@ -405,6 +456,20 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       cluster_start_local_hour: finding.clusterStartLocalHour,
       cluster_window_hours: finding.clusterWindowHours,
       relationship: 'associational_timing', // a clock pattern we are noting — NOT a cause, NOT a mechanism
+    }
+  }
+  if (finding.type === 'incident_red_flag') {
+    // Template-only (index.ts), so this payload is never actually sent to the model; kept for
+    // shape-correctness and parity. Carries the visible FLAG + recency only — no cause, no
+    // diagnosis, no severity verdict beyond the calm safety-flag marker.
+    return {
+      insight_type: 'incident_red_flag',
+      pet_name: petName,
+      incident: SYMPTOM_LABEL[finding.incidentType],
+      flags: finding.flags, // ('blood' | 'foreign_material')[]
+      flagged_incident_count: finding.flaggedIncidentCount,
+      relationship: 'visible_finding', // what the photo showed — NOT a cause, NOT a diagnosis
+      severity: 'calm_safety_flag', // surface clearly, route to vet, never reassure
     }
   }
   return {

@@ -42,6 +42,7 @@ import {
   type FoodFormat,
   type Species,
   type OccurredAtConfidence,
+  type IncidentAnalysisInput,
   type DetectionInput,
 } from './detection.ts'
 import {
@@ -114,7 +115,10 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
     finding.type === 'symptom_worsening' ||
     finding.type === 'symptom_chronicity' ||
     finding.type === 'postprandial_timing' ||
-    finding.type === 'timeofday_clustering'
+    finding.type === 'timeofday_clustering' ||
+    // B-340 — a SAFETY finding naming what a photo VISIBLY showed, routed to the vet. Template-only
+    // (no LLM) is itself a structural never-reassure guarantee, matching the other safety templates.
+    finding.type === 'incident_red_flag'
   ) {
     return fallback
   }
@@ -419,6 +423,41 @@ function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): MealEve
   })
 }
 
+// ── Per-incident visual red flags (B-340) ─────────────────────────────────────
+// The Home safety-lane input for a blood / foreign-material flag the owner photographed. Read from
+// event_ai_analysis (RLS-scoped by the caller's JWT, like every read here — the row's own
+// event_ai_analysis_owner policy), INNER-joined to events so we get the incident's occurred_at AND
+// enforce the two contracts the pure engine relies on: the analyzed event must be NON-soft-deleted
+// (deleted_at IS NULL) and within the lookback. We filter to incident_type='vomit' (v1 scope; the
+// B-247 stool rows in the same table are B-364). We do NOT filter on status or on the cached
+// visual_flags/recommendation — the engine DERIVES the flag from the owner-editable structured
+// fields (blood_present / foreign_material_present), which is exactly what makes an owner override
+// clear the Home card by construction (B-339). Absent rows ⇒ [] ⇒ the detector is silent.
+type IncidentEventJoin = { occurred_at: string } | { occurred_at: string }[] | null
+interface IncidentAnalysisRow {
+  event_id: string
+  incident_type: string
+  blood_present: string | null
+  foreign_material_present: string | null
+  events: IncidentEventJoin
+}
+
+function mapIncidentAnalyses(rows: IncidentAnalysisRow[]): IncidentAnalysisInput[] {
+  const out: IncidentAnalysisInput[] = []
+  for (const r of rows) {
+    const ev = first(r.events)
+    if (!ev?.occurred_at) continue // no joined (non-deleted, in-window) event → skip defensively
+    out.push({
+      eventId: r.event_id,
+      incidentType: r.incident_type as SymptomType,
+      occurredAt: ev.occurred_at,
+      bloodPresent: r.blood_present,
+      foreignMaterialPresent: r.foreign_material_present,
+    })
+  }
+  return out
+}
+
 // ── Cap + flag gate (Monetization Track 2, T2-3 / B-329 + B-001) ──────────────
 // docs/monetization-and-throttling-requirements.md §4–§5. Per-function COPY of the
 // shared-shape gate logic (S6: no _shared/ module; copy-paste per function —
@@ -588,7 +627,17 @@ const handler = async (req: Request): Promise<Response> => {
     // 1. Load pet, symptom events, meal events, active diet trial — all
     //    ownership-scoped by RLS via the caller's JWT. Soft-deleted rows are
     //    excluded here (the detection module's documented contract).
-    const [petRes, symptomsRes, mealsRes, trialRes, arrangementsRes, profileRes, regimensRes, doseEventsRes] =
+    const [
+      petRes,
+      symptomsRes,
+      mealsRes,
+      trialRes,
+      arrangementsRes,
+      profileRes,
+      regimensRes,
+      doseEventsRes,
+      incidentAnalysesRes,
+    ] =
       await Promise.all([
       supabase.from('pets').select('name, species').eq('id', petId).maybeSingle(),
       supabase
@@ -638,6 +687,19 @@ const handler = async (req: Request): Promise<Response> => {
         .eq('event_type', 'medication')
         .is('deleted_at', null)
         .gte('occurred_at', lookbackIso),
+      // Per-incident visual red flags (B-340) — the owner-editable structured fields from
+      // event_ai_analysis for this pet's VOMIT incidents, INNER-joined to events so a soft-deleted
+      // or out-of-lookback incident is excluded (the engine's contract) and we get occurred_at.
+      // incident_type='vomit' scopes out the B-247 stool rows (B-364). No status filter — the
+      // engine derives the flag from the structured fields (override-aware), never the cached
+      // visual_flags. Empty ⇒ detectIncidentRedFlags is silent (byte-identical to pre-B-340).
+      supabase
+        .from('event_ai_analysis')
+        .select('event_id, incident_type, blood_present, foreign_material_present, events!inner(occurred_at)')
+        .eq('pet_id', petId)
+        .eq('incident_type', 'vomit')
+        .is('events.deleted_at', null)
+        .gte('events.occurred_at', lookbackIso),
     ])
 
     const pet = petRes.data as { name: string; species: string } | null
@@ -686,6 +748,11 @@ const handler = async (req: Request): Promise<Response> => {
       doseRows,
       mealIntakeById,
     )
+    // B-340: per-incident visual red-flag inputs (vomit blood / foreign material), derived
+    // downstream from the owner-editable structured fields. Empty ⇒ the red-flag lane is silent.
+    const incidentAnalyses = mapIncidentAnalyses(
+      (incidentAnalysesRes.data ?? []) as IncidentAnalysisRow[],
+    )
 
     // 2. Detect — the pure engine ranks already-true findings (safety leads).
     const input: DetectionInput = {
@@ -694,6 +761,7 @@ const handler = async (req: Request): Promise<Response> => {
       mealEvents,
       feedingArrangements,
       medicationWindows,
+      incidentAnalyses,
       timezone,
       now: new Date(nowMs).toISOString(),
     }
