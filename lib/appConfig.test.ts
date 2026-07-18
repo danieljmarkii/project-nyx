@@ -16,6 +16,10 @@ import {
   resolveAppConfigFromRows,
   fetchAppConfig,
   parseGateResponse,
+  resolveAllowlistFlag,
+  extractAllowlistFlags,
+  coerceAllowlistFlags,
+  ALLOWLIST_FLAGS_UNSET,
 } from './appConfig';
 
 describe('app_config resolution — shipped defaults (§11 row 9)', () => {
@@ -90,14 +94,20 @@ describe('app_config resolution — server values', () => {
 describe('fetchAppConfig', () => {
   beforeEach(() => mockSelect.mockReset());
 
-  it('returns resolved values on a clean fetch', async () => {
+  it('returns a bundle of resolved values + raw allowlist flags on a clean fetch', async () => {
     mockSelect.mockResolvedValue({
-      data: [{ key: 'ai_food_extraction_enabled', value: false }],
+      data: [
+        { key: 'ai_food_extraction_enabled', value: false },
+        { key: 'ask_enabled', value: { enabled: false, allowlist: ['u-1'] } },
+      ],
       error: null,
     });
     const r = await fetchAppConfig();
-    expect(r?.ai_food_extraction_enabled).toBe(false);
-    expect(r?.paywall_enabled).toBe(false);
+    expect(r?.values.ai_food_extraction_enabled).toBe(false);
+    expect(r?.values.paywall_enabled).toBe(false);
+    // Allowlist values ride the SAME fetch, raw (un-coerced — resolution needs a uid).
+    expect(r?.allowlist.ask_enabled).toEqual({ enabled: false, allowlist: ['u-1'] });
+    expect(r?.allowlist.ask_general_enabled).toBeUndefined();
   });
 
   it('returns null on a query error (caller holds last-known-good)', async () => {
@@ -146,5 +156,109 @@ describe('parseGateResponse — the §4.5 typed contract (§11 rows 1,2,4,5)', (
     expect(parseGateResponse('nope')).toEqual({ kind: 'ok' });
     // A falsey cap_reached must NOT trip the branch.
     expect(parseGateResponse({ cap_reached: false })).toEqual({ kind: 'ok' });
+  });
+});
+
+// ── The experimental-flag allowlist primitive (Ask §8) ──────────────────────────
+// The primitive is the same pure function on client + server (the server copy in
+// supabase/functions/_shared/flags.test.ts asserts identical behaviour). These pin
+// every branch: plain-bool back-compat, enabled-for-all, allowlist membership,
+// signed-out, and the fail-closed malformed cases (Ask keys pass fallback=false).
+
+describe('resolveAllowlistFlag — plain-bool back-compat', () => {
+  it('a plain boolean value is returned verbatim (existing keys unchanged)', () => {
+    expect(resolveAllowlistFlag(true, 'u-1', false)).toBe(true);
+    expect(resolveAllowlistFlag(false, 'u-1', true)).toBe(false);
+    // uid is irrelevant for a plain bool — even signed out.
+    expect(resolveAllowlistFlag(true, null, false)).toBe(true);
+  });
+});
+
+describe('resolveAllowlistFlag — { enabled, allowlist } shape', () => {
+  it('enabled:true is on for everyone, allowlist ignored', () => {
+    expect(resolveAllowlistFlag({ enabled: true, allowlist: [] }, 'u-1', false)).toBe(true);
+    expect(resolveAllowlistFlag({ enabled: true, allowlist: ['other'] }, 'u-1', false)).toBe(true);
+    expect(resolveAllowlistFlag({ enabled: true }, null, false)).toBe(true);
+  });
+
+  it('enabled:false is on ONLY for an allow-listed caller', () => {
+    const v = { enabled: false, allowlist: ['pm-uid', 'qa-uid'] };
+    expect(resolveAllowlistFlag(v, 'pm-uid', false)).toBe(true);
+    expect(resolveAllowlistFlag(v, 'someone-else', false)).toBe(false);
+  });
+
+  it('enabled:false with an empty allowlist is off for everyone', () => {
+    expect(resolveAllowlistFlag({ enabled: false, allowlist: [] }, 'u-1', false)).toBe(false);
+  });
+
+  it('enabled:false but signed out (null uid) → off, never the fallback', () => {
+    // A well-formed gated value resolves to off for an unknown caller — it does NOT
+    // leak through to `fallback=true` (that would flip the semantics).
+    expect(resolveAllowlistFlag({ enabled: false, allowlist: ['u-1'] }, null, true)).toBe(false);
+    expect(resolveAllowlistFlag({ enabled: false, allowlist: ['u-1'] }, '', false)).toBe(false);
+  });
+
+  it('enabled:false with a non-array allowlist → off (well-formed enough to gate)', () => {
+    expect(resolveAllowlistFlag({ enabled: false, allowlist: 'u-1' }, 'u-1', false)).toBe(false);
+    expect(resolveAllowlistFlag({ enabled: false }, 'u-1', false)).toBe(false);
+  });
+});
+
+describe('resolveAllowlistFlag — malformed values fall to fallback (fail-closed for Ask)', () => {
+  it('a missing boolean `enabled` is malformed → fallback', () => {
+    // With fallback=false (how the Ask keys call it) these all hide the feature.
+    expect(resolveAllowlistFlag({ allowlist: ['u-1'] }, 'u-1', false)).toBe(false);
+    expect(resolveAllowlistFlag({ enabled: 'true', allowlist: ['u-1'] }, 'u-1', false)).toBe(false);
+    expect(resolveAllowlistFlag({ enabled: 1 }, 'u-1', false)).toBe(false);
+    // fallback is honoured (proves it's the fallback branch, not a hardcoded false).
+    expect(resolveAllowlistFlag({ allowlist: ['u-1'] }, 'u-1', true)).toBe(true);
+  });
+
+  it('non-object primitives → fallback', () => {
+    expect(resolveAllowlistFlag(undefined, 'u-1', false)).toBe(false);
+    expect(resolveAllowlistFlag(null, 'u-1', false)).toBe(false);
+    expect(resolveAllowlistFlag('garbage', 'u-1', false)).toBe(false);
+    expect(resolveAllowlistFlag(42, 'u-1', false)).toBe(false);
+    expect(resolveAllowlistFlag(undefined, 'u-1', true)).toBe(true); // fallback honoured
+  });
+});
+
+describe('extractAllowlistFlags — raw values off an app_config SELECT', () => {
+  it('picks only the known experimental keys, raw (un-coerced)', () => {
+    const rows = [
+      { key: 'ai_food_extraction_enabled', value: false },
+      { key: 'ask_enabled', value: { enabled: false, allowlist: ['u-1'] } },
+      { key: 'ask_general_enabled', value: false },
+      { key: 'ai_caps', value: { extract_food: { daily: 5 } } },
+    ];
+    expect(extractAllowlistFlags(rows)).toEqual({
+      ask_enabled: { enabled: false, allowlist: ['u-1'] },
+      ask_general_enabled: false,
+    });
+  });
+
+  it('a missing row stays undefined (unset baseline)', () => {
+    const r = extractAllowlistFlags([{ key: 'ask_enabled', value: { enabled: true } }]);
+    expect(r.ask_enabled).toEqual({ enabled: true });
+    expect(r.ask_general_enabled).toBeUndefined();
+  });
+
+  it('null / no rows → the unset baseline', () => {
+    expect(extractAllowlistFlags(null)).toEqual(ALLOWLIST_FLAGS_UNSET);
+    expect(extractAllowlistFlags(undefined)).toEqual(ALLOWLIST_FLAGS_UNSET);
+  });
+});
+
+describe('coerceAllowlistFlags — cache decode, legacy-tolerant', () => {
+  it('round-trips a persisted allowlist map', () => {
+    const stored = { ask_enabled: { enabled: false, allowlist: ['u-1'] }, ask_general_enabled: false };
+    expect(coerceAllowlistFlags(stored)).toEqual(stored);
+  });
+
+  it('a legacy cache with no allowlist keys → unset baseline (experiments hidden)', () => {
+    // A pre-primitive cache blob is a flat AppConfigValues — none of the ask keys.
+    expect(coerceAllowlistFlags({ ai_food_extraction_enabled: true })).toEqual(ALLOWLIST_FLAGS_UNSET);
+    expect(coerceAllowlistFlags(undefined)).toEqual(ALLOWLIST_FLAGS_UNSET);
+    expect(coerceAllowlistFlags(null)).toEqual(ALLOWLIST_FLAGS_UNSET);
   });
 });

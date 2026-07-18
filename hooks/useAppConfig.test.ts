@@ -8,6 +8,14 @@
 // lib/supabase's env fail-fast (the module isn't exercised — fetch is mocked below).
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
 
+// Mock the auth store so useAllowlistFlag reads a controllable caller uid. It's a
+// zustand selector hook — return the selector applied to a stub state.
+let mockUserId: string | null = null;
+jest.mock('../store/authStore', () => ({
+  useAuthStore: (selector: (s: { user: { id: string } | null }) => unknown) =>
+    selector({ user: mockUserId ? { id: mockUserId } : null }),
+}));
+
 const mockFetch = jest.fn();
 const mockLoadCache = jest.fn();
 const mockPersist = jest.fn((_v?: unknown) => Promise.resolve());
@@ -21,37 +29,47 @@ jest.mock('../lib/appConfig', () => {
   };
 });
 
-import { APP_CONFIG_DEFAULTS, AppConfigValues } from '../lib/appConfig';
+import { renderHook } from '@testing-library/react-native';
 import {
-  initAppConfig, refreshAppConfig, __resetAppConfigForTest,
+  APP_CONFIG_DEFAULTS,
+  ALLOWLIST_FLAGS_UNSET,
+  AppConfigValues,
+  AppConfigBundle,
+  AllowlistFlagValues,
+} from '../lib/appConfig';
+import {
+  initAppConfig, refreshAppConfig, __resetAppConfigForTest, useAllowlistFlag,
 } from './useAppConfig';
 
-// Read the singleton's current value the way a component would — via the subscribe
-// contract. `getSnapshot` is not exported, so we re-fetch it through a fresh render
-// path would need RTL; instead assert via the observable side effects (setConfig →
-// what refresh/init resolve to). We expose current by re-importing the hook's
-// snapshot through refreshAppConfig's persisted argument + a captured value.
+// A full config bundle (values + raw allowlist) — the shape fetch/cache now carry.
 function cfg(over: Partial<AppConfigValues> = {}): AppConfigValues {
   return { ...APP_CONFIG_DEFAULTS, ...over };
+}
+function bundle(
+  valuesOver: Partial<AppConfigValues> = {},
+  allowlistOver: Partial<AllowlistFlagValues> = {},
+): AppConfigBundle {
+  return { values: cfg(valuesOver), allowlist: { ...ALLOWLIST_FLAGS_UNSET, ...allowlistOver } };
 }
 
 beforeEach(() => {
   mockFetch.mockReset();
   mockLoadCache.mockReset();
   mockPersist.mockReset().mockResolvedValue(undefined);
+  mockUserId = null;
   __resetAppConfigForTest();
 });
 
 describe('initAppConfig — cache seed + idempotency', () => {
   it('seeds from last-known-good cache and does NOT fetch (auth-driven fetch)', async () => {
-    mockLoadCache.mockResolvedValue(cfg({ paywall_enabled: true }));
+    mockLoadCache.mockResolvedValue(bundle({ paywall_enabled: true }));
     await initAppConfig();
     expect(mockLoadCache).toHaveBeenCalledTimes(1);
     expect(mockFetch).not.toHaveBeenCalled(); // init never fetches — INITIAL_SESSION does
   });
 
   it('is idempotent — a second call does not re-read the cache', async () => {
-    mockLoadCache.mockResolvedValue(cfg());
+    mockLoadCache.mockResolvedValue(bundle());
     await initAppConfig();
     await initAppConfig();
     expect(mockLoadCache).toHaveBeenCalledTimes(1);
@@ -65,19 +83,52 @@ describe('initAppConfig — cache seed + idempotency', () => {
 
 describe('refreshAppConfig — fetch precedence', () => {
   it('applies a successful fetch and persists it as last-known-good', async () => {
-    mockFetch.mockResolvedValue(cfg({ ai_food_extraction_enabled: false }));
+    const b = bundle({ ai_food_extraction_enabled: false });
+    mockFetch.mockResolvedValue(b);
     await refreshAppConfig();
     expect(mockPersist).toHaveBeenCalledTimes(1);
-    expect(mockPersist).toHaveBeenCalledWith(cfg({ ai_food_extraction_enabled: false }));
+    expect(mockPersist).toHaveBeenCalledWith(b);
   });
 
   it('holds the current value on a failed fetch (null) — never persists, never snaps to defaults', async () => {
     // First a good fetch to move off defaults, then a failed one.
-    mockFetch.mockResolvedValueOnce(cfg({ paywall_enabled: true }));
+    mockFetch.mockResolvedValueOnce(bundle({ paywall_enabled: true }));
     await refreshAppConfig();
     mockPersist.mockClear();
     mockFetch.mockResolvedValueOnce(null);
     await refreshAppConfig();
     expect(mockPersist).not.toHaveBeenCalled(); // no write on a failed fetch
+  });
+});
+
+describe('useAllowlistFlag — store value × caller uid (Ask §8)', () => {
+  it('fail-closed before any fetch: unset flag → false', () => {
+    const { result } = renderHook(() => useAllowlistFlag('ask_enabled'));
+    expect(result.current).toBe(false);
+  });
+
+  it('enabled:false gated flag is on for an allow-listed caller, off otherwise', () => {
+    __resetAppConfigForTest(bundle({}, { ask_enabled: { enabled: false, allowlist: ['pm-uid'] } }));
+
+    mockUserId = 'pm-uid';
+    expect(renderHook(() => useAllowlistFlag('ask_enabled')).result.current).toBe(true);
+
+    mockUserId = 'someone-else';
+    expect(renderHook(() => useAllowlistFlag('ask_enabled')).result.current).toBe(false);
+
+    mockUserId = null; // signed out
+    expect(renderHook(() => useAllowlistFlag('ask_enabled')).result.current).toBe(false);
+  });
+
+  it('enabled:true is on for everyone, incl. signed out', () => {
+    __resetAppConfigForTest(bundle({}, { ask_enabled: { enabled: true, allowlist: [] } }));
+    mockUserId = null;
+    expect(renderHook(() => useAllowlistFlag('ask_enabled')).result.current).toBe(true);
+  });
+
+  it('a malformed value fails closed regardless of caller', () => {
+    __resetAppConfigForTest(bundle({}, { ask_general_enabled: { allowlist: ['pm-uid'] } }));
+    mockUserId = 'pm-uid';
+    expect(renderHook(() => useAllowlistFlag('ask_general_enabled')).result.current).toBe(false);
   });
 });
