@@ -79,7 +79,9 @@ const REC_LABEL: Record<Recommendation, string> = {
   not_enough_to_say: 'Not enough to say yet',
 };
 
-export function VomitAnalysisSection({ eventId, petName }: { eventId: string; petName?: string | null }) {
+export function VomitAnalysisSection(
+  { eventId, petName, hasPhoto }: { eventId: string; petName?: string | null; hasPhoto: boolean },
+) {
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
   const [working, setWorking] = useState(false); // analysis in flight (triggered or polling)
   const [retrying, setRetrying] = useState(false);
@@ -189,8 +191,10 @@ export function VomitAnalysisSection({ eventId, petName }: { eventId: string; pe
 
   // ── Render states ──
 
-  // First load, nothing known yet.
-  if (row === undefined && !working) {
+  // First load, nothing known yet. Only shown WITH a photo — a photoless event
+  // stays silent until it resolves (to an escalation, or to nothing), so the
+  // section never appears-then-vanishes on the common photoless path (B-363).
+  if (hasPhoto && row === undefined && !working) {
     return (
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>AI READ</Text>
@@ -203,8 +207,9 @@ export function VomitAnalysisSection({ eventId, petName }: { eventId: string; pe
 
   const status: Status | undefined = row?.status;
 
-  // Pending / actively working.
-  if (working || status === 'pending') {
+  // Pending / actively working. Same photoless rule: no spinner for a photoless
+  // event — a contextual escalation pops in clean when it resolves (B-363).
+  if (hasPhoto && (working || status === 'pending')) {
     return (
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>AI READ</Text>
@@ -263,7 +268,26 @@ export function VomitAnalysisSection({ eventId, petName }: { eventId: string; pe
     );
   }
 
-  // No analysis and not working (e.g. gave up, or never had a photo/context).
+  // A photoless vomit can never produce a descriptive read: with no photo the
+  // escalation floor collapses to not_enough_to_say (a real CONTEXTUAL escalation —
+  // repeated vomiting, concurrent lethargy — still returns worth_a_call and falls
+  // through to the render below, never suppressed). So suppress the dead "Not enough
+  // to say · Try analysis" frame and its looping retry when there's no photo —
+  // re-running without one just loops back to the same empty read. The detail screen
+  // shows an "Add photo" empty hero directly above this section; once a photo is
+  // added the section un-suppresses (hasPhoto flips) and a real read is one tap on
+  // its retry away (the add-photo flow also kicks a re-analysis). Analysis still
+  // fires on mount regardless of photo (the trigger is unchanged), so a photoless
+  // contextual escalation is never hidden. Auto-refreshing the section the instant a
+  // photo lands is a tracked follow-up (B-370). Matches the read_disabled branch: no
+  // dead affordance, no empty frame (B-363).
+  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say')) {
+    return null;
+  }
+
+  // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
+  // reached WITH a photo now — the retry is legitimate (the photo may not have
+  // synced yet, the documented race triggerVomitAnalysis guards against).
   if (!row || !row.recommendation) {
     return (
       <View style={styles.section}>

@@ -48,7 +48,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
 
   it('row 5 — capped (no flags): renders the calm cap state, no retry, no reassurance', async () => {
     mockRow = row({ status: 'capped' });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e1" petName="Rex" hasPhoto />);
 
     // The §7.3 cap copy, personalized + the vet escalation.
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
@@ -65,7 +65,7 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
 
   it('read_disabled (no flags): renders nothing — no dead affordance', async () => {
     mockRow = row({ status: 'read_disabled' });
-    const { toJSON } = render(<VomitAnalysisSection eventId="e2" petName="Rex" />);
+    const { toJSON } = render(<VomitAnalysisSection eventId="e2" petName="Rex" hasPhoto />);
     await waitFor(() => expect(toJSON()).toBeNull());
   });
 
@@ -74,7 +74,10 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     // floor-forced recommendation — the client must render the escalation, not a cap
     // band and not a reassurance.
     mockRow = row({ status: 'completed', recommendation: 'worth_a_call', read_text: 'Given the repeated vomiting, a call to your vet is worth it.' });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e3" petName="Rex" />);
+    // hasPhoto={false}: a photoless contextual escalation (repeated vomiting) must
+    // still render — B-363's no-photo suppression only eats the not_enough_to_say
+    // dead-end, never an escalation.
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e3" petName="Rex" hasPhoto={false} />);
 
     expect(await findByText('Worth a call')).toBeTruthy();
     expect(queryByText(/photo reads are used up/i)).toBeNull(); // NOT the cap band
@@ -85,8 +88,47 @@ describe('VomitAnalysisSection — T2-4 cap/flag render states', () => {
     // Guards the branch ORDER: `capped` must be caught before the `!row.recommendation`
     // fallback (which would otherwise offer a "Try analysis" retry on a capped row).
     mockRow = row({ status: 'capped' });
-    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e4" petName="Rex" />);
+    const { findByText, queryByText } = render(<VomitAnalysisSection eventId="e4" petName="Rex" hasPhoto />);
     expect(await findByText(/photo reads are used up/i)).toBeTruthy();
     expect(queryByText(/Not enough to say about this one yet/i)).toBeNull();
+  });
+});
+
+describe('VomitAnalysisSection — photoless suppression (B-363)', () => {
+  afterEach(() => { mockRow = null; });
+
+  it('photoless + no recommendation: renders nothing — no looping "Try analysis"', async () => {
+    mockRow = row({ recommendation: null });
+    const { toJSON } = render(<VomitAnalysisSection eventId="p1" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(toJSON()).toBeNull());
+  });
+
+  it('photoless + not_enough_to_say: renders nothing', async () => {
+    mockRow = row({ recommendation: 'not_enough_to_say' });
+    const { toJSON } = render(<VomitAnalysisSection eventId="p2" petName="Rex" hasPhoto={false} />);
+    await waitFor(() => expect(toJSON()).toBeNull());
+  });
+
+  it('photoless + pending: stays silent — no appear-then-vanish spinner', () => {
+    // Assert the first (synchronous) frame is silent, then unmount before start()'s
+    // async fetch resolves — so its poll loop never schedules a lingering timer.
+    mockRow = row({ status: 'pending', recommendation: null });
+    const { queryByText, toJSON, unmount } = render(<VomitAnalysisSection eventId="p5" petName="Rex" hasPhoto={false} />);
+    expect(toJSON()).toBeNull();
+    expect(queryByText(/Reading this one/i)).toBeNull();
+    unmount();
+  });
+
+  it('WITH a photo + not_enough_to_say: keeps the retry (an unclear/unsynced photo is legitimately re-runnable)', async () => {
+    mockRow = row({ recommendation: 'not_enough_to_say' });
+    const { findByText } = render(<VomitAnalysisSection eventId="p3" petName="Rex" hasPhoto />);
+    expect(await findByText(/Re-run analysis/i)).toBeTruthy();
+  });
+
+  it('WITH a photo + no row/recommendation: keeps the "Try analysis" fallback', async () => {
+    mockRow = row({ recommendation: null });
+    const { findByText } = render(<VomitAnalysisSection eventId="p4" petName="Rex" hasPhoto />);
+    expect(await findByText(/Not enough to say about this one yet/i)).toBeTruthy();
+    expect(await findByText(/Try analysis/i)).toBeTruthy();
   });
 });

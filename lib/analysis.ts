@@ -28,11 +28,15 @@ export async function triggerVomitAnalysis(eventId: string): Promise<{ error: st
 // identical to triggerVomitAnalysis — flush pending sync so the event row lands,
 // force THIS event's attachment rows up (ignoring the local `synced` flag, same
 // recovery reasoning as vomit), then fire-and-forget invoke analyze-stool with
-// { event_id }. The caller only reaches this on a photographed stool event (the
-// invoke happens inside app/log.tsx's attachment-upload block), so we never
-// round-trip a photoless stool for a guaranteed-empty read. Idempotent: the
-// function upserts event_ai_analysis keyed by event_id, so auto-on-log and a
-// later detail-open re-run are both safe.
+// { event_id }. On log, app/log.tsx only invokes this for a PHOTOGRAPHED stool;
+// but StoolAnalysisSection ALSO triggers on detail-screen mount regardless of
+// photo, so a photoless stool IS round-tripped there — deliberately, because the
+// server computes contextual escalation flags (repeated loose stool, concurrent
+// vomiting/lethargy) with no photo needed, and that escalation must run. A
+// photoless-and-no-flag read collapses to not_enough_to_say; the detail section
+// suppresses that dead result (B-363). Idempotent: the function upserts
+// event_ai_analysis keyed by event_id, so auto-on-log and a later detail-open
+// re-run are both safe.
 export async function triggerStoolAnalysis(eventId: string): Promise<{ error: string | null }> {
   try {
     await syncPendingEvents().catch(() => {});
