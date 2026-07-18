@@ -26,6 +26,7 @@ import type {
   TimeOfDayClusteringFinding,
   IncidentRedFlagFinding,
   IncidentFlagKind,
+  IncidentCategory,
   RankedFinding,
   SymptomType,
 } from './detection.ts'
@@ -151,6 +152,15 @@ const INCIDENT_FLAG_PHRASE: Record<IncidentFlagKind, string> = {
   foreign_material: 'possible foreign material',
 }
 
+// Owner-facing noun for a per-incident red-flag card, by family (B-340 vomit / B-364 stool). NOT
+// SYMPTOM_LABEL: stool must read the NEUTRAL "stool", never "loose stool" — blood is a red flag in a
+// FORMED stool as much as in diarrhoea (the finding's family collapses stool_normal + diarrhea), so
+// the card must not assert a consistency it didn't measure. "vomiting" matches SYMPTOM_LABEL.vomit.
+const INCIDENT_NOUN: Record<IncidentCategory, string> = {
+  vomit: 'vomiting',
+  stool: 'stool',
+}
+
 export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: string): string {
   // Detector — per-incident visual red flag (B-340). SAFETY class, template-only (no LLM, like
   // ③–⑦) — a structural never-reassure guarantee. ESCALATE-ON-PRESENCE: it names what the photo
@@ -159,7 +169,7 @@ export function templateIncidentRedFlag(f: IncidentRedFlagFinding, petName: stri
   // unconfirmed AI read. Derived upstream from the owner-editable structured fields, so an owner
   // override clears the card by construction. Finalized voice is PR 2 (Designer + Dr. Chen +
   // nyx-voice); this template is the guardrail-clean floor + the deterministic fallback.
-  const symptom = SYMPTOM_LABEL[f.incidentType] // v1: 'vomiting'
+  const symptom = INCIDENT_NOUN[f.incidentType] // 'vomiting' | 'stool' (neutral — never "loose stool")
   const phrase =
     f.flags.length === 2
       ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
@@ -465,7 +475,7 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
     return {
       insight_type: 'incident_red_flag',
       pet_name: petName,
-      incident: SYMPTOM_LABEL[finding.incidentType],
+      incident: INCIDENT_NOUN[finding.incidentType],
       flags: finding.flags, // ('blood' | 'foreign_material')[]
       flagged_incident_count: finding.flaggedIncidentCount,
       relationship: 'visible_finding', // what the photo showed — NOT a cause, NOT a diagnosis

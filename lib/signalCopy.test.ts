@@ -371,6 +371,38 @@ describe('incident_red_flag (B-340) — client copy', () => {
   });
 });
 
+describe('incident_red_flag (B-364) — stool client copy', () => {
+  const stoolFlag = (over: Partial<IncidentRedFlagFinding> = {}): IncidentRedFlagFinding =>
+    incidentRedFlag({ incidentType: 'stool', ...over });
+
+  it('evidenceText reads the NEUTRAL "stool", never "loose stool" (a formed stool can bleed too)', () => {
+    const s = evidenceText(stoolFlag({ flags: ['blood'] }), 'Pixel');
+    expect(s).toContain("Pixel's stool");
+    expect(s.toLowerCase()).not.toContain('loose stool');
+    expect(s).toContain('possible blood');
+    expect(s.toLowerCase()).toContain('not a diagnosis');
+    expect(s).toContain('vet');
+  });
+
+  it('evidenceText is guardrail-clean for stool across flag sets/counts (never reassures/causal/shouts)', () => {
+    for (const flags of [['blood'], ['foreign_material'], ['blood', 'foreign_material']] as const) {
+      for (const flaggedIncidentCount of [1, 2]) {
+        const s = evidenceText(stoolFlag({ flags: [...flags], flaggedIncidentCount }), 'Nyx');
+        expect(s.toLowerCase()).not.toContain('loose stool');
+        expect(REASSURANCE_RE.test(s)).toBe(false);
+        expect(DISMISSIVE_RE.test(s)).toBe(false);
+        expect(CAUSAL_RE.test(s)).toBe(false);
+        expect(s.includes('!')).toBe(false);
+      }
+    }
+  });
+
+  it('sampleLine (AI-read provenance) is unchanged by family — same honest photo count', () => {
+    expect(sampleLine(stoolFlag({ flaggedIncidentCount: 1 }))).toBe('From an AI read of 1 logged photo');
+    expect(sampleLine(stoolFlag({ flaggedIncidentCount: 2 }))).toBe('From an AI read of 2 logged photos');
+  });
+});
+
 describe('coverageCopy (B-053)', () => {
   const rateMeals = (over: Partial<RateMealsDiagnostic> = {}): RateMealsDiagnostic => ({
     type: 'rate_meals',
@@ -881,6 +913,19 @@ describe('selectCrossPetSafetyFinding', () => {
     // to raise the banner (same rationale as B-191), not stay silent on a detail screen.
     const sel = selectCrossPetSafetyFinding([candidate('A', [incidentRedFlag()])]);
     expect(sel?.finding.type).toBe('incident_red_flag');
+  });
+
+  it('B-364: a secondary pet\'s STOOL red flag also raises the banner, with a guardrail-clean sentence', () => {
+    // Stool inherits the cross-pet allow-list (same InsightType); the banner rest ("has a logged
+    // photo showing possible blood — worth a look") is family-agnostic, so it reads cleanly for stool.
+    const stoolFlag = incidentRedFlag({ incidentType: 'stool', flags: ['blood'] });
+    const sel = selectCrossPetSafetyFinding([candidate('A', [stoolFlag])]);
+    expect(sel?.finding.type).toBe('incident_red_flag');
+    const { text } = bannerCopy(sel!.finding, sel!.pet.name);
+    expect(text).toContain('possible blood');
+    expect(text.includes('!')).toBe(false);
+    expect(REASSURANCE_RE.test(text)).toBe(false);
+    expect(CAUSAL_RE.test(text)).toBe(false);
   });
 
   it('incident_red_flag leads every other safety lane, within a pet and across pets (SAFETY_TYPE_ORDER)', () => {

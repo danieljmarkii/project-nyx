@@ -335,27 +335,43 @@ export interface MedicationWindow {
  * so the two override-aware surfaces agree.
  *
  * CONTRACT: the caller passes only rows whose analyzed event is NON-soft-deleted and within the
- * lookback (the join is in generate-signal/index.ts). Values are the raw enum strings from the DB
- * (`vomit_blood` / `vomit_tristate`); the pure derivation keeps the present-only asymmetry in one
- * tested place (deriveIncidentFlags). v1 scope is vomit only (B-340); stool per-incident red
- * flags are B-364 — so the detector ignores any non-vomit incident_type even if passed one.
+ * lookback (the join is in generate-signal/index.ts). Values are the raw enum strings from the DB;
+ * the pure derivation keeps the present-only asymmetry in one tested place (deriveIncidentFlags).
+ * Scope is vomit (B-340) AND stool (B-364) — `incidentCategory()` maps the raw incident_type to a
+ * family, and the derivation reads the family's OWN blood column (the seam: vomit blood is
+ * `blood_present`, stool blood is `stool_blood_present` — a DIFFERENT column; reading the wrong one
+ * silently drops a bleed). Any other family (itch/scratch/…) has no lane and is ignored.
  */
 export interface IncidentAnalysisInput {
   /** The analyzed event's id (audit / future evidence expansion; the finding does not carry it in v1). */
   eventId: string
-  /** The analyzed event's type (event_ai_analysis.incident_type). Only 'vomit' is acted on in v1. */
-  incidentType: SymptomType
+  /**
+   * The raw `event_ai_analysis.incident_type`: 'vomit' | 'stool_normal' | 'diarrhea' | … . Mapped to
+   * a coarse family by `incidentCategory()`; the derivation and detector key off the family, never
+   * this raw string directly (so both stool event types are handled and mislabelling is impossible).
+   */
+  incidentType: string
   /** ISO-8601 UTC occurred_at of the incident (from the joined events row) — the recency anchor. */
   occurredAt: string
   /**
-   * `event_ai_analysis.blood_present` (vomit_blood): 'none_visible'|'fresh_red'|'coffee_ground'|
-   * 'unsure'|null. PRESENT-ONLY escalation — only 'fresh_red'/'coffee_ground' is a red flag; every
-   * other value (incl. 'unsure' and null) is NOT a flag (absence is never manufactured; §9).
+   * VOMIT blood — `event_ai_analysis.blood_present` (vomit_blood): 'none_visible'|'fresh_red'|
+   * 'coffee_ground'|'unsure'|null. PRESENT-ONLY escalation — only 'fresh_red'/'coffee_ground' is a
+   * red flag; every other value (incl. 'unsure' and null) is NOT (absence is never manufactured; §9).
+   * Read ONLY for the 'vomit' family (stool blood lives in `stoolBloodPresent`).
    */
   bloodPresent: string | null
   /**
-   * `event_ai_analysis.foreign_material_present` (vomit_tristate): 'yes'|'no'|'unsure'|null.
-   * PRESENT-ONLY escalation — only 'yes' is a red flag; 'no'/'unsure'/null is NOT (§9).
+   * STOOL blood — `event_ai_analysis.stool_blood_present` (stool_tristate): 'yes'|'no'|'unsure'|null
+   * (migration 034). PRESENT-ONLY escalation — only 'yes' is a red flag. Keyed on PRESENCE, not the
+   * `stool_blood_type` subtype (fresh_red haematochezia vs dark_tarry melena only refines the vet
+   * report's copy — a present-but-unread subtype is still blood), mirroring generate-report's
+   * `stoolUnionPresentFlags`. Read ONLY for the 'stool' family.
+   */
+  stoolBloodPresent: string | null
+  /**
+   * `event_ai_analysis.foreign_material_present` (vomit_tristate): 'yes'|'no'|'unsure'|null. SHARED
+   * across families — the 013 column is reused for stool (migration 034: "a sock is a sock"), so the
+   * derivation reads it for both. PRESENT-ONLY — only 'yes' is a red flag; 'no'/'unsure'/null is NOT.
    */
   foreignMaterialPresent: string | null
 }
@@ -823,6 +839,46 @@ export interface TimeOfDayClusteringFinding extends FindingBase {
 export type IncidentFlagKind = 'blood' | 'foreign_material'
 
 /**
+ * The clinical INCIDENT FAMILY a per-incident red flag belongs to (B-340 vomit, B-364 stool).
+ * This is a COARSE category, deliberately NOT event_ai_analysis.incident_type: stool is logged as
+ * two raw event types ('stool_normal' | 'diarrhea', migration 034) and blood is a red flag in
+ * EITHER (haematochezia in a formed stool is as real as in diarrhoea), so both collapse to 'stool'
+ * here — and the owner-facing noun stays the neutral "stool", never "loose stool", so a blood flag
+ * on a FORMED stool never mis-states consistency on a safety card. The finding carries the category,
+ * not the raw type; `incidentCategory()` maps raw → category (null for non-analysed families).
+ */
+export type IncidentCategory = 'vomit' | 'stool'
+
+/**
+ * Fixed display/rank order for the per-incident red-flag families: vomit leads stool. The SINGLE
+ * source of truth for BOTH the detector's emission order (detectIncidentRedFlags) and the ranker's
+ * incident_red_flag/incident_red_flag tie-break (rankFindings) — so a future family (e.g. skin) is
+ * ordered in exactly one place, not two hand-kept-in-sync lists.
+ */
+export const INCIDENT_CATEGORY_ORDER: readonly IncidentCategory[] = ['vomit', 'stool']
+
+/**
+ * The raw `event_ai_analysis.incident_type` values that carry a per-incident red-flag lane — exactly
+ * the values `incidentCategory()` maps to a non-null family. The generate-signal query filters on
+ * this; keep it in sync with `incidentCategory` below (a future stool-schema consolidation — see the
+ * CLAUDE.md open question — would touch both).
+ */
+export const RED_FLAG_INCIDENT_TYPES = ['vomit', 'stool_normal', 'diarrhea'] as const
+
+/**
+ * Map a raw `event_ai_analysis.incident_type` to its coarse red-flag category. 'vomit' → vomit;
+ * 'stool_normal' / 'diarrhea' → stool (migration 034 keeps the two stool event types split — D1 —
+ * so both must map here); anything else (itch/scratch/skin_reaction, or an unknown future value)
+ * → null, i.e. it carries no per-incident visual red-flag lane. Pure; the single source of truth
+ * for "which incidents feed this lane", used by both the derivation and the detector.
+ */
+export function incidentCategory(incidentType: string): IncidentCategory | null {
+  if (incidentType === 'vomit') return 'vomit'
+  if (incidentType === 'stool_normal' || incidentType === 'diarrhea') return 'stool'
+  return null
+}
+
+/**
  * Per-incident visual red flag (B-340) — the SAFETY-class lane that elevates a blood /
  * foreign-material flag from a photo the owner logged onto the Home Signal, where "safety
  * insights always lead" (Principle 3). Today that flag lives ONLY on the event detail screen
@@ -837,15 +893,17 @@ export type IncidentFlagKind = 'blood' | 'foreign_material'
  * construction — the flag is DERIVED from those fields, mirroring generate-report). Template-only
  * phrasing (like ③–⑦), itself a structural never-reassure guarantee.
  *
- * v1 SCOPE: vomit only (B-340). The stool sibling (blood / foreign material in stool) is B-364 —
- * it reuses this same type with incidentType='diarrhea', so the client renderer built for this
- * lane extends to stool without a new InsightType.
+ * SCOPE: vomit (B-340) and stool (B-364), each surfaced as its OWN finding — the detector emits up
+ * to one per family, because the two are distinct clinical findings with distinct owner-facing nouns
+ * ("vomiting" vs "stool") and must not be conflated into one card (a pet with a bloody vomit AND a
+ * bloody stool shows two safety cards, neither dropped — Principle 3). Both reuse this single type +
+ * the same client renderer (no new InsightType); the `incidentType` category picks the noun.
  */
 export interface IncidentRedFlagFinding extends FindingBase {
   type: 'incident_red_flag'
   priorityClass: 'safety'
-  /** The incident type carrying the flag. v1: 'vomit' only; B-364 adds stool ('diarrhea'). */
-  incidentType: SymptomType
+  /** The incident family carrying the flag ('vomit' | 'stool') — picks the owner-facing noun. */
+  incidentType: IncidentCategory
   /** The distinct visible red flags present across the in-window incidents (blood before foreign, stable order). ≥1. */
   flags: IncidentFlagKind[]
   /** ISO-8601 UTC occurred_at of the MOST RECENT in-window incident carrying a red flag — the recency anchor for copy. */
@@ -3649,8 +3707,22 @@ export function computeHumanFoodProvenance(
  */
 export function deriveIncidentFlags(a: IncidentAnalysisInput): IncidentFlagKind[] {
   const flags: IncidentFlagKind[] = []
-  if (a.bloodPresent === 'fresh_red' || a.bloodPresent === 'coffee_ground') flags.push('blood')
-  if (a.foreignMaterialPresent === 'yes') flags.push('foreign_material')
+  const cat = incidentCategory(a.incidentType)
+  // The seam (B-364): each family's blood lives in its OWN column. Stool blood is present iff
+  // stool_blood_present==='yes' (present-only, subtype-agnostic — matches generate-report's
+  // stoolUnionPresentFlags); vomit blood is 'fresh_red'/'coffee_ground'. A non-lane family (cat=null)
+  // contributes no blood flag. Reading the vomit column for a stool row would ALWAYS be null → a
+  // silently dropped bleed, so the branch is load-bearing, not cosmetic.
+  const bloodPresent =
+    cat === 'stool'
+      ? a.stoolBloodPresent === 'yes'
+      : cat === 'vomit'
+        ? a.bloodPresent === 'fresh_red' || a.bloodPresent === 'coffee_ground'
+        : false
+  if (bloodPresent) flags.push('blood')
+  // Foreign material is the shared 013 column for both families (a sock is a sock) — but only for a
+  // lane family; a non-lane incident_type never contributes a flag.
+  if (cat !== null && a.foreignMaterialPresent === 'yes') flags.push('foreign_material')
   return flags
 }
 
@@ -3699,11 +3771,12 @@ function countFlaggedClusters(items: { ms: number; flagged: boolean }[]): number
  * gate (a false positive is cheap for the owner to clear by editing the structured field, which
  * clears the card by construction because the flag is DERIVED from those fields).
  *
- * v1 SCOPE: vomit only. Any non-vomit incidentType (e.g. a B-247 stool analysis row) is IGNORED —
- * the stool sibling is B-364 and will reuse this type with incidentType='diarrhea'. Emits AT MOST
- * ONE finding (calm surface, like ⑦): it UNIONS the present flags across all in-window flagged
- * incidents and anchors copy to the MOST RECENT one, so a pet with two flagged incidents shows one
- * calm card, not two.
+ * SCOPE: vomit (B-340) + stool (B-364). Each analysed family (`incidentCategory()`) is handled
+ * independently and emits AT MOST ONE finding — so the surface is calm (one card per family, like
+ * ⑦), unioning present flags across that family's in-window flagged incidents and anchoring copy to
+ * the family's MOST RECENT one. A pet with two flagged vomits shows one vomit card; a pet with a
+ * flagged vomit AND a flagged stool shows two (distinct clinical findings, distinct nouns — neither
+ * dropped, Principle 3). Any non-lane incident_type (itch/scratch/…) is IGNORED.
  *
  * CONTRACT (from the caller): incidentAnalyses are already non-soft-deleted + RLS-scoped; this
  * detector additionally applies the recency window (config.incidentRedFlag.windowDays) so a stale
@@ -3719,70 +3792,91 @@ export function detectIncidentRedFlags(
   if (Number.isNaN(nowMs)) return []
   const windowMs = config.incidentRedFlag.windowDays * MS_PER_DAY
 
-  const flagKinds = new Set<IncidentFlagKind>()
-  let mostRecentMs = -Infinity
-  let mostRecentIso = ''
-  // EVERY in-window vomit incident (flagged or not), so the count can dedup re-logs over the SAME
-  // universe generate-report does (B-368) — all same-type events, not just the flagged subset —
-  // instead of counting raw event_ai_analysis rows. `flagged` = this incident carries a red flag.
-  const inWindowVomits: { ms: number; flagged: boolean }[] = []
+  // Accumulate PER FAMILY (vomit / stool) — each family surfaces as its own card (§ finding doc),
+  // so a bloody vomit and a bloody stool never conflate into one. Per family we track: the union of
+  // present flag kinds, the most-recent FLAGGED incident (copy anchor), and EVERY in-window incident
+  // (flagged or not) so the count can dedup re-logs over the same universe generate-report does
+  // (B-368) — the family's whole event population, not just the flagged subset.
+  interface FamilyAcc {
+    flagKinds: Set<IncidentFlagKind>
+    mostRecentMs: number
+    mostRecentIso: string
+    inWindow: { ms: number; flagged: boolean }[]
+  }
+  const byFamily = new Map<IncidentCategory, FamilyAcc>()
+  const familyAcc = (cat: IncidentCategory): FamilyAcc => {
+    let acc = byFamily.get(cat)
+    if (!acc) {
+      acc = { flagKinds: new Set(), mostRecentMs: -Infinity, mostRecentIso: '', inWindow: [] }
+      byFamily.set(cat, acc)
+    }
+    return acc
+  }
+
   for (const a of analyses) {
-    if (a.incidentType !== 'vomit') continue // v1 scope; stool is B-364
+    const cat = incidentCategory(a.incidentType)
+    if (cat === null) continue // itch/scratch/… — no per-incident visual red-flag lane
     const ms = Date.parse(a.occurredAt)
     if (Number.isNaN(ms)) continue
-    // Recency: only flags on an incident within the window lead Home. A future-dated occurred_at
+    // Recency: only a flag on an incident within the window leads Home. A future-dated occurred_at
     // (nowMs - ms < 0) still passes the ≤ windowMs test, which is correct — it is trivially recent.
     // KNOWN LIMIT (B-361 inheritance): recency anchors on occurred_at, so a red flag the owner logs
     // TODAY but back-dates > windowDays ago (B-010 estimated/window edge) never leads Home. Safe
-    // direction (silence, never reassurance), shared with vomit/stool; the B-361 fix (anchor on
-    // max(occurred_at, created_at)) would fix this lane too. Not addressed in PR 1.
+    // direction (silence, never reassurance), shared by vomit AND stool; the B-361 fix (anchor on
+    // max(occurred_at, created_at)) would fix this lane too. Not addressed here.
     if (nowMs - ms > windowMs) continue
     const flags = deriveIncidentFlags(a)
     const flagged = flags.length > 0 // no PRESENT flag ⇒ silence, never a "clear"; but it still
-    inWindowVomits.push({ ms, flagged }) // participates in clustering as a possible re-log anchor
+    const acc = familyAcc(cat)
+    acc.inWindow.push({ ms, flagged }) // participates in clustering as a possible re-log anchor
     if (flagged) {
-      for (const f of flags) flagKinds.add(f)
-      if (ms > mostRecentMs) {
-        mostRecentMs = ms
-        mostRecentIso = a.occurredAt // copy anchors on the most-recent FLAGGED incident
+      for (const f of flags) acc.flagKinds.add(f)
+      if (ms > acc.mostRecentMs) {
+        acc.mostRecentMs = ms
+        acc.mostRecentIso = a.occurredAt // copy anchors on the most-recent FLAGGED incident
       }
     }
   }
-  if (flagKinds.size === 0) return [] // no flagged incident in-window — silence, never an all-clear
 
-  // B-368 — collapse NEAR-DUPLICATE re-logs of one incident so the count (and its singular/plural
-  // "logged photo(s)" copy) describes distinct flagged incidents, not raw analysis rows: the same
-  // vomit double-tapped / sync-replayed into N events with N analyses is ONE flagged incident.
-  // Mirrors generate-report's §5.11 collapse (countFlaggedClusters below): a 60s window anchored to
-  // each cluster's FIRST member, dedup over ALL in-window vomit incidents, then count the clusters
-  // carrying ≥1 flag — so the two surfaces agree even when an UNFLAGGED vomit anchors the cluster.
-  // Two GENUINELY distinct bloody-vomit bouts 30 min apart count as 2 on both (never understated to 1
-  // on a safety card); a seconds-apart re-log collapses to 1. NOT the 3h symptomEpisodeGapHours the
-  // frequency lanes use (that would fold distinct bouts together and understate presence). This never
-  // changes WHETHER the card fires (≥1 flagged incident ⇒ count ≥1) — only the count/plural copy.
-  // Residual bound (B-376): a PHOTOLESS vomit — which has no event_ai_analysis row and so never
-  // reaches this detector — can anchor a report cluster we can't see, so a rare 3-vomits-in-~90s
-  // arrangement can still under-count by one here vs the report. Always the understating direction
-  // (card still fires + routes to the vet), never a never-reassure violation; closing it fully needs
-  // photoless-vomit timestamps passed into DetectionInput (a contract change, deferred).
-  const flaggedIncidentCount = countFlaggedClusters(inWindowVomits)
+  // Emit one finding per family with ≥1 flagged in-window incident, in a DETERMINISTIC family order
+  // (vomit before stool) — the ranker also breaks the incident_red_flag/incident_red_flag tie this
+  // way, so the two agree. A family with no flagged incident emits nothing (silence, never a "clear").
+  const out: IncidentRedFlagFinding[] = []
+  for (const cat of INCIDENT_CATEGORY_ORDER) {
+    const acc = byFamily.get(cat)
+    if (!acc || acc.flagKinds.size === 0) continue
 
-  // Stable flag order (blood before foreign material) so copy reads deterministically.
-  const flags: IncidentFlagKind[] = []
-  if (flagKinds.has('blood')) flags.push('blood')
-  if (flagKinds.has('foreign_material')) flags.push('foreign_material')
+    // B-368 — collapse NEAR-DUPLICATE re-logs of one incident so the count (and its singular/plural
+    // "logged photo(s)" copy) describes distinct flagged incidents, not raw analysis rows: the same
+    // incident double-tapped / sync-replayed into N events with N analyses is ONE flagged incident.
+    // Mirrors generate-report's §5.11 collapse (countFlaggedClusters): a 60s window anchored to each
+    // cluster's FIRST member, dedup over ALL in-window incidents of this family, then count clusters
+    // carrying ≥1 flag — so the two surfaces agree even when an UNFLAGGED incident anchors the
+    // cluster. Two GENUINELY distinct bloody bouts 30 min apart count as 2 on both (never understated
+    // to 1 on a safety card); a seconds-apart re-log collapses to 1. NOT the 3h symptomEpisodeGapHours
+    // the frequency lanes use (that would fold distinct bouts together and understate presence). Never
+    // changes WHETHER the card fires (≥1 flagged incident ⇒ count ≥1) — only the count/plural copy.
+    // Residual bound (B-376): a PHOTOLESS incident has no event_ai_analysis row and so never reaches
+    // this detector, so a rare 3-in-~90s arrangement can under-count by one vs the report — always the
+    // understating direction (card still fires + routes to the vet), never a never-reassure violation.
+    const flaggedIncidentCount = countFlaggedClusters(acc.inWindow)
 
-  return [
-    {
+    // Stable flag order (blood before foreign material) so copy reads deterministically.
+    const flags: IncidentFlagKind[] = []
+    if (acc.flagKinds.has('blood')) flags.push('blood')
+    if (acc.flagKinds.has('foreign_material')) flags.push('foreign_material')
+
+    out.push({
       type: 'incident_red_flag',
       priorityClass: 'safety',
-      incidentType: 'vomit',
+      incidentType: cat,
       flags,
-      mostRecentFlaggedIso: mostRecentIso,
+      mostRecentFlaggedIso: acc.mostRecentIso,
       flaggedIncidentCount,
       windowDays: config.incidentRedFlag.windowDays,
-    },
-  ]
+    })
+  }
+  return out
 }
 
 // ── Detector registry (§4) ──────────────────────────────────────────────────
@@ -3906,6 +4000,15 @@ export function rankFindings(findings: Finding[], ctx: PetContext): RankedFindin
     if (x.priorityClass === 'safety' && y.priorityClass === 'safety') {
       const safetyDiff = (SAFETY_TYPE_ORDER[x.type] ?? 9) - (SAFETY_TYPE_ORDER[y.type] ?? 9)
       if (safetyDiff !== 0) return safetyDiff
+      // Two per-incident red-flag cards (a bloody vomit AND a bloody stool, B-364): both lead every
+      // other safety lane; between the two, vomit leads stool — a fixed, deterministic order (also
+      // the detector's emission order), so the surface never reorders on re-run. Neither is dropped.
+      if (x.type === 'incident_red_flag' && y.type === 'incident_red_flag') {
+        return (
+          INCIDENT_CATEGORY_ORDER.indexOf(x.incidentType) -
+          INCIDENT_CATEGORY_ORDER.indexOf(y.incidentType)
+        )
+      }
       if (x.type === 'intake_decline' && y.type === 'intake_decline') {
         const order: Record<IntakeDeclineTrigger, number> = {
           refused_normal_food: 0,
