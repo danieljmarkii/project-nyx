@@ -200,8 +200,10 @@ export function StoolAnalysisSection(
 
   // ── Render states ──
 
-  // First load, nothing known yet.
-  if (row === undefined && !working) {
+  // First load, nothing known yet. Only shown WITH a photo — a photoless event
+  // stays silent until it resolves (to an escalation, or to nothing), so the
+  // section never appears-then-vanishes on the common photoless path (B-363).
+  if (hasPhoto && row === undefined && !working) {
     return (
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>AI READ</Text>
@@ -214,8 +216,9 @@ export function StoolAnalysisSection(
 
   const status: Status | undefined = row?.status;
 
-  // Pending / actively working.
-  if (working || status === 'pending') {
+  // Pending / actively working. Same photoless rule: no spinner for a photoless
+  // event — a contextual escalation pops in clean when it resolves (B-363).
+  if (hasPhoto && (working || status === 'pending')) {
     return (
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>AI READ</Text>
@@ -280,11 +283,13 @@ export function StoolAnalysisSection(
   // and falls through to the render below, never suppressed). So suppress the dead
   // "Not enough to say · Try analysis" frame and its looping retry when there's no
   // photo — re-running without one just loops back to the same empty read. The
-  // detail screen already shows an "Add photo" empty hero directly above this
-  // section, and adding a photo there re-triggers analysis, so the section reappears
-  // with a real read. Analysis still fires on mount regardless of photo (the trigger
-  // is unchanged), so a photoless contextual escalation is never hidden. Matches the
-  // read_disabled branch: no dead affordance, no empty frame (B-363).
+  // detail screen shows an "Add photo" empty hero directly above this section; once a
+  // photo is added the section un-suppresses (hasPhoto flips) and a real read is one
+  // tap on its retry away (the add-photo flow also kicks a re-analysis). Analysis
+  // still fires on mount regardless of photo (the trigger is unchanged), so a
+  // photoless contextual escalation is never hidden. Auto-refreshing the section the
+  // instant a photo lands is a tracked follow-up (B-370). Matches the read_disabled
+  // branch: no dead affordance, no empty frame (B-363).
   if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say')) {
     return null;
   }

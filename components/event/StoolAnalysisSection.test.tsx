@@ -116,6 +116,19 @@ describe('StoolAnalysisSection — photoless suppression (B-363)', () => {
     await waitFor(() => expect(toJSON()).toBeNull());
   });
 
+  it('photoless + pending: stays silent — no appear-then-vanish spinner', () => {
+    // The section must not flash "Reading this one…" for a photoless event and then
+    // vanish when it resolves to not_enough_to_say — it stays silent throughout,
+    // popping in only if a contextual escalation resolves to worth_a_call. Assert the
+    // first (synchronous) frame is silent, then unmount before start()'s async
+    // fetch resolves — so its poll loop never schedules a lingering timer.
+    mockRow = row({ status: 'pending', recommendation: null });
+    const { queryByText, toJSON, unmount } = render(<StoolAnalysisSection eventId="p5" petName="Rex" hasPhoto={false} />);
+    expect(toJSON()).toBeNull();
+    expect(queryByText(/Reading this one/i)).toBeNull();
+    unmount();
+  });
+
   it('WITH a photo + not_enough_to_say: keeps the retry (an unclear/unsynced photo is legitimately re-runnable)', async () => {
     mockRow = row({ recommendation: 'not_enough_to_say' });
     const { findByText } = render(<StoolAnalysisSection eventId="p3" petName="Rex" hasPhoto />);
