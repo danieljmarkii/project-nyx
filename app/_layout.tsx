@@ -165,6 +165,7 @@ export default function RootLayout() {
         <Stack.Screen name="event/[id]" />
         <Stack.Screen name="ask" />
         <Stack.Screen name="report" />
+        <Stack.Screen name="rundown" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
         <Stack.Screen name="settings/feedback" />
