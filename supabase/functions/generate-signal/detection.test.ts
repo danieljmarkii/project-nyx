@@ -139,12 +139,13 @@ const medDose = (occurredAt: string, medicationItemId: string | null = 'drug-1')
   activeUntil: occurredAt,
 })
 
-/** A per-incident AI-analysis projection (B-340). Defaults: a vomit incident with NO present flag. */
+/** A per-incident AI-analysis projection (B-340/B-364). Defaults: a vomit incident with NO present flag. */
 const incidentAnalysis = (over: Partial<IncidentAnalysisInput> = {}): IncidentAnalysisInput => ({
   eventId: nextId(),
   incidentType: 'vomit',
   occurredAt: at(28, 9), // 2 days before NOW (at(30,12)) — inside the 14-day window
   bloodPresent: null,
+  stoolBloodPresent: null, // B-364: stool blood column; null on a default vomit incident
   foreignMaterialPresent: null,
   ...over,
 })
@@ -2620,15 +2621,155 @@ Deno.test('detectIncidentRedFlags — recency window: a flag older than windowDa
   )
 })
 
-Deno.test('detectIncidentRedFlags — v1 scope is VOMIT ONLY: a stool (diarrhea) flag is ignored (B-364)', () => {
+Deno.test('detectIncidentRedFlags — B-364: a stool (diarrhea) foreign-material flag now fires as a STOOL card', () => {
+  const out = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [incidentAnalysis({ incidentType: 'diarrhea', foreignMaterialPresent: 'yes' })],
+    }),
+  )
+  assert.equal(out.length, 1)
+  assert.equal(out[0].incidentType, 'stool', 'the stool family carries the flag')
+  assert.deepEqual(out[0].flags, ['foreign_material'])
+})
+
+Deno.test('detectIncidentRedFlags — B-364: stool BLOOD fires off stool_blood_present, NOT the vomit blood_present column (the seam)', () => {
+  // The load-bearing seam: stool blood lives in stool_blood_present, a DIFFERENT column from the
+  // vomit blood_present. A stool row carrying blood has blood_present=null; reading the vomit column
+  // would silently drop the bleed. Derivation must read the stool column for the stool family.
+  const out = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ incidentType: 'diarrhea', bloodPresent: null, stoolBloodPresent: 'yes' }),
+      ],
+    }),
+  )
+  assert.equal(out.length, 1)
+  assert.equal(out[0].incidentType, 'stool')
+  assert.deepEqual(out[0].flags, ['blood'], 'stool blood fired from stool_blood_present')
+})
+
+Deno.test('detectIncidentRedFlags — B-364: blood in a FORMED stool (stool_normal) also fires (not just diarrhea)', () => {
+  // Haematochezia in a formed stool is as real a red flag as in diarrhoea; both stool event types
+  // map to the stool family. The noun stays neutral ("stool"), never "loose stool" (a stool_normal
+  // is not loose) — verified in the phrasing suite.
+  const out = detectIncidentRedFlags(
+    input({ incidentAnalyses: [incidentAnalysis({ incidentType: 'stool_normal', stoolBloodPresent: 'yes' })] }),
+  )
+  assert.equal(out.length, 1)
+  assert.equal(out[0].incidentType, 'stool')
+  assert.deepEqual(out[0].flags, ['blood'])
+})
+
+Deno.test('detectIncidentRedFlags — B-364: a stool row does NOT read the vomit blood column (no cross-column false fire)', () => {
+  // The mirror of the seam: a stool row with the vomit column set (defensive — should never happen)
+  // but stool_blood_present='no' must be SILENT. The stool family reads only stool_blood_present.
   assert.deepEqual(
     detectIncidentRedFlags(
       input({
-        incidentAnalyses: [incidentAnalysis({ incidentType: 'diarrhea', foreignMaterialPresent: 'yes' })],
+        incidentAnalyses: [
+          incidentAnalysis({ incidentType: 'diarrhea', bloodPresent: 'fresh_red', stoolBloodPresent: 'no' }),
+        ],
       }),
     ),
     [],
-    'the stool sibling is B-364, not this lane',
+    'a stool row ignores the vomit blood_present column',
+  )
+})
+
+Deno.test('detectIncidentRedFlags — B-364: MUCUS is monitor-tier and never elevates (B-247 ruling)', () => {
+  // stool_mucus_present is deliberately NOT carried into the red-flag input at all — mucus is a
+  // structured monitor-tier finding, never a Home safety card. A stool row whose only notable field
+  // is mucus (blood='no', foreign='no') is SILENT here.
+  assert.deepEqual(
+    detectIncidentRedFlags(
+      input({
+        incidentAnalyses: [
+          incidentAnalysis({ incidentType: 'diarrhea', stoolBloodPresent: 'no', foreignMaterialPresent: 'no' }),
+        ],
+      }),
+    ),
+    [],
+    'mucus-only stool never leads Home',
+  )
+})
+
+Deno.test('detectIncidentRedFlags — B-364: stool blood "unsure"/null is SILENT (present-only, never manufactured)', () => {
+  for (const stoolBloodPresent of ['unsure', 'no', null]) {
+    assert.deepEqual(
+      detectIncidentRedFlags(
+        input({ incidentAnalyses: [incidentAnalysis({ incidentType: 'diarrhea', stoolBloodPresent })] }),
+      ),
+      [],
+      `stool_blood_present=${stoolBloodPresent} is not a flag`,
+    )
+  }
+})
+
+Deno.test('detectIncidentRedFlags — B-364: an owner clearing stool_blood_present clears the stool card by construction', () => {
+  // The override-aware rule (B-339/B-340) extends to stool: the flag is DERIVED from the editable
+  // structured field, so an edit to 'no' removes the card on the next regeneration.
+  assert.equal(
+    detectIncidentRedFlags(
+      input({ incidentAnalyses: [incidentAnalysis({ incidentType: 'diarrhea', stoolBloodPresent: 'yes' })] }),
+    ).length,
+    1,
+    'present → fires',
+  )
+  assert.deepEqual(
+    detectIncidentRedFlags(
+      input({ incidentAnalyses: [incidentAnalysis({ incidentType: 'diarrhea', stoolBloodPresent: 'no' })] }),
+    ),
+    [],
+    'cleared → silent',
+  )
+})
+
+Deno.test('detectIncidentRedFlags — B-364: a bloody VOMIT and a bloody STOOL emit TWO cards, vomit ranked first, neither dropped', () => {
+  const out = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ incidentType: 'diarrhea', occurredAt: at(29, 9), stoolBloodPresent: 'yes' }),
+        incidentAnalysis({ incidentType: 'vomit', occurredAt: at(27, 9), bloodPresent: 'fresh_red' }),
+      ],
+    }),
+  )
+  assert.equal(out.length, 2, 'two distinct family cards')
+  // Emission order is deterministic: vomit before stool (matches the ranker tie-break).
+  assert.equal(out[0].incidentType, 'vomit')
+  assert.equal(out[1].incidentType, 'stool')
+  assert.deepEqual(out[0].flags, ['blood'])
+  assert.deepEqual(out[1].flags, ['blood'])
+})
+
+Deno.test('detectIncidentRedFlags — B-364: the count clusters PER FAMILY (a vomit re-log never collapses a distinct stool)', () => {
+  const out = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        // two vomit re-logs seconds apart → one vomit bout
+        incidentAnalysis({ incidentType: 'vomit', occurredAt: '2026-05-29T09:00:00.000Z', bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ incidentType: 'vomit', occurredAt: '2026-05-29T09:00:20.000Z', bloodPresent: 'fresh_red' }),
+        // one stool within the SAME 60s — a different family, must not fold into the vomit cluster
+        incidentAnalysis({ incidentType: 'diarrhea', occurredAt: '2026-05-29T09:00:30.000Z', stoolBloodPresent: 'yes' }),
+      ],
+    }),
+  )
+  assert.equal(out.length, 2)
+  const vomit = out.find((f) => f.incidentType === 'vomit')!
+  const stool = out.find((f) => f.incidentType === 'stool')!
+  assert.equal(vomit.flaggedIncidentCount, 1, 'the two vomit re-logs collapse to one')
+  assert.equal(stool.flaggedIncidentCount, 1, 'the stool is counted on its own, not folded into vomit')
+})
+
+Deno.test('detectIncidentRedFlags — B-364: a stale stool flag (older than windowDays) no longer leads Home', () => {
+  assert.deepEqual(
+    detectIncidentRedFlags(
+      input({
+        // NOW is at(30,12); 15 days back is outside the 14-day window
+        incidentAnalyses: [incidentAnalysis({ incidentType: 'diarrhea', occurredAt: at(15, 12), stoolBloodPresent: 'yes' })],
+      }),
+    ),
+    [],
+    'stale stool blood is silent',
   )
 })
 
@@ -2690,6 +2831,35 @@ Deno.test('rankFindings — a per-incident red flag LEADS the safety band (above
   assert.deepEqual(
     ranked.map((r) => r.finding.type),
     ['incident_red_flag', 'intake_decline', 'symptom_chronicity', 'symptom_worsening'],
+  )
+})
+
+Deno.test('rankFindings — B-364: two red-flag cards (vomit + stool) both lead, vomit ranked before stool, regardless of input order', () => {
+  const cat: PetContext = { name: 'Mochi', species: 'cat', dietTrialActive: false }
+  const stoolFlag: IncidentRedFlagFinding = {
+    type: 'incident_red_flag',
+    priorityClass: 'safety',
+    incidentType: 'stool',
+    flags: ['blood'],
+    mostRecentFlaggedIso: at(28, 9),
+    flaggedIncidentCount: 1,
+    windowDays: 14,
+  }
+  const vomitFlag: IncidentRedFlagFinding = {
+    type: 'incident_red_flag',
+    priorityClass: 'safety',
+    incidentType: 'vomit',
+    flags: ['foreign_material'],
+    mostRecentFlaggedIso: at(27, 9),
+    flaggedIncidentCount: 1,
+    windowDays: 14,
+  }
+  // stool first in the input; the tie-break must still put vomit ahead.
+  const ranked = rankFindings([stoolFlag, vomitFlag], cat)
+  assert.deepEqual(
+    ranked.map((r) => (r.finding as IncidentRedFlagFinding).incidentType),
+    ['vomit', 'stool'],
+    'deterministic vomit-before-stool tie-break, neither dropped',
   )
 })
 
