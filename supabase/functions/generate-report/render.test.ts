@@ -214,6 +214,7 @@ Deno.test('chronicity flag → safety band leads, mono-prominent, escalates on p
 Deno.test('present_blood flag → "Possible blood" leads the safety band', () => {
   const flag: SafetyFlag = {
     kind: 'present_blood',
+    source: 'vomit',
     incidents: [{ eventId: 'v1', occurredAt: '2026-06-18T18:00:00Z', kind: 'coffee_ground' }],
   }
   const html = renderReport(base({ safetyFlags: [flag] }))
@@ -224,6 +225,40 @@ Deno.test('present_blood flag → "Possible blood" leads the safety band', () =>
   assert.ok(/AI read &middot; unconfirmed/.test(html), 'uniform AI badge present')
   assert.ok(/automated photo analysis/i.test(html), 'attributed to the mechanism, not the app name')
   assert.ok(!/photo Nyx flagged/.test(html), 'no app-name/patient-name collision')
+})
+
+Deno.test('present_blood (source=stool, melena) → stool noun + upper-GI anatomy in the band', () => {
+  const flag: SafetyFlag = {
+    kind: 'present_blood',
+    source: 'stool',
+    incidents: [{ eventId: 's1', occurredAt: '2026-06-26T14:00:00Z', kind: 'dark_tarry' }],
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(html.includes('class="safetyband"') && html.includes('Possible blood'))
+  assert.ok(/stool incident/.test(html) && !/vomiting incident/.test(html), 'stool noun, not vomit')
+  assert.ok(/melena/.test(html) && /upper-GI/.test(html), 'melena localised upper-GI')
+})
+
+Deno.test('present_blood (source=stool, haematochezia) → lower-GI anatomy; not melena', () => {
+  const flag: SafetyFlag = {
+    kind: 'present_blood',
+    source: 'stool',
+    incidents: [{ eventId: 's1', occurredAt: '2026-06-26T14:00:00Z', kind: 'fresh_red' }],
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(/haematochezia/.test(html) && /lower-GI/.test(html), 'fresh red localised lower-GI')
+  assert.ok(!/melena/.test(html), 'haematochezia not mislabelled melena')
+})
+
+Deno.test('present_blood (source=stool, subtype unread) → present but no false anatomy', () => {
+  const flag: SafetyFlag = {
+    kind: 'present_blood',
+    source: 'stool',
+    incidents: [{ eventId: 's1', occurredAt: '2026-06-26T14:00:00Z', kind: null }],
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(/subtype unread/.test(html), 'present-but-unread blood surfaces without inventing a subtype')
+  assert.ok(!/melena/.test(html) && !/haematochezia/.test(html), 'no anatomy claimed when subtype is unknown')
 })
 
 Deno.test('intake_decline renders as a health signal, never "picky"', () => {
@@ -512,7 +547,7 @@ Deno.test('phenotype consistency: a tie for the top type is disclosed, not asser
   const tie = renderReport(
     base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 2, watery: 2, chunky: 1 } }) }),
   )
-  assert.ok(/no single predominant type/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
+  assert.ok(/no single predominant reading/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
   const clear = renderReport(
     base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 6, chunky: 2 } }) }),
   )
@@ -732,11 +767,75 @@ Deno.test('an out-of-range date degrades to the raw string, never leaks "undefin
 
 // ── Coverage: stool characteristics (present-only for blood/mucus) ─────────────────
 
-Deno.test('stool characteristics render normal vs loose + a present-only blood/mucus note', () => {
-  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48 } }))
+Deno.test('stool: no photo read → owner-described bar + the pre-AI limitation note', () => {
+  const html = renderReport(base({ stool: { total: 6, normalCount: 4, looseCount: 2, windowDays: 52, loggedDays: 48, ai: null } }))
   assert.ok(/Stool characteristics/.test(html))
-  assert.ok(/Blood &amp; mucus/.test(html) && /Not reported/.test(html), 'present-only blood/mucus limitation note')
+  assert.ok(/owner-described/.test(html))
+  assert.ok(/No photos were read/.test(html), 'pre-AI limitation note stands when ai is null')
   assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
+})
+
+Deno.test('stool: AI read, nothing present → Bristol line + "not a clearance" (never "0 of N")', () => {
+  const html = renderReport(base({
+    stool: {
+      total: 4, normalCount: 3, looseCount: 1, windowDays: 30, loggedDays: 28,
+      ai: {
+        totalIncidents: 4, withAnalysis: 3,
+        states: { completed: 3, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 3,
+        consistencyDistribution: { type_4_smooth_soft: 2, type_6_mushy: 1 },
+        colourDistribution: { brown: 3 },
+        bloodPresent: [], mucusPresent: [], reviewedCount: 0,
+      },
+    },
+  }))
+  assert.ok(/Automated photo analysis/.test(html), 'aitag when a read exists')
+  assert.ok(/Type 4 — smooth, soft/.test(html), 'Bristol most-common named with plain label')
+  assert.ok(/most often brown/.test(html), 'colour predominant line')
+  assert.ok(/Not seen/.test(html) && /not<\/b> a clearance/.test(html), 'present-only absence framed as non-clearance')
+  assert.ok(/1 without a photo/.test(html), 'four-state denominator discloses the no-photo incident')
+  assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
+})
+
+Deno.test('stool: melena blood + mucus present → present findings, melena named, mucus is monitor-tier', () => {
+  const html = renderReport(base({
+    stool: {
+      total: 2, normalCount: 0, looseCount: 2, windowDays: 14, loggedDays: 10,
+      ai: {
+        totalIncidents: 2, withAnalysis: 2,
+        states: { completed: 2, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 2,
+        consistencyDistribution: { type_7_watery: 2 },
+        colourDistribution: { black_tarry: 1, brown: 1 },
+        bloodPresent: [{ eventId: 'e1', occurredAt: '2026-06-15T12:00:00Z', kind: 'dark_tarry' }],
+        mucusPresent: [{ eventId: 'e2', occurredAt: '2026-06-16T12:00:00Z' }],
+        reviewedCount: 0,
+      },
+    },
+  }))
+  assert.ok(/Present findings/.test(html))
+  assert.ok(/possible melena/.test(html), 'dark_tarry blood named as melena')
+  assert.ok(/often upper-GI/.test(html), 'melena localised to upper-GI, not large-bowel')
+  assert.ok(!/large-bowel/.test(html), 'never the inverted large-bowel claim for melena')
+  assert.ok(/stool red flag/.test(html) && /leads the safety flags at the top/.test(html), 'blood framed as a red flag that leads the band')
+  assert.ok(/Mucus (&mdash;|—)/.test(html), 'mucus surfaced')
+  assert.ok(/often benign on its own/.test(html), 'mucus framed monitor-tier, never an escalation')
+  assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
+})
+
+Deno.test('stool: haematochezia (fresh_red) blood named distinctly from melena', () => {
+  const html = renderReport(base({
+    stool: {
+      total: 1, normalCount: 0, looseCount: 1, windowDays: 7, loggedDays: 7,
+      ai: {
+        totalIncidents: 1, withAnalysis: 1,
+        states: { completed: 1, uncertain: 0, failed: 0, pending: 0 }, assessedCount: 1,
+        consistencyDistribution: { type_6_mushy: 1 }, colourDistribution: { red_streaked: 1 },
+        bloodPresent: [{ eventId: 'e1', occurredAt: '2026-06-15T12:00:00Z', kind: 'fresh_red' }],
+        mucusPresent: [], reviewedCount: 0,
+      },
+    },
+  }))
+  assert.ok(/haematochezia/.test(html), 'fresh_red named as haematochezia')
+  assert.ok(!/melena/.test(html.replace(/digested \(melena\)/g, '')), 'fresh_red not mislabelled melena')
 })
 
 // ── Coverage: full diet/meds — trial + human food + established association ─────────
@@ -1335,7 +1434,7 @@ Deno.test('R2-5 — page 1 carries an orientation line; the appendices open with
 })
 
 Deno.test('R2-4/R2-6 — one uniform AI badge; safety-band header hedge removed; footer labels the patient', () => {
-  const flag: SafetyFlag = { kind: 'present_blood', incidents: [{ eventId: 'v1', occurredAt: '2026-06-18T18:00:00Z', kind: 'coffee_ground' }] }
+  const flag: SafetyFlag = { kind: 'present_blood', source: 'vomit', incidents: [{ eventId: 'v1', occurredAt: '2026-06-18T18:00:00Z', kind: 'coffee_ground' }] }
   const html = renderReport(base({ safetyFlags: [flag] }))
   assert.ok(/AI read &middot; unconfirmed/.test(html), 'the uniform AI badge')
   assert.ok(!/owner-reported · not a diagnosis<\/span>/.test(html), 'safety-band header no longer restates the masthead hedge')
@@ -1462,7 +1561,7 @@ Deno.test('PR7 render — with a meals appendix present, photos take the NEXT le
 })
 
 Deno.test('PR7 render — a safety-flagged photo also LEADS the safety band on page 1 (thumbnail)', () => {
-  const bloodFlag: SafetyFlag = { kind: 'present_blood', incidents: [{ eventId: 'vb', occurredAt: '2026-06-20T14:00:00Z', kind: 'fresh_red' }] }
+  const bloodFlag: SafetyFlag = { kind: 'present_blood', source: 'vomit', incidents: [{ eventId: 'vb', occurredAt: '2026-06-20T14:00:00Z', kind: 'fresh_red' }] }
   const html = renderReport(
     base({
       safetyFlags: [bloodFlag],
@@ -1490,7 +1589,7 @@ Deno.test('PR7 render — the owner-reviewable AI read shows present-only fields
           eventId: 'v1',
           occurredAt: '2026-06-20T14:00:00Z',
           dataUri: PNG_1PX,
-          phenotype: { status: 'completed', contentsCategory: 'bile', consistency: 'foamy', colour: 'yellow', bloodPresent: 'coffee_ground', foreignPresent: null, foreignNote: null, edited: false },
+          phenotype: { kind: 'vomit', status: 'completed', contentsCategory: 'bile', consistency: 'foamy', colour: 'yellow', bloodPresent: 'coffee_ground', foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
         }),
       ],
     }),
