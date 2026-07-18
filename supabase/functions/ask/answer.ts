@@ -729,8 +729,12 @@ export function redactReadForModel(result: PhotoReadResult): Record<string, unkn
 // photo-referencing headline/detail to a deterministic line and keeps the safe readLine.
 // `look(?:s|ed|ing)?` covers looks/looked/looking (the round-3 leak was the present-tense
 // "looks" — "That one looks typical for her" — which the old `looke?d?` missed).
+// The reference set covers the read's OBJECT nouns (photo/image/read) AND its AGENT nouns
+// (the AI/analysis/scan/assessment/result) — the round-4 note: "the AI didn't spot anything"
+// referenced the read via its agent, not its object, and slipped. On a non-escalating read
+// the model must not reference the read at all, by subject or object.
 const PHOTO_REFERENCE_RE =
-  /\b(photos?|image|picture|pic|snapshot|the shot|the read|read (?:came|is|was|did|didn'?t|shows?|showed)|look(?:s|ed|ing)?|appears?|appeared|seems?|seemed|clean|clear|negative|flag(?:s|ged)?|(?:turn(?:s|ed)?|stood|jump(?:s|ed)?|came|show(?:s|ed)?) (?:up|out|back|anything|nothing)|nothing (?:turned|stood|jumped|showed|to flag|to note))\b/i
+  /\b(photos?|image|picture|pic|snapshot|the shot|the read|the (?:ai|analysis|scan|assessment|result)s?|read (?:came|is|was|did|didn'?t|shows?|showed)|look(?:s|ed|ing)?|appears?|appeared|seems?|seemed|clean|clear|negative|flag(?:s|ged)?|(?:turn(?:s|ed)?|stood|jump(?:s|ed)?|came|show(?:s|ed)?) (?:up|out|back|anything|nothing)|nothing (?:turned|stood|jumped|showed|to flag|to note))\b/i
 
 /** Does this text reference the photo / its appearance / the read verdict? Used ONLY when a
  *  no-flag read was featured, to bar the model from delivering a photo verdict the deterministic

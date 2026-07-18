@@ -761,6 +761,13 @@ Deno.test('mentionsPhotoAppearance: catches the 15 sibling-channel leak headline
     'That one looks routine.',
     'It looks how it always does.',
     'That one looks like her usual.',
+    // round-4 note 1 — the read's AGENT nouns (referenced the read via subject, not object):
+    "The AI didn't spot anything concerning.",
+    'The AI gave it a pass.',
+    'The AI was happy with it.',
+    "The scan didn't raise anything.",
+    'The analysis came back fine.',
+    'The result was normal.',
   ]) {
     assert.equal(mentionsPhotoAppearance(leak), true, `should bar the photo reference: ${leak}`)
   }
