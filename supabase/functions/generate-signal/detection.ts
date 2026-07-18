@@ -851,11 +851,13 @@ export interface IncidentRedFlagFinding extends FindingBase {
   /** ISO-8601 UTC occurred_at of the MOST RECENT in-window incident carrying a red flag — the recency anchor for copy. */
   mostRecentFlaggedIso: string
   /**
-   * How many distinct in-window flagged BOUTS carry a red flag (drives singular/plural copy + evidence). ≥1.
-   * B-368: episode-collapsed — a single vomiting bout re-logged as N events with N analyses counts as
-   * ONE, matching generate-report's memberEventIds collapse, so "Photos… " (plural) never describes one
-   * bout re-logged. The collapse reuses the frequency lanes' 3h re-log gap (symptomEpisodeGapHours). It
-   * never changes WHETHER the card fires (≥1 flagged incident ⇒ ≥1 bout) — only the count/plural copy.
+   * How many distinct in-window flagged incidents carry a red flag (drives singular/plural copy + evidence). ≥1.
+   * B-368: NEAR-DUPLICATE re-logs collapsed — the same vomit double-tapped / sync-replayed into N events
+   * with N analyses counts as ONE, matching generate-report's §5.11 collapse EXACTLY (a 60s window
+   * anchored to the cluster's first member — countRelogCollapsedIncidents). Two GENUINELY distinct bouts
+   * (e.g. 30 min apart) count as 2 on BOTH surfaces — never understated to 1 on a safety card. Each
+   * collapsed incident is one analyzed photo, so the "logged photo(s)" copy is accurate. It never changes
+   * WHETHER the card fires (≥1 flagged incident ⇒ count ≥1) — only the count and its singular/plural copy.
    */
   flaggedIncidentCount: number
   /** The recency window in days actually applied (a flag older than this no longer leads Home). */
@@ -3650,6 +3652,34 @@ export function deriveIncidentFlags(a: IncidentAnalysisInput): IncidentFlagKind[
   return flags
 }
 
+// B-368 — the near-duplicate re-log window for collapsing flagged incidents, kept EQUAL to
+// generate-report's DEDUP_WINDOW_MS (report.ts §5.11) so the Home red-flag count and the vet
+// report agree on how many distinct flagged incidents occurred. The two edge functions ship as
+// separate bundles and can't share a module, so this is a KEPT-IN-SYNC mirror — change both.
+const INCIDENT_RELOG_DEDUP_MS = 60_000
+
+/**
+ * Count distinct flagged incidents, collapsing only NEAR-DUPLICATE re-logs of one incident (B-368).
+ * Mirrors generate-report's §5.11 dedup: a run is swept in occurred_at order and a member within
+ * INCIDENT_RELOG_DEDUP_MS of the cluster's FIRST member (anchor-fixed, NOT the running previous)
+ * joins that cluster — which bounds each cluster's span to one window, so a slow chain of sub-window
+ * gaps can never fold an arbitrarily long run of genuinely distinct incidents into one (the same
+ * adversarial guard generate-report applies). Pure + list-order-independent (sorts internally).
+ */
+function countRelogCollapsedIncidents(msList: number[]): number {
+  if (msList.length === 0) return 0
+  const sorted = [...msList].sort((a, b) => a - b)
+  let count = 0
+  let clusterAnchor = -Infinity
+  for (const ms of sorted) {
+    if (ms - clusterAnchor > INCIDENT_RELOG_DEDUP_MS) {
+      count++
+      clusterAnchor = ms // a new cluster starts; the anchor stays fixed to its first member
+    }
+  }
+  return count
+}
+
 /**
  * Detector — per-incident visual red flag (B-340). Elevates a blood / foreign-material flag from
  * a photo the owner logged onto the Home safety surface, where "safety insights always lead"
@@ -3707,12 +3737,16 @@ export function detectIncidentRedFlags(
   }
   if (flaggedMs.length === 0) return []
 
-  // B-368 — episode-collapse the flagged incidents so the count (and its singular/plural copy)
-  // describes distinct BOUTS, not raw analysis rows: a single vomiting bout re-logged as N events
-  // with N analyses is ONE flagged incident, matching generate-report's memberEventIds collapse.
-  // Same 3h re-log gap the frequency lanes (③/④/⑤/⑦) use (symptomEpisodeGapHours). This never
-  // changes WHETHER the card fires (flaggedMs is already non-empty ⇒ ≥1 bout) — only the count.
-  const flaggedIncidentCount = toEpisodeOnsets(flaggedMs, config.symptomEpisodeGapHours).length
+  // B-368 — collapse NEAR-DUPLICATE re-logs of one incident so the count (and its singular/plural
+  // "logged photo(s)" copy) describes distinct flagged incidents, not raw analysis rows: the same
+  // vomit double-tapped / sync-replayed into N events with N analyses is ONE flagged incident.
+  // Mirrors generate-report's §5.11 collapse EXACTLY (countRelogCollapsedIncidents below) — a 60s
+  // window anchored to each cluster's FIRST member — so the two surfaces agree: two GENUINELY
+  // distinct bloody-vomit bouts 30 min apart count as 2 on both (never understated to 1 on a safety
+  // card), while a seconds-apart re-log collapses to 1. NOT the 3h symptomEpisodeGapHours used by
+  // the frequency lanes: that would fold distinct bouts together and understate presence. This
+  // never changes WHETHER the card fires (flaggedMs already non-empty ⇒ ≥1 incident) — only the count.
+  const flaggedIncidentCount = countRelogCollapsedIncidents(flaggedMs)
 
   // Stable flag order (blood before foreign material) so copy reads deterministically.
   const flags: IncidentFlagKind[] = []

@@ -51,6 +51,10 @@ const INCIDENT_FLAG_PHRASE: Record<IncidentFlagKind, string> = {
   foreign_material: 'possible foreign material',
 };
 function incidentFlagPhrase(flags: IncidentFlagKind[]): string {
+  // The engine guarantees ≥1 flag (a finding is only emitted when deriveIncidentFlags is non-empty),
+  // but this reads from the cache — defend a corrupt/empty array with a safe, still-escalating phrase
+  // rather than rendering "undefined" on a safety card (never reassures either way).
+  if (flags.length === 0) return 'a possible red flag';
   return flags.length === 2
     ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
     : INCIDENT_FLAG_PHRASE[flags[0]];
