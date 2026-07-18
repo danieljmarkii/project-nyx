@@ -770,13 +770,31 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
   switch (f.kind) {
     case 'present_blood': {
       const n = f.incidents.length
-      const anyFresh = f.incidents.some((i) => i.kind === 'fresh_red')
-      const kindPhrase = anyFresh
-        ? f.incidents.every((i) => i.kind === 'fresh_red')
-          ? 'possible fresh (red) blood'
-          : 'possible blood (fresh and/or digested)'
-        : 'possible coffee-ground (digested) blood'
       const dates = f.incidents.map((i) => fmtLocalDay(i.occurredAt, tz)).join(', ')
+      const anyFresh = f.incidents.some((i) => i.kind === 'fresh_red')
+      const noun = f.source === 'stool' ? 'stool incident' : 'vomiting incident'
+      // Blood-kind phrase — with anatomy correct per source. Vomit: fresh vs coffee-ground (digested).
+      // Stool: fresh_red = haematochezia (lower-GI / large-bowel); dark_tarry = melena (digested,
+      // often UPPER-GI — the anatomy the §3.7 line originally inverted; vet-report-cold-read PR 7).
+      let kindPhrase: string
+      if (f.source === 'stool') {
+        const anyDark = f.incidents.some((i) => i.kind === 'dark_tarry')
+        kindPhrase = anyFresh && anyDark
+          ? 'possible blood — fresh red (haematochezia, lower-GI) and black/tarry (possible melena — digested blood, often upper-GI)'
+          : anyFresh && f.incidents.every((i) => i.kind === 'fresh_red')
+            ? 'possible fresh (red) blood — haematochezia, a lower-GI (large-bowel) sign'
+            : anyDark && f.incidents.every((i) => i.kind === 'dark_tarry')
+              ? 'possible black/tarry stool — melena (digested blood, often upper-GI)'
+              : anyDark || anyFresh
+                ? 'possible blood (fresh and/or black/tarry)'
+                : 'possible blood (subtype unread)'
+      } else {
+        kindPhrase = anyFresh
+          ? f.incidents.every((i) => i.kind === 'fresh_red')
+            ? 'possible fresh (red) blood'
+            : 'possible blood (fresh and/or digested)'
+          : 'possible coffee-ground (digested) blood'
+      }
       return flagRow(
         'Possible blood',
         // R2-6 — attribute to the mechanism ("automated photo analysis"), never the brand ("a photo
@@ -785,7 +803,7 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
         // correct clinical voice, so the attribution stands. R2-4 — the AI provenance sentence
         // collapses into the uniform badge; the present-only qualifier stays.
         // PR 7 — the flagged photo also leads the band (thumbnail), impossible to miss.
-        `<b>${num(n)} vomiting incident${n === 1 ? '' : 's'} (${h(dates)})</b> — ${h(kindPhrase)} on automated photo analysis. ${aiBadge()} Shown because it is present; a photo cannot exclude bleeding.${safetyBandThumbs(
+        `<b>${num(n)} ${noun}${n === 1 ? '' : 's'} (${h(dates)})</b> — ${h(kindPhrase)} on automated photo analysis. ${aiBadge()} Shown because it is present; a photo cannot exclude bleeding.${safetyBandThumbs(
           snap,
           f.incidents.map((i) => i.eventId),
         )}`,
@@ -1363,18 +1381,7 @@ function vomitCharacteristics(snap: ReportSnapshot): string {
   // Consistency: name the most-common deterministically (no average). On a TIE for the
   // top count, say so rather than picking one — asserting "most often foamy" when foamy
   // and watery are 2–2 is a false majority (cold-read).
-  const consistEntries = Object.entries(p.consistencyDistribution).sort(
-    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
-  )
-  let consistBit = ''
-  if (consistEntries.length > 0) {
-    const maxN = consistEntries[0][1]
-    const tied = consistEntries.filter(([, n]) => n === maxN).map(([k]) => k.replace(/_/g, ' '))
-    consistBit =
-      tied.length === 1
-        ? ` Consistency, where legible, was most often ${h(tied[0])}.`
-        : ` Consistency, where legible, had no single predominant type (${h(tied.slice(0, 3).join(', '))}).`
-  }
+  const consistBit = predominantBit(p.consistencyDistribution, 'Consistency, where legible,', (k) => k.replace(/_/g, ' '))
 
   // The four-state denominator disclosure (§5.10) — kept distinct, never collapsed.
   const noPhoto = p.totalIncidents - p.withAnalysis
@@ -1503,12 +1510,15 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
   } else {
     const lines: string[] = []
     if (ai.bloodPresent.length > 0) {
+      // Anatomy correct PER KIND (vet-report-cold-read PR 7): fresh_red = haematochezia (lower-GI);
+      // dark_tarry = melena, digested blood (often UPPER-GI). Never a blanket "large-bowel" claim —
+      // that inverts the anatomy for melena. Trailing sentence stays anatomy-neutral.
       const dates = ai.bloodPresent
         .map((b) => {
           const kind = b.kind === 'fresh_red'
-            ? 'fresh red — haematochezia'
+            ? 'fresh red — haematochezia, a lower-GI sign'
             : b.kind === 'dark_tarry'
-            ? 'black / tarry — possible melena'
+            ? 'black / tarry — possible melena, digested blood (often upper-GI)'
             : 'subtype unread'
           return `${fmtLocalDay(b.occurredAt, snap.timezone)} (${kind})`
         })
@@ -1516,7 +1526,7 @@ function stoolCharacteristics(snap: ReportSnapshot): string {
       lines.push(
         `<b>Possible blood — ${num(ai.bloodPresent.length)} incident${
           ai.bloodPresent.length === 1 ? '' : 's'
-        }:</b> ${h(dates)}. A large-bowel red flag — worth a vet conversation.`,
+        }:</b> ${h(dates)}. A stool red flag — worth a vet conversation, and it leads the safety flags at the top of this report.`,
       )
     }
     if (ai.mucusPresent.length > 0) {
@@ -1902,7 +1912,7 @@ function appendixA(snap: ReportSnapshot): string {
 <section class="page">
   ${appendixDivider(snap)}
   <p class="appx-title serif">Appendix A — Symptom event log</p>
-  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed.${estBit} For photographed vomiting events the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
+  <p class="appx-sub">Every symptom event in the window, in order. &ldquo;Occurred&rdquo; is the owner's best account of when it happened; for events found later it is a time range, not the time it was noticed.${estBit} For photographed incidents the automated photo-analysis fields are shown beneath the note (owner-reviewable).</p>
   <table>
     <caption>${num(count)} symptom event${count === 1 ? '' : 's'} &middot; ${h(fmtRange(snap.scope.startDate, snap.scope.endDate))}</caption>
     <thead>
@@ -1916,7 +1926,7 @@ function appendixA(snap: ReportSnapshot): string {
     </thead>
     <tbody>${rows || `<tr><td colspan="5">No symptom events in this window.</td></tr>`}</tbody>
   </table>
-  <p class="note" style="margin-top:9px"><b>Why a range and not a time:</b> a vomit found at 07:44 but occurring around 04:00 changes the interval from the prior meal from minutes to hours — a clinically different picture. Where the owner did not witness the event, the window it occurred in is shown, not the time it was noticed. Photo findings are Culprit's read of the owner's photo, owner-reviewable; they never carry a diagnosis or a single-incident verdict (that stays in the app, off this report).</p>
+  <p class="note" style="margin-top:9px"><b>Why a range and not a time:</b> an event found at 07:44 but occurring around 04:00 changes the interval from the prior meal from minutes to hours — a clinically different picture. Where the owner did not witness the event, the window it occurred in is shown, not the time it was noticed. Photo findings are Culprit's read of the owner's photo, owner-reviewable; they never carry a diagnosis or a single-incident verdict (that stays in the app, off this report).</p>
   ${footer(snap, 'Appendix A — event log')}
 </section>`
 }
@@ -1931,14 +1941,31 @@ function appendixA(snap: ReportSnapshot): string {
 function phenotypeFieldBits(ph: SymptomLogPhenotype | null): string {
   if (!ph) return ''
   if (ph.status === 'completed') {
-    const bits = [
-      ph.colour ? `colour ${h(ph.colour)}` : null,
-      ph.contentsCategory ? `contents ${h(contentsLabel(ph.contentsCategory).toLowerCase())}` : null,
-      ph.consistency ? `consistency ${h(ph.consistency.replace(/_/g, ' '))}` : null,
-      // PRESENT-only (§5.9): render blood/foreign ONLY when present; silence otherwise.
-      ph.bloodPresent ? `<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>` : null,
-      ph.foreignPresent ? `<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>` : null,
-    ].filter(Boolean)
+    // PRESENT-only (§5.9): render blood/foreign/mucus ONLY when present; silence otherwise.
+    const bits =
+      ph.kind === 'stool'
+        ? [
+            ph.bristol ? `consistency ${h(BRISTOL_LABEL[ph.bristol] ?? ph.bristol.replace(/_/g, ' '))}` : null,
+            ph.stoolColour ? `colour ${h(STOOL_COLOUR_LABEL[ph.stoolColour] ?? ph.stoolColour.replace(/_/g, ' '))}` : null,
+            ph.stoolBlood
+              ? `<b>blood ${
+                  ph.stoolBlood === 'fresh_red'
+                    ? 'possible fresh red (haematochezia)'
+                    : ph.stoolBlood === 'dark_tarry'
+                    ? 'possible black/tarry (melena)'
+                    : 'possible (subtype unread)'
+                } (AI, unconfirmed)</b>`
+              : null,
+            // Mucus is monitor-tier (D5) — surfaced, present-only, but NOT bolded like a red flag.
+            ph.mucusPresent ? `mucus present (AI, unconfirmed)` : null,
+          ].filter(Boolean)
+        : [
+            ph.colour ? `colour ${h(ph.colour)}` : null,
+            ph.contentsCategory ? `contents ${h(contentsLabel(ph.contentsCategory).toLowerCase())}` : null,
+            ph.consistency ? `consistency ${h(ph.consistency.replace(/_/g, ' '))}` : null,
+            ph.bloodPresent ? `<b>blood ${ph.bloodPresent === 'fresh_red' ? 'possible fresh red' : 'possible coffee-ground'} (AI, unconfirmed)</b>` : null,
+            ph.foreignPresent ? `<b>foreign material possible (AI, unconfirmed)${ph.foreignNote ? ` — ${h(ph.foreignNote)}` : ''}</b>` : null,
+          ].filter(Boolean)
     return bits.join(' &middot; ')
   }
   const stateWord =
@@ -2143,7 +2170,7 @@ function incidentPhotosAppendix(snap: ReportSnapshot): string {
   return `
 <section class="page">
   <p class="appx-title serif">Appendix ${letter} — Incident photos</p>
-  <p class="appx-sub">${lead} — the owner's own photos, attached when the event was logged. For vomiting incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}${removedNote}</p>
+  <p class="appx-sub">${lead} — the owner's own photos, attached when the event was logged. For analyzed incidents the automated photo-analysis fields are shown beneath (owner-reviewable, unconfirmed); a photo flagged for possible blood or foreign material also leads the safety flags on page&nbsp;1. Photo metadata (location, device, capture time) is removed before embedding. A clear photo is never an all-clear and these never carry a diagnosis.${missingNote}${removedNote}</p>
   ${cards}
   ${footer(snap, `Appendix ${letter} — incident photos`)}
 </section>`

@@ -1486,6 +1486,46 @@ Deno.test('stool ai: present-only blood/mucus — never folds no/unsure into pre
   assert.equal(ai.mucusPresent[0].eventId, 's1')
 })
 
+Deno.test('stool blood ELEVATES to the page-1 safety band (source=stool), like vomit blood', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ id: 's1', type: 'diarrhea', occurredAt: at('2026-06-26') })],
+      aiAnalyses: [mkAnalysis('s1', { status: 'completed', stoolBloodPresent: 'yes', stoolBloodType: 'dark_tarry' })],
+    }),
+  )
+  const blood = snap.safetyFlags.filter((f) => f.kind === 'present_blood')
+  assert.equal(blood.length, 1)
+  assert.equal((blood[0] as { source: string }).source, 'stool')
+  assert.equal((blood[0] as { incidents: unknown[] }).incidents.length, 1)
+})
+
+Deno.test('stool mucus does NOT elevate to the safety band (monitor-tier, D5)', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ id: 's1', type: 'diarrhea', occurredAt: at('2026-06-26') })],
+      aiAnalyses: [mkAnalysis('s1', { status: 'completed', stoolBloodPresent: 'no', stoolMucusPresent: 'yes' })],
+    }),
+  )
+  assert.equal(snap.safetyFlags.filter((f) => f.kind === 'present_blood').length, 0)
+})
+
+Deno.test('stool incident phenotype (Appendix A/E) carries Bristol + present blood; photo safety class = blood', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [makeEvent({ id: 's1', type: 'diarrhea', occurredAt: at('2026-06-26') })],
+      aiAnalyses: [mkAnalysis('s1', { status: 'completed', stoolConsistency: 'type_6_mushy', stoolColour: 'black_tarry', stoolBloodPresent: 'yes', stoolBloodType: 'dark_tarry', stoolMucusPresent: 'no' })],
+      attachments: [mkAttachment('s1', 'p/s1.jpg')],
+    }),
+  )
+  const ph = snap.provenance.symptomLog.find((e) => e.eventId === 's1')!.phenotype!
+  assert.equal(ph.kind, 'stool')
+  assert.equal(ph.bristol, 'type_6_mushy')
+  assert.equal(ph.stoolBlood, 'dark_tarry')
+  assert.equal(ph.bloodPresent, null) // vomit field stays null on a stool phenotype
+  const photo = snap.incidentPhotos.find((p) => p.eventId === 's1')!
+  assert.equal(photo.safety, 'blood') // a stool blood photo leads Appendix E + the band thumbnail
+})
+
 Deno.test('stool ai: §5.9 — a blood flag on a DROPPED same-minute duplicate still surfaces', () => {
   // Two stool logs 30s apart collapse to one incident; the fresh_red rides the dropped member.
   const snap = assembleReport(

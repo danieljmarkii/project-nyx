@@ -214,6 +214,7 @@ Deno.test('chronicity flag → safety band leads, mono-prominent, escalates on p
 Deno.test('present_blood flag → "Possible blood" leads the safety band', () => {
   const flag: SafetyFlag = {
     kind: 'present_blood',
+    source: 'vomit',
     incidents: [{ eventId: 'v1', occurredAt: '2026-06-18T18:00:00Z', kind: 'coffee_ground' }],
   }
   const html = renderReport(base({ safetyFlags: [flag] }))
@@ -224,6 +225,40 @@ Deno.test('present_blood flag → "Possible blood" leads the safety band', () =>
   assert.ok(/AI read &middot; unconfirmed/.test(html), 'uniform AI badge present')
   assert.ok(/automated photo analysis/i.test(html), 'attributed to the mechanism, not the app name')
   assert.ok(!/photo Nyx flagged/.test(html), 'no app-name/patient-name collision')
+})
+
+Deno.test('present_blood (source=stool, melena) → stool noun + upper-GI anatomy in the band', () => {
+  const flag: SafetyFlag = {
+    kind: 'present_blood',
+    source: 'stool',
+    incidents: [{ eventId: 's1', occurredAt: '2026-06-26T14:00:00Z', kind: 'dark_tarry' }],
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(html.includes('class="safetyband"') && html.includes('Possible blood'))
+  assert.ok(/stool incident/.test(html) && !/vomiting incident/.test(html), 'stool noun, not vomit')
+  assert.ok(/melena/.test(html) && /upper-GI/.test(html), 'melena localised upper-GI')
+})
+
+Deno.test('present_blood (source=stool, haematochezia) → lower-GI anatomy; not melena', () => {
+  const flag: SafetyFlag = {
+    kind: 'present_blood',
+    source: 'stool',
+    incidents: [{ eventId: 's1', occurredAt: '2026-06-26T14:00:00Z', kind: 'fresh_red' }],
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(/haematochezia/.test(html) && /lower-GI/.test(html), 'fresh red localised lower-GI')
+  assert.ok(!/melena/.test(html), 'haematochezia not mislabelled melena')
+})
+
+Deno.test('present_blood (source=stool, subtype unread) → present but no false anatomy', () => {
+  const flag: SafetyFlag = {
+    kind: 'present_blood',
+    source: 'stool',
+    incidents: [{ eventId: 's1', occurredAt: '2026-06-26T14:00:00Z', kind: null }],
+  }
+  const html = renderReport(base({ safetyFlags: [flag] }))
+  assert.ok(/subtype unread/.test(html), 'present-but-unread blood surfaces without inventing a subtype')
+  assert.ok(!/melena/.test(html) && !/haematochezia/.test(html), 'no anatomy claimed when subtype is unknown')
 })
 
 Deno.test('intake_decline renders as a health signal, never "picky"', () => {
@@ -512,7 +547,7 @@ Deno.test('phenotype consistency: a tie for the top type is disclosed, not asser
   const tie = renderReport(
     base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 2, watery: 2, chunky: 1 } }) }),
   )
-  assert.ok(/no single predominant type/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
+  assert.ok(/no single predominant reading/i.test(tie), 'a 2–2 tie is not called "most often foamy"')
   const clear = renderReport(
     base({ vomitPhenotype: emptyPhenotype({ consistencyDistribution: { foamy: 6, chunky: 2 } }) }),
   )
@@ -778,7 +813,9 @@ Deno.test('stool: melena blood + mucus present → present findings, melena name
   }))
   assert.ok(/Present findings/.test(html))
   assert.ok(/possible melena/.test(html), 'dark_tarry blood named as melena')
-  assert.ok(/large-bowel red flag/.test(html), 'blood framed as a red flag worth a vet conversation')
+  assert.ok(/often upper-GI/.test(html), 'melena localised to upper-GI, not large-bowel')
+  assert.ok(!/large-bowel/.test(html), 'never the inverted large-bowel claim for melena')
+  assert.ok(/stool red flag/.test(html) && /leads the safety flags at the top/.test(html), 'blood framed as a red flag that leads the band')
   assert.ok(/Mucus (&mdash;|—)/.test(html), 'mucus surfaced')
   assert.ok(/often benign on its own/.test(html), 'mucus framed monitor-tier, never an escalation')
   assert.ok(!/0 of \d/.test(html), 'never a "0 of N"')
@@ -1397,7 +1434,7 @@ Deno.test('R2-5 — page 1 carries an orientation line; the appendices open with
 })
 
 Deno.test('R2-4/R2-6 — one uniform AI badge; safety-band header hedge removed; footer labels the patient', () => {
-  const flag: SafetyFlag = { kind: 'present_blood', incidents: [{ eventId: 'v1', occurredAt: '2026-06-18T18:00:00Z', kind: 'coffee_ground' }] }
+  const flag: SafetyFlag = { kind: 'present_blood', source: 'vomit', incidents: [{ eventId: 'v1', occurredAt: '2026-06-18T18:00:00Z', kind: 'coffee_ground' }] }
   const html = renderReport(base({ safetyFlags: [flag] }))
   assert.ok(/AI read &middot; unconfirmed/.test(html), 'the uniform AI badge')
   assert.ok(!/owner-reported · not a diagnosis<\/span>/.test(html), 'safety-band header no longer restates the masthead hedge')
@@ -1524,7 +1561,7 @@ Deno.test('PR7 render — with a meals appendix present, photos take the NEXT le
 })
 
 Deno.test('PR7 render — a safety-flagged photo also LEADS the safety band on page 1 (thumbnail)', () => {
-  const bloodFlag: SafetyFlag = { kind: 'present_blood', incidents: [{ eventId: 'vb', occurredAt: '2026-06-20T14:00:00Z', kind: 'fresh_red' }] }
+  const bloodFlag: SafetyFlag = { kind: 'present_blood', source: 'vomit', incidents: [{ eventId: 'vb', occurredAt: '2026-06-20T14:00:00Z', kind: 'fresh_red' }] }
   const html = renderReport(
     base({
       safetyFlags: [bloodFlag],
@@ -1552,7 +1589,7 @@ Deno.test('PR7 render — the owner-reviewable AI read shows present-only fields
           eventId: 'v1',
           occurredAt: '2026-06-20T14:00:00Z',
           dataUri: PNG_1PX,
-          phenotype: { status: 'completed', contentsCategory: 'bile', consistency: 'foamy', colour: 'yellow', bloodPresent: 'coffee_ground', foreignPresent: null, foreignNote: null, edited: false },
+          phenotype: { kind: 'vomit', status: 'completed', contentsCategory: 'bile', consistency: 'foamy', colour: 'yellow', bloodPresent: 'coffee_ground', foreignPresent: null, foreignNote: null, bristol: null, stoolColour: null, stoolBlood: null, mucusPresent: null, edited: false },
         }),
       ],
     }),
