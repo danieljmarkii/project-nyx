@@ -301,9 +301,11 @@ export default function FoodCaptureScreen() {
     }
   }
 
-  // Upload all captured photos and kick off async extraction. The food_items
-  // row is inserted with status='pending' before extraction is invoked so the
-  // realtime subscription (Step 6) has something to watch even on slow Claude.
+  // Insert the pending food_items row, upload its photos, then kick off async
+  // extraction. Order matters (B-358): the owner-locked row is written FIRST so
+  // the owner-scoped nyx-food-photos Storage INSERT policy can resolve each
+  // {foodId}/… path to its owner and authorize the upload — and so the realtime
+  // subscription (Step 6) has a row to watch even on slow Claude.
   async function runUploadAndExtract(
     front: CapturedPhoto,
     ingredients: CapturedPhoto | null,
@@ -329,16 +331,13 @@ export default function FoodCaptureScreen() {
     const storagePaths = photos.map((p) => p.storagePath);
 
     try {
-      // Compress + upload all photos in parallel
-      await Promise.all(photos.map(async (p) => {
-        const compressedUri = await compressForUpload(p.localUri, p.width, p.height);
-        await uploadPhoto('nyx-food-photos', p.storagePath, compressedUri);
-      }));
-
-      // Insert pending food_items row. The brand/product_name/format columns
-      // are NOT NULL on the table, so we seed placeholders that the Edge
-      // Function overwrites on extraction success. created_by_user_id is
-      // required by the RLS insert policy.
+      // Insert the pending food_items row BEFORE uploading its photos (B-358).
+      // The tightened nyx-food-photos Storage INSERT policy scopes uploads to the
+      // owner of the food named by the path's first segment ({foodId}/…), so the
+      // owner-locked row (which carries created_by_user_id) must exist first or
+      // the upload 42501s. brand/product_name/format are NOT NULL on the table,
+      // so we seed placeholders that the Edge Function overwrites on extraction
+      // success. created_by_user_id is required by the RLS insert policy.
       const { error: insertError } = await supabase.from('food_items').insert({
         id: foodId,
         brand: 'Extracting…',
@@ -352,9 +351,19 @@ export default function FoodCaptureScreen() {
         source: 'ai_extracted',
       });
       if (insertError) {
-        // If the row already exists (retry path), continue — extraction can still run.
+        // A conflict here is the retry path (the row was created on a prior
+        // attempt) — the row still exists and satisfies the upload policy, so
+        // continue. A genuine insert failure instead surfaces below as an upload
+        // 42501 that routes to the same manual-edit fallback (setExtractionFailed).
         console.warn('[food-capture] food_items insert:', insertError.message);
       }
+
+      // Compress + upload all photos in parallel. Runs AFTER the insert so the
+      // owner-scoped Storage INSERT policy can authorize each {foodId}/… path.
+      await Promise.all(photos.map(async (p) => {
+        const compressedUri = await compressForUpload(p.localUri, p.width, p.height);
+        await uploadPhoto('nyx-food-photos', p.storagePath, compressedUri);
+      }));
 
       // Invoke extraction. We await it for the confirm screen, but don't block
       // the meal log on it — if it errors, we fall through to manual edit.
