@@ -389,17 +389,38 @@ async function blobToImagePart(blob: Blob): Promise<ImagePart> {
 // caller degrades to photoUnreadable. A raw-download failure throws (a real,
 // retryable error), matching the prior behaviour. The worst case of the transform
 // is "degrades exactly like before"; it introduces no new failure mode.
-async function fetchUsableImageBlob(
+//
+// `forceTransform` (B-228 A8 — the Ask transform-only condition, §6.2.4 / AC-13): when
+// true, the raw download is SKIPPED entirely and every photo — small ones included —
+// is fetched only through the imgproxy transform, which strips EXIF/GPS and re-encodes.
+// This is the vet-report PR-7 "never raw originals" posture, and it is the mechanism
+// T&S's D2 sign-off was conditioned on: a live read triggered by Ask must never send an
+// un-stripped original across the Anthropic boundary. It is OPT-IN (default false) so
+// the detail-screen read path is byte-identical — a deliberate owner action on one event
+// keeps its shipped raw-for-small fetch (no transform-quota, no availability dependency);
+// only the conversational Ask surface pays the transform tax + gains the stripping
+// guarantee. On the forced path a storage/transform error degrades to photoUnreadable
+// (null) rather than throwing — honest "couldn't read the photo", never raw bytes, never
+// reassurance; the owner can re-run from the detail screen (the raw path) if it was
+// transient.
+// Exported for the AC-13 test (B-228 A8): a fixture asserts that with forceTransform the
+// ONLY storage access is the stripping transform — no raw-original download path exists.
+export async function fetchUsableImageBlob(
   adminClient: SupabaseClient,
   path: string,
   functionName: string,
+  forceTransform = false,
 ): Promise<Blob | null> {
   const bucket = adminClient.storage.from('nyx-event-attachments')
-  const { data, error } = await bucket.download(path)
-  if (error || !data) throw new Error(`Storage download failed for ${path}: ${error?.message ?? 'no data'}`)
-  if (data.size > 0 && data.size <= MAX_CLAUDE_IMAGE_BYTES) return data
+  if (!forceTransform) {
+    const { data, error } = await bucket.download(path)
+    if (error || !data) throw new Error(`Storage download failed for ${path}: ${error?.message ?? 'no data'}`)
+    if (data.size > 0 && data.size <= MAX_CLAUDE_IMAGE_BYTES) return data
+    // Oversized (or zero-byte): fall through to the server-side downscale below.
+  }
 
-  // Oversized (or zero-byte): try a server-side downscale.
+  // Transform-only fetch — the ONLY download when forceTransform is set (so there is no
+  // raw-original access path at all; AC-13), and the oversized fallback otherwise.
   const { data: resized, error: resizeErr } = await bucket.download(path, {
     transform: { width: DOWNSCALE_EDGE_PX, height: DOWNSCALE_EDGE_PX, resize: 'contain' },
   })
@@ -518,6 +539,12 @@ async function runVisionCall<TAnalysis extends IncidentAnalysisBase, TFlag exten
 
 interface RequestBody {
   event_id: string
+  // B-228 A8: when true, photos are fetched transform-only (EXIF/GPS-stripped, never raw
+  // originals — §6.2.4 / AC-13). Set by the `ask` Edge Function on a live read; absent /
+  // false on the detail-screen path (byte-identical to the shipped fetch). Optional and
+  // default-off, so analyze-vomit/analyze-stool behaviour is unchanged for every existing
+  // caller — the regression proof (each function's index.test.ts passing unmodified) holds.
+  transform_only?: boolean
 }
 
 export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase, TFlag extends string>(
@@ -543,6 +570,9 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
     return Response.json({ error: 'event_id required' }, { status: 400, headers: CORS_HEADERS })
   }
   const eventId = body.event_id
+  // Transform-only opt-in (B-228 A8). Any non-`true` value keeps the shipped raw-for-small
+  // fetch — so an untrusted/garbled body can only ever tighten the fetch, never loosen it.
+  const forceTransform = body.transform_only === true
 
   // User-scoped client: RLS enforces that the caller owns the event's pet.
   const userClient = createClient(
@@ -739,7 +769,7 @@ export async function runIncidentAnalysis<TAnalysis extends IncidentAnalysisBase
       // any encoding.
       const fetched = await Promise.all(
         photoPaths.slice(0, MAX_PHOTOS_PER_ANALYSIS).map((path) =>
-          fetchUsableImageBlob(adminClient, path, descriptor.functionName)
+          fetchUsableImageBlob(adminClient, path, descriptor.functionName, forceTransform)
         ),
       )
       const usableBlobs = fetched.filter((b): b is Blob => b !== null)

@@ -69,6 +69,7 @@ import {
   medications,
   engineFindings,
   isNotEnoughData,
+  projectCachedRead,
   type AskWindow,
   type AskEventRow,
   type AskMealRow,
@@ -77,6 +78,7 @@ import {
   type AskDoseRow,
   type AskFeedingArrangementRow,
   type AskCachedReadRow,
+  type ProjectedRead,
 } from './tools.ts'
 
 // ── Model & loop bounds ─────────────────────────────────────────────────────────
@@ -300,6 +302,16 @@ export const MODEL_TOOLS: Record<string, unknown>[] = [
     },
   },
   {
+    name: 'read_photo',
+    description:
+      "Look at the photo on ONE vomit or stool event (by id) and return its AI read — a factual recount of what the photo shows (colour, contents, whether blood or foreign material was flagged), never a wellness verdict. Relays the cached read if one exists; otherwise runs a FRESH read through the same machinery the event detail screen uses (this counts against the pet's daily photo-read limit). Use ONLY when the owner asks what an incident looked like AND a recall tool shows the event HAS a photo but no read yet. An empty set of flags means 'nothing was flagged in this one', never 'she's fine'.",
+    input_schema: {
+      type: 'object',
+      properties: { event_id: { type: 'string', description: "The vomit/stool event id (from a recall tool's result)." } },
+      required: ['event_id'],
+    },
+  },
+  {
     name: 'intake_summary',
     description:
       "Share of meals the pet finished (most/all) in the window, over rated non-treat non-free-fed meals. Below the sample floor returns not_enough_data. Use for 'is she eating well', 'appetite'. Frame declines as health, never 'picky'.",
@@ -479,6 +491,139 @@ function ok(result: unknown): ToolCallResult {
  *  outcome to the honest data_gap deflection instead of a guessed rate. */
 function floored(result: unknown): ToolCallResult {
   return { ok: true, result, notEnoughData: isNotEnoughData(result) }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════
+// read_photo — live per-incident photo reads (§6.2/§7.7, A8). The PURE decision half.
+// ══════════════════════════════════════════════════════════════════════════════════
+//
+// read_photo is the ONE model tool that is not pure to dispatch: when no cached read
+// exists it must actually LOOK at the photo, which means a service-role storage fetch +
+// a vision call + a write-back — the shipped analyze-vomit / analyze-stool machinery
+// (`_shared/incident-analysis.ts`), invoked over HTTP by index.ts exactly as the detail
+// screen does (§6.2 — one read path, product-wide). So the split is: this file owns the
+// PURE plan (does a usable cached read exist? is this even a readable, photographed
+// event? is the per-question live-read budget spent?), and index.ts owns only the I/O
+// for the `run` branch. Keeping the plan pure makes the run-or-read-cache decision and
+// the never-run guards (no photo / wrong type / budget) unit-testable.
+//
+// SAFETY: a live read runs through the exact escalation floor + never-clobber write-back
+// + never-reassure read-text selection as the detail screen, and Ask relays it via the
+// SAME override-aware projection the cached-read path uses (projectCachedRead — present-
+// only flags, no all-clear affordance). So a read Ask triggers is immediately a free-
+// surface fact (visible on the event detail screen), Ask can never disagree with that
+// screen about what a photo showed, and the n=1 asymmetry (escalate on presence, never
+// reassure on absence) is inherited wholesale (§7.7). The validator gates the surrounding
+// sentence regardless.
+
+/** The event types that carry a per-incident photo-read machinery (vomit + the two stool
+ *  event_types). Any other type has no read path — read_photo returns unsupported_type. */
+export const PHOTO_READ_EVENT_TYPES: ReadonlySet<string> = new Set(['vomit', 'stool_normal', 'diarrhea'])
+
+export type PhotoReadIncident = 'vomit' | 'stool'
+
+/** Route an event_type to its incident-analysis family (the descriptor index.ts invokes).
+ *  Null for a non-readable type. */
+export function photoReadIncidentType(eventType: string): PhotoReadIncident | null {
+  if (eventType === 'vomit') return 'vomit'
+  if (eventType === 'stool_normal' || eventType === 'diarrhea') return 'stool'
+  return null
+}
+
+/** Per-QUESTION live-read budget (the cost/abuse bound). Each live read is a vision call +
+ *  a per-incident cap unit (analyze_vomit / analyze_stool, 10/day — the product-wide read
+ *  cap, §9.1); this caps how many one question can TRIGGER so a crafted/injected prompt
+ *  can't burn the whole daily cap across the tool loop. A cached RELAY is free (no invoke),
+ *  so it never counts against this. 2 allows "compare the last two"; the daily cap backstops. */
+export const MAX_LIVE_PHOTO_READS_PER_MESSAGE = 2
+
+/** The read_photo tool result the model phrases from + the server features for provenance.
+ *  `read` (when present) is the same override-aware projection the recall path relays. */
+export interface PhotoReadResult {
+  kind: 'read_photo'
+  eventId: string | null
+  eventType: string | null
+  incidentType: PhotoReadIncident | null
+  /**
+   *  - `cached`   — a usable read already existed; relayed, no run, no cap burn.
+   *  - `ran`      — a fresh read ran through the machinery and is relayed + persisted.
+   *  - `capped`   — the daily photo-read limit is reached; no read this time (not "fine").
+   *  - `unavailable` — the read couldn't run (flag off / failed / unreadable photo).
+   *  - `no_photo` — the event has no photo to look at.
+   *  - `unsupported_type` — not a vomit/stool event (no read machinery).
+   *  - `not_found` — no live event with that id in the record.
+   *  - `budget_exhausted` — this question already ran its allowed live reads.
+   */
+  status: 'cached' | 'ran' | 'capped' | 'unavailable' | 'no_photo' | 'unsupported_type' | 'not_found' | 'budget_exhausted'
+  /** True ONLY when a fresh read actually ran (status 'ran') — drives the "I took a fresh
+   *  look" framing and separates a run from a relay for cost accounting. */
+  ranLiveRead: boolean
+  /** The relayable, override-aware read (present-only flags), or null when there's nothing
+   *  to relay (no run / no photo / capped / etc.). Never carries an "all clear" affordance. */
+  read: ProjectedRead | null
+}
+
+/** The pure plan for a read_photo call, decided over the already-fetched context. `run`
+ *  is the only outcome that needs I/O (index.ts invokes the machinery); every other
+ *  outcome is a final result with no side effect. */
+export type PhotoReadPlan =
+  | { action: 'not_found' }
+  | { action: 'no_photo'; eventId: string; eventType: string }
+  | { action: 'unsupported_type'; eventId: string; eventType: string }
+  | { action: 'relay_cached'; eventId: string; eventType: string; incidentType: PhotoReadIncident; read: ProjectedRead }
+  | { action: 'budget_exhausted'; eventId: string; eventType: string; incidentType: PhotoReadIncident }
+  | { action: 'run'; eventId: string; eventType: string; incidentType: PhotoReadIncident }
+
+/**
+ * Decide what a read_photo call should do — WITHOUT any I/O. Run-or-read-cache (§6.2):
+ *   • unknown / soft-deleted id            → not_found (never a reassurance).
+ *   • not a vomit/stool event              → unsupported_type.
+ *   • no photo on the event                → no_photo (nothing to look at; a photoless
+ *     contextual escalation still reaches the owner via engine_findings / safetyLead,
+ *     relay-only — so we never invoke, and never burn a cap, for a photoless event).
+ *   • a usable cached read already exists   → relay_cached (no run, no cap burn). "Usable"
+ *     = a real analysis (completed / uncertain); pending/failed/capped/read_disabled are
+ *     NOT usable → re-run. A dismissed-but-completed read still relays (its structured
+ *     facts remain a recountable fact — dismissal never hides a present red flag).
+ *   • the per-question live-read budget is spent → budget_exhausted (no run).
+ *   • otherwise                            → run (index.ts invokes the machinery).
+ * `liveReadsUsed` counts prior INVOKES this question (cached relays don't count).
+ */
+export function planPhotoRead(
+  ctx: AskDataContext,
+  eventId: string,
+  liveReadsUsed: number,
+  maxLiveReads: number = MAX_LIVE_PHOTO_READS_PER_MESSAGE,
+): PhotoReadPlan {
+  const event = ctx.events.find((e) => e.id === eventId && e.deletedAt == null)
+  if (!event) return { action: 'not_found' }
+  const incidentType = photoReadIncidentType(event.type)
+  if (!incidentType) return { action: 'unsupported_type', eventId, eventType: event.type }
+  if (!event.hasPhoto) return { action: 'no_photo', eventId, eventType: event.type }
+
+  const read = ctx.reads.find((r) => r.eventId === eventId) ?? null
+  if (read && (read.status === 'completed' || read.status === 'uncertain')) {
+    return { action: 'relay_cached', eventId, eventType: event.type, incidentType, read: projectCachedRead(read) }
+  }
+  if (liveReadsUsed >= maxLiveReads) return { action: 'budget_exhausted', eventId, eventType: event.type, incidentType }
+  return { action: 'run', eventId, eventType: event.type, incidentType }
+}
+
+/** Build the read_photo tool result for every NON-run plan (the run branch's result is
+ *  assembled by index.ts from the machinery's persisted row). Pure. */
+export function buildPhotoReadResult(plan: Exclude<PhotoReadPlan, { action: 'run' }>): PhotoReadResult {
+  switch (plan.action) {
+    case 'not_found':
+      return { kind: 'read_photo', eventId: null, eventType: null, incidentType: null, status: 'not_found', ranLiveRead: false, read: null }
+    case 'no_photo':
+      return { kind: 'read_photo', eventId: plan.eventId, eventType: plan.eventType, incidentType: null, status: 'no_photo', ranLiveRead: false, read: null }
+    case 'unsupported_type':
+      return { kind: 'read_photo', eventId: plan.eventId, eventType: plan.eventType, incidentType: null, status: 'unsupported_type', ranLiveRead: false, read: null }
+    case 'relay_cached':
+      return { kind: 'read_photo', eventId: plan.eventId, eventType: plan.eventType, incidentType: plan.incidentType, status: 'cached', ranLiveRead: false, read: plan.read }
+    case 'budget_exhausted':
+      return { kind: 'read_photo', eventId: plan.eventId, eventType: plan.eventType, incidentType: plan.incidentType, status: 'budget_exhausted', ranLiveRead: false, read: null }
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════
@@ -748,6 +893,13 @@ export function buildProvenance(featured: unknown): AnswerProvenance | null {
       const id = ev && ev.id != null ? String(ev.id) : null
       return { window: null, denominator: null, tapThrough: id ? { kind: 'events', eventIds: [id] } : null }
     }
+    case 'read_photo': {
+      // The tap-through opens the event where the photo itself lives (§6.2 mode 1) — and,
+      // for a live read, where the now-persisted read is visible like any other read. No
+      // denominator/window: a single-incident read is not an aggregate.
+      const id = r.eventId != null && r.status !== 'not_found' ? String(r.eventId) : null
+      return { window: null, denominator: null, tapThrough: id ? { kind: 'events', eventIds: [id] } : null }
+    }
     case 'photo_presence': {
       const ids = Array.isArray(r.eventIds) ? (r.eventIds as unknown[]).map(String) : []
       const count = num(r.count)
@@ -915,7 +1067,8 @@ export const SYSTEM_PROMPT =
   "(5) If a data tool returns not_enough_data, decline with a data-gap; don't invent a rate. " +
   "(6) If engine_findings returns a SAFETY finding relevant to the question, lead with it — relay it verbatim, never soften it. " +
   "(7) Plain, warm language; address the owner as 'you'; use the pet's name; no exclamation marks; never cute. One or two sentences of detail. " +
-  "(8) For a diagnosis-shaped or interpretive question ('does she have X', 'is that a lot', 'should I worry'), or a fishing-for-reassurance question ('so she's fine, right'), call decline — those are the vet's call, and declining still offers to line up the evidence."
+  "(8) For a diagnosis-shaped or interpretive question ('does she have X', 'is that a lot', 'should I worry'), or a fishing-for-reassurance question ('so she's fine, right'), call decline — those are the vet's call, and declining still offers to line up the evidence. " +
+  "(9) PHOTOS: to answer what a vomit or stool incident LOOKED like, first recall the event, then — only if it HAS a photo but no read yet — call read_photo with its id to look at the photo. read_photo returns a factual read (colour, contents, whether blood or foreign material was flagged); relay ONLY what it reports. NEVER say a photo 'looked fine/normal/okay', 'nothing concerning', 'no red flags', or 'in the clear' — an empty set of flags means 'nothing was flagged in this one photo', never that the pet is well. If read_photo reports it ran a fresh read, you may say you took a look; if it reports no_photo / capped / unavailable, say so plainly and point to the event — never fill the gap with reassurance. Do NOT call read_photo for a non-vomit/stool event, and do NOT call it speculatively — only when the owner asked what an incident looked like."
 
 export const GENERAL_SYSTEM_PROMPT =
   SYSTEM_PROMPT +

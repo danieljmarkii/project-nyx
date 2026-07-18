@@ -36,10 +36,17 @@ import {
   sanitizeFollowups,
   strayNumerals,
   validateAnswer,
+  planPhotoRead,
+  buildPhotoReadResult,
+  photoReadIncidentType,
+  PHOTO_READ_EVENT_TYPES,
+  MAX_LIVE_PHOTO_READS_PER_MESSAGE,
   type AskDataContext,
   type AskOutcome,
   type AskTurn,
+  type PhotoReadPlan,
 } from './answer.ts'
+import type { AskCachedReadRow } from './tools.ts'
 
 // ── A minimal fetched context for dispatch tests ──────────────────────────────────
 const NOW = Date.UTC(2026, 6, 18, 12, 0, 0) // 2026-07-18T12:00:00Z
@@ -510,4 +517,142 @@ Deno.test('computeResetsAt: daily = next UTC midnight, monthly = first of next U
   const now = Date.UTC(2026, 6, 18, 15, 30, 0)
   assert.equal(computeResetsAt('daily', now), new Date(Date.UTC(2026, 6, 19)).toISOString())
   assert.equal(computeResetsAt('monthly', now), new Date(Date.UTC(2026, 7, 1)).toISOString())
+})
+
+// ══════════════════════════════════════════════════════════════════════════════════
+// read_photo — live per-incident photo reads (§6.2/§7.7, A8). PURE plan + result. AC-11/12/13.
+// ══════════════════════════════════════════════════════════════════════════════════
+
+function readRow(over: Partial<AskCachedReadRow> & { eventId: string }): AskCachedReadRow {
+  return {
+    incidentType: 'vomit',
+    status: 'completed',
+    dismissedAt: null,
+    editedAt: null,
+    description: null,
+    colour: null,
+    contents: null,
+    consistency: null,
+    bloodPresent: null,
+    bilePresent: null,
+    foreignMaterialPresent: null,
+    foreignMaterialNote: null,
+    stoolConsistency: null,
+    stoolBloodPresent: null,
+    stoolMucusPresent: null,
+    recommendation: null,
+    readText: null,
+    ...over,
+  }
+}
+
+Deno.test('photoReadIncidentType + PHOTO_READ_EVENT_TYPES: only vomit/stool route to a read', () => {
+  assert.equal(photoReadIncidentType('vomit'), 'vomit')
+  assert.equal(photoReadIncidentType('stool_normal'), 'stool')
+  assert.equal(photoReadIncidentType('diarrhea'), 'stool')
+  assert.equal(photoReadIncidentType('meal'), null)
+  assert.equal(photoReadIncidentType('weight_check'), null)
+  assert.deepEqual([...PHOTO_READ_EVENT_TYPES].sort(), ['diarrhea', 'stool_normal', 'vomit'])
+})
+
+Deno.test('planPhotoRead: unknown / soft-deleted id → not_found (never a reassurance)', () => {
+  assert.equal(planPhotoRead(ctx(), 'nope', 0).action, 'not_found')
+  const softDeleted = ctx({
+    events: [{ id: 'x', type: 'vomit', occurredAt: iso(1), occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, note: null, hasPhoto: true, deletedAt: iso(0) }],
+  })
+  assert.equal(planPhotoRead(softDeleted, 'x', 0).action, 'not_found')
+})
+
+Deno.test('planPhotoRead: non-vomit/stool event → unsupported_type (no read machinery)', () => {
+  // e4 is a lethargy event in the shared ctx.
+  const plan = planPhotoRead(ctx(), 'e4', 0)
+  assert.equal(plan.action, 'unsupported_type')
+})
+
+Deno.test('planPhotoRead: a readable event with NO photo → no_photo (never invokes)', () => {
+  // e2 is a photoless vomit.
+  const plan = planPhotoRead(ctx(), 'e2', 0)
+  assert.equal(plan.action, 'no_photo')
+})
+
+Deno.test('planPhotoRead: a usable cached read → relay_cached, no run (run-or-read-cache)', () => {
+  const c = ctx({ reads: [readRow({ eventId: 'e1', status: 'completed', bloodPresent: 'fresh_red', readText: 'I can see what looks like blood.' })] })
+  const plan = planPhotoRead(c, 'e1', 0)
+  assert.equal(plan.action, 'relay_cached')
+  if (plan.action === 'relay_cached') {
+    // Override-aware present-only flag surfaces; the read text relays.
+    assert.deepEqual(plan.read.flags, ['blood'])
+    assert.equal(plan.read.readText, 'I can see what looks like blood.')
+  }
+})
+
+Deno.test('planPhotoRead: an UNCERTAIN cached read is still usable (relayed, not re-run)', () => {
+  const c = ctx({ reads: [readRow({ eventId: 'e1', status: 'uncertain' })] })
+  assert.equal(planPhotoRead(c, 'e1', 0).action, 'relay_cached')
+})
+
+Deno.test('planPhotoRead: a DISMISSED-but-completed read still relays; its n=1 text is hidden but a present flag is NOT', () => {
+  const c = ctx({ reads: [readRow({ eventId: 'e1', status: 'completed', dismissedAt: iso(0), bloodPresent: 'fresh_red', readText: 'named concern' })] })
+  const plan = planPhotoRead(c, 'e1', 0)
+  assert.equal(plan.action, 'relay_cached')
+  if (plan.action === 'relay_cached') {
+    assert.equal(plan.read.readText, null) // dismissed → interpretive text hidden
+    assert.deepEqual(plan.read.flags, ['blood']) // but a present red flag is never hidden
+  }
+})
+
+Deno.test('planPhotoRead: a non-real cached state (capped/failed/pending/read_disabled) → run (re-read)', () => {
+  for (const status of ['capped', 'failed', 'pending', 'read_disabled']) {
+    const c = ctx({ reads: [readRow({ eventId: 'e1', status })] })
+    assert.equal(planPhotoRead(c, 'e1', 0).action, 'run', `status ${status} should re-run`)
+  }
+})
+
+Deno.test('planPhotoRead: no cached read + has photo → run; at budget → budget_exhausted (no run)', () => {
+  assert.equal(planPhotoRead(ctx(), 'e1', 0).action, 'run')
+  assert.equal(planPhotoRead(ctx(), 'e1', MAX_LIVE_PHOTO_READS_PER_MESSAGE).action, 'budget_exhausted')
+  // Budget is checked AFTER the cached-relay branch: a cached read is free even at budget.
+  const c = ctx({ reads: [readRow({ eventId: 'e1', status: 'completed' })] })
+  assert.equal(planPhotoRead(c, 'e1', MAX_LIVE_PHOTO_READS_PER_MESSAGE).action, 'relay_cached')
+})
+
+Deno.test('buildPhotoReadResult: each non-run plan maps to the right status; only ran sets ranLiveRead', () => {
+  const cases: { plan: Exclude<PhotoReadPlan, { action: 'run' }>; status: string }[] = [
+    { plan: { action: 'not_found' }, status: 'not_found' },
+    { plan: { action: 'no_photo', eventId: 'e1', eventType: 'vomit' }, status: 'no_photo' },
+    { plan: { action: 'unsupported_type', eventId: 'e4', eventType: 'lethargy' }, status: 'unsupported_type' },
+    { plan: { action: 'budget_exhausted', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit' }, status: 'budget_exhausted' },
+  ]
+  for (const { plan, status } of cases) {
+    const r = buildPhotoReadResult(plan)
+    assert.equal(r.kind, 'read_photo')
+    assert.equal(r.status, status)
+    assert.equal(r.ranLiveRead, false)
+    assert.equal(r.read, null) // no relayable read on any non-cached, non-run path
+  }
+  // relay_cached carries the projected read.
+  const relayed = buildPhotoReadResult({ action: 'relay_cached', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit', read: { incidentType: 'vomit', status: 'completed', edited: false, description: null, flags: [], readText: null, recommendation: 'monitor', fields: { colour: 'yellow', contents: null, consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } } })
+  assert.equal(relayed.status, 'cached')
+  assert.equal(relayed.ranLiveRead, false)
+  assert.ok(relayed.read)
+})
+
+Deno.test('buildProvenance(read_photo): a real read taps through to its event; not_found → no tap-through', () => {
+  const prov = buildProvenance({ kind: 'read_photo', eventId: 'e1', status: 'ran' })
+  assert.ok(prov)
+  assert.deepEqual(prov!.tapThrough, { kind: 'events', eventIds: ['e1'] })
+  assert.equal(prov!.denominator, null) // a single incident is not an aggregate
+  const missing = buildProvenance({ kind: 'read_photo', eventId: null, status: 'not_found' })
+  assert.equal(missing!.tapThrough, null)
+})
+
+Deno.test('read_photo relay is guardrail-gated: a relayed read cannot launder reassurance-on-absence (§7.7, AC-2)', () => {
+  // The model's phrasing of a no-flag read must never say "no blood was flagged, looks fine".
+  // The absence-reassurance family (A7) catches it in DATA mode; the read's own numerals are
+  // allowed (they came from the tool result), so only the WELLNESS verdict trips.
+  const bad = "Her July 9 vomit was yellow bile with no blood flagged — looks fine."
+  assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(['9']), mode: 'data' }).ok, false)
+  // A factual recount of the SAME read (present-only, no wellness verdict) passes.
+  const good = "Her July 9 vomit was logged as yellow bile; no blood or foreign material was flagged in it."
+  assert.equal(validateAnswer({ text: good, allowedNumerals: new Set(['9']), mode: 'data' }).ok, true)
 })
