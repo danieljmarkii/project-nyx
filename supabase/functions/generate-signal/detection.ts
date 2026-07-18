@@ -851,13 +851,11 @@ export interface IncidentRedFlagFinding extends FindingBase {
   /** ISO-8601 UTC occurred_at of the MOST RECENT in-window incident carrying a red flag — the recency anchor for copy. */
   mostRecentFlaggedIso: string
   /**
-   * How many in-window analyzed incidents carry a red flag (drives singular/plural copy + evidence). ≥1.
-   * NOTE: this counts distinct `event_ai_analysis` ROWS, NOT deduped bouts — a single vomiting bout
-   * re-logged as N events with N analyses counts as N (so the copy may read "Photos… " for what was
-   * one bout). Safe direction for a SAFETY lane (it over-states presence, never reassures, and there
-   * is no escalation THRESHOLD it can inflate — a single flag already fires). generate-report collapses
-   * re-logs into one incident (unionPresentFlags over memberEventIds); this lane deliberately does NOT
-   * in v1. Episode-collapse to match is deferred to PR 2 (B-368).
+   * How many distinct in-window flagged BOUTS carry a red flag (drives singular/plural copy + evidence). ≥1.
+   * B-368: episode-collapsed — a single vomiting bout re-logged as N events with N analyses counts as
+   * ONE, matching generate-report's memberEventIds collapse, so "Photos… " (plural) never describes one
+   * bout re-logged. The collapse reuses the frequency lanes' 3h re-log gap (symptomEpisodeGapHours). It
+   * never changes WHETHER the card fires (≥1 flagged incident ⇒ ≥1 bout) — only the count/plural copy.
    */
   flaggedIncidentCount: number
   /** The recency window in days actually applied (a flag older than this no longer leads Home). */
@@ -3684,7 +3682,9 @@ export function detectIncidentRedFlags(
   const flagKinds = new Set<IncidentFlagKind>()
   let mostRecentMs = -Infinity
   let mostRecentIso = ''
-  let flaggedCount = 0
+  // The occurred_at (ms) of every FLAGGED in-window incident, so the count can episode-collapse
+  // re-logs of one bout (B-368) instead of counting raw event_ai_analysis rows.
+  const flaggedMs: number[] = []
   for (const a of analyses) {
     if (a.incidentType !== 'vomit') continue // v1 scope; stool is B-364
     const ms = Date.parse(a.occurredAt)
@@ -3698,14 +3698,21 @@ export function detectIncidentRedFlags(
     if (nowMs - ms > windowMs) continue
     const flags = deriveIncidentFlags(a)
     if (flags.length === 0) continue // no PRESENT flag on this incident — silence, never a "clear"
-    flaggedCount++
+    flaggedMs.push(ms)
     for (const f of flags) flagKinds.add(f)
     if (ms > mostRecentMs) {
       mostRecentMs = ms
       mostRecentIso = a.occurredAt
     }
   }
-  if (flaggedCount === 0) return []
+  if (flaggedMs.length === 0) return []
+
+  // B-368 — episode-collapse the flagged incidents so the count (and its singular/plural copy)
+  // describes distinct BOUTS, not raw analysis rows: a single vomiting bout re-logged as N events
+  // with N analyses is ONE flagged incident, matching generate-report's memberEventIds collapse.
+  // Same 3h re-log gap the frequency lanes (③/④/⑤/⑦) use (symptomEpisodeGapHours). This never
+  // changes WHETHER the card fires (flaggedMs is already non-empty ⇒ ≥1 bout) — only the count.
+  const flaggedIncidentCount = toEpisodeOnsets(flaggedMs, config.symptomEpisodeGapHours).length
 
   // Stable flag order (blood before foreign material) so copy reads deterministically.
   const flags: IncidentFlagKind[] = []
@@ -3719,7 +3726,7 @@ export function detectIncidentRedFlags(
       incidentType: 'vomit',
       flags,
       mostRecentFlaggedIso: mostRecentIso,
-      flaggedIncidentCount: flaggedCount,
+      flaggedIncidentCount,
       windowDays: config.incidentRedFlag.windowDays,
     },
   ]
@@ -3759,10 +3766,9 @@ export const DETECTOR_REGISTRY: Detector[] = [
   // Detector — per-incident visual red flag (B-340). SAFETY class; reads the NEW
   // incidentAnalyses source (derived from event_ai_analysis structured fields, override-aware by
   // construction). Live in detectSignals + ranked at the TOP of the safety band (SAFETY_TYPE_ORDER
-  // below). DEPLOY-GATED (the B-182 lesson): the client (lib/signal.ts InsightType, InsightCard
-  // renderer) cannot render 'incident_red_flag' until PR 2, so do NOT redeploy generate-signal
-  // until the PR-2 client renderer + copy land — an engine-registered-but-unrenderable type must
-  // never reach a live cache.
+  // below). The client renderer (lib/signal.ts InsightType, InsightCard + signalCopy) landed in PR 2
+  // (B-340), so the B-182 deploy gate LIFTS: generate-signal may be redeployed once the PR-2 client
+  // is on devices and the PM has smoke-tested the new event_ai_analysis !inner query.
   { type: 'incident_red_flag', detect: detectIncidentRedFlags },
 ]
 

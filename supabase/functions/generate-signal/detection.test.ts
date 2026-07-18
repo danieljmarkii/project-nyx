@@ -2481,6 +2481,38 @@ Deno.test('detectIncidentRedFlags — UNIONS flags across incidents into ONE cal
   assert.equal(f.mostRecentFlaggedIso, at(27, 14), 'anchored to the most-recent flagged incident')
 })
 
+Deno.test('detectIncidentRedFlags — B-368: one bout re-logged within the gap counts as ONE flagged incident', () => {
+  // A single vomiting bout the owner logged twice ~30 min apart (two events, two analyses) is ONE
+  // bout — episode-collapsed (symptomEpisodeGapHours = 3), matching generate-report, so the copy
+  // never reads "Photos… " (plural) for what was one bout. It still FIRES (a single flag suffices).
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: at(29, 9, 0), foreignMaterialPresent: 'yes' }),
+        incidentAnalysis({ occurredAt: at(29, 9, 30), foreignMaterialPresent: 'yes' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 1, 'the two same-bout re-logs collapse to one')
+})
+
+Deno.test('detectIncidentRedFlags — B-368: distinct bouts across days stay counted separately', () => {
+  // Two same-bout re-logs (within the 3h gap) PLUS a flag on a different day → two distinct bouts.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: at(28, 9, 0), bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ occurredAt: at(28, 10, 0), bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ occurredAt: at(25, 14, 0), foreignMaterialPresent: 'yes' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 2, 'the day-28 bout (re-logged) + the day-25 bout = 2')
+  assert.deepEqual(findings[0].flags, ['blood', 'foreign_material'], 'flags still union across bouts')
+})
+
 Deno.test('detectIncidentRedFlags — an owner override that clears the field clears the card by construction', () => {
   // The whole point (B-339): derive from the owner-editable structured fields, so a cleared
   // foreign_material_present='no' (or blood='none_visible') emits nothing — no stale visual_flags.

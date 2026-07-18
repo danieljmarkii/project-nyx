@@ -31,10 +31,14 @@ export type InsightType =
   | 'symptom_worsening'
   | 'symptom_chronicity'
   | 'postprandial_timing'
-  | 'timeofday_clustering';
+  | 'timeofday_clustering'
+  | 'incident_red_flag';
 export type PriorityClass = 'safety' | 'insight';
 export type EvidenceTier = 'early' | 'established';
 export type SignalSymptomType = 'vomit' | 'diarrhea' | 'itch' | 'scratch' | 'skin_reaction';
+// The visible red-flag kinds a per-incident photo read can surface (B-340). Mirror of
+// IncidentFlagKind in detection.ts; blood before foreign_material is the engine's stable order.
+export type IncidentFlagKind = 'blood' | 'foreign_material';
 export type IntakeDeclineTrigger = 'consecutive_low' | 'refused_normal_food';
 export type ReflectionDirection = 'flat' | 'improving';
 export type WorseningTrigger = 'more_episodes' | 'more_days';
@@ -53,6 +57,26 @@ export interface CorrelationFinding {
   matchedPairs: number;
   symptomEventCount: number;
   correlationWindowHours: number;
+}
+
+// Per-incident visual red flag (B-340) — the SAFETY-class lane that elevates a blood /
+// foreign-material flag from a photo the owner logged of a symptom onto the Home Signal, where
+// "safety insights always lead" (Principle 3). Derived server-side from the owner-editable
+// structured fields (override-aware by construction), so an owner clearing the field clears the
+// card. ESCALATE-ON-PRESENCE, NEVER REASSURE (clinical-guardrails): it fires on the PRESENCE of a
+// visible flag and routes to the vet; its absence is silence, never an all-clear. The main card
+// sentence is the server template (templateIncidentRedFlag); the client composes the sample line +
+// tap-to-expand evidence around it (lib/signalCopy.ts). Ranks at the TOP of the safety band.
+// Mirror of detection.ts IncidentRedFlagFinding (rendered fields). v1: incidentType is 'vomit'
+// only; B-364 reuses this type with 'diarrhea' for stool, so the renderer already extends to it.
+export interface IncidentRedFlagFinding {
+  type: 'incident_red_flag';
+  priorityClass: 'safety';
+  incidentType: SignalSymptomType;
+  flags: IncidentFlagKind[];
+  mostRecentFlaggedIso: string;
+  flaggedIncidentCount: number;
+  windowDays: number;
 }
 
 export interface IntakeDeclineFinding {
@@ -167,6 +191,7 @@ export interface TimeOfDayClusteringFinding {
 
 export type SignalFinding =
   | CorrelationFinding
+  | IncidentRedFlagFinding
   | IntakeDeclineFinding
   | ReflectionFinding
   | SymptomWorseningFinding

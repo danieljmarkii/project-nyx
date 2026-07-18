@@ -67,6 +67,10 @@ const INSIGHT_RENDERERS: Record<InsightType, (p: InsightBodyProps) => ReactEleme
   // "this has been going on for weeks and isn't resolving" statement. No confidence tag (a
   // deterministic count shows its sample size); leads the surface below intake-decline.
   symptom_chronicity: SentenceBody,
+  // Per-incident visual red flag (B-340) — a calm sentence on the SAFETY rail: what a logged photo
+  // showed (blood / foreign material), routed to the vet. Leads the whole surface (top of the
+  // safety band). No confidence tag; the sentence itself carries the unconfirmed-AI-read framing.
+  incident_red_flag: SentenceBody,
   // Postprandial timing (⑤, B-078) — a descriptive timing count, rendered as a calm
   // sentence on the benign 'insight' rail; no confidence tag (it shows its sample size).
   postprandial_timing: SentenceBody,

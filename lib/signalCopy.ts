@@ -16,6 +16,8 @@
 import type {
   CachedFinding,
   CoverageDiagnostic,
+  IncidentFlagKind,
+  IncidentRedFlagFinding,
   IntakeDeclineFinding,
   SignalFinding,
   SignalSymptomType,
@@ -38,6 +40,20 @@ const SYMPTOM_LABEL: Record<SignalSymptomType, string> = {
 
 function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+// Per-incident red-flag phrasing (B-340) — "possible" because these are AI reads of a single
+// photo, not confirmed findings (matches the detail-screen "AI · unconfirmed" register). Mirror of
+// INCIDENT_FLAG_PHRASE in the generate-signal phrasing module; KEEP IN SYNC. Blood-before-foreign
+// is the engine's stable flag order, so the two-flag joiner reads deterministically.
+const INCIDENT_FLAG_PHRASE: Record<IncidentFlagKind, string> = {
+  blood: 'possible blood',
+  foreign_material: 'possible foreign material',
+};
+function incidentFlagPhrase(flags: IncidentFlagKind[]): string {
+  return flags.length === 2
+    ? `${INCIDENT_FLAG_PHRASE.blood} and ${INCIDENT_FLAG_PHRASE.foreign_material}`
+    : INCIDENT_FLAG_PHRASE[flags[0]];
 }
 
 // Plain 12-hour clock label for a local hour 0..23 (⑥, B-079): 0→'12am', 4→'4am',
@@ -228,6 +244,12 @@ export function confidenceTag(finding: SignalFinding): string | null {
 // Shows the evidence weight at a glance — §6: a finding "needs its sample size
 // shown". Associational only for correlations; never reassuring for the flag.
 export function sampleLine(finding: SignalFinding): string {
+  if (finding.type === 'incident_red_flag') {
+    // The honest sample weight + provenance (§6): an AI read of the flagged photo(s), never a
+    // count that implies a confirmed finding. "AI read" mirrors the detail-screen unconfirmed
+    // register; the count is episode-collapsed bouts (B-368), so a re-logged bout reads as one.
+    return `From an AI read of ${count(finding.flaggedIncidentCount, 'logged photo', 'logged photos')}`;
+  }
   if (finding.type === 'food_symptom_correlation') {
     return `${count(finding.symptomEventCount, 'episode', 'episodes')} across ${count(
       finding.matchedPairs,
@@ -276,6 +298,25 @@ export function sampleLine(finding: SignalFinding): string {
 // enough to act on it. Associational framing on correlations (a pattern in the
 // logs, not a proven link). The safety flag points at the vet and never reassures.
 export function evidenceText(finding: SignalFinding, petName: string): string {
+  if (finding.type === 'incident_red_flag') {
+    // Tap-to-expand evidence (B-340): names WHAT the photo showed + the symptom + the pet, is
+    // honest about the AI provenance (an automated read of a single photo, unconfirmed), and routes
+    // to the vet. ESCALATE-ON-PRESENCE — NEVER reassures (the "not confirmed / not a diagnosis"
+    // clause is a provenance disclaimer, immediately followed by the vet ask, never an all-clear),
+    // NEVER diagnoses, NEVER assigns a cause. The date lives in the main card sentence, so the
+    // tap-through adds the provenance + why-it-matters rather than repeating it.
+    const symptom = SYMPTOM_LABEL[finding.incidentType]; // v1: 'vomiting'
+    const phrase = incidentFlagPhrase(finding.flags);
+    const single = finding.flaggedIncidentCount === 1;
+    const lead = single
+      ? `A photo you logged of ${petName}'s ${symptom} showed ${phrase}`
+      : `Photos you logged of ${petName}'s ${symptom} have shown ${phrase}`;
+    const readNoun = single ? 'a single photo' : 'those photos';
+    return (
+      `${lead} — an automated read of ${readNoun}, not a confirmed finding and not a diagnosis. ` +
+      `It's still worth a call to your vet, who can look at what you logged and tell you what it means.`
+    );
+  }
   if (finding.type === 'food_symptom_correlation') {
     const symptom = SYMPTOM_LABEL[finding.symptomType];
     const window = Math.round(finding.correlationWindowHours);
@@ -404,34 +445,37 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
 // in lib/signal.ts; the focus-effect + render live in the hook + component.
 
 // The banner-eligible safety types, in cross-pet priority order (lower wins).
-// intake_decline > symptom_chronicity > symptom_worsening — mirroring the engine's
-// per-pet SAFETY_TYPE_ORDER (detection.ts §5), so the cross-pet surface can never
-// imply a precedence between two safety lanes that contradicts the pet's own Signal.
-// An explicit allow-list, NOT `priorityClass === 'safety'`: a future safety detector
-// must be added here deliberately (with its own template + guardrail review) before
-// it can reach this clinical escalation surface. chronicity (⑦, B-182/B-191) is the
-// council's top clinically-established concern, but intake_decline stays rank 0 for
-// the acute-anorexia window (unchanged from detection.ts) — chronicity slots between
-// it and worsening. The point of B-191: a secondary pet whose only flag is a
-// weeks-long unresolved course must be able to raise the banner, not stay silent.
+// incident_red_flag > intake_decline > symptom_chronicity > symptom_worsening — mirroring the
+// engine's per-pet SAFETY_TYPE_ORDER (detection.ts §5), so the cross-pet surface can never imply a
+// precedence between two safety lanes that contradicts the pet's own Signal.
+// An explicit allow-list, NOT `priorityClass === 'safety'`: a future safety detector must be added
+// here deliberately (with its own template + guardrail review) before it can reach this clinical
+// escalation surface. incident_red_flag (B-340) is added deliberately here — it is the engine's
+// top-ranked safety finding (a directly-photographed blood / foreign-body flag), and B-191's own
+// rationale applies with full force: a SECONDARY pet whose only flag is a photographed red flag
+// must be able to raise the banner, never stay silent while a lower-priority lane on another pet
+// would. chronicity (⑦, B-182/B-191) slots below intake_decline; worsening is last.
 const BANNER_SAFETY_PRIORITY: Record<
-  'intake_decline' | 'symptom_chronicity' | 'symptom_worsening',
+  'incident_red_flag' | 'intake_decline' | 'symptom_chronicity' | 'symptom_worsening',
   number
 > = {
-  intake_decline: 0,
-  symptom_chronicity: 1,
-  symptom_worsening: 2,
+  incident_red_flag: 0,
+  intake_decline: 1,
+  symptom_chronicity: 2,
+  symptom_worsening: 3,
 };
 
 export type BannerSafetyFinding =
+  | IncidentRedFlagFinding
   | IntakeDeclineFinding
   | SymptomChronicityFinding
   | SymptomWorseningFinding;
 
 function isBannerSafetyFinding(f: SignalFinding): f is BannerSafetyFinding {
-  // Type-narrow via the explicit allow-list. All three are priorityClass 'safety' by
+  // Type-narrow via the explicit allow-list. All four are priorityClass 'safety' by
   // construction (asserted in the tests); the type union is the contract here.
   return (
+    f.type === 'incident_red_flag' ||
     f.type === 'intake_decline' ||
     f.type === 'symptom_chronicity' ||
     f.type === 'symptom_worsening'
@@ -439,8 +483,8 @@ function isBannerSafetyFinding(f: SignalFinding): f is BannerSafetyFinding {
 }
 
 // A pet's representative banner finding = its highest-priority banner-safety
-// finding (intake_decline preferred, then chronicity). Returns null if it has none — a pet whose
-// only findings are reflections/correlations/descriptive can never raise a banner.
+// finding (incident_red_flag preferred, then intake_decline, then chronicity). Returns null if it
+// has none — a pet whose only findings are reflections/correlations/descriptive can't raise a banner.
 function petTopSafetyFinding(findings: CachedFinding[]): BannerSafetyFinding | null {
   let best: BannerSafetyFinding | null = null;
   for (const cf of findings) {
@@ -465,7 +509,7 @@ export interface SelectedBanner<P> {
 
 // Pick the ONE cross-pet banner to show (§4: at most one, never stack). Across all
 // candidate pets that have a banner-safety finding, choose the highest-priority
-// finding (intake_decline > symptom_chronicity > symptom_worsening). Ties (two same-class flags) break
+// finding (incident_red_flag > intake_decline > symptom_chronicity > symptom_worsening). Ties (two same-class flags) break
 // by candidate order: the caller passes pets oldest-first, so the choice is
 // deterministic and implies no false clinical precedence between them — the owner
 // reaches the other pet via the switcher. Returns null if none qualifies.
@@ -523,6 +567,17 @@ function truncateFoodLabel(label: string | null): string | null {
 // rest never repeats it — it refers to the pet as "they" where needed (matching
 // the Signal evidence copy), so the leading name can render bold once (mock A3).
 function bannerRest(finding: BannerSafetyFinding): string {
+  if (finding.type === 'incident_red_flag') {
+    // Per-incident visual red flag (B-340) — the teaser names WHAT the logged photo showed
+    // (blood / foreign material), calmly. "possible …" keeps it an unconfirmed AI read; the
+    // tap-through lands on the pet's full Signal where the "worth a call to your vet" ask lives.
+    // Never a cause, never a severity verdict, never a reassurance (validateBannerPhrasing screens
+    // it as defense-in-depth). Refers to the pet by the leading bold name only (no "you"), like
+    // the other banner rests.
+    const phrase = incidentFlagPhrase(finding.flags);
+    const noun = finding.flaggedIncidentCount === 1 ? 'a logged photo' : 'logged photos';
+    return ` has ${noun} showing ${phrase} — worth a look.`;
+  }
   if (finding.type === 'intake_decline') {
     if (finding.trigger === 'refused_normal_food') {
       const food = truncateFoodLabel(finding.refusedFoodLabel);
