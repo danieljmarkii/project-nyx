@@ -727,8 +727,10 @@ export function redactReadForModel(result: PhotoReadResult): Record<string, unkn
 // vocabulary the denylist can't enumerate; paired with the redaction above (no absence
 // signal), the model has neither the hook nor the channel. finalizeAnswer scrubs a
 // photo-referencing headline/detail to a deterministic line and keeps the safe readLine.
+// `look(?:s|ed|ing)?` covers looks/looked/looking (the round-3 leak was the present-tense
+// "looks" — "That one looks typical for her" — which the old `looke?d?` missed).
 const PHOTO_REFERENCE_RE =
-  /\b(photos?|image|picture|pic|snapshot|the shot|the read|read (?:came|is|was|did|didn'?t|shows?|showed)|looke?d?|looking|appears?|appeared|seems?|seemed|clean|clear|negative|flag(?:s|ged)?|(?:turn(?:s|ed)?|stood|jump(?:s|ed)?|came|show(?:s|ed)?) (?:up|out|back|anything|nothing)|nothing (?:turned|stood|jumped|showed|to flag|to note))\b/i
+  /\b(photos?|image|picture|pic|snapshot|the shot|the read|read (?:came|is|was|did|didn'?t|shows?|showed)|look(?:s|ed|ing)?|appears?|appeared|seems?|seemed|clean|clear|negative|flag(?:s|ged)?|(?:turn(?:s|ed)?|stood|jump(?:s|ed)?|came|show(?:s|ed)?) (?:up|out|back|anything|nothing)|nothing (?:turned|stood|jumped|showed|to flag|to note))\b/i
 
 /** Does this text reference the photo / its appearance / the read verdict? Used ONLY when a
  *  no-flag read was featured, to bar the model from delivering a photo verdict the deterministic
@@ -737,14 +739,18 @@ export function mentionsPhotoAppearance(text: string): boolean {
   return PHOTO_REFERENCE_RE.test(text ?? '')
 }
 
-/** True when the most-recent read_photo captured this turn is a REAL read (ran/cached) with
- *  NO present red flags — the reassurance-on-absence risk case that triggers the reference
- *  bar. A present-flag read is exempt (the model SHOULD name the concern — escalate). */
-export function featuredNoFlagRead(captured: { name: string; result: unknown }[]): boolean {
+/** True when the most-recent read_photo captured this turn is anything OTHER than a real
+ *  present-flag escalation — i.e. the reassurance-on-absence risk cases that trigger the
+ *  reference bar: a no-flag ran/cached read, OR a capped/unavailable/no_photo/budget/
+ *  not_found/unsupported read (where there is no read at all, so a model "it looked clear"
+ *  is a pure fabrication — round-3 residual 2). ONLY a real present-flag read is exempt
+ *  (the model SHOULD name the concern — escalate). */
+export function featuredNonEscalatingRead(captured: { name: string; result: unknown }[]): boolean {
   for (let i = captured.length - 1; i >= 0; i--) {
     if (captured[i].name !== 'read_photo') continue
     const r = captured[i].result as PhotoReadResult
-    return (r.status === 'ran' || r.status === 'cached') && !!r.read && r.read.flags.length === 0
+    const isEscalation = (r.status === 'ran' || r.status === 'cached') && !!r.read && r.read.flags.length > 0
+    return !isEscalation
   }
   return false
 }

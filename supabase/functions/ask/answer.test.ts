@@ -40,7 +40,7 @@ import {
   buildPhotoReadResult,
   buildReadLine,
   redactReadForModel,
-  featuredNoFlagRead,
+  featuredNonEscalatingRead,
   mentionsPhotoAppearance,
   SCRUBBED_READ_HEADLINE,
   photoReadIncidentType,
@@ -756,6 +756,11 @@ Deno.test('mentionsPhotoAppearance: catches the 15 sibling-channel leak headline
     'That one appears clear.',
     'Nothing to note in the picture.',
     'The image showed nothing concerning.',
+    // round-3 residual 1 — present-tense "looks" (the one-letter inflection hole):
+    'That one looks typical for her.',
+    'That one looks routine.',
+    'It looks how it always does.',
+    'That one looks like her usual.',
   ]) {
     assert.equal(mentionsPhotoAppearance(leak), true, `should bar the photo reference: ${leak}`)
   }
@@ -769,15 +774,21 @@ Deno.test('mentionsPhotoAppearance: catches the 15 sibling-channel leak headline
   }
 })
 
-Deno.test('featuredNoFlagRead: true only for a real ran/cached read with NO present flags', () => {
-  assert.equal(featuredNoFlagRead([{ name: 'read_photo', result: photoResult('ran', projected({ flags: [] })) }]), true)
-  assert.equal(featuredNoFlagRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [] })) }]), true)
-  // A present flag is EXEMPT — the model should name the concern (escalate), not be scrubbed.
-  assert.equal(featuredNoFlagRead([{ name: 'read_photo', result: photoResult('ran', projected({ flags: ['blood'] })) }]), false)
-  // No read to relay → not the reassurance-on-absence case.
-  assert.equal(featuredNoFlagRead([{ name: 'read_photo', result: photoResult('capped') }]), false)
-  assert.equal(featuredNoFlagRead([{ name: 'count_symptom', result: { kind: 'count_symptom', count: 3 } }]), false)
-  assert.equal(featuredNoFlagRead([]), false)
+Deno.test('featuredNonEscalatingRead: fires on every featured read EXCEPT a real present-flag escalation', () => {
+  // No-flag reads → scrub-eligible.
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('ran', projected({ flags: [] })) }]), true)
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [] })) }]), true)
+  // round-3 residual 2: capped / unavailable / no_photo (no read at all) → ALSO scrub-eligible
+  // (a model "it looked clear" there is pure fabrication and must be barred).
+  for (const status of ['capped', 'unavailable', 'no_photo', 'budget_exhausted', 'not_found', 'unsupported_type'] as const) {
+    assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult(status) }]), true, `status ${status} should be scrub-eligible`)
+  }
+  // ONLY a real present-flag read is EXEMPT — the model should name the concern (escalate).
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('ran', projected({ flags: ['blood'] })) }]), false)
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: ['stool_blood'] })) }]), false)
+  // No read_photo featured → no scrub.
+  assert.equal(featuredNonEscalatingRead([{ name: 'count_symptom', result: { kind: 'count_symptom', count: 3 } }]), false)
+  assert.equal(featuredNonEscalatingRead([]), false)
 })
 
 Deno.test('SCRUBBED_READ_HEADLINE never reassures (the deterministic fallback for a photo-referencing headline)', () => {

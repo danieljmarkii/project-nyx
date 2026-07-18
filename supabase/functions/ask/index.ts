@@ -58,7 +58,7 @@ import {
   buildPhotoReadResult,
   buildReadLine,
   redactReadForModel,
-  featuredNoFlagRead,
+  featuredNonEscalatingRead,
   mentionsPhotoAppearance,
   SCRUBBED_READ_HEADLINE,
   validateAnswer,
@@ -358,15 +358,17 @@ function finalizeAnswer(
   const allowedNumerals = new Set<string>()
   for (const c of captured) collectNumerals(c.result, allowedNumerals)
 
-  // Structural bar (the §7.7 re-review fix): on a NO-FLAG read turn the model must not deliver
-  // a photo verdict in its own prose (the deterministic readLine carries the photo). Scrub any
-  // photo/read/appearance reference to a guaranteed-clean line, per field — a recall-only
-  // headline/detail is kept; a photo-referencing one is replaced. Done BEFORE validation so the
-  // scrubbed text is what's gated. The redaction already denies the model the absence signal;
-  // this closes the sibling channel (headline/detail) the re-review found (15/15 leaks).
+  // Structural bar (the §7.7 re-review fix): when a NON-ESCALATING read_photo was featured
+  // (a no-flag read, OR a capped/unavailable/no-photo read where there is no read at all), the
+  // model must not deliver a photo verdict in its own prose — the deterministic readLine carries
+  // the photo. Scrub any photo/read/appearance reference to a guaranteed-clean line, per field.
+  // Done BEFORE validation so the scrubbed text is what's gated. The redaction already denies the
+  // model the absence signal; this closes the sibling channel (headline/detail) — incl. the
+  // round-3 residuals (present-tense "looks", and capped/unavailable turns). A present-flag read
+  // is exempt so the model can still name the concern (escalate).
   let headlineOut = headline
   let detailOut = detail
-  if (featuredNoFlagRead(captured)) {
+  if (featuredNonEscalatingRead(captured)) {
     if (mentionsPhotoAppearance(headline)) headlineOut = SCRUBBED_READ_HEADLINE
     if (mentionsPhotoAppearance(detail)) detailOut = ''
   }
