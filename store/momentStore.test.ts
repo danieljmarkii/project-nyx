@@ -319,16 +319,26 @@ describe('momentStore', () => {
     expect(payload).not.toHaveProperty('howGiven');
   });
 
-  it('patchIntakeRating / patchOccurredAt never mutate a medication payload', () => {
+  it('patchIntakeRating never mutates a medication payload (meal-only affordance)', () => {
     useMomentStore.getState().showMedication(medicationPayload());
     useMomentStore.getState().patchIntakeRating('all');
-    useMomentStore.getState().patchOccurredAt('2026-06-07T13:30:00.000Z');
     const { payload } = useMomentStore.getState();
     if (payload?.kind !== 'medication') throw new Error('expected medication payload');
-    // The meal-only patches must leave the dose card's own time + adherence intact.
+    // The meal-only intake patch must leave the dose card's own state intact.
     expect(payload.adherence).toBe('given');
     expect(payload.occurredAt).toBe('2026-06-07T14:00:00.000Z');
     expect(payload).not.toHaveProperty('intakeRating');
+  });
+
+  it('patchOccurredAt updates the in-flight medication card ("Change time")', () => {
+    useMomentStore.getState().showMedication(medicationPayload());
+    useMomentStore.getState().patchOccurredAt('2026-06-07T13:30:00.000Z');
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'medication') throw new Error('expected medication payload');
+    // The dose card gained the meal card's "Change time" affordance — the time patch
+    // now applies, leaving adherence untouched.
+    expect(payload.occurredAt).toBe('2026-06-07T13:30:00.000Z');
+    expect(payload.adherence).toBe('given');
   });
 
   it('a medication card replaces an in-flight meal', () => {

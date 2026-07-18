@@ -455,7 +455,16 @@ export default function LogModal() {
         drugName: med.generic_name,
         adherence, // standalone/finished: 'given'; not-finished combo: null (B-156 PR B3)
         howGiven, // combo: inferred vehicle (pre-set); standalone: null (chips can set it)
-        pairedFoodName: pairedFoodName ?? null, // combo: names the food on the card; else null
+        // combo: names the food on the card; else null. Reuse the SAME empty-name
+        // fallback as the log-screen banner (comboFoodLabel below) so a vehicle food
+        // with no brand AND no product name still yields a non-empty label ("meal"/
+        // "treat"). This keeps the card's `isCombo = !!pairedFoodName` check reliable
+        // — an empty string would read as a STANDALONE dose and (a) drop the "Logged
+        // together" framing and (b) surface the standalone-only "Change time" button
+        // on a genuine combo dose.
+        pairedFoodName: isComboMode
+          ? (pairedFoodName?.trim() || (pairedFoodType === 'treat' ? 'treat' : 'meal'))
+          : null,
         vehicleIntake, // combo: the linked vehicle's intake → drives the in-doubt prompt; else null
       },
       { delayMs: 450 },
