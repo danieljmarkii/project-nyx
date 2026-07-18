@@ -12,6 +12,7 @@ import { OwnerAvatar } from '../settings/OwnerAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { CulpritMark } from '../brand/CulpritMark';
 import { useSignal } from '../../hooks/useSignal';
+import { useAllowlistFlag } from '../../hooks/useAppConfig';
 
 // Home identity strip (B-076) — a thin orienting band above the Signal: a quiet
 // "Culprit" wordmark + the active pet's avatar, name, and one slim line.
@@ -33,6 +34,12 @@ export function HomeHeader({ onPressMark }: { onPressMark?: () => void }) {
   // The CulpritMark pulse (B-284 §3) — same cache read SignalZone/CrossPetSafetyBanner
   // already each own independently; a fresh, unseen finding lights the header mark.
   const { hasUnseenSignal } = useSignal();
+  // The Ask entry (B-228 D5) — header chrome, not a card (Principle 3). Visible iff the
+  // experimental flag resolves on for this caller (fail-closed; allowlist-gated until
+  // Track-3). It NEVER changes/badges/disables when capped — Home carries no monetization
+  // state; the capped experience lives inside the surface (D5). Render-only; the server
+  // re-checks the flag authoritatively on every ask call.
+  const askEnabled = useAllowlistFlag('ask_enabled');
 
   const [switcherVisible, setSwitcherVisible] = useState(false);
 
@@ -71,14 +78,28 @@ export function HomeHeader({ onPressMark }: { onPressMark?: () => void }) {
             accessible={!onPressMark}
           />
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push('/settings')}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          accessibilityRole="button"
-          accessibilityLabel="You — account and settings"
-        >
-          <OwnerAvatar email={email} size={32} />
-        </TouchableOpacity>
+        <View style={styles.topRight}>
+          {askEnabled ? (
+            <TouchableOpacity
+              onPress={() => router.push('/ask')}
+              style={styles.askPill}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Ask about ${activePet.name}`}
+            >
+              <View style={styles.askDot} />
+              <Text style={styles.askLabel}>Ask</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity
+            onPress={() => router.push('/settings')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="You — account and settings"
+          >
+            <OwnerAvatar email={email} size={32} />
+          </TouchableOpacity>
+        </View>
       </View>
       <TouchableOpacity
         style={styles.identityRow}
@@ -125,6 +146,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  // The right cluster: the Ask pill sits beside the owner avatar (D5 — "beside the
+  // avatar"), so the mark stays alone on the left and space-between still holds.
+  topRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  // The Ask pill (mock §1 option A): the word + a quiet Signal-teal dot in a bordered
+  // pill. Chrome, never a card. Teal here is the interactive accent (a tappable entry),
+  // so the one-accent rule holds.
+  askPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderColor: theme.colorBorderStrong,
+    borderRadius: theme.radiusFull,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: theme.colorSurface,
+  },
+  askDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colorAccent,
+  },
+  askLabel: {
+    fontFamily: theme.fontBodySemibold,
+    fontSize: theme.textSM,
+    color: theme.colorTextPrimary,
   },
   // Quiet brand mark in the display face — identity, not a banner. "Culprit"
   // (the decided product name) reads at a glance without competing with the Signal.

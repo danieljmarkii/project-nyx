@@ -55,3 +55,37 @@ export function stoolCapCopy(petName: string | null | undefined, cap: 'daily' | 
   const resume = cap === 'monthly' ? 'at the start of next month' : 'tomorrow';
   return `Today's photo reads are used up, so this read will run ${resume}. Everything you logged is saved. If ${name}'s stool keeps looking off or ${name} seems unwell, don't wait for the read — check in with your vet.`;
 }
+
+// Ask cap-hit copy (B-228 §9.3 / §16.1). Two shapes for two grains: the monthly
+// FREE-CONVERSATION teaser boundary (the upgrade moment — carries the Premium line
+// + the care-first line) and the per-conversation / daily MESSAGE backstop (a plain
+// rate limit — no Premium line). Both obey §16.1 #3: when the just-attempted question
+// was SYMPTOM-SHAPED, the money-adjacent copy is dropped entirely — no Premium
+// sentence AND no care-first line sit next to a symptom (the vomitCapCopy precedent).
+// `care` is the second, quieter line the cap band renders under the primary; null
+// suppresses it. `resetLabel` is pre-formatted by the caller (it owns date locale).
+export function askCapCopy(opts: {
+  grain: 'conversation' | 'message';
+  cap: 'daily' | 'monthly';
+  resetLabel: string;
+  petName?: string | null;
+  symptomShaped: boolean;
+}): { primary: string; care: string | null } {
+  const care = opts.symptomShaped ? null : careFirstLine(opts.petName);
+
+  if (opts.grain === 'conversation') {
+    // The free-tier teaser boundary — the designed upgrade moment.
+    const premium = opts.symptomShaped ? '' : ' Premium lifts the limit.';
+    return {
+      primary: `That's this month's free Ask conversations used. They restart ${opts.resetLabel}.${premium}`,
+      care,
+    };
+  }
+  // A message/rate backstop (this conversation is full, or the daily cap is spent).
+  // A plain limit, never the upgrade moment — no Premium/transaction word.
+  const resume = `More open up ${opts.resetLabel}`;
+  return {
+    primary: `That's the questions for now. ${resume}. Everything is still here to look through.`,
+    care,
+  };
+}
