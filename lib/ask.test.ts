@@ -79,6 +79,18 @@ describe('parseAskResponse — the typed response contract', () => {
     if (res.ok && 'answer' in res) expect(res.answer.component).toBeNull();
     else throw new Error('expected answer');
   });
+
+  it('coerces the A8 photo readLine (present → string; absent/non-string → null)', () => {
+    const withLine = parseAskResponse({ outcome: 'answer', headline: 'Most recently July 9.', detail: '', readLine: 'Logged as yellow bile, with no blood or foreign material flagged.' });
+    if (withLine.ok && 'answer' in withLine) expect(withLine.answer.readLine).toBe('Logged as yellow bile, with no blood or foreign material flagged.');
+    else throw new Error('expected answer');
+    const withoutLine = parseAskResponse({ outcome: 'answer', headline: 'x', detail: '' });
+    if (withoutLine.ok && 'answer' in withoutLine) expect(withoutLine.answer.readLine).toBeNull();
+    else throw new Error('expected answer');
+    const badLine = parseAskResponse({ outcome: 'answer', headline: 'x', detail: '', readLine: 42 });
+    if (badLine.ok && 'answer' in badLine) expect(badLine.answer.readLine).toBeNull();
+    else throw new Error('expected answer');
+  });
 });
 
 describe('askQuestion — the network call', () => {

@@ -36,10 +36,23 @@ import {
   sanitizeFollowups,
   strayNumerals,
   validateAnswer,
+  planPhotoRead,
+  buildPhotoReadResult,
+  buildReadLine,
+  redactReadForModel,
+  featuredNonEscalatingRead,
+  mentionsPhotoAppearance,
+  SCRUBBED_READ_HEADLINE,
+  photoReadIncidentType,
+  PHOTO_READ_EVENT_TYPES,
+  MAX_LIVE_PHOTO_READS_PER_MESSAGE,
   type AskDataContext,
   type AskOutcome,
   type AskTurn,
+  type PhotoReadPlan,
+  type PhotoReadResult,
 } from './answer.ts'
+import type { AskCachedReadRow, ProjectedRead } from './tools.ts'
 
 // ── A minimal fetched context for dispatch tests ──────────────────────────────────
 const NOW = Date.UTC(2026, 6, 18, 12, 0, 0) // 2026-07-18T12:00:00Z
@@ -510,4 +523,309 @@ Deno.test('computeResetsAt: daily = next UTC midnight, monthly = first of next U
   const now = Date.UTC(2026, 6, 18, 15, 30, 0)
   assert.equal(computeResetsAt('daily', now), new Date(Date.UTC(2026, 6, 19)).toISOString())
   assert.equal(computeResetsAt('monthly', now), new Date(Date.UTC(2026, 7, 1)).toISOString())
+})
+
+// ══════════════════════════════════════════════════════════════════════════════════
+// read_photo — live per-incident photo reads (§6.2/§7.7, A8). PURE plan + result. AC-11/12/13.
+// ══════════════════════════════════════════════════════════════════════════════════
+
+function readRow(over: Partial<AskCachedReadRow> & { eventId: string }): AskCachedReadRow {
+  return {
+    incidentType: 'vomit',
+    status: 'completed',
+    dismissedAt: null,
+    editedAt: null,
+    description: null,
+    colour: null,
+    contents: null,
+    consistency: null,
+    bloodPresent: null,
+    bilePresent: null,
+    foreignMaterialPresent: null,
+    foreignMaterialNote: null,
+    stoolConsistency: null,
+    stoolBloodPresent: null,
+    stoolMucusPresent: null,
+    recommendation: null,
+    readText: null,
+    ...over,
+  }
+}
+
+Deno.test('photoReadIncidentType + PHOTO_READ_EVENT_TYPES: only vomit/stool route to a read', () => {
+  assert.equal(photoReadIncidentType('vomit'), 'vomit')
+  assert.equal(photoReadIncidentType('stool_normal'), 'stool')
+  assert.equal(photoReadIncidentType('diarrhea'), 'stool')
+  assert.equal(photoReadIncidentType('meal'), null)
+  assert.equal(photoReadIncidentType('weight_check'), null)
+  assert.deepEqual([...PHOTO_READ_EVENT_TYPES].sort(), ['diarrhea', 'stool_normal', 'vomit'])
+})
+
+Deno.test('planPhotoRead: unknown / soft-deleted id → not_found (never a reassurance)', () => {
+  assert.equal(planPhotoRead(ctx(), 'nope', 0).action, 'not_found')
+  const softDeleted = ctx({
+    events: [{ id: 'x', type: 'vomit', occurredAt: iso(1), occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, note: null, hasPhoto: true, deletedAt: iso(0) }],
+  })
+  assert.equal(planPhotoRead(softDeleted, 'x', 0).action, 'not_found')
+})
+
+Deno.test('planPhotoRead: non-vomit/stool event → unsupported_type (no read machinery)', () => {
+  // e4 is a lethargy event in the shared ctx.
+  const plan = planPhotoRead(ctx(), 'e4', 0)
+  assert.equal(plan.action, 'unsupported_type')
+})
+
+Deno.test('planPhotoRead: a readable event with NO photo → no_photo (never invokes)', () => {
+  // e2 is a photoless vomit.
+  const plan = planPhotoRead(ctx(), 'e2', 0)
+  assert.equal(plan.action, 'no_photo')
+})
+
+Deno.test('planPhotoRead: a usable cached read → relay_cached, no run (run-or-read-cache)', () => {
+  const c = ctx({ reads: [readRow({ eventId: 'e1', status: 'completed', bloodPresent: 'fresh_red', readText: 'I can see what looks like blood.' })] })
+  const plan = planPhotoRead(c, 'e1', 0)
+  assert.equal(plan.action, 'relay_cached')
+  if (plan.action === 'relay_cached') {
+    // Override-aware present-only flag surfaces; the read text relays.
+    assert.deepEqual(plan.read.flags, ['blood'])
+    assert.equal(plan.read.readText, 'I can see what looks like blood.')
+  }
+})
+
+Deno.test('planPhotoRead: an UNCERTAIN cached read is still usable (relayed, not re-run)', () => {
+  const c = ctx({ reads: [readRow({ eventId: 'e1', status: 'uncertain' })] })
+  assert.equal(planPhotoRead(c, 'e1', 0).action, 'relay_cached')
+})
+
+Deno.test('planPhotoRead: a DISMISSED-but-completed read still relays; its n=1 text is hidden but a present flag is NOT', () => {
+  const c = ctx({ reads: [readRow({ eventId: 'e1', status: 'completed', dismissedAt: iso(0), bloodPresent: 'fresh_red', readText: 'named concern' })] })
+  const plan = planPhotoRead(c, 'e1', 0)
+  assert.equal(plan.action, 'relay_cached')
+  if (plan.action === 'relay_cached') {
+    assert.equal(plan.read.readText, null) // dismissed → interpretive text hidden
+    assert.deepEqual(plan.read.flags, ['blood']) // but a present red flag is never hidden
+  }
+})
+
+Deno.test('planPhotoRead: a non-real cached state (capped/failed/pending/read_disabled) → run (re-read)', () => {
+  for (const status of ['capped', 'failed', 'pending', 'read_disabled']) {
+    const c = ctx({ reads: [readRow({ eventId: 'e1', status })] })
+    assert.equal(planPhotoRead(c, 'e1', 0).action, 'run', `status ${status} should re-run`)
+  }
+})
+
+Deno.test('planPhotoRead: no cached read + has photo → run; at budget → budget_exhausted (no run)', () => {
+  assert.equal(planPhotoRead(ctx(), 'e1', 0).action, 'run')
+  assert.equal(planPhotoRead(ctx(), 'e1', MAX_LIVE_PHOTO_READS_PER_MESSAGE).action, 'budget_exhausted')
+  // Budget is checked AFTER the cached-relay branch: a cached read is free even at budget.
+  const c = ctx({ reads: [readRow({ eventId: 'e1', status: 'completed' })] })
+  assert.equal(planPhotoRead(c, 'e1', MAX_LIVE_PHOTO_READS_PER_MESSAGE).action, 'relay_cached')
+})
+
+Deno.test('buildPhotoReadResult: each non-run plan maps to the right status; only ran sets ranLiveRead', () => {
+  const cases: { plan: Exclude<PhotoReadPlan, { action: 'run' }>; status: string }[] = [
+    { plan: { action: 'not_found' }, status: 'not_found' },
+    { plan: { action: 'no_photo', eventId: 'e1', eventType: 'vomit' }, status: 'no_photo' },
+    { plan: { action: 'unsupported_type', eventId: 'e4', eventType: 'lethargy' }, status: 'unsupported_type' },
+    { plan: { action: 'budget_exhausted', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit' }, status: 'budget_exhausted' },
+  ]
+  for (const { plan, status } of cases) {
+    const r = buildPhotoReadResult(plan)
+    assert.equal(r.kind, 'read_photo')
+    assert.equal(r.status, status)
+    assert.equal(r.ranLiveRead, false)
+    assert.equal(r.read, null) // no relayable read on any non-cached, non-run path
+  }
+  // relay_cached carries the projected read.
+  const relayed = buildPhotoReadResult({ action: 'relay_cached', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit', read: { incidentType: 'vomit', status: 'completed', edited: false, description: null, flags: [], readText: null, recommendation: 'monitor', fields: { colour: 'yellow', contents: null, consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } } })
+  assert.equal(relayed.status, 'cached')
+  assert.equal(relayed.ranLiveRead, false)
+  assert.ok(relayed.read)
+})
+
+Deno.test('buildProvenance(read_photo): a real read taps through to its event; not_found → no tap-through', () => {
+  const prov = buildProvenance({ kind: 'read_photo', eventId: 'e1', status: 'ran' })
+  assert.ok(prov)
+  assert.deepEqual(prov!.tapThrough, { kind: 'events', eventIds: ['e1'] })
+  assert.equal(prov!.denominator, null) // a single incident is not an aggregate
+  const missing = buildProvenance({ kind: 'read_photo', eventId: null, status: 'not_found' })
+  assert.equal(missing!.tapThrough, null)
+})
+
+Deno.test('read_photo relay is guardrail-gated: a relayed read cannot launder reassurance-on-absence (§7.7, AC-2)', () => {
+  // The model's phrasing of a no-flag read must never say "no blood was flagged, looks fine".
+  // The absence-reassurance family (A7) catches it in DATA mode; the read's own numerals are
+  // allowed (they came from the tool result), so only the WELLNESS verdict trips.
+  const bad = "Her July 9 vomit was yellow bile with no blood flagged — looks fine."
+  assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(['9']), mode: 'data' }).ok, false)
+  // A factual recount of the SAME read (present-only, no wellness verdict) passes.
+  const good = "Her July 9 vomit was logged as yellow bile; no blood or foreign material was flagged in it."
+  assert.equal(validateAnswer({ text: good, allowedNumerals: new Set(['9']), mode: 'data' }).ok, true)
+})
+
+// ── The §7.7 structural fix (2026-07-18 adversarial FAIL → fixed) ──────────────────
+// The owner-facing photo read is now a DETERMINISTIC server line (buildReadLine), the model
+// is REDACTED of the benign detail (redactReadForModel), and the denylist gains the
+// demonstrated leak families as defense-in-depth.
+
+function projected(over: Partial<ProjectedRead> = {}): ProjectedRead {
+  return {
+    incidentType: 'vomit',
+    status: 'completed',
+    edited: false,
+    description: null,
+    flags: [],
+    readText: null,
+    recommendation: 'monitor',
+    fields: { colour: 'yellow', contents: ['bile'], consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null },
+    ...over,
+  }
+}
+function photoResult(status: PhotoReadResult['status'], read: ProjectedRead | null = null): PhotoReadResult {
+  return { kind: 'read_photo', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit', status, ranLiveRead: status === 'ran', read }
+}
+
+Deno.test('buildReadLine: EVERY status is deterministic and passes the never-reassure gate (structural, not model prose)', () => {
+  const monitorText = "A single photo on its own can't tell you how Biscuit is doing. Keep an eye on Biscuit — if it happens again, or Biscuit seems unwell or goes off food, your vet is the best call."
+  const cases: PhotoReadResult[] = [
+    photoResult('ran', projected({ readText: monitorText })), // no-flag fresh read (the reassurance-on-absence risk)
+    photoResult('cached', projected({ readText: monitorText })),
+    photoResult('ran', projected({ flags: ['blood'], recommendation: 'worth_a_call', readText: 'I can see what looks like blood in this photo. That is worth a call to your vet about Biscuit.', fields: { colour: 'pink_red', contents: null, consistency: null, bloodPresent: 'fresh_red', bilePresent: 'unsure', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } })),
+    photoResult('ran', projected({ readText: null })), // dismissed no-flag read → safe generic tail
+    photoResult('no_photo'),
+    photoResult('capped'),
+    photoResult('unavailable'),
+    photoResult('budget_exhausted'),
+  ]
+  for (const r of cases) {
+    const line = buildReadLine(r, 'Biscuit')
+    assert.ok(line && line.length > 0, `status ${r.status} should produce a line`)
+    // The deterministic line NEVER trips the never-reassure gate — the guarantee is structural.
+    assert.equal(validateAnswer({ text: line!, allowedNumerals: new Set(), mode: 'data' }).ok, true, `readLine reassures: "${line}"`)
+    assert.equal(line!.includes('!'), false)
+  }
+  // not_found / unsupported_type carry no relayable read → null (the model's recall handles them).
+  assert.equal(buildReadLine(photoResult('not_found'), 'Biscuit'), null)
+  assert.equal(buildReadLine(photoResult('unsupported_type'), 'Biscuit'), null)
+})
+
+Deno.test('buildReadLine: a present red flag is NAMED (escalate-on-presence), a no-flag read never asserts wellness', () => {
+  const bloody = buildReadLine(photoResult('ran', projected({ flags: ['blood'], recommendation: 'worth_a_call', readText: 'I can see what looks like blood in this photo. That is worth a call to your vet about Biscuit.', fields: { colour: 'pink_red', contents: null, consistency: null, bloodPresent: 'fresh_red', bilePresent: 'unsure', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } })), 'Biscuit')!
+  assert.match(bloody, /blood/i)
+  assert.match(bloody, /vet/i)
+  const noFlag = buildReadLine(photoResult('ran', projected({ readText: 'A single photo on its own can\'t tell you how Biscuit is doing. If it happens again or Biscuit seems unwell, your vet is the best call.' })), 'Biscuit')!
+  // Recounts the present-only facts + the safe forward-looking template; no wellness verdict.
+  assert.match(noFlag, /yellow/i)
+  assert.equal(validateAnswer({ text: noFlag, allowedNumerals: new Set(), mode: 'data' }).ok, true)
+})
+
+Deno.test('redactReadForModel: strips benign detail AND the no-flag absence signal; keeps only escalation', () => {
+  const redacted = redactReadForModel(photoResult('ran', projected({ readText: 'benign monitor text the model must NOT see' })))
+  // No benign specifics reach the model.
+  for (const leaked of ['colour', 'contents', 'description', 'read_text', 'readText', 'recommendation', 'fields']) {
+    assert.equal(leaked in redacted, false, `redacted result leaks ${leaked}`)
+  }
+  // The re-review fix: a NO-FLAG read carries NO red_flags field at all — no absence signal
+  // for the model to read as "nothing wrong" and editorialize (the sibling-channel leak).
+  assert.equal('red_flags' in redacted, false)
+  assert.equal(redacted.status, 'ran')
+  assert.match(String(redacted.guidance), /no information|do not|don'?t/i)
+  // A red flag IS surfaced (so the model can lead the escalation — the safe direction).
+  const flagged = redactReadForModel(photoResult('ran', projected({ flags: ['blood'] })))
+  assert.deepEqual(flagged.red_flags, ['blood'])
+  assert.match(String(flagged.guidance), /red flag|concern|vet/i)
+})
+
+Deno.test('mentionsPhotoAppearance: catches the 15 sibling-channel leak headlines the re-review found', () => {
+  // These are model HEADLINES/DETAIL on a no-flag read — the D6 line the owner reads first.
+  // All leaked the reassurance denylist in the 2026-07-18 re-review; the CATEGORICAL photo/read
+  // reference bar catches them (they all reference the photo / its appearance / the read verdict).
+  for (const leak of [
+    'I took a look — all seems well with that one.',
+    'The read came back with nothing.',
+    'The read is negative.',
+    'Nothing turned up when I looked.',
+    'Nothing stood out in that photo.',
+    "That one's clean.",
+    'The photo came out clean.',
+    "There's nothing to flag here.",
+    'No flags on that one.',
+    "The read didn't flag anything on that one.",
+    'The photo looked clean.',
+    'It looked clear to me.',
+    'That one appears clear.',
+    'Nothing to note in the picture.',
+    'The image showed nothing concerning.',
+    // round-3 residual 1 — present-tense "looks" (the one-letter inflection hole):
+    'That one looks typical for her.',
+    'That one looks routine.',
+    'It looks how it always does.',
+    'That one looks like her usual.',
+    // round-4 note 1 — the read's AGENT nouns (referenced the read via subject, not object):
+    "The AI didn't spot anything concerning.",
+    'The AI gave it a pass.',
+    'The AI was happy with it.',
+    "The scan didn't raise anything.",
+    'The analysis came back fine.',
+    'The result was normal.',
+  ]) {
+    assert.equal(mentionsPhotoAppearance(leak), true, `should bar the photo reference: ${leak}`)
+  }
+  // Recall-only prose (what the model SHOULD write) is NOT a photo reference — no false positive.
+  for (const recall of [
+    'Most recently July 9 — that is 7 in the last 30 days.',
+    "Biscuit's last vomit was on the 9th; 6 of 7 landed overnight.",
+    'That was the third one this week.',
+  ]) {
+    assert.equal(mentionsPhotoAppearance(recall), false, `recall prose must pass: ${recall}`)
+  }
+})
+
+Deno.test('featuredNonEscalatingRead: fires on every featured read EXCEPT a real present-flag escalation', () => {
+  // No-flag reads → scrub-eligible.
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('ran', projected({ flags: [] })) }]), true)
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: [] })) }]), true)
+  // round-3 residual 2: capped / unavailable / no_photo (no read at all) → ALSO scrub-eligible
+  // (a model "it looked clear" there is pure fabrication and must be barred).
+  for (const status of ['capped', 'unavailable', 'no_photo', 'budget_exhausted', 'not_found', 'unsupported_type'] as const) {
+    assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult(status) }]), true, `status ${status} should be scrub-eligible`)
+  }
+  // ONLY a real present-flag read is EXEMPT — the model should name the concern (escalate).
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('ran', projected({ flags: ['blood'] })) }]), false)
+  assert.equal(featuredNonEscalatingRead([{ name: 'read_photo', result: photoResult('cached', projected({ flags: ['stool_blood'] })) }]), false)
+  // No read_photo featured → no scrub.
+  assert.equal(featuredNonEscalatingRead([{ name: 'count_symptom', result: { kind: 'count_symptom', count: 3 } }]), false)
+  assert.equal(featuredNonEscalatingRead([]), false)
+})
+
+Deno.test('SCRUBBED_READ_HEADLINE never reassures (the deterministic fallback for a photo-referencing headline)', () => {
+  assert.equal(validateAnswer({ text: SCRUBBED_READ_HEADLINE, allowedNumerals: new Set(), mode: 'data' }).ok, true)
+})
+
+Deno.test('REASSURANCE_RE: the demonstrated A8 leak phrasings are now blocked (defense-in-depth)', () => {
+  // Every one PASSED the base lexicon in the 2026-07-18 adversarial run.
+  for (const bad of [
+    "The photo showed clear foam — that's a good sign.",
+    "The clear foam is reassuring.",
+    "That looks encouraging.",
+    "The photo is promising.",
+    "The read came back clear.",
+    "Nothing jumped out in the photo.",
+    "The photo looked clean.",
+    "That's the least concerning kind.",
+    "It's not worrying.",
+    "There was nothing remarkable in the photo.",
+    "No worries there.",
+    "There was nothing of concern.",
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(), mode: 'data' }).ok, false, `should now reject: ${bad}`)
+  }
+  // Guard against false positives: honest count/recall prose still passes.
+  for (const good of [
+    'Biscuit vomited 7 times in the last 30 days.',
+    'The most recent one was July 9.',
+    'Logged as yellow bile, with no blood or foreign material flagged in this one.',
+  ]) {
+    assert.equal(validateAnswer({ text: good, allowedNumerals: new Set(['7', '30', '9']), mode: 'data' }).ok, true, `should still pass: ${good}`)
+  }
 })

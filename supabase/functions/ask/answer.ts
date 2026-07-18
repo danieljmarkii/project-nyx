@@ -69,6 +69,7 @@ import {
   medications,
   engineFindings,
   isNotEnoughData,
+  projectCachedRead,
   type AskWindow,
   type AskEventRow,
   type AskMealRow,
@@ -77,6 +78,7 @@ import {
   type AskDoseRow,
   type AskFeedingArrangementRow,
   type AskCachedReadRow,
+  type ProjectedRead,
 } from './tools.ts'
 
 // ── Model & loop bounds ─────────────────────────────────────────────────────────
@@ -194,6 +196,14 @@ export interface AskAnswerBody {
    *  question can never return a bare count without the live safety finding beside it (the
    *  A4 adversarial #6 fix). Null when the engine is silent (silence ≠ wellness). */
   safetyLead: string | null
+  /** The DETERMINISTIC, server-built recount of a photo read this answer featured (A8) —
+   *  the photo's clinical content NEVER comes from model prose (the analyze-vomit precedent:
+   *  a no-flag read's owner-facing text is a template, not model-authored, because a
+   *  reassurance-on-absence denylist provably leaks — §7.7 / adversarial 2026-07-18). The
+   *  model is redacted of the benign clinical details (it sees only status + present red
+   *  flags, so it can escalate but has nothing benign to editorialize); this line carries
+   *  the actual read. Present-only, never "looks fine". Null when no read was featured. */
+  readLine: string | null
   followups: string[]
   /** Whether THIS conversation has now committed its free credit (client echoes it back
    *  so a follow-up in the same conversation does not commit a second — D8/D9). */
@@ -297,6 +307,16 @@ export const MODEL_TOOLS: Record<string, unknown>[] = [
         type: { type: 'string' },
         window: { type: 'string', enum: WINDOW_ENUM },
       },
+    },
+  },
+  {
+    name: 'read_photo',
+    description:
+      "Look at the photo on ONE vomit or stool event (by id) and return its AI read — a factual recount of what the photo shows (colour, contents, whether blood or foreign material was flagged), never a wellness verdict. Relays the cached read if one exists; otherwise runs a FRESH read through the same machinery the event detail screen uses (this counts against the pet's daily photo-read limit). Use ONLY when the owner asks what an incident looked like AND a recall tool shows the event HAS a photo but no read yet. An empty set of flags means 'nothing was flagged in this one', never 'she's fine'.",
+    input_schema: {
+      type: 'object',
+      properties: { event_id: { type: 'string', description: "The vomit/stool event id (from a recall tool's result)." } },
+      required: ['event_id'],
     },
   },
   {
@@ -482,6 +502,286 @@ function floored(result: unknown): ToolCallResult {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════
+// read_photo — live per-incident photo reads (§6.2/§7.7, A8). The PURE decision half.
+// ══════════════════════════════════════════════════════════════════════════════════
+//
+// read_photo is the ONE model tool that is not pure to dispatch: when no cached read
+// exists it must actually LOOK at the photo, which means a service-role storage fetch +
+// a vision call + a write-back — the shipped analyze-vomit / analyze-stool machinery
+// (`_shared/incident-analysis.ts`), invoked over HTTP by index.ts exactly as the detail
+// screen does (§6.2 — one read path, product-wide). So the split is: this file owns the
+// PURE plan (does a usable cached read exist? is this even a readable, photographed
+// event? is the per-question live-read budget spent?), and index.ts owns only the I/O
+// for the `run` branch. Keeping the plan pure makes the run-or-read-cache decision and
+// the never-run guards (no photo / wrong type / budget) unit-testable.
+//
+// SAFETY: a live read runs through the exact escalation floor + never-clobber write-back
+// + never-reassure read-text selection as the detail screen, and Ask relays it via the
+// SAME override-aware projection the cached-read path uses (projectCachedRead — present-
+// only flags, no all-clear affordance). So a read Ask triggers is immediately a free-
+// surface fact (visible on the event detail screen), Ask can never disagree with that
+// screen about what a photo showed, and the n=1 asymmetry (escalate on presence, never
+// reassure on absence) is inherited wholesale (§7.7). The validator gates the surrounding
+// sentence regardless.
+
+/** The event types that carry a per-incident photo-read machinery (vomit + the two stool
+ *  event_types). Any other type has no read path — read_photo returns unsupported_type. */
+export const PHOTO_READ_EVENT_TYPES: ReadonlySet<string> = new Set(['vomit', 'stool_normal', 'diarrhea'])
+
+export type PhotoReadIncident = 'vomit' | 'stool'
+
+/** Route an event_type to its incident-analysis family (the descriptor index.ts invokes).
+ *  Null for a non-readable type. */
+export function photoReadIncidentType(eventType: string): PhotoReadIncident | null {
+  if (eventType === 'vomit') return 'vomit'
+  if (eventType === 'stool_normal' || eventType === 'diarrhea') return 'stool'
+  return null
+}
+
+/** Per-QUESTION live-read budget (the cost/abuse bound). Each live read is a vision call +
+ *  a per-incident cap unit (analyze_vomit / analyze_stool, 10/day — the product-wide read
+ *  cap, §9.1); this caps how many one question can TRIGGER so a crafted/injected prompt
+ *  can't burn the whole daily cap across the tool loop. A cached RELAY is free (no invoke),
+ *  so it never counts against this. 2 allows "compare the last two"; the daily cap backstops. */
+export const MAX_LIVE_PHOTO_READS_PER_MESSAGE = 2
+
+/** The read_photo tool result the model phrases from + the server features for provenance.
+ *  `read` (when present) is the same override-aware projection the recall path relays. */
+export interface PhotoReadResult {
+  kind: 'read_photo'
+  eventId: string | null
+  eventType: string | null
+  incidentType: PhotoReadIncident | null
+  /**
+   *  - `cached`   — a usable read already existed; relayed, no run, no cap burn.
+   *  - `ran`      — a fresh read ran through the machinery and is relayed + persisted.
+   *  - `capped`   — the daily photo-read limit is reached; no read this time (not "fine").
+   *  - `unavailable` — the read couldn't run (flag off / failed / unreadable photo).
+   *  - `no_photo` — the event has no photo to look at.
+   *  - `unsupported_type` — not a vomit/stool event (no read machinery).
+   *  - `not_found` — no live event with that id in the record.
+   *  - `budget_exhausted` — this question already ran its allowed live reads.
+   */
+  status: 'cached' | 'ran' | 'capped' | 'unavailable' | 'no_photo' | 'unsupported_type' | 'not_found' | 'budget_exhausted'
+  /** True ONLY when a fresh read actually ran (status 'ran') — drives the "I took a fresh
+   *  look" framing and separates a run from a relay for cost accounting. */
+  ranLiveRead: boolean
+  /** The relayable, override-aware read (present-only flags), or null when there's nothing
+   *  to relay (no run / no photo / capped / etc.). Never carries an "all clear" affordance. */
+  read: ProjectedRead | null
+}
+
+/** The pure plan for a read_photo call, decided over the already-fetched context. `run`
+ *  is the only outcome that needs I/O (index.ts invokes the machinery); every other
+ *  outcome is a final result with no side effect. */
+export type PhotoReadPlan =
+  | { action: 'not_found' }
+  | { action: 'no_photo'; eventId: string; eventType: string }
+  | { action: 'unsupported_type'; eventId: string; eventType: string }
+  | { action: 'relay_cached'; eventId: string; eventType: string; incidentType: PhotoReadIncident; read: ProjectedRead }
+  | { action: 'budget_exhausted'; eventId: string; eventType: string; incidentType: PhotoReadIncident }
+  | { action: 'run'; eventId: string; eventType: string; incidentType: PhotoReadIncident }
+
+/**
+ * Decide what a read_photo call should do — WITHOUT any I/O. Run-or-read-cache (§6.2):
+ *   • unknown / soft-deleted id            → not_found (never a reassurance).
+ *   • not a vomit/stool event              → unsupported_type.
+ *   • no photo on the event                → no_photo (nothing to look at; a photoless
+ *     contextual escalation still reaches the owner via engine_findings / safetyLead,
+ *     relay-only — so we never invoke, and never burn a cap, for a photoless event).
+ *   • a usable cached read already exists   → relay_cached (no run, no cap burn). "Usable"
+ *     = a real analysis (completed / uncertain); pending/failed/capped/read_disabled are
+ *     NOT usable → re-run. A dismissed-but-completed read still relays (its structured
+ *     facts remain a recountable fact — dismissal never hides a present red flag).
+ *   • the per-question live-read budget is spent → budget_exhausted (no run).
+ *   • otherwise                            → run (index.ts invokes the machinery).
+ * `liveReadsUsed` counts prior INVOKES this question (cached relays don't count).
+ */
+export function planPhotoRead(
+  ctx: AskDataContext,
+  eventId: string,
+  liveReadsUsed: number,
+  maxLiveReads: number = MAX_LIVE_PHOTO_READS_PER_MESSAGE,
+): PhotoReadPlan {
+  const event = ctx.events.find((e) => e.id === eventId && e.deletedAt == null)
+  if (!event) return { action: 'not_found' }
+  const incidentType = photoReadIncidentType(event.type)
+  if (!incidentType) return { action: 'unsupported_type', eventId, eventType: event.type }
+  if (!event.hasPhoto) return { action: 'no_photo', eventId, eventType: event.type }
+
+  const read = ctx.reads.find((r) => r.eventId === eventId) ?? null
+  if (read && (read.status === 'completed' || read.status === 'uncertain')) {
+    return { action: 'relay_cached', eventId, eventType: event.type, incidentType, read: projectCachedRead(read) }
+  }
+  if (liveReadsUsed >= maxLiveReads) return { action: 'budget_exhausted', eventId, eventType: event.type, incidentType }
+  return { action: 'run', eventId, eventType: event.type, incidentType }
+}
+
+// ── Deterministic read recount + model redaction (the §7.7 structural fix) ──────────
+// The adversarial pass (2026-07-18) broke the first cut: the owner-facing photo-read
+// sentence was model-authored free prose gated only by the reassurance denylist, which
+// leaks ("that's a good sign", "the read came back clear", "nothing jumped out"). That is
+// the exact leaky-denylist hole analyze-vomit closed by making its no-flag read text a
+// DETERMINISTIC TEMPLATE (a denylist missed ~86% of reassurance phrasings — the read text
+// must be structural, not lexical). So for Ask:
+//   • the owner-facing read content is a DETERMINISTIC server line (buildReadLine),
+//     never model prose — present-only, reusing the read's own structurally-safe read_text;
+//   • the model is REDACTED (redactReadForModel) of the benign clinical details (colour,
+//     contents, description, read_text), seeing only status + PRESENT red flags — so it can
+//     still ESCALATE on a flag (the safe direction) but has no benign specifics to
+//     editorialize into "it looked fine".
+// Defense-in-depth (never the net): the reassurance denylist gains the demonstrated leak
+// families, so even the model's recall framing can't drift into a photo verdict.
+
+/** A concise, PRESENT-ONLY factual recount of a read's structured fields — the honest
+ *  "what it looked like" (§7.7 permits "no blood or foreign material was flagged in this
+ *  one" as a recount; being deterministic it can never drift to a wellness verdict). */
+function recountReadFacts(read: ProjectedRead): string {
+  const f = read.fields
+  const parts: string[] = []
+  if (read.incidentType === 'stool_normal' || read.incidentType === 'diarrhea') {
+    if (f.stoolConsistency) parts.push(`${f.stoolConsistency.replace(/_/g, ' ')} stool`)
+    if (read.flags.includes('stool_blood')) parts.push('with blood present')
+    if (f.stoolMucusPresent === 'yes') parts.push('with mucus present')
+    if (!read.flags.includes('stool_blood')) parts.push('with no blood flagged')
+  } else {
+    const desc: string[] = []
+    if (f.colour) desc.push(f.colour.replace(/_/g, ' '))
+    if (Array.isArray(f.contents) && f.contents.length) desc.push(f.contents.map((c) => c.replace(/_/g, ' ')).join(', '))
+    if (desc.length) parts.push(desc.join(' '))
+    if (read.flags.includes('blood')) parts.push('with what looks like blood')
+    if (read.flags.includes('foreign_material')) parts.push(read.fields.foreignMaterialNote ? `with ${read.fields.foreignMaterialNote}` : "with something that doesn't look like food")
+    if (!read.flags.includes('blood') && !read.flags.includes('foreign_material')) parts.push('with no blood or foreign material flagged')
+  }
+  return parts.length ? `Logged as ${parts.join(', ')}.` : ''
+}
+
+/** Build the DETERMINISTIC owner-facing read line for a featured read_photo result. Never
+ *  model-authored; present-only; reuses the read's own structurally-safe read_text (which,
+ *  for a no-flag read, IS the analyze-vomit never-reassure monitor template). Null when
+ *  there is nothing to relay (not_found / unsupported_type — the model's recall handles
+ *  those). Every branch is unit-tested against the reassurance regex (never-reassure). */
+export function buildReadLine(result: PhotoReadResult, petName: string): string | null {
+  const p = petName?.trim() || 'your pet'
+  switch (result.status) {
+    case 'ran':
+    case 'cached': {
+      const read = result.read
+      if (!read) return null
+      const facts = recountReadFacts(read)
+      // read_text is the deterministic analyze-vomit text (monitor template on the no-flag
+      // path — safe by construction). Hidden when dismissed → fall back to a safe generic.
+      const tail = read.readText
+        ? read.readText
+        : `A single photo on its own can't say how ${p} is doing. If you're worried, your vet is the best call.`
+      return [facts, tail].filter(Boolean).join(' ')
+    }
+    case 'no_photo':
+      return `There's no photo on that one to look at.`
+    case 'capped':
+      return `I couldn't take a fresh look — ${p}'s daily photo-read limit has been reached. Open the event to run it later.`
+    case 'unavailable':
+      return `I couldn't read that photo just now. Open the event to try again.`
+    case 'budget_exhausted':
+      return `I've looked at as many photos as I can in one go — open the event to see this one.`
+    default:
+      return null // not_found / unsupported_type — the model's recall handles these
+  }
+}
+
+/** The REDACTED view of a read_photo result handed to the MODEL. It never carries the benign
+ *  clinical details (colour/contents/description/read_text) — and, critically, for a NO-FLAG
+ *  read it carries NO absence signal either: `red_flags` is present ONLY when a red flag is
+ *  actually present (so the model can lead the escalation — the safe direction). A no-flag
+ *  read hands the model NOTHING to editorialize — no `red_flags:[]` to read as "nothing
+ *  wrong" (the sibling-channel leak the 2026-07-18 re-review found: `red_flags:[]` IS the
+ *  absence signal, and the model's own headline/detail then reassured past the denylist).
+ *  `guidance` is SERVER-authored (trusted, not owner data). The deterministic buildReadLine
+ *  carries the actual read to the owner; the model's job is the recall framing only. */
+export function redactReadForModel(result: PhotoReadResult): Record<string, unknown> {
+  const redFlags = result.read?.flags ?? []
+  const hasRead = result.status === 'ran' || result.status === 'cached'
+  const base = { kind: 'read_photo', eventId: result.eventId, eventType: result.eventType, status: result.status, ranLiveRead: result.ranLiveRead }
+  if (hasRead && redFlags.length > 0) {
+    // Escalation — the model IS told the present flag so it can lead with the concern.
+    return { ...base, red_flags: redFlags, guidance: 'A red flag is present in this photo — lead by naming that concern plainly and route to the vet. The factual read summary is shown to the owner directly; do not add a wellness verdict.' }
+  }
+  if (hasRead) {
+    // NO absence signal — no red_flags field at all. The model is told it has no appearance
+    // information and must not mention the photo; there is no factual hook for a wellness verdict.
+    return { ...base, guidance: "The photo's read is complete and its factual summary is shown to the owner directly, separately from your text. You have NO information about how the photo looked and did not see it — do NOT describe, characterize, or comment on the photo or its read in any way. Answer ONLY the recall context (when it happened, how often)." }
+  }
+  // no_photo / capped / unavailable / budget_exhausted / not_found / unsupported_type.
+  return { ...base, guidance: 'No read is available for this photo right now. State that plainly and point to the event; never fill any gap with reassurance.' }
+}
+
+// ── Structural bar: the model may not reference a NO-FLAG photo read in its own prose ────
+// The re-review's residual: the deterministic readLine is safe, but the model still authors
+// headline/detail (the D6 TLDR the owner reads FIRST), and on a no-flag read it can slip a
+// wellness verdict past the reassurance denylist ("that one's clean", "the read is negative",
+// "all seems well" — 15/15 leaked). We do NOT trust model + denylist on this exact hazard
+// (that is why readLine is deterministic), so we do not trust it for the surrounding sentence
+// either: when a no-flag read was featured, the model must not reference the photo/read/its
+// appearance AT ALL (the readLine carries it). This is a bounded, CATEGORICAL reference bar
+// — reference nouns/verbs/verdict words for "the photo/read" — not the open-ended wellness
+// vocabulary the denylist can't enumerate; paired with the redaction above (no absence
+// signal), the model has neither the hook nor the channel. finalizeAnswer scrubs a
+// photo-referencing headline/detail to a deterministic line and keeps the safe readLine.
+// `look(?:s|ed|ing)?` covers looks/looked/looking (the round-3 leak was the present-tense
+// "looks" — "That one looks typical for her" — which the old `looke?d?` missed).
+// The reference set covers the read's OBJECT nouns (photo/image/read) AND its AGENT nouns
+// (the AI/analysis/scan/assessment/result) — the round-4 note: "the AI didn't spot anything"
+// referenced the read via its agent, not its object, and slipped. On a non-escalating read
+// the model must not reference the read at all, by subject or object.
+const PHOTO_REFERENCE_RE =
+  /\b(photos?|image|picture|pic|snapshot|the shot|the read|the (?:ai|analysis|scan|assessment|result)s?|read (?:came|is|was|did|didn'?t|shows?|showed)|look(?:s|ed|ing)?|appears?|appeared|seems?|seemed|clean|clear|negative|flag(?:s|ged)?|(?:turn(?:s|ed)?|stood|jump(?:s|ed)?|came|show(?:s|ed)?) (?:up|out|back|anything|nothing)|nothing (?:turned|stood|jumped|showed|to flag|to note))\b/i
+
+/** Does this text reference the photo / its appearance / the read verdict? Used ONLY when a
+ *  no-flag read was featured, to bar the model from delivering a photo verdict the deterministic
+ *  readLine already carries. Pure. */
+export function mentionsPhotoAppearance(text: string): boolean {
+  return PHOTO_REFERENCE_RE.test(text ?? '')
+}
+
+/** True when the most-recent read_photo captured this turn is anything OTHER than a real
+ *  present-flag escalation — i.e. the reassurance-on-absence risk cases that trigger the
+ *  reference bar: a no-flag ran/cached read, OR a capped/unavailable/no_photo/budget/
+ *  not_found/unsupported read (where there is no read at all, so a model "it looked clear"
+ *  is a pure fabrication — round-3 residual 2). ONLY a real present-flag read is exempt
+ *  (the model SHOULD name the concern — escalate). */
+export function featuredNonEscalatingRead(captured: { name: string; result: unknown }[]): boolean {
+  for (let i = captured.length - 1; i >= 0; i--) {
+    if (captured[i].name !== 'read_photo') continue
+    const r = captured[i].result as PhotoReadResult
+    const isEscalation = (r.status === 'ran' || r.status === 'cached') && !!r.read && r.read.flags.length > 0
+    return !isEscalation
+  }
+  return false
+}
+
+/** The deterministic, guaranteed-clean headline a photo-referencing model sentence is scrubbed
+ *  to on a no-flag-read turn (the recall data still rides in component/provenance, the photo in
+ *  readLine). Never reassures by construction. */
+export const SCRUBBED_READ_HEADLINE = "Here's what's logged for that one."
+
+/** Build the read_photo tool result for every NON-run plan (the run branch's result is
+ *  assembled by index.ts from the machinery's persisted row). Pure. */
+export function buildPhotoReadResult(plan: Exclude<PhotoReadPlan, { action: 'run' }>): PhotoReadResult {
+  switch (plan.action) {
+    case 'not_found':
+      return { kind: 'read_photo', eventId: null, eventType: null, incidentType: null, status: 'not_found', ranLiveRead: false, read: null }
+    case 'no_photo':
+      return { kind: 'read_photo', eventId: plan.eventId, eventType: plan.eventType, incidentType: null, status: 'no_photo', ranLiveRead: false, read: null }
+    case 'unsupported_type':
+      return { kind: 'read_photo', eventId: plan.eventId, eventType: plan.eventType, incidentType: null, status: 'unsupported_type', ranLiveRead: false, read: null }
+    case 'relay_cached':
+      return { kind: 'read_photo', eventId: plan.eventId, eventType: plan.eventType, incidentType: plan.incidentType, status: 'cached', ranLiveRead: false, read: plan.read }
+    case 'budget_exhausted':
+      return { kind: 'read_photo', eventId: plan.eventId, eventType: plan.eventType, incidentType: plan.incidentType, status: 'budget_exhausted', ranLiveRead: false, read: null }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════
 // validateAnswer — the output gate (§7.3, G8)
 // ══════════════════════════════════════════════════════════════════════════════════
 
@@ -519,8 +819,18 @@ function floored(result: unknown): ToolCallResult {
 // The "nothing … wrong/concerning" family allows ONE optional intervening word so an
 // absence-reassurance verb ("nothing SEEMED wrong", "nothing LOOKED concerning") can't slip
 // the gate the adjacent form catches.
+//
+// A8 photo-read additions (the 2026-07-18 adversarial pass — the leaky-denylist proof).
+// The primary net for a photo read is STRUCTURAL (buildReadLine is deterministic; the model
+// is redacted of benign detail) — but the model still authors the recall framing, so these
+// close the specific reassurance-on-absence phrasings that pass the base lexicon: "good
+// sign", "reassuring", "encouraging", "promising", "came back clear", "reads clear", "looks
+// clean", "nothing jumped out", "least concerning", "no worries", "not worried/worrying",
+// "nothing remarkable/notable", "nothing of concern". `concern(?:s|ed)?` widens the
+// "nothing ... concern" arm to catch "nothing of concern" / "least concern". These are
+// verdict phrasings that never appear in an honest count/date recount, so no false positive.
 const REASSURANCE_RE =
-  /\b(fine|okay|ok|healthy|all clear|nothing to worry|no need to worry|nothing serious|no issues?|no problems?|probably fine|no concern|no cause for concern|not a concern|no red flags?|nothing (?:\w+ )?(?:wrong|concerning|alarming|unusual|amiss|out of the ordinary)|in the clear|clean bill|unremarkable|benign|look(?:s|ing)? good|don'?t worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|get(?:ting|s)? better|gotten better|improv(?:e|es|ed|ing)|back to normal|right track|she'?s well|he'?s well|they'?re well|stable|steady|holding steady|unchanged|no change|normal(?!\s+(?:stools?|poops?|bowels?|movements?))|nothing to change|no need to (?:change|do anything))\b/i
+  /\b(fine|okay|ok|healthy|all clear|nothing to worry|no need to worry|nothing serious|no issues?|no problems?|probably fine|no concern|no cause for concern|not a concern|no red flags?|nothing (?:\w+ )?(?:wrong|concern(?:s|ed|ing)?|alarming|unusual|amiss|out of the ordinary|jumped out|to note|notable|remarkable)|least concern(?:ing)?|no worries|not worr(?:y|ied|ying)|good sign|reassur(?:e|es|ed|ing)|encouraging|promising|came back clear|reads? clear|look(?:s|ed|ing)? clean|in the clear|clean bill|unremarkable|benign|look(?:s|ing)? good|don'?t worry|doing great|doing well|all good|on the mend|mend|mending|thriving|recover(?:s|ed|ing)?|much better|get(?:ting|s)? better|gotten better|improv(?:e|es|ed|ing)|back to normal|right track|she'?s well|he'?s well|they'?re well|stable|steady|holding steady|unchanged|no change|normal(?!\s+(?:stools?|poops?|bowels?|movements?))|nothing to change|no need to (?:change|do anything))\b/i
 const DISMISSIVE_RE = /\b(picky|fussy|finicky)\b/i
 // Flagrant spelled-out quantities that assert a count the tools never returned — the
 // number-word bypass of the numeral-subset check (A4 adversarial #2). A count claim must be
@@ -748,6 +1058,13 @@ export function buildProvenance(featured: unknown): AnswerProvenance | null {
       const id = ev && ev.id != null ? String(ev.id) : null
       return { window: null, denominator: null, tapThrough: id ? { kind: 'events', eventIds: [id] } : null }
     }
+    case 'read_photo': {
+      // The tap-through opens the event where the photo itself lives (§6.2 mode 1) — and,
+      // for a live read, where the now-persisted read is visible like any other read. No
+      // denominator/window: a single-incident read is not an aggregate.
+      const id = r.eventId != null && r.status !== 'not_found' ? String(r.eventId) : null
+      return { window: null, denominator: null, tapThrough: id ? { kind: 'events', eventIds: [id] } : null }
+    }
     case 'photo_presence': {
       const ids = Array.isArray(r.eventIds) ? (r.eventIds as unknown[]).map(String) : []
       const count = num(r.count)
@@ -829,6 +1146,7 @@ export function buildDeflection(reason: DeflectionReason, petName: string, clari
     component: null,
     provenance: null,
     safetyLead: null, // set structurally by the I/O layer from the engine's live findings
+    readLine: null, // a deflection features no photo read
     followups,
     conversationCredited: false,
     generalMode: false,
@@ -915,7 +1233,8 @@ export const SYSTEM_PROMPT =
   "(5) If a data tool returns not_enough_data, decline with a data-gap; don't invent a rate. " +
   "(6) If engine_findings returns a SAFETY finding relevant to the question, lead with it — relay it verbatim, never soften it. " +
   "(7) Plain, warm language; address the owner as 'you'; use the pet's name; no exclamation marks; never cute. One or two sentences of detail. " +
-  "(8) For a diagnosis-shaped or interpretive question ('does she have X', 'is that a lot', 'should I worry'), or a fishing-for-reassurance question ('so she's fine, right'), call decline — those are the vet's call, and declining still offers to line up the evidence."
+  "(8) For a diagnosis-shaped or interpretive question ('does she have X', 'is that a lot', 'should I worry'), or a fishing-for-reassurance question ('so she's fine, right'), call decline — those are the vet's call, and declining still offers to line up the evidence. " +
+  "(9) PHOTOS: to answer what a vomit or stool incident LOOKED like, first recall the event, then — only if it HAS a photo but no read yet — call read_photo with its id. read_photo does NOT return the photo's appearance to you: the factual read summary is rendered for the owner DIRECTLY, separately from your text. You get only the read STATUS and any PRESENT red flags. So: if it reports a red flag, lead by naming that concern plainly and route to the vet. Otherwise DO NOT describe, interpret, or comment on how the photo looked — do NOT say it looked fine/clear/normal, that nothing was wrong or concerning, that it's a good sign, or that the read came back clear — give ONLY the recall context (when it happened, how often). If it reports no_photo / capped / unavailable, say so plainly and point to the event. Never fill any gap with reassurance. Do NOT call read_photo for a non-vomit/stool event or speculatively — only when the owner asked what an incident looked like."
 
 export const GENERAL_SYSTEM_PROMPT =
   SYSTEM_PROMPT +

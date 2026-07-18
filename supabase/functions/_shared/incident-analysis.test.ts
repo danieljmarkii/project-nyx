@@ -17,12 +17,62 @@ import {
   applyEscalationFloor,
   selectReadText,
   buildAnalysisWriteBack,
+  fetchUsableImageBlob,
   getToolUseInput,
   sanitizeEnum,
   sanitizeEnumArray,
   type IncidentCopy,
   type AnalysisReadFields,
 } from './incident-analysis.ts'
+
+// ── fetchUsableImageBlob — the transform-only opt-in (B-228 A8, §6.2.4 / AC-13) ─────
+// A recording fake storage client: every download(path, opts?) is logged so a test can
+// assert WHICH access paths were exercised. A small blob is under Claude's cap; a
+// transform download returns a re-encoded (metadata-stripped) small blob.
+
+function fakeStorage(opts: { rawSize: number; transformSize: number }) {
+  const calls: { transform: boolean }[] = []
+  const client = {
+    storage: {
+      from: (_bucket: string) => ({
+        download: (_path: string, o?: { transform?: unknown }) => {
+          const isTransform = !!o?.transform
+          calls.push({ transform: isTransform })
+          const size = isTransform ? opts.transformSize : opts.rawSize
+          return Promise.resolve({ data: new Blob([new Uint8Array(size)], { type: 'image/jpeg' }), error: null })
+        },
+      }),
+    },
+  }
+  // deno-lint-ignore no-explicit-any
+  return { client: client as any, calls }
+}
+
+Deno.test('fetchUsableImageBlob — forceTransform: the ONLY storage access is the transform (no raw path — AC-13)', async () => {
+  // A SMALL photo — the case the shipped path serves RAW. Under forceTransform it must still
+  // never touch the raw download: the sole access is the EXIF/GPS-stripping transform.
+  const { client, calls } = fakeStorage({ rawSize: 1024, transformSize: 1024 })
+  const blob = await fetchUsableImageBlob(client, 'p/a.jpg', 'ask', true)
+  assertEquals(calls.length, 1)
+  assertStrictEquals(calls[0].transform, true) // the transform, never the raw original
+  assertStrictEquals(blob !== null, true)
+})
+
+Deno.test('fetchUsableImageBlob — default (forceTransform off): a small photo is downloaded RAW (detail-screen path unchanged)', async () => {
+  const { client, calls } = fakeStorage({ rawSize: 1024, transformSize: 1024 })
+  const blob = await fetchUsableImageBlob(client, 'p/a.jpg', 'analyze-vomit')
+  assertEquals(calls.length, 1)
+  assertStrictEquals(calls[0].transform, false) // raw-for-small: byte-identical to the shipped fetch
+  assertStrictEquals(blob !== null, true)
+})
+
+Deno.test('fetchUsableImageBlob — default: an OVERSIZED photo falls through raw → transform (unchanged)', async () => {
+  const OVER = 6_000_000 // over MAX_CLAUDE_IMAGE_BYTES
+  const { client, calls } = fakeStorage({ rawSize: OVER, transformSize: 1024 })
+  const blob = await fetchUsableImageBlob(client, 'p/big.jpg', 'analyze-vomit')
+  assertEquals(calls.map((c) => c.transform), [false, true]) // raw attempt, then the downscale
+  assertStrictEquals(blob !== null, true)
+})
 
 // ── applyEscalationFloor — the mechanism a descriptor cannot weaken ───────────
 

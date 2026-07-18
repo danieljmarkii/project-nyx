@@ -53,6 +53,16 @@ export function AskAnswerCard({ body, petName, onAsk, onTapThrough }: Props) {
         {body.headline ? <Text style={styles.headline}>{body.headline}</Text> : null}
         {body.detail ? <Text style={styles.detail}>{body.detail}</Text> : null}
 
+        {/* The photo read (A8) — DETERMINISTIC, server-built, present-only (never model
+            prose, never "looks fine"). Its own calm inset line so the owner sees the read
+            distinctly from the recall framing above, and the tap-through below opens the
+            event where the photo (and the now-persisted read) live. */}
+        {body.readLine ? (
+          <View style={styles.readLine}>
+            <Text style={styles.readLineText}>{body.readLine}</Text>
+          </View>
+        ) : null}
+
         {body.component ? <AskAnswerComponent descriptor={body.component} /> : null}
 
         {prov && (prov.denominator || goLabel) ? (
@@ -134,6 +144,25 @@ const styles = StyleSheet.create({
     lineHeight: theme.lineHeightBody,
     color: theme.colorTextSecondary,
     marginTop: theme.space1,
+  },
+  // The photo-read line — a quiet inset surface (subtle ground + left rule), set apart from
+  // the model's recall framing. Ink-token text; no accent, no safety-red (a red flag rides
+  // the leading safety card, not here).
+  readLine: {
+    marginTop: theme.space2,
+    paddingLeft: theme.space2,
+    paddingVertical: theme.space1,
+    borderLeftWidth: 2,
+    borderLeftColor: theme.colorBorderStrong,
+    backgroundColor: theme.colorSurfaceSubtle,
+    borderTopRightRadius: theme.radiusXS,
+    borderBottomRightRadius: theme.radiusXS,
+  },
+  readLineText: {
+    fontFamily: theme.fontBody,
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightBody,
+    color: theme.colorTextSecondary,
   },
   prov: {
     flexDirection: 'row',

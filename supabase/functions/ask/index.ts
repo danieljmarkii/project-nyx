@@ -11,8 +11,10 @@
 //   • ask/answer.ts  — the model toolset, dispatch, validator, deflections, provenance,
 //                      component descriptors, and the pure cap/credit decisions (A4).
 // It runs with the CALLER'S JWT so RLS enforces pet ownership on every read (no service
-// role — no storage, no cross-user data; A8's live photo read is the only future service-
-// role touch, and it rides the shipped analyze-vomit path, not this file).
+// role in THIS file). A8's live photo read (read_photo) is the one write-triggering touch,
+// and it rides the shipped analyze-vomit / analyze-stool path — invoked over HTTP with the
+// caller's own JWT, so the invoked function does its OWN ownership gate + cap + service-role
+// storage fetch/write-back. This file never holds the service role.
 //
 // Flow (§5.1):
 //   OPTIONS/CORS → auth header → JWT verify → OWNERSHIP GATE (uniform 404, BEFORE any cap
@@ -26,11 +28,13 @@
 // SAFETY: never-reassure / intake-≠-preference / no-diagnosis are enforced structurally by
 // answer.ts's validator + the deflection taxonomy, not by the prompt alone (§7.6 — function
 // beats disclaimers). Cached photo-reads relay through the scoped recall tools; LIVE photo
-// reads are deferred to A8 (this ships the honest "no read yet" state — a recall answer
-// simply reports the event has a photo and points the tap-through at the event).
+// reads (read_photo, A8) run through the shipped analyze-vomit/-stool machinery and are
+// relayed via the SAME override-aware projection — one read path, so Ask can never disagree
+// with the event detail screen about what a photo showed (§6.2 / G5-extended-to-reads).
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { resolveAllowlistFlagFromRows } from '../_shared/flags.ts'
+import { projectCachedRead } from './tools.ts'
 import type {
   AskEventRow,
   AskMealRow,
@@ -45,10 +49,18 @@ import {
   MAX_TOOL_ITERATIONS,
   MAX_CONTEXT_TURNS,
   MAX_RECALLED_EVENTS_PER_MESSAGE,
+  MAX_LIVE_PHOTO_READS_PER_MESSAGE,
   MODEL_TOOLS,
   SYSTEM_PROMPT,
   GENERAL_SYSTEM_PROMPT,
   dispatchTool,
+  planPhotoRead,
+  buildPhotoReadResult,
+  buildReadLine,
+  redactReadForModel,
+  featuredNonEscalatingRead,
+  mentionsPhotoAppearance,
+  SCRUBBED_READ_HEADLINE,
   validateAnswer,
   collectNumerals,
   buildProvenance,
@@ -68,6 +80,8 @@ import {
   type AskAnswerBody,
   type AskOutcome,
   type ComponentDescriptor,
+  type PhotoReadResult,
+  type PhotoReadIncident,
 } from './answer.ts'
 
 const CORS_HEADERS = {
@@ -167,6 +181,7 @@ interface LoopResult {
 // governs whether a substantive answer commits a new credit at the end (D9, decided by the
 // caller after this returns).
 async function runAskLoop(
+  client: SupabaseClient,
   ctx: AskDataContext,
   question: string,
   conversation: AskTurn[],
@@ -196,6 +211,10 @@ async function runAskLoop(
   // return an empty, budget-exhausted result — so one question can't page the record.
   let recalledEvents = 0
   const RECALL_TOOLS = new Set(['recent_events', 'recall_event', 'last_symptom'])
+  // Per-question live photo-read budget (A8): how many FRESH reads this question has
+  // triggered (each = a vision call + a per-incident cap unit). A cached relay is free and
+  // never counts. Bounds cost/abuse across the tool loop; the analyze_* 10/day cap backstops.
+  let liveReadsUsed = 0
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     let res: Response
@@ -247,24 +266,52 @@ async function runAskLoop(
     messages.push({ role: 'assistant', content: data.content ?? [] })
     for (const b of blocks) {
       const name = b.name ?? ''
-      // Enforce the per-message recall budget (rls-privacy #a): once exhausted, a recall
-      // tool returns a budget-exhausted stub instead of more scoped events. Aggregates are
-      // never budgeted (they carry no note/read). The tool layer already caps ONE call at
-      // MAX_RECALL; this caps the SUM across the whole question.
-      let call
-      if (RECALL_TOOLS.has(name) && recalledEvents >= MAX_RECALLED_EVENTS_PER_MESSAGE) {
-        call = { ok: false, result: { error: 'recall budget for this question is exhausted — ask a narrower question or open the vet report for the full record', budget_exhausted: true } }
+      let result: unknown
+      if (name === 'read_photo') {
+        // Live photo read (§6.2/§7.7, A8) — the one tool that isn't pure to dispatch. The
+        // PURE plan (run-or-read-cache; no photo / wrong type / budget) is answer.ts's; only
+        // the `run` branch does I/O (invoke the shipped machinery → re-read → project).
+        if (recalledEvents >= MAX_RECALLED_EVENTS_PER_MESSAGE) {
+          // HARD-gate against the per-question recall budget too (rls-privacy A8 residual):
+          // a read surfaces one scoped event's read across the boundary, so a cached relay is
+          // NOT free of the scoped-data cap — else a crafted "read every photo" question could
+          // page many cached reads in one turn. budget_exhausted → no invoke, no relay.
+          result = { kind: 'read_photo', eventId: String((b.input?.event_id as string) ?? '') || null, eventType: null, incidentType: null, status: 'budget_exhausted', ranLiveRead: false, read: null } as PhotoReadResult
+        } else {
+          const eventId = String((b.input?.event_id as string) ?? '')
+          const plan = planPhotoRead(ctx, eventId, liveReadsUsed)
+          if (plan.action === 'run') {
+            liveReadsUsed++ // count the invoke BEFORE it runs — bounds the loop even on failure
+            result = await runLivePhotoRead(client, plan.eventId, plan.eventType, plan.incidentType)
+          } else {
+            result = buildPhotoReadResult(plan)
+          }
+          // A relayed read surfaces one scoped event's data — count it toward the per-question
+          // recall budget too (defense-in-depth on scoped-data volume; §6.1 / AC-11).
+          if ((result as PhotoReadResult).read) recalledEvents += 1
+        }
+      } else if (RECALL_TOOLS.has(name) && recalledEvents >= MAX_RECALLED_EVENTS_PER_MESSAGE) {
+        // Enforce the per-message recall budget (rls-privacy #a): once exhausted, a recall
+        // tool returns a budget-exhausted stub instead of more scoped events. Aggregates are
+        // never budgeted (they carry no note/read). The tool layer already caps ONE call at
+        // MAX_RECALL; this caps the SUM across the whole question.
+        result = { error: 'recall budget for this question is exhausted — ask a narrower question or open the vet report for the full record', budget_exhausted: true }
       } else {
-        call = dispatchTool(name, b.input, ctx)
+        const call = dispatchTool(name, b.input, ctx)
         recalledEvents += countRecalledEvents(name, call.result)
+        result = call.result
       }
-      captured.push({ name, result: call.result })
-      if (name === 'engine_findings' && findingsHaveSafety(call.result)) sawSafetyFinding = true
+      captured.push({ name, result })
+      if (name === 'engine_findings' && findingsHaveSafety(result)) sawSafetyFinding = true
+      // The MODEL sees a REDACTED read_photo result (no benign clinical details to
+      // editorialize — §7.7 structural fix); the owner-facing read content is built
+      // deterministically server-side (buildReadLine) from the full captured result.
+      const modelResult = name === 'read_photo' ? redactReadForModel(result as PhotoReadResult) : result
       toolResultBlocks.push({
         type: 'tool_result',
         // @ts-ignore — tool_result carries tool_use_id + content (Anthropic shape)
         tool_use_id: b.id,
-        content: JSON.stringify(call.result),
+        content: JSON.stringify(modelResult),
       } as ClaudeContentBlock)
     }
     messages.push({ role: 'user', content: toolResultBlocks })
@@ -311,7 +358,21 @@ function finalizeAnswer(
   const allowedNumerals = new Set<string>()
   for (const c of captured) collectNumerals(c.result, allowedNumerals)
 
-  const combined = `${headline} ${detail}`.trim()
+  // Structural bar (the §7.7 re-review fix): when a NON-ESCALATING read_photo was featured
+  // (a no-flag read, OR a capped/unavailable/no-photo read where there is no read at all), the
+  // model must not deliver a photo verdict in its own prose — the deterministic readLine carries
+  // the photo. Scrub any photo/read/appearance reference to a guaranteed-clean line, per field.
+  // Done BEFORE validation so the scrubbed text is what's gated. The redaction already denies the
+  // model the absence signal; this closes the sibling channel (headline/detail) — incl. the
+  // round-3 residuals (present-tense "looks", and capped/unavailable turns). A present-flag read
+  // is exempt so the model can still name the concern (escalate).
+  let headlineOut = headline
+  let detailOut = detail
+  if (featuredNonEscalatingRead(captured)) {
+    if (mentionsPhotoAppearance(headline)) headlineOut = SCRUBBED_READ_HEADLINE
+    if (mentionsPhotoAppearance(detail)) detailOut = ''
+  }
+  const combined = `${headlineOut} ${detailOut}`.trim()
   const verdict = validateAnswer({ text: combined, allowedNumerals, mode, safety: sawSafetyFinding })
   if (!verdict.ok) {
     console.warn(`ask: answer failed validation (${verdict.reason}) — using deflection fallback`)
@@ -328,15 +389,22 @@ function finalizeAnswer(
   const provenance = featured ? buildProvenance(featured) : null
   const component: ComponentDescriptor | null = featured ? buildComponent(featured) : null
 
+  // The photo read's owner-facing content is DETERMINISTIC (never the model's prose — the
+  // §7.7 structural fix). Build it from the most-recent read_photo result this turn (the
+  // full, un-redacted captured one), regardless of which tool the model featured.
+  const photoRead = [...captured].reverse().find((c) => c.name === 'read_photo')?.result
+  const readLine = photoRead ? buildReadLine(photoRead as PhotoReadResult, ctx.petName) : null
+
   const outcome: AskOutcome = isGeneral ? 'general' : sawSafetyFinding ? 'relayed_safety' : 'answer'
   return {
     outcome,
     substantive: isSubstantiveOutcome(outcome),
-    headline: headline || detail,
-    detail: headline ? detail : '',
+    headline: headlineOut || detailOut,
+    detail: headlineOut ? detailOut : '',
     component,
     provenance,
     safetyLead: null, // attached structurally by the handler from the engine's live findings
+    readLine,
     followups,
     conversationCredited: false, // set by the caller when the credit actually commits (D9)
     generalMode: isGeneral,
@@ -392,6 +460,94 @@ function normalizeDeclineReason(
 function first<T>(v: T | T[] | null | undefined): T | null {
   if (Array.isArray(v)) return v.length ? v[0] : null
   return v ?? null
+}
+
+// The event_ai_analysis columns Ask relays (§6.2 mode 2 — the override-aware structured
+// fields + the dismissible n=1 read). Shared by fetchContext (the cached-read snapshot) and
+// runLivePhotoRead (the post-run re-read), so both project from the identical column set.
+const READ_COLS =
+  'event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, read_text'
+
+type ReadRowDb = Record<string, unknown> & { event_id: string; incident_type: string; status: string }
+
+/** Map an event_ai_analysis DB row (READ_COLS) to the AskCachedReadRow the tools relay. */
+function mapReadRow(r: ReadRowDb): AskCachedReadRow {
+  return {
+    eventId: r.event_id,
+    incidentType: r.incident_type,
+    status: r.status,
+    dismissedAt: (r.dismissed_at as string) ?? null,
+    editedAt: (r.edited_at as string) ?? null,
+    description: (r.description as string) ?? null,
+    colour: (r.colour as string) ?? null,
+    contents: (r.contents as string[]) ?? null,
+    consistency: (r.consistency as string) ?? null,
+    bloodPresent: (r.blood_present as string) ?? null,
+    bilePresent: (r.bile_present as string) ?? null,
+    foreignMaterialPresent: (r.foreign_material_present as string) ?? null,
+    foreignMaterialNote: (r.foreign_material_note as string) ?? null,
+    stoolConsistency: (r.stool_consistency as string) ?? null,
+    stoolBloodPresent: (r.stool_blood_present as string) ?? null,
+    stoolMucusPresent: (r.stool_mucus_present as string) ?? null,
+    recommendation: (r.recommendation as string) ?? null,
+    readText: (r.read_text as string) ?? null,
+  }
+}
+
+// ── Live photo read (§6.2/§7.7, A8) — invoke the shipped read machinery, re-read the row ──
+
+function photoReadOutcome(
+  eventId: string,
+  eventType: string,
+  incidentType: PhotoReadIncident,
+  status: PhotoReadResult['status'],
+  read: PhotoReadResult['read'] = null,
+): PhotoReadResult {
+  return { kind: 'read_photo', eventId, eventType, incidentType, status, ranLiveRead: status === 'ran', read }
+}
+
+/**
+ * Run a live per-incident photo read for `eventId` by invoking the SHIPPED analyze-vomit /
+ * analyze-stool Edge Function over HTTP with the caller's JWT — the exact path the event
+ * detail screen uses (§6.2, one read path). `transform_only: true` forces the EXIF/GPS-
+ * stripping transform fetch (T&S's D2 condition, §6.2.4 / AC-13). The invoked function does
+ * its OWN ownership gate, cap increment (analyze_vomit/analyze_stool, 10/day — the product-
+ * wide read cap), escalation floor, and never-clobber write-back, then persists to
+ * event_ai_analysis. We re-read that row (RLS-scoped by the same JWT) and project it exactly
+ * as the cached-read path does — so a read Ask triggers is immediately a free-surface fact
+ * and can never disagree with the detail screen. The row's STATUS is the machinery's own
+ * truth (robust regardless of the invoke response body): completed/uncertain → a real read
+ * to relay; capped → the daily read cap was hit (no read, never "fine"); anything else
+ * (read_disabled / failed / pending / none) → unavailable.
+ */
+async function runLivePhotoRead(
+  client: SupabaseClient,
+  eventId: string,
+  eventType: string,
+  incidentType: PhotoReadIncident,
+): Promise<PhotoReadResult> {
+  const fn = incidentType === 'vomit' ? 'analyze-vomit' : 'analyze-stool'
+  try {
+    const { error } = await client.functions.invoke(fn, { body: { event_id: eventId, transform_only: true } })
+    if (error) {
+      // A non-2xx from the machinery (incl. a cap-gated 200 that supabase-js may surface).
+      // Don't bail — re-read the row below; the machinery may have persisted a capped/failed
+      // STATE we should relay honestly rather than a bare "unavailable".
+      console.warn(`ask: live ${fn} read for ${eventId} returned an error:`, error.message)
+    }
+  } catch (e) {
+    console.warn(`ask: live ${fn} invoke threw for ${eventId}:`, e instanceof Error ? e.message : String(e))
+    return photoReadOutcome(eventId, eventType, incidentType, 'unavailable')
+  }
+
+  const { data } = await client.from('event_ai_analysis').select(READ_COLS).eq('event_id', eventId).maybeSingle()
+  if (!data) return photoReadOutcome(eventId, eventType, incidentType, 'unavailable')
+  const row = data as ReadRowDb
+  if (row.status === 'completed' || row.status === 'uncertain') {
+    return photoReadOutcome(eventId, eventType, incidentType, 'ran', projectCachedRead(mapReadRow(row)))
+  }
+  if (row.status === 'capped') return photoReadOutcome(eventId, eventType, incidentType, 'capped')
+  return photoReadOutcome(eventId, eventType, incidentType, 'unavailable')
 }
 
 async function fetchContext(
@@ -451,10 +607,7 @@ async function fetchContext(
       .eq('method', 'free_choice')
       .is('deleted_at', null),
     // Cached per-incident AI reads (§6.2 mode 2) — the override-aware structured fields.
-    client
-      .from('event_ai_analysis')
-      .select('event_id, incident_type, status, dismissed_at, edited_at, description, colour, contents, consistency, blood_present, bile_present, foreign_material_present, foreign_material_note, stool_consistency, stool_blood_present, stool_mucus_present, recommendation, read_text')
-      .eq('pet_id', petId),
+    client.from('event_ai_analysis').select(READ_COLS).eq('pet_id', petId),
     // Active diet trial → the `since_trial_start` window + diet_trial_status tool.
     client.from('diet_trials').select('started_at, target_duration_days, status').eq('pet_id', petId).eq('status', 'active').limit(1),
     // The caller's IANA timezone (for time_of_day; absent ⇒ the tool stays silent).
@@ -568,27 +721,7 @@ async function fetchContext(
   const freeFedFoodIds = new Set<string>(arrRows.filter((r) => r.active_until === null && r.food_item_id).map((r) => r.food_item_id as string))
 
   // ── reads ──
-  type ReadRowDb = Record<string, unknown> & { event_id: string; incident_type: string; status: string }
-  const reads: AskCachedReadRow[] = ((readsRes.data ?? []) as ReadRowDb[]).map((r) => ({
-    eventId: r.event_id,
-    incidentType: r.incident_type,
-    status: r.status,
-    dismissedAt: (r.dismissed_at as string) ?? null,
-    editedAt: (r.edited_at as string) ?? null,
-    description: (r.description as string) ?? null,
-    colour: (r.colour as string) ?? null,
-    contents: (r.contents as string[]) ?? null,
-    consistency: (r.consistency as string) ?? null,
-    bloodPresent: (r.blood_present as string) ?? null,
-    bilePresent: (r.bile_present as string) ?? null,
-    foreignMaterialPresent: (r.foreign_material_present as string) ?? null,
-    foreignMaterialNote: (r.foreign_material_note as string) ?? null,
-    stoolConsistency: (r.stool_consistency as string) ?? null,
-    stoolBloodPresent: (r.stool_blood_present as string) ?? null,
-    stoolMucusPresent: (r.stool_mucus_present as string) ?? null,
-    recommendation: (r.recommendation as string) ?? null,
-    readText: (r.read_text as string) ?? null,
-  }))
+  const reads: AskCachedReadRow[] = ((readsRes.data ?? []) as ReadRowDb[]).map(mapReadRow)
 
   // ── trial / timezone / engine findings ──
   const trialRow = first((trialRes.data ?? []) as { started_at: string; target_duration_days: number | null; status: string }[])
@@ -716,7 +849,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // 6. Fetch the working set (RLS-scoped) and run the bounded plan-loop.
     const ctx = await fetchContext(client, petId, pet as { name: string; species: string }, nowMs)
-    const { body: loopBody } = await runAskLoop(ctx, question, conversation, generalEnabled, apiKey, model)
+    const { body: loopBody } = await runAskLoop(client, ctx, question, conversation, generalEnabled, apiKey, model)
 
     // 6b. STRUCTURALLY attach a live engine SAFETY finding as the leading card (§7.2 — safety
     //     leads, never dropped). This is NOT model-discretionary: whatever the model did (a
