@@ -324,6 +324,42 @@ export interface MedicationWindow {
   activeUntil: string | null
 }
 
+/**
+ * Per-incident AI-analysis projection for the red-flag lane (B-340) — the owner-editable
+ * structured clinical fields from an `event_ai_analysis` row, one per analyzed incident.
+ * detectIncidentRedFlags derives the escalating VISUAL flag (blood / foreign material) from
+ * THESE fields — never the cached `visual_flags`/`recommendation` array, which the client edit
+ * path deliberately does NOT refresh on an owner override (lib/analysis.ts / B-339). Deriving
+ * from the structured fields is what makes an owner override that clears the fact clear the Home
+ * card BY CONSTRUCTION — the same derivation generate-report already uses (unionPresentFlags),
+ * so the two override-aware surfaces agree.
+ *
+ * CONTRACT: the caller passes only rows whose analyzed event is NON-soft-deleted and within the
+ * lookback (the join is in generate-signal/index.ts). Values are the raw enum strings from the DB
+ * (`vomit_blood` / `vomit_tristate`); the pure derivation keeps the present-only asymmetry in one
+ * tested place (deriveIncidentFlags). v1 scope is vomit only (B-340); stool per-incident red
+ * flags are B-364 — so the detector ignores any non-vomit incident_type even if passed one.
+ */
+export interface IncidentAnalysisInput {
+  /** The analyzed event's id (audit / future evidence expansion; the finding does not carry it in v1). */
+  eventId: string
+  /** The analyzed event's type (event_ai_analysis.incident_type). Only 'vomit' is acted on in v1. */
+  incidentType: SymptomType
+  /** ISO-8601 UTC occurred_at of the incident (from the joined events row) — the recency anchor. */
+  occurredAt: string
+  /**
+   * `event_ai_analysis.blood_present` (vomit_blood): 'none_visible'|'fresh_red'|'coffee_ground'|
+   * 'unsure'|null. PRESENT-ONLY escalation — only 'fresh_red'/'coffee_ground' is a red flag; every
+   * other value (incl. 'unsure' and null) is NOT a flag (absence is never manufactured; §9).
+   */
+  bloodPresent: string | null
+  /**
+   * `event_ai_analysis.foreign_material_present` (vomit_tristate): 'yes'|'no'|'unsure'|null.
+   * PRESENT-ONLY escalation — only 'yes' is a red flag; 'no'/'unsure'/null is NOT (§9).
+   */
+  foreignMaterialPresent: string | null
+}
+
 /** A logged dose reduced to what doseToMedicationWindow needs (the caller's DB-row projection). */
 export interface DoseEventInput {
   medicationItemId: string | null
@@ -435,6 +471,16 @@ export interface DetectionInput {
    * it, so omitting it is byte-identical to today's behavior.
    */
   timezone?: string
+  /**
+   * Per-incident AI-analysis red-flag inputs (B-340) — the owner-editable structured clinical
+   * fields from event_ai_analysis for this pet's analyzed incidents. detectIncidentRedFlags
+   * derives the escalating VISUAL flag (blood / foreign material) from these fields (NEVER the
+   * cached visual_flags array — B-339 / clinical-guardrails), so an owner override that clears a
+   * field clears the Home card by construction. Optional — absent/empty ⇒ the red-flag detector is
+   * SILENT (byte-identical to pre-B-340; detectors ①–⑦ ignore this field entirely). CONTRACT: the
+   * caller passes only rows whose analyzed event is non-soft-deleted and within the lookback.
+   */
+  incidentAnalyses?: IncidentAnalysisInput[]
   /** Reference "now" (ISO-8601 UTC), injected so detection is deterministic and testable. */
   now: string
 }
@@ -449,6 +495,7 @@ export type InsightType =
   | 'symptom_chronicity'
   | 'postprandial_timing'
   | 'timeofday_clustering'
+  | 'incident_red_flag'
 
 /** Safety/concern always leads (§5); everything else is an insight. */
 export type PriorityClass = 'safety' | 'insight'
@@ -771,6 +818,52 @@ export interface TimeOfDayClusteringFinding extends FindingBase {
   windowDays: number
 }
 
+/** Which visible red flag a per-incident analysis carries (B-340). Present-only, derived from the
+ * owner-editable structured clinical fields — never the cached visual_flags array. */
+export type IncidentFlagKind = 'blood' | 'foreign_material'
+
+/**
+ * Per-incident visual red flag (B-340) — the SAFETY-class lane that elevates a blood /
+ * foreign-material flag from a photo the owner logged onto the Home Signal, where "safety
+ * insights always lead" (Principle 3). Today that flag lives ONLY on the event detail screen
+ * (`analyze-vomit` writes it; `generate-signal` never read `event_ai_analysis`), so a genuine
+ * red flag an owner photographed never reaches Home. This lane closes that gap.
+ *
+ * ESCALATE-ON-PRESENCE, NEVER REASSURE (clinical-guardrails, the n=1 asymmetry): it fires on the
+ * PRESENCE of a visible flag and routes to the vet; it makes NO diagnosis, NO causal claim, and
+ * its ABSENCE is silence, not wellness (a cleared/absent flag emits nothing — never an all-clear).
+ * Single-incident fires — there is deliberately no corroboration gate, because a false positive is
+ * cheap for the owner to clear (editing the structured field, B-028, clears the card by
+ * construction — the flag is DERIVED from those fields, mirroring generate-report). Template-only
+ * phrasing (like ③–⑦), itself a structural never-reassure guarantee.
+ *
+ * v1 SCOPE: vomit only (B-340). The stool sibling (blood / foreign material in stool) is B-364 —
+ * it reuses this same type with incidentType='diarrhea', so the client renderer built for this
+ * lane extends to stool without a new InsightType.
+ */
+export interface IncidentRedFlagFinding extends FindingBase {
+  type: 'incident_red_flag'
+  priorityClass: 'safety'
+  /** The incident type carrying the flag. v1: 'vomit' only; B-364 adds stool ('diarrhea'). */
+  incidentType: SymptomType
+  /** The distinct visible red flags present across the in-window incidents (blood before foreign, stable order). ≥1. */
+  flags: IncidentFlagKind[]
+  /** ISO-8601 UTC occurred_at of the MOST RECENT in-window incident carrying a red flag — the recency anchor for copy. */
+  mostRecentFlaggedIso: string
+  /**
+   * How many in-window analyzed incidents carry a red flag (drives singular/plural copy + evidence). ≥1.
+   * NOTE: this counts distinct `event_ai_analysis` ROWS, NOT deduped bouts — a single vomiting bout
+   * re-logged as N events with N analyses counts as N (so the copy may read "Photos… " for what was
+   * one bout). Safe direction for a SAFETY lane (it over-states presence, never reassures, and there
+   * is no escalation THRESHOLD it can inflate — a single flag already fires). generate-report collapses
+   * re-logs into one incident (unionPresentFlags over memberEventIds); this lane deliberately does NOT
+   * in v1. Episode-collapse to match is deferred to PR 2 (B-368).
+   */
+  flaggedIncidentCount: number
+  /** The recency window in days actually applied (a flag older than this no longer leads Home). */
+  windowDays: number
+}
+
 export type Finding =
   | CorrelationFinding
   | IntakeDeclineFinding
@@ -779,6 +872,7 @@ export type Finding =
   | SymptomChronicityFinding
   | PostprandialTimingFinding
   | TimeOfDayClusteringFinding
+  | IncidentRedFlagFinding
 
 /** A finding plus its resolved sort position, returned by the engine in ranked order. */
 export interface RankedFinding {
@@ -1103,6 +1197,19 @@ export interface DetectionConfig {
     /** §4.3: analysis window in days, bounding the denominator to the current era (same as ⑤). */
     windowDays: number
   }
+  incidentRedFlag: {
+    /**
+     * Recency window in days (detector — B-340). A per-incident visual red flag (blood /
+     * foreign material) leads the Home safety surface only while it is recent enough to still
+     * be actionable; a flag older than this no longer leads (the vet report, unlike Home, still
+     * carries the full history). 14 = "the last two weeks" — recent enough to prompt a call, not
+     * so long a resolved incident keeps alarming. The sanctioned clear before this window elapses
+     * is the owner editing the structured field (which clears the card by construction). Tune on
+     * real data, not a re-decision; the exact value is a Dr. Chen recency call (flagged for PR-1
+     * adversarial ratification).
+     */
+    windowDays: number
+  }
   coverage: {
     /**
      * Min classifiable exposures (meals + treats) before "X is in most of what the pet
@@ -1309,6 +1416,13 @@ export const DEFAULT_CONFIG: DetectionConfig = {
     minClusterFraction: 0.6,
     clusterWindowHours: 4,
     windowDays: 60,
+  },
+  // B-340 per-incident visual red-flag lane. windowDays 14 = "the last two weeks": recent
+  // enough that a photographed blood / foreign-material flag still warrants leading Home, short
+  // enough that a resolved incident stops alarming (the owner's edit-the-field clear works within
+  // it too). The exact recency is a Dr. Chen call — flagged for PR-1 adversarial ratification.
+  incidentRedFlag: {
+    windowDays: 14,
   },
   // B-053 coverage-diagnostic floors. stapleMinMeals keeps "X is in most of what the pet
   // eats" honest; stapleMinSymptomEpisodes mirrors the correlation Early episode floor
@@ -3518,6 +3632,99 @@ export function computeHumanFoodProvenance(
   }
 }
 
+// ── Detector: per-incident visual red flag (B-340) ───────────────────────────
+
+/**
+ * Derive the PRESENT visible red flags on ONE analyzed incident from its owner-editable
+ * structured clinical fields — never the cached `visual_flags` array (the client edit path does
+ * NOT refresh that on an override, so it lies after an edit; B-339 / clinical-guardrails). This is
+ * the single place the present-only asymmetry lives, mirroring generate-report's unionPresentFlags:
+ *   • blood escalates ONLY on 'fresh_red' / 'coffee_ground' — never 'none_visible', 'unsure', null.
+ *   • foreign material escalates ONLY on 'yes' — never 'no', 'unsure', null.
+ * An 'unsure'/absent value is NEVER folded into a flag: that would manufacture presence the data
+ * doesn't support (the inverse of the §9 never-reassure-on-absence rule — we also never alarm on
+ * absence). Pure + exported so the derivation is directly unit-testable.
+ */
+export function deriveIncidentFlags(a: IncidentAnalysisInput): IncidentFlagKind[] {
+  const flags: IncidentFlagKind[] = []
+  if (a.bloodPresent === 'fresh_red' || a.bloodPresent === 'coffee_ground') flags.push('blood')
+  if (a.foreignMaterialPresent === 'yes') flags.push('foreign_material')
+  return flags
+}
+
+/**
+ * Detector — per-incident visual red flag (B-340). Elevates a blood / foreign-material flag from
+ * a photo the owner logged onto the Home safety surface, where "safety insights always lead"
+ * (Principle 3). SAFETY class. ESCALATE-ON-PRESENCE, NEVER REASSURE: it fires on the PRESENCE of a
+ * flag on a RECENT incident and never speaks on absence (an incident with no present flag, or none
+ * in-window, emits nothing — silence, never an all-clear). Single-incident fires — no corroboration
+ * gate (a false positive is cheap for the owner to clear by editing the structured field, which
+ * clears the card by construction because the flag is DERIVED from those fields).
+ *
+ * v1 SCOPE: vomit only. Any non-vomit incidentType (e.g. a B-247 stool analysis row) is IGNORED —
+ * the stool sibling is B-364 and will reuse this type with incidentType='diarrhea'. Emits AT MOST
+ * ONE finding (calm surface, like ⑦): it UNIONS the present flags across all in-window flagged
+ * incidents and anchors copy to the MOST RECENT one, so a pet with two flagged incidents shows one
+ * calm card, not two.
+ *
+ * CONTRACT (from the caller): incidentAnalyses are already non-soft-deleted + RLS-scoped; this
+ * detector additionally applies the recency window (config.incidentRedFlag.windowDays) so a stale
+ * flag doesn't keep leading Home. Absent/empty incidentAnalyses ⇒ [] (byte-identical to pre-B-340).
+ */
+export function detectIncidentRedFlags(
+  input: DetectionInput,
+  config: DetectionConfig = DEFAULT_CONFIG,
+): IncidentRedFlagFinding[] {
+  const analyses = input.incidentAnalyses ?? []
+  if (analyses.length === 0) return []
+  const nowMs = Date.parse(input.now)
+  if (Number.isNaN(nowMs)) return []
+  const windowMs = config.incidentRedFlag.windowDays * MS_PER_DAY
+
+  const flagKinds = new Set<IncidentFlagKind>()
+  let mostRecentMs = -Infinity
+  let mostRecentIso = ''
+  let flaggedCount = 0
+  for (const a of analyses) {
+    if (a.incidentType !== 'vomit') continue // v1 scope; stool is B-364
+    const ms = Date.parse(a.occurredAt)
+    if (Number.isNaN(ms)) continue
+    // Recency: only flags on an incident within the window lead Home. A future-dated occurred_at
+    // (nowMs - ms < 0) still passes the ≤ windowMs test, which is correct — it is trivially recent.
+    // KNOWN LIMIT (B-361 inheritance): recency anchors on occurred_at, so a red flag the owner logs
+    // TODAY but back-dates > windowDays ago (B-010 estimated/window edge) never leads Home. Safe
+    // direction (silence, never reassurance), shared with vomit/stool; the B-361 fix (anchor on
+    // max(occurred_at, created_at)) would fix this lane too. Not addressed in PR 1.
+    if (nowMs - ms > windowMs) continue
+    const flags = deriveIncidentFlags(a)
+    if (flags.length === 0) continue // no PRESENT flag on this incident — silence, never a "clear"
+    flaggedCount++
+    for (const f of flags) flagKinds.add(f)
+    if (ms > mostRecentMs) {
+      mostRecentMs = ms
+      mostRecentIso = a.occurredAt
+    }
+  }
+  if (flaggedCount === 0) return []
+
+  // Stable flag order (blood before foreign material) so copy reads deterministically.
+  const flags: IncidentFlagKind[] = []
+  if (flagKinds.has('blood')) flags.push('blood')
+  if (flagKinds.has('foreign_material')) flags.push('foreign_material')
+
+  return [
+    {
+      type: 'incident_red_flag',
+      priorityClass: 'safety',
+      incidentType: 'vomit',
+      flags,
+      mostRecentFlaggedIso: mostRecentIso,
+      flaggedIncidentCount: flaggedCount,
+      windowDays: config.incidentRedFlag.windowDays,
+    },
+  ]
+}
+
 // ── Detector registry (§4) ──────────────────────────────────────────────────
 
 export interface Detector {
@@ -3549,6 +3756,14 @@ export const DETECTOR_REGISTRY: Detector[] = [
   { type: 'postprandial_timing', detect: detectPostprandialTiming },
   { type: 'timeofday_clustering', detect: detectTimeOfDayClustering },
   { type: 'reflection', detect: detectReflections },
+  // Detector — per-incident visual red flag (B-340). SAFETY class; reads the NEW
+  // incidentAnalyses source (derived from event_ai_analysis structured fields, override-aware by
+  // construction). Live in detectSignals + ranked at the TOP of the safety band (SAFETY_TYPE_ORDER
+  // below). DEPLOY-GATED (the B-182 lesson): the client (lib/signal.ts InsightType, InsightCard
+  // renderer) cannot render 'incident_red_flag' until PR 2, so do NOT redeploy generate-signal
+  // until the PR-2 client renderer + copy land — an engine-registered-but-unrenderable type must
+  // never reach a live cache.
+  { type: 'incident_red_flag', detect: detectIncidentRedFlags },
 ]
 
 // ── Composition & ranking (§5) ──────────────────────────────────────────────
@@ -3564,7 +3779,7 @@ export const DETECTOR_REGISTRY: Detector[] = [
 //      safety finding AND below every correlation, never the lead of a data-rich
 //      pet that has a real correlation to show.
 function priorityBand(finding: Finding, ctx: PetContext): number {
-  if (finding.priorityClass === 'safety') return 0 // intake_decline, symptom_chronicity, symptom_worsening
+  if (finding.priorityClass === 'safety') return 0 // incident_red_flag, intake_decline, symptom_chronicity, symptom_worsening
   if (finding.type === 'reflection') return 3
   // Correlation is the context-lead insight for a diet-trial pet (Jordan's stack, §8).
   if (finding.type === 'food_symptom_correlation' && ctx.dietTrialActive) return 1
@@ -3582,19 +3797,30 @@ const INSIGHT_TYPE_ORDER: Record<string, number> = {
   timeofday_clustering: 2,
 }
 
-// Within the safety band (band 0): intake-decline leads chronicity leads symptom-frequency
-// worsening. Anorexia (esp. the feline 48h hepatic-lipidosis window) is the FASTEST-killing
-// emergency, unchanged at the top. Chronicity (⑦, B-182) outranks the week-over-week
-// worsening bump because the vet council ranked sustained chronicity ABOVE the bump as the
-// more clinically established concern (Consensus #3) — "this has gone on for weeks" is a more
-// complete statement than "up 2 this week". All three lead every insight, and co-firing across
-// DIFFERENT symptoms/axes is kept by curation (a pet eating less AND with one chronic symptom
-// AND another worsening symptom shows all three — the two-/multi-signal gestalt the re-run
-// brief found MISSING). Same-symptom ④ is de-duplicated upstream by suppressWorseningWhenChronic.
+// Within the safety band (band 0): a per-incident VISUAL red flag leads, then intake-decline,
+// then chronicity, then symptom-frequency worsening. All lead every insight, and co-firing across
+// DIFFERENT symptoms/axes is kept by curation (a pet with a blood-flagged vomit AND eating less
+// AND one chronic symptom shows all — the multi-signal gestalt the re-run brief found MISSING);
+// none is ever dropped, so this ordering only decides which leads when several safety findings
+// co-fire. Same-symptom ④ is de-duplicated upstream by suppressWorseningWhenChronic.
+//   • incident_red_flag (B-340) at the TOP: a directly-OBSERVED acute finding the owner
+//     photographed — blood (hematemesis) or a foreign body (obstruction risk). The feature exists
+//     precisely so this concrete red flag LEADS Home (Open Q resolution 2026-07-13: "led at top").
+//     NOTE — this places it ABOVE intake_decline, overriding that lane's "fastest-killing
+//     emergency, unchanged at the top" note: a photographed blood/foreign-body is an equally
+//     emergency-grade, more concrete finding, and both still show when they co-fire. The
+//     red-flag-vs-anorexia lead order is a genuine clinical call → FLAGGED for Dr. Chen
+//     ratification (PR-1 adversarial pass); a bare provisional decision, surfaced not hidden.
+//   • intake-decline next: anorexia (esp. the feline 48h hepatic-lipidosis window) is the
+//     fastest-killing CONTEXTUAL emergency; within it, an outright refusal leads a consecutive-low.
+//   • chronicity (⑦, B-182) outranks the week-over-week worsening bump — the vet council ranked
+//     sustained chronicity ABOVE the bump as the more clinically established concern (Consensus
+//     #3): "this has gone on for weeks" is a more complete statement than "up 2 this week".
 const SAFETY_TYPE_ORDER: Record<string, number> = {
-  intake_decline: 0,
-  symptom_chronicity: 1,
-  symptom_worsening: 2,
+  incident_red_flag: 0,
+  intake_decline: 1,
+  symptom_chronicity: 2,
+  symptom_worsening: 3,
 }
 
 /**

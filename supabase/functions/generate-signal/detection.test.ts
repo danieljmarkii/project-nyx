@@ -18,6 +18,8 @@ import {
   detectChronicity,
   detectPostprandialTiming,
   detectTimeOfDayClustering,
+  detectIncidentRedFlags,
+  deriveIncidentFlags,
   detectSignals,
   detectCoverage,
   doseToMedicationWindow,
@@ -36,6 +38,8 @@ import {
   type SymptomChronicityFinding,
   type PostprandialTimingFinding,
   type TimeOfDayClusteringFinding,
+  type IncidentRedFlagFinding,
+  type IncidentAnalysisInput,
   type OccurredAtConfidence,
   type DetectionInput,
   type MealEvent,
@@ -133,6 +137,16 @@ const medDose = (occurredAt: string, medicationItemId: string | null = 'drug-1')
   medicationItemId,
   activeFrom: occurredAt,
   activeUntil: occurredAt,
+})
+
+/** A per-incident AI-analysis projection (B-340). Defaults: a vomit incident with NO present flag. */
+const incidentAnalysis = (over: Partial<IncidentAnalysisInput> = {}): IncidentAnalysisInput => ({
+  eventId: nextId(),
+  incidentType: 'vomit',
+  occurredAt: at(28, 9), // 2 days before NOW (at(30,12)) — inside the 14-day window
+  bloodPresent: null,
+  foreignMaterialPresent: null,
+  ...over,
 })
 
 const dog: PetContext = { name: 'Mochi', species: 'dog', dietTrialActive: false }
@@ -2400,6 +2414,202 @@ const reflectionFinding = (over: Partial<ReflectionFinding> = {}): ReflectionFin
   direction: 'flat',
   windowDays: 7,
   ...over,
+})
+
+// ── Detector: per-incident visual red flag (B-340) ──────────────────────────
+
+Deno.test('deriveIncidentFlags — present-only: only fresh_red/coffee_ground → blood, only yes → foreign', () => {
+  // blood: PRESENT values escalate.
+  assert.deepEqual(deriveIncidentFlags(incidentAnalysis({ bloodPresent: 'fresh_red' })), ['blood'])
+  assert.deepEqual(deriveIncidentFlags(incidentAnalysis({ bloodPresent: 'coffee_ground' })), ['blood'])
+  // foreign: only 'yes' escalates.
+  assert.deepEqual(
+    deriveIncidentFlags(incidentAnalysis({ foreignMaterialPresent: 'yes' })),
+    ['foreign_material'],
+  )
+  // both present → both, stable order (blood before foreign).
+  assert.deepEqual(
+    deriveIncidentFlags(incidentAnalysis({ bloodPresent: 'fresh_red', foreignMaterialPresent: 'yes' })),
+    ['blood', 'foreign_material'],
+  )
+})
+
+Deno.test('deriveIncidentFlags — absence is NEVER a flag: unsure / none_visible / no / null all yield []', () => {
+  // The inverse of never-reassure-on-absence: an unclear or negative read never manufactures a flag.
+  for (const bloodPresent of ['none_visible', 'unsure', null]) {
+    assert.deepEqual(deriveIncidentFlags(incidentAnalysis({ bloodPresent })), [])
+  }
+  for (const foreignMaterialPresent of ['no', 'unsure', null]) {
+    assert.deepEqual(deriveIncidentFlags(incidentAnalysis({ foreignMaterialPresent })), [])
+  }
+})
+
+Deno.test('detectIncidentRedFlags — a SINGLE foreign-material incident fires (no corroboration gate)', () => {
+  const findings = detectIncidentRedFlags(
+    input({ incidentAnalyses: [incidentAnalysis({ foreignMaterialPresent: 'yes' })] }),
+  )
+  assert.equal(findings.length, 1)
+  const f = findings[0]
+  assert.equal(f.type, 'incident_red_flag')
+  assert.equal(f.priorityClass, 'safety')
+  assert.equal(f.incidentType, 'vomit')
+  assert.deepEqual(f.flags, ['foreign_material'])
+  assert.equal(f.flaggedIncidentCount, 1)
+})
+
+Deno.test('detectIncidentRedFlags — fires on blood (both fresh_red and coffee_ground)', () => {
+  for (const bloodPresent of ['fresh_red', 'coffee_ground']) {
+    const findings = detectIncidentRedFlags(input({ incidentAnalyses: [incidentAnalysis({ bloodPresent })] }))
+    assert.equal(findings.length, 1, `${bloodPresent} fires`)
+    assert.deepEqual(findings[0].flags, ['blood'])
+  }
+})
+
+Deno.test('detectIncidentRedFlags — UNIONS flags across incidents into ONE calm card, most-recent anchored', () => {
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: at(22, 9), bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ occurredAt: at(27, 14), foreignMaterialPresent: 'yes' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1, 'one card, not two (calm surface)')
+  const f = findings[0]
+  assert.deepEqual(f.flags, ['blood', 'foreign_material'], 'unioned, stable order')
+  assert.equal(f.flaggedIncidentCount, 2)
+  assert.equal(f.mostRecentFlaggedIso, at(27, 14), 'anchored to the most-recent flagged incident')
+})
+
+Deno.test('detectIncidentRedFlags — an owner override that clears the field clears the card by construction', () => {
+  // The whole point (B-339): derive from the owner-editable structured fields, so a cleared
+  // foreign_material_present='no' (or blood='none_visible') emits nothing — no stale visual_flags.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [incidentAnalysis({ foreignMaterialPresent: 'no', bloodPresent: 'none_visible' })],
+    }),
+  )
+  assert.deepEqual(findings, [])
+})
+
+Deno.test('detectIncidentRedFlags — an "unsure" read is SILENT (never manufactures a flag)', () => {
+  assert.deepEqual(
+    detectIncidentRedFlags(
+      input({ incidentAnalyses: [incidentAnalysis({ bloodPresent: 'unsure', foreignMaterialPresent: 'unsure' })] }),
+    ),
+    [],
+  )
+})
+
+Deno.test('detectIncidentRedFlags — recency window: a flag older than windowDays no longer leads Home', () => {
+  // NOW = at(30, 12); windowDays = 14. at(16,12) is exactly 14 days back (inclusive → fires);
+  // at(15,12) is 15 days back (→ silent). A stale flag stops alarming; the vet report still carries it.
+  assert.equal(
+    detectIncidentRedFlags(
+      input({ incidentAnalyses: [incidentAnalysis({ occurredAt: at(16, 12), foreignMaterialPresent: 'yes' })] }),
+    ).length,
+    1,
+    'exactly at the 14-day edge still fires',
+  )
+  assert.deepEqual(
+    detectIncidentRedFlags(
+      input({ incidentAnalyses: [incidentAnalysis({ occurredAt: at(15, 12), foreignMaterialPresent: 'yes' })] }),
+    ),
+    [],
+    '15 days back is stale → silent',
+  )
+})
+
+Deno.test('detectIncidentRedFlags — v1 scope is VOMIT ONLY: a stool (diarrhea) flag is ignored (B-364)', () => {
+  assert.deepEqual(
+    detectIncidentRedFlags(
+      input({
+        incidentAnalyses: [incidentAnalysis({ incidentType: 'diarrhea', foreignMaterialPresent: 'yes' })],
+      }),
+    ),
+    [],
+    'the stool sibling is B-364, not this lane',
+  )
+})
+
+Deno.test('detectIncidentRedFlags — absent/empty incidentAnalyses is inert (byte-identical to pre-B-340)', () => {
+  assert.deepEqual(detectIncidentRedFlags(input({})), [])
+  assert.deepEqual(detectIncidentRedFlags(input({ incidentAnalyses: [] })), [])
+})
+
+Deno.test('rankFindings — a per-incident red flag LEADS the safety band (above intake-decline, chronicity, worsening)', () => {
+  const redFlag: IncidentRedFlagFinding = {
+    type: 'incident_red_flag',
+    priorityClass: 'safety',
+    incidentType: 'vomit',
+    flags: ['blood'],
+    mostRecentFlaggedIso: at(28, 9),
+    flaggedIncidentCount: 1,
+    windowDays: 14,
+  }
+  const intake: IntakeDeclineFinding = {
+    type: 'intake_decline',
+    priorityClass: 'safety',
+    trigger: 'consecutive_low',
+    species: 'cat',
+    baselineScore: 3.8,
+    recentScore: 0.5,
+    daysBelowBaseline: 2,
+    refusedFoodLabel: null,
+    ratedMealsConsidered: 5,
+    lastFullMealIso: null,
+  }
+  const chronicity: SymptomChronicityFinding = {
+    type: 'symptom_chronicity',
+    priorityClass: 'safety',
+    symptomType: 'vomit',
+    episodeCount: 6,
+    spanDays: 40,
+    activeWeeks: 5,
+    symptomDays: 6,
+    daysSinceLastEpisode: 2,
+    firstOnsetIso: at(1, 8),
+    tier: 'standard',
+    windowDays: 56,
+    associationalOnly: true,
+  }
+  const worsening: SymptomWorseningFinding = {
+    type: 'symptom_worsening',
+    priorityClass: 'safety',
+    symptomType: 'itch',
+    currentCount: 3,
+    priorCount: 1,
+    currentDays: 3,
+    priorDays: 1,
+    trigger: 'more_episodes',
+    tier: 'standard',
+    windowDays: 7,
+  }
+  // Shuffle the input order to prove ordering is by SAFETY_TYPE_ORDER, not input order.
+  const ranked = rankFindings([worsening, chronicity, intake, redFlag], cat)
+  assert.deepEqual(
+    ranked.map((r) => r.finding.type),
+    ['incident_red_flag', 'intake_decline', 'symptom_chronicity', 'symptom_worsening'],
+  )
+})
+
+Deno.test('detectSignals — end to end: a per-incident red flag fires and LEADS, co-firing safety is never dropped', () => {
+  // A pet with a foreign-material vomit photo AND a chronic vomiting course: both are safety, both
+  // must show, and the concrete photographed red flag leads (Principle 3 "safety insights lead").
+  // Chronic course = the council fixture (~q2-day vomiting over 6 weeks → chronicity fires).
+  const chronicVomits: SymptomEvent[] = []
+  for (let d = 0; d <= 42; d += 2) chronicVomits.push(vomitAgo(d))
+  const ranked = detectSignals(
+    input({
+      symptomEvents: chronicVomits,
+      incidentAnalyses: [incidentAnalysis({ foreignMaterialPresent: 'yes' })],
+    }),
+  )
+  assert.equal(ranked[0].finding.type, 'incident_red_flag', 'the red flag leads the surface')
+  assert.ok(
+    ranked.some((r) => r.finding.type === 'symptom_chronicity'),
+    'the co-firing chronicity safety card is never dropped',
+  )
 })
 
 Deno.test('rankFindings — a reflection ranks below safety AND below a correlation', () => {
