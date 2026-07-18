@@ -119,8 +119,10 @@ interface MomentState {
   // Warmed bottom card carrying the adherence chip row (dose logs, B-117 PR 3).
   showMedication: (payload: Omit<MedicationPayload, 'kind'>, opts?: ShowOpts) => void;
   hide: () => void;
-  // Mutates the in-flight MEAL card's occurredAt after a "Change time" edit so
-  // the card reflects the new time before dismissing. No-op on a beat payload.
+  // Mutates the in-flight MEAL or MEDICATION card's occurredAt after a "Change
+  // time" edit so the card reflects the new time before dismissing. Both cards
+  // carry the same witnessed-point "Change time" backfill affordance (the dose
+  // card gained it to match the meal card). No-op on a beat payload.
   patchOccurredAt: (occurredAt: string) => void;
   // Mutates the in-flight MEAL card's intakeRating after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on a beat payload.
@@ -200,7 +202,7 @@ export const useMomentStore = create<MomentState>((set) => ({
   },
   patchOccurredAt: (occurredAt) =>
     set((state) =>
-      state.payload?.kind === 'meal'
+      state.payload?.kind === 'meal' || state.payload?.kind === 'medication'
         ? { payload: { ...state.payload, occurredAt } }
         : {}
     ),
