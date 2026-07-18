@@ -851,13 +851,15 @@ export interface IncidentRedFlagFinding extends FindingBase {
   /** ISO-8601 UTC occurred_at of the MOST RECENT in-window incident carrying a red flag — the recency anchor for copy. */
   mostRecentFlaggedIso: string
   /**
-   * How many distinct in-window flagged incidents carry a red flag (drives singular/plural copy + evidence). ≥1.
+   * How many distinct in-window incidents carry a red flag (drives singular/plural copy + evidence). ≥1.
    * B-368: NEAR-DUPLICATE re-logs collapsed — the same vomit double-tapped / sync-replayed into N events
-   * with N analyses counts as ONE, matching generate-report's §5.11 collapse EXACTLY (a 60s window
-   * anchored to the cluster's first member — countRelogCollapsedIncidents). Two GENUINELY distinct bouts
-   * (e.g. 30 min apart) count as 2 on BOTH surfaces — never understated to 1 on a safety card. Each
-   * collapsed incident is one analyzed photo, so the "logged photo(s)" copy is accurate. It never changes
-   * WHETHER the card fires (≥1 flagged incident ⇒ count ≥1) — only the count and its singular/plural copy.
+   * with N analyses counts as ONE, matching generate-report's §5.11 collapse (a 60s window anchored to
+   * the cluster's first member, dedup over ALL in-window vomit incidents, count clusters carrying ≥1 flag
+   * — countFlaggedClusters). Two GENUINELY distinct bouts (e.g. 30 min apart) count as 2 on BOTH surfaces
+   * — never understated to 1 on a safety card. It never changes WHETHER the card fires (≥1 flagged
+   * incident ⇒ count ≥1) — only the count/plural copy. Known residual (B-372): a photoless vomit has no
+   * analysis row so can't reach this detector, so a rare 3-vomits-in-~90s arrangement can still under-count
+   * by one vs the report — always the understating direction, card still fires + routes to the vet.
    */
   flaggedIncidentCount: number
   /** The recency window in days actually applied (a flag older than this no longer leads Home). */
@@ -3659,24 +3661,32 @@ export function deriveIncidentFlags(a: IncidentAnalysisInput): IncidentFlagKind[
 const INCIDENT_RELOG_DEDUP_MS = 60_000
 
 /**
- * Count distinct flagged incidents, collapsing only NEAR-DUPLICATE re-logs of one incident (B-368).
- * Mirrors generate-report's §5.11 dedup: a run is swept in occurred_at order and a member within
- * INCIDENT_RELOG_DEDUP_MS of the cluster's FIRST member (anchor-fixed, NOT the running previous)
- * joins that cluster — which bounds each cluster's span to one window, so a slow chain of sub-window
- * gaps can never fold an arbitrarily long run of genuinely distinct incidents into one (the same
- * adversarial guard generate-report applies). Pure + list-order-independent (sorts internally).
+ * Count distinct flagged incidents, collapsing NEAR-DUPLICATE re-logs of one incident (B-368).
+ * Mirrors generate-report's §5.11 dedup: ALL in-window vomit incidents are swept in occurred_at
+ * order and a member within INCIDENT_RELOG_DEDUP_MS of the cluster's FIRST member (anchor-fixed, NOT
+ * the running previous) joins that cluster — which bounds each cluster's span to one window, so a
+ * slow chain of sub-window gaps can never fold an arbitrarily long run of genuinely distinct
+ * incidents into one (the same adversarial guard generate-report applies). Then, matching the
+ * report's per-cluster present-flag union, a cluster COUNTS iff it carries ≥1 flagged member — so an
+ * unflagged vomit anchoring the cluster can't shift the count off the report's. Pure +
+ * list-order-independent (sorts internally). Returns 0 if no cluster carries a flag.
  */
-function countRelogCollapsedIncidents(msList: number[]): number {
-  if (msList.length === 0) return 0
-  const sorted = [...msList].sort((a, b) => a - b)
+function countFlaggedClusters(items: { ms: number; flagged: boolean }[]): number {
+  if (items.length === 0) return 0
+  const sorted = [...items].sort((a, b) => a.ms - b.ms)
   let count = 0
   let clusterAnchor = -Infinity
-  for (const ms of sorted) {
-    if (ms - clusterAnchor > INCIDENT_RELOG_DEDUP_MS) {
-      count++
-      clusterAnchor = ms // a new cluster starts; the anchor stays fixed to its first member
+  let clusterHasFlag = false
+  for (const it of sorted) {
+    if (it.ms - clusterAnchor > INCIDENT_RELOG_DEDUP_MS) {
+      if (clusterHasFlag) count++ // close the previous cluster before opening a new one
+      clusterAnchor = it.ms // a new cluster starts; the anchor stays fixed to its first member
+      clusterHasFlag = it.flagged
+    } else {
+      clusterHasFlag = clusterHasFlag || it.flagged
     }
   }
+  if (clusterHasFlag) count++ // close the final cluster
   return count
 }
 
@@ -3712,9 +3722,10 @@ export function detectIncidentRedFlags(
   const flagKinds = new Set<IncidentFlagKind>()
   let mostRecentMs = -Infinity
   let mostRecentIso = ''
-  // The occurred_at (ms) of every FLAGGED in-window incident, so the count can episode-collapse
-  // re-logs of one bout (B-368) instead of counting raw event_ai_analysis rows.
-  const flaggedMs: number[] = []
+  // EVERY in-window vomit incident (flagged or not), so the count can dedup re-logs over the SAME
+  // universe generate-report does (B-368) — all same-type events, not just the flagged subset —
+  // instead of counting raw event_ai_analysis rows. `flagged` = this incident carries a red flag.
+  const inWindowVomits: { ms: number; flagged: boolean }[] = []
   for (const a of analyses) {
     if (a.incidentType !== 'vomit') continue // v1 scope; stool is B-364
     const ms = Date.parse(a.occurredAt)
@@ -3727,26 +3738,34 @@ export function detectIncidentRedFlags(
     // max(occurred_at, created_at)) would fix this lane too. Not addressed in PR 1.
     if (nowMs - ms > windowMs) continue
     const flags = deriveIncidentFlags(a)
-    if (flags.length === 0) continue // no PRESENT flag on this incident — silence, never a "clear"
-    flaggedMs.push(ms)
-    for (const f of flags) flagKinds.add(f)
-    if (ms > mostRecentMs) {
-      mostRecentMs = ms
-      mostRecentIso = a.occurredAt
+    const flagged = flags.length > 0 // no PRESENT flag ⇒ silence, never a "clear"; but it still
+    inWindowVomits.push({ ms, flagged }) // participates in clustering as a possible re-log anchor
+    if (flagged) {
+      for (const f of flags) flagKinds.add(f)
+      if (ms > mostRecentMs) {
+        mostRecentMs = ms
+        mostRecentIso = a.occurredAt // copy anchors on the most-recent FLAGGED incident
+      }
     }
   }
-  if (flaggedMs.length === 0) return []
+  if (flagKinds.size === 0) return [] // no flagged incident in-window — silence, never an all-clear
 
   // B-368 — collapse NEAR-DUPLICATE re-logs of one incident so the count (and its singular/plural
   // "logged photo(s)" copy) describes distinct flagged incidents, not raw analysis rows: the same
   // vomit double-tapped / sync-replayed into N events with N analyses is ONE flagged incident.
-  // Mirrors generate-report's §5.11 collapse EXACTLY (countRelogCollapsedIncidents below) — a 60s
-  // window anchored to each cluster's FIRST member — so the two surfaces agree: two GENUINELY
-  // distinct bloody-vomit bouts 30 min apart count as 2 on both (never understated to 1 on a safety
-  // card), while a seconds-apart re-log collapses to 1. NOT the 3h symptomEpisodeGapHours used by
-  // the frequency lanes: that would fold distinct bouts together and understate presence. This
-  // never changes WHETHER the card fires (flaggedMs already non-empty ⇒ ≥1 incident) — only the count.
-  const flaggedIncidentCount = countRelogCollapsedIncidents(flaggedMs)
+  // Mirrors generate-report's §5.11 collapse (countFlaggedClusters below): a 60s window anchored to
+  // each cluster's FIRST member, dedup over ALL in-window vomit incidents, then count the clusters
+  // carrying ≥1 flag — so the two surfaces agree even when an UNFLAGGED vomit anchors the cluster.
+  // Two GENUINELY distinct bloody-vomit bouts 30 min apart count as 2 on both (never understated to 1
+  // on a safety card); a seconds-apart re-log collapses to 1. NOT the 3h symptomEpisodeGapHours the
+  // frequency lanes use (that would fold distinct bouts together and understate presence). This never
+  // changes WHETHER the card fires (≥1 flagged incident ⇒ count ≥1) — only the count/plural copy.
+  // Residual bound (B-372): a PHOTOLESS vomit — which has no event_ai_analysis row and so never
+  // reaches this detector — can anchor a report cluster we can't see, so a rare 3-vomits-in-~90s
+  // arrangement can still under-count by one here vs the report. Always the understating direction
+  // (card still fires + routes to the vet), never a never-reassure violation; closing it fully needs
+  // photoless-vomit timestamps passed into DetectionInput (a contract change, deferred).
+  const flaggedIncidentCount = countFlaggedClusters(inWindowVomits)
 
   // Stable flag order (blood before foreign material) so copy reads deterministically.
   const flags: IncidentFlagKind[] = []

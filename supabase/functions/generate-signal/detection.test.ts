@@ -2530,6 +2530,41 @@ Deno.test('detectIncidentRedFlags — B-368: the 60s window is anchor-fixed, so 
   assert.equal(findings[0].flaggedIncidentCount, 2, 'anchor-fixed 60s window: first two collapse, third is distinct')
 })
 
+Deno.test('detectIncidentRedFlags — B-368: an UNFLAGGED vomit anchoring a cluster does not shift the count off generate-report (dedup over ALL incidents)', () => {
+  // The adversarial residual: three vomits in ~90s where the FIRST reads clean. generate-report
+  // dedups over all vomit events (clean anchor A + B → one cluster; C → a second), unions flags per
+  // cluster → 2 flagged incidents. This lane must agree — deduping only the flagged subset would
+  // wrongly count 1. A clean read is NOT a flag (never manufactures presence), but it still
+  // participates in clustering as the report's anchor would.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:00.000Z' }), // clean read (default nulls)
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:50.000Z', bloodPresent: 'fresh_red' }),
+        incidentAnalysis({ occurredAt: '2026-05-29T09:01:30.000Z', bloodPresent: 'fresh_red' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 2, 'clean anchor A+B = one flagged cluster, C = a second')
+})
+
+Deno.test('detectIncidentRedFlags — B-368: a clean vomit within 60s of the ONLY flagged one folds into its cluster (count 1, not a second bout)', () => {
+  // A clean read seconds before the flagged one is the same re-log cluster — it must not add a count,
+  // and (being unflagged) it must not create a separate incident either. One flagged bout → 1.
+  const findings = detectIncidentRedFlags(
+    input({
+      incidentAnalyses: [
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:00.000Z' }), // clean read
+        incidentAnalysis({ occurredAt: '2026-05-29T09:00:30.000Z', bloodPresent: 'fresh_red' }),
+      ],
+    }),
+  )
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].flaggedIncidentCount, 1)
+  assert.deepEqual(findings[0].flags, ['blood'])
+})
+
 Deno.test('detectIncidentRedFlags — B-368: distinct bouts across days stay counted separately, flags still union', () => {
   // A day-28 bout re-logged twice within 60s (collapses to 1) PLUS a day-25 bout → two distinct.
   const findings = detectIncidentRedFlags(
