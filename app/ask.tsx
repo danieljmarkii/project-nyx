@@ -170,6 +170,7 @@ export default function AskScreen() {
               chips={suggestions.chips}
               online={online}
               onAsk={send}
+              onRundown={() => router.push('/rundown')}
             />
           ) : (
             <Conversation
@@ -246,11 +247,13 @@ function FreshState({
   chips,
   online,
   onAsk,
+  onRundown,
 }: {
   petName: string;
   chips: string[];
   online: boolean;
   onAsk: (q: string) => void;
+  onRundown: () => void;
 }) {
   return (
     <View style={styles.freshWrap}>
@@ -265,6 +268,15 @@ function FreshState({
           <AskChip key={`${c}-${i}`} label={c} block onPress={() => onAsk(c)} />
         ))}
       </View>
+      {/* The vet-visit rundown (A6) — a deterministic preset, not a question, so
+          it works offline and capped (it never calls the model). Accent-marked as
+          the featured action, set apart from the question chips above. */}
+      <AskChip
+        label="Heading to the vet? Build the visit rundown"
+        variant="accent"
+        block
+        onPress={onRundown}
+      />
     </View>
   );
 }
