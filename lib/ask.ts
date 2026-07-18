@@ -247,14 +247,18 @@ export function resolveTapThrough(tp: AskTapThrough | null | undefined): AskNav 
   return { pathname: '/insights' };
 }
 
-/** The owner-facing "go" label for a tap-through (mock §2 provenance row). Honest about
- *  where it lands: a single event opens the event; several open History; a filter opens
- *  Patterns. Null when there's nowhere to go (the row renders without a link). */
+/** The owner-facing "go" label for a tap-through (mock §2 provenance row). The label MUST
+ *  name where it actually lands (pm-feature-review: a mislabelled provenance link is the
+ *  one interaction the feature's trust is built on). There is no multi-event route, so a
+ *  several-event tap-through opens the LATEST event — the label says exactly that, never
+ *  "Open in History" (which would promise a filtered list the app can't deep-link to yet;
+ *  that's the backlog History `?type=` param). A single event opens the event; a filter
+ *  opens Patterns. Null when there's nowhere to go. */
 export function tapThroughLabel(tp: AskTapThrough | null | undefined): string | null {
   if (!tp) return null;
   if (tp.kind === 'events') {
     if (tp.eventIds.length === 0) return null;
-    return tp.eventIds.length === 1 ? 'Open the event' : 'Open in History';
+    return tp.eventIds.length === 1 ? 'Open the event' : 'Open the latest event';
   }
   return 'Open in Patterns';
 }

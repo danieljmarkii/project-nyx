@@ -45,8 +45,10 @@ import { askCapCopy } from '../constants/monetizationCopy';
 // turns to the `ask` Edge Function and renders the typed answer it returns. Every number
 // shown was built server-side from a deterministic tool result (§5.4).
 
+// Verbatim §6.5 disclosure — T&S's sign-off on the D2 boundary was conditional on THIS
+// exact line shipping with A5. Do not paraphrase.
 const POLICY_LINE =
-  'Answers use your logged data — including your notes, and photos when a question needs them.';
+  'Answers use your logged data — including your notes, and photos when your question needs them.';
 
 export default function AskScreen() {
   const activePet = usePetStore((s) => s.activePet);
@@ -124,7 +126,10 @@ export default function AskScreen() {
     else router.push({ pathname: nav.pathname, params: nav.params });
   }, []);
 
-  const fresh = messages.length === 0 && !capped;
+  // `disabled` (flag flipped off server-side mid-session) is an EXCLUSIVE state — it must
+  // not compose on top of an inviting fresh/chips view (that reads as "ask me… but you
+  // can't"). fresh/empty only apply when the feature is on and there's no conversation.
+  const fresh = messages.length === 0 && !capped && !disabled;
   const emptyRecord = fresh && suggestions.total === 0;
 
   return (
@@ -155,7 +160,9 @@ export default function AskScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {emptyRecord ? (
+          {disabled ? (
+            <Text style={styles.disabledLine}>Ask isn't available on this account right now.</Text>
+          ) : emptyRecord ? (
             <EmptyRecord petName={petName} onLog={() => router.push('/log')} />
           ) : fresh ? (
             <FreshState
@@ -183,10 +190,6 @@ export default function AskScreen() {
               onNavigate={goTapThrough}
             />
           ) : null}
-
-          {disabled ? (
-            <Text style={styles.disabledLine}>Ask isn't available on this account right now.</Text>
-          ) : null}
         </ScrollView>
 
         {/* Input — hidden when capped (chips degrade to navigation, §9.3) or the flag is
@@ -209,10 +212,14 @@ export default function AskScreen() {
                 multiline
                 maxLength={1000}
               />
+              {/* Offline, send is NOT disabled — it produces the same honest offline
+                  deflection a tapped chip does (both explain "Ask needs a connection"),
+                  so the two controls never disagree about whether Ask is reachable
+                  (pm-review). Only an empty input or an in-flight ask disables it. */}
               <TouchableOpacity
-                style={[styles.send, (!input.trim() || thinking || !online) && styles.sendDisabled]}
+                style={[styles.send, (!input.trim() || thinking) && styles.sendDisabled]}
                 onPress={() => send(input)}
-                disabled={!input.trim() || thinking || !online}
+                disabled={!input.trim() || thinking}
                 accessibilityRole="button"
                 accessibilityLabel="Send question"
               >
@@ -310,7 +317,9 @@ function Thinking({ petName }: { petName: string }) {
     <View style={styles.thinkingCard}>
       <View style={styles.thinkingHead}>
         <WhorlSpinner size="sm" ground="day" />
-        <Text style={styles.thinkingText}>Counting from {petName}'s record…</Text>
+        {/* Honest for every question type — a recall/weight question isn't "counting"
+            (Principle 5: narration names the real step, and we don't know the plan yet). */}
+        <Text style={styles.thinkingText}>Reading {petName}'s record…</Text>
       </View>
       <View style={styles.skelStack}>
         <Skeleton width="85%" height={14} />

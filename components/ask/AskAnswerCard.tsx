@@ -33,10 +33,13 @@ export function AskAnswerCard({ body, petName, onAsk, onTapThrough }: Props) {
 
   return (
     <View style={styles.wrap}>
-      {/* 1. Leading safety card — firm but calm, its own surface above the answer. */}
+      {/* 1. Leading safety card — the relayed engine finding, VERBATIM, on its own calm
+          safety surface above the answer (§7.2). No net-new label copy: the finding text
+          is the engine's own validated string, and any eyebrow above a safety finding is
+          safety-adjacent copy that gates on clinical-guardrails + Dr. Chen (§4, A7) — so
+          the card leads with the finding itself, not a build-time label. */}
       {body.safetyLead ? (
         <View style={styles.safetyCard} accessibilityRole="alert">
-          <Text style={styles.safetyLabel}>Worth a look</Text>
           <Text style={styles.safetyText}>{body.safetyLead}</Text>
         </View>
       ) : null}
@@ -95,14 +98,6 @@ const styles = StyleSheet.create({
     borderColor: theme.colorEventSymptomBorder,
     borderRadius: theme.radiusMedium,
     padding: theme.space2,
-    gap: 4,
-  },
-  safetyLabel: {
-    fontFamily: theme.fontBodySemibold,
-    fontSize: theme.textXS,
-    letterSpacing: theme.trackingWidest,
-    textTransform: 'uppercase',
-    color: theme.colorEventSymptom,
   },
   safetyText: {
     fontFamily: theme.fontBody,

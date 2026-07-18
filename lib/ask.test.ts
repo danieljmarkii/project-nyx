@@ -132,7 +132,9 @@ describe('resolveTapThrough — provenance navigation (real routes only)', () =>
 describe('tapThroughLabel', () => {
   it('names where it actually lands', () => {
     expect(tapThroughLabel({ kind: 'events', eventIds: ['e1'] })).toBe('Open the event');
-    expect(tapThroughLabel({ kind: 'events', eventIds: ['e1', 'e2'] })).toBe('Open in History');
+    // Several events open the LATEST one (no multi-event route), so the label must say
+    // so — never "Open in History" (which would promise a filtered list — pm-review fix).
+    expect(tapThroughLabel({ kind: 'events', eventIds: ['e1', 'e2'] })).toBe('Open the latest event');
     expect(tapThroughLabel({ kind: 'filter', symptomType: 'vomit' })).toBe('Open in Patterns');
     expect(tapThroughLabel(null)).toBeNull();
     expect(tapThroughLabel({ kind: 'events', eventIds: [] })).toBeNull();
