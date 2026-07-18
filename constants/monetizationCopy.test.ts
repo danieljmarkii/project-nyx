@@ -9,6 +9,7 @@ import {
   medicationCapCopy,
   vomitCapCopy,
   stoolCapCopy,
+  askCapCopy,
 } from './monetizationCopy';
 
 const NO_EXCLAMATION = /!/;
@@ -113,5 +114,40 @@ describe('stool cap copy (§7.3, B-247) — the sensitive sibling', () => {
   });
   it('falls back to "your pet" when the name is absent', () => {
     expect(stoolCapCopy(null, 'daily')).toMatch(/If your pet's stool keeps looking off/);
+  });
+});
+
+describe('askCapCopy (B-228 §9.3 / §16.1 #3)', () => {
+  it('conversation/monthly (non-symptom) is the upgrade moment — Premium line + care line', () => {
+    const { primary, care } = askCapCopy({ grain: 'conversation', cap: 'monthly', resetLabel: 'August 1', petName: 'Pixel', symptomShaped: false });
+    expect(primary).toMatch(/free Ask conversations used/i);
+    expect(primary).toMatch(/August 1/);
+    expect(primary).toMatch(/Premium/);
+    expect(care).toBe(careFirstLine('Pixel'));
+    expect(primary).not.toMatch(NO_EXCLAMATION);
+  });
+
+  it('DROPS the Premium sentence AND the care line when the attempt was symptom-shaped (§16.1 #3)', () => {
+    const { primary, care } = askCapCopy({ grain: 'conversation', cap: 'monthly', resetLabel: 'August 1', petName: 'Pixel', symptomShaped: true });
+    expect(primary).not.toMatch(TRANSACTION);
+    expect(care).toBeNull();
+    expect(primary).not.toMatch(NO_EXCLAMATION);
+  });
+
+  it('message grain is a plain rate limit — never a transaction word, even non-symptom', () => {
+    const { primary } = askCapCopy({ grain: 'message', cap: 'daily', resetLabel: 'tomorrow', petName: 'Pixel', symptomShaped: false });
+    expect(primary).not.toMatch(TRANSACTION);
+    expect(primary).toMatch(/tomorrow/);
+    expect(primary).not.toMatch(NO_EXCLAMATION);
+  });
+
+  it('never reassures about the pet in any branch', () => {
+    for (const symptomShaped of [true, false]) {
+      for (const grain of ['conversation', 'message'] as const) {
+        const { primary, care } = askCapCopy({ grain, cap: 'monthly', resetLabel: 'August 1', petName: 'Rex', symptomShaped });
+        expect(primary).not.toMatch(REASSURANCE);
+        if (care) expect(care).not.toMatch(REASSURANCE);
+      }
+    }
   });
 });
