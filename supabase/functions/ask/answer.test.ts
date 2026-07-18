@@ -38,6 +38,8 @@ import {
   validateAnswer,
   planPhotoRead,
   buildPhotoReadResult,
+  buildReadLine,
+  redactReadForModel,
   photoReadIncidentType,
   PHOTO_READ_EVENT_TYPES,
   MAX_LIVE_PHOTO_READS_PER_MESSAGE,
@@ -45,8 +47,9 @@ import {
   type AskOutcome,
   type AskTurn,
   type PhotoReadPlan,
+  type PhotoReadResult,
 } from './answer.ts'
-import type { AskCachedReadRow } from './tools.ts'
+import type { AskCachedReadRow, ProjectedRead } from './tools.ts'
 
 // ── A minimal fetched context for dispatch tests ──────────────────────────────────
 const NOW = Date.UTC(2026, 6, 18, 12, 0, 0) // 2026-07-18T12:00:00Z
@@ -655,4 +658,104 @@ Deno.test('read_photo relay is guardrail-gated: a relayed read cannot launder re
   // A factual recount of the SAME read (present-only, no wellness verdict) passes.
   const good = "Her July 9 vomit was logged as yellow bile; no blood or foreign material was flagged in it."
   assert.equal(validateAnswer({ text: good, allowedNumerals: new Set(['9']), mode: 'data' }).ok, true)
+})
+
+// ── The §7.7 structural fix (2026-07-18 adversarial FAIL → fixed) ──────────────────
+// The owner-facing photo read is now a DETERMINISTIC server line (buildReadLine), the model
+// is REDACTED of the benign detail (redactReadForModel), and the denylist gains the
+// demonstrated leak families as defense-in-depth.
+
+function projected(over: Partial<ProjectedRead> = {}): ProjectedRead {
+  return {
+    incidentType: 'vomit',
+    status: 'completed',
+    edited: false,
+    description: null,
+    flags: [],
+    readText: null,
+    recommendation: 'monitor',
+    fields: { colour: 'yellow', contents: ['bile'], consistency: null, bloodPresent: 'none_visible', bilePresent: 'yes', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null },
+    ...over,
+  }
+}
+function photoResult(status: PhotoReadResult['status'], read: ProjectedRead | null = null): PhotoReadResult {
+  return { kind: 'read_photo', eventId: 'e1', eventType: 'vomit', incidentType: 'vomit', status, ranLiveRead: status === 'ran', read }
+}
+
+Deno.test('buildReadLine: EVERY status is deterministic and passes the never-reassure gate (structural, not model prose)', () => {
+  const monitorText = "A single photo on its own can't tell you how Biscuit is doing. Keep an eye on Biscuit — if it happens again, or Biscuit seems unwell or goes off food, your vet is the best call."
+  const cases: PhotoReadResult[] = [
+    photoResult('ran', projected({ readText: monitorText })), // no-flag fresh read (the reassurance-on-absence risk)
+    photoResult('cached', projected({ readText: monitorText })),
+    photoResult('ran', projected({ flags: ['blood'], recommendation: 'worth_a_call', readText: 'I can see what looks like blood in this photo. That is worth a call to your vet about Biscuit.', fields: { colour: 'pink_red', contents: null, consistency: null, bloodPresent: 'fresh_red', bilePresent: 'unsure', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } })),
+    photoResult('ran', projected({ readText: null })), // dismissed no-flag read → safe generic tail
+    photoResult('no_photo'),
+    photoResult('capped'),
+    photoResult('unavailable'),
+    photoResult('budget_exhausted'),
+  ]
+  for (const r of cases) {
+    const line = buildReadLine(r, 'Biscuit')
+    assert.ok(line && line.length > 0, `status ${r.status} should produce a line`)
+    // The deterministic line NEVER trips the never-reassure gate — the guarantee is structural.
+    assert.equal(validateAnswer({ text: line!, allowedNumerals: new Set(), mode: 'data' }).ok, true, `readLine reassures: "${line}"`)
+    assert.equal(line!.includes('!'), false)
+  }
+  // not_found / unsupported_type carry no relayable read → null (the model's recall handles them).
+  assert.equal(buildReadLine(photoResult('not_found'), 'Biscuit'), null)
+  assert.equal(buildReadLine(photoResult('unsupported_type'), 'Biscuit'), null)
+})
+
+Deno.test('buildReadLine: a present red flag is NAMED (escalate-on-presence), a no-flag read never asserts wellness', () => {
+  const bloody = buildReadLine(photoResult('ran', projected({ flags: ['blood'], recommendation: 'worth_a_call', readText: 'I can see what looks like blood in this photo. That is worth a call to your vet about Biscuit.', fields: { colour: 'pink_red', contents: null, consistency: null, bloodPresent: 'fresh_red', bilePresent: 'unsure', foreignMaterialPresent: 'no', foreignMaterialNote: null, stoolConsistency: null, stoolBloodPresent: null, stoolMucusPresent: null } })), 'Biscuit')!
+  assert.match(bloody, /blood/i)
+  assert.match(bloody, /vet/i)
+  const noFlag = buildReadLine(photoResult('ran', projected({ readText: 'A single photo on its own can\'t tell you how Biscuit is doing. If it happens again or Biscuit seems unwell, your vet is the best call.' })), 'Biscuit')!
+  // Recounts the present-only facts + the safe forward-looking template; no wellness verdict.
+  assert.match(noFlag, /yellow/i)
+  assert.equal(validateAnswer({ text: noFlag, allowedNumerals: new Set(), mode: 'data' }).ok, true)
+})
+
+Deno.test('redactReadForModel: strips the benign clinical detail the model could editorialize; keeps escalation signal', () => {
+  const redacted = redactReadForModel(photoResult('ran', projected({ readText: 'benign monitor text the model must NOT see' })))
+  // No benign specifics reach the model.
+  for (const leaked of ['colour', 'contents', 'description', 'read_text', 'readText', 'recommendation', 'fields']) {
+    assert.equal(leaked in redacted, false, `redacted result leaks ${leaked}`)
+  }
+  // Keeps only what's needed to escalate + frame.
+  assert.equal(redacted.status, 'ran')
+  assert.deepEqual(redacted.red_flags, [])
+  assert.match(String(redacted.guidance), /do not|don'?t|only the recall/i)
+  // A red flag IS surfaced to the model (so it can lead the escalation — the safe direction).
+  const flagged = redactReadForModel(photoResult('ran', projected({ flags: ['blood'] })))
+  assert.deepEqual(flagged.red_flags, ['blood'])
+  assert.match(String(flagged.guidance), /red flag|concern|vet/i)
+})
+
+Deno.test('REASSURANCE_RE: the demonstrated A8 leak phrasings are now blocked (defense-in-depth)', () => {
+  // Every one PASSED the base lexicon in the 2026-07-18 adversarial run.
+  for (const bad of [
+    "The photo showed clear foam — that's a good sign.",
+    "The clear foam is reassuring.",
+    "That looks encouraging.",
+    "The photo is promising.",
+    "The read came back clear.",
+    "Nothing jumped out in the photo.",
+    "The photo looked clean.",
+    "That's the least concerning kind.",
+    "It's not worrying.",
+    "There was nothing remarkable in the photo.",
+    "No worries there.",
+    "There was nothing of concern.",
+  ]) {
+    assert.equal(validateAnswer({ text: bad, allowedNumerals: new Set(), mode: 'data' }).ok, false, `should now reject: ${bad}`)
+  }
+  // Guard against false positives: honest count/recall prose still passes.
+  for (const good of [
+    'Biscuit vomited 7 times in the last 30 days.',
+    'The most recent one was July 9.',
+    'Logged as yellow bile, with no blood or foreign material flagged in this one.',
+  ]) {
+    assert.equal(validateAnswer({ text: good, allowedNumerals: new Set(['7', '30', '9']), mode: 'data' }).ok, true, `should still pass: ${good}`)
+  }
 })

@@ -69,6 +69,12 @@ export interface AskAnswerBody {
   /** A live engine SAFETY finding relayed verbatim, leading the answer (§7.2). Null
    *  when the engine is silent (silence never reassures). */
   safetyLead: string | null;
+  /** The DETERMINISTIC, server-built recount of a photo read this answer featured (A8).
+   *  The photo's clinical content is NEVER model prose — the model is redacted of the
+   *  benign detail and this line (present-only, never "looks fine") carries the read, so
+   *  the never-reassure-on-absence invariant is structural, not denylist-gated (§7.7).
+   *  Null when no photo read was featured. Rendered as its own calm line in the card. */
+  readLine: string | null;
   followups: string[];
   /** Whether THIS conversation has now committed its free credit — echoed back on the
    *  next request so a follow-up in the same conversation doesn't commit a second (D9). */
@@ -160,6 +166,7 @@ function coerceAnswerBody(d: Record<string, unknown>): AskAnswerBody {
     component: coerceComponent(d.component),
     provenance: coerceProvenance(d.provenance),
     safetyLead: typeof d.safetyLead === 'string' ? d.safetyLead : null,
+    readLine: typeof d.readLine === 'string' ? d.readLine : null,
     followups,
     conversationCredited: d.conversationCredited === true,
     generalMode: d.generalMode === true,
@@ -281,6 +288,7 @@ export function buildOfflineDeflection(petName: string): AskAnswerBody {
     component: null,
     provenance: null,
     safetyLead: null,
+    readLine: null,
     followups: [RUNDOWN_CTA],
     conversationCredited: false,
     generalMode: false,

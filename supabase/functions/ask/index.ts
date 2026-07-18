@@ -56,6 +56,8 @@ import {
   dispatchTool,
   planPhotoRead,
   buildPhotoReadResult,
+  buildReadLine,
+  redactReadForModel,
   validateAnswer,
   collectNumerals,
   buildProvenance,
@@ -265,19 +267,26 @@ async function runAskLoop(
       if (name === 'read_photo') {
         // Live photo read (§6.2/§7.7, A8) — the one tool that isn't pure to dispatch. The
         // PURE plan (run-or-read-cache; no photo / wrong type / budget) is answer.ts's; only
-        // the `run` branch does I/O (invoke the shipped machinery → re-read → project). A
-        // cached relay never counts against the live-read budget.
-        const eventId = String((b.input?.event_id as string) ?? '')
-        const plan = planPhotoRead(ctx, eventId, liveReadsUsed)
-        if (plan.action === 'run') {
-          liveReadsUsed++ // count the invoke BEFORE it runs — bounds the loop even on failure
-          result = await runLivePhotoRead(client, plan.eventId, plan.eventType, plan.incidentType)
+        // the `run` branch does I/O (invoke the shipped machinery → re-read → project).
+        if (recalledEvents >= MAX_RECALLED_EVENTS_PER_MESSAGE) {
+          // HARD-gate against the per-question recall budget too (rls-privacy A8 residual):
+          // a read surfaces one scoped event's read across the boundary, so a cached relay is
+          // NOT free of the scoped-data cap — else a crafted "read every photo" question could
+          // page many cached reads in one turn. budget_exhausted → no invoke, no relay.
+          result = { kind: 'read_photo', eventId: String((b.input?.event_id as string) ?? '') || null, eventType: null, incidentType: null, status: 'budget_exhausted', ranLiveRead: false, read: null } as PhotoReadResult
         } else {
-          result = buildPhotoReadResult(plan)
+          const eventId = String((b.input?.event_id as string) ?? '')
+          const plan = planPhotoRead(ctx, eventId, liveReadsUsed)
+          if (plan.action === 'run') {
+            liveReadsUsed++ // count the invoke BEFORE it runs — bounds the loop even on failure
+            result = await runLivePhotoRead(client, plan.eventId, plan.eventType, plan.incidentType)
+          } else {
+            result = buildPhotoReadResult(plan)
+          }
+          // A relayed read surfaces one scoped event's data — count it toward the per-question
+          // recall budget too (defense-in-depth on scoped-data volume; §6.1 / AC-11).
+          if ((result as PhotoReadResult).read) recalledEvents += 1
         }
-        // A relayed read surfaces one scoped event's data across the boundary — count it
-        // toward the per-question recall budget too (defense-in-depth on scoped data volume).
-        if ((result as PhotoReadResult).read) recalledEvents += 1
       } else if (RECALL_TOOLS.has(name) && recalledEvents >= MAX_RECALLED_EVENTS_PER_MESSAGE) {
         // Enforce the per-message recall budget (rls-privacy #a): once exhausted, a recall
         // tool returns a budget-exhausted stub instead of more scoped events. Aggregates are
@@ -291,11 +300,15 @@ async function runAskLoop(
       }
       captured.push({ name, result })
       if (name === 'engine_findings' && findingsHaveSafety(result)) sawSafetyFinding = true
+      // The MODEL sees a REDACTED read_photo result (no benign clinical details to
+      // editorialize — §7.7 structural fix); the owner-facing read content is built
+      // deterministically server-side (buildReadLine) from the full captured result.
+      const modelResult = name === 'read_photo' ? redactReadForModel(result as PhotoReadResult) : result
       toolResultBlocks.push({
         type: 'tool_result',
         // @ts-ignore — tool_result carries tool_use_id + content (Anthropic shape)
         tool_use_id: b.id,
-        content: JSON.stringify(result),
+        content: JSON.stringify(modelResult),
       } as ClaudeContentBlock)
     }
     messages.push({ role: 'user', content: toolResultBlocks })
@@ -359,6 +372,12 @@ function finalizeAnswer(
   const provenance = featured ? buildProvenance(featured) : null
   const component: ComponentDescriptor | null = featured ? buildComponent(featured) : null
 
+  // The photo read's owner-facing content is DETERMINISTIC (never the model's prose — the
+  // §7.7 structural fix). Build it from the most-recent read_photo result this turn (the
+  // full, un-redacted captured one), regardless of which tool the model featured.
+  const photoRead = [...captured].reverse().find((c) => c.name === 'read_photo')?.result
+  const readLine = photoRead ? buildReadLine(photoRead as PhotoReadResult, ctx.petName) : null
+
   const outcome: AskOutcome = isGeneral ? 'general' : sawSafetyFinding ? 'relayed_safety' : 'answer'
   return {
     outcome,
@@ -368,6 +387,7 @@ function finalizeAnswer(
     component,
     provenance,
     safetyLead: null, // attached structurally by the handler from the engine's live findings
+    readLine,
     followups,
     conversationCredited: false, // set by the caller when the credit actually commits (D9)
     generalMode: isGeneral,

@@ -24,6 +24,7 @@ function answer(overrides: Partial<AskAnswerBody> = {}): AskAnswerBody {
     component: null,
     provenance: null,
     safetyLead: null,
+    readLine: null,
     followups: [],
     conversationCredited: true,
     generalMode: false,
