@@ -857,7 +857,7 @@ export interface IncidentRedFlagFinding extends FindingBase {
    * the cluster's first member, dedup over ALL in-window vomit incidents, count clusters carrying ≥1 flag
    * — countFlaggedClusters). Two GENUINELY distinct bouts (e.g. 30 min apart) count as 2 on BOTH surfaces
    * — never understated to 1 on a safety card. It never changes WHETHER the card fires (≥1 flagged
-   * incident ⇒ count ≥1) — only the count/plural copy. Known residual (B-372): a photoless vomit has no
+   * incident ⇒ count ≥1) — only the count/plural copy. Known residual (B-376): a photoless vomit has no
    * analysis row so can't reach this detector, so a rare 3-vomits-in-~90s arrangement can still under-count
    * by one vs the report — always the understating direction, card still fires + routes to the vet.
    */
@@ -3760,7 +3760,7 @@ export function detectIncidentRedFlags(
   // on a safety card); a seconds-apart re-log collapses to 1. NOT the 3h symptomEpisodeGapHours the
   // frequency lanes use (that would fold distinct bouts together and understate presence). This never
   // changes WHETHER the card fires (≥1 flagged incident ⇒ count ≥1) — only the count/plural copy.
-  // Residual bound (B-372): a PHOTOLESS vomit — which has no event_ai_analysis row and so never
+  // Residual bound (B-376): a PHOTOLESS vomit — which has no event_ai_analysis row and so never
   // reaches this detector — can anchor a report cluster we can't see, so a rare 3-vomits-in-~90s
   // arrangement can still under-count by one here vs the report. Always the understating direction
   // (card still fires + routes to the vet), never a never-reassure violation; closing it fully needs

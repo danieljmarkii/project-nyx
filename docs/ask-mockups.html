@@ -1,0 +1,724 @@
+<title>Culprit — Ask feature design mockups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* ============================================================
+     PAGE (studio presentation layer) — theme-aware tokens.
+     The phone screens below use FIXED app tokens (the real
+     Culprit design system, constants/theme.ts), never these —
+     so the app always looks like the app regardless of the
+     viewer's theme.
+     ============================================================ */
+  :root {
+    --canvas:      #F4F7F6;
+    --panel:       #FFFFFF;
+    --ink:         #16211F;
+    --ink-soft:    #4A5754;
+    --ink-faint:   #7B8884;
+    --line:        #E2E9E6;
+    --line-soft:   #EDF2F0;
+    --accent:      #068A78;   /* deeper teal than the app's, so doc chrome ≠ app UI */
+    --accent-tint: #E4F4F1;
+    --amber:       #9A6A00;   /* trade-off / open-decision notes */
+    --amber-tint:  #F6EED9;
+    --rose:        #B8433B;   /* guardrail / can't-do annotations */
+    --rose-tint:   #F7E4E2;
+    --shadow:      0 1px 2px rgba(20,40,36,.04), 0 8px 30px rgba(20,40,36,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+      --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+      --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="light"] {
+    --canvas:#F4F7F6; --panel:#FFFFFF; --ink:#16211F; --ink-soft:#4A5754; --ink-faint:#7B8884;
+    --line:#E2E9E6; --line-soft:#EDF2F0; --accent:#068A78; --accent-tint:#E4F4F1;
+    --amber:#9A6A00; --amber-tint:#F6EED9; --rose:#B8433B; --rose-tint:#F7E4E2;
+    --shadow:0 1px 2px rgba(20,40,36,.04), 0 8px 30px rgba(20,40,36,.06);
+  }
+  :root[data-theme="dark"] {
+    --canvas:#0C1211; --panel:#131B19; --ink:#E9F0ED; --ink-soft:#A7B4B0; --ink-faint:#6F7C78;
+    --line:#253029; --line-soft:#1C2523; --accent:#2ED3B9; --accent-tint:#12312C;
+    --amber:#E2AC49; --amber-tint:#2E2612; --rose:#F08A82; --rose-tint:#331B19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.4);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .serif { font-family: "Newsreader", Georgia, "Times New Roman", serif; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: clamp(28px, 6vw, 72px) clamp(18px, 5vw, 44px) 96px; }
+
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
+  h1.title { font-size: clamp(30px, 5.4vw, 50px); line-height: 1.05; letter-spacing: -.02em; font-weight: 500; margin: 0 0 20px; text-wrap: balance; max-width: 18ch; }
+  .lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--ink-soft); max-width: 66ch; margin: 0; }
+
+  .rec-note {
+    margin-top: 26px; padding: 15px 18px; border: 1px solid var(--line);
+    border-left: 3px solid var(--accent); border-radius: 12px; background: var(--panel);
+    box-shadow: var(--shadow); font-size: 14.5px; color: var(--ink-soft); max-width: 74ch;
+  }
+  .rec-note b { color: var(--ink); font-weight: 600; }
+  .rec-note.amber { border-left-color: var(--amber); }
+
+  section { margin-top: clamp(52px, 8vw, 88px); }
+  .sec-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
+  h2 { font-size: clamp(22px, 3.4vw, 30px); font-weight: 500; letter-spacing: -.015em; margin: 0 0 12px; line-height: 1.12; text-wrap: balance; }
+  .sec-lede { font-size: 16px; color: var(--ink-soft); max-width: 66ch; margin: 0; }
+
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 4px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-soft);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px 6px 10px;
+  }
+  .pill code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--accent); font-weight: 600; }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+
+  .rail { display: grid; gap: clamp(22px, 4vw, 40px); margin-top: 30px; }
+  .rail-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
+  .rail-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); align-items: start; }
+  .opt { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .opt-cap { text-align: center; max-width: 34ch; }
+  .opt-cap .k { font-weight: 600; font-size: 15px; color: var(--ink); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .opt-cap p { margin: 7px 0 0; font-size: 13.5px; color: var(--ink-soft); line-height: 1.5; }
+  .tag { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; vertical-align: middle; white-space: nowrap; }
+  .tag.rec { background: var(--accent-tint); color: var(--accent); }
+  .tag.open { background: var(--amber-tint); color: var(--amber); }
+  .tag.guard { background: var(--rose-tint); color: var(--rose); }
+
+  .note-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 26px; }
+  .note { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 14px 16px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.55; }
+  .note b { color: var(--ink); font-weight: 600; display: block; margin-bottom: 4px; font-size: 13px; }
+  .note.amber { border-left: 3px solid var(--amber); }
+  .note.rose { border-left: 3px solid var(--rose); }
+  .note.teal { border-left: 3px solid var(--accent); }
+
+  /* ============================================================
+     PHONE FRAME — fixed Culprit app tokens (constants/theme.ts).
+     ============================================================ */
+  .phone {
+    --a-bg:#FAFAFA; --a-surface:#FFFFFF; --a-subtle:#F5F5F5;
+    --a-text:#0A0A0A; --a-text2:#525252; --a-text3:#737373; --a-text-dis:#A3A3A3;
+    --a-border:#EAEAEA; --a-border-strong:#D4D4D4;
+    --a-accent:#00C2A8; --a-accent-soft:#86D9CC; --a-accent-light:#E0FBF7;
+    --a-symptom:#F43F5E; --a-symptom-light:#FFE4E6; --a-symptom-border:#FBCFD6;
+    --a-med:#5B7A9E; --a-whorl:#A6A2CE; --a-chart-empty:#F0F0F0;
+    --a-shadow: 0 1px 3px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.04);
+    width: 300px; max-width: 100%; background: var(--a-bg);
+    border-radius: 36px; border: 1px solid var(--line);
+    box-shadow: var(--shadow); overflow: hidden; flex: none;
+    font-size: 14px; color: var(--a-text);
+  }
+  .ph-screen { padding: 18px 16px 20px; min-height: 480px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* app header */
+  .ap-head { display: flex; align-items: center; gap: 8px; padding: 2px 2px 4px; }
+  .ap-mark { width: 20px; height: 20px; border-radius: 50%; background: #211E4E; position: relative; flex: none; }
+  .ap-mark::after { content:""; position: absolute; right: 3px; top: 3px; width: 11px; height: 11px; border-radius: 50%; background: var(--a-bg); }
+  .ap-mark .sig { position: absolute; right: 2px; bottom: 2px; width: 5px; height: 5px; border-radius: 50%; background: var(--a-accent); }
+  .ap-pet { font-weight: 600; font-size: 15px; }
+  .ap-spacer { flex: 1; }
+  .ap-ava { width: 26px; height: 26px; border-radius: 50%; background: var(--a-subtle); border: 1px solid var(--a-border); display: grid; place-items: center; font-size: 11px; color: var(--a-text3); font-weight: 600; }
+
+  .ask-pill {
+    display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--a-border-strong);
+    background: var(--a-surface); border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--a-text);
+  }
+  .ask-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--a-accent); }
+  .hl { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 999px; }
+
+  /* generic app card */
+  .ap-card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; padding: 14px; box-shadow: var(--a-shadow); }
+  .ap-zone { font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin-bottom: 8px; }
+
+  /* ask surface */
+  .q-pill { align-self: flex-end; max-width: 85%; background: var(--a-subtle); border: 1px solid var(--a-border); border-radius: 16px 16px 4px 16px; padding: 9px 12px; font-size: 13.5px; color: var(--a-text); }
+  .ans-line { font-family: "Newsreader", Georgia, serif; font-size: 17.5px; line-height: 1.35; letter-spacing: -0.2px; color: var(--a-text); margin: 2px 0 10px; }
+  .ans-sub { font-size: 12px; color: var(--a-text3); }
+  .prov { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--a-border); margin-top: 12px; padding-top: 10px; }
+  .prov .n { font-size: 11.5px; color: var(--a-text3); }
+  .prov .go { font-size: 12px; font-weight: 600; color: var(--a-accent); white-space: nowrap; }
+  .fu-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+  .chip { border: 1px solid var(--a-border-strong); background: var(--a-surface); border-radius: 999px; padding: 7px 11px; font-size: 12px; color: var(--a-text); font-weight: 500; }
+  .chip.acc { border-color: var(--a-accent); color: var(--a-accent); font-weight: 600; }
+  .ask-input { margin-top: auto; display: flex; align-items: center; gap: 8px; border: 1px solid var(--a-border-strong); background: var(--a-surface); border-radius: 999px; padding: 10px 14px; color: var(--a-text-dis); font-size: 13px; }
+  .ask-input .send { margin-left: auto; width: 22px; height: 22px; border-radius: 50%; background: var(--a-subtle); flex: none; }
+  .meter { font-size: 11px; color: var(--a-text3); text-align: center; margin-top: 6px; }
+
+  /* whorl / thinking */
+  .whorl { width: 26px; height: 26px; border-radius: 50%; flex: none;
+    background: conic-gradient(var(--a-accent) 0 25%, var(--a-whorl) 25% 50%, var(--a-accent) 50% 75%, var(--a-whorl) 75% 100%);
+    -webkit-mask: radial-gradient(circle at center, transparent 34%, #000 36%); mask: radial-gradient(circle at center, transparent 34%, #000 36%); }
+  .skel { border-radius: 8px; background: var(--a-subtle); height: 12px; }
+
+  /* pips calendar */
+  .pips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin: 4px 0 2px; }
+  .pd { height: 26px; border-radius: 7px; background: var(--a-surface); border: 1px solid var(--a-border); display: grid; place-items: center; }
+  .pd .p { display: flex; gap: 2px; }
+  .pd .p i { width: 4px; height: 4px; border-radius: 50%; background: var(--a-symptom); }
+  .pd.empty { background: var(--a-subtle); border-style: dashed; }
+  .pip-cap { font-size: 10.5px; color: var(--a-text3); display: flex; justify-content: space-between; margin-top: 6px; }
+
+  /* sparkline */
+  .spark { width: 100%; height: 74px; }
+
+  /* deflection / safety */
+  .gen-card { border: 1px solid var(--a-border-strong); border-radius: 12px; padding: 10px 12px; margin-top: 10px; background: var(--a-subtle); }
+  .gen-tag { font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--a-text3); margin-bottom: 5px; }
+  .cap-band { background: var(--a-accent-light); border: 1px solid var(--a-accent-soft); border-radius: 12px; padding: 11px 13px; font-size: 12.5px; color: var(--a-text); line-height: 1.5; }
+  .cap-band .cf { display: block; margin-top: 8px; font-size: 11.5px; color: var(--a-text2); }
+
+  /* rundown tiles */
+  .rd-tile { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--a-border); }
+  .rd-tile:last-child { border-bottom: 0; }
+  .rd-k { font-size: 12px; color: var(--a-text2); }
+  .rd-v { font-size: 13px; font-weight: 600; color: var(--a-text); text-align: right; }
+
+  footer.doc { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-faint); }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Culprit — design exploration · 2026-07-18</p>
+  <h1 class="title serif">Ask — answers from your pet's own record</h1>
+  <p class="lede">
+    Owner-initiated Q&amp;A over this pet's logged data. Not a chatbot: <b>answer-first cards built from the
+    app's own components</b>, chips before keyboard, every number carrying its denominator and a tap-through
+    to the source events. The model plans and phrases; the deterministic query layer computes. Escalation
+    never comes from the model — it can only relay what the Signal engine already fired.
+  </p>
+
+  <div class="pills">
+    <span class="pill"><span class="dot"></span><code>B-228</code> promoted — next main project</span>
+    <span class="pill"><span class="dot"></span><code>ask_enabled</code> + <code>ask_general_enabled</code> (app_config, nested — D1)</span>
+    <span class="pill"><span class="dot"></span>Free: 3 conversations/mo · full = Premium (D3)</span>
+    <span class="pill"><span class="dot"></span>Born-Premium flagship (D-M1) · no-exclusive-escalations invariant</span>
+  </div>
+
+  <div class="rec-note">
+    <b>How to read this file.</b> Session decisions D1 (nested toggles), D3 (free teaser + Premium full) and
+    D4 (next main project) are baked in. <b>Three things are deliberately open for your call:</b>
+    §1 the entry point (three candidates), §5 the D2 data boundary (same question answered both ways,
+    side by side), and the working name — "Ask" is used throughout as a functional label
+    (no sparkle icon anywhere; research: the ✨ now signals "some AI thing" and nothing else).
+  </div>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-eyebrow">§1 · Entry points</p>
+    <h2 class="serif">Where Ask lives</h2>
+    <p class="sec-lede">Home is an intelligence surface, not a nav menu (Principle 3) — so the global entry is header
+      chrome, never a card. The research pattern (Oura, Gemini, Ask Photos): one ambient global entry plus
+      contextual asks from the thing you're curious about.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ap-head">
+            <div class="ap-mark"><span class="sig"></span></div>
+            <span class="ap-pet">Pixel</span>
+            <div class="ap-spacer"></div>
+            <span class="ask-pill hl"><span class="dot"></span>Ask</span>
+            <div class="ap-ava">D</div>
+          </div>
+          <div class="ap-card">
+            <div class="ap-zone">Signal</div>
+            <div style="font-family:'Newsreader',Georgia,serif;font-size:16px;line-height:1.35;">Pixel's vomiting has clustered in the early morning this month.</div>
+            <div class="ans-sub" style="margin-top:6px;">6 of 7 episodes · midnight–8am</div>
+          </div>
+          <div class="ap-card" style="opacity:.55;">
+            <div class="ap-zone">Today</div>
+            <div style="font-size:13px;color:var(--a-text2);">2 meals · 1 med · no symptoms logged</div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">A — Home header pill <span class="tag rec">Recommended v1</span></span>
+          <p>Always one tap from the primary surface without adding a card to it. The word "Ask," a quiet
+          Signal-teal dot, 44pt hit zone. Ships alone in v1 — one entry, one habit.</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ap-head"><span class="ap-pet" style="font-size:17px;">Patterns</span><div class="ap-spacer"></div><div class="ap-ava">D</div></div>
+          <div class="ask-input hl" style="margin:0;">Ask about Pixel's patterns…<span class="send"></span></div>
+          <div class="ap-card" style="opacity:.55;">
+            <div class="ap-zone">Symptoms</div>
+            <div style="font-size:13px;color:var(--a-text2);">Vomiting · 7 in the last 30 days</div>
+          </div>
+          <div class="ap-card" style="opacity:.55;">
+            <div class="ap-zone">Meals &amp; treats</div>
+            <div style="font-size:13px;color:var(--a-text2);">86% meals · 14% treats</div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">B — Patterns ask-bar <span class="tag open">Later</span></span>
+          <p>Search-bar-as-ask on the analysis surface (the Notion/Raycast pattern). Natural home, but a tab
+          away — weaker as the <i>only</i> entry. Candidate second entry once the habit exists.</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ap-head"><span class="ap-pet" style="font-size:17px;">Weight</span><div class="ap-spacer"></div><div class="ap-ava">D</div></div>
+          <div class="ap-card">
+            <div class="ap-zone">Trend</div>
+            <svg class="spark" viewBox="0 0 260 74" aria-label="Weight sparkline">
+              <line x1="0" y1="60" x2="260" y2="60" stroke="#EAEAEA" stroke-width="1"/>
+              <polyline points="10,34 60,30 110,36 160,28 210,32 250,30" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="250" cy="30" r="3.5" fill="#00C2A8"/>
+              <text x="250" y="18" text-anchor="end" font-size="11" fill="#525252" font-weight="600">4.3 kg</text>
+            </svg>
+            <div class="fu-row" style="margin-top:4px;"><span class="chip hl">Ask about this</span></div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">C — Contextual "Ask about this" <span class="tag open">Fast-follow</span></span>
+          <p>The Gemini / Ask Photos / Oura pattern — the ask starts from the chart or card, context
+          pre-attached. Highest-craft version; multiplies touchpoints, so it follows once v1 proves the habit.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-eyebrow">§2 · The surface</p>
+    <h2 class="serif">Fresh state → thinking → answer</h2>
+    <p class="sec-lede">Chips before keyboard — suggested questions are seeded from <i>this pet's</i> data, so the
+      first session needs zero typing (Oura's top beta request). The thinking moment is the day-ground
+      WhorlSpinner with honest narration. The answer is a card the app could have drawn itself — because it did.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ap-head">
+            <div class="ap-mark"><span class="sig"></span></div>
+            <span class="ap-pet" style="font-size:17px;">Ask</span>
+            <div class="ap-spacer"></div><span style="font-size:12px;color:var(--a-text3);">Pixel ▾</span>
+          </div>
+          <div style="font-size:12.5px;color:var(--a-text2);margin-top:2px;">Anything in Pixel's record — counts, trends, foods, meds. I'll show my sources.</div>
+          <div class="fu-row" style="flex-direction:column;align-items:stretch;">
+            <span class="chip">How's Pixel's appetite this month?</span>
+            <span class="chip">When did she last vomit?</span>
+            <span class="chip">What's her weight doing?</span>
+            <span class="chip">Which foods does she actually finish?</span>
+            <span class="chip acc">Heading to the vet? Build the visit rundown</span>
+          </div>
+          <div class="ask-input">Ask about Pixel…<span class="send"></span></div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Fresh state</span>
+          <p>Suggested chips are generated from the pet's own data (a pet with no vomit history never sees a
+          vomit chip). Empty-record state is designed: "Once a few days are logged, I'll have things to answer."</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">How many times has she vomited this month?</div>
+          <div class="ap-card">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div class="whorl"></div>
+              <div style="font-size:12.5px;color:var(--a-text2);">Counting from Pixel's record…</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
+              <div class="skel" style="width:85%;"></div>
+              <div class="skel" style="width:60%;"></div>
+              <div class="skel" style="width:100%;height:64px;"></div>
+            </div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Thinking</span>
+          <p>Day-ground <code>WhorlSpinner</code> (sm) + a skeleton shaped like the incoming card — never a bare
+          spinner. Narration names the real step. Reduced-motion: static frame; pauses on app blur.</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">How many times has she vomited this month?</div>
+          <div class="ap-card">
+            <div class="ans-line">Pixel has vomited 7 times in the last 30 days — 3 of them this past week.</div>
+            <div class="pips" aria-label="Last four weeks, vomit count per day">
+              <div class="pd empty"></div><div class="pd"></div><div class="pd"></div><div class="pd"><span class="p"><i></i></span></div><div class="pd"></div><div class="pd"></div><div class="pd"></div>
+              <div class="pd"></div><div class="pd empty"></div><div class="pd"></div><div class="pd"></div><div class="pd"><span class="p"><i></i></span></div><div class="pd"></div><div class="pd"></div>
+              <div class="pd"></div><div class="pd"></div><div class="pd"><span class="p"><i></i><i></i></span></div><div class="pd"></div><div class="pd"></div><div class="pd empty"></div><div class="pd"></div>
+              <div class="pd"><span class="p"><i></i></span></div><div class="pd"></div><div class="pd"><span class="p"><i></i></span></div><div class="pd"></div><div class="pd"><span class="p"><i></i></span></div><div class="pd"></div><div class="pd"></div>
+            </div>
+            <div class="pip-cap"><span>Jun 18</span><span>· = 1 event</span><span>Jul 17</span></div>
+            <div class="prov">
+              <span class="n">7 events · logging on 28 of 30 days</span>
+              <span class="go">Open in History →</span>
+            </div>
+          </div>
+          <div class="fu-row">
+            <span class="chip">Compare to last month</span>
+            <span class="chip">What time of day?</span>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Answer card <span class="tag rec">The core pattern</span></span>
+          <p>Newsreader answer line (the Signal's voice), the app's own calendar pips, the denominator, and a
+          provenance tap-through to filtered History. Follow-up chips continue in-session; nothing persists as a transcript.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-grid">
+      <div class="note teal"><b>The model never does arithmetic</b> Every number is computed by the deterministic
+        query layer (the same code family as Patterns/Signal) and slotted into the card; the model classifies the
+        question and writes the phrasing. One hallucinated stat over an owner's own data is a permanent trust wound
+        (Strava/Notion lesson).</div>
+      <div class="note teal"><b>Relay, never mint</b> If a safety finding is live (worsening, chronicity, intake
+        decline), its card leads the answer — the same card Home shows, free. Ask introduces no new escalations and
+        no new reassurance. If the engine is silent, Ask stays silent about wellness.</div>
+      <div class="note"><b>Voice</b> nyx-voice throughout: specific over generic, no exclamation marks, pet by name,
+        the register of a caring friend who knows veterinary medicine. "I" appears only as the app's quiet working
+        voice ("I'll show my sources"), never a named character.</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-eyebrow">§3 · The PM's three example questions</p>
+    <h2 class="serif">Weight, preferences — and where the invariants bite</h2>
+    <p class="sec-lede">Your original examples, answered. Weight is descriptive only (a flat line is never called
+      "healthy" — trend never reassures). Preferences are multi-sample and positive-framed; decline routes to a
+      health flag; the word "picky" is banned.</p>
+
+    <div class="rail rail-3">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">What's her weight doing?</div>
+          <div class="ap-card">
+            <div class="ans-line">Six weigh-ins since March put Pixel between 4.2 and 4.4 kg. The latest — 4.3 kg on July 12.</div>
+            <svg class="spark" viewBox="0 0 260 74" aria-label="Weight, six weigh-ins, March to July">
+              <line x1="0" y1="62" x2="260" y2="62" stroke="#EAEAEA" stroke-width="1"/>
+              <polyline points="12,36 58,30 106,38 152,26 200,33 246,30" fill="none" stroke="#00C2A8" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="246" cy="30" r="3.5" fill="#00C2A8"/>
+              <text x="246" y="17" text-anchor="end" font-size="11" fill="#525252" font-weight="600">4.3 kg</text>
+              <text x="12" y="74" font-size="9.5" fill="#737373">Mar 4</text>
+              <text x="246" y="74" text-anchor="end" font-size="9.5" fill="#737373">Jul 12</text>
+            </svg>
+            <div class="prov">
+              <span class="n">6 weigh-ins · Mar 4 – Jul 12</span>
+              <span class="go">Open weight history →</span>
+            </div>
+          </div>
+          <div class="fu-row"><span class="chip">Since her last vet visit?</span></div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Weight trend</span>
+          <p>The existing trend-card language: accent line, recessive grid, latest value direct-labeled, ink-colored
+          text. Descriptive range only — no "stable," no "healthy" (a rising line can be fluid; loss is the danger
+          signal; verdicts belong to the vet).</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">Which foods does she actually finish?</div>
+          <div class="ap-card">
+            <div class="ans-line">This month Pixel finished all of her Sheba Tuna in 9 of 10 meals. She's left more than half of the Fancy Feast Chicken in 4 of its 6.</div>
+            <div class="rd-tile"><span class="rd-k">Sheba Tuna</span><span class="rd-v">9 / 10 finished</span></div>
+            <div class="rd-tile"><span class="rd-k">Fancy Feast Chicken</span><span class="rd-v">2 / 6 finished</span></div>
+            <div class="prov">
+              <span class="n">16 rated meals · Jun 18 – Jul 17</span>
+              <span class="go">Open in Patterns →</span>
+            </div>
+          </div>
+          <div class="fu-row"><span class="chip">What about treats?</span><span class="chip">Her proteins over time</span></div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Food preferences <span class="tag guard">Invariant surface</span></span>
+          <p>Positive signal from N samples — never a verdict from one rating. If the intake-decline flag were live,
+          its safety card would lead this answer instead of a preference read.</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">Which foods does Juniper actually finish?</div>
+          <div class="ap-card">
+            <div class="ans-line">Only 3 of Juniper's meals this month have an intake note — not enough to read a preference from.</div>
+            <div style="font-size:12.5px;color:var(--a-text2);margin-top:2px;">A few more confirmed meals and I can answer this properly.</div>
+            <div class="prov">
+              <span class="n">3 rated meals · needs ~8</span>
+              <span class="go">Log a meal →</span>
+            </div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Not-enough-data as a first-class answer</span>
+          <p><code>ANALYTICS_FLOORS</code> / <code>NotEnoughData</code> already model this. Thin data gets honesty and
+          a forward path (Principle 5) — never a guess, never "she's fine." Also: pet-scoped by construction (Juniper ≠ Pixel).</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-eyebrow">§4 · Safety states</p>
+    <h2 class="serif">The answers that earn (or torch) clinical trust</h2>
+    <p class="sec-lede">Refusal is a designed feature, not an error. Function beats disclaimers (the Whoop-FDA
+      lesson): these states are structural — the model cannot diagnose or reassure because the answer path
+      doesn't have those moves.</p>
+
+    <div class="rail rail-2">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">Does Pixel have IBD?</div>
+          <div class="ap-card">
+            <div class="ans-line">That's one for her vet — a diagnosis needs an exam and bloodwork, not just a log.</div>
+            <div style="font-size:12.5px;color:var(--a-text2);">What I can do is line up what her record shows for that conversation.</div>
+            <div class="fu-row" style="margin-top:12px;"><span class="chip acc">Build the visit rundown</span></div>
+          </div>
+          <div style="height:6px;"></div>
+          <div class="q-pill">So she's fine, right?</div>
+          <div class="ap-card">
+            <div class="ans-line" style="font-size:16px;">Her record can't rule that out — it only shows what's been seen.</div>
+            <div style="font-size:12.5px;color:var(--a-text2);">What it shows: 7 vomits in 30 days; meals finished at her usual rate across 28 logged days. If she seems off to you, trust that and check in with her vet.</div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Diagnosis-shaped &amp; reassurance-fishing <span class="tag guard">clinical-guardrails</span></span>
+          <p>The deflection converts the question into the thing we're actually good at — the evidence line-up.
+          "Fine" is structurally unsayable; facts carry denominators; the trust-your-gut escalation line is standing
+          copy. Final strings gated on Dr. Chen + clinical-guardrails review.</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">Can cats eat tuna every day?</div>
+          <div class="ap-card">
+            <div class="ans-line" style="font-size:16px;">I stick to what Pixel's record shows — feeding advice is her vet's call.</div>
+            <div style="font-size:12.5px;color:var(--a-text2);">I can show you how often tuna's been on her menu, though.</div>
+            <div class="fu-row" style="margin-top:12px;"><span class="chip acc">Tuna in Pixel's log</span></div>
+          </div>
+          <div style="height:6px;"></div>
+          <div class="q-pill">Can cats eat tuna every day?</div>
+          <div class="ap-card">
+            <div class="gen-card" style="margin-top:0;">
+              <div class="gen-tag">General guidance — not from Pixel's record</div>
+              <div style="font-size:12.5px;color:var(--a-text2);line-height:1.5;">As an occasional food, tuna is fine for most cats — as a daily staple it can crowd out complete nutrition. Worth raising at her next visit.</div>
+            </div>
+            <div class="prov" style="border-top:0;padding-top:6px;">
+              <span class="n">In her log: tuna in 11 of 16 meals this month</span>
+              <span class="go">See them →</span>
+            </div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">General question — toggle off vs on <span class="tag open">D1, nested flags</span></span>
+          <p>Top: <code>ask_general_enabled=false</code> (the seeded default) — warm deflection that redirects to the
+          data we do have. Bottom: toggle on — the general answer is visibly fenced ("not from Pixel's record"),
+          still never diagnostic, and grounded back into her log. Dr. Chen review gates the first flip-on.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="note-grid">
+      <div class="note rose"><b>Data-gap honesty</b> "How was her appetite last week?" with 2 logged meals →
+        "Only 2 meals were logged last week — not enough to read appetite from. I'd rather tell you that than guess."
+        Never inferred, never smoothed. (Free-fed pets additionally carry the "intake not directly observed" caveat.)</div>
+      <div class="note rose"><b>Notes &amp; photos are in scope — scoped to the question (D2, ratified)</b> "What did
+        my note say on Tuesday?" gets your note back, verbatim. Photos answer via their AI read — cached first, or a
+        live read through the same analyze-vomit path the detail screen uses (stripped transform, shared 10/day read
+        cap, result saved to the event). Never a bulk dump: the question picks the events, and nothing else crosses.</div>
+      <div class="note"><b>Deleted events stay deleted</b> Every query tool filters <code>deleted_at IS NULL</code> —
+        the B-071 lesson, carried as a hard contract + test fixture ("more deleted than live" pet).</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-eyebrow">§5 · The D2 decision record</p>
+    <h2 class="serif">Same question, two boundaries — resolved</h2>
+    <p class="sec-lede">What the model is allowed to see about Pixel. <b>D2 is RATIFIED (PM, 2026-07-18) — and goes
+      further than either tier shown here:</b> notes and photos are data points the engine runs on, under the
+      spec's scoped-retrieval contract. These two frames are kept as the decision record.</p>
+
+    <div class="rail rail-2">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">When did she last vomit — and what did it look like?</div>
+          <div class="ap-card">
+            <div class="ans-line" style="font-size:16px;">Most recently July 9 — that's 7 in the last 30 days.</div>
+            <div style="font-size:12.5px;color:var(--a-text2);">What it looked like lives in the event itself.</div>
+            <div class="prov">
+              <span class="n">7 events · 28 of 30 days logged</span>
+              <span class="go">Open July 9 →</span>
+            </div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Tier 1 — aggregates only <span class="tag open">Not chosen</span></span>
+          <p>Counts, rates, dates. Honest but blunt: the second half of the question is
+          <span style="color:var(--rose);font-weight:600;">unanswerable</span> — every recall question ends in a redirect.
+          Holds the strictest prior posture (findings + counts).</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="q-pill">When did she last vomit — and what did it look like?</div>
+          <div class="ap-card">
+            <div class="ans-line" style="font-size:16px;">July 9, early morning — you logged it as yellow bile, with no blood or foreign material flagged.</div>
+            <div style="font-size:12.5px;color:var(--a-text2);">That's 7 in the last 30 days; 6 of 7 landed between midnight and 8am.</div>
+            <div class="prov">
+              <span class="n">From Pixel's record — fields, your note, the photo's read</span>
+              <span class="go">Open July 9 →</span>
+            </div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Tier 2+ — the full record, scoped <span class="tag rec">Ratified &amp; extended</span></span>
+          <p>Event fields, chip/enum observations, food &amp; med names, ratings, weights, engine findings —
+          <b>plus the event's note and its photo's AI read</b> (PM ruling: they're data points; the report leads
+          with photos). Always a factual recount of what <i>you</i> logged — never a wellness verdict from it.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="rec-note">
+      <b>D2 — RATIFIED (PM, 2026-07-18; spec v2.1 §6).</b> The full logged record is in scope — including notes and
+      photos — under three mechanisms that replace field-tier exclusion: <b>scoped retrieval</b> (the question picks
+      the events; no bulk tool exists), <b>transform-only photo access</b> (the report's EXIF/GPS-stripping path,
+      never raw originals), and <b>one read path</b> (photo reads run through the analyze-vomit machinery, so Ask
+      and the detail screen can never disagree about what a photo showed). T&amp;S's tier-2 recommendation and
+      dissent are recorded in the spec; the privacy-policy line becomes <i>"your logged data — including your
+      notes, and photos when your question needs them."</i>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-eyebrow">§6 · Caps &amp; Premium (D3)</p>
+    <h2 class="serif">Three free conversations, a calm ceiling</h2>
+    <p class="sec-lede">The free meter appears from the second conversation on — quiet, named reset date. The cap
+      gates <b>only the model call</b>: every chip keeps working as navigation, the record and every escalation
+      surface are untouched, and the care-first line does the reassuring about the product, never the pet.</p>
+
+    <div class="rail rail-2">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ap-head">
+            <div class="ap-mark"><span class="sig"></span></div>
+            <span class="ap-pet" style="font-size:17px;">Ask</span>
+            <div class="ap-spacer"></div><span style="font-size:12px;color:var(--a-text3);">Pixel ▾</span>
+          </div>
+          <div class="fu-row" style="flex-direction:column;align-items:stretch;margin-top:2px;">
+            <span class="chip">How's Pixel's appetite this month?</span>
+            <span class="chip">What's her weight doing?</span>
+            <span class="chip acc">Heading to the vet? Build the visit rundown</span>
+          </div>
+          <div class="ask-input">Ask about Pixel…<span class="send"></span></div>
+          <div class="meter">2 of 3 free conversations left this month</div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">The meter</span>
+          <p>One line under the input, ink-tertiary, no progress bar, no urgency. Hidden on the first conversation
+          of the month (research: surface usage near the boundary, not before it matters).</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ap-head">
+            <div class="ap-mark"><span class="sig"></span></div>
+            <span class="ap-pet" style="font-size:17px;">Ask</span>
+            <div class="ap-spacer"></div><span style="font-size:12px;color:var(--a-text3);">Pixel ▾</span>
+          </div>
+          <div class="cap-band">
+            That's this month's 3 free conversations used. They restart August 1 — Premium removes the wait.
+            <span class="cf">Pixel's care is never behind this door — logging, health alerts, trends and the vet report are free, always.</span>
+          </div>
+          <div style="font-size:11.5px;color:var(--a-text3);margin-top:2px;">These still open directly:</div>
+          <div class="fu-row" style="flex-direction:column;align-items:stretch;">
+            <span class="chip">Her vomit history → History</span>
+            <span class="chip">Weight trend → Patterns</span>
+            <span class="chip acc">Visit rundown (no Ask needed) →</span>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">Cap reached <span class="tag guard">§16.1 rules carried</span></span>
+          <p>Accent-light band, never error-red; the reset date named; the shipped <code>careFirstLine</code>
+          verbatim. If the attempted question was symptom-shaped, the Premium sentence drops entirely — no
+          transaction word near a symptom. Chips degrade to pure navigation, so Ask stays useful capped.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section>
+    <p class="sec-eyebrow">§7 · The vet-visit rundown</p>
+    <h2 class="serif">The exam-room preset — deterministic by design</h2>
+    <p class="sec-lede">One tap assembles the answers a clinician actually asks for. No model call at all — it's the
+      same engine that writes the vet report, so it works capped, works offline from local data, and every tile
+      taps through to its source.</p>
+
+    <div class="rail rail-2">
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ap-head">
+            <div class="ap-mark"><span class="sig"></span></div>
+            <span class="ap-pet" style="font-size:17px;">Pixel — visit rundown</span>
+          </div>
+          <div class="ap-card">
+            <div class="rd-tile"><span class="rd-k">Vomiting</span><span class="rd-v">7 in 30 days · 3 this week</span></div>
+            <div class="rd-tile"><span class="rd-k">Timing</span><span class="rd-v">6 of 7 between 12–8am</span></div>
+            <div class="rd-tile"><span class="rd-k">Appetite</span><span class="rd-v">usual rate · 28/30 days logged</span></div>
+            <div class="rd-tile"><span class="rd-k">Weight</span><span class="rd-v">4.2–4.4 kg · 6 weigh-ins</span></div>
+            <div class="rd-tile"><span class="rd-k">Current meds</span><span class="rd-v">Cerenia, as needed · last Jul 10</span></div>
+            <div class="rd-tile"><span class="rd-k">Since last visit</span><span class="rd-v">2 new foods introduced</span></div>
+          </div>
+          <div class="fu-row">
+            <span class="chip acc">Share the full vet report</span>
+            <span class="chip">Save for the visit</span>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">The rundown <span class="tag rec">Ships in v1</span></span>
+          <p>Reads like the report's first minute: counts with denominators, no adjectives, no verdicts. "Share the
+          full vet report" hands off to the Step-9 flow — Ask covers the long tail of follow-ups; the report stays
+          the clinical artifact.</p>
+        </div>
+      </div>
+
+      <div class="opt" style="justify-content:center;">
+        <div class="note-grid" style="margin-top:0;grid-template-columns:1fr;">
+          <div class="note teal"><b>Why deterministic</b> An anxious owner in a consult room is the least able user
+            of a blank text box in the product. A preset needs no typing, no model, no network luck — and its numbers
+            are the engine's, so the vet can audit any tile in one tap.</div>
+          <div class="note"><b>What's deliberately NOT here</b> No proactive voice (Signal owns proactivity — one
+            channel, Principle 4). No persisted chat history; answers are ephemeral, the rundown is pinnable. No
+            night ground (Ask is a records surface — day system; the whorl is the only working moment). No voice
+            input in v1 (backlog). No write tools ever — Ask reads the record, it never edits it.</div>
+          <div class="note amber"><b>Open with the name</b> "Ask" as the working label reads clean in the header pill
+            and matches the mental model. Alternatives if you want distance from competitors' "Ask AI": "Rundown,"
+            "Q&amp;A," or pet-name framing ("Ask about Pixel"). Your call at spec time.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="doc">
+    <b>Decisions locked (2026-07-18):</b> D2 ratified (full record, scoped — spec v2.1 §6) · entry = Home header
+    pill (D5) · name = "Ask" placeholder, workshop later (D7). <b>Next:</b> build A1 (the config-seed migration) —
+    kickoff prompts in `docs/nyx-ask-requirements.md` §12. · Built from
+    <code>constants/theme.ts</code> tokens (Geist/Newsreader scale, accent #00C2A8, pips &amp; spark from the shipped
+    Calendar v3 / Trend patterns) · Copy register: nyx-voice + <code>constants/monetizationCopy.ts</code> ·
+    B-228 · 2026-07-18.
+  </footer>
+</div>
