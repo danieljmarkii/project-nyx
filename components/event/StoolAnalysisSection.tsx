@@ -88,7 +88,9 @@ const REC_LABEL: Record<Recommendation, string> = {
   not_enough_to_say: 'Not enough to say yet',
 };
 
-export function StoolAnalysisSection({ eventId, petName }: { eventId: string; petName?: string | null }) {
+export function StoolAnalysisSection(
+  { eventId, petName, hasPhoto }: { eventId: string; petName?: string | null; hasPhoto: boolean },
+) {
   const [row, setRow] = useState<AnalysisRow | null | undefined>(undefined); // undefined = first load
   const [working, setWorking] = useState(false); // analysis in flight (triggered or polling)
   const [retrying, setRetrying] = useState(false);
@@ -272,7 +274,24 @@ export function StoolAnalysisSection({ eventId, petName }: { eventId: string; pe
     );
   }
 
-  // No analysis and not working (e.g. gave up, or never had a photo/context).
+  // A photoless stool can never produce a descriptive read: with no photo the
+  // escalation floor collapses to not_enough_to_say (a real CONTEXTUAL escalation —
+  // repeated loose stool, concurrent vomiting/lethargy — still returns worth_a_call
+  // and falls through to the render below, never suppressed). So suppress the dead
+  // "Not enough to say · Try analysis" frame and its looping retry when there's no
+  // photo — re-running without one just loops back to the same empty read. The
+  // detail screen already shows an "Add photo" empty hero directly above this
+  // section, and adding a photo there re-triggers analysis, so the section reappears
+  // with a real read. Analysis still fires on mount regardless of photo (the trigger
+  // is unchanged), so a photoless contextual escalation is never hidden. Matches the
+  // read_disabled branch: no dead affordance, no empty frame (B-363).
+  if (!hasPhoto && (!row?.recommendation || row.recommendation === 'not_enough_to_say')) {
+    return null;
+  }
+
+  // No analysis and not working (e.g. gave up, or an unclear/unsynced photo). Only
+  // reached WITH a photo now — the retry is legitimate (the photo may not have
+  // synced yet, the documented race triggerStoolAnalysis guards against).
   if (!row || !row.recommendation) {
     return (
       <View style={styles.section}>

@@ -644,11 +644,11 @@ export default function EventDetailScreen() {
           ) : null}
 
           {event.event_type === 'vomit' ? (
-            <VomitAnalysisSection eventId={event.id} petName={activePet?.name} />
+            <VomitAnalysisSection eventId={event.id} petName={activePet?.name} hasPhoto={!!attachment} />
           ) : null}
 
           {isStoolEvent(event.event_type) ? (
-            <StoolAnalysisSection eventId={event.id} petName={activePet?.name} />
+            <StoolAnalysisSection eventId={event.id} petName={activePet?.name} hasPhoto={!!attachment} />
           ) : null}
 
           {foodLabel && (foodLabel.brand || foodLabel.product) ? (
