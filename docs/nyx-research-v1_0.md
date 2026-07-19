@@ -1,5 +1,7 @@
 # Project Nyx — Research Dossier
-**Version:** 1.0 | **Status:** Stable | **Last Updated:** May 2026
+**Version:** 1.0 | **Status:** 🧊 FROZEN point-in-time artifact (do not version-bump) | **Last Updated:** May 2026
+
+> **Frozen artifact (tagged 2026-07-19 retro).** This is a dated evidence base — a May-2026 market/clinical/persona snapshot — not a living reference. It is deliberately *not* maintained: fixing figures in place would destroy the "what we knew when" record. Persona definitions here are superseded by `personas.md` (canonical). Newer evidence lives in dated briefs under `docs/research/`. Read this for original rationale, not current state.
 
 ---
 
