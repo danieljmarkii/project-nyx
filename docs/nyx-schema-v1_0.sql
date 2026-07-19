@@ -3,6 +3,24 @@
 -- Version: 1.0 | May 2026
 -- Platform: Supabase (Postgres)
 -- ============================================================
+--
+-- ⚠️  STATUS: FROZEN SNAPSHOT — NOT THE CURRENT SCHEMA (flagged 2026-07-19 workflow retro)
+-- ------------------------------------------------------------
+-- This file is the INITIAL (≈ migration 001) schema snapshot. It is NOT
+-- maintained and does NOT reflect the live database. As of 2026-07-19 it
+-- documents ~9 of ~21 live tables and is in places actively WRONG, not just
+-- incomplete — e.g. it shows `food_items` as a GLOBAL catalog, but migration
+-- 033 (B-354) re-scoped it to PER-ACCOUNT (`created_by_user_id NOT NULL`,
+-- owner RLS, ON DELETE CASCADE), and two RLS policies documented here were
+-- dropped (026) or replaced (033).
+--
+-- CANONICAL SCHEMA = `supabase/migrations/` (001 … 037+), applied in order.
+-- To see the real current schema, read the migrations or run the Supabase
+-- MCP `list_tables` / `generate_typescript_types`. Trust THOSE, not this file,
+-- for any data/query/RLS work. Keep this snapshot only as a readable origin
+-- of the design intent + the reference queries below.
+-- ------------------------------------------------------------
+--
 -- Design principles:
 --   - Multi-pet ready from day one (pet_id on all clinical tables)
 --   - Single event timeline (Option A) — meals are events with detail rows

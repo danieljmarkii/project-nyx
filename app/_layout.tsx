@@ -10,6 +10,7 @@ import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { wipeLocalSession } from '../lib/session';
 import { logAuth } from '../lib/authDebug';
+import { coldStartDecision } from '../lib/authRouting';
 import { APP_BUILD, PLATFORM } from '../lib/appInfo';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
@@ -64,27 +65,50 @@ export default function RootLayout() {
 
     initDb().catch(console.error);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
       // The single most diagnostic moment: did the persisted session survive to
-      // this cold start? `expiresInSec < 0` means it was read back but already
-      // expired (a refresh would follow); no session means the storage read (see
-      // the immediately-preceding `sec.get` breadcrumb) came back empty.
+      // this cold start? Crucially we now read `error` too — getSession returns
+      // null-WITH-error when the token was within its expiry margin and the refresh
+      // network call FAILED (offline/flaky on resume). That is NOT a sign-out, and
+      // treating it as one — the old `if (!session)` bounce — is the frequent-logout
+      // bug: a returning owner with a perfectly good refresh token still sitting in
+      // encrypted storage got kicked to the login wall over a network blip.
+      const decision = coldStartDecision(session, error);
       logAuth('coldstart.getSession', {
         hasSession: !!session,
+        hadError: !!error,
+        decision,
         expiresInSec:
           session?.expires_at != null
             ? session.expires_at - Math.floor(Date.now() / 1000)
             : null,
       });
-      setSession(session);
-      setLoading(false);
-      if (!session) {
-        // The Signal-led Landing (app/(auth)/index) is the unauthenticated entry
-        // point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in" from
-        // there. A live session skips straight past auth; the usePet hook (in the
-        // tabs layout) then fetches the pet and redirects to onboarding if none.
+      if (decision === 'proceed') {
+        setSession(session);
+      } else if (decision === 'to-auth') {
+        // Genuinely no stored session (fresh install / cold start after a real
+        // sign-out). The Signal-led Landing (app/(auth)/index) is the unauthenticated
+        // entry point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in"
+        // from there. A live session skips straight past auth; the usePet hook (in
+        // the tabs layout) then fetches the pet and redirects to onboarding if none.
+        setSession(null);
         router.replace('/(auth)');
+      } else {
+        // retain — a transient refresh failure. Keep the owner in the app (their
+        // local data is intact, offline-first) instead of bouncing to login, and
+        // crucially do NOT null the store: a good session may already have arrived
+        // (or is about to) via INITIAL_SESSION or the autoRefresh ticker auth-js
+        // starts on init, and setSession(null) here would clobber it and needlessly
+        // tear down sync (useSync keys on `session`). Leave the store as-is and force
+        // an immediate refresh retry so recovery isn't gated on the next ~30s tick;
+        // a real logout would instead arrive as SIGNED_OUT and route from the
+        // listener below.
+        supabase.auth.startAutoRefresh().catch(() => {});
       }
+      // Release the initial-load gate only after the session decision above, so a
+      // consumer of `isLoading` never observes loading:false with the session not
+      // yet applied.
+      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -99,32 +123,43 @@ export default function RootLayout() {
             ? session.expires_at - Math.floor(Date.now() / 1000)
             : null,
       });
-      // FR-9 (B-054 Trust & Safety gate): wipe the local pet-data copy on an
-      // explicit sign-out before routing away. Gated on the SIGNED_OUT event
-      // specifically — NOT on a null session generally — so a transient token
-      // refresh can never destroy local data. Awaited so the wipe completes
-      // before any subsequent sign-in starts re-hydrating.
+      // FR-9 (B-054 Trust & Safety gate): a real sign-out is signalled ONLY by
+      // SIGNED_OUT — auth-js emits it from _removeSession on every genuine removal
+      // (explicit signOut, or a NON-retryable refresh failure), and never for a
+      // transient one. So SIGNED_OUT is the sole authority for "route to auth":
+      // routing on a bare `!session` used to bounce the owner on a transient
+      // INITIAL_SESSION-with-no-session (the sibling of the cold-start bug above).
       if (event === 'SIGNED_OUT') {
         // FR-9 local teardown, extracted to lib/session so the post-deletion
         // fallback (DeleteAccountSheet) runs the identical sequence — one source
         // of truth for the wipe. Awaited so it completes before any subsequent
         // sign-in starts re-hydrating.
         await wipeLocalSession();
-      }
-      setSession(session);
-      // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
-      // session exists. This one listener covers every fetchable transition:
-      // INITIAL_SESSION (cold start with a persisted session), SIGNED_IN, and
-      // TOKEN_REFRESHED — so it's the single authoritative "on start"/sign-in fetch,
-      // with no duplicate SELECTs from initAppConfig or the getSession callback.
-      if (session) refreshAppConfig().catch(() => {});
-      if (!session) {
+        setSession(null);
         // Route to the new Landing on sign-out (B-251 PR 5) — EXCEPT a just-deleted
         // account, which goes to login so the B-039 "your account has been deleted"
         // confirmation banner (armed on the auth store, shown on the login screen)
         // still surfaces immediately instead of behind the Landing's swipe cards.
         const justDeleted = useAuthStore.getState().justDeletedAccount;
         router.replace(justDeleted ? '/(auth)/login' : '/(auth)');
+        return;
+      }
+      // Only WRITE a session we actually have. A non-SIGNED_OUT event can still carry
+      // a null session — auth-js's own INITIAL_SESSION emission does an independent
+      // getSession and, on a transient refresh failure, invokes this callback with
+      // (INITIAL_SESSION, null) — the sibling of the cold-start bug above. Since
+      // SIGNED_OUT is the ONLY authoritative logout (handled above), nulling the
+      // store on that transient null would clobber a good session racing in from the
+      // getSession callback / autoRefresh and needlessly tear down sync. So set only
+      // when present; otherwise leave the last-known session untouched.
+      if (session) {
+        setSession(session);
+        // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
+        // session exists. This one listener covers every fetchable transition:
+        // INITIAL_SESSION (cold start with a persisted session), SIGNED_IN, and
+        // TOKEN_REFRESHED — so it's the single authoritative "on start"/sign-in fetch,
+        // with no duplicate SELECTs from initAppConfig or the getSession callback.
+        refreshAppConfig().catch(() => {});
       }
     });
 
