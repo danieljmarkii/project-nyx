@@ -323,6 +323,11 @@ export interface AskWeightRow {
 export interface AskRegimenRow {
   id: string
   drugLabel: string
+  /** The linked library drug (medication_items.id), or null for a free-text regimen. Used to
+   *  attribute regimen-UNLINKED one-tap doses to their regimen by drug (the client's
+   *  attributeDosesToRegimens item+window match, B-135) — NOT the regimen's own id. Optional so
+   *  legacy fixtures compile; absent ⇒ only an explicit medication_id dose links to it. */
+  medicationItemId?: string | null
   /**
    * The AUTHORITATIVE lifecycle field (`medications.status`: 'active' | 'ended') — the
    * same source of truth lib/medications.ts and the `idx_medications_active` index key
@@ -344,6 +349,11 @@ export interface AskRegimenRow {
 export interface AskDoseRow {
   id: string
   medicationId: string | null
+  /** The linked library drug (medication_administrations.medication_item_id), or null. This is
+   *  how a regimen-UNLINKED one-tap dose (medicationId null — the dominant B-135 shape) is both
+   *  NAMED (index.ts resolves drugLabel from the item) and attributed to a same-drug regimen.
+   *  Optional so legacy fixtures compile; absent ⇒ ad-hoc with no drug identity to match. */
+  medicationItemId?: string | null
   drugLabel: string | null
   occurredAt: string
   /** dose_adherence: 'given'|'partial'|'missed'|'refused'|null (null defaults to given). */
@@ -1194,11 +1204,15 @@ export interface MedicationEntry {
   drugLabel: string
   active: boolean
   doseAmount: string | null
-  /** Last administered (given/partial) dose time for this drug, or null. Refused/missed
-   *  doses are NOT "last given" (they weren't given). */
+  /** Last dose time with adherence === 'given' for this drug, or null. A refused/missed/
+   *  partial/unconfirmed dose is NOT "last given" (a partial/unconfirmed dose never reads as
+   *  a clean administration — the never-reassure spine). */
   lastDoseAt: string | null
-  /** Doses logged for this drug in the adherence window: given/partial vs missed/refused. */
+  /** Given-only count (adherence === 'given') — mirrors the client's administeredDoses.
+   *  Partial + null(unrated) are NOT counted here (nor in dosesMissed) — the safe under-read;
+   *  their honest surfacing is deferred (B-388). */
   dosesGiven: number
+  /** Not-given attention count: missed + refused (partial is separate — see B-388). */
   dosesMissed: number
 }
 
@@ -1226,21 +1240,35 @@ export function medications(
   const liveRegimens = liveEvents(regimens)
   const windowDoses = liveEvents(doses).filter((d) => inSpan(d.occurredAt, w))
 
-  const entries: MedicationEntry[] = []
-  const seenAdHoc = new Set<string>()
+  // Attribute each in-window dose to a regimen with the SAME two-pass precedence as the
+  // client's attributeDosesToRegimens (lib/medications.ts) — so Ask attributes a dose to the
+  // same regimen the pet-profile "Current medications" card does, and its given-only count
+  // mirrors the card's administeredDoses (G5). The old code
+  // matched ONLY on medicationId, which the one-tap path leaves null (B-135): so a real
+  // ad-hoc dose both undercounted its regimen AND (since index.ts didn't resolve its name)
+  // collapsed into a single unnamed "a medication" bucket — merging every different drug's
+  // ad-hoc doses together (the motozol bug). Keep this in lockstep with the client helper.
+  const regimenIdByDoseId = new Map<string, string>()
+  for (const d of windowDoses) {
+    const regId = attributeDoseToRegimen(d, liveRegimens)
+    if (regId) regimenIdByDoseId.set(d.id, regId)
+  }
 
+  const entries: MedicationEntry[] = []
   for (const reg of liveRegimens) {
     // Authoritative lifecycle: `status === 'active'` (the DB's own field + index), with a
     // `endedAt == null` fallback when status is absent. NOT a now ∈ [started_at, ended_at]
     // interval test — those are DATE-only and drift by the owner's UTC offset (code review, A3).
     const active = reg.status != null ? reg.status === 'active' : reg.endedAt == null
-    const drugDoses = windowDoses.filter((d) => d.medicationId === reg.id)
+    const drugDoses = windowDoses.filter((d) => regimenIdByDoseId.get(d.id) === reg.id)
     entries.push(buildMedicationEntry(reg.id, reg.drugLabel, active, reg.doseAmount, drugDoses))
   }
 
-  // Ad-hoc (regimen-unlinked) doses grouped by drug label so a logged dose with no
-  // regimen still reports (B-135 — the dominant signal today is unlinked doses).
-  const unlinked = windowDoses.filter((d) => !d.medicationId || !liveRegimens.some((r) => r.id === d.medicationId))
+  // Truly ad-hoc doses — matched to NO regimen — grouped by their resolved drug label so a
+  // logged dose with no regimen still reports NAMED (B-135; the motozol case). drugLabel is
+  // resolved from the library item by index.ts; a genuinely nameless dose (no regimen, no
+  // library item) still falls back to "a medication".
+  const unlinked = windowDoses.filter((d) => !regimenIdByDoseId.has(d.id))
   const byLabel = new Map<string, AskDoseRow[]>()
   for (const d of unlinked) {
     const label = d.drugLabel ?? 'a medication'
@@ -1249,12 +1277,41 @@ export function medications(
     else byLabel.set(label, [d])
   }
   for (const [label, group] of byLabel) {
-    if (seenAdHoc.has(label)) continue
-    seenAdHoc.add(label)
     entries.push(buildMedicationEntry(null, label, false, null, group))
   }
 
   return { kind: 'medications', window: w.window, windowLabel: w.label, medications: entries }
+}
+
+/**
+ * Attribute one dose to a regimen id, or null when it belongs to none — the two-pass
+ * precedence PORTED from lib/medications.ts attributeDosesToRegimens (KEEP IN LOCKSTEP):
+ *
+ *   1. EXPLICIT LINK (B-153/B-154). A dose carrying a medicationId is attributed straight
+ *      to that regimen and NEVER re-matched by drug/window. A link to a regimen not in the
+ *      live set falls through to ad-hoc (index.ts fetches every regimen for the pet, so in
+ *      practice this can't happen; treating it as named-ad-hoc is safer than dropping it).
+ *   2. ITEM + WINDOW FALLBACK (the legacy/one-tap unlinked dose, the dominant shape). Match
+ *      the regimen for the SAME drug (medicationItemId) whose lifespan contains the dose:
+ *      started on/before it, not past its end. ISO date/timestamp strings compare correctly
+ *      lexicographically (a DATE-only startedAt vs a full occurredAt works). If two regimens
+ *      share a drug, the most-recently-started in-window one wins, so a dose is never double-
+ *      counted. An ad-hoc dose with no item id (and no link) matches nothing.
+ */
+function attributeDoseToRegimen(dose: AskDoseRow, regimens: AskRegimenRow[]): string | null {
+  if (dose.medicationId) {
+    return regimens.some((r) => r.id === dose.medicationId) ? dose.medicationId : null
+  }
+  if (!dose.medicationItemId) return null
+  let best: AskRegimenRow | null = null
+  for (const reg of regimens) {
+    if ((reg.medicationItemId ?? null) !== dose.medicationItemId) continue
+    if (reg.startedAt == null) continue
+    if (dose.occurredAt < reg.startedAt) continue // before this regimen began
+    if (reg.endedAt && dose.occurredAt > reg.endedAt) continue // after it ended
+    if (!best || (best.startedAt != null && reg.startedAt > best.startedAt)) best = reg
+  }
+  return best ? best.id : null
 }
 
 function buildMedicationEntry(
@@ -1264,9 +1321,18 @@ function buildMedicationEntry(
   doseAmount: string | null,
   doses: AskDoseRow[],
 ): MedicationEntry {
-  // A dose counts as "given" at given/partial/null (null defaults to administered — the
-  // §5.1 capture default); missed/refused are not given.
-  const given = doses.filter((d) => d.adherence == null || d.adherence === 'given' || d.adherence === 'partial')
+  // "Given" is adherence === 'given' ONLY — mirroring the client's administeredDoses
+  // (lib/medications.ts computeRegimenCompliance) and the wire-mapper invariant that a
+  // null/unrated dose "must never default to 'given', or an unrated dose would read as a
+  // confirmed-given one" (the n=1-never-reassures spine, spec §6). 'partial' is NOT a clean
+  // given (the client flags it "not fully taken"); null is unrated (incl. the B-156 G1
+  // fail-safe's unconfirmed dose — evidence AGAINST compliance). Both are the SAFE-direction
+  // under-read: Ask never reports a partial/unconfirmed dose as given, and never names one as
+  // "last given". (Adversarial-reviewer 2026-07-19: the prior null/partial→given rule folded
+  // an unconfirmed dose into a NAMED drug's given-count once attribution attached it — a
+  // never-reassure violation.) Honestly surfacing partial/unconfirmed as their OWN bucket in
+  // the answer is deferred as a Dr. Chen/Data contract call — B-388.
+  const given = doses.filter((d) => d.adherence === 'given')
   const missed = doses.filter((d) => d.adherence === 'missed' || d.adherence === 'refused')
   const lastGiven = given.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]
   return {

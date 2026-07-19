@@ -497,14 +497,30 @@ Deno.test('medications — active regimen, last-given ignores refused/missed dos
   const doses = [
     { id: 'd1', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-14T08:00:00Z', adherence: 'given', deletedAt: null },
     { id: 'd2', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-15T08:00:00Z', adherence: 'refused', deletedAt: null },
-    { id: 'd3', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-13T08:00:00Z', adherence: null, deletedAt: null }, // null defaults to given
+    { id: 'd3', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-13T08:00:00Z', adherence: null, deletedAt: null }, // null = unrated, NOT given
   ]
   const r = medications(regimens, doses, { window: '30d', nowMs: NOW_MS })
   const apoquel = r.medications.find((m) => m.medicationId === 'r1')
   assert.equal(apoquel?.active, true)
-  assert.equal(apoquel?.dosesGiven, 2) // given + null
+  assert.equal(apoquel?.dosesGiven, 1) // 'given' ONLY — a null/unrated dose never reads as given (never-reassure)
   assert.equal(apoquel?.dosesMissed, 1) // refused
-  assert.equal(apoquel?.lastDoseAt, '2026-07-14T08:00:00Z') // NOT the 07-15 refusal
+  assert.equal(apoquel?.lastDoseAt, '2026-07-14T08:00:00Z') // NOT the 07-15 refusal, NOT the 07-13 unrated
+})
+
+Deno.test('medications — a partial or unconfirmed(null) dose never reads as "given" (never-reassure)', () => {
+  // Adversarial-reviewer 2026-07-19: once attribution folds an unlinked dose into a NAMED
+  // regimen, a partial/null dose counted as given became a false administration report.
+  const regimens = [
+    { id: 'r1', medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', status: 'active', startedAt: '2026-07-01', endedAt: null, doseAmount: null, deletedAt: null },
+  ]
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', occurredAt: '2026-07-14T08:00:00Z', adherence: 'partial', deletedAt: null },
+    { id: 'd2', medicationId: null, medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', occurredAt: '2026-07-15T08:00:00Z', adherence: null, deletedAt: null }, // B-156 G1 unconfirmed
+  ]
+  const r = medications(regimens, doses, { window: '30d', nowMs: NOW_MS })
+  const cet = r.medications.find((m) => m.medicationId === 'r1')
+  assert.equal(cet?.dosesGiven, 0) // neither partial nor unconfirmed is a clean given
+  assert.equal(cet?.lastDoseAt, null) // an unconfirmed dose is never named "last given"
 })
 
 Deno.test('medications — active keys on status, not a [started,ended] interval (no UTC drift)', () => {
@@ -520,6 +536,73 @@ Deno.test('medications — active keys on status, not a [started,ended] interval
   assert.equal(r.medications.find((m) => m.medicationId === 'nostatus')?.active, true)
   // soft-deleted regimen never surfaces at all
   assert.equal(r.medications.some((m) => m.medicationId === 'gone'), false)
+})
+
+Deno.test('medications — a regimen-unlinked dose linked to a library item reports NAMED, not "a medication"', () => {
+  // The motozol bug: a one-tap dose is medicationId-null (B-135) but item-linked; before the
+  // fix index.ts left drugLabel null and the tool collapsed it into an anonymous "a medication".
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-motozol', drugLabel: 'Motozol', occurredAt: '2026-07-14T08:00:00Z', adherence: 'given', deletedAt: null },
+    { id: 'd2', medicationId: null, medicationItemId: 'item-motozol', drugLabel: 'Motozol', occurredAt: '2026-07-15T09:00:00Z', adherence: 'given', deletedAt: null },
+  ]
+  const r = medications([], doses, { window: '30d', nowMs: NOW_MS })
+  const motozol = r.medications.find((m) => m.drugLabel === 'Motozol')
+  assert.equal(motozol?.medicationId, null) // ad-hoc: no regimen
+  assert.equal(motozol?.dosesGiven, 2)
+  assert.equal(motozol?.lastDoseAt, '2026-07-15T09:00:00Z')
+  // and it is NOT hidden inside the anonymous bucket
+  assert.equal(r.medications.some((m) => m.drugLabel === 'a medication'), false)
+})
+
+Deno.test('medications — two different ad-hoc drugs stay SEPARATE (no collapse)', () => {
+  // Before the fix both had drugLabel null → both merged into one "a medication" pile.
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-motozol', drugLabel: 'Motozol', occurredAt: '2026-07-14T08:00:00Z', adherence: 'given', deletedAt: null },
+    { id: 'd2', medicationId: null, medicationItemId: 'item-pred', drugLabel: 'Prednisone', occurredAt: '2026-07-14T09:00:00Z', adherence: 'given', deletedAt: null },
+  ]
+  const r = medications([], doses, { window: '30d', nowMs: NOW_MS })
+  assert.equal(r.medications.find((m) => m.drugLabel === 'Motozol')?.dosesGiven, 1)
+  assert.equal(r.medications.find((m) => m.drugLabel === 'Prednisone')?.dosesGiven, 1)
+})
+
+Deno.test('medications — an item-linked ad-hoc dose FOLDS into the same-drug regimen (G5 parity, no duplicate)', () => {
+  // The client's attributeDosesToRegimens matches an unlinked dose to its regimen by
+  // medication_item_id + lifespan; Ask must agree, or its regimen dose count would differ from
+  // the "Current medications" card and a phantom duplicate entry would appear.
+  const regimens = [
+    { id: 'r1', medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', status: 'active', startedAt: '2026-07-01', endedAt: null, doseAmount: null, deletedAt: null },
+  ]
+  const doses = [
+    { id: 'd1', medicationId: 'r1', medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', occurredAt: '2026-07-13T08:00:00Z', adherence: 'given', deletedAt: null }, // explicit link
+    { id: 'd2', medicationId: null, medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', occurredAt: '2026-07-14T08:00:00Z', adherence: 'given', deletedAt: null }, // unlinked, same drug
+  ]
+  const r = medications(regimens, doses, { window: '30d', nowMs: NOW_MS })
+  const cet = r.medications.filter((m) => m.drugLabel === 'Cetirizine HCl')
+  assert.equal(cet.length, 1) // ONE entry, not a regimen + a duplicate ad-hoc
+  assert.equal(cet[0].medicationId, 'r1')
+  assert.equal(cet[0].dosesGiven, 2) // BOTH doses counted toward the regimen
+})
+
+Deno.test('medications — an unlinked dose does NOT fold into a same-drug regimen that started AFTER it', () => {
+  // Lifespan guard (attributeDosesToRegimens window): a dose before the regimen began is ad-hoc.
+  const regimens = [
+    { id: 'r1', medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', status: 'active', startedAt: '2026-07-10', endedAt: null, doseAmount: null, deletedAt: null },
+  ]
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', occurredAt: '2026-07-05T08:00:00Z', adherence: 'given', deletedAt: null },
+  ]
+  const r = medications(regimens, doses, { window: '30d', nowMs: NOW_MS })
+  assert.equal(r.medications.find((m) => m.medicationId === 'r1')?.dosesGiven, 0) // regimen sees nothing
+  const adhoc = r.medications.find((m) => m.medicationId === null && m.drugLabel === 'Cetirizine HCl')
+  assert.equal(adhoc?.dosesGiven, 1) // dose surfaces as ad-hoc instead
+})
+
+Deno.test('medications — a genuinely nameless ad-hoc dose still falls back to "a medication"', () => {
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: null, drugLabel: null, occurredAt: '2026-07-14T08:00:00Z', adherence: 'given', deletedAt: null },
+  ]
+  const r = medications([], doses, { window: '30d', nowMs: NOW_MS })
+  assert.equal(r.medications.find((m) => m.drugLabel === 'a medication')?.dosesGiven, 1)
 })
 
 // ════════════════════════════════════════════════════════════════════════════════════
