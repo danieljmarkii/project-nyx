@@ -66,7 +66,7 @@ const chunkKey = (key: string, gen: number, i: number) => `${key}__g${gen}_c${i}
 // dominated the trail and read as an alarming logout-shaped event. Labelling the
 // kind makes a genuine session removal — the actual logout fingerprint — instantly
 // distinguishable from that per-save noise.
-function keyKind(key: string): 'session' | 'code-verifier' | 'user' {
+export function keyKind(key: string): 'session' | 'code-verifier' | 'user' {
   if (key.endsWith('-code-verifier')) return 'code-verifier';
   if (key.endsWith('-user')) return 'user';
   return 'session';

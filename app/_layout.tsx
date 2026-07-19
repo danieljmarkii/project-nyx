@@ -83,23 +83,32 @@ export default function RootLayout() {
             ? session.expires_at - Math.floor(Date.now() / 1000)
             : null,
       });
-      setSession(session);
-      setLoading(false);
-      if (decision === 'to-auth') {
+      if (decision === 'proceed') {
+        setSession(session);
+      } else if (decision === 'to-auth') {
         // Genuinely no stored session (fresh install / cold start after a real
         // sign-out). The Signal-led Landing (app/(auth)/index) is the unauthenticated
         // entry point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in"
         // from there. A live session skips straight past auth; the usePet hook (in
         // the tabs layout) then fetches the pet and redirects to onboarding if none.
+        setSession(null);
         router.replace('/(auth)');
-      } else if (decision === 'retain') {
-        // Transient refresh failure — keep the owner in the app (their local data is
-        // intact, offline-first) instead of bouncing to login. A genuine logout would
-        // arrive as SIGNED_OUT and route from the listener below. Nudge autoRefresh so
-        // recovery isn't gated on the ~30s tick; if it succeeds, onAuthStateChange
-        // delivers the session (TOKEN_REFRESHED/SIGNED_IN) and sync resumes.
+      } else {
+        // retain — a transient refresh failure. Keep the owner in the app (their
+        // local data is intact, offline-first) instead of bouncing to login, and
+        // crucially do NOT null the store: a good session may already have arrived
+        // (or is about to) via INITIAL_SESSION or the autoRefresh ticker auth-js
+        // starts on init, and setSession(null) here would clobber it and needlessly
+        // tear down sync (useSync keys on `session`). Leave the store as-is and force
+        // an immediate refresh retry so recovery isn't gated on the next ~30s tick;
+        // a real logout would instead arrive as SIGNED_OUT and route from the
+        // listener below.
         supabase.auth.startAutoRefresh().catch(() => {});
       }
+      // Release the initial-load gate only after the session decision above, so a
+      // consumer of `isLoading` never observes loading:false with the session not
+      // yet applied.
+      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -135,13 +144,23 @@ export default function RootLayout() {
         router.replace(justDeleted ? '/(auth)/login' : '/(auth)');
         return;
       }
-      setSession(session);
-      // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
-      // session exists. This one listener covers every fetchable transition:
-      // INITIAL_SESSION (cold start with a persisted session), SIGNED_IN, and
-      // TOKEN_REFRESHED — so it's the single authoritative "on start"/sign-in fetch,
-      // with no duplicate SELECTs from initAppConfig or the getSession callback.
-      if (session) refreshAppConfig().catch(() => {});
+      // Only WRITE a session we actually have. A non-SIGNED_OUT event can still carry
+      // a null session — auth-js's own INITIAL_SESSION emission does an independent
+      // getSession and, on a transient refresh failure, invokes this callback with
+      // (INITIAL_SESSION, null) — the sibling of the cold-start bug above. Since
+      // SIGNED_OUT is the ONLY authoritative logout (handled above), nulling the
+      // store on that transient null would clobber a good session racing in from the
+      // getSession callback / autoRefresh and needlessly tear down sync. So set only
+      // when present; otherwise leave the last-known session untouched.
+      if (session) {
+        setSession(session);
+        // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
+        // session exists. This one listener covers every fetchable transition:
+        // INITIAL_SESSION (cold start with a persisted session), SIGNED_IN, and
+        // TOKEN_REFRESHED — so it's the single authoritative "on start"/sign-in fetch,
+        // with no duplicate SELECTs from initAppConfig or the getSession callback.
+        refreshAppConfig().catch(() => {});
+      }
     });
 
     return () => subscription.unsubscribe();
