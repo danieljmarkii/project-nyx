@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, processLock } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import { ChunkedSecureStoreAdapter } from './secureStore';
 import { logAuth } from './authDebug';
@@ -40,6 +40,15 @@ export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // Serialize every auth operation in-process. On React Native auth-js defaults
+    // to `lockNoOp` (no serialization), so the app's concurrent auth traffic — the
+    // foreground autoRefresh tick + syncNow's ~10 getSession() calls + fire-and-
+    // forget syncPending* from completion cards, all landing at once on resume —
+    // interleaves its non-atomic multi-chunk keychain reads/writes against the
+    // ChunkedSecureStoreAdapter. `processLock` (an in-memory promise-chain mutex,
+    // re-exported from @supabase/auth-js) makes those operations run one at a time,
+    // removing the torn-read/refresh-race surface without changing any semantics.
+    lock: processLock,
   },
 });
 

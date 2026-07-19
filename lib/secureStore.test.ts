@@ -1,4 +1,4 @@
-import { ChunkedSecureStoreAdapter } from './secureStore';
+import { ChunkedSecureStoreAdapter, keyKind } from './secureStore';
 import * as SecureStore from 'expo-secure-store';
 
 // In-memory keystore standing in for expo-secure-store. It faithfully models the
@@ -127,6 +127,22 @@ describe('legacy single-key migration', () => {
 
     expect(store.has(KEY)).toBe(false); // legacy base key removed
     expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('new-session');
+  });
+});
+
+describe('keyKind (diagnostic key classifier)', () => {
+  // The label that lets a genuine session removal (the logout fingerprint) be told
+  // apart from the benign per-save PKCE code-verifier clear in the breadcrumb trail.
+  it('classifies the bare session key as session', () => {
+    expect(keyKind('sb-abcdef-auth-token')).toBe('session');
+  });
+
+  it('classifies the -code-verifier sibling as code-verifier (the per-save noise)', () => {
+    expect(keyKind('sb-abcdef-auth-token-code-verifier')).toBe('code-verifier');
+  });
+
+  it('classifies the -user sibling as user', () => {
+    expect(keyKind('sb-abcdef-auth-token-user')).toBe('user');
   });
 });
 

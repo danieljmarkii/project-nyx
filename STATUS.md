@@ -4,7 +4,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 _**Size budget (enforced at `/wrap`, added 2026-07-19 workflow retro):** target under ~200 lines. Recent Sessions ≤ ~10 one-line entries; **no "Previous:" narrative archive** at the top (it duplicates Recent Sessions); **completed PM action items are deleted, not left checked** — `git log` is the archive. If a section is growing unbounded, that's the signal to prune, not to keep appending._
 
-**Last updated:** 2026-07-19 — workflow retro (state-file hygiene; process/meta, no phase change; #413). Build state unchanged: Ask (B-228) live for the PM allowlist (`ask` v3 + `analyze-vomit` v9 + `analyze-stool` v2; A8 live-photo-read path, #409/#410).
+**Last updated:** 2026-07-19 — **iOS frequent-logout fix (#412, draft)** — cold-start no longer bounces to login on a *transient* refresh failure (`getSession()` null+error — token in its 90s expiry margin + refresh network-fail — was treated as a sign-out; now `coldStartDecision` → proceed/retain/to-auth, and both auth handlers clear the store only on the authoritative `SIGNED_OUT`). Hardened the auth race (`lock: processLock`) + de-blinded the diagnostic (coalesce identical breadcrumbs → `×N`, ring 200→500, `sec.*` key-`kind` labels). Client-only; `code-reviewer` fix-before-merge addressed; tsc + jest 1503 green. **Build phase unchanged** (Step 10 / Ask B-228 live for the PM allowlist).
 
 ---
 
@@ -150,6 +150,9 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 
 ## Open PM Action Items
 
+**Auth / iOS logout (#412)**
+- [ ] **Verify the frequent-logout fix on-device** (the only remaining DoD item — code-confirmed, not yet on-device-confirmed). Get #412 onto the device (Runtime B, or `eas update --branch preview` to your TestFlight build since that's where you repro'd it), then: force-quit → Airplane Mode → reopen → **you stay on Home with local data, NOT the login screen** (old build 34 bounced here). Confirm normal cold start still restores, and Sign out still routes to the Landing. If a logout still recurs, share the Auth-diagnostics trail — a real one now shows `sec.remove {kind:session}` / `SIGNED_OUT` with cause. Once confirmed, the temporary auth-diagnostic scaffolding (`lib/authDebug.ts`, `app/settings/diagnostics.tsx`) can be removed.
+
 **Monetization (Track-2 pre-submission)**
 - [ ] **Paywall pre-submission flip (T2-5, B-330) — recorded config change, not a deploy.** Before cutting the submission build, set `paywall_enabled=false` in the live `app_config` (Supabase dashboard SQL Editor or MCP: `UPDATE app_config SET value='false'::jsonb WHERE key='paywall_enabled';`) so the non-functional mocked trial CTA (a Guideline 2.1/3.1.2 rejection risk) is never reachable in the submission build. The T2-5 code gate is already merged + ship-dark (seeded `true` ⇒ current flow unchanged until you flip it). **Record the flip here in STATUS when done.** Reversible — set back to `true` to restore the mock (e.g. once T3-D un-mocks the paywall).
 
@@ -231,6 +234,8 @@ eas build --platform ios --profile production --auto-submit
 ## Recent Sessions
 
 _Last ~13 only; older history lives in git (`git log`) + PR descriptions._
+
+- 2026-07-19 — **iOS frequent-logout fix** — the build-34 auth-diagnostic trail showed auth *working* (every cold start restored, every refresh succeeded, **no `SIGNED_OUT` captured**; chunking #306 + `AFTER_FIRST_UNLOCK` build-33 healthy), so the real sign-out had rotated out of the read-storm-flooded 200-entry ring. Located a concrete in-code logout instead: `app/_layout.tsx` cold-start treated a *transient* refresh failure (`getSession()` returns null+error when the token is in its 90s margin AND the refresh network call fails) as a sign-out and bounced to `/(auth)` despite a valid refresh token still in encrypted storage. Fix: pure `coldStartDecision(session,error)` → proceed/**retain** (stay in-app, offline-first)/to-auth; **both** handlers now clear the store only on the authoritative `SIGNED_OUT` (auth-js `_removeSession` always emits it). Hardened the race with `lock: processLock` (RN auth-js defaults to `lockNoOp`); de-blinded the diagnostic — `appendCoalesced` folds identical breadcrumbs to `×N`, ring 200→500, `sec.*` key-`kind` labels (a `sec.remove {kind:session}` is now the logout fingerprint). `code-reviewer` **fix-before-merge → addressed** (both handlers still nulled the store on a transient `INITIAL_SESSION`-null, clobbering a racing-in session + tearing down `useSync` — now set-only-when-present; `keyKind` exported+tested; retain-nudge comment corrected since auth-js starts autoRefresh on init). Diagnostic scaffolding kept (code-confirmed, not yet on-device-confirmed). Client-only, no schema/secrets/deploy; tsc + jest 1503 green. — shipped via #412
 
 - 2026-07-19 — **Workflow retro (process/meta; no build-phase change)** — first run of the Periodic Process Retro: slimmed STATUS.md 210 KB→~86 KB (killed the duplicate "Previous:" archive, one-lined Recent Sessions, pruned the 11 done PM items — all 45 open preserved), added the STATUS size budget + `/wrap` prune-while-you-prepend teeth, living-vs-frozen doc versioning (schema demoted to a snapshot → `supabase/migrations/` canonical; research/competitive frozen), re-armed the retro ritual, CLAUDE.md→v1.25. Filed **B-387–B-393** for PM sign-off (backlog archive-split, CLAUDE.md trim, OQ consolidation, CI workflow, draft sweep). — shipped via #413
 

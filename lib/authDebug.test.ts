@@ -3,6 +3,7 @@ import {
   redactDetail,
   trimRing,
   buildBreadcrumb,
+  appendCoalesced,
   logAuth,
   readAuthLog,
   clearAuthLog,
@@ -76,6 +77,48 @@ describe('trimRing', () => {
   });
 });
 
+describe('appendCoalesced', () => {
+  const mk = (seq: number, event: string, detail?: Record<string, unknown>, ms = seq): Breadcrumb => ({
+    seq,
+    t: new Date(ms).toISOString(),
+    ms,
+    launch: 'l',
+    event,
+    detail,
+  });
+
+  it('pushes a distinct event as its own entry', () => {
+    const arr = [mk(0, 'launch')];
+    appendCoalesced(arr, mk(1, 'sec.get', { path: 'ok' }));
+    expect(arr).toHaveLength(2);
+    expect(arr[1].event).toBe('sec.get');
+  });
+
+  it('folds an identical repeat, bumping repeat and advancing the timestamp', () => {
+    const arr = [mk(0, 'sec.get', { path: 'ok', chars: 10 }, 1000)];
+    appendCoalesced(arr, mk(1, 'sec.get', { path: 'ok', chars: 10 }, 2000));
+    appendCoalesced(arr, mk(2, 'sec.get', { path: 'ok', chars: 10 }, 3000));
+    expect(arr).toHaveLength(1);
+    expect(arr[0].repeat).toBe(3);
+    expect(arr[0].ms).toBe(3000); // latest occurrence wins
+    expect(arr[0].seq).toBe(0); // anchored on the first occurrence
+  });
+
+  it('breaks the run when detail differs, even for the same event name', () => {
+    const arr = [mk(0, 'sec.get', { ptr: '20:5' })];
+    appendCoalesced(arr, mk(1, 'sec.get', { ptr: '21:5' }));
+    expect(arr).toHaveLength(2);
+    expect(arr[0].repeat).toBeUndefined();
+  });
+
+  it('treats both-undefined details as identical (coalesces)', () => {
+    const arr = [mk(0, 'ping')];
+    appendCoalesced(arr, mk(1, 'ping'));
+    expect(arr).toHaveLength(1);
+    expect(arr[0].repeat).toBe(2);
+  });
+});
+
 describe('buildBreadcrumb', () => {
   it('assembles fields and derives an ISO time from the injected clock', () => {
     const b = buildBreadcrumb(7, 'sec.get', { chars: 3200 }, 'abc123', 1783650000000);
@@ -131,15 +174,38 @@ describe('logAuth ring buffer (AsyncStorage-backed)', () => {
     expect(log[0].event).toBe('recovered');
   });
 
-  it('caps the persisted ring at 200 entries, keeping the most recent', async () => {
-    for (let i = 0; i < 205; i++) logAuth('tick', { i });
+  it('caps the persisted ring at 500 entries, keeping the most recent', async () => {
+    // Distinct details (i differs) so nothing coalesces — a pure cap test.
+    for (let i = 0; i < 505; i++) logAuth('tick', { i });
     await flushAuthLog();
 
     const log = await readAuthLog();
-    expect(log).toHaveLength(200);
+    expect(log).toHaveLength(500);
     // The oldest 5 were dropped; the last entry is the most recent tick.
-    expect(log[log.length - 1].detail).toEqual({ i: 204 });
+    expect(log[log.length - 1].detail).toEqual({ i: 504 });
     expect(log[0].detail).toEqual({ i: 5 });
+  });
+
+  it('coalesces an unbroken run of identical breadcrumbs into one ×N entry', async () => {
+    // The storm case: 30 identical reads must not burn 30 ring slots.
+    for (let i = 0; i < 30; i++) logAuth('sec.get', { ptr: '20:5', path: 'ok', chars: 2262 });
+    logAuth('authchange', { event: 'SIGNED_OUT', hasSession: false }); // the signal survives
+    await flushAuthLog();
+
+    const log = await readAuthLog();
+    expect(log.map((b) => b.event)).toEqual(['sec.get', 'authchange']);
+    expect(log[0].repeat).toBe(30);
+    expect(log[1].repeat).toBeUndefined(); // a lone event carries no count
+  });
+
+  it('does NOT coalesce the same event when its detail changes (every transition shows)', async () => {
+    logAuth('sec.get', { ptr: '20:5', path: 'ok', chars: 2262 });
+    logAuth('sec.get', { ptr: '21:5', path: 'ok', chars: 2262 }); // generation bump
+    await flushAuthLog();
+
+    const log = await readAuthLog();
+    expect(log).toHaveLength(2);
+    expect(log.map((b) => (b.detail as { ptr: string }).ptr)).toEqual(['20:5', '21:5']);
   });
 
   it('clearAuthLog empties the trail', async () => {
