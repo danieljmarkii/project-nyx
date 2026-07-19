@@ -26,7 +26,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // and fixed (tracked in the backlog).
 
 const LOG_KEY = '__culprit_auth_debug_v1';
-const MAX_ENTRIES = 200;
+// Raised from 200 (build 34). The 200-entry ring rotated a real SIGNED_OUT out of
+// the trail before the PM could export it, because getSession() re-reads the
+// keychain on every call and sync alone fires ~10 per foreground — one healthy
+// launch alone burned well over half the ring on identical `sec.get {path:ok}`
+// reads. Coalescing (below) collapses those bursts, and 500 slots then span many
+// launches so the actual sign-out is still there when the log is shared.
+const MAX_ENTRIES = 500;
 
 // Longest string we will store verbatim in a breadcrumb detail. Anything longer
 // is assumed to be a value we must never persist (a token, a serialized session)
@@ -40,6 +46,10 @@ export type Breadcrumb = {
   launch: string; // groups breadcrumbs by app-process lifetime
   event: string;
   detail?: Record<string, unknown>;
+  // When an unbroken run of identical breadcrumbs is coalesced into one, how many
+  // occurrences it stands for (absent/1 = a single occurrence). Keeps a burst of
+  // ~30 identical reads to ONE slot without losing the "it happened N times" fact.
+  repeat?: number;
 };
 
 // A random id for THIS launch of the app. The whole diagnosis hinges on being
@@ -100,6 +110,38 @@ export function trimRing(entries: Breadcrumb[], max: number): Breadcrumb[] {
   return entries.length > max ? entries.slice(entries.length - max) : entries;
 }
 
+// Pure: two breadcrumb details are "the same" for coalescing when their redacted
+// JSON matches (identical events carry an identically-shaped detail, so the key
+// order is stable). Both-undefined counts as same; one-sided does not.
+function sameDetail(
+  a: Record<string, unknown> | undefined,
+  b: Record<string, unknown> | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// Pure: fold a new breadcrumb into the ring, collapsing an UNBROKEN run of
+// identical events (same name + same detail) into a single entry that carries a
+// `repeat` count and advances to the latest time. This is what keeps the storm of
+// identical `sec.get {path:ok}` reads from flooding the ring and rotating the rare,
+// high-signal events (a SIGNED_OUT, a `sec.remove {kind:session}`, a torn read) out
+// of the trail before it can be shared. A different event — or the SAME event with a
+// changed detail (a new generation, an error path) — breaks the run and is pushed
+// as its own entry, so every transition still shows. Mutates + returns `entries`.
+export function appendCoalesced(entries: Breadcrumb[], entry: Breadcrumb): Breadcrumb[] {
+  const last = entries[entries.length - 1];
+  if (last && last.event === entry.event && sameDetail(last.detail, entry.detail)) {
+    last.repeat = (last.repeat ?? 1) + 1;
+    last.ms = entry.ms; // advance to the most recent occurrence
+    last.t = entry.t;
+    return entries;
+  }
+  entries.push(entry);
+  return entries;
+}
+
 // Pure: assemble one breadcrumb. Time is injected so it is unit-testable.
 export function buildBreadcrumb(
   seq: number,
@@ -137,7 +179,7 @@ export function logAuth(event: string, detail?: Record<string, unknown>): void {
   chain = chain
     .then(async () => {
       const arr = safeParseLog(await AsyncStorage.getItem(LOG_KEY));
-      arr.push(entry);
+      appendCoalesced(arr, entry);
       await AsyncStorage.setItem(LOG_KEY, JSON.stringify(trimRing(arr, MAX_ENTRIES)));
     })
     .catch(() => {

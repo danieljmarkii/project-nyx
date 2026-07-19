@@ -13,10 +13,13 @@ import { clearAuthLog, readAuthLog, type Breadcrumb } from '../../lib/authDebug'
 // reproduce the frequent-logout bug on-device and share the exact trail back.
 // Expected to be removed with the rest of the probe once the root cause is fixed.
 
-// One breadcrumb rendered as a single paste-friendly line.
+// One breadcrumb rendered as a single paste-friendly line. A coalesced run of
+// identical events shows a `×N` count so a burst reads as one line without hiding
+// how many times it fired.
 function formatLine(b: Breadcrumb): string {
   const detail = b.detail ? ' ' + JSON.stringify(b.detail) : '';
-  return `#${b.seq} ${b.t} [${b.launch}] ${b.event}${detail}`;
+  const repeat = b.repeat && b.repeat > 1 ? ` ×${b.repeat}` : '';
+  return `#${b.seq} ${b.t} [${b.launch}] ${b.event}${detail}${repeat}`;
 }
 
 export default function DiagnosticsScreen() {

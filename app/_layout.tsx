@@ -10,6 +10,7 @@ import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { wipeLocalSession } from '../lib/session';
 import { logAuth } from '../lib/authDebug';
+import { coldStartDecision } from '../lib/authRouting';
 import { APP_BUILD, PLATFORM } from '../lib/appInfo';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
@@ -64,13 +65,19 @@ export default function RootLayout() {
 
     initDb().catch(console.error);
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
       // The single most diagnostic moment: did the persisted session survive to
-      // this cold start? `expiresInSec < 0` means it was read back but already
-      // expired (a refresh would follow); no session means the storage read (see
-      // the immediately-preceding `sec.get` breadcrumb) came back empty.
+      // this cold start? Crucially we now read `error` too — getSession returns
+      // null-WITH-error when the token was within its expiry margin and the refresh
+      // network call FAILED (offline/flaky on resume). That is NOT a sign-out, and
+      // treating it as one — the old `if (!session)` bounce — is the frequent-logout
+      // bug: a returning owner with a perfectly good refresh token still sitting in
+      // encrypted storage got kicked to the login wall over a network blip.
+      const decision = coldStartDecision(session, error);
       logAuth('coldstart.getSession', {
         hasSession: !!session,
+        hadError: !!error,
+        decision,
         expiresInSec:
           session?.expires_at != null
             ? session.expires_at - Math.floor(Date.now() / 1000)
@@ -78,12 +85,20 @@ export default function RootLayout() {
       });
       setSession(session);
       setLoading(false);
-      if (!session) {
-        // The Signal-led Landing (app/(auth)/index) is the unauthenticated entry
-        // point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in" from
-        // there. A live session skips straight past auth; the usePet hook (in the
-        // tabs layout) then fetches the pet and redirects to onboarding if none.
+      if (decision === 'to-auth') {
+        // Genuinely no stored session (fresh install / cold start after a real
+        // sign-out). The Signal-led Landing (app/(auth)/index) is the unauthenticated
+        // entry point (B-251 PR 5) — a returning-but-logged-out owner taps "Log in"
+        // from there. A live session skips straight past auth; the usePet hook (in
+        // the tabs layout) then fetches the pet and redirects to onboarding if none.
         router.replace('/(auth)');
+      } else if (decision === 'retain') {
+        // Transient refresh failure — keep the owner in the app (their local data is
+        // intact, offline-first) instead of bouncing to login. A genuine logout would
+        // arrive as SIGNED_OUT and route from the listener below. Nudge autoRefresh so
+        // recovery isn't gated on the ~30s tick; if it succeeds, onAuthStateChange
+        // delivers the session (TOKEN_REFRESHED/SIGNED_IN) and sync resumes.
+        supabase.auth.startAutoRefresh().catch(() => {});
       }
     });
 
@@ -99,17 +114,26 @@ export default function RootLayout() {
             ? session.expires_at - Math.floor(Date.now() / 1000)
             : null,
       });
-      // FR-9 (B-054 Trust & Safety gate): wipe the local pet-data copy on an
-      // explicit sign-out before routing away. Gated on the SIGNED_OUT event
-      // specifically — NOT on a null session generally — so a transient token
-      // refresh can never destroy local data. Awaited so the wipe completes
-      // before any subsequent sign-in starts re-hydrating.
+      // FR-9 (B-054 Trust & Safety gate): a real sign-out is signalled ONLY by
+      // SIGNED_OUT — auth-js emits it from _removeSession on every genuine removal
+      // (explicit signOut, or a NON-retryable refresh failure), and never for a
+      // transient one. So SIGNED_OUT is the sole authority for "route to auth":
+      // routing on a bare `!session` used to bounce the owner on a transient
+      // INITIAL_SESSION-with-no-session (the sibling of the cold-start bug above).
       if (event === 'SIGNED_OUT') {
         // FR-9 local teardown, extracted to lib/session so the post-deletion
         // fallback (DeleteAccountSheet) runs the identical sequence — one source
         // of truth for the wipe. Awaited so it completes before any subsequent
         // sign-in starts re-hydrating.
         await wipeLocalSession();
+        setSession(null);
+        // Route to the new Landing on sign-out (B-251 PR 5) — EXCEPT a just-deleted
+        // account, which goes to login so the B-039 "your account has been deleted"
+        // confirmation banner (armed on the auth store, shown on the login screen)
+        // still surfaces immediately instead of behind the Landing's swipe cards.
+        const justDeleted = useAuthStore.getState().justDeletedAccount;
+        router.replace(justDeleted ? '/(auth)/login' : '/(auth)');
+        return;
       }
       setSession(session);
       // Config's SELECT policy is `authenticated`, so a fetch only succeeds once a
@@ -118,14 +142,6 @@ export default function RootLayout() {
       // TOKEN_REFRESHED — so it's the single authoritative "on start"/sign-in fetch,
       // with no duplicate SELECTs from initAppConfig or the getSession callback.
       if (session) refreshAppConfig().catch(() => {});
-      if (!session) {
-        // Route to the new Landing on sign-out (B-251 PR 5) — EXCEPT a just-deleted
-        // account, which goes to login so the B-039 "your account has been deleted"
-        // confirmation banner (armed on the auth store, shown on the login screen)
-        // still surfaces immediately instead of behind the Landing's swipe cards.
-        const justDeleted = useAuthStore.getState().justDeletedAccount;
-        router.replace(justDeleted ? '/(auth)/login' : '/(auth)');
-      }
     });
 
     return () => subscription.unsubscribe();

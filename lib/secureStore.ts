@@ -58,6 +58,20 @@ const WRITE_OPTIONS: SecureStore.SecureStoreOptions = {
 const pointerKey = (key: string) => `${key}__ptr`;
 const chunkKey = (key: string, gen: number, i: number) => `${key}__g${gen}_c${i}`;
 
+// Which logical key an adapter call targets, for the diagnostic trail. auth-js
+// drives THREE sibling keys off the one storageKey — the session itself, a PKCE
+// `-code-verifier`, and (when userStorage is on) a `-user`. Only a 'session'
+// removal is a real sign-out; the '-code-verifier' removal fires on EVERY
+// _saveSession as benign PKCE cleanup, which is exactly the `sec.remove` that
+// dominated the trail and read as an alarming logout-shaped event. Labelling the
+// kind makes a genuine session removal — the actual logout fingerprint — instantly
+// distinguishable from that per-save noise.
+function keyKind(key: string): 'session' | 'code-verifier' | 'user' {
+  if (key.endsWith('-code-verifier')) return 'code-verifier';
+  if (key.endsWith('-user')) return 'user';
+  return 'session';
+}
+
 // The pointer value: "<generation>:<chunkCount>", both non-negative integers.
 // Parsed strictly — a value that doesn't match exactly is treated as absent, so a
 // corrupted pointer degrades to a clean re-login rather than a wrong read.
@@ -148,6 +162,7 @@ async function setItem(key: string, value: string): Promise<void> {
   // premise against a real device instead of a mock.
   logAuth('sec.set', {
     path: 'begin',
+    kind: keyKind(key),
     prevPtr: prev ? `${prev.gen}:${prev.count}` : null,
     gen,
     chunks: chunks.length,
@@ -198,7 +213,10 @@ async function setItem(key: string, value: string): Promise<void> {
 async function removeItem(key: string): Promise<void> {
   try {
     const ptr = await readPointer(key);
-    logAuth('sec.remove', { hadPtr: ptr != null });
+    // `kind:'session'` here is THE logout fingerprint — auth-js calls this only from
+    // _removeSession (a genuine sign-out). `kind:'code-verifier'` is the benign
+    // per-_saveSession PKCE clear (the misleading `hadPtr:false` noise).
+    logAuth('sec.remove', { kind: keyKind(key), hadPtr: ptr != null });
     if (ptr) {
       for (let i = 0; i < ptr.count; i++) {
         await SecureStore.deleteItemAsync(chunkKey(key, ptr.gen, i));
