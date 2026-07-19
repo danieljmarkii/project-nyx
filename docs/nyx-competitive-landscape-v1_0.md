@@ -1,5 +1,7 @@
 # Project Nyx — Competitive Landscape
-**Version:** 1.0 | **Status:** Stable | **Last Updated:** May 2026
+**Version:** 1.0 | **Status:** 🧊 FROZEN — superseded by the June-2026 refresh | **Last Updated:** May 2026
+
+> **Frozen artifact (tagged 2026-07-19 retro).** A newer pass exists — **`docs/nyx-competitive-landscape-refresh-2026-06.md`** — read that for current positioning. This May-2026 snapshot is kept for the original baseline only. (The fact that the refresh was written as a *separate file* rather than a version bump is exactly the filename-versioning symptom the retro flagged; treat the June refresh as canonical.)
 
 ---
 
