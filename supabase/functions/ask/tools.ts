@@ -1204,11 +1204,15 @@ export interface MedicationEntry {
   drugLabel: string
   active: boolean
   doseAmount: string | null
-  /** Last administered (given/partial) dose time for this drug, or null. Refused/missed
-   *  doses are NOT "last given" (they weren't given). */
+  /** Last dose time with adherence === 'given' for this drug, or null. A refused/missed/
+   *  partial/unconfirmed dose is NOT "last given" (a partial/unconfirmed dose never reads as
+   *  a clean administration — the never-reassure spine). */
   lastDoseAt: string | null
-  /** Doses logged for this drug in the adherence window: given/partial vs missed/refused. */
+  /** Given-only count (adherence === 'given') — mirrors the client's administeredDoses.
+   *  Partial + null(unrated) are NOT counted here (nor in dosesMissed) — the safe under-read;
+   *  their honest surfacing is deferred (B-388). */
   dosesGiven: number
+  /** Not-given attention count: missed + refused (partial is separate — see B-388). */
   dosesMissed: number
 }
 
@@ -1237,8 +1241,9 @@ export function medications(
   const windowDoses = liveEvents(doses).filter((d) => inSpan(d.occurredAt, w))
 
   // Attribute each in-window dose to a regimen with the SAME two-pass precedence as the
-  // client's attributeDosesToRegimens (lib/medications.ts) — so an Ask per-regimen dose
-  // count equals the pet-profile "Current medications" card exactly (G5). The old code
+  // client's attributeDosesToRegimens (lib/medications.ts) — so Ask attributes a dose to the
+  // same regimen the pet-profile "Current medications" card does, and its given-only count
+  // mirrors the card's administeredDoses (G5). The old code
   // matched ONLY on medicationId, which the one-tap path leaves null (B-135): so a real
   // ad-hoc dose both undercounted its regimen AND (since index.ts didn't resolve its name)
   // collapsed into a single unnamed "a medication" bucket — merging every different drug's
@@ -1316,9 +1321,18 @@ function buildMedicationEntry(
   doseAmount: string | null,
   doses: AskDoseRow[],
 ): MedicationEntry {
-  // A dose counts as "given" at given/partial/null (null defaults to administered — the
-  // §5.1 capture default); missed/refused are not given.
-  const given = doses.filter((d) => d.adherence == null || d.adherence === 'given' || d.adherence === 'partial')
+  // "Given" is adherence === 'given' ONLY — mirroring the client's administeredDoses
+  // (lib/medications.ts computeRegimenCompliance) and the wire-mapper invariant that a
+  // null/unrated dose "must never default to 'given', or an unrated dose would read as a
+  // confirmed-given one" (the n=1-never-reassures spine, spec §6). 'partial' is NOT a clean
+  // given (the client flags it "not fully taken"); null is unrated (incl. the B-156 G1
+  // fail-safe's unconfirmed dose — evidence AGAINST compliance). Both are the SAFE-direction
+  // under-read: Ask never reports a partial/unconfirmed dose as given, and never names one as
+  // "last given". (Adversarial-reviewer 2026-07-19: the prior null/partial→given rule folded
+  // an unconfirmed dose into a NAMED drug's given-count once attribution attached it — a
+  // never-reassure violation.) Honestly surfacing partial/unconfirmed as their OWN bucket in
+  // the answer is deferred as a Dr. Chen/Data contract call — B-388.
+  const given = doses.filter((d) => d.adherence === 'given')
   const missed = doses.filter((d) => d.adherence === 'missed' || d.adherence === 'refused')
   const lastGiven = given.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]
   return {

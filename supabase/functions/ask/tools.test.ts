@@ -497,14 +497,30 @@ Deno.test('medications — active regimen, last-given ignores refused/missed dos
   const doses = [
     { id: 'd1', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-14T08:00:00Z', adherence: 'given', deletedAt: null },
     { id: 'd2', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-15T08:00:00Z', adherence: 'refused', deletedAt: null },
-    { id: 'd3', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-13T08:00:00Z', adherence: null, deletedAt: null }, // null defaults to given
+    { id: 'd3', medicationId: 'r1', drugLabel: 'Apoquel', occurredAt: '2026-07-13T08:00:00Z', adherence: null, deletedAt: null }, // null = unrated, NOT given
   ]
   const r = medications(regimens, doses, { window: '30d', nowMs: NOW_MS })
   const apoquel = r.medications.find((m) => m.medicationId === 'r1')
   assert.equal(apoquel?.active, true)
-  assert.equal(apoquel?.dosesGiven, 2) // given + null
+  assert.equal(apoquel?.dosesGiven, 1) // 'given' ONLY — a null/unrated dose never reads as given (never-reassure)
   assert.equal(apoquel?.dosesMissed, 1) // refused
-  assert.equal(apoquel?.lastDoseAt, '2026-07-14T08:00:00Z') // NOT the 07-15 refusal
+  assert.equal(apoquel?.lastDoseAt, '2026-07-14T08:00:00Z') // NOT the 07-15 refusal, NOT the 07-13 unrated
+})
+
+Deno.test('medications — a partial or unconfirmed(null) dose never reads as "given" (never-reassure)', () => {
+  // Adversarial-reviewer 2026-07-19: once attribution folds an unlinked dose into a NAMED
+  // regimen, a partial/null dose counted as given became a false administration report.
+  const regimens = [
+    { id: 'r1', medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', status: 'active', startedAt: '2026-07-01', endedAt: null, doseAmount: null, deletedAt: null },
+  ]
+  const doses = [
+    { id: 'd1', medicationId: null, medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', occurredAt: '2026-07-14T08:00:00Z', adherence: 'partial', deletedAt: null },
+    { id: 'd2', medicationId: null, medicationItemId: 'item-cet', drugLabel: 'Cetirizine HCl', occurredAt: '2026-07-15T08:00:00Z', adherence: null, deletedAt: null }, // B-156 G1 unconfirmed
+  ]
+  const r = medications(regimens, doses, { window: '30d', nowMs: NOW_MS })
+  const cet = r.medications.find((m) => m.medicationId === 'r1')
+  assert.equal(cet?.dosesGiven, 0) // neither partial nor unconfirmed is a clean given
+  assert.equal(cet?.lastDoseAt, null) // an unconfirmed dose is never named "last given"
 })
 
 Deno.test('medications — active keys on status, not a [started,ended] interval (no UTC drift)', () => {
