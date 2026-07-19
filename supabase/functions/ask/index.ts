@@ -590,11 +590,15 @@ async function fetchContext(
     // occurred_at of its own). No lookback filter: the full series is a legitimate 'all' answer.
     client.from('weight_checks').select('weight_kg, events!inner(occurred_at, deleted_at)').eq('pet_id', petId).is('events.deleted_at', null),
     // Regimens — status/started_at/ended_at define the active span (no soft-delete on meds).
-    client.from('medications').select('id, drug_name, status, started_at, ended_at, dose_amount').eq('pet_id', petId),
-    // Administered dose events (point exposures) + their administration child.
+    // medication_item_id is the drug key an unlinked one-tap dose attributes to (B-135).
+    client.from('medications').select('id, medication_item_id, drug_name, status, started_at, ended_at, dose_amount').eq('pet_id', petId),
+    // Administered dose events (point exposures) + their administration child. The nested
+    // medication_items(generic_name) NAMES a regimen-unlinked dose (medication_id null — the
+    // dominant B-135 shape) that would otherwise be an anonymous "a medication"; RLS-scoped by
+    // the caller JWT like every read here (medication_items is per-account, B-354).
     client
       .from('events')
-      .select('id, occurred_at, medication_administrations(medication_id, adherence)')
+      .select('id, occurred_at, medication_administrations(medication_id, medication_item_id, adherence, medication_items(generic_name))')
       .eq('pet_id', petId)
       .eq('event_type', 'medication')
       .is('deleted_at', null)
@@ -675,9 +679,10 @@ async function fetchContext(
     .filter((w): w is AskWeightRow => w !== null)
 
   // ── regimens ──
-  type RegimenRowDb = { id: string; drug_name: string; status: string | null; started_at: string | null; ended_at: string | null; dose_amount: string | null }
+  type RegimenRowDb = { id: string; medication_item_id: string | null; drug_name: string; status: string | null; started_at: string | null; ended_at: string | null; dose_amount: string | null }
   const regimens: AskRegimenRow[] = ((regimensRes.data ?? []) as RegimenRowDb[]).map((r) => ({
     id: r.id,
+    medicationItemId: r.medication_item_id,
     drugLabel: r.drug_name,
     status: r.status,
     startedAt: r.started_at,
@@ -687,15 +692,28 @@ async function fetchContext(
   }))
 
   // ── doses ──
-  type DoseRowDb = { id: string; occurred_at: string; medication_administrations: { medication_id: string | null; adherence: string | null } | { medication_id: string | null; adherence: string | null }[] | null }
+  // drugLabel precedence mirrors the client: the regimen name wins for an explicitly-linked
+  // dose; otherwise the LIBRARY ITEM name (medication_items.generic_name) names a regimen-
+  // unlinked one-tap dose (the dominant B-135 shape) — the fix for the "a medication" collapse.
+  type AdminRowDb = {
+    medication_id: string | null
+    medication_item_id: string | null
+    adherence: string | null
+    medication_items: { generic_name: string | null } | { generic_name: string | null }[] | null
+  }
+  type DoseRowDb = { id: string; occurred_at: string; medication_administrations: AdminRowDb | AdminRowDb[] | null }
   const regimenLabelById = new Map(regimens.map((r) => [r.id, r.drugLabel]))
   const doses: AskDoseRow[] = ((doseEventsRes.data ?? []) as DoseRowDb[]).map((r) => {
     const admin = first(r.medication_administrations)
     const medId = admin?.medication_id ?? null
+    const itemId = admin?.medication_item_id ?? null
+    const itemName = first(admin?.medication_items ?? null)?.generic_name ?? null
+    const regimenLabel = medId ? (regimenLabelById.get(medId) ?? null) : null
     return {
       id: r.id,
       medicationId: medId,
-      drugLabel: medId ? (regimenLabelById.get(medId) ?? null) : null,
+      medicationItemId: itemId,
+      drugLabel: regimenLabel ?? itemName ?? null,
       occurredAt: r.occurred_at,
       adherence: admin?.adherence ?? null,
       deletedAt: null,
