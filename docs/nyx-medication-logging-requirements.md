@@ -31,7 +31,7 @@ This is a real clinical gap, not a convenience feature:
 | # | Decision | Ruling |
 |---|---|---|
 | **D1** | Data model shape | **Regimen + dose events.** A `medications` regimen table (mirrors `diet_trials`) + each dose as a `medication` event with a child `medication_administrations` row (mirrors `meals` + `intake_rating`). This is the only shape consistent with the decided "single event timeline / Option A" architecture (`nyx-technical-spec-v1_0.md:245`) **and** the only one that makes the 10-second test passable (see §5). |
-| **D2** | Drug identity | **Photo-first capture seeding an organically-built `medication_items` library, food-model style.** First log of a new drug = a photo of the label (like `food-capture.tsx`); follow-up doses are one-tap picks from a library-like picker. Library is globally scoped with `created_by_user_id` (like `food_items` today — *not* pre-curated). **A centralized/curated drug catalog is an explicit future refactor, not v1.** (PM, verbatim: "eventually we could want to refactor to a centralized library… similar capture as food. Take a photo of the initial event and then select follow-up doses from a library-like experience.") |
+| **D2** | Drug identity | **Photo-first capture seeding an organically-built `medication_items` library, food-model style.** First log of a new drug = a photo of the label (like `food-capture.tsx`); follow-up doses are one-tap picks from a library-like picker. Library is **per-account** scoped by `created_by_user_id` (like `food_items` — *re-scoped from global to per-account by B-354 / migration 033*; *not* pre-curated). **A centralized/curated drug catalog is an explicit future refactor, not v1.** (PM, verbatim: "eventually we could want to refactor to a centralized library… similar capture as food. Take a photo of the initial event and then select follow-up doses from a library-like experience.") |
 | **D3** | Reminders | **Owner-initiated logging only in v1. Reminders deferred.** Blocked on the unresolved push-notification-provider open question (`nyx-technical-spec-v1_0.md:273`) and Principle 4 nudge discipline. See §10. |
 | **D4** | Vet report | **"Current medications" section + a one-line adherence summary per drug** (e.g. "given consistently" / "some doses missed"). Computed from logged doses, not owner-asserted. Rendering rides Step 9; the **schema must capture what the report needs now** (it does — see §3, §8). |
 
@@ -48,7 +48,7 @@ This is a real clinical gap, not a convenience feature:
 
 | Food pattern | Schema | Medication analog (new) |
 |---|---|---|
-| `food_items` — global catalog, no `user_id`, `created_by_user_id` for RLS, photo-first AI extraction | `001_schema.sql:61`, `007_food_library_redesign.sql` | **`medication_items`** — the drug-product library |
+| `food_items` — per-account catalog (`created_by_user_id` = owner scope, RLS default-deny cross-account; re-scoped from global by B-354 / migration 033), photo-first AI extraction | `001_schema.sql:61`, `007_food_library_redesign.sql`, `033_per_account_food_med_library.sql` | **`medication_items`** — the drug-product library (per-account, same B-354 re-scope, migration 033) |
 | `meals` — 1:1 child of an `event` (unique `event_id`) + nullable `intake_rating` (offered-vs-consumed) | `001_schema.sql:131`, `011_meal_intake_rating.sql` | **`medication_administrations`** — the dose event child + nullable `adherence` |
 | `diet_trials` — pet-scoped ongoing **regimen** with status + compliance % | `001_schema.sql:147` | **`medications`** — the prescription/regimen |
 
@@ -104,7 +104,7 @@ CREATE TABLE medication_items (
 );
 ```
 
-Globally scoped (no `user_id`/`pet_id`). RLS: read = authenticated; insert/update = `created_by_user_id` — identical to `food_items` (`001_schema.sql:245-252`).
+Per-account scoped (no `pet_id`; owned via `created_by_user_id` — re-scoped from global by B-354 / migration 033). RLS: read/insert/update all gated on `created_by_user_id = auth.uid()` (default-deny cross-account) — identical to `food_items` (`001_schema.sql:245-252`, `033_per_account_food_med_library.sql`).
 
 ### 4.3 `medications` — the regimen (mirrors `diet_trials`)
 
@@ -259,7 +259,7 @@ From the food-template blueprint (the food model is the 1:1 reference):
 | S1 | Final `dose_adherence` vocabulary — is `given/partial/missed/refused` right, or add `vomited-up-after-dosing` (both an adherence event and a symptom)? | Dr. Chen + Data Scientist | PR 1 (enum) / PR 3 (chip) |
 | S2 | `is_critical` source — curated drug list match? confidence? which drug classes? | Dr. Chen | PR 9 (escalation) |
 | S3 | AI dose-extraction confirm UX — how forcefully must the owner confirm strength before save? | Designer + Dr. Chen + `clinical-guardrails` | PR 5 |
-| S4 | Library scope display — global catalog is decided (D2), but the picker should show "for which pet?" in multi-pet households. | Designer + Sam | PR 6 |
+| S4 | Library scope display — the `medication_items` catalog is per-account (D2 as re-scoped by B-354 / migration 033), but the picker should show "for which pet?" in multi-pet households. | Designer + Sam | PR 6 |
 | S5 | Centralized-library refactor trigger — what conditions promote D2's organic library to a curated catalog? | PM | post-v1 |
 
 ---

@@ -35,7 +35,7 @@ The PM's cats are the canonical case from the research brief: **Nyx** eats wet f
 ### Why it's structural, not a missing button
 Today the data model has **no pet↔food standing relationship**:
 - `meals` is a **point event** (`occurred_at`, `quantity`, `intake_rating`) — it assumes discrete, witnessed feeding. A 24/7 bowl is a *duration / standing exposure*, not a point.
-- `food_items` is **globally scoped** (no `user_id`/`pet_id`) — so "*this pet* is free-fed *this food*" has nowhere to live on the food row.
+- `food_items` is **account-scoped, not per-pet** (`created_by_user_id`, no `pet_id` — re-scoped from global to per-account by B-354 / migration 033) — so "*this pet* is free-fed *this food*" still has nowhere to live on the food row.
 - The pet↔food link exists only transiently, per logged meal (`meals.food_item_id`).
 
 R1 introduces the missing concept: a standing fact joining a pet to a food it always has access to.
@@ -70,7 +70,7 @@ Every intake signal carries **two orthogonal** confidence dimensions. R1 sets up
 
 ## 4. Schema — proposed `feeding_arrangements` table
 
-A new pet↔food join table (because `food_items` is global and cannot carry per-pet facts). Additive, RLS'd, multi-pet-ready by construction.
+A new pet↔food join table (because `food_items` is account-scoped, not per-pet — B-354 / migration 033 — and cannot carry per-pet facts). Additive, RLS'd, multi-pet-ready by construction.
 
 ```sql
 CREATE TYPE feeding_method AS ENUM (

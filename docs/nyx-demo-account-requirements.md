@@ -28,7 +28,7 @@ The hard part — and the reason this needs a spec rather than "insert some rows
 | **D2** | **Seed as an idempotent, date-relative, parameterized SQL script** (`scripts/seed-demo-account.sql`), re-run right before submission. | Detectors read recent windows + the Signal cache has a 24h TTL, so fixed dates age out (§8). Parameterization is what makes the PM's "multiple demo accounts later" cheap (§6, B-324). |
 | **D3** | **`generate-signal` is invoked for the demo pet after seeding** — the Home Signal is a **server cache**, not computed on-device. | Seeding rows is necessary but not sufficient; without the Edge Function run, the reviewer sees a "still building" card (§4). |
 | **D4** | **Credentials live only in App Store Connect.** The account is created through the real signup flow; the password never enters the repo. `docs/app-review-notes.md` uses a placeholder. | Trust & Safety: no secret in version control. |
-| **D5** | **Reference existing global `food_items` only** — never create catalog rows that degrade the real-user picker. | `food_items` are globally scoped (no `user_id`); a stray demo row shows up for everyone. |
+| **D5** | **Superseded by B-354 (per-account catalog).** The original constraint — reference existing `food_items` only, never mint demo rows — no longer binds: `food_items` is now per-account (migration 033), so a demo-account row is RLS-scoped to the demo user and cannot appear in a real user's picker. The seed MAY mint its own catalog rows under the demo account; keep them realistic (a screenshot may show them). | *Original rationale (now false): `food_items` were globally scoped (no `user_id`); a stray demo row showed up for everyone. B-354 / migration 033 scopes catalog rows to `created_by_user_id`, removing the leak.* |
 | **D6** | **Seed 1–2 real event photos**; leave live camera as the reviewer's own demo (pointed at in the notes). | Timeline looks alive without shipping a fake camera flow; one photo also feeds the per-incident vomit read (D7). |
 | **D7** | **Include the per-incident vomit AI read** (run `analyze-vomit` on one photo'd vomit event). **Skip** the medication/adherence thread for v1 review. | (a) is another visible "intelligence" moment for cheap; (b) is scope the reviewer doesn't need to evaluate the app. |
 
@@ -83,7 +83,7 @@ The seed writes to (v1.0 schema + migrations 001–029): `user_profiles` (set `t
 - **All timestamps UTC**; the app converts at display using `user_profiles.timezone`.
 - **Soft-delete asymmetry:** `pets` uses `is_active` (boolean); `events` use `deleted_at` (NULL = active). Seed active rows.
 - **`meals.intake_rating`** ∈ `refused | picked | some | most | all` (WSAVA 5-point); `events.occurred_at_confidence` ∈ `witnessed | estimated | window` — vary it (some witnessed, some discovered) so the timeline is realistic and the per-incident/timing detectors have honest inputs.
-- **`food_items` are global** — query and reference existing rows at seed time (D5). If the needed proteins (venison, beef) aren't present, reuse the closest existing match rather than minting catalog rows; if a demo row is truly unavoidable, mark it unmistakably and log it as debt.
+- **`food_items` are per-account** (re-scoped from global by B-354 / migration 033; RLS scopes each row to `created_by_user_id`). Per D5-as-superseded, the seed MAY mint its own catalog rows (venison, beef, etc.) under the demo account — a demo row is visible only to the demo user, so the old "reference existing rows only, never mint" rule no longer applies. Keep any seeded foods realistic since a screenshot may show them.
 - **RLS:** everything is the demo user's own pet data; the seed runs with the **service role** via the Supabase MCP (`execute_sql`), so it isn't RLS-gated on write, but the *shapes* must satisfy the same ownership graph (`pet_id ∈ pets WHERE user_id = <demo user>`).
 
 ---
@@ -127,7 +127,7 @@ Detectors read recent windows (intake = 14d, worsening = 7d, chronicity = 56d, d
 
 - **No secret in the repo** (D4): password only in ASC; placeholder in the notes doc.
 - **Account isolation:** the demo account is a normal, RLS-scoped user; it can see only its own pet. The seed touches only that user's graph. `rls-privacy-reviewer` is *not* required for a single-owner seed, but the service-role `execute_sql` step must be scoped to the demo `pet_id` — never a blanket write.
-- **Global-catalog hygiene** (D5): reference existing `food_items`; a demo row would leak into every real user's picker.
+- **Catalog scope** (D5, reconciled by B-354): `food_items` is now per-account (migration 033), so a demo-account food row is RLS-scoped to the demo user and does **not** leak into other users' pickers — the original global-catalog leak rationale no longer holds. Seed foods freely under the demo account; keep them realistic for screenshots.
 - **Post-launch teardown:** note in the notes doc / backlog that the demo account and its data can be deleted after approval (it exercises the B-039 deletion path — a nice bonus check), or kept for future submissions.
 
 ---
@@ -174,7 +174,7 @@ Dependencies: **needs** guide step 9 (email confirmation ON) to create the accou
 - [ ] **No surface shows an empty state** for the demo pet: Home Signal (card, not "building"), Trend (compliance mode), Patterns (cards), Timeline (populated), vet report (renders with a real date range).
 - [ ] The per-incident vomit read renders on the event detail and **does not reassure** (n=1 invariant).
 - [ ] `docs/app-review-notes.md` exists, is nyx-voice-clean, and contains **no real credentials**.
-- [ ] No new global `food_items` rows created (or any created are logged as debt).
+- [ ] Any seeded `food_items` rows are per-account (owned by the demo user, migration 033) and realistic — no reliance on the retired global catalog.
 - [ ] `vet-report-cold-read` returns CLINIC-READY on the rendered report.
 
 ---
