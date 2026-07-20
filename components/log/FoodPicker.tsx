@@ -183,6 +183,16 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
     }
   }, [reloadArrangements]);
 
+  // Search-results mode. While a query is typed the picker collapses to just the
+  // matches: the add CTA, the rotation shelf, and "Always available" all step
+  // aside so results render directly under the pinned bar. Without this, up to
+  // ~6 rotation grid rows kept rendering above the filtered library, and on
+  // smaller phones the matches sat entirely below the fold — search read as a
+  // no-op exactly when the owner asked for a specific food. Hiding the rotation
+  // loses no candidates: it is a recency view of the same library the search
+  // filters. The scope chips stay put (pinned) — they compose with the query.
+  const searching = search.trim().length > 0;
+
   // Compose the two library filters: the scope chip (a fact — food_type/format)
   // first, then the free-text search over brand + product. Both are AND-ed, so
   // "Wet" + "tur" narrows to wet turkey foods.
@@ -254,28 +264,13 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.zone}>
-          <TouchableOpacity
-            style={styles.addCta}
-            onPress={onAddNew}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Snap a new food"
-          >
-            {/* B-062 — Lucide Camera (was a 📷 emoji), matching MedicationPicker's
-                identical "Add" CTA so the two pickers read as one family of vector
-                glyphs rather than mixed emoji/icon. */}
-            <View style={styles.addCtaIcon}>
-              <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
-            </View>
-            <View style={styles.addCtaText}>
-              <Text style={styles.addCtaTitle}>Snap a new food</Text>
-              <Text style={styles.addCtaHint}>Or choose from your photos</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
+        {!searching && (
+          <View style={styles.zone}>
+            <AddFoodCta onPress={onAddNew} />
+          </View>
+        )}
 
-        {rotation.length > 0 && (
+        {!searching && rotation.length > 0 && (
           <View style={styles.zone}>
             <SectionLabel label={rotationLabel} />
             {/* B-346 — the rotation shelf is a WRAPPED 2-up grid, not a horizontal
@@ -302,11 +297,21 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
             bar above, so this zone opens straight on the results. */}
         <View style={styles.zone}>
           {filteredLibrary.length === 0 ? (
-            <Text style={styles.empty}>
-              {library.length === 0
-                ? 'No foods yet. Snap one above.'
-                : 'No matches.'}
-            </Text>
+            searching ? (
+              // The search dead-end carries its own forward path (P5 — empty
+              // states are features): the top CTA is hidden in results mode, and
+              // the food the owner just failed to find is exactly the one to snap.
+              <>
+                <Text style={styles.empty}>No matches.</Text>
+                <AddFoodCta onPress={onAddNew} />
+              </>
+            ) : (
+              <Text style={styles.empty}>
+                {library.length === 0
+                  ? 'No foods yet. Snap one above.'
+                  : 'No matches.'}
+              </Text>
+            )
           ) : (
             <View style={styles.groups}>
               <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
@@ -326,108 +331,138 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
             to log. Styled distinctly from log-tap tiles: a quiet dot + label, NOT a
             loud chip (§11), and a tap opens the food's detail (where the toggle
             lives) rather than logging a meal. A designed empty state when there are
-            none (P5). */}
-        <View style={styles.zone}>
-          <SectionLabel label="Always available" />
-          {arrangements.length === 0 ? (
-            <Text style={styles.alwaysEmpty}>
-              Nothing always-out yet. If {multiPet
-                ? petNameList(householdPets.map((p) => p.name), 'or')
-                : petName ?? 'your pet'} grazes a bowl that's
-              down all day, open a food and turn on “Always available” — we'll note it
-              as free-choice for the vet.
-            </Text>
-          ) : (
-            <View style={styles.alwaysList}>
-              {arrangements.map((g) => {
-                // Single-pet: today's unlabeled meta line. Multi-pet: each entry
-                // labeled with the pet(s) it's down for (spec §3.4).
-                const since = formatCalendarDate(g.perPet[0]?.active_from ?? null);
-                const metaLine = multiPet
-                  ? `Free-choice · ${arrangementPetsLine(g.perPet)}`
-                  : `Free-choice${since ? ` · since ${since}` : ''}`;
-                // §6a staleness stays per-arrangement: the nudge shows when ANY
-                // pet's row is stale, and the answer below asks per stale pet.
-                const staleEntries = g.perPet.filter((p) => isArrangementStale(p.updated_at));
-                return (
-                  <View key={g.food_item_id} style={styles.alwaysItem}>
-                    <View style={styles.alwaysRow}>
-                      <TouchableOpacity
-                        style={styles.alwaysMain}
-                        // food_type/photo_path are null because this is a display-only
-                        // view shape — the detail screen re-fetches the full food row.
-                        onPress={() =>
-                          onOpenDetail?.({
-                            id: g.food_item_id,
-                            brand: g.brand,
-                            product_name: g.product_name,
-                            format: g.format,
-                            food_type: null,
-                            photo_path: null,
-                          })
-                        }
-                        activeOpacity={0.7}
-                        hitSlop={8}
-                      >
-                        <View style={styles.alwaysDot} />
-                        <View style={styles.alwaysRowText}>
-                          <Text style={styles.alwaysRowTitle} numberOfLines={1}>
-                            {g.brand} {g.product_name}
-                          </Text>
-                          <Text style={styles.alwaysRowMeta}>{metaLine}</Text>
-                        </View>
-                      </TouchableOpacity>
-                      {/* §6a passive freshness — a NUDGE, not a persistent link: the
-                          re-attest shows only once an arrangement is stale, so a fresh
-                          bowl stays quiet. Tapping it opens a two-way answer (below)
-                          rather than silently auto-confirming "yes"; never a push. */}
-                      {justConfirmedId === g.food_item_id ? (
-                        <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
-                      ) : staleEntries.length > 0 && choosingId !== g.food_item_id ? (
+            none (P5). Hidden in search-results mode — standing facts aren't
+            matches, and an unfiltered list under filtered results would read as
+            phantom hits. */}
+        {!searching && (
+          <View style={styles.zone}>
+            <SectionLabel label="Always available" />
+            {arrangements.length === 0 ? (
+              <Text style={styles.alwaysEmpty}>
+                Nothing always-out yet. If {multiPet
+                  ? petNameList(householdPets.map((p) => p.name), 'or')
+                  : petName ?? 'your pet'} grazes a bowl that's
+                down all day, open a food and turn on “Always available” — we'll note it
+                as free-choice for the vet.
+              </Text>
+            ) : (
+              <View style={styles.alwaysList}>
+                {arrangements.map((g) => {
+                  // Single-pet: today's unlabeled meta line. Multi-pet: each entry
+                  // labeled with the pet(s) it's down for (spec §3.4).
+                  const since = formatCalendarDate(g.perPet[0]?.active_from ?? null);
+                  const metaLine = multiPet
+                    ? `Free-choice · ${arrangementPetsLine(g.perPet)}`
+                    : `Free-choice${since ? ` · since ${since}` : ''}`;
+                  // §6a staleness stays per-arrangement: the nudge shows when ANY
+                  // pet's row is stale, and the answer below asks per stale pet.
+                  const staleEntries = g.perPet.filter((p) => isArrangementStale(p.updated_at));
+                  return (
+                    <View key={g.food_item_id} style={styles.alwaysItem}>
+                      <View style={styles.alwaysRow}>
                         <TouchableOpacity
-                          onPress={() => setChoosingId(g.food_item_id)}
-                          hitSlop={10}
+                          style={styles.alwaysMain}
+                          // food_type/photo_path are null because this is a display-only
+                          // view shape — the detail screen re-fetches the full food row.
+                          onPress={() =>
+                            onOpenDetail?.({
+                              id: g.food_item_id,
+                              brand: g.brand,
+                              product_name: g.product_name,
+                              format: g.format,
+                              food_type: null,
+                              photo_path: null,
+                            })
+                          }
                           activeOpacity={0.7}
-                          style={styles.alwaysConfirm}
+                          hitSlop={8}
                         >
-                          <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
+                          <View style={styles.alwaysDot} />
+                          <View style={styles.alwaysRowText}>
+                            <Text style={styles.alwaysRowTitle} numberOfLines={1}>
+                              {g.brand} {g.product_name}
+                            </Text>
+                            <Text style={styles.alwaysRowMeta}>{metaLine}</Text>
+                          </View>
                         </TouchableOpacity>
-                      ) : null}
-                    </View>
-
-                    {choosingId === g.food_item_id && staleEntries.map((entry) => (
-                      <View key={entry.pet_id} style={styles.freshnessChoices}>
-                        <Text style={styles.freshnessPrompt}>
-                          Still always out for {multiPet ? entry.petName : petName ?? 'your pet'}?
-                        </Text>
-                        <View style={styles.freshnessChoiceBtns}>
+                        {/* §6a passive freshness — a NUDGE, not a persistent link: the
+                            re-attest shows only once an arrangement is stale, so a fresh
+                            bowl stays quiet. Tapping it opens a two-way answer (below)
+                            rather than silently auto-confirming "yes"; never a push. */}
+                        {justConfirmedId === g.food_item_id ? (
+                          <Text style={styles.alwaysConfirmed}>Confirmed ✓</Text>
+                        ) : staleEntries.length > 0 && choosingId !== g.food_item_id ? (
                           <TouchableOpacity
-                            onPress={() => handleConfirmYes(entry.pet_id, g.food_item_id)}
-                            hitSlop={8}
+                            onPress={() => setChoosingId(g.food_item_id)}
+                            hitSlop={10}
                             activeOpacity={0.7}
-                            style={styles.freshnessChoiceBtn}
+                            style={styles.alwaysConfirm}
                           >
-                            <Text style={styles.choiceYes}>Yes, still out</Text>
+                            <Text style={styles.alwaysConfirmText}>Still accurate?</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => handleStopped(entry.pet_id, g.food_item_id)}
-                            hitSlop={8}
-                            activeOpacity={0.7}
-                            style={styles.freshnessChoiceBtn}
-                          >
-                            <Text style={styles.choiceNo}>No, it's stopped</Text>
-                          </TouchableOpacity>
-                        </View>
+                        ) : null}
                       </View>
-                    ))}
-                  </View>
-                );
-              })}
-            </View>
-          )}
-        </View>
+  
+                      {choosingId === g.food_item_id && staleEntries.map((entry) => (
+                        <View key={entry.pet_id} style={styles.freshnessChoices}>
+                          <Text style={styles.freshnessPrompt}>
+                            Still always out for {multiPet ? entry.petName : petName ?? 'your pet'}?
+                          </Text>
+                          <View style={styles.freshnessChoiceBtns}>
+                            <TouchableOpacity
+                              onPress={() => handleConfirmYes(entry.pet_id, g.food_item_id)}
+                              hitSlop={8}
+                              activeOpacity={0.7}
+                              style={styles.freshnessChoiceBtn}
+                            >
+                              <Text style={styles.choiceYes}>Yes, still out</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleStopped(entry.pet_id, g.food_item_id)}
+                              hitSlop={8}
+                              activeOpacity={0.7}
+                              style={styles.freshnessChoiceBtn}
+                            >
+                              <Text style={styles.choiceNo}>No, it's stopped</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
     </View>
+  );
+}
+
+// The photo-first "Snap a new food" CTA — rendered at the top of the browse
+// layout and again inside the no-matches search empty state, so it's one block
+// with one a11y contract in both places.
+function AddFoodCta({ onPress }: { onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      style={styles.addCta}
+      onPress={onPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel="Snap a new food"
+    >
+      {/* B-062 — Lucide Camera (was a 📷 emoji), matching MedicationPicker's
+          identical "Add" CTA so the two pickers read as one family of vector
+          glyphs rather than mixed emoji/icon. */}
+      <View style={styles.addCtaIcon}>
+        <Camera size={20} color={theme.colorAccent} strokeWidth={2} />
+      </View>
+      <View style={styles.addCtaText}>
+        <Text style={styles.addCtaTitle}>Snap a new food</Text>
+        <Text style={styles.addCtaHint}>Or choose from your photos</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
