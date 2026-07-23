@@ -4,6 +4,7 @@
 **Version:** 0.1 | Created: 2026-07-19
 **Owner backlog item:** B-351 (Later). Predecessor: **B-332** (single-protein manual capture, shipped #355). Likely absorbs: **B-048** (ingredient→protein canonicalization).
 **Gating Open Question (CLAUDE.md):** *"Capture ALL proteins in a food, not just `primary_protein`? … vet-advisor + PM call on sensitivity vs. attribution before B-351 is spec-ready."*
+**Design mocks:** `docs/nyx-multi-protein-mockups.html` — the four owner-facing surfaces (multi-select picker · trial-contaminant catch · joint-candidate Signal · vet-report protein exposure).
 
 > **Why this doc exists.** B-351 was surfaced by the PM during B-332 and parked pending a decision on the sensitivity-vs-attribution tradeoff. This design session (2026-07-19) was run **non-interactively** — the live PM decision prompt could not be collected — so per the CLAUDE.md Open-Questions protocol, this doc records **provisional decisions with recommendations, clearly flagged for PM/Dr. Chen ratification** (see §10). Nothing here is built; the spec locks after §10 is ruled.
 

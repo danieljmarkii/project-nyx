@@ -1,0 +1,457 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-protein capture — design exploration (B-351)</title>
+<style>
+  /* ── Tokens (from constants/theme.ts) ────────────────────────────────── */
+  :root {
+    --ground: #F6F6F3;
+    --card: #FFFFFF;
+    --card-subtle: #F5F5F5;
+    --ink: #131312;
+    --ink-2: #525252;
+    --ink-3: #737373;
+    --ink-4: #A3A3A3;
+    --hairline: #EAEAEA;
+    --hairline-strong: #D4D4D4;
+    --accent: #00A38D;        /* teal deepened for text on light ground */
+    --accent-fill: #00C2A8;   /* the app's interactive teal */
+    --accent-tint: #E0FBF7;
+    --night: #13112E;
+    --night-elev: #251F57;
+    --night-line: rgba(196,190,255,0.16);
+    --moonlight: #F2EEE4;
+    --on-night: #ECEAF6;
+    --on-night-muted: #A6A2CE;
+    --on-night-faint: #706BA6;
+    --rose: #F43F5E;
+    --rose-night: #FB7185;
+    --rose-tint: #FFE4E6;
+    --rose-border: #FBCFD6;
+    --warn: #B45309;          /* factual "heads up" amber — text on light */
+    --warn-tint: #FDF4E7;
+    --warn-border: #F0DBB8;
+    --serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #141320; --card: #1C1B2A; --card-subtle: #242235;
+      --ink: #ECEAF6; --ink-2: #B7B3D9; --ink-3: #8B87B4; --ink-4: #6C688E;
+      --hairline: #2C2A42; --hairline-strong: #3A3852;
+      --accent: #35D6BE; --accent-tint: #12332F;
+      --rose-tint: #3A1620; --rose-border: #5A2230;
+      --warn: #E5A155; --warn-tint: #2E2415; --warn-border: #4A3A1E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #141320; --card: #1C1B2A; --card-subtle: #242235;
+    --ink: #ECEAF6; --ink-2: #B7B3D9; --ink-3: #8B87B4; --ink-4: #6C688E;
+    --hairline: #2C2A42; --hairline-strong: #3A3852;
+    --accent: #35D6BE; --accent-tint: #12332F;
+    --rose-tint: #3A1620; --rose-border: #5A2230;
+    --warn: #E5A155; --warn-tint: #2E2415; --warn-border: #4A3A1E;
+  }
+  :root[data-theme="light"] {
+    --ground: #F6F6F3; --card: #FFFFFF; --card-subtle: #F5F5F5;
+    --ink: #131312; --ink-2: #525252; --ink-3: #737373; --ink-4: #A3A3A3;
+    --hairline: #EAEAEA; --hairline-strong: #D4D4D4;
+    --accent: #00A38D; --accent-tint: #E0FBF7;
+    --rose-tint: #FFE4E6; --rose-border: #FBCFD6;
+    --warn: #B45309; --warn-tint: #FDF4E7; --warn-border: #F0DBB8;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 15.5px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px 110px; }
+
+  /* ── Masthead ────────────────────────────────────────────────────────── */
+  .masthead {
+    background:
+      radial-gradient(120% 90% at 82% -10%, #221C56 0%, rgba(34,28,86,0) 55%),
+      radial-gradient(90% 120% at 8% 120%, #191449 0%, rgba(25,20,73,0) 60%),
+      var(--night);
+    color: var(--moonlight); border-radius: 0 0 22px 22px;
+    padding: 46px 44px 40px; margin-bottom: 20px; position: relative; overflow: hidden;
+  }
+  .masthead .eyebrow {
+    font-size: 11.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--on-night-muted); margin-bottom: 15px; font-weight: 600;
+  }
+  .masthead h1 {
+    font-family: var(--serif); font-weight: 500; font-size: clamp(30px, 4.6vw, 44px);
+    line-height: 1.12; margin: 0 0 18px; text-wrap: balance; letter-spacing: -0.015em;
+    max-width: 22ch;
+  }
+  .masthead p { max-width: 66ch; color: #CFCBE8; margin: 0 0 8px; }
+  .masthead .meta { margin-top: 20px; font-size: 13px; color: var(--on-night-muted); display: flex; gap: 22px; flex-wrap: wrap; }
+  .masthead .meta b { color: var(--moonlight); font-weight: 600; }
+  .masthead .signal-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 999px;
+    background: var(--accent-fill); box-shadow: 0 0 0 4px rgba(0,194,168,0.18); vertical-align: 2px; margin-right: 7px;
+  }
+
+  /* ── Tension banner ──────────────────────────────────────────────────── */
+  .tension {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--hairline);
+    border: 1px solid var(--hairline); border-radius: 14px; overflow: hidden; margin: 30px 0 8px;
+  }
+  @media (max-width: 720px) { .tension { grid-template-columns: 1fr; } }
+  .tension > div { background: var(--card); padding: 18px 22px; }
+  .tension h4 { margin: 0 0 4px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+  .tension .who { font-family: var(--serif); font-size: 18px; letter-spacing: -0.01em; margin: 0 0 6px; color: var(--ink); }
+  .tension p { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.5; max-width: none; }
+  .tension .verdict-line { grid-column: 1 / -1; background: var(--accent-tint); color: var(--accent); padding: 13px 22px; font-size: 13.5px; font-weight: 600; }
+  .tension .verdict-line b { color: var(--accent); }
+
+  /* ── Sections ────────────────────────────────────────────────────────── */
+  h2 {
+    font-family: var(--serif); font-weight: 500; font-size: 27px; line-height: 1.22;
+    margin: 66px 0 6px; letter-spacing: -0.015em; text-wrap: balance;
+  }
+  h2 .num {
+    display: inline-flex; align-items: center; justify-content: center; vertical-align: 3px;
+    width: 30px; height: 30px; margin-right: 12px; border-radius: 999px;
+    font-family: var(--sans); font-size: 14px; font-weight: 700;
+    background: var(--night); color: var(--moonlight);
+  }
+  .phase-tag {
+    display: inline-block; vertical-align: 5px; margin-left: 10px;
+    font-family: var(--sans); font-size: 10.5px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 9px; border-radius: 999px; border: 1px solid var(--hairline-strong); color: var(--ink-3);
+  }
+  .phase-tag.a { background: var(--accent-tint); color: var(--accent); border-color: transparent; }
+  .kicker { color: var(--ink-2); max-width: 74ch; margin: 8px 0 26px; font-size: 15px; }
+  .kicker .file { font-family: var(--mono); font-size: 0.84em; background: var(--card); border: 1px solid var(--hairline); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+
+  .option { display: grid; grid-template-columns: 392px minmax(0,1fr); gap: 44px; align-items: start; }
+  @media (max-width: 940px) { .option { grid-template-columns: 1fr; gap: 28px; } }
+  .frame-caption { font-size: 12.5px; color: var(--ink-3); margin-top: 14px; max-width: 372px; line-height: 1.5; }
+
+  /* ── Phone frame ─────────────────────────────────────────────────────── */
+  .phone {
+    width: 392px; max-width: 100%; border-radius: 40px; background: var(--card);
+    border: 1px solid var(--hairline); padding: 12px;
+    box-shadow: 0 30px 60px -30px rgba(20,16,46,0.35), 0 8px 24px -12px rgba(20,16,46,0.18);
+  }
+  .screen { border-radius: 30px; overflow: hidden; background: var(--ground); border: 1px solid var(--hairline); }
+  .screen.night { background: var(--night); border-color: transparent; }
+  .statusbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 22px 4px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+  .screen.night .statusbar { color: var(--on-night-muted); }
+  .statusbar .dots { letter-spacing: 2px; }
+  .navbar { display: flex; align-items: center; gap: 12px; padding: 8px 20px 14px; }
+  .navbar .back { font-size: 22px; color: var(--ink-3); line-height: 1; }
+  .navbar .title { font-size: 17px; font-weight: 600; }
+  .navbar .spacer { flex: 1; }
+  .navbar .save { font-size: 15px; font-weight: 600; color: var(--accent); }
+  .body-pad { padding: 6px 20px 24px; }
+
+  .label { font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; margin: 20px 0 3px; }
+  .hint { font-size: 12.5px; color: var(--ink-3); margin: 0 0 12px; line-height: 1.45; }
+
+  /* Chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 9px; }
+  .chip {
+    position: relative; font-size: 14px; font-weight: 500; color: var(--ink-2);
+    background: var(--card); border: 1px solid var(--hairline-strong); border-radius: 999px;
+    padding: 9px 15px; line-height: 1; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .chip.on { background: var(--accent-tint); border-color: var(--accent-fill); color: var(--accent); font-weight: 600; }
+  .chip.on .tick { color: var(--accent); font-size: 12px; }
+  .chip .maintag {
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    background: var(--accent-fill); color: #fff; border-radius: 999px; padding: 2px 6px; margin-left: 2px;
+  }
+  .chip.other { color: var(--ink-3); border-style: dashed; }
+  .otherfield { margin-top: 10px; border: 1px solid var(--hairline-strong); border-radius: 8px; padding: 11px 13px; font-size: 14px; color: var(--ink-4); background: var(--card); }
+
+  /* Field rows / card */
+  .field { border: 1px solid var(--hairline); border-radius: 12px; background: var(--card); padding: 13px 15px; display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+  .field .k { font-size: 13px; color: var(--ink-3); min-width: 74px; }
+  .field .v { font-size: 15px; color: var(--ink); font-weight: 500; }
+  .field .thumb { width: 40px; height: 40px; border-radius: 8px; background: linear-gradient(135deg,#E7E4DA,#CFCabb); flex: none; }
+
+  /* Note callout (amber / rose) */
+  .note { border-radius: 14px; padding: 14px 16px; margin-top: 16px; display: grid; grid-template-columns: 22px 1fr; gap: 12px; align-items: start; }
+  .note.warn { background: var(--warn-tint); border: 1px solid var(--warn-border); }
+  .note.rose { background: var(--rose-tint); border: 1px solid var(--rose-border); }
+  .note .ico { width: 20px; height: 20px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #fff; margin-top: 1px; }
+  .note.warn .ico { background: var(--warn); }
+  .note.rose .ico { background: var(--rose); }
+  .note .h { font-weight: 600; font-size: 14px; color: var(--ink); margin: 0 0 3px; }
+  .note.warn .h { color: var(--warn); }
+  .note.rose .h { color: var(--rose); }
+  .note p { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.5; max-width: none; }
+  .note .b { font-weight: 600; color: var(--ink); }
+
+  /* Diet-trial card */
+  .trialcard { border: 1px solid var(--hairline); border-radius: 14px; background: var(--card); padding: 15px 16px; margin-top: 4px; }
+  .trialcard .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .trialcard .tt { font-size: 15px; font-weight: 600; }
+  .trialcard .pill { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); background: var(--accent-tint); border-radius: 999px; padding: 3px 8px; }
+  .trialcard .row { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--ink-2); padding: 5px 0; border-top: 1px solid var(--hairline); }
+  .trialcard .row .v { color: var(--ink); font-weight: 500; }
+
+  /* Signal card (night) */
+  .signalcard { padding: 22px 22px 20px; }
+  .signalcard .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--on-night-muted); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; }
+  .signalcard .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--accent-fill); box-shadow: 0 0 0 4px rgba(0,194,168,0.16); margin-right: 8px; }
+  .signalcard h3 { font-family: var(--serif); font-weight: 500; font-size: 24px; line-height: 1.28; letter-spacing: -0.01em; color: var(--moonlight); margin: 0 0 12px; text-wrap: balance; }
+  .signalcard .joint { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 14px; font-size: 12px; color: var(--on-night); background: rgba(196,190,255,0.10); border: 1px solid var(--night-line); border-radius: 999px; padding: 5px 11px; }
+  .signalcard .joint b { color: var(--moonlight); font-weight: 600; }
+  .signalcard p { font-size: 14px; color: var(--on-night-muted); line-height: 1.55; margin: 0 0 16px; max-width: none; }
+  .signalcard .prov { font-size: 12px; color: var(--on-night-faint); border-top: 1px solid var(--night-line); padding-top: 13px; display: flex; align-items: center; gap: 8px; }
+  .signalcard .chev { margin-left: auto; color: var(--on-night-muted); }
+
+  /* Vet report */
+  .report { background: var(--card); padding: 20px 22px 22px; }
+  .report .rpt-h { font-family: var(--serif); font-size: 16px; font-weight: 600; letter-spacing: 0.01em; border-bottom: 2px solid var(--ink); padding-bottom: 7px; margin: 0 0 4px; text-transform: uppercase; font-size: 12.5px; letter-spacing: 0.1em; }
+  .report table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .report td { padding: 9px 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  .report td.food { color: var(--ink); font-weight: 500; width: 52%; }
+  .report td.food small { display: block; color: var(--ink-3); font-weight: 400; font-size: 11.5px; margin-top: 2px; }
+  .report .prot { display: flex; flex-wrap: wrap; gap: 5px; }
+  .report .ptag { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--card-subtle); border: 1px solid var(--hairline); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .report .ptag.primary { background: #ECECEC; border-color: var(--hairline-strong); color: var(--ink); font-weight: 600; }
+  .report .ptag.flag { border-color: var(--warn-border); background: var(--warn-tint); color: var(--warn); font-weight: 600; }
+  :root[data-theme="dark"] .report .ptag.primary, @media (prefers-color-scheme: dark) { }
+  .report .fnote { font-size: 11px; color: var(--ink-3); margin-top: 12px; line-height: 1.5; display: grid; grid-template-columns: 12px 1fr; gap: 7px; }
+  .report .fnote .star { color: var(--warn); font-weight: 700; }
+  .report .trialband { margin: 12px 0 2px; padding: 9px 12px; border-radius: 8px; background: var(--card-subtle); font-size: 12px; color: var(--ink-2); }
+  .report .trialband b { color: var(--ink); }
+
+  /* ── Callouts ────────────────────────────────────────────────────────── */
+  .callouts { list-style: none; margin: 2px 0 22px; padding: 0; display: grid; gap: 13px; }
+  .callouts > li { display: grid; grid-template-columns: 24px 1fr; gap: 13px; align-items: start; }
+  .co-num { width: 22px; height: 22px; border-radius: 999px; background: var(--accent-fill); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-top: 2px; flex: none; }
+  .co-num.guard { background: var(--rose); }
+  .co-num.det { background: var(--warn); }
+  .callouts .ct { font-size: 14.5px; color: var(--ink); font-weight: 600; margin: 0 0 2px; }
+  .callouts .cd { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; margin: 0; max-width: 64ch; }
+  .callouts .cd .file { font-family: var(--mono); font-size: 0.86em; background: var(--card); border: 1px solid var(--hairline); border-radius: 4px; padding: 0 5px; }
+
+  .decrow { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 20px; }
+  .dec { font-size: 12px; font-weight: 600; border: 1px solid var(--hairline); background: var(--card); color: var(--ink-2); border-radius: 999px; padding: 5px 12px; }
+  .dec b { color: var(--accent); }
+
+  .foot { margin-top: 74px; border-top: 1px solid var(--hairline); padding-top: 26px; color: var(--ink-3); font-size: 13px; }
+  .foot b { color: var(--ink-2); }
+  .foot .file { font-family: var(--mono); font-size: 0.86em; }
+
+  hr.div { border: none; border-top: 1px solid var(--hairline); margin: 60px 0 0; }
+</style>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="eyebrow">Nyx · design exploration · B-351</div>
+    <h1>Every protein in the bowl, not just the one on the front of the bag</h1>
+    <p>A food carries more than one protein. A “duck” formula that also lists chicken by-product meal is the textbook reason a home elimination trial silently fails — and today we only store the primary, so that chicken is invisible to every clinical surface.</p>
+    <p>These mocks show how capturing the full protein set reads for an owner, and how attribution stays honest when proteins can’t yet be separated.</p>
+    <div class="meta">
+      <span><span class="signal-dot"></span><b>4 surfaces</b> · picker · trial catch · Signal · vet report</span>
+      <span><b>Spec:</b> nyx-multi-protein-requirements.md</span>
+      <span><b>Status:</b> provisional — pending D1 ratification</span>
+    </div>
+  </div>
+
+  <div class="tension">
+    <div>
+      <h4>Dr. Chen — capture all</h4>
+      <div class="who">Sensitivity</div>
+      <p>Hidden secondary proteins are the #1 reason a home trial silently fails. You can’t detect a contaminant you never recorded.</p>
+    </div>
+    <div>
+      <h4>Data Scientist — counterweight</h4>
+      <div class="who">Attribution</div>
+      <p>Co-occurring proteins are collinear — capturing more can muddy <em>which</em> protein is the culprit and bloat the exposure set.</p>
+    </div>
+    <div class="verdict-line">The resolution these mocks embody: <b>capture everything (wins exposure outright) — and when two proteins always travel together, name them jointly rather than crediting one falsely.</b></div>
+  </div>
+
+  <!-- ══════════════ 1 · PICKER ══════════════ -->
+  <h2><span class="num">1</span>Capturing the set<span class="phase-tag a">Phase A · PR 3</span></h2>
+  <p class="kicker">The single-select <span class="file">ProteinPicker</span> (B-332) becomes multi-select on the food-capture confirm step and the food-detail edit. The first protein is the “main” one — it stays the derived <span class="file">primary_protein</span> so every existing read keeps working. Wrapping chips, never an h-scroll (house rule B-146).</p>
+  <div class="option">
+    <div>
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots">● ● ●</span></div>
+          <div class="navbar"><span class="back">‹</span><span class="title">Edit food</span><span class="spacer"></span><span class="save">Save</span></div>
+          <div class="body-pad">
+            <div class="field"><div class="thumb"></div><div><div class="v">Zignature Duck Formula</div><div class="k" style="margin-top:2px">Dry · limited ingredient</div></div></div>
+
+            <div class="label">Main proteins</div>
+            <p class="hint">The animal proteins in this food. Tap all that apply — the first is the main one.</p>
+            <div class="chips">
+              <span class="chip on"><span class="tick">✓</span>Duck<span class="maintag">Main</span></span>
+              <span class="chip on"><span class="tick">✓</span>Chicken</span>
+              <span class="chip">Turkey</span>
+              <span class="chip">Beef</span>
+              <span class="chip">Lamb</span>
+              <span class="chip">Salmon</span>
+              <span class="chip">Whitefish</span>
+              <span class="chip">Rabbit</span>
+              <span class="chip">Venison</span>
+              <span class="chip other">+ Other</span>
+            </div>
+
+            <div class="note warn">
+              <span class="ico">i</span>
+              <div>
+                <div class="h">Nyx read “chicken by-product meal” from the label</div>
+                <p>I added <span class="b">Chicken</span> from the ingredients. Tap it to remove it if that’s wrong — I’ll never drop a protein you’ve set.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-caption">Food-detail edit, mid-selection. Duck is “Main”; Chicken was extracted as a secondary and can be corrected with one tap.</p>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><div><p class="ct">The first tap becomes the primary</p><p class="cd"><span class="file">proteins[0]</span> is the derived <span class="file">primary_protein</span> — the vet-report primary, the picker display, and every legacy read keep working unchanged. Additive, back-compat.</p></div></li>
+        <li><span class="co-num">2</span><div><p class="ct">Owner-picked and AI-extracted key identically</p><p class="cd">Both flow through the same <span class="file">canonicalizeProtein</span> — an owner chip and a model label can never fragment (the B-332 parity property, extended to the set).</p></div></li>
+        <li><span class="co-num guard">3</span><div><p class="ct">Never null-clobber an AI value</p><p class="cd">The picker reseeds from the full array and only writes on a tap — an AI-hydrated multi-protein set is never silently overwritten. A wrong extraction is corrected, not fought.</p></div></li>
+        <li><span class="co-num">4</span><div><p class="ct">Factual, never preference</p><p class="cd">Label is “Main proteins,” not “favorites.” Intake ≠ preference (B-112) is a separate axis; this field stays plainly descriptive. <span class="file">nyx-voice</span> pass.</p></div></li>
+      </ul>
+      <div class="decrow"><span class="dec">D4 · <b>proteins TEXT[]</b></span><span class="dec">wrapping ChipGroup</span><span class="dec">no schema in the picker PR</span></div>
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════ 2 · TRIAL CONTAMINANT ══════════════ -->
+  <h2><span class="num">2</span>The contaminant catch<span class="phase-tag a">Phase A · PR 4 · the wedge win</span></h2>
+  <p class="kicker">The highest-value slice is <em>deterministic</em> — no correlation to accumulate, no attribution ambiguity. When a pet is on a declared elimination trial and a food’s protein set contains a protein the trial should exclude, flag it the moment the data exists: at the confirm screen, and as a standing note on the diet-trial card.</p>
+  <div class="option">
+    <div>
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots">● ● ●</span></div>
+          <div class="navbar"><span class="back">‹</span><span class="title">Add this food?</span><span class="spacer"></span></div>
+          <div class="body-pad">
+            <div class="field"><div class="thumb"></div><div><div class="v">Zignature Duck Formula</div><div class="k" style="margin-top:2px">Dry · Duck, Chicken</div></div></div>
+
+            <div class="note warn" style="margin-top:18px">
+              <span class="ico">!</span>
+              <div>
+                <div class="h">Heads up — this food also lists chicken</div>
+                <p>Nyx’s elimination trial is on <span class="b">duck</span>. The chicken in here could keep the trial from giving a clean answer. Worth a word with your vet before you feed it.</p>
+              </div>
+            </div>
+
+            <div class="label" style="margin-top:22px">Active trial</div>
+            <div class="trialcard">
+              <div class="top"><span class="tt">Duck elimination</span><span class="pill">Day 24 of 56</span></div>
+              <div class="row"><span>Trial food</span><span class="v">Zignature Duck</span></div>
+              <div class="row"><span>Should exclude</span><span class="v">All but duck</span></div>
+              <div class="row" style="color:var(--warn)"><span>Flagged this food</span><span class="v" style="color:var(--warn)">Contains chicken</span></div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:20px">
+              <div style="flex:1;text-align:center;border:1px solid var(--hairline-strong);border-radius:12px;padding:13px;font-weight:600;color:var(--ink-2)">Not now</div>
+              <div style="flex:1;text-align:center;background:var(--accent-fill);border-radius:12px;padding:13px;font-weight:600;color:#fff">Add anyway</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-caption">Confirm screen for an off-trial food. The flag is factual and never blocks — the owner (and their vet) decide.</p>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num det">D</span><div><p class="ct">Deterministic — fires the instant the data exists</p><p class="cd">A set-membership check against the trial food’s own protein, not a statistical read. Near-zero risk, so it ships before the correlation work (D2).</p></div></li>
+        <li><span class="co-num det">D</span><div><p class="ct">Two contaminant shapes</p><p class="cd"><b>2a</b> — the <em>trial food itself</em> is multi-protein (this mock). <b>2b</b> — a <em>different</em> food logged during the trial carries a non-sanctioned protein. Both surface here.</p></div></li>
+        <li><span class="co-num guard">G</span><div><p class="ct">Descriptive, never alarmist — never reassuring</p><p class="cd">A calm “heads up,” not a klaxon; and a <em>clean</em> protein set is never an “all clear.” <span class="file">clinical-guardrails</span> + <span class="file">nyx-voice</span> mandatory.</p></div></li>
+        <li><span class="co-num">i</span><div><p class="ct">No <span class="file">diet_trials</span> schema change (D6)</p><p class="cd">v1 keys off the trial food’s own set vs. its novel protein — “all but duck.” An explicit excluded-protein list is a deferred enhancement.</p></div></li>
+      </ul>
+      <div class="decrow"><span class="dec">D2 · <b>pulled to Phase A</b></span><span class="dec">no block, owner decides</span><span class="dec">diet-trial card note</span></div>
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════ 3 · SIGNAL (JOINT CANDIDATE) ══════════════ -->
+  <h2><span class="num">3</span>Honest attribution on the Signal<span class="phase-tag">Phase B · PR 5 · adversarial-mandatory</span></h2>
+  <p class="kicker">This is the Data Scientist’s guardrail made visible. When two proteins <em>always</em> appear together in what the pet eats, the engine can’t separate them — so it names them <b>jointly</b> and says so, rather than crediting one falsely. The moment the diet varies (one fed without the other), attribution sharpens on its own.</p>
+  <div class="option">
+    <div>
+      <div class="phone">
+        <div class="screen night">
+          <div class="statusbar"><span>9:41</span><span class="dots">● ● ●</span></div>
+          <div class="signalcard">
+            <div class="eyebrow"><span class="dot"></span>Nyx · Signal</div>
+            <h3>Chicken and duck both track with Nyx’s vomiting.</h3>
+            <div class="joint">⛓ can’t yet separate — <b>chicken &amp; duck</b> always appear together</div>
+            <p>These two show up in the same meals, so I can’t tell which one is the trigger yet. Feeding one without the other — or asking your vet — would help tell them apart.</p>
+            <div class="prov">3 of 4 vomiting days followed a meal with both · 21 days<span class="chev">›</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-caption">Home Signal card, night ground. The joint chip is the attribution-honesty surface — never a single false culprit.</p>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num guard">G</span><div><p class="ct">Collinear proteins → one joint candidate</p><p class="cd">Proteins that always co-occur are counted as <em>one</em> cluster — which also keeps the Bonferroni family sized by discriminating clusters, not raw protein count. Kills the “4–5 proteins bloat the family” objection.</p></div></li>
+        <li><span class="co-num guard">G</span><div><p class="ct">Never credit one over its twin</p><p class="cd">The copy names both and says why they can’t be split. Associational only — “track with,” never “cause.” The existing <span class="file">validatePhrasing</span> guardrails hold.</p></div></li>
+        <li><span class="co-num">1</span><div><p class="ct">Set-membership, not primary-only</p><p class="cd">The hidden secondary now <em>enters</em> the exposure set — the sensitivity win. Omnipresent staples still wash out (B-070); a protein that discriminates earns clean attribution.</p></div></li>
+        <li><span class="co-num guard">G</span><div><p class="ct">The diet varying is the unlock</p><p class="cd">The card points at the one action that separates them. This is honest uncertainty guiding a next step — never reassurance about the other protein.</p></div></li>
+      </ul>
+      <div class="decrow"><span class="dec">D5 · <b>joint-candidate copy</b></span><span class="dec">deploy-gated on the renderer</span><span class="dec">adversarial-reviewer MANDATORY</span></div>
+    </div>
+  </div>
+
+  <hr class="div">
+
+  <!-- ══════════════ 4 · VET REPORT ══════════════ -->
+  <h2><span class="num">4</span>The full exposure, for the vet<span class="phase-tag">Phase B · PR 6 · cold-read gated</span></h2>
+  <p class="kicker">The vet otherwise reconstructs this by hand from the ingredient panel. The report renders the full protein set per food — primary emphasized, secondaries listed — and marks a contaminant under an active trial. Clinical, never causal; every existing <span class="file">primary_protein</span> read still works because it’s <span class="file">proteins[0]</span>.</p>
+  <div class="option">
+    <div>
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots">● ● ●</span></div>
+          <div class="report">
+            <div class="rpt-h">Diet &amp; protein exposure</div>
+            <div class="trialband">Under an active <b>duck elimination trial</b> · Jun 3 – Jul 29 (Day 24 of 56)</div>
+            <table>
+              <tr>
+                <td class="food">Zignature Duck Formula<small>Dry · fed daily · 47 meals</small></td>
+                <td><div class="prot"><span class="ptag primary">Duck</span><span class="ptag flag">Chicken *</span></div></td>
+              </tr>
+              <tr>
+                <td class="food">Blue Wilderness Salmon<small>Topper · 6 meals</small></td>
+                <td><div class="prot"><span class="ptag primary">Salmon</span></div></td>
+              </tr>
+              <tr>
+                <td class="food">Milk-Bone biscuit<small>Treat · 11 given</small></td>
+                <td><div class="prot"><span class="ptag primary">Chicken *</span><span class="ptag">Beef *</span></div></td>
+              </tr>
+            </table>
+            <div class="fnote"><span class="star">*</span><span>Protein present in a food fed during the duck elimination trial and not on the trial diet. Chicken appears in the trial food itself (secondary) and in a treat.</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-caption">Report diet section. Secondaries are listed; the <b>*</b> marks off-trial protein exposure the vet would want at a glance.</p>
+    </div>
+    <div>
+      <ul class="callouts">
+        <li><span class="co-num">1</span><div><p class="ct">Complete exposure, not just the headline protein</p><p class="cd">The chicken in a “duck” food and in a “meaty” treat is exactly what a vet needs to see — and exactly what primary-only hides today.</p></div></li>
+        <li><span class="co-num">2</span><div><p class="ct">Primary stays emphasized</p><p class="cd">Visual weight tracks prominence (<span class="file">proteins[0]</span> bold); secondaries are quiet. The report adds detail, it doesn’t rework the primary path.</p></div></li>
+        <li><span class="co-num det">D</span><div><p class="ct">Contaminant marked, never diagnosed</p><p class="cd">The <b>*</b> is a factual “off-trial protein present” line, not a causal claim. Composes with the existing off-diet / free-fed surfacing (§9).</p></div></li>
+        <li><span class="co-num guard">G</span><div><p class="ct">Colour never load-bearing</p><p class="cd">The amber <b>*</b> tag also carries the glyph + footnote, so it survives a B&amp;W photocopy (the §5.8 carve-out already ratified). <span class="file">vet-report-cold-read</span> gate.</p></div></li>
+      </ul>
+      <div class="decrow"><span class="dec">renders the set</span><span class="dec">absorbs the ingredient panel</span><span class="dec">B-048 canonicalization (D3)</span></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <p><b>What these mocks decide vs. defer.</b> They embody the provisional rulings D1 (capture all, phased), D2 (contaminant check first), D4 (<span class="file">proteins TEXT[]</span>), and D5 (joint-candidate copy). Still yours to rule before the spec locks: the core D1 sensitivity-vs-attribution call, D5 copy (Dr. Chen + Designer), and D6 (no explicit excluded-protein list in v1). Full rationale + the 6-PR plan: <span class="file">docs/nyx-multi-protein-requirements.md</span> · tracked as B-351.</p>
+  </div>
+
+</div>
