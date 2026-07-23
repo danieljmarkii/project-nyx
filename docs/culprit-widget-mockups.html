@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culprit — Home Screen Widget mockups (ideation round 1)</title>
+<style>
+  /* Fonts approximate the real stack: Geist → -apple-system/Inter; Newsreader → Georgia.
+     Tokens below are lifted verbatim from constants/theme.ts. */
+  :root {
+    --accent: #00C2A8;
+    --accent-soft: #86D9CC;
+    --accent-light: #E0FBF7;
+    --neutral-dark: #0A0A0A;
+    --text-primary: #0A0A0A;
+    --text-secondary: #525252;
+    --text-tertiary: #737373;
+    --surface: #FFFFFF;
+    --surface-subtle: #F5F5F5;
+    --border: #EAEAEA;
+    --night: #13112E;
+    --night-elevated: #251F57;
+    --moonlight: #F2EEE4;
+    --text-on-night: #ECEAF6;
+    --text-on-night-muted: #A6A2CE;
+    --text-on-night-faint: #706BA6;
+    --border-on-night: rgba(196,190,255,0.16);
+    --crescent-on-light: #211E4E;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    background: #F0EFEA;
+    color: var(--text-primary);
+    padding: 40px 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 900px; margin: 0 auto; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 34px; letter-spacing: -0.3px; margin-bottom: 6px; }
+  .sub { color: var(--text-secondary); font-size: 15px; line-height: 1.5; max-width: 640px; margin-bottom: 8px; }
+  .meta { color: var(--text-tertiary); font-size: 12.5px; margin-bottom: 40px; }
+  section { margin-bottom: 64px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--text-tertiary); font-weight: 600; margin-bottom: 6px; }
+  h3 { font-size: 21px; font-weight: 600; letter-spacing: -0.2px; margin-bottom: 10px; }
+  .concept-note { color: var(--text-secondary); font-size: 14.5px; line-height: 1.55; max-width: 680px; margin-bottom: 24px; }
+  .concept-note strong { color: var(--text-primary); }
+
+  /* wallpaper strip that widgets sit on */
+  .shelf {
+    background: linear-gradient(135deg, #C9D6D2 0%, #AEC3C9 55%, #93A8B8 100%);
+    border-radius: 28px;
+    padding: 36px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    align-items: flex-start;
+  }
+  .shelf.night-wall { background: linear-gradient(160deg, #2A2650 0%, #16132F 70%, #0E0C22 100%); }
+  .widget-stack { display: flex; flex-direction: column; gap: 8px; }
+  .widget-label { font-size: 11.5px; color: rgba(255,255,255,0.85); text-shadow: 0 1px 2px rgba(0,0,0,0.25); font-weight: 500; text-align: center; }
+
+  /* iOS widget frames (approx. proportions; systemSmall 158pt, systemMedium 338×158pt) */
+  .w-small  { width: 172px; height: 172px; border-radius: 26px; }
+  .w-medium { width: 364px; height: 172px; border-radius: 26px; }
+  .widget {
+    background: var(--surface);
+    box-shadow: 0 8px 24px rgba(10,10,10,0.18);
+    padding: 16px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    position: relative;
+  }
+  .widget.night { background: var(--night); }
+
+  /* crescent mark (approximation of CulpritMark) */
+  .crescent { width: 14px; height: 14px; border-radius: 50%; position: relative; overflow: hidden; flex: none; }
+  .crescent::before { content:""; position:absolute; inset:0; border-radius:50%; background: var(--crescent-on-light); }
+  .crescent::after  { content:""; position:absolute; top:-3px; left:4px; width:12px; height:12px; border-radius:50%; background: var(--surface); }
+  .night .crescent::before { background: var(--moonlight); }
+  .night .crescent::after  { background: var(--night); }
+
+  .w-head { display:flex; align-items:center; gap:6px; margin-bottom: 10px; }
+  .w-pet { font-size: 13px; font-weight: 600; letter-spacing: -0.1px; }
+  .night .w-pet { color: var(--text-on-night); }
+  .w-head .spacer { flex: 1; }
+  .w-time { font-size: 10.5px; color: var(--text-tertiary); }
+
+  /* slot rows */
+  .slot { display:flex; align-items:center; gap:8px; padding: 4px 0; font-size: 13.5px; }
+  .slot .tick { width:18px; height:18px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:11px; }
+  .tick.done { background: var(--accent-light); color: #0B7B6C; }
+  .tick.open { border: 1.5px dashed #C9C9C9; color: transparent; }
+  .slot .name { font-weight: 500; }
+  .slot .when { color: var(--text-tertiary); font-size: 12px; margin-left:auto; }
+  .slot.pending .name { color: var(--text-secondary); }
+  .med { display:flex; align-items:center; gap:8px; margin-top:6px; padding-top:8px; border-top:1px solid var(--border); font-size:12.5px; color: var(--text-secondary); }
+  .med .pill { width:16px; height:9px; border:1.5px solid var(--text-tertiary); border-radius:5px; flex:none; }
+
+  /* action buttons (App Intent buttons) */
+  .actions { display:flex; flex-direction:column; gap:10px; justify-content:center; }
+  .btn {
+    border-radius: 14px; padding: 12px 14px;
+    font-size: 13.5px; font-weight: 600; text-align:center;
+    background: var(--surface-subtle); border: 1px solid var(--border);
+  }
+  .btn.accent { background: var(--accent); color: #0A0A0A; border-color: var(--accent); }
+  .btn .sub-line { display:block; font-weight:400; font-size:10.5px; color: var(--text-tertiary); margin-top:2px; }
+  .btn.accent .sub-line { color: rgba(10,10,10,0.65); }
+
+  /* small treat widget */
+  .treat-center { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
+  .treat-ring { width:64px; height:64px; border-radius:50%; background: var(--accent-light); border: 2px solid var(--accent); display:flex; align-items:center; justify-content:center; font-size:26px; }
+  .treat-cta { font-size:14px; font-weight:600; }
+  .treat-count { font-size:11.5px; color: var(--text-tertiary); }
+
+  /* trial progress widget */
+  .trial-num { font-family: Georgia, serif; font-size: 44px; line-height: 1.05; letter-spacing: -0.5px; }
+  .trial-num .of { font-size: 20px; color: var(--text-tertiary); }
+  .night .trial-num { color: var(--moonlight); }
+  .night .trial-num .of { color: var(--text-on-night-muted); }
+  .trial-line { font-size: 12px; color: var(--text-secondary); margin-top: 6px; line-height:1.4; }
+  .night .trial-line { color: var(--text-on-night-muted); }
+  .trial-bar { margin-top:auto; height: 5px; border-radius: 3px; background: var(--surface-subtle); overflow:hidden; }
+  .night .trial-bar { background: rgba(255,255,255,0.08); }
+  .trial-bar i { display:block; height:100%; width:43%; background: var(--accent); border-radius:3px; }
+
+  /* lock screen accessories */
+  .lockwall { background: linear-gradient(180deg, #1B2735 0%, #090A0F 100%); border-radius: 28px; padding: 40px 36px; display:flex; flex-direction:column; align-items:center; gap:20px; }
+  .lock-clock { font-family: -apple-system, sans-serif; font-size: 64px; font-weight: 250; color: rgba(255,255,255,0.92); letter-spacing: -1px; }
+  .acc-rect { width: 172px; height: 56px; border-radius: 14px; background: rgba(255,255,255,0.14); backdrop-filter: blur(6px); padding: 9px 12px; color: rgba(255,255,255,0.95); }
+  .acc-rect .l1 { font-size: 11px; font-weight: 600; display:flex; align-items:center; gap:5px; }
+  .acc-rect .l2 { font-size: 12.5px; margin-top: 3px; color: rgba(255,255,255,0.75); }
+  .acc-circ { width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.14); display:flex; flex-direction:column; align-items:center; justify-content:center; color: rgba(255,255,255,0.95); }
+  .acc-circ .n { font-size: 15px; font-weight: 600; }
+  .acc-circ .d { font-size: 8.5px; color: rgba(255,255,255,0.7); }
+  .acc-row { display:flex; gap:16px; align-items:center; }
+  .acc-crescent { width:11px; height:11px; }
+  .acc-crescent::before { background: rgba(255,255,255,0.95); }
+  .acc-crescent::after { background: #14161c; top:-2.5px; left:3.5px; width:9.5px; height:9.5px; }
+
+  /* annotations */
+  .annos { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
+  .anno { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+  .anno b { display:block; color: var(--text-primary); margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
+  .anno.flag { border-color: #F3D9A4; background: #FDF8EC; }
+
+  .rules { background: var(--surface); border:1px solid var(--border); border-radius: 16px; padding: 20px 24px; max-width: 760px; }
+  .rules li { margin: 8px 0 8px 18px; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+  .rules li strong { color: var(--text-primary); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Culprit — Home Screen Widget</h1>
+  <p class="sub">Ideation round 1 · four converged candidates for the team + PM to react to. All copy is draft (nyx-voice pass pending). Widget frames approximate iOS systemSmall / systemMedium / Lock&nbsp;Screen accessory proportions; Geist/Newsreader approximated with system faces.</p>
+  <p class="meta">2026-07-23 · pairs with the ideation session notes · tokens verbatim from <code>constants/theme.ts</code> · not yet committed</p>
+
+  <!-- ================= CANDIDATE A ================= -->
+  <section>
+    <h2>Candidate A — flagship</h2>
+    <h3>“Today + Log” medium widget</h3>
+    <p class="concept-note">The discovery's two highest-leverage jobs in one surface: <strong>ambient visibility</strong> (today's slots answer “did you log it?” without opening the app — the kitchen-counter accountability question) and <strong>one-press capture</strong> (treat + meal buttons run App Intents in-process; no app launch). Unconfirmed slots render as an honest gap — never an assumed ✓.</p>
+    <div class="shelf">
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div style="display:flex; gap:18px; flex:1;">
+            <div style="flex:1.4; display:flex; flex-direction:column;">
+              <div class="w-head">
+                <div class="crescent"></div>
+                <span class="w-pet">Biscuit</span>
+                <span class="spacer"></span>
+                <span class="w-time">Day 12 of 28</span>
+              </div>
+              <div class="slot">
+                <span class="tick done">✓</span>
+                <span class="name">Breakfast</span>
+                <span class="when">7:42a</span>
+              </div>
+              <div class="slot pending">
+                <span class="tick open">·</span>
+                <span class="name">Dinner</span>
+                <span class="when">usually ~6p</span>
+              </div>
+              <div class="med">
+                <span class="pill"></span>
+                <span>Amoxicillin — day 3 of 10</span>
+              </div>
+            </div>
+            <div class="actions" style="flex:1;">
+              <div class="btn accent">Log a treat<span class="sub-line">one tap · edit later in app</span></div>
+              <div class="btn">Log a meal</div>
+            </div>
+          </div>
+        </div>
+        <div class="widget-label">systemMedium · interactive (iOS 17+) · day ground</div>
+      </div>
+    </div>
+    <div class="annos">
+      <div class="anno"><b>Jordan</b>The treat button is the whole point — the 5-second event I never log. One press while holding the dog, fix details later.</div>
+      <div class="anno"><b>Data Scientist</b>Slot state comes from logged events only. A treat tap writes <code>logged_via='widget'</code> with assumed portion and <em>no</em> intake_rating — it is not a witnessed rating and the engine must know that.</div>
+      <div class="anno"><b>Dr. Chen</b>“Day 3 of 10” on the med line is state, not a verdict. No adherence % on a glanceable surface.</div>
+      <div class="anno flag"><b>Open — what does one press record?</b>Treat: most-recent treat item, or a generic “treat” needing later attribution? Meal: log immediately with the usual food, or deep-link into quick-log? Principle 1 says decide nothing at the moment of event — the team leans log-now-with-defaults + easy edit.</div>
+    </div>
+  </section>
+
+  <!-- ================= CANDIDATE B ================= -->
+  <section>
+    <h2>Candidate B</h2>
+    <h3>Small one-press treat logger</h3>
+    <p class="concept-note">The single-purpose version: <strong>a treat jar on the Home Screen</strong>. Attacks the highest-clinical-stakes class (spontaneous-micro — the diet-trial contaminant) with the biggest possible tap target. The same <code>LogTreat</code> App Intent powers Siri, an NFC sticker on the real treat jar, Action Button, and Back Tap for free.</p>
+    <div class="shelf">
+      <div class="widget-stack">
+        <div class="widget w-small">
+          <div class="w-head">
+            <div class="crescent"></div>
+            <span class="w-pet">Biscuit</span>
+          </div>
+          <div class="treat-center">
+            <div class="treat-ring">🦴</div>
+            <div class="treat-cta">Log a treat</div>
+            <div class="treat-count">2 logged today</div>
+          </div>
+        </div>
+        <div class="widget-label">systemSmall · interactive · one intent</div>
+      </div>
+    </div>
+    <div class="annos">
+      <div class="anno"><b>Sam (cat)</b>For me this button is “a few kibbles off-plan,” not a bone icon — the icon/copy needs a species-aware pass.</div>
+      <div class="anno"><b>Engineer</b>Cheapest interactive widget we could ship; a good thin-slice proof of the whole out-of-app write path (B-290).</div>
+      <div class="anno flag"><b>Open — count visibility</b>“2 logged today” is useful state but flirts with scorekeeping in a shared household. Pet-centric only, never “logged by Dan: 1, Sarah: 1.”</div>
+    </div>
+  </section>
+
+  <!-- ================= CANDIDATE C ================= -->
+  <section>
+    <h2>Candidate C</h2>
+    <h3>Small trial-record widget — the quiet brand moment</h3>
+    <p class="concept-note">Bounded-goal <strong>record-completeness feedback</strong> (“this is exactly what your vet needs”), never streaks. This is where “keep Culprit top of mind” lives without a single notification: the crescent on the Home Screen every day. Shown on both grounds — the night variant is a genuine open question against the brand rule (<em>night appears only where the app is working on the pet's behalf</em>).</p>
+    <div class="shelf night-wall">
+      <div class="widget-stack">
+        <div class="widget w-small">
+          <div class="w-head">
+            <div class="crescent"></div>
+            <span class="w-pet">Biscuit</span>
+          </div>
+          <div style="margin-top:6px;">
+            <div class="trial-num">12<span class="of"> / 28</span></div>
+            <div class="trial-line">trial days logged so far</div>
+          </div>
+          <div class="trial-bar"><i></i></div>
+        </div>
+        <div class="widget-label">day ground</div>
+      </div>
+      <div class="widget-stack">
+        <div class="widget w-small night">
+          <div class="w-head">
+            <div class="crescent"></div>
+            <span class="w-pet">Biscuit</span>
+          </div>
+          <div style="margin-top:6px;">
+            <div class="trial-num">12<span class="of"> / 28</span></div>
+            <div class="trial-line">trial days logged so far</div>
+          </div>
+          <div class="trial-bar"><i></i></div>
+        </div>
+        <div class="widget-label">night ground — open brand question</div>
+      </div>
+    </div>
+    <div class="annos">
+      <div class="anno"><b>Designer</b>The night ground is the more distinctive Home-Screen object — but the carve rule says night = the app working on the pet's behalf. A record-state widget may not qualify. Needs the same ground call as the Signal card (D8's sibling).</div>
+      <div class="anno"><b>No trial running?</b>The widget falls back to the Today-slot state (Candidate A's left column, small). Empty states are features — it never says “start a trial” (no upsell, no firehose).</div>
+      <div class="anno flag"><b>Open — “logged” vs “complete”</b>Copy must count <em>days with a record</em>, never imply the trial is going <em>well</em>. “12/28 logged” is honest; a progress ring that reads as “health progress” is not.</div>
+    </div>
+  </section>
+
+  <!-- ================= CANDIDATE D ================= -->
+  <section>
+    <h2>Candidate D</h2>
+    <h3>Lock Screen accessories</h3>
+    <p class="concept-note">Glance + fast-launch (button interactivity on the Lock Screen is a <strong>verify-in-spike</strong>, not assumed). Monochrome by platform convention. The rectangular answers “did anyone feed her?” from a raised wrist/pocket glance; the circular is the trial-day counter.</p>
+    <div class="lockwall">
+      <div class="lock-clock">9:41</div>
+      <div class="acc-row">
+        <div class="acc-rect">
+          <div class="l1"><div class="crescent acc-crescent"></div> BISCUIT</div>
+          <div class="l2">Dinner — not yet · Amoxicillin 6p</div>
+        </div>
+        <div class="acc-circ">
+          <div class="n">12/28</div>
+          <div class="d">logged</div>
+        </div>
+      </div>
+    </div>
+    <div class="annos">
+      <div class="anno"><b>Trust &amp; Safety</b>Lock Screen = visible before auth, to anyone holding the phone. Pet-health data is low-sensitivity but the rule is set now: slot state + counts only; never symptom text, never AI-read language on a pre-auth surface.</div>
+      <div class="anno"><b>Engineer</b>accessoryRectangular / accessoryCircular / accessoryInline all supported by expo-widgets. Cheap once the widget target exists.</div>
+    </div>
+  </section>
+
+  <!-- ================= RULES ================= -->
+  <section>
+    <h2>Held constant across every candidate</h2>
+    <div class="rules">
+      <ul>
+        <li><strong>Fail-safe honesty (B-156 G1 generalized):</strong> no surface ever assumes an event into existence. An unconfirmed slot is a visible gap, not a ✓.</li>
+        <li><strong>Provenance:</strong> every widget write carries <code>logged_via='widget'</code> (B-289 lands first — unbackfillable later).</li>
+        <li><strong>Never reassures:</strong> no “all clear,” no “Biscuit is doing great,” no Signal/AI-read copy in v1 (a widget's refresh cadence can leave a clinical sentence stale on the Home Screen — deliberately deferred, see session notes).</li>
+        <li><strong>No monetization state</strong> (D5 parity with Home): the widget never badges, upsells, or caps.</li>
+        <li><strong>Silent by design:</strong> a widget is the anti-nag surface — zero notifications, Principle 4 untouched.</li>
+        <li><strong>One accent:</strong> teal on interactive elements only; everything else neutral (or the night palette if ratified).</li>
+      </ul>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
