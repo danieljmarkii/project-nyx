@@ -150,6 +150,12 @@ export async function initDb(): Promise<void> {
       -- archived — filtered out of picker/library reads ONLY, never history/
       -- analytics/report joins. Per-user by construction (row is account-scoped).
       archived_at     TEXT,
+      -- B-351: mirrors food_items.proteins (migration 039) — the prominence-
+      -- ordered canonical protein keys, stored as a JSON-array string (SQLite has
+      -- no array type). Encode/decode ONLY via proteinsToCacheText /
+      -- proteinsFromCacheText (lib/protein.ts). NULL = not yet hydrated; '[]' =
+      -- known protein-less.
+      proteins        TEXT,
       cached_at       TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -278,6 +284,15 @@ export async function initDb(): Promise<void> {
   // at picker/library reads only, never on history/analytics/report joins.
   try {
     await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN archived_at TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
+  // proteins — B-351 multi-protein set. Mirrors food_items.proteins (migration
+  // 039) as a JSON-array string of canonical protein keys. Nullable; legacy rows
+  // stay NULL (= not yet hydrated) until the next refreshFoodCache writes them.
+  try {
+    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN proteins TEXT`);
   } catch {
     // Column already exists — safe to ignore
   }

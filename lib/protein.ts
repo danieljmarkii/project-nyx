@@ -100,6 +100,45 @@ const TRAILING_QUALIFIER = /(?:^|\s+)(by-product meal|by-product|meal)$/;
  *   "meal"                     → null   (qualifier with no protein left)
  *   null | undefined           → null
  */
+// ── proteins cache-column shape (B-351 Phase A, PR 1) ──────────────────────────
+// The server's `food_items.proteins TEXT[]` (migration 039) mirrors into the
+// SQLite `food_items_cache.proteins` column as a JSON-array string — SQLite has
+// no array type, and a JSON string round-trips through the existing TEXT-column
+// sync plumbing with zero schema machinery. These two helpers are the ONLY
+// sanctioned way across that boundary, so every reader/writer agrees on one
+// encoding (they live here, next to the keying they carry, and stay
+// dependency-free for the same client/Deno dual-import reason as the rest of
+// this module).
+//
+// Column semantics: NULL = not yet hydrated (a legacy cache row that predates
+// the column — unknown, reads as []); '[]' = KNOWN-empty (the server said this
+// food has no captured proteins). The distinction only matters to the writer —
+// readers treat both as "no exposure to count".
+
+/** Serialize a server `proteins` value for the food_items_cache TEXT column.
+ *  Tolerant of the untyped PostgREST payload: a non-array (missing column on a
+ *  skewed client, unexpected shape) serializes to null (= unknown) rather than
+ *  inventing a known-empty set; non-string elements are dropped. */
+export function proteinsToCacheText(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  return JSON.stringify(value.filter((p): p is string => typeof p === 'string'));
+}
+
+/** Parse a food_items_cache `proteins` TEXT value back to the ordered key array.
+ *  Never throws: NULL, malformed JSON, or a non-array all read as [] — a cache
+ *  decode failure must degrade to "protein-unknown", never crash a read path or
+ *  fabricate an exposure. Non-string elements are dropped. */
+export function proteinsFromCacheText(text: string | null | undefined): string[] {
+  if (text == null) return [];
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((p): p is string => typeof p === 'string');
+  } catch {
+    return [];
+  }
+}
+
 export function canonicalizeProtein(raw: string | null | undefined): string | null {
   if (raw == null) return null;
 
