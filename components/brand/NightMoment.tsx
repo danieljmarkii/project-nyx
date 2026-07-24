@@ -138,7 +138,7 @@ export function NightMoment({ visible, title, subtitle }: NightMomentProps) {
 
 const styles = StyleSheet.create({
   fill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: theme.colorBrandNight,
     // Above the Stack/Toast layers, matching ColdStartOverlay's takeover z.
     zIndex: 100,

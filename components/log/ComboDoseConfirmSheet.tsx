@@ -69,7 +69,7 @@ export function ComboDoseConfirmSheet({ visible, petName, foodName, onAnswer, on
 
 const styles = StyleSheet.create({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: theme.colorScrim,
   },
   sheet: {

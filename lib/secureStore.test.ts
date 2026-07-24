@@ -17,7 +17,7 @@ jest.mock('expo-secure-store', () => ({
   AFTER_FIRST_UNLOCK: 'after-first-unlock',
 }));
 
-const utf8Bytes = (v: string) => Buffer.byteLength(v, 'utf8');
+const utf8Bytes = (v: string) => new TextEncoder().encode(v).length;
 
 // Reinstall the default (happy-path) mock implementations. Tests that need to
 // simulate a mid-write crash override setItemAsync after calling this.
