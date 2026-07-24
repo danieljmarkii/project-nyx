@@ -1,6 +1,16 @@
 import { ChunkedSecureStoreAdapter, keyKind } from './secureStore';
 import * as SecureStore from 'expo-secure-store';
 
+// secureStore now imports lib/appGroup (for the shared access-group id — W3),
+// which imports expo-file-system; that native module doesn't resolve under
+// jest-expo's node runner, and nothing in this suite touches the container, so
+// an import-graph stub is sufficient (the cacheFlush.test.ts pattern).
+jest.mock('expo-file-system', () => ({
+  Directory: class {},
+  File: class {},
+  Paths: { appleSharedContainers: {} },
+}));
+
 // In-memory keystore standing in for expo-secure-store. It faithfully models the
 // one property that drives this module's whole reason to exist — a per-value size
 // ceiling — so the large-value test actually exercises the chunking rather than
@@ -103,15 +113,29 @@ describe('ChunkedSecureStoreAdapter round-trip', () => {
   });
 });
 
-describe('overwrite and cleanup', () => {
-  it('cleans up the previous generation when a later value is shorter', async () => {
-    await ChunkedSecureStoreAdapter.setItem(KEY, 'z'.repeat(3000)); // several chunks
-    await ChunkedSecureStoreAdapter.setItem(KEY, 'small'); // one chunk
+describe('overwrite, retention, and cleanup', () => {
+  it('RETAINS the just-superseded generation (a concurrent extension reader may still be mid-read)', async () => {
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'z'.repeat(3000)); // gen 0, several chunks
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'small'); // gen 1
 
     expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('small');
-    // No stale chunk fragments from the previous (generation-0) write remain.
-    const oldGenChunks = [...store.keys()].filter((k) => k.includes('__g0_c'));
-    expect(oldGenChunks).toHaveLength(0);
+    // Gen 0's chunks survive one write: the W4 extension reads from another OS
+    // process with no lock, so a reader that grabbed the gen-0 pointer just
+    // before the commit must still be able to finish reading gen 0's chunks.
+    const gen0Chunks = [...store.keys()].filter((k) => k.includes('__g0_c'));
+    expect(gen0Chunks.length).toBeGreaterThan(0);
+  });
+
+  it('prunes a generation once it is TWO writes old (no unbounded keychain growth)', async () => {
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'z'.repeat(3000)); // gen 0
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'small'); // gen 1 (retains gen 0)
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'smaller'); // gen 2 (prunes gen 0, retains gen 1)
+
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('smaller');
+    const gen0Chunks = [...store.keys()].filter((k) => k.includes('__g0_c'));
+    expect(gen0Chunks).toHaveLength(0);
+    const gen1Chunks = [...store.keys()].filter((k) => k.includes('__g1_c'));
+    expect(gen1Chunks.length).toBeGreaterThan(0); // the newly retained one
   });
 });
 
@@ -163,12 +187,13 @@ describe('torn / partial writes (atomicity)', () => {
     // Commit an initial session.
     await ChunkedSecureStoreAdapter.setItem(KEY, 'OLD'.repeat(1200)); // multi-chunk
 
-    // Simulate the app being killed mid-refresh: the 2nd chunk write of the NEW
-    // value throws (process death) before the pointer-commit line is reached.
+    // Simulate the app being killed mid-refresh: from the 2nd chunk write of the
+    // NEW value onwards, NOTHING more lands (process death) — including the
+    // tier-fallback retry the W3 adapter would otherwise make on a mere error.
     let writes = 0;
     (SecureStore.setItemAsync as jest.Mock).mockImplementation(async (k: string, v: string) => {
       writes += 1;
-      if (writes === 2) throw new Error('process killed mid-write');
+      if (writes >= 2) throw new Error('process killed mid-write');
       store.set(k, v);
     });
 
@@ -178,6 +203,26 @@ describe('torn / partial writes (atomicity)', () => {
     // new-chunk-0 + stale-old-chunk-1, and never a corrupt non-null blob.
     installStoreMocks(); // restore normal reads
     expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('OLD'.repeat(1200));
+  });
+
+  it('a transient shared-tier error mid-write still lands the NEW session (fallback commit is readable)', async () => {
+    // Distinct from process death above: the write ERRORS but the process lives.
+    // The adapter retries on the local tier and must then clear the stale shared
+    // copy — otherwise the reader (which prefers shared) would resurrect OLD.
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'OLD'.repeat(1200));
+
+    let sharedWrites = 0;
+    (SecureStore.setItemAsync as jest.Mock).mockImplementation(
+      async (k: string, v: string, opts?: { accessGroup?: string }) => {
+        if (opts?.accessGroup && ++sharedWrites >= 2) throw new Error('transient keychain error');
+        store.set(k, v);
+      },
+    );
+
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'NEW'.repeat(1200));
+
+    installStoreMocks();
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('NEW'.repeat(1200));
   });
 
   it('serves the new session when a crash lands after commit but during cleanup', async () => {
@@ -197,8 +242,9 @@ describe('torn / partial writes (atomicity)', () => {
 
   it('returns null when a live chunk is missing (torn cleanup), rather than a truncated value', async () => {
     await ChunkedSecureStoreAdapter.setItem(KEY, 'a'.repeat(3000));
-    // Simulate a lost chunk in the live generation.
-    store.delete(`${KEY}__g0_c1`);
+    // Simulate a lost chunk in the live generation (the shared tier on iOS —
+    // the jest-expo default platform — so the shared-tier key name).
+    store.delete(sharedChunkKeyFor(KEY, 0, 1));
     expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBeNull();
   });
 
@@ -227,7 +273,9 @@ describe('keychain accessibility (locked-device fix)', () => {
     const calls = (SecureStore.setItemAsync as jest.Mock).mock.calls;
     expect(calls.length).toBeGreaterThan(1); // several chunks + the pointer commit
     for (const call of calls) {
-      expect(call[2]).toEqual({ keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK });
+      // Regardless of tier (shared carries accessGroup too — W3), the
+      // accessibility class must ride every single write.
+      expect(call[2].keychainAccessible).toBe(SecureStore.AFTER_FIRST_UNLOCK);
     }
   });
 });
@@ -238,8 +286,106 @@ describe('absent key', () => {
   });
 });
 
-// Mirror of the module-private pointer key derivation, for tests that seed a
-// corrupted pointer directly.
+describe('shared keychain tier (B-290 W3 — App Group session sharing)', () => {
+  // The jest-expo default platform is iOS, so the shared tier is preferred.
+
+  it('commits new writes to the shared-tier key namespace with the App Group access group', async () => {
+    // Scope the call assertions to THIS test — mock call history accumulates
+    // across the earlier suites (which include deliberate local-tier fallbacks).
+    (SecureStore.setItemAsync as jest.Mock).mockClear();
+    await ChunkedSecureStoreAdapter.setItem(KEY, 's'.repeat(3000));
+
+    // The live value lives at the __ag__ names…
+    expect(store.has(sharedPointerKeyFor(KEY))).toBe(true);
+    expect(store.has(pointerKeyFor(KEY))).toBe(false); // never the local names
+    // …and every write to it carried the App Group as its access group, which is
+    // what actually makes the extension able to read the session (spec §8).
+    for (const call of (SecureStore.setItemAsync as jest.Mock).mock.calls) {
+      expect(call[2].accessGroup).toBe('group.com.projectnyx.app');
+    }
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('s'.repeat(3000));
+  });
+
+  it('reads a pre-W3 local-tier session (no forced logout on upgrade)', async () => {
+    // Seed the pre-W3 shape: a committed local-tier chunked value, no shared tier.
+    store.set(pointerKeyFor(KEY), '0:2');
+    store.set(`${KEY}__g0_c0`, 'OLD-');
+    store.set(`${KEY}__g0_c1`, 'SESSION');
+
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('OLD-SESSION');
+  });
+
+  it('migrates a local-tier session to the shared tier on the next write, clearing the local copy', async () => {
+    store.set(pointerKeyFor(KEY), '0:1');
+    store.set(`${KEY}__g0_c0`, 'OLD-SESSION');
+
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'REFRESHED-SESSION');
+
+    // The refreshed session is live in the shared tier; the local copy is gone,
+    // so a later shared-tier read failure can never resurrect the stale token.
+    expect(store.has(sharedPointerKeyFor(KEY))).toBe(true);
+    expect(store.has(pointerKeyFor(KEY))).toBe(false);
+    expect(store.has(`${KEY}__g0_c0`)).toBe(false);
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('REFRESHED-SESSION');
+  });
+
+  it('falls back to the local tier when shared-group writes fail (missing entitlement), losing nothing', async () => {
+    // Simulate a binary without the App Group entitlement: any write that names
+    // the access group throws errSecMissingEntitlement-style.
+    (SecureStore.setItemAsync as jest.Mock).mockImplementation(
+      async (k: string, v: string, opts?: { accessGroup?: string }) => {
+        if (opts?.accessGroup) throw new Error('errSecMissingEntitlement');
+        store.set(k, v);
+      },
+    );
+
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'ENTITLEMENT-LESS-SESSION');
+
+    // The session landed in the local tier — the pre-W3 behavior, not a lost
+    // session (the frequent-signin class this fallback exists to prevent).
+    expect(store.has(pointerKeyFor(KEY))).toBe(true);
+    expect(store.has(sharedPointerKeyFor(KEY))).toBe(false);
+    installStoreMocks();
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('ENTITLEMENT-LESS-SESSION');
+  });
+
+  it('removeItem clears BOTH tiers and the legacy key — sign-out leaves nothing in the shared group', async () => {
+    // A messy real-world state: legacy copy + stale local tier + live shared tier.
+    store.set(KEY, 'legacy');
+    store.set(pointerKeyFor(KEY), '0:1');
+    store.set(`${KEY}__g0_c0`, 'stale-local');
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'live-shared');
+
+    await ChunkedSecureStoreAdapter.removeItem(KEY);
+
+    // Nothing survives in ANY namespace: the shared-group copy is exactly what
+    // the extension reads, so sign-out must reach it too.
+    expect(store.size).toBe(0);
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBeNull();
+  });
+
+  it('prefers the shared tier over a stale local copy when both exist', async () => {
+    // A crashed cleanup can leave both tiers committed; the shared one is by
+    // construction the newer write and must win.
+    store.set(pointerKeyFor(KEY), '0:1');
+    store.set(`${KEY}__g0_c0`, 'stale-local');
+    store.set(sharedPointerKeyFor(KEY), '0:1');
+    store.set(sharedChunkKeyFor(KEY, 0, 0), 'live-shared');
+
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('live-shared');
+  });
+});
+
+// Mirror of the module-private key derivations, for tests that seed values
+// directly. Local tier = the pre-W3 names; shared tier = the __ag__ names the
+// App Group access group stores under (distinct on purpose — see the tier-model
+// comment in lib/secureStore.ts).
 function pointerKeyFor(key: string): string {
   return `${key}__ptr`;
+}
+function sharedPointerKeyFor(key: string): string {
+  return `${key}__ag__ptr`;
+}
+function sharedChunkKeyFor(key: string, gen: number, i: number): string {
+  return `${key}__ag__g${gen}_c${i}`;
 }

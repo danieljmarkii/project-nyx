@@ -130,6 +130,7 @@ export async function syncPendingMeals(): Promise<void> {
     created_at: string;
     updated_at: string;
     intake_rating: string | null;
+    logged_via: string;
   }>(
     `SELECT m.* FROM meals m
        JOIN events e ON e.id = m.event_id
@@ -202,6 +203,9 @@ export async function syncPendingMeals(): Promise<void> {
       // the row lands with a usable updated_at for the next device to compare.
       updated_at: m.updated_at,
       intake_rating: m.intake_rating,
+      // B-289 — capture-surface provenance; 'app' for every pre-W3 row via the
+      // local default, the record's own value for inbox-ingested rows.
+      logged_via: m.logged_via ?? 'app',
     })),
     { onConflict: 'id' }
   );
@@ -306,6 +310,7 @@ export async function syncPendingEvents(): Promise<void> {
     deleted_at: string | null;
     created_at: string;
     updated_at: string;
+    logged_via: string;
   }>('SELECT * FROM events WHERE synced = 0 LIMIT 100');
 
   if (unsyncedEvents.length === 0) return;
@@ -327,6 +332,8 @@ export async function syncPendingEvents(): Promise<void> {
       deleted_at: e.deleted_at,
       created_at: e.created_at,
       updated_at: e.updated_at,
+      // B-289 — capture-surface provenance (see the meals payload note).
+      logged_via: e.logged_via ?? 'app',
     })),
     { onConflict: 'id' }
   );
@@ -838,11 +845,13 @@ interface RemoteEvent {
   occurred_at_source: string | null; occurred_at_confidence: string | null;
   occurred_at_earliest: string | null; occurred_at_latest: string | null;
   deleted_at: string | null; created_at: string; updated_at: string;
+  logged_via: string | null; // B-289 — capture-surface provenance (migration 038)
 }
 interface RemoteMeal {
   id: string; event_id: string; pet_id: string; food_item_id: string | null;
   quantity: string | null; is_full_portion: boolean | null; notes: string | null;
   created_at: string; updated_at: string; intake_rating: string | null;
+  logged_via: string | null; // B-289
 }
 interface RemoteWeightCheck {
   id: string; event_id: string; pet_id: string; weight_kg: number;
@@ -879,6 +888,7 @@ interface RemoteMedicationAdministration {
   how_given: string | null; // B-156 — vehicle (dose_route_vehicle enum, migration 022)
   paired_event_id: string | null; // B-156 Slice C — combo link (events.id, migration 023)
   notes: string | null; created_at: string; updated_at: string;
+  logged_via: string | null; // B-289
 }
 
 async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
@@ -890,7 +900,7 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
     'events',
     'id, pet_id, event_type, occurred_at, severity, notes, source, ' +
       'occurred_at_source, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, ' +
-      'deleted_at, created_at, updated_at',
+      'deleted_at, created_at, updated_at, logged_via',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -906,8 +916,8 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
       `INSERT INTO events
         (id, pet_id, event_type, occurred_at, severity, notes, source,
          occurred_at_source, occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
-         deleted_at, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         logged_via, deleted_at, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, event_type=excluded.event_type, occurred_at=excluded.occurred_at,
          severity=excluded.severity, notes=excluded.notes, source=excluded.source,
@@ -915,6 +925,7 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
          occurred_at_confidence=excluded.occurred_at_confidence,
          occurred_at_earliest=excluded.occurred_at_earliest,
          occurred_at_latest=excluded.occurred_at_latest,
+         logged_via=excluded.logged_via,
          deleted_at=excluded.deleted_at, created_at=excluded.created_at,
          updated_at=excluded.updated_at, synced=1
        WHERE events.synced = 1`,
@@ -922,7 +933,7 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
         e.id, e.pet_id, e.event_type, e.occurred_at, e.severity ?? null, e.notes ?? null,
         e.source ?? 'manual', e.occurred_at_source ?? 'manual',
         e.occurred_at_confidence ?? null, e.occurred_at_earliest ?? null, e.occurred_at_latest ?? null,
-        e.deleted_at ?? null, e.created_at, e.updated_at,
+        e.logged_via ?? 'app', e.deleted_at ?? null, e.created_at, e.updated_at,
       ],
     );
   }
@@ -954,7 +965,7 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteMeal>(
     'meals',
-    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating',
+    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, logged_via',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -972,17 +983,18 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
     // it's safe to compare in SQL — no parseTs format trap).
     await db.runAsync(
       `INSERT INTO meals
-        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, logged_via, created_at, updated_at, intake_rating, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          food_item_id=excluded.food_item_id, quantity=excluded.quantity,
          is_full_portion=excluded.is_full_portion, notes=excluded.notes,
+         logged_via=excluded.logged_via,
          intake_rating=excluded.intake_rating, updated_at=excluded.updated_at, synced=1
        WHERE meals.synced = 1`,
       [
         m.id, m.event_id, m.pet_id, m.food_item_id ?? null, m.quantity ?? 'unknown',
         m.is_full_portion === null || m.is_full_portion === undefined ? null : (m.is_full_portion ? 1 : 0),
-        m.notes ?? null, m.created_at, m.updated_at, m.intake_rating ?? null,
+        m.notes ?? null, m.logged_via ?? 'app', m.created_at, m.updated_at, m.intake_rating ?? null,
       ],
     );
   }
@@ -1240,7 +1252,7 @@ async function hydrateMedicationAdministrations(db: Db, stale: () => boolean): P
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteMedicationAdministration>(
     'medication_administrations',
-    'id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, notes, created_at, updated_at',
+    'id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, notes, created_at, updated_at, logged_via',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -1258,17 +1270,18 @@ async function hydrateMedicationAdministrations(db: Db, stale: () => boolean): P
     // local edit.
     await db.runAsync(
       `INSERT INTO medication_administrations
-        (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, notes, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, logged_via, notes, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          medication_id=excluded.medication_id, medication_item_id=excluded.medication_item_id,
          adherence=excluded.adherence, dose_amount=excluded.dose_amount, how_given=excluded.how_given,
-         paired_event_id=excluded.paired_event_id,
+         paired_event_id=excluded.paired_event_id, logged_via=excluded.logged_via,
          notes=excluded.notes, updated_at=excluded.updated_at, synced=1
        WHERE medication_administrations.synced = 1`,
       [
         a.id, a.event_id, a.pet_id, a.medication_id ?? null, a.medication_item_id ?? null,
-        a.adherence ?? null, a.dose_amount ?? null, a.how_given ?? null, a.paired_event_id ?? null, a.notes ?? null, a.created_at, a.updated_at,
+        a.adherence ?? null, a.dose_amount ?? null, a.how_given ?? null, a.paired_event_id ?? null,
+        a.logged_via ?? 'app', a.notes ?? null, a.created_at, a.updated_at,
       ],
     );
   }

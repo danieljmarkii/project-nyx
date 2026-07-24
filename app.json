@@ -17,6 +17,9 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.projectnyx.app"]
       }
     },
     "android": {
