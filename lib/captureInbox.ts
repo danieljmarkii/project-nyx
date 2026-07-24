@@ -185,6 +185,7 @@ export function classifyInboxPayload(raw: string): InboxClassification {
 export interface InboxDb {
   runAsync(sql: string, params: (string | number | null)[]): Promise<unknown>;
   getFirstAsync<T>(sql: string, params: (string | number | null)[]): Promise<T | null>;
+  getAllAsync<T>(sql: string, params: (string | number | null)[]): Promise<T[]>;
 }
 
 export interface InboxFilePayload {
@@ -258,19 +259,22 @@ export async function ingestCaptureRecords(
     // apply is confirmArrangementFresh's semantics with the TAP time as the
     // freshness stamp — guarded so an out-of-order ingest (the owner re-attested
     // in-app AFTER tapping the widget offline) can never move freshness
-    // BACKWARDS: only arrangements staler than the tap are bumped. synced=0
-    // queues the LWW push through syncPendingFeedingArrangements in the same
-    // cycle. Re-ingest after a crash is a no-op by the same guard (updated_at is
-    // already ≥ the tap). No Signal regen — a freshness stamp changes no insight.
+    // BACKWARDS: only arrangements staler than the tap are bumped. The
+    // staleness compare is PARSED-ms in JS, never lexical SQL — a hydrated
+    // row's updated_at arrives in PostgREST offset form ('+00:00', µs
+    // precision) while the tap is canonical Z-form, so a raw SQL `<` is the
+    // B-055 class (same reasoning as buildWidgetSnapshot's window filter).
+    // synced=0 queues the LWW push through syncPendingFeedingArrangements in
+    // the same cycle. Re-ingest after a crash is a no-op by the same guard.
+    // No Signal regen — a freshness stamp changes no insight.
     if (record.kind === 'bowl_topup') {
-      const arrangement = await db.getFirstAsync<{ id: string }>(
-        `SELECT id FROM feeding_arrangements
+      const arrangements = await db.getAllAsync<{ id: string; updated_at: string }>(
+        `SELECT id, updated_at FROM feeding_arrangements
          WHERE pet_id = ? AND method = 'free_choice'
-           AND active_until IS NULL AND deleted_at IS NULL
-         LIMIT 1`,
+           AND active_until IS NULL AND deleted_at IS NULL`,
         [record.petId],
       );
-      if (!arrangement) {
+      if (arrangements.length === 0) {
         // Usually transient (arrangements not yet hydrated on a fresh install);
         // a tap on a genuinely-ended bowl ages out via INBOX_MAX_AGE_DAYS.
         decisions.push({ name: file.name, action: 'deferred', reason: 'no active free-fed arrangement' });
@@ -280,15 +284,24 @@ export async function ingestCaptureRecords(
         decisions.push({ name: file.name, action: 'deferred', reason: 'pass cap' });
         continue;
       }
-      await db.runAsync(
-        `UPDATE feeding_arrangements
-           SET updated_at = ?, synced = 0
-         WHERE pet_id = ? AND method = 'free_choice'
-           AND active_until IS NULL AND deleted_at IS NULL
-           AND updated_at < ?`,
-        [record.occurredAt, record.petId, record.occurredAt],
-      );
-      applied++;
+      const tapMs = Date.parse(record.occurredAt);
+      // An unparseable stored stamp counts as stale (bumping it repairs the
+      // row to a comparable canonical form).
+      const stale = arrangements.filter((a) => {
+        const storedMs = Date.parse(a.updated_at);
+        return Number.isNaN(storedMs) || storedMs < tapMs;
+      });
+      for (const a of stale) {
+        await db.runAsync(
+          'UPDATE feeding_arrangements SET updated_at = ?, synced = 0 WHERE id = ?',
+          [record.occurredAt, a.id],
+        );
+      }
+      // The apply budget counts DB writes — an all-fresher no-op consumes none
+      // (mirrors confirmArrangementFresh's result.changes gate). Either way the
+      // record is consumed ('applied' → the wrapper deletes the file); staying
+      // idempotent is exactly why the no-op is still a clean apply.
+      if (stale.length > 0) applied++;
       // No petId on the decision: petId there means "regen this pet's Signal",
       // and a top-up must not trigger one.
       decisions.push({ name: file.name, action: 'applied' });

@@ -59,6 +59,9 @@ function asyncAdapter(db: RawDb): InboxDb {
     async getFirstAsync<T>(sql: string, params: (string | number | null)[]): Promise<T | null> {
       return (db.prepare(sql).get(...params) as T) ?? null;
     },
+    async getAllAsync<T>(sql: string, params: (string | number | null)[]): Promise<T[]> {
+      return db.prepare(sql).all(...params) as T[];
+    },
   };
 }
 
@@ -392,6 +395,35 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
       };
       expect(arr.updated_at).toBe('2026-07-24T19:30:00.000Z');
       expect(arr.synced).toBe(1); // untouched — no spurious push
+    });
+
+    it('compares freshness by PARSED time across mixed formats — never lexical SQL (B-055 class)', async () => {
+      insertArrangement();
+      // Hydrated PostgREST offset form, chronologically NEWER than the tap
+      // (18:00:00Z) — lexically '2026-07-24T18:00:30.123456+00:00' vs
+      // '2026-07-24T18:00:00.000Z' is format-dependent; parsed ms must decide,
+      // and the newer in-app stamp must survive.
+      raw.prepare('UPDATE feeding_arrangements SET updated_at = ? WHERE id = ?').run(
+        '2026-07-24T18:00:30.123456+00:00',
+        ARR,
+      );
+      await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      const newer = raw.prepare('SELECT updated_at FROM feeding_arrangements WHERE id = ?').get(ARR) as {
+        updated_at: string;
+      };
+      expect(newer.updated_at).toBe('2026-07-24T18:00:30.123456+00:00');
+
+      // And the mirror case: an offset-form stamp chronologically OLDER than
+      // the tap must be bumped even if it lexically sorts after it.
+      raw.prepare('UPDATE feeding_arrangements SET updated_at = ? WHERE id = ?').run(
+        '2026-07-24T17:59:59.999999+00:00',
+        ARR,
+      );
+      await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      const bumped = raw.prepare('SELECT updated_at FROM feeding_arrangements WHERE id = ?').get(ARR) as {
+        updated_at: string;
+      };
+      expect(bumped.updated_at).toBe('2026-07-24T18:00:00.000Z');
     });
 
     it('is idempotent on re-ingest (crash between apply and delete)', async () => {

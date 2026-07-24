@@ -215,6 +215,20 @@ describe('buildMealChoices', () => {
     expect(choices).toEqual([{ foodItemId: 'food-trial', label: 'Royal Canin PD' }]);
   });
 
+  it('but a trial pet whose slots are ALL logged today gets NO extra row — the app door, not an overfeed nudge', () => {
+    const choices = buildMealChoices(
+      [slotWithFood],
+      [{ ...rowUnlogged, loggedAt: iso(2026, 6, 24, 18, 0) }],
+      {
+        startedAt: '2026-07-13',
+        targetDurationDays: 28,
+        foodItemId: 'food-trial',
+        foodLabel: 'Royal Canin PD',
+      },
+    );
+    expect(choices).toEqual([]);
+  });
+
   it(`caps at ${MAX_MEAL_CHOICES} one-tap rows (D3)`, () => {
     const slots = [7, 12, 18].map((h, i) => ({
       label: (['Breakfast', 'Lunch', 'Dinner'] as const)[i],

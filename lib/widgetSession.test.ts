@@ -17,7 +17,7 @@ jest.mock('expo-secure-store', () => ({
 }));
 
 import type * as SecureStoreTypes from 'expo-secure-store';
-import { SHARED_TIER } from './secureStore';
+import { SHARED_TIER } from './secureStoreTiers';
 import {
   getExtensionSession,
   isSessionUsable,

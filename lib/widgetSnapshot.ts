@@ -252,9 +252,23 @@ async function readSnapshotInputs(petId: string, now: Date) {
 // day), and a missing "Day N of 28" header line is staleness, not a fabricated
 // claim. A local diet_trials mirror is the real fix if this bites (backlog
 // candidate, not W4 scope).
+//
+// TTL-cached: the publisher fires on every store change + sync tick (1s
+// debounce), and a trial changes ~once per month — re-querying the network per
+// publish would be the only non-local read on that hot path. A successful
+// fetch is reused for TRIAL_FETCH_TTL_MS (day-granularity data; minutes of
+// staleness are invisible); a FAILED fetch is never cached, so offline →
+// online recovers on the next publish.
+export const TRIAL_FETCH_TTL_MS = 5 * 60 * 1000;
+let trialCache: { key: string; atMs: number; trials: Map<string, ActiveTrialInfo> } | null = null;
+
 async function fetchActiveTrials(petIds: string[]): Promise<Map<string, ActiveTrialInfo>> {
   const out = new Map<string, ActiveTrialInfo>();
   if (petIds.length === 0) return out;
+  const cacheKey = [...petIds].sort().join(',');
+  if (trialCache && trialCache.key === cacheKey && Date.now() - trialCache.atMs < TRIAL_FETCH_TTL_MS) {
+    return trialCache.trials;
+  }
   try {
     const { data, error } = await supabase
       .from('diet_trials')
@@ -282,6 +296,7 @@ async function fetchActiveTrials(petIds: string[]): Promise<Map<string, ActiveTr
         foodLabel: label || null,
       });
     }
+    trialCache = { key: cacheKey, atMs: Date.now(), trials: out };
   } catch (e) {
     console.warn('[widgetSnapshot] trial fetch failed (offline?):', e);
   }

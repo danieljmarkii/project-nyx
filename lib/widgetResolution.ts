@@ -273,10 +273,13 @@ export interface ActiveTrialInfo {
 
 // One-tap meal choices (D3/§2.2): unlogged slots with a NAMED food, in time
 // order, capped at MAX_MEAL_CHOICES. During a trial the named food is the
-// trial diet by definition. A trial pet with no learned slots yet still gets
+// trial diet by definition. A trial pet with NO learned slots yet still gets
 // one bare trial-diet row — the food is named, so the no-garbage rule holds,
 // and the highest-intent user (the wedge) isn't locked out of one-tap logging
-// for their first two weeks.
+// for their first two weeks. Deliberately ONLY the no-slots case: a trial pet
+// whose known slots are all logged today gets no extra "log more" row — every
+// remaining path is the app door (D2/"when in doubt, app it out"), and an
+// always-available extra-meal affordance would nudge overfeeding.
 export function buildMealChoices(
   slots: LearnedSlot[],
   slotRows: WidgetSlotRow[],
@@ -294,7 +297,7 @@ export function buildMealChoices(
     if (!food) continue; // no stable name → the app door, not a one-tap row
     choices.push({ foodItemId: food.foodItemId, label: `${slots[i].label} — ${food.label}` });
   }
-  if (choices.length === 0 && trialFood) {
+  if (slots.length === 0 && trialFood) {
     choices.push({ foodItemId: trialFood.foodItemId, label: trialFood.label });
   }
   return choices;

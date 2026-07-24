@@ -23,8 +23,11 @@
 // reading that generation's chunks. A torn read (missing chunk) returns null —
 // never a truncated blob.
 
+// The tier contract comes from secureStoreTiers (NOT secureStore): Metro
+// bundles whole modules, and secureStore drags authDebug/AsyncStorage — app
+// diagnostic scaffolding that must not ship in the extension bundle.
 import * as SecureStore from 'expo-secure-store';
-import { parsePointer, SHARED_TIER } from './secureStore';
+import { parsePointer, SHARED_TIER } from './secureStoreTiers';
 
 // Storage key derivation — supabase-js's default (`sb-<project-ref>-auth-token`
 // where the ref is the first DNS label of the project URL). lib/supabase.ts

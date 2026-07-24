@@ -15,11 +15,13 @@ import { useSyncStore } from '../store/syncStore';
 // can't-forget reasoning as lib/meals.ts owning the meal side-effects.
 //
 // Debounced: a burst (hydration writing dozens of rows, a log + its optimistic
-// store update) collapses into one publish. The publish itself is a handful of
-// indexed SQLite reads + small file writes, so the trailing-edge delay is the
-// only cost that matters — 1s keeps the widget honest well within its own
-// refresh cadence. On non-iOS / entitlement-less builds publishWidgetSnapshots
-// no-ops at the container check, so this hook is inert there.
+// store update) collapses into one publish. The publish is indexed SQLite
+// reads + small file writes, plus (since W4) one best-effort diet-trials
+// Supabase query that is TTL-cached inside the publisher and degrades to
+// trialDay:null offline — so the trailing-edge delay is still the only cost
+// that matters; 1s keeps the widget honest well within its own refresh
+// cadence. On non-iOS / entitlement-less builds publishWidgetSnapshots no-ops
+// at the container check, so this hook is inert there.
 const PUBLISH_DEBOUNCE_MS = 1000;
 
 export function useWidgetSnapshots() {
