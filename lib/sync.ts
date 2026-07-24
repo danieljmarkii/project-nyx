@@ -16,6 +16,7 @@ import {
   type LocalMedication,
   type LocalMedicationAdministration,
 } from './medications';
+import { proteinsToCacheText, proteinsFromCacheText } from './protein';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -150,10 +151,11 @@ export async function syncPendingMeals(): Promise<void> {
     const localFoods = await db.getAllAsync<{
       id: string; brand: string; product_name: string; format: string;
       food_type: string | null;
-      primary_protein: string | null; is_novel_protein: number;
+      primary_protein: string | null; proteins: string | null;
+      is_novel_protein: number;
       is_grain_free: number; is_prescription: number;
     }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein,
+      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
               is_novel_protein, is_grain_free, is_prescription
        FROM food_items_cache WHERE id IN (${placeholders})`,
       foodIds
@@ -167,6 +169,11 @@ export async function syncPendingMeals(): Promise<void> {
           format: f.format,
           food_type: f.food_type,
           primary_protein: f.primary_protein,
+          // B-351: carry the protein set up too, or a food captured offline
+          // would land server-side with the '{}' default and silently drop the
+          // set until some later write repaired it. NULL cache (unhydrated
+          // legacy) decodes to [] — matching the server column's own default.
+          proteins: proteinsFromCacheText(f.proteins),
           is_novel_protein: Boolean(f.is_novel_protein),
           is_grain_free: Boolean(f.is_grain_free),
           is_prescription: Boolean(f.is_prescription),
@@ -512,9 +519,12 @@ export async function refreshFoodCache(): Promise<void> {
   // library reads filter them out locally (archived is NOT filtered on the server
   // pull). ON CONFLICT DO UPDATE below writes archived_at every sync, so a Restore
   // (server archived_at -> NULL) round-trips back to an active cached row.
+  // B-351: pull the multi-protein set alongside the derived primary_protein —
+  // the cache must mirror both so the disclosure/contaminant surfaces (PRs 4/5)
+  // and the Phase B engine read the full exposure, not just proteins[0].
   const { data, error } = await supabase
     .from('food_items')
-    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths, archived_at')
+    .select('id, brand, product_name, format, food_type, primary_protein, proteins, is_novel_protein, is_grain_free, is_prescription, photo_paths, archived_at')
     .eq('created_by_user_id', session.user.id);
 
   // Log on failure (CLAUDE.md "no silent failures in sync") — parity with the
@@ -537,14 +547,15 @@ export async function refreshFoodCache(): Promise<void> {
     // leaves last_used_at intact.
     await db.runAsync(
       `INSERT INTO food_items_cache
-        (id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, archived_at, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, brand, product_name, format, food_type, primary_protein, proteins, is_novel_protein, is_grain_free, is_prescription, photo_path, archived_at, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          brand = excluded.brand,
          product_name = excluded.product_name,
          format = excluded.format,
          food_type = excluded.food_type,
          primary_protein = excluded.primary_protein,
+         proteins = excluded.proteins,
          is_novel_protein = excluded.is_novel_protein,
          is_grain_free = excluded.is_grain_free,
          is_prescription = excluded.is_prescription,
@@ -552,6 +563,7 @@ export async function refreshFoodCache(): Promise<void> {
          archived_at = excluded.archived_at,
          cached_at = excluded.cached_at`,
       [item.id, item.brand, item.product_name, item.format, item.food_type ?? null, item.primary_protein ?? null,
+       proteinsToCacheText(item.proteins),
        item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, item.archived_at ?? null, now]
     );
   }
@@ -645,9 +657,10 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
     const localFoods = await db.getAllAsync<{
       id: string; brand: string; product_name: string; format: string;
       food_type: string | null; primary_protein: string | null;
+      proteins: string | null;
       is_novel_protein: number; is_grain_free: number; is_prescription: number;
     }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein,
+      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
               is_novel_protein, is_grain_free, is_prescription
        FROM food_items_cache WHERE id IN (${placeholders})`,
       foodIds,
@@ -657,6 +670,9 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
         localFoods.map((f) => ({
           id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
           food_type: f.food_type, primary_protein: f.primary_protein,
+          // B-351: same carriage as the meals pre-sync — never let an offline-
+          // captured food's protein set flatten to the server default.
+          proteins: proteinsFromCacheText(f.proteins),
           is_novel_protein: Boolean(f.is_novel_protein),
           is_grain_free: Boolean(f.is_grain_free),
           is_prescription: Boolean(f.is_prescription),

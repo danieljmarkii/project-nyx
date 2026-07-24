@@ -119,6 +119,9 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
     // B-005: archived_at must be pulled so archived rows stay cached (for the
     // future Archived section) and a Restore round-trips archived_at -> NULL.
     expect(selectSpy).toHaveBeenCalledWith(expect.stringContaining('archived_at'));
+    // B-351: the multi-protein set must be pulled so the cache mirrors the full
+    // exposure, not just the derived primary_protein.
+    expect(selectSpy).toHaveBeenCalledWith(expect.stringContaining('proteins'));
   });
 
   it('refreshMedicationCache scopes the pull to the signed-in account', async () => {
@@ -152,6 +155,9 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
       data: [{
         id: 'f1', brand: 'Blue Buffalo', product_name: 'Wilderness',
         format: 'dry_kibble', food_type: 'meal', primary_protein: 'chicken',
+        // B-351: the server's TEXT[] arrives as a JS array from PostgREST; the
+        // upsert must encode it to the cache's JSON-text column, order intact.
+        proteins: ['chicken', 'salmon'],
         is_novel_protein: false, is_grain_free: true, is_prescription: false,
         photo_paths: ['f1/0-front.jpg'], archived_at: '2026-07-17T00:00:00Z',
       }],
@@ -167,7 +173,7 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
     const db = new DatabaseSync(':memory:');
     db.exec(`CREATE TABLE food_items_cache (
       id TEXT PRIMARY KEY, brand TEXT, product_name TEXT, format TEXT,
-      food_type TEXT, primary_protein TEXT, is_novel_protein INTEGER,
+      food_type TEXT, primary_protein TEXT, proteins TEXT, is_novel_protein INTEGER,
       is_grain_free INTEGER, is_prescription INTEGER, photo_path TEXT,
       last_used_at TEXT, archived_at TEXT, cached_at TEXT
     );`);
@@ -189,6 +195,8 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
     // … the server-owned metadata refreshed …
     expect(row.brand).toBe('Blue Buffalo');
     expect(row.product_name).toBe('Wilderness');
+    // … the B-351 protein set written as JSON text, order intact …
+    expect(row.proteins).toBe('["chicken","salmon"]');
     // … and the LOCAL-ONLY last_used_at untouched (the footgun that must not regress).
     expect(row.last_used_at).toBe('2026-01-01T00:00:00Z');
   });
