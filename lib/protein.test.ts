@@ -163,3 +163,97 @@ describe('proteinsToCacheText / proteinsFromCacheText (B-351 cache column)', () 
     expect(proteinsFromCacheText('[1, {"x":2}, "duck"]')).toEqual(['duck']);
   });
 });
+
+// ── B-414: Class-A convergence, as a PROPERTY not an example list ─────────────
+// The bug this suite exists to close was live under a docstring that already
+// claimed idempotence, next to a test that checked four hand-picked strings —
+// none of which happened to expose punctuation when its qualifier was stripped.
+// A fixed list can only ever assert the cases someone already thought of, so the
+// invariant is checked here over the full cross-product of the artifact forms
+// Class A covers (module header: casing / padding / boundary punctuation /
+// stacked + hyphen-joined form-qualifiers). Any future edit that leaves a value
+// able to re-key on a second pass fails this suite rather than shipping.
+describe('canonicalizeProtein — Class-A convergence (B-414)', () => {
+  // Built combinatorially rather than randomly: a property test that can't be
+  // reproduced from its own source is a worse guard than no guard.
+  const HEADS = ['chicken', 'turkey', 'ocean whitefish', 'beef', 'liver', 'oatmeal'];
+  const QUALIFIERS = [
+    '', ' meal', '-meal', ' by-product', ' by product', ' byproduct',
+    ' by-product meal', ' by product meal', ' meal by-product',
+  ];
+  const PREFIXES = ['', '(', '"', ' ', '  ', '-', ' "'];
+  const SUFFIXES = ['', ')', '"', ',', '.', ' -', ' - ', '!', ' ', '  ', ', '];
+  const CASINGS: ((s: string) => string)[] = [
+    (s) => s,
+    (s) => s.toUpperCase(),
+    (s) => s.replace(/\b\w/g, (c) => c.toUpperCase()),
+  ];
+
+  function* corpus(): Generator<string> {
+    for (const head of HEADS)
+      for (const qual of QUALIFIERS)
+        for (const pre of PREFIXES)
+          for (const suf of SUFFIXES)
+            for (const casing of CASINGS)
+              yield pre + casing(head + qual) + suf;
+  }
+
+  it('converges on every generated variant — canonicalize(canonicalize(x)) === canonicalize(x)', () => {
+    let checked = 0;
+    for (const raw of corpus()) {
+      const once = canonicalizeProtein(raw);
+      // The second pass is the whole test: it is what a second READ path does.
+      expect(canonicalizeProtein(once)).toBe(once);
+      checked++;
+    }
+    // Guards the generator itself — a refactor that empties it must not read as a pass.
+    expect(checked).toBeGreaterThan(4000);
+  });
+
+  it('never returns a key carrying boundary punctuation', () => {
+    for (const raw of corpus()) {
+      const key = canonicalizeProtein(raw);
+      if (key === null) continue;
+      expect(key).toBe(key.trim());
+      expect(/^[\p{L}\p{N}]/u.test(key)).toBe(true);
+      expect(/[\p{L}\p{N}]$/u.test(key)).toBe(true);
+    }
+  });
+
+  it('pools every chicken variant onto exactly one key', () => {
+    const keys = new Set<string | null>();
+    for (const raw of corpus()) {
+      if (!/chicken/i.test(raw)) continue;
+      keys.add(canonicalizeProtein(raw));
+    }
+    // One key, and it is the bare animal — no `chicken -`, no `chicken meal`.
+    expect([...keys]).toEqual(['chicken']);
+  });
+
+  it('regression: the exact B-414 shapes', () => {
+    // Each of these returned a non-key before the joint fixpoint landed, which
+    // dropped the food out of every correlation and contaminant check.
+    expect(canonicalizeProtein('chicken - meal')).toBe('chicken');
+    expect(canonicalizeProtein('Chicken - Meal')).toBe('chicken');
+    expect(canonicalizeProtein('chicken -')).toBe('chicken');
+    expect(canonicalizeProtein('chicken,  meal')).toBe('chicken');
+    expect(canonicalizeProtein('chicken-meal')).toBe('chicken');
+    expect(canonicalizeProtein('chicken-by-product-meal')).toBe('chicken');
+  });
+
+  it('still leaves Class-B judgements alone (the line the ruling draws)', () => {
+    // Same-token artifacts converge (above); DIFFERENT tokens claiming the same
+    // animal must not be merged on read — that stays at capture.
+    expect(canonicalizeProtein('ocean whitefish')).toBe('ocean whitefish');
+    expect(canonicalizeProtein('Buffalo')).toBe('buffalo');
+    expect(canonicalizeProtein('chicken liver')).toBe('chicken liver');
+    // …and the word merely ENDING in a qualifier is still untouched.
+    expect(canonicalizeProtein('oatmeal')).toBe('oatmeal');
+  });
+
+  it('over-length input degrades to protein-unknown, never a truncated key', () => {
+    expect(canonicalizeProtein('chicken ' + 'x'.repeat(200))).toBeNull();
+    // The live library's longest real value is 22 chars — nothing real trips it.
+    expect(canonicalizeProtein('hydrolyzed chicken by-product meal')).toBe('hydrolyzed chicken');
+  });
+});

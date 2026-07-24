@@ -83,9 +83,31 @@ Deno.test('trailing/leading punctuation does not re-fragment the key', () => {
   assert.deepEqual([...keys], ['chicken'])
 })
 
-Deno.test('idempotent: canonicalize(canonicalize(x)) === canonicalize(x)', () => {
-  for (const raw of ['Chicken By-Product Meal', 'ocean whitefish', 'Turkey Meal', 'null']) {
+// ⚠️ This four-item list is NOT the coverage that keeps convergence honest — it
+// passed for months while B-414 was live, because no entry happened to expose
+// punctuation when its qualifier was stripped. The real guard is the
+// cross-product fuzz in lib/protein.test.ts (jest); this deno copy asserts the
+// same invariant on the Edge Function's own import path plus the shapes that
+// actually broke.
+Deno.test('convergent: canonicalize(canonicalize(x)) === canonicalize(x)', () => {
+  for (const raw of [
+    'Chicken By-Product Meal', 'ocean whitefish', 'Turkey Meal', 'null',
+    'chicken - meal', 'Chicken - Meal', 'chicken -', 'chicken,  meal',
+    'chicken-meal', 'chicken-by-product-meal', '(chicken meal)', '"Turkey Meal".',
+  ]) {
     const once = canonicalizeProtein(raw)
     assert.equal(canonicalizeProtein(once), once)
   }
+})
+
+Deno.test('B-414: a qualifier strip that exposes punctuation still lands on the bare animal', () => {
+  // Each of these returned a non-key (e.g. 'chicken -') before the joint
+  // fixpoint, dropping that food out of every correlation the engine computes.
+  for (const raw of ['chicken - meal', 'Chicken - Meal', 'chicken,  meal', 'chicken-meal']) {
+    assert.equal(canonicalizeProtein(raw), 'chicken', `expected ${JSON.stringify(raw)} → chicken`)
+  }
+})
+
+Deno.test('B-414: an over-length term degrades to protein-unknown, never a truncated key', () => {
+  assert.equal(canonicalizeProtein('chicken ' + 'x'.repeat(200)), null)
 })
