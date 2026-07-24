@@ -197,6 +197,15 @@
   .trialcard .row { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--ink-2); padding: 5px 0; border-top: 1px solid var(--hairline); }
   .trialcard .row .v { color: var(--ink); font-weight: 500; }
 
+  /* Meal completion card (log-time) */
+  .completion { border-top: 1px solid var(--hairline); background: var(--card); border-radius: 24px 24px 0 0; margin-top: 14px; padding: 18px 20px 24px; box-shadow: 0 -10px 30px -18px rgba(20,16,46,0.30); }
+  .completion .done { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 3px; }
+  .completion .done .chk { width: 22px; height: 22px; border-radius: 999px; background: var(--accent-fill); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex: none; }
+  .completion .sub { font-size: 12.5px; color: var(--ink-3); margin: 0 0 14px; }
+  .intakechips { display: flex; gap: 8px; }
+  .intakechips .ic { flex: 1; text-align: center; font-size: 13px; font-weight: 500; color: var(--ink-2); border: 1px solid var(--hairline-strong); border-radius: 999px; padding: 9px 0; }
+  .intakechips .ic.on { background: var(--accent-tint); border-color: var(--accent-fill); color: var(--accent); font-weight: 600; }
+
   /* Signal card (night) */
   .signalcard { padding: 22px 22px 20px; }
   .signalcard .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--on-night-muted); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; }
@@ -341,7 +350,7 @@
 
   <!-- ══════════════ 2 · TRIAL CONTAMINANT ══════════════ -->
   <h2><span class="num">2</span>The contaminant catch<span class="phase-tag a">Phase A · PR 4 · the wedge win</span></h2>
-  <p class="kicker">The highest-value slice is <em>deterministic</em> — no correlation to accumulate, no attribution ambiguity. When a pet is on a declared elimination trial and a food’s protein set contains a protein the trial should exclude, flag it the moment the data exists: at the confirm screen, and as a standing note on the diet-trial card.</p>
+  <p class="kicker">The highest-value slice is <em>deterministic</em> — no correlation to accumulate, no attribution ambiguity. When a pet is on a declared elimination trial and a food’s protein set contains a protein the trial should exclude, flag it the moment the data exists — <b>both when you add the food and when you log a meal of it</b> — plus a standing note on the diet-trial card. The two moments behave differently: adding is a soft confirm; logging never blocks (Principle 1).</p>
   <div class="option">
     <div>
       <div class="phone">
@@ -374,16 +383,44 @@
           </div>
         </div>
       </div>
-      <p class="frame-caption">Confirm screen for an off-trial food. The flag is factual and never blocks — the owner (and their vet) decide.</p>
+      <p class="frame-caption"><b>Adding to the library</b> — a soft confirm. The food isn’t at the moment-of-event yet, so a “Not now / Add anyway” choice is fine; the owner (and their vet) decide.</p>
+
+      <div class="phone" style="margin-top:28px">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots">● ● ●</span></div>
+          <div style="padding:26px 22px 0;opacity:0.36">
+            <div style="font-family:var(--serif);font-size:22px;color:var(--ink);letter-spacing:-0.01em">Good morning</div>
+            <div style="font-size:13px;color:var(--ink-3);margin-top:3px">Nyx · Day 24 of the duck trial</div>
+          </div>
+          <div class="completion">
+            <div class="done"><span class="chk">✓</span>Logged · Purina ONE Chicken</div>
+            <div class="sub">Breakfast · 8:02 AM · tap to undo</div>
+            <div class="intakechips">
+              <span class="ic on">Ate it all</span>
+              <span class="ic">Some</span>
+              <span class="ic">None</span>
+            </div>
+            <div class="note warn" style="margin-top:16px">
+              <span class="ico">!</span>
+              <div>
+                <div class="h">This one has chicken</div>
+                <p>Nyx’s duck trial should skip chicken. The meal’s saved — just worth knowing, and maybe a note for your vet.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-caption"><b>Logging a meal</b> — the meal saves the instant you tap (Principle 1: zero decisions at the moment of event). The heads-up rides the completion card, calm and non-blocking — it never gates the log or asks “are you sure?”. Here a <em>chicken</em> food logged during a <em>duck</em> trial trips shape 2b.</p>
     </div>
     <div>
       <ul class="callouts">
-        <li><span class="co-num det">D</span><div><p class="ct">Deterministic — fires the instant the data exists</p><p class="cd">A set-membership check against the trial food’s own protein, not a statistical read. Near-zero risk, so it ships before the correlation work (D2).</p></div></li>
-        <li><span class="co-num det">D</span><div><p class="ct">Two contaminant shapes</p><p class="cd"><b>2a</b> — the <em>trial food itself</em> is multi-protein (this mock). <b>2b</b> — a <em>different</em> food logged during the trial carries a non-sanctioned protein. Both surface here.</p></div></li>
+        <li><span class="co-num det">D</span><div><p class="ct">Fires at both moments (D2)</p><p class="cd"><b>Adding a food</b> (top) — a soft confirm, since a food isn’t at the moment-of-event. <b>Logging a meal</b> (bottom) — the meal saves instantly and the heads-up rides the completion card, <em>never</em> a gate. A pre-trial library food only meets the trial at log time, so both surfaces are needed.</p></div></li>
+        <li><span class="co-num guard">P1</span><div><p class="ct">Log time never blocks — Principle 1</p><p class="cd">Zero decisions at the moment of event. No “are you sure?”, no “log anyway.” The log is one tap; the flag is a calm afterthought with “tap to undo” already on the card if it was a mistake.</p></div></li>
+        <li><span class="co-num det">D</span><div><p class="ct">Two contaminant shapes, both shown</p><p class="cd"><b>① the trial food itself</b> is multi-protein (the duck food hiding chicken — top). <b>② a different food</b> logged during the trial carries an off-trial protein (a chicken kibble on a duck trial — bottom).</p></div></li>
         <li><span class="co-num guard">G</span><div><p class="ct">Descriptive, never alarmist — never reassuring</p><p class="cd">A calm “heads up,” not a klaxon; and a <em>clean</em> protein set is never an “all clear.” <span class="file">clinical-guardrails</span> + <span class="file">nyx-voice</span> mandatory.</p></div></li>
         <li><span class="co-num">i</span><div><p class="ct">No <span class="file">diet_trials</span> schema change (D6)</p><p class="cd">v1 keys off the trial food’s own set vs. its novel protein — “all but duck.” An explicit excluded-protein list is a deferred enhancement.</p></div></li>
       </ul>
-      <div class="decrow"><span class="dec">D2 · <b>pulled to Phase A</b></span><span class="dec">no block, owner decides</span><span class="dec">diet-trial card note</span></div>
+      <div class="decrow"><span class="dec">D2 · <b>flag at add + at log</b></span><span class="dec">log-time = non-blocking</span><span class="dec">diet-trial card note</span></div>
     </div>
   </div>
 
