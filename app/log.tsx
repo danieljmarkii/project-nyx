@@ -16,6 +16,7 @@ import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/Time
 import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
+import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
@@ -64,15 +65,26 @@ export default function LogModal() {
   // dose given WITH a just-logged meal/treat (entered from its completion card): the
   // dose binds to the meal's pet (pairedPetId) and links to the meal event, and
   // how_given is inferred from pairedFoodType. Absent on every standalone log path.
-  const { type: typeParam, pairedEventId, pairedPetId, pairedFoodType, pairedFoodName, comboSource } =
-    useLocalSearchParams<{
-      type?: string;
-      pairedEventId?: string;
-      pairedPetId?: string;
-      pairedFoodType?: string;
-      pairedFoodName?: string;
-      comboSource?: string;
-    }>();
+  const {
+    type: typeParam,
+    pet: petParam,
+    pairedEventId,
+    pairedPetId,
+    pairedFoodType,
+    pairedFoodName,
+    comboSource,
+  } = useLocalSearchParams<{
+    type?: string;
+    pet?: string;
+    pairedEventId?: string;
+    pairedPetId?: string;
+    pairedFoodType?: string;
+    pairedFoodName?: string;
+    comboSource?: string;
+  }>();
+  // W5 — the widget's "Something else…" app door names its bound pet, so this
+  // screen opens on that pet rather than whichever one the app last showed.
+  useWidgetPetLink(petParam);
   const isComboMode = !!pairedEventId;
   // B-325 — a RETROACTIVE combo: the med is being added to an ALREADY-logged meal/treat
   // from that event's detail screen (comboSource='detail'), not from the in-the-moment

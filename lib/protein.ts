@@ -44,7 +44,7 @@
 // canonicalizeProtein on read: the set is a convenience, never a limit.
 //
 // ⚠️ The parity claim above covers the CHIPS, and no longer covers the "Other"
-// typed escape (B-351 PR 2, caught by the adversarial pass — B-407). Extraction
+// typed escape (B-351 PR 2, caught by the adversarial pass — B-412). Extraction
 // now applies normalizeExtractedProtein at write time, so AI-captured "Buffalo"
 // stores `bison`, while an owner typing "Buffalo" into Other still stores
 // `buffalo` — one animal, two keys, exposure split across them and each under

@@ -53,6 +53,7 @@ const base = {
   generatedAt: '2026-07-24T20:00:00.000Z',
   dayKey: '2026-07-24',
   freeFed: false,
+  bowlConfirmedAt: null as string | null,
   meals: [] as SnapshotMealRow[],
   // The UTC calendar day 2026-07-24 as the authoritative window (a UTC-aligned
   // "device" for test determinism).
@@ -196,6 +197,10 @@ describe('buildWidgetSnapshot', () => {
     const snap = buildWidgetSnapshot(PET, base);
     expect(Object.keys(snap).sort()).toEqual(
       [
+        // W5 added `bowlConfirmedAt` — an ISO timestamp of a real arrangement
+        // re-attest. It carries no copy, no verdict and no tier: it can only
+        // put a dated ✓ on the bowl row, which is why it survives the review.
+        'bowlConfirmedAt',
         'dayKey', 'freeFed', 'generatedAt', 'mealChoices', 'petId', 'petName',
         'schemaVersion', 'slots', 'species', 'today', 'treatChoices', 'trialDay',
         'trialTargetDays',

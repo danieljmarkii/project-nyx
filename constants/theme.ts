@@ -45,6 +45,14 @@ export const theme = {
   colorAccentSoft: '#86D9CC',     // mid teal — a calm, on-brand fill that is NOT a verdict
                                   // (e.g. the treats segment of the Meals & treats card)
   colorAccentLight: '#E0FBF7',    // tinted surface behind accent elements
+  colorAccentInk: '#0B7B6C',      // darkened teal for a MARK on colorAccentLight
+                                  // (the widget's ✓ on its tinted row). Teal at
+                                  // full strength fails contrast on its own tint;
+                                  // this is the same accent, not a second one, so
+                                  // the "one accent" rule holds. Added for the
+                                  // widget (W5), which cannot import this file —
+                                  // the value lives here so it is reviewed and
+                                  // reusable rather than invented at the call site.
 
   // Neutrals
   colorNeutralDark: '#0A0A0A',
