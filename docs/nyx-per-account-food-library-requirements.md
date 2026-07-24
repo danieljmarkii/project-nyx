@@ -1,6 +1,6 @@
 # Per-Account Food Library — Requirements (B-354)
 
-**Version:** 1.1 | 2026-07-17 | Status: **shipped** — PRs 1–5 merged (#374/#377/#378/#381 + this PR-5 docs pass). Only open item: the PM republishes the hosted legal docs (§7.4).
+**Version:** 1.2 | 2026-07-25 | Status: **DONE** — PRs 1–5 + B-358 (#392) merged, and the §7.4 hosted-doc republish is **verified live** (getculprit.app terms/privacy now read per-account: "deleted with your account"). No open items on this track; the only residual is B-359 (minor global-catalog wording drift in three sibling specs, its own row).
 **Reads with:** `docs/food-library-redesign-requirements.md` (the surface being re-scoped), `docs/nyx-food-dedup-requirements.md` (the track this reshapes), `docs/nyx-account-deletion-requirements.md` (the survival rule this inverts), B-005 backlog row (the archive plan this unblocks).
 
 ---
