@@ -13,8 +13,7 @@ import {
   type DrainDeps,
   type WidgetHandle,
 } from './widgetBridge';
-import type { CulpritWidgetProps } from './widgetProps';
-import type { WidgetPendingCapture } from './widgetProps';
+import type { CulpritWidgetProps, WidgetPendingCapture } from './widgetProps';
 
 const PET = '11111111-1111-4111-8111-111111111111';
 

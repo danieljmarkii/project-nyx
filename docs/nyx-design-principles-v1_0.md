@@ -1,5 +1,5 @@
 # Project Nyx — Design Principles
-**Version:** 1.0 | **Status:** Stable | **Last Updated:** June 2026
+**Version:** 1.0 | **Status:** Stable | **Last Updated:** 2026-07-24
 
 ---
 
@@ -201,6 +201,27 @@ The single most important screen in the product. Principles:
 Flat, and disciplined by **kind of surface, not by count**. A navigation tab is reserved for a **top-level destination** — a place you return to and *act within* (browse, manage, review). At launch that is **Home · History · Foods · Pet**. A **pull-view of computed insight** is *not* a tab — it opens as a **doorway** from wherever it is relevant (the analytics "Patterns" dashboard and Nyx Ask both follow this rule). The quick-log is likewise not a tab — it is always accessible via the persistent **+** action regardless of which tab is active.
 
 > _Revised June 2026 (PM-approved, 2026-06-16). The original rule was "three tabs maximum at MVP: Home · Log History · Pet Profile." As the app grows past MVP, the arbitrary numeric cap is retired in favor of the categorical destination-vs-doorway rule above — it keeps navigation flat and honest without freezing the count. This is what lets the **Foods library** (B-004) become a fourth tab: it is a genuine destination you browse and manage, and because the food catalog is globally scoped (not pet-scoped) it would be misrepresented if nested under the Pet tab. Insight surfaces (analytics, Ask) stay doorways._
+
+### Filters & Scopes — the lens shapes
+
+A filter is a *lens over content* — it changes what a list, chart, or report shows without being the content itself. Every lens in Nyx uses one of three shapes, chosen by the size and stability of its option set, never by taste:
+
+| Shape | Use when | Example |
+|---|---|---|
+| **Visible lens chips** (`ChipGroup`, filter usage) | ≤5 short options that always fit on screen without scrolling, on a hot path where the one-tap switch matters | FoodPicker scope (All/Meals/Treats/Wet/Dry) |
+| **Segmented control** | Exactly 2–3 fixed, equal-weight windows over the same data | Metric detail Week/Month/3-Month |
+| **ScopeMenu** (pill + bottom sheet) | A long (≳5), growable, or long-labelled set — or a scarce header | History event type + date scope |
+
+(Capture-form option pickers — Form, Route, Format — are not lenses; they wrap via `ChipGroup` per the B-146 rule and are covered under the quick-log principles.)
+
+Four invariants bind every shape:
+
+1. **No option ever hides.** Wrap, segment, or sheet — never a hidden horizontal overflow. A sheet's options scroll *visibly inside it*. This rule has no carve-outs: the one exception ever granted (History's edge-fade rail) failed a real owner and was revoked (#421).
+2. **Filtering is always legible at the control.** Any non-default scope shows a visible active cue — a tinted pill, a filled chip, a raised segment. "Why is my list short?" must be answerable without opening anything.
+3. **Defaults are explicit options** ("All types", "All time") — never an implicit nothing-selected state.
+4. **An option that expands dependent inline UI stays visible** — a sheet would sever the control from its own dependent controls (the report range's "Custom…" date fields).
+
+> _Added 2026-07-24 (PM-approved, F3 of `nyx-filter-ux-requirements.md`). Why not bottom sheets for every filter: a sheet costs a tap, and earns it only by making a long set un-hideable. For a small set that already fits, the sheet removes at-a-glance visibility on a hot path — a regression dressed as consistency. Shape follows set size. The full pattern language, per-surface inventory, and conversion criteria live in `docs/nyx-filter-ux-requirements.md`._
 
 ### Onboarding
 
