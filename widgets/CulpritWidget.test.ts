@@ -99,8 +99,8 @@ function panel(overrides: Partial<WidgetPetPanel> = {}): WidgetPetPanel {
     dayKey: TODAY,
     contextLine: 'Day 12 of 28',
     rows: [
-      { label: 'Breakfast', done: true, when: '7:42a', expected: '~7a' },
-      { label: 'Dinner', done: false, when: '', expected: '~6p' },
+      { label: 'Breakfast', done: true, when: '7:42a', expected: '~7a', ambient: false },
+      { label: 'Dinner', done: false, when: '', expected: '~6p', ambient: false },
     ],
     mealChoices: [{ label: "Dinner — Hill's z/d", foodItemId: 'f1', kind: 'meal' }],
     treatChoices: [
@@ -146,24 +146,47 @@ describe('resting state (mock states 1 + 4)', () => {
     expect(out).toContain('sf:circle'); // Dinner — the visible gap (B-156 G1)
   });
 
-  it('deep-links the status column to that pet AND that day', () => {
-    const out = texts(render(props(), ENV));
-    expect(out).toContain(
-      'link:nyx:///history?date=2026-07-24&pet=11111111-1111-4111-8111-111111111111',
+  it('deep-links the status column to that pet, that day, WITH the ts nonce', () => {
+    // History ignores a `date` without a `ts` (the tab persists across
+    // navigation), so omitting the nonce silently opens the last-used filter.
+    const [link] = texts(render(props(), ENV)).filter((t) => t.startsWith('link:nyx:///history'));
+    expect(link).toMatch(
+      /^link:nyx:\/\/\/history\?date=2026-07-24&ts=\d+&pet=11111111-1111-4111-8111-111111111111$/,
     );
+  });
+
+  it('links to the day being RENDERED, not the day the snapshot describes', () => {
+    // On a stale render the rows already show today's gaps; a link to yesterday
+    // would contradict what the owner is looking at.
+    const [link] = texts(render(props(), { ...ENV, date: new Date(2026, 6, 25, 9, 0) })).filter(
+      (t) => t.startsWith('link:nyx:///history'),
+    );
+    expect(link).toContain('date=2026-07-25');
   });
 
   it('renders a designed empty state before any routine is learned', () => {
     const out = texts(render(props({ pets: { slot1: panel({ rows: [] }) } }), ENV));
-    expect(out).toContain('Log a few meals and Biscuit’s usual times show up here.');
+    expect(out).toContain('Log meals for about a week and Biscuit’s usual times show up here.');
+  });
+
+  it('marks the free-fed bowl as ambient, never with the task/verdict vocabulary', () => {
+    // An un-topped bowl is not an unmet obligation and a top-up is not a fed-✓ —
+    // grazing intake is unmeasured, and the row must not imply otherwise.
+    const bowlOnly = panel({
+      rows: [{ label: 'Bowl', done: false, when: '', expected: 'free-fed', ambient: true }],
+    });
+    const out = texts(render(props({ pets: { slot1: bowlOnly } }), ENV));
+    expect(out).toContain('sf:circle.dotted');
+    expect(out).not.toContain('sf:circle');
+    expect(out).not.toContain('sf:checkmark.circle.fill');
   });
 
   it('a hybrid pet gets both row types (D6)', () => {
     const hybrid = panel({
       contextLine: 'free-fed + meals',
       rows: [
-        { label: 'Bowl', done: true, when: 'topped 8:05a', expected: 'free-fed' },
-        { label: 'Dinner', done: false, when: '', expected: '~7p' },
+        { label: 'Bowl', done: true, when: 'topped 8:05a', expected: 'free-fed', ambient: true },
+        { label: 'Dinner', done: false, when: '', expected: '~7p', ambient: false },
       ],
     });
     const out = texts(render(props({ pets: { slot1: hybrid } }), ENV));
@@ -225,6 +248,45 @@ describe('the flip (D3)', () => {
     expect(out).toContain('not a meal');
   });
 
+  it('gives an un-nameable picker a designed empty state, not a blank card', () => {
+    const bare = panel({ mealChoices: [], treatChoices: [] });
+    const base = props({ pets: { slot1: bare } });
+    const meal = merge(base, press(base, ENV, 'tile:meal'));
+    expect(texts(render(meal, ENV))).toContain(
+      'No usual meal to offer yet — Culprit is still learning Biscuit’s routine.',
+    );
+    const treat = merge(base, press(base, ENV, 'tile:treat'));
+    expect(texts(render(treat, ENV))).toContain(
+      'No usual treat yet — log a couple in Culprit and they show up here.',
+    );
+  });
+
+  it('falls back to resting once an abandoned picker goes stale (§2.2 idle)', () => {
+    const opened = merge(props(), press(props(), ENV, 'tile:meal'));
+    expect(opened.ui.slot1.openedAt).toEqual(expect.any(Number));
+    // A widget has no timer, but every system refresh re-evaluates the layout.
+    const abandoned = {
+      ...opened,
+      ui: { slot1: { ...opened.ui.slot1, openedAt: Date.now() - 10 * 60 * 1000 } },
+    };
+    const out = texts(render(abandoned, ENV));
+    expect(out).not.toContain('Which meal?');
+    expect(out).toContain('Biscuit'); // back to the status board
+  });
+
+  it('stops offering a choice it has already captured this pass', () => {
+    const after = merge(
+      merge(props(), press(props(), ENV, 'tile:meal')),
+      press(merge(props(), press(props(), ENV, 'tile:meal')), ENV, 'pick:meal:0'),
+    );
+    // Re-open the picker with the capture still un-drained.
+    const reopened = merge(after, press(after, ENV, 'tile:meal'));
+    const out = texts(render(reopened, ENV));
+    expect(out).toContain("Dinner — Hill's z/d");
+    expect(out).not.toContain('one tap · logs now');
+    expect(out.some((t) => /^logged \d{1,2}(:\d{2})?[ap]$/.test(t))).toBe(true);
+  });
+
   it('flips only the pressing widget’s slot — a second pet’s widget is untouched', () => {
     const two = props({ pets: { slot1: panel(), slot2: panel({ slot: 2, petName: 'Mochi' }) } });
     const next = merge(two, press(two, ENV, 'tile:meal'));
@@ -264,8 +326,11 @@ describe('capture (the outbox)', () => {
     expect(after.ui.slot1.logged?.label).toBe("Dinner — Hill's z/d");
     const out = texts(render(after, ENV));
     expect(out).toContain("Dinner — Hill's z/d");
-    expect(out.some((t) => /^logged \d{1,2}(:\d{2})?[ap]$/.test(t))).toBe(true);
+    // The minute, not "just now" — the widget cannot keep a relative claim true.
+    expect(out.some((t) => /^\d{1,2}(:\d{2})?[ap]$/.test(t))).toBe(true);
     expect(out).toContain('Undo');
+    // Job 1 survives the capture: the status column is still answering.
+    expect(out).toContain('Breakfast');
   });
 
   it('a bowl top-up carries no food and no meal row', () => {

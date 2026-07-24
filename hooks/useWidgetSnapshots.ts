@@ -36,11 +36,19 @@ export function useWidgetSnapshots() {
     // One pass: publish the per-pet snapshot files (W3), then hand the SAME
     // facts to the widget as props — drain-then-publish, so a Home Screen tap
     // is never thrown away by the publish that follows it (lib/widgetBridge).
-    const publish = async () => {
-      const pets = usePetStore.getState().pets;
-      const { snapshots, index } = await publishWidgetSnapshots(pets);
-      await syncWidget(buildWidgetProps({ index, snapshots, signedIn: true }));
-    };
+    // One pass. `syncWidget` drains the widget's outbox FIRST — applying each
+    // capture through the W4 intents and ingesting it into local SQLite — and
+    // only then calls this builder, so the snapshot it publishes already
+    // contains the tap that triggered the pass. Building the props before the
+    // drain would republish a status column that pre-dates the tap, dropping
+    // the ✓ on a capture that actually succeeded.
+    const publish = () =>
+      syncWidget(async () => {
+        const { snapshots, index } = await publishWidgetSnapshots(
+          usePetStore.getState().pets,
+        );
+        return buildWidgetProps({ index, snapshots, signedIn: true });
+      });
 
     const schedule = () => {
       if (timer.current) clearTimeout(timer.current);

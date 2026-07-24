@@ -24,6 +24,7 @@
 // Go, a dev client built before this PR) — same posture as lib/appGroup.
 
 import { softDeleteEvent } from './db';
+import { usePetStore } from '../store/petStore';
 import { logMealIntent, logTreatIntent, topUpBowlIntent } from './widgetCapture';
 import {
   WIDGET_NAME,
@@ -82,14 +83,32 @@ export function __setWidgetHandleForTests(fake: WidgetHandle | null): void {
 export interface DrainOutcome {
   applied: number;
   revoked: number;
-  failed: number;
+  /**
+   * Captures that could NOT be applied and must survive the publish that
+   * follows. Re-seeded into the next props' outbox so a failed tap is retried,
+   * never silently dropped — the "no lost taps" guarantee (§4.1 Q4) restated
+   * for the app-side leg of the outbox.
+   */
+  failed: WidgetPendingCapture[];
+  /**
+   * Revocations that could not be applied this pass (the ingest failed, so the
+   * rows they target may not exist locally yet). Carried into the next props
+   * for the same reason as `failed` — an undo the app dropped on the floor
+   * would resurrect the event on the next ingest.
+   */
+  deferredRevokes: string[];
 }
 
 export interface DrainDeps {
   logMeal: typeof logMealIntent;
   logTreat: typeof logTreatIntent;
   topUpBowl: typeof topUpBowlIntent;
-  /** Soft-delete an already-ingested event; must be a no-op if it isn't there. */
+  /**
+   * Move the just-written inbox records into local SQLite + the sync queue.
+   * MUST run between the applies and the revokes — see applyOutbox.
+   */
+  ingest: () => Promise<void>;
+  /** Soft-delete an already-ingested event; a no-op if it isn't there. */
   revokeEvent: (eventId: string) => Promise<void>;
 }
 
@@ -98,6 +117,16 @@ function defaultDrainDeps(): DrainDeps {
     logMeal: logMealIntent,
     logTreat: logTreatIntent,
     topUpBowl: topUpBowlIntent,
+    // Same allowlisted ingest the sync cycle runs (hooks/useSync.ts) — the pet
+    // set is the trust boundary, so it is read here rather than derived from
+    // the captures themselves. Required lazily: captureInbox pulls in the
+    // Supabase client, whose import-time env guard deliberately throws, and
+    // this module must stay importable by anything that only needs its types.
+    ingest: () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { ingestCaptureInbox } = require('./captureInbox');
+      return ingestCaptureInbox(new Set(usePetStore.getState().pets.map((p) => p.id)));
+    },
     revokeEvent: softDeleteEvent,
   };
 }
@@ -129,57 +158,96 @@ async function applyCapture(capture: WidgetPendingCapture, deps: DrainDeps): Pro
   return result.ok;
 }
 
-// Pure-ish core: given the outbox, apply it. Exported for the unit test (the
-// production function runs against fakes, not a copy of itself).
+// Given the outbox, apply it. Exported for the unit test (the production
+// function runs against fakes, not a copy of itself).
 //
-// A revoked id is never applied AND is soft-deleted if an earlier drain already
-// ingested it — one undo path, honest whichever side of the drain the owner
-// tapped on (the W3 §4.1 Q5 recommendation). A bowl top-up creates no row, so
-// its revoke is pre-drain only; once drained, the re-attest stands and the
-// widget's undo affordance is already gone (the publish that follows the drain
-// clears it). That asymmetry is documented, not hidden.
+// THE THREE STEPS ARE ORDERED, and the order is the whole correctness argument:
+//
+//   1. APPLY  — each capture goes through its W4 intent, which writes an inbox
+//               file (+ a best-effort direct REST leg). No local row exists yet.
+//   2. INGEST — the inbox is drained into local SQLite + the sync queue, in
+//               THIS pass. Without it the app's own snapshot (read right after,
+//               to republish) would still show the slot as unlogged, so the
+//               widget would drop its ✓ about a second after a tap that
+//               actually succeeded — an invitation to log the meal twice. The
+//               W3 contract assumed the extension wrote the inbox file long
+//               before a foreground; W5's outbox writes it DURING one, so the
+//               ingest has to be pulled into the same pass.
+//   3. REVOKE — only now can a soft-delete find the row. Revoking before the
+//               ingest would silently no-op, and the inbox record — which knows
+//               nothing about revocations — would then insert the event the
+//               owner explicitly undid.
+//
+// One undo path, honest whichever side of the drain the owner tapped on (the
+// W3 §4.1 Q5 recommendation). A bowl top-up creates no row, so its revoke is
+// pre-drain only; once drained the re-attest stands, and the publish that
+// follows has already cleared the affordance. That asymmetry is documented,
+// not hidden.
 export async function applyOutbox(
   outbox: { pending: WidgetPendingCapture[]; revoked: string[] },
   deps: DrainDeps = defaultDrainDeps(),
 ): Promise<DrainOutcome> {
   const revoked = new Set(outbox.revoked);
+  const failed: WidgetPendingCapture[] = [];
   let applied = 0;
-  let failed = 0;
   for (const capture of outbox.pending) {
     if (revoked.has(capture.id)) continue;
     try {
       if (await applyCapture(capture, deps)) applied++;
-      else failed++;
+      else failed.push(capture);
     } catch (e) {
       console.warn('[widgetBridge] capture apply failed:', e);
-      failed++;
+      failed.push(capture);
     }
   }
-  for (const id of revoked) {
-    try {
-      await deps.revokeEvent(id);
-    } catch (e) {
-      console.warn('[widgetBridge] revoke failed:', e);
+
+  // Step 2. Best-effort like every other ingest call site — but a FAILED ingest
+  // must not let step 3 run against rows that aren't there yet, so a throw
+  // here defers the revokes to the next pass rather than burning them.
+  let ingested = true;
+  try {
+    await deps.ingest();
+  } catch (e) {
+    console.warn('[widgetBridge] inbox ingest failed; deferring revokes:', e);
+    ingested = false;
+  }
+
+  if (ingested) {
+    for (const id of revoked) {
+      try {
+        await deps.revokeEvent(id);
+      } catch (e) {
+        console.warn('[widgetBridge] revoke failed:', e);
+      }
     }
   }
-  return { applied, revoked: revoked.size, failed };
+
+  if (failed.length > 0) {
+    console.warn(`[widgetBridge] ${failed.length} widget capture(s) not applied — retrying`);
+  }
+  return {
+    applied,
+    revoked: ingested ? revoked.size : 0,
+    failed,
+    deferredRevokes: ingested ? [] : [...revoked],
+  };
 }
+
+const EMPTY_DRAIN: DrainOutcome = { applied: 0, revoked: 0, failed: [], deferredRevokes: [] };
 
 /** Read the widget's timeline and apply whatever the Home Screen captured. */
 export async function drainWidgetOutbox(deps?: DrainDeps): Promise<DrainOutcome> {
   const widget = getWidget();
-  if (!widget) return { applied: 0, revoked: 0, failed: 0 };
+  if (!widget) return EMPTY_DRAIN;
   let entries: { date: Date; props: CulpritWidgetProps }[] = [];
   try {
     entries = await widget.getTimeline();
   } catch (e) {
     console.warn('[widgetBridge] timeline read failed:', e);
-    return { applied: 0, revoked: 0, failed: 0 };
+    return EMPTY_DRAIN;
   }
   const outbox = collectOutbox(entries);
-  if (outbox.pending.length === 0 && outbox.revoked.length === 0) {
-    return { applied: 0, revoked: 0, failed: 0 };
-  }
+  if (outbox.pending.length === 0 && outbox.revoked.length === 0) return EMPTY_DRAIN;
   return applyOutbox(outbox, deps);
 }
 
@@ -215,13 +283,25 @@ export function clearWidgetTimeline(): void {
 
 /**
  * One full pass: drain what the Home Screen captured, then publish fresh props.
- * Drain first — see the ORDER note in the module header.
+ *
+ * `buildProps` is a callback, not a value, so the props are necessarily built
+ * AFTER the drain has applied and ingested — otherwise the fresh snapshot would
+ * pre-date the tap it is meant to reflect and the widget would drop its ✓ on a
+ * capture that succeeded. Anything the drain could not finish (failed captures,
+ * deferred revocations) is re-seeded into the published outbox so the next pass
+ * retries it: publishing replaces the timeline, so what isn't carried is gone.
  */
 export async function syncWidget(
-  props: CulpritWidgetProps,
+  buildProps: () => Promise<CulpritWidgetProps>,
   opts?: { deps?: DrainDeps; now?: Date },
 ): Promise<DrainOutcome> {
   const outcome = await drainWidgetOutbox(opts?.deps);
-  publishWidgetTimeline(props, opts?.now ?? new Date());
+  const props = await buildProps();
+  publishWidgetTimeline(
+    outcome.failed.length > 0 || outcome.deferredRevokes.length > 0
+      ? { ...props, pending: outcome.failed, revoked: outcome.deferredRevokes }
+      : props,
+    opts?.now ?? new Date(),
+  );
   return outcome;
 }

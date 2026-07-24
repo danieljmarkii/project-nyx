@@ -81,8 +81,12 @@ describe('buildStatusRows', () => {
         ],
       }),
     );
-    expect(rows[0]).toEqual({ label: 'Breakfast', done: true, when: '7:42a', expected: '~7a' });
-    expect(rows[1]).toEqual({ label: 'Dinner', done: false, when: '', expected: '~6p' });
+    expect(rows[0]).toEqual({
+      label: 'Breakfast', done: true, when: '7:42a', expected: '~7a', ambient: false,
+    });
+    expect(rows[1]).toEqual({
+      label: 'Dinner', done: false, when: '', expected: '~6p', ambient: false,
+    });
   });
 
   it('adds the bowl row for a free-fed component, ticked only when re-attested TODAY', () => {
@@ -94,7 +98,7 @@ describe('buildStatusRows', () => {
       }),
     );
     expect(today).toEqual([
-      { label: 'Bowl', done: true, when: 'topped 8:05a', expected: 'free-fed' },
+      { label: 'Bowl', done: true, when: 'topped 8:05a', expected: 'free-fed', ambient: true },
     ]);
 
     // Yesterday's top-up is NOT today's ✓ — the bowl is an ambient fact again.
@@ -106,7 +110,7 @@ describe('buildStatusRows', () => {
       }),
     );
     expect(yesterday).toEqual([
-      { label: 'Bowl', done: false, when: '', expected: 'free-fed' },
+      { label: 'Bowl', done: false, when: '', expected: 'free-fed', ambient: true },
     ]);
   });
 

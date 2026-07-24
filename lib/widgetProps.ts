@@ -71,6 +71,13 @@ export interface WidgetStatusRow {
    * blank row (§4.1 Q3).
    */
   expected: string;
+  /**
+   * True for the free-fed bowl row: an ambient standing fact, not a task. The
+   * widget renders it with a distinct, non-tick mark so an un-topped bowl can
+   * never read as an unmet obligation and a top-up can never read as a fed-✓ —
+   * grazing intake is unmeasured, and the row must not imply otherwise.
+   */
+  ambient: boolean;
 }
 
 /** One one-tap named choice in a picker (D2 — a choice always names its item). */
@@ -118,6 +125,14 @@ export interface WidgetPendingCapture {
 /** Widget-local UI state, per pet slot. */
 export interface WidgetSlotUi {
   view: 'resting' | 'meal' | 'treat';
+  /**
+   * Epoch ms when a picker was opened. The widget has no timer, but every
+   * system refresh re-evaluates the layout — so comparing this against the
+   * evaluation clock lets an abandoned picker fall back to resting on the next
+   * refresh instead of leaving the Home Screen showing a menu (spec §2.2's
+   * "auto-reverts after a short idle", as closely as this platform allows).
+   */
+  openedAt?: number;
   /**
    * The just-captured tap this slot is offering to undo, or null. `at` is the
    * tap's own clock time ('7:42a'): the strip has no guaranteed re-render, so
@@ -179,6 +194,7 @@ export function buildStatusRows(snapshot: WidgetSnapshot): WidgetStatusRow[] {
     done: slot.loggedAt !== null,
     when: slot.loggedAt ? formatClock(slot.loggedAt) : '',
     expected: slot.expectedWindow ?? '',
+    ambient: false,
   }));
   if (snapshot.freeFed) {
     const toppedToday =
@@ -190,6 +206,7 @@ export function buildStatusRows(snapshot: WidgetSnapshot): WidgetStatusRow[] {
       done: toppedToday,
       when: toppedToday ? `topped ${formatClock(snapshot.bowlConfirmedAt!)}` : '',
       expected: 'free-fed',
+      ambient: true,
     });
   }
   return rows;

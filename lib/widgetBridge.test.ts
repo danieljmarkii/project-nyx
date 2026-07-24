@@ -6,7 +6,14 @@
 // applies an undo on either side of the drain, and never invents a row from a
 // capture that names nothing.
 
-import { applyOutbox, type DrainDeps } from './widgetBridge';
+import {
+  applyOutbox,
+  syncWidget,
+  __setWidgetHandleForTests,
+  type DrainDeps,
+  type WidgetHandle,
+} from './widgetBridge';
+import type { CulpritWidgetProps } from './widgetProps';
 import type { WidgetPendingCapture } from './widgetProps';
 
 const PET = '11111111-1111-4111-8111-111111111111';
@@ -40,6 +47,9 @@ function fakeDeps() {
       calls.push({ fn: 'topUpBowl', args });
       return ok(...args);
     }) as unknown as DrainDeps['topUpBowl'],
+    ingest: async () => {
+      calls.push({ fn: 'ingest', args: [] });
+    },
     revokeEvent: async (id: string) => {
       calls.push({ fn: 'revokeEvent', args: [id] });
     },
@@ -53,9 +63,8 @@ describe('applyOutbox', () => {
     const record = capture();
     const outcome = await applyOutbox({ pending: [record], revoked: [] }, deps);
 
-    expect(outcome).toEqual({ applied: 1, revoked: 0, failed: 0 });
-    expect(calls).toHaveLength(1);
-    expect(calls[0].fn).toBe('logMeal');
+    expect(outcome).toEqual({ applied: 1, revoked: 0, failed: [], deferredRevokes: [] });
+    expect(calls.map((c) => c.fn)).toEqual(['logMeal', 'ingest']);
     const [petId, foodItemId, opts] = calls[0].args as [string, string, Record<string, unknown>];
     expect(petId).toBe(PET);
     expect(foodItemId).toBe(record.foodItemId);
@@ -83,7 +92,7 @@ describe('applyOutbox', () => {
       },
       deps,
     );
-    expect(calls.map((c) => c.fn)).toEqual(['logTreat', 'topUpBowl']);
+    expect(calls.map((c) => c.fn)).toEqual(['logTreat', 'topUpBowl', 'ingest']);
     const bowlOpts = calls[1].args[1] as Record<string, unknown>;
     expect(bowlOpts.id).toBe('dddddddd-dddd-4ddd-8ddd-dddddddddddd');
   });
@@ -100,22 +109,29 @@ describe('applyOutbox', () => {
       },
       deps,
     );
-    expect(calls).toHaveLength(0);
-    expect(outcome).toEqual({ applied: 0, revoked: 0, failed: 2 });
+    expect(calls.map((c) => c.fn)).toEqual(['ingest']);
+    // The unapplied captures are HANDED BACK so the publish can re-seed them —
+    // a failed tap is retried, never silently dropped.
+    expect(outcome.applied).toBe(0);
+    expect(outcome.failed.map((c) => c.id)).toEqual([
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    ]);
   });
 
   it('a revoked capture is never applied (undo before the drain)', async () => {
     const { deps, calls } = fakeDeps();
     const record = capture();
     const outcome = await applyOutbox({ pending: [record], revoked: [record.id] }, deps);
-    expect(calls.map((c) => c.fn)).toEqual(['revokeEvent']);
-    expect(outcome).toMatchObject({ applied: 0, revoked: 1 });
+    expect(calls.map((c) => c.fn)).toEqual(['ingest', 'revokeEvent']);
+    expect(outcome).toMatchObject({ applied: 0, revoked: 1, failed: [] });
   });
 
   it('a revoked capture already drained is soft-deleted (undo after the drain)', async () => {
     const { deps, calls } = fakeDeps();
     await applyOutbox({ pending: [], revoked: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'] }, deps);
     expect(calls).toEqual([
+      { fn: 'ingest', args: [] },
       { fn: 'revokeEvent', args: ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'] },
     ]);
   });
@@ -139,7 +155,8 @@ describe('applyOutbox', () => {
       },
       deps,
     );
-    expect(outcome).toMatchObject({ applied: 1, failed: 1 });
+    expect(outcome.applied).toBe(1);
+    expect(outcome.failed).toHaveLength(1);
     expect(calls.filter((c) => c.fn === 'logMeal')).toHaveLength(1);
   });
 
@@ -151,5 +168,127 @@ describe('applyOutbox', () => {
     await expect(applyOutbox({ pending: [], revoked: ['x'] }, deps)).resolves.toMatchObject({
       revoked: 1,
     });
+  });
+
+  // ── The ordering that makes the whole thing correct ───────────────────────
+
+  it('INGESTS between applying and revoking', async () => {
+    // Apply writes an inbox file; only the ingest puts the row in local SQLite.
+    // Revoking first would soft-delete a row that isn't there yet — a silent
+    // no-op — and the inbox record, which knows nothing about revocations,
+    // would then insert the event the owner explicitly undid.
+    const { deps, calls } = fakeDeps();
+    await applyOutbox(
+      {
+        pending: [capture()],
+        revoked: ['77777777-7777-4777-8777-777777777777'],
+      },
+      deps,
+    );
+    expect(calls.map((c) => c.fn)).toEqual(['logMeal', 'ingest', 'revokeEvent']);
+  });
+
+  it('defers revocations (rather than burning them) when the ingest fails', async () => {
+    const { deps, calls } = fakeDeps();
+    deps.ingest = async () => {
+      throw new Error('db locked');
+    };
+    const outcome = await applyOutbox({ pending: [], revoked: ['undo-me'] }, deps);
+    expect(calls.filter((c) => c.fn === 'revokeEvent')).toHaveLength(0);
+    expect(outcome.revoked).toBe(0);
+    expect(outcome.deferredRevokes).toEqual(['undo-me']);
+  });
+});
+
+// ── The seam the whole thing turns on ────────────────────────────────────────
+//
+// `syncWidget` takes a props BUILDER, not props, precisely so the snapshot is
+// read after the drain has applied and ingested. Building first would republish
+// a status column that pre-dates the tap — dropping the ✓ on a capture that
+// succeeded, and inviting a duplicate log.
+
+describe('syncWidget', () => {
+  function fakeWidget(entries: { date: Date; props: CulpritWidgetProps }[]) {
+    const published: CulpritWidgetProps[] = [];
+    const handle: WidgetHandle = {
+      getTimeline: async () => entries,
+      updateTimeline: (next) => next.forEach((e) => published.push(e.props)),
+    };
+    return { handle, published };
+  }
+
+  const emptyProps = (): CulpritWidgetProps => ({
+    schemaVersion: 1,
+    pets: {},
+    signedIn: true,
+    ui: {},
+    pending: [],
+    revoked: [],
+  });
+
+  afterEach(() => __setWidgetHandleForTests(null));
+
+  it('builds the props AFTER draining, and clears the outbox on the way out', async () => {
+    const order: string[] = [];
+    const { deps } = fakeDeps();
+    const record = capture();
+    const { handle, published } = fakeWidget([
+      { date: new Date(), props: { ...emptyProps(), pending: [record] } },
+    ]);
+    __setWidgetHandleForTests(handle);
+
+    const wrapped: DrainDeps = {
+      ...deps,
+      logMeal: (async (...args: unknown[]) => {
+        order.push('apply');
+        return (deps.logMeal as unknown as (...a: unknown[]) => Promise<unknown>)(...args);
+      }) as unknown as DrainDeps['logMeal'],
+      ingest: async () => {
+        order.push('ingest');
+      },
+    };
+
+    await syncWidget(
+      async () => {
+        order.push('build-props');
+        return emptyProps();
+      },
+      { deps: wrapped },
+    );
+
+    expect(order).toEqual(['apply', 'ingest', 'build-props']);
+    // Two entries (now + the midnight rollover), both carrying the fresh props.
+    expect(published).toHaveLength(2);
+    expect(published[0].pending).toEqual([]); // the drained tap is gone
+  });
+
+  it('re-seeds an unapplied capture so a failed tap is retried, not lost', async () => {
+    const { deps } = fakeDeps();
+    // A capture that names nothing can never be applied.
+    const broken = capture({ foodItemId: null });
+    const { handle, published } = fakeWidget([
+      { date: new Date(), props: { ...emptyProps(), pending: [broken] } },
+    ]);
+    __setWidgetHandleForTests(handle);
+
+    const outcome = await syncWidget(async () => emptyProps(), { deps });
+
+    expect(outcome.failed).toHaveLength(1);
+    expect(published[0].pending.map((p) => p.id)).toEqual([broken.id]);
+  });
+
+  it('carries a deferred revocation forward when the ingest failed', async () => {
+    const { deps } = fakeDeps();
+    deps.ingest = async () => {
+      throw new Error('db locked');
+    };
+    const { handle, published } = fakeWidget([
+      { date: new Date(), props: { ...emptyProps(), revoked: ['undo-me'] } },
+    ]);
+    __setWidgetHandleForTests(handle);
+
+    await syncWidget(async () => emptyProps(), { deps });
+
+    expect(published[0].revoked).toEqual(['undo-me']);
   });
 });
