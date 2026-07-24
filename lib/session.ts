@@ -1,5 +1,6 @@
 import { notifySignedOut } from './sync';
 import { clearLocalData } from './db';
+import { clearWidgetData } from './appGroup';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 
@@ -18,6 +19,13 @@ export async function wipeLocalSession(): Promise<void> {
   // re-populate the store after clearLocalData runs.
   notifySignedOut();
   await clearLocalData().catch((e) => console.warn('[session] local wipe failed:', e));
+  // B-290 (FR-9 parity): the App Group container is OUTSIDE the app sandbox and
+  // holds account data on a Home Screen surface — per-pet snapshots and any
+  // un-ingested widget captures. Wipe it with the rest, or the next sign-in on
+  // this device inherits (and could even ingest) the previous account's data.
+  // (The shared-keychain session copy is cleared by the auth adapter's own
+  // removeItem on SIGNED_OUT — lib/secureStore.ts.)
+  clearWidgetData();
   // Device-local active-pet selection is account state too — wipe it and the
   // in-memory pet list so the next sign-in starts clean (FR-9 parity).
   await clearPersistedActivePetId();
