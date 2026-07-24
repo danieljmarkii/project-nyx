@@ -155,7 +155,7 @@ describe('resting state (mock states 1 + 4)', () => {
 
   it('renders a designed empty state before any routine is learned', () => {
     const out = texts(render(props({ pets: { slot1: panel({ rows: [] }) } }), ENV));
-    expect(out).toContain('Log a few meals and your usual times show up here.');
+    expect(out).toContain('Log a few meals and Biscuit’s usual times show up here.');
   });
 
   it('a hybrid pet gets both row types (D6)', () => {
@@ -264,7 +264,7 @@ describe('capture (the outbox)', () => {
     expect(after.ui.slot1.logged?.label).toBe("Dinner — Hill's z/d");
     const out = texts(render(after, ENV));
     expect(out).toContain("Dinner — Hill's z/d");
-    expect(out).toContain('logged just now');
+    expect(out.some((t) => /^logged \d{1,2}(:\d{2})?[ap]$/.test(t))).toBe(true);
     expect(out).toContain('Undo');
   });
 

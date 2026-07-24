@@ -129,6 +129,16 @@ export function CulpritWidgetLayout(
     return out;
   }
 
+  // '7:42a' — the same compact clock lib/widgetProps.formatClock renders for
+  // the status rows, so the undo strip and the row it will become agree.
+  function clock(d: Date): string {
+    const h24 = d.getHours();
+    const mm = d.getMinutes();
+    const h12 = ((h24 + 11) % 12) + 1;
+    const suffix = h24 < 12 ? 'a' : 'p';
+    return mm === 0 ? h12 + suffix : h12 + ':' + (mm < 10 ? '0' + mm : String(mm)) + suffix;
+  }
+
   function withUi(next: WidgetSlotUi) {
     const merged: Record<string, WidgetSlotUi> = {};
     for (const key in uiState) merged[key] = uiState[key];
@@ -148,18 +158,19 @@ export function CulpritWidgetLayout(
     foodItemId: string | null,
     label: string,
   ) {
+    const now = new Date();
     const record = {
       id: uuid4(),
       mealId: kind === 'bowl_topup' ? null : uuid4(),
       kind,
       petId: panel ? panel.petId : '',
       foodItemId,
-      occurredAt: new Date().toISOString(),
+      occurredAt: now.toISOString(),
       label,
     };
     return {
       pending: (props.pending || []).concat([record]),
-      ui: withUi({ view: 'resting', logged: { id: record.id, label } }),
+      ui: withUi({ view: 'resting', logged: { id: record.id, label, at: clock(now) } }),
     };
   }
 
@@ -308,7 +319,7 @@ export function CulpritWidgetLayout(
   // based, not timer-based: a widget gets no guaranteed re-render on a 60s
   // schedule, and a "tap to undo" that quietly stopped working would be worse
   // than one that stays until the app takes the capture off our hands.
-  function loggedStrip(logged: { id: string; label: string }) {
+  function loggedStrip(logged: { id: string; label: string; at: string }) {
     return (
       <VStack
         key="logged"
@@ -334,8 +345,10 @@ export function CulpritWidgetLayout(
               <Spacer key="spacer" />,
             ]}
           </HStack>,
+          // The minute, not "just now": the widget has no guaranteed re-render,
+          // so a relative claim would quietly go stale on the Home Screen.
           <Text key="when" modifiers={[font({ size: 10.5 }), foregroundStyle(T.textTertiary)]}>
-            logged just now
+            {'logged ' + logged.at}
           </Text>,
           <Button key="undo" target="undo" onPress={() => undoPatch(logged.id)}>
             <Text
@@ -570,8 +583,10 @@ export function CulpritWidgetLayout(
   for (let i = 0; i < visible.length; i++) rows.push(statusRow(visible[i], stale, 'row' + i));
   if (rows.length === 0) {
     rows.push(
+      // Principle 5 / nyx-voice Pattern 1+3: a designed empty state that names
+      // the pet and points forward, not a blank column.
       <Text key="empty" modifiers={[font({ size: 11.5 }), foregroundStyle(T.textTertiary)]}>
-        Log a few meals and your usual times show up here.
+        {'Log a few meals and ' + panel.petName + '’s usual times show up here.'}
       </Text>,
     );
   }

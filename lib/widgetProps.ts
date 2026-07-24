@@ -118,8 +118,12 @@ export interface WidgetPendingCapture {
 /** Widget-local UI state, per pet slot. */
 export interface WidgetSlotUi {
   view: 'resting' | 'meal' | 'treat';
-  /** The just-captured tap this slot is offering to undo, or null. */
-  logged: { id: string; label: string } | null;
+  /**
+   * The just-captured tap this slot is offering to undo, or null. `at` is the
+   * tap's own clock time ('7:42a'): the strip has no guaranteed re-render, so
+   * it names the minute rather than claiming "just now" hours later.
+   */
+  logged: { id: string; label: string; at: string } | null;
 }
 
 export interface CulpritWidgetProps {
