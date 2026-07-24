@@ -166,6 +166,16 @@ export function keyKind(key: string): 'session' | 'code-verifier' | 'user' {
 // corrupted pointer degrades to a clean re-login rather than a wrong read.
 const POINTER_RE = /^(\d+):(\d+)$/;
 
+// Pure pointer parse, exported so the W4 extension-side reader
+// (lib/widgetSession.ts) interprets pointer values with EXACTLY this logic —
+// a second regex would be a drift seam between the two processes.
+export function parsePointer(raw: string | null): { gen: number; count: number } | null {
+  if (raw == null) return null;
+  const m = POINTER_RE.exec(raw);
+  if (!m) return null;
+  return { gen: Number.parseInt(m[1], 10), count: Number.parseInt(m[2], 10) };
+}
+
 // Split a value into ≤MAX_CHUNK_CHARS slices WITHOUT ever splitting a UTF-16
 // surrogate PAIR across a boundary: each chunk is UTF-8-encoded independently by
 // native SecureStore, and a lone surrogate half is ill-formed there and gets
@@ -194,11 +204,7 @@ async function readPointerValue(
   storageKey: string,
   tier: StorageTier,
 ): Promise<{ gen: number; count: number } | null> {
-  const raw = await SecureStore.getItemAsync(storageKey, tier.options);
-  if (raw == null) return null;
-  const m = POINTER_RE.exec(raw);
-  if (!m) return null;
-  return { gen: Number.parseInt(m[1], 10), count: Number.parseInt(m[2], 10) };
+  return parsePointer(await SecureStore.getItemAsync(storageKey, tier.options));
 }
 
 // Read a tier's live pointer as {gen, count}, or null when absent/malformed.

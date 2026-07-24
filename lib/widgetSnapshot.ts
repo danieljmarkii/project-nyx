@@ -6,13 +6,12 @@
 // debounces event/pet-store changes and each sync cycle into a publish), and the
 // widget's timeline provider (W5) reads the file for its bound pet.
 //
-// W3 owns the ENVELOPE + the ambient status facts that exist in today's data
-// model: pet identity, the free-fed bowl fact (B-040), and today's logged
-// meal/treat state. The picker rows (slot→named-food resolution, the treat
-// shortlist, trial day) are W4's resolution lib — their fields are declared here
-// so the W5 renderer contract is visible now, and they publish empty until W4
-// fills them. An empty field renders as "nothing to offer one-tap", never as a
-// fabricated choice.
+// W3 owned the ENVELOPE + the ambient status facts; W4's resolution lib
+// (lib/widgetResolution.ts) now fills the picker fields — learned slot rows,
+// slot→named-food meal choices, the treat shortlist, and the trial day. All
+// resolution logic is pure and lives there; this module owns the DB/network
+// reads and the file writes. An empty field still renders as "nothing to offer
+// one-tap", never as a fabricated choice.
 //
 // Safety invariants carried by CONSTRUCTION, not convention (spec §8 / D9):
 // the snapshot shape has no field that could hold Signal/AI copy, reassurance,
@@ -23,11 +22,25 @@
 
 import { File } from 'expo-file-system';
 import { getDb } from './db';
+import { supabase } from './supabase';
 import { getSnapshotDirectory } from './appGroup';
 // toLocalDayKey (not feedingArrangements' localDateString twin): utils is
 // dependency-free, so the publisher doesn't drag the sync/supabase import graph
 // into every consumer.
 import { toLocalDayKey } from './utils';
+import {
+  assignPetSlots,
+  buildMealChoices,
+  buildSlotRows,
+  buildTreatChoices,
+  learnMealSlots,
+  resolveTrialContext,
+  PET_SLOT_INDEX_FILENAME,
+  TREAT_LOOKBACK_DAYS,
+  type ActiveTrialInfo,
+  type PetSlotIndex,
+  type ResolutionMealRow,
+} from './widgetResolution';
 
 export const WIDGET_SNAPSHOT_SCHEMA_VERSION = 1;
 
@@ -78,24 +91,29 @@ export interface WidgetSnapshot {
   /** An active free-choice arrangement exists (B-040) — the bowl row's fact. */
   freeFed: boolean;
   today: WidgetSnapshotToday;
-  // ── W4 resolution-lib fields (published empty by W3) ──
+  // ── W4 resolution-lib fields (filled by lib/widgetResolution.ts) ──
   slots: WidgetSlotRow[];
   mealChoices: WidgetNamedChoice[];
   treatChoices: WidgetNamedChoice[];
   /** Day N of the active diet trial, or null when no trial is active. */
   trialDay: number | null;
+  /**
+   * The trial's target length ("Day 12 of 28"), or null. Additive to the v1
+   * contract (a v1 reader that doesn't know the key ignores it) — no
+   * schema-version bump.
+   */
+  trialTargetDays: number | null;
 }
 
-// One row of today's logged meal events, as read by the publisher's query.
-export interface TodayMealRow {
-  occurred_at: string;
-  food_type: string | null;
-}
+// One row of the publisher's meal query (the resolution lib's input shape —
+// events ⋈ meals ⟕ food_items_cache over the treat-lookback window).
+export type SnapshotMealRow = ResolutionMealRow;
 
-// Pure: today's meal rows + the bowl fact → the snapshot. A treat IS a meal
-// event whose food is food_type='treat' (the app's own model); anything else —
-// including a meal whose food the cache doesn't know (food_type null) — counts
-// as a meal, matching how History renders it.
+// Pure: the lookback window's meal rows + the bowl fact + the active trial →
+// the snapshot. A treat IS a meal event whose food is food_type='treat' (the
+// app's own model); anything else — including a meal whose food the cache
+// doesn't know (food_type null) — counts as a meal, matching how History
+// renders it.
 //
 // All timestamp logic is PARSED-ms based, never lexical: local rows store
 // occurred_at as toISOString() ('Z') while hydrated rows keep PostgREST's
@@ -108,20 +126,26 @@ export function buildWidgetSnapshot(
     generatedAt: string;
     dayKey: string;
     freeFed: boolean;
-    todayMeals: TodayMealRow[];
+    /** Meal rows over the full treat-lookback window, INCLUDING today. */
+    meals: SnapshotMealRow[];
     /** Authoritative [start, end) of the local day, epoch ms. */
     dayBounds: { startMs: number; endMs: number };
+    /** The active diet trial, or null (offline / none — see fetchActiveTrials). */
+    trial: ActiveTrialInfo | null;
   },
 ): WidgetSnapshot {
+  const now = new Date(input.generatedAt);
   let mealCount = 0;
   let treatCount = 0;
   let lastMealMs = -1;
   let lastTreatMs = -1;
   let lastMealAt: string | null = null;
   let lastTreatAt: string | null = null;
-  for (const row of input.todayMeals) {
+  const todayMeals: SnapshotMealRow[] = [];
+  for (const row of input.meals) {
     const t = Date.parse(row.occurred_at);
     if (Number.isNaN(t) || t < input.dayBounds.startMs || t >= input.dayBounds.endMs) continue;
+    todayMeals.push(row);
     if (row.food_type === 'treat') {
       treatCount++;
       if (t > lastTreatMs) {
@@ -136,6 +160,11 @@ export function buildWidgetSnapshot(
       }
     }
   }
+
+  const slots = learnMealSlots(input.meals, now);
+  const slotRows = buildSlotRows(slots, todayMeals);
+  const { trialDay, trialTargetDays } = resolveTrialContext(input.trial, now.getTime());
+
   return {
     schemaVersion: WIDGET_SNAPSHOT_SCHEMA_VERSION,
     petId: pet.id,
@@ -145,10 +174,11 @@ export function buildWidgetSnapshot(
     dayKey: input.dayKey,
     freeFed: input.freeFed,
     today: { mealCount, treatCount, lastMealAt, lastTreatAt },
-    slots: [],
-    mealChoices: [],
-    treatChoices: [],
-    trialDay: null,
+    slots: slotRows,
+    mealChoices: buildMealChoices(slots, slotRows, input.trial),
+    treatChoices: buildTreatChoices(input.meals, now),
+    trialDay,
+    trialTargetDays,
   };
 }
 
@@ -176,15 +206,18 @@ export function localDayBounds(now: Date = new Date()): {
 async function readSnapshotInputs(petId: string, now: Date) {
   const db = getDb();
   const bounds = localDayBounds(now);
-  // The SQL bounds are a PREFILTER only, buffered by a minute on each side
-  // (B-055 class): hydrated rows store occurred_at in offset form ('+00:00')
-  // while these bounds are toISOString() ('Z'), so a lexical TEXT compare can
-  // drop a row sitting on the exact boundary second. buildWidgetSnapshot
-  // applies the authoritative ms-based window; over-fetching a neighbour or
-  // two is harmless (the pure filter drops it). Mirrors getDoubleDoseFlag.
+  // One query over the full treat-lookback window (slot learning uses its own
+  // shorter cutoff inside the pure lib). The SQL bounds are a PREFILTER only,
+  // buffered by a minute on each side (B-055 class): hydrated rows store
+  // occurred_at in offset form ('+00:00') while these bounds are toISOString()
+  // ('Z'), so a lexical TEXT compare can drop a row sitting on the exact
+  // boundary second. buildWidgetSnapshot applies the authoritative ms-based
+  // windows; over-fetching a neighbour or two is harmless (the pure filters
+  // drop it). Mirrors getDoubleDoseFlag.
   const bufferMs = 60 * 1000;
-  const todayMeals = await db.getAllAsync<TodayMealRow>(
-    `SELECT e.occurred_at, f.food_type
+  const lookbackStartMs = bounds.startMs - TREAT_LOOKBACK_DAYS * 86_400_000;
+  const meals = await db.getAllAsync<SnapshotMealRow>(
+    `SELECT e.occurred_at, m.food_item_id, f.food_type, f.brand, f.product_name
      FROM events e
      JOIN meals m ON m.event_id = e.id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
@@ -192,7 +225,7 @@ async function readSnapshotInputs(petId: string, now: Date) {
        AND e.occurred_at >= ? AND e.occurred_at < ?`,
     [
       petId,
-      new Date(bounds.startMs - bufferMs).toISOString(),
+      new Date(lookbackStartMs - bufferMs).toISOString(),
       new Date(bounds.endMs + bufferMs).toISOString(),
     ],
   );
@@ -204,10 +237,74 @@ async function readSnapshotInputs(petId: string, now: Date) {
     [petId],
   );
   return {
-    todayMeals,
+    meals,
     freeFed: !!bowl,
     dayBounds: { startMs: bounds.startMs, endMs: bounds.endMs },
   };
+}
+
+// Active diet trials for the given pets, one Supabase query. BEST-EFFORT by
+// design: diet_trials has NO local mirror (it is Supabase-only — the same
+// posture as hooks/useTrend and the profile card), so offline this returns an
+// empty map and the snapshot publishes trialDay:null with the meal choices
+// degrading to the learned usual food. Honest degradation: mid-trial the
+// learned usual IS overwhelmingly the trial diet (it's what gets logged every
+// day), and a missing "Day N of 28" header line is staleness, not a fabricated
+// claim. A local diet_trials mirror is the real fix if this bites (backlog
+// candidate, not W4 scope).
+async function fetchActiveTrials(petIds: string[]): Promise<Map<string, ActiveTrialInfo>> {
+  const out = new Map<string, ActiveTrialInfo>();
+  if (petIds.length === 0) return out;
+  try {
+    const { data, error } = await supabase
+      .from('diet_trials')
+      .select('pet_id, started_at, target_duration_days, food_item_id, food_items(brand, product_name)')
+      .in('pet_id', petIds)
+      .eq('status', 'active');
+    if (error) throw error;
+    for (const row of (data ?? []) as unknown as {
+      pet_id: string;
+      started_at: string;
+      target_duration_days: number;
+      food_item_id: string | null;
+      food_items: { brand: string; product_name: string } | null;
+    }[]) {
+      // One active trial per pet is the product model; if data ever holds two,
+      // first wins (deterministic — PostgREST returns a stable order per query).
+      if (out.has(row.pet_id)) continue;
+      const label = row.food_items
+        ? `${row.food_items.brand} ${row.food_items.product_name}`.trim()
+        : null;
+      out.set(row.pet_id, {
+        startedAt: row.started_at,
+        targetDurationDays: row.target_duration_days,
+        foodItemId: row.food_item_id,
+        foodLabel: label || null,
+      });
+    }
+  } catch (e) {
+    console.warn('[widgetSnapshot] trial fetch failed (offline?):', e);
+  }
+  return out;
+}
+
+// Read the previously-published pet-slot index, so assignments stay sticky
+// across publishes (the D5 stability rule). Absent/corrupt → null (first
+// publish, or start assignments fresh — new assignments only ever ADD slots,
+// so a lost file can re-point a slot only in the same visible-not-hidden way
+// as tombstone reuse).
+function readPreviousSlotIndex(dir: { list(): { name: string; textSync?(): string }[] }): PetSlotIndex | null {
+  try {
+    for (const entry of dir.list()) {
+      if (entry.name === PET_SLOT_INDEX_FILENAME && 'textSync' in entry && entry.textSync) {
+        const parsed = JSON.parse(entry.textSync()) as PetSlotIndex;
+        return parsed && Array.isArray(parsed.assignments) ? parsed : null;
+      }
+    }
+  } catch (e) {
+    console.warn('[widgetSnapshot] pet-slot index read failed:', e);
+  }
+  return null;
 }
 
 // Publish one snapshot file per pet ("<petId>.json") and prune files for pets
@@ -233,10 +330,18 @@ export async function publishWidgetSnapshots(pets: SnapshotPet[]): Promise<void>
   // not guarded with extra state.
   const wanted = new Set(pets.map((p) => `${p.id}.json`));
 
+  // Trials fetched once for all pets (best-effort, empty offline).
+  const trials = await fetchActiveTrials(pets.map((p) => p.id));
+
   for (const pet of pets) {
     try {
       const inputs = await readSnapshotInputs(pet.id, now);
-      const snapshot = buildWidgetSnapshot(pet, { generatedAt, dayKey, ...inputs });
+      const snapshot = buildWidgetSnapshot(pet, {
+        generatedAt,
+        dayKey,
+        ...inputs,
+        trial: trials.get(pet.id) ?? null,
+      });
       // new File(...).write creates or overwrites; createFile would throw on an
       // existing snapshot (re-publish is the common case).
       new File(dir, `${pet.id}.json`).write(JSON.stringify(snapshot));
@@ -245,10 +350,29 @@ export async function publishWidgetSnapshots(pets: SnapshotPet[]): Promise<void>
     }
   }
 
-  // Prune snapshots for pets that left the account (archived/removed).
+  // The D5 pet-slot index: sticky slot assignments the widget's "Pet N" enum
+  // parameter resolves through (lib/widgetResolution.ts § D5). Read-modify-
+  // write of our own file — previous assignments survive so a bound widget
+  // never silently re-points (B-086).
+  try {
+    const previous = readPreviousSlotIndex(dir);
+    const index = assignPetSlots(previous, pets);
+    new File(dir, PET_SLOT_INDEX_FILENAME).write(JSON.stringify(index));
+  } catch (e) {
+    console.warn('[widgetSnapshot] pet-slot index publish failed:', e);
+  }
+
+  // Prune snapshots for pets that left the account (archived/removed). The
+  // slot index is NOT a per-pet snapshot — it must survive the prune (its
+  // tombstones are the D5 stability guarantee).
   try {
     for (const entry of dir.list()) {
-      if ('textSync' in entry && entry.name.endsWith('.json') && !wanted.has(entry.name)) {
+      if (
+        'textSync' in entry &&
+        entry.name.endsWith('.json') &&
+        entry.name !== PET_SLOT_INDEX_FILENAME &&
+        !wanted.has(entry.name)
+      ) {
         entry.delete();
       }
     }
