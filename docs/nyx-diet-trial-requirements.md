@@ -1,7 +1,53 @@
 # Diet Trial Lifecycle — Requirements
 
-**Version:** 1.0 (build-ready pending D3 ratification) | **Last Updated:** 2026-07-24
-**Backlog:** B-417 | **Status:** requirements + PR plan complete; D3 flagged recommend-and-proceed
+**Version:** 0.9 — **pre-mock. Not build-ready for the UI PRs.** | **Last Updated:** 2026-07-24
+**Backlog:** B-417 | **Status:** problem, evidence, schema and PR plan complete. Three gates remain before v1.0 — see §0.
+
+> **Readiness in one line:** PRs 1–2 (schema, local mirror) are buildable the moment D3 is ruled. PRs 3–7 are **not** — they need a mock round, a sequencing call against B-351 slice 4, and two clinical rulings.
+
+---
+
+## 0. Readiness — what stands between this and v1.0
+
+This doc is deliberately versioned **0.9**. Every other build-ready spec in this repo (`ask`, widget, multi-protein, vet report) pairs with **design-locked mocks** and was PM-ratified over a mock-review round — the widget spec after three. This one has ASCII sketches. Calling it build-ready would misrepresent it against the bar the project actually holds.
+
+### 0.1 Per-PR readiness
+
+| PR | Ready? | What's missing |
+|---|---|---|
+| **1** — migration 040 + `diet_trial_foods` | **Yes, on D3** | D3 ruling only |
+| **2** — local SQLite mirror | **Yes, on PR 1** | — |
+| **3** — start-a-trial modal | No | Mock + `nyx-voice` copy pass |
+| **4** — trial card v2 | No | Mock + **sequencing vs. B-351 slice 4** (§0.2) |
+| **5** — off-diet exposure detection | No | **Hard dep on B-351 slice 4** (§0.2) + **G2** coverage floor |
+| **6** — completion milestone | No | Mock + copy pass |
+| **7** — vet report render | No | Gated on PR 5 |
+
+### 0.2 The B-351 slice 4 collision (unresolved — needs a sequencing call)
+
+B-351 Phase A **slice 4** — *"Disclosure + trial-contaminant flag"*, **not yet built** — includes, verbatim from `nyx-multi-protein-requirements.md` §11: *"+ the diet-trial-card note."*
+
+That is the same card **this spec's PR 4 rebuilds**, and PR 4 deletes the `% compliance` string slice 4 would be annotating. Two unbuilt PRs, two specs, one component, neither referencing the other. Whichever lands first silently invalidates the other's assumptions.
+
+It is also a **hard dependency**, not just a collision: §5.3's protein arm *is* slice 4's contaminant flag. This spec says "compose with" in D4, which reads as if the flag already ships. It does not.
+
+**Options for the PM:**
+- **(a)** Slice 4 first; this spec's PR 4 absorbs its note into the rebuilt card. Slice 4 must then target a card it can't see yet.
+- **(b)** This spec's PRs 1–4 first; slice 4 retargets onto the new card. Delays B-351's Tier-2 escalation.
+- **(c)** Merge the two — slice 4's diet-trial-card note is *cut* from B-351 and rebuilt as part of PR 4 here, with B-351 slice 4 keeping only the food-surface disclosure. **Team lean**, because it puts every trial-card change in one track and leaves B-351 owning food surfaces.
+
+### 0.3 Clinical gates (reclassified — these are not build-time details)
+
+- **G1 — D3**: the allowed-food set vs. B-351 D6 (§2.1). Blocks PR 1's schema.
+- **G2 — the coverage floor** (was S1). Below what coverage does §5.2 suppress an exposure claim entirely? *Proposal: <50%.* **This was previously filed as a build-time sub-decision, which was a misclassification** — the floor decides when the app is permitted to say *"no off-diet foods logged,"* which is the never-reassure invariant in its most direct form. It belongs to Dr. Chen before PR 5, not to whoever builds it.
+- **G3 — duration defaults**: GI 28d / Skin 56d (§4.1) are the **low end** of the research ranges (3–4wk / 8–12wk). A defensible default, but a clinical call, not an engineering one.
+
+### 0.4 Still to produce before v1.0
+
+1. **Mocks** for the three UI surfaces — start-trial modal, trial card v2, completion milestone — as `docs/nyx-diet-trial-mockups.html`, following the house pattern
+2. **Verbatim copy pack** through `nyx-voice` (this doc's strings are illustrative, not locked)
+3. **Rulings** on G1–G3 and the §0.2 sequencing option
+4. An **`adversarial-reviewer` read of §5.2/§5.3 as specified** — before someone builds it, not only after. The never-reassure asymmetry here is prose right now; it should be attacked while it's still cheap to change.
 
 ---
 
@@ -67,7 +113,7 @@ From `docs/nyx-research-v1_0.md:72–119`:
 | **D1** | v1 scope | **RATIFIED (PM, 2026-07-24) — lifecycle + allowed-set adherence.** Start / track / complete, plus a trial allowed-food set and real off-diet exposure counting. Guided trial mode (wizard, reintroduction challenge) is out. |
 | **D2** | What "compliance" means | **RATIFIED (PM, 2026-07-24) — split the metric, folded into this track** (not a standalone hotfix). Coverage (days logged) and adherence (off-diet exposures) are reported as two separate facts. The single blended "% compliance" is deleted. |
 | **D3** | Allowed-food set vs. B-351 D6 | **RECOMMEND-AND-PROCEED — flagged for ratification.** B-351 D6 deferred an `excluded_proteins` *column* in favour of deriving contaminants from the trial food's own protein set. That is a different axis (proteins, derived) from an allowed-**food** set (foods, explicit). Both ship; **one detection path consults both** (§6.3). See §2.1 for why derivation alone is insufficient. |
-| **D4** | Contamination detection | **Compose with B-351 D2's ratified deterministic contaminant flag** — soft at add, non-blocking at log (Principle 1). Do not build a second detector. |
+| **D4** | Contamination detection | **Compose with B-351 D2's ratified deterministic contaminant flag** — soft at add, non-blocking at log (Principle 1). Do not build a second detector. ⚠️ **The flag is specified but NOT BUILT** — it is B-351 Phase A slice 4, still pending. This is a hard ordering dependency on PR 5, and slice 4 also touches the diet-trial card. See §0.2. |
 | **D5** | Where trials are created | **Profile card**, mirroring `components/profile/AddMedicationModal.tsx` exactly. Consistent with `medications`, which was itself modeled on `diet_trials`. |
 | **D6** | Trial end | **Milestone prompt** at day N → complete / extend / abandon, with an **owner-reported** outcome. Never an app verdict on whether the trial worked. |
 | **D7** | Local SQLite mirror | **Yes.** `medications` — the table explicitly modeled on `diet_trials` (`nyx-medication-logging-requirements.md` §4.3) — has a local mirror (`lib/db.ts:85`); the original never got one. Closes B-408. |
@@ -280,7 +326,8 @@ Step 9's first clinical question finally has a substrate. Changes are **content,
 
 ## 10. Open sub-decisions (build-time, not PM-blocking)
 
-- **S1** — Coverage floor below which §5.2 suppresses the exposure claim. Proposal: **< 50%**. Needs Dr. Chen.
+> **S1 has been promoted out of this list** to **G2** in §0.3. It governs when the app may state "no off-diet foods logged" — the never-reassure invariant — which is a clinical ruling, not a build-time detail. Filing it here was a misclassification.
+
 - **S2** — Do treats count in the coverage denominator, or meals only? Composes with B-011 (treats vs meals) and the §11 #1 finished-rate precedent.
 - **S3** — Back-dated trial start: cap how far back? Proposal: no cap; coverage honesty handles it.
 - **S4** — Does completing a trial archive its foods (B-005 / B-354 interaction)?
@@ -296,11 +343,13 @@ Step 9's first clinical question finally has a substrate. Changes are **content,
 | **2** | Local SQLite mirror + sync for both tables (D7) | `supabase-sync` skill. Closes B-408. |
 | **3** | Start-a-trial UX — `AddDietTrialModal` + allowed-set picker (D5) | Designer (P1, P2), `nyx-voice`, Jordan |
 | **4** | Trial card v2 — coverage/exposure split; delete "% compliance"; unify day math (D2) | Designer (P6), Dr. Chen, `nyx-voice` |
-| **5** | Off-diet exposure detection — the one path (§5.3) | **`adversarial-reviewer` mandatory.** Data Scientist, Dr. Chen |
+| **5** | Off-diet exposure detection — the one path (§5.3) | **`adversarial-reviewer` mandatory.** Data Scientist, Dr. Chen. **Blocked on B-351 slice 4** (the protein arm) + **G2** (the coverage floor). |
 | **6** | Completion milestone + owner-reported outcome (D6) | Designer (P4, P5), `nyx-voice`, `clinical-guardrails` |
 | **7** | Vet report render (§7) | **`vet-report-cold-read` mandatory.** Dr. Chen |
 
 **Parallelism:** PRs 1→2 are sequential. PR 3 and PR 4 are independent once PR 1 lands (disjoint files: modal vs. card). PR 5 gates PR 7. PRs 3/4 can run concurrently with PR 5's detection work in separate sessions — expect `STATUS.md` as the only shared-file collision at wrap.
+
+**Cross-track sequencing (§0.2 — unresolved).** PR 4 and B-351 slice 4 both write the diet-trial card, and PR 5 depends on slice 4's contaminant flag existing. Until the PM rules (a)/(b)/(c), **do not start PR 4 or PR 5** — PRs 1, 2 and 3 are unaffected and can proceed on D3 alone. `STATUS.md` is *not* the only collision to expect between these two tracks; `app/(tabs)/profile.tsx` is the real one.
 
 **Deploy-gating (the B-182 lesson):** PR 7 changes `generate-report` output. Do **not** deploy the Edge Function until the PR 4 client renderer has landed, or a report will render fields the app cannot display.
 
