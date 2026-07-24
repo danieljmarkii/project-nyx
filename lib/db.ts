@@ -373,6 +373,34 @@ export async function initDb(): Promise<void> {
     // Column already exists — safe to ignore
   }
 
+  // logged_via — capture-surface provenance (B-289 / migration 038; local mirror
+  // rides B-290/W3 per the migration header). TEXT with the same NOT NULL
+  // DEFAULT 'app' as the server enum: every pre-W3 local row was written by the
+  // app, so the default is a true backfill, and app write paths that omit the
+  // column keep landing 'app' — exactly correct. The inbox ingest
+  // (lib/captureInbox.ts) is the first writer of a non-'app' value. All three
+  // mirrored tables get it; events/meals CREATEs above predate the column and
+  // medication_administrations lives in MEDICATION_SCHEMA_SQL, so the ALTER
+  // upgrade path covers every existing install (the try/catch no-ops when a
+  // future CREATE includes it).
+  try {
+    await database.execAsync(`ALTER TABLE events ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    await database.execAsync(`ALTER TABLE meals ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    await database.execAsync(
+      `ALTER TABLE medication_administrations ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`,
+    );
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   // B-156 PR B4 — local index on the combo link, mirroring Supabase migration 023's
   // partial index. The reverse-lookup join (PAIRED_DOSE_REVERSE_JOIN) groups
   // medication_administrations BY paired_event_id on every getTimeline / getEventById,

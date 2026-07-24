@@ -156,6 +156,7 @@ describe('administrationRowToRemote — dose-event child payload', () => {
     dose_amount: '5 mg',
     how_given: 'in_treat',
     paired_event_id: null,
+    logged_via: 'app', // B-289 — provenance rides the push (W3)
     notes: null,
     created_at: '2026-06-01T10:00:00.000Z',
     updated_at: '2026-06-01T10:00:00.000Z',
@@ -171,7 +172,8 @@ describe('administrationRowToRemote — dose-event child payload', () => {
     expect(keys.sort()).toEqual(
       [
         'adherence', 'created_at', 'dose_amount', 'event_id', 'how_given', 'id',
-        'medication_id', 'medication_item_id', 'notes', 'paired_event_id', 'pet_id', 'updated_at',
+        'logged_via', 'medication_id', 'medication_item_id', 'notes', 'paired_event_id',
+        'pet_id', 'updated_at',
       ].sort(),
     );
   });
@@ -1319,6 +1321,7 @@ describe('administrationRowToRemote — an unconfirmed combo dose stays null on 
       dose_amount: null,
       how_given: 'in_treat',
       paired_event_id: 'evt-meal', // the refused/picked vehicle
+      logged_via: 'app', // B-289
       notes: null,
       created_at: '2026-06-23T10:00:00.000Z',
       updated_at: '2026-06-23T10:00:00.000Z',

@@ -157,6 +157,7 @@ export interface LocalMedicationAdministration {
   dose_amount: string | null;
   how_given: string | null; // B-156 — vehicle (dose_route_vehicle enum, server-side)
   paired_event_id: string | null; // B-156 Slice C (PR B2) — the co-logged meal/treat event this dose was given inside
+  logged_via: string; // B-289 — capture-surface provenance (migration 038); local DEFAULT 'app'
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -259,6 +260,7 @@ export interface RemoteMedicationAdministrationUpsert {
   dose_amount: string | null;
   how_given: string | null; // B-156 — vehicle; forwarded as-is, never coerced
   paired_event_id: string | null; // B-156 Slice C — combo link; forwarded as-is (a UUID or NULL)
+  logged_via: string; // B-289 — capture-surface provenance
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -288,6 +290,9 @@ export function administrationRowToRemote(
     dose_amount: row.dose_amount,
     how_given: row.how_given,
     paired_event_id: row.paired_event_id,
+    // B-289 — provenance rides the push; 'app' for every pre-W3 row via the
+    // local default. Nullish-guard for a row read before the ALTER ran.
+    logged_via: row.logged_via ?? 'app',
     notes: row.notes,
     created_at: row.created_at,
     updated_at: row.updated_at,
