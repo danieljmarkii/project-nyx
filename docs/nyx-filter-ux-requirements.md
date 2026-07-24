@@ -47,7 +47,9 @@ The app-wide answer to "which UI shape does a filter get?" — written after the
 
 ---
 
-## 4. The two live decisions — recommend-and-proceed
+## 4. The two live decisions — **PM-RATIFIED 2026-07-24** (same day)
+
+> **D1 ("Keep") and D2 ("team rec" — keep, with the ≥5-lens tripwire B-405) were both ratified by the PM on 2026-07-24; F3 was approved and shipped the same day** (the `design-principles.md` Interaction Principles § Filters & Scopes section). The text below is preserved as the decision record; F1/F2 remain conditional exactly as §5 states — F1 now fires only on the B-405 tripwire, F2 only on a future PM reversal of D1.
 
 - **D1 — FoodPicker scope chips stay visible chips.** Team rec (Designer + Jordan/Sam): the meal log is the app's hottest path; five short always-visible options beat a two-tap sheet, and nothing can hide (they wrap). Revisit trigger: the set outgrows one wrapped row on the smallest supported width. *(Related but separate: B-396 — whether an active scope chip should also narrow the rotation shelf. A behavior question, not a shape question; unchanged by this doc.)*
 - **D2 — Calendar lens selector stays chips, with a conversion trigger.** Today it's 2–4 chips on a card with room. The set is dynamic (one per active symptom + "Meals"), so it *can* grow: at **≥5 lenses** the chips start crowding the card and the surface converts to a ScopeMenu pill in the card header. Tracked as **B-405** so the trigger isn't lost.
@@ -64,7 +66,7 @@ Both are recommend-and-proceed (reversible, no code shipped on them today); PM c
 |---|---|---|---|
 | **F1 — Calendar lens → ScopeMenu** | D2's ≥5-lens trigger, or PM override | Replace the card's `ChipGroup` with a ScopeMenu pill in the card header (icon-less options; dynamic set; keep the drill-in-close-on-switch behavior + pet-switch reset) | `code-reviewer`; §6 AC |
 | **F2 — FoodPicker scope → ScopeMenu** | Only on PM override of D1 | Pill beside the search field replacing the pinned chip row; must compose with search collapse (B-355 geometry) | `code-reviewer` + `pm-feature-review` (hot path); §6 AC |
-| **F3 — Tier-2 doc edit** | PM sign-off | `design-principles.md` gains the §1 shape table + the §2 rules (flagged per Tier-2 protocol — **not written unilaterally**) | PM confirmation |
+| **F3 — Tier-2 doc edit** | ~~PM sign-off~~ **DONE — approved + shipped 2026-07-24** | `design-principles.md` § Interaction Principles gained "Filters & Scopes — the lens shapes" (shape table + four invariants + the why-not-sheets-everywhere note) | PM approved 2026-07-24 |
 
 CLAUDE.md's Code Conventions carry the one-paragraph version of §1 (Tier-1, updated with this doc).
 
