@@ -4,6 +4,7 @@ export { SectionLabel } from './SectionLabel';
 export { PrimaryButton } from './PrimaryButton';
 export { TextField } from './TextField';
 export { FilterChip } from './FilterChip';
+export { ScopeMenu } from './ScopeMenu';
 export { Badge } from './Badge';
 export { Divider } from './Divider';
 export { SyncBanner } from './SyncBanner';
