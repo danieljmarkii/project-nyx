@@ -4,10 +4,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router, useLocalSearchParams } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../constants/theme';
-import { FilterChip } from '../../components/ui/FilterChip';
 import { DateScopeControl } from '../../components/history/DateScopeControl';
+import { TypeScopeControl } from '../../components/history/TypeScopeControl';
 import { DAY_KEY_RE, effectiveRange } from '../../lib/historyDateFilter';
 import type { DatePreset } from '../../lib/historyDateFilter';
 import { EVENT_TYPES, EventTypeKey } from '../../constants/eventTypes';
@@ -39,19 +38,6 @@ function itemSortMs(item: ListItem): number {
     ? new Date(item.event.occurred_at).getTime()
     : item.marker.sortMs;
 }
-
-// The event-type lens. Labels read from EVENT_TYPES so a chip can never drift
-// from its row label again (it used to hardcode "Diarrhea" while the rows render
-// "Loose stool"). `medication` is loggable today (B-117) but had no filter until
-// now. Order keeps the two stool types adjacent for scanning.
-const TYPE_FILTER_KEYS: EventTypeKey[] = [
-  'meal', 'vomit', 'diarrhea', 'stool_normal', 'lethargy', 'itch', 'medication', 'other',
-];
-
-const TYPE_FILTERS: { key: EventTypeKey | null; label: string }[] = [
-  { key: null, label: 'All' },
-  ...TYPE_FILTER_KEYS.map((key) => ({ key, label: EVENT_TYPES[key].label })),
-];
 
 function rowToEvent(row: TimelineRow): NyxEvent {
   return {
@@ -403,50 +389,23 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
 
-      {/* Unified filter section — one surface, one border at the bottom */}
+      {/* Unified filter section — one surface, one border at the bottom.
+          Both filters are single mutually-exclusive choices, so both are quiet
+          pill + sheet controls (the same ScopeMenu): every option is a
+          full-width sheet row and none can hide off-screen. This retires the
+          app's last h-scroll chip rail — its edge-fade peek wasn't enough of a
+          cue, and the Medication filter sat undiscoverable past the fold. */}
       <View style={styles.filterSection}>
-        {/* Title + time-scope menu. Scope is a single choice with long labels,
-            so it's a quiet pill + sheet (DateScopeControl), not a chip rail —
-            this is what kills the old clipped, unscrollable date row. */}
         <View style={styles.headerRow}>
           <Text style={styles.title}>History</Text>
-          <DateScopeControl
-            value={datePreset}
-            onChange={handleDatePreset}
-            dayLabel={dayFilter ? formatUtcDayShort(dayFilter) : null}
-          />
-        </View>
-
-        {/* Event-type lens — one scrollable row, one visual language (teal), with
-            a right edge fade so "there's more →" reads at a glance. The View
-            wrapper enforces a reliable height; a FlatList alone does not. */}
-        <View style={styles.chipWrapper}>
-          <FlatList<typeof TYPE_FILTERS[0]>
-            horizontal
-            data={TYPE_FILTERS}
-            keyExtractor={(item) => item.key ?? 'all'}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipRow}
-            renderItem={({ item }) => (
-              <FilterChip
-                label={item.label}
-                active={typeFilter === item.key}
-                onPress={() => handleTypeFilter(item.key)}
-                variant="default"
-              />
-            )}
-          />
-          {/* Fades the row's right edge to the header surface (#FFFFFF). The
-              0-alpha stop is white's zero-alpha form, NOT 'transparent' — RN
-              fades 'transparent' through black and would dirty the edge. Keep in
-              sync with filterSection's backgroundColor. */}
-          <LinearGradient
-            colors={['rgba(255,255,255,0)', theme.colorSurface]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.lensFade}
-            pointerEvents="none"
-          />
+          <View style={styles.scopeRow}>
+            <TypeScopeControl value={typeFilter} onChange={handleTypeFilter} />
+            <DateScopeControl
+              value={datePreset}
+              onChange={handleDatePreset}
+              dayLabel={dayFilter ? formatUtcDayShort(dayFilter) : null}
+            />
+          </View>
         </View>
       </View>
 
@@ -547,32 +506,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: theme.space3,
     paddingTop: 14,
-    paddingBottom: 8,
+    paddingBottom: 12,
+    gap: theme.space2,
   },
   title: {
     fontSize: 24,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
   },
-  // View wrapper enforces height; setting height directly on FlatList is unreliable
-  chipWrapper: {
-    height: 44,
-  },
-  chipRow: {
-    paddingHorizontal: theme.space2,
-    paddingBottom: 8,
-    gap: 6,
+  // The two scope pills share the row's remaining width; each pill flexShrinks
+  // (ellipsizing its label) rather than pushing the other off-screen.
+  scopeRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    height: 44,
-  },
-  // Right-edge scroll affordance for the lens row. Fixed overlay (chips scroll
-  // under it); pointerEvents none so taps reach the chips beneath.
-  lensFade: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 28,
+    gap: theme.space1,
+    flexShrink: 1,
   },
   listContainer: {
     flex: 1,
