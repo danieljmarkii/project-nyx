@@ -19,7 +19,9 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
-        "com.apple.security.application-groups": ["group.com.projectnyx.app"]
+        "com.apple.security.application-groups": [
+          "group.com.projectnyx.app"
+        ]
       }
     },
     "android": {
@@ -68,7 +70,43 @@
         }
       ],
       "expo-sqlite",
-      "expo-status-bar"
+      "expo-status-bar",
+      "./plugins/withoutPushEntitlement",
+      [
+        "expo-widgets",
+        {
+          "groupIdentifier": "group.com.projectnyx.app",
+          "widgets": [
+            {
+              "name": "CulpritWidget",
+              "displayName": "Culprit",
+              "description": "Log a meal or a treat without opening the app.",
+              "ios": {
+                "supportedFamilies": ["systemMedium"],
+                "configuration": {
+                  "title": "Pet",
+                  "description": "Pick which pet this widget logs for. Pet slots follow the order you added your pets — the widget shows the name so you can check.",
+                  "parameters": {
+                    "petSlot": {
+                      "title": "Pet",
+                      "type": "enum",
+                      "default": "slot1",
+                      "values": [
+                        { "name": "Pet 1", "value": "slot1" },
+                        { "name": "Pet 2", "value": "slot2" },
+                        { "name": "Pet 3", "value": "slot3" },
+                        { "name": "Pet 4", "value": "slot4" },
+                        { "name": "Pet 5", "value": "slot5" },
+                        { "name": "Pet 6", "value": "slot6" }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
     ]
   }
 }

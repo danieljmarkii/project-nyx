@@ -189,6 +189,21 @@ function defaultDeps(): CaptureDeps {
 
 export type DirectWriteOutcome = 'written' | 'skipped' | 'failed';
 
+// Per-call overrides. `ids` + `occurredAt` exist for the W5 drain: the widget's
+// JS context cannot write a file, so the tap is captured in the widget's own
+// props and the APP replays it through these same intents — at which point the
+// ids and the tap time must be the ones generated on the Home Screen, not fresh
+// ones minted at drain time. That is what keeps the id-keyed idempotency (and
+// the honest `occurred_at`) intact across the outbox hop.
+export interface IntentOptions {
+  loggedVia?: InboxLoggedVia;
+  deps?: Partial<CaptureDeps>;
+  /** Canonical row ids generated at tap time; defaults to freshly minted ones. */
+  ids?: CaptureIds;
+  /** The tap's own time; defaults to now. */
+  occurredAt?: Date;
+}
+
 export interface IntentResult {
   /** The capture is durably in the inbox. false = the tap FAILED — surface it. */
   ok: boolean;
@@ -262,7 +277,7 @@ async function runCapture(
 export async function logMealIntent(
   petId: string,
   foodItemId: string,
-  opts?: { loggedVia?: InboxLoggedVia; deps?: Partial<CaptureDeps> },
+  opts?: IntentOptions,
 ): Promise<IntentResult> {
   const deps = { ...defaultDeps(), ...opts?.deps };
   const record = buildMealCapture({
@@ -270,8 +285,8 @@ export async function logMealIntent(
     foodItemId,
     kind: 'meal',
     loggedVia: opts?.loggedVia ?? 'widget',
-    now: deps.now(),
-    ids: { eventId: deps.newId(), mealId: deps.newId() },
+    now: opts?.occurredAt ?? deps.now(),
+    ids: opts?.ids ?? { eventId: deps.newId(), mealId: deps.newId() },
   });
   return runCapture(record, deps);
 }
@@ -281,7 +296,7 @@ export async function logMealIntent(
 export async function logTreatIntent(
   petId: string,
   foodItemId: string,
-  opts?: { loggedVia?: InboxLoggedVia; deps?: Partial<CaptureDeps> },
+  opts?: IntentOptions,
 ): Promise<IntentResult> {
   const deps = { ...defaultDeps(), ...opts?.deps };
   const record = buildMealCapture({
@@ -289,8 +304,8 @@ export async function logTreatIntent(
     foodItemId,
     kind: 'treat',
     loggedVia: opts?.loggedVia ?? 'widget',
-    now: deps.now(),
-    ids: { eventId: deps.newId(), mealId: deps.newId() },
+    now: opts?.occurredAt ?? deps.now(),
+    ids: opts?.ids ?? { eventId: deps.newId(), mealId: deps.newId() },
   });
   return runCapture(record, deps);
 }
@@ -299,14 +314,14 @@ export async function logTreatIntent(
 // free-choice arrangement(s); never an intake claim, never an events row.
 export async function topUpBowlIntent(
   petId: string,
-  opts?: { loggedVia?: InboxLoggedVia; deps?: Partial<CaptureDeps> },
+  opts?: Omit<IntentOptions, 'ids'> & { id?: string },
 ): Promise<IntentResult> {
   const deps = { ...defaultDeps(), ...opts?.deps };
   const record = buildBowlTopUpCapture({
     petId,
     loggedVia: opts?.loggedVia ?? 'widget',
-    now: deps.now(),
-    id: deps.newId(),
+    now: opts?.occurredAt ?? deps.now(),
+    id: opts?.id ?? deps.newId(),
   });
   return runCapture(record, deps);
 }

@@ -14,6 +14,7 @@ import { EventRow } from '../../components/history/EventRow';
 import { BoundaryMarkerRow } from '../../components/history/BoundaryMarkerRow';
 import { FreeFeedingStrip } from '../../components/history/FreeFeedingStrip';
 import { usePetStore } from '../../store/petStore';
+import { useWidgetPetLink } from '../../hooks/useWidgetPetLink';
 import { useEventStore, NyxEvent } from '../../store/eventStore';
 import { useSyncStore } from '../../store/syncStore';
 import { getTimeline, softDeleteEvent, TimelineRow } from '../../lib/db';
@@ -82,7 +83,10 @@ export default function HistoryScreen() {
   // day). `ts` is a nonce so the filter re-applies even when this tab is already mounted (a
   // doorway tap is not a remount). Either filter is fully clearable — picking any date
   // scope clears it.
-  const params = useLocalSearchParams<{ date?: string; ts?: string }>();
+  // W5 adds a third: the widget's status column deep-links here with
+  // ?date=YYYY-MM-DD&pet=<id> — the day AND whose day it is.
+  const params = useLocalSearchParams<{ date?: string; ts?: string; pet?: string }>();
+  useWidgetPetLink(params.pet);
   const initialDatePreset: DatePreset = params.date === 'today' ? 'today' : null;
   const initialDay: string | null =
     params.date && DAY_KEY_RE.test(params.date) ? params.date : null;
