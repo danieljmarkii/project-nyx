@@ -68,7 +68,7 @@ exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carv
             maskContentUnits={1}
             maskType={0}
             maskUnits={0}
-            name="culpritMarkCarve-«r3»"
+            name="culpritMarkCarve-_r_3_"
             width="100%"
             x="0%"
             y="0%"
@@ -117,7 +117,7 @@ exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carv
               "type": 0,
             }
           }
-          mask="culpritMarkCarve-«r3»"
+          mask="culpritMarkCarve-_r_3_"
           propList={
             [
               "fill",
@@ -215,7 +215,7 @@ exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carv
             maskContentUnits={1}
             maskType={0}
             maskUnits={0}
-            name="culpritMarkCarve-«r4»"
+            name="culpritMarkCarve-_r_4_"
             width="100%"
             x="0%"
             y="0%"
@@ -264,7 +264,7 @@ exports[`CulpritMark — the carve rule matches a snapshot on both grounds (carv
               "type": 0,
             }
           }
-          mask="culpritMarkCarve-«r4»"
+          mask="culpritMarkCarve-_r_4_"
           propList={
             [
               "fill",

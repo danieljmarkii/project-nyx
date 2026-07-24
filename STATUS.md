@@ -44,8 +44,8 @@ Spec `docs/nyx-ask-requirements.md` **v2.2** (build-ready — **no PM blockers**
 | A7 | Copy/safety hardening + the general-mode flip-on review package | ⬜ |
 | A8 | Live photo reads via the `analyze-vomit` machinery (transform-only; shared cap; clinical-guardrails) — adversarial + rls-privacy MANDATORY | ✅ shipped via #409 (draft) — both gates PASS (adversarial: 4 rounds to CONFIRMED-CLOSED; rls-privacy: PASS, residual closed); deno 129 (ask+shared) + 89 vomit/stool regression unmodified; jest 1491. **DEPLOY-GATED:** redeploy `analyze-vomit` + `analyze-stool` FIRST (honor `transform_only`, default-off = behavior-neutral), THEN `ask`. |
 
-### Home Screen Widget (B-289/B-290/B-291) — spec ratified 2026-07-24; PR W1 (`logged_via` migration) ready to build
-Spec **`docs/nyx-widget-requirements.md`** v1.0 (D1–D9 ratified; no PM blockers) + design-locked mock `docs/culprit-widget-mockups.html` (round-3 Candidate A: status column + Meal/Treat tiles → flip-to-named-choices pickers; hybrid feeding rows; per-widget pet binding). Jobs: top-of-mind + when-in-doubt-app-it-out. v1 scope = meals+treats, free, no AI/med capture. Plan: **W1** B-289 migration (own schema PR) → **W2** SDK 54→56/57 upgrade (unlocks stable `expo-widgets`; Runtime B → dev client) → **W3** B-290 App-Group write path (`rls-privacy-reviewer` mandatory; §4.1 spike checklist) → **W4** App Intents + resolution lib → **W5** the widget → **W6** TestFlight cut. W1 and W2 are independent; the whole chain is parallel to B-288 and the Ask track.
+### Home Screen Widget (B-289/B-290/B-291) — W2 (SDK 57 upgrade) shipped; W1 (`logged_via` migration) ready to build
+Spec **`docs/nyx-widget-requirements.md`** v1.0 (D1–D9 ratified; no PM blockers) + design-locked mock `docs/culprit-widget-mockups.html` (round-3 Candidate A: status column + Meal/Treat tiles → flip-to-named-choices pickers; hybrid feeding rows; per-widget pet binding). Jobs: top-of-mind + when-in-doubt-app-it-out. v1 scope = meals+treats, free, no AI/med capture. Plan: **W1** B-289 migration (own schema PR, independent — still ready to build) → **W2 ✅ SDK 54→**57** upgrade** (this session — RN 0.86 / React 19.2 / TS 6.0; `expo-widgets` 57.0.6 now installable; `expo-dev-client` added; runbook rewritten for the Runtime-B dev-client switch; OTA fence via `version` 1.1.0; **on-device regression QA = the PM gate before W3+ builds on it**) → **W3** B-290 App-Group write path (`rls-privacy-reviewer` mandatory; §4.1 spike checklist) → **W4** App Intents + resolution lib → **W5** the widget → **W6** TestFlight cut. The chain is parallel to B-288 and the Ask track.
 
 ### B-284 Culprit in-app brand alignment — N1 (tokens) + N2 (mark) + N2b (Landing) + N3 (loading system) + N5/N5b (calendar) shipped; N4/N6/N7 next
 Spec `docs/culprit-in-app-brand-requirements.md` (v1.0, §10 = PRs N1–N7). Four locked rules (carve / register / one-accent / no-metaphor + motion budget). Night grounds appear **only where the app is working on the pet's behalf** (Landing, loading, the night moment, the Signal-card night variant) — capture & records stay the shipped light system. **Zero new dependencies** (`react-native-svg` + `expo-linear-gradient` already shipped).
@@ -220,7 +220,7 @@ Plan `docs/design-system-migration-plan.md`. 4 PRs merged: palette (#99), fonts 
 
 ## Runtime in Use
 
-**TestFlight (real iOS builds) — primary on-device target since 2026-06-07.** Runtime B (Metro `npx expo start --tunnel` + Expo Go) remains available for fast local iteration.
+**TestFlight (real iOS builds) — primary on-device target since 2026-06-07.** Runtime B (Metro `npx expo start --tunnel` + the **custom dev client** — Expo Go retired as of W2/SDK 57, transition window until W3; see `docs/dev-handoff-runbook.md`) remains available for fast local iteration.
 
 **Cut a new TestFlight build** (verified build 22 from `main`, 2026-06-12) — one command builds the store-signed binary and submits that same artifact:
 ```
@@ -229,6 +229,7 @@ eas build --platform ios --profile production --auto-submit
 **OTA to the installed build:** `eas update --branch production` (the build's channel is `production`, NOT `preview`).
 
 **Traps (each cost a session — do not repeat):**
+- **SDK 57 OTA fence (W2, 2026-07-24):** `version` bumped 1.0.0 → 1.1.0 so SDK-57 bundles never reach the installed SDK-54 TestFlight build (`runtimeVersion.policy: appVersion`). Until a fresh binary is cut, `eas update --branch production` is a harmless no-op against that build; the **first post-W2 TestFlight cut must be a native `eas build`**, never OTA. Never revert the version to "fix" a non-arriving OTA — an SDK-57 bundle on the SDK-54 binary is a crash-on-launch. Full note: `docs/dev-handoff-runbook.md`.
 - Never build TestFlight with the `preview` profile — it's `distribution: internal` (ad-hoc), never store-submittable. Use `production`.
 - Never submit with `eas submit --latest` — it skips internal builds and re-uploads a stale store build (the "build number 8 already used" loop). Use `--auto-submit` (binds the upload to the binary just built).
 - "Build number N already used" = EAS counter is behind App Store Connect → `eas build:version:set --platform ios`, then rebuild. (Build numbers live on EAS; `appVersionSource: remote`, `autoIncrement`.)

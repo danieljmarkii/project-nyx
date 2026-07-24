@@ -27,7 +27,7 @@ const juniper = makePet('pet-2', 'Juniper');
 
 // persistActivePetId is fire-and-forget inside store actions; flush the
 // microtask queue before reading the persisted value back.
-const flush = () => new Promise((resolve) => setImmediate(resolve));
+const flush = () => new Promise<void>((resolve) => setImmediate(() => resolve()));
 
 // Reset to initial state before each test — zustand stores are module singletons,
 // so without this a mutation in one test leaks into the next.
