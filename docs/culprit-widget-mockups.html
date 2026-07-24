@@ -3,47 +3,107 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Culprit — Home Screen Widget mockups (ideation round 1)</title>
+<title>Culprit — Home Screen Widget mockups</title>
 <style>
   /* Fonts approximate the real stack: Geist → -apple-system/Inter; Newsreader → Georgia.
-     Tokens below are lifted verbatim from constants/theme.ts. */
+     Widget-internal tokens are lifted verbatim from constants/theme.ts and are fixed —
+     the widgets are the subject under review, so they don't re-theme. Page chrome does. */
   :root {
     --accent: #00C2A8;
-    --accent-soft: #86D9CC;
     --accent-light: #E0FBF7;
-    --neutral-dark: #0A0A0A;
-    --text-primary: #0A0A0A;
-    --text-secondary: #525252;
-    --text-tertiary: #737373;
+    --text-primary-w: #0A0A0A;
+    --text-secondary-w: #525252;
+    --text-tertiary-w: #737373;
     --surface: #FFFFFF;
     --surface-subtle: #F5F5F5;
-    --border: #EAEAEA;
+    --border-w: #EAEAEA;
     --night: #13112E;
-    --night-elevated: #251F57;
     --moonlight: #F2EEE4;
     --text-on-night: #ECEAF6;
     --text-on-night-muted: #A6A2CE;
-    --text-on-night-faint: #706BA6;
-    --border-on-night: rgba(196,190,255,0.16);
     --crescent-on-light: #211E4E;
+
+    /* page chrome — theme-aware */
+    --page-bg: #F0EFEA;
+    --page-text: #0A0A0A;
+    --page-text-2: #525252;
+    --page-text-3: #737373;
+    --card-bg: #FFFFFF;
+    --card-border: #EAEAEA;
+    --flag-bg: #FDF8EC;
+    --flag-border: #F3D9A4;
+    --new-bg: #E7F6F3;
+    --new-border: #9BD8CC;
+    --code-bg: #ECEAE3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #17161F;
+      --page-text: #ECEAF6;
+      --page-text-2: #B7B3D6;
+      --page-text-3: #8F8BB5;
+      --card-bg: #201F2B;
+      --card-border: #34324A;
+      --flag-bg: #2B2536;
+      --flag-border: #6B5A33;
+      --new-bg: #1C2B29;
+      --new-border: #2E5B52;
+      --code-bg: #2A2938;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #17161F;
+    --page-text: #ECEAF6;
+    --page-text-2: #B7B3D6;
+    --page-text-3: #8F8BB5;
+    --card-bg: #201F2B;
+    --card-border: #34324A;
+    --flag-bg: #2B2536;
+    --flag-border: #6B5A33;
+    --new-bg: #1C2B29;
+    --new-border: #2E5B52;
+    --code-bg: #2A2938;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #F0EFEA;
+    --page-text: #0A0A0A;
+    --page-text-2: #525252;
+    --page-text-3: #737373;
+    --card-bg: #FFFFFF;
+    --card-border: #EAEAEA;
+    --flag-bg: #FDF8EC;
+    --flag-border: #F3D9A4;
+    --new-bg: #E7F6F3;
+    --new-border: #9BD8CC;
+    --code-bg: #ECEAE3;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-    background: #F0EFEA;
-    color: var(--text-primary);
+    background: var(--page-bg);
+    color: var(--page-text);
     padding: 40px 20px 80px;
     -webkit-font-smoothing: antialiased;
   }
+  code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
   .page { max-width: 900px; margin: 0 auto; }
-  h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 34px; letter-spacing: -0.3px; margin-bottom: 6px; }
-  .sub { color: var(--text-secondary); font-size: 15px; line-height: 1.5; max-width: 640px; margin-bottom: 8px; }
-  .meta { color: var(--text-tertiary); font-size: 12.5px; margin-bottom: 40px; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 34px; letter-spacing: -0.3px; margin-bottom: 6px; text-wrap: balance; }
+  .sub { color: var(--page-text-2); font-size: 15px; line-height: 1.5; max-width: 660px; margin-bottom: 8px; }
+  .meta { color: var(--page-text-3); font-size: 12.5px; margin-bottom: 40px; }
   section { margin-bottom: 64px; }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--text-tertiary); font-weight: 600; margin-bottom: 6px; }
-  h3 { font-size: 21px; font-weight: 600; letter-spacing: -0.2px; margin-bottom: 10px; }
-  .concept-note { color: var(--text-secondary); font-size: 14.5px; line-height: 1.55; max-width: 680px; margin-bottom: 24px; }
-  .concept-note strong { color: var(--text-primary); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--page-text-3); font-weight: 600; margin-bottom: 6px; display:flex; align-items:center; gap:10px; }
+  h3 { font-size: 21px; font-weight: 600; letter-spacing: -0.2px; margin-bottom: 10px; text-wrap: balance; }
+  .badge { font-size: 10px; letter-spacing: 0.8px; border-radius: 999px; padding: 3px 9px; font-weight: 700; }
+  .badge.new { background: var(--new-bg); border: 1px solid var(--new-border); color: var(--page-text); }
+  .badge.deferred { background: var(--flag-bg); border: 1px solid var(--flag-border); color: var(--page-text); }
+  .concept-note { color: var(--page-text-2); font-size: 14.5px; line-height: 1.55; max-width: 680px; margin-bottom: 24px; }
+  .concept-note strong { color: var(--page-text); }
+
+  /* the round-2 rule card */
+  .rule-hero { background: var(--card-bg); border: 1px solid var(--new-border); border-radius: 18px; padding: 24px 28px; max-width: 760px; }
+  .rule-hero .big { font-family: Georgia, serif; font-size: 24px; line-height: 1.3; margin-bottom: 14px; text-wrap: balance; }
+  .rule-hero li { margin: 9px 0 9px 18px; font-size: 14.5px; line-height: 1.55; color: var(--page-text-2); }
+  .rule-hero li strong { color: var(--page-text); }
 
   /* wallpaper strip that widgets sit on */
   .shelf {
@@ -54,14 +114,15 @@
     flex-wrap: wrap;
     gap: 28px;
     align-items: flex-start;
+    overflow-x: auto;
   }
   .shelf.night-wall { background: linear-gradient(160deg, #2A2650 0%, #16132F 70%, #0E0C22 100%); }
   .widget-stack { display: flex; flex-direction: column; gap: 8px; }
-  .widget-label { font-size: 11.5px; color: rgba(255,255,255,0.85); text-shadow: 0 1px 2px rgba(0,0,0,0.25); font-weight: 500; text-align: center; }
+  .widget-label { font-size: 11.5px; color: rgba(255,255,255,0.85); text-shadow: 0 1px 2px rgba(0,0,0,0.25); font-weight: 500; text-align: center; max-width: 364px; }
 
   /* iOS widget frames (approx. proportions; systemSmall 158pt, systemMedium 338×158pt) */
   .w-small  { width: 172px; height: 172px; border-radius: 26px; }
-  .w-medium { width: 364px; height: 172px; border-radius: 26px; }
+  .w-medium { width: 364px; max-width: 100%; height: 172px; border-radius: 26px; }
   .widget {
     background: var(--surface);
     box-shadow: 0 8px 24px rgba(10,10,10,0.18);
@@ -69,105 +130,111 @@
     display: flex; flex-direction: column;
     overflow: hidden;
     position: relative;
+    color: var(--text-primary-w);
   }
   .widget.night { background: var(--night); }
 
-  /* crescent mark (approximation of CulpritMark) */
-  .crescent { width: 14px; height: 14px; border-radius: 50%; position: relative; overflow: hidden; flex: none; }
-  .crescent::before { content:""; position:absolute; inset:0; border-radius:50%; background: var(--crescent-on-light); }
-  .crescent::after  { content:""; position:absolute; top:-3px; left:4px; width:12px; height:12px; border-radius:50%; background: var(--surface); }
-  .night .crescent::before { background: var(--moonlight); }
-  .night .crescent::after  { background: var(--night); }
+  /* the real mark: crescent mask-cutout + teal Signal dot (CulpritMark geometry,
+     small-size dot bump per icon-kit §3) */
+  .mark { width: 16px; height: 16px; flex: none; display: block; }
 
-  .w-head { display:flex; align-items:center; gap:6px; margin-bottom: 10px; }
+  .w-head { display:flex; align-items:center; gap:6px; margin-bottom: 8px; }
   .w-pet { font-size: 13px; font-weight: 600; letter-spacing: -0.1px; }
   .night .w-pet { color: var(--text-on-night); }
   .w-head .spacer { flex: 1; }
-  .w-time { font-size: 10.5px; color: var(--text-tertiary); }
+  .w-time { font-size: 10.5px; color: var(--text-tertiary-w); }
 
-  /* slot rows */
-  .slot { display:flex; align-items:center; gap:8px; padding: 4px 0; font-size: 13.5px; }
-  .slot .tick { width:18px; height:18px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:11px; }
+  /* slot rows — now tappable (the row IS the button) */
+  .slot { display:flex; align-items:center; gap:9px; padding: 7px 8px; font-size: 13.5px; border-radius: 11px; }
+  .slot.tappable { background: var(--surface-subtle); }
+  .slot .tick { width:19px; height:19px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:11px; }
   .tick.done { background: var(--accent-light); color: #0B7B6C; }
-  .tick.open { border: 1.5px dashed #C9C9C9; color: transparent; }
+  .tick.open { border: 1.5px solid var(--accent); color: transparent; }
   .slot .name { font-weight: 500; }
-  .slot .when { color: var(--text-tertiary); font-size: 12px; margin-left:auto; }
-  .slot.pending .name { color: var(--text-secondary); }
-  .med { display:flex; align-items:center; gap:8px; margin-top:6px; padding-top:8px; border-top:1px solid var(--border); font-size:12.5px; color: var(--text-secondary); }
-  .med .pill { width:16px; height:9px; border:1.5px solid var(--text-tertiary); border-radius:5px; flex:none; }
+  .slot .when { color: var(--text-tertiary-w); font-size: 11.5px; margin-left:auto; text-align: right; }
+  .slot .when b { color: #0B7B6C; font-weight: 600; }
+  .slot + .slot { margin-top: 5px; }
 
-  /* action buttons (App Intent buttons) */
-  .actions { display:flex; flex-direction:column; gap:10px; justify-content:center; }
+  /* treat button + flipped treat picker */
+  .actions { display:flex; flex-direction:column; gap:8px; justify-content:center; }
   .btn {
-    border-radius: 14px; padding: 12px 14px;
-    font-size: 13.5px; font-weight: 600; text-align:center;
-    background: var(--surface-subtle); border: 1px solid var(--border);
+    border-radius: 13px; padding: 11px 13px;
+    font-size: 13px; font-weight: 600; text-align:center;
+    background: var(--surface-subtle); border: 1px solid var(--border-w);
   }
   .btn.accent { background: var(--accent); color: #0A0A0A; border-color: var(--accent); }
-  .btn .sub-line { display:block; font-weight:400; font-size:10.5px; color: var(--text-tertiary); margin-top:2px; }
-  .btn.accent .sub-line { color: rgba(10,10,10,0.65); }
+  .btn.ghost { background: transparent; border-style: dashed; color: var(--text-secondary-w); font-weight: 500; }
+  .btn .sub-line { display:block; font-weight:400; font-size:10px; color: rgba(10,10,10,0.65); margin-top:1px; }
+  .picker-title { font-size: 11px; font-weight: 600; color: var(--text-tertiary-w); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px; }
 
   /* small treat widget */
   .treat-center { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
-  .treat-ring { width:64px; height:64px; border-radius:50%; background: var(--accent-light); border: 2px solid var(--accent); display:flex; align-items:center; justify-content:center; font-size:26px; }
+  .treat-ring { width:60px; height:60px; border-radius:50%; background: var(--accent-light); border: 2px solid var(--accent); display:flex; align-items:center; justify-content:center; font-size:24px; }
   .treat-cta { font-size:14px; font-weight:600; }
-  .treat-count { font-size:11.5px; color: var(--text-tertiary); }
+  .treat-count { font-size:11.5px; color: var(--text-tertiary-w); }
 
   /* trial progress widget */
-  .trial-num { font-family: Georgia, serif; font-size: 44px; line-height: 1.05; letter-spacing: -0.5px; }
-  .trial-num .of { font-size: 20px; color: var(--text-tertiary); }
+  .trial-num { font-family: Georgia, serif; font-size: 44px; line-height: 1.05; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+  .trial-num .of { font-size: 20px; color: var(--text-tertiary-w); }
   .night .trial-num { color: var(--moonlight); }
   .night .trial-num .of { color: var(--text-on-night-muted); }
-  .trial-line { font-size: 12px; color: var(--text-secondary); margin-top: 6px; line-height:1.4; }
+  .trial-line { font-size: 12px; color: var(--text-secondary-w); margin-top: 6px; line-height:1.4; }
   .night .trial-line { color: var(--text-on-night-muted); }
   .trial-bar { margin-top:auto; height: 5px; border-radius: 3px; background: var(--surface-subtle); overflow:hidden; }
   .night .trial-bar { background: rgba(255,255,255,0.08); }
   .trial-bar i { display:block; height:100%; width:43%; background: var(--accent); border-radius:3px; }
 
-  /* lock screen accessories */
-  .lockwall { background: linear-gradient(180deg, #1B2735 0%, #090A0F 100%); border-radius: 28px; padding: 40px 36px; display:flex; flex-direction:column; align-items:center; gap:20px; }
-  .lock-clock { font-family: -apple-system, sans-serif; font-size: 64px; font-weight: 250; color: rgba(255,255,255,0.92); letter-spacing: -1px; }
-  .acc-rect { width: 172px; height: 56px; border-radius: 14px; background: rgba(255,255,255,0.14); backdrop-filter: blur(6px); padding: 9px 12px; color: rgba(255,255,255,0.95); }
-  .acc-rect .l1 { font-size: 11px; font-weight: 600; display:flex; align-items:center; gap:5px; }
-  .acc-rect .l2 { font-size: 12.5px; margin-top: 3px; color: rgba(255,255,255,0.75); }
-  .acc-circ { width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,0.14); display:flex; flex-direction:column; align-items:center; justify-content:center; color: rgba(255,255,255,0.95); }
-  .acc-circ .n { font-size: 15px; font-weight: 600; }
-  .acc-circ .d { font-size: 8.5px; color: rgba(255,255,255,0.7); }
-  .acc-row { display:flex; gap:16px; align-items:center; }
-  .acc-crescent { width:11px; height:11px; }
-  .acc-crescent::before { background: rgba(255,255,255,0.95); }
-  .acc-crescent::after { background: #14161c; top:-2.5px; left:3.5px; width:9.5px; height:9.5px; }
-
   /* annotations */
   .annos { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
-  .anno { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
-  .anno b { display:block; color: var(--text-primary); margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
-  .anno.flag { border-color: #F3D9A4; background: #FDF8EC; }
+  .anno { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 14px 16px; font-size: 13px; line-height: 1.5; color: var(--page-text-2); }
+  .anno b { display:block; color: var(--page-text); margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
+  .anno.flag { border-color: var(--flag-border); background: var(--flag-bg); }
+  .anno.new { border-color: var(--new-border); background: var(--new-bg); }
 
-  .rules { background: var(--surface); border:1px solid var(--border); border-radius: 16px; padding: 20px 24px; max-width: 760px; }
-  .rules li { margin: 8px 0 8px 18px; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
-  .rules li strong { color: var(--text-primary); }
+  .rules { background: var(--card-bg); border:1px solid var(--card-border); border-radius: 16px; padding: 20px 24px; max-width: 760px; }
+  .rules li { margin: 8px 0 8px 18px; font-size: 14px; line-height: 1.55; color: var(--page-text-2); }
+  .rules li strong { color: var(--page-text); }
+
+  .changelog { font-size: 13px; color: var(--page-text-3); line-height: 1.7; max-width: 700px; }
 </style>
 </head>
 <body>
+
 <div class="page">
 
   <h1>Culprit — Home Screen Widget</h1>
-  <p class="sub">Ideation round 1 · four converged candidates for the team + PM to react to. All copy is draft (nyx-voice pass pending). Widget frames approximate iOS systemSmall / systemMedium / Lock&nbsp;Screen accessory proportions; Geist/Newsreader approximated with system faces.</p>
-  <p class="meta">2026-07-23 · pairs with the ideation session notes · tokens verbatim from <code>constants/theme.ts</code> · not yet committed</p>
+  <p class="sub">Ideation <strong>round 2</strong> — iterated on the PM's reaction: the no-garbage-data rule now leads the design, Candidate A is calmer with an explicit tap-by-tap story, free-fed and multi-pet households are answered, and the mark got its Signal dot back. Copy is draft (nyx-voice pass pending).</p>
+  <p class="meta">2026-07-24 · round 1 → PM reaction → this · widget tokens + mark geometry verbatim from <code>constants/theme.ts</code> / <code>CulpritMark.tsx</code> · PR #419</p>
+
+  <!-- ================= THE RULE ================= -->
+  <section>
+    <h2>Round 2's spine <span class="badge new">NEW</span></h2>
+    <div class="rule-hero">
+      <div class="big">The widget only one-press-logs what it can name. Otherwise it's a fast door, never a guesser.</div>
+      <ul>
+        <li><strong>Meal slots are bound to a named food.</strong> During a diet trial, "Dinner" <em>is</em> the trial diet by definition; outside one, it's the slot's learned usual (confirmation-over-entry — the app already knows it after week one). Tapping the slot logs that food, assumed portion, <em>no</em> intake rating. If no stable usual exists for a slot, the tap deep-links into quick-log instead of logging a guess.</li>
+        <li><strong>The treat button never logs "a treat."</strong> It flips the widget in place (iOS 17 interactive state) to the pet's 2–3 most-logged named treats + "Something else…" (deep-link). Two taps, real item, real exposure record.</li>
+        <li><strong>No generic events exist in the schema path.</strong> There is nothing to "edit later" because an unnameable event never gets written — the failure mode the PM called out is structurally impossible, not policy-discouraged.</li>
+      </ul>
+    </div>
+    <div class="annos">
+      <div class="anno"><b>Data Scientist</b>This is the same shape as the meal-confirmation card: the cheap path is also the honest path. A slot-bound log carries <code>logged_via='widget'</code> + the named <code>food_item_id</code> — fully usable by the correlation engine.</div>
+      <div class="anno"><b>Jordan</b>Two taps for a named treat is still faster than unlock-find-launch, and I actually know which treat I just gave. Fine trade.</div>
+    </div>
+  </section>
 
   <!-- ================= CANDIDATE A ================= -->
   <section>
-    <h2>Candidate A — flagship</h2>
-    <h3>“Today + Log” medium widget</h3>
-    <p class="concept-note">The discovery's two highest-leverage jobs in one surface: <strong>ambient visibility</strong> (today's slots answer “did you log it?” without opening the app — the kitchen-counter accountability question) and <strong>one-press capture</strong> (treat + meal buttons run App Intents in-process; no app launch). Unconfirmed slots render as an honest gap — never an assumed ✓.</p>
+    <h2>Candidate A — flagship, round 2</h2>
+    <h3>"Today" medium widget — calmer, tap-by-tap</h3>
+    <p class="concept-note"><strong>De-busied:</strong> the button column is gone — <strong>the slot row is now the button</strong> (tap the open Dinner circle → logs the named dinner). One accent action remains (Treat). The med row only renders during an active course. Three states shown: the resting state, the treat picker it flips to, and the free-fed variant.</p>
     <div class="shelf">
       <div class="widget-stack">
         <div class="widget w-medium">
-          <div style="display:flex; gap:18px; flex:1;">
-            <div style="flex:1.4; display:flex; flex-direction:column;">
+          <div style="display:flex; gap:16px; flex:1;">
+            <div style="flex:1.5; display:flex; flex-direction:column;">
               <div class="w-head">
-                <div class="crescent"></div>
+                <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
                 <span class="w-pet">Biscuit</span>
                 <span class="spacer"></span>
                 <span class="w-time">Day 12 of 28</span>
@@ -177,43 +244,84 @@
                 <span class="name">Breakfast</span>
                 <span class="when">7:42a</span>
               </div>
-              <div class="slot pending">
-                <span class="tick open">·</span>
+              <div class="slot tappable">
+                <span class="tick open"></span>
                 <span class="name">Dinner</span>
-                <span class="when">usually ~6p</span>
-              </div>
-              <div class="med">
-                <span class="pill"></span>
-                <span>Amoxicillin — day 3 of 10</span>
+                <span class="when"><b>tap ✓</b> — logs Hill's z/d</span>
               </div>
             </div>
             <div class="actions" style="flex:1;">
-              <div class="btn accent">Log a treat<span class="sub-line">one tap · edit later in app</span></div>
-              <div class="btn">Log a meal</div>
+              <div class="btn accent">Log a treat</div>
             </div>
           </div>
         </div>
-        <div class="widget-label">systemMedium · interactive (iOS 17+) · day ground</div>
+        <div class="widget-label">State 1 — resting. Slot tap = one press, logs the slot's named food (here: the trial diet).</div>
+      </div>
+
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div style="display:flex; flex-direction:column; flex:1;">
+            <div class="w-head">
+              <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+              <span class="w-pet">Biscuit</span>
+              <span class="spacer"></span>
+              <span class="w-time">which treat?</span>
+            </div>
+            <div style="display:flex; gap:8px; flex:1; align-items:center;">
+              <div class="btn" style="flex:1;">Dental chew</div>
+              <div class="btn" style="flex:1;">Freeze-dried liver</div>
+              <div class="btn ghost" style="flex:1;">Something else…</div>
+            </div>
+          </div>
+        </div>
+        <div class="widget-label">State 2 — after tapping Treat: flips in place to the 2–3 most-logged named treats. Third button opens the app.</div>
+      </div>
+
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div style="display:flex; gap:16px; flex:1;">
+            <div style="flex:1.5; display:flex; flex-direction:column;">
+              <div class="w-head">
+                <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m3"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m3)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+                <span class="w-pet">Mochi</span>
+                <span class="spacer"></span>
+                <span class="w-time">free-fed</span>
+              </div>
+              <div class="slot">
+                <span class="tick done">✓</span>
+                <span class="name">Bowl topped up</span>
+                <span class="when">8:05a</span>
+              </div>
+              <div class="slot" style="opacity:0.75;">
+                <span style="font-size:12px; color: var(--text-tertiary-w);">Last logged: lickable treat · 2h ago</span>
+              </div>
+            </div>
+            <div class="actions" style="flex:1;">
+              <div class="btn accent">Log a treat</div>
+              <div class="btn">Top up bowl</div>
+            </div>
+          </div>
+        </div>
+        <div class="widget-label">Free-fed variant — no slot checklist to fail (Sam's line: grazing must never look like failure). Rows come from the pet's declared feeding arrangement (B-040).</div>
       </div>
     </div>
     <div class="annos">
-      <div class="anno"><b>Jordan</b>The treat button is the whole point — the 5-second event I never log. One press while holding the dog, fix details later.</div>
-      <div class="anno"><b>Data Scientist</b>Slot state comes from logged events only. A treat tap writes <code>logged_via='widget'</code> with assumed portion and <em>no</em> intake_rating — it is not a witnessed rating and the engine must know that.</div>
-      <div class="anno"><b>Dr. Chen</b>“Day 3 of 10” on the med line is state, not a verdict. No adherence % on a glanceable surface.</div>
-      <div class="anno flag"><b>Open — what does one press record?</b>Treat: most-recent treat item, or a generic “treat” needing later attribution? Meal: log immediately with the usual food, or deep-link into quick-log? Principle 1 says decide nothing at the moment of event — the team leans log-now-with-defaults + easy edit.</div>
+      <div class="anno new"><b>Multi-pet households</b>Each placed widget is bound to one pet at placement (long-press → Edit Widget → pick pet — standard iOS configuration). Two pets = stack two widgets. It deliberately never follows the in-app active-pet switch — that's the B-086 hidden-switch hazard on a glanceable surface. <em>Configurable-widget support in expo-widgets = a named spike check.</em></div>
+      <div class="anno"><b>Designer</b>Round-1 busy-ness fixes: one accent element per state, the slot rows carry the layout, med row is conditional, "Day 12 of 28" only renders during a trial. Everything else is whitespace.</div>
+      <div class="anno flag"><b>Open — undo</b>A mis-tap writes a real named event. Proposal: the slot shows "✓ just now · tap to undo" for ~60s (widget-local), and the event is editable in-app like any other. Needs a design pass, not a schema one.</div>
     </div>
   </section>
 
   <!-- ================= CANDIDATE B ================= -->
   <section>
-    <h2>Candidate B</h2>
-    <h3>Small one-press treat logger</h3>
-    <p class="concept-note">The single-purpose version: <strong>a treat jar on the Home Screen</strong>. Attacks the highest-clinical-stakes class (spontaneous-micro — the diet-trial contaminant) with the biggest possible tap target. The same <code>LogTreat</code> App Intent powers Siri, an NFC sticker on the real treat jar, Action Button, and Back Tap for free.</p>
+    <h2>Candidate B — round 2</h2>
+    <h3>The treat logger, as a size family</h3>
+    <p class="concept-note">Per the PM's "both" instinct: the same treat surface ships as <strong>small and medium</strong> of one widget kind — the owner picks the footprint. The small taps through the same named-treat flip (State 2 above, stacked vertically); the count line stays <strong>pet-centric only</strong>. Same <code>LogTreat</code> App Intent powers Siri, NFC-on-the-jar, Action Button, Back Tap.</p>
     <div class="shelf">
       <div class="widget-stack">
         <div class="widget w-small">
           <div class="w-head">
-            <div class="crescent"></div>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m4"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m4)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
             <span class="w-pet">Biscuit</span>
           </div>
           <div class="treat-center">
@@ -222,26 +330,25 @@
             <div class="treat-count">2 logged today</div>
           </div>
         </div>
-        <div class="widget-label">systemSmall · interactive · one intent</div>
+        <div class="widget-label">systemSmall · tap → flips to named treats</div>
       </div>
     </div>
     <div class="annos">
-      <div class="anno"><b>Sam (cat)</b>For me this button is “a few kibbles off-plan,” not a bone icon — the icon/copy needs a species-aware pass.</div>
-      <div class="anno"><b>Engineer</b>Cheapest interactive widget we could ship; a good thin-slice proof of the whole out-of-app write path (B-290).</div>
-      <div class="anno flag"><b>Open — count visibility</b>“2 logged today” is useful state but flirts with scorekeeping in a shared household. Pet-centric only, never “logged by Dan: 1, Sarah: 1.”</div>
+      <div class="anno"><b>Sam (cat)</b>Species-aware icon/copy still owed ("a few kibbles off-plan," not a bone). Carrying to the requirements doc.</div>
+      <div class="anno"><b>Engineer</b>Small + medium of one widget kind is near-zero marginal cost — same timeline provider, two layouts.</div>
     </div>
   </section>
 
   <!-- ================= CANDIDATE C ================= -->
   <section>
-    <h2>Candidate C</h2>
-    <h3>Small trial-record widget — the quiet brand moment</h3>
-    <p class="concept-note">Bounded-goal <strong>record-completeness feedback</strong> (“this is exactly what your vet needs”), never streaks. This is where “keep Culprit top of mind” lives without a single notification: the crescent on the Home Screen every day. Shown on both grounds — the night variant is a genuine open question against the brand rule (<em>night appears only where the app is working on the pet's behalf</em>).</p>
+    <h2>Candidate C — round 2</h2>
+    <h3>The small status widget is trial-aware, not trial-only</h3>
+    <p class="concept-note">Per the PM's read: one adaptive small widget. <strong>Trial running</strong> → the record-completeness count ("12/28 logged" — days with a record, never "going well"). <strong>No trial</strong> → today's slots, small. The owner never configures this; it follows the pet's state. Ground (day vs night) remains the open brand question — same call as the Signal card's D8.</p>
     <div class="shelf night-wall">
       <div class="widget-stack">
         <div class="widget w-small">
           <div class="w-head">
-            <div class="crescent"></div>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m5"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m5)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
             <span class="w-pet">Biscuit</span>
           </div>
           <div style="margin-top:6px;">
@@ -250,12 +357,12 @@
           </div>
           <div class="trial-bar"><i></i></div>
         </div>
-        <div class="widget-label">day ground</div>
+        <div class="widget-label">trial running · day ground</div>
       </div>
       <div class="widget-stack">
         <div class="widget w-small night">
           <div class="w-head">
-            <div class="crescent"></div>
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m6"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#F2EEE4" mask="url(#m6)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
             <span class="w-pet">Biscuit</span>
           </div>
           <div style="margin-top:6px;">
@@ -264,38 +371,16 @@
           </div>
           <div class="trial-bar"><i></i></div>
         </div>
-        <div class="widget-label">night ground — open brand question</div>
+        <div class="widget-label">night ground — open brand question (D8's sibling)</div>
       </div>
-    </div>
-    <div class="annos">
-      <div class="anno"><b>Designer</b>The night ground is the more distinctive Home-Screen object — but the carve rule says night = the app working on the pet's behalf. A record-state widget may not qualify. Needs the same ground call as the Signal card (D8's sibling).</div>
-      <div class="anno"><b>No trial running?</b>The widget falls back to the Today-slot state (Candidate A's left column, small). Empty states are features — it never says “start a trial” (no upsell, no firehose).</div>
-      <div class="anno flag"><b>Open — “logged” vs “complete”</b>Copy must count <em>days with a record</em>, never imply the trial is going <em>well</em>. “12/28 logged” is honest; a progress ring that reads as “health progress” is not.</div>
     </div>
   </section>
 
   <!-- ================= CANDIDATE D ================= -->
   <section>
-    <h2>Candidate D</h2>
+    <h2>Candidate D <span class="badge deferred">DEFERRED — PHASE 2</span></h2>
     <h3>Lock Screen accessories</h3>
-    <p class="concept-note">Glance + fast-launch (button interactivity on the Lock Screen is a <strong>verify-in-spike</strong>, not assumed). Monochrome by platform convention. The rectangular answers “did anyone feed her?” from a raised wrist/pocket glance; the circular is the trial-day counter.</p>
-    <div class="lockwall">
-      <div class="lock-clock">9:41</div>
-      <div class="acc-row">
-        <div class="acc-rect">
-          <div class="l1"><div class="crescent acc-crescent"></div> BISCUIT</div>
-          <div class="l2">Dinner — not yet · Amoxicillin 6p</div>
-        </div>
-        <div class="acc-circ">
-          <div class="n">12/28</div>
-          <div class="d">logged</div>
-        </div>
-      </div>
-    </div>
-    <div class="annos">
-      <div class="anno"><b>Trust &amp; Safety</b>Lock Screen = visible before auth, to anyone holding the phone. Pet-health data is low-sensitivity but the rule is set now: slot state + counts only; never symptom text, never AI-read language on a pre-auth surface.</div>
-      <div class="anno"><b>Engineer</b>accessoryRectangular / accessoryCircular / accessoryInline all supported by expo-widgets. Cheap once the widget target exists.</div>
-    </div>
+    <p class="concept-note">Per the PM: lower priority than the Home Screen widget itself. Parked with its round-1 design + the T&amp;S pre-auth rule (slot state + counts only; never symptom text or AI language). Cheap to add once the widget target exists; sequenced behind the flagship in the PR plan.</p>
   </section>
 
   <!-- ================= RULES ================= -->
@@ -303,14 +388,21 @@
     <h2>Held constant across every candidate</h2>
     <div class="rules">
       <ul>
+        <li><strong>Logs only what it can name</strong> (round 2's spine) — no generic events; the unnameable path deep-links, never guesses.</li>
         <li><strong>Fail-safe honesty (B-156 G1 generalized):</strong> no surface ever assumes an event into existence. An unconfirmed slot is a visible gap, not a ✓.</li>
-        <li><strong>Provenance:</strong> every widget write carries <code>logged_via='widget'</code> (B-289 lands first — unbackfillable later).</li>
-        <li><strong>Never reassures:</strong> no “all clear,” no “Biscuit is doing great,” no Signal/AI-read copy in v1 (a widget's refresh cadence can leave a clinical sentence stale on the Home Screen — deliberately deferred, see session notes).</li>
-        <li><strong>No monetization state</strong> (D5 parity with Home): the widget never badges, upsells, or caps.</li>
-        <li><strong>Silent by design:</strong> a widget is the anti-nag surface — zero notifications, Principle 4 untouched.</li>
-        <li><strong>One accent:</strong> teal on interactive elements only; everything else neutral (or the night palette if ratified).</li>
+        <li><strong>Provenance:</strong> every widget write carries <code>logged_via='widget'</code> + the named item id (B-289 lands first — unbackfillable later).</li>
+        <li><strong>Per-widget pet binding:</strong> configured at placement; never follows the in-app active-pet switch (B-086).</li>
+        <li><strong>Never reassures:</strong> no "all clear," no Signal/AI-read copy in v1 (stale-refresh hazard — deliberately deferred).</li>
+        <li><strong>No monetization state</strong> (D5 parity with Home) — and the widget itself ships <strong>free</strong> (PM ruled 2026-07-24: easier logging → better retention → more insight; amends the D-M1 "Home-screen widgets" Premium bullet, doc edits flagged).</li>
+        <li><strong>Silent by design:</strong> zero notifications, Principle 4 untouched. <strong>One accent:</strong> teal on interactive elements only.</li>
       </ul>
     </div>
+  </section>
+
+  <!-- ================= CHANGELOG ================= -->
+  <section>
+    <h2>Changed from round 1</h2>
+    <p class="changelog">① The no-garbage rule leads: slot-bound named meals, flip-to-named-treats, no generic events (was: "log now with defaults, edit later" — PM killed it). ② Candidate A de-busied: button column removed, slot rows are the buttons, med row conditional, one accent per state. ③ Free-fed variant added (B-040 arrangements drive the rows). ④ Multi-pet answered: per-widget pet binding at placement. ⑤ Candidate B becomes a small+medium family. ⑥ Candidate C is trial-aware/adaptive rather than trial-only. ⑦ Candidate D explicitly deferred to Phase 2. ⑧ The mark is now the real CulpritMark geometry — crescent cutout + teal Signal dot (round 1 was missing the dot; PM caught it). ⑨ Undo flagged as a new open design question.</p>
   </section>
 
 </div>
