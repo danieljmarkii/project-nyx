@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culprit — Home Screen Widget mockups</title>
+<style>
+  /* Fonts approximate the real stack: Geist → -apple-system/Inter; Newsreader → Georgia.
+     Widget-internal tokens are lifted verbatim from constants/theme.ts and are fixed —
+     the widgets are the subject under review, so they don't re-theme. Page chrome does. */
+  :root {
+    --accent: #00C2A8;
+    --accent-light: #E0FBF7;
+    --text-primary-w: #0A0A0A;
+    --text-secondary-w: #525252;
+    --text-tertiary-w: #737373;
+    --surface: #FFFFFF;
+    --surface-subtle: #F5F5F5;
+    --border-w: #EAEAEA;
+    --night: #13112E;
+    --moonlight: #F2EEE4;
+    --text-on-night: #ECEAF6;
+    --text-on-night-muted: #A6A2CE;
+    --crescent-on-light: #211E4E;
+
+    /* page chrome — theme-aware */
+    --page-bg: #F0EFEA;
+    --page-text: #0A0A0A;
+    --page-text-2: #525252;
+    --page-text-3: #737373;
+    --card-bg: #FFFFFF;
+    --card-border: #EAEAEA;
+    --flag-bg: #FDF8EC;
+    --flag-border: #F3D9A4;
+    --new-bg: #E7F6F3;
+    --new-border: #9BD8CC;
+    --code-bg: #ECEAE3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #17161F;
+      --page-text: #ECEAF6;
+      --page-text-2: #B7B3D6;
+      --page-text-3: #8F8BB5;
+      --card-bg: #201F2B;
+      --card-border: #34324A;
+      --flag-bg: #2B2536;
+      --flag-border: #6B5A33;
+      --new-bg: #1C2B29;
+      --new-border: #2E5B52;
+      --code-bg: #2A2938;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #17161F;
+    --page-text: #ECEAF6;
+    --page-text-2: #B7B3D6;
+    --page-text-3: #8F8BB5;
+    --card-bg: #201F2B;
+    --card-border: #34324A;
+    --flag-bg: #2B2536;
+    --flag-border: #6B5A33;
+    --new-bg: #1C2B29;
+    --new-border: #2E5B52;
+    --code-bg: #2A2938;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #F0EFEA;
+    --page-text: #0A0A0A;
+    --page-text-2: #525252;
+    --page-text-3: #737373;
+    --card-bg: #FFFFFF;
+    --card-border: #EAEAEA;
+    --flag-bg: #FDF8EC;
+    --flag-border: #F3D9A4;
+    --new-bg: #E7F6F3;
+    --new-border: #9BD8CC;
+    --code-bg: #ECEAE3;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    background: var(--page-bg);
+    color: var(--page-text);
+    padding: 40px 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
+  .page { max-width: 900px; margin: 0 auto; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 34px; letter-spacing: -0.3px; margin-bottom: 6px; text-wrap: balance; }
+  .sub { color: var(--page-text-2); font-size: 15px; line-height: 1.5; max-width: 660px; margin-bottom: 8px; }
+  .meta { color: var(--page-text-3); font-size: 12.5px; margin-bottom: 40px; }
+  section { margin-bottom: 64px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--page-text-3); font-weight: 600; margin-bottom: 6px; display:flex; align-items:center; gap:10px; }
+  h3 { font-size: 21px; font-weight: 600; letter-spacing: -0.2px; margin-bottom: 10px; text-wrap: balance; }
+  .badge { font-size: 10px; letter-spacing: 0.8px; border-radius: 999px; padding: 3px 9px; font-weight: 700; }
+  .badge.new { background: var(--new-bg); border: 1px solid var(--new-border); color: var(--page-text); }
+  .badge.deferred { background: var(--flag-bg); border: 1px solid var(--flag-border); color: var(--page-text); }
+  .concept-note { color: var(--page-text-2); font-size: 14.5px; line-height: 1.55; max-width: 680px; margin-bottom: 24px; }
+  .concept-note strong { color: var(--page-text); }
+
+  /* jobs card */
+  .rule-hero { background: var(--card-bg); border: 1px solid var(--new-border); border-radius: 18px; padding: 24px 28px; max-width: 760px; }
+  .rule-hero .big { font-family: Georgia, serif; font-size: 24px; line-height: 1.3; margin-bottom: 14px; text-wrap: balance; }
+  .rule-hero li { margin: 9px 0 9px 18px; font-size: 14.5px; line-height: 1.55; color: var(--page-text-2); }
+  .rule-hero li strong { color: var(--page-text); }
+
+  /* wallpaper strip that widgets sit on */
+  .shelf {
+    background: linear-gradient(135deg, #C9D6D2 0%, #AEC3C9 55%, #93A8B8 100%);
+    border-radius: 28px;
+    padding: 36px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    align-items: flex-start;
+    overflow-x: auto;
+  }
+  .widget-stack { display: flex; flex-direction: column; gap: 8px; }
+  .widget-label { font-size: 11.5px; color: rgba(255,255,255,0.85); text-shadow: 0 1px 2px rgba(0,0,0,0.25); font-weight: 500; text-align: center; max-width: 364px; }
+
+  /* iOS widget frames (approx. proportions; systemMedium 338×158pt) */
+  .w-medium { width: 364px; max-width: 100%; height: 172px; border-radius: 26px; }
+  .widget {
+    background: var(--surface);
+    box-shadow: 0 8px 24px rgba(10,10,10,0.18);
+    padding: 14px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    color: var(--text-primary-w);
+  }
+
+  /* the real mark: crescent mask-cutout + teal Signal dot (CulpritMark geometry,
+     small-size dot bump per icon-kit §3) */
+  .mark { width: 16px; height: 16px; flex: none; display: block; }
+
+  .w-head { display:flex; align-items:center; gap:6px; margin-bottom: 8px; }
+  .w-pet { font-size: 13px; font-weight: 600; letter-spacing: -0.1px; }
+  .w-head .spacer { flex: 1; }
+  .w-time { font-size: 10.5px; color: var(--text-tertiary-w); }
+
+  /* A3 layout: status column + big action tiles */
+  .a3 { display:flex; gap:12px; flex:1; min-height:0; }
+  .a3-status { flex:1.15; display:flex; flex-direction:column; gap:5px; justify-content:center; }
+  .srow { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:11px; background: var(--surface-subtle); font-size:13px; }
+  .srow .tick { width:18px; height:18px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-size:10.5px; }
+  .tick.done { background: var(--accent-light); color:#0B7B6C; }
+  .tick.open { border:1.5px solid var(--accent); color:transparent; }
+  .srow .name { font-weight:500; }
+  .srow .when { color: var(--text-tertiary-w); font-size:11px; margin-left:auto; }
+  .a3-tiles { flex:1; display:flex; gap:10px; }
+  .tile {
+    flex:1; border-radius:16px; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:5px;
+    background: var(--surface-subtle); border:1px solid var(--border-w);
+  }
+  .tile.accent { background: var(--accent); border-color: var(--accent); }
+  .tile .glyph { font-size:24px; line-height:1; }
+  .tile .lbl { font-size:13px; font-weight:600; }
+  .tile .hint { font-size:9.5px; color: var(--text-tertiary-w); }
+  .tile.accent .hint { color: rgba(10,10,10,0.6); }
+
+  /* picker (flipped) state */
+  .picker { display:flex; flex-direction:column; gap:8px; flex:1; justify-content:center; }
+  .prow {
+    display:flex; align-items:center; gap:10px;
+    border-radius:13px; padding:11px 14px;
+    background: var(--surface-subtle); border:1px solid var(--border-w);
+    font-size:13.5px; font-weight:600;
+  }
+  .prow.accent { background: var(--accent); border-color: var(--accent); color:#0A0A0A; }
+  .prow .sub { font-weight:400; font-size:11px; color: var(--text-tertiary-w); margin-left:auto; }
+  .prow.accent .sub { color: rgba(10,10,10,0.65); }
+  .prow.ghost { background:transparent; border-style:dashed; font-weight:500; color: var(--text-secondary-w); }
+  .picker-head { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color: var(--text-tertiary-w); text-transform:uppercase; letter-spacing:0.8px; }
+  .picker-head .back { margin-left:auto; font-weight:500; text-transform:none; letter-spacing:0; }
+
+  /* annotations */
+  .annos { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 22px; }
+  .anno { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 14px 16px; font-size: 13px; line-height: 1.5; color: var(--page-text-2); }
+  .anno b { display:block; color: var(--page-text); margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
+  .anno.flag { border-color: var(--flag-border); background: var(--flag-bg); }
+  .anno.new { border-color: var(--new-border); background: var(--new-bg); }
+
+  .rules { background: var(--card-bg); border:1px solid var(--card-border); border-radius: 16px; padding: 20px 24px; max-width: 760px; }
+  .rules li { margin: 8px 0 8px 18px; font-size: 14px; line-height: 1.55; color: var(--page-text-2); }
+  .rules li strong { color: var(--page-text); }
+  .parked { max-width: 720px; }
+  .parked li { margin: 8px 0 8px 18px; font-size: 14px; line-height: 1.6; color: var(--page-text-2); }
+  .parked li strong { color: var(--page-text); }
+
+  .changelog { font-size: 13px; color: var(--page-text-3); line-height: 1.7; max-width: 700px; }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <h1>Culprit — Home Screen Widget</h1>
+  <p class="sub">Ideation <strong>round 3</strong> — all-in on Candidate A per the PM. The design finally clicked by importing B's simplicity: <strong>the resting state is two big tiles + a compact status column</strong>, and the flip-to-named-choices interaction the PM loved for treats now works identically for meals. No wasted space, no ambiguity about what a tap does.</p>
+  <p class="meta">2026-07-24 · round 2 → PM reaction → this · widget tokens + mark geometry verbatim from <code>constants/theme.ts</code> / <code>CulpritMark.tsx</code> · PR #419</p>
+
+  <!-- ================= JOBS ================= -->
+  <section>
+    <h2>The widget's jobs — PM-defined <span class="badge new">ROUND 3 SPINE</span></h2>
+    <div class="rule-hero">
+      <div class="big">The widget will never be as robust as the app. It has exactly two jobs.</div>
+      <ul>
+        <li><strong>Job 1 — keep Culprit top of mind</strong> so logging happens, so we can help pets. The status column is the ambient half; the big tiles are the capture half.</li>
+        <li><strong>Job 2 — "when in doubt, app it out."</strong> Every path that can't produce a <em>named</em> event in ≤2 taps opens the app instead. The dashed "Something else…" row is this job made visible — it appears in every picker, always last, always honest.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= A3 STATES ================= -->
+  <section>
+    <h2>Candidate A — round 3</h2>
+    <h3>One layout, four states</h3>
+    <p class="concept-note"><strong>Resting:</strong> status column left (slots, packed), two big B-style tiles right (Meal / Treat — the whole tile is the tap target). <strong>Tap a tile → the widget flips in place</strong> to that category's named choices: 1–2 one-tap named options + the "Something else…" app door. Same interaction both categories — learn it once.</p>
+
+    <div class="shelf">
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div class="w-head">
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m1"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m1)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <span class="w-pet">Biscuit</span>
+            <span class="spacer"></span>
+            <span class="w-time">Day 12 of 28</span>
+          </div>
+          <div class="a3">
+            <div class="a3-status">
+              <div class="srow">
+                <span class="tick done">✓</span>
+                <span class="name">Breakfast</span>
+                <span class="when">7:42a</span>
+              </div>
+              <div class="srow">
+                <span class="tick open"></span>
+                <span class="name">Dinner</span>
+                <span class="when">~6p</span>
+              </div>
+            </div>
+            <div class="a3-tiles">
+              <div class="tile accent">
+                <span class="glyph">🍽</span>
+                <span class="lbl">Meal</span>
+                <span class="hint">tap to pick</span>
+              </div>
+              <div class="tile">
+                <span class="glyph">🐾</span>
+                <span class="lbl">Treat</span>
+                <span class="hint">tap to pick</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="widget-label">State 1 — resting (dog, mid-trial). Status packed left, two big targets right. Status rows are glance-only; tapping one opens the app to that day.</div>
+      </div>
+
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div class="picker-head">
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m2"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m2)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            Which meal? <span class="back">‹ back</span>
+          </div>
+          <div class="picker">
+            <div class="prow accent">Dinner — Hill's z/d <span class="sub">one tap · logs now</span></div>
+            <div class="prow ghost">Something else… <span class="sub">opens Culprit</span></div>
+          </div>
+        </div>
+        <div class="widget-label">State 2 — after tapping Meal. The next unlogged slot with its named food leads (during a trial that's the trial diet by definition). Anything else = the app.</div>
+      </div>
+
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div class="picker-head">
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m3"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m3)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            Which treat? <span class="back">‹ back</span>
+          </div>
+          <div class="picker">
+            <div class="prow">Dental chew</div>
+            <div class="prow">Freeze-dried liver</div>
+            <div class="prow ghost">Something else… <span class="sub">opens Culprit</span></div>
+          </div>
+        </div>
+        <div class="widget-label">State 3 — after tapping Treat. The 2 most-logged named treats + the app door. Identical interaction to meals.</div>
+      </div>
+
+      <div class="widget-stack">
+        <div class="widget w-medium">
+          <div class="w-head">
+            <svg class="mark" viewBox="0 0 100 100"><defs><mask id="m4"><rect width="100" height="100" fill="#fff"/><circle cx="61" cy="43" r="29" fill="#000"/></mask></defs><circle cx="45" cy="50" r="33" fill="#211E4E" mask="url(#m4)"/><circle cx="66" cy="53" r="10.5" fill="#00C2A8"/></svg>
+            <span class="w-pet">Mochi</span>
+            <span class="spacer"></span>
+            <span class="w-time">free-fed + meals</span>
+          </div>
+          <div class="a3">
+            <div class="a3-status">
+              <div class="srow">
+                <span class="tick done">✓</span>
+                <span class="name">Bowl topped</span>
+                <span class="when">8:05a</span>
+              </div>
+              <div class="srow">
+                <span class="tick open"></span>
+                <span class="name">Wet dinner</span>
+                <span class="when">~7p</span>
+              </div>
+            </div>
+            <div class="a3-tiles">
+              <div class="tile accent">
+                <span class="glyph">🍽</span>
+                <span class="lbl">Meal</span>
+                <span class="hint">tap to pick</span>
+              </div>
+              <div class="tile">
+                <span class="glyph">🐾</span>
+                <span class="lbl">Treat</span>
+                <span class="hint">tap to pick</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="widget-label">State 4 — hybrid cat (the PM's own): free-fed kibble AND scheduled wet meals coexist as rows. Mochi's Meal picker offers "Top up bowl" and "Wet dinner — Royal Canin".</div>
+      </div>
+    </div>
+
+    <div class="annos">
+      <div class="anno new"><b>Hybrid arrangements</b>Free-fed vs meal-fed isn't either/or — it's per-pet rows from the declared feeding arrangement (B-040 machinery): scheduled slots get slot rows, a free-fed component gets a bowl row. The same status column renders any mix. No separate "free-fed variant" widget anymore.</div>
+      <div class="anno"><b>Designer</b>Space audit vs round 2: the dead middle is gone — tiles take the full right half at full height, status rows are edge-to-edge chips, the header carries the trial line. Every region is either information or a target.</div>
+      <div class="anno"><b>Data Scientist</b>Unchanged invariants: every one-tap write is a named item + <code>logged_via='widget'</code>; the bowl "top up" is an arrangement event, never an intake claim (grazing intake stays unmeasured — no fake precision).</div>
+      <div class="anno flag"><b>Open — tile glyphs</b>Emoji placeholders (🍽 🐾) mark the slots only; production uses the app's own EventIcon set — species-neutral by default (Candidate B's icon note generalized here). Needs the icon pass, not a decision.</div>
+    </div>
+  </section>
+
+  <!-- ================= PARKED ================= -->
+  <section>
+    <h2>Parked this round <span class="badge deferred">NOT DROPPED</span></h2>
+    <div class="parked">
+      <ul>
+        <li><strong>Candidate B (small treat logger):</strong> both PM notes recorded — needs a generic or species-aware icon (see glyph note above), and its post-tap behavior is the <em>same flip</em> as A's State 3, just stacked vertically in the small frame; round 2's mock didn't show that state, which is why it read as unclear. Ships as the small sibling of A's treat path if A's interaction tests well.</li>
+        <li><strong>Candidate C (adaptive status small):</strong> unchanged from round 2; trial-aware; ground question still open (D8's sibling).</li>
+        <li><strong>Candidate D (Lock Screen):</strong> deferred to Phase 2, unchanged.</li>
+        <li><strong>Multi-pet:</strong> stack-two-widgets confirmed "good v1" by the PM. Per-widget pet binding at placement stands.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= RULES ================= -->
+  <section>
+    <h2>Held constant</h2>
+    <div class="rules">
+      <ul>
+        <li><strong>Logs only what it can name;</strong> every ambiguous path opens the app ("when in doubt, app it out" — Job 2). No generic events exist.</li>
+        <li><strong>Fail-safe honesty:</strong> unconfirmed slots are visible gaps, never assumed ✓ (B-156 G1 generalized).</li>
+        <li><strong>Provenance:</strong> <code>logged_via='widget'</code> + named item id on every write (B-289 first).</li>
+        <li><strong>Per-widget pet binding</strong> at placement; never follows the in-app active-pet switch (B-086).</li>
+        <li><strong>Never reassures;</strong> no Signal/AI copy in v1. <strong>No monetization state;</strong> the widget ships free (PM-ruled; D-M1 bullet amendment flagged).</li>
+        <li><strong>Silent by design;</strong> zero notifications. <strong>One accent:</strong> teal on the primary action only.</li>
+        <li><strong>Mis-tap undo:</strong> "✓ just now · tap to undo" for ~60s on the affected row (open design question from round 2, carried).</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= CHANGELOG ================= -->
+  <section>
+    <h2>Changed from round 2</h2>
+    <p class="changelog">① All-in on Candidate A (PM call — most promise, most real estate). ② The PM's jobs-to-be-done frame is now the spine: top-of-mind + when-in-doubt-app-it-out. ③ B's simplicity imported: resting state = two big tiles, whole-tile targets, "tap to pick" hint. ④ The flip-to-named-choices interaction generalized from treats to meals (PM: "maybe it should be meal"). ⑤ Wasted space fixed: full-height tiles, chip-style status rows, trial line moved to the header. ⑥ Free-fed AND meals coexist per pet (the PM's cat) — arrangement-driven rows replace the separate free-fed variant. ⑦ Slot rows are glance-only now (tap opens the app); logging is tiles-only — one interaction model, no hidden second gesture. ⑧ B's two notes recorded in Parked (icon; its post-tap flip is A's State 3). ⑨ Emoji glyphs flagged as placeholders for the EventIcon pass.</p>
+  </section>
+
+</div>
+</body>
+</html>

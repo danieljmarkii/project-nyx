@@ -18,12 +18,12 @@
 | # | Step | Type | Backlog | Status |
 |---|---|---|---|---|
 | 1 | Verify the App Store Connect record + lock the name | PM | B-272 | ✅ Done 2026-07-08 — name "Culprit — Pet Health Tracker", category Lifestyle/Health & Fitness |
-| 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | 🟡 In progress — draft PR #302 open |
-| 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | 🔵 Spec'd 2026-07-08 — domain `getculprit.app` purchased (Cloudflare); build-ready spec `docs/culprit-website-requirements.md`; awaiting PM repo + Email Routing setup |
+| 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | ✅ Done — docs hosted live 2026-07-16; in-app wiring shipped (#361/#362): signup acceptance line, settings rows, onboarding disclaimer step writing `legal_acceptances` (code-verified 2026-07-20 audit) |
+| 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | ✅ Hosting live — `getculprit.app` privacy/terms/disclaimer URLs wired in-app (`LEGAL_LINKS_ENABLED=true`) + `support@getculprit.app`; residual PM check: confirm the **support page URL** resolves for the ASC listing field (2026-07-20 audit) |
 | 4 | Pick + configure the production SMTP provider | PM | B-152 (part 1) | ⬜ Not started |
-| 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | 🟡 In progress — draft PR #299 open, **permission strings only** (B-267); confirmed it does **not** include the `supportsTablet: false` flip (B-269) — that half still needs its own change, either folded into #299 before merge or a follow-up |
+| 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | 🟡 Permission strings **merged** (#299; built-artifact verify rides the next build-cut); **`supportsTablet: false` flip still NOT done** (`app.json:17` remains `true` — 2026-07-20 audit §B4) |
 | 6 | Ratify + flag off the paywall for v1 | Mixed | B-263–266 (deferral) | ⬜ Not started |
-| 7 | In-app version display | PR | B-231 | ⬜ Not started |
+| 7 | In-app version display | PR | B-231 | ✅ Done — `Culprit v{version} ({build})` at the settings foot (B-283 PR 1/2, #315/#316; code-verified 2026-07-20 audit) |
 | 8 | On-device deletion QA + logout-wipe (email confirm still OFF) | PM | B-039 + AC-6 | 🟡 B-039 deletion ✅ verified 2026-07-16 (live-DB, real account); AC-6 cross-account logout-wipe rider still open |
 | 9 | Flip email confirmation ON + verify the signup path | Mixed | B-152 (part 2) | ⬜ Not started |
 | 10 | Cut the production build + built-artifact verification | Mixed | — | ⬜ Not started |

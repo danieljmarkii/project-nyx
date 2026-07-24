@@ -168,13 +168,17 @@ describe('CulpritMark — the pulse contract', () => {
     expect(ring.length).toBe(0);
   });
 
-  it('renders a ping-ring circle (stroked, no fill) when live is true', () => {
+  it('renders the three-ring ping train (stroked, no fill) when live is true', () => {
+    // Round-2 choreography (2026-07-24): the ping is a staggered THREE-ring
+    // concentric train, each ring a stroked accent circle with no fill.
     const { toJSON } = render(<CulpritMark size={16} ground="night" live />);
     const circles = findByType(toJSON(), 'RNSVGCircle');
-    const ring = circles.filter((c) => c.props.stroke != null);
-    expect(ring.length).toBe(1);
-    expect(ring[0].props.fill).toBeNull();
-    expect(ring[0].props.stroke.payload).toBe(argbPayload(theme.colorAccent));
+    const rings = circles.filter((c) => c.props.stroke != null);
+    expect(rings.length).toBe(3);
+    rings.forEach((ring) => {
+      expect(ring.props.fill).toBeNull();
+      expect(ring.props.stroke.payload).toBe(argbPayload(theme.colorAccent));
+    });
   });
 
   it('drives the pulse via native-driver-eligible RN View transforms, never a react-native-svg <G> matrix (B-322)', () => {
@@ -185,7 +189,7 @@ describe('CulpritMark — the pulse contract', () => {
     // So a LIVE mark must render transform-bearing Views (the ring + dot wrappers)
     // AND its animated circles must NOT hang off an SVG group carrying a transform.
     const live = render(<CulpritMark size={64} ground="night" live />).toJSON();
-    expect(viewsWithTransform(live).length).toBeGreaterThanOrEqual(2); // ring + dot
+    expect(viewsWithTransform(live).length).toBeGreaterThanOrEqual(4); // 3 train rings + dot
     // No react-native-svg <G> carries a transform/matrix (the frozen shape).
     expect(findByType(live, 'RNSVGGroup').every((g) => g.props.matrix == null && g.props.transform == null)).toBe(true);
     // A resting (non-live) mark has no transform-bearing pulse Views at all.

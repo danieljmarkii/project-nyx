@@ -45,7 +45,25 @@ const RING_STROKE = 2;
 // that at every size with margin; the ping's 2.1× growth then rides the View transform.
 const PULSE_BOX_FACTOR = 0.5;
 
+// The pulse choreography (PM-ratified round 2, 2026-07-24): the ORIGINAL radar
+// format — throbbing dot + bright expanding ping — multiplied into a THREE-RING
+// train. Each ring lives one full period at the original values; a new ring is
+// emitted every third of a period, so 2–3 concentric ripples radiate at any
+// moment. Round 1 mis-diagnosed the format as the problem: a compositor-driven
+// mock of these SAME values reads clean, and the on-device roughness is
+// Animated.loop's per-cycle JS-thread restart stalling under load (worst in dev
+// mode). The structural fix is in the effect below — an independent loop per
+// ring — not in the values, which are deliberately unchanged from the original.
 const PULSE_PERIOD_MS = 2600;
+const RING_COUNT = 3;
+const RING_STAGGER_MS = PULSE_PERIOD_MS / RING_COUNT;
+// Born at 0.66× the ring sits INSIDE the dot's own radius (and under it in paint
+// order), so the full-opacity start is never a visible snap — the ring slides
+// out from behind the dot already lit.
+const RING_START_SCALE = 0.66;
+const RING_MAX_SCALE = 2.1;
+const RING_PEAK_OPACITY = 0.9;
+const DOT_CREST_SCALE = 1.12;
 
 export interface CulpritMarkProps {
   /** Rendered size in px (square). */
@@ -82,8 +100,14 @@ export function CulpritMark({
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const scale = useRef(new Animated.Value(1)).current;
-  const ringScale = useRef(new Animated.Value(0.66)).current;
-  const ringOpacity = useRef(new Animated.Value(0)).current;
+  // One scale/opacity pair per ring in the train (a stable ref — RING_COUNT is a
+  // module constant, so the array never changes length across renders).
+  const ringAnims = useRef(
+    Array.from({ length: RING_COUNT }, () => ({
+      scale: new Animated.Value(RING_START_SCALE),
+      opacity: new Animated.Value(0),
+    })),
+  ).current;
 
   // Pause on app blur (§1.5 motion budget), matching WhorlSpinner — a native-driver
   // loop would otherwise keep ticking on the UI thread while backgrounded.
@@ -92,14 +116,24 @@ export function CulpritMark({
   useEffect(() => {
     if (!animate) {
       scale.setValue(1);
-      ringScale.setValue(0.66);
-      ringOpacity.setValue(0);
+      ringAnims.forEach((r) => {
+        r.scale.setValue(RING_START_SCALE);
+        r.opacity.setValue(0);
+      });
       return;
     }
-    const cycle = Animated.parallel([
+    // The dot's breathe and each ring's ping run as INDEPENDENT loops rather than
+    // one shared parallel mega-cycle. Animated.loop re-arms every iteration from
+    // the JS thread, so under load the restart stalls by a variable amount — with
+    // one shared cycle that stall froze/desynced everything at once (the choppy,
+    // arrhythmic playback the PM flagged on device). Per-ring loops place each
+    // ring's restart at the moment it is fully faded out, so a stalled restart
+    // just extends an invisible rest instead of hitching a visible ring; the
+    // dot's own boundary lands at its rest scale, the least noticeable moment.
+    const dotLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(scale, {
-          toValue: 1.12,
+          toValue: DOT_CREST_SCALE,
           duration: PULSE_PERIOD_MS / 2,
           useNativeDriver: true,
         }),
@@ -109,28 +143,41 @@ export function CulpritMark({
           useNativeDriver: true,
         }),
       ]),
+    );
+    const ringLoops = ringAnims.map((r, i) =>
       Animated.sequence([
-        Animated.timing(ringOpacity, { toValue: 0.9, duration: 1, useNativeDriver: true }),
-        Animated.parallel([
-          Animated.timing(ringScale, {
-            toValue: 2.1,
-            duration: PULSE_PERIOD_MS,
-            useNativeDriver: true,
-          }),
-          Animated.timing(ringOpacity, {
-            toValue: 0,
-            duration: PULSE_PERIOD_MS,
-            useNativeDriver: true,
-          }),
-        ]),
+        // Stagger the train: ring i joins one third of a period after ring i−1,
+        // so emissions interleave into evenly spaced concentric ripples.
+        Animated.delay(i * RING_STAGGER_MS),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(r.opacity, {
+              toValue: RING_PEAK_OPACITY,
+              duration: 1,
+              useNativeDriver: true,
+            }),
+            Animated.parallel([
+              Animated.timing(r.scale, {
+                toValue: RING_MAX_SCALE,
+                duration: PULSE_PERIOD_MS,
+                useNativeDriver: true,
+              }),
+              Animated.timing(r.opacity, {
+                toValue: 0,
+                duration: PULSE_PERIOD_MS,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]),
+        ),
       ]),
-    ]);
-    const loop = Animated.loop(cycle);
-    loop.start();
+    );
+    const pulse = Animated.parallel([dotLoop, ...ringLoops]);
+    pulse.start();
     return () => {
-      loop.stop();
+      pulse.stop();
     };
-  }, [animate, scale, ringScale, ringOpacity]);
+  }, [animate, scale, ringAnims]);
 
   const dotR = size <= SMALL_SIZE_THRESHOLD ? DOT_R_SMALL : DOT_R;
   const crescentFill = ground === 'night' ? theme.colorMoonlight : theme.colorCulpritCrescentOnLight;
@@ -200,25 +247,30 @@ export function CulpritMark({
           )}
         </Svg>
 
-        {/* Live pulse — native-driver View transforms (B-322). The ring expands +
-            fades; the dot breathes. Both pivot around the dot via the centred box. */}
+        {/* Live pulse — native-driver View transforms (B-322). The ring train
+            expands + fades under the dot (paint order: rings first, dot last, so
+            each ring is born hidden behind the dot); the dot breathes on top.
+            All layers pivot around the dot via the centred box. */}
         {animate && (
           <>
-            <Animated.View
-              pointerEvents="none"
-              style={[pulseBoxStyle, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
-            >
-              <Svg width={boxPx} height={boxPx}>
-                <Circle
-                  cx={boxCentre}
-                  cy={boxCentre}
-                  r={dotRadiusPx}
-                  fill="none"
-                  stroke={theme.colorAccent}
-                  strokeWidth={ringStrokePx}
-                />
-              </Svg>
-            </Animated.View>
+            {ringAnims.map((r, i) => (
+              <Animated.View
+                key={i}
+                pointerEvents="none"
+                style={[pulseBoxStyle, { opacity: r.opacity, transform: [{ scale: r.scale }] }]}
+              >
+                <Svg width={boxPx} height={boxPx}>
+                  <Circle
+                    cx={boxCentre}
+                    cy={boxCentre}
+                    r={dotRadiusPx}
+                    fill="none"
+                    stroke={theme.colorAccent}
+                    strokeWidth={ringStrokePx}
+                  />
+                </Svg>
+              </Animated.View>
+            ))}
             <Animated.View
               pointerEvents="none"
               style={[pulseBoxStyle, { transform: [{ scale }] }]}
