@@ -26,10 +26,39 @@
 // across several keys → a true association is HARDER to surface in the Signal, and
 // the dashboard's "top protein" would fragment the same animal across rows.
 //
-// Scope is deliberately NARROW (PM decision 2026-06-07): qualifier-strip + junk-drop
-// only. It does NOT map species synonyms (`ocean whitefish` → `whitefish`, etc.) —
-// that is B-048's ingredient-canonicalization lane and is judgement-heavy enough to
-// risk wrong merges. A pure module (no I/O), unit-tested in
+// ── THE MERGE RULE: Class A vs Class B (PM ruling 2026-07-24, B-414) ──────────
+// Two protein values may be merged into one key under two very different
+// warrants, and the line between them is a single question: DOES JUSTIFYING THIS
+// MERGE REQUIRE KNOWING ANYTHING ABOUT ANIMALS?
+//
+//   • CLASS A — orthographic / artifact merges. PERMITTED ALWAYS, ON READ,
+//     RETROACTIVELY. The same token differing only by a mechanical artifact of
+//     capture: casing, padding, boundary punctuation, form-qualifier spellings
+//     (`by product`/`byproduct`/`by-product`), and trailing qualifiers that
+//     describe PROCESSING rather than the animal. `chicken -`, `Chicken`,
+//     `chicken meal`, `chicken by-product meal` are all `chicken`. No clinical
+//     judgement is involved, so no merge can pool two species by accident —
+//     leaving these split is PURE data loss (the food drops out of every
+//     correlation and contaminant check). Fixing one retroactively is expected.
+//     Standing guard: a Class-A change re-keys stored data, so pair it with a
+//     before/after affected-row count (B-414's own fix: 0 of 59 live rows).
+//   • CLASS B — semantic merges. WRITE-PATH ONLY, NEVER RETROACTIVE. Two
+//     DIFFERENT tokens asserted to name the same animal, or a strictly vaguer
+//     label of it: `buffalo`→`bison`, `ocean whitefish`→`whitefish`,
+//     `chicken liver`→`chicken`. These need species knowledge, and a wrong call
+//     silently pools two distinct animals across the entire record with nothing
+//     an owner could see or undo. They live below the extraction boundary, at
+//     capture, where the owner sees the value and can correct it.
+//
+// This supersedes D3's original blanket "never re-merge already-stored keys",
+// which collapsed both classes into one prohibition — and so lent a stray hyphen
+// the caution that belongs only to species judgements. D3's real protection
+// (Class B) is unchanged. Full ruling: docs/nyx-multi-protein-requirements.md §10 D3.
+//
+// canonicalizeProtein's scope stays NARROW (PM decision 2026-06-07): Class-A only
+// — qualifier-strip, punctuation convergence, junk-drop. It does NOT map species
+// synonyms (`ocean whitefish` → `whitefish`, etc.); that is Class B, and lives in
+// the extraction write path below. A pure module (no I/O), unit-tested in
 // supabase/functions/generate-signal/protein.test.ts (deno) — kept green by the
 // re-export — and exercised again client-side in lib/analytics.test.ts.
 
@@ -94,7 +123,29 @@ const PROTEIN_JUNK = new Set([
 // so a bare qualifier ("meal", "by-product meal") strips to empty (→ null), while
 // a word that merely ENDS in "meal" with no boundary (e.g. "oatmeal", char "t"
 // before "meal") is never touched.
-const TRAILING_QUALIFIER = /(?:^|\s+)(by-product meal|by-product|meal)$/;
+// The leading boundary accepts hyphens as well as spaces (`[-\s]+`) so a
+// hyphen-joined qualifier ("chicken-meal", "chicken-by-product-meal") strips
+// exactly like its spaced form — the same Class-A artifact rule that governs the
+// punctuation trim below. `oatmeal` is still untouched (char `t`, no boundary).
+const TRAILING_QUALIFIER = /(?:^|[-\s]+)(by-product meal|by-product|meal)$/;
+
+// Boundary punctuation, quotes, and brackets. Applied inside the convergence
+// loop in canonicalizeProtein (never once, up front) — see the Class-A note
+// there for why running it a single time was a real bug.
+const PUNCTUATION_EDGES = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
+
+// Defensive upper bound on a single protein TERM (not an ingredient panel). The
+// longest plausible real value is ~35 chars ("hydrolyzed chicken by-product
+// meal"), so 120 is ~3× headroom and nothing real trips it — the live library's
+// longest value is 22 ("turkey by-product meal"). It exists because the
+// convergence loop below is O(n²) in the string length (12 KB → ~244 ms, 48 KB →
+// ~3.3 s), bounded today only by `max_tokens` on the vision call. The
+// re-derivation backfill contemplated in spec §13 reads `ingredients_notes`
+// directly and would NOT respect that ceiling, so the guard belongs here, at the
+// entry every path shares, rather than in the backfill that hasn't been written
+// yet. Over-length degrades to protein-unknown (null) — never a truncated key,
+// which would be an invented protein.
+const MAX_PROTEIN_TERM_LENGTH = 120;
 
 // ── proteins cache-column shape (B-351 Phase A, PR 1) ──────────────────────────
 // The server's `food_items.proteins TEXT[]` (migration 039) mirrors into the
@@ -147,8 +198,16 @@ export function proteinsFromCacheText(text: string | null | undefined): string[]
 // capture, to a value the owner then sees and can correct on the confirm screen.
 //
 // ⚠️ Never call normalizeExtractedProtein / deriveProteinSet from a read path,
-// and never widen canonicalizeProtein with these rules — that would re-merge
-// stored keys retroactively, which D3 explicitly does not sanction.
+// and never widen canonicalizeProtein with THESE rules — the synonym table, the
+// species-tissue fold, and the descriptor strip are all CLASS B (see the module
+// header), so applying them on read would retroactively re-merge stored keys on
+// a species judgement, which D3 does not sanction. This is NOT a bar on
+// Class-A convergence work inside canonicalizeProtein — punctuation, casing, and
+// form-qualifier artifacts are explicitly in scope there and are meant to be
+// fixed retroactively (B-414).
+//
+// Note the picker's "Other" typed escape is a WRITE path, so routing it through
+// normalizeExtractedProtein is in-contract, not a violation (B-412).
 
 // Leading descriptors that qualify the SOURCING or STATE of a protein, not the
 // animal: "deboned chicken", "fresh salmon", and "chicken" are one exposure.
@@ -332,13 +391,26 @@ export function deriveProteinSet(rawProteins: unknown, rawPrimary: unknown): str
 
 /**
  * Canonicalize a raw protein string to a stable ranking/correlation key, or null
- * when it carries no usable protein. Pure and idempotent: canonicalize(canonicalize(x))
- * === canonicalize(x).
+ * when it carries no usable protein. Class-A merges only (module header).
+ *
+ * Pure and CONVERGENT: canonicalize(canonicalize(x)) === canonicalize(x) for all
+ * inputs. That is a hard invariant, not a nicety — every read path canonicalizes
+ * independently, so a value that could still re-key on a second pass would let
+ * two surfaces disagree about what protein a food is, which is the exact
+ * fragmentation this module exists to prevent. Fuzz-tested in protein.test.ts
+ * over the full cross-product of casing / padding / boundary punctuation /
+ * stacked qualifiers; a fixed example list is NOT sufficient coverage (that is
+ * precisely what missed B-414).
  *
  *   "Chicken"                  → "chicken"
  *   "  Chicken  By-Product  Meal " → "chicken"
  *   "Turkey By Product Meal"   → "turkey"
  *   "Chicken Meal"             → "chicken"
+ *   "Chicken - Meal"           → "chicken"   (B-414: the qualifier strip exposes
+ *                                the hyphen, and the loop cleans it in the same
+ *                                pass — this returned "chicken -" before)
+ *   "chicken-meal"             → "chicken"   (hyphen-joined qualifier)
+ *   <over 120 chars>           → null        (not a protein term; see the guard)
  *   "ocean whitefish"          → "ocean whitefish"   (no synonym mapping on READ —
  *                                the B-048 mapping is write-path only, see above)
  *   "null" | "" | "unknown"    → null
@@ -350,25 +422,30 @@ export function canonicalizeProtein(raw: string | null | undefined): string | nu
 
   // Lowercase, trim, collapse internal whitespace runs to single spaces.
   let v = raw.trim().toLowerCase().replace(/\s+/g, ' ');
-
-  // Trim leading/trailing punctuation, quotes, and brackets (e.g. a stray
-  // "chicken," or "(chicken)"). A trailing comma/period otherwise blocks the
-  // $-anchored qualifier strip below and re-fragments the key ("chicken meal,"
-  // would split from both "chicken" and "chicken meal") — the exact starvation
-  // B-052 fixes. Internal characters (the hyphen in "by-product") are untouched.
-  v = v.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-  if (PROTEIN_JUNK.has(v)) return null;
+  if (v.length > MAX_PROTEIN_TERM_LENGTH) return null;
 
   // Normalize the spelling of "by product" / "byproduct" → "by-product" so the
   // single qualifier rule below covers all three spellings.
   v = v.replace(/\bby[ -]?product\b/g, 'by-product');
 
-  // Strip trailing form-qualifiers repeatedly until the value is stable, so a
-  // stacked qualifier ("chicken meal by-product") fully reduces. Re-check the
-  // junk set after stripping in case the qualifier was the only content.
+  // Strip boundary punctuation AND trailing form-qualifiers together, to a JOINT
+  // fixpoint. Both rules must live inside the same loop, because each one can
+  // expose work for the other:
+  //   • a stacked qualifier ("chicken meal by-product") needs repeated passes;
+  //   • a qualifier strip can EXPOSE punctuation the trim already ran past —
+  //     "chicken - meal" → (strip "meal") → "chicken -" → (trim) → "chicken".
+  // That second case was a live bug (B-414): the trim ran ONCE, up front, so the
+  // function returned the non-key "chicken -" and that food sat outside every
+  // correlation, top-protein count, and contaminant check. It is a Class-A
+  // (orthographic/artifact) merge — the same token with a capture artifact, no
+  // species judgment involved — so converging it is required, not optional; see
+  // the Class-A/Class-B note in the module header. The convergence property is
+  // fuzz-tested in protein.test.ts, which is what actually keeps this closed: the
+  // docstring below already CLAIMED idempotence while the bug was live.
   let prev: string;
   do {
     prev = v;
+    v = v.replace(PUNCTUATION_EDGES, '');
     v = v.replace(TRAILING_QUALIFIER, '').trim();
   } while (v !== prev);
 
