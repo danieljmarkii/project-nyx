@@ -90,6 +90,15 @@ export interface WidgetSnapshot {
   dayKey: string;
   /** An active free-choice arrangement exists (B-040) — the bowl row's fact. */
   freeFed: boolean;
+  /**
+   * When the pet's free-choice arrangement was last re-attested (its
+   * `updated_at`, which lib/feedingArrangements already treats as
+   * "last confirmed"), or null. The widget shows a bowl ✓ only when this
+   * lands on `dayKey` — a dated fact, never an intake claim and never an
+   * assumption from time passing. Additive to the v1 contract (a reader that
+   * doesn't know the key ignores it) — no schema-version bump.
+   */
+  bowlConfirmedAt: string | null;
   today: WidgetSnapshotToday;
   // ── W4 resolution-lib fields (filled by lib/widgetResolution.ts) ──
   slots: WidgetSlotRow[];
@@ -126,6 +135,8 @@ export function buildWidgetSnapshot(
     generatedAt: string;
     dayKey: string;
     freeFed: boolean;
+    /** The free-choice arrangement's last-confirmed stamp, or null. */
+    bowlConfirmedAt: string | null;
     /** Meal rows over the full treat-lookback window, INCLUDING today. */
     meals: SnapshotMealRow[];
     /** Authoritative [start, end) of the local day, epoch ms. */
@@ -173,6 +184,7 @@ export function buildWidgetSnapshot(
     generatedAt: input.generatedAt,
     dayKey: input.dayKey,
     freeFed: input.freeFed,
+    bowlConfirmedAt: input.bowlConfirmedAt,
     today: { mealCount, treatCount, lastMealAt, lastTreatAt },
     slots: slotRows,
     mealChoices: buildMealChoices(slots, slotRows, input.trial),
@@ -229,16 +241,21 @@ async function readSnapshotInputs(petId: string, now: Date) {
       new Date(bounds.endMs + bufferMs).toISOString(),
     ],
   );
-  const bowl = await db.getFirstAsync<{ id: string }>(
-    `SELECT id FROM feeding_arrangements
+  // Most-recently-confirmed active free-choice arrangement. `updated_at` is the
+  // "last confirmed" stamp by the existing convention (lib/feedingArrangements
+  // §ActiveArrangementView) — the same column a widget bowl top-up re-attests.
+  const bowl = await db.getFirstAsync<{ updated_at: string }>(
+    `SELECT updated_at FROM feeding_arrangements
      WHERE pet_id = ? AND method = 'free_choice'
        AND active_until IS NULL AND deleted_at IS NULL
+     ORDER BY updated_at DESC
      LIMIT 1`,
     [petId],
   );
   return {
     meals,
     freeFed: !!bowl,
+    bowlConfirmedAt: bowl?.updated_at ?? null,
     dayBounds: { startMs: bounds.startMs, endMs: bounds.endMs },
   };
 }
@@ -331,9 +348,17 @@ function readPreviousSlotIndex(dir: { list(): { name: string; textSync?(): strin
 // it truly is empty-account state — an empty list prunes everything, which is
 // correct for both sign-out (clearWidgetData covers it anyway) and a genuinely
 // pet-less account.
-export async function publishWidgetSnapshots(pets: SnapshotPet[]): Promise<void> {
+//
+// Returns what it published (snapshots + the slot index) so the W5 widget
+// timeline can be driven from the SAME pass rather than re-reading the files it
+// just wrote — one set of facts reaches the snapshot files and the widget's
+// props, so the two can never disagree. Returns nulls/empties when the
+// container is unavailable, which the caller treats as "no widget to update".
+export async function publishWidgetSnapshots(
+  pets: SnapshotPet[],
+): Promise<{ snapshots: WidgetSnapshot[]; index: PetSlotIndex | null }> {
   const dir = getSnapshotDirectory();
-  if (!dir) return;
+  if (!dir) return { snapshots: [], index: null };
 
   const now = new Date();
   const generatedAt = now.toISOString();
@@ -348,6 +373,7 @@ export async function publishWidgetSnapshots(pets: SnapshotPet[]): Promise<void>
   // Trials fetched once for all pets (best-effort, empty offline).
   const trials = await fetchActiveTrials(pets.map((p) => p.id));
 
+  const published: WidgetSnapshot[] = [];
   for (const pet of pets) {
     try {
       const inputs = await readSnapshotInputs(pet.id, now);
@@ -360,6 +386,7 @@ export async function publishWidgetSnapshots(pets: SnapshotPet[]): Promise<void>
       // new File(...).write creates or overwrites; createFile would throw on an
       // existing snapshot (re-publish is the common case).
       new File(dir, `${pet.id}.json`).write(JSON.stringify(snapshot));
+      published.push(snapshot);
     } catch (e) {
       console.warn(`[widgetSnapshot] publish failed for pet ${pet.id}:`, e);
     }
@@ -369,9 +396,10 @@ export async function publishWidgetSnapshots(pets: SnapshotPet[]): Promise<void>
   // parameter resolves through (lib/widgetResolution.ts § D5). Read-modify-
   // write of our own file — previous assignments survive so a bound widget
   // never silently re-points (B-086).
+  let index: PetSlotIndex | null = null;
   try {
     const previous = readPreviousSlotIndex(dir);
-    const index = assignPetSlots(previous, pets);
+    index = assignPetSlots(previous, pets);
     new File(dir, PET_SLOT_INDEX_FILENAME).write(JSON.stringify(index));
   } catch (e) {
     console.warn('[widgetSnapshot] pet-slot index publish failed:', e);
@@ -394,4 +422,6 @@ export async function publishWidgetSnapshots(pets: SnapshotPet[]): Promise<void>
   } catch (e) {
     console.warn('[widgetSnapshot] prune failed:', e);
   }
+
+  return { snapshots: published, index };
 }

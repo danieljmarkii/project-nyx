@@ -1,6 +1,7 @@
 import { notifySignedOut } from './sync';
 import { clearLocalData } from './db';
 import { clearWidgetData } from './appGroup';
+import { clearWidgetTimeline } from './widgetBridge';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 
@@ -26,6 +27,10 @@ export async function wipeLocalSession(): Promise<void> {
   // (The shared-keychain session copy is cleared by the auth adapter's own
   // removeItem on SIGNED_OUT — lib/secureStore.ts.)
   clearWidgetData();
+  // W5: the widget's own timeline lives in the App Group's UserDefaults, not in
+  // the container directory clearWidgetData() deletes — so it needs its own
+  // wipe, or the Home Screen keeps showing the previous account's pet.
+  clearWidgetTimeline();
   // Device-local active-pet selection is account state too — wipe it and the
   // in-memory pet list so the next sign-in starts clean (FR-9 parity).
   await clearPersistedActivePetId();
