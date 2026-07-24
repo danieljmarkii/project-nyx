@@ -1,12 +1,12 @@
 # Nyx — Multi-Protein Capture & Set-Membership Correlation (B-351)
 
-**Status:** DRAFT design spec — provisional decisions pending PM/vet-advisor ratification.
-**Version:** 0.1 | Created: 2026-07-19
-**Owner backlog item:** B-351 (Later). Predecessor: **B-332** (single-protein manual capture, shipped #355). Likely absorbs: **B-048** (ingredient→protein canonicalization).
-**Gating Open Question (CLAUDE.md):** *"Capture ALL proteins in a food, not just `primary_protein`? … vet-advisor + PM call on sensitivity vs. attribution before B-351 is spec-ready."*
-**Design mocks:** `docs/nyx-multi-protein-mockups.html` — the four owner-facing surfaces (multi-select picker · trial-contaminant catch · joint-candidate Signal · vet-report protein exposure).
+**Status:** DESIGN-RATIFIED (2026-07-19) — D1–D8 ruled by the PM over a mock-review session; build-ready. Spec locks; PRs can start.
+**Version:** 1.0 | Created: 2026-07-19 | Last Updated: 2026-07-19
+**Owner backlog item:** B-351 (Later). Predecessor: **B-332** (single-protein manual capture, shipped #355). Absorbs: **B-048** (ingredient→protein canonicalization).
+**Gating Open Question (CLAUDE.md):** *"Capture ALL proteins in a food, not just `primary_protein`? … vet-advisor + PM call on sensitivity vs. attribution before B-351 is spec-ready."* → **RESOLVED (D1, §10): capture all, phased.**
+**Design mocks:** `docs/nyx-multi-protein-mockups.html` — the owner-facing surfaces (Main-protein/Also-contains picker · trial-contaminant catch at *add + log* · joint-candidate Signal · vet-report protein exposure).
 
-> **Why this doc exists.** B-351 was surfaced by the PM during B-332 and parked pending a decision on the sensitivity-vs-attribution tradeoff. This design session (2026-07-19) was run **non-interactively** — the live PM decision prompt could not be collected — so per the CLAUDE.md Open-Questions protocol, this doc records **provisional decisions with recommendations, clearly flagged for PM/Dr. Chen ratification** (see §10). Nothing here is built; the spec locks after §10 is ruled.
+> **How this was ratified.** B-351 was surfaced by the PM during B-332 and parked on the sensitivity-vs-attribution tradeoff. The design session (2026-07-19) opened non-interactively with provisional decisions, then the PM reviewed the mocks turn-by-turn and ruled each call: D1 capture-all/phased ✓, D2 contaminant-at-add-*and*-log ✓, D7 disclosure-vs-escalation tiers ✓, D8 Main-line/Also-contains picker ✓ ("10/10, super clear"), the joint-candidate resolution ✓ ("let the vet piece it together"), and Dr. Chen's vet-report conditions ✓. §10 records the final rulings.
 
 ---
 
@@ -36,7 +36,7 @@ Capturing all proteins wins Job 1 outright. The Job-2 risk is contained by three
 2. **Omnipresent proteins self-eliminate.** A protein in *every* case and control window is a staple and the case-crossover already washes it out (B-070). Capturing more proteins does **not** automatically bloat the candidate family — only *discriminating* proteins are candidates.
 3. **Effective-n floors stay.** The existing minimum-sample floors and the `notEnoughData` sentinel already refuse to rank below floor. Nothing here weakens them.
 
-**Conclusion (provisional D1):** capture all proteins; keep attribution honest via collinearity-aware joint attribution. The sensitivity/attribution framing is a false binary once capture and attribution are separated.
+**Conclusion (D1 — RATIFIED):** capture all proteins; keep attribution honest via collinearity-aware joint attribution. The sensitivity/attribution framing is a false binary once capture and attribution are separated. The PM's ratification came with a governing steer that shapes §7–§9: **"let the vet piece it together"** — surface honest exposure and reserve causal synthesis for the clinician, rather than over-computing a verdict on Home.
 
 ---
 
@@ -88,14 +88,18 @@ The function **already** captures the full ingredient list verbatim (`ingredient
 
 ---
 
-## 6. Manual capture (`ProteinPicker` → multi-select)
+## 6. Manual capture — two lines: "Main protein" + "Also contains" (D8 — RATIFIED)
 
-B-332 shipped a **single-select** `ProteinPicker` (wrapping `ChipGroup`, `COMMON_PROTEINS` + "Other" typed escape) on the food-capture edit step and the food-detail edit screen. B-351 extends it to **multi-select**:
+B-332 shipped a **single-select** `ProteinPicker` (wrapping `ChipGroup`, `COMMON_PROTEINS` + "Other" typed escape) on the food-capture edit step and the food-detail edit screen. B-351 **does not** turn it into one flat multi-select list — an earlier draft did, and the "first tap = main" model made *editing which protein is primary* clunky (deselect all → re-tap in order). The PM's review settled a cleaner two-line layout ("10/10, super clear"):
 
-- Multi-select `ChipGroup` (already supported) over `COMMON_PROTEINS`, storing an ordered set; the first-selected (or an explicit "primary" affordance) becomes `proteins[0]`.
-- The "Other" typed escape appends a canonicalized custom protein to the set.
-- **Never null-clobber an AI value** (the load-bearing B-332 property) — extended: the picker reseeds from the full `proteins` array and only writes on an owner tap/keystroke, so an AI-hydrated multi-protein set is never silently overwritten.
-- Copy/voice: the field is still optional (many treats/legacy rows have none); the label stays factual ("Proteins" / "Main proteins"), never preference framing (B-112 intake≠preference is a separate axis, but keep the register plain). `nyx-voice` pass required.
+- **Line 1 — "Main protein"** (single-select): **the shipped B-332 `ProteinPicker`, unchanged.** One tap sets it, one tap changes it. This is `proteins[0]`.
+- **Line 2 — "Also contains"** (multi-select, optional): the secondary proteins. AI-extracted secondaries land here; the owner adds/removes freely.
+- **Editing the main is one tap, and never loses the set:** picking a new main **auto-demotes the previous main into "Also contains."** So `proteins = [main, ...alsoContains]` and no protein is ever silently dropped by a re-designation.
+- A protein is never in both lines: selecting it as main removes it from "Also contains" (and vice-versa).
+- **Never null-clobber an AI value** (the load-bearing B-332 property, extended): both lines reseed from the stored `proteins` array and only write on an owner tap/keystroke, so an AI-hydrated set is never silently overwritten — a wrong extraction is corrected, not fought.
+- Copy/voice: both fields stay optional (many treats/legacy rows have none) and factual — "Main protein" / "Also contains", never preference framing (B-112 intake≠preference is a separate axis). `nyx-voice` pass required.
+
+**Why two lines, not one (the clinical rationale):** the main is *what the food is sold as* (and, in a trial, the target protein); the secondaries are *the hidden exposure that breaks trials*. The two lines literally are the two jobs of §2 — separating them in the form is the same separation that unties the sensitivity-vs-attribution knot.
 
 ---
 
@@ -110,6 +114,9 @@ B-332 shipped a **single-select** `ProteinPicker` (wrapping `ChipGroup`, `COMMON
 3. **Omnipresent-staple washout is unchanged** (B-070) — a protein in ≥ dominance-fraction of all exposures is genuinely unassessable and washes out; this now applies per protein in the set. Never reassurance (an omnipresent exposure is unassessable, not "safe").
 4. **Confidence/attribution machinery reused.** The existing `AttributionConfidence` (`low`/…) and `standingConfounder` tier-capping carry over per-cluster: a cluster with only collinear/low-confidence exposures caps at Early; a protein that *does* discriminate (appears in some case windows without its former co-occurrers) earns clean attribution as the diet varies.
 5. **Effective-n floors + `notEnoughData` sentinel unchanged.** Below floor → sentinel, never a fabricated rank.
+6. **Where the joint candidate SURFACES (RATIFIED — "let the vet piece it together").** Collinearity is **always computed** — it is the correctness guardrail that stops the engine falsely blaming duck when it cannot distinguish duck from chicken (and stops a false "duck is fine"). But the surfacing is deliberately restrained:
+   - **On Home:** a joint candidate is shown **only when it clears the same effective-n/floor a single culprit would**, and the copy is **action-led** ("feed them apart"), never ambiguity-led. Design (mock §3): a compact **linked pair** (`Chicken + Duck · always fed together`) with the can't-separate explanation + resolving action in the body sentence — **not** a text-heavy pill. It is expected to be a **rare** card (chicken's ubiquity usually breaks collinearity in a varied diet; it's most likely for a mono-food cat or a strict single-food trial dog).
+   - **On the vet report:** the full primary/secondary set is laid out (§9) for the clinician to synthesize — this is the primary home for the "piece it together" work, not a heavy Home card. The engine surfaces honest exposure; the vet draws the causal line.
 
 **The adversarial pass must try to break, at minimum:**
 - A daily staple + a sporadic co-occurring secondary → the staple washes out, the secondary is correctly attributable *only* once it appears without the staple; no false signal while they're collinear.
@@ -121,56 +128,84 @@ B-332 shipped a **single-select** `ProteinPicker` (wrapping `ChipGroup`, `COMMON
 
 ## 8. Trial-contaminant check (Phase A — deterministic, §3)
 
-**8a — trial food self-contamination (the pure win).** When a `diet_trial` is active and its trial `food_item_id`'s `proteins` set contains **more than one** protein (or a protein other than the trial's novel/target protein), surface a calm, factual flag at:
-- **capture / confirm time** for that food ("This food lists *chicken* as a secondary protein…"), and
-- the **diet-trial card** (Pet profile) as a standing note.
+**Two contaminant shapes (both ship):**
+- **Shape ① — the trial food is itself contaminated (the pure win).** A "duck" trial food whose `proteins` set = `{duck, chicken}`. Multi-protein capture of the *trial food itself* reveals the chicken.
+- **Shape ② — off-diet exposure during an active trial.** A *different* food/treat logged during the active trial whose protein set includes a protein not sanctioned by the trial (a chicken kibble fed during a duck trial).
 
-`diet_trials` has **no explicit excluded-protein column** today (it references a single trial `food_item_id`; the target protein is implicit = the trial food's intended novel protein). v1 keys off the **trial food's own protein set vs. its `is_novel_protein` / `proteins[0]`** — no schema change to `diet_trials`. An explicit `excluded_proteins TEXT[]` on `diet_trials` is a **future enhancement** (D6, deferred) for trials that exclude a named list rather than "everything but the novel protein."
+**Two surfaces — and they behave differently (D2 — RATIFIED: flag at add AND log).** A food often enters the library *before* a trial starts, so the add-to-library moment can't see the trial; the trial context is live at log time. So the flag fires at **both** moments — but with different registers governed by the design principles:
 
-**8b — off-diet exposure during an active trial.** A *different* food/treat logged during an active trial whose protein set includes a protein not sanctioned by the trial is an off-diet exposure. This **composes with** (does not duplicate) the vet report's existing off-diet / free-fed double-count surfacing — the multi-protein set just makes the exposure *complete*. Scope for Phase A: surface at most as a diet-trial-card note; deeper vet-report integration rides Phase B / the report renderer.
+| Surface | Register | Why |
+|---|---|---|
+| **Adding a food to the library** | **Soft confirm** — a "Not now / Add anyway" choice is fine. | The food is not at the moment-of-event; presenting a choice here is allowed. |
+| **Logging a meal of the food** | **Non-blocking** — the meal saves the instant the owner taps; the heads-up **rides the meal completion card** afterward, with "tap to undo" already present. **No gate, no "are you sure?".** | **Principle 1 — zero decisions at the moment of event.** Logging must stay a one-tap action; a confirmation gate here would violate the wedge's core interaction. |
+| **Diet-trial card** (Pet profile) | Standing factual note. | Persistent context, not a moment. |
+
+Copy (mock §2, `nyx-voice`, non-reassuring): *"This one has chicken. Nyx's duck trial should skip chicken. The meal's saved — just worth knowing, and maybe a note for your vet."*
+
+`diet_trials` has **no explicit excluded-protein column** today (it references a single trial `food_item_id`; the target protein is implicit = the trial food's intended novel protein). v1 keys off the **trial food's own protein set vs. its `is_novel_protein` / `proteins[0]`** — no schema change to `diet_trials` (**D6 — RATIFIED, deferred**). Shape ② composes with (does not duplicate) the vet report's existing off-diet / free-fed double-count surfacing.
 
 **Safety register:** never reassure (a *clean* protein set is not an "all clear" — `clinical-guardrails`); the flag is descriptive/`worth-a-look`, never alarmist; `nyx-voice` + `clinical-guardrails` mandatory.
 
+### 8.5 Two tiers — disclosure (everyone) vs. escalation (trial) — D7, RATIFIED
+
+The contaminant *escalation* above is trial-scoped. But the underlying insight — *"so many foods say 'chicken' and quietly also contain salmon"* — is a **universal owner-education** win, not a trial-only one. So multi-protein surfacing is two-tiered:
+
+- **Tier 1 — Disclosure (all owners, always).** The food's full protein set is shown plainly wherever a food appears (food card / detail / confirm): "Duck · also contains Chicken, Salmon." Factual, quiet, educational. No trial required. This is the "know what's actually in the bowl" tier.
+- **Tier 2 — Contaminant escalation (active trial only).** The amber "heads up, this conflicts with the duck trial → worth a vet word" (§8 above). Only this tier escalates.
+
+**Guardrail (Designer):** Tier 1 disclosure is *informational*, never a repeated nudge — Principle 4. It is shown on the surface where the food is presented; it never barks on every log. Only the Tier-2 trial conflict rides the completion card. `nyx-voice` pass on both tiers.
+
 ---
 
-## 9. Vet report (`generate-report`)
+## 9. Vet report (`generate-report`) — primary + secondary, Dr. Chen ratified
 
-- The "diet / proteins" surfaces render the **full protein set** per food, primary emphasized, secondaries listed — the vet sees the complete exposure, which is precisely the data they'd otherwise reconstruct from the ingredient panel by hand.
+**Dr. Chen's clinical verdict (consulted this session): YES, high value.** The first thing a vet does with a diet history in a food-responsive workup is scan for **protein overlap** — the marketing name on the bag is clinically meaningless, and a "duck" diet that also contains chicken *invalidates the elimination trial*. Today the vet only learns that if the owner brings the physical bags and the vet reads the ingredient panels in-room. Laying out actual primary+secondary exposure across every food in the window turns a 10-minute label-reading exercise into a 60-second glance.
+
+**Ratified with three clinical-hygiene conditions:**
+1. **Provenance, stated once.** A quiet line — *"Proteins as read from product labels."* Label-derived, not lab-verified; the vet must weight it accordingly. Never asserted as fact.
+2. **Primary reads first, secondaries subordinate.** Visual weight tracks prominence (bold `proteins[0]`, quiet secondaries) — a 60-second scan should never hunt for the headline protein.
+3. **Present-only, never causal.** List what is *in* the food; never imply a secondary protein *caused* anything. The report shows exposure; the clinician draws the line ("let the vet piece it together").
+
+**Render:**
+- The diet section renders the **full protein set** per food (primary emphasized, secondaries listed); off-trial proteins under an active trial are **flagged** (a factual `*` "off-trial protein present", never causal).
 - The protein-over-time chart (§5.8 colour-carve, already ratified) extends to set-membership (a food-week can contribute to multiple protein bands).
-- A contaminated trial food (§8a) surfaces in the diet-trial section as a factual "secondary protein present" line — high clinical value, never causal.
-- All existing joins that read `primary_protein` keep working (it's still `proteins[0]`); the report *adds* the secondaries rather than reworking the primary path. `vet-report-cold-read` gate on any rendered change.
+- All existing joins that read `primary_protein` keep working (it's still `proteins[0]`); the report *adds* the secondaries rather than reworking the primary path.
+- `vet-report-cold-read` gate on the rendered change; `clinical-guardrails` (present-only, never causal).
+
+**Timing (RATIFIED): a Phase A fast-follow, not gated behind the correlation engine.** The report only needs the *captured set*, not the statistics — so once foods carry `proteins` (Phase A), the report can render them without waiting on the Phase B joint-candidate work. Given the education value, the vet sees the real exposure early. (It still ships *after* Phase A capture, since there are no secondaries to render before then.)
 
 ---
 
-## 10. Provisional decisions — **PM / Dr. Chen ratification required**
+## 10. Decisions — RATIFIED (PM mock-review session, 2026-07-19)
 
-These were to be collected live this session; recorded provisionally per the Open-Questions protocol. **Recommend-and-proceed** unless overridden.
-
-| # | Decision | Provisional ruling (recommended) | Who ratifies |
-|---|---|---|---|
-| **D1** | **Capture all proteins & correlate on set-membership?** (the blocking Open Question — sensitivity vs. attribution) | **YES — phased.** Sensitivity is an unambiguous data-completeness win; attribution stays honest via collinearity-aware joint candidates (§7). False binary once the two jobs are separated (§2). | PM + Dr. Chen / vet advisors |
-| **D2** | **Trial-contaminant check — sequencing** | **Pull forward as Phase A** (deterministic, near-zero statistical risk, wedge-centred). Ship before the set-membership correlation. | PM |
-| **D3** | **Does B-351 absorb B-048** (ingredient→protein canonicalization)? | **Absorb.** The multi-protein set *is* derived by structuring `ingredients_notes`; one spec owns extraction→structured proteins→canonical keys (§5). | PM |
-| **D4** | **Schema shape** | **`food_items.proteins TEXT[]`** (ordered, canonical, `proteins[0]`=derived `primary_protein`); additive, back-compat. Join table rejected (over-engineered); jsonb deferred. | Dir. of Eng |
-| **D4a** | Per-protein metadata (extraction confidence / list position)? | **Defer.** `TEXT[]` first; jsonb widening is non-breaking if a real need appears. | Dir. of Eng |
-| **D5** | **Collinearity attribution surface** — joint candidate copy ("chicken and/or duck — can't yet separate") | **Adopt** as the honest attribution surface; exact copy at build time (`nyx-voice` + Dr. Chen). | Dr. Chen + Designer |
-| **D6** | Explicit `excluded_proteins` on `diet_trials`? | **Defer.** v1 contaminant check keys off the trial food's own set vs. its novel protein — no `diet_trials` schema change. Explicit excluded list is a future enhancement. | PM |
+| # | Decision | Ruling |
+|---|---|---|
+| **D1** | Capture all proteins & correlate on set-membership? (the blocking Open Question — sensitivity vs. attribution) | **RATIFIED — YES, phased.** Sensitivity is an unambiguous data-completeness win; attribution stays honest via collinearity-aware joint candidates (§7). False binary once the two jobs are separated (§2). Governing steer: **"let the vet piece it together."** |
+| **D2** | Trial-contaminant check — sequencing & surfaces | **RATIFIED — Phase A, flag at BOTH add-to-library AND meal-log** (a pre-trial library food only meets the trial at log time). Log-time is **non-blocking** (Principle 1); add-time is a soft confirm (§8). |
+| **D3** | Does B-351 absorb B-048 (ingredient→protein canonicalization)? | **RATIFIED — absorb.** The multi-protein set *is* derived by structuring `ingredients_notes`; one spec owns extraction→structured proteins→canonical keys (§5). |
+| **D4** | Schema shape | **RATIFIED — `food_items.proteins TEXT[]`** (ordered, canonical, `proteins[0]`=derived `primary_protein`); additive, back-compat. Join table rejected; jsonb deferred. |
+| **D4a** | Per-protein metadata (extraction confidence / list position)? | **Deferred.** `TEXT[]` first; jsonb widening is non-breaking if a real need appears. |
+| **D5** | Collinearity attribution surface | **RATIFIED — joint candidate: compute always (guardrail); surface on Home only above the single-culprit floor, action-led, as a compact linked-pair (not a text pill); the vet report is the synthesis surface** (§7 #6, §9). Exact copy at build time (`nyx-voice` + Dr. Chen). |
+| **D6** | Explicit `excluded_proteins` on `diet_trials`? | **RATIFIED — deferred.** v1 keys off the trial food's own set vs. its novel protein — no `diet_trials` schema change. |
+| **D7** | Disclosure vs. escalation tiers | **RATIFIED — two tiers** (§8.5): Tier 1 disclosure (full protein set shown to ALL owners, always, informational — the "chicken food secretly has salmon" education win); Tier 2 contaminant escalation (active trial only). Only Tier 2 escalates; Tier 1 never nudges (Principle 4). |
+| **D8** | Manual-capture picker shape | **RATIFIED — two lines: "Main protein" (single-select, = shipped B-332 picker unchanged, `proteins[0]`) + "Also contains" (multi-select secondaries); changing the main auto-demotes the old main so the set is never lost** (§6). PM: "10/10, super clear." |
+| **VR** | Vet report primary+secondary | **RATIFIED (Dr. Chen)** with three conditions — provenance line, primary-first, present-only/never-causal; pulled to a **Phase A fast-follow** (§9). |
 
 ---
 
-## 11. Provisional PR plan (locks after §10 ratification)
+## 11. PR plan — RATIFIED
 
-**Phase A — capture + deterministic contaminant (wedge-first, low statistical risk):**
+**Phase A — capture + deterministic contaminant + report render (wedge-first, low statistical risk):**
 1. **Schema migration** — `food_items.proteins TEXT[]` + backfill from `primary_protein`; local `food_items_cache` mirror + `refreshFoodCache`. *(Own PR — schema isolation. Migration Safety Pre-flight: additive, destructive=`n`, rollback=`DROP COLUMN`.)*
 2. **Extraction** — `extract-food-from-photo` emits ordered `proteins`; write-back sets `proteins` + derived `primary_protein`; absorbs B-048 canonicalization (§5). *(Edge Function; deno tests; `deploy-edge` bundle.)*
-3. **Manual capture** — `ProteinPicker` → multi-select; never null-clobber an AI set (§6). *(Client; `nyx-voice`.)*
-4. **Trial-contaminant flag (§8a)** — deterministic capture-time + diet-trial-card note. *(Client + shared helper; `clinical-guardrails` + `nyx-voice`.)*
+3. **Manual capture (D8)** — the two-line "Main protein" + "Also contains" picker; auto-demote on main-change; never null-clobber an AI set (§6). *(Client; `nyx-voice`.)*
+4. **Disclosure + trial-contaminant flag (D7/D2/§8/§8.5)** — Tier-1 protein-set disclosure on the food surfaces; Tier-2 contaminant flag at **add (soft) + log (non-blocking, rides the completion card)** + the diet-trial-card note. *(Client + shared helper; `clinical-guardrails` + `nyx-voice`.)*
+5. **Vet-report render (VR)** — full protein set per food, primary emphasized, off-trial `*` flag, provenance line (§9). *(Edge Function; `vet-report-cold-read` gate.)* Depends only on Phase A capture, not the engine.
 
 **Phase B — set-membership correlation (statistical, `adversarial-reviewer` MANDATORY):**
-5. **Engine** — `detection.ts` + `lib/analytics.ts` key on set-membership + collinearity clustering + joint attribution (§7). *(Shared `lib/protein.ts` extended to map a set on read; `adversarial-reviewer` mandatory; deploy-gated on the client renderer per the B-182 lesson.)*
-6. **Vet report** — render the full protein set + contaminant line (§9). *(Edge Function; `vet-report-cold-read` gate.)*
+6. **Engine** — `detection.ts` + `lib/analytics.ts` key on set-membership + collinearity clustering + joint attribution + the Home linked-pair render (§7). *(Shared `lib/protein.ts` extended to map a set on read; `adversarial-reviewer` mandatory; deploy-gated on the client renderer per the B-182 lesson.)*
 
-Phase A slices 2/3/4 are largely **parallelizable** (disjoint files — extraction vs. picker vs. trial card) once slice 1's schema lands. Phase B is sequential and gated.
+Phase A slices 2/3/4/5 are largely **parallelizable** (disjoint files — extraction vs. picker vs. flag/disclosure vs. report) once slice 1's schema lands. Phase B is sequential and gated.
 
 ---
 
