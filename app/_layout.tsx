@@ -14,6 +14,7 @@ import { coldStartDecision } from '../lib/authRouting';
 import { APP_BUILD, PLATFORM } from '../lib/appInfo';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
+import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
 import { useAppActive } from '../hooks/useAppActive';
 import { initAppConfig, refreshAppConfig } from '../hooks/useAppConfig';
 import { MealCompletionCard } from '../components/ui/MealCompletionCard';
@@ -39,6 +40,9 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(fontMap);
 
   useSync();
+  // B-290: keep the App Group widget snapshots current — debounced re-publish on
+  // event/pet-store changes + each hydration tick. Inert off iOS.
+  useWidgetSnapshots();
   // B-085: keep user_profiles.timezone populated with the device zone so the
   // detection engine's detector ⑥ can run (engine input only — never surfaced).
   useSyncTimezone();

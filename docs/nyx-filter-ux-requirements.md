@@ -39,7 +39,7 @@ The app-wide answer to "which UI shape does a filter get?" — written after the
 |---|---|---|---|
 | History type + date (`app/(tabs)/history.tsx`) | ScopeMenu ×2 | 10 / 4 | **Reference implementation** (#421) |
 | FoodPicker scope (`components/log/FoodPicker.tsx`) | Visible lens chips | 5 short | **Keep** — hot log path; always visible; converting is a discoverability regression (D1) |
-| Calendar lens (`components/dashboard/PatternCalendar.tsx`, B-310) | Visible lens chips | 2–4, dynamic | **Keep, with a named trigger** — convert to ScopeMenu if a pet's lens set reaches ≥5 (D2, → backlog B-404) |
+| Calendar lens (`components/dashboard/PatternCalendar.tsx`, B-310) | Visible lens chips | 2–4, dynamic | **Keep, with a named trigger** — convert to ScopeMenu if a pet's lens set reaches ≥5 (D2, → backlog B-405) |
 | Metric detail range (`components/dashboard/MetricDetailScreen.tsx`) | Segmented | 3 fixed | **Keep** — textbook segmented case; carved out of any "app-wide" mandate |
 | Report range (`app/report.tsx`, B-222) | Visible lens chips | 2 | **Keep** — "Custom…" expands inline date pickers (rule #5) |
 | MedicationPicker / Foods tab / Patterns dashboard / Home | no filter control | — | Nothing to convert |
@@ -50,7 +50,7 @@ The app-wide answer to "which UI shape does a filter get?" — written after the
 ## 4. The two live decisions — recommend-and-proceed
 
 - **D1 — FoodPicker scope chips stay visible chips.** Team rec (Designer + Jordan/Sam): the meal log is the app's hottest path; five short always-visible options beat a two-tap sheet, and nothing can hide (they wrap). Revisit trigger: the set outgrows one wrapped row on the smallest supported width. *(Related but separate: B-396 — whether an active scope chip should also narrow the rotation shelf. A behavior question, not a shape question; unchanged by this doc.)*
-- **D2 — Calendar lens selector stays chips, with a conversion trigger.** Today it's 2–4 chips on a card with room. The set is dynamic (one per active symptom + "Meals"), so it *can* grow: at **≥5 lenses** the chips start crowding the card and the surface converts to a ScopeMenu pill in the card header. Tracked as **B-404** so the trigger isn't lost.
+- **D2 — Calendar lens selector stays chips, with a conversion trigger.** Today it's 2–4 chips on a card with room. The set is dynamic (one per active symptom + "Meals"), so it *can* grow: at **≥5 lenses** the chips start crowding the card and the surface converts to a ScopeMenu pill in the card header. Tracked as **B-405** so the trigger isn't lost.
 
 Both are recommend-and-proceed (reversible, no code shipped on them today); PM can override either — the conditional PRs below are pre-scoped for that case.
 

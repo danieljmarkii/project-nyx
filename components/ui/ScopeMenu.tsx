@@ -180,7 +180,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   scrim: {
-    ...StyleSheet.absoluteFillObject,
+    // absoluteFill (not absoluteFillObject) — the SDK 57 idiom (#423).
+    ...StyleSheet.absoluteFill,
     backgroundColor: theme.colorScrim,
   },
   sheet: {

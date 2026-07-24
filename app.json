@@ -2,17 +2,11 @@
   "expo": {
     "name": "Culprit",
     "slug": "project-nyx",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "scheme": "nyx",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#13112E"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.projectnyx.app",
@@ -23,6 +17,9 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.projectnyx.app"]
       }
     },
     "android": {
@@ -31,7 +28,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#13112E"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -60,7 +56,19 @@
           "cameraPermission": "Culprit uses the camera so you can take a photo of a meal, a symptom, a medication label, or your pet to add to a log or profile.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-secure-store",
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#13112E"
+        }
+      ],
+      "expo-sqlite",
+      "expo-status-bar"
     ]
   }
 }

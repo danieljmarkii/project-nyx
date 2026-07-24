@@ -4,12 +4,14 @@ The exact, copy-pasteable command scripts the PM runs to get the latest code ont
 
 There are **two runtimes**, and they map to two *different intentions*:
 
-- **Runtime B (Metro + tunnel) is the per-push default** — it's how the PM tests a single pushed PR on-device for a one-off look. Emit this after a normal feature push.
+- **Runtime B (Metro + tunnel) is the per-push default** — it's how the PM tests a single pushed PR on-device for a one-off look. Emit this after a normal feature push. **As of PR W2 (2026-07-24, SDK 57) Runtime B runs in a custom dev client, not Expo Go** — see the one-time switch inside the Runtime B section.
 - **Runtime A (TestFlight) is a deliberate, separate "cut a new build" session** — the PM kicks it off **by hand, in its own session**, when changes warrant a new TestFlight version. It is **not** the handoff after every push. It has two sub-paths: a fast **OTA** push (JS-only changes → existing build) and a full **native build + submit** (anything native changed, or you want a fresh binary). It went live 2026-06-07 (Apple enrollment + first TestFlight build done); see `STATUS.md` → Runtime in Use.
 
 Pick the one that matches the session's intention and emit only that block. **Default to Runtime B** unless the session's explicit goal is shipping to TestFlight.
 
 > ⚠️ **The TestFlight build lives on the `production` channel, built with the `production` profile** (`distribution: store`). This was mis-documented as `preview` until 2026-06-12 and cost a full session — see the two traps in `STATUS.md` → Runtime in Use. `preview` is `distribution: internal` (ad-hoc) and is **not** TestFlight-eligible; OTA to TestFlight is `--branch production`, never `--branch preview`.
+
+> ⚠️ **SDK 57 OTA fence (PR W2, 2026-07-24).** The app was upgraded Expo SDK 54 → 57 and `app.json` `version` was bumped **1.0.0 → 1.1.0** specifically so the old runtime never receives a new-runtime bundle (`runtimeVersion.policy: appVersion` → the installed SDK-54 TestFlight build reports runtime `1.0.0`; SDK-57 bundles publish as `1.1.0`). Consequences until the first post-W2 binary is cut: **A-OTA is a no-op against the installed TestFlight build** (the update publishes but no installed build matches it — nothing breaks, nothing updates), and the **first post-W2 TestFlight cut MUST be Runtime A-Native** (`eas build`), never `eas update`. After that fresh binary is installed, A-OTA works normally again. Never "fix" a non-arriving OTA by reverting the version to 1.0.0 — delivering an SDK-57 JS bundle to the SDK-54 binary is a guaranteed crash-on-launch.
 
 ---
 
@@ -75,9 +77,27 @@ After this runs, commit any changes `eas` made to `app.json` and push. From then
 
 ---
 
-## Runtime B — Active development (Metro + tunnel) — today's daily driver
+## Runtime B — Active development (Metro + tunnel, in the custom dev client) — the per-push daily driver
 
-Use this when iterating on a feature and you need hot reload. This is the daily driver until Runtime A is unblocked.
+Use this when iterating on a feature and you need hot reload.
+
+> **The one-time switch (PR W2, 2026-07-24): Expo Go → custom dev client.** The Home Screen Widget track needs a native extension target (`expo-widgets`, from PR W3 on), and native targets don't run inside Expo Go — so Runtime B now runs the same Metro + tunnel workflow inside a **custom dev client**: a development build of Culprit itself (`expo-dev-client` is installed as of W2) that you install once per device and keep. Day-to-day the workflow is identical — pull, tunnel, scan the QR, press `r` — the QR just opens the Culprit dev client instead of Expo Go.
+>
+> **Transition note:** until PR W3 actually adds the widget target, the app contains no native module Expo Go 57 lacks, so Expo Go still works as a stopgap if the dev client isn't built yet. Treat that as temporary — from W3 onward Expo Go will hard-fail on the widget module, and the dev client is the only Runtime B.
+
+**One-time per device (repeat only after a native change — new native module, SDK bump, `app.json` native config; NOT for ordinary JS pushes):**
+
+```bash
+eas device:create
+```
+Registers your iPhone's UDID for ad-hoc installs (skip if this phone is already registered — it is if you've installed a `development`/`preview` internal build before).
+
+```bash
+eas build --platform ios --profile development
+```
+Builds the Culprit **dev client** (the `development` profile already has `developmentClient: true` + `distribution: internal` in `eas.json`). ~15 min; when it finishes, open the build link on your phone and install it. You'll now have a "Culprit" dev app alongside any TestFlight install — they coexist.
+
+**Every session (the familiar loop, unchanged except which app opens):**
 
 ```bash
 git fetch origin <branch-name>
@@ -94,9 +114,11 @@ Authenticates the bundled ngrok binary — required once per Codespace session b
 ```bash
 npx expo start --tunnel
 ```
-Starts Metro and opens a public ngrok tunnel so Expo Go on your phone can reach the dev server. Scan the QR code with the phone camera to open it.
+Starts Metro and opens a public ngrok tunnel so your phone can reach the dev server. Scan the QR code with the phone camera — it opens in the **Culprit dev client** (or in Expo Go during the pre-W3 transition window above).
 
 Then press **`r`** in the Expo terminal to reload the app on your device after a pull. Hot reload picks up most JS edits automatically.
+
+**When the dev client itself goes stale:** if a pulled branch adds a native module or bumps the SDK, Metro will start but the app errors at load (missing native module) — that's the signal to re-run the `eas build --profile development` step once and reinstall. Widget *UI* changes (W5+) are also native-side: they need a fresh dev-client build to see, not a Metro reload.
 
 ---
 

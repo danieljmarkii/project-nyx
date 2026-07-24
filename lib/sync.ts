@@ -16,6 +16,7 @@ import {
   type LocalMedication,
   type LocalMedicationAdministration,
 } from './medications';
+import { proteinsToCacheText, proteinsFromCacheText } from './protein';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -129,6 +130,7 @@ export async function syncPendingMeals(): Promise<void> {
     created_at: string;
     updated_at: string;
     intake_rating: string | null;
+    logged_via: string;
   }>(
     `SELECT m.* FROM meals m
        JOIN events e ON e.id = m.event_id
@@ -149,10 +151,11 @@ export async function syncPendingMeals(): Promise<void> {
     const localFoods = await db.getAllAsync<{
       id: string; brand: string; product_name: string; format: string;
       food_type: string | null;
-      primary_protein: string | null; is_novel_protein: number;
+      primary_protein: string | null; proteins: string | null;
+      is_novel_protein: number;
       is_grain_free: number; is_prescription: number;
     }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein,
+      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
               is_novel_protein, is_grain_free, is_prescription
        FROM food_items_cache WHERE id IN (${placeholders})`,
       foodIds
@@ -166,6 +169,11 @@ export async function syncPendingMeals(): Promise<void> {
           format: f.format,
           food_type: f.food_type,
           primary_protein: f.primary_protein,
+          // B-351: carry the protein set up too, or a food captured offline
+          // would land server-side with the '{}' default and silently drop the
+          // set until some later write repaired it. NULL cache (unhydrated
+          // legacy) decodes to [] — matching the server column's own default.
+          proteins: proteinsFromCacheText(f.proteins),
           is_novel_protein: Boolean(f.is_novel_protein),
           is_grain_free: Boolean(f.is_grain_free),
           is_prescription: Boolean(f.is_prescription),
@@ -195,6 +203,9 @@ export async function syncPendingMeals(): Promise<void> {
       // the row lands with a usable updated_at for the next device to compare.
       updated_at: m.updated_at,
       intake_rating: m.intake_rating,
+      // B-289 — capture-surface provenance; 'app' for every pre-W3 row via the
+      // local default, the record's own value for inbox-ingested rows.
+      logged_via: m.logged_via ?? 'app',
     })),
     { onConflict: 'id' }
   );
@@ -299,6 +310,7 @@ export async function syncPendingEvents(): Promise<void> {
     deleted_at: string | null;
     created_at: string;
     updated_at: string;
+    logged_via: string;
   }>('SELECT * FROM events WHERE synced = 0 LIMIT 100');
 
   if (unsyncedEvents.length === 0) return;
@@ -320,6 +332,8 @@ export async function syncPendingEvents(): Promise<void> {
       deleted_at: e.deleted_at,
       created_at: e.created_at,
       updated_at: e.updated_at,
+      // B-289 — capture-surface provenance (see the meals payload note).
+      logged_via: e.logged_via ?? 'app',
     })),
     { onConflict: 'id' }
   );
@@ -505,9 +519,12 @@ export async function refreshFoodCache(): Promise<void> {
   // library reads filter them out locally (archived is NOT filtered on the server
   // pull). ON CONFLICT DO UPDATE below writes archived_at every sync, so a Restore
   // (server archived_at -> NULL) round-trips back to an active cached row.
+  // B-351: pull the multi-protein set alongside the derived primary_protein —
+  // the cache must mirror both so the disclosure/contaminant surfaces (PRs 4/5)
+  // and the Phase B engine read the full exposure, not just proteins[0].
   const { data, error } = await supabase
     .from('food_items')
-    .select('id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_paths, archived_at')
+    .select('id, brand, product_name, format, food_type, primary_protein, proteins, is_novel_protein, is_grain_free, is_prescription, photo_paths, archived_at')
     .eq('created_by_user_id', session.user.id);
 
   // Log on failure (CLAUDE.md "no silent failures in sync") — parity with the
@@ -530,14 +547,15 @@ export async function refreshFoodCache(): Promise<void> {
     // leaves last_used_at intact.
     await db.runAsync(
       `INSERT INTO food_items_cache
-        (id, brand, product_name, format, food_type, primary_protein, is_novel_protein, is_grain_free, is_prescription, photo_path, archived_at, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, brand, product_name, format, food_type, primary_protein, proteins, is_novel_protein, is_grain_free, is_prescription, photo_path, archived_at, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          brand = excluded.brand,
          product_name = excluded.product_name,
          format = excluded.format,
          food_type = excluded.food_type,
          primary_protein = excluded.primary_protein,
+         proteins = excluded.proteins,
          is_novel_protein = excluded.is_novel_protein,
          is_grain_free = excluded.is_grain_free,
          is_prescription = excluded.is_prescription,
@@ -545,6 +563,7 @@ export async function refreshFoodCache(): Promise<void> {
          archived_at = excluded.archived_at,
          cached_at = excluded.cached_at`,
       [item.id, item.brand, item.product_name, item.format, item.food_type ?? null, item.primary_protein ?? null,
+       proteinsToCacheText(item.proteins),
        item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, item.archived_at ?? null, now]
     );
   }
@@ -638,9 +657,10 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
     const localFoods = await db.getAllAsync<{
       id: string; brand: string; product_name: string; format: string;
       food_type: string | null; primary_protein: string | null;
+      proteins: string | null;
       is_novel_protein: number; is_grain_free: number; is_prescription: number;
     }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein,
+      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
               is_novel_protein, is_grain_free, is_prescription
        FROM food_items_cache WHERE id IN (${placeholders})`,
       foodIds,
@@ -650,6 +670,9 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
         localFoods.map((f) => ({
           id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
           food_type: f.food_type, primary_protein: f.primary_protein,
+          // B-351: same carriage as the meals pre-sync — never let an offline-
+          // captured food's protein set flatten to the server default.
+          proteins: proteinsFromCacheText(f.proteins),
           is_novel_protein: Boolean(f.is_novel_protein),
           is_grain_free: Boolean(f.is_grain_free),
           is_prescription: Boolean(f.is_prescription),
@@ -822,11 +845,13 @@ interface RemoteEvent {
   occurred_at_source: string | null; occurred_at_confidence: string | null;
   occurred_at_earliest: string | null; occurred_at_latest: string | null;
   deleted_at: string | null; created_at: string; updated_at: string;
+  logged_via: string | null; // B-289 — capture-surface provenance (migration 038)
 }
 interface RemoteMeal {
   id: string; event_id: string; pet_id: string; food_item_id: string | null;
   quantity: string | null; is_full_portion: boolean | null; notes: string | null;
   created_at: string; updated_at: string; intake_rating: string | null;
+  logged_via: string | null; // B-289
 }
 interface RemoteWeightCheck {
   id: string; event_id: string; pet_id: string; weight_kg: number;
@@ -863,6 +888,7 @@ interface RemoteMedicationAdministration {
   how_given: string | null; // B-156 — vehicle (dose_route_vehicle enum, migration 022)
   paired_event_id: string | null; // B-156 Slice C — combo link (events.id, migration 023)
   notes: string | null; created_at: string; updated_at: string;
+  logged_via: string | null; // B-289
 }
 
 async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
@@ -874,7 +900,7 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
     'events',
     'id, pet_id, event_type, occurred_at, severity, notes, source, ' +
       'occurred_at_source, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, ' +
-      'deleted_at, created_at, updated_at',
+      'deleted_at, created_at, updated_at, logged_via',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -890,8 +916,8 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
       `INSERT INTO events
         (id, pet_id, event_type, occurred_at, severity, notes, source,
          occurred_at_source, occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
-         deleted_at, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+         logged_via, deleted_at, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          pet_id=excluded.pet_id, event_type=excluded.event_type, occurred_at=excluded.occurred_at,
          severity=excluded.severity, notes=excluded.notes, source=excluded.source,
@@ -899,6 +925,7 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
          occurred_at_confidence=excluded.occurred_at_confidence,
          occurred_at_earliest=excluded.occurred_at_earliest,
          occurred_at_latest=excluded.occurred_at_latest,
+         logged_via=excluded.logged_via,
          deleted_at=excluded.deleted_at, created_at=excluded.created_at,
          updated_at=excluded.updated_at, synced=1
        WHERE events.synced = 1`,
@@ -906,7 +933,7 @@ async function hydrateEvents(db: Db, stale: () => boolean): Promise<void> {
         e.id, e.pet_id, e.event_type, e.occurred_at, e.severity ?? null, e.notes ?? null,
         e.source ?? 'manual', e.occurred_at_source ?? 'manual',
         e.occurred_at_confidence ?? null, e.occurred_at_earliest ?? null, e.occurred_at_latest ?? null,
-        e.deleted_at ?? null, e.created_at, e.updated_at,
+        e.logged_via ?? 'app', e.deleted_at ?? null, e.created_at, e.updated_at,
       ],
     );
   }
@@ -938,7 +965,7 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteMeal>(
     'meals',
-    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating',
+    'id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, logged_via',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -956,17 +983,18 @@ async function hydrateMeals(db: Db, stale: () => boolean): Promise<void> {
     // it's safe to compare in SQL — no parseTs format trap).
     await db.runAsync(
       `INSERT INTO meals
-        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, created_at, updated_at, intake_rating, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, food_item_id, quantity, is_full_portion, notes, logged_via, created_at, updated_at, intake_rating, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          food_item_id=excluded.food_item_id, quantity=excluded.quantity,
          is_full_portion=excluded.is_full_portion, notes=excluded.notes,
+         logged_via=excluded.logged_via,
          intake_rating=excluded.intake_rating, updated_at=excluded.updated_at, synced=1
        WHERE meals.synced = 1`,
       [
         m.id, m.event_id, m.pet_id, m.food_item_id ?? null, m.quantity ?? 'unknown',
         m.is_full_portion === null || m.is_full_portion === undefined ? null : (m.is_full_portion ? 1 : 0),
-        m.notes ?? null, m.created_at, m.updated_at, m.intake_rating ?? null,
+        m.notes ?? null, m.logged_via ?? 'app', m.created_at, m.updated_at, m.intake_rating ?? null,
       ],
     );
   }
@@ -1224,7 +1252,7 @@ async function hydrateMedicationAdministrations(db: Db, stale: () => boolean): P
   const floor = watermarkQueryFloor(since);
   const rows = await fetchAllRows<RemoteMedicationAdministration>(
     'medication_administrations',
-    'id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, notes, created_at, updated_at',
+    'id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, notes, created_at, updated_at, logged_via',
     floor ? { column: 'updated_at', value: floor } : null,
   );
   if (!rows || rows.length === 0) return;
@@ -1242,17 +1270,18 @@ async function hydrateMedicationAdministrations(db: Db, stale: () => boolean): P
     // local edit.
     await db.runAsync(
       `INSERT INTO medication_administrations
-        (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, notes, created_at, updated_at, synced)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)
+        (id, event_id, pet_id, medication_id, medication_item_id, adherence, dose_amount, how_given, paired_event_id, logged_via, notes, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
        ON CONFLICT(id) DO UPDATE SET
          medication_id=excluded.medication_id, medication_item_id=excluded.medication_item_id,
          adherence=excluded.adherence, dose_amount=excluded.dose_amount, how_given=excluded.how_given,
-         paired_event_id=excluded.paired_event_id,
+         paired_event_id=excluded.paired_event_id, logged_via=excluded.logged_via,
          notes=excluded.notes, updated_at=excluded.updated_at, synced=1
        WHERE medication_administrations.synced = 1`,
       [
         a.id, a.event_id, a.pet_id, a.medication_id ?? null, a.medication_item_id ?? null,
-        a.adherence ?? null, a.dose_amount ?? null, a.how_given ?? null, a.paired_event_id ?? null, a.notes ?? null, a.created_at, a.updated_at,
+        a.adherence ?? null, a.dose_amount ?? null, a.how_given ?? null, a.paired_event_id ?? null,
+        a.logged_via ?? 'app', a.notes ?? null, a.created_at, a.updated_at,
       ],
     );
   }

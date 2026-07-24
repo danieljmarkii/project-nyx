@@ -150,6 +150,12 @@ export async function initDb(): Promise<void> {
       -- archived — filtered out of picker/library reads ONLY, never history/
       -- analytics/report joins. Per-user by construction (row is account-scoped).
       archived_at     TEXT,
+      -- B-351: mirrors food_items.proteins (migration 039) — the prominence-
+      -- ordered canonical protein keys, stored as a JSON-array string (SQLite has
+      -- no array type). Encode/decode ONLY via proteinsToCacheText /
+      -- proteinsFromCacheText (lib/protein.ts). NULL = not yet hydrated; '[]' =
+      -- known protein-less.
+      proteins        TEXT,
       cached_at       TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -282,6 +288,15 @@ export async function initDb(): Promise<void> {
     // Column already exists — safe to ignore
   }
 
+  // proteins — B-351 multi-protein set. Mirrors food_items.proteins (migration
+  // 039) as a JSON-array string of canonical protein keys. Nullable; legacy rows
+  // stay NULL (= not yet hydrated) until the next refreshFoodCache writes them.
+  try {
+    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN proteins TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
   // occurred_at_source records the provenance of an event's timestamp:
   // 'manual' (user chose), 'exif' (from photo metadata), 'now' (auto-set when
   // we couldn't read EXIF). Surfaced in the UI as a subtle attribution. Mirrors
@@ -369,6 +384,34 @@ export async function initDb(): Promise<void> {
   // + same-pet trigger are server-side; the local mirror just holds the value).
   try {
     await database.execAsync(`ALTER TABLE medication_administrations ADD COLUMN paired_event_id TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
+  // logged_via — capture-surface provenance (B-289 / migration 038; local mirror
+  // rides B-290/W3 per the migration header). TEXT with the same NOT NULL
+  // DEFAULT 'app' as the server enum: every pre-W3 local row was written by the
+  // app, so the default is a true backfill, and app write paths that omit the
+  // column keep landing 'app' — exactly correct. The inbox ingest
+  // (lib/captureInbox.ts) is the first writer of a non-'app' value. All three
+  // mirrored tables get it; events/meals CREATEs above predate the column and
+  // medication_administrations lives in MEDICATION_SCHEMA_SQL, so the ALTER
+  // upgrade path covers every existing install (the try/catch no-ops when a
+  // future CREATE includes it).
+  try {
+    await database.execAsync(`ALTER TABLE events ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    await database.execAsync(`ALTER TABLE meals ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    await database.execAsync(
+      `ALTER TABLE medication_administrations ADD COLUMN logged_via TEXT NOT NULL DEFAULT 'app'`,
+    );
   } catch {
     // Column already exists — safe to ignore
   }

@@ -3,8 +3,10 @@ import { AppState, AppStateStatus } from 'react-native';
 import * as Network from 'expo-network';
 import { syncNow } from '../lib/sync';
 import { getSyncStatus, isLocalDataEmpty } from '../lib/db';
+import { ingestCaptureInbox } from '../lib/captureInbox';
 import { isOnlineFromState } from '../lib/network';
 import { useAuthStore } from '../store/authStore';
+import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
 export function useSync() {
@@ -44,6 +46,16 @@ export function useSync() {
         if (blocking) setColdStartHydrating(true);
       }
       try {
+        // B-290 — drain the App Group capture inbox BEFORE the cycle, so a
+        // widget/intent tap made while the app was backgrounded lands in local
+        // SQLite as synced=0 and rides THIS cycle's push (§4.1 Q4: the ingest is
+        // foreground-driven and idempotent, so a crash mid-ingest re-runs
+        // harmlessly — no lost taps). Reads the pet list at call time; an empty
+        // list (not yet loaded) defers the whole pass rather than misjudging
+        // records. Best-effort: an ingest failure must never block the sync.
+        await ingestCaptureInbox(
+          new Set(usePetStore.getState().pets.map((p) => p.id)),
+        ).catch((e) => console.warn('[sync] inbox ingest failed:', e));
         await syncNow();
       } finally {
         // Clear the overlay whether the cycle succeeded or threw — never strand it.

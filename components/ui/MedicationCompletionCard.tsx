@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
   // Time-edit picker sheet — identical to the meal card's so the two completion
   // cards present the same "Change time" surface.
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   sheet: {
