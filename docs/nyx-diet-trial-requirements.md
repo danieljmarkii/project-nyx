@@ -1,7 +1,7 @@
 # Diet Trial Lifecycle — Requirements
 
 **Version:** 1.0 (build-ready pending D3 ratification) | **Last Updated:** 2026-07-24
-**Backlog:** B-415 | **Status:** requirements + PR plan complete; D3 flagged recommend-and-proceed
+**Backlog:** B-417 | **Status:** requirements + PR plan complete; D3 flagged recommend-and-proceed
 
 ---
 
@@ -80,9 +80,9 @@ B-351 D6's derive-from-the-trial-food approach covers the common novel-protein t
 
 1. **Hydrolyzed / prescription diets.** The therapeutic mechanism is not the protein identity. Feeding a *different* duck food is off-diet, but protein-derivation sees `duck == duck` and passes it.
 2. **The permitted treat.** Vets routinely allow exactly one named treat through a trial. Derivation flags it as a contaminant at every single feeding — and an owner who is warned about a permitted food learns to dismiss all warnings, including the real ones. This is the alarm-fatigue failure that makes contaminant detection worthless.
-3. **Foods with no protein data.** Owner-added, never extracted. `proteins` is empty; there is nothing to compare.
+3. **Foods with no protein data.** Owner-added, never extracted. `proteins` is empty; there is nothing to compare. **Weakened, not eliminated, by B-416** (merged #433, 2026-07-24): the re-derivation pass recovers full protein sets for the 51 of 59 live foods that already carry panel text in `ingredients_notes`. The residual is the ~8 with no panel text plus every future owner-added food — a permanent trickle, not a one-off backlog.
 
-The allowed-food set is the explicit-inclusion complement to D6's derived exclusion. Neither subsumes the other.
+The allowed-food set is the explicit-inclusion complement to D6's derived exclusion. Neither subsumes the other. **Cases 1 and 2 are untouched by B-416** — no amount of protein-set completeness tells you a hydrolyzed trial forbids a different duck food, or that the vet permitted one named treat.
 
 > **Product Owner:** flagged, not silently taken. If the PM reads D6 as binding on trial-scoped food modeling generally, PR 1 drops `diet_trial_foods` and v1 reports coverage only — adherence then waits for B-351 Phase B.
 
@@ -331,4 +331,5 @@ Step 9's first clinical question finally has a substrate. Changes are **content,
 - `docs/nyx-medication-logging-requirements.md` §4.3, §5.4 — the mirror-of-`diet_trials` precedent this track inverts
 - `docs/nyx-multi-protein-requirements.md` D2, D6, D7, D8 — contaminant flag, `excluded_proteins` deferral, disclosure tiers, picker shape
 - `docs/research/2026-06-vet-council-nyx-deep-dive.md` — nutritionist lens on uninterpretable diets
-- Backlog: **B-415** (this), B-408, B-357, B-356, B-094, B-217, B-011, B-005
+- `docs/nyx-multi-protein-requirements.md` §10 D3a — the Class-A / Class-B canonicalization merge rule (merged #433); the trial's detection path inherits it via the protein arm
+- Backlog: **B-417** (this), B-416 (protein re-derivation — strengthens the derived arm of §5.3), B-408, B-357, B-356, B-094, B-217, B-011, B-005
