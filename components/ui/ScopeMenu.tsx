@@ -69,7 +69,10 @@ export function ScopeMenu({
         onPress={() => setOpen(true)}
         activeOpacity={0.7}
         // Pill is ~32pt tall; expand the vertical tap zone to the 44pt floor
-        // (Designer anti-pattern: sub-44pt targets without hitSlop).
+        // (Designer anti-pattern: sub-44pt targets without hitSlop). Vertical
+        // ONLY — two ScopeMenus sit 8pt apart in the History header, so any
+        // horizontal slop would overlap adjacent pills' tap zones (the same
+        // reasoning as FilterChip). Width already clears 44pt from content.
         hitSlop={{ top: 8, bottom: 8 }}
         accessibilityRole="button"
         accessibilityLabel={`${accessibilityPrefix}: ${pillLabel}`}
