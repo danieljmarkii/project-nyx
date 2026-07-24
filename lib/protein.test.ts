@@ -64,7 +64,7 @@ describe('COMMON_PROTEINS (picker set)', () => {
 describe('normalizeExtractedProtein / deriveProteinSet (B-351 extraction write path)', () => {
   const SAMPLES = [
     'Chicken', 'Deboned Chicken', 'Chicken By-Product Meal', 'Chicken Liver',
-    'Ocean Whitefish', 'white fish', 'Dried Egg Product', 'Buffalo', 'Deer',
+    'Ocean Whitefish', 'white fish', 'Dried Egg Product', 'Buffalo', 'Deer', 'Green Tripe', 'liver',
     'Hydrolyzed Soy Protein', 'water buffalo', 'poultry', 'fresh deboned turkey',
   ];
 
@@ -114,7 +114,9 @@ describe('normalizeExtractedProtein / deriveProteinSet (B-351 extraction write p
     expect(deriveProteinSet(['chicken', 'duck'], 'duck')).toEqual(['duck', 'chicken']);
     expect(deriveProteinSet(['Chicken', 'chicken meal'], null)).toEqual(['chicken']);
     expect(deriveProteinSet([], null)).toEqual([]);
-    expect(deriveProteinSet(Array(20).fill(null).map((_, i) => `p${i}`), null))
+    // Over-cap only bites a pathological set — a real 14-protein raw-grind panel
+    // is captured whole (the deno suite pins that case).
+    expect(deriveProteinSet(Array(MAX_CAPTURED_PROTEINS + 16).fill(null).map((_, i) => `p${i}`), null))
       .toHaveLength(MAX_CAPTURED_PROTEINS);
   });
 });

@@ -37,11 +37,21 @@
 // monetization spec §9 T3-A, sub-decision S5). Derived from the live
 // `food_items.primary_protein` distinct values plus the common clinical protein
 // set a diet-trial owner reaches for. Every value is canonicalizeProtein-STABLE
-// (canonicalize(v) === v) and non-junk, so an owner-picked chip keys IDENTICALLY
+// (canonicalize(v) === v) and non-junk, so an owner-picked CHIP keys IDENTICALLY
 // to an AI-extracted value — both enter ranking/correlation through the same
 // canonicalizeProtein() below and can never fragment. Rarer or compound proteins
 // fall to the picker's "Other" typed escape, which also runs through
-// canonicalizeProtein on read: the set is a convenience, never a limit. Stored
+// canonicalizeProtein on read: the set is a convenience, never a limit.
+//
+// ⚠️ The parity claim above covers the CHIPS, and no longer covers the "Other"
+// typed escape (B-351 PR 2, caught by the adversarial pass — B-407). Extraction
+// now applies normalizeExtractedProtein at write time, so AI-captured "Buffalo"
+// stores `bison`, while an owner typing "Buffalo" into Other still stores
+// `buffalo` — one animal, two keys, exposure split across them and each under
+// the effective-n floor. Every chip is unaffected (no chip is aliased or
+// stripped, locked by a test). Closing it is a PRODUCT decision, not a silent
+// normalizer change — does the app rewrite what the owner typed? — and it is
+// PR 3's to make, since PR 3 owns the picker. Stored
 // lowercase (matching how extraction writes "chicken"/"salmon"); the picker
 // Title-cases for display only. Ordered common-first, then the fish group, then
 // the novel-diet tail — the order the picker renders them in.
@@ -157,14 +167,43 @@ const LEADING_DESCRIPTOR =
 // same species — a species-elimination trial excludes every tissue from that
 // animal, so keeping them as separate keys fragments one real exposure (and pads
 // the Signal's Bonferroni family). Same `(?:^|\s+)`-anchored shape as
-// TRAILING_QUALIFIER, so a bare tissue word ("liver" — species unknown) strips
-// to empty and correctly reads as protein-unknown rather than a junk key, while
-// a word merely ENDING in one ("backbone") is untouched. Fats and oils are NOT
-// here: "chicken fat" is not merged into "chicken" (it is a different exposure
-// class clinically, and inventing a chicken exposure is the unsafe direction);
-// the extraction prompt tells the model not to emit them at all.
+// TRAILING_QUALIFIER, so a word merely ENDING in one ("backbone") is untouched.
+// Fats and oils are NOT here: "chicken fat" is not merged into "chicken" (it is a
+// different exposure class clinically, and inventing a chicken exposure is the
+// unsafe direction); the extraction prompt tells the model not to emit them.
 const TRAILING_TISSUE =
   /(?:^|\s+)(livers?|hearts?|gizzards?|giblets?|tripe|kidneys?|cartilage|bones?)$/;
+
+// The strip above only fires when what REMAINS names an animal we recognise.
+// Without that gate it did two wrong things (both found by the adversarial pass,
+// both with real products behind them):
+//   • "Green Tripe" — a mainstream raw-feeding product — became the garbage key
+//     `green`, which would reach the Patterns top-protein card and the vet
+//     report's protein-exposure section.
+//   • a single-ingredient "Liver Treats" pack stripped to empty and read as
+//     protein-unknown, DROPPING an exposure the pre-B-351 path captured as
+//     `liver`. A sensitivity regression is the one direction the wedge can't
+//     afford (§2: capture is the unambiguous win).
+// So the rule is now the same one the alias table follows: merge only where we
+// are sure, otherwise leave the value alone. A bare `liver` (no species) and an
+// unrecognised head both keep their full value — vaguer, but never invented and
+// never dropped. Missing a merge for an exotic species is the cheap error.
+const TISSUE_STRIP_SPECIES = new Set<string>([
+  ...COMMON_PROTEINS,
+  'bison', 'goat', 'kangaroo', 'quail', 'pheasant', 'ostrich', 'elk', 'boar',
+  'cod', 'herring', 'mackerel', 'sardine', 'pollock', 'trout', 'fish', 'poultry',
+]);
+
+function stripTrailingTissue(v: string): string {
+  const m = v.match(TRAILING_TISSUE);
+  if (!m) return v;
+  const remainder = v.slice(0, v.length - m[0].length).trim();
+  if (!remainder) return v; // bare tissue word — names no species, keep it whole
+  const head = remainder.split(' ').pop() as string;
+  // Checks the LAST token so a qualified species still folds:
+  // "hydrolyzed chicken liver" → head "chicken" → "hydrolyzed chicken".
+  return TISSUE_STRIP_SPECIES.has(head) ? remainder : v;
+}
 
 // Exact-match aliases, applied AFTER canonicalization + the strips above (so the
 // left-hand side is always a canonical key). EXACT match only — never a substring
@@ -177,8 +216,13 @@ const TRAILING_TISSUE =
 //       it to chicken would fabricate a specific exposure a vet would act on.
 const EXTRACTION_PROTEIN_ALIASES: Readonly<Record<string, string>> = {
   'ocean whitefish': 'whitefish', // the spec's own B-048 example (§5)
-  'white fish': 'whitefish',      // spacing variant of one label term
   'ocean fish': 'fish',           // vague label term → the vague key, not a species
+  // NOT here: 'white fish' → 'whitefish'. It reads like a spacing variant and
+  // was written as one, but it maps VAGUE → SPECIFIC, which is rule (1) backwards:
+  // "whitefish" is a specific label term, "white fish" is a generic descriptor for
+  // any white-fleshed species (cod, haddock, pollock, tilapia). A cod-based novel-
+  // protein diet labelled "white fish" would have been keyed `whitefish` and
+  // collided with a real whitefish food in the §8 contaminant check.
   'egg product': 'egg',           // "dried egg product" → (descriptor strip) → egg
   'egg whites': 'egg',            // allergen exposure is to the egg
   'egg white': 'egg',
@@ -186,12 +230,19 @@ const EXTRACTION_PROTEIN_ALIASES: Readonly<Record<string, string>> = {
   deer: 'venison',                // same animal, culinary vs. label naming
 };
 
-// Upper bound on a single food's captured protein set. Real multi-protein foods
-// carry 2–5 (§7); this is a hallucination/label-soup guard so one pathological
-// extraction can't hand the Signal a 30-protein exposure set and pad the
-// Bonferroni family for every OTHER protein the pet eats. Ordered by prominence,
-// so a truncation drops the LEAST prominent — never the primary.
-export const MAX_CAPTURED_PROTEINS = 8;
+// Upper bound on a single food's captured protein set — a pure hallucination
+// guard, NOT a statistical control.
+//
+// It was 8, which a real 14-ingredient raw-grind panel (beef, beef liver, lamb,
+// salmon, herring, duck, turkey, chicken, egg, rabbit, venison…) blew straight
+// through — silently dropping rabbit and venison, i.e. the two most likely
+// novel-protein trial targets, and in the mirror case truncating away a
+// contaminant sitting 9th on the panel. That is the exact failure B-351 exists
+// to stop, and it was buying a Bonferroni-family concern that belongs to Phase B
+// (which caps the CANDIDATE FAMILY, §7 #2 — capping the RECORD to pre-pay it
+// trades away Job-1 capture, the one thing §2 calls an unambiguous win).
+// 24 clears any real panel while still bounding a pathological extraction.
+export const MAX_CAPTURED_PROTEINS = 24;
 
 /**
  * Normalize ONE raw protein string from an AI extraction to a canonical key, or
@@ -215,12 +266,22 @@ export function normalizeExtractedProtein(raw: string | null | undefined): strin
   let prev: string | null;
   do {
     prev = v;
-    v = v.replace(LEADING_DESCRIPTOR, '').replace(TRAILING_TISSUE, '').trim();
+    v = stripTrailingTissue(v.replace(LEADING_DESCRIPTOR, '').trim()).trim();
     v = canonicalizeProtein(v);
     if (v == null) return null;
   } while (v !== prev);
 
-  const alias = EXTRACTION_PROTEIN_ALIASES[v];
+  // hasOwnProperty, not a bare index: a bare `EXTRACTION_PROTEIN_ALIASES[v]`
+  // reaches the object literal's PROTOTYPE, so a model that emitted the literal
+  // token "constructor" got back the `Object` FUNCTION. It then survived into the
+  // returned string[], and JSON.stringify silently rendered it as
+  // `{"proteins":[null]}` while DROPPING primary_protein from the update payload
+  // entirely (functions are omitted) — so the column would have kept a stale
+  // value while "the pair can never drift" quietly stopped being true. Low
+  // likelihood, but it is a photographed-label / prompt-injection surface.
+  const alias = Object.prototype.hasOwnProperty.call(EXTRACTION_PROTEIN_ALIASES, v)
+    ? EXTRACTION_PROTEIN_ALIASES[v]
+    : undefined;
   // An alias target is itself canonical + strip-stable by construction (locked by
   // the unit tests), so one hop is enough — no alias chains to resolve.
   return alias ?? v;
@@ -257,8 +318,11 @@ export function deriveProteinSet(rawProteins: unknown, rawPrimary: unknown): str
     if (typeof candidate !== 'string') continue;
     const key = normalizeExtractedProtein(candidate);
     // Dedupe on the canonical key, keeping FIRST occurrence — this is what makes
-    // the hoist stick when the model lists the primary in the array too.
-    if (key == null || seen.has(key)) continue;
+    // the hoist stick when the model lists the primary in the array too. The
+    // typeof re-check is belt-and-braces against a non-string ever escaping the
+    // normalizer again (see the prototype-chain note there) — nothing but a
+    // string may reach a TEXT[] write.
+    if (key == null || typeof key !== 'string' || seen.has(key)) continue;
     seen.add(key);
     out.push(key);
     if (out.length >= MAX_CAPTURED_PROTEINS) break;

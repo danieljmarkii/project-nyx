@@ -133,7 +133,17 @@ const EXTRACTION_TOOL = {
         description:
           'The single headline protein the product is sold as — the one a vet would call this food\'s protein ' +
           '(e.g. "chicken", "salmon", "hydrolyzed soy protein"). Usually named on the front of pack. ' +
-          'This is the MAIN protein even when another protein appears earlier in the ingredient list.',
+          'This is the MAIN protein even when another protein appears earlier in the ingredient list. ' +
+          // Load-bearing: this field is what gets hoisted to proteins[0], and it is NOT in the tool's
+          // `required` list (so an unknown stays null rather than being hallucinated). A model that
+          // treats it as redundant once it has filled `proteins` silently hands proteins[0] back to
+          // panel order — which, on a "Duck Recipe" listing chicken first, makes the PR-4 contaminant
+          // check treat chicken as the trial target and flag DUCK as its own trial's contaminant.
+          // Asking for it whenever ANY protein was identified closes that without inviting a guess:
+          // it selects among proteins already read off the label, it never invents one.
+          'Always provide this field whenever you identify any protein at all — if the front of pack does not ' +
+          'name one, use the most prominent protein from the ingredient list. Leave it out only when no ' +
+          'protein is legible anywhere.',
       },
       // B-351: the ordered set. The single most common reason a home elimination
       // trial silently fails is a SECONDARY protein (a "duck" food that also

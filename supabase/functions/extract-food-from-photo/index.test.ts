@@ -387,15 +387,54 @@ Deno.test('normalizeExtractedProtein — tissue terms fold into their species', 
   assertStrictEquals(normalizeExtractedProtein('Chicken Liver'), 'chicken')
   assertStrictEquals(normalizeExtractedProtein('beef hearts'), 'beef')
   assertStrictEquals(normalizeExtractedProtein('Turkey Giblets'), 'turkey')
-  // A bare tissue word names no species — protein-unknown, not a junk key.
-  assertStrictEquals(normalizeExtractedProtein('liver'), null)
   // A word that merely ENDS in a tissue term is untouched.
   assertStrictEquals(normalizeExtractedProtein('backbone'), 'backbone')
 })
 
+Deno.test('normalizeExtractedProtein — the tissue strip fires ONLY when a known species remains', () => {
+  // Both of these were live defects the adversarial pass found, with real
+  // products behind them. The rule is the alias table's: merge only where sure.
+
+  // "Green Tripe" is a mainstream raw-feeding product — stripping blindly
+  // produced the garbage key `green`, which would reach the Patterns
+  // top-protein card and the vet report's protein-exposure section.
+  assertStrictEquals(normalizeExtractedProtein('Green Tripe'), 'green tripe')
+
+  // A single-ingredient "Liver Treats" pack: stripping to empty read as
+  // protein-unknown and DROPPED an exposure the pre-B-351 path captured as
+  // `liver`. A sensitivity regression is the one direction the wedge can't
+  // afford — vaguer is fine, missing is not.
+  assertStrictEquals(normalizeExtractedProtein('liver'), 'liver')
+  assertStrictEquals(normalizeExtractedProtein('Tripe'), 'tripe')
+
+  // An unrecognised species keeps its whole value rather than inventing a head.
+  assertStrictEquals(normalizeExtractedProtein('alpaca liver'), 'alpaca liver')
+
+  // The check reads the LAST token, so a qualified species still folds — and
+  // the hydrolysis qualifier survives it.
+  assertStrictEquals(normalizeExtractedProtein('hydrolyzed chicken liver'), 'hydrolyzed chicken')
+})
+
+Deno.test('normalizeExtractedProtein — the alias lookup cannot reach the prototype chain', () => {
+  // A bare EXTRACTION_PROTEIN_ALIASES[v] returned the `Object` FUNCTION for the
+  // literal token "constructor". It survived into the returned string[], and
+  // JSON.stringify then rendered proteins as [null] AND dropped primary_protein
+  // from the update payload entirely (functions are omitted) — so the column
+  // kept a stale value while the derived-pair guarantee silently broke.
+  // Reachable via a photographed label / prompt injection, not spontaneously.
+  const key = normalizeExtractedProtein('constructor')
+  assertStrictEquals(typeof key, 'string')
+  assertStrictEquals(key, 'constructor')
+  const set = deriveProteinSet(['constructor', 'valueOf', 'toString'], 'constructor')
+  for (const p of set) assertStrictEquals(typeof p, 'string')
+  // And it must survive the wire as a real TEXT[] — never [null].
+  assertEquals(JSON.parse(JSON.stringify({ proteins: set })), { proteins: set })
+})
+
 Deno.test('normalizeExtractedProtein — the bounded B-048 alias table (write path only)', () => {
   assertStrictEquals(normalizeExtractedProtein('Ocean Whitefish'), 'whitefish')
-  assertStrictEquals(normalizeExtractedProtein('white fish'), 'whitefish')
+  // 'white fish' is deliberately NOT aliased — see the table's note (vague -> specific).
+  assertStrictEquals(normalizeExtractedProtein('white fish'), 'white fish')
   assertStrictEquals(normalizeExtractedProtein('Dried Egg Product'), 'egg')
   assertStrictEquals(normalizeExtractedProtein('Buffalo'), 'bison')
   // Exact-match only: a genuinely different animal is NOT caught by the alias.
@@ -414,7 +453,9 @@ Deno.test('normalizeExtractedProtein — hydrolyzed is never merged into the int
 
 Deno.test('normalizeExtractedProtein — junk in, protein-unknown out (never a junk key)', () => {
   // A junk key would pad the Signal's Bonferroni family and tighten the bar
-  // against every REAL protein the pet eats.
+  // against every REAL protein the pet eats. Note what is NOT on this list:
+  // `liver` and `tripe` are vague, not junk — they name a real exposure with an
+  // unknown species, and dropping them loses data (see the tissue-strip test).
   for (const junk of ['', '   ', 'null', 'unknown', 'N/A', 'meal', 'fresh']) {
     assertStrictEquals(normalizeExtractedProtein(junk), null)
   }
@@ -475,14 +516,29 @@ Deno.test('deriveProteinSet — malformed model output degrades to protein-unkno
   assertEquals(deriveProteinSet(['null', 'Chicken', '', 'unknown'], null), ['chicken'])
 })
 
-Deno.test('deriveProteinSet — caps the set, dropping the LEAST prominent first', () => {
-  // A hallucinated label-soup extraction must not hand the Signal a 30-protein
-  // exposure set (which would pad the Bonferroni family for every other protein).
-  const many = ['chicken', 'turkey', 'duck', 'beef', 'lamb', 'pork', 'salmon', 'tuna', 'rabbit', 'venison']
-  const set = deriveProteinSet(many, 'venison')
+Deno.test('deriveProteinSet — a REAL long panel is captured whole, not truncated', () => {
+  // The counterexample that moved the cap from 8 to 24: a 14-ingredient raw
+  // grind. At 8 this silently dropped rabbit and venison — the two most likely
+  // novel-protein trial targets — and in the mirror case would truncate away a
+  // contaminant sitting 9th on the panel, which is the exact failure B-351
+  // exists to stop. Family-size control belongs to Phase B's candidate set, not
+  // to the record.
+  const rawGrind = [
+    'beef', 'beef liver', 'beef heart', 'beef tripe', 'lamb', 'lamb liver',
+    'salmon', 'herring', 'duck', 'turkey', 'chicken', 'egg', 'rabbit', 'venison',
+  ]
+  const set = deriveProteinSet(rawGrind, 'beef')
+  assertEquals(set, ['beef', 'lamb', 'salmon', 'herring', 'duck', 'turkey', 'chicken', 'egg', 'rabbit', 'venison'])
+})
+
+Deno.test('deriveProteinSet — still caps a pathological set, dropping the LEAST prominent first', () => {
+  // The cap survives as a hallucination guard: prominence-ordered, so the
+  // primary is always the last thing standing.
+  const soup = Array.from({ length: 40 }, (_, i) => `protein${i}`)
+  const set = deriveProteinSet(soup, 'venison')
   assertStrictEquals(set.length, MAX_CAPTURED_PROTEINS)
-  assertStrictEquals(set[0], 'venison')          // the primary always survives
-  assertEquals(set.includes('rabbit'), false)    // the tail is what gets dropped
+  assertStrictEquals(set[0], 'venison')
+  assertEquals(set.includes('protein39'), false)
 })
 
 Deno.test('parseToolResult — proteins land ordered, and primary_protein IS proteins[0]', () => {
