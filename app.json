@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "scheme": "nyx",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.projectnyx.app",
       "icon": {
         "light": "./assets/icon.png",
