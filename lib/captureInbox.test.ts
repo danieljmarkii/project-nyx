@@ -41,7 +41,9 @@ import {
   CAPTURE_INBOX_SCHEMA_VERSION,
   INBOX_MAX_AGE_DAYS,
   MAX_INGEST_PER_PASS,
+  type BowlTopUpCaptureRecord,
   type CaptureRecord,
+  type MealCaptureRecord,
   type InboxDb,
 } from './captureInbox';
 import { getCaptureInboxDirectory } from './appGroup';
@@ -56,6 +58,9 @@ function asyncAdapter(db: RawDb): InboxDb {
     },
     async getFirstAsync<T>(sql: string, params: (string | number | null)[]): Promise<T | null> {
       return (db.prepare(sql).get(...params) as T) ?? null;
+    },
+    async getAllAsync<T>(sql: string, params: (string | number | null)[]): Promise<T[]> {
+      return db.prepare(sql).all(...params) as T[];
     },
   };
 }
@@ -87,6 +92,14 @@ function freshDb(): RawDb {
     CREATE TABLE food_items_cache (
       id TEXT PRIMARY KEY, brand TEXT, product_name TEXT, last_used_at TEXT
     );
+    CREATE TABLE feeding_arrangements (
+      id TEXT PRIMARY KEY, pet_id TEXT NOT NULL, food_item_id TEXT NOT NULL,
+      method TEXT NOT NULL DEFAULT 'free_choice',
+      active_from TEXT, active_until TEXT, is_shared INTEGER NOT NULL DEFAULT 0,
+      notes TEXT, deleted_at TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      synced INTEGER NOT NULL DEFAULT 1
+    );
   `);
   return db;
 }
@@ -96,7 +109,7 @@ const FOOD = '22222222-2222-4222-9222-222222222222';
 const EVT = '33333333-3333-4333-9333-333333333333';
 const MEAL = '44444444-4444-4444-9444-444444444444';
 
-function validRecord(overrides: Partial<CaptureRecord> = {}): CaptureRecord {
+function validRecord(overrides: Partial<MealCaptureRecord> = {}): MealCaptureRecord {
   return {
     schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION,
     id: EVT,
@@ -111,13 +124,28 @@ function validRecord(overrides: Partial<CaptureRecord> = {}): CaptureRecord {
   };
 }
 
+function topUpRecord(overrides: Partial<BowlTopUpCaptureRecord> = {}): BowlTopUpCaptureRecord {
+  return {
+    schemaVersion: CAPTURE_INBOX_SCHEMA_VERSION,
+    id: EVT,
+    kind: 'bowl_topup',
+    petId: PET,
+    occurredAt: '2026-07-24T18:00:00.000Z',
+    createdAt: '2026-07-24T18:00:00.000Z',
+    loggedVia: 'widget',
+    ...overrides,
+  };
+}
+
 const NOW = new Date('2026-07-24T20:00:00.000Z');
 
 describe('classifyInboxPayload (the extension→app trust boundary)', () => {
   it('accepts a well-formed v1 record', () => {
     const out = classifyInboxPayload(JSON.stringify(validRecord()));
     expect(out.status).toBe('valid');
-    if (out.status === 'valid') expect(out.record.foodItemId).toBe(FOOD);
+    if (out.status === 'valid' && out.record.kind !== 'bowl_topup') {
+      expect(out.record.foodItemId).toBe(FOOD);
+    }
   });
 
   it('drops malformed JSON — it can never become ingestible', () => {
@@ -132,9 +160,25 @@ describe('classifyInboxPayload (the extension→app trust boundary)', () => {
     expect(out.status).toBe('defer');
   });
 
-  it('defers an unknown kind (bowl_topup is reserved for W4) rather than destroying it', () => {
-    const raw = JSON.stringify({ ...validRecord(), kind: 'bowl_topup' });
+  it('defers an unknown kind (the next W-track addition) rather than destroying it', () => {
+    const raw = JSON.stringify({ ...validRecord(), kind: 'water_refill' });
     expect(classifyInboxPayload(raw).status).toBe('defer');
+  });
+
+  it("accepts a bowl_topup record — no mealId/foodItemId, it names the standing fact (D6)", () => {
+    const out = classifyInboxPayload(JSON.stringify(topUpRecord()));
+    expect(out.status).toBe('valid');
+    if (out.status === 'valid') expect(out.record.kind).toBe('bowl_topup');
+  });
+
+  it('still validates ids/timestamps/provenance on a bowl_topup', () => {
+    expect(classifyInboxPayload(JSON.stringify(topUpRecord({ id: 'nope' }))).status).toBe('drop');
+    expect(
+      classifyInboxPayload(JSON.stringify(topUpRecord({ occurredAt: 'whenever' }))).status,
+    ).toBe('drop');
+    expect(
+      classifyInboxPayload(JSON.stringify({ ...topUpRecord(), loggedVia: 'app' })).status,
+    ).toBe('drop');
   });
 
   it("enforces the no-garbage rule: a record without a named food can't exist", () => {
@@ -305,6 +349,119 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
     expect(decisions.map((d) => d.action)).toEqual(['deferred', 'applied', 'deferred']);
     expect(decisions[2].reason).toBe('pass cap');
     expect((raw.prepare('SELECT COUNT(*) AS n FROM meals').get() as { n: number }).n).toBe(1);
+  });
+
+  describe('bowl_topup (the D6 arrangement re-attest)', () => {
+    const ARR = 'aaaaaaaa-aaaa-4aaa-9aaa-aaaaaaaaaaaa';
+    const OLD_STAMP = '2026-07-20T09:00:00.000Z';
+
+    function insertArrangement(overrides: { active_until?: string | null; deleted_at?: string | null } = {}) {
+      raw
+        .prepare(
+          `INSERT INTO feeding_arrangements
+             (id, pet_id, food_item_id, method, active_until, deleted_at, created_at, updated_at, synced)
+           VALUES (?, ?, ?, 'free_choice', ?, ?, ?, ?, 1)`,
+        )
+        .run(ARR, PET, FOOD, overrides.active_until ?? null, overrides.deleted_at ?? null, OLD_STAMP, OLD_STAMP);
+    }
+
+    it('bumps the active arrangement to the TAP time, queues the push, writes no event/meal/rating', async () => {
+      insertArrangement();
+      const decisions = await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      // No petId on the decision: applied, but a freshness bump must not
+      // trigger a Signal regen.
+      expect(decisions).toEqual([{ name: '0.json', action: 'applied' }]);
+
+      const arr = raw.prepare('SELECT updated_at, synced FROM feeding_arrangements WHERE id = ?').get(ARR) as {
+        updated_at: string; synced: number;
+      };
+      expect(arr.updated_at).toBe('2026-07-24T18:00:00.000Z'); // the tap time
+      expect(arr.synced).toBe(0); // rides syncPendingFeedingArrangements
+      // Never an intake claim (D6): nothing else was written.
+      expect((raw.prepare('SELECT COUNT(*) AS n FROM events').get() as { n: number }).n).toBe(0);
+      expect((raw.prepare('SELECT COUNT(*) AS n FROM meals').get() as { n: number }).n).toBe(0);
+    });
+
+    it('never moves freshness BACKWARDS — an in-app re-attest newer than the tap wins', async () => {
+      insertArrangement();
+      raw.prepare('UPDATE feeding_arrangements SET updated_at = ? WHERE id = ?').run(
+        '2026-07-24T19:30:00.000Z', // the owner re-attested in-app AFTER the offline tap
+        ARR,
+      );
+      const decisions = await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      expect(decisions[0].action).toBe('applied'); // file consumed — the newer stamp stands
+      const arr = raw.prepare('SELECT updated_at, synced FROM feeding_arrangements WHERE id = ?').get(ARR) as {
+        updated_at: string; synced: number;
+      };
+      expect(arr.updated_at).toBe('2026-07-24T19:30:00.000Z');
+      expect(arr.synced).toBe(1); // untouched — no spurious push
+    });
+
+    it('compares freshness by PARSED time across mixed formats — never lexical SQL (B-055 class)', async () => {
+      insertArrangement();
+      // Hydrated PostgREST offset form, chronologically NEWER than the tap
+      // (18:00:00Z) — lexically '2026-07-24T18:00:30.123456+00:00' vs
+      // '2026-07-24T18:00:00.000Z' is format-dependent; parsed ms must decide,
+      // and the newer in-app stamp must survive.
+      raw.prepare('UPDATE feeding_arrangements SET updated_at = ? WHERE id = ?').run(
+        '2026-07-24T18:00:30.123456+00:00',
+        ARR,
+      );
+      await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      const newer = raw.prepare('SELECT updated_at FROM feeding_arrangements WHERE id = ?').get(ARR) as {
+        updated_at: string;
+      };
+      expect(newer.updated_at).toBe('2026-07-24T18:00:30.123456+00:00');
+
+      // And the mirror case: an offset-form stamp chronologically OLDER than
+      // the tap must be bumped even if it lexically sorts after it.
+      raw.prepare('UPDATE feeding_arrangements SET updated_at = ? WHERE id = ?').run(
+        '2026-07-24T17:59:59.999999+00:00',
+        ARR,
+      );
+      await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      const bumped = raw.prepare('SELECT updated_at FROM feeding_arrangements WHERE id = ?').get(ARR) as {
+        updated_at: string;
+      };
+      expect(bumped.updated_at).toBe('2026-07-24T18:00:00.000Z');
+    });
+
+    it('is idempotent on re-ingest (crash between apply and delete)', async () => {
+      insertArrangement();
+      await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      raw.prepare('UPDATE feeding_arrangements SET synced = 1 WHERE id = ?').run(ARR); // push happened
+      const decisions = await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      expect(decisions[0].action).toBe('applied');
+      const arr = raw.prepare('SELECT synced FROM feeding_arrangements WHERE id = ?').get(ARR) as { synced: number };
+      expect(arr.synced).toBe(1); // the guard made the re-apply a true no-op
+    });
+
+    it('defers when the pet has no active free-fed arrangement (ended, deleted, or not yet hydrated)', async () => {
+      insertArrangement({ active_until: '2026-07-22' });
+      const decisions = await ingestCaptureRecords(db, files(topUpRecord()), new Set([PET]), NOW);
+      expect(decisions[0].action).toBe('deferred');
+      const arr = raw.prepare('SELECT updated_at FROM feeding_arrangements WHERE id = ?').get(ARR) as {
+        updated_at: string;
+      };
+      expect(arr.updated_at).toBe(OLD_STAMP); // an ended bowl is never re-attested
+    });
+
+    it('still honors the pet allowlist and the apply budget', async () => {
+      insertArrangement();
+      const foreign = topUpRecord({ petId: '99999999-9999-4999-9999-999999999999' });
+      expect(
+        (await ingestCaptureRecords(db, files(foreign), new Set([PET]), NOW))[0].action,
+      ).toBe('deferred');
+      const capped = await ingestCaptureRecords(
+        db,
+        files(validRecord(), topUpRecord({ id: '66666666-6666-4666-9666-666666666666' })),
+        new Set([PET]),
+        NOW,
+        1,
+      );
+      expect(capped.map((d) => d.action)).toEqual(['applied', 'deferred']);
+      expect(capped[1].reason).toBe('pass cap');
+    });
   });
 
   it('processes a mixed batch independently — one bad file strands nothing', async () => {
