@@ -22,7 +22,7 @@
 | 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | ✅ Hosting live — `getculprit.app` privacy/terms/disclaimer URLs wired in-app (`LEGAL_LINKS_ENABLED=true`) + `support@getculprit.app`; residual PM check: confirm the **support page URL** resolves for the ASC listing field (2026-07-20 audit) |
 | 4 | Pick + configure the production SMTP provider | PM | B-152 (part 1) | ⬜ Not started |
 | 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | ✅ Both halves merged — permission strings (#299) + **`supportsTablet: false`** (2026-07-24, closes audit §B4). Prebuild verified: main app target `TARGETED_DEVICE_FAMILY = "1"` (iPhone-only). Residual for step 10: built-artifact verify of the `NS*UsageDescription` keys, `PrivacyInfo.xcprivacy`, and `UIDeviceFamily` — **plus the new widget-extension device-family mismatch (B-415)** |
-| 6 | Ratify + flag off the paywall for v1 | Mixed | B-263–266 (deferral) | ⬜ Not started |
+| 6 | Ratify + flag off the paywall for v1 | Mixed | B-263–266 (deferral) | ✅ Done 2026-07-24 — PM ratified + **flipped live**: `app_config.paywall_enabled = false` (verified jsonb boolean, `updated_at` 21:22 UTC). Code gate (T2-5) merged 2026-07-15. Paywall unreachable in the submission build; B-263–266 stay deferred |
 | 7 | In-app version display | PR | B-231 | ✅ Done — `Culprit v{version} ({build})` at the settings foot (B-283 PR 1/2, #315/#316; code-verified 2026-07-20 audit) |
 | 8 | On-device deletion QA + logout-wipe (email confirm still OFF) | PM | B-039 + AC-6 | 🟡 B-039 deletion ✅ verified 2026-07-16 (live-DB, real account); AC-6 cross-account logout-wipe rider still open |
 | 9 | Flip email confirmation ON + verify the signup path | Mixed | B-152 (part 2) | ⬜ Not started |
@@ -139,9 +139,12 @@ You need three URLs by the end (anchors/pages on the site): `getculprit.app/supp
 
 **PM part:** ratify the recommendation (or overrule — if you want the paywall visible in v1, we go back to the register's Tier 3 options and accept the StoreKit + Paid-Apps-Agreement path and its lead time).
 
-**Kickoff prompt (after ratifying):**
+**✅ DONE 2026-07-24 — ratified and flipped.** Both halves are complete:
 
-> Read `docs/app-store-submission-guide.md` step 6, `app/onboarding/paywall.tsx`, `app/onboarding/pet-age.tsx`, and `constants/flags.ts`. The PM has ratified flagging the paywall off for the v1 store build (advisor recommendation in `docs/app-store-readiness.md` Tier 3). Add a `PAYWALL_ENABLED` flag (off) to `constants/flags.ts` following the `SOCIAL_AUTH_ENABLED` pattern; when off, `pet-age`'s `finish()` routes straight to `/onboarding/done` and the paywall screen is unreachable (keep the screen + its tests intact — it returns post-launch when the freemium gate is decided; B-263–266 stay open). Update the affected navigation tests. One PR; update the guide tracker + a note on the B-263 row at wrap.
+- **Code gate (shipped 2026-07-15, T2-5).** It did *not* land as the `constants/flags.ts` `PAYWALL_ENABLED` compile-time flag this step originally sketched — it rides the **server-flippable `app_config.paywall_enabled`** flag instead (B-329/B-330, `docs/monetization-and-throttling-requirements.md` §6.5), which is strictly better here: the paywall can be restored without a build. Primary route gate in `app/onboarding/pet-age.tsx:68` (`finish()` → `/onboarding/done` when off); defensive deep-link bounce in `app/onboarding/paywall.tsx:79`. Render-only, and the shipped client default is fail-**closed** (`lib/appConfig.ts:129`) so a config-unreachable build also skips the mock.
+- **Live flip (2026-07-24).** `UPDATE app_config SET value='false'::jsonb WHERE key='paywall_enabled';` — verified stored as a jsonb **boolean** (a string `"false"` would fail the `typeof raw === 'boolean'` check in `lib/appConfig.ts:148` and silently fall back to the default). Migration 030's seed is `ON CONFLICT DO NOTHING`, so a re-applied migration can't clobber the flip.
+
+**Reversible:** set the flag back to `true` to restore the mock — e.g. once T3-D un-mocks the paywall. **Step-10 note:** the "onboarding skips the paywall" spot-check still belongs on the built-artifact checklist; verify it against config, not `constants/flags.ts` (there is no `PAYWALL_ENABLED` constant). One caveat for that pass: an install whose config cache predates the flip can show the paywall once more before its next foreground refresh — a *fresh* install never does (no cache → fail-closed default).
 
 ---
 
