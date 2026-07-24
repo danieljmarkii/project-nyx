@@ -202,8 +202,10 @@
   .signalcard .eyebrow { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--on-night-muted); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; }
   .signalcard .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--accent-fill); box-shadow: 0 0 0 4px rgba(0,194,168,0.16); margin-right: 8px; }
   .signalcard h3 { font-family: var(--serif); font-weight: 500; font-size: 24px; line-height: 1.28; letter-spacing: -0.01em; color: var(--moonlight); margin: 0 0 12px; text-wrap: balance; }
-  .signalcard .joint { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 14px; font-size: 12px; color: var(--on-night); background: rgba(196,190,255,0.10); border: 1px solid var(--night-line); border-radius: 999px; padding: 5px 11px; }
-  .signalcard .joint b { color: var(--moonlight); font-weight: 600; }
+  .signalcard .pairrow { display: flex; align-items: center; gap: 9px; margin: 2px 0 14px; }
+  .signalcard .ptag2 { font-size: 13px; font-weight: 600; color: var(--moonlight); background: rgba(196,190,255,0.13); border: 1px solid var(--night-line); border-radius: 8px; padding: 5px 11px; line-height: 1; }
+  .signalcard .link { color: var(--on-night-faint); font-size: 15px; font-weight: 400; }
+  .signalcard .pairnote { font-size: 11.5px; color: var(--on-night-faint); margin-left: 3px; }
   .signalcard p { font-size: 14px; color: var(--on-night-muted); line-height: 1.55; margin: 0 0 16px; max-width: none; }
   .signalcard .prov { font-size: 12px; color: var(--on-night-faint); border-top: 1px solid var(--night-line); padding-top: 13px; display: flex; align-items: center; gap: 8px; }
   .signalcard .chev { margin-left: auto; color: var(--on-night-muted); }
@@ -398,13 +400,18 @@
           <div class="signalcard">
             <div class="eyebrow"><span class="dot"></span>Nyx · Signal</div>
             <h3>Chicken and duck both track with Nyx’s vomiting.</h3>
-            <div class="joint">⛓ can’t yet separate — <b>chicken &amp; duck</b> always appear together</div>
-            <p>These two show up in the same meals, so I can’t tell which one is the trigger yet. Feeding one without the other — or asking your vet — would help tell them apart.</p>
+            <div class="pairrow">
+              <span class="ptag2">Chicken</span>
+              <span class="link">+</span>
+              <span class="ptag2">Duck</span>
+              <span class="pairnote">always fed together</span>
+            </div>
+            <p>I can’t tell which one is the trigger yet. Feeding one without the other would help tell them apart.</p>
             <div class="prov">3 of 4 vomiting days followed a meal with both · 21 days<span class="chev">›</span></div>
           </div>
         </div>
       </div>
-      <p class="frame-caption">Home Signal card, night ground. The joint chip is the attribution-honesty surface — never a single false culprit.</p>
+      <p class="frame-caption">Home Signal card, night ground. The linked pair + a three-word note carry the honesty; the sentence carries the action. No wrapping-text pill.</p>
     </div>
     <div>
       <ul class="callouts">
