@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from 'react';
-import { Animated, StyleSheet, Text, View, StyleProp, TextStyle, ViewStyle } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View, StyleProp, TextStyle, ViewStyle } from 'react-native';
 import Svg, { Circle, Defs, Mask, Rect } from 'react-native-svg';
 import { theme } from '../../constants/theme';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
@@ -37,15 +37,31 @@ const DOT_R = 9;
 // unless it nudges up.
 const DOT_R_SMALL = 10.5;
 const SMALL_SIZE_THRESHOLD = 24;
-const RING_STROKE = 2;
+const RING_STROKE = 1.5;
 // The ring/dot are drawn at REST size inside this box, then the whole Animated.View
 // (box + its <Svg> contents) scales as one transform — so an affine scale preserves
 // "fits inside," and the only real constraint is that the resting ring fits the box:
 // boxCentre (0.25·size) must exceed dotR + stroke/2 (≤ ~0.115·size). 0.5·size clears
-// that at every size with margin; the ping's 2.1× growth then rides the View transform.
+// that at every size with margin; the ripple's 1.6× growth then rides the View transform.
 const PULSE_BOX_FACTOR = 0.5;
 
-const PULSE_PERIOD_MS = 2600;
+// The pulse choreography (login-hero softening, 2026-07-24): ONE shared rhythm —
+// the dot breathes to its crest, and AT the crest releases a single soft ripple
+// that dissipates before the next breath. The old 2.6s choreography had two
+// competing envelopes (a sine breathe + a ring that SNAPPED on at 0.9 opacity and
+// blasted linearly to 2.1×) — at the Landing's hero scale it read as sonar, and
+// the snap-attack/slow-decay sawtooth is why it felt arrhythmic. Every value here
+// exists to keep the live cue *detectable, not prominent*: no snap (the ripple
+// fades IN), low peak opacity, short decelerating travel, and genuine rest.
+const PULSE_PERIOD_MS = 4400;
+// The breath crests at 40% of the cycle — the ripple is emitted there, so the two
+// layers read as cause (swell) and effect (release), not two overlapping loops.
+const RING_EMIT_MS = PULSE_PERIOD_MS * 0.4; // 1760
+const RING_TRAVEL_MS = PULSE_PERIOD_MS - RING_EMIT_MS; // 2640
+const RING_FADE_IN_MS = 440;
+const RING_PEAK_OPACITY = 0.3;
+const RING_MAX_SCALE = 1.6;
+const DOT_CREST_SCALE = 1.05;
 
 export interface CulpritMarkProps {
   /** Rendered size in px (square). */
@@ -82,7 +98,7 @@ export function CulpritMark({
   const reducedMotion = useReducedMotion();
   const appActive = useAppActive();
   const scale = useRef(new Animated.Value(1)).current;
-  const ringScale = useRef(new Animated.Value(0.66)).current;
+  const ringScale = useRef(new Animated.Value(1)).current;
   const ringOpacity = useRef(new Animated.Value(0)).current;
 
   // Pause on app blur (§1.5 motion budget), matching WhorlSpinner — a native-driver
@@ -92,36 +108,55 @@ export function CulpritMark({
   useEffect(() => {
     if (!animate) {
       scale.setValue(1);
-      ringScale.setValue(0.66);
+      ringScale.setValue(1);
       ringOpacity.setValue(0);
       return;
     }
     const cycle = Animated.parallel([
+      // The breath: a slow sine swell that crests exactly when the ripple is
+      // emitted (asymmetric on purpose — quicker inhale, longer exhale), so the
+      // whole mark moves to one beat instead of two out-of-phase envelopes.
       Animated.sequence([
         Animated.timing(scale, {
-          toValue: 1.12,
-          duration: PULSE_PERIOD_MS / 2,
+          toValue: DOT_CREST_SCALE,
+          duration: RING_EMIT_MS,
+          easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(scale, {
           toValue: 1,
-          duration: PULSE_PERIOD_MS / 2,
+          duration: RING_TRAVEL_MS,
+          easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
       ]),
+      // The ripple: born at the dot's edge at the breath's crest, faded IN over
+      // ~440ms (never snapped on — the old 1ms 0.9-opacity attack was the strobe),
+      // travelling a short decelerating 1 → 1.6× like a ripple losing energy,
+      // gone before the cycle ends so each pulse is followed by real rest.
       Animated.sequence([
-        Animated.timing(ringOpacity, { toValue: 0.9, duration: 1, useNativeDriver: true }),
+        Animated.delay(RING_EMIT_MS),
         Animated.parallel([
           Animated.timing(ringScale, {
-            toValue: 2.1,
-            duration: PULSE_PERIOD_MS,
+            toValue: RING_MAX_SCALE,
+            duration: RING_TRAVEL_MS,
+            easing: Easing.out(Easing.quad),
             useNativeDriver: true,
           }),
-          Animated.timing(ringOpacity, {
-            toValue: 0,
-            duration: PULSE_PERIOD_MS,
-            useNativeDriver: true,
-          }),
+          Animated.sequence([
+            Animated.timing(ringOpacity, {
+              toValue: RING_PEAK_OPACITY,
+              duration: RING_FADE_IN_MS,
+              easing: Easing.out(Easing.quad),
+              useNativeDriver: true,
+            }),
+            Animated.timing(ringOpacity, {
+              toValue: 0,
+              duration: RING_TRAVEL_MS - RING_FADE_IN_MS,
+              easing: Easing.inOut(Easing.sin),
+              useNativeDriver: true,
+            }),
+          ]),
         ]),
       ]),
     ]);
