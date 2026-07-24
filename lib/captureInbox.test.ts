@@ -22,17 +22,30 @@ jest.mock('expo-file-system', () => ({
 jest.mock('expo-sqlite', () => ({ openDatabaseSync: jest.fn() }));
 jest.mock('./signal', () => ({ triggerSignalRegenDebounced: jest.fn() }));
 jest.mock('./db', () => ({ getDb: jest.fn() }));
+// The wrapper suite drives the inbox through a fake directory; everything else
+// leaves it returning null (wrapper no-ops, core functions don't touch it).
+jest.mock('./appGroup', () => ({
+  APP_GROUP_ID: 'group.test',
+  getCaptureInboxDirectory: jest.fn(() => null),
+  getSnapshotDirectory: jest.fn(() => null),
+  clearWidgetData: jest.fn(),
+}));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { DatabaseSync } = require('node:sqlite');
 import {
   classifyInboxPayload,
   ingestCaptureRecords,
+  ingestCaptureInbox,
+  inboxFileSortKey,
   CAPTURE_INBOX_SCHEMA_VERSION,
   INBOX_MAX_AGE_DAYS,
+  MAX_INGEST_PER_PASS,
   type CaptureRecord,
   type InboxDb,
 } from './captureInbox';
+import { getCaptureInboxDirectory } from './appGroup';
+import { getDb } from './db';
 
 type RawDb = InstanceType<typeof DatabaseSync>;
 
@@ -149,6 +162,25 @@ describe('classifyInboxPayload (the extension→app trust boundary)', () => {
     ).toBe('drop');
     expect(classifyInboxPayload(JSON.stringify(validRecord({ id: 'evt-1' }))).status).toBe('drop');
   });
+
+  it('normalizes offset-form timestamps to canonical UTC Z-form at the boundary (stored-UTC constraint)', () => {
+    const out = classifyInboxPayload(
+      JSON.stringify(validRecord({ occurredAt: '2026-07-24T14:00:00-04:00' })),
+    );
+    expect(out.status).toBe('valid');
+    if (out.status === 'valid') {
+      expect(out.record.occurredAt).toBe('2026-07-24T18:00:00.000Z');
+    }
+  });
+});
+
+describe('inboxFileSortKey (FIFO ordering)', () => {
+  it('orders by the record createdAt; unparseable files sort last', () => {
+    const older = JSON.stringify(validRecord({ createdAt: '2026-07-24T10:00:00.000Z' }));
+    const newer = JSON.stringify(validRecord({ createdAt: '2026-07-24T12:00:00.000Z' }));
+    expect(inboxFileSortKey(older)).toBeLessThan(inboxFileSortKey(newer));
+    expect(inboxFileSortKey('{broken')).toBe(Number.POSITIVE_INFINITY);
+  });
 });
 
 describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
@@ -251,6 +283,30 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
     expect(decisions[0].action).toBe('dropped');
   });
 
+  it('caps APPLIES per pass, not classification — a deferral never consumes the budget', async () => {
+    const second = validRecord({
+      id: '66666666-6666-4666-9666-666666666666',
+      mealId: '77777777-7777-4777-9777-777777777777',
+    });
+    const deferrable = validRecord({
+      id: '88888888-8888-4888-9888-888888888888',
+      mealId: '99999999-9999-4999-9999-999999999999',
+      petId: '99999999-9999-4999-9999-999999999999', // foreign pet → defers
+    });
+    const decisions = await ingestCaptureRecords(
+      db,
+      files(deferrable, validRecord(), second),
+      new Set([PET]),
+      NOW,
+      1, // apply budget of one this pass
+    );
+    // The deferral cost nothing; the first valid record used the budget; the
+    // second valid record waits for the next pass (deferred, file left alone).
+    expect(decisions.map((d) => d.action)).toEqual(['deferred', 'applied', 'deferred']);
+    expect(decisions[2].reason).toBe('pass cap');
+    expect((raw.prepare('SELECT COUNT(*) AS n FROM meals').get() as { n: number }).n).toBe(1);
+  });
+
   it('processes a mixed batch independently — one bad file strands nothing', async () => {
     const other = validRecord({
       id: '66666666-6666-4666-9666-666666666666',
@@ -265,5 +321,113 @@ describe('ingestCaptureRecords (inbox → SQLite + sync queue)', () => {
     );
     expect(decisions.map((d) => d.action)).toEqual(['dropped', 'applied', 'applied']);
     expect((raw.prepare('SELECT COUNT(*) AS n FROM meals').get() as { n: number }).n).toBe(2);
+  });
+});
+
+// ── The file-system wrapper (ingestCaptureInbox) over a fake inbox directory ──
+// The core above is exercised against real SQL; this suite pins the wrapper's
+// own load-bearing behavior: FIFO ordering under the apply cap (the starvation
+// class), and the delete-applied/delete-dropped/leave-deferred file lifecycle.
+
+interface FakeFile {
+  name: string;
+  deleted: boolean;
+  textSync(): string;
+  delete(): void;
+}
+
+function fakeFile(name: string, raw: string): FakeFile {
+  const f: FakeFile = {
+    name,
+    deleted: false,
+    textSync: () => raw,
+    delete: () => {
+      f.deleted = true;
+    },
+  };
+  return f;
+}
+
+// Distinct valid uuids from an index (decimal digits are valid hex).
+const uuidAt = (i: number, nibble: string) =>
+  `${String(i).padStart(8, '0')}-0000-4000-8000-${nibble.repeat(12)}`;
+
+describe('ingestCaptureInbox (wrapper: ordering + file lifecycle)', () => {
+  let raw: RawDb;
+
+  beforeEach(() => {
+    raw = freshDb();
+    raw
+      .prepare(`INSERT INTO food_items_cache (id, brand, product_name) VALUES (?, 'Hill''s', 'z/d')`)
+      .run(FOOD);
+    (getDb as jest.Mock).mockReturnValue(asyncAdapter(raw));
+  });
+
+  function installInbox(entries: FakeFile[]) {
+    (getCaptureInboxDirectory as jest.Mock).mockReturnValue({ list: () => entries });
+  }
+
+  it('deletes applied and dropped files, leaves deferred ones for the next pass', async () => {
+    const applied = fakeFile('a.json', JSON.stringify(validRecord()));
+    const dropped = fakeFile('b.json', '{broken');
+    const deferred = fakeFile(
+      'c.json',
+      JSON.stringify(
+        validRecord({
+          id: '66666666-6666-4666-9666-666666666666',
+          mealId: '77777777-7777-4777-9777-777777777777',
+          petId: '99999999-9999-4999-9999-999999999999', // foreign pet
+        }),
+      ),
+    );
+    const ignored = fakeFile('readme.txt', 'not a record');
+    installInbox([applied, dropped, deferred, ignored]);
+
+    await ingestCaptureInbox(new Set([PET]));
+
+    expect(applied.deleted).toBe(true);
+    expect(dropped.deleted).toBe(true);
+    expect(deferred.deleted).toBe(false); // waits for the pet to appear / age-out
+    expect(ignored.deleted).toBe(false); // non-.json is never touched
+    expect((raw.prepare('SELECT COUNT(*) AS n FROM events').get() as { n: number }).n).toBe(1);
+  });
+
+  it('drains oldest-first under the apply cap — a newest-first listing cannot starve the oldest tap', async () => {
+    // One MORE valid record than the per-pass apply budget, listed newest first
+    // (the adversarial enumeration order). The oldest capture must be applied
+    // this pass; the NEWEST is the one that waits.
+    const count = MAX_INGEST_PER_PASS + 1;
+    const entries: FakeFile[] = [];
+    for (let i = count - 1; i >= 0; i--) {
+      // i=0 is the oldest capture; createdAt encodes the order.
+      const createdAt = new Date(Date.parse('2026-07-24T00:00:00.000Z') + i * 1000).toISOString();
+      entries.push(
+        fakeFile(
+          `${i}.json`,
+          JSON.stringify(
+            validRecord({
+              id: uuidAt(i, 'a'),
+              mealId: uuidAt(i, 'b'),
+              createdAt,
+              occurredAt: createdAt,
+            }),
+          ),
+        ),
+      );
+    }
+    installInbox(entries);
+
+    await ingestCaptureInbox(new Set([PET]));
+
+    const applied = (raw.prepare('SELECT COUNT(*) AS n FROM events').get() as { n: number }).n;
+    expect(applied).toBe(MAX_INGEST_PER_PASS);
+    // The OLDEST record landed…
+    const oldest = raw.prepare('SELECT id FROM events WHERE id = ?').get(uuidAt(0, 'a'));
+    expect(oldest).toBeTruthy();
+    // …and the one deferred to the next pass is the NEWEST, still in the inbox.
+    const newestEntry = entries.find((e) => e.name === `${count - 1}.json`)!;
+    expect(newestEntry.deleted).toBe(false);
+    const newestRow = raw.prepare('SELECT id FROM events WHERE id = ?').get(uuidAt(count - 1, 'a'));
+    expect(newestRow).toBeUndefined();
   });
 });

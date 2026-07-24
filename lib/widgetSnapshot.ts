@@ -96,6 +96,12 @@ export interface TodayMealRow {
 // event whose food is food_type='treat' (the app's own model); anything else —
 // including a meal whose food the cache doesn't know (food_type null) — counts
 // as a meal, matching how History renders it.
+//
+// All timestamp logic is PARSED-ms based, never lexical: local rows store
+// occurred_at as toISOString() ('Z') while hydrated rows keep PostgREST's
+// offset form ('+00:00'), so string comparison mixes formats (the B-055
+// class). The caller's SQL bounds are only a buffered prefilter; the
+// authoritative today-window filter is the dayBounds check here.
 export function buildWidgetSnapshot(
   pet: SnapshotPet,
   input: {
@@ -103,19 +109,31 @@ export function buildWidgetSnapshot(
     dayKey: string;
     freeFed: boolean;
     todayMeals: TodayMealRow[];
+    /** Authoritative [start, end) of the local day, epoch ms. */
+    dayBounds: { startMs: number; endMs: number };
   },
 ): WidgetSnapshot {
   let mealCount = 0;
   let treatCount = 0;
+  let lastMealMs = -1;
+  let lastTreatMs = -1;
   let lastMealAt: string | null = null;
   let lastTreatAt: string | null = null;
   for (const row of input.todayMeals) {
+    const t = Date.parse(row.occurred_at);
+    if (Number.isNaN(t) || t < input.dayBounds.startMs || t >= input.dayBounds.endMs) continue;
     if (row.food_type === 'treat') {
       treatCount++;
-      if (lastTreatAt === null || row.occurred_at > lastTreatAt) lastTreatAt = row.occurred_at;
+      if (t > lastTreatMs) {
+        lastTreatMs = t;
+        lastTreatAt = row.occurred_at;
+      }
     } else {
       mealCount++;
-      if (lastMealAt === null || row.occurred_at > lastMealAt) lastMealAt = row.occurred_at;
+      if (t > lastMealMs) {
+        lastMealMs = t;
+        lastMealAt = row.occurred_at;
+      }
     }
   }
   return {
@@ -134,19 +152,37 @@ export function buildWidgetSnapshot(
   };
 }
 
-// The device-local day's [start, end) as ISO UTC bounds — the same day the
-// owner sees on the widget. occurred_at is stored UTC (Eng hard constraint);
-// converting the LOCAL midnight to ISO keeps "today" aligned with the kitchen
-// clock, not the UTC rollover.
-export function localDayBounds(now: Date = new Date()): { startIso: string; endIso: string } {
+// The device-local day's [start, end) — the same day the owner sees on the
+// widget. occurred_at is stored UTC (Eng hard constraint); converting the
+// LOCAL midnight keeps "today" aligned with the kitchen clock, not the UTC
+// rollover. The ISO strings are for the SQL prefilter only; startMs/endMs are
+// the authoritative bounds (see buildWidgetSnapshot's B-055 note).
+export function localDayBounds(now: Date = new Date()): {
+  startIso: string;
+  endIso: string;
+  startMs: number;
+  endMs: number;
+} {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  return { startIso: start.toISOString(), endIso: end.toISOString() };
+  return {
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+    startMs: start.getTime(),
+    endMs: end.getTime(),
+  };
 }
 
 async function readSnapshotInputs(petId: string, now: Date) {
   const db = getDb();
-  const { startIso, endIso } = localDayBounds(now);
+  const bounds = localDayBounds(now);
+  // The SQL bounds are a PREFILTER only, buffered by a minute on each side
+  // (B-055 class): hydrated rows store occurred_at in offset form ('+00:00')
+  // while these bounds are toISOString() ('Z'), so a lexical TEXT compare can
+  // drop a row sitting on the exact boundary second. buildWidgetSnapshot
+  // applies the authoritative ms-based window; over-fetching a neighbour or
+  // two is harmless (the pure filter drops it). Mirrors getDoubleDoseFlag.
+  const bufferMs = 60 * 1000;
   const todayMeals = await db.getAllAsync<TodayMealRow>(
     `SELECT e.occurred_at, f.food_type
      FROM events e
@@ -154,7 +190,11 @@ async function readSnapshotInputs(petId: string, now: Date) {
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE e.pet_id = ? AND e.event_type = 'meal' AND e.deleted_at IS NULL
        AND e.occurred_at >= ? AND e.occurred_at < ?`,
-    [petId, startIso, endIso],
+    [
+      petId,
+      new Date(bounds.startMs - bufferMs).toISOString(),
+      new Date(bounds.endMs + bufferMs).toISOString(),
+    ],
   );
   const bowl = await db.getFirstAsync<{ id: string }>(
     `SELECT id FROM feeding_arrangements
@@ -163,7 +203,11 @@ async function readSnapshotInputs(petId: string, now: Date) {
      LIMIT 1`,
     [petId],
   );
-  return { todayMeals, freeFed: !!bowl };
+  return {
+    todayMeals,
+    freeFed: !!bowl,
+    dayBounds: { startMs: bounds.startMs, endMs: bounds.endMs },
+  };
 }
 
 // Publish one snapshot file per pet ("<petId>.json") and prune files for pets
@@ -182,6 +226,11 @@ export async function publishWidgetSnapshots(pets: SnapshotPet[]): Promise<void>
   const now = new Date();
   const generatedAt = now.toISOString();
   const dayKey = toLocalDayKey(now);
+  // Post-sign-out publish race (FR-9 note): an in-flight publish from a session
+  // that just ended could re-write a stale snapshot moments after
+  // clearWidgetData. Self-healing — the next session's first publish prunes any
+  // file not in ITS pet set — so it's accepted as a millisecond-window cosmetic,
+  // not guarded with extra state.
   const wanted = new Set(pets.map((p) => `${p.id}.json`));
 
   for (const pet of pets) {

@@ -99,10 +99,24 @@ const SHARED_OPTIONS: SecureStore.SecureStoreOptions = {
 // A storage tier: how to derive this tier's key names and which options every
 // SecureStore call against it must carry. Exported for the W4 extension-side
 // session reader, which must use the exact same shared-tier contract.
+//
+// CROSS-PROCESS READER NOTE (for W4): processLock serializes only THIS app's
+// auth ops — the extension reads from another OS process with no lock at all.
+// The generation scheme covers that reader too, but only because of the
+// retention rule below: the writer RETAINS the just-superseded generation
+// (tracked by retainedKey) and prunes only the one from two writes ago. A
+// reader that grabbed the old pointer just before a commit can therefore
+// still finish reading that generation's chunks — the writes that could
+// delete them are a full write-cycle away (an hour at refresh cadence), not
+// racing microseconds behind. Without retention, the post-commit cleanup
+// deletes the exact chunks a mid-read extension is following, and it would
+// see a torn read (= "not signed in") on a perfectly healthy session.
 export interface StorageTier {
   label: 'shared' | 'local';
   pointerKey(key: string): string;
   chunkKey(key: string, gen: number, i: number): string;
+  /** Bookkeeping pointer naming the RETAINED (previous) generation. */
+  retainedKey(key: string): string;
   options: SecureStore.SecureStoreOptions;
 }
 
@@ -113,6 +127,7 @@ export const LOCAL_TIER: StorageTier = {
   label: 'local',
   pointerKey: (key) => `${key}__ptr`,
   chunkKey: (key, gen, i) => `${key}__g${gen}_c${i}`,
+  retainedKey: (key) => `${key}__prevptr`,
   options: WRITE_OPTIONS,
 };
 
@@ -120,6 +135,7 @@ export const SHARED_TIER: StorageTier = {
   label: 'shared',
   pointerKey: (key) => `${key}__ag__ptr`,
   chunkKey: (key, gen, i) => `${key}__ag__g${gen}_c${i}`,
+  retainedKey: (key) => `${key}__ag__prevptr`,
   options: SHARED_OPTIONS,
 };
 
@@ -173,16 +189,24 @@ function splitIntoChunks(value: string): string[] {
   return chunks;
 }
 
+// Read a "<gen>:<count>" value at a derived key, or null when absent/malformed.
+async function readPointerValue(
+  storageKey: string,
+  tier: StorageTier,
+): Promise<{ gen: number; count: number } | null> {
+  const raw = await SecureStore.getItemAsync(storageKey, tier.options);
+  if (raw == null) return null;
+  const m = POINTER_RE.exec(raw);
+  if (!m) return null;
+  return { gen: Number.parseInt(m[1], 10), count: Number.parseInt(m[2], 10) };
+}
+
 // Read a tier's live pointer as {gen, count}, or null when absent/malformed.
 async function readPointer(
   key: string,
   tier: StorageTier,
 ): Promise<{ gen: number; count: number } | null> {
-  const raw = await SecureStore.getItemAsync(tier.pointerKey(key), tier.options);
-  if (raw == null) return null;
-  const m = POINTER_RE.exec(raw);
-  if (!m) return null;
-  return { gen: Number.parseInt(m[1], 10), count: Number.parseInt(m[2], 10) };
+  return readPointerValue(tier.pointerKey(key), tier);
 }
 
 async function getItem(key: string): Promise<string | null> {
@@ -286,16 +310,30 @@ async function writeToTier(key: string, value: string, tier: StorageTier): Promi
     throw e;
   }
 
-  // Post-commit cleanup of THIS tier's previous generation — best-effort and
-  // non-fatal: the write already succeeded, so a failure here must not be logged
-  // as a write failure (that would misdirect a "why did this user sign out"
-  // investigation). Orphaned chunks left by a failed cleanup are never read
-  // (the pointer names only the live generation).
+  // Post-commit generation bookkeeping — best-effort and non-fatal: the write
+  // already succeeded, so a failure here must not be logged as a write failure
+  // (that would misdirect a "why did this user sign out" investigation).
+  // RETENTION (the cross-process reader rule — see the StorageTier comment):
+  // the just-superseded generation is KEPT and recorded under retainedKey; what
+  // gets pruned is the generation retained by the PREVIOUS write (two writes
+  // ago), which no reader can still be following at any plausible read
+  // duration. Orphaned chunks left by a failed prune are never read (nothing
+  // points at them) and cost only dead keychain entries.
   try {
-    if (prev) {
-      for (let i = 0; i < prev.count; i++) {
-        await SecureStore.deleteItemAsync(tier.chunkKey(key, prev.gen, i), tier.options);
+    const stale = await readPointerValue(tier.retainedKey(key), tier);
+    if (stale) {
+      for (let i = 0; i < stale.count; i++) {
+        await SecureStore.deleteItemAsync(tier.chunkKey(key, stale.gen, i), tier.options);
       }
+    }
+    if (prev) {
+      await SecureStore.setItemAsync(
+        tier.retainedKey(key),
+        `${prev.gen}:${prev.count}`,
+        tier.options,
+      );
+    } else {
+      await SecureStore.deleteItemAsync(tier.retainedKey(key), tier.options);
     }
   } catch (e) {
     logAuth('sec.set', { path: 'cleanupfail', tier: tier.label, msg: String(e) });
@@ -303,8 +341,10 @@ async function writeToTier(key: string, value: string, tier: StorageTier): Promi
   }
 }
 
-// Clear a tier's committed value entirely (pointer last, so an interrupted
-// clear leaves a torn set that reads as absent-or-null, never a stale hybrid).
+// Clear a tier's committed value entirely — the live generation, the RETAINED
+// previous generation, and both bookkeeping keys (pointers last, so an
+// interrupted clear leaves a torn set that reads as absent-or-null, never a
+// stale hybrid). Sign-out must leave nothing in any access group.
 async function clearTier(key: string, tier: StorageTier): Promise<void> {
   const ptr = await readPointer(key, tier);
   if (ptr) {
@@ -312,6 +352,13 @@ async function clearTier(key: string, tier: StorageTier): Promise<void> {
       await SecureStore.deleteItemAsync(tier.chunkKey(key, ptr.gen, i), tier.options);
     }
   }
+  const retained = await readPointerValue(tier.retainedKey(key), tier);
+  if (retained) {
+    for (let i = 0; i < retained.count; i++) {
+      await SecureStore.deleteItemAsync(tier.chunkKey(key, retained.gen, i), tier.options);
+    }
+  }
+  await SecureStore.deleteItemAsync(tier.retainedKey(key), tier.options);
   await SecureStore.deleteItemAsync(tier.pointerKey(key), tier.options);
 }
 

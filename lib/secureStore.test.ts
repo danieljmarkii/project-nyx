@@ -113,15 +113,29 @@ describe('ChunkedSecureStoreAdapter round-trip', () => {
   });
 });
 
-describe('overwrite and cleanup', () => {
-  it('cleans up the previous generation when a later value is shorter', async () => {
-    await ChunkedSecureStoreAdapter.setItem(KEY, 'z'.repeat(3000)); // several chunks
-    await ChunkedSecureStoreAdapter.setItem(KEY, 'small'); // one chunk
+describe('overwrite, retention, and cleanup', () => {
+  it('RETAINS the just-superseded generation (a concurrent extension reader may still be mid-read)', async () => {
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'z'.repeat(3000)); // gen 0, several chunks
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'small'); // gen 1
 
     expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('small');
-    // No stale chunk fragments from the previous (generation-0) write remain.
-    const oldGenChunks = [...store.keys()].filter((k) => k.includes('__g0_c'));
-    expect(oldGenChunks).toHaveLength(0);
+    // Gen 0's chunks survive one write: the W4 extension reads from another OS
+    // process with no lock, so a reader that grabbed the gen-0 pointer just
+    // before the commit must still be able to finish reading gen 0's chunks.
+    const gen0Chunks = [...store.keys()].filter((k) => k.includes('__g0_c'));
+    expect(gen0Chunks.length).toBeGreaterThan(0);
+  });
+
+  it('prunes a generation once it is TWO writes old (no unbounded keychain growth)', async () => {
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'z'.repeat(3000)); // gen 0
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'small'); // gen 1 (retains gen 0)
+    await ChunkedSecureStoreAdapter.setItem(KEY, 'smaller'); // gen 2 (prunes gen 0, retains gen 1)
+
+    expect(await ChunkedSecureStoreAdapter.getItem(KEY)).toBe('smaller');
+    const gen0Chunks = [...store.keys()].filter((k) => k.includes('__g0_c'));
+    expect(gen0Chunks).toHaveLength(0);
+    const gen1Chunks = [...store.keys()].filter((k) => k.includes('__g1_c'));
+    expect(gen1Chunks.length).toBeGreaterThan(0); // the newly retained one
   });
 });
 

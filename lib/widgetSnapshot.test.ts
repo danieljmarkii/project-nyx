@@ -25,6 +25,12 @@ const base = {
   dayKey: '2026-07-24',
   freeFed: false,
   todayMeals: [] as { occurred_at: string; food_type: string | null }[],
+  // The UTC calendar day 2026-07-24 as the authoritative window (a UTC-aligned
+  // "device" for test determinism).
+  dayBounds: {
+    startMs: Date.parse('2026-07-24T00:00:00.000Z'),
+    endMs: Date.parse('2026-07-25T00:00:00.000Z'),
+  },
 };
 
 describe('buildWidgetSnapshot', () => {
@@ -43,6 +49,37 @@ describe('buildWidgetSnapshot', () => {
       lastMealAt: '2026-07-24T12:30:00.000Z',
       lastTreatAt: '2026-07-24T15:00:00.000Z',
     });
+  });
+
+  it('applies the authoritative ms window, not the lexical SQL prefilter (B-055 class)', () => {
+    const snap = buildWidgetSnapshot(PET, {
+      ...base,
+      todayMeals: [
+        // Hydrated offset form on the exact start-boundary second — lexically
+        // ('+00:00' vs 'Z') this is the row a TEXT compare can misjudge; the
+        // parsed-ms filter must count it.
+        { occurred_at: '2026-07-24T00:00:00+00:00', food_type: 'meal' },
+        // Over-fetched by the buffered SQL prefilter: yesterday, must be dropped.
+        { occurred_at: '2026-07-23T23:59:30.000Z', food_type: 'meal' },
+        // And tomorrow's boundary second is OUT ([start, end)).
+        { occurred_at: '2026-07-25T00:00:00.000Z', food_type: 'meal' },
+      ],
+    });
+    expect(snap.today.mealCount).toBe(1);
+    expect(snap.today.lastMealAt).toBe('2026-07-24T00:00:00+00:00');
+  });
+
+  it('picks the latest by parsed time across mixed timestamp formats', () => {
+    const snap = buildWidgetSnapshot(PET, {
+      ...base,
+      todayMeals: [
+        // Lexically '2026-07-24T12:00:00+00:00' > '2026-07-24T08:00:00.000Z'
+        // is format-dependent; parsed ms must decide.
+        { occurred_at: '2026-07-24T12:00:00+00:00', food_type: 'meal' },
+        { occurred_at: '2026-07-24T08:00:00.000Z', food_type: 'meal' },
+      ],
+    });
+    expect(snap.today.lastMealAt).toBe('2026-07-24T12:00:00+00:00');
   });
 
   it('counts an unknown-food row (food_type null) as a meal — matching History', () => {

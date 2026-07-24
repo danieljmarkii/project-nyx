@@ -70,9 +70,13 @@ export interface CaptureRecord {
 // cost of destroying a real capture too early.
 export const INBOX_MAX_AGE_DAYS = 45;
 
-// Defense against a runaway writer filling the inbox: one pass ingests at most
-// this many files; the remainder waits for the next foreground. Real usage is
-// a handful of taps between foregrounds.
+// Defense against a runaway writer filling the inbox: one pass APPLIES at most
+// this many records; the rest stay in the inbox for the next foreground. The
+// cap is on applies (the DB-write cost), never on classification — deferred and
+// malformed files cost only a parse, so a backlog of stuck deferrals can never
+// starve a fresh tap out of the pass (records are processed oldest-first, and a
+// deferral doesn't consume the apply budget). Real usage is a handful of taps
+// between foregrounds.
 export const MAX_INGEST_PER_PASS = 200;
 
 // What to do with one inbox file. 'defer' = leave it for a later pass (the
@@ -142,6 +146,12 @@ export function classifyInboxPayload(raw: string): InboxClassification {
   if (!ISO_PARSEABLE(r.createdAt)) {
     return { status: 'drop', reason: 'bad createdAt' };
   }
+  // Normalize timestamps to canonical UTC Z-form HERE, at the trust boundary —
+  // parseability alone would let a valid offset form ('…T14:00:00-04:00') reach
+  // events.occurred_at verbatim, violating the stored-UTC hard constraint and
+  // reintroducing the B-055 lexical-comparison class downstream.
+  const occurredAt = new Date(r.occurredAt).toISOString();
+  const createdAt = new Date(r.createdAt).toISOString();
   if (!isInboxLoggedVia(r.loggedVia)) {
     // 'app' (or anything else) here is a provenance forgery, not a version skew.
     return { status: 'drop', reason: `disallowed loggedVia ${String(r.loggedVia)}` };
@@ -156,8 +166,8 @@ export function classifyInboxPayload(raw: string): InboxClassification {
       kind: r.kind,
       petId: r.petId,
       foodItemId: r.foodItemId,
-      occurredAt: r.occurredAt,
-      createdAt: r.createdAt,
+      occurredAt,
+      createdAt,
       loggedVia: r.loggedVia,
     },
   };
@@ -204,6 +214,7 @@ export async function ingestCaptureRecords(
   files: InboxFilePayload[],
   validPetIds: ReadonlySet<string>,
   now: Date = new Date(),
+  maxApplies: number = MAX_INGEST_PER_PASS,
 ): Promise<InboxDecision[]> {
   if (validPetIds.size === 0) {
     return files.map((f) => ({ name: f.name, action: 'deferred', reason: 'no pets loaded' }));
@@ -211,6 +222,7 @@ export async function ingestCaptureRecords(
 
   const decisions: InboxDecision[] = [];
   const maxAgeMs = INBOX_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  let applied = 0;
 
   for (const file of files) {
     const classified = classifyInboxPayload(file.raw);
@@ -246,12 +258,25 @@ export async function ingestCaptureRecords(
       continue;
     }
 
+    // The apply budget bounds DB writes per pass, not classification — a record
+    // past the cap simply waits (files are ordered oldest-first by the caller,
+    // so the queue drains FIFO across passes).
+    if (applied >= maxApplies) {
+      decisions.push({ name: file.name, action: 'deferred', reason: 'pass cap' });
+      continue;
+    }
+
     // Apply — the insertMeal shape (lib/meals.ts), with the record's own ids and
     // provenance. INSERT OR IGNORE (not upsert): if the row already exists —
     // a re-ingest after a crash, or a second device that hydrated the intent's
-    // direct REST write — the existing row wins untouched; an inbox record is a
-    // creation, never an edit. Event before meal (meals.event_id FK). synced=0
-    // queues both for the push that follows this ingest in the same cycle.
+    // direct REST write — the existing LOCAL row wins untouched. (On the wire
+    // the row then rides the shared id-keyed upsert like any queued write; RLS
+    // pins it to the owner's own pets, so an id collision with an existing
+    // server row is contained within the owner's tenant — the rls-privacy
+    // review's recorded LOW residual, accepted because every inbox writer is a
+    // first-party surface already holding the owner's session.) Event before
+    // meal (meals.event_id FK). synced=0 queues both for the push that follows
+    // this ingest in the same cycle.
     // occurred_at_confidence 'witnessed' + occurred_at_source 'now': a widget
     // tap is the owner logging in the moment; the surface stamps the clock.
     const nowIso = now.toISOString();
@@ -277,10 +302,25 @@ export async function ingestCaptureRecords(
       record.foodItemId,
     ]);
 
+    applied++;
     decisions.push({ name: file.name, action: 'applied', petId: record.petId });
   }
 
   return decisions;
+}
+
+// Oldest-first ordering key for a raw inbox payload — the record's own
+// createdAt when it parses, else +∞ so unparseable files sort last (they are
+// still classified and dropped; they just never displace a real capture).
+// Exported for the unit test.
+export function inboxFileSortKey(raw: string): number {
+  try {
+    const parsed = JSON.parse(raw) as { createdAt?: unknown };
+    const t = typeof parsed?.createdAt === 'string' ? Date.parse(parsed.createdAt) : NaN;
+    return Number.isNaN(t) ? Number.POSITIVE_INFINITY : t;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }
 
 // The file-system wrapper the app actually calls (hooks/useSync, immediately
@@ -304,9 +344,9 @@ export async function ingestCaptureInbox(validPetIds: ReadonlySet<string>): Prom
   const byName = new Map<string, { delete(): void }>();
   for (const entry of entries) {
     // Only files, only .json — the extension writes nothing else; anything else
-    // is left alone rather than guessed at.
+    // is left alone rather than guessed at. Every file is READ (records are
+    // tiny); only applies are capped, inside ingestCaptureRecords.
     if (!('textSync' in entry) || !entry.name.endsWith('.json')) continue;
-    if (files.length >= MAX_INGEST_PER_PASS) break;
     try {
       files.push({ name: entry.name, raw: entry.textSync() });
       byName.set(entry.name, entry);
@@ -315,6 +355,10 @@ export async function ingestCaptureInbox(validPetIds: ReadonlySet<string>): Prom
     }
   }
   if (files.length === 0) return;
+
+  // Oldest capture first, so the queue drains FIFO and a backlog can never
+  // starve a record behind newer arrivals across passes.
+  files.sort((a, b) => inboxFileSortKey(a.raw) - inboxFileSortKey(b.raw));
 
   let decisions: InboxDecision[];
   try {
