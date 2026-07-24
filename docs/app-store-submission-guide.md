@@ -21,7 +21,7 @@
 | 2 | Draft the legal docs (privacy policy, terms, disclaimer) | PR | B-229 / B-230 / B-270 | ✅ Done — docs hosted live 2026-07-16; in-app wiring shipped (#361/#362): signup acceptance line, settings rows, onboarding disclaimer step writing `legal_acceptances` (code-verified 2026-07-20 audit) |
 | 3 | Stand up the web presence (support URL + hosted docs) | Mixed | B-273 | ✅ Hosting live — `getculprit.app` privacy/terms/disclaimer URLs wired in-app (`LEGAL_LINKS_ENABLED=true`) + `support@getculprit.app`; residual PM check: confirm the **support page URL** resolves for the ASC listing field (2026-07-20 audit) |
 | 4 | Pick + configure the production SMTP provider | PM | B-152 (part 1) | ⬜ Not started |
-| 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | 🟡 Permission strings **merged** (#299; built-artifact verify rides the next build-cut); **`supportsTablet: false` flip still NOT done** (`app.json:17` remains `true` — 2026-07-20 audit §B4) |
+| 5 | iOS store-config PR (permission strings + iPad off) | PR | B-267 / B-269 | ✅ Both halves merged — permission strings (#299) + **`supportsTablet: false`** (2026-07-24, closes audit §B4). Prebuild verified: main app target `TARGETED_DEVICE_FAMILY = "1"` (iPhone-only). Residual for step 10: built-artifact verify of the `NS*UsageDescription` keys, `PrivacyInfo.xcprivacy`, and `UIDeviceFamily` — **plus the new widget-extension device-family mismatch (B-415)** |
 | 6 | Ratify + flag off the paywall for v1 | Mixed | B-263–266 (deferral) | ⬜ Not started |
 | 7 | In-app version display | PR | B-231 | ✅ Done — `Culprit v{version} ({build})` at the settings foot (B-283 PR 1/2, #315/#316; code-verified 2026-07-20 audit) |
 | 8 | On-device deletion QA + logout-wipe (email confirm still OFF) | PM | B-039 + AC-6 | 🟡 B-039 deletion ✅ verified 2026-07-16 (live-DB, real account); AC-6 cross-account logout-wipe rider still open |
@@ -207,7 +207,8 @@ You need three URLs by the end (anchors/pages on the site): `getculprit.app/supp
 - [ ] `NSCameraUsageDescription` / `NSPhotoLibraryUsageDescription` / `NSMicrophoneUsageDescription` present in Info.plist with the Nyx-voice copy
 - [ ] `ITSAppUsesNonExemptEncryption` = false present
 - [ ] `PrivacyInfo.xcprivacy` present in the bundle (Expo SDK 54 aggregation — verify, don't assume)
-- [ ] `UIDeviceFamily` = iPhone-only (the `supportsTablet: false` flip took)
+- [ ] `UIDeviceFamily` = iPhone-only in the **app** bundle's Info.plist (the `supportsTablet: false` flip took). Note `expo config --type introspect` cannot check this — `supportsTablet` maps to the Xcode `TARGETED_DEVICE_FAMILY` build setting at prebuild, not into the introspected `infoPlist`; verify on the artifact or a `expo prebuild -p ios` pbxproj
+- [ ] **`UIDeviceFamily` in the widget extension's `Info.plist` (B-415)** — `expo-widgets` hardcodes the extension target to `TARGETED_DEVICE_FAMILY = "1,2"` regardless of `ios.supportsTablet`, so the extension advertises iPad while the container app does not. Confirm the build + ASC upload accept the mismatch; if they don't, a config-plugin patch pins the extension to `"1"`
 - [ ] Social auth buttons hidden; paywall unreachable; version string renders
 
 **Kickoff prompt (verification session):**
