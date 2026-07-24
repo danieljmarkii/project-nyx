@@ -286,41 +286,52 @@
           <div class="body-pad">
             <div class="field"><div class="thumb"></div><div><div class="v">Zignature Duck Formula</div><div class="k" style="margin-top:2px">Dry · limited ingredient</div></div></div>
 
-            <div class="label">Main proteins</div>
-            <p class="hint">The animal proteins in this food. Tap all that apply — the first is the main one.</p>
+            <div class="label">Main protein</div>
+            <p class="hint">What this food is built around. One tap to set — or to change it.</p>
             <div class="chips">
-              <span class="chip on"><span class="tick">✓</span>Duck<span class="maintag">Main</span></span>
+              <span class="chip on"><span class="tick">✓</span>Duck</span>
+              <span class="chip">Turkey</span>
+              <span class="chip">Beef</span>
+              <span class="chip">Salmon</span>
+              <span class="chip">Lamb</span>
+              <span class="chip other">+ Other</span>
+            </div>
+
+            <div class="label" style="margin-top:20px">Also contains <span style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-4)">· optional</span></div>
+            <p class="hint">Other proteins in the ingredients — the ones bags love to bury.</p>
+            <div class="chips">
               <span class="chip on"><span class="tick">✓</span>Chicken</span>
               <span class="chip">Turkey</span>
               <span class="chip">Beef</span>
-              <span class="chip">Lamb</span>
               <span class="chip">Salmon</span>
               <span class="chip">Whitefish</span>
-              <span class="chip">Rabbit</span>
-              <span class="chip">Venison</span>
               <span class="chip other">+ Other</span>
             </div>
 
             <div class="note warn">
               <span class="ico">i</span>
               <div>
-                <div class="h">Nyx read “chicken by-product meal” from the label</div>
-                <p>I added <span class="b">Chicken</span> from the ingredients. Tap it to remove it if that’s wrong — I’ll never drop a protein you’ve set.</p>
+                <div class="h">Nyx found chicken in the ingredients</div>
+                <p>“Chicken by-product meal” is in here too — I added it under <span class="b">Also contains</span>. Tap to remove it if that’s wrong; I’ll never drop a protein you’ve set.</p>
               </div>
+            </div>
+
+            <div style="margin-top:14px;font-size:12.5px;color:var(--ink-3);line-height:1.5;background:var(--card-subtle);border-radius:10px;padding:11px 13px">
+              <b style="color:var(--ink-2)">Changing the main?</b> Tap another chip up top — Duck slides down to “Also contains,” so nothing’s lost.
             </div>
           </div>
         </div>
       </div>
-      <p class="frame-caption">Food-detail edit, mid-selection. Duck is “Main”; Chicken was extracted as a secondary and can be corrected with one tap.</p>
+      <p class="frame-caption">Proposed (D8): <b>Main protein</b> (single-tap) on its own line above <b>Also contains</b> (the secondaries). Editing the main is one tap — the old main auto-demotes to a secondary, never lost.</p>
     </div>
     <div>
       <ul class="callouts">
-        <li><span class="co-num">1</span><div><p class="ct">The first tap becomes the primary</p><p class="cd"><span class="file">proteins[0]</span> is the derived <span class="file">primary_protein</span> — the vet-report primary, the picker display, and every legacy read keep working unchanged. Additive, back-compat.</p></div></li>
-        <li><span class="co-num">2</span><div><p class="ct">Owner-picked and AI-extracted key identically</p><p class="cd">Both flow through the same <span class="file">canonicalizeProtein</span> — an owner chip and a model label can never fragment (the B-332 parity property, extended to the set).</p></div></li>
-        <li><span class="co-num guard">3</span><div><p class="ct">Never null-clobber an AI value</p><p class="cd">The picker reseeds from the full array and only writes on a tap — an AI-hydrated multi-protein set is never silently overwritten. A wrong extraction is corrected, not fought.</p></div></li>
-        <li><span class="co-num">4</span><div><p class="ct">Factual, never preference</p><p class="cd">Label is “Main proteins,” not “favorites.” Intake ≠ preference (B-112) is a separate axis; this field stays plainly descriptive. <span class="file">nyx-voice</span> pass.</p></div></li>
+        <li><span class="co-num">1</span><div><p class="ct">Main is its own line — editing it is one tap</p><p class="cd">The single-select <b>Main protein</b> reuses the shipped B-332 picker unchanged (= <span class="file">proteins[0]</span>); <b>Also contains</b> holds the secondaries. Change the main by tapping a new chip; the previous main auto-slides into “Also contains,” so the set is never lost and you never “remove all and re-tap in order.”</p></div></li>
+        <li><span class="co-num">2</span><div><p class="ct">The split matches the clinical model</p><p class="cd">The main is what the food is <em>sold</em> as (and the trial protein); the secondaries are the hidden ones that break trials. The two lines literally are the two jobs — exposure vs. what-it’s-built-around.</p></div></li>
+        <li><span class="co-num guard">3</span><div><p class="ct">Never null-clobber an AI value</p><p class="cd">Both lines reseed from the stored array and only write on a tap — an AI-hydrated set is never silently overwritten. A wrong extraction is corrected, not fought.</p></div></li>
+        <li><span class="co-num">4</span><div><p class="ct">Owner-picked and AI-extracted key identically</p><p class="cd">Every chip flows through the same <span class="file">canonicalizeProtein</span> — an owner tap and a model label can never fragment (B-332 parity, extended to the set). Factual, never preference (B-112). <span class="file">nyx-voice</span> pass.</p></div></li>
       </ul>
-      <div class="decrow"><span class="dec">D4 · <b>proteins TEXT[]</b></span><span class="dec">wrapping ChipGroup</span><span class="dec">no schema in the picker PR</span></div>
+      <div class="decrow"><span class="dec">D8 · <b>Main line + Also contains</b></span><span class="dec">edit main = 1 tap</span><span class="dec">proteins = [main, …rest]</span></div>
     </div>
   </div>
 
