@@ -18,6 +18,13 @@
 // account's row — including the catch-block 'failed' status stamp.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// B-351 Phase A PR 2 — the shared protein-keying module (lib/protein.ts) is the
+// single source of truth for how a protein name is keyed everywhere. Imported by
+// relative path across the function directory, exactly like generate-signal's
+// protein.ts re-export; esbuild inlines it into the deploy bundle
+// (scripts/deploy-edge.sh), so the deployed artifact stays self-contained.
+// ⚠️ Do not rename or move lib/protein.ts without updating this path.
+import { deriveProteinSet } from '../../../lib/protein.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -35,6 +42,10 @@ export interface ExtractionResult {
   brand: string
   product_name: string
   format: string | null
+  // The ordered, canonical protein set (B-351). proteins[0] is the primary, and
+  // `primary_protein` below is derived from it — the two can never disagree.
+  // Empty array = protein-unknown (never a junk key).
+  proteins: string[]
   primary_protein: string | null
   is_grain_free: boolean | null
   is_prescription: boolean | null
@@ -47,6 +58,10 @@ export interface ConfidenceScores {
   brand: number
   product_name: number
   format: number
+  // Legibility of the ingredient panel's protein sources as a whole (B-351).
+  // `primary_protein` is kept alongside it for back-compat with rows extracted
+  // before PR 2 — the client's confirm screen reads per-field confidence.
+  proteins: number
   primary_protein: number
   is_grain_free: number
   is_prescription: number
@@ -58,6 +73,10 @@ interface ClaudeToolInput {
   brand?: string
   product_name?: string
   format?: string
+  // Typed `unknown`, not string[]: this is raw model output. deriveProteinSet
+  // does the shape-checking (a non-array, or non-string elements, degrade to
+  // "nothing captured" rather than throwing mid-extraction).
+  proteins?: unknown
   primary_protein?: string
   is_grain_free?: boolean
   is_prescription?: boolean
@@ -111,7 +130,35 @@ const EXTRACTION_TOOL = {
       },
       primary_protein: {
         type: 'string',
-        description: 'Primary protein source as listed on the label (e.g. "chicken", "salmon", "hydrolyzed soy protein").',
+        description:
+          'The single headline protein the product is sold as — the one a vet would call this food\'s protein ' +
+          '(e.g. "chicken", "salmon", "hydrolyzed soy protein"). Usually named on the front of pack. ' +
+          'This is the MAIN protein even when another protein appears earlier in the ingredient list. ' +
+          // Load-bearing: this field is what gets hoisted to proteins[0], and it is NOT in the tool's
+          // `required` list (so an unknown stays null rather than being hallucinated). A model that
+          // treats it as redundant once it has filled `proteins` silently hands proteins[0] back to
+          // panel order — which, on a "Duck Recipe" listing chicken first, makes the PR-4 contaminant
+          // check treat chicken as the trial target and flag DUCK as its own trial's contaminant.
+          // Asking for it whenever ANY protein was identified closes that without inviting a guess:
+          // it selects among proteins already read off the label, it never invents one.
+          'Always provide this field whenever you identify any protein at all — if the front of pack does not ' +
+          'name one, use the most prominent protein from the ingredient list. Leave it out only when no ' +
+          'protein is legible anywhere.',
+      },
+      // B-351: the ordered set. The single most common reason a home elimination
+      // trial silently fails is a SECONDARY protein (a "duck" food that also
+      // lists chicken by-product meal) — invisible until it is structured.
+      proteins: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Every protein source in the ingredient list, ordered as they appear on the panel (most prominent first). ' +
+          'Use the bare animal or protein term only — "chicken", not "chicken by-product meal"; "salmon", not "deboned salmon". ' +
+          'Include the primary protein as well as every secondary one. ' +
+          'Include a non-animal protein source when the label presents it as a protein (e.g. "hydrolyzed soy protein", "pea protein") — ' +
+          'keep "hydrolyzed" when the label says hydrolyzed, as that is a clinically different ingredient. ' +
+          'Do NOT include fats or oils (chicken fat, salmon oil), broths, digests, grains, vegetables, or supplements. ' +
+          'Return an empty array if the ingredient panel is not legible in the provided photos.',
       },
       is_grain_free: {
         type: 'boolean',
@@ -138,13 +185,14 @@ const EXTRACTION_TOOL = {
           brand:            { type: 'number', minimum: 0, maximum: 1 },
           product_name:     { type: 'number', minimum: 0, maximum: 1 },
           format:           { type: 'number', minimum: 0, maximum: 1 },
+          proteins:         { type: 'number', minimum: 0, maximum: 1 },
           primary_protein:  { type: 'number', minimum: 0, maximum: 1 },
           is_grain_free:    { type: 'number', minimum: 0, maximum: 1 },
           is_prescription:  { type: 'number', minimum: 0, maximum: 1 },
           ingredients_text: { type: 'number', minimum: 0, maximum: 1 },
           upc_barcode:      { type: 'number', minimum: 0, maximum: 1 },
         },
-        required: ['brand', 'product_name', 'format', 'primary_protein', 'is_grain_free', 'is_prescription', 'ingredients_text', 'upc_barcode'],
+        required: ['brand', 'product_name', 'format', 'proteins', 'primary_protein', 'is_grain_free', 'is_prescription', 'ingredients_text', 'upc_barcode'],
       },
     },
     required: ['brand', 'product_name', 'confidence'],
@@ -161,6 +209,10 @@ const SYSTEM_PROMPT =
   '(2) ingredients_text must be the full ingredients list in AAFCO order exactly as printed — do not reorder, paraphrase, or abbreviate. ' +
   '(3) If a field is not clearly visible in the provided photos, return null — never hallucinate. ' +
   '(4) confidence scores reflect legibility: 1.0 = clearly readable, 0.0 = not visible or ambiguous. ' +
+  '(5) proteins is read FROM the ingredient list, in panel order, as bare terms — every protein source, ' +
+  'not only the headline one. A secondary protein an owner would miss (a "duck" food that also lists chicken ' +
+  'by-product meal) is the single most important thing to catch. Never invent a protein that is not printed; ' +
+  'an unreadable panel means an empty array, not a guess from the product name. ' +
   'Call the extract_food_data tool with your findings.'
 
 // ── Image size guard + downscale (ported from analyze-vomit, B-204) ────────────
@@ -252,11 +304,18 @@ export function parseToolResult(response: ClaudeResponse): ExtractionResult | nu
   const input = toolBlock.input as ClaudeToolInput
   const confidence = normaliseConfidence(input.confidence ?? {})
 
+  // B-351: one derivation for both fields, so `primary_protein` is the derived
+  // proteins[0] by construction and the pair can never drift. deriveProteinSet
+  // hoists the model's primary to position 0 and canonicalizes the whole set
+  // (which is where B-048's synonym mapping lands — see lib/protein.ts).
+  const proteins = deriveProteinSet(input.proteins, input.primary_protein ?? null)
+
   return {
     brand:            input.brand ?? '',
     product_name:     input.product_name ?? '',
     format:           input.format ?? null,
-    primary_protein:  input.primary_protein ?? null,
+    proteins,
+    primary_protein:  proteins[0] ?? null,
     is_grain_free:    input.is_grain_free ?? null,
     is_prescription:  input.is_prescription ?? null,
     ingredients_text: input.ingredients_text ?? null,
@@ -292,6 +351,7 @@ export function normaliseConfidence(raw: Partial<ConfidenceScores>): ConfidenceS
     brand:            clamp(raw.brand),
     product_name:     clamp(raw.product_name),
     format:           clamp(raw.format),
+    proteins:         clamp(raw.proteins),
     primary_protein:  clamp(raw.primary_protein),
     is_grain_free:    clamp(raw.is_grain_free),
     is_prescription:  clamp(raw.is_prescription),
@@ -663,6 +723,11 @@ const handler = async (req: Request): Promise<Response> => {
     const updatePayload: Record<string, unknown> = {
       brand:                    extraction.brand,
       product_name:             extraction.product_name,
+      // B-351: the ordered set is the real datum; primary_protein is written as
+      // its derived first element (parseToolResult guarantees the pair). A
+      // protein-unknown read writes proteins=[] + primary_protein=null, matching
+      // the column default — the row says "we don't know", never a junk key.
+      proteins:                 extraction.proteins,
       primary_protein:          extraction.primary_protein,
       is_grain_free:            toBool(extraction.is_grain_free),
       is_prescription:          toBool(extraction.is_prescription),

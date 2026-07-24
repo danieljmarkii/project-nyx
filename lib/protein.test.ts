@@ -3,6 +3,9 @@ import {
   COMMON_PROTEINS,
   proteinsToCacheText,
   proteinsFromCacheText,
+  normalizeExtractedProtein,
+  deriveProteinSet,
+  MAX_CAPTURED_PROTEINS,
 } from './protein';
 
 // The picker's offered set (B-332) must stay in lockstep with the canonicalizer,
@@ -47,6 +50,74 @@ describe('COMMON_PROTEINS (picker set)', () => {
     // A qualifier-laden AI label still collapses onto the same chip key.
     expect(canonicalizeProtein('Chicken By-Product Meal')).toBe('chicken');
     expect(COMMON_PROTEINS).toContain(canonicalizeProtein('Chicken By-Product Meal'));
+  });
+});
+
+// B-351 PR 2 — the extraction WRITE-path normalization (absorbs B-048). The
+// behaviour tests live with the Edge Function that calls this
+// (supabase/functions/extract-food-from-photo/index.test.ts, deno); what is
+// guarded HERE is the pair of invariants the rest of the app leans on: the write
+// path never produces a key the READ path would re-key (fragmenting one protein
+// across two), and the narrow read-time canonicalizer is NOT quietly widened by
+// the write-time rules (D3 sanctions mapping at capture, not a retroactive
+// re-merge of already-stored keys).
+describe('normalizeExtractedProtein / deriveProteinSet (B-351 extraction write path)', () => {
+  const SAMPLES = [
+    'Chicken', 'Deboned Chicken', 'Chicken By-Product Meal', 'Chicken Liver',
+    'Ocean Whitefish', 'white fish', 'Dried Egg Product', 'Buffalo', 'Deer', 'Green Tripe', 'liver',
+    'Hydrolyzed Soy Protein', 'water buffalo', 'poultry', 'fresh deboned turkey',
+  ];
+
+  it('every output is canonicalize-STABLE — the read path can never re-key a stored value', () => {
+    for (const raw of SAMPLES) {
+      const key = normalizeExtractedProtein(raw);
+      expect(key).not.toBeNull();
+      expect(canonicalizeProtein(key)).toBe(key);
+    }
+  });
+
+  it('is idempotent — re-running it over a stored key is a no-op', () => {
+    for (const raw of SAMPLES) {
+      const once = normalizeExtractedProtein(raw);
+      expect(normalizeExtractedProtein(once)).toBe(once);
+    }
+  });
+
+  it('every alias target is itself a terminal key (no alias chains to resolve)', () => {
+    // The implementation takes exactly ONE alias hop, so a target that itself
+    // aliased would silently stop half-mapped.
+    for (const raw of SAMPLES) {
+      const key = normalizeExtractedProtein(raw) as string;
+      expect(normalizeExtractedProtein(key)).toBe(key);
+    }
+  });
+
+  it('does NOT widen the read-time canonicalizer (B-052 §29 scope note holds)', () => {
+    // The same inputs the write path maps must still pass through
+    // canonicalizeProtein untouched — otherwise every already-stored value in the
+    // history would be retroactively re-merged on read, which D3 does not sanction.
+    expect(canonicalizeProtein('ocean whitefish')).toBe('ocean whitefish');
+    expect(canonicalizeProtein('chicken liver')).toBe('chicken liver');
+    expect(canonicalizeProtein('buffalo')).toBe('buffalo');
+    expect(normalizeExtractedProtein('ocean whitefish')).toBe('whitefish');
+  });
+
+  it('keeps a picker-set protein identical under the write path (B-332 parity)', () => {
+    // An owner-picked chip and an AI-extracted value must key identically, so no
+    // COMMON_PROTEINS value may be rewritten by an alias or a strip.
+    for (const p of COMMON_PROTEINS) {
+      expect(normalizeExtractedProtein(p)).toBe(p);
+    }
+  });
+
+  it('derives an ordered, deduped, bounded set with the primary at [0]', () => {
+    expect(deriveProteinSet(['chicken', 'duck'], 'duck')).toEqual(['duck', 'chicken']);
+    expect(deriveProteinSet(['Chicken', 'chicken meal'], null)).toEqual(['chicken']);
+    expect(deriveProteinSet([], null)).toEqual([]);
+    // Over-cap only bites a pathological set — a real 14-protein raw-grind panel
+    // is captured whole (the deno suite pins that case).
+    expect(deriveProteinSet(Array(MAX_CAPTURED_PROTEINS + 16).fill(null).map((_, i) => `p${i}`), null))
+      .toHaveLength(MAX_CAPTURED_PROTEINS);
   });
 });
 
