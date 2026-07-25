@@ -1,0 +1,120 @@
+# Culprit / Nyx — CI floor (B-390, audit §C1).
+#
+# Why this exists: until now the only gate on ~400 merges was the opt-in,
+# locally-bypassable `.githooks/pre-push`. This is the server-side floor —
+# the same two commands the hook runs, plus the Edge Function suites the hook
+# never touches, enforced where they can't be skipped.
+#
+# Two jobs on purpose, run in parallel so each reports independently:
+#   app            — the RN/Expo app: `tsc --noEmit` + jest (self-contained)
+#   edge-functions — `deno test` over supabase/functions (needs network once)
+# A network blip in one must not mask a real failure in the other.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A re-push supersedes its own in-flight run rather than queueing behind it —
+# at the project's merge cadence the older run's verdict is already stale.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only. Nothing here writes to the repo, posts a comment, or needs a token
+# beyond checkout. Declared at the top level so no job can silently widen it.
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: App (typecheck + jest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Actions are pinned to full commit SHAs, not tags: a tag is mutable, and
+      # a CI job is the one place in this repo that runs third-party code with
+      # the repo checked out. The trailing comment is the human-readable version
+      # — bump both together.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Major-pinned: Expo SDK 57 / RN 0.86 needs Node 20+, and 22 is what
+          # the project develops against. Patch updates flow in automatically.
+          node-version: '22'
+          cache: npm
+
+      # `npm ci` (not `npm install`) so the lockfile is authoritative and a
+      # drifted package-lock.json fails here instead of resolving silently.
+      # `.npmrc` supplies `legacy-peer-deps=true`, same as local installs.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      # `--ci` makes an unmatched snapshot a failure instead of a silent write.
+      - name: Jest
+        run: npm test -- --ci
+
+  edge-functions:
+    name: Edge Functions (deno test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          # Exact-pinned, unlike Node: `deno test` type-checks by default, so a
+          # minor Deno bump can red this job on unchanged code. Bump deliberately
+          # (run the suite locally first), not by drifting.
+          deno-version: 2.9.4
+
+      # The function suites import their deps by URL
+      # (`https://deno.land/std@0.224.0/...`, `https://esm.sh/...`) rather than
+      # vendoring them, so the module graph has to be fetched. That is confined
+      # to THIS step — retried, because a registry blip is an infra failure, not
+      # a code failure — and the assertion step below then runs `--cached-only`.
+      #
+      # `--lock=deno.lock` verifies every remote file against its committed
+      # hash, so a URL whose content silently changed fails here. Deliberately
+      # NOT `--frozen`: deno.lock's `workspace.dependencies` block still mirrors
+      # the pre-SDK-57 package.json, so `--frozen` fails on a clean checkout and
+      # would keep failing after every dependency bump until someone remembered
+      # to regenerate the lockfile. Remote-hash integrity is the part that
+      # matters and plain `--lock` gives it. (Lockfile drift → B-418.)
+      - name: Warm the Deno module cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t suites < <(find supabase/functions -name '*.test.ts' | sort)
+          # Guard against a green run that asserted nothing — if a rename or a
+          # bad path ever empties this list, fail loudly instead of passing.
+          if [ "${#suites[@]}" -eq 0 ]; then
+            echo "::error::found no *.test.ts under supabase/functions"
+            exit 1
+          fi
+          echo "Caching the module graph for ${#suites[@]} suites."
+          for attempt in 1 2 3; do
+            if deno cache --lock=deno.lock "${suites[@]}"; then
+              exit 0
+            fi
+            delay=$((attempt * 5))
+            echo "::warning::deno cache attempt ${attempt} failed; retrying in ${delay}s"
+            sleep "${delay}"
+          done
+          echo "::error::could not fetch the Edge Function module graph after 3 attempts"
+          exit 1
+
+      # `--cached-only` forbids network here, so this step can only fail on the
+      # code. Note this is also the ONLY type check covering supabase/functions —
+      # tsconfig.json excludes that path, and `deno test` type-checks by default.
+      - name: Deno test
+        run: deno test --lock=deno.lock --cached-only supabase/functions/
