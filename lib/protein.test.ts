@@ -6,6 +6,8 @@ import {
   normalizeExtractedProtein,
   deriveProteinSet,
   MAX_CAPTURED_PROTEINS,
+  seedPickerProteins,
+  pickerProteinsToSet,
 } from './protein';
 
 // The picker's offered set (B-332) must stay in lockstep with the canonicalizer,
@@ -255,5 +257,105 @@ describe('canonicalizeProtein — Class-A convergence (B-414)', () => {
     expect(canonicalizeProtein('chicken ' + 'x'.repeat(200))).toBeNull();
     // The live library's longest real value is 22 chars — nothing real trips it.
     expect(canonicalizeProtein('hydrolyzed chicken by-product meal')).toBe('hydrolyzed chicken');
+  });
+});
+
+// ── The D8 two-line picker mapping (B-351 PR 3) ────────────────────────────────
+// seedPickerProteins carries the spec §11 SEED RULE and the round-trip half of
+// §6's auto-demote rule; pickerProteinsToSet is the write half. Between them
+// they are the only thing standing between the picker and food_items.proteins,
+// so the invariants live here rather than in a component test.
+describe('seedPickerProteins / pickerProteinsToSet (B-351 D8 picker)', () => {
+  it('splits an extracted set into main + secondaries', () => {
+    expect(seedPickerProteins('duck', ['duck', 'chicken'])).toEqual({
+      main: 'duck',
+      alsoContains: ['chicken'],
+    });
+  });
+
+  it('keeps the raw stored primary — the picker never rewrites what it shows', () => {
+    // A legacy row's verbatim value must survive a seed untouched; the chip is
+    // matched by canonicalizing it, exactly as the shipped B-332 picker does.
+    const seeded = seedPickerProteins('Chicken By-Product Meal', ['chicken']);
+    expect(seeded.main).toBe('Chicken By-Product Meal');
+    expect(seeded.alsoContains).toEqual([]);
+  });
+
+  it('SEED RULE: the owner primary wins a disagreement, and the set is rewritten', () => {
+    // The migration-039 window: primary_protein written alone, `proteins` left
+    // at the backfilled value. The primary is what the owner chose, so it must
+    // not be demoted by a stale array element.
+    expect(seedPickerProteins('duck', ['chicken'])).toEqual({
+      main: 'duck',
+      alsoContains: ['chicken'],
+    });
+    // …and the demoted-vs-dropped distinction: `chicken` is kept, not discarded.
+    expect(seedPickerProteins('duck', ['chicken', 'duck', 'salmon']).alsoContains)
+      .toEqual(['chicken', 'salmon']);
+  });
+
+  it('never fires spuriously on a legacy row (equal UNDER canonicalization)', () => {
+    // The property the seed rule leans on: a dirty primary and its canonical
+    // proteins[0] agree once canonicalized, so no rewrite happens.
+    const seeded = seedPickerProteins('Chicken Meal', ['chicken', 'salmon']);
+    expect(seeded.main).toBe('Chicken Meal');
+    expect(seeded.alsoContains).toEqual(['salmon']);
+  });
+
+  it('a null primary means NO main — the whole set reads as secondaries', () => {
+    // The round-trip of "clearing the main demotes it": re-opening the food must
+    // not silently promote a secondary back into the main slot.
+    expect(seedPickerProteins(null, ['chicken', 'salmon'])).toEqual({
+      main: null,
+      alsoContains: ['chicken', 'salmon'],
+    });
+  });
+
+  it('treats a junk placeholder primary as unset, not as a custom protein', () => {
+    expect(seedPickerProteins('null', []).main).toBeNull();
+  });
+
+  it('tolerates a missing/!array proteins column (skewed or pre-039 client)', () => {
+    expect(seedPickerProteins('duck', undefined)).toEqual({ main: 'duck', alsoContains: [] });
+    expect(seedPickerProteins('duck', 'chicken')).toEqual({ main: 'duck', alsoContains: [] });
+    expect(seedPickerProteins('duck', ['chicken', 42, null]).alsoContains).toEqual(['chicken']);
+  });
+
+  it('hoists the main to proteins[0] so primary_protein cannot drift', () => {
+    expect(pickerProteinsToSet('duck', ['chicken'])).toEqual(['duck', 'chicken']);
+    expect(pickerProteinsToSet(null, ['chicken'])).toEqual(['chicken']);
+    expect(pickerProteinsToSet(null, [])).toEqual([]);
+  });
+
+  it('canonicalizes and dedupes on write', () => {
+    expect(pickerProteinsToSet('Chicken By-Product Meal', ['chicken', 'salmon']))
+      .toEqual(['chicken', 'salmon']);
+    expect(pickerProteinsToSet('null', ['duck'])).toEqual(['duck']);
+  });
+
+  it('applies Class-A merges ONLY — a seeded Class-B value is never re-keyed', () => {
+    // D3a: `ocean whitefish` (3 live rows) and `buffalo` are SEMANTIC merges.
+    // Re-keying them because the owner edited some other field on the food would
+    // be a retroactive Class-B merge. The typed escape normalizes at the point of
+    // typing instead (D9); re-deriving stored primaries is spec §11's separate,
+    // PM-gated backfill question.
+    expect(pickerProteinsToSet('ocean whitefish', [])).toEqual(['ocean whitefish']);
+    expect(pickerProteinsToSet('buffalo', ['chicken liver']))
+      .toEqual(['buffalo', 'chicken liver']);
+  });
+
+  it('round-trips: seed → flatten → seed is stable', () => {
+    const first = seedPickerProteins('duck', ['duck', 'chicken', 'salmon']);
+    const set = pickerProteinsToSet(first.main, first.alsoContains);
+    expect(set).toEqual(['duck', 'chicken', 'salmon']);
+    expect(seedPickerProteins(set[0], set)).toEqual({
+      main: 'duck',
+      alsoContains: ['chicken', 'salmon'],
+    });
+  });
+
+  it('bounds a pathological set at MAX_CAPTURED_PROTEINS', () => {
+    const many = Array.from({ length: 40 }, (_, i) => `protein${i}`);
+    expect(pickerProteinsToSet('duck', many)).toHaveLength(MAX_CAPTURED_PROTEINS);
   });
 });

@@ -20,12 +20,13 @@ import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { ChipGroup } from '../../components/ui/ChipGroup';
-import { ProteinPicker } from '../../components/food/ProteinPicker';
+import { ProteinSetPicker } from '../../components/food/ProteinSetPicker';
 import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
+import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../../lib/protein';
 import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
@@ -67,12 +68,15 @@ interface FoodRow {
   upc_barcode: string | null;
   photo_paths: string[];
   primary_protein: string | null;
+  // B-351: the ordered canonical protein set. primary_protein is its derived
+  // proteins[0]; the tail is what the D8 "Also contains" line edits.
+  proteins: string[] | null;
   ai_extraction_status: ExtractionStatus;
   ai_extraction_error: string | null;
   source: string;
 }
 
-const SELECT_COLS = 'id, brand, product_name, format, food_type, ingredients_notes, upc_barcode, photo_paths, primary_protein, ai_extraction_status, ai_extraction_error, source';
+const SELECT_COLS = 'id, brand, product_name, format, food_type, ingredients_notes, upc_barcode, photo_paths, primary_protein, proteins, ai_extraction_status, ai_extraction_error, source';
 
 export default function FoodDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -90,7 +94,15 @@ export default function FoodDetailScreen() {
   const [ingredients, setIngredients] = useState('');
   const [barcode, setBarcode] = useState('');
   // B-332: primary_protein is now owner-editable here (was extraction-only).
+  // B-351 PR 3 widens it to the D8 two-line set — `alsoContains` is the tail of
+  // food_items.proteins, with primaryProtein as its (raw, unrewritten) head.
   const [primaryProtein, setPrimaryProtein] = useState<string | null>(null);
+  const [alsoContains, setAlsoContains] = useState<string[]>([]);
+  // Flipped only by an owner tap/keystroke in the picker. Gates BOTH the reseed
+  // (an in-progress edit is never stomped by a realtime AI completion) and the
+  // write (an untouched picker never re-keys a stored value the owner didn't
+  // author — see pickerProteinsToSet's Class-A note).
+  const proteinTouched = useRef(false);
   const baseline = useRef<Pick<FoodRow, 'brand' | 'product_name' | 'format' | 'food_type' | 'ingredients_notes' | 'upc_barcode' | 'primary_protein'> | null>(null);
 
   const [saving, setSaving] = useState(false);
@@ -164,10 +176,16 @@ export default function FoodDetailScreen() {
     setFoodType((cur) => (!prev || cur === prev.food_type) ? next.food_type : cur);
     setIngredients((cur) => (!prev || cur === (prev.ingredients_notes ?? '')) ? nextIngredients : cur);
     setBarcode((cur) => (!prev || cur === (prev.upc_barcode ?? '')) ? nextBarcode : cur);
-    // Reseed protein only when the owner hasn't diverged from the last loaded
-    // value — so an AI completion landing via realtime shows the read protein,
-    // but an in-progress owner edit is never stomped.
-    setPrimaryProtein((cur) => (!prev || cur === prev.primary_protein) ? next.primary_protein : cur);
+    // Reseed the protein set only while the owner hasn't touched the picker — so
+    // an AI completion landing via realtime shows the read proteins, but an
+    // in-progress owner edit is never stomped. (The other fields diff against
+    // `prev` for the same reason; the picker has an explicit touch signal, which
+    // is more honest for a two-line control than diffing either line alone.)
+    if (!proteinTouched.current) {
+      const seeded = seedPickerProteins(next.primary_protein, next.proteins);
+      setPrimaryProtein(seeded.main);
+      setAlsoContains(seeded.alsoContains);
+    }
   }
 
   // ── Save ──
@@ -181,6 +199,16 @@ export default function FoodDetailScreen() {
     const trimmedIngredients = ingredients.trim() || null;
 
     const base = baseline.current;
+    // B-351: the picker's two lines flatten to one ordered set, with
+    // primary_protein written as its derived head (migration 039's contract).
+    // Both columns are written together or not at all — a partial write is what
+    // opened the primary/proteins desync window this PR closes.
+    const proteinSet = pickerProteinsToSet(primaryProtein, alsoContains);
+    const proteinChanged =
+      proteinTouched.current &&
+      (proteinSet.join(' ') !== (row.proteins ?? []).join(' ') ||
+        (pickerPrimaryProtein(primaryProtein)) !== base.primary_protein);
+
     const changed =
       brand.trim() !== base.brand ||
       productName.trim() !== base.product_name ||
@@ -188,7 +216,7 @@ export default function FoodDetailScreen() {
       foodType !== base.food_type ||
       trimmedIngredients !== base.ingredients_notes ||
       trimmedBarcode !== base.upc_barcode ||
-      primaryProtein !== base.primary_protein;
+      proteinChanged;
 
     if (!changed) {
       router.back();
@@ -200,18 +228,25 @@ export default function FoodDetailScreen() {
     // future analytics can tell ground truth from model output. Manual rows
     // stay 'user' either way; 'curated' is never auto-downgraded.
     const nextSource = row.source === 'ai_extracted' ? 'user' : row.source;
+    const update: Record<string, unknown> = {
+      brand: brand.trim(),
+      product_name: productName.trim(),
+      format,
+      food_type: foodType,
+      ingredients_notes: trimmedIngredients,
+      upc_barcode: trimmedBarcode,
+      source: nextSource,
+    };
+    // Omit the protein columns entirely when the picker was never touched — the
+    // same never-clobber rule the capture screen applies. Saving an edit to the
+    // brand must not re-key a stored protein the owner never authored.
+    if (proteinTouched.current) {
+      update.primary_protein = pickerPrimaryProtein(primaryProtein);
+      update.proteins = proteinSet;
+    }
     const { error } = await supabase
       .from('food_items')
-      .update({
-        brand: brand.trim(),
-        product_name: productName.trim(),
-        format,
-        food_type: foodType,
-        ingredients_notes: trimmedIngredients,
-        upc_barcode: trimmedBarcode,
-        primary_protein: primaryProtein,
-        source: nextSource,
-      })
+      .update(update)
       .eq('id', row.id);
     setSaving(false);
 
@@ -226,10 +261,18 @@ export default function FoodDetailScreen() {
       const db = getDb();
       await db.runAsync(
         `UPDATE food_items_cache
-           SET brand = ?, product_name = ?, format = ?, food_type = ?, primary_protein = ?
+           SET brand = ?, product_name = ?, format = ?, food_type = ?
          WHERE id = ?`,
-        [brand.trim(), productName.trim(), format, foodType, primaryProtein, row.id],
+        [brand.trim(), productName.trim(), format, foodType, row.id],
       );
+      // Mirrors the server write above: protein columns move together, and only
+      // when the owner touched the picker.
+      if (proteinTouched.current) {
+        await db.runAsync(
+          `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
+          [pickerPrimaryProtein(primaryProtein), proteinsToCacheText(proteinSet), row.id],
+        );
+      }
     } catch (err) {
       console.warn('[food-detail] cache update failed:', err);
     }
@@ -532,11 +575,14 @@ export default function FoodDetailScreen() {
               style={styles.formatRow}
             />
 
-            <SectionLabel label="Primary protein" />
-            <ProteinPicker
-              value={primaryProtein}
-              onChange={setPrimaryProtein}
-              accessibilityLabel="Primary protein"
+            <ProteinSetPicker
+              main={primaryProtein}
+              alsoContains={alsoContains}
+              onChange={(next) => {
+                proteinTouched.current = true;
+                setPrimaryProtein(next.main);
+                setAlsoContains(next.alsoContains);
+              }}
             />
 
             <SectionLabel label="Type" />

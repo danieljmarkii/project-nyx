@@ -16,11 +16,24 @@
 // onChange in response to a tap or keystroke — which is what lets both host
 // screens treat "onChange fired" as the owner having touched the field, and so
 // avoid null-clobbering an AI-hydrated protein.
+//
+// B-351 PR 3 / D9 — the typed escape NORMALIZES ON COMMIT. An owner typing
+// "Buffalo" used to store `buffalo` while an AI read of the same label stored
+// `bison`: one animal, two keys, exposure split across them and each under the
+// effective-n floor (B-412). The escape is a WRITE path, so it now runs through
+// normalizeExtractedProtein — but on blur/submit, never per keystroke, and never
+// silently: the matching chip becomes selected (the change is visible IN the
+// control) and a quiet persistent note names what was typed and what was saved.
 import { useState } from 'react';
-import { View, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ChipGroup, ChipGroupOption } from '../ui/ChipGroup';
-import { COMMON_PROTEINS, canonicalizeProtein } from '../../lib/protein';
+import {
+  COMMON_PROTEINS,
+  canonicalizeProtein,
+  normalizeExtractedProtein,
+} from '../../lib/protein';
+import { NormalizedProteinNote, proteinNoteFor, type ProteinRewrite } from './proteinNote';
 
 // Sentinel chip value for the typed escape. Not a real protein, never stored.
 const OTHER = '__other__';
@@ -33,13 +46,32 @@ const OPTIONS: ChipGroupOption[] = [
   { value: OTHER, label: 'Other' },
 ];
 
+/**
+ * WHY the host is told what KIND of change this was.
+ *
+ * The typed escape emits on every keystroke (so nothing an owner types is ever
+ * lost), which means "onChange fired" does NOT mean "the owner designated a new
+ * protein" — mid-word, `value` is the partial string `bis`. A host that treats
+ * every emission as a designation does something destructive with it: the D8
+ * two-line picker's auto-demote read `b`, `bi`, `bis`, `biso` as four successive
+ * main proteins and filed each one into "Also contains" as a junk correlation
+ * key. So the kind is part of the contract, not a convenience:
+ *
+ *  • 'select' — a chip tap, including the second tap that clears. A real
+ *    designation; this is the ONLY kind that should move the outgoing value.
+ *  • 'typing' — a keystroke in the Other field. A draft, not a designation.
+ *  • 'commit' — the D9-normalized value resolved on blur/submit. It REPLACES the
+ *    draft it grew out of, so it must not move the draft anywhere either.
+ */
+export type ProteinChangeKind = 'select' | 'typing' | 'commit';
+
 interface Props {
   // The raw stored protein string (as it sits in food_items.primary_protein), or
   // null when unset. The picker highlights a chip by canonicalizing this value —
   // it never rewrites it, so a value that already matches a chip stays byte-equal
   // until the owner actually taps.
   value: string | null;
-  onChange: (next: string | null) => void;
+  onChange: (next: string | null, kind: ProteinChangeKind) => void;
   accessibilityLabel?: string;
 }
 
@@ -64,23 +96,77 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
   // stray "Other" field mounted alongside the correct chip.
   const [otherTapped, setOtherTapped] = useState(false);
 
+  // The D9 rewrite disclosure, if the owner's last committed "Other" value was
+  // normalized. Held as state but READ through a derived guard: the note only
+  // renders while the value it explains is still the one in the field, so it
+  // self-clears on any later tap or keystroke with no effect and no staleness.
+  const [rewrite, setRewrite] = useState<ProteinRewrite | null>(null);
+  const activeRewrite = rewrite && canon === rewrite.saved ? rewrite : null;
+
+  // Has the owner typed in the Other field since it was last opened or committed?
+  // The commit below fires on blur, and a mounted Other field can be focused and
+  // blurred without a keystroke — so without this, merely tapping through a food
+  // whose stored protein is `ocean whitefish` would rewrite it to `whitefish`.
+  // That is a CLASS-B merge applied retroactively to a value the owner never
+  // typed, which D3a forbids: D9's warrant is that the owner is looking at the
+  // value they just entered. No keystroke, no warrant, no rewrite.
+  const [otherDirty, setOtherDirty] = useState(false);
+
   // The "Other" field shows only when no common chip matches AND (the owner is
   // mid-entry OR there's a custom value). Gating on `matchedCommon === null`
   // makes it self-correcting: a common value winning always hides the field.
-  const otherActive = matchedCommon === null && (otherTapped || hasCustomValue);
+  // `otherDirty` is in the condition so the field survives being backspaced to
+  // empty: without it, clearing the last character drops hasCustomValue, the
+  // field unmounts mid-edit, and the blur that would have committed the clear
+  // never fires — so the protein being cleared is dropped instead of demoted.
+  const otherActive =
+    matchedCommon === null && (otherTapped || hasCustomValue || otherDirty);
   const selected: string | null = matchedCommon ?? (otherActive ? OTHER : null);
 
   function handleChipChange(next: string | null) {
+    setOtherDirty(false);
     if (next === OTHER) {
       setOtherTapped(true);
       // Preserve custom text if some already exists; otherwise emit null until
       // the owner types (so an opened-but-empty "Other" is a real "unset").
-      onChange(hasCustomValue ? value : null);
+      onChange(hasCustomValue ? value : null, 'select');
     } else {
       // A common canonical value, or null on a deselect tap.
       setOtherTapped(false);
-      onChange(next);
+      onChange(next, 'select');
     }
+  }
+
+  // D9 — resolve the typed escape on COMMIT (blur / submit), never per
+  // keystroke: normalizing mid-word would thrash the field while someone is
+  // still typing "bison".
+  function handleOtherCommit() {
+    // Only a value the owner typed in this session may be normalized — see the
+    // otherDirty note above.
+    if (!otherDirty) return;
+    setOtherDirty(false);
+    const typed = (value ?? '').trim();
+    // Backspaced to empty. That is the owner clearing the value, so it commits
+    // like any other clear rather than evaporating — which is what lets the host
+    // treat it exactly like a chip clear and keep the old protein (§11).
+    if (!typed) {
+      onChange(null, 'commit');
+      return;
+    }
+    const normalized = normalizeExtractedProtein(typed);
+    // Nothing usable ("fresh", "meal") — leave the owner's text exactly as typed
+    // rather than wiping it. Storing a vaguer key is the safe direction; silently
+    // emptying a field someone just filled is not, and it is not what D9 asked
+    // for (its scope is aliased/stripped terms).
+    if (normalized == null) return;
+    setRewrite(proteinNoteFor(typed, normalized));
+    // Emitted even when the value is byte-identical to what is already held. The
+    // KIND is the payload here: 'commit' is what tells the host the draft is over
+    // and the protein it replaced can now be demoted. Suppressing a no-op change
+    // swallowed that signal, so retyping a custom main over another custom main
+    // ("kangaroo" → "emu") dropped kangaroo — the value never moved because the
+    // host was never told the edit had landed.
+    onChange(normalized, 'commit');
   }
 
   return (
@@ -98,7 +184,15 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
         <TextInput
           style={styles.otherInput}
           value={value ?? ''}
-          onChangeText={(t) => onChange(t.trim().length ? t : null)}
+          // Raw per keystroke so nothing an owner types is ever lost; the
+          // canonical value resolves in handleOtherCommit below. Emitted as
+          // 'typing' — a partial word is a draft, never a designation.
+          onChangeText={(t) => {
+            setOtherDirty(true);
+            onChange(t.trim().length ? t : null, 'typing');
+          }}
+          onBlur={handleOtherCommit}
+          onSubmitEditing={handleOtherCommit}
           placeholder="Name the protein"
           placeholderTextColor={theme.colorTextTertiary}
           autoCapitalize="none"
@@ -106,6 +200,10 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
           accessibilityLabel="Other protein"
         />
       )}
+      {/* Renders whether or not the field is still open — a commit that lands a
+          COMMON protein ("chicken liver" → Chicken) selects the chip and closes
+          the field, and that is exactly the rewrite most in need of explaining. */}
+      {activeRewrite && <NormalizedProteinNote rewrite={activeRewrite} />}
     </View>
   );
 }
