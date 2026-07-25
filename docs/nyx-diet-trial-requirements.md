@@ -1,10 +1,12 @@
 # Diet Trial Lifecycle — Requirements
 
-**Version:** 0.95 — **reviewed, still pre-mock. Not build-ready for the UI PRs.** | **Last Updated:** 2026-07-25
-**Backlog:** B-417 | **Status:** problem, evidence, schema and PR plan complete, and now competitively + clinically grounded. Mocks and six PM rulings remain — see §0.
+**Version:** 0.97 — **all PM rulings closed. PRs 1–2 are build-ready; PRs 3–7 need the mock round.** | **Last Updated:** 2026-07-25
+**Backlog:** B-417 | **Status:** problem, evidence, schema, PR plan, competitive/clinical grounding and **every gate and conflict ruled**. Mocks + the copy pack remain — see §0.
 
-> **Readiness in one line:** PR 1 is the gate the whole track queues behind, and it is **not** one ruling away — it carries ~9 schema decisions this review surfaced. PRs 3–7 additionally need a mock round.
+> **Readiness in one line:** **PR 1's schema is settled and PR 1–2 can start now.** PRs 3–7 need `docs/nyx-diet-trial-mockups.html` and the `nyx-voice` copy pack; PR 4 additionally carries the C4 ruling, which is deliberately deferred *to* that mock round.
 
+> **What changed at v0.97 (2026-07-25).** All four gates (G1/G2/G3/§0.2) and all six conflicts (C1–C6) were **ruled by the PM** — the record is §0 of `docs/diet-trial-requirements-review-2026-07.md`, and the outcomes are written throughout this doc. Two rulings changed the spec's substance rather than confirming it: **C3** (detect the oral-route lane in v1, a PM override) and **C5** (severity comes from logged events, not a subjective score — so no severity columns, and §7 discloses logging density instead).
+>
 > **What changed at v0.95 (2026-07-25).** A full requirements review against two new evidence bases: `docs/research/2026-07-diet-trial-competitive-landscape.md` (7 web-grounded lanes, adversarially fact-checked) and a 5-lane audit of this spec against the actual codebase (32 grounded findings). Session record, including every persona conflict and the rulings tee-up: **`docs/diet-trial-requirements-review-2026-07.md`**. The three headline corrections: the app may **never** render "No off-diet foods logged" at any coverage (§5.2); a **seventh** reader was missing from §1.1 and no PR touched it (§1.1); and `§7.2`, which §4.2's entire safety framing pointed at, **did not exist** — it is now written (§7.2).
 
 ---
@@ -17,13 +19,13 @@ This doc is deliberately versioned **0.95**. Every other build-ready spec in thi
 
 | PR | Ready? | What's missing |
 |---|---|---|
-| **1** — migration 040 + `diet_trial_foods` | **No** | ~9 schema decisions (§3). **This is the last cheap moment this schema will ever have** — production holds **zero** `diet_trials` rows. Not one ruling away, as v0.9 claimed. |
-| **2** — local SQLite mirror | On PR 1 | §3.3 must be expanded from one sentence to the real ~10-point registration checklist |
-| **3** — start-a-trial modal | No | Mock + `nyx-voice` copy pass |
-| **4** — trial card v2 | No | Mock. **No longer blocked on B-351 slice 4** — the dependency is soft, not hard (§0.2). Scope now includes `useTrend`/`TrendZone` (§1.1). |
-| **5** — off-diet exposure detection | No | **G2** + the §5.1 definition work. **Not blocked on B-351 slice 4** — PR 5 *owns* the shared predicate. |
+| **1** — migration 040 + `diet_trial_foods` | **YES** | Nothing. G1 ratified, C5 dropped the severity columns, C3 needs no new schema (it keys on the shipped `form` enum). **Start here.** Production holds **zero** `diet_trials` rows, so every choice is still free. |
+| **2** — local SQLite mirror | **YES, on PR 1** | Nothing — §3.4 now carries the real ~10-point registration checklist |
+| **3** — start-a-trial modal | No | Mock + `nyx-voice` copy pass. Carries the C6 disclosure line and the C3 substitution line. |
+| **4** — trial card v2 | No | Mock. **Not blocked on B-351 slice 4** (§0.2 ruled (c); the dependency was soft). Scope includes `useTrend`/`TrendZone` (§1.1). B-421 must land first. |
+| **5** — off-diet exposure detection | No | The §5.1 definition work. **G2 is ruled.** Scope grew under C3 (the oral-route check). |
 | **6** — completion milestone | No | Mock + copy pass. **Must not ship before PR 7** (§7). |
-| **7** — vet report render | No | Gated on PR 5 |
+| **7** — vet report render | No | Gated on PR 5. **Carries the deferred C4 ruling** — the mock must render the trial block in at least two variants. |
 
 ### 0.2 The B-351 slice 4 collision — **corrected**
 
@@ -33,24 +35,25 @@ v0.9 called this a **hard dependency**. It is **soft**, and the correction matte
 
 What remains real is the **collision**: slice 4's *"+ the diet-trial-card note"* annotates the same card PR 4 rebuilds, and the shared file is **`app/(tabs)/profile.tsx`**, not `STATUS.md`.
 
-**Options for the PM:**
-- **(a)** Slice 4 first; PR 4 absorbs its note. Slice 4 must then target a card it can't see yet.
-- **(b)** PRs 1–4 first; slice 4 retargets onto the new card.
-- **(c) Team recommendation** — the trial-card note is **cut** from B-351 slice 4 and rebuilt in PR 4; B-351 keeps only the food-surface disclosure. **PR 5 owns the predicate** as a shared pure module (`lib/dietTrial.ts`) imported by the client, `generate-report` and `ask`; B-351's Tier-2 flag becomes a **consumer** of that module rather than a dependency of this track. This dissolves the collision instead of sequencing it.
+**RULED 2026-07-25 — option (c).**
+- ~~(a) Slice 4 first~~ · ~~(b) PRs 1–4 first~~
+- **(c) ✅ RULED** — the trial-card note is **cut** from B-351 slice 4 and rebuilt in PR 4; B-351 keeps only the food-surface disclosure. **PR 5 owns the predicate** as a shared pure module (`lib/dietTrial.ts`) imported by the client, `generate-report` and `ask`; B-351's Tier-2 flag becomes a **consumer** of that module rather than a dependency of this track. This dissolves the collision instead of sequencing it.
 
 > **Backlog truth (Product Owner, unconditional):** whichever option wins, B-351's row currently claims slices 3/4/5 are *"parallelizable, disjoint files."* That is false as of this spec and must be corrected.
 
 ### 0.3 Clinical gates
 
-- **G1 — D3**: the allowed-food set vs. B-351 D6 (§2.1). **Team recommendation: ratify — unanimous, and now empirical** (§2.1 rationale 4–6). Blocks PR 1's schema.
-- **G2 — what the app may say.** *Reframed.* v0.9 asked "below what coverage does §5.2 suppress an exposure claim?" The team's unanimous finding is that **the question is malformed** — it presumes that above a floor the negative claim becomes sayable, and it never is. See §5.2 for the rule proposed in its place, and the review record §4 for the four code-grounded proofs.
-- **G3 — duration defaults**: GI 28d / Skin 56d. **Correction to v0.9's framing: skin 56d is not "the low end" — it IS the >90% diagnostic-sensitivity band** (Olivry/Mueller/Prélaud, 209 dogs + 40 cats; AAHA 2023; CAVD tells owners 8wk diagnoses ~95% vs ~half at 4wk). The live question is not the number but **what the number means** — see §4.1 and §4.3.
+**All three RULED 2026-07-25.** Record: `docs/diet-trial-requirements-review-2026-07.md` §0.
+
+- **G1 — D3 ✅ RATIFIED.** Both ship, one detection path (§2.1, §5.3). PR 1's schema is unblocked.
+- **G2 — ✅ RULED as a rule, not a threshold.** The question was malformed: it presumed that above a floor the negative claim becomes sayable, and it never is. **The negative claim is deleted from the product at every coverage, on every surface** (§5.2). A floor still exists but gates §7.2's interpretability statement, not the exposure count.
+- **G3 — ✅ RULED: numbers stand, keyed on species × indication, semantics fixed.** GI 28d / Skin 56d. **v0.9's framing was wrong: skin 56d is not "the low end" — it IS the >90% diagnostic-sensitivity band** (Olivry/Mueller/Prélaud, 209 dogs + 40 cats; AAHA 2023; CAVD tells owners 8wk diagnoses ~95% vs ~half at 4wk). The live question is not the number but **what the number means** — see §4.1 and §4.3.
 
 ### 0.4 Still to produce before v1.0
 
 1. **Mocks** for the three UI surfaces — start-trial modal, trial card v2 (all seven states, §4.2), completion milestone — as `docs/nyx-diet-trial-mockups.html`. **Brief them against an owner who has never tracked a trial in any tool**: no consumer pet app ships a trial object, so this is a first-run problem, not a differentiation problem.
 2. **Verbatim copy pack** through `nyx-voice` (this doc's strings are illustrative except where marked **LOCKED**).
-3. **PM rulings** on G1, G2, G3, the §0.2 sequencing option, and conflicts **C1–C6** in the review record.
+3. ~~PM rulings on G1, G2, G3, §0.2 and conflicts C1–C6~~ — **all closed 2026-07-25.** Two §2.2 amendments remain unruled: **A-2** (a `paused` state) and **A-3** (a mid-trial card state).
 4. ~~An `adversarial-reviewer` read of §5.2/§5.3 as specified~~ — **done 2026-07-25**, before the build rather than after. Results in §5.5 and the review record §6.
 
 ---
@@ -122,7 +125,7 @@ The server computes the same numerator (`report.ts:2854`) but renders it honestl
 |---|---|---|
 | **D1** | v1 scope | **RATIFIED (PM, 2026-07-24) — lifecycle + allowed-set adherence.** Stress-tested 2026-07-25 and **held** — see §2.2 and review record §5. |
 | **D2** | What "compliance" means | **RATIFIED (PM, 2026-07-24) — split the metric.** Coverage and adherence are two facts; the blended "% compliance" is deleted. **Externally validated:** no adherence number is documented in the public materials of Monash, mySymptoms or Vyla, and no clinical source computes a blended one. D2 is convergence with the mature category, not a downgrade. |
-| **D3** | Allowed-food set vs. B-351 D6 | **RECOMMEND-AND-PROCEED — flagged for ratification (G1).** Unanimous across all nine lenses, now backed by live data (§2.1). |
+| **D3** | Allowed-food set vs. B-351 D6 | **RATIFIED (PM, 2026-07-25) — both ship, one detection path.** D6 keeps the protein axis; this adds the explicit food axis. Unanimous across all nine lenses, backed by live data (§2.1). |
 | **D4** | Contamination detection | **One predicate, one shared module — not one documented intention.** `classifyFeeding` lives in `lib/dietTrial.ts` and is imported by the client, `generate-report` and `ask`. B-351's Tier-2 flag is this function's protein arm, **consumed** on B-351's surfaces — not a parallel system. See §5.3. |
 | **D5** | Where trials are created | **Profile card** — pet-scoped, where an owner already tells Nyx standing facts. The *location* mirrors `AddMedicationModal.tsx`; **the modal's shape does not** — that modal is 566 lines and collects eight fields (§4.1). |
 | **D6** | Trial end | **Milestone prompt** at day N → complete / extend / abandon, with an **owner-reported** outcome. Never an app verdict. **Amended:** the milestone is *sticky*, action-first, and never reads as permission to stop (§4.3). |
@@ -149,12 +152,12 @@ Also: without the set, PR 5's *"a permitted treat never flags"* test is literall
 
 Recorded so they neither widen D1/D6 silently nor get lost. **All are PM rulings** — full argument in the review record §3.
 
-| # | Amendment | Against | Team position |
+| # | Amendment | Against | Outcome |
 |---|---|---|---|
-| **A-1** | Owner-scored 0–10 severity at trial **start** and **completion**, `indication='skin'` only, PVAS-shaped with behavioural anchors | D1 ("guided trial mode is out") | Chen: for the wedge's hardest case the report can otherwise render only itch **counts** and one unvalidated word, and scratch-log frequency is confounded by owner attention — highest at start, lowest by week 6 — **biasing the count toward apparent improvement.** Recommendation: **columns in PR 1** so the space isn't foreclosed; capture UI waits for the mock round. |
-| **A-2** | A `paused` lifecycle state | `trial_status` enum | A vet-directed hold ("stop the trial, she's on metronidazole" — routine under ACVIM's antibiotic guidance) today lands only on `abandoned`, destroying a trial that will resume. Paused days leave the coverage denominator. |
-| **A-3** | A mid-trial card state at ~40% of target | D6 (one moment, at day N) | D6 places its only moment *after* the window in which owners quit. Card state only, never a push — Principle 4 untouched. |
-| **A-4** | Setup line prompting the flavoured-medication **substitution** | D1 scope | The clinical instruction is to **substitute, not detect** — every source instructs a pre-trial switch. Costs one string and acts on day 0 rather than day 14. |
+| **A-1** | Owner-scored 0–10 severity at trial start and completion (skin only) | D1 | **❌ REJECTED (PM, 2026-07-25) — and the premise corrected.** Severity comes from the **logged events**, not a subjective score. **No severity columns in migration 040.** The review's argument for it contradicted Dr. Chen's own persona (*"she trusts frequency over owner-rated severity"*), Jordan's (*"Jordan doesn't know what '3 out of 5' means clinically"*), and a shipped app-wide decision — **every** event type carries `hasSeverity: false`, not just `itch`. The clinical finding underneath survives and is **not** discharged: owner-logged streams decay with attention, so an itch count is biased toward apparent improvement. The remedy changed — **§7 discloses logging density alongside the symptom trend** so the bias is visible rather than corrected by an instrument the app has refused everywhere else. |
+| **A-2** | A `paused` lifecycle state | `trial_status` enum | **OPEN.** A vet-directed hold ("stop the trial, she's on metronidazole" — routine under ACVIM's antibiotic guidance) today lands only on `abandoned`, destroying a trial that will resume. Paused days would leave the coverage denominator. Schema-or-nothing: it is free in PR 1 and a migration afterwards. |
+| **A-3** | A mid-trial card state at ~40% of target | D6 | **OPEN.** D6 places its only moment *after* the window in which owners quit. Card state only, never a push — Principle 4 untouched. Not schema; can land any time. |
+| **A-4** | Setup line prompting the flavoured-medication **substitution** | D1 scope | **✅ RULED IN (PM, 2026-07-25)**, alongside C3's detection. The clinical instruction is to substitute, not detect — every source prescribes a pre-trial switch, and the line acts on day 0 where the detector fires on day 14. |
 
 ---
 
@@ -298,7 +301,11 @@ One active trial per pet, now enforced in the database (§3.3). Starting a secon
 > **LOCKED (A-4, pending ruling):** *"Ask your vet about anything else that goes in {pet}'s mouth — flavoured chewables (heartworm, flea, joint supplements) and flavoured toothpaste are the most commonly missed."*
 > Every clinical source instructs a **pre-trial substitution**. A detector that flags a chewable on day 14 is fourteen days late; this line acts on day 0.
 
-**Disclosure (conflict C6 — PM ruling):** the owner must be told, before confirming, what starting a trial begins recording. Team lean: *"While the trial runs, Nyx records which feedings matched the trial diet and which didn't, with dates. That's the part your vet needs."*
+**Disclosure — ✅ C6 RULED (PM, 2026-07-25): name the itemisation, at the confirm action.**
+
+> **LOCKED:** *"While the trial runs, Nyx records which feedings matched the trial diet and which didn't, with dates. That's the part your vet needs."*
+
+This is the one place the app tells an owner that it is about to start keeping a dated record of **their own conduct**, rendered to the person who prescribed the diet — Nyx's first record that is a judgment about a *person* rather than a fact about a pet, on an artifact that already names both owner and vet. §6.3's disclosure-not-blame invariant governs how Nyx *phrases* things; it does not govern what the owner knew they were agreeing to, and it cannot control how a vet reads the list. **"They consented by tapping Start" is not consent to a disclosure never shown to them.** It renders *before* the commit, not on the card afterwards.
 
 ### 4.2 The trial card v2 (PR 4 — executes D2)
 
@@ -392,13 +399,18 @@ Four code-grounded proofs that no floor rescues it:
 
 **The rule above the steps: the allowed set is the ONLY permit path. The protein arm may only ADD an off-diet verdict; it can never remove one.** An unknown, unread or incomplete protein set yields silence — never an "all clear" (B-351 D10, PM-ratified). The chain is **closed-world**, not permit/deny.
 
-**Scope: feedings only.** A `medication` event is not classified here in v1 (§9, B-419).
+**Scope: feedings AND the oral route.** ✅ **C3 RULED (PM, 2026-07-25) — detect in v1**, overriding the chair's recommendation to defer. Flavoured chewables and supplements are named by eight independent guideline sources as trial-invalidating, and `diet_trial_foods` — a set of `food_items` — structurally cannot hold a medication. This is rulable at **zero new schema** because `medication_items.form` already ships `'chewable'` as an owner-selectable value.
 
 `classifyFeeding` lives in **`lib/dietTrial.ts`** as a shared pure module imported by the client, `generate-report` and `ask` — one implementation, not one documented intention.
 
 1. **Explicit allowed set** — the food is in `diet_trial_foods` **on the feeding's date** (`allowed_from … allowed_until`) → `permitted`, stop. Membership resolves on the **case-folded brand + product identity group**, not the raw UUID (§5.4).
 2. **B-351 derived protein contaminant** → `off_diet_protein`.
 3. **Neither** → `off_diet_unrecognised`, rendered as *"not recognised as trial food"*, never as a contaminant assertion.
+4. **The oral route (C3)** — an in-window `medication` event whose item carries `form = 'chewable'`, **or** any dose carrying a `paired_event_id` food vehicle (B-156's shipped pairing), enters the exposure set. Rendered as an oral-route exposure, never as a dosing error and never as a reason to skip a dose — **a missed critical dose is a worse outcome than a contaminated trial**, and §6.7's record-and-continue governs the copy.
+
+> **The substitution beats the detection, and both ship (A-4).** Every clinical source instructs a **pre-trial switch** to unflavoured forms, not vigilance. A detector firing on day 14 is fourteen days after the exposure it reports; the §4.1 setup line acts on day 0. Rung 4 is the backstop for the owner who didn't make the switch, not the primary intervention.
+>
+> **What is still out (B-419):** flavoured *non-chewable* forms — a flavoured liquid antibiotic, a flavoured tablet. Detecting those needs a `flavored` attribute on `medication_items`, which needs new owner capture on the medication surface and was deliberately cut (the datum is not reliably owner-knowable). §5.2's blind-spot line names this residual.
 
 **Every flag must be tappable to its reason**, naming which rung fired. §6.3 says a flag is "disclosure, not blame" — but a flag the owner cannot interrogate is an unfalsifiable accusation. And rung 3 is the **modal** case on real libraries, not the edge case, so it needs a designed first-class copy treatment rather than a fallback.
 
@@ -436,7 +448,8 @@ v0.9's §5 has no model for either, and §9's shared-bowl deferral does not disc
 5. **Refusal of the trial diet routes to the health lane, not preference.** `detectIntakeDecline` owns it and the trial must not shadow it — and §5.2 now makes that composition structural rather than asserted. A *second, non-clinical* path may surface "this diet isn't being eaten" as a **trial-viability** fact pointing at the vet (a different hydrolysate is the standard answer), without softening the first.
 6. **An abandoned trial is a clinical fact, not a failure state.**
 7. **Record and continue (new).** Every exposure surface carries an explicit continuation statement, and **no copy on any surface may imply the trial is voided, compromised, or must be restarted.** No consulted source instructs a restart. CAVD, verbatim in both handouts: *"Don't panic! If you make a mistake, it's OK. Record it on the calendar and keep going with the diet trial."* And **no quantified reassurance** — never "a small amount probably won't matter" — because the cross-contact threshold is explicitly unknown (reactions were elicited at 1 g in 5.7% of challenges).
-8. **Nyx never scores the owner (new).** Coverage is a data-quality statement about the **record**, never a performance statement about the **person** — never a percentage, grade, bar, streak or badge on any surface. Feedback-intervention evidence: over ⅓ of interventions *decreased* performance, worst when attention moves toward the self. On a diet trial the streak break and the real clinical slip fall on the same day, so a streak stacks the abandonment mechanism onto the event most likely to end the trial.
+8. **An oral-route exposure is never a reason to skip a dose (new — C3).** Rung 4 flags a flavoured chewable as a trial exposure; it must never read as *"don't give this."* **A missed critical dose is a worse outcome than a contaminated trial.** The copy names the fact and points at the vet for a substitution — never at the next dose. §6.7's record-and-continue governs, and this composes with B-117's missed-critical-dose escalation rather than competing with it.
+9. **Nyx never scores the owner (new).** Coverage is a data-quality statement about the **record**, never a performance statement about the **person** — never a percentage, grade, bar, streak or badge on any surface. Feedback-intervention evidence: over ⅓ of interventions *decreased* performance, worst when attention moves toward the self. On a diet trial the streak break and the real clinical slip fall on the same day, so a streak stacks the abandonment mechanism onto the event most likely to end the trial.
 
 ---
 
@@ -448,11 +461,14 @@ Step 9's first clinical question finally has a substrate. **The report leads wit
 - **Fix the caption.** `render.ts:2340` claims *"Everything fed outside the trial diet"* over a computation that does no such thing. **Add a generalisable AC: every caption is checked against the code beneath it.**
 - **Concurrent medications during the trial window — required, and it is re-siting, not addition.** Drug, date span, still-active-at-report-end, and whether the span overlaps the last 7 days. **Explicitly not judged** — antipruritics are permitted throughout a trial and a 2–3 week prednisolone course is a documented protocol, so an app that flagged steroids as a compliance violation would be scolding an owner for following their vet. `render.ts:1678-1697` already computes this beside the off-diet line; it moves inside the trial block. **Without it a derm trial is unreadable — a steroid course and a successful elimination produce the identical improving curve.** Flag an antibiotic course in a GI-indication trial specifically: a steroid's effect withdraws, a course of metronidazole's effect on the microbiome does not.
 - Coverage and off-diet exposures as separate rendered facts, each with its own denominator (§5.1)
+- **The symptom trend is rendered against logging density over the same window** — ✅ **C5 RULED (PM, 2026-07-25).** Severity comes from the logged events, not a subjective score; **no owner-scored severity instrument ships** (§2.2 A-1). But an owner-logged event stream decays with attention — highest at trial start, lowest by week 6 — so a falling itch count is **biased toward apparent improvement** and a vet cannot tell a real remission from a tiring owner. Rendering the two series together makes the bias visible: if the itch count falls while total logging also falls, the trend is uninterpretable and the vet can see that at a glance. This is §5.2's coverage-denominator honesty applied one surface over — **measure and disclose the bias rather than correct it with an instrument the app has deliberately refused on every event type.**
 - Off-diet exposures itemized with dates, feeding **Appendix C** (v0.9 said Appendix B — the spec and the code disagreed)
 - Permitted foods rendered **with counts**, not just membership (§5.3)
 - The allowed set rendered with `food_label` provenance and **effective dates**, plus a line when the set changed after `started_at`
 - Owner-reported outcome rendered as **owner-reported**, attributed, never as a finding. The words **confirmed**, **diagnosis** and **food allergy** may not appear near it.
 - Scope cascade rung 2 becomes reachable — with a **minimum-window floor** (B-423): a trial started today otherwise collapses the report to a one-day window at the highest-intent moment in the product.
+
+> **✅ C4 RULED (PM, 2026-07-25) — deferred to the mock round.** Dr. Chen asked for four additions (medication overlap, `diet_class`, the interpretability statement, a derived prior-diet line); the Designer held Principle 6's 60-second scan. **The mock must render the trial block in at least two variants — a two-element and a four-element version — so the ruling is made against a real artifact rather than a description.** One dependency: G2 placed the coverage floor on §7.2's interpretability statement, so if C4 later lands at "medication overlap only", that statement needs another home.
 
 ### 7.2 The interpretability statement
 
@@ -484,7 +500,7 @@ The report carries one sentence, derived from coverage + exposures + any uncontr
 | Item | Why |
 |---|---|
 | **Reintroduction / provocation challenge** | Empirically safe: only ~10% of owners ever re-challenge. **`phase` reserves a lifecycle state, not a data model** — a challenge is N per-food windows with quantities and washouts and needs its own child table. |
-| **Per-dose oral-route contaminant detection** | Flavoured chewables and supplements — **B-419**. v1 suppresses the claim (§5.2) and prompts the substitution at setup (§4.1, A-4). Eight guideline sources name this class as trial-invalidating. |
+| **Flavoured *non-chewable* oral products** | A flavoured liquid antibiotic or flavoured tablet — **B-419 (narrowed)**. C3 ruled the **chewable** lane INTO v1 (§5.3 rung 4), which needs no new schema. The residual needs a `flavored` attribute on `medication_items`, which needs new owner capture on a surface outside this track and is not reliably owner-knowable. §5.2's blind-spot line names it. |
 | Flavoured toothpaste | Captured nowhere in Nyx. Blind-spot line only. |
 | Coprophagy, foraging, undisclosed feeding by others | Structurally undetectable. **A one-time teaching moment at setup and a named blind-spot line on the report — never a detector, and never recurring alarms.** |
 | Trial reminders / push | Blocked on the push-provider question + B-288. **Worth recording so a future session doesn't treat push as the adherence unlock:** electronic reminders pool at d≈0.29, the *smallest* credible mechanic in the literature. |
@@ -533,7 +549,7 @@ The report carries one sentence, derived from coverage + exposures + any uncontr
 
 **PR 4** — **no blended coverage/adherence metric renders in any form — string, bar width, ring, meter, badge, grade or colour**; any progress bar encodes `getDietTrialProgress().fraction` and nothing else, **asserted on the computed width prop, not on the absence of a word**; **`TrendZone` renders no `%`**; coverage and exposures render as separate facts with their own denominators; **the day counter is pinned under UTC−7 and UTC+11 at 00:30 and 23:30 local and agrees with the server**; the card renders correctly in **all seven states** (§4.2), each with its literal expected string.
 
-**PR 5** *(jest, `lib/dietTrial.test.ts`)* — a permitted treat classifies `permitted` on **every** feeding (the alarm-fatigue test); **a re-captured duplicate of the trial food does not flag**; a different-brand same-protein food **does** flag on a hydrolyzed trial; a food with no protein data flags `off_diet_unrecognised` with hedged copy; **a 14-day all-refused trial renders no clean-trial statement anywhere**; **no surface renders a negative claim about the world** (greppable in CI); an exposure figure never renders without both denominators; every flag is tappable to its reason; `adversarial-reviewer` states the counterexample tried and why it held.
+**PR 5** *(jest, `lib/dietTrial.test.ts`)* — a permitted treat classifies `permitted` on **every** feeding (the alarm-fatigue test); **a re-captured duplicate of the trial food does not flag**; a different-brand same-protein food **does** flag on a hydrolyzed trial; a food with no protein data flags `off_diet_unrecognised` with hedged copy; **a 14-day all-refused trial renders no clean-trial statement anywhere**; **a chewable preventive given mid-trial appears in the exposure list, and its copy never implies the dose should have been skipped** (C3); **no surface renders a negative claim about the world** (greppable in CI); an exposure figure never renders without both denominators; every flag is tappable to its reason; `adversarial-reviewer` states the counterexample tried and why it held.
 
 **PR 6** — the milestone renders **action-first**; **it never reads as permission to stop the diet**; `Keep going` has equal visual weight to `This trial is done` and cannot set a target at or below the current day; outcome is owner-reported and rendered as such; abandoning carries no failure framing; a refusal `stopped_reason` routes to the intake lane.
 
