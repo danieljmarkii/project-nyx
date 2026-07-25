@@ -673,6 +673,36 @@ export function hasCapturedPanelText(notes: string | null | undefined): boolean 
  * so an unknown set yields silence, never an all-clear). It means only that no
  * surface may say "and nothing else".
  */
+/**
+ * May a surface present this food's protein set as COMPLETE — i.e. say anything
+ * about what is NOT in it?
+ *
+ * Strictly stronger than `proteinSetCompleteness` below, and the difference is a
+ * defect the adversarial pass found: that predicate answers "was the ingredient
+ * panel read?", which says nothing about whether the extraction actually
+ * ANSWERED. `proteins` is OPTIONAL in the extractor's tool schema while
+ * `confidence.proteins` is REQUIRED, so a model that reads a legible panel,
+ * returns the full ingredients text at confidence 0.9, and simply omits the
+ * `proteins` array yields an EMPTY set that passes the panel gate — and the
+ * surface then renders a positive claim ("no animal proteins on the label") over
+ * a chicken-and-salmon food. An absent field is not an attested absence.
+ *
+ * So an empty set may never carry a completeness claim, whatever the panel says.
+ * The theoretical loss — a genuinely protein-free diet, read off a real panel —
+ * is close to vacuous, because the extraction prompt explicitly instructs the
+ * model to emit `hydrolyzed soy protein` / `pea protein`, so a real hydrolysed
+ * diet comes back NON-empty. The gain is that the one reassuring string in the
+ * feature cannot be manufactured from a partial tool call.
+ */
+export function mayClaimCompleteProteinSet(
+  proteins: readonly string[],
+  ingredientsNotes: string | null | undefined,
+  extractionConfidence: unknown,
+): boolean {
+  if (proteins.length === 0) return false;
+  return proteinSetCompleteness(ingredientsNotes, extractionConfidence).complete;
+}
+
 export function proteinSetCompleteness(
   ingredientsNotes: string | null | undefined,
   extractionConfidence: unknown,

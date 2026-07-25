@@ -7,9 +7,27 @@
 jest.mock('./supabase', () => ({ supabase: {} }));
 jest.mock('./db', () => ({ getDb: () => { throw new Error('no db in this suite'); } }));
 
+// The rule-3 ledger IS testable without a device — it is AsyncStorage, which the
+// project already mocks elsewhere. An in-memory stub keeps the assertions about
+// behaviour (what gets suppressed) rather than about storage.
+const mockStore = new Map<string, string>();
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(async (k: string) => mockStore.get(k) ?? null),
+    setItem: jest.fn(async (k: string, v: string) => { mockStore.set(k, v); }),
+    removeItem: jest.fn(async (k: string) => { mockStore.delete(k); }),
+  },
+}));
+
 import {
   offTrialProteins,
   resolveTargetProtein,
+  trialTargetLine,
+  hasFlaggedFoodInTrial,
+  recordFlaggedFoodInTrial,
+  clearTrialHeadsUpLedger,
+  resetHeadsUpLedgerCache,
   trialFoodContaminants,
   foodContaminantFlag,
   trialDietNote,
@@ -30,6 +48,7 @@ function ctx(over: Partial<TrialProteinContext> = {}): TrialProteinContext {
     startedAtMs: new Date(2026, 6, 1).getTime(),
     trialFoodId: 'trial-food',
     trialFoodLabel: 'Zignature Duck',
+    trialFoodKey: 'zignature\u001Fduck formula',
     targetProtein: 'duck',
     trialFoodProteins: ['duck'],
     trialFoodCompleteness: { complete: true, provenance: 'panel_read' },
@@ -153,8 +172,10 @@ describe('trialDietNote — the trial card standing note', () => {
     expect(trialDietNote(ctx())).toBeNull();
   });
 
-  it('is silent when the target protein is unknown', () => {
-    expect(trialDietNote(ctx({ targetProtein: null }))).toBeNull();
+  it('does NOT go silent when the target protein is unknown — see B9 below', () => {
+    // An unknown target disables every check in the module. Returning null here
+    // gave the MOST unknown state the LEAST disclosure; it now says so.
+    expect(trialDietNote(ctx({ targetProtein: null }))).not.toBeNull();
   });
 
   it('never emits a reassuring string in any state', () => {
@@ -229,5 +250,106 @@ describe('localMidnightMs', () => {
 
   it('is NaN for an unparseable value, which disables the window check', () => {
     expect(Number.isNaN(localMidnightMs(''))).toBe(true);
+  });
+});
+
+
+// ── Rule 3's ledger (B1 + B3 — the adversarial pass's top two breaks) ─────────
+//
+// The gate used to count MEALS of the food inside the trial window. Both cases
+// below silently muted the feature outright under that design; both are correct
+// by construction once the gate counts heads-ups GIVEN.
+describe('heads-up ledger — one per food per trial, counted in heads-ups given', () => {
+  beforeEach(async () => {
+    mockStore.clear();
+    resetHeadsUpLedgerCache();
+  });
+
+  it('suppresses only after a heads-up was actually shown', async () => {
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(false);
+    await recordFlaggedFoodInTrial('t1', 'chew');
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(true);
+  });
+
+  it('B1 — a SUPPRESSED meal does not consume the budget', async () => {
+    // Owner logs the chicken chew on the subway: no trial context, so
+    // evaluateMealTrialFlag returns null and records nothing. An hour later, on
+    // wifi, the same chew is logged again. Under the old meal-count gate the
+    // count was 2 and the food was never flagged for the rest of a 56-day trial.
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(false);
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(false);
+    await recordFlaggedFoodInTrial('t1', 'chew');
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(true);
+  });
+
+  it('B3 — meals fed BEFORE the trial was entered do not consume the budget', async () => {
+    // The normal vet-directed setup: visit Monday, trial entered Thursday with
+    // started_at back-dated. Foods fed Mon–Wed already have in-window meals, so
+    // the meal-count gate was dead on arrival for exactly the foods most likely
+    // to be contaminating the trial. The ledger knows nothing about meals.
+    expect(await hasFlaggedFoodInTrial('trial-entered-late', 'chew')).toBe(false);
+  });
+
+  it('a NEW trial re-opens every food — the ledger is keyed by trial', async () => {
+    // A chicken treat that was fine under a salmon trial is news again under a
+    // duck one.
+    await recordFlaggedFoodInTrial('salmon-trial', 'chicken-treat');
+    expect(await hasFlaggedFoodInTrial('duck-trial', 'chicken-treat')).toBe(false);
+  });
+
+  it('survives a restart (the in-memory mirror is a cache, not the record)', async () => {
+    await recordFlaggedFoodInTrial('t1', 'chew');
+    resetHeadsUpLedgerCache();
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(true);
+  });
+
+  it('degrades a corrupt ledger toward SHOWING, never suppressing', async () => {
+    mockStore.set('nyx.trialHeadsUp.v1', 'not json');
+    resetHeadsUpLedgerCache();
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(false);
+    mockStore.set('nyx.trialHeadsUp.v1', '["an","array"]');
+    resetHeadsUpLedgerCache();
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(false);
+  });
+
+  it('is wiped on sign-out — it is per-account bookkeeping', async () => {
+    await recordFlaggedFoodInTrial('t1', 'chew');
+    await clearTrialHeadsUpLedger();
+    expect(await hasFlaggedFoodInTrial('t1', 'chew')).toBe(false);
+  });
+});
+
+// ── B7 — the duplicate capture of the trial diet ─────────────────────────────
+describe('rule 2 survives a duplicate capture of the trial food', () => {
+  it('excludes a re-photographed bag of the trial diet by brand+product', () => {
+    // food-capture mints a fresh uuid every time, so re-photographing the trial
+    // diet (to finally capture its ingredient panel) creates a row whose id is
+    // not trialFoodId. An id-only exclusion turned the trial diet's own
+    // contamination into exactly the per-feeding verdict C2 forbids.
+    const c = ctx({ trialFoodProteins: ['duck', 'chicken'] });
+    expect(foodContaminantFlag(c, 'a-fresh-uuid', ['duck', 'chicken'])).not.toBeNull();
+    expect(foodContaminantFlag(c, 'a-fresh-uuid', ['duck', 'chicken'], c.trialFoodKey))
+      .toBeNull();
+  });
+
+  it('still flags a genuinely different food that happens to be captured twice', () => {
+    const c = ctx();
+    expect(foodContaminantFlag(c, 'other', ['chicken'], 'purina\u001Fone chicken'))
+      .toEqual({ proteins: ['chicken'], targetProtein: 'duck' });
+  });
+});
+
+// ── B9 / B8 — the most-unknown state must not get the least disclosure ───────
+describe('an unknown trial target discloses that the check is off', () => {
+  it('B9 — says so rather than going silent', () => {
+    const note = trialDietNote(ctx({ targetProtein: null }));
+    expect(note).not.toBeNull();
+    expect(note?.title).toContain("can't tell");
+    expect(note?.body).toContain('no main protein set');
+  });
+
+  it('B8 — the trial card names the protein every check rests on', () => {
+    expect(trialTargetLine(ctx())).toBe('Checking other foods against duck');
+    expect(trialTargetLine(ctx({ targetProtein: null }))).toBeNull();
   });
 });

@@ -27,6 +27,7 @@ import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
 import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../../lib/protein';
+import { foodIntakeKey } from '../../lib/food';
 import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
@@ -550,7 +551,15 @@ export default function FoodDetailScreen() {
   // in-progress state) and suppressed entirely for the trial diet itself — that
   // food's own contamination is a trial-level standing fact that belongs on the
   // diet-trial card (B-417 C2), and foodContaminantFlag enforces it.
-  const contaminantFlag = foodContaminantFlag(trialCtx, row.id, row.proteins ?? []);
+  const contaminantFlag = foodContaminantFlag(
+    trialCtx,
+    row.id,
+    row.proteins ?? [],
+    // The brand+product key closes rule 2's duplicate-capture hole: a
+    // re-photographed bag of the trial diet has a different id but is the same
+    // food, and must not carry an off-trial note against itself.
+    foodIntakeKey(row.brand, row.product_name),
+  );
   const standingFlag = contaminantFlag
     ? standingFlagCopy(contaminantFlag, activePet?.name ?? 'your pet')
     : null;

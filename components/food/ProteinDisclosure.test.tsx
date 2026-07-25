@@ -42,12 +42,22 @@ describe('proteinSummaryLine (the library-row form)', () => {
     })).toBeNull();
   });
 
-  it('reports a read panel that genuinely lists no animal protein', () => {
-    // Rare but real: a hydrolysed or vegetarian diet. Only sayable because the
-    // panel was read.
+  it('B4 — NEVER claims "no animal proteins" from an empty set, however good the panel', () => {
+    // The break the adversarial pass found, and this fixture is the proof: PANEL
+    // names duck and chicken by-product meal. `proteins` is OPTIONAL in the
+    // extractor's tool schema while `confidence.proteins` is REQUIRED, so a model
+    // that reads a legible panel and omits the array yields exactly this shape —
+    // and the row used to assert the food had no animal protein in it. An absent
+    // field is not an attested absence.
     expect(proteinSummaryLine({
       proteins: [], ingredientsNotes: PANEL, extractionConfidence: READ,
-    })).toBe('No animal proteins on the label');
+    })).toBeNull();
+  });
+
+  it('B4 — the provenance line does not attest an empty set either', () => {
+    expect(proteinProvenanceLine({
+      proteins: [], ingredientsNotes: PANEL, extractionConfidence: READ,
+    })).not.toContain('Read from the ingredient list');
   });
 
   it('never claims completeness on any un-gated input', () => {
@@ -59,6 +69,17 @@ describe('proteinSummaryLine (the library-row form)', () => {
     ];
     for (const input of ungated) {
       expect(proteinSummaryLine(input)).not.toMatch(/nothing else|no animal proteins/i);
+    }
+    // …and no input at all, gated or not, can produce the deleted claim.
+    for (const proteins of [[], ['duck'], ['duck', 'chicken']]) {
+      for (const notes of [null, '', PANEL]) {
+        for (const conf of [null, READ, { proteins: 0.1 }]) {
+          const line = proteinSummaryLine({
+            proteins, ingredientsNotes: notes, extractionConfidence: conf,
+          });
+          expect(line ?? '').not.toMatch(/no animal proteins/i);
+        }
+      }
     }
   });
 });
@@ -79,7 +100,7 @@ describe('proteinProvenanceLine (the under-the-picker form)', () => {
   it('says the proteins are unknown when nothing was captured at all', () => {
     expect(proteinProvenanceLine({
       proteins: [], ingredientsNotes: null, extractionConfidence: null,
-    })).toContain("aren't known yet");
+    })).toContain("isn't known");
   });
 
   it('carries no exclamation and no reassurance (nyx-voice + guardrails)', () => {

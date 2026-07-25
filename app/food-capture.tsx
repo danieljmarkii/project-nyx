@@ -33,12 +33,14 @@ import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../lib/protein';
+import { foodIntakeKey } from '../lib/food';
 import { ProteinDisclosure, proteinSummaryLine } from '../components/food/ProteinDisclosure';
 import { TrialContaminantSheet } from '../components/food/TrialContaminantSheet';
 import {
   loadTrialProteinContext,
   foodContaminantFlag,
   addFlagCopy,
+  mealFlagCopy,
   type TrialProteinContext,
 } from '../lib/trialContaminant';
 import { useAppConfig } from '../hooks/useAppConfig';
@@ -143,6 +145,10 @@ export default function FoodCaptureScreen() {
   // Set once the owner taps "Add anyway", so a later re-tap of Save (or a bounce
   // between the confirm and edit steps) doesn't re-ask a question they answered.
   const trialAcknowledged = useRef(false);
+  // The heads-up the completion step reports, on the meal-log path only. Set at
+  // commit, rendered non-blockingly — never a gate (see attemptCommit).
+  const [loggedTrialFlag, setLoggedTrialFlag] =
+    useState<{ headline: string; detail: string } | null>(null);
 
   const [frontPhoto, setFrontPhoto] = useState<CapturedPhoto | null>(null);
   const [ingredientsPhoto, setIngredientsPhoto] = useState<CapturedPhoto | null>(null);
@@ -201,9 +207,13 @@ export default function FoodCaptureScreen() {
     ]).start();
     // dismissAll() unwinds both the food-capture modal and the underlying
     // meal-log picker so the user lands on Home, not on a stale picker.
-    const t = setTimeout(() => router.dismissAll(), 900);
+    // 900ms is the plain confirmation beat. A trial heads-up adds two lines of
+    // prose the owner has never seen and cannot get back by tapping (it is
+    // passive by design), so the beat holds long enough to read it — the same
+    // reasoning that extends the meal completion card's dwell when flagged.
+    const t = setTimeout(() => router.dismissAll(), loggedTrialFlag ? 3800 : 900);
     return () => clearTimeout(t);
-  }, [step]);
+  }, [step, loggedTrialFlag]);
 
   // §6.1 flag-off: when photo extraction is disabled the flow has no camera path —
   // it opens directly on the manual edit step (no banner, no dead affordance). We
@@ -486,8 +496,22 @@ export default function FoodCaptureScreen() {
   // the other skip it. Silence (no trial, offline, unknown target, an unread
   // panel, nothing off-trial) commits straight through — the sheet has no
   // reassuring state to render.
+  //
+  // ⚠️ THE SOFT CONFIRM NEVER RUNS ON THE MEAL-LOG PATH. This screen is reachable
+  // as `/food-capture?fromLog=1`, where the button reads "Save and log food" and
+  // the commit below WRITES A MEAL. Gating that on a modal put a decision at the
+  // moment of event — a straight Principle 1 violation — and worse, "Not now"
+  // (or a backdrop tap, or Android back) discarded the meal silently: no food
+  // row, no meal row, no explanation, for an owner who had just fed the treat and
+  // opened the app specifically to record it. Caught by the adversarial pass; the
+  // defence written here originally ("adding a food is not the moment of event")
+  // is true of the add-only path and exactly inverted on this one.
+  //
+  // So the meal path commits unconditionally and the same fact rides the
+  // completion step afterwards, non-blocking — the register D2 actually ratified
+  // for log time, and the same shape the meal completion card uses.
   function attemptCommit(brand: string, product: string, format: string, type: FoodType) {
-    if (!trialAcknowledged.current && trialFlag) {
+    if (!cameFromMealLog && !trialAcknowledged.current && trialFlag) {
       setPendingCommit({ brand, product, format, type });
       return;
     }
@@ -616,6 +640,12 @@ export default function FoodCaptureScreen() {
       });
     }
 
+    // The log-time heads-up for THIS path (see attemptCommit): captured at commit
+    // so the completion step can report it. Only when a meal was actually
+    // written — an add-only commit already had its say in the soft confirm.
+    if (cameFromMealLog && pet && trialFlag) {
+      setLoggedTrialFlag(mealFlagCopy(trialFlag, pet.name));
+    }
     setStep('complete');
   }
 
@@ -641,7 +671,15 @@ export default function FoodCaptureScreen() {
     ingredientsNotes: extractionProvenance?.ingredientsText ?? null,
     extractionConfidence: extractionProvenance?.confidence ?? null,
   };
-  const trialFlag = foodContaminantFlag(trialCtx, foodId, capturedProteins);
+  // `foodId` is a fresh uuid on every capture, so the id-based half of rule 2's
+  // exclusion can never match — the brand+product key is what stops a
+  // re-photographed bag of the TRIAL DIET being flagged against itself.
+  const trialFlag = foodContaminantFlag(
+    trialCtx,
+    foodId,
+    capturedProteins,
+    foodIntakeKey(extractedBrand, extractedProduct),
+  );
   const trialFlagCopy = trialFlag ? addFlagCopy(trialFlag, activePet?.name ?? 'your pet') : null;
   const summaryLine = proteinSummaryLine(disclosureInput);
 
@@ -668,6 +706,18 @@ export default function FoodCaptureScreen() {
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
           {cameFromMealLog ? 'Logged' : 'Added'}
         </Animated.Text>
+        {/* The Tier-2 heads-up on the meal-log path — reported, never asked. The
+            meal is already written by the time this renders. */}
+        {loggedTrialFlag && (
+          <Animated.View
+            style={[styles.completeFlag, { opacity: checkOpacity }]}
+            accessibilityRole="summary"
+            accessibilityLabel={`${loggedTrialFlag.headline} ${loggedTrialFlag.detail}`}
+          >
+            <Text style={styles.completeFlagHeadline}>{loggedTrialFlag.headline}</Text>
+            <Text style={styles.completeFlagDetail}>{loggedTrialFlag.detail}</Text>
+          </Animated.View>
+        )}
       </View>
     );
   }
@@ -1407,5 +1457,30 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+  },
+  // The Tier-2 heads-up on the completion beat. Constrained width + centred so it
+  // reads as part of the beat rather than a banner, and the app's existing calm
+  // safety register (tinted accent + accent rail) rather than a new alarm state.
+  completeFlag: {
+    maxWidth: 320,
+    marginTop: theme.space1,
+    marginHorizontal: theme.space3,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space2,
+    borderRadius: theme.radiusMedium,
+    backgroundColor: theme.colorAccentLight,
+    borderColor: theme.colorAccent,
+    borderLeftWidth: 3,
+    gap: 4,
+  },
+  completeFlagHeadline: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+  },
+  completeFlagDetail: {
+    fontSize: theme.textSM,
+    lineHeight: theme.textSM * 1.45,
+    color: theme.colorTextSecondary,
   },
 });

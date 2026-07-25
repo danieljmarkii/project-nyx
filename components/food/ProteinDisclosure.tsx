@@ -28,7 +28,7 @@
 // protein line there buys education at the cost of the 10-second test.
 import { Text, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
-import { proteinSetCompleteness } from '../../lib/protein';
+import { mayClaimCompleteProteinSet } from '../../lib/protein';
 
 /** The three stored facts every disclosure decision needs. */
 export interface ProteinDisclosureInput {
@@ -49,11 +49,16 @@ function display(key: string): string {
  * came from, because silence there is exactly the ambiguity D10 was ruled on.
  */
 export function proteinProvenanceLine(input: ProteinDisclosureInput): string {
-  const { complete } = proteinSetCompleteness(input.ingredientsNotes, input.extractionConfidence);
-  if (complete) return 'Read from the ingredient list on the label.';
+  // mayClaimCompleteProteinSet, not proteinSetCompleteness: an EMPTY set never
+  // earns the "read from the label" line either, because a partial tool call
+  // (panel read, `proteins` array omitted) produces exactly that shape and the
+  // line would attest an emptiness nothing actually asserted.
+  if (mayClaimCompleteProteinSet(input.proteins, input.ingredientsNotes, input.extractionConfidence)) {
+    return 'Read from the ingredient list on the label.';
+  }
   return input.proteins.length > 0
     ? "The ingredient list hasn't been read, so there may be more proteins in here than these."
-    : "The ingredient list hasn't been read, so the proteins in here aren't known yet.";
+    : "No proteins have been picked out of this food's label yet, so what's in it isn't known.";
 }
 
 /**
@@ -63,22 +68,27 @@ export function proteinProvenanceLine(input: ProteinDisclosureInput): string {
  * two type sizes), which still honours Dr. Chen's "primary reads first" condition
  * from §9 — the headline protein is never something the eye has to hunt for.
  *
- * Returns null when there is nothing honest to say: an empty set on an unread
- * panel is not "no proteins", it is no information, and a row that renders
- * "Ingredient list not read" against every legacy manual food would turn a
- * library browse into a wall of scolding.
+ * An EMPTY set is always silence, never a claim. An earlier draft rendered
+ * "No animal proteins on the label" when the panel gate passed, and the
+ * adversarial pass broke it with the routine case: the extractor's tool schema
+ * makes `proteins` optional while `confidence.proteins` is required, so a model
+ * that reads a legible panel and omits the array produces an empty set with a
+ * high-confidence panel — and the row asserted a chicken-and-salmon food had no
+ * animal protein in it. The theoretical case that string existed for (a genuinely
+ * protein-free diet) barely exists, because the extraction prompt tells the model
+ * to emit `hydrolyzed soy protein` / `pea protein`. Silence loses nothing real
+ * and closes the only reassuring string on this surface.
+ *
+ * Silence is also right for an unread empty set for a different reason: a row
+ * reading "ingredient list not read" against every legacy manual food would turn
+ * a library browse into a wall of scolding.
  */
 export function proteinSummaryLine(input: ProteinDisclosureInput): string | null {
-  const { complete } = proteinSetCompleteness(input.ingredientsNotes, input.extractionConfidence);
   const [main, ...rest] = input.proteins;
-
-  if (!main) {
-    // Complete + empty is a real, if rare, answer: a panel WAS read and it lists
-    // no animal protein (a hydrolysed or vegetarian diet). Unread + empty is not
-    // an answer at all, so it stays silent.
-    return complete ? 'No animal proteins on the label' : null;
+  if (!main) return null;
+  if (!mayClaimCompleteProteinSet(input.proteins, input.ingredientsNotes, input.extractionConfidence)) {
+    return `${display(main)} · ingredient list not read`;
   }
-  if (!complete) return `${display(main)} · ingredient list not read`;
   if (rest.length === 0) return `${display(main)} · nothing else on the label`;
   return `${display(main)} · also contains ${rest.join(', ')}`;
 }

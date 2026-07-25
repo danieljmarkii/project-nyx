@@ -38,12 +38,29 @@
 //    itself contaminated) surfaces on the diet-trial card and the food's own
 //    detail screen, and is EXCLUDED from the meal-log path by construction.
 //
-// 3. ONE HEADS-UP PER FOOD PER TRIAL. Shape ② (a different food logged during the
-//    trial) rides the completion card the FIRST time that food is fed inside the
-//    trial window and stays quiet after. The second chicken treat is not new
-//    information; C2's alarm-fatigue reasoning applies to any food fed daily, not
-//    only the trial diet. The standing fact remains visible on the food's detail
-//    screen, which is where a standing fact belongs.
+// 3. ONE HEADS-UP PER FOOD PER TRIAL — counted in HEADS-UPS GIVEN, never in meals
+//    fed. Shape ② (a different food logged during the trial) rides the completion
+//    card the first time we actually TELL the owner, and stays quiet after. The
+//    second chicken treat is not new information; C2's alarm-fatigue reasoning
+//    applies to any food fed daily, not only the trial diet.
+//
+//    The distinction is not pedantry — it is a defect the adversarial pass found
+//    in the first cut, which gated on "is this the first MEAL of this food inside
+//    the trial window". Two ways that silently muted the feature outright:
+//      • an owner logs the chicken chew on the subway (offline → no trial context
+//        → correct silence), then again on wifi an hour later: meal count is 2,
+//        so the gate suppresses, and that food is NEVER flagged for the rest of a
+//        56-day trial. A suppressed heads-up consumed the budget for a heads-up
+//        that was never given.
+//      • the normal vet-directed setup — trial entered on Thursday with
+//        `started_at` back-dated to Monday's visit — means every food fed Mon–Wed
+//        already has meals inside the window, so the flag is dead on arrival for
+//        exactly the foods most likely to be contaminating the trial.
+//    Recording what we SAID makes both cases correct by construction, and it
+//    removes the only SQL in this module.
+//
+//    The standing fact remains visible on the food's detail screen, which is where
+//    a standing fact belongs — that is what makes suppressing the repeat safe.
 //
 // 4. THE TARGET PROTEIN COMES FROM THE OWNER'S DESIGNATION, NOT FROM proteins[0].
 //    See resolveTargetProtein below — the one place where the derived-primary
@@ -52,8 +69,10 @@
 // No `diet_trials` schema change (D6, RATIFIED-deferred): v1 keys off the trial
 // food's own designated protein. `nyx-voice` + `clinical-guardrails` govern every
 // string this module builds.
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { getDb } from './db';
+import { foodIntakeKey } from './food';
 import {
   canonicalizeProtein,
   proteinSetCompleteness,
@@ -79,6 +98,14 @@ export interface TrialProteinContext {
   trialFoodId: string | null;
   /** Display name of the trial food, for copy. Null when unresolvable. */
   trialFoodLabel: string | null;
+  /** Case-folded brand+product of the trial food — the library's own dedup key
+   *  (`lib/food.foodIntakeKey`). Carried so rule 2's exclusion survives a
+   *  DUPLICATE CAPTURE of the trial diet: `food-capture` mints a fresh uuid every
+   *  time, so re-photographing the same bag (e.g. to finally capture the
+   *  ingredient panel) creates a row whose id ≠ `trialFoodId` — and an id-only
+   *  exclusion would then turn the trial diet's own contamination into exactly
+   *  the per-feeding verdict B-417 C2 forbids. Null when unresolvable. */
+  trialFoodKey: string | null;
   /** The canonical protein the trial diet is built on. NULL = unknown, which
    *  disables every check in this module (rule 1: silence, never an all-clear). */
   targetProtein: string | null;
@@ -94,6 +121,8 @@ export interface FoodProteinRecord {
   proteins: string[];
   ingredientsNotes: string | null;
   extractionConfidence: unknown;
+  /** Case-folded brand+product — the rule-2 duplicate-capture key. */
+  foodKey: string;
 }
 
 /**
@@ -176,10 +205,18 @@ export function foodContaminantFlag(
   ctx: TrialProteinContext | null,
   foodId: string,
   foodProteins: readonly string[],
+  /** Case-folded brand+product of THIS food, when the caller has it. Closes the
+   *  duplicate-capture hole in rule 2 — see TrialProteinContext.trialFoodKey.
+   *  Omitting it degrades to the id-only exclusion, which is the pre-existing
+   *  behaviour, not a new hazard. */
+  foodKey?: string | null,
 ): TrialContaminantFlag | null {
   if (!ctx || !ctx.targetProtein) return null;
   // Rule 2 — the trial diet's own contamination is a trial-level standing fact.
+  // Matched on the id OR the library's dedup key, so a re-photographed bag of the
+  // trial diet is still the trial diet.
   if (ctx.trialFoodId != null && foodId === ctx.trialFoodId) return null;
+  if (ctx.trialFoodKey != null && foodKey != null && foodKey === ctx.trialFoodKey) return null;
   const proteins = offTrialProteins(foodProteins, ctx.targetProtein);
   if (proteins.length === 0) return null;
   return { proteins, targetProtein: ctx.targetProtein };
@@ -279,7 +316,22 @@ export function standingFlagCopy(flag: TrialContaminantFlag, petName: string): {
  * single-protein.
  */
 export function trialDietNote(ctx: TrialProteinContext): { title: string; body: string } | null {
-  if (!ctx.targetProtein) return null;
+  // B9 — the MOST unknown state must not get the LEAST disclosure. An unknown
+  // target silently disables every check in this module, and an earlier cut
+  // returned null here: the trial card said nothing, no flag ever fired, and
+  // nothing anywhere told the owner the check was off. That is worse than the
+  // panel-unread case below, which does get a note — the owner was being given
+  // strictly less information the less we knew. It is reachable two ways: a
+  // hydrolysed trial diet with no animal protein designated, and slice 3's
+  // "clear the main protein", which is precisely the case rule 4 exists for.
+  if (!ctx.targetProtein) {
+    return {
+      title: 'Nyx can\'t tell what this trial is built on',
+      body:
+        'The trial food has no main protein set, so other foods can\'t be checked ' +
+        'against it. Setting one on the food would turn the checks back on.',
+    };
+  }
   const contaminants = trialFoodContaminants(ctx);
   if (contaminants.length > 0) {
     const list = proteinList(contaminants);
@@ -300,6 +352,30 @@ export function trialDietNote(ctx: TrialProteinContext): { title: string; body: 
     };
   }
   return null;
+}
+
+/**
+ * The quiet "here is what we are checking against" line for the diet-trial card.
+ *
+ * B8 mitigation, and the honest one. The target protein is read from the trial
+ * food's `primary_protein`, which on an AI-extracted food is a model output with
+ * no completeness gate over it — a front-of-pack read of "Salmon & Duck" can
+ * designate the wrong one, and every heads-up then states the inverse of the real
+ * prescription with full confidence. We deliberately do NOT gate the target on
+ * `ai_extraction_confidence.primary_protein`: most trial foods are manually
+ * entered, where that field is null, so gating would disable the feature for the
+ * majority in order to bound a minority error.
+ *
+ * The fix is disclosure, not suppression — render the assumption where the owner
+ * looks, so a wrong target is visible rather than silently load-bearing. The
+ * heads-up copy already names the target inline ("…'s duck trial should skip
+ * chicken"), which makes an inverted target self-disclosing at the moment it
+ * would mislead; this puts the same fact somewhere the owner can act on it.
+ * Tracked as B-440.
+ */
+export function trialTargetLine(ctx: TrialProteinContext): string | null {
+  if (!ctx.targetProtein) return null;
+  return `Checking other foods against ${ctx.targetProtein}`;
 }
 
 // ── The I/O layer ────────────────────────────────────────────────────────────
@@ -345,11 +421,13 @@ export function localMidnightMs(dateOnly: string): number {
 export async function readFoodProteinRecord(foodId: string): Promise<FoodProteinRecord | null> {
   const db = getDb();
   const row = await db.getFirstAsync<{
+    brand: string;
+    product_name: string;
     proteins: string | null;
     ingredients_notes: string | null;
     ai_extraction_confidence: string | null;
   }>(
-    `SELECT proteins, ingredients_notes, ai_extraction_confidence
+    `SELECT brand, product_name, proteins, ingredients_notes, ai_extraction_confidence
        FROM food_items_cache WHERE id = ?`,
     [foodId],
   );
@@ -357,6 +435,7 @@ export async function readFoodProteinRecord(foodId: string): Promise<FoodProtein
   return {
     proteins: proteinsFromCacheText(row.proteins),
     ingredientsNotes: row.ingredients_notes,
+    foodKey: foodIntakeKey(row.brand ?? '', row.product_name ?? ''),
     // The cache mirrors the jsonb column as its raw JSON text; a decode failure
     // reads as "no confidence recorded", which the D10 gate treats as unread.
     extractionConfidence: parseConfidence(row.ai_extraction_confidence),
@@ -410,10 +489,16 @@ export async function loadTrialProteinContext(
     startedAtMs: localMidnightMs(trial.started_at),
     trialFoodId: trial.food_item_id,
     trialFoodLabel: null,
+    trialFoodKey: null,
     targetProtein: null,
     trialFoodProteins: [],
     trialFoodCompleteness: { complete: false, provenance: 'no_panel_text' },
   };
+
+  // Whether the trial food actually RESOLVED. Drives the memoization decision
+  // below — see the note there; this is not the same question as "is there a
+  // trial".
+  let trialFoodResolved = false;
 
   if (trial.food_item_id) {
     try {
@@ -432,9 +517,11 @@ export async function loadTrialProteinContext(
         [trial.food_item_id],
       );
       if (food) {
+        trialFoodResolved = true;
         ctx = {
           ...ctx,
           trialFoodLabel: `${food.brand} ${food.product_name}`.trim() || null,
+          trialFoodKey: foodIntakeKey(food.brand, food.product_name),
           targetProtein: resolveTargetProtein(food.primary_protein),
           trialFoodProteins: proteinsFromCacheText(food.proteins),
           trialFoodCompleteness: proteinSetCompleteness(
@@ -449,37 +536,97 @@ export async function loadTrialProteinContext(
     }
   }
 
+  // MEMOIZE ONLY A SETTLED ANSWER. A trial whose food row did not resolve is a
+  // TRANSIENT state, not a fact: on a fresh install or a re-login the
+  // `diet_trials` fetch can succeed while `food_items_cache` has not hydrated
+  // yet, and caching that for five minutes would silently disable every check
+  // for the whole window — with, under the earlier meal-count gate, each meal
+  // logged in it permanently burning that food's heads-up. Treated like a failed
+  // fetch: answer now, re-ask next time. (`ctx: null` — genuinely no active
+  // trial — IS a settled answer and stays cached.)
+  if (trial.food_item_id && !trialFoodResolved) return ctx;
+
   contextCache.set(petId, { atMs: Date.now(), ctx });
   return ctx;
 }
 
-/**
- * Rule 3's gate: is the meal just written the FIRST of this food inside the
- * trial window?
- *
- * Called AFTER the insert, so the just-logged meal is included — exactly one row
- * means this is the first. Counts by `food_item_id`; a duplicate CAPTURE of the
- * same package is a distinct id and would re-fire once (the known B-009 dedup
- * wrinkle, one extra heads-up, never a missed one).
- */
-async function isFirstMealOfFoodInTrial(
-  petId: string,
-  foodId: string,
-  startedAtMs: number,
-): Promise<boolean> {
-  const db = getDb();
-  const row = await db.getFirstAsync<{ n: number }>(
-    `SELECT COUNT(*) AS n
-       FROM meals m
-       JOIN events e ON e.id = m.event_id
-      WHERE m.pet_id = ?
-        AND m.food_item_id = ?
-        AND e.event_type = 'meal'
-        AND e.deleted_at IS NULL
-        AND e.occurred_at >= ?`,
-    [petId, foodId, new Date(startedAtMs).toISOString()],
-  );
-  return (row?.n ?? 0) <= 1;
+// ── Rule 3's ledger: which foods we have already told the owner about ────────
+//
+// Persisted (survives a restart; a 56-day trial outlives many app sessions) and
+// keyed by TRIAL, so starting a new trial legitimately re-opens every food — a
+// chicken treat that was fine under a salmon trial is news again under a duck
+// one. Deliberately NOT a count of meals: see rule 3 in the header for the two
+// ways that muted the feature outright.
+//
+// AsyncStorage rather than a SQLite table: this is device-local UI bookkeeping
+// about what was DISPLAYED, not health data. It carries no clinical record — the
+// exposure itself is in `meals`, and the standing fact is re-derived from
+// `food_items` on every render of the food's detail screen — so losing it is at
+// worst one repeated heads-up, and it must never sync or reach the vet report.
+const HEADS_UP_KEY = 'nyx.trialHeadsUp.v1';
+
+/** trialId → the food ids already flagged under it. */
+type HeadsUpLedger = Record<string, string[]>;
+
+// In-memory mirror so the log path does not hit storage twice per meal. `null`
+// means "not loaded yet", which is distinct from an empty ledger.
+let headsUpLedger: HeadsUpLedger | null = null;
+
+async function readHeadsUpLedger(): Promise<HeadsUpLedger> {
+  if (headsUpLedger) return headsUpLedger;
+  try {
+    const raw = await AsyncStorage.getItem(HEADS_UP_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    // Tolerant: any malformed shape degrades to an empty ledger, which can only
+    // cause ONE extra heads-up — never a suppressed one. That is the safe
+    // direction for a decay/corruption path in a safety surface.
+    headsUpLedger =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as HeadsUpLedger)
+        : {};
+  } catch {
+    headsUpLedger = {};
+  }
+  return headsUpLedger;
+}
+
+/** Have we already shown a heads-up for this food under this trial? */
+export async function hasFlaggedFoodInTrial(trialId: string, foodId: string): Promise<boolean> {
+  const ledger = await readHeadsUpLedger();
+  return Array.isArray(ledger[trialId]) && ledger[trialId].includes(foodId);
+}
+
+/** Record that we just showed one. Best-effort: a write failure re-shows the
+ *  heads-up next time, which is the harmless direction. */
+export async function recordFlaggedFoodInTrial(trialId: string, foodId: string): Promise<void> {
+  const ledger = await readHeadsUpLedger();
+  const existing = Array.isArray(ledger[trialId]) ? ledger[trialId] : [];
+  if (existing.includes(foodId)) return;
+  // Only the ACTIVE trial's entry is kept. A trial ends and its ledger is dead
+  // weight; pruning here rather than on trial-completion means there is no
+  // lifecycle hook to forget (and no trial write path exists yet — B-417 PR 1).
+  headsUpLedger = { [trialId]: [...existing, foodId] };
+  try {
+    await AsyncStorage.setItem(HEADS_UP_KEY, JSON.stringify(headsUpLedger));
+  } catch (e) {
+    console.warn('[trialContaminant] heads-up ledger write failed:', e);
+  }
+}
+
+/** Wipe the ledger. Called from the sign-out teardown alongside the context
+ *  cache — it is per-account bookkeeping and must not leak across a switch. */
+export async function clearTrialHeadsUpLedger(): Promise<void> {
+  headsUpLedger = null;
+  try {
+    await AsyncStorage.removeItem(HEADS_UP_KEY);
+  } catch (e) {
+    console.warn('[trialContaminant] heads-up ledger clear failed:', e);
+  }
+}
+
+/** Test seam — reset the in-memory mirror without touching storage. */
+export function resetHeadsUpLedgerCache(): void {
+  headsUpLedger = null;
 }
 
 /**
@@ -530,10 +677,12 @@ async function evaluateMealTrialFlagInner(args: {
     const record = await readFoodProteinRecord(args.foodId);
     if (!record) return null;
 
-    const flag = foodContaminantFlag(ctx, args.foodId, record.proteins);
+    const flag = foodContaminantFlag(ctx, args.foodId, record.proteins, record.foodKey);
     if (!flag) return null;
 
-    if (!(await isFirstMealOfFoodInTrial(args.petId, args.foodId, ctx.startedAtMs))) return null;
+    // Rule 3 — one heads-up per food per trial, counted in heads-ups GIVEN.
+    if (await hasFlaggedFoodInTrial(ctx.trialId, args.foodId)) return null;
+    await recordFlaggedFoodInTrial(ctx.trialId, args.foodId);
     return flag;
   } catch (e) {
     // A failure here must never surface to the owner or disturb the log — the

@@ -28,6 +28,7 @@ import { TrialContaminantNote } from '../../components/food/TrialContaminantNote
 import {
   loadTrialProteinContext,
   trialDietNote,
+  trialTargetLine,
   type TrialProteinContext,
 } from '../../lib/trialContaminant';
 import { Pet } from '../../store/petStore';
@@ -570,6 +571,10 @@ export default function ProfileScreen() {
   // when there is nothing to say — no trial, no known target protein, offline, or
   // a panel that WAS read and really is single-protein. Never a "clean" state.
   const trialDietFlag = trialCtx ? trialDietNote(trialCtx) : null;
+  // The assumption the whole check rests on, rendered where the owner can see it
+  // is wrong (B8 — the target is an ungated AI read on an extracted food). Quiet
+  // metadata, not a safety card: it belongs with the trial's other facts.
+  const trialTarget = trialCtx ? trialTargetLine(trialCtx) : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -804,6 +809,9 @@ export default function ProfileScreen() {
                 ingredient panel was never read, the card SAYS so rather than let
                 the absence of a flag read as an all-clear on the single food this
                 pet eats every day for eight weeks. */}
+            {trialTarget && (
+              <Text style={styles.trialVet}>{trialTarget}</Text>
+            )}
             {trialDietFlag && (
               <View style={styles.trialNoteWrap}>
                 <TrialContaminantNote title={trialDietFlag.title} body={trialDietFlag.body} />
