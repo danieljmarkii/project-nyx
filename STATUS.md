@@ -1,10 +1,8 @@
-**Last updated:** 2026-07-25 — **CI is live and enforcing** (B-390): `.github/workflows/ci.yml` runs typecheck+jest (1688) and `deno test` (829) on every PR, and an Active `main` ruleset with an empty bypass list now blocks a merge on a red check. Shipped via #440.
+**Last updated:** 2026-07-25 — **B-280 PR 1 shipped: password-recovery foundations** (`flowType:'pkce'`, the pure `lib/passwordRecovery.ts`, the **persisted** recovery gate, the FR-12/FR-14 request marker, FR-17 log redaction, flag off). No user-visible change; PR 2 (the flow) is next and gated only on the §9.3 device checks. Shipped via #444.
 
 _Canonical answer to "where are we?". High-churn: update inline at session end and any time these change mid-session. CLAUDE.md is the stable operating manual; this file is the volatile state. **Keep it scannable** — prose narrative and build history belong in PR descriptions + git, not here (the file is reconstructable via `git log -p STATUS.md`)._
 
 _**Size budget (enforced at `/wrap`, added 2026-07-19 workflow retro):** target under ~200 lines. Recent Sessions ≤ ~10 one-line entries; **no "Previous:" narrative archive** at the top (it duplicates Recent Sessions); **completed PM action items are deleted, not left checked** — `git log` is the archive. If a section is growing unbounded, that's the signal to prune, not to keep appending._
-
-**Last updated:** 2026-07-25 — **B-417 diet-trial: every PM ruling closed.** All four gates (G1/G2/G3/§0.2) and six conflicts (C1–C6) ruled in one sitting; spec → **v0.97**, and **PRs 1–2 are now build-ready**. Two PM overrides of the team rec: **C3** (detect the oral route in v1 — zero new schema) and **C5** (no owner-scored severity; severity comes from logged events, with §7 disclosing logging density to expose the attention-decay bias instead). Record: `docs/diet-trial-requirements-review-2026-07.md` §0.
 
 ---
 
@@ -30,12 +28,12 @@ _**Size budget (enforced at `/wrap`, added 2026-07-19 workflow retro):** target 
 
 ## Parallel Tracks
 
-### Password recovery (B-280) — spec v1.1 build-ready; PR 1 buildable today, PR 2 gated
-Spec `docs/nyx-password-recovery-requirements.md` **v1.1** + design-locked mocks `docs/culprit-password-recovery-mockups.html`. Closes the app's sharpest returning-owner dead end and a submission gap (hardening audit §B2). Flow: login link → request → neutral Sent → same-phone deep link → set password → **in** (no credential re-entry).
+### Password recovery (B-280) — spec v1.2; **PR 1 shipped**; PR 2 gated only on the §9.3 device checks
+Spec `docs/nyx-password-recovery-requirements.md` **v1.2** + design-locked mocks `docs/culprit-password-recovery-mockups.html`. Closes the app's sharpest returning-owner dead end and a submission gap (hardening audit §B2). Flow: login link → request → neutral Sent → same-phone deep link → set password → **in** (no credential re-entry).
 
 | PR | What | Status |
 |---|---|---|
-| 1 | Foundations — `flowType: 'pkce'`, pure `lib/passwordRecovery.ts` (two-stage FR-4 classification), **persisted** recovery gate, request marker, FR-17 log redaction, flag off | ⬜ **build-ready today** — independent of every open ruling |
+| 1 | Foundations — `flowType: 'pkce'`, pure `lib/passwordRecovery.ts` (two-stage FR-4 classification), **persisted** recovery gate, request marker, FR-17 log redaction, flag off | ✅ **shipped via #444** (79 new tests; no user-visible change) |
 | 2 | The whole flow (FR-1→FR-20) — deliberately not split further; a request without a handler ships a dead end, which is the defect this track removes | ⬜ **all rulings landed**; gated only on the §9.3 device checks. `rls-privacy-reviewer` is a **merge gate** |
 | 3 | Settings → change password + the FR-19 eviction option | ⬜ **D4 ruled** — buildable after PR 1 |
 | 4 | Enablement — flip `PASSWORD_RECOVERY_ENABLED`, on-device end-to-end | ⛔ gated on **B-152 SMTP** |
@@ -283,6 +281,8 @@ eas build --platform ios --profile production --auto-submit
 ## Recent Sessions
 
 _Last ~10 only; older history lives in git (`git log`) + PR descriptions._
+
+- 2026-07-25 — **B-280 PR 1 — password-recovery foundations (no user-visible change).** `flowType:'pkce'` (D1a) + the pure `lib/passwordRecovery.ts` + the **persisted** FR-6 gate + the FR-12/FR-14 request marker + FR-17 redaction + `PASSWORD_RECOVERY_ENABLED=false`. **Three calls worth carrying forward:** (1) FR-4(b) ships **three** exchange outcomes, not four — GoTrue returns one indistinguishable shape for expired / already-used / resend-overwritten links, they render the identical screen (§10 rows 9/10/20), and a type claiming to tell them apart invites copy asserting a cause the device cannot know (§5.5's own trap); `classifyExchangeOutcome` takes an optional `verifierPresent` so PR 2 is correct **either way §9.3-Q2 lands**. (2) **FR-17 needed a second guard**: the key regex only works if callers name keys well, and the length guard can't help — `nyx:///reset-password?code=` (27) + a 36-char code = **63**, under the 64 threshold — so a narrow value-shape guard catches a deep link under any key name. (3) `parseRecoveryLink` is hand-rolled, not `new URL()`, whose RN polyfill has shipped without working `searchParams` — a parser behaving differently on device than in jest is worse than none; it also gained an `unrelated` verdict so a **widget deep link is not rendered as a broken reset** (§6.5's collision). Found while wiring the wipe, recorded in-comment for PR 2: §6.4's wipe runs at step 5 **before** the exchange, so the FR-12 pre-fill must come from the value the handler holds in memory, not a re-read of disk. tsc clean; jest **1788/114 suites** (79 new). Shipped via #444.
 
 - 2026-07-25 — **CI shipped AND enforcing — the repo's first server-side gate (B-390, audit §C1).** ~400 merges had landed on `main` with **0 automated checks**; the only gate was `.githooks/pre-push` — opt-in, `--no-verify`-able, and it never ran the Edge Function suites at all. `ci.yml` now runs two parallel jobs on every PR: `App (typecheck + jest)` (110 suites / 1688) + `Edge Functions (deno test)` (829). SHA-pinned actions, `contents: read`, concurrency-cancel, network confined to one retried `deno cache` with the assertion step on `--cached-only`. **PM turned the gate on the same day** (Active `main` ruleset, empty bypass list, both checks required, PR@0 approvals) → a red check now blocks the merge for everyone including the owner. **Three findings only real runs produced:** (1) the Deno job needs `npm ci` too — its type-check resolves a *transitive* `@types/node` out of `node_modules`, invisible locally; (2) `deno test` type-checks by default, making that job the **only** type check over `supabase/functions/` (`tsconfig.json` excludes it); (3) `esm.sh` 522'd for ~2.5 min and reddened the job — fixed by **caching `DENO_DIR`** (keyed on `deno.lock`; a hit = zero network) + a 4×(10/20/40s) retry, *not* `continue-on-error`, which would trade the 829-case gate for a green tick. `--frozen` still blocked by stale lockfile → **B-434**; merge-methods still Merge/Squash/Rebase vs the squash-only rule → **B-433**; backlog IDs collided with parallel sessions 3× in one day → **B-435**. tests: N/A — CI config; the green run is the test. — shipped via #440
 
