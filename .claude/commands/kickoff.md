@@ -10,7 +10,7 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
 
 1. **Read `STATUS.md`** (repo root) — the canonical "where are we?": Current Phase, Parallel Track, Blocking Open Questions, Open PM Action Items, Runtime in Use. This is the high-churn state file; CLAUDE.md is the stable manual and usually doesn't need re-reading at kickoff. Then read the **2–3 most recent session records** for what actually shipped last: `ls docs/sessions/ | sort -r | head -3`, and read those files. (`STATUS.md` deliberately carries no session list — see `docs/sessions/README.md`.)
 
-2. **Scan `docs/backlog.md`** for any row whose **Blocks** column matches the current Phase, and for anything marked **Now**. Surface those — they may pre-empt the obvious next step. (For a fuller reconcile, the `backlog-groomer` skill is the procedure.)
+2. **Grep `docs/backlog.md`** — don't read it whole. It's ~453 KB (one row per line, so it's grep-shaped by construction) and a kickoff needs a handful of rows, not all 427: search the **Blocks** column for the current Phase and for anything marked `| Now |`. Surface those — they may pre-empt the obvious next step. The whole-file read is for `view backlog`, not for this. (For a fuller reconcile, the `backlog-groomer` skill is the procedure.)
 
 3. **Check for blocking Open Questions** (CLAUDE.md § Open Questions → Open, cross-referenced from STATUS.md) that gate the current Phase. If one is blocking and unanswered, the recommended first action is "resolve open question X," not "build."
 
