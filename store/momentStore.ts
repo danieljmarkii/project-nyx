@@ -137,6 +137,14 @@ interface MomentState {
   // Mutates the in-flight MEAL card's intakeRating after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on a beat payload.
   patchIntakeRating: (rating: IntakeRating | null) => void;
+  // B-351 slice 4 — land the trial-contaminant heads-up on a card that is ALREADY
+  // showing. The card fires the instant the meal is written; the check (which may
+  // need one network round-trip on a cold cache) patches in when it resolves, so
+  // nothing about the log path ever waits on it. Guarded by eventId: a second log
+  // during the wait replaces the payload, and a late answer for the PREVIOUS meal
+  // must not decorate the new one. Returns whether it landed, so the caller only
+  // spends rule 3's one-per-food budget on a heads-up actually rendered.
+  patchTrialFlag: (eventId: string, flag: TrialContaminantFlag) => boolean;
   // Mutates the in-flight MEDICATION card's adherence after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on other payloads.
   patchAdherence: (adherence: DoseAdherence | null) => void;
@@ -163,7 +171,7 @@ const MEAL_DURATION_MS = 5000;
 // showMeal rather than at each call site so a future meal-entry path cannot ship
 // a flagged card that flashes past — the same can't-forget reasoning that puts
 // every meal path through showMeal in the first place.
-const MEAL_FLAGGED_DURATION_MS = 7000;
+export const MEAL_FLAGGED_DURATION_MS = 7000;
 // Medication-card dwell: same rationale as the meal card — interactive (the
 // adherence chip row needs reading + a deliberate tap before auto-dismiss).
 const MEDICATION_DURATION_MS = 5000;
@@ -235,6 +243,15 @@ export const useMomentStore = create<MomentState>((set) => ({
         ? { payload: { ...state.payload, intakeRating } }
         : {}
     ),
+  patchTrialFlag: (eventId, trialFlag) => {
+    const state = useMomentStore.getState();
+    if (state.payload?.kind !== 'meal' || state.payload.eventId !== eventId) return false;
+    // Also require the card to still be visible — patching a dismissed card would
+    // burn the food's one heads-up on something nobody saw.
+    if (!state.visible) return false;
+    set({ payload: { ...state.payload, trialFlag } });
+    return true;
+  },
   patchAdherence: (adherence) =>
     set((state) =>
       state.payload?.kind === 'medication'

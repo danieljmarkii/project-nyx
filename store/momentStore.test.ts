@@ -155,12 +155,46 @@ describe('momentStore', () => {
     // past at the unflagged 5s. Applied in the store rather than at each call
     // site, so a future meal-entry path cannot ship a flagged card that does.
     useMomentStore.getState().showMeal(mealPayload({
-      trialFlag: { proteins: ['chicken'], targetProtein: 'duck' },
+      trialFlag: { proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' },
     }));
     jest.advanceTimersByTime(5000);
     expect(useMomentStore.getState().visible).toBe(true);
     jest.advanceTimersByTime(2000);
     expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('patchTrialFlag lands on the showing card and extends its dwell', () => {
+    // B-351 slice 4 round 2: the card now shows IMMEDIATELY and the flag patches
+    // in, so a cold trial-cache lookup never delays the owner's confirmation.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-flag' }));
+    const landed = useMomentStore.getState().patchTrialFlag('e-flag', {
+      proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1',
+    });
+    expect(landed).toBe(true);
+    const p = useMomentStore.getState().payload;
+    if (p?.kind !== 'meal') throw new Error('expected meal payload');
+    expect(p.trialFlag?.proteins).toEqual(['chicken']);
+  });
+
+  it('patchTrialFlag REFUSES a late answer for a superseded meal', () => {
+    // A second log during the wait replaces the payload. A late flag for the
+    // PREVIOUS meal must not decorate the new one — and, because the caller only
+    // spends rule 3's budget when the patch lands, refusing here also stops that
+    // food's one heads-up being burned on a card nobody saw.
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-first' }));
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-second' }));
+    expect(useMomentStore.getState().patchTrialFlag('e-first', {
+      proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1',
+    })).toBe(false);
+  });
+
+  it('patchTrialFlag REFUSES once the card has been dismissed', () => {
+    useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-gone' }));
+    jest.advanceTimersByTime(5000);
+    expect(useMomentStore.getState().visible).toBe(false);
+    expect(useMomentStore.getState().patchTrialFlag('e-gone', {
+      proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1',
+    })).toBe(false);
   });
 
   it('carries a null trial flag through untouched — absence is never an all-clear', () => {

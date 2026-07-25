@@ -20,7 +20,7 @@ import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
-import { useMomentStore } from '../store/momentStore';
+import { useMomentStore, MEAL_FLAGGED_DURATION_MS } from '../store/momentStore';
 import { getDb, getActiveRegimenForDrug, getMealForEvent, updateDoseAdherence, PickerFood, PickerMedication } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../lib/sync';
@@ -31,7 +31,7 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
-import { evaluateMealTrialFlag } from '../lib/trialContaminant';
+import { evaluateMealTrialFlag, noteTrialFlagShown } from '../lib/trialContaminant';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'medication' | 'symptom' | 'simple' | 'stool-type' | 'weight';
@@ -61,6 +61,8 @@ export default function LogModal() {
   const { pendingAttachment, setPendingAttachment } = useAttachmentStore();
   const showMoment = useMomentStore((s) => s.show);
   const showMealMoment = useMomentStore((s) => s.showMeal);
+  const patchTrialFlag = useMomentStore((s) => s.patchTrialFlag);
+  const rescheduleMoment = useMomentStore((s) => s.rescheduleHide);
   const showMedicationMoment = useMomentStore((s) => s.showMedication);
   // B-156 PR B2b — combo params. When pairedEventId is set, this medication log is a
   // dose given WITH a just-logged meal/treat (entered from its completion card): the
@@ -261,6 +263,24 @@ export default function LogModal() {
   // attached before reaching the picker, preserve that provenance and
   // the EXIF-derived time — Dr. Chen relies on EXIF-stamped meals for
   // clinical trust, and clobbering it here would silently drop that.
+  // B-351 slice 4 — resolve the trial-contaminant heads-up and land it on the
+  // card that is already showing. Fire-and-forget by design: the meal is written,
+  // the card is up, and this is strictly additive information. The ledger write
+  // happens ONLY if the patch landed, so the food's one-per-trial budget can never
+  // be spent on a heads-up the owner did not see.
+  async function applyTrialFlag(
+    eventId: string,
+    petId: string,
+    foodId: string,
+    occurredAt: string,
+  ) {
+    const flag = await evaluateMealTrialFlag({ petId, foodId, occurredAt });
+    if (!flag) return;
+    if (!patchTrialFlag(eventId, flag)) return;
+    rescheduleMoment(MEAL_FLAGGED_DURATION_MS);
+    await noteTrialFlagShown(flag);
+  }
+
   async function handlePickFood(food: PickerFood) {
     setSelectedFoodId(food.id);
     setSelectedFoodBrand(food.brand);
@@ -297,17 +317,6 @@ export default function LogModal() {
       const foodType = food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
         ? food.food_type
         : null;
-      // B-351 slice 4 — the trial-contaminant heads-up, resolved AFTER the meal is
-      // committed and awaited only because the card has not been shown yet. The log
-      // itself is already done and synced by this point, so nothing about Principle
-      // 1 depends on this resolving (or resolving fast, or at all): the evaluator
-      // reads local SQLite plus a 5-minute-cached trial row, swallows every error,
-      // and returns null for every uncertainty.
-      const trialFlag = await evaluateMealTrialFlag({
-        petId: result.petId,
-        foodId: food.id,
-        occurredAt: result.occurredAt,
-      });
       showMealMoment(
         {
           eventId: result.eventId,
@@ -317,10 +326,19 @@ export default function LogModal() {
           foodBrand: food.brand,
           foodProductName: food.product_name,
           intakeRating: null,
-          trialFlag,
         },
         { delayMs: 450 },
       );
+      // B-351 slice 4 — the trial-contaminant heads-up, resolved AFTER the card is
+      // already on screen and patched in if it lands. Deliberately NOT awaited
+      // before the card: on a cold trial cache this makes one network call, and an
+      // earlier cut awaited it behind a 1200ms timeout — which both delayed the
+      // owner's confirmation on the wedge's hot path AND (because a JS promise is
+      // not cancellable) let the abandoned evaluation spend the food's one
+      // heads-up on a card that never showed it. Patch-on-arrival has neither
+      // problem: nothing waits, and the budget is spent by the surface that
+      // renders it.
+      void applyTrialFlag(result.eventId, result.petId, food.id, result.occurredAt);
     }
   }
 

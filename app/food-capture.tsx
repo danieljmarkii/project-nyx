@@ -41,6 +41,7 @@ import {
   foodContaminantFlag,
   addFlagCopy,
   mealFlagCopy,
+  noteTrialFlagShown,
   type TrialProteinContext,
 } from '../lib/trialContaminant';
 import { useAppConfig } from '../hooks/useAppConfig';
@@ -643,8 +644,24 @@ export default function FoodCaptureScreen() {
     // The log-time heads-up for THIS path (see attemptCommit): captured at commit
     // so the completion step can report it. Only when a meal was actually
     // written — an add-only commit already had its say in the soft confirm.
-    if (cameFromMealLog && pet && trialFlag) {
+    //
+    // Two guards this path needs and the picker paths get from
+    // evaluateMealTrialFlag, which it deliberately does not call (the food is
+    // brand-new and in memory, not in the cache yet):
+    //   • THE TRIAL WINDOW. mealOccurredAt is EXIF-seeded, so a photo taken last
+    //     week yields a meal that predates the trial — and the card would say
+    //     "…'s duck trial should skip chicken. The meal's saved" about a
+    //     PRE-TRIAL feeding. Two meal paths must not disagree about the predicate.
+    //   • RULE 3's LEDGER. Without the write, the same food fires again on its
+    //     next log from the picker, silently contradicting "counted in heads-ups
+    //     GIVEN".
+    const inTrialWindow =
+      trialCtx != null &&
+      !Number.isNaN(trialCtx.startedAtMs) &&
+      mealOccurredAt.getTime() >= trialCtx.startedAtMs;
+    if (cameFromMealLog && pet && trialFlag && inTrialWindow) {
       setLoggedTrialFlag(mealFlagCopy(trialFlag, pet.name));
+      void noteTrialFlagShown(trialFlag);
     }
     setStep('complete');
   }

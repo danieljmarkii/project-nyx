@@ -26,6 +26,7 @@ import {
   trialTargetLine,
   hasFlaggedFoodInTrial,
   recordFlaggedFoodInTrial,
+  noteTrialFlagShown,
   clearTrialHeadsUpLedger,
   resetHeadsUpLedgerCache,
   trialFoodContaminants,
@@ -50,6 +51,7 @@ function ctx(over: Partial<TrialProteinContext> = {}): TrialProteinContext {
     trialFoodLabel: 'Zignature Duck',
     trialFoodKey: 'zignature\u001Fduck formula',
     targetProtein: 'duck',
+    trialFoodResolved: true,
     trialFoodProteins: ['duck'],
     trialFoodCompleteness: { complete: true, provenance: 'panel_read' },
     ...over,
@@ -116,6 +118,8 @@ describe('foodContaminantFlag — shape ② (a food that is not the trial diet)'
     expect(foodContaminantFlag(ctx(), 'other-food', ['chicken'])).toEqual({
       proteins: ['chicken'],
       targetProtein: 'duck',
+      trialId: 't1',
+      foodId: 'other-food',
     });
   });
 
@@ -204,7 +208,7 @@ describe('copy', () => {
   });
 
   it('the log-time heads-up reports a saved meal and never asks anything', () => {
-    const copy = mealFlagCopy({ proteins: ['chicken'], targetProtein: 'duck' }, 'Mochi');
+    const copy = mealFlagCopy({ proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' }, 'Mochi');
     expect(copy.headline).toBe('This one has chicken.');
     expect(copy.detail).toContain("Mochi's duck trial should skip chicken");
     // Principle 1 — the log is already done; nothing here is a question or a gate.
@@ -215,7 +219,7 @@ describe('copy', () => {
   it('the add-time confirm does not assert a trial TYPE we were never told', () => {
     // The mock read "elimination trial"; diet_trials carries no indication column
     // (D6 deferred it), so claiming one would be a fabricated clinical detail.
-    const copy = addFlagCopy({ proteins: ['chicken'], targetProtein: 'duck' }, 'Mochi');
+    const copy = addFlagCopy({ proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' }, 'Mochi');
     expect(copy.title).toBe('Heads up — this food lists chicken');
     expect(copy.body).toContain("Mochi's trial diet is duck");
     expect(copy.body).not.toMatch(/elimination|hydrolysed|hydrolyzed/i);
@@ -223,13 +227,13 @@ describe('copy', () => {
   });
 
   it('the standing note names the food\'s property, not an event', () => {
-    const copy = standingFlagCopy({ proteins: ['chicken', 'salmon'], targetProtein: 'duck' }, 'Mochi');
+    const copy = standingFlagCopy({ proteins: ['chicken', 'salmon'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' }, 'Mochi');
     expect(copy.title).toBe("Off Mochi's trial diet");
     expect(copy.body).toContain('chicken and salmon');
   });
 
   it('no owner-facing string carries an exclamation mark (nyx-voice)', () => {
-    const flag = { proteins: ['chicken'], targetProtein: 'duck' };
+    const flag = { proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' };
     const all = [
       ...Object.values(mealFlagCopy(flag, 'Mochi')),
       ...Object.values(addFlagCopy(flag, 'Mochi')),
@@ -335,7 +339,7 @@ describe('rule 2 survives a duplicate capture of the trial food', () => {
   it('still flags a genuinely different food that happens to be captured twice', () => {
     const c = ctx();
     expect(foodContaminantFlag(c, 'other', ['chicken'], 'purina\u001Fone chicken'))
-      .toEqual({ proteins: ['chicken'], targetProtein: 'duck' });
+      .toEqual({ proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'other' });
   });
 });
 
@@ -348,8 +352,96 @@ describe('an unknown trial target discloses that the check is off', () => {
     expect(note?.body).toContain('no main protein set');
   });
 
-  it('B8 — the trial card names the protein every check rests on', () => {
-    expect(trialTargetLine(ctx())).toBe('Checking other foods against duck');
+  it('B8 — the trial card names the trial protein, and claims NO coverage', () => {
+    // "Checking other foods against duck" was the first cut, and the second
+    // adversarial pass broke it: the check only sees foods with a captured
+    // protein set — a small minority of a real library — so the line advertised
+    // surveillance that mostly does not happen, turning rule 1's silence into an
+    // implied "nothing conflicts". Naming the protein carries the same B8
+    // disclosure and asserts nothing about what is being watched.
+    expect(trialTargetLine(ctx())).toBe('Trial protein · Duck');
+    expect(trialTargetLine(ctx())).not.toMatch(/check|watch|monitor|scan/i);
     expect(trialTargetLine(ctx({ targetProtein: null }))).toBeNull();
+  });
+
+  it('B9 — distinguishes "no protein designated" from "we never read the food"', () => {
+    // Collapsing these asserted "the trial food has no main protein set" about a
+    // food the app had never loaded — an unproven claim about the record, on a
+    // clinical surface.
+    const unread = trialDietNote(ctx({ targetProtein: null, trialFoodResolved: false }));
+    expect(unread?.title).toContain("can't check other foods");
+    expect(unread?.body).toContain("hasn't loaded");
+
+    const noFood = trialDietNote(
+      ctx({ targetProtein: null, trialFoodResolved: false, trialFoodId: null }),
+    );
+    expect(noFood?.body).toContain('no food attached');
+
+    const designatedNone = trialDietNote(ctx({ targetProtein: null, trialFoodResolved: true }));
+    expect(designatedNone?.body).toContain('no main protein set');
+  });
+});
+
+
+// ── Round-2 adversarial regressions ──────────────────────────────────────────
+
+describe('rule 3 spends its budget only on a heads-up that was SHOWN', () => {
+  beforeEach(async () => { mockStore.clear(); resetHeadsUpLedgerCache(); });
+
+  it('the evaluator does NOT write the ledger — only noteTrialFlagShown does', async () => {
+    // The round-2 break, reproduced by the reviewer: the evaluator recorded, and
+    // it was wrapped in a 1200ms Promise.race so a slow cold evaluation could not
+    // delay the card. A JS promise is not cancellable, so the ABANDONED inner
+    // still computed the flag and wrote the ledger while the caller had already
+    // shown a card with no heads-up — measured as
+    // `shown to owner: null | ledger says already-told: true`. That food could
+    // then never fire again for the rest of the trial: verbatim the
+    // "suppressed heads-up consumed the budget" defect rule 3 was rewritten to
+    // eliminate. The read and the write are now split; this pins the split.
+    const flag = { proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'jerky' };
+    expect(await hasFlaggedFoodInTrial('t1', 'jerky')).toBe(false);
+    await noteTrialFlagShown(flag);
+    expect(await hasFlaggedFoodInTrial('t1', 'jerky')).toBe(true);
+  });
+
+  it('there is no timeout constant left to reintroduce the race', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('./trialContaminant') as Record<string, unknown>;
+    expect(mod.MEAL_FLAG_TIMEOUT_MS).toBeUndefined();
+  });
+});
+
+describe('the ledger is multi-pet safe', () => {
+  beforeEach(async () => { mockStore.clear(); resetHeadsUpLedgerCache(); });
+
+  it('recording under one trial does not drop another trial (B-086 multi-pet)', async () => {
+    // The first cut wrote `{ [trialId]: … }` to prune dead trials, which dropped
+    // every other trial's entries. Two littermates each on an elimination trial
+    // is routine, so every pet switch re-opened the other's flagged foods and
+    // defeated rule 3 outright.
+    await recordFlaggedFoodInTrial('trial-pet-a', 'chew');
+    await recordFlaggedFoodInTrial('trial-pet-b', 'salmon-treat');
+    expect(await hasFlaggedFoodInTrial('trial-pet-a', 'chew')).toBe(true);
+    expect(await hasFlaggedFoodInTrial('trial-pet-b', 'salmon-treat')).toBe(true);
+  });
+
+  it('still bounds growth across many completed trials', async () => {
+    for (let i = 0; i < 12; i++) await recordFlaggedFoodInTrial(`trial-${i}`, 'food');
+    const stored = JSON.parse(mockStore.get('nyx.trialHeadsUp.v1') as string) as Record<string, string[]>;
+    expect(Object.keys(stored).length).toBeLessThanOrEqual(6);
+    // The most recent trial is always kept.
+    expect(await hasFlaggedFoodInTrial('trial-11', 'food')).toBe(true);
+  });
+});
+
+describe('an empty brand+product key is not an identity', () => {
+  it('two blank-named foods do not collide into the trial-diet exclusion', () => {
+    // foodIntakeKey('','') is the bare separator, and brand/product are NOT NULL
+    // but not non-empty — the confirm step has no non-empty guard. Treating that
+    // as a match would silently mark an unrelated food as the trial diet and
+    // never flag it: the dangerous direction.
+    const blank = '\u001F';
+    const c = ctx({ trialFoodKey: blank });
+    expect(foodContaminantFlag(c, 'some-other-food', ['chicken'], blank)).not.toBeNull();
   });
 });
