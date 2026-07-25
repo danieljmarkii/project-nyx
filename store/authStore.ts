@@ -90,6 +90,14 @@ export async function armRecoveryGate(): Promise<void> {
  *
  * Memory is cleared even if the disk clear fails, so a storage error can never be
  * the thing that traps an owner in the flow.
+ *
+ * The mirror-image residual of the arm path, named rather than left to be
+ * rediscovered: if that disk clear fails, a stale `'1'` survives, so a force-quit
+ * before the next chance to clear makes the NEXT cold start read the gate as armed
+ * with the password already changed. The owner is not stuck — PR 2's FR-16 escape
+ * releases it — but they meet one screen they shouldn't have to. Accepted here
+ * because the alternative (clearing memory only after a confirmed disk write) trades
+ * a rare cosmetic detour for a rare hard trap, which is the worse direction.
  */
 export async function releaseRecoveryGate(): Promise<void> {
   try {

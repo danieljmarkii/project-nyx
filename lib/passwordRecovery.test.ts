@@ -133,6 +133,40 @@ describe('parseRecoveryLink — the URL-shape classification (FR-4a)', () => {
     });
   });
 
+  it('does not let a nested URL smuggle a top-level code param', () => {
+    // A `?` inside a parameter VALUE belongs to that value. Splitting on every
+    // delimiter would surface the inner `code=evil` as though the outer link
+    // carried it — and this parser is what decides what a hostile deep link (§10
+    // row 23) even looks like, so it must not be the weak link.
+    expect(
+      parseRecoveryLink(
+        'nyx:///reset-password?redirect_to=nyx:///reset-password?code=evil',
+      ),
+    ).toEqual({ kind: 'malformed' });
+  });
+
+  it('treats everything after the first # as fragment, per RFC 3986', () => {
+    expect(
+      parseRecoveryLink('nyx:///reset-password#error_code=otp_expired&next=/x?code=evil'),
+    ).toEqual({ kind: 'error', errorCode: 'otp_expired' });
+  });
+
+  it('ignores a query that appears only AFTER the fragment', () => {
+    expect(parseRecoveryLink('nyx:///reset-password#a=b?code=evil')).toEqual({
+      kind: 'malformed',
+    });
+  });
+
+  it('matches the route case-insensitively but keeps the code verbatim', () => {
+    // A mail client that uppercased a path segment would otherwise make a real
+    // link vanish into `unrelated` instead of reaching a designed state. The code
+    // itself is opaque and case-significant, so it must NOT be folded.
+    expect(parseRecoveryLink('nyx:///Reset-Password?code=AbC123')).toEqual({
+      kind: 'valid',
+      code: 'AbC123',
+    });
+  });
+
   it('survives a malformed percent-escape without throwing', () => {
     // `decodeURIComponent('%')` throws; a truncated link can absolutely contain one.
     expect(() => parseRecoveryLink('nyx:///reset-password?code=%')).not.toThrow();

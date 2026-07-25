@@ -70,7 +70,27 @@ function dissect(url: string): { segments: string[]; params: Map<string, string>
   // Everything before the first `?` or `#` is the path portion.
   const cut = url.search(/[?#]/);
   const pathPart = cut === -1 ? url : url.slice(0, cut);
-  const rest = cut === -1 ? '' : url.slice(cut);
+
+  // Split the remainder on the FIRST `?` and the FIRST `#` only — never on every
+  // occurrence. A delimiter inside a parameter VALUE belongs to that value, and
+  // treating it as a new boundary lets a nested URL smuggle a top-level param past
+  // this parser: `?redirect_to=nyx:///reset-password?code=evil` would surface
+  // `code=evil` as though the outer link carried it. Real GoTrue links percent-
+  // encode their values so they never produce this, and FR-14's provenance check
+  // plus the exchange itself still gate whether any code is honoured — but this is
+  // the parser that decides what a hostile deep link (§10 row 23) even looks like,
+  // so it must not be the weak link. Per RFC 3986 the fragment is last, so
+  // everything after the first `#` is fragment even if it contains a `?`.
+  const qIdx = url.indexOf('?');
+  const hIdx = url.indexOf('#');
+  let query = '';
+  let fragment = '';
+  if (hIdx === -1) {
+    query = qIdx === -1 ? '' : url.slice(qIdx + 1);
+  } else {
+    fragment = url.slice(hIdx + 1);
+    if (qIdx !== -1 && qIdx < hIdx) query = url.slice(qIdx + 1, hIdx);
+  }
 
   // Strip the scheme (`nyx:`, `exp:`, `https:`) so the remainder is host/path.
   // The host-vs-path distinction is genuinely ambiguous for a custom scheme
@@ -84,7 +104,7 @@ function dissect(url: string): { segments: string[]; params: Map<string, string>
   // Parse the query AND the fragment into one map. GoTrue puts recovery errors in
   // the query on the PKCE path but in the fragment on others, and a spec that only
   // read one would render "that link no longer works" as a blank screen instead.
-  for (const chunk of rest.split(/[?#]/)) {
+  for (const chunk of [query, fragment]) {
     for (const pair of chunk.split('&')) {
       if (!pair) continue;
       const eq = pair.indexOf('=');
@@ -122,7 +142,12 @@ export function parseRecoveryLink(url: string | null | undefined): RecoveryLink 
   if (!url || typeof url !== 'string') return { kind: 'unrelated' };
 
   const { segments, params } = dissect(url);
-  const last = segments[segments.length - 1];
+  // Case-insensitive on the ROUTE only (never on the code, which is opaque and
+  // case-significant). Our own links are always lowercase, but a mail client that
+  // uppercased a segment on tap-through would otherwise make a real link vanish
+  // into `unrelated` — silently showing nothing, rather than degrading to a
+  // designed state with a forward action.
+  const last = segments[segments.length - 1]?.toLowerCase();
   if (last !== RECOVERY_PATH) return { kind: 'unrelated' };
 
   // Error BEFORE code, so a URL carrying both is never exchanged. Fail-closed is

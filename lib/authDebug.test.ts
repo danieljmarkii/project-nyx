@@ -84,6 +84,18 @@ describe('redactDetail', () => {
     });
   });
 
+  it('redacts a deep link under ANY scheme, so B-278 needs no coordination here', () => {
+    // Scheme-agnostic on purpose: a hardcoded `nyx://` literal would be a second
+    // place to remember at the rename, and would fail SILENTLY (post-rename it
+    // just stops matching). Covers the dev-client `exp://` shape too.
+    expect(redactDetail({ detail: 'culprit:///reset-password?c=1' })).toEqual({
+      detail: '<redacted url>',
+    });
+    expect(redactDetail({ detail: 'exp://192.168.1.5:8081/--/reset-password' })).toEqual({
+      detail: '<redacted url>',
+    });
+  });
+
   it('keeps an ordinary error message readable — the value guard stays narrow', () => {
     // Blanket-redacting anything URL-shaped would dark out the breadcrumbs this
     // module exists for, so the guard matches credential params and our own

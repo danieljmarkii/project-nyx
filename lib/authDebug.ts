@@ -81,10 +81,18 @@ const SENSITIVE_KEY_RE =
 // query parameter, or any string that is one of our own deep links — so ordinary
 // diagnostic messages stay readable rather than being blanket-redacted.
 const SENSITIVE_VALUE_RE = /[?&#](code|token|access_token|refresh_token|verifier)=/i;
-const APP_SCHEME_URL_RE = /\bnyx:\/\//i;
+// Any NON-http(s) scheme URL — i.e. a deep link. Deliberately scheme-AGNOSTIC
+// rather than matching our own `nyx://` literal: B-278 renames the scheme to
+// `culprit://`, and a hardcoded literal here would be a second place to remember
+// (and would fail silently — post-rename it just stops matching). Written this way
+// it also covers the dev-client `exp://` shape, and needs no import from the
+// recovery module into this diagnostic primitive. http(s) is excluded so an
+// ordinary "GET https://… failed" breadcrumb stays readable; a credential-carrying
+// https URL is still caught by the parameter guard above.
+const DEEP_LINK_RE = /\b(?!https?:)[a-z][a-z0-9+.-]*:\/\//i;
 
 function looksSensitive(value: string): boolean {
-  return SENSITIVE_VALUE_RE.test(value) || APP_SCHEME_URL_RE.test(value);
+  return SENSITIVE_VALUE_RE.test(value) || DEEP_LINK_RE.test(value);
 }
 
 // Pure: strip anything that could be a secret. We only ever intend to log
