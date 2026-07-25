@@ -61,7 +61,31 @@ export const LAUNCH_ID: string = Math.random().toString(36).slice(2, 10);
 // in depth against a future `logAuth('x', { email })` / `{ refreshToken }` added
 // mid-investigation without review. Deliberately EXCLUDES "session" so the
 // load-bearing `hasSession` boolean still logs (a boolean carries no secret).
-const SENSITIVE_KEY_RE = /token|jwt|refresh|secret|email|password/i;
+//
+// `code|verifier|url|link` were added for B-280 FR-17. The length guard below is
+// NOT sufficient on its own for the recovery flow: `nyx:///reset-password?code=`
+// (27 chars) plus a 36-char code is 63 — UNDER `MAX_DETAIL_STRING`, so it would be
+// stored VERBATIM in a log that `app/settings/diagnostics.tsx` invites the owner
+// to Share. A recovery code in a shared log is a single-use account-takeover
+// token. None of the four words collides with a key any current call site uses,
+// so nothing diagnostic is lost — but note the consequence for future callers: an
+// error code worth logging must be named something that does not match (`reason`,
+// `errShape`), because this guard is deliberately blunt.
+const SENSITIVE_KEY_RE =
+  /token|jwt|refresh|secret|email|password|code|verifier|url|link/i;
+
+// Value-shape guard, the second half of FR-17. The key-name regex above only works
+// if every caller names its keys well; this catches the same secret arriving under
+// an innocent key (`{ deepLink: … }`, `{ msg: String(e) }` where the error text
+// embeds the URL). Kept NARROW on purpose — any string carrying a credential-ish
+// query parameter, or any string that is one of our own deep links — so ordinary
+// diagnostic messages stay readable rather than being blanket-redacted.
+const SENSITIVE_VALUE_RE = /[?&#](code|token|access_token|refresh_token|verifier)=/i;
+const APP_SCHEME_URL_RE = /\bnyx:\/\//i;
+
+function looksSensitive(value: string): boolean {
+  return SENSITIVE_VALUE_RE.test(value) || APP_SCHEME_URL_RE.test(value);
+}
 
 // Pure: strip anything that could be a secret. We only ever intend to log
 // numbers/booleans/short enums, but redact defensively in case a caller passes a
@@ -77,9 +101,16 @@ export function redactDetail(
       // Never log a value under a sensitive-looking key, whatever its type.
       out[k] = '<redacted>';
     } else if (typeof v === 'string') {
-      // A long string is assumed to be a value we must never persist verbatim
-      // (a token, a serialized session) and is reduced to its length only.
-      out[k] = v.length > MAX_DETAIL_STRING ? `<${v.length} chars>` : v;
+      if (looksSensitive(v)) {
+        // A deep link or a credential-carrying URL, whatever key it arrived under
+        // and however short it is (FR-17 — the 63-char recovery link clears the
+        // length guard below with a character to spare).
+        out[k] = '<redacted url>';
+      } else {
+        // A long string is assumed to be a value we must never persist verbatim
+        // (a token, a serialized session) and is reduced to its length only.
+        out[k] = v.length > MAX_DETAIL_STRING ? `<${v.length} chars>` : v;
+      }
     } else if (v === null || typeof v === 'number' || typeof v === 'boolean') {
       out[k] = v;
     } else {
