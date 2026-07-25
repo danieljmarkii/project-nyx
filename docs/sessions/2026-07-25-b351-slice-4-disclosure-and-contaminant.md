@@ -110,9 +110,11 @@ Fixed by counting what we actually *said*: a small persisted ledger keyed by tri
 
 The useful part was what the merge *exposed*. B-280 shipped `lib/session.test.ts`, which imports `lib/session.ts` — which now imports `lib/trialContaminant.ts` → `lib/supabase`, and that fail-fasts on missing env under jest. **Neither branch's suite caught it alone; it exists only where the two meet.** Fixed in that file's own stated idiom ("the native-heavy halves are mocked; the AsyncStorage-backed halves run for real"): stub the supabase client, let both trial teardown functions run for real. That turned a silencing fix into coverage — the suite now *asserts* the heads-up ledger is wiped on sign-out, which matters because the ledger is per-account bookkeeping in AsyncStorage, outside the SQLite `clearLocalData` wipes; without the explicit clear it survives sign-out and the next account inherits "already told you about that food" for foods it has never seen.
 
-## Not merged — CI has never run on this branch
+## The CI scare, and the lesson
 
-Four pushes, zero workflow runs on `claude/b351-phase-a-slice-4-6h2cr1`, while sibling branches got `pull_request` runs the same afternoon. This is **not a red check — it is no check**, and the `main` ruleset requires both with an empty bypass list, so the PR cannot merge until a run exists. Locally `tsc` is clean and jest is 118 suites / 1898 green, and `deno test` was never runnable here (no deno in this environment), so the Edge Function suites remain unverified for this branch — though it touches no file under `supabase/functions/`.
+For about 25 minutes this looked like a hard blocker: four pushes, **zero** workflow runs on the branch, while sibling branches were getting `pull_request` runs the same afternoon. With the `main` ruleset requiring both checks against an empty bypass list, no-check is as unmergeable as a red check, so it was written up as one.
+
+Then run #32 fired on the merge commit at 17:20Z **by itself**, and finished **green on both jobs** — including the Deno suite, which could not run locally (no deno in this environment). It was an Actions queue delay all along. A close→reopen done at 17:22 to force a trigger was unnecessary, and the honest read is that I should have waited before diagnosing the trigger as broken. Recording it because the shape is recognisable and the wrong conclusion is cheap to reach: *absent checks look identical to a dead trigger for the first several minutes.*
 
 ## Deferred, recorded
 
