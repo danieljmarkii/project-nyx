@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Culprit — Diet trial lifecycle mockups</title>
+<!--
+  Diet trial lifecycle — mock round 1.  B-417 · PRs 3, 4, 6, 7.
+  Spec: docs/nyx-diet-trial-requirements.md v0.97 (§4.1, §4.2, §4.3, §5.2, §5.3, §7)
+  Rulings record: docs/diet-trial-requirements-review-2026-07.md §0 (all ten closed 2026-07-25)
+
+  App-surface tokens are lifted verbatim from constants/theme.ts and are FIXED — the
+  screens are the subject under review, so they don't re-theme. Page chrome does.
+  The vet-report register mirrors docs/vet-report-mock-v3.html (13.5px sans, tabular
+  nums, hairline kv rows) so §7's block is judged in the artifact it actually lands in.
+
+  Two rules govern every screen here and are stated once, at the top:
+    R1 — no negative claim about off-diet foods, at any coverage, on any surface (G2).
+    R2 — no blended coverage/adherence metric in any form, INCLUDING bar width (D2).
+-->
+<style>
+  /* Fonts approximate the real stack: Geist → -apple-system/Inter; Newsreader → Georgia. */
+  :root {
+    /* app tokens — constants/theme.ts, fixed */
+    --accent: #00C2A8;
+    --accent-light: #E0FBF7;
+    --accent-ink: #0B7B6C;
+    --text-primary-a: #0A0A0A;
+    --text-secondary-a: #525252;
+    --text-tertiary-a: #737373;
+    --text-disabled-a: #A3A3A3;
+    --surface-a: #FFFFFF;
+    --surface-subtle-a: #F5F5F5;
+    --neutral-light-a: #FAFAFA;
+    --border-a: #EAEAEA;
+    --chart-empty-a: #F0F0F0;
+    --symptom-a: #F43F5E;
+    --night: #13112E;
+    --crescent-on-light: #211E4E;
+
+    /* page chrome — theme-aware */
+    --page-bg: #F0EFEA;
+    --page-text: #0A0A0A;
+    --page-text-2: #525252;
+    --page-text-3: #737373;
+    --card-bg: #FFFFFF;
+    --card-border: #EAEAEA;
+    --flag-bg: #FDF8EC;
+    --flag-border: #F3D9A4;
+    --new-bg: #E7F6F3;
+    --new-border: #9BD8CC;
+    --kill-bg: #FBEDED;
+    --kill-border: #E9BDBD;
+    --code-bg: #ECEAE3;
+    --shelf-1: #C9D6D2;
+    --shelf-2: #AEC3C9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #17161F; --page-text: #ECEAF6; --page-text-2: #B7B3D6; --page-text-3: #8F8BB5;
+      --card-bg: #201F2B; --card-border: #34324A; --flag-bg: #2B2536; --flag-border: #6B5A33;
+      --new-bg: #1C2B29; --new-border: #2E5B52; --kill-bg: #2E2024; --kill-border: #6B3B3B;
+      --code-bg: #2A2938; --shelf-1: #3A4550; --shelf-2: #2B3540;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #17161F; --page-text: #ECEAF6; --page-text-2: #B7B3D6; --page-text-3: #8F8BB5;
+    --card-bg: #201F2B; --card-border: #34324A; --flag-bg: #2B2536; --flag-border: #6B5A33;
+    --new-bg: #1C2B29; --new-border: #2E5B52; --kill-bg: #2E2024; --kill-border: #6B3B3B;
+    --code-bg: #2A2938; --shelf-1: #3A4550; --shelf-2: #2B3540;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #F0EFEA; --page-text: #0A0A0A; --page-text-2: #525252; --page-text-3: #737373;
+    --card-bg: #FFFFFF; --card-border: #EAEAEA; --flag-bg: #FDF8EC; --flag-border: #F3D9A4;
+    --new-bg: #E7F6F3; --new-border: #9BD8CC; --kill-bg: #FBEDED; --kill-border: #E9BDBD;
+    --code-bg: #ECEAE3; --shelf-1: #C9D6D2; --shelf-2: #AEC3C9;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    background: var(--page-bg); color: var(--page-text);
+    padding: 40px 20px 90px; -webkit-font-smoothing: antialiased;
+  }
+  code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.9em; }
+  .page { max-width: 1080px; margin: 0 auto; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 34px; letter-spacing: -0.3px; margin-bottom: 6px; text-wrap: balance; }
+  .sub { color: var(--page-text-2); font-size: 15px; line-height: 1.55; max-width: 700px; margin-bottom: 8px; }
+  .meta { color: var(--page-text-3); font-size: 12.5px; margin-bottom: 44px; line-height: 1.6; }
+  section { margin-bottom: 68px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--page-text-3); font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  h3 { font-size: 21px; font-weight: 600; letter-spacing: -0.2px; margin-bottom: 10px; text-wrap: balance; }
+  h4 { font-size: 15px; font-weight: 600; margin: 26px 0 10px; }
+  .badge { font-size: 10px; letter-spacing: 0.8px; border-radius: 999px; padding: 3px 9px; font-weight: 700; white-space: nowrap; }
+  .badge.new { background: var(--new-bg); border: 1px solid var(--new-border); color: var(--page-text); }
+  .badge.deferred { background: var(--flag-bg); border: 1px solid var(--flag-border); color: var(--page-text); }
+  .badge.kill { background: var(--kill-bg); border: 1px solid var(--kill-border); color: var(--page-text); }
+  .concept-note { color: var(--page-text-2); font-size: 14.5px; line-height: 1.6; max-width: 720px; margin-bottom: 24px; }
+  .concept-note strong { color: var(--page-text); }
+  .concept-note + .concept-note { margin-top: -14px; }
+
+  /* rules hero */
+  .rule-hero { background: var(--card-bg); border: 1px solid var(--new-border); border-radius: 18px; padding: 24px 28px; max-width: 820px; }
+  .rule-hero .big { font-family: Georgia, serif; font-size: 24px; line-height: 1.3; margin-bottom: 16px; text-wrap: balance; }
+  .rule-hero li { margin: 11px 0 11px 18px; font-size: 14.5px; line-height: 1.6; color: var(--page-text-2); }
+  .rule-hero li strong { color: var(--page-text); }
+
+  /* the shelf the screens sit on */
+  .shelf {
+    background: linear-gradient(135deg, var(--shelf-1) 0%, var(--shelf-2) 100%);
+    border-radius: 28px; padding: 32px 30px;
+    display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start;
+  }
+  .stack { display: flex; flex-direction: column; gap: 9px; width: 306px; max-width: 100%; }
+  .stack.wide { width: 640px; }
+  .caption { font-size: 11.5px; color: rgba(255,255,255,0.92); text-shadow: 0 1px 2px rgba(0,0,0,0.32); font-weight: 500; line-height: 1.5; }
+  .caption b { color: #fff; }
+
+  /* device */
+  .device {
+    background: var(--neutral-light-a); border-radius: 22px; padding: 14px 12px;
+    box-shadow: 0 8px 26px rgba(10,10,10,0.20);
+    color: var(--text-primary-a);
+    font-size: 15px;
+  }
+  .device.sheetframe { border-radius: 22px 22px 10px 10px; }
+  .statusbar { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-tertiary-a); padding: 0 4px 10px; letter-spacing: 0.2px; }
+
+  /* app card */
+  .acard { background: var(--surface-a); border: 1px solid var(--border-a); border-radius: 16px; padding: 16px; }
+  .acard + .acard { margin-top: 12px; }
+  .clabel { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-tertiary-a); font-weight: 600; margin-bottom: 8px; }
+  .cfood { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; line-height: 1.25; }
+  .cday { font-size: 13px; color: var(--text-secondary-a); margin-top: 3px; }
+  .cends { font-size: 13px; color: var(--text-tertiary-a); margin-top: 2px; }
+  .track { height: 5px; border-radius: 3px; background: var(--chart-empty-a); overflow: hidden; margin: 12px 0 12px; }
+  .fill { height: 5px; border-radius: 3px; background: var(--accent); }
+  .fact { font-size: 15px; line-height: 1.5; margin-top: 2px; }
+  .fact + .fact { margin-top: 4px; }
+  .fact .tap { border-bottom: 1px solid var(--accent); padding-bottom: 1px; }
+  .qual { font-size: 13px; color: var(--text-tertiary-a); line-height: 1.45; margin-top: 8px; }
+  .forward { font-size: 15px; line-height: 1.5; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-a); }
+  .muted { color: var(--text-secondary-a); }
+  .tiny { font-size: 13px; color: var(--text-secondary-a); line-height: 1.45; }
+  .standing { margin-top: 12px; padding: 10px 12px; background: var(--surface-subtle-a); border-radius: 12px; font-size: 13px; line-height: 1.45; color: var(--text-secondary-a); }
+  .standing b { color: var(--text-primary-a); font-weight: 600; }
+  .flagline { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-subtle-a); font-size: 13.5px; line-height: 1.45; }
+  .flagline .hd { font-weight: 600; color: var(--text-primary-a); }
+
+  /* buttons */
+  .btn { display: block; text-align: center; background: var(--accent); color: #0A0A0A; font-weight: 600; font-size: 15px; border-radius: 12px; padding: 13px 14px; margin-top: 14px; }
+  .btn.ghost { background: transparent; color: var(--text-primary-a); border: 1px solid var(--border-a); }
+  .btn.tint { background: var(--accent-light); color: var(--accent-ink); }
+  .btn.quiet { background: transparent; color: var(--text-secondary-a); font-weight: 500; padding: 11px; }
+  .btn.sm { font-size: 14px; padding: 11px; margin-top: 10px; }
+  .btnrow { display: flex; gap: 10px; }
+  .btnrow .btn { flex: 1; margin-top: 14px; }
+
+  /* form bits */
+  .field { margin-top: 16px; }
+  .flabel { font-size: 13px; font-weight: 600; color: var(--text-primary-a); margin-bottom: 7px; }
+  .fhelp { font-size: 12.5px; color: var(--text-tertiary-a); margin-top: 6px; line-height: 1.45; }
+  .input { border: 1px solid var(--border-a); border-radius: 12px; padding: 13px 14px; font-size: 15px; background: var(--surface-a); display: flex; align-items: center; gap: 10px; }
+  .input.empty { color: var(--text-disabled-a); }
+  .input .thumb { width: 34px; height: 34px; border-radius: 8px; background: var(--surface-subtle-a); flex: none; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .input .chev { margin-left: auto; color: var(--text-tertiary-a); font-size: 15px; }
+  .input .two { line-height: 1.3; }
+  .input .two small { display: block; font-size: 12px; color: var(--text-tertiary-a); }
+  .chiprow { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { border: 1px solid var(--border-a); border-radius: 999px; padding: 9px 14px; font-size: 14px; background: var(--surface-a); color: var(--text-secondary-a); }
+  .chip.on { background: var(--accent-light); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .disclosure { margin-top: 18px; font-size: 14.5px; color: var(--accent-ink); font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .consent { margin-top: 16px; font-size: 13px; line-height: 1.5; color: var(--text-secondary-a); background: var(--surface-subtle-a); border-radius: 12px; padding: 12px 13px; }
+  .sheettitle { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+  .sheetsub { font-size: 13.5px; color: var(--text-secondary-a); line-height: 1.5; margin-top: 6px; }
+  .divider { height: 1px; background: var(--border-a); margin: 16px 0; }
+  .grabber { width: 36px; height: 4px; border-radius: 2px; background: var(--border-a); margin: 0 auto 14px; }
+  .milestone-h { font-family: Georgia, serif; font-size: 21px; line-height: 1.32; letter-spacing: -0.2px; }
+  .checkrow { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border-a); border-radius: 12px; padding: 12px 13px; font-size: 14.5px; margin-top: 8px; }
+  .checkrow .rad { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--border-a); flex: none; }
+
+  /* dead/deleted artifact */
+  .dead { position: relative; opacity: 0.92; }
+  .dead::after { content: ""; position: absolute; inset: 0; border-radius: 16px; border: 2px solid #C0504A; }
+  .deadtag { position: absolute; top: -10px; right: 10px; background: #C0504A; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 0.6px; border-radius: 999px; padding: 3px 9px; }
+
+  /* annotations */
+  .annos { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-top: 24px; }
+  .anno { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 14px; padding: 14px 16px; font-size: 13px; line-height: 1.55; color: var(--page-text-2); }
+  .anno b { display: block; color: var(--page-text); margin-bottom: 5px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; }
+  .anno.flag { border-color: var(--flag-border); background: var(--flag-bg); }
+  .anno.new { border-color: var(--new-border); background: var(--new-bg); }
+  .anno.kill { border-color: var(--kill-border); background: var(--kill-bg); }
+  .anno strong { color: var(--page-text); }
+
+  .rules { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px 24px; max-width: 820px; }
+  .rules li { margin: 9px 0 9px 18px; font-size: 14px; line-height: 1.6; color: var(--page-text-2); }
+  .rules li strong { color: var(--page-text); }
+
+  /* ── vet-report register (mirrors docs/vet-report-mock-v3.html) ───────────── */
+  .rptwrap { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .rpt {
+    background: #ffffff; color: #16181d; border-radius: 4px; padding: 20px 22px;
+    width: 494px; max-width: 100%;
+    font-family: ui-sans-serif, -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13.5px; line-height: 1.5;
+    box-shadow: 0 1px 3px rgba(20,24,34,.10), 0 8px 28px rgba(20,24,34,.10);
+  }
+  .rpt .num { font-variant-numeric: tabular-nums; }
+  .rpt h5 { font-size: 11px; text-transform: uppercase; letter-spacing: .13em; color: #565961; font-weight: 700; border-bottom: 1px solid #e4e5e8; padding-bottom: 5px; margin-bottom: 9px; }
+  .rpt .idline { font-size: 14px; font-weight: 600; line-height: 1.35; }
+  .rpt .idsub { font-size: 12px; color: #565961; margin-top: 2px; }
+  .rpt .kv { display: flex; gap: 10px; margin: 9px 0; font-size: 12.5px; }
+  .rpt .kv .k { flex: 0 0 84px; font-weight: 600; color: #25272d; }
+  .rpt .kv .v { flex: 1; }
+  .rpt .kv .v em { font-style: normal; color: #565961; }
+  .rpt .interp { margin-top: 11px; padding: 9px 11px; background: #f4f5f7; border-left: 2px solid #1a1c22; font-size: 12.5px; line-height: 1.5; }
+  .rpt .interp b { font-weight: 700; }
+  .rpt .foot { font-size: 11px; color: #8a8d94; margin-top: 10px; line-height: 1.45; }
+  .rpt .added { background: #f2f6ef; box-shadow: inset 2px 0 0 #6f8f5e; }
+  .rptlabel { font-size: 12.5px; color: var(--page-text-2); margin-top: 10px; max-width: 494px; line-height: 1.55; }
+  .rptlabel b { color: var(--page-text); }
+
+  .spark { display: block; }
+  .sparkrow { display: flex; gap: 16px; align-items: center; margin: 8px 0; }
+  .sparkrow .lab { font-size: 11.5px; color: #565961; width: 150px; flex: none; line-height: 1.35; }
+  .sparkrow .lab b { color: #16181d; }
+
+  table.matrix { border-collapse: collapse; font-size: 13px; max-width: 860px; margin-top: 6px; }
+  table.matrix th, table.matrix td { border: 1px solid var(--card-border); padding: 8px 11px; text-align: left; vertical-align: top; line-height: 1.5; }
+  table.matrix th { background: var(--card-bg); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--page-text-3); }
+  table.matrix td { color: var(--page-text-2); }
+  table.matrix td b { color: var(--page-text); }
+
+  .asks { background: var(--card-bg); border: 1px solid var(--flag-border); border-radius: 16px; padding: 20px 24px; max-width: 860px; }
+  .asks ol { margin-left: 18px; }
+  .asks li { margin: 12px 0; font-size: 14px; line-height: 1.6; color: var(--page-text-2); }
+  .asks li strong { color: var(--page-text); }
+  .asks li .rec { display: block; margin-top: 4px; color: var(--page-text); }
+  .changelog { font-size: 13px; color: var(--page-text-3); line-height: 1.75; max-width: 780px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Diet trial lifecycle — mockups</h1>
+  <p class="sub">Mock <strong>round 1</strong>, covering the three UI surfaces PRs 3, 4 and 6 build, plus the two <strong>§7 report variants C4 was deferred to</strong>. The wedge feature has never had a write path: <code>diet_trials</code> shipped in migration 001, seven surfaces read it, and production holds zero rows. Nothing below has ever been drawn.</p>
+  <p class="sub">Briefed against an owner who has <strong>never tracked a trial in any tool</strong> — no consumer pet app ships a trial object, so this is a first-run problem, not a differentiation problem.</p>
+  <p class="meta">2026-07-25 · spec <code>docs/nyx-diet-trial-requirements.md</code> v0.97 §4.1 / §4.2 / §4.3 / §5.2 / §5.3 / §7 · rulings record <code>docs/diet-trial-requirements-review-2026-07.md</code> §0 (all ten closed) · app tokens verbatim from <code>constants/theme.ts</code> · report register from <code>docs/vet-report-mock-v3.html</code> · B-417</p>
+
+  <!-- ══════════════ THE TWO RULES ══════════════ -->
+  <section>
+    <h2>The two rules — they govern every screen below <span class="badge new">SPINE</span></h2>
+    <div class="rule-hero">
+      <div class="big">Everything here is drawn against two rules that cannot be traded off against layout.</div>
+      <ul>
+        <li><strong>R1 — the negative claim is deleted from the product.</strong> <em>“No off-diet foods logged”</em> renders at no coverage level, on no surface. Every claim is in <strong>positive form about the record</strong>, carries <strong>both denominators</strong>, and the blind-spot qualifier is <strong>inline on the claim</strong> — never a page legend. The exposure count is a <strong>floor, never a total</strong>. Two-sided: below the floor Nyx also raises no absence-based alarm. <em>(G2, ruled as a rule rather than a threshold.)</em></li>
+        <li><strong>R2 — no blended coverage/adherence metric, in any form.</strong> Not a string, not a ring, not a badge, not a grade, not a colour, and <strong>not a bar width</strong>. Any progress bar on any screen below encodes <code>getDietTrialProgress().fraction</code> — day progress — and nothing else. <em>(D2; and §6.9: Nyx never scores the owner, so coverage is never a percentage, bar, streak or badge anywhere.)</em></li>
+      </ul>
+    </div>
+
+    <h4>What the two rules delete, drawn</h4>
+    <div class="shelf">
+      <div class="stack">
+        <div class="device">
+          <div class="acard dead">
+            <span class="deadtag">SHIPPED TODAY</span>
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 2 of 56</div>
+            <div class="track"><div class="fill" style="width:100%"></div></div>
+            <div class="tiny"><s>100% compliance</s> · 2 days with food logged</div>
+          </div>
+        </div>
+        <div class="caption"><b>The artifact PR 4 deletes.</b> <code>profile.tsx:770</code> binds the bar’s width to <code>compliance</code>, so day 2 of 56 with both days logged renders a <b>full bar</b> — “almost done” at 3.5% elapsed. Deleting only the string ships this. R2 is asserted on the computed width prop, not on the absence of a word.</div>
+      </div>
+      <div class="stack">
+        <div class="device">
+          <div class="acard dead">
+            <span class="deadtag">NEVER RENDERS</span>
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 23 of 56</div>
+            <div class="track"><div class="fill" style="width:41%"></div></div>
+            <div class="fact"><s>No off-diet foods logged.</s></div>
+            <div class="qual">Four independent proofs this is false while the app is most confident: coverage never reads intake; treat-only days clear any floor; the metric saturates on the first meal of a day; the oral-product channel is invisible by construction.</div>
+          </div>
+        </div>
+        <div class="caption"><b>The sentence R1 removes.</b> A 14-day all-refused trial scores 100% coverage and 0 exposures — a maximally clean trial rendered over a starving cat. No floor rescues it, which is why G2 came back as a rule.</div>
+      </div>
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 23 of 56</div>
+            <div class="cends">Ends 27 August</div>
+            <div class="track"><div class="fill" style="width:41%"></div></div>
+            <div class="fact">68 feedings logged across 22 of 23 days.</div>
+            <div class="fact">All 68 matched the trial diet or a permitted food.</div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
+          </div>
+        </div>
+        <div class="caption"><b>What replaces both.</b> Positive form about the record, both denominators, qualifier inline. The bar is 23/56 — day progress, unrelated to how well the trial is going.</div>
+      </div>
+    </div>
+
+    <div class="annos">
+      <div class="anno new"><b>Why the bar survives at all</b>An owner needs to know how much of a 56-day commitment is left; that is the card’s job (§4.2). What it may never do is encode quality. Drawing the two side by side is the cheapest regression test the team will get: the deleted bar and the kept bar are visually identical on a good week, which is exactly why the string-only acceptance criterion would have passed the bug.</div>
+      <div class="anno"><b>Data Scientist</b>Both denominators, always, and they are different units — 22 <em>of 23 days</em> and 68 <em>of 68 feedings</em> differ by roughly 3×. Never pair an exposure count with a day ratio as if they shared a scale.</div>
+      <div class="anno flag"><b>Copy pack — brand collision</b>Every LOCKED string in the spec says “Nyx” and is reproduced verbatim here. B-274 renames the brand to Culprit. The copy pack must run the rename before PR 3 lands, or the first sentence an owner reads about a dated record of their own conduct names a product that no longer exists.</div>
+    </div>
+  </section>
+
+  <!-- ══════════════ 1. START A TRIAL ══════════════ -->
+  <section>
+    <h2>Surface 1 — Start a trial <span class="badge new">PR 3 · §4.1</span></h2>
+    <h3>Two fields on the primary screen. Everything else behind one disclosure.</h3>
+    <p class="concept-note"><strong>The field test:</strong> the modal asks only what an owner can answer standing in a clinic car park holding a bag of food. <code>AddMedicationModal.tsx</code> is the right <em>location</em> precedent and the wrong <em>shape</em> one — it is 566 lines and collects eight fields. The default path here is two taps and a picker; the AC is <strong>under 15 seconds on a physical device, timed</strong>.</p>
+
+    <div class="shelf">
+      <!-- A: primary -->
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">Start a diet trial</div>
+          <div class="sheetsub">Biscuit’s vet has put him on an elimination diet. Tell Nyx what he’s eating and what it’s for.</div>
+
+          <div class="field">
+            <div class="flabel">Trial diet</div>
+            <div class="input"><span class="thumb">🥣</span><span class="two">Zignature Kangaroo Formula<small>Dry · kangaroo</small></span><span class="chev">›</span></div>
+          </div>
+
+          <div class="field">
+            <div class="flabel">What’s it for</div>
+            <div class="chiprow">
+              <span class="chip on">Skin</span>
+              <span class="chip">Stomach &amp; gut</span>
+              <span class="chip">Something else</span>
+            </div>
+            <div class="fhelp">Most skin trials run 8 weeks. Starting today, that ends <strong>18 September</strong>.</div>
+          </div>
+
+          <div class="disclosure">More options <span>⌄</span></div>
+
+          <div class="consent">While the trial runs, Nyx records which feedings matched the trial diet and which didn’t, with dates. That’s the part your vet needs.</div>
+          <div class="btn">Start trial</div>
+        </div>
+        <div class="caption"><b>A — primary screen.</b> Two fields. The duration default is <b>set and shown</b> by the indication chip without becoming a third field: picking <em>Skin</em> writes 56 days and renders the resulting <b>end date</b>, not a day count. The <b>C6 disclosure</b> sits attached to the confirm action — before the commit, not on the card afterwards.</div>
+      </div>
+
+      <!-- B: more options -->
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">Start a diet trial</div>
+          <div class="divider"></div>
+          <div class="tiny"><b>Trial diet</b> · Zignature Kangaroo Formula &nbsp;·&nbsp; <b>For</b> · Skin</div>
+          <div class="disclosure" style="margin-top:14px">More options <span>⌃</span></div>
+
+          <div class="field">
+            <div class="flabel">Also allowed</div>
+            <div class="input"><span class="thumb">🦘</span><span class="two">Kangaroo jerky<small>Permitted treat</small></span><span class="chev">›</span></div>
+            <div class="input" style="margin-top:8px"><span class="chev" style="margin-left:0">＋</span><span class="muted">Add another</span></div>
+            <div class="fhelp">Anything your vet said is OK.</div>
+          </div>
+
+          <div class="field">
+            <div class="flabel">How long</div>
+            <div class="input"><span>8 weeks — 56 days</span><span class="chev">›</span></div>
+            <div class="fhelp">Ends <strong>27 August</strong>.</div>
+          </div>
+
+          <div class="field">
+            <div class="flabel">First day on the trial diet only</div>
+            <div class="input"><span>3 July 2026</span><span class="chev">›</span></div>
+            <div class="fhelp">Day 1 is the first day Biscuit eats <strong>only</strong> the trial diet. If you mixed the old food in for a week to switch him over, that week isn’t day 1.</div>
+          </div>
+
+          <div class="field">
+            <div class="flabel">Vet <span class="muted" style="font-weight:400">(optional)</span></div>
+            <div class="input empty">Who prescribed it</div>
+          </div>
+
+          <div class="consent">While the trial runs, Nyx records which feedings matched the trial diet and which didn’t, with dates. That’s the part your vet needs.</div>
+          <div class="btn">Start trial</div>
+        </div>
+        <div class="caption"><b>B — “More options” expanded.</b> Four fields, none of them required. <b>“Also allowed”</b> is copy-locked to <b>provenance</b> — <em>“anything your vet said is OK”</em>, never <em>“treats you’ll still give”</em>, or the field becomes a self-granted loophole that silently zeroes the exposure count.</div>
+      </div>
+
+      <!-- C: post-create -->
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">Biscuit is on day 1</div>
+          <div class="sheetsub">Zignature Kangaroo Formula, through 27 August. Two things worth doing today.</div>
+
+          <div class="divider"></div>
+          <div class="fact" style="font-size:14.5px">Everyone who feeds Biscuit needs to know about the trial — Nyx can only count what gets logged here.</div>
+          <div class="divider"></div>
+          <div class="fact" style="font-size:14.5px">Ask your vet about anything else that goes in Biscuit’s mouth — flavoured chewables (heartworm, flea, joint supplements) and flavoured toothpaste are the most commonly missed.</div>
+
+          <div class="btn">Got it</div>
+          <div class="btn quiet">Log Biscuit’s first meal</div>
+        </div>
+        <div class="caption"><b>C — the teaching moment, once.</b> Both lines are <b>LOCKED</b> in §4.1. The second is <b>A-4</b>: every clinical source prescribes a pre-trial <b>substitution</b>, so this line acts on day 0 where §5.3’s rung-4 detector fires on day 14. Setup, not a log moment — Principle 1 is untouched.</div>
+      </div>
+
+      <!-- D: second trial -->
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">Biscuit already has a trial running</div>
+          <div class="sheetsub">Zignature Kangaroo Formula, day 23 of 56. A pet can only be on one trial at a time, so this one needs an ending before the next one starts.</div>
+          <div class="divider"></div>
+          <div class="checkrow"><span class="rad"></span><span>Finish it — it ran its course</span></div>
+          <div class="checkrow"><span class="rad"></span><span>Stopped early</span></div>
+          <div class="btn">Finish and start the new one</div>
+          <div class="btn quiet">Keep the current trial</div>
+        </div>
+        <div class="caption"><b>D — one active trial per pet, now a database constraint.</b> The UNIQUE partial index means this is not a soft nudge: complete-then-start must be <b>ordered</b>, and PR 2 needs a terminal-error branch — a <code>23505</code> is permanent, not retryable, and the existing <code>syncPending*</code> shape has none.</div>
+      </div>
+    </div>
+
+    <div class="annos">
+      <div class="anno flag"><b>Blocking — the lookup table has no cat cells</b>G3 ruled the duration default is keyed on <strong>species × indication</strong>, and the review’s own evidence is that cats reach ~50% remission at 4 weeks against dogs >85% at 5. But the spec names only <strong>GI 28 / Skin 56</strong>. <strong>PR 3 cannot build the table it is required to build.</strong> The Mochi screens below render a proposed <strong>42-day</strong> feline GI default; it is a placeholder, not a recommendation. Needs Dr. Chen, and it is a lookup constant, not schema — cheap whenever it is answered.</div>
+      <div class="anno new"><b>Trust &amp; Safety — why C6 renders here and not later</b>This is the first record Nyx keeps that is a judgement about a <em>person</em> rather than a fact about a pet, on an artifact that already names both owner and vet. “They consented by tapping Start” is not consent to a disclosure never shown to them. It renders above the button on both screens, in the same warm register as the rest of the sheet — no legal voice, no checkbox.</div>
+      <div class="anno"><b>Designer — the indication chips</b><code>ChipGroup</code>, wrapping and accessible, three short always-visible options on a hot path (the filter-UX pattern language, ≤5 → visible chips). Labels are plain: <strong>“Stomach &amp; gut”</strong>, not “GI”. The stored enum stays <code>skin</code> / <code>gi</code> / <code>other</code> — an owner-facing label and a clinical enum are different objects, and the enum is what reaches a clinician verbatim on §7.</div>
+      <div class="anno"><b>Jordan</b>“I can do screen A in the car park. What I could not do is answer four questions about transition weeks while the receptionist is waiting for my card — so the fact that the start date lives behind ‘More options’ and defaults to today is the whole reason I finish this at all.”</div>
+      <div class="anno flag"><b>Open — the start-date semantic</b>The default <em>value</em> is today; the <em>semantic</em> is “first day of exclusive feeding.” Screen B’s helper carries it in plain language. What is not drawn: an owner mid-transition who should back-date is not prompted to, and <code>transition_started_at</code> has no capture affordance anywhere in this mock. It is in the schema; PR 3 should say whether it is written from this screen or left null in v1.</div>
+    </div>
+  </section>
+
+  <!-- ══════════════ 2. TRIAL CARD V2 ══════════════ -->
+  <section>
+    <h2>Surface 2 — Trial card v2 <span class="badge new">PR 4 · §4.2</span></h2>
+    <h3>Every state, including the two that were never drawn</h3>
+    <p class="concept-note"><strong>The card’s job is keeping the owner in the trial; the report’s job is letting the vet act.</strong> The hierarchy differs by artifact on purpose: the card leads with <strong>progress and a forward line</strong> with record-quality subordinate; the report (§7) leads with <strong>coverage and exposures</strong>.</p>
+    <p class="concept-note"><strong>Counting note for QA:</strong> §4.2 says “seven states” and then lists <strong>eight</strong> (0–7). Drawing them surfaced <strong>two more</strong> that are structurally required elsewhere in the spec and belong to no numbered state — the intake-decline replacement (§5.2) and the free-fed replacement (§5.6). <strong>Ten states, not seven.</strong> PR 4’s acceptance criterion undercounts by three.</p>
+
+    <div class="shelf">
+
+      <!-- 0 -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="fact">No trial running.</div>
+            <div class="tiny" style="margin-top:6px">If Biscuit’s vet has put him on an elimination diet, tell Nyx — it keeps the dated record your vet will ask for at the recheck.</div>
+            <div class="btn tint sm">Start a diet trial</div>
+          </div>
+        </div>
+        <div class="caption"><b>State 0 — no trial.</b> The card <b>always renders</b>, mirroring the medications card; this is the only entry point to PR 3. Warm, honest, forward-looking (Principle 5) and it names the payoff rather than the feature.</div>
+      </div>
+
+      <!-- 1 -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 1 of 56</div>
+            <div class="cends">Ends 18 September</div>
+            <div class="track"><div class="fill" style="width:2%"></div></div>
+            <div class="fact">Nothing logged yet today.</div>
+            <div class="qual">From here, every meal and treat you log builds the record your vet reads.</div>
+            <div class="btn tint sm">Log a meal</div>
+          </div>
+        </div>
+        <div class="caption"><b>State 1 — day 1.</b> No claim in either direction, because there is nothing yet to describe. The forward line is the whole card. Note what is <b>absent</b>: no “0 off-diet foods”, which R1 forbids and which day 1 would render most confidently.</div>
+      </div>
+
+      <!-- 2 -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 23 of 56</div>
+            <div class="cends">Ends 27 August</div>
+            <div class="track"><div class="fill" style="width:41%"></div></div>
+            <div class="fact">68 feedings logged across 22 of 23 days.</div>
+            <div class="fact">All 68 matched the trial diet or a permitted food.</div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
+            <div class="standing"><b>About this food.</b> It’s an over-the-counter limited-ingredient diet. Undeclared proteins turn up often enough in that category that your vet should know which one you’re using. <span class="tap" style="color:var(--accent-ink)">Why this matters ›</span></div>
+          </div>
+        </div>
+        <div class="caption"><b>State 2 — mid-trial, clean.</b> The <b>C2 standing fact</b> renders <b>once per trial</b>, not per feeding — computed from the <code>primary_diet</code> rows. Per feeding it would fire 100+ times across 56 days, on the one food the owner cannot stop feeding.</div>
+      </div>
+
+      <!-- A-3 variant -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 23 of 56</div>
+            <div class="cends">Ends 27 August</div>
+            <div class="track"><div class="fill" style="width:41%"></div></div>
+            <div class="fact">68 feedings logged across 22 of 23 days.</div>
+            <div class="fact">All 68 matched the trial diet or a permitted food.</div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
+            <div class="flagline"><span class="hd">Five weeks to go.</span> This is the stretch where most trials get abandoned. If it’s getting hard — cost, refusal, other people in the house — that’s worth a message to your vet now rather than at the recheck.</div>
+          </div>
+        </div>
+        <div class="caption"><b>Proposed — amendment A-3, still unruled.</b> A mid-trial state at ~40% of target. D6 places its only moment <b>after</b> the window in which owners quit. Card state only, never a push, so Principle 4 is untouched; not schema, so it can land any time. <b>Drawn so the PM can rule it against an artifact.</b></div>
+      </div>
+
+      <!-- 3 -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 23 of 56</div>
+            <div class="cends">Ends 27 August</div>
+            <div class="track"><div class="fill" style="width:41%"></div></div>
+            <div class="fact">68 feedings logged across 22 of 23 days.</div>
+            <div class="fact">65 matched the trial diet or a permitted food; <span class="tap">3 did not ›</span></div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here. The 3 are what’s been logged, not a total.</div>
+            <div class="flagline"><span class="hd">Yesterday, 6:40 pm — Zuke’s Mini Naturals (chicken).</span> Keep going with the trial diet. Your vet will want to see this at the recheck.</div>
+          </div>
+        </div>
+        <div class="caption"><b>State 3 — the day after a slip.</b> The screen that decides whether an owner finishes six weeks. <b>Record and continue</b> (§6.7), CAVD verbatim in both owner handouts. No restart language, no voiding language, and <b>no quantified reassurance</b> — never “a small amount probably won’t matter”, because the cross-contact threshold is explicitly unknown.</div>
+      </div>
+
+      <!-- 4 -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 23 of 56</div>
+            <div class="cends">Ends 27 August</div>
+            <div class="track"><div class="fill" style="width:41%"></div></div>
+            <div class="fact">9 feedings logged across 6 of 23 days.</div>
+            <div class="fact">All 9 matched the trial diet or a permitted food.</div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
+            <div class="flagline"><span class="hd">There isn’t enough logged yet for your vet to read much into this.</span> Every meal from here counts, and there are five weeks left to build it.</div>
+            <div class="btn tint sm">Log a meal</div>
+          </div>
+        </div>
+        <div class="caption"><b>State 4 — below the coverage floor. Never drawn before.</b> Jordan’s binding constraint: <em>“the owner below the floor is by definition the one logging least, which is the one closest to quitting; handing them the emptiest, most disapproving card in the app is exactly backwards.”</em> So the card gets <b>more</b> here, not less — and the note is about the <b>record</b>, never the person.</div>
+      </div>
+
+      <!-- 5 -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="milestone-h">Day 56 of 56 — the window you set is done.</div>
+            <div class="tiny" style="margin-top:8px">Your vet decides when the diet changes.</div>
+            <div class="btn">Keep going — 4 more weeks</div>
+            <div class="btnrow">
+              <div class="btn ghost">This trial is done</div>
+              <div class="btn ghost">Stopped early</div>
+            </div>
+          </div>
+        </div>
+        <div class="caption"><b>State 5 — the milestone, on the card.</b> Persistent state, not a push. Full treatment in Surface 3 below.</div>
+      </div>
+
+      <!-- 6 -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">Day 61 — 5 days past the window you set</div>
+            <div class="cends">Window ended 27 August</div>
+            <div class="track"><div class="fill" style="width:100%"></div></div>
+            <div class="fact">182 feedings logged across 58 of 61 days.</div>
+            <div class="fact">176 matched the trial diet or a permitted food; <span class="tap">6 did not ›</span></div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
+            <div class="flagline"><span class="hd">Still running.</span> Plenty of trials run past their window on the vet’s say-so. When you know what’s next, tell Nyx so the record closes properly.</div>
+            <div class="btn tint sm">Update the trial</div>
+          </div>
+        </div>
+        <div class="caption"><b>State 6 — overrun.</b> Renders <b>“Day 61 — 5 days past”</b>, never <code>Day 61 of 56</code> (a PR 7 acceptance criterion, and the same string reaches the widget header). The bar clamps at 100% and stops carrying information — deliberate, and the reason the copy takes over. With 70–80% of trials abandoned, <b>stale-active is the steady state</b>, so this card is also where B-422’s staleness rule becomes visible to the owner.</div>
+      </div>
+
+      <!-- 7a -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial · finished</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">3 July – 27 August · 56 days</div>
+            <div class="fact" style="margin-top:10px">182 feedings logged across 54 of 56 days.</div>
+            <div class="fact">176 matched the trial diet or a permitted food; <span class="tap">6 did not ›</span></div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
+            <div class="flagline"><span class="hd">You said Biscuit was better at the end of it.</span> That’s on the vet report, marked as your read rather than a finding.</div>
+            <div class="btn tint sm">Open vet report</div>
+          </div>
+        </div>
+        <div class="caption"><b>State 7a — completed.</b> The card keeps rendering after completion, and so must the report — every report surface currently gates on <code>status='active'</code>, so the day after Complete the trial section, tiles, coverage and off-diet list all vanish. <b>This is why PR 6 must not ship before PR 7.</b></div>
+      </div>
+
+      <!-- 7b -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial · stopped early</div>
+            <div class="cfood">Zignature Kangaroo Formula</div>
+            <div class="cday">3 July – 21 July · 19 days</div>
+            <div class="fact" style="margin-top:10px">54 feedings logged across 18 of 19 days.</div>
+            <div class="fact">All 54 matched the trial diet or a permitted food.</div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
+            <div class="flagline"><span class="hd">Stopped because Biscuit wouldn’t eat it.</span> That’s a useful thing for your vet to know — it usually means a different diet, not a different plan.</div>
+            <div class="btn tint sm">Start a new trial</div>
+          </div>
+        </div>
+        <div class="caption"><b>State 7b — abandoned.</b> A legitimate clinical fact, never framed as failure (§6.6). The refusal reason routes to the <b>intake-decline health lane</b> and is never rendered as a compliance outcome.</div>
+      </div>
+
+      <!-- conditional: intake decline -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Royal Canin Hydrolyzed Protein HP</div>
+            <div class="cday">Day 9 of 42</div>
+            <div class="cends">Ends 11 August</div>
+            <div class="track"><div class="fill" style="width:21%"></div></div>
+            <div class="flagline" style="background:#FFF1F2">
+              <span class="hd" style="color:#9F1239">Mochi has left most of her food for 3 days.</span>
+              A cat that stops eating needs a call today, whatever the trial is doing. Nyx isn’t showing the trial numbers while this is going on.
+            </div>
+            <div class="btn tint sm">See what’s been logged</div>
+          </div>
+        </div>
+        <div class="caption"><b>Conditional state — intake decline <b>replaces</b> the adherence line.</b> §5.2 requires this composition to be <b>structural, not asserted</b>: the same <code>IntakeDeclineFlag</code> the dashboard consumes, and while it is live the card is <b>incapable</b> of rendering an adherence line. Otherwise a refused hydrolyzed diet reads as a maximally clean trial — seven times past the feline 48-hour hepatic-lipidosis window.</div>
+      </div>
+
+      <!-- conditional: free-fed -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Royal Canin Hydrolyzed Protein HP</div>
+            <div class="cday">Day 16 of 42</div>
+            <div class="cends">Ends 11 August</div>
+            <div class="track"><div class="fill" style="width:38%"></div></div>
+            <div class="fact">Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of what she ate.</div>
+            <div class="fact">22 feedings logged; all 22 matched the trial diet or a permitted food.</div>
+            <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
+          </div>
+        </div>
+        <div class="caption"><b>Conditional state — free-fed.</b> A <code>free_choice</code> arrangement emits no meal events, so the coverage <b>ratio has no denominator</b> and is replaced by the <code>intakeNotDirectlyObserved</code> marker (mirroring <code>lib/analytics.ts</code> invariant #6). Without this, the most tightly controlled feline trial in the app scores near-zero coverage and Nyx spends eight weeks telling a compliant owner she is failing.</div>
+      </div>
+    </div>
+
+    <h4>Every flag is tappable to its reason</h4>
+    <p class="concept-note">§6.3 calls a contaminant flag “disclosure, not blame” — but <strong>a flag the owner cannot interrogate is an unfalsifiable accusation</strong>. One sheet, one rung named per exposure. Rung 3 is the <strong>modal</strong> case on a real library, not the edge case, so it gets the first-class treatment rather than a fallback string.</p>
+
+    <div class="shelf">
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">Why this is on the list</div>
+          <div class="sheetsub">Zuke’s Mini Naturals — Chicken · yesterday, 6:40 pm</div>
+          <div class="divider"></div>
+          <div class="fact" style="font-size:14.5px">It isn’t on Biscuit’s allowed list, so Nyx recorded it as outside the trial diet.</div>
+          <div class="tiny" style="margin-top:8px">That’s a record of what was fed, not a claim about what’s in it — Nyx doesn’t know its ingredients.</div>
+          <div class="divider"></div>
+          <div class="fact" style="font-size:14.5px">Keep going with the trial diet. Your vet will want to see this at the recheck.</div>
+          <div class="btn ghost sm">Biscuit’s vet said this one is OK</div>
+          <div class="tiny" style="margin-top:8px;color:var(--text-tertiary-a)">Adding it applies from today. Feedings already on the record stay as they are.</div>
+        </div>
+        <div class="caption"><b>Rung 3 — not recognised.</b> The hedged rung, and the common one. The last line makes <b>dated membership</b> visible: <code>allowed_from</code> means adding contraband on day 13 cannot silently re-score 12 prior exposures and flip the card to clean.</div>
+      </div>
+
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">Why this is on the list</div>
+          <div class="sheetsub">Heartgard Plus · chewable · 21 July</div>
+          <div class="divider"></div>
+          <div class="fact" style="font-size:14.5px">Flavoured chewables count as food in a diet trial, so Nyx records them alongside meals.</div>
+          <div class="divider"></div>
+          <div class="fact" style="font-size:14.5px">Keep giving it exactly as prescribed. Ask your vet whether it comes in an unflavoured form for the rest of the trial.</div>
+          <div class="tiny" style="margin-top:8px">Missing a dose is the worse outcome. This is a note for the recheck, not a change to Biscuit’s medication.</div>
+        </div>
+        <div class="caption"><b>Rung 4 — the oral route (C3, PM override: detect in v1).</b> The safety-critical copy in this whole track. It names the fact, points at the <b>vet</b> for a substitution, and never at the next dose — <b>a missed critical dose is a worse outcome than a contaminated trial</b> (§6.8). Composes with B-117’s missed-critical-dose escalation rather than competing with it.</div>
+      </div>
+
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">Why this is on the list</div>
+          <div class="sheetsub">Purina Pro Plan Salmon &amp; Rice · 14 July</div>
+          <div class="divider"></div>
+          <div class="fact" style="font-size:14.5px">This food lists <strong>salmon</strong> and <strong>chicken fat</strong>. Biscuit’s trial is meant to be kangaroo only.</div>
+          <div class="divider"></div>
+          <div class="fact" style="font-size:14.5px">Keep going with the trial diet. Your vet will want to see this at the recheck.</div>
+        </div>
+        <div class="caption"><b>Rung 2 — a named protein.</b> The only rung that can name <em>why</em> the food is a problem, because B-351 read its protein set. It can only <b>add</b> a verdict, never remove one: an unknown or unread protein set yields silence plus the blind-spot line, never an all-clear.</div>
+      </div>
+    </div>
+
+    <h4>Also in PR 4’s scope — the Home Trend zone</h4>
+    <div class="shelf">
+      <div class="stack wide" style="width:640px">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Trend · last 8 weeks</div>
+            <svg viewBox="0 0 560 120" style="width:100%;height:auto;margin-top:6px" role="img" aria-label="Itch events per week for Biscuit over eight weeks: 14, 12, 9, 6, 5, 3, 2, 2. A dashed marker at week 3 shows the trial diet starting.">
+              <line x1="8" y1="100" x2="552" y2="100" stroke="#EAEAEA" stroke-width="1"/>
+              <line x1="150" y1="12" x2="150" y2="100" stroke="#A3A3A3" stroke-width="1" stroke-dasharray="3 3"/>
+              <text x="156" y="21" font-size="11" fill="#737373">Trial diet started 3 Jul</text>
+              <polyline points="20,20 60,31 100,52 140,73 180,80 220,94 260,97 300,97" fill="none" stroke="#00C2A8" stroke-width="2.5" stroke-linejoin="round"/>
+              <circle cx="20" cy="20" r="3" fill="#00C2A8"/><circle cx="300" cy="97" r="3" fill="#00C2A8"/>
+              <text x="20" y="114" font-size="11" fill="#737373">8 wks ago</text>
+              <text x="270" y="114" font-size="11" fill="#737373">now</text>
+            </svg>
+            <div class="tiny" style="margin-top:8px">Itch events per week — 14 down to 2. Trial diet marked.</div>
+          </div>
+        </div>
+        <div class="caption"><b>What PR 4 does to Home.</b> <code>TrendZone.tsx:35</code> tests compliance mode <b>before</b> symptom mode today, so starting a trial <b>replaces the Home symptom chart with a compliance bar</b> — a second, unlisted “% compliance” computed with the same unfiltered defect. PR 4 deletes it and the symptom chart stays, gaining a trial marker. <b>The team lean the spec records is that a trial should never displace the symptom chart</b> — the symptom is <em>why</em> the trial exists, and Principle 3 says concern leads. Drawn as that lean; the PM ruling in §8 is still open.</div>
+      </div>
+    </div>
+
+    <div class="annos">
+      <div class="anno kill"><b>QA — PR 4’s AC undercounts the states</b>The criterion reads “all seven states, each with its literal expected string.” The spec lists eight, and this mock draws <strong>ten</strong> — the intake-decline replacement and the free-fed replacement are required by §5.2 and §5.6 and belong to no numbered state. Both are the states most likely to ship broken, because both are <em>replacements</em>: the bug they prevent is a normal-looking card rendering over an abnormal pet.</div>
+      <div class="anno flag"><b>Blocking for state 4 — the floor has no number</b>§5.2 leaves it undefined on purpose: three defensible definitions of coverage read <strong>100% / 84% / 19%</strong> over the same 70 days of live data. State 4 cannot be built, and its acceptance criterion cannot be written, until the metric is pinned. It is the one place the card changes behaviour on a threshold, so it is also the one place an arbitrary number is expensive.</div>
+      <div class="anno new"><b>Dr. Chen</b>“State 3 is the card I would want an owner to see. It records the exposure, it does not scold, and it does not tell them the trial is ruined — because it isn’t, and a restart is what actually loses me the diagnosis. What I need from state 6 is the honest one: a trial that has drifted past its window without anyone closing it is the most common thing I see, and an app that renders <em>Day 61 of 56</em> tells me nobody is reading it.”</div>
+      <div class="anno"><b>Sam</b>“The free-fed card is the first screen in this app that admits it can’t see what my cat ate, instead of scoring me at 4% for it. And the intake-decline card is the only one that puts the cat before the trial — which is the right order, because a cat that stops eating is the emergency and the trial isn’t.”</div>
+      <div class="anno"><b>Engineer — one predicate, four rungs</b>All three reason sheets read the same <code>classifyFeeding</code> in <code>lib/dietTrial.ts</code>, imported by the client, <code>generate-report</code> and <code>ask</code>. Rung 1 (explicit set) resolves on <strong>case-folded brand + product</strong>, not the raw UUID — re-photographing the bag mints a new row, and matching on the id would flag <em>every remaining meal of the prescribed diet</em> on a 100%-compliant owner.</div>
+      <div class="anno flag"><b>Open — amendment A-2 (<code>paused</code>), and it is schema</b>Drawing state 7b made it concrete. A vet-directed hold — <em>“stop the trial, she’s on metronidazole”</em>, routine under ACVIM’s antibiotic guidance — today lands on <code>abandoned</code>, so the card reads <b>“stopped early”</b> and that string reaches the vet who ordered the hold. Paused days would leave the coverage denominator. <strong>Free in PR 1 today, a migration afterwards.</strong></div>
+    </div>
+  </section>
+
+  <!-- ══════════════ 3. COMPLETION MILESTONE ══════════════ -->
+  <section>
+    <h2>Surface 3 — Completion milestone <span class="badge new">PR 6 · §4.3</span></h2>
+    <h3>Action first. The verdict is asked only after the owner has decided what happens next.</h3>
+    <p class="concept-note">A persistent card state at <code>dayCounter &gt;= targetDays</code> — <strong>never a push</strong>, so Principle 4 is untouched — that <strong>never expires and re-surfaces until acted on</strong>. The failure this shape prevents: a milestone that asks “how did it go?” first turns an unanswered card into a stalled trial, and a stalled trial is the one the vet report renders as still ongoing.</p>
+
+    <div class="shelf">
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="milestone-h">Day 56 of 56 — the window you set is done.</div>
+            <div class="tiny" style="margin-top:8px">Your vet decides when the diet changes.</div>
+            <div class="btn">Keep going — 4 more weeks</div>
+            <div class="btnrow">
+              <div class="btn ghost">This trial is done</div>
+              <div class="btn ghost">Stopped early</div>
+            </div>
+          </div>
+        </div>
+        <div class="caption"><b>Skin, day 56 — action first.</b> <b>“Keep going” carries at least equal weight</b> and offers a <b>named default</b>, not a blank field: +28 days carries 8 weeks → 12 weeks in one tap. At day 56, 5–10% of true food-responsive patients have not yet remitted. Nothing on this card says “complete”, “finished”, “passed” or “well done”.</div>
+      </div>
+
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="milestone-h">Day 42 of 42 — the window you set is done.</div>
+            <div class="tiny" style="margin-top:8px">Your vet decides when the diet changes. For gut problems, diets are often continued for around three months even when things look better early.</div>
+            <div class="btn">Keep going — 2 more weeks</div>
+            <div class="btnrow">
+              <div class="btn ghost">This trial is done</div>
+              <div class="btn ghost">Stopped early</div>
+            </div>
+          </div>
+        </div>
+        <div class="caption"><b>Stomach &amp; gut, day 42 — the live clinical harm.</b> ACVIM 2026 says continue the diet <b>≥12 weeks</b> before transitioning away, so a milestone at the assessment window that reads “trial complete” tells an owner to stop a diet their vet wanted continued for three months. The extra sentence is <b>indication-specific</b> and is the reason the milestone copy cannot be one string.</div>
+      </div>
+
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">Compared with the day the trial started, how is Biscuit?</div>
+          <div class="sheetsub">Your read, in your words — Nyx doesn’t score the trial, and your vet decides what it means.</div>
+          <div class="checkrow"><span class="rad"></span><span>Better</span></div>
+          <div class="checkrow"><span class="rad"></span><span>No change</span></div>
+          <div class="checkrow"><span class="rad"></span><span>Worse</span></div>
+          <div class="checkrow"><span class="rad"></span><span>Not sure</span></div>
+          <div class="field">
+            <div class="input empty">Anything you want your vet to know (optional)</div>
+          </div>
+          <div class="btn">Save</div>
+        </div>
+        <div class="caption"><b>Second, and only second — the owner-reported outcome.</b> The subtitle is §6.1’s missing sentence, said plainly: <b>Nyx reports what happened, the vet decides what it means.</b> Rendered on the report as owner-reported and attributed; the words <b>confirmed</b>, <b>diagnosis</b> and <b>food allergy</b> may not appear near it.</div>
+      </div>
+
+      <div class="stack">
+        <div class="device sheetframe">
+          <div class="grabber"></div>
+          <div class="sheettitle">What got in the way?</div>
+          <div class="sheetsub">Trials get stopped early all the time. Which one it was changes what your vet suggests next.</div>
+          <div class="checkrow"><span class="rad"></span><span>He wouldn’t eat it</span></div>
+          <div class="checkrow"><span class="rad"></span><span>Too expensive</span></div>
+          <div class="checkrow"><span class="rad"></span><span>Too hard to keep him off everything else</span></div>
+          <div class="checkrow"><span class="rad"></span><span>The vet said to stop</span></div>
+          <div class="checkrow"><span class="rad"></span><span>His symptoms cleared up</span></div>
+          <div class="checkrow"><span class="rad"></span><span>Something else</span></div>
+          <div class="btn">Save</div>
+        </div>
+        <div class="caption"><b>“Stopped early” captures a structured reason.</b> A vet reading <em>“stopped at day 19 — wouldn’t eat it”</em> prescribes differently than <em>“stopped — cost.”</em> <b>A refusal reason routes to the intake-decline health lane and is never rendered as a compliance outcome.</b> Opening line normalises rather than absolves — no failure framing, no “that’s OK”.</div>
+      </div>
+    </div>
+
+    <div class="annos">
+      <div class="anno new"><b>Designer — why “Keep going” is the filled button</b>§4.3 requires equal weight; this draws it as <em>filled-plus-two-ghosts</em>, which is equal-or-greater. The argument for greater: the milestone is the single moment the app can prevent a premature stop, and a three-ghost row makes “done” the path of least resistance by reading order alone. <strong>If the PM wants strict equality, all three become ghosts</strong> — flagged rather than assumed, because it edges toward the app having an opinion about the clinical decision.</div>
+      <div class="anno"><b>Jordan</b>“I would tap ‘This trial is done’ on day 56 because I would read the day count as the finish line. The thing that stops me is the sentence under it — ‘your vet decides when the diet changes’ — and the fact that ‘keep going’ already has the four weeks filled in, so I don’t have to work out a date to choose it.”</div>
+      <div class="anno flag"><b>Dr. Chen — the sequencing this depends on</b>Completing a trial currently <strong>deletes it from the vet report</strong>: every report surface gates on <code>status='active'</code>, so the day after the owner taps Complete, the trial section, coverage, off-diet list and clinical framing vanish and the window falls to the 90-day fallback. The most valuable report this feature produces is the one it destroys. <strong>PR 6 must not ship before PR 7.</strong></div>
+      <div class="anno"><b>QA</b>“<code>Keep going</code> cannot set a target at or below the current day” is an acceptance criterion with an oracle: extend from day 56 must write ≥57. The overrun state (6) is what renders while the owner ignores the milestone, so the two are tested together, not separately.</div>
+    </div>
+  </section>
+
+  <!-- ══════════════ 4. THE C4 RULING ══════════════ -->
+  <section>
+    <h2>Surface 4 — §7’s trial block, two variants <span class="badge deferred">C4 — THE RULING THIS MOCK EXISTS FOR</span></h2>
+    <h3>Two elements, or four?</h3>
+    <p class="concept-note">Dr. Chen asked for four additions to §7’s trial block — <strong>medication overlap</strong>, <strong><code>diet_class</code></strong>, the <strong>interpretability statement</strong>, and a <strong>derived prior-diet line</strong>. The Designer held Principle 6’s 60-second scan. C4 was ruled <strong>deferred to this mock round</strong> so the call is made against a real artifact. Both variants are rendered in the report’s own register — same page, same type, same hairlines as <code>vet-report-mock-v3.html</code>.</p>
+    <p class="concept-note">Scenario for both: <strong>Mochi</strong>, cat, chronic vomiting and loose stool, hydrolyzed-protein trial, day 45 of 56, report window 1 May – 21 Jun.</p>
+
+    <div class="rptwrap">
+      <div>
+        <div class="rpt">
+          <h5>Diet trial</h5>
+          <div class="idline">Hydrolyzed-protein elimination trial — Royal Canin Hydrolyzed Protein HP (dry, Rx)</div>
+          <div class="idsub">Started <span class="num">8 May</span> · target <span class="num">56</span> d · day <span class="num">45</span> at report end · prescribed by Dr. L. Okafor</div>
+
+          <div class="kv"><span class="k">Coverage</span><span class="v"><span class="num">41</span> of <span class="num">45</span> days in this window carried a logged non-treat feeding (<span class="num">8 May – 21 Jun</span>).</span></div>
+          <div class="kv"><span class="k">Off-diet</span><span class="v"><span class="num">10</span> of <span class="num">84</span> logged feedings fell outside the trial diet — <em>a floor, not a total.</em> Dates in appendix C.<br><em>Nyx sees only what was logged; flavoured medications, other households and foraging are not visible.</em></span></div>
+          <div class="kv"><span class="k">Permitted</span><span class="v">DentaStix (owner reports vet-approved) — <span class="num">168</span> feedings over <span class="num">45</span> days.</span></div>
+          <div class="kv"><span class="k">Concurrent</span><span class="v">Metronidazole <span class="num">250</span> mg PO q12h, <span class="num">8 May – 21 Jun</span> — active at report end, including the last <span class="num">7</span> days. FortiFlora, <span class="num">8 May – 21 Jun</span>.<br><em>Listed, not judged — both are permitted during a trial. A steroid’s effect withdraws; a course of metronidazole’s effect on the microbiome does not.</em></span></div>
+
+          <div class="interp"><b>Interpretability.</b> This log <b>partially supports</b> interpreting this trial: coverage is high, but ten off-diet exposures fall inside the window, three of them in the last <span class="num">14</span> days.</div>
+          <div class="foot">Owner-reported outcome is rendered in the summary section, attributed, and is not a finding.</div>
+        </div>
+        <p class="rptlabel"><b>Variant A — two elements.</b> Medication overlap (re-sited from the off-diet line, where <code>render.ts:1678</code> already computes it) + the interpretability statement. <b>10 rendered lines.</b></p>
+      </div>
+
+      <div>
+        <div class="rpt">
+          <h5>Diet trial</h5>
+          <div class="idline">Hydrolyzed-protein elimination trial — Royal Canin Hydrolyzed Protein HP (dry, Rx)</div>
+          <div class="idsub">Started <span class="num">8 May</span> · target <span class="num">56</span> d · day <span class="num">45</span> at report end · prescribed by Dr. L. Okafor</div>
+
+          <div class="kv added"><span class="k">Diet class</span><span class="v">Prescription hydrolyzed. <em>Owner-selected at trial start.</em></span></div>
+          <div class="kv added"><span class="k">Prior diet</span><span class="v">In the <span class="num">90</span> days before <span class="num">8 May</span>: supermarket adult chicken &amp; rice kibble (<span class="num">61</span> meals), Zuke’s Mini Naturals chicken (<span class="num">22</span>), roast chicken (<span class="num">3</span>).<br><em>Derived from logged meals — this is what the trial is eliminating.</em></span></div>
+          <div class="kv"><span class="k">Coverage</span><span class="v"><span class="num">41</span> of <span class="num">45</span> days in this window carried a logged non-treat feeding (<span class="num">8 May – 21 Jun</span>).</span></div>
+          <div class="kv"><span class="k">Off-diet</span><span class="v"><span class="num">10</span> of <span class="num">84</span> logged feedings fell outside the trial diet — <em>a floor, not a total.</em> Dates in appendix C.<br><em>Nyx sees only what was logged; flavoured medications, other households and foraging are not visible.</em></span></div>
+          <div class="kv"><span class="k">Permitted</span><span class="v">DentaStix (owner reports vet-approved) — <span class="num">168</span> feedings over <span class="num">45</span> days.</span></div>
+          <div class="kv"><span class="k">Concurrent</span><span class="v">Metronidazole <span class="num">250</span> mg PO q12h, <span class="num">8 May – 21 Jun</span> — active at report end, including the last <span class="num">7</span> days. FortiFlora, <span class="num">8 May – 21 Jun</span>.<br><em>Listed, not judged — both are permitted during a trial. A steroid’s effect withdraws; a course of metronidazole’s effect on the microbiome does not.</em></span></div>
+
+          <div class="interp"><b>Interpretability.</b> This log <b>partially supports</b> interpreting this trial: coverage is high, but ten off-diet exposures fall inside the window, three of them in the last <span class="num">14</span> days.</div>
+          <div class="foot">Owner-reported outcome is rendered in the summary section, attributed, and is not a finding.</div>
+        </div>
+        <p class="rptlabel"><b>Variant B — four elements.</b> Adds <code>diet_class</code> and the derived prior-diet line (tinted here for the comparison only — production renders them identically to the rest). <b>14 rendered lines, +38% block height.</b></p>
+      </div>
+    </div>
+
+    <h4>Held constant in both variants — the C5 render</h4>
+    <p class="concept-note">C5 rejected owner-scored severity and replaced it with <strong>disclosure</strong>: the symptom trend is rendered <strong>against logging density over the same window</strong>, so a vet can see whether a falling symptom count tracks a falling total-log count. An owner-logged stream decays with attention — highest at trial start, lowest by week 6 — so a falling itch count is biased toward apparent improvement, and rendering the two series together makes the bias visible instead of correcting it with an instrument the app has refused on every event type.</p>
+
+    <div class="rpt" style="width:auto;max-width:772px">
+      <h5>Symptom trend, read against logging density</h5>
+      <div class="sparkrow">
+        <div class="lab"><b>Vomiting + loose stool</b><br>episodes per week</div>
+        <svg class="spark" width="440" height="46" viewBox="0 0 440 46" role="img" aria-label="Symptom episodes per week over eight weeks: 6, 5, 4, 3, 2, 1, 1, 1.">
+          <line x1="4" y1="42" x2="436" y2="42" stroke="#e4e5e8" stroke-width="1"/>
+          <polyline points="14,8 74,15 134,22 194,29 254,35 314,38 374,38 428,38" fill="none" stroke="#1a1c22" stroke-width="1.8"/>
+          <circle cx="14" cy="8" r="2.6" fill="#1a1c22"/><circle cx="428" cy="38" r="2.6" fill="#1a1c22"/>
+          <text x="10" y="20" font-size="10.5" fill="#565961" class="num">6</text>
+          <text x="418" y="32" font-size="10.5" fill="#565961" class="num">1</text>
+        </svg>
+      </div>
+      <div class="sparkrow">
+        <div class="lab"><b>All logs</b><br>entries per week</div>
+        <svg class="spark" width="440" height="46" viewBox="0 0 440 46" role="img" aria-label="Total log entries per week over the same eight weeks: 40, 38, 35, 30, 22, 15, 12, 11 — a decline that tracks the symptom decline.">
+          <line x1="4" y1="42" x2="436" y2="42" stroke="#e4e5e8" stroke-width="1"/>
+          <polyline points="14,8 74,10 134,13 194,18 254,26 314,33 374,36 428,37" fill="none" stroke="#8a8d94" stroke-width="1.8" stroke-dasharray="4 3"/>
+          <circle cx="14" cy="8" r="2.6" fill="#8a8d94"/><circle cx="428" cy="37" r="2.6" fill="#8a8d94"/>
+          <text x="10" y="20" font-size="10.5" fill="#565961" class="num">40</text>
+          <text x="414" y="31" font-size="10.5" fill="#565961" class="num">11</text>
+        </svg>
+      </div>
+      <div class="foot">Both series fall together over the eight weeks. Logging density fell by <span class="num">73%</span> across the same window, so the symptom decline cannot be separated from a decline in reporting. Two scales, two rows — never one axis, and no colour carries meaning here (each series is identified by its label, its stroke and its endpoint values).</div>
+    </div>
+
+    <div class="annos">
+      <div class="anno new"><b>Recommendation — three of the four, and <code>diet_class</code> is the odd one out</b><strong>Ship: medication overlap, the interpretability statement, and the prior-diet line. Fold diet class into the identity line rather than giving it a row.</strong> Three of the four are <em>free</em> — computed from data already captured. <code>diet_class</code> is the only one that needs new owner capture, and it is also the only one whose most clinically important value the app cannot currently derive (see the next card).</div>
+      <div class="anno flag"><b>Blocking if the PM rules four-element — <code>diet_class</code> is not in migration 040</b>§3.1’s column list has <code>food_label</code>, <code>indication</code>, <code>phase</code>, <code>outcome</code>, <code>outcome_notes</code>, <code>stopped_reason</code>, <code>ended_at</code>, <code>transition_started_at</code> — <strong>no <code>diet_class</code></strong>. And it is only <em>partly</em> derivable from <code>food_items</code>: <code>is_prescription</code> ✓, <code>is_novel_protein</code> ✓, <code>food_type</code> ✓ — but there is <strong>no hydrolyzed flag anywhere in the schema</strong>, and hydrolyzed is precisely the class Dr. Chen’s argument turns on (a hydrolysate is prescribed <em>after</em> a novel-protein trial has already failed, so those are the most refractory patients). So a real <code>diet_class</code> reopens <strong>PR 1 — the gate the whole track queues behind</strong>. <strong>It is free today at zero live rows and a migration tomorrow, so this needs ruling before PR 1 merges, not after.</strong></div>
+      <div class="anno"><b>Designer — the scan cost, measured</b>Variant B is <strong>+4 lines, +38% block height</strong>. Principle 6 is a 60-second scan of the whole report, not of this block, and both variants keep the block’s <strong>lead</strong> identical — coverage and off-diet still read first, which is the hierarchy that matters. My objection was to unbounded growth, and four labelled rows in a fixed order is bounded. <strong>I withdraw the objection for the prior-diet line and hold it for <code>diet_class</code> as its own row</strong> — that one is an attribute of the diet already named on the line above it.</div>
+      <div class="anno new"><b>Dr. Chen — cold, on variant A</b>“I can act on A. What I cannot do from A is tell what was being eliminated — ‘hydrolyzed trial’ tells me the mechanism but not the exposure history, and if the prior diet was already novel-protein this trial means something quite different. The prior-diet line is the one addition I would not trade, and it costs you nothing because you already have the meals.”</div>
+      <div class="anno"><b>Data Scientist — the dependency C4 carries</b>G2 put the coverage floor’s copy home on the <strong>interpretability statement</strong>. If C4 lands at “medication overlap only”, that statement needs another home <em>and the floor loses its only consequence</em> — at which point the floor is a number with no behaviour attached, which is worse than no floor. Any two-element ruling must keep the interpretability row.</div>
+      <div class="anno flag"><b>What both variants depend on landing first</b>Re-basing off-diet onto <code>classifyFeeding</code>. Today a <strong>third</strong> definition ships at <code>report.ts:2246</code> — every treat plus human food, never consulting the trial — under a caption at <code>render.ts:2340</code> claiming <em>“Everything fed outside the trial diet.”</em> On the production account that definition would report <strong>~530 off-diet exposures across 645 feedings</strong>, because 82% of logged feedings are treats. No layout rescues 530. Invariant: <strong>one definition across page 1, the tile and the appendix</strong>, and every caption checked against the code beneath it.</div>
+    </div>
+  </section>
+
+  <!-- ══════════════ ASKS ══════════════ -->
+  <section>
+    <h2>What this mock asks the PM <span class="badge deferred">7 ITEMS · 3 ARE SCHEMA-TIMED</span></h2>
+    <div class="asks">
+      <ol>
+        <li><strong>C4 — two elements or four?</strong> Both variants above.
+          <span class="rec">Recommendation: <strong>three</strong> — medication overlap, interpretability, prior-diet. Fold diet class into the identity line. Any ruling must keep the interpretability row, or G2’s floor loses its only consequence.</span></li>
+        <li><strong>Does <code>diet_class</code> become a real column in migration 040?</strong> Only if C4 lands four-element with a genuine class (hydrolyzed is not derivable). <span class="rec"><strong>Timed against PR 1 — free today at zero live rows, a migration once PR 1 merges.</strong></span></li>
+        <li><strong>A-2 — the <code>paused</code> lifecycle state.</strong> Drawing state 7b made the cost concrete: a vet-directed hold renders as “stopped early” to the vet who ordered it. <span class="rec"><strong>Also PR 1-timed</strong> — <code>ALTER TYPE trial_status ADD VALUE 'paused'</code> is free now and a migration later.</span></li>
+        <li><strong>A-3 — the mid-trial card state at ~40%.</strong> Drawn above as the fourth card. Card-state only, no schema, lands any time. <span class="rec">Recommendation: <strong>yes</strong> — D6 places its only moment after the window in which owners quit, and this costs one card state and no notification.</span></li>
+        <li><strong>The species × indication duration table has no cat cells.</strong> G3 ruled the key; the spec supplies only GI 28 / skin 56, both dog-derived. <span class="rec"><strong>PR 3 cannot build the lookup it is required to build.</strong> Needs Dr. Chen. The mock renders a placeholder 42-day feline GI default — do not read it as a recommendation.</span></li>
+        <li><strong>The coverage floor still has no number.</strong> Three defensible definitions read 100% / 84% / 19% over the same live 70 days. <span class="rec"><strong>State 4 and its acceptance criterion cannot be written until the metric is pinned</strong> (PR 5 work, but PR 4 renders the state).</span></li>
+        <li><strong>§8’s open ruling — does a trial displace the Home symptom chart?</strong> Drawn as the team lean: <strong>no</strong>. The symptom is why the trial exists, and Principle 3 says concern leads. <span class="rec">A ruling either way is a one-line change in <code>TrendZone.tsx:35</code>; leaving it unruled ships whichever branch happens to be first.</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ══════════════ HELD CONSTANT ══════════════ -->
+  <section>
+    <h2>Held constant across every screen</h2>
+    <div class="rules">
+      <ul>
+        <li><strong>No negative claim, at any coverage, on any surface</strong> — positive form about the record, both denominators, blind-spot qualifier inline on the claim, exposure count is a floor never a total. Two-sided: below the floor, no absence-based alarms either.</li>
+        <li><strong>No blended metric in any form</strong> — string, bar width, ring, meter, badge, grade or colour. Every bar is day progress and nothing else.</li>
+        <li><strong>Nyx never scores the trial, and never scores the owner.</strong> Coverage is a statement about the <em>record</em>, never about the person — no percentage, streak, badge or grade anywhere. The owner reports the outcome; the vet decides what it means.</li>
+        <li><strong>Record and continue.</strong> Every exposure surface carries a continuation statement. No copy implies the trial is voided, compromised or must restart — and <strong>no quantified reassurance</strong>, ever.</li>
+        <li><strong>An oral-route exposure is never a reason to skip a dose.</strong> It names the fact and points at the vet for a substitution. A missed critical dose is the worse outcome.</li>
+        <li><strong>Every flag is tappable to its reason</strong>, naming which rung fired. Disclosure includes explainability.</li>
+        <li><strong>Non-blocking at the moment of the event</strong> (Principle 1) — nothing here warns, verdicts or colour-codes at log time. A pre-decision surface may verdict; a record surface may not.</li>
+        <li><strong>Refusal routes to the health lane, not preference</strong> — and while an intake-decline flag is live, the card is structurally incapable of rendering an adherence line.</li>
+        <li><strong>An abandoned trial is a clinical fact, not a failure state.</strong></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ══════════════ NOT DRAWN ══════════════ -->
+  <section>
+    <h2>Not drawn <span class="badge deferred">DELIBERATE</span></h2>
+    <table class="matrix">
+      <tr><th>Surface</th><th>Why not</th></tr>
+      <tr><td><b>The allowed-set picker itself</b></td><td>It reuses <code>components/log/FoodPicker.tsx</code> — its rows, search and always-available section — so re-drawing it would invent a second pattern. <b>Flagged, not free:</b> that picker is <b>single-select</b> today, so “Also allowed” is net-new multi-select behaviour inside PR 3, not a prop. The only net-new copy is the provenance label on screen B.</td></tr>
+      <tr><td><b>The full vet report page</b></td><td><code>vet-report-mock-v3.html</code> owns the page. This mock draws the <b>trial block</b> only, in that page’s register, because C4 is a question about that block’s size.</td></tr>
+      <tr><td><b>Appendix C (the itemised exposures)</b></td><td>Format is settled — the shipped table, one row per exposure with a date, plus the rung that fired. The open question was never its layout.</td></tr>
+      <tr><td><b>Reintroduction / challenge</b></td><td>Out of v1. Only ~10% of owners ever re-challenge, and <code>phase</code> reserves a lifecycle state, not a data model — a challenge is N per-food windows with quantities and washouts and needs its own child table.</td></tr>
+      <tr><td><b>The widget’s trial header</b></td><td>Already design-locked in <code>culprit-widget-mockups.html</code> (<code>Day 12 of 28</code>). PR 2 changes where it reads from, not what it says — except for the overrun string, which must follow state 6 rather than rendering <code>Day 61 of 28</code>.</td></tr>
+      <tr><td><b>Any push or reminder</b></td><td>Blocked on the push-provider question and B-288, and worth recording so a future session doesn’t treat push as the adherence unlock: electronic reminders pool at d≈0.29, the smallest credible mechanic in the literature.</td></tr>
+      <tr><td><b>Streaks, badges, perfect-week, owner scores</b></td><td>Barred by §6.9. On a diet trial the streak break and the real clinical slip fall on the same day, so a streak stacks the abandonment mechanism onto the event most likely to end the trial.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Round 1 — what changed against the spec’s ASCII sketches</h2>
+    <p class="changelog">① The card’s eight numbered states are drawn, plus <strong>two conditional replacements</strong> (intake decline, free-fed) that belong to no numbered state — ten in total, against an acceptance criterion that says seven. ② <strong>State 4 (below the floor)</strong> gets <em>more</em> card, not less, per Jordan’s constraint, and its note is about the record rather than the person. ③ <strong>State 3 (the day after a slip)</strong> is drawn as record-and-continue with the exposure named, dated and tappable. ④ The <strong>C6 disclosure</strong> is attached to the confirm action on both modal screens, in the sheet’s own warm register. ⑤ The <strong>duration default renders an end date</strong> from the indication chip, so the primary screen still holds two fields. ⑥ Three <strong>reason sheets</strong>, one per rung, with dated membership made visible on the add-to-allowed action. ⑦ The <strong>milestone is action-first</strong> in two indication variants; the GI one carries the ≥12-week sentence that keeps day 42 from reading as permission to stop. ⑧ <strong>§7 rendered in two variants</strong> with the scan cost measured, and the C5 dual-series render held constant across both. ⑨ Five things the spec could not have known until it was drawn are filed as PM asks — three of them <strong>timed against PR 1</strong>, which is the last cheap moment this schema will ever have.</p>
+  </section>
+
+</div>
+</body>
+</html>
