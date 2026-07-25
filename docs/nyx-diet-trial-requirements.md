@@ -31,7 +31,7 @@
 
 **PM ruling: all of B-351 ships**, so the protein arm has no external dependency. Two consequences:
 
-- **PR 5 sequences after B-351 completes.** Not blocked by it in principle — rungs 1, 3 and 4 are a correct closed-world detector on their own (C1) — but there is no reason to ship a deliberately half-lit predicate when the other half is days away.
+- **PR 5 sequences after B-351 completes.** Not blocked by it in principle — rungs 1, 3 and 4 are a correct closed-world detector on their own (C1) — but there is no reason to ship a deliberately half-lit predicate when the other half is days away. **Slice 3 (the manual multi-protein picker) landed 2026-07-25 (#446)**, which closes the one gap that mattered here: a hand-entered food now carries its full array, so rung 2 sees hand-entered contaminants and not only AI-extracted ones.
 - **The collision is dissolved, not sequenced** (§0.2 option (c), ruled 2026-07-25): slice 4's diet-trial-card note is **cut** from B-351 and rebuilt in PR 4; **PR 5 owns the predicate** as a shared pure module and B-351's Tier-2 flag becomes a *consumer* of it.
 
 > **Backlog truth (Product Owner):** B-351's row claims slices 3/4/5 are *"parallelizable, disjoint files."* That is false as of this spec and must be corrected.

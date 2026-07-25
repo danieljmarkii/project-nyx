@@ -169,7 +169,7 @@ Spec `docs/nyx-stool-analysis-requirements.md` (§8 = 10-PR plan). Second child 
 
 ## Blocking Open Questions
 
-**Diet trial (B-417) — spec is v1.0 BUILD-READY; mocks design-locked at round 4.** `docs/nyx-diet-trial-requirements.md` v1.0 + `docs/nyx-diet-trial-mockups.html` (artifact live). Every gate, conflict and design decision is ruled. **Nothing blocks PRs 1–4.** PR 5 sequences after B-351 completes (PM finishing it now).
+**Diet trial (B-417) — spec is v1.0 BUILD-READY; mocks design-locked at round 4.** `docs/nyx-diet-trial-requirements.md` v1.0 + `docs/nyx-diet-trial-mockups.html` (artifact live). Every gate, conflict and design decision is ruled. **Nothing blocks PRs 1–4.** PR 5 sequences after B-351 completes (PM finishing it now; **slice 3 — the manual multi-protein picker — landed #446**, closing the gap that mattered for rung 2: hand-entered foods now carry a full protein array).
 
 Two **provisional** decisions ride at the PR that consumes them, flagged for Dr. Chen, blocking nothing:
 - **P-1 — duration defaults, all four cells:** dog·skin 56d, dog·gut 28d, cat·skin 56d, **cat·gut 42d** (the only new number; cats reach ~50% remission at 4wk vs dogs >90% at 5). Consumed at **PR 3**. Lookup constant, no schema.
