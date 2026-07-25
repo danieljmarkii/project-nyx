@@ -149,10 +149,10 @@ Spec `docs/nyx-stool-analysis-requirements.md` (§8 = 10-PR plan). Second child 
 
 ## Blocking Open Questions
 
-**Diet trial (B-417) — the ten spec rulings are closed; the mock round returned fourteen new items, three of them PR 1-timed.** Mock: `docs/nyx-diet-trial-mockups.html`. Nothing here blocks PRs 1–2 *except* items 1–3, which are free today and a migration once PR 1 merges.
+**Diet trial (B-417) — mock round 2 shipped (`docs/nyx-diet-trial-mockups.html`, artifact live); PM feedback closed nine of the fourteen asks. Five open, three of which gate a PR.** Mock: `docs/nyx-diet-trial-mockups.html`. Nothing here blocks PRs 1–2 *except* items 1–3, which are free today and a migration once PR 1 merges.
 
-1. **C4 — two elements or four?** Both variants rendered in the report's own register. Rec: **three** — medication overlap + interpretability + the derived prior-diet line. Any ruling must keep the interpretability row, or G2's coverage floor loses its only consequence.
-2. **Does `diet_class` become a real column in migration 040?** Only under a four-element C4. It is partly derivable (`is_prescription`, `is_novel_protein`, `food_type`) but **there is no hydrolyzed flag anywhere in the schema**, and hydrolyzed is the class Dr. Chen's argument turns on. **PR 1-timed.**
+1. ~~**C4**~~ — **PM leans two-element** (Dr. Chen to confirm). Variant A already carries the interpretability statement, so G2's floor keeps its home; the derived prior-diet line survives as a fast-follow (B-217).
+2. ~~**`diet_class` in migration 040**~~ — **answered: no.** Only a four-element C4 needed it. **PR 1 ships as specified.**
 3. **A-2 (`paused`)** — drawing card state 7b made the cost concrete: a vet-directed hold renders to the vet who ordered it as "stopped early". **PR 1-timed** (`ALTER TYPE trial_status ADD VALUE 'paused'`).
 4. **A-3 (mid-trial card state at ~40%)** — drawn. Card state only, no schema, no push. Rec: yes.
 5. **The species × indication duration table has no cat cells.** G3 ruled the key; the spec supplies only GI 28 / skin 56, both dog-derived. **PR 3 cannot build the lookup it is required to build.** Needs Dr. Chen; a lookup constant, not schema.
