@@ -25,7 +25,7 @@ export { canonicalizeProtein } from '../../../lib/protein.ts'
 // and the vet report would disagree about which foods are trustworthy — see the
 // gate's own rationale in lib/protein.ts.
 export {
-  deriveProteinSet,
+  readProteinSet,
   mayClaimCompleteProteinSet,
   proteinSetCompleteness,
   type ProteinSetCompleteness,

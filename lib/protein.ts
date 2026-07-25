@@ -391,6 +391,51 @@ export function deriveProteinSet(rawProteins: unknown, rawPrimary: unknown): str
   return out;
 }
 
+/**
+ * `deriveProteinSet`'s READ-PATH twin: the same hoist + dedupe shape, keyed
+ * Class-A only (B-351 slice 5).
+ *
+ * WHY THIS EXISTS. Slice 5 needed "the stored row as a usable set" on the vet
+ * report and reached for `deriveProteinSet`, which is a WRITE-path function — it
+ * applies the Class-B synonym/tissue/descriptor rules that D3a permits only at
+ * capture. The adversarial pass showed what that costs, and it is not theoretical:
+ * a trial food stored `primary_protein='ocean whitefish'` (spec §11 records three
+ * such rows live) had its SET normalized to `whitefish` while the trial TARGET,
+ * keyed through `canonicalizeProtein`, stayed `ocean whitefish` — so the two sides
+ * of the off-trial equality no longer named the same string, and the report
+ * announced in bold on page 1 that a whitefish trial diet was contaminated with
+ * whitefish. Same break for `Buffalo`→`bison`, `Deer`→`venison`, `Deboned
+ * Chicken`→`chicken`, `Chicken Liver`→`chicken`.
+ *
+ * The rule that prevents this class of bug is not "remember to normalize both
+ * sides" — it is that a read path uses ONE keying function, and on read that
+ * function is `canonicalizeProtein`. That also keeps the report agreeing with the
+ * client, whose `offTrialProteins` and Tier-1 disclosure both read stored values
+ * through the same Class-A key. Re-keying stored rows semantically is the B-416
+ * backfill's job, on the write path, where an owner can see and correct it.
+ *
+ * The hoist is preserved for the same reason `deriveProteinSet` has it: the
+ * owner-designated primary is *what the food is sold as* (and, in a trial, the
+ * target), so it leads regardless of panel order — otherwise the contaminant check
+ * would compare against a secondary and call the trial protein the contaminant.
+ */
+export function readProteinSet(rawProteins: unknown, rawPrimary: unknown): string[] {
+  const listed = Array.isArray(rawProteins) ? rawProteins : [];
+  const primary = typeof rawPrimary === 'string' ? rawPrimary : null;
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of [primary, ...listed]) {
+    if (typeof candidate !== 'string') continue;
+    const key = canonicalizeProtein(candidate);
+    if (key == null || typeof key !== 'string' || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+    if (out.length >= MAX_CAPTURED_PROTEINS) break;
+  }
+  return out;
+}
+
 // ── Manual capture — the D8 two-line picker (B-351 Phase A, PR 3) ─────────────
 // The picker is two controls over ONE ordered array: "Main protein" is
 // proteins[0], "Also contains" is the tail. These two helpers are the whole

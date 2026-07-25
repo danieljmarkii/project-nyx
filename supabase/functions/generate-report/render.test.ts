@@ -1813,7 +1813,10 @@ Deno.test('B-351 D10 — an unread ingredient list NEVER renders "nothing else o
   )
   assert.ok(!/nothing else on the label/.test(html), 'no completeness claim over an unread panel')
   assert.ok(/ingredient list not captured/.test(html), 'the honest qualifier renders instead')
-  assert.ok(/Proteins as read from product labels/.test(html), 'provenance stated (§9 condition 1)')
+  // Names the real provenance — an automated read of an owner's photo, not a human
+  // transcription — and tells the reader to confirm against the bag.
+  assert.ok(/automated read of the owner&rsquo;s photo/.test(html), 'provenance stated (§9 condition 1)')
+  assert.ok(/label-derived, not lab-verified/.test(html))
 })
 
 Deno.test('B-351 D10 — a genuinely READ single-protein panel DOES earn the completeness line', () => {
@@ -1899,7 +1902,8 @@ Deno.test('B-351 — the off-trial `*` is defined on the sheet where it appears,
     }),
   )
   assert.ok(/a protein other than the trial protein \(Duck\)/.test(withMark), 'the marker is explained')
-  assert.ok(/does not by itself mean it caused anything/.test(withMark), 'explicitly non-causal')
+  // "does not BY ITSELF mean it caused anything" conceded that it might in combination.
+  assert.ok(/records exposure only; Culprit draws no link between it and any symptom/.test(withMark), 'explicitly non-causal')
 
   const noTrial = renderReport(base({}))
   assert.ok(!/a protein other than the trial protein/.test(noTrial), 'no legend for a symbol that never appears')
@@ -1930,7 +1934,7 @@ Deno.test('B-351 D10 — an under-counted protein tally is disclosed as a FLOOR'
   )
   assert.ok(/A floor, not a total:/.test(html), 'the under-count is named, not hidden behind a confident tally')
   assert.ok(
-    /2 of 4 off-diet feedings involved a food whose ingredient list was never captured/.test(text(html)),
+    /2 of 4 off-diet feedings involved a food whose ingredient panel was never captured/.test(text(html)),
   )
 })
 
@@ -1977,7 +1981,167 @@ Deno.test('B-351 §9 — appendix C\'s protein column carries the whole set, mar
       },
     }),
   )
-  assert.ok(/Chicken<b>\*<\/b>, Salmon<b>\*<\/b>/.test(html), 'both off-trial proteins marked in the column')
-  assert.ok(/Salmon<b>\*<\/b><span class="rnote">&hellip;<\/span>/.test(html), 'the incomplete-set ellipsis follows the set')
+  // Plain `*` in a table cell, and the incompleteness qualifier is WORDS: in a table
+  // where nearly every protein is off-trial, a bold `*` is clutter while "nobody read
+  // this label" is the highest-information mark on the sheet.
+  assert.ok(/Chicken\*, Salmon\*/.test(html), 'both off-trial proteins marked in the column')
+  assert.ok(/Salmon\* <span class="rnote">&middot; list not read<\/span>/.test(html), 'the unread-panel qualifier is spelled out')
 })
 
+
+// ── B-351 slice 5 — review follow-ups ─────────────────────────────────────────
+
+Deno.test('B-351 — a food whose OWN PRIMARY is off-trial marks cleanly, without nested emphasis', () => {
+  // The common case in the "Proteins in the diet" block: any non-trial food fed
+  // alongside a trial has an off-trial primary. Wrapping the marked primary wholesale
+  // in <b> produced nested <b>Chicken<b>*</b></b>; the marker belongs outside it.
+  const html = renderReport(
+    base({
+      diet: {
+        trialTargetProtein: 'duck',
+        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        freeFed: [
+          {
+            foodLabel: 'Housemate kibble',
+            primaryProtein: 'chicken',
+            activeFrom: null,
+            activeUntil: null,
+            proteinSet: pset(['chicken', 'turkey'], { complete: true, offTrial: ['chicken', 'turkey'] }),
+          },
+        ],
+        intakeNotDirectlyObserved: true,
+        mealCompletion: null,
+        mealItems: [],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  assert.ok(/<b>Chicken<\/b><b>\*<\/b>, also Turkey<b>\*<\/b>/.test(html), 'primary bold, marker beside it')
+  assert.ok(!/<b>Chicken<b>/.test(html), 'no nested emphasis')
+})
+
+Deno.test('B-351 — a continuously-available off-trial protein reaches PAGE 1, not just appendix C', () => {
+  // The cold-read blocker: an ad-lib chicken bowl means the elimination diet was never
+  // run. Reading page 1 alone, a vet concluded "contaminated trial food, fix the treats
+  // and re-run" — the wrong plan — because that fact was three pages away.
+  const html = renderReport(
+    base({
+      diet: {
+        trialTargetProtein: 'duck',
+        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        freeFed: [
+          {
+            foodLabel: 'Housemate kibble',
+            primaryProtein: 'chicken',
+            activeFrom: null,
+            activeUntil: null,
+            proteinSet: pset(['chicken', 'turkey'], { complete: true, offTrial: ['chicken', 'turkey'] }),
+          },
+        ],
+        intakeNotDirectlyObserved: true,
+        mealCompletion: null,
+        mealItems: [],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  const p1 = text(pageOne(html))
+  assert.ok(
+    /Chicken and Turkey are also continuously available in a free-fed bowl/.test(p1),
+    'the ad-lib competing antigen is named on page 1',
+  )
+  assert.ok(/intake not directly observed/.test(p1), 'and still carries the B-040 caveat')
+})
+
+Deno.test('B-351 D10 — page 1 distinguishes an UNREAD trial panel from a clean one', () => {
+  // Silence used to mean both "this trial diet is single-protein" and "nobody has read
+  // its label" — and today the second is the common state, so silence defaulted to the
+  // reassuring reading on the report's most-scanned line.
+  const unread = renderReport(
+    base({
+      diet: {
+        trialTargetProtein: 'duck',
+        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck']) },
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        mealItems: [],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  assert.ok(/ingredient panel has not been captured/.test(text(pageOne(unread))))
+
+  const read = renderReport(
+    base({
+      diet: {
+        trialTargetProtein: 'duck',
+        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        mealItems: [],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  assert.ok(!/ingredient panel has not been captured/.test(read), 'a genuinely read panel says nothing')
+})
+
+Deno.test('B-351 — duplicate library rows under one label do not inherit each other\'s completeness', () => {
+  // Per-account duplicate food rows are a live condition (B-009/B-018). A label-only
+  // dedupe rendered the photo-extracted row's implied-complete set over a label whose
+  // other row nobody ever read.
+  const html = renderReport(
+    base({
+      diet: {
+        trialTargetProtein: null,
+        activeTrial: null,
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        mealItems: [
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck', 'chicken'], { complete: true }), count: 2, firstDate: '2026-06-01', lastDate: '2026-06-02', intakeMode: 'all' },
+          { foodLabel: 'Acme Duck Formula', primaryProtein: 'duck', proteinSet: pset(['duck']), count: 1, firstDate: '2026-06-03', lastDate: '2026-06-03', intakeMode: 'all' },
+        ],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  assert.ok(/ingredient list not captured/.test(html), 'the unread duplicate keeps its own qualifier')
+})
+
+Deno.test('B-351 — owner-entered food labels and protein keys are HTML-escaped on every new surface', () => {
+  // Food labels are owner free text and the picker's "Other" escape lets an owner type
+  // a protein key, so both reach these new surfaces unsanitised.
+  const evil = '<script>alert(1)</script>'
+  const html = renderReport(
+    base({
+      diet: {
+        trialTargetProtein: null,
+        activeTrial: null,
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        mealItems: [
+          { foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil, 'chicken']), count: 1, firstDate: '2026-06-01', lastDate: '2026-06-01', intakeMode: 'all' },
+        ],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+      provenance: {
+        ...base({}).provenance,
+        confounders: [
+          { eventId: 'c1', occurredAt: '2026-06-01T12:00:00Z', dayKey: '2026-06-01', foodLabel: evil, primaryProtein: evil, proteinSet: pset([evil]), format: 'treat', foodType: 'treat', note: null },
+        ],
+      },
+    }),
+  )
+  assert.ok(!/<script>/.test(html), 'no raw script tag anywhere in the rendered report')
+  assert.ok(/&lt;script&gt;/.test(html), 'it renders escaped instead of being dropped')
+})

@@ -114,18 +114,23 @@ interface PetRow {
 // byte-identical to a duck food whose panel was actually read, and the report would
 // serve the first as a clean single-protein diet under a provenance line claiming the
 // label was read — reassurance-on-absence on the surface a vet trusts most.
-type FoodItemJoin = {
-  food_type: string | null
-  format: string | null
+/** The protein-evidence columns, declared ONCE so the row types and the select string
+ *  cannot drift apart — three copies of this shape is three chances to widen the query
+ *  without widening the type (or the reverse, which reads as a null at runtime). */
+type FoodProteinCols = {
   primary_protein: string | null
   proteins: string[] | null
   ingredients_notes: string | null
   ai_extraction_confidence: unknown
+}
+const FOOD_PROTEIN_COLS = 'primary_protein, proteins, ingredients_notes, ai_extraction_confidence'
+
+type FoodItemJoin = FoodProteinCols & {
+  food_type: string | null
+  format: string | null
   brand: string
   product_name: string
 }
-/** The three protein columns, as every food join selects them. */
-const FOOD_PROTEIN_COLS = 'primary_protein, proteins, ingredients_notes, ai_extraction_confidence'
 type MealJoin = {
   food_item_id: string | null
   intake_rating: string | null
@@ -227,14 +232,7 @@ interface VetVisitRow {
   reason: string | null
 }
 
-type ArrangementFoodJoin = {
-  primary_protein: string | null
-  proteins: string[] | null
-  ingredients_notes: string | null
-  ai_extraction_confidence: unknown
-  brand: string
-  product_name: string
-}
+type ArrangementFoodJoin = FoodProteinCols & { brand: string; product_name: string }
 interface ArrangementRow {
   id: string
   food_item_id: string
@@ -322,7 +320,7 @@ export function mapPet(row: PetRow): ReportPetInput {
 
 /** The raw protein evidence off a food join, unmapped and un-derived — report.ts owns
  *  the derivation so the whole protein view stays offline-testable in the pure layer. */
-function mapFoodProteins(fi: { proteins: string[] | null; ingredients_notes: string | null; ai_extraction_confidence: unknown } | null): {
+function mapFoodProteins(fi: FoodProteinCols | null | undefined): {
   proteins: string[] | null
   ingredientsNotes: string | null
   extractionConfidence: unknown

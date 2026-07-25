@@ -79,7 +79,7 @@ import {
 // Chicken By-Product Meal ×15" on the first real artifact — B-052's exact bug class).
 import {
   canonicalizeProtein,
-  deriveProteinSet,
+  readProteinSet,
   mayClaimCompleteProteinSet,
 } from '../generate-signal/protein.ts'
 // The SAME off-trial predicate the client's contaminant flag runs (B-351 slice 4).
@@ -2093,13 +2093,19 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   /**
    * Build the render-ready protein view for one food.
    *
-   * `deriveProteinSet` is the same function the extractor writes with, so a legacy
-   * row that has only `primary_protein` still yields a one-element set rather than
-   * dropping out. `mayClaimCompleteProteinSet` is the same gate the client's Tier-1
-   * disclosure runs — the whole reason it lives in lib/protein.ts.
+   * `readProteinSet` — NOT `deriveProteinSet`. This is a read path over stored rows,
+   * so it keys Class-A only (`canonicalizeProtein`). Using the write-path derivation
+   * here applied D3a's semantic merges retroactively and, worse, keyed the SET
+   * differently from the TARGET (which resolves through `canonicalizeProtein`), so an
+   * `ocean whitefish` trial food reported itself as contaminated with whitefish. One
+   * read path, one keying function. A legacy row carrying only `primary_protein` still
+   * yields a one-element set rather than dropping out.
+   *
+   * `mayClaimCompleteProteinSet` is the same gate the client's Tier-1 disclosure runs —
+   * the whole reason it lives in lib/protein.ts.
    */
   function proteinView(food: ReportFoodProteinInput & { primaryProtein?: string | null }): ProteinSetView {
-    const proteins = deriveProteinSet(food.proteins ?? null, food.primaryProtein ?? null)
+    const proteins = readProteinSet(food.proteins ?? null, food.primaryProtein ?? null)
     return {
       proteins,
       complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
@@ -2434,11 +2440,17 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   let proteinUnknownCount = 0
   let incompleteFeedings = 0
   for (const c of confounders) {
-    if (!c.proteinSet.complete) incompleteFeedings++
     if (c.proteinSet.proteins.length === 0) {
+      // NOT counted as an unread panel: a feeding with no captured protein at all
+      // (often no food row at all — a bare human-food log) is already disclosed as
+      // "no recorded protein". Counting it here too made the floor line say N
+      // feedings "involved a food whose ingredient panel was never captured" when
+      // there was no food. Over-disclosure in the safe direction, but the sentence
+      // did not mean what it said.
       proteinUnknownCount++
       continue
     }
+    if (!c.proteinSet.complete) incompleteFeedings++
     for (const key of c.proteinSet.proteins) {
       proteinExposureTally[key] = (proteinExposureTally[key] ?? 0) + 1
     }

@@ -26,6 +26,9 @@ import {
   type ReportDoseInput,
 } from './report.ts'
 import type { FoodFormat } from '../generate-signal/detection.ts'
+// The Class-A key, imported so the parity assertion below compares against the REAL
+// read-path keying rather than a string literal that could drift from it.
+import { canonicalizeProtein as canonicalizeProteinForTest } from '../generate-signal/protein.ts'
 
 // ── Fixture helpers ────────────────────────────────────────────────────────────
 
@@ -1951,4 +1954,88 @@ Deno.test('B-351 — §5.6 reconciles in FEEDINGS: appendix rows, totalFeedings 
     snap.proteinTimeline.feedingsByWeek.reduce((a, b) => a + b, 0),
     snap.proteinTimeline.totalFeedings,
   )
+})
+
+// ── B-351 slice 5 — END-TO-END, from STORED COLUMN SHAPES to rendered HTML ─────
+//
+// The adversarial pass named a structural blind spot in the tests above: report.test
+// exercises derivation with no HTML, and render.test hand-builds `ProteinSetView`s and
+// never runs `proteinView`. So the seam BETWEEN them — how a stored row becomes a set,
+// and whether that set is keyed the same way as the trial target — was covered by
+// nothing, which is exactly where the worst bug lived. These run the whole pipe.
+
+Deno.test('B-351 — a Class-B-mappable protein does NOT report itself as its own contaminant', () => {
+  // THE REGRESSION. `deriveProteinSet` (write path) applies D3a's Class-B rules —
+  // aliases, tissue and descriptor strips — while the trial target resolves through
+  // `canonicalizeProtein` (Class A). Keying the two sides differently made an
+  // `ocean whitefish` trial food announce, in bold on page 1, that its own label also
+  // listed whitefish. Spec §11 records three such rows live; `Buffalo`, `Deer`,
+  // `Deboned Chicken` and `Chicken Liver` all reproduce it.
+  for (const stored of ['ocean whitefish', 'Buffalo', 'Deer', 'Deboned Chicken', 'Chicken Liver', 'Egg Whites']) {
+    const snap = assembleReport(
+      baseInput({
+        dietTrials: [
+          {
+            id: 'dt1',
+            foodItemId: 'f-trial',
+            startedAt: '2026-05-08',
+            targetDurationDays: 56,
+            status: 'active',
+            completedAt: null,
+            vetName: null,
+            foodLabel: 'Novel Diet',
+            primaryProtein: stored,
+            proteins: [stored],
+            ingredientsNotes: `${stored}, brewers rice, sunflower oil, dried beet pulp.`,
+            extractionConfidence: { proteins: 0.93 },
+          },
+        ],
+      }),
+    )
+    assert.deepEqual(
+      snap.diet.activeTrial!.proteinSet.offTrial,
+      [],
+      `"${stored}" must not be off-trial against itself`,
+    )
+    // And the set must key IDENTICALLY to the target, so the two can be compared at all.
+    assert.deepEqual(
+      snap.diet.activeTrial!.proteinSet.proteins,
+      [snap.diet.trialTargetProtein],
+      `"${stored}" keys the same on both sides of the off-trial comparison`,
+    )
+  }
+})
+
+Deno.test('B-351 — a stored row keys the same on the read path as the client does', () => {
+  // The client (lib/trialContaminant + ProteinDisclosure) reads stored values through
+  // canonicalizeProtein. If the report normalized further, the app would tell the owner
+  // a trial is clean while the report told the vet it was contaminated — the split
+  // lib/trialProtein.ts exists to prevent, one layer down.
+  const snap = assembleReport(
+    baseInput({
+      events: [proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: 'Ocean Whitefish', proteins: ['Ocean Whitefish', 'Chicken Meal'] })],
+    }),
+  )
+  assert.deepEqual(
+    snap.provenance.confounders[0].proteinSet.proteins,
+    [canonicalizeProteinForTest('Ocean Whitefish'), canonicalizeProteinForTest('Chicken Meal')],
+  )
+})
+
+Deno.test('B-351 — a feeding with no food at all is "no protein recorded", not "panel not captured"', () => {
+  // The floor line counts foods whose ingredient panel was never READ. A bare
+  // human-food log has no food row to have a panel, and is already disclosed as
+  // unknown — counting it twice made the sentence say something untrue.
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: null, proteins: [] }),
+        proteinMeal({ occurredAt: at('2026-06-11'), primaryProtein: null, proteins: [] }),
+        proteinMeal({ occurredAt: at('2026-06-12'), primaryProtein: 'beef', proteins: ['beef'] }),
+      ],
+    }),
+  )
+  assert.equal(snap.proteinTimeline.totalFeedings, 3)
+  assert.equal(snap.provenance.proteinUnknownCount, 2)
+  assert.equal(snap.proteinTimeline.incompleteFeedings, 1, 'only the food that HAS a protein but no read panel')
 })

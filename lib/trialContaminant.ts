@@ -74,7 +74,6 @@ import { supabase } from './supabase';
 import { getDb } from './db';
 import { foodIntakeKey } from './food';
 import {
-  canonicalizeProtein,
   proteinSetCompleteness,
   proteinsFromCacheText,
   type ProteinSetCompleteness,
