@@ -2145,3 +2145,126 @@ Deno.test('B-351 — owner-entered food labels and protein keys are HTML-escaped
   assert.ok(!/<script>/.test(html), 'no raw script tag anywhere in the rendered report')
   assert.ok(/&lt;script&gt;/.test(html), 'it renders escaped instead of being dropped')
 })
+
+// ── B-351 slice 5 — second-cold-read follow-ups (page-1 coherence) ────────────
+
+/** A trial report with a contaminated trial food AND an ad-lib off-trial bowl. */
+function breachedTrialSnap() {
+  return base({
+    // The headline only renders the trial framing for this clinical question.
+    clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
+    diet: {
+      trialTargetProtein: 'duck',
+      activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck', 'chicken'], { complete: true, offTrial: ['chicken'] }) },
+      freeFed: [
+        {
+          foodLabel: 'Housemate kibble',
+          primaryProtein: 'chicken',
+          activeFrom: null,
+          activeUntil: null,
+          proteinSet: pset(['chicken', 'turkey'], { complete: true, offTrial: ['chicken', 'turkey'] }),
+        },
+      ],
+      intakeNotDirectlyObserved: true,
+      mealCompletion: null,
+      mealItems: [],
+      treats: { count: 0, distinctItems: 0 },
+      humanFood: { count: 0, days: 0, items: [] },
+    },
+    proteinTimeline: {
+      weekStartDates: ['2026-06-01'],
+      proteins: ['chicken'],
+      bins: [[7]],
+      unknownByWeek: [0],
+      feedingsByWeek: [7],
+      totalByProtein: { chicken: 7 },
+      hasUnknown: false,
+      totalFeedings: 7,
+      incompleteFeedings: 0,
+    },
+  })
+}
+
+Deno.test('B-351 — the HEADLINE qualifies "day N of M" when the record shows off-trial exposure', () => {
+  // "Day 46 of 56" asserts a running trial. A cold read that scanned top-down and stopped
+  // concluded "40 days of diarrhoea on a well-adhered duck trial → not food-responsive →
+  // scope her"; the honest reading was that this was never an elimination trial. Opposite
+  // plans, and the page invited the expensive one.
+  const html = renderReport(breachedTrialSnap())
+  const p1 = text(pageOne(html))
+  assert.ok(
+    /The record shows Chicken and Turkey reaching Nyx during the trial/.test(p1),
+    'the headline names what reached the pet',
+  )
+  assert.ok(/before reading the trial as a result/.test(p1))
+  // Present-only: it reports exposure, never a verdict on whether the trial failed.
+  assert.ok(!/trial failed|not food-responsive|invalid/i.test(p1), 'no verdict on the trial itself')
+})
+
+Deno.test('B-351 — a CLEAN trial keeps the headline unqualified', () => {
+  const html = renderReport(
+    base({
+      // Same clinical question as the breached case, so this cannot pass vacuously by
+      // simply not rendering a trial headline at all.
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
+      diet: {
+        trialTargetProtein: 'duck',
+        activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        mealItems: [],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  assert.ok(!/The record shows .* reaching/.test(html))
+})
+
+Deno.test('B-351 — the promoted page-1 protein claim carries its provenance with it', () => {
+  // The full provenance note lives in appendix B. Promoting the claim to page 1 without a
+  // qualifier invites a vet to change a prescription diet on an unverified automated read.
+  const p1 = text(pageOne(renderReport(breachedTrialSnap())))
+  assert.ok(/Read automatically from the owner&rsquo;s photo of the label/.test(p1))
+  assert.ok(/worth confirming against the bag/.test(p1))
+})
+
+Deno.test('B-351 — the exposure chart does not contradict the diet line about a standing exposure', () => {
+  // The chart counts DISCRETE feedings; an ad-lib bowl is not a feeding event, so chicken
+  // read as 7 sporadic exposures directly beneath a line saying it was always available.
+  const html = renderReport(breachedTrialSnap())
+  assert.ok(
+    /Chicken and Turkey are also continuously available in a free-fed bowl and cannot be counted as feedings at all/.test(
+      text(html),
+    ),
+    'the chart states what its own bars structurally cannot show',
+  )
+})
+
+Deno.test('B-351 — the trial-diet parenthetical stops asserting composition when the label contradicts it', () => {
+  // "(duck)" reads as what is IN the food, and the next clause said chicken was too.
+  const breached = text(pageOne(renderReport(breachedTrialSnap())))
+  assert.ok(/\(labelled duck\)/.test(breached), 'names how the food is SOLD when the set disagrees')
+
+  const clean = text(
+    pageOne(
+      renderReport(
+        base({
+          clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
+          diet: {
+            trialTargetProtein: 'duck',
+            activeTrial: { ...DUCK_TRIAL, proteinSet: pset(['duck'], { complete: true }) },
+            freeFed: [],
+            intakeNotDirectlyObserved: false,
+            mealCompletion: null,
+            mealItems: [],
+            treats: { count: 0, distinctItems: 0 },
+            humanFood: { count: 0, days: 0, items: [] },
+          },
+        }),
+      ),
+    ),
+  )
+  assert.ok(/\(duck\)/.test(clean) && !/\(labelled duck\)/.test(clean), 'unchanged when there is no contradiction')
+})

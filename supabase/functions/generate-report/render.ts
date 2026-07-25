@@ -550,6 +550,33 @@ function proteinSetPhrase(v: ProteinSetView, markOffTrial: boolean): string {
 }
 
 /**
+ * The off-trial exposures that make an active trial's protein picture non-clean, split
+ * by how they reach the pet (B-351 slice 5).
+ *
+ * Computed ONCE and shared by the headline, the trial-diet line and the exposure chart,
+ * because a cold read caught the three disagreeing: the chart quantified chicken as 7
+ * discrete feedings directly above a line saying chicken was continuously available.
+ * Same page, same snapshot, two renderers, one of them missing the fact.
+ *
+ * `inTrialFood` is §8 shape ① (the trial diet contaminating itself); `freeFed` is the
+ * worst form of shape ② — an ad-lib competing antigen the discrete tally structurally
+ * cannot count, because it is not a feeding event at all.
+ */
+function trialProteinBreaches(snap: ReportSnapshot): { inTrialFood: string[]; freeFed: string[] } {
+  if (!snap.diet.activeTrial || snap.diet.trialTargetProtein == null) return { inTrialFood: [], freeFed: [] }
+  return {
+    inTrialFood: snap.diet.activeTrial.proteinSet.offTrial,
+    freeFed: [...new Set(snap.diet.freeFed.flatMap((f) => f.proteinSet.offTrial))],
+  }
+}
+
+/** The one-clause epistemic qualifier for a protein claim made OUTSIDE appendix B, where
+ *  the full provenance note lives. Promoting a claim to page 1 must not leave its
+ *  provenance behind — a vet may change a prescription diet on the strength of it. */
+const PROTEIN_READ_CAVEAT =
+  '<span class="rnote">Read automatically from the owner&rsquo;s photo of the label &mdash; worth confirming against the bag.</span>'
+
+/**
  * The compact table-cell form (appendices C and E): no bold, order carries prominence.
  *
  * The incompleteness qualifier is WORDS, not a glyph. It was a faint `…` and the cold
@@ -568,6 +595,20 @@ function proteinSetCell(v: ProteinSetView, markOffTrial: boolean): string {
 function proteinTimelineSection(snap: ReportSnapshot): string {
   const t = snap.proteinTimeline
   if (t.proteins.length === 0 && !t.hasUnknown) return '' // nothing off-diet to chart
+  // A chart that counts DISCRETE feedings sat directly above a diet line saying a protein
+  // was CONTINUOUSLY available, and said nothing about it — so the same page quantified
+  // chicken as 7 sporadic events while asserting it was always in the bowl. A vet reads
+  // the number, not the contradiction, and concludes the confounding is minor. The
+  // appendix-C lead has carried this caveat all along; the chart needs it more, because
+  // the chart is the thing that looks like a measurement.
+  const freeFedStanding = [...new Set(snap.diet.freeFed.flatMap((f) => f.proteinSet.proteins))]
+  const standingBit = freeFedStanding.length
+    ? ` ${h(proteinList(freeFedStanding.map(capProtein)))} ${
+        freeFedStanding.length === 1 ? 'is' : 'are'
+      } also continuously available in a free-fed bowl and cannot be counted as feedings at all, so ${
+        freeFedStanding.length === 1 ? 'it does' : 'they do'
+      } not appear in these bars.`
+    : ''
   const n = t.weekStartDates.length
   const legend =
     t.proteins
@@ -588,9 +629,9 @@ function proteinTimelineSection(snap: ReportSnapshot): string {
         t.incompleteFeedings > 0
           ? ` ${num(t.incompleteFeedings)} feeding${
               t.incompleteFeedings === 1 ? '' : 's'
-            } involved a food whose ingredient list was never captured, so these bands are a floor.`
+            } involved a food whose ingredient panel was never captured, so these bands are a floor.`
           : ''
-      } Colour is a convenience — every protein also carries a texture, so this reads in black &amp; white. Itemised in appendix&nbsp;C.</div>
+      }${standingBit} Colour is a convenience — every protein also carries a texture, so this reads in black &amp; white. Itemised in appendix&nbsp;C.</div>
     </div>
   </div>`
 }
@@ -1007,10 +1048,28 @@ function headline(snap: ReportSnapshot): string {
     const t = snap.diet.activeTrial
     const food = t.foodLabel ? h(t.foodLabel) : 'a diet trial'
     const vet = t.vetName ? `, directed by ${h(t.vetName)}` : ''
+    // "Day 46 of 56" asserts a trial that is RUNNING. When the record shows an off-trial
+    // protein in the trial food or continuously available in a bowl, that assertion is
+    // the wrong frame for everything below it — and a cold read proved the cost: scanning
+    // top-down and stopping early yielded "40 days of diarrhoea on a well-adhered duck
+    // trial → not food-responsive → scope her", when the honest reading was "this has
+    // never been an elimination trial; the symptom figures are uninterpretable as a trial
+    // result." Opposite plans, and the expensive one was the one the page invited.
+    //
+    // So the qualifier rides the headline itself, not a section six blocks down. It says
+    // what the record shows and stops — no verdict on whether the trial "failed", which is
+    // the clinician's call and not derivable from an exposure set.
+    const breach = trialProteinBreaches(snap)
+    const breachNames = [...new Set([...breach.inTrialFood, ...breach.freeFed])]
+    const breachBit = breachNames.length
+      ? ` <b>The record shows ${h(
+          proteinList(breachNames.map(capProtein)),
+        )} reaching ${h(snap.signalment.name)} during the trial</b> — see the diet section before reading the trial as a result.`
+      : ''
     return `
   <div class="headline">Tracking <b>${food}</b> as a diet trial${vet} — day ${num(t.daysElapsed)} of ${num(
     t.targetDurationDays,
-  )}. Primary sign logged: <b>${primPhrase}</b>.</div>`
+  )}. Primary sign logged: <b>${primPhrase}</b>.${breachBit}</div>`
   }
   const hasChronic = snap.safetyFlags.some((f) => f.kind === 'chronicity')
   const chronicBit = hasChronic ? ' Ongoing pattern — see the safety flags above.' : ''
@@ -1704,7 +1763,8 @@ function dietMeds(snap: ReportSnapshot): string {
     // is worse than none. Nothing renders when the set is clean OR unread: there is no
     // honest "no contaminants" string, because the commonest reason a set looks clean is
     // that the panel was never captured (D10).
-    const selfContam = t.proteinSet.offTrial
+    const breach = trialProteinBreaches(snap)
+    const selfContam = breach.inTrialFood
     const contamBits: string[] = []
     if (selfContam.length) {
       contamBits.push(`The trial food&rsquo;s own label also lists ${h(proteinList(selfContam.map(capProtein)))}.`)
@@ -1714,7 +1774,7 @@ function dietMeds(snap: ReportSnapshot): string {
     // page 1, when the real answer was that an ad-lib chicken bowl meant the elimination diet
     // was never run at all. That fact was on page 3. An ad-lib competing antigen outranks the
     // discrete exposures below it, so it belongs on the line the trial is described on.
-    const freeFedOff = [...new Set(d.freeFed.flatMap((f) => f.proteinSet.offTrial))]
+    const freeFedOff = breach.freeFed
     if (freeFedOff.length) {
       contamBits.push(
         `${h(proteinList(freeFedOff.map(capProtein)))} ${
@@ -1735,12 +1795,20 @@ function dietMeds(snap: ReportSnapshot): string {
         } is unknown here.`,
       )
     }
-    const contamBit = contamBits.length ? ` <b>${contamBits.join(' ')}</b> Full protein sets in appendix&nbsp;B.` : ''
+    // The claim was promoted to page 1; its provenance must come with it. A vet may change
+    // a prescription diet on the strength of "the duck food also lists chicken", and that
+    // sentence is an automated read of an owner's photo, not a transcription by a person.
+    const contamBit = contamBits.length
+      ? ` <b>${contamBits.join(' ')}</b> ${PROTEIN_READ_CAVEAT} Full protein sets in appendix&nbsp;B.`
+      : ''
     left.push(
       kv(
         'Trial diet',
         `${t.foodLabel ? h(t.foodLabel) : 'Trial diet'}${
-          t.primaryProtein ? ` (${h(t.primaryProtein)})` : ''
+          // "(duck)" is the skimmable token, and it reads as a statement of composition —
+          // which the very next clause contradicts when the label also lists chicken. Say
+          // what the parenthetical actually means in that case: how the food is SOLD.
+          t.primaryProtein ? ` (${selfContam.length ? 'labelled ' : ''}${h(t.primaryProtein)})` : ''
         } &middot; started ${h(fmtDay(t.startedAt))} &middot; target ${num(t.targetDurationDays)}&nbsp;d, now day ${num(
           t.daysElapsed,
         )}.${contamBit}`,
