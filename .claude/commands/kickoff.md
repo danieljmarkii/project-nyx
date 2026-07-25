@@ -8,7 +8,7 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
 
 ## Steps
 
-1. **Read `STATUS.md`** (repo root) — the canonical "where are we?": Current Phase, Parallel Track, Blocking Open Questions, Open PM Action Items, Runtime in Use, Recent Sessions. This is the high-churn state file; CLAUDE.md is the stable manual and usually doesn't need re-reading at kickoff.
+1. **Read `STATUS.md`** (repo root) — the canonical "where are we?": Current Phase, Parallel Track, Blocking Open Questions, Open PM Action Items, Runtime in Use. This is the high-churn state file; CLAUDE.md is the stable manual and usually doesn't need re-reading at kickoff. Then read the **2–3 most recent session records** for what actually shipped last: `ls docs/sessions/ | sort -r | head -3`, and read those files. (`STATUS.md` deliberately carries no session list — see `docs/sessions/README.md`.)
 
 2. **Scan `docs/backlog.md`** for any row whose **Blocks** column matches the current Phase, and for anything marked **Now**. Surface those — they may pre-empt the obvious next step. (For a fuller reconcile, the `backlog-groomer` skill is the procedure.)
 
@@ -23,7 +23,7 @@ Produce a tight, skimmable orientation so a returning session (or the PM) can st
 Emit, in this order:
 
 - **Where we are** — Phase + in-flight work, in 2–3 lines.
-- **Last shipped** — one line, with PR number(s), from STATUS.md → Recent Sessions.
+- **Last shipped** — one line, with PR number(s), from the newest files in `docs/sessions/`.
 - **Blocked on / waiting on PM** — any blocking Open Question or PM Action Item that gates progress. If none, say "nothing blocking."
 - **Recommended first task** — the single concrete next step, naming the file/doc to open first and the build step it advances. If a PM Action Item is a prerequisite, say so.
 - **Alternates** — 1–2 other live tracks the PM could pick instead (parallel food track, a ready-to-decide open question).
