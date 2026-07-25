@@ -72,15 +72,17 @@
 // fall to the picker's "Other" typed escape, which also runs through
 // canonicalizeProtein on read: the set is a convenience, never a limit.
 //
-// ⚠️ The parity claim above covers the CHIPS, and no longer covers the "Other"
-// typed escape (B-351 PR 2, caught by the adversarial pass — B-412). Extraction
-// now applies normalizeExtractedProtein at write time, so AI-captured "Buffalo"
-// stores `bison`, while an owner typing "Buffalo" into Other still stores
-// `buffalo` — one animal, two keys, exposure split across them and each under
-// the effective-n floor. Every chip is unaffected (no chip is aliased or
-// stripped, locked by a test). Closing it is a PRODUCT decision, not a silent
-// normalizer change — does the app rewrite what the owner typed? — and it is
-// PR 3's to make, since PR 3 owns the picker. Stored
+// ⚠️ The parity claim above covers the CHIPS. It once did NOT cover the "Other"
+// typed escape (B-412, caught by PR 2's adversarial pass): extraction applies
+// normalizeExtractedProtein at write time, so an AI-captured "Buffalo" stored
+// `bison` while an owner typing "Buffalo" into Other stored `buffalo` — one
+// animal, two keys, exposure split across them and each under the effective-n
+// floor. **CLOSED by PR 3 (D9, PM-ratified 2026-07-24): the typed escape is a
+// WRITE path, so it now runs through normalizeExtractedProtein on COMMIT
+// (blur/submit, never per keystroke), and the rewrite is disclosed inline in the
+// picker rather than applied silently** — see components/food/ProteinPicker.tsx
+// and ProteinSetPicker.tsx. Every chip is unaffected (no chip is aliased or
+// stripped, locked by a test). Stored
 // lowercase (matching how extraction writes "chicken"/"salmon"); the picker
 // Title-cases for display only. Ordered common-first, then the fish group, then
 // the novel-diet tail — the order the picker renders them in.
@@ -382,6 +384,120 @@ export function deriveProteinSet(rawProteins: unknown, rawPrimary: unknown): str
     // normalizer again (see the prototype-chain note there) — nothing but a
     // string may reach a TEXT[] write.
     if (key == null || typeof key !== 'string' || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+    if (out.length >= MAX_CAPTURED_PROTEINS) break;
+  }
+  return out;
+}
+
+// ── Manual capture — the D8 two-line picker (B-351 Phase A, PR 3) ─────────────
+// The picker is two controls over ONE ordered array: "Main protein" is
+// proteins[0], "Also contains" is the tail. These two helpers are the whole
+// mapping between the stored row and that split, and they live here (not in the
+// component) because the seed rule below is a DATA rule with a live-window
+// history, not a rendering detail — and because both host screens
+// (app/food-capture.tsx, app/food/[id].tsx) need exactly the same answer.
+
+export interface PickerProteins {
+  /** The RAW stored `primary_protein`, never rewritten — the picker highlights a
+   *  chip by canonicalizing it, exactly as the shipped B-332 control does. */
+  main: string | null;
+  /** Canonical keys, prominence-ordered, with the main excluded (§6: a protein is
+   *  never in both lines). */
+  alsoContains: string[];
+}
+
+/**
+ * Seed the two-line picker from a stored food row.
+ *
+ * THE SEED RULE (spec §11). `primary_protein` and `proteins` can disagree for
+ * rows written in the window between migration 039 going live and this PR — the
+ * food screens wrote `primary_protein` alone, leaving `proteins` at the
+ * backfilled value. When they disagree **the owner's `primary_protein` wins**
+ * and the set is rewritten `[primary, ...rest minus dupes]`: the primary is the
+ * field an owner actually chose and the one every existing reader treats as
+ * "what the food is sold as" (and, in a trial, the target protein), so a stale
+ * array element must never demote it. A live audit found zero rows walked
+ * through that window, so this is a guard, not a repair — and it never fires
+ * spuriously, because a legacy row's verbatim-dirty primary and its canonical
+ * `proteins[0]` are equal UNDER CANONICALIZATION, which is what it compares.
+ *
+ * A NULL primary means no main is designated — the whole stored set reads as
+ * "Also contains". That is the round-trip half of §6's auto-demote rule applied
+ * to the clear case: clearing the main demotes it into the tail rather than
+ * dropping it, and re-opening the food must not silently promote a secondary
+ * back into the main slot.
+ */
+export function seedPickerProteins(
+  rawPrimary: string | null | undefined,
+  storedProteins: unknown,
+): PickerProteins {
+  const listed = Array.isArray(storedProteins) ? storedProteins : [];
+  const rest: string[] = [];
+  const seen = new Set<string>();
+  for (const p of listed) {
+    if (typeof p !== 'string') continue;
+    const key = canonicalizeProtein(p);
+    if (key == null || seen.has(key)) continue;
+    seen.add(key);
+    rest.push(key);
+  }
+
+  const mainKey = canonicalizeProtein(rawPrimary);
+  // No usable primary (unset, or a junk placeholder like the literal "null") —
+  // no main is designated and the stored set stands as the tail.
+  if (mainKey == null) return { main: null, alsoContains: rest };
+  return { main: rawPrimary ?? null, alsoContains: rest.filter((p) => p !== mainKey) };
+}
+
+/**
+ * Flatten the two picker lines back to the ordered `food_items.proteins` array.
+ * The main is hoisted to position 0, so `proteins[0]` is the derived
+ * `primary_protein` by construction and the pair cannot drift (migration 039's
+ * stated contract for this PR).
+ *
+ * CLASS A ONLY. This canonicalizes; it deliberately does NOT run
+ * normalizeExtractedProtein over the set. A seeded value the owner never typed
+ * (a legacy `ocean whitefish`, of which the live library has three) would
+ * otherwise be re-keyed on a species judgement just because the owner edited
+ * some other field on the food — a retroactive CLASS-B merge, which D3a
+ * forbids. The typed escape normalizes at the point of typing instead, where
+ * the owner sees it (D9); re-deriving stored primaries is spec §11's separate,
+ * PM-gated backfill question.
+ */
+/**
+ * The `primary_protein` a save should write for a given picker state.
+ *
+ * NOT `proteins[0]` — that is the trap. When the owner clears the main while
+ * secondaries remain, §6's demote rule moves the old main into the tail, so
+ * `proteins[0]` is a *demoted* protein. Writing it as the primary republishes
+ * the very designation the owner just cleared, and the next open reseeds it
+ * straight back into the main line: the clear silently undoes itself.
+ *
+ * So a null main writes a NULL primary, and `seedPickerProteins` reads that back
+ * as "no main designated" — the two halves of one round-trip. It is the one case
+ * where `primary_protein !== proteins[0]`, and it is deliberate: the exposure
+ * stays in `proteins` (nothing is lost), while the primary honestly records that
+ * the owner named no headline protein.
+ *
+ * Otherwise the main is canonicalized — a CLASS-A merge, permitted always — so
+ * the pair is exactly consistent on every ordinary write.
+ */
+export function pickerPrimaryProtein(main: string | null): string | null {
+  return canonicalizeProtein(main);
+}
+
+export function pickerProteinsToSet(
+  main: string | null,
+  alsoContains: readonly string[],
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of [main, ...alsoContains]) {
+    if (typeof candidate !== 'string') continue;
+    const key = canonicalizeProtein(candidate);
+    if (key == null || seen.has(key)) continue;
     seen.add(key);
     out.push(key);
     if (out.length >= MAX_CAPTURED_PROTEINS) break;
