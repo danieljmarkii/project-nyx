@@ -7,6 +7,12 @@ jest.mock('./sync', () => ({ notifySignedOut: jest.fn() }));
 jest.mock('./db', () => ({ clearLocalData: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('./appGroup', () => ({ clearWidgetData: jest.fn() }));
 jest.mock('./widgetBridge', () => ({ clearWidgetTimeline: jest.fn() }));
+// session.ts pulls lib/trialContaminant for the B-351 slice-4 teardown, and that
+// module imports lib/supabase, which fail-fasts on missing env under jest. Stub
+// the client only — the two teardown functions themselves run for real below
+// (one is in-memory, one is AsyncStorage-backed), which is the same split the
+// note above describes.
+jest.mock('./supabase', () => ({ supabase: {} }));
 
 import { wipeLocalSession } from './session';
 import { notifySignedOut } from './sync';
@@ -14,6 +20,7 @@ import { clearLocalData } from './db';
 import { clearWidgetData } from './appGroup';
 import { clearWidgetTimeline } from './widgetBridge';
 import { readRecoveryRequest, recordRecoveryRequest } from './recoveryMarker';
+import { hasFlaggedFoodInTrial, recordFlaggedFoodInTrial } from './trialContaminant';
 import { armRecoveryGate, useAuthStore } from '../store/authStore';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
@@ -33,6 +40,17 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(clearLocalData).toHaveBeenCalled();
     expect(clearWidgetData).toHaveBeenCalled();
     expect(clearWidgetTimeline).toHaveBeenCalled();
+  });
+
+  // B-351 slice 4. The trial heads-up ledger is per-account bookkeeping living in
+  // AsyncStorage, OUTSIDE the SQLite clearLocalData wipes — so without an explicit
+  // clear it survives a sign-out and the next account on this device inherits
+  // "already told you about that food" for foods it has never seen.
+  it('wipes the trial heads-up ledger — it is account state outside SQLite', async () => {
+    await recordFlaggedFoodInTrial('t1', 'chicken-treat');
+    expect(await hasFlaggedFoodInTrial('t1', 'chicken-treat')).toBe(true);
+    await wipeLocalSession();
+    expect(await hasFlaggedFoodInTrial('t1', 'chicken-treat')).toBe(false);
   });
 
   it('never throws when a wipe step fails — teardown always completes', async () => {

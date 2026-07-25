@@ -33,6 +33,17 @@ import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
 import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../lib/protein';
+import { foodIntakeKey } from '../lib/food';
+import { ProteinDisclosure, proteinSummaryLine } from '../components/food/ProteinDisclosure';
+import { TrialContaminantSheet } from '../components/food/TrialContaminantSheet';
+import {
+  loadTrialProteinContext,
+  foodContaminantFlag,
+  addFlagCopy,
+  mealFlagCopy,
+  noteTrialFlagShown,
+  type TrialProteinContext,
+} from '../lib/trialContaminant';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { parseGateResponse } from '../lib/appConfig';
 import { EARLY_ACCESS_LABEL, foodCapCopy, careFirstLine } from '../constants/monetizationCopy';
@@ -117,6 +128,29 @@ export default function FoodCaptureScreen() {
   // the edit step in place of the retryable failure banner.
   const [capReached, setCapReached] = useState<{ cap: 'daily' | 'monthly' } | null>(null);
 
+  // ── B-351 slice 4 ────────────────────────────────────────────────────────────
+  // The two D10 completeness arms for the food being captured, held in memory
+  // because this row is mid-flight: the server copy may not exist yet (manual
+  // path) and the cache copy definitely does not carry them until the next sync.
+  // Null on the manual path, which the gate reads as "panel not captured" — the
+  // honest answer for a food nobody photographed the ingredients of.
+  const [extractionProvenance, setExtractionProvenance] =
+    useState<{ ingredientsText: string | null; confidence: unknown } | null>(null);
+  // Active-trial context for the add-time soft confirm (D2). Best-effort and
+  // TTL-cached; null offline / no trial / unknown target protein, and a null
+  // context means the sheet simply never opens — never an all-clear.
+  const [trialCtx, setTrialCtx] = useState<TrialProteinContext | null>(null);
+  // The commit the sheet is holding, if any. Non-null == the sheet is up.
+  const [pendingCommit, setPendingCommit] =
+    useState<{ brand: string; product: string; format: string; type: FoodType } | null>(null);
+  // Set once the owner taps "Add anyway", so a later re-tap of Save (or a bounce
+  // between the confirm and edit steps) doesn't re-ask a question they answered.
+  const trialAcknowledged = useRef(false);
+  // The heads-up the completion step reports, on the meal-log path only. Set at
+  // commit, rendered non-blockingly — never a gate (see attemptCommit).
+  const [loggedTrialFlag, setLoggedTrialFlag] =
+    useState<{ headline: string; detail: string } | null>(null);
+
   const [frontPhoto, setFrontPhoto] = useState<CapturedPhoto | null>(null);
   const [ingredientsPhoto, setIngredientsPhoto] = useState<CapturedPhoto | null>(null);
   const [barcodePhoto, setBarcodePhoto] = useState<CapturedPhoto | null>(null);
@@ -174,9 +208,13 @@ export default function FoodCaptureScreen() {
     ]).start();
     // dismissAll() unwinds both the food-capture modal and the underlying
     // meal-log picker so the user lands on Home, not on a stale picker.
-    const t = setTimeout(() => router.dismissAll(), 900);
+    // 900ms is the plain confirmation beat. A trial heads-up adds two lines of
+    // prose the owner has never seen and cannot get back by tapping (it is
+    // passive by design), so the beat holds long enough to read it — the same
+    // reasoning that extends the meal completion card's dwell when flagged.
+    const t = setTimeout(() => router.dismissAll(), loggedTrialFlag ? 3800 : 900);
     return () => clearTimeout(t);
-  }, [step]);
+  }, [step, loggedTrialFlag]);
 
   // §6.1 flag-off: when photo extraction is disabled the flow has no camera path —
   // it opens directly on the manual edit step (no banner, no dead affordance). We
@@ -423,6 +461,12 @@ export default function FoodCaptureScreen() {
       setPrimaryProtein(seeded.main);
       setAlsoContains(seeded.alsoContains);
       proteinTouched.current = false;
+      // The D10 arms, straight off the extraction result — the only place this
+      // client ever sees them for a brand-new row.
+      setExtractionProvenance({
+        ingredientsText: ex.ingredients_text ?? null,
+        confidence: ex.confidence ?? null,
+      });
       // Seed meal time from EXIF if available; otherwise fall back to now.
       if (front.exifIso) {
         setMealOccurredAt(new Date(front.exifIso));
@@ -439,6 +483,40 @@ export default function FoodCaptureScreen() {
     } finally {
       setExtracting(false);
     }
+  }
+
+  // ── B-351 slice 4 — the add-time soft confirm (D2, §8) ─────────────────────
+  //
+  // Register: a CHOICE is allowed here and only here. Adding a food to the
+  // library is not the moment of event — the owner is deciding what to feed, not
+  // recording what they fed — so "Not now / Add anyway" costs nothing they were
+  // mid-way through. The log-time twin of this fact is deliberately passive prose
+  // on the completion card, because Principle 1 forbids a decision there.
+  //
+  // Both Save buttons route through here, so neither step can ship the gate and
+  // the other skip it. Silence (no trial, offline, unknown target, an unread
+  // panel, nothing off-trial) commits straight through — the sheet has no
+  // reassuring state to render.
+  //
+  // ⚠️ THE SOFT CONFIRM NEVER RUNS ON THE MEAL-LOG PATH. This screen is reachable
+  // as `/food-capture?fromLog=1`, where the button reads "Save and log food" and
+  // the commit below WRITES A MEAL. Gating that on a modal put a decision at the
+  // moment of event — a straight Principle 1 violation — and worse, "Not now"
+  // (or a backdrop tap, or Android back) discarded the meal silently: no food
+  // row, no meal row, no explanation, for an owner who had just fed the treat and
+  // opened the app specifically to record it. Caught by the adversarial pass; the
+  // defence written here originally ("adding a food is not the moment of event")
+  // is true of the add-only path and exactly inverted on this one.
+  //
+  // So the meal path commits unconditionally and the same fact rides the
+  // completion step afterwards, non-blocking — the register D2 actually ratified
+  // for log time, and the same shape the meal completion card uses.
+  function attemptCommit(brand: string, product: string, format: string, type: FoodType) {
+    if (!cameFromMealLog && !trialAcknowledged.current && trialFlag) {
+      setPendingCommit({ brand, product, format, type });
+      return;
+    }
+    void commitFood(brand, product, format, type);
   }
 
   // Write the food into the local cache and (if from the meal-log flow) log
@@ -563,8 +641,64 @@ export default function FoodCaptureScreen() {
       });
     }
 
+    // The log-time heads-up for THIS path (see attemptCommit): captured at commit
+    // so the completion step can report it. Only when a meal was actually
+    // written — an add-only commit already had its say in the soft confirm.
+    //
+    // Two guards this path needs and the picker paths get from
+    // evaluateMealTrialFlag, which it deliberately does not call (the food is
+    // brand-new and in memory, not in the cache yet):
+    //   • THE TRIAL WINDOW. mealOccurredAt is EXIF-seeded, so a photo taken last
+    //     week yields a meal that predates the trial — and the card would say
+    //     "…'s duck trial should skip chicken. The meal's saved" about a
+    //     PRE-TRIAL feeding. Two meal paths must not disagree about the predicate.
+    //   • RULE 3's LEDGER. Without the write, the same food fires again on its
+    //     next log from the picker, silently contradicting "counted in heads-ups
+    //     GIVEN".
+    const inTrialWindow =
+      trialCtx != null &&
+      !Number.isNaN(trialCtx.startedAtMs) &&
+      mealOccurredAt.getTime() >= trialCtx.startedAtMs;
+    if (cameFromMealLog && pet && trialFlag && inTrialWindow) {
+      setLoggedTrialFlag(mealFlagCopy(trialFlag, pet.name));
+      void noteTrialFlagShown(trialFlag);
+    }
     setStep('complete');
   }
+
+  // Best-effort active-trial load for the add-time gate. Keyed on the active pet
+  // (a trial belongs to a pet; the library is per-account) and re-run on switch.
+  useEffect(() => {
+    let cancelled = false;
+    const petId = activePet?.id;
+    if (!petId) { setTrialCtx(null); return; }
+    loadTrialProteinContext(petId)
+      .then((ctx) => { if (!cancelled) setTrialCtx(ctx); })
+      .catch(() => { if (!cancelled) setTrialCtx(null); });
+    return () => { cancelled = true; };
+  }, [activePet?.id]);
+
+  // The captured set as it stands right now, and the two derived facts every
+  // B-351 surface on this screen reads. `foodId` is a fresh uuid, so the
+  // trial-diet exclusion inside foodContaminantFlag can never match — an add is
+  // shape ② by construction (the trial food is already in the library).
+  const capturedProteins = pickerProteinsToSet(primaryProtein, alsoContains);
+  const disclosureInput = {
+    proteins: capturedProteins,
+    ingredientsNotes: extractionProvenance?.ingredientsText ?? null,
+    extractionConfidence: extractionProvenance?.confidence ?? null,
+  };
+  // `foodId` is a fresh uuid on every capture, so the id-based half of rule 2's
+  // exclusion can never match — the brand+product key is what stops a
+  // re-photographed bag of the TRIAL DIET being flagged against itself.
+  const trialFlag = foodContaminantFlag(
+    trialCtx,
+    foodId,
+    capturedProteins,
+    foodIntakeKey(extractedBrand, extractedProduct),
+  );
+  const trialFlagCopy = trialFlag ? addFlagCopy(trialFlag, activePet?.name ?? 'your pet') : null;
+  const summaryLine = proteinSummaryLine(disclosureInput);
 
   function handleManualEntry() {
     setExtractedBrand('');
@@ -573,6 +707,9 @@ export default function FoodCaptureScreen() {
     setPrimaryProtein(null);
     setAlsoContains([]);
     proteinTouched.current = false;
+    // Manual entry: no panel was read by anyone, and the gate must say so rather
+    // than let an owner-typed single protein render as a complete set.
+    setExtractionProvenance(null);
     setStep('edit');
   }
 
@@ -586,6 +723,18 @@ export default function FoodCaptureScreen() {
         <Animated.Text style={[styles.loggedText, { opacity: checkOpacity }]}>
           {cameFromMealLog ? 'Logged' : 'Added'}
         </Animated.Text>
+        {/* The Tier-2 heads-up on the meal-log path — reported, never asked. The
+            meal is already written by the time this renders. */}
+        {loggedTrialFlag && (
+          <Animated.View
+            style={[styles.completeFlag, { opacity: checkOpacity }]}
+            accessibilityRole="summary"
+            accessibilityLabel={`${loggedTrialFlag.headline} ${loggedTrialFlag.detail}`}
+          >
+            <Text style={styles.completeFlagHeadline}>{loggedTrialFlag.headline}</Text>
+            <Text style={styles.completeFlagDetail}>{loggedTrialFlag.detail}</Text>
+          </Animated.View>
+        )}
       </View>
     );
   }
@@ -714,6 +863,12 @@ export default function FoodCaptureScreen() {
             </View>
           )}
           <Text style={styles.confirmCaption}>Is this right?</Text>
+          {/* Tier-1 (D7/§8.5) — the confirm step shows no protein picker, so this
+              compact line is the whole disclosure here: primary first, secondaries
+              after, and "ingredient list not read" instead of an implied-complete
+              set when the D10 gate fails. Silent when there is nothing honest to
+              say (proteinSummaryLine returns null). */}
+          {summaryLine ? <Text style={styles.proteinSummary}>{summaryLine}</Text> : null}
           <SectionLabel label="Type" />
           <View style={styles.foodTypeRow}>
             {FOOD_TYPES.map((t) => (
@@ -769,7 +924,7 @@ export default function FoodCaptureScreen() {
           )}
           <TouchableOpacity
             style={styles.primaryBtn}
-            onPress={() => commitFood(extractedBrand, extractedProduct, extractedFormat, foodType)}
+            onPress={() => attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)}
             activeOpacity={0.85}
           >
             <Text style={styles.primaryBtnText}>Looks right</Text>
@@ -783,6 +938,23 @@ export default function FoodCaptureScreen() {
             <Text style={styles.secondaryBtnText}>Edit</Text>
           </TouchableOpacity>
         </ScrollView>
+      {/* B-351 slice 4 — the add-time soft confirm. Rendered on both the confirm
+          and edit steps from one place, so the two Save paths cannot diverge.
+          Backdrop / Android-back both resolve to "Not now": a dismissed sheet is
+          never read as consent. */}
+      <TrialContaminantSheet
+        visible={pendingCommit != null}
+        title={trialFlagCopy?.title ?? ''}
+        body={trialFlagCopy?.body ?? ''}
+        trialLine={trialCtx?.trialFoodLabel ? `Trial diet · ${trialCtx.trialFoodLabel}` : null}
+        onNotNow={() => setPendingCommit(null)}
+        onAddAnyway={() => {
+          const pending = pendingCommit;
+          setPendingCommit(null);
+          trialAcknowledged.current = true;
+          if (pending) void commitFood(pending.brand, pending.product, pending.format, pending.type);
+        }}
+      />
       </SafeAreaView>
     );
   }
@@ -853,6 +1025,9 @@ export default function FoodCaptureScreen() {
                 setAlsoContains(next.alsoContains);
               }}
             />
+            {/* Tier-1 (D7) — the chips above show the set; this says whether it is
+                the WHOLE set, which is the one thing D10 forbids leaving implied. */}
+            <ProteinDisclosure input={disclosureInput} />
             <SectionLabel label="Type" />
             <View style={styles.foodTypeRow}>
               {FOOD_TYPES.map((t) => (
@@ -867,7 +1042,7 @@ export default function FoodCaptureScreen() {
             </View>
             <TouchableOpacity
               style={[styles.primaryBtn, !canSave && styles.primaryBtnDisabled]}
-              onPress={() => commitFood(extractedBrand, extractedProduct, extractedFormat, foodType)}
+              onPress={() => attemptCommit(extractedBrand, extractedProduct, extractedFormat, foodType)}
               disabled={!canSave}
               activeOpacity={0.85}
             >
@@ -877,6 +1052,23 @@ export default function FoodCaptureScreen() {
             </TouchableOpacity>
           </ScrollView>
         </KeyboardAvoidingView>
+      {/* B-351 slice 4 — the add-time soft confirm. Rendered on both the confirm
+          and edit steps from one place, so the two Save paths cannot diverge.
+          Backdrop / Android-back both resolve to "Not now": a dismissed sheet is
+          never read as consent. */}
+      <TrialContaminantSheet
+        visible={pendingCommit != null}
+        title={trialFlagCopy?.title ?? ''}
+        body={trialFlagCopy?.body ?? ''}
+        trialLine={trialCtx?.trialFoodLabel ? `Trial diet · ${trialCtx.trialFoodLabel}` : null}
+        onNotNow={() => setPendingCommit(null)}
+        onAddAnyway={() => {
+          const pending = pendingCommit;
+          setPendingCommit(null);
+          trialAcknowledged.current = true;
+          if (pending) void commitFood(pending.brand, pending.product, pending.format, pending.type);
+        }}
+      />
       </SafeAreaView>
     );
   }
@@ -1157,6 +1349,15 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.92)',
     lineHeight: 20,
   },
+  // Tier-1 protein disclosure on the confirm step — quiet, under the "Is this
+  // right?" caption, where it reads as part of what the owner is confirming.
+  proteinSummary: {
+    fontSize: theme.textSM,
+    lineHeight: theme.textSM * 1.4,
+    color: theme.colorTextSecondary,
+    textAlign: 'center',
+    marginTop: -theme.space1,
+  },
   confirmCaption: {
     fontSize: theme.textMD,
     color: theme.colorTextSecondary,
@@ -1273,5 +1474,30 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: theme.weightMedium,
     color: theme.colorNeutralDark,
+  },
+  // The Tier-2 heads-up on the completion beat. Constrained width + centred so it
+  // reads as part of the beat rather than a banner, and the app's existing calm
+  // safety register (tinted accent + accent rail) rather than a new alarm state.
+  completeFlag: {
+    maxWidth: 320,
+    marginTop: theme.space1,
+    marginHorizontal: theme.space3,
+    paddingHorizontal: theme.space2,
+    paddingVertical: theme.space2,
+    borderRadius: theme.radiusMedium,
+    backgroundColor: theme.colorAccentLight,
+    borderColor: theme.colorAccent,
+    borderLeftWidth: 3,
+    gap: 4,
+  },
+  completeFlagHeadline: {
+    fontSize: theme.textMD,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextPrimary,
+  },
+  completeFlagDetail: {
+    fontSize: theme.textSM,
+    lineHeight: theme.textSM * 1.45,
+    color: theme.colorTextSecondary,
   },
 });
