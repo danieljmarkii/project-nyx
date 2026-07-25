@@ -477,7 +477,8 @@ export function dispatchTool(name: string, rawInput: unknown, ctx: AskDataContex
       case 'weight_summary':
         return ok(weightSummary(ctx.weights, wp))
       case 'diet_trial_status':
-        return ok(dietTrialStatus(ctx.trial, ctx.nowMs))
+        // B-421: bucket the day counter by the owner's midnight, like time_of_day.
+        return ok(dietTrialStatus(ctx.trial, ctx.nowMs, ctx.timezone))
       case 'free_fed':
         return ok(freeFedStatus(ctx.arrangements))
       case 'medications':

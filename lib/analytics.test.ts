@@ -774,6 +774,117 @@ describe('getDietTrialProgress', () => {
   });
 });
 
+// ── B-421: the day counter is timezone-honest, and there is ONE of it ────────────
+//
+// This is the oracle B-417 PR 4 inherits (§5.1: the day boundary is LOCAL midnight,
+// defined once). Before B-421 there were four implementations disagreeing by up to
+// two days on a single screen unlock, so these tests pin the BOUNDARY rather than the
+// arithmetic: the same trial, on the same wall-clock local day, read from opposite
+// sides of the date line, must produce the SAME Day N.
+//
+// Fixed-offset Etc zones are used deliberately (POSIX sign inversion: 'Etc/GMT+7' IS
+// UTC−7) so the offsets are exactly the ±7/+11 the criterion names and no DST rule can
+// quietly move them. The DST case gets its own test with a real zone below.
+//
+// The zone is passed as the helper's optional `timeZone` argument rather than by
+// relocating the process. That is not a shortcut: jest replaces `process.env` with a
+// plain object, which drops Node's TZ setter hook, so `process.env.TZ = ...` inside a
+// test does NOT move `Date` — every assertion would silently run in one zone and pass
+// for the wrong reason. Verified before writing these.
+
+const MINUS_7 = 'Etc/GMT+7'; // UTC−7
+const PLUS_11 = 'Etc/GMT-11'; // UTC+11
+
+describe('getDietTrialProgress — timezone honesty (B-421)', () => {
+  const TRIAL = { startedAt: '2026-06-10', targetDurationDays: 14 };
+
+  // Four instants that are all "14 Jun, local" for their respective owner. Day 1 is
+  // 10 Jun, so every one is Day 5 — whatever UTC date the instant happens to carry.
+  const CASES = [
+    { label: 'UTC−7 @ 00:30 local', zone: MINUS_7, nowIso: '2026-06-14T07:30:00.000Z', utcDate: '2026-06-14' },
+    { label: 'UTC−7 @ 23:30 local', zone: MINUS_7, nowIso: '2026-06-15T06:30:00.000Z', utcDate: '2026-06-15' },
+    { label: 'UTC+11 @ 00:30 local', zone: PLUS_11, nowIso: '2026-06-13T13:30:00.000Z', utcDate: '2026-06-13' },
+    { label: 'UTC+11 @ 23:30 local', zone: PLUS_11, nowIso: '2026-06-14T12:30:00.000Z', utcDate: '2026-06-14' },
+  ];
+
+  it.each(CASES)('reads Day 5 at $label', ({ zone, nowIso }) => {
+    expect(getDietTrialProgress(TRIAL, Date.parse(nowIso), zone)?.dayCounter).toBe(5);
+  });
+
+  it('all four readings agree — one local day, one Day N', () => {
+    const counters = CASES.map(
+      ({ zone, nowIso }) => getDietTrialProgress(TRIAL, Date.parse(nowIso), zone)?.dayCounter,
+    );
+    expect(counters).toEqual([5, 5, 5, 5]);
+    expect(new Set(counters).size).toBe(1);
+  });
+
+  it('the UTC epoch-day index these same instants used to produce spanned two days', () => {
+    // Not a test of shipped code — it pins WHY this exists, so a refactor back to
+    // `Math.floor(ms / 86_400_000)` fails against a test that states what it costs.
+    const utcCounters = CASES.map(
+      ({ utcDate }) =>
+        Math.round((Date.parse(`${utcDate}T00:00:00Z`) - Date.parse('2026-06-10T00:00:00Z')) / 86_400_000) + 1,
+    );
+    expect(utcCounters).toEqual([5, 6, 4, 5]);
+    expect(Math.max(...utcCounters) - Math.min(...utcCounters)).toBe(2);
+  });
+
+  // The discrepancy owners actually hit: the trial started "yesterday" where they
+  // live, but the UTC clock has already rolled past midnight (or has not reached it).
+  // A DATE column has no time, so it must be read as a calendar day — never
+  // re-parsed as UTC midnight and then floored into the device zone.
+  it('a trial that started "yesterday" local reads Day 2 on both sides of the date line', () => {
+    const yesterday = { startedAt: '2026-06-13', targetDurationDays: 14 };
+    // UTC−7: local 14 Jun 23:30, but the UTC date is already 15 Jun.
+    expect(getDietTrialProgress(yesterday, Date.parse('2026-06-15T06:30:00.000Z'), MINUS_7)?.dayCounter).toBe(2);
+    // UTC+11: local 14 Jun 00:30, but the UTC date is still 13 Jun.
+    expect(getDietTrialProgress(yesterday, Date.parse('2026-06-13T13:30:00.000Z'), PLUS_11)?.dayCounter).toBe(2);
+  });
+
+  it('a trial that started today reads Day 1 — never Day 0, never Day 2', () => {
+    const today = { startedAt: '2026-06-14', targetDurationDays: 14 };
+    expect(getDietTrialProgress(today, Date.parse('2026-06-15T06:30:00.000Z'), MINUS_7)?.dayCounter).toBe(1);
+    expect(getDietTrialProgress(today, Date.parse('2026-06-13T13:30:00.000Z'), PLUS_11)?.dayCounter).toBe(1);
+  });
+
+  it('a DST transition inside the trial does not eat a day', () => {
+    // US spring-forward is 8 Mar 2026. The span from 6 Mar local midnight to 9 Mar
+    // local midnight is 71 hours, so dividing a millisecond span by 86_400_000 floors
+    // to 2 and reads Day 3 — the old profile.tsx shape. Indexing calendar days reads
+    // Day 4, which is the day the owner is actually living in.
+    const out = getDietTrialProgress(
+      { startedAt: '2026-03-06', targetDurationDays: 14 },
+      Date.parse('2026-03-09T19:00:00.000Z'),
+      'America/Los_Angeles',
+    );
+    expect(out?.dayCounter).toBe(4);
+  });
+
+  it('an ISO instant start is bucketed by its LOCAL day, not its UTC day', () => {
+    // Defensive: `started_at` is date-only today, but the type admits an ISO string.
+    // 2026-06-10T04:00Z is still 9 Jun in UTC−7, so Day 1 is 9 Jun and 14 Jun is Day 6.
+    const out = getDietTrialProgress(
+      { startedAt: '2026-06-10T04:00:00.000Z', targetDurationDays: 14 },
+      Date.parse('2026-06-14T07:30:00.000Z'),
+      MINUS_7,
+    );
+    expect(out?.dayCounter).toBe(6);
+  });
+
+  it('an unusable zone degrades to the device zone rather than throwing', () => {
+    const out = getDietTrialProgress(TRIAL, Date.parse('2026-06-14T12:00:00.000Z'), 'Not/AZone');
+    expect(out?.dayCounter).toBe(5);
+  });
+
+  it('the derived fields track the corrected counter, not a stale one', () => {
+    const out = getDietTrialProgress(TRIAL, Date.parse('2026-06-15T06:30:00.000Z'), MINUS_7);
+    expect(out).toEqual({
+      dayCounter: 5, targetDays: 14, daysRemaining: 9, fraction: 5 / 14, complete: false,
+    });
+  });
+});
+
 // ── detectIntakeDecline — the clinically load-bearing detector ───────────────────
 
 describe('detectIntakeDecline', () => {

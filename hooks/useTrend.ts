@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getDietTrialProgress } from '../lib/analytics';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { usePetStore } from '../store/petStore';
@@ -108,10 +109,16 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
           if (trial) {
             hasTrial = true;
             const startISO = new Date(trial.started_at as string).toISOString().split('T')[0];
-            trialDaysElapsed = Math.max(
-              1,
-              Math.floor((Date.now() - new Date(trial.started_at as string).getTime()) / 86_400_000),
+            // Day math via the one shared helper (B-421) — this used to be a raw ms
+            // span with no `+1`, so it read a day behind the trial card next to it.
+            const progress = getDietTrialProgress(
+              {
+                startedAt: trial.started_at as string,
+                targetDurationDays: trial.target_duration_days as number,
+              },
+              Date.now(),
             );
+            trialDaysElapsed = progress?.dayCounter ?? 1;
             trialTargetDays = trial.target_duration_days as number;
             trialCompliantDays = new Set(
               rawEvents

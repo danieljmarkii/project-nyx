@@ -463,6 +463,76 @@ Deno.test('dietTrialStatus — a soft-deleted or unparseable trial is inactive',
   assert.equal(dietTrialStatus({ startedAt: 'not-a-date', targetDurationDays: 21 }, NOW_MS).active, false)
 })
 
+// ── B-421: the day boundary is the OWNER'S midnight, not UTC ───────────────────────
+//
+// The mirror of lib/analytics.test.ts "getDietTrialProgress — timezone honesty". Ask
+// must never quote a different Day N than the trial card the owner is looking at (G5),
+// so the two suites assert the SAME numbers against the SAME instants — the client
+// reading the device zone, this one reading `user_profiles.timezone`. If these two
+// blocks ever disagree, the port has drifted.
+
+const MINUS_7 = 'Etc/GMT+7' // POSIX sign inversion — this IS UTC−7
+const PLUS_11 = 'Etc/GMT-11' // …and this IS UTC+11
+
+Deno.test('dietTrialStatus — one local day, one Day N, on both sides of the date line', () => {
+  const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
+  // Four instants that are all "14 Jun, local" for their owner. Day 1 is 10 Jun.
+  const cases: Array<[string, string]> = [
+    [MINUS_7, '2026-06-14T07:30:00.000Z'], // 00:30 local
+    [MINUS_7, '2026-06-15T06:30:00.000Z'], // 23:30 local — UTC has already rolled over
+    [PLUS_11, '2026-06-13T13:30:00.000Z'], // 00:30 local — UTC has not yet
+    [PLUS_11, '2026-06-14T12:30:00.000Z'], // 23:30 local
+  ]
+  for (const [tz, iso] of cases) {
+    const r = dietTrialStatus(trial, Date.parse(iso), tz)
+    assert.equal(r.dayCounter, 5, `${tz} @ ${iso}`)
+    assert.equal(r.daysRemaining, 9)
+  }
+})
+
+Deno.test('dietTrialStatus — a trial that started "yesterday" local reads Day 2 in both zones', () => {
+  const trial = { startedAt: '2026-06-13', targetDurationDays: 14 }
+  assert.equal(dietTrialStatus(trial, Date.parse('2026-06-15T06:30:00.000Z'), MINUS_7).dayCounter, 2)
+  assert.equal(dietTrialStatus(trial, Date.parse('2026-06-13T13:30:00.000Z'), PLUS_11).dayCounter, 2)
+})
+
+Deno.test('dietTrialStatus — a trial that started today reads Day 1, never Day 0 or 2', () => {
+  const trial = { startedAt: '2026-06-14', targetDurationDays: 14 }
+  assert.equal(dietTrialStatus(trial, Date.parse('2026-06-15T06:30:00.000Z'), MINUS_7).dayCounter, 1)
+  assert.equal(dietTrialStatus(trial, Date.parse('2026-06-13T13:30:00.000Z'), PLUS_11).dayCounter, 1)
+})
+
+Deno.test('dietTrialStatus — a DST transition inside the trial does not eat a day', () => {
+  // 6 Mar → 9 Mar 2026 in America/Los_Angeles is 71 local hours (spring-forward on
+  // the 8th). A millisecond-span divide floors to 2 and reads Day 3; the truth is 4.
+  const r = dietTrialStatus(
+    { startedAt: '2026-03-06', targetDurationDays: 14 },
+    Date.parse('2026-03-09T19:00:00.000Z'),
+    'America/Los_Angeles',
+  )
+  assert.equal(r.dayCounter, 4)
+})
+
+Deno.test('dietTrialStatus — an absent or invalid timezone degrades to UTC, never to silence', () => {
+  // Unlike time_of_day, which stays silent without a zone: a day counter is a plain
+  // fact the owner is owed, and UTC is the behaviour this shipped with. Still active.
+  const trial = { startedAt: '2026-07-01', targetDurationDays: 21 }
+  for (const tz of [undefined, null, 'Not/AZone']) {
+    const r = dietTrialStatus(trial, NOW_MS, tz)
+    assert.equal(r.active, true)
+    assert.equal(r.dayCounter, 15)
+  }
+})
+
+Deno.test('dietTrialStatus — a date-only start is never re-read as UTC midnight', () => {
+  // The DATE column has no time. Parsing '2026-06-10' as an instant lands it on
+  // 9 Jun local for anyone behind UTC, inflating every counter built on it by one.
+  // Indexed as a calendar day, the start day is the same in both zones.
+  const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
+  const noon = Date.parse('2026-06-10T19:00:00.000Z') // 12:00 in UTC−7, still 10 Jun
+  assert.equal(dietTrialStatus(trial, noon, MINUS_7).dayCounter, 1)
+})
+
 Deno.test('resolveWindow — 14d / 30d state their windows', () => {
   assert.equal(resolveWindow('14d', NOW_MS).label, 'the last 14 days')
   assert.equal(resolveWindow('30d', NOW_MS).label, 'the last 30 days')

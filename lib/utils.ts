@@ -55,6 +55,67 @@ export function dayKeyToLocalDate(key: string): Date | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
+const MS_PER_DAY = 86_400_000;
+
+// Epoch-day index (whole days since 1970-01-01) of the calendar day `ms` falls on.
+//
+// The index is built from CALENDAR COMPONENTS via Date.UTC rather than by dividing a
+// millisecond span, for two reasons a day COUNTER cares about (B-421):
+//   • `Math.floor(ms / MS_PER_DAY)` is a UTC epoch-day index — at 23:30 local in
+//     UTC−7 it has already rolled to tomorrow, and at 00:30 local in UTC+11 it is
+//     still yesterday. That is the two-day disagreement B-421 exists to kill.
+//   • Differencing two local midnights in milliseconds is off by an hour across a
+//     DST transition (a local day can be 23h or 25h). Indexing calendar components
+//     makes every local day advance the index by exactly 1.
+//
+// `timeZone` is an IANA zone to bucket in. OMIT IT on the client — the device's own
+// zone IS the owner's midnight, and that is the production path. It exists because
+// the day boundary is a parameter of this problem rather than a constant: the Edge
+// Function port has no device clock and buckets by `user_profiles.timezone` instead,
+// so stating the zone explicitly is what lets the two be pinned against each other.
+// An invalid zone falls back to the device zone rather than throwing.
+export function localDayIndex(ms: number, timeZone?: string): number {
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+      }).formatToParts(new Date(ms));
+      const y = Number(parts.find((p) => p.type === 'year')?.value);
+      const m = Number(parts.find((p) => p.type === 'month')?.value);
+      const d = Number(parts.find((p) => p.type === 'day')?.value);
+      if (Number.isInteger(y) && Number.isInteger(m) && Number.isInteger(d)) {
+        return Math.floor(Date.UTC(y, m - 1, d) / MS_PER_DAY);
+      }
+    } catch {
+      // invalid IANA zone → Intl throws → fall through to the device zone
+    }
+  }
+  const local = new Date(ms);
+  return Math.floor(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate()) / MS_PER_DAY);
+}
+
+// Epoch-day index of a stored date value, interpreted the way each form is stored:
+//
+//   • 'YYYY-MM-DD' (a Postgres DATE — `diet_trials.started_at`, `completed_at`) is
+//     ALREADY a calendar day and is indexed verbatim, zone-independently. Do NOT
+//     round-trip it through `new Date(key)`: that parses as UTC midnight, so for
+//     anyone behind UTC the day lands on the previous local date and every counter
+//     built on it reads one too high.
+//   • Anything else is an instant, indexed by the calendar day it falls on.
+//
+// Returns null when the value is neither — the caller reports "unknown", never a
+// guessed day number.
+export function localDayIndexOf(value: string, timeZone?: string): number | null {
+  const key = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (key) return Math.floor(Date.UTC(Number(key[1]), Number(key[2]) - 1, Number(key[3])) / MS_PER_DAY);
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return null;
+  return localDayIndex(ms, timeZone);
+}
+
 // Format a UTC day key (YYYY-MM-DD) as a short "Mon D" label ("Jun 24"). The Patterns
 // calendar buckets by UTC day (lib/analytics), so its cells, the day drill-in, and the
 // History single-day filter must all NAME the day in UTC — otherwise a near-midnight
