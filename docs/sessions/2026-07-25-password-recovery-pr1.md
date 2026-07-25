@@ -6,7 +6,7 @@ PR 1 of the 5-PR track, built from `docs/nyx-password-recovery-requirements.md` 
 
 ## What landed
 
-- **`flowType: 'pkce'`** on the Supabase client (D1a). Behaviour-neutral today — the only other consumers are signup-confirmation links and unused magic links. Deliberately diverges from Supabase's documented RN example (implicit flow), which would cost a new dependency (`expo-auth-session`, to read the URL *fragment*) and put long-lived tokens in a URL on the one flow whose job is re-establishing trust. Implicit's cross-device benefit is unrealisable here anyway: the redirect is a custom scheme no desktop browser can open under either flow.
+- **`flowType: 'pkce'`** on the Supabase client (D1a). Deliberately diverges from Supabase's documented RN example (implicit flow), which would cost a new dependency (`expo-auth-session`, to read the URL *fragment*) and put long-lived tokens in a URL on the one flow whose job is re-establishing trust. Implicit's cross-device benefit is unrealisable here anyway: the redirect is a custom scheme no desktop browser can open under either flow.
 - **`lib/passwordRecovery.ts`** — pure by contract, carrying FR-4's *two* classifications (URL shape, exchange result), D7's cooldown machine, and `recoveryRedirectUrl()`.
 - **The persisted FR-6 recovery gate** in `store/authStore.ts`, following the `justDeletedAccount` precedent.
 - **`lib/recoveryMarker.ts`** — FR-12's request marker, doubling as FR-14's provenance signal.
@@ -35,6 +35,16 @@ PR 1 of the 5-PR track, built from `docs/nyx-password-recovery-requirements.md` 
 
 tsc clean; jest **1797 / 115 suites** (88 new cases).
 
+## The §11 landmine: re-checked, and the spec's premise had already expired
+
+The spec §11 warns that `flowType: 'pkce'` "is behaviour-neutral *today* only because email confirmation is off. The day B-152 part 2 turns it on, signup-confirmation links become same-device-only PKCE links pointing at a redirect nothing handles." **B-152 part 2 turned confirmation on in #436 (2026-07-24), and #445 proved it live this morning** — so that condition was already met before this PR was written, and the PR body's original "confirmation is off" claim was stale on arrival.
+
+**Re-checked against the code rather than the spec, and the conclusion survives for a better reason:** `app/(auth)/signup.tsx:77` calls `signUp` with **no `emailRedirectTo`**, and nothing on-device converts a confirmation link into a session (no `Linking` handler exists anywhere — that is PR 2's job). So the confirmation link uses the project's Site URL, the click confirms the account server-side, and the owner returns to sign in with their password — a path that never touches the flow type. The screen's own comment (`signup.tsx:202`) already documents this as deliberate.
+
+The residual is unchanged and belongs to **B-432**: where the confirm link actually lands is still an open question, with or without PKCE. What this section changes is *why* we believe the flip is safe — from "confirmation is off" (no longer true) to "signup sends no redirect and nothing exchanges a code" (verified). A future session that inherited the old reasoning would have been reassured by a premise that had already expired.
+
 ## Merge note
 
-`main` moved mid-session and #442 restructured `STATUS.md` — removing the `Last updated` line and the `Recent Sessions` list in favour of this directory. Resolved by taking main's side wholesale and re-homing this record here, which is the first session to be written under the new convention rather than migrated into it.
+`main` moved three times mid-session. **#442** restructured `STATUS.md` — removing the `Last updated` line and the `Recent Sessions` list in favour of this directory; resolved by taking main's side wholesale and re-homing this record here, which makes it the first session written under the new convention rather than migrated into it. **#445** (production SMTP verified live) lifted PR 4's stated gate, so that row was corrected rather than simply un-blocked: §8's sequence needs a real reset sent end-to-end before the flag flips, and that needs PR 2 to exist — so PR 4's real remaining gate is PR 2 plus the §9.2 dashboard items, most sharply the `nyx:///reset-password` redirect allowlist, without which every emailed link dead-ends no matter how correct the client is. **#446** (B-351 PR 3) merged clean.
+
+One process note worth leaving for the next session: a push to this branch produced **no `synchronize` run** and CI never fired for that commit. `ci.yml` has no `workflow_dispatch`, so the re-trigger was a close/reopen of the PR — history untouched, but it generated close/reopen webhook noise. If this recurs, that is the lever; a `workflow_dispatch` trigger would be the cleaner fix.
