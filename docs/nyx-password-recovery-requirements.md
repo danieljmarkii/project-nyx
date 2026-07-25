@@ -1,10 +1,12 @@
 # Password Recovery — Requirements & Design (B-280)
 
-**Version:** 1.1 — *revised after review; §6.4 rewritten* | **Last Updated:** 2026-07-24
+**Version:** 1.2 — *all PM rulings landed; §7.2 session lifecycle scoped* | **Last Updated:** 2026-07-24
 **Backlog:** B-280 (`Now`) · touches B-152, B-278, B-281, B-401, B-271 · files B-418/B-419/B-420/B-421
-**Status:** design session complete. **PR 1 build-ready.** **D1c ✅ accepted · D4 ✅ yes (+ email change scoped → D9) · D6b ⏳ open** — PM asked for the App Review + best-practice position first; answered in **§7.1**, and the team recommendation **changed to "yes"** as a result. PR 2 also gated on the **three device checks (§9.3)**.
+**Status:** design session complete; **all three PM rulings landed 2026-07-25.** **D1c ✅ accept · D4 ✅ yes (+ email change scoped → D9) · D6b ✅ yes — best-practice session workflow adopted and scoped in §7.2.** PR 1 build-ready; PR 2 now gated only on the **three device checks (§9.3)**.
 **Reviews run:** `nyx-voice` ✓ · `pm-feature-review` (2 SHIP-SHAPED / 2 NEEDS-WORK / 1 INSUFFICIENT) · `rls-privacy-reviewer` **FAIL on v1.0 — 5 merge blockers, all folded in**. Full record + attack log: **§12**.
 
+> **v1.1 → v1.2:** D1c/D4/D6b all ruled. D6b adopted the best-practice control (terminate other sessions on reset), scoped in **§7.2** — including the constraint that the evicted device *cannot know why* it was signed out and must not claim a cause. Email change scoped as **D9**. Files **B-422**.
+>
 > **v1.0 → v1.1 in one line:** the privacy gate broke the original cross-account fix five ways, because `wipeLocalSession()` was built for the `SIGNED_OUT` transition (session → **null**) and a recovery swap is non-null → non-null. §6.4 now forces a real `signOut()` before the exchange and reuses the shipped teardown instead of inventing a second one.
 
 ---
@@ -47,7 +49,7 @@ Both were found by reading `app/_layout.tsx` against the Supabase recovery flow.
 |---|---|---|---|
 | **D1c** | Ship v1 with the **custom-scheme** redirect (same-device only) and accept the desktop-open dead end as a documented limit? | **✅ RULED 2026-07-25 — ACCEPT.** Custom scheme ships; the https interstitial + universal links stay filed as **B-418**, post-submission. §9.3-Q1 still runs, because if a desktop open *burns* the token the mitigation copy has to move into the email template. | — |
 | **D4** | Does this track also build **in-app password change** in settings? | **✅ RULED 2026-07-25 — YES, and email change is now scoped too** (→ **D9**, §3). Password change = PR 3. Email change is **specified**, with its build slot left open. | — |
-| **D6b** | After a successful reset, **sign out the owner's other devices**? | **⏳ OPEN — PM asked for the App Review + best-practice position before ruling.** Answered in §7.1; the team recommendation **has changed to "yes on reset, optional on change"** as a result. | PR 2 |
+| **D6b** | After a successful reset, **sign out the owner's other devices**? | **✅ RULED 2026-07-25 — YES, best-practice workflow adopted.** Terminate on reset (default, no prompt); **offer** it on change (default off). Scoped in **§7.2**: ordering, the honesty constraint on the evicted device, the involuntary-vs-deliberate discrimination, and the accepted residual. | — |
 
 Everything else in §3 is ruled recommend-and-proceed with the rationale stated, per the standing convention.
 
@@ -211,6 +213,9 @@ Recovery links are single-use, and corporate mail-security scanners routinely fe
 | **FR-14** | **Local provenance.** A recovery link is honoured only if this device recorded the request (FR-12's marker). Any app or webpage can fire `nyx:///reset-password?code=x`; an unauthenticated URL must never set the gate. Doubles as the `wrong_device` signal (§5.5b). |
 | **FR-15** | The gate is cleared in a **`finally`** on every non-success path. Clearing only on success wedges the app in the gate — permanently, once FR-6 persists it. |
 | **FR-16** | The set-password screen has an **explicit escape** that calls `signOut()` and clears the gate. A recovery session is full-privilege and already hydrated (§6.6); abandoning a reset must be a designed terminal state, not a trap. |
+| **FR-18** | **Reset terminates other sessions** — `signOut({ scope: 'others' })`, strictly **after** a successful `updateUser({ password })`. The resetting device keeps its own session (FR-8). |
+| **FR-19** | **Change offers it** — an "Also sign out other devices" option on the settings screen, **default off** (§7.2.2). |
+| **FR-20** | An **involuntary** `SIGNED_OUT` routes to `/(auth)/login` with a one-shot banner that **names the likely cause without asserting it** (§7.2.3). Discriminated from a deliberate sign-out by a marker set at `app/settings.tsx:102`, reusing the `justDeletedAccount` one-shot shape. |
 | **FR-17** | The recovery `code`, the verifier, and any raw deep-link URL are **never logged**. `lib/authDebug.ts`'s `SENSITIVE_KEY_RE` matches none of `code`/`verifier`/`url`, and `MAX_DETAIL_STRING = 64` stores shorter strings **verbatim** — `nyx:///reset-password?code=` (27) + a 36-char code = **63**, under the threshold, in a log `app/settings/diagnostics.tsx` invites the owner to **share**. Widen the regex in PR 1. |
 | **FR-8** | The set-password screen enforces the **same** password rules as signup (shared `passwordError`), and on success signs the owner into the app — never back to a login form (Jordan's rule). |
 | **FR-9** | Every terminal state in §10 has a **designed screen** with at least one forward action. No `Alert.alert` is the sole representation of any state. |
@@ -287,9 +292,16 @@ Split on the error shape — one message cannot serve both causes.
   *A blanket "check your connection" **blames the owner's wifi for our rate limit** — the most likely non-network cause (§9.2). An online owner reads it, checks their connection, finds it fine, and taps straight back into the same rejection.*
 - Primary: **`Try again`** · Tertiary: **`Back to log in`**
 
-### 5.7 Settings — change password (PR 3, gated on D4)
+### 5.6b Signed out on another device (FR-20) — the evicted co-resident's screen
+Renders on `login.tsx` in the existing B-039 banner slot.
+- Title: **`You were signed out`**
+- Body: **`This usually happens when the account password is changed on another device. Sign in again to pick up where you left off.`**
+  *"Usually" is load-bearing: a revoked refresh token is indistinguishable from any other non-retryable failure, so the device **cannot know** the cause and must not claim one (§7.2.3). The authoritative "why" arrives by the password-changed email.*
+
+### 5.7 Settings — change password (PR 3, D4 ruled)
 - Row replaces the current "coming soon" note: **`Change password`**
 - Screen title: **`Change password`**; fields `Current password`, `New password`
+- Option (FR-19), **default off**: **`Also sign out other devices`** with the sublabel **`Anyone signed in on another phone or tablet will need to sign in again.`**
 - Primary: **`Save`** · success confirmation: **`Password updated.`** (renders as a `Snackbar`, not an alert)
 - The residual line becomes: **`To change your account email, contact support.`**
   *Not `Changing your email is coming soon.` — `nyx-voice` Pattern 3 lists "Coming soon" in its never-set, and keeping one directly under a newly-working row re-creates the exact half-built signal D4 was justified by (`pm-feature-review`). A path beats an undated promise, and it is also the only answer we currently have for the owner who has lost access to their signup mailbox (§11).*
@@ -399,7 +411,53 @@ Sam's objection stands and does not disappear — it gets **bounded**:
 
 **Net:** "yes" costs a bounded, mitigable inconvenience to a co-resident. "No" costs the feature its actual security purpose. Recommend **yes**, with the two conditions.
 
+**✅ RULED 2026-07-25 — PM adopted the best-practice workflow.** Scoped in full below.
+
 ---
+
+## §7.2 — The session lifecycle *(D6b ruled; this is the scoped workflow)*
+
+### 7.2.1 What actually happens, and what already works
+
+`signOut({ scope: 'others' })` revokes every *other* session's **refresh** token and keeps the current one. Two consequences shape everything else:
+
+**Detection needs no new code.** On the evicted device, auth-js's `autoRefresh` eventually attempts a refresh, receives a **non-retryable** error, calls `_removeSession`, and emits `SIGNED_OUT` — which `app/_layout.tsx:136` already handles correctly, running the full `wipeLocalSession()` teardown. `lib/authRouting.ts`'s retryable-vs-non-retryable distinction is exactly the discrimination this needs, and it already exists. **We are adding a trigger, not a mechanism.**
+
+**Eviction is not instant.** Revocation kills refresh tokens; the evicted device's **access** token stays validly signed until it expires (default ~1 hour). Until then that device keeps working and `useSync` flushes on its normal cadence. This is the single most important mitigation of Sam's objection — and it is why the unsynced-data loss is narrow rather than routine. *(Confirm the project's JWT expiry setting — §9.2 — since §7.1's whole cost argument rests on that window being ~an hour, not ~a minute.)*
+
+### 7.2.2 Ordering
+
+**Reset (PR 2):** evict **after** `updateUser({ password })` succeeds — never before. Evicting first and then failing the write would sign the household out for nothing, and would do it on the path where the owner is *already* locked out.
+
+**Change (PR 3):** identical ordering, gated on the checkbox.
+
+The reset device keeps its own session (`scope: 'others'`, not `'global'`) — Jordan's no-re-entry rule survives.
+
+### 7.2.3 The honesty problem on the evicted device
+
+**The evicted device cannot know why it was signed out.** A revoked refresh token is indistinguishable, from the client, from an account deletion, an admin revocation, or any other non-retryable failure. auth-js just reports an invalid refresh token.
+
+So the banner **must not assert a cause** — that is the identical error to §5.5's original "That link has expired", and it would be a worse one here, because it tells a co-resident something about the account that may not be true. What it *can* honestly do is name the likely cause and point forward:
+
+- Banner title: **`You were signed out`**
+- Body: **`This usually happens when the account password is changed on another device. Sign in again to pick up where you left off.`**
+
+"Usually" is doing real work. The **authoritative** "why" travels by the password-changed notification email (§9.2) to the account mailbox — which, in the shared-credential household this decision is about, both people can see.
+
+### 7.2.4 Involuntary vs deliberate sign-out
+
+The banner must appear **only** when the sign-out was not the owner's own action. The app already knows the difference: a deliberate sign-out originates at `app/settings.tsx:102`. So set a one-shot `deliberateSignOut` marker there; a `SIGNED_OUT` arriving **without** it was involuntary → route to `/(auth)/login` with the banner armed.
+
+This is precisely the shape of B-039's `justDeletedAccount` (`store/authStore.ts`, rendered at `login.tsx:119-128`) — same one-shot capture-then-clear, same screen, same banner slot. **Reuse that pattern rather than inventing a third.** Today an involuntary `SIGNED_OUT` routes to the Landing with no explanation, which is the "the app logged me out at random" experience `lib/authRouting.ts` exists to prevent — this closes the last hole in that story.
+
+### 7.2.5 The residual, stated plainly
+
+A device that is offline for the **entire** access-token window and reconnects after revocation will hit `SIGNED_OUT` and lose its unsynced rows to `wipeLocalSession()`. We accept this because:
+- the alternative — skipping the wipe on a revoked session — leaves pet-health data on a device whose access was deliberately revoked, which is exactly what B-054 FR-9 exists to prevent;
+- flushing at `SIGNED_OUT` time is impossible: the session is already revoked, so any push would 401;
+- and it is a **pre-existing** property of every sign-out, not something this decision introduces.
+
+It is written down here so the next person who meets it recognises it as a known cost rather than a new bug. → **B-422** tracks the general "sign-out discards unsynced captures" gap, which is worth solving on its own merits and would retire this residual as a side effect.
 
 ## §7 — Safety, privacy, and the invariants
 
@@ -428,8 +486,8 @@ Deliberately **not** an `app_config` allowlist flag: this is not an experiment b
 | PR | Scope | Gates | Build-ready? |
 |---|---|---|---|
 | **1** | Foundations — `flowType: 'pkce'`, `lib/passwordRecovery.ts` + tests (FR-4's **two** classifications), the **persisted** `recoveryInProgress` (FR-6), FR-12's request marker, **FR-17's redaction widening**, the `PASSWORD_RECOVERY_ENABLED` constant (off). **No user-visible change.** | `code-reviewer`; `npm test` | ✅ **Yes — today.** Independent of every open ruling. FR-4's contract was re-scoped before its tests get written, which was the reviewer's one PR-1 ask. |
-| **2** | The whole flow — FR-1 → FR-16: login link + §5.1b alert, request, Sent, deep-link handler, the §6.4 sign-out-first ordering, the §6.5 router gate, §6.6's escape, set-password, link-no-longer-works, wrong-device, request-failed. | **`rls-privacy-reviewer` (mandatory, merge gate — must clear F1–F5)** · `nyx-voice` · `pm-feature-review` · `code-reviewer` | ⚠️ **On D1c + §9.3 device checks.** |
-| **3** | Settings → change password (§5.7); retires the "coming soon" line. If **D6b** = yes, also carries the "Also sign out other devices" option (default off, §7.1). | `nyx-voice` · `code-reviewer` | ✅ **D4 ruled** — buildable once PR 1 lands. Needs the "Secure password change" dashboard setting, or the current-password field is decorative. |
+| **2** | The whole flow — FR-1 → FR-16, plus **FR-18/FR-20** (evict on reset + the evicted-device state): login link + §5.1b alert, request, Sent, deep-link handler, the §6.4 sign-out-first ordering, the §6.5 router gate, §6.6's escape, set-password, link-no-longer-works, wrong-device, request-failed. | **`rls-privacy-reviewer` (mandatory, merge gate — must clear F1–F5)** · `nyx-voice` · `pm-feature-review` · `code-reviewer` | ⚠️ **On D1c + §9.3 device checks.** |
+| **3** | Settings → change password (§5.7); retires the "coming soon" line. Also carries **FR-19**'s "Also sign out other devices" option (default off) — D6b ruled yes. | `nyx-voice` · `code-reviewer` | ✅ **D4 ruled** — buildable once PR 1 lands. Needs the "Secure password change" dashboard setting, or the current-password field is decorative. |
 | **4** | Enablement — flip `PASSWORD_RECOVERY_ENABLED`, on-device end-to-end verification, dashboard checklist confirmed. | On-device QA (§10) | ⛔ **On B-152 SMTP** (PM). |
 | **5** | **Email change** (D9) — request, dual confirmation, pending state, cancel. Reuses PR 1's handler/gate/provenance wholesale. | **`rls-privacy-reviewer` (mandatory — account re-homing)** · `nyx-voice` · `code-reviewer` | 🔓 **Scoped, slot open.** Recommended after PR 4; not on the submission path. Needs "Secure email change" ON. |
 
@@ -445,6 +503,7 @@ PR 1 is disjoint from every other live track (`lib/`, `store/authStore.ts`, `con
 - [ ] **OTP / link expiry** — confirm the recovery link lifetime; §5.5's copy assumes "doesn't last long" is true.
 - [ ] **Production SMTP** (B-152, guide step 4) — the §8 gate.
 - [ ] Confirm rate limits on the recovery endpoint are sane for a real user retrying twice.
+- [ ] **JWT / access-token expiry — read the actual value.** §7.1's entire cost argument for D6b rests on the evicted device staying live for ~an hour (so it flushes its queue normally). If the project's expiry is much shorter, the unsynced-loss residual (§7.2.5) is wider than assumed and worth re-pricing.
 - [ ] **OTP / recovery link expiry — read the actual value.** §5.5's "they don't last long" is an assertion the repo cannot verify.
 - [ ] **"Secure password change" (require re-authentication) — confirm ON before PR 3 ships.** Supabase's `updateUser({ password })` does **not** require the current password unless this is enabled, which makes §5.7's current-password field **decorative**: an unlocked, unattended phone becomes a Settings-screen account takeover. This is a server-control item, not a copy detail.
 - [ ] **Password-changed notification email — confirm enabled.** Load-bearing **either way**: if D6b is declined it is the *only* compensating control; if D6b is accepted it is how an evicted co-resident learns why (§7.1).
@@ -493,6 +552,14 @@ Every row is a reachable terminal state with a designed screen and a forward act
 | 23 | **Hostile deep link** | Fire `nyx:///reset-password?code=x` from Safari | Refused — no local request marker (FR-14); the gate does **not** set, the app does **not** wedge |
 | 24 | **Abandon a reset** | Reach set-password, take the escape | `signOut()` + gate cleared; no privileged session, no B data left on device (FR-16, §6.6) |
 | 25 | **Cold start from link with no prior session** | Fresh install, tap a link | Wipe still runs (FR-7 is unconditional) — the case where id-comparison failed open |
+| 26 | **Reset on A while signed in on B** (both online) | Complete a reset on A | B keeps working to the end of its access-token window, **flushes its queue**, then signs out (FR-18) |
+| 27 | **The evicted device's landing** | Continue from 26 on B | B lands on **login with the banner**, not the Landing with no explanation (FR-20) |
+| 28 | **Banner asserts nothing false** | Read B's banner | "usually happens when…" — **no claim of a cause the device cannot know** (§7.2.3) |
+| 29 | **Deliberate sign-out shows no banner** | Settings → Sign out | Landing, no banner — the involuntary discrimination works (§7.2.4) |
+| 30 | **B offline across the whole window** | Airplane-mode B, reset on A, reconnect later | B signs out and **loses unsynced rows** — the accepted, documented residual (§7.2.5) |
+| 31 | **Change with the option OFF** | Settings → change password, unchecked | B is **unaffected** (FR-19 default) |
+| 32 | **Change with the option ON** | Same, checked | B evicted exactly as in 26–27 |
+| 33 | **Evict fires only after a successful write** | Force the password write to fail | **No eviction** — the household is not signed out for nothing (FR-18 ordering) |
 
 Rows **7, 11, and 12** fail silently if the §6.4 ordering is wrong. Row **2** is verified by comparing rendered output, not by reading code. Rows **16–17** were surfaced by walking the flow as Sam rather than as an implementer; rows **20–25** all come from the `rls-privacy-reviewer` FAIL and **did not exist in v1** — each one is a state the original design could reach and had no answer for.
 
@@ -509,7 +576,7 @@ Rows **7, 11, and 12** fail silently if the §6.4 ordering is wrong. Row **2** i
 | Deep-link scheme `nyx://` → `culprit://` | **B-278** (existing; cost/benefit changed — see §1) |
 | Social-auth recovery re-verification | **B-281** (existing; noted) |
 | "Verify later · continue for now" routes to the login wall | **B-401** (existing; belongs to B-152 part 2) |
-| Sign out other devices | D6b — revisit at **B-292** if declined |
+| Sign-out discards unsynced captures | **B-422** — every `SIGNED_OUT` wipes `synced=0` rows, so an involuntary eviction (FR-18) can cost a co-resident their offline logs. Pre-existing and worth solving on its own merits; would retire §7.2.5's residual as a side effect |
 | Password reveal toggle on `components/ui/TextField` | **B-420** — app-wide gap (login, signup, reset, change all mask with no reveal and no confirm field); recovery is where a silent typo costs most, since it surfaces days later at the next cold start with the link already spent |
 | Manual ops runbook: owner has lost access to their signup email | **B-421** — recovery is **single-factor on an address B-419 defers making changeable**. An owner who loses that mailbox has *no path back into their pet's record at all*, and "contact support" is currently the whole answer, with no documented procedure behind it |
 
