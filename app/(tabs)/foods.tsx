@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
@@ -8,8 +8,22 @@ import { FoodRow } from '../../components/foods/FoodRow';
 import { ArchivedFoodRow } from '../../components/foods/ArchivedFoodRow';
 import {
   getLibraryFoods, getArchivedFoods, getFoodIntakeStats,
-  PickerFood, ArchivedFood, FoodIntakeStat,
+  PickerFood, LibraryFood, ArchivedFood, FoodIntakeStat,
 } from '../../lib/db';
+import { proteinSummaryLine } from '../../components/food/ProteinDisclosure';
+import { proteinsFromCacheText } from '../../lib/protein';
+
+/** Decode the cache's raw ai_extraction_confidence JSON text. Anything malformed
+ *  reads as null, which the D10 gate treats as "panel unread" — the safe
+ *  direction, since it can only ever suppress a completeness claim. */
+function parseCachedConfidence(text: string | null): unknown {
+  if (text == null) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
 import {
   groupFoodsByType, groupFoodsByBrand, foodIntakeKey, foodIntakeNote, indexIntakeStats,
   foodFavoriteNote, type ReliableFavorite,
@@ -38,7 +52,7 @@ type ThumbProps = { hasPhoto: boolean; photoUrl: string | null; photoLoading: bo
 // the FAB picker path. (The picker's 2-up toFoodRows chunker is deliberately not
 // used here — these are full-width rows, one food per line, not a 2-col grid.)
 export default function FoodsScreen() {
-  const [library, setLibrary] = useState<PickerFood[]>([]);
+  const [library, setLibrary] = useState<LibraryFood[]>([]);
   // Archived foods (B-005 PR 3) — the removed-from-library set, shown in a
   // collapsed-by-default section at the bottom of the tab. Its own read so a
   // failure to load it never blanks the active library above it.
@@ -191,6 +205,32 @@ export default function FoodsScreen() {
     [intakeStats],
   );
 
+  // Resolve a row's Tier-1 protein line (B-351 slice 4). Pure — the three inputs
+  // ride on the library row itself (LIBRARY_FOODS_QUERY selects them), so this is
+  // a decode + format with no read of its own. Returns null when the food has
+  // nothing honest to disclose, which leaves the row exactly as it was before.
+  // Built as an id → line MAP rather than a per-row function, so the three
+  // disclosure columns never have to be threaded through groupFoodsByType /
+  // groupFoodsByBrand (which stay PickerFood-shaped and shared with the quick-log
+  // picker — a surface that deliberately shows no protein line at all). One pass
+  // over the library; rows look themselves up by id.
+  const proteinNotes = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of library) {
+      const line = proteinSummaryLine({
+        proteins: proteinsFromCacheText(f.proteins),
+        ingredientsNotes: f.ingredients_notes,
+        extractionConfidence: parseCachedConfidence(f.ai_extraction_confidence),
+      });
+      if (line) map.set(f.id, line);
+    }
+    return map;
+  }, [library]);
+  const proteinNoteFor = useCallback(
+    (f: PickerFood): string | null => proteinNotes.get(f.id) ?? null,
+    [proteinNotes],
+  );
+
   // Resolve a row's thumbnail props (B-004 PR 6). hasPhoto drives the pending-vs-
   // placeholder branch in FoodRow; photoUrl is null until that path signs (or if
   // it never does — offline / deleted object — in which case the row shows the
@@ -247,7 +287,7 @@ export default function FoodsScreen() {
   const libraryByKey = new Map(library.map((f) => [foodIntakeKey(f.brand, f.product_name), f]));
   const favoriteRows = favorites
     .map((fav) => ({ fav, food: libraryByKey.get(fav.key) }))
-    .filter((x): x is { fav: ReliableFavorite; food: PickerFood } => x.food != null);
+    .filter((x): x is { fav: ReliableFavorite; food: LibraryFood } => x.food != null);
 
   // The error state wins only when there's nothing to show. A failed *reload*
   // that still has a populated list keeps the (stale-but-present) rows — matching
@@ -324,15 +364,21 @@ export default function FoodsScreen() {
             </View>
           ) : null}
           {favoriteRows.length > 0 ? (
-            <FavoritesShelf rows={favoriteRows} petName={activePetName} thumbFor={thumbFor} />
+            <FavoritesShelf
+              rows={favoriteRows}
+              petName={activePetName}
+              proteinNoteFor={proteinNoteFor}
+              thumbFor={thumbFor}
+            />
           ) : null}
-          <FoodGroup label="Meals" foods={grouped.meals} noteFor={noteFor} thumbFor={thumbFor} />
-          <FoodGroup label="Treats" foods={grouped.treats} noteFor={noteFor} thumbFor={thumbFor} />
+          <FoodGroup label="Meals" foods={grouped.meals} noteFor={noteFor} proteinNoteFor={proteinNoteFor} thumbFor={thumbFor} />
+          <FoodGroup label="Treats" foods={grouped.treats} noteFor={noteFor} proteinNoteFor={proteinNoteFor} thumbFor={thumbFor} />
           <FoodGroup
             label="Unclassified"
             foods={grouped.other}
             hint="Tap a food to set whether it's a meal or a treat."
             noteFor={noteFor}
+            proteinNoteFor={proteinNoteFor}
             thumbFor={thumbFor}
           />
           {archived.length > 0 ? (
@@ -362,10 +408,11 @@ export default function FoodsScreen() {
 // catalog rows below (a favorite also appears in its type group; the shelf is a
 // promotion, not a second list).
 function FavoritesShelf({
-  rows, petName, thumbFor,
+  rows, petName, proteinNoteFor, thumbFor,
 }: {
-  rows: { fav: ReliableFavorite; food: PickerFood }[];
+  rows: { fav: ReliableFavorite; food: LibraryFood }[];
   petName: string | null;
+  proteinNoteFor: (f: PickerFood) => string | null;
   thumbFor: (f: PickerFood) => ThumbProps;
 }) {
   return (
@@ -383,6 +430,7 @@ function FavoritesShelf({
               brand={food.brand}
               productName={food.product_name}
               format={food.format}
+              proteinNote={proteinNoteFor(food)}
               favoriteNote={foodFavoriteNote(fav)}
               {...thumbFor(food)}
               onPress={() => router.push(`/food/${food.id}`)}
@@ -404,7 +452,7 @@ function FavoritesShelf({
 // canonicalizeBrand. The brand-label + card-of-rows pairing reuses the same
 // Linear/Oura grouped-list idiom as the section header itself.
 function FoodGroup({
-  label, foods, hint, noteFor, thumbFor,
+  label, foods, hint, noteFor, proteinNoteFor, thumbFor,
 }: {
   label: string;
   foods: PickerFood[];
@@ -412,6 +460,10 @@ function FoodGroup({
   // Per-row intake annotation resolver (B-004 PR 4), passed down from the screen
   // so the group stays presentational and the per-pet logic lives in one place.
   noteFor: (f: PickerFood) => string | null;
+  // Per-row Tier-1 protein disclosure (B-351 slice 4). Same passed-down shape as
+  // noteFor — the group stays presentational; the decode + D10 gate live once, in
+  // the screen's memoized map.
+  proteinNoteFor: (f: PickerFood) => string | null;
   // Per-row thumbnail resolver (B-004 PR 6), same pattern as noteFor.
   thumbFor: (f: PickerFood) => ThumbProps;
 }) {
@@ -443,6 +495,7 @@ function FoodGroup({
                     brand={f.brand}
                     productName={f.product_name}
                     format={f.format}
+                    proteinNote={proteinNoteFor(f)}
                     intakeNote={noteFor(f)}
                     {...thumbFor(f)}
                     onPress={() => router.push(`/food/${f.id}`)}

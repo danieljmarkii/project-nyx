@@ -29,6 +29,18 @@ interface Props {
   // muted last-logged line (it's the shelf row's point) but kept calm and factual —
   // the visible denominator, not a loud "loved!" badge (intake-is-not-preference).
   favoriteNote?: string | null;
+  // Tier-1 protein disclosure (B-351 slice 4, D7/§8.5) — "Duck · also contains
+  // chicken", or "Duck · ingredient list not read" when D10's completeness gate
+  // fails. Built by lib/.../proteinSummaryLine, which returns null when there is
+  // nothing honest to say, so the row stays clean for a library of legacy manual
+  // foods rather than turning a browse into a wall of "not read".
+  //
+  // A PROPERTY OF THE FOOD, so it renders ABOVE the favorite/intake notes, which
+  // are properties of this pet's history with it. Never a nudge and never
+  // interactive — Tier 1 is informational by ruling (Principle 4); only Tier 2's
+  // trial conflict escalates, and that lives on the detail screen and the
+  // completion card, never here.
+  proteinNote?: string | null;
   // Leading thumbnail (B-004 PR 6). The Foods tab gives every row a fixed-size
   // photo slot so the surface reads as one calm column — never the "uneven
   // empty/photo state machine" that retired thumbnails from the picker GRID (a
@@ -54,7 +66,7 @@ interface Props {
 // (BRAND · FORMAT) mirrors FoodTile's, sourced from the shared FORMAT_LABEL.
 export function FoodRow({
   brand, productName, format, onPress, hideBrand = false, intakeNote, favoriteNote,
-  hasPhoto, photoUrl, photoLoading,
+  proteinNote, hasPhoto, photoUrl, photoLoading,
 }: Props) {
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const formatMeta = typeLabel.toUpperCase();
@@ -65,7 +77,7 @@ export function FoodRow({
       : brand.toUpperCase();
   // Append whichever annotation lines are present to the spoken label, so a screen
   // reader hears the favorite rate / last-logged note, not just the name.
-  const spokenNotes = [favoriteNote, intakeNote].filter(Boolean).join(', ');
+  const spokenNotes = [proteinNote, favoriteNote, intakeNote].filter(Boolean).join(', ');
 
   return (
     <TouchableOpacity
@@ -92,6 +104,11 @@ export function FoodRow({
         <Text style={styles.product} numberOfLines={2}>
           {productName}
         </Text>
+        {proteinNote ? (
+          <Text style={styles.protein} numberOfLines={1}>
+            {proteinNote}
+          </Text>
+        ) : null}
         {favoriteNote ? (
           <Text style={styles.favorite} numberOfLines={1}>
             {favoriteNote}
@@ -210,6 +227,12 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     fontWeight: theme.weightMedium,
     color: theme.colorTextSecondary,
+  },
+  // Tier-1 protein line. Tertiary colour — quieter than the pet-specific intake
+  // note below it, because it is context rather than a finding.
+  protein: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
   },
   chevron: {
     fontSize: theme.textLG,

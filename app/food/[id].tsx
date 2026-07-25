@@ -30,6 +30,15 @@ import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteins
 import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { usePetStore } from '../../store/petStore';
+import { ProteinDisclosure } from '../../components/food/ProteinDisclosure';
+import { TrialContaminantNote } from '../../components/food/TrialContaminantNote';
+import {
+  loadTrialProteinContext,
+  foodContaminantFlag,
+  standingFlagCopy,
+  type TrialProteinContext,
+} from '../../lib/trialContaminant';
 
 const FOOD_FORMATS = [
   { value: 'dry_kibble', label: 'Dry kibble' },
@@ -73,13 +82,19 @@ interface FoodRow {
   proteins: string[] | null;
   ai_extraction_status: ExtractionStatus;
   ai_extraction_error: string | null;
+  // B-351 slice 4 (D10 / B-413): the second arm of the protein-set completeness
+  // gate. Untyped by design — it is jsonb, rows predating PR 2 have no
+  // `proteins` key at all, and lib/protein's gate is written to tolerate any
+  // shape (anything unreadable counts as "panel unread", never as "clean").
+  ai_extraction_confidence: unknown;
   source: string;
 }
 
-const SELECT_COLS = 'id, brand, product_name, format, food_type, ingredients_notes, upc_barcode, photo_paths, primary_protein, proteins, ai_extraction_status, ai_extraction_error, source';
+const SELECT_COLS = 'id, brand, product_name, format, food_type, ingredients_notes, upc_barcode, photo_paths, primary_protein, proteins, ai_extraction_status, ai_extraction_error, ai_extraction_confidence, source';
 
 export default function FoodDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { activePet } = usePetStore();
 
   const [row, setRow] = useState<FoodRow | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -104,6 +119,12 @@ export default function FoodDetailScreen() {
   // author — see pickerProteinsToSet's Class-A note).
   const proteinTouched = useRef(false);
   const baseline = useRef<Pick<FoodRow, 'brand' | 'product_name' | 'format' | 'food_type' | 'ingredients_notes' | 'upc_barcode' | 'primary_protein'> | null>(null);
+
+  // B-351 slice 4 — the active-trial context for the Tier-2 standing note. Loaded
+  // best-effort once per mount (TTL-cached in lib/trialContaminant); null offline,
+  // with no trial, or when the trial food's target protein is unknown, and a null
+  // context renders NOTHING rather than an all-clear.
+  const [trialCtx, setTrialCtx] = useState<TrialProteinContext | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -150,6 +171,20 @@ export default function FoodDetailScreen() {
       supabase.removeChannel(channel);
     };
   }, [id]);
+
+  // The trial context keys off the ACTIVE pet: a diet trial belongs to a pet, and
+  // the food library is per-account and shared across them. So the note reads
+  // "off Mochi's trial diet" for whichever pet is in focus, which is the same
+  // scoping every other pet-specific annotation on the food surfaces uses.
+  useEffect(() => {
+    let cancelled = false;
+    const petId = activePet?.id;
+    if (!petId) { setTrialCtx(null); return; }
+    loadTrialProteinContext(petId)
+      .then((ctx) => { if (!cancelled) setTrialCtx(ctx); })
+      .catch(() => { if (!cancelled) setTrialCtx(null); });
+    return () => { cancelled = true; };
+  }, [activePet?.id]);
 
   function applyRow(next: FoodRow) {
     // Capture the *previous* baseline before we mutate it — the field-seeding
@@ -260,10 +295,14 @@ export default function FoodDetailScreen() {
     try {
       const db = getDb();
       await db.runAsync(
+        // ingredients_notes rides along because the cache now backs the Tier-1
+        // disclosure's completeness gate (B-351 slice 4) — an owner who types the
+        // panel here would otherwise see the library row keep saying "ingredient
+        // list not read" until the next full sync.
         `UPDATE food_items_cache
-           SET brand = ?, product_name = ?, format = ?, food_type = ?
+           SET brand = ?, product_name = ?, format = ?, food_type = ?, ingredients_notes = ?
          WHERE id = ?`,
-        [brand.trim(), productName.trim(), format, foodType, row.id],
+        [brand.trim(), productName.trim(), format, foodType, trimmedIngredients, row.id],
       );
       // Mirrors the server write above: protein columns move together, and only
       // when the owner touched the picker.
@@ -500,6 +539,15 @@ export default function FoodDetailScreen() {
     );
   }
 
+  // Tier-2 standing note. Derived from the SAVED protein set (not the picker's
+  // in-progress state) and suppressed entirely for the trial diet itself — that
+  // food's own contamination is a trial-level standing fact that belongs on the
+  // diet-trial card (B-417 C2), and foodContaminantFlag enforces it.
+  const contaminantFlag = foodContaminantFlag(trialCtx, row.id, row.proteins ?? []);
+  const standingFlag = contaminantFlag
+    ? standingFlagCopy(contaminantFlag, activePet?.name ?? 'your pet')
+    : null;
+
   const isPending = row.ai_extraction_status === 'pending';
   const isFailed = row.ai_extraction_status === 'failed';
   const isCompleted = row.ai_extraction_status === 'completed';
@@ -584,6 +632,25 @@ export default function FoodDetailScreen() {
                 setAlsoContains(next.alsoContains);
               }}
             />
+            {/* Tier-1 (D7): the chips above already SHOW the set, so the only thing
+                left to disclose is whether it is the whole set — which is exactly
+                what D10 says no surface may leave implied. Reads from `row` (the
+                stored record), never from the in-progress picker state, so it
+                describes what is saved rather than flickering mid-edit. */}
+            <ProteinDisclosure
+              input={{
+                proteins: row.proteins ?? [],
+                ingredientsNotes: row.ingredients_notes,
+                extractionConfidence: row.ai_extraction_confidence,
+              }}
+            />
+            {/* Tier-2 (D2/§8): the standing register of the same fact the completion
+                card reports once. This is where a food flagged on its first log
+                keeps saying so — which is what makes the one-heads-up-per-food rule
+                affordable rather than a silent drop. */}
+            {standingFlag && (
+              <TrialContaminantNote title={standingFlag.title} body={standingFlag.body} />
+            )}
 
             <SectionLabel label="Type" />
             <View style={styles.foodTypeRow}>

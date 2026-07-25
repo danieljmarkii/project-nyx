@@ -148,6 +148,28 @@ describe('momentStore', () => {
     expect(useMomentStore.getState().visible).toBe(false);
   });
 
+  it('holds a trial-flagged meal card open longer than an unflagged one (B-351 slice 4)', () => {
+    // The heads-up is PASSIVE — there is no tap that brings it back, and its
+    // durable home (the food's detail screen) is a navigation away. So a card
+    // carrying two extra lines of prose the owner has never seen must not flash
+    // past at the unflagged 5s. Applied in the store rather than at each call
+    // site, so a future meal-entry path cannot ship a flagged card that does.
+    useMomentStore.getState().showMeal(mealPayload({
+      trialFlag: { proteins: ['chicken'], targetProtein: 'duck' },
+    }));
+    jest.advanceTimersByTime(5000);
+    expect(useMomentStore.getState().visible).toBe(true);
+    jest.advanceTimersByTime(2000);
+    expect(useMomentStore.getState().visible).toBe(false);
+  });
+
+  it('carries a null trial flag through untouched — absence is never an all-clear', () => {
+    useMomentStore.getState().showMeal(mealPayload());
+    const { payload } = useMomentStore.getState();
+    if (payload?.kind !== 'meal') throw new Error('expected meal payload');
+    expect(payload.trialFlag ?? null).toBeNull();
+  });
+
   it('defers a meal card reveal by delayMs (clears the dismissing /log modal)', () => {
     useMomentStore.getState().showMeal(mealPayload(), { delayMs: 450 });
     expect(useMomentStore.getState().visible).toBe(false);

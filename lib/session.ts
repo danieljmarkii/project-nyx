@@ -4,6 +4,7 @@ import { clearWidgetData } from './appGroup';
 import { clearWidgetTimeline } from './widgetBridge';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
+import { clearTrialContextCache } from './trialContaminant';
 
 // The local teardown that must run on sign-out AND on post-deletion sign-out
 // (B-054 FR-9): abort in-flight hydration, wipe the synced SQLite copy + the
@@ -38,4 +39,13 @@ export async function wipeLocalSession(): Promise<void> {
   // Clear any half-finished onboarding entry (a typed pet name/type) so it can't
   // carry into the next account's onboarding on this device (B-251 PR 7).
   useOnboardingDraftStore.getState().reset();
+  // B-351 slice 4: the active-trial protein context is memoized per pet in a
+  // module-level Map with a 5-minute TTL. It is account data — the trial's target
+  // protein and the trial food's own protein set — and it lives in JS memory, so
+  // clearLocalData never touches it. Without this, signing into a second account
+  // within the TTL could evaluate the new account's meals against the previous
+  // account's trial (pet ids are uuids so a collision is not the risk; a lingering
+  // context for a pet id that is simply gone is). Same FR-9 parity reasoning as the
+  // App Group wipe above: wipe every place account data rests, not just SQLite.
+  clearTrialContextCache();
 }

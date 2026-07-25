@@ -31,6 +31,7 @@ import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFi
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
+import { evaluateMealTrialFlag } from '../lib/trialContaminant';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution, formatTime, deriveOccurredAt, OccurredConfidence } from '../lib/utils';
 
 type Step = 'type' | 'food' | 'medication' | 'symptom' | 'simple' | 'stool-type' | 'weight';
@@ -296,6 +297,17 @@ export default function LogModal() {
       const foodType = food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
         ? food.food_type
         : null;
+      // B-351 slice 4 — the trial-contaminant heads-up, resolved AFTER the meal is
+      // committed and awaited only because the card has not been shown yet. The log
+      // itself is already done and synced by this point, so nothing about Principle
+      // 1 depends on this resolving (or resolving fast, or at all): the evaluator
+      // reads local SQLite plus a 5-minute-cached trial row, swallows every error,
+      // and returns null for every uncertainty.
+      const trialFlag = await evaluateMealTrialFlag({
+        petId: result.petId,
+        foodId: food.id,
+        occurredAt: result.occurredAt,
+      });
       showMealMoment(
         {
           eventId: result.eventId,
@@ -305,6 +317,7 @@ export default function LogModal() {
           foodBrand: food.brand,
           foodProductName: food.product_name,
           intakeRating: null,
+          trialFlag,
         },
         { delayMs: 450 },
       );

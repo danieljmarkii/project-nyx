@@ -13,6 +13,7 @@ import { updateEvent, updateMealIntake } from '../../lib/db';
 import { syncPendingEvents, syncPendingMeals } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import { IntakeChipRow, IntakeRating } from '../log/IntakeChipRow';
+import { mealFlagCopy } from '../../lib/trialContaminant';
 
 // Tab bar height from app/(tabs)/_layout.tsx — the card must clear it so it
 // isn't occluded when the user lands back on a tabs screen after a log.
@@ -56,10 +57,20 @@ const INTAKE_CONFIRM_HOLD_MS = 1500;
 // the meal's pet = the same-pet write target, food type = the inferred vehicle).
 // The intake→adherence SAFETY coupling is deliberately NOT here — that's the gated,
 // adversarial-reviewed PR B3. Before proposing a FOURTH affordance: stop.
+//
+// B-351 slice 4 added a fourth BLOCK but not a fourth AFFORDANCE, and the
+// distinction is the whole reason the standing warning above was not tripped: the
+// trial-contaminant heads-up is passive prose with no target, no state and no
+// write. It adds zero taps to every path, including its own — D2 ratified the
+// log-time register as NON-BLOCKING precisely because Principle 1 forbids a
+// decision at the moment of event, so this line reports a fact about a meal that
+// is already saved and asks nothing. It renders only when
+// evaluateMealTrialFlag returned a flag; its absence is never an all-clear, and
+// there is deliberately no "no conflict" state for it to render.
 export function MealCompletionCard() {
   const { visible, payload, hide, patchOccurredAt, patchIntakeRating, rescheduleHide } = useMomentStore();
   const { patchInToday } = useEventStore();
-  const { activePet } = usePetStore();
+  const { activePet, pets } = usePetStore();
 
   const translateY = useRef(new Animated.Value(80)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -209,6 +220,16 @@ export function MealCompletionCard() {
   // null; never pre-stamped. 'other' and unclassified foods stay opted out.
   const showIntake = payload.foodType === 'meal' || payload.foodType === 'treat';
   const petName = activePet?.name ?? 'your pet';
+  // Name the MEAL's pet, not the active one. The flag is already targeted
+  // correctly either way (evaluateMealTrialFlag runs against payload.petId, the
+  // pet captured at log time), but a queue-then-switch would otherwise print
+  // another pet's name in a sentence about this pet's trial — and a clinical
+  // heads-up naming the wrong animal is worse than no name at all. Falls back to
+  // the active pet, then to the generic form.
+  const mealPetName =
+    pets.find((p) => p.id === payload.petId)?.name ?? petName;
+  const trialFlag = payload.trialFlag ?? null;
+  const trialFlagCopy = trialFlag ? mealFlagCopy(trialFlag, mealPetName) : null;
 
   return (
     <>
@@ -249,6 +270,22 @@ export function MealCompletionCard() {
                 size="compact"
                 onDark
               />
+            </View>
+          )}
+          {/* B-351 slice 4 — the Tier-2 trial-contaminant heads-up. Sits below the
+              intake row (the mock's order): the owner's muscle memory for the chips
+              is untouched, and the note is read on the way out rather than in place
+              of the thing they came to do. Non-interactive — accessible as one
+              summary node so a screen reader speaks the fact and its context
+              together instead of two orphan lines. */}
+          {trialFlag && (
+            <View
+              style={styles.flagWrap}
+              accessibilityRole="summary"
+              accessibilityLabel={`${trialFlagCopy!.headline} ${trialFlagCopy!.detail}`}
+            >
+              <Text style={styles.flagHeadline}>{trialFlagCopy!.headline}</Text>
+              <Text style={styles.flagDetail}>{trialFlagCopy!.detail}</Text>
             </View>
           )}
           {/* B-156 PR B2b — the opt-in combo line (meal/treat only). The quietest line
@@ -399,6 +436,27 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: 'rgba(255,255,255,0.7)',
     fontWeight: theme.weightRegular,
+  },
+  // B-351 slice 4 — the passive trial-contaminant heads-up. Same divider treatment
+  // as the rows around it so the card stays one calm stack, and no accent fill: on
+  // this dark ground the tinted safety card the detail screens use would read as an
+  // alarm, and D2's whole point is that log-time is the NON-blocking register. The
+  // headline carries slightly more weight than the detail so the fact lands first.
+  flagWrap: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.15)',
+    paddingTop: theme.space1,
+    gap: 2,
+  },
+  flagHeadline: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: '#fff',
+  },
+  flagDetail: {
+    fontSize: theme.textSM,
+    lineHeight: theme.textSM * 1.4,
+    color: 'rgba(255,255,255,0.75)',
   },
   // The opt-in combo entry (B-156 PR B2b). ≥44pt tappable (the 3am-test floor) via
   // minHeight; a faint divider so it reads as a separate, optional add-on beneath the

@@ -31,7 +31,10 @@ function runLibraryQuery(rows: Fixture[]): LibRow[] {
   // Minimal mirror of the columns getLibraryFoods reads (lib/db.ts food_items_cache).
   db.exec(`CREATE TABLE food_items_cache (
     id TEXT PRIMARY KEY, brand TEXT, product_name TEXT, format TEXT,
-    food_type TEXT, photo_path TEXT, archived_at TEXT
+    food_type TEXT, photo_path TEXT, archived_at TEXT,
+    -- B-351 slice 4: the Tier-1 disclosure's three inputs now ride on the
+    -- library row (bare columns, tied to the MAX(photo_path) row).
+    proteins TEXT, ingredients_notes TEXT, ai_extraction_confidence TEXT
   );`);
   const insert = db.prepare(
     `INSERT INTO food_items_cache (id, brand, product_name, format, food_type, photo_path, archived_at)
@@ -86,7 +89,14 @@ describe('LIBRARY_FOODS_QUERY — B-108 photo dedup', () => {
       ['E', 'Solo', 'Only One', 'raw', 'meal', 'E/0.jpg'],
     ]);
     expect(rows).toEqual([
-      { id: 'E', brand: 'Solo', product_name: 'Only One', format: 'raw', food_type: 'meal', photo_path: 'E/0.jpg' },
+      {
+        id: 'E', brand: 'Solo', product_name: 'Only One', format: 'raw', food_type: 'meal',
+        photo_path: 'E/0.jpg',
+        // B-351 slice 4 — the disclosure columns ride along on every library row.
+        // Null here because this fixture predates them, which is exactly the
+        // legacy shape the D10 gate must read as "panel not captured".
+        proteins: null, ingredients_notes: null, ai_extraction_confidence: null,
+      },
     ]);
   });
 

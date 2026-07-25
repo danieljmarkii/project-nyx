@@ -15,6 +15,7 @@ import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
+import { evaluateMealTrialFlag } from '../../lib/trialContaminant';
 
 export function FAB() {
   const { prependEvent } = useEventStore();
@@ -106,6 +107,15 @@ export function FAB() {
       // meal-entry path must route through showMeal — if a non-picker meal flow
       // is added later, mirror this call (otherwise intake capture vanishes for
       // that path). Replaces the retired standalone post-log toast.
+      // B-351 slice 4 — the trial-contaminant heads-up. Resolved after the meal is
+      // committed (it already is: insertMeal above owns the write + sync push), so
+      // the quick-log stays exactly as fast as it was; the evaluator reads local
+      // SQLite plus a TTL-cached trial row and returns null on any uncertainty.
+      const trialFlag = await evaluateMealTrialFlag({
+        petId: pet.id,
+        foodId: food.id,
+        occurredAt: occurredAtIso,
+      });
       showMealMoment({
         eventId,
         petId: pet.id,
@@ -114,6 +124,7 @@ export function FAB() {
         foodBrand: food.brand,
         foodProductName: food.product_name,
         intakeRating: null,
+        trialFlag,
       });
     } finally {
       setLogging(null);

@@ -156,6 +156,16 @@ export async function initDb(): Promise<void> {
       -- proteinsFromCacheText (lib/protein.ts). NULL = not yet hydrated; '[]' =
       -- known protein-less.
       proteins        TEXT,
+      -- B-351 slice 4 (D10 / B-413): the two arms of the protein-set completeness
+      -- gate. The proteins column alone cannot distinguish "the panel was read and this
+      -- food really is single-protein" from "nobody read the panel" — so every
+      -- surface that renders the set needs the provenance alongside it, and the
+      -- gate must be the SAME one generate-report uses (proteinSetCompleteness
+      -- in lib/protein.ts). ingredients_notes mirrors the verbatim panel;
+      -- ai_extraction_confidence mirrors the jsonb column as its raw JSON text.
+      -- Both NULL on a manual/legacy row, which the gate reads as "not captured".
+      ingredients_notes         TEXT,
+      ai_extraction_confidence  TEXT,
       cached_at       TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -293,6 +303,23 @@ export async function initDb(): Promise<void> {
   // stay NULL (= not yet hydrated) until the next refreshFoodCache writes them.
   try {
     await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN proteins TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+
+  // ingredients_notes + ai_extraction_confidence — B-351 slice 4 (D10 / B-413).
+  // The two arms of the protein-set completeness gate, mirrored so a surface can
+  // tell a read panel from an unread one WITHOUT a network round-trip (the Foods
+  // library list and the post-log heads-up both run offline). Legacy rows stay
+  // NULL until the next refreshFoodCache, which the gate reads as "not captured" —
+  // the safe direction, since NULL can only ever suppress a completeness claim.
+  try {
+    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN ingredients_notes TEXT`);
+  } catch {
+    // Column already exists — safe to ignore
+  }
+  try {
+    await database.execAsync(`ALTER TABLE food_items_cache ADD COLUMN ai_extraction_confidence TEXT`);
   } catch {
     // Column already exists — safe to ignore
   }
@@ -932,9 +959,22 @@ export async function getRecentFoods(
 // Full catalog, deduplicated by brand+product_name, alpha by brand. The query
 // (incl. the B-108 MAX(photo_path) photo-dedup) lives in ./foodQueries so it can
 // be exercised against an in-memory SQLite in jest without the expo-sqlite stack.
-export async function getLibraryFoods(): Promise<PickerFood[]> {
+// A library row = a picker row plus the Tier-1 protein disclosure's inputs
+// (B-351 slice 4). The three extra columns ride ONLY on the library read, not on
+// PickerFood: the picker grid is a moment-of-event surface and deliberately shows
+// no protein line there (Principle 1 / the 10-second test), so widening the
+// shared type would carry data to a surface that must not render it.
+export interface LibraryFood extends PickerFood {
+  /** JSON-array text; decode with proteinsFromCacheText. */
+  proteins: string | null;
+  ingredients_notes: string | null;
+  /** Raw JSON text of the ai_extraction_confidence jsonb. */
+  ai_extraction_confidence: string | null;
+}
+
+export async function getLibraryFoods(): Promise<LibraryFood[]> {
   const db = getDb();
-  return db.getAllAsync<PickerFood>(LIBRARY_FOODS_QUERY);
+  return db.getAllAsync<LibraryFood>(LIBRARY_FOODS_QUERY);
 }
 
 // One archived (removed-from-library) food per restorable archive-unit — the

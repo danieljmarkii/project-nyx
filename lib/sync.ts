@@ -502,6 +502,19 @@ export async function ensureEventAttachmentsSynced(eventId: string): Promise<voi
   }
 }
 
+/** Serialize `food_items.ai_extraction_confidence` (untyped jsonb) for the cache's
+ *  TEXT column. Anything that is not a plain object serializes to null — the D10
+ *  gate reads null as "no confidence recorded", which suppresses a completeness
+ *  claim rather than granting one. */
+function serializeConfidence(value: unknown): string | null {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return null;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
 export async function refreshFoodCache(): Promise<void> {
   const db = getDb();
 
@@ -524,7 +537,7 @@ export async function refreshFoodCache(): Promise<void> {
   // and the Phase B engine read the full exposure, not just proteins[0].
   const { data, error } = await supabase
     .from('food_items')
-    .select('id, brand, product_name, format, food_type, primary_protein, proteins, is_novel_protein, is_grain_free, is_prescription, photo_paths, archived_at')
+    .select('id, brand, product_name, format, food_type, primary_protein, proteins, is_novel_protein, is_grain_free, is_prescription, photo_paths, archived_at, ingredients_notes, ai_extraction_confidence')
     .eq('created_by_user_id', session.user.id);
 
   // Log on failure (CLAUDE.md "no silent failures in sync") — parity with the
@@ -547,8 +560,8 @@ export async function refreshFoodCache(): Promise<void> {
     // leaves last_used_at intact.
     await db.runAsync(
       `INSERT INTO food_items_cache
-        (id, brand, product_name, format, food_type, primary_protein, proteins, is_novel_protein, is_grain_free, is_prescription, photo_path, archived_at, cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, brand, product_name, format, food_type, primary_protein, proteins, is_novel_protein, is_grain_free, is_prescription, photo_path, archived_at, ingredients_notes, ai_extraction_confidence, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          brand = excluded.brand,
          product_name = excluded.product_name,
@@ -561,10 +574,20 @@ export async function refreshFoodCache(): Promise<void> {
          is_prescription = excluded.is_prescription,
          photo_path = excluded.photo_path,
          archived_at = excluded.archived_at,
+         ingredients_notes = excluded.ingredients_notes,
+         ai_extraction_confidence = excluded.ai_extraction_confidence,
          cached_at = excluded.cached_at`,
       [item.id, item.brand, item.product_name, item.format, item.food_type ?? null, item.primary_protein ?? null,
        proteinsToCacheText(item.proteins),
-       item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, item.archived_at ?? null, now]
+       item.is_novel_protein ? 1 : 0, item.is_grain_free ? 1 : 0, item.is_prescription ? 1 : 0, photoPath, item.archived_at ?? null,
+       // B-351 slice 4 — the two D10 completeness arms. Stored as the verbatim
+       // panel text + the raw jsonb serialized back to JSON text (SQLite has no
+       // json type; lib/trialContaminant parses it back, tolerating garbage as
+       // "unread"). A row the server has neither reads NULL, which the gate
+       // treats as not-captured — never as a clean single-protein food.
+       (item as { ingredients_notes?: string | null }).ingredients_notes ?? null,
+       serializeConfidence((item as { ai_extraction_confidence?: unknown }).ai_extraction_confidence),
+       now]
     );
   }
 }

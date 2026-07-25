@@ -24,8 +24,17 @@
 // capture of a still-active food can't drag its group into the archived state —
 // each cache row is independently archived, and only non-archived rows form the
 // displayed group. A group whose rows are ALL archived drops out entirely.
+//
+// B-351 slice 4: the row also carries the Tier-1 protein disclosure's three
+// inputs — the captured set plus the two D10 completeness arms. They are BARE
+// columns, so SQLite's single-max rule ties them to the same (photo-bearing) row
+// MAX(photo_path) selects: the disclosure describes the capture whose photo the
+// owner is looking at, rather than mixing one capture's proteins with another's
+// provenance. A duplicate capture with a different set is the known B-009 dedup
+// wrinkle and is unchanged by this.
 export const LIBRARY_FOODS_QUERY =
-  `SELECT id, brand, product_name, format, food_type, MAX(photo_path) AS photo_path
+  `SELECT id, brand, product_name, format, food_type, MAX(photo_path) AS photo_path,
+          proteins, ingredients_notes, ai_extraction_confidence
    FROM food_items_cache
    WHERE archived_at IS NULL
    GROUP BY LOWER(brand), LOWER(product_name)

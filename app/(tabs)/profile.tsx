@@ -24,6 +24,12 @@ import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
+import { TrialContaminantNote } from '../../components/food/TrialContaminantNote';
+import {
+  loadTrialProteinContext,
+  trialDietNote,
+  type TrialProteinContext,
+} from '../../lib/trialContaminant';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
@@ -165,6 +171,11 @@ export default function ProfileScreen() {
     }
   }, [activePet?.id]);
 
+  // B-351 slice 4 — the protein context behind the trial card's standing note.
+  // Loaded alongside the trial itself; best-effort and TTL-cached, and a null
+  // context renders nothing at all rather than an all-clear.
+  const [trialCtx, setTrialCtx] = useState<TrialProteinContext | null>(null);
+
   const loadDietTrial = useCallback(async () => {
     if (!activePet) return;
     setTrialLoading(true);
@@ -205,6 +216,9 @@ export default function ProfileScreen() {
       const compliance = Math.round((distinctDays / daysElapsed) * 100);
 
       setDietTrial({ ...row, daysElapsed, daysLogged: distinctDays, compliance });
+      // force: this screen is where an owner lands after editing a trial food, so
+      // it re-reads rather than serving a 5-minute-old target protein.
+      setTrialCtx(await loadTrialProteinContext(activePet.id, { force: true }));
     } catch (e) {
       console.error('[Profile] load diet trial failed:', e);
     } finally {
@@ -552,6 +566,11 @@ export default function ProfileScreen() {
     activePet.species.charAt(0).toUpperCase() + activePet.species.slice(1);
   const subtitle = [speciesLabel, activePet.breed].filter(Boolean).join(' · ');
 
+  // The trial diet's own standing protein note (B-351 slice 4 / B-417 C2). Null
+  // when there is nothing to say — no trial, no known target protein, offline, or
+  // a panel that WAS read and really is single-protein. Never a "clean" state.
+  const trialDietFlag = trialCtx ? trialDietNote(trialCtx) : null;
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -776,6 +795,19 @@ export default function ProfileScreen() {
             </Text>
             {dietTrial.vet_name && (
               <Text style={styles.trialVet}>Vet: {dietTrial.vet_name}</Text>
+            )}
+            {/* B-351 slice 4 — the trial DIET's own protein story, as a trial-level
+                standing fact (B-417 C2: never a per-feeding verdict, because a flag
+                on the prescribed food would fire 100+ times across a 56-day trial
+                and train the owner to ignore the one that matters on day 22).
+                Two states, and the second is why D10 exists: when the trial food's
+                ingredient panel was never read, the card SAYS so rather than let
+                the absence of a flag read as an all-clear on the single food this
+                pet eats every day for eight weeks. */}
+            {trialDietFlag && (
+              <View style={styles.trialNoteWrap}>
+                <TrialContaminantNote title={trialDietFlag.title} body={trialDietFlag.body} />
+              </View>
             )}
           </Card>
         )}
@@ -1064,6 +1096,11 @@ const styles = StyleSheet.create({
   },
 
   // ── Diet trial ──
+  // Breathing room above the standing protein note so it reads as a distinct
+  // statement rather than another metric line under the compliance bar.
+  trialNoteWrap: {
+    marginTop: theme.space2,
+  },
   trialLabel: {
     fontSize: theme.textXS,
     fontWeight: theme.weightMedium,

@@ -35,7 +35,7 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { FoodPicker } from './FoodPicker';
 import { usePetStore } from '../../store/petStore';
 import * as db from '../../lib/db';
-import type { PickerFood } from '../../lib/db';
+import type { PickerFood, LibraryFood } from '../../lib/db';
 
 const DB = db as jest.Mocked<typeof db>;
 
@@ -51,7 +51,15 @@ const food = (id: string, brand: string, product: string): PickerFood => ({
 // Duck + Fish are in the 30-day rotation window; Chicken is library-only — the
 // food the owner searches for.
 const ROTATION = [food('r1', 'Acana', 'Duck'), food('r2', 'Orijen', 'Fish')];
-const LIBRARY = [...ROTATION, food('l1', 'Tiki Cat', 'Chicken')];
+// getLibraryFoods returns LibraryFood (PickerFood + the three B-351 disclosure
+// columns). The picker itself never reads them — it is a moment-of-event surface
+// and shows no protein line — so they are stubbed as the not-captured shape.
+const LIBRARY: LibraryFood[] = [...ROTATION, food('l1', 'Tiki Cat', 'Chicken')].map((f) => ({
+  ...f,
+  proteins: null,
+  ingredients_notes: null,
+  ai_extraction_confidence: null,
+}));
 
 beforeEach(() => {
   jest.clearAllMocks();
