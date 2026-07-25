@@ -2,6 +2,7 @@ import { notifySignedOut } from './sync';
 import { clearLocalData } from './db';
 import { clearWidgetData } from './appGroup';
 import { clearWidgetTimeline } from './widgetBridge';
+import { clearRecoveryRequest } from './recoveryMarker';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
@@ -39,6 +40,22 @@ export async function wipeLocalSession(): Promise<void> {
   // Clear any half-finished onboarding entry (a typed pet name/type) so it can't
   // carry into the next account's onboarding on this device (B-251 PR 7).
   useOnboardingDraftStore.getState().reset();
+  // B-280 FR-12: the recovery marker holds the address a reset was requested for.
+  // It is account state, so it goes with the rest — otherwise the request screen
+  // pre-fills the PREVIOUS owner's email for the next person to sign in on a
+  // shared device, which is Sam's household iPad exactly.
+  //
+  // ORDERING NOTE for the §6.4 handler, which is easy to get wrong: the wipe runs
+  // at step 5 (the pre-exchange signOut), BEFORE the exchange at step 6. So FR-12's
+  // pre-fill on a failure state must come from the value the handler already read
+  // at step 2 (the provenance check) and holds in memory for the attempt — not
+  // from a re-read of disk, which this line has by then cleared.
+  //
+  // Deliberately NOT cleared here: the FR-6 recovery gate. The §6.4 signOut is what
+  // triggers this wipe, so clearing the gate here would destroy it at the exact
+  // moment it is needed — the same trap `justDeletedAccount` avoids by not being
+  // touched on teardown (spec §6.3).
+  await clearRecoveryRequest();
   // B-351 slice 4: the active-trial protein context is memoized per pet in a
   // module-level Map with a 5-minute TTL. It is account data — the trial's target
   // protein and the trial food's own protein set — and it lives in JS memory, so

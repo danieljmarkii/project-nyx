@@ -54,6 +54,60 @@ describe('redactDetail', () => {
     expect(redactDetail({ hasSession: true })).toEqual({ hasSession: true });
   });
 
+  // ── B-280 FR-17 ──────────────────────────────────────────────────────────────
+  // The diagnostics screen invites the owner to SHARE this log. A recovery code in
+  // a shared log is a single-use account-takeover token.
+
+  it('redacts the recovery-flow key names (FR-17)', () => {
+    expect(redactDetail({ code: 'abc' })).toEqual({ code: '<redacted>' });
+    expect(redactDetail({ verifier: 'abc' })).toEqual({ verifier: '<redacted>' });
+    expect(redactDetail({ url: 'abc' })).toEqual({ url: '<redacted>' });
+    expect(redactDetail({ deepLink: 'abc' })).toEqual({ deepLink: '<redacted>' });
+  });
+
+  it('redacts a recovery link that is UNDER the 64-char length guard', () => {
+    // The exact FR-17 arithmetic: `nyx:///reset-password?code=` (27) + a 36-char
+    // code = 63 chars, which the length guard stores verbatim with a character to
+    // spare. The key here is deliberately innocent, so only the value guard can
+    // catch it.
+    const link = `nyx:///reset-password?code=${'a'.repeat(36)}`;
+    expect(link).toHaveLength(63);
+    expect(redactDetail({ detail: link })).toEqual({ detail: '<redacted url>' });
+  });
+
+  it('redacts any string carrying a credential-ish query parameter', () => {
+    expect(
+      redactDetail({ msg: 'AuthApiError at https://x.supabase.co/verify?code=abc' }),
+    ).toEqual({ msg: '<redacted url>' });
+    expect(redactDetail({ msg: 'redirect #access_token=eyJ' })).toEqual({
+      msg: '<redacted url>',
+    });
+  });
+
+  it('redacts a deep link under ANY scheme, so B-278 needs no coordination here', () => {
+    // Scheme-agnostic on purpose: a hardcoded `nyx://` literal would be a second
+    // place to remember at the rename, and would fail SILENTLY (post-rename it
+    // just stops matching). Covers the dev-client `exp://` shape too.
+    expect(redactDetail({ detail: 'culprit:///reset-password?c=1' })).toEqual({
+      detail: '<redacted url>',
+    });
+    expect(redactDetail({ detail: 'exp://192.168.1.5:8081/--/reset-password' })).toEqual({
+      detail: '<redacted url>',
+    });
+  });
+
+  it('keeps an ordinary error message readable — the value guard stays narrow', () => {
+    // Blanket-redacting anything URL-shaped would dark out the breadcrumbs this
+    // module exists for, so the guard matches credential params and our own
+    // scheme only.
+    expect(redactDetail({ msg: 'Error: Network request failed' })).toEqual({
+      msg: 'Error: Network request failed',
+    });
+    expect(redactDetail({ msg: 'GET https://x.supabase.co/rest/v1/pets failed' })).toEqual({
+      msg: 'GET https://x.supabase.co/rest/v1/pets failed',
+    });
+  });
+
   it('never JSON-dumps a structured value — records its shape only', () => {
     // A whole session/user object passed by mistake must never surface its
     // embedded token/email — only that it was an object.
