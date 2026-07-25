@@ -27,6 +27,20 @@ Two consequences the review does not carry. **(a)** This sits *inside* the asset
 
 The review names **food identity** as the moat passive hardware can never cross — a feeder measures grams and is blind to brand, protein and ingredients. It does not connect that to B-354: the catalog is **per-account**, so the moat is 59 rows and starts at zero for every new owner, and it bites hardest exactly at the wedge (day 1 of a prescription diet, peak friction, peak intent). The elimination-trial therapeutic-diet market is small and enumerable; seeding those SKUs as the **already-sanctioned** read-only curated layer (`canonical_food_items`, per-account requirements FR-9 / D5) is cheap, additive, and the only way the protein work pays off for a new account. → **B-451**, gated on PM decision D4 (a new globally-scoped table is a PM + Dir. of Eng ruling).
 
+## Roadmap (added mid-session, at the PM's request)
+
+PM asked whether the team had roadmap ideas coming out of the review. Added as **§9 of the deliverable** — the team's proposed *ordering*, which is our concrete answer to decision D1.
+
+The framing observation: **the Build Sequence in CLAUDE.md ends at Step 10**, Steps 9 and 10 are substantially shipped, and there is no roadmap doc in this repo — the numbered sequence *was* the roadmap. The review landed exactly when the plan of record ran out.
+
+The scheduling fact that shapes the proposal: **getting to the store is now almost entirely PM/operational work** (screenshots, listing copy, privacy label, demo account, build cut — submission-guide steps 1–7 and 9 are done or nearly, and what remains barely touches the codebase), while **everything the competitive review argues for is build work.** The two spines don't compete for the same resource, which is why they run concurrently rather than sequentially — and why the review's §12 conflict is less binary than it reads.
+
+Four horizons: **H0 Submit** (the three security items, password-recovery PR 2, the runway's remaining steps, plus a flagged judgment call — *promote crash reporting/B-016 out of Tier 4*, since the category's dominant negative-review theme is crashes and lost data, not missing features) · **H1 Make the wedge real** (B-417 PRs 1–7, then B-416 → B-351 slice 6, in that order because slice 6 over sets of size 1 is a no-op) · **H2 Make it survivable** (trial-scoped confirmations + co-signer, time-to-first-finding, report feedback — post-submit, before any acquisition spend) · **H3 Compound the moat** (B-451 curated diets, B-454 handoff, the vet-side question, B-455).
+
+**The one re-sequencing the review actually forces:** I5/I9 and the review's §10 #9–#11 positioning items read like post-launch marketing, but **submission step 13 is listing copy, and listing copy is positioning** — so B-453 (the methods page) moves *into* H0 as the source text for the listing and the support page App Review visits anyway. With Dr. Chen's standing constraint: nothing we write may imply *vet-validated* until a real vet reads the report.
+
+§9.8 records the roadmap's own weaknesses — nothing estimated, two concurrent tracks assumed, H2 gated on two decisions open for weeks (D2 since 2026-07-10; D5 unowned), and 0.3 taking a position the readiness register does not.
+
 ## Decisions made
 
 None — every call this review surfaced is the PM's, and the review says so. Seven are tabled in §6 of the deliverable (sequencing; the standing notification question; the report-feedback shape; the curated-layer authorization; B-047/B-016 ownership; pricing shape; the Tier-2 edits).

@@ -14,7 +14,8 @@
 2. **One claim is now stale, and the correction makes it worse, not better.** Multi-protein reached the *vet report* the same day the review was written (#448). It has **not** reached the **correlation engine** — the one asset the review calls category-unique. So today a "Duck & Chicken" meal enters our case-crossover as a clean duck exposure (§1.5). That is a misattribution risk sitting inside the differentiator, not a missing feature at the edge.
 3. **The §12 sequencing conflict is real but the framing is too binary.** Reminders and household sharing do not have to ship as generic app features. Shipped **trial-scoped**, they are instruments of the wedge protocol, they self-terminate, and they cost a fraction of the general versions (I1, I2). This does not dissolve the conflict — the acquisition argument survives it — so it stays a PM call (§4 C1).
 4. **The cheapest unclaimed asset in the whole review is our own rigor.** We cannot say "vet-validated" and should not try. We *can* publish the falsification record — the Monte-Carlo property tests that overruled our own spec twice, the no-reassuring-enum architecture, zero LLM in the report. That is a validation asset built entirely from work already done (I5).
-5. **The strategic gap the review names but does not connect: our permanent moat does not compound.** "Food identity" is the one thing hardware can never do (§6.5 of the review) — and it is **59 rows, per-account, starting from zero for every new owner** by our own ratified decision (B-354). The wedge user's day-1 job is photographing a prescription diet that maybe 40 products in the US market cover. Seeding *those* as the sanctioned curated layer is the highest-leverage cheap idea in this document (I6).
+5. **A roadmap follows from all of this, and §9 proposes one** (added at the PM's request after the first read). Its load-bearing observation: the Build Sequence ends at Step 10 and nothing replaced it, and the remaining work splits along a resource line — **getting to the store is now almost entirely operational, while every competitive idea is build work** — so the two spines run concurrently rather than in sequence. §9 is our answer to D1.
+6. **The strategic gap the review names but does not connect: our permanent moat does not compound.** "Food identity" is the one thing hardware can never do (§6.5 of the review) — and it is **59 rows, per-account, starting from zero for every new owner** by our own ratified decision (B-354). The wedge user's day-1 job is photographing a prescription diet that maybe 40 products in the US market cover. Seeding *those* as the sanctioned curated layer is the highest-leverage cheap idea in this document (I6).
 
 ---
 
@@ -315,7 +316,93 @@ We endorse the review's §11 list, with two corrections and one addition:
 
 ---
 
-## 9. What this review could not do
+## 9. Roadmap proposal
+
+**Added 2026-07-25, at the PM's request** ("does the team have any roadmap ideas?"). §3 produced ideas and §6 tabled the decisions; this section is the team's proposed **ordering**, which makes it our concrete answer to **D1**.
+
+### 9.0 Why this is a live question at all
+
+The **Build Sequence in CLAUDE.md ends at Step 10**, and Steps 9 and 10 are both substantially shipped. There is no roadmap document in this repo — the numbered sequence *was* the roadmap, and it is nearly exhausted. So the competitive review has landed at the exact moment the plan of record runs out, which is the most useful timing it could have had, and it is why "what next?" no longer has a mechanical answer.
+
+### 9.1 The scheduling fact that shapes everything
+
+The remaining work splits cleanly along a resource line nobody has named:
+
+- **Getting to the store is now almost entirely PM/operational work** — screenshots, listing copy, the privacy nutrition label, the demo account, the build cut, a handful of device QA riders. Steps 1–7 and 9 of the submission guide are done or nearly; what remains barely touches the codebase.
+- **Everything the competitive review argues for is build work** — the trial front door, the protein key, notifications, sharing.
+
+**These two do not compete for the same resource.** That, not optimism, is why the roadmap below runs two spines concurrently instead of sequencing them. It is also why the review's §12 conflict is less binary than it reads: the acquisition-side features do not have to *wait* for submission, they have to wait for a *build track*, and there is one.
+
+### 9.2 Horizon 0 — Submit (the operational spine, runs now)
+
+Nothing here is a competitive-review idea. It is on the roadmap because the review's clearest strategic statement is that **the shelf is thin and stale** and the keywords are uncontested — an argument for being on the shelf sooner, not for building more first.
+
+| # | Work | Shape | Note |
+|---|---|---|---|
+| 0.1 | **The three security items** — B-397 (delete `view-report` + `zz-deploy-probe`), B-248 (owner-scope `nyx-vet-attachments`), B-431 (anon-writable `nyx-pet-photos`) | 1 dashboard action + 2 schema PRs | Review §3.3 / §10 #2. B-248 goes live as a real hole the moment user #2 exists, and App Store review makes user #2 real. |
+| 0.2 | **Password recovery PR 2** (B-280) | In flight; gated on the §9.3 device checks | Review §7 #8: the first owner who forgets is locked out permanently. This is a launch item, not polish. |
+| 0.3 | **Crash reporting (B-016)** — **the team asks to promote this** | Currently Tier 4 "recommended, not a gate", and unowned | Review §7 #8 + §9: the dominant negative-review theme across the entire category is crashes and lost data, not missing features. You cannot triage an App Review "it crashed" blind, and the first cohort is exactly where crashes surface. Promoting it is a judgment call, not a rule — flagged as such. |
+| 0.4 | **The submission runway's remaining steps** — 8/9 device riders, 10 build cut, 11 demo account, 12 screenshots, 13 listing copy, 14 privacy label, 15 submit | PM, mostly | `docs/app-store-submission-guide.md` owns the detail; nothing here needs re-planning. |
+| 0.5 | **The positioning work — as an input to step 13, not as marketing** | Writing, zero code | See §9.3. |
+
+### 9.3 The one re-sequencing the review actually forces
+
+Ideas **I5** (publish the falsification record), **I9** (design for the moment after the AI answer fails) and the review's §10 #9–#11 read like post-launch marketing. They are not: **submission step 13 is listing copy, and listing copy is positioning.** Whatever we write there is what the store says about us for the next several months, and the review's three positioning findings all bear on it:
+
+- lead with the *design* (case-crossover, McNemar, Bonferroni), not "AI" — "AI" is cheap on this shelf, where 13+ AI symptom-checkers exist and the largest has 25 ratings;
+- own **independence** explicitly — Zoetis is a drug loyalty vehicle, Petalife is Purina-backed, PoopScan is Mars, and **none of them can name a sponsor's food as the culprit.** Our product name already does this work;
+- **retire** the "AI falsely reassures owners" line (the evidence is two-sided) in favour of *uncalibrated in both directions, reasoning from one snapshot with no denominator*.
+
+So B-453 (the methods page) moves **into Horizon 0** as the source text for listing copy and the support-site page that App Review visits anyway. It costs a writing session and it is the only "validation" claim we can make honestly. **The corollary constraint:** until a real vet reads the report — the PM action open since 2026-07-02 — nothing we write may say or imply *vet-validated*. Dr. Chen holds that line.
+
+### 9.4 Horizon 1 — Make the wedge real (the build spine, runs concurrently)
+
+| # | Work | Why here | Gate |
+|---|---|---|---|
+| 1.1 | **B-417 PRs 1–7** — the diet-trial lifecycle | The review's #2 finding. Every §6 differentiator is gated behind a door we never built, and PR 1 is the gate the rest queues behind. **PR 1 is open now as #450.** | None — spec v1.0, every ruling landed |
+| 1.2 | **B-416** — re-derive `proteins` from stored `ingredients_notes` | All 59 live rows are `|proteins| ≤ 1`, so today the *report* renders nearly every food as single-protein-and-incomplete. Fixing the data improves the shipped report immediately, with no engine change. | None |
+| 1.3 | **B-351 slice 6** — set-membership correlation in the engine | §1.5's hazard: a "Duck & Chicken" meal is a clean duck exposure today. **Must follow 1.2** — over sets of size 1 it is the engine we already have. | `adversarial-reviewer` mandatory; deploy-gated per B-182 |
+
+**Sequencing note:** 1.2 before 1.3 is not a preference, it is the difference between a change that does something and a change that does nothing. Carry the review's own worked example as the fixture — a Tiki Cat Rabbit & Chicken Liver keyed as clean rabbit, failing now and passing after.
+
+### 9.5 Horizon 2 — Make it survivable (post-submit, before any acquisition spend)
+
+The review's §9 warning — a correlation product dies when capture cost exceeds interpretive payoff — is a *retention* failure, and retention only matters once there are users. Hence this horizon, and hence the position that **submitting early and marketing late are compatible**: get on the thin shelf, but do not spend on acquisition into a product with no reminders and no sharing, because the review documents exactly which 1★ reviews that earns at rivals.
+
+| # | Work | Gate |
+|---|---|---|
+| 2.1 | **Trial-scoped confirmations** (I1, scoping B-288) | **D2** — the Open Question standing since 2026-07-10 |
+| 2.2 | **Trial-scoped co-signer** (I2, scoping B-292's v1) | `rls-privacy-reviewer` mandatory; the hardest item on this list |
+| 2.3 | **Time-to-first-finding instrumentation** (I8, the minimum of B-047) | **D5** — currently unowned, and it silently blocks T3-E |
+| 2.4 | **B-452** — report-usefulness feedback v0, owner-relayed | **D3** |
+
+2.1 and 2.2 are where the review's acquisition argument gets paid, and trial-scoping is what makes them affordable this early. 2.3 is the instrument that tells us whether 2.1 and 2.2 worked — the review supplies its rationale, so building it *after* them wastes the measurement.
+
+### 9.6 Horizon 3 — Compound the moat (longest fuse, highest ceiling)
+
+| # | Work | Gate |
+|---|---|---|
+| 3.1 | **B-451** — curated canonical layer, seeded with veterinary therapeutic diets | **D4** (a new globally-scoped table is a PM + Dir. of Eng ruling) |
+| 3.2 | **B-454** — the trial-plan handoff at week 0 | B-417 PRs 3–4 must exist to describe |
+| 3.3 | **The vet-side question** — one-way artifact, or a loop? | The review's proposed new Open Question (§11 #8) |
+| 3.4 | **B-455** — install the competitors | None; a PM afternoon |
+
+3.1 is the item the team ranked highest on value-per-cost anywhere in this review, and it is in the last horizon **only because it needs a ruling** — food identity is the one moat hardware cannot cross, and per-account scoping means it currently does not compound across users. If D4 lands early, 3.1 moves up.
+
+### 9.7 What is deliberately **not** on the roadmap
+
+Everything in §5, unchanged: no vet portal, no hardware or hardware integration, no Android/tablet/web/localization, no labelled-image accuracy study. Plus **I11** (feeder-screenshot ingest, B-456) — logged so it is not re-derived, deliberately unscheduled.
+
+### 9.8 Honest weaknesses in this roadmap
+
+- **It assumes two concurrent tracks are real.** This repo does run many parallel sessions, so that is plausible — but the shared-file collision to expect is `docs/backlog.md` and `STATUS.md`, and 0.1's schema PRs must stay isolated per the migration rule.
+- **Nothing here is estimated.** The order is defended; the durations are not, and 2.2 is the item most likely to be larger than it looks.
+- **It takes a position the readiness register does not** (0.3, promoting crash reporting to the submission horizon). That is a judgment call flagged as one, not a rule being enforced.
+- **Horizon 2 is gated on two decisions that have been open for weeks** (D2 since 2026-07-10, D5 unowned). If neither lands, Horizon 2 does not start, and the roadmap quietly becomes Horizon 0 + 1 only.
+
+---
+
+## 10. What this review could not do
 
 - **No competitor was installed.** We inherited that debt and did not close it (I10).
 - **No market claim was re-verified.** The team took the review's `[E]`-marked market findings on trust; only the `[C]`-marked claims about our own code were re-derived.
