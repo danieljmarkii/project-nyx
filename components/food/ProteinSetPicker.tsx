@@ -27,7 +27,7 @@
 // never-null-clobber property: it emits only on a tap or a keystroke, so both
 // host screens can treat "onChange fired" as the owner having touched the field
 // and leave an AI-hydrated set alone otherwise.
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
@@ -56,6 +56,25 @@ interface Props extends PickerProteins {
 export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
   const mainKey = canonicalizeProtein(main);
 
+  // The last main the owner actually DESIGNATED — seeded, chip-tapped, or
+  // committed — as opposed to whatever partial string the Other field holds
+  // mid-word. The demote keys off THIS, never off the live prop, and that
+  // distinction is the whole correctness story of this component:
+  //
+  //   • demote off the live prop → typing "bison" files b/bi/bis/biso as
+  //     secondaries (fabricated keys straight into the correlation column);
+  //   • don't demote on a typed change at all → retyping or backspacing over a
+  //     seeded CUSTOM main silently drops it, and "custom" here means precisely
+  //     kangaroo / bison / ostrich — the novel proteins a diet trial is built on.
+  //
+  // Keying off the committed value gets both: a draft never demotes anything,
+  // and the real protein it is replacing is still preserved when the edit lands.
+  const committedMain = useRef<string | null>(mainKey);
+  const drafting = useRef(false);
+  // While not drafting, the prop IS the committed value — this keeps the ref
+  // honest across an external reseed (a realtime AI completion landing mid-edit).
+  if (!drafting.current) committedMain.current = mainKey;
+
   // Typed-escape state for the secondaries line. The draft is LOCAL (unlike the
   // main line's, which is the stored value itself) because this field adds a new
   // element rather than editing an existing one — there is nothing to control it
@@ -81,36 +100,29 @@ export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
   function handleMainChange(next: string | null, kind: ProteinChangeKind) {
     const nextKey = canonicalizeProtein(next);
 
-    // A DRAFT REPLACES THE MAIN IN PLACE — it never demotes.
-    //
-    // The typed escape emits per keystroke, so treating every emission as a new
-    // designation filed every prefix of the word into "Also contains": typing
-    // "bison" wrote proteins = ["bison","biso","bis","bi","b", …], five junk keys
-    // straight into the column the correlation engine, the Patterns ranking and
-    // the vet report all read. A 'commit' is the same story one step later — it
-    // replaces the draft it grew out of, so demoting "biso" would be just as
-    // wrong. Only a chip tap ('select') is an owner saying "the main is now this
-    // one, and the old one is still in the food".
-    // KNOWN, DELIBERATE LIMIT of this rule: editing the Other text over an
-    // existing CUSTOM main ("kangaroo" → "emu"), or backspacing it to empty,
-    // replaces that value without demoting it — so kangaroo is not kept. That is
-    // the right call for the overwhelmingly common case (correcting a typo, where
-    // demoting the misspelling into "Also contains" is exactly the junk-key bug
-    // above), and the owner has an explicit path when they do mean to swap: tap a
-    // chip, which demotes properly. Editing text is an edit; tapping a chip is a
-    // designation. A COMMON main is unaffected either way — tapping "Other" is
-    // itself a select, so it demotes before any typing starts.
-    if (kind !== 'select') {
+    // A keystroke is a draft, not a designation — replace the main in place and
+    // move nothing. The demote waits for the commit that follows, which is what
+    // stops every prefix of "bison" (b, bi, bis, biso) being filed as a
+    // secondary and written into the correlation column as a fabricated key.
+    if (kind === 'typing') {
+      drafting.current = true;
       onChange({ main: next, alsoContains });
       return;
     }
+
+    // 'select' (a chip tap, including the clear) or 'commit' (the D9-normalized
+    // value, including a backspace-to-empty). Both are real designations, so the
+    // protein being replaced is demoted rather than dropped.
+    const outgoing = drafting.current ? committedMain.current : mainKey;
+    drafting.current = false;
+    committedMain.current = nextKey;
 
     let rest = alsoContains;
     // Auto-demote: the outgoing main keeps its exposure, at the FRONT of the
     // tail because it was the most prominent protein and the array is
     // prominence-ordered.
-    if (mainKey != null && mainKey !== nextKey) {
-      rest = [mainKey, ...rest.filter((p) => p !== mainKey)];
+    if (outgoing != null && outgoing !== nextKey) {
+      rest = [outgoing, ...rest.filter((p) => p !== outgoing)];
     }
     // Never in both: promoting a secondary to main takes it out of the tail.
     if (nextKey != null) rest = rest.filter((p) => p !== nextKey);

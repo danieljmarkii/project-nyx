@@ -115,7 +115,12 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
   // The "Other" field shows only when no common chip matches AND (the owner is
   // mid-entry OR there's a custom value). Gating on `matchedCommon === null`
   // makes it self-correcting: a common value winning always hides the field.
-  const otherActive = matchedCommon === null && (otherTapped || hasCustomValue);
+  // `otherDirty` is in the condition so the field survives being backspaced to
+  // empty: without it, clearing the last character drops hasCustomValue, the
+  // field unmounts mid-edit, and the blur that would have committed the clear
+  // never fires — so the protein being cleared is dropped instead of demoted.
+  const otherActive =
+    matchedCommon === null && (otherTapped || hasCustomValue || otherDirty);
   const selected: string | null = matchedCommon ?? (otherActive ? OTHER : null);
 
   function handleChipChange(next: string | null) {
@@ -141,7 +146,13 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
     if (!otherDirty) return;
     setOtherDirty(false);
     const typed = (value ?? '').trim();
-    if (!typed) return;
+    // Backspaced to empty. That is the owner clearing the value, so it commits
+    // like any other clear rather than evaporating — which is what lets the host
+    // treat it exactly like a chip clear and keep the old protein (§11).
+    if (!typed) {
+      onChange(null, 'commit');
+      return;
+    }
     const normalized = normalizeExtractedProtein(typed);
     // Nothing usable ("fresh", "meal") — leave the owner's text exactly as typed
     // rather than wiping it. Storing a vaguer key is the safe direction; silently
@@ -149,7 +160,13 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
     // for (its scope is aliased/stripped terms).
     if (normalized == null) return;
     setRewrite(proteinNoteFor(typed, normalized));
-    if (normalized !== value) onChange(normalized, 'commit');
+    // Emitted even when the value is byte-identical to what is already held. The
+    // KIND is the payload here: 'commit' is what tells the host the draft is over
+    // and the protein it replaced can now be demoted. Suppressing a no-op change
+    // swallowed that signal, so retyping a custom main over another custom main
+    // ("kangaroo" → "emu") dropped kangaroo — the value never moved because the
+    // host was never told the edit had landed.
+    onChange(normalized, 'commit');
   }
 
   return (

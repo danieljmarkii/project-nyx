@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import { ProteinSetPicker } from './ProteinSetPicker';
 import {
+  COMMON_PROTEINS,
+  canonicalizeProtein,
+  normalizeExtractedProtein,
   pickerProteinsToSet,
   pickerPrimaryProtein,
   seedPickerProteins,
@@ -267,5 +270,129 @@ describe('ProteinSetPicker (B-351 D8 two-line picker)', () => {
       main: null,
       alsoContains: ['duck', 'chicken'],
     });
+  });
+
+  // Round 2 of the adversarial pass: the kind-gated demote fixed the junk-key
+  // bug but declined to demote ANY typed change — and the value it was then
+  // dropping is a committed protein, not a draft. "Custom main" here means
+  // precisely kangaroo / bison / ostrich: the novel proteins a diet trial is
+  // built on, i.e. the wedge's own data.
+
+  it('retyping over a seeded CUSTOM main demotes it rather than dropping it', () => {
+    let last: PickerProteins = { main: 'kangaroo', alsoContains: ['chicken'] };
+    const { getByPlaceholderText } = render(
+      <Host initial={last} onEmit={(n) => { last = n; }} />,
+    );
+    const field = getByPlaceholderText('Name the protein');
+    fireEvent.changeText(field, 'emu');
+    fireEvent(field, 'blur');
+    expect(last).toEqual({ main: 'emu', alsoContains: ['kangaroo', 'chicken'] });
+    expect(pickerProteinsToSet(last.main, last.alsoContains))
+      .toEqual(['emu', 'kangaroo', 'chicken']);
+  });
+
+  it('backspacing the main to empty demotes it, exactly like a chip clear', () => {
+    // §11's demote-on-clear rule, holding on the other half of the same
+    // affordance: chip-clear and text-clear must not disagree.
+    let last: PickerProteins = { main: 'kangaroo', alsoContains: ['chicken'] };
+    const { getByPlaceholderText } = render(
+      <Host initial={last} onEmit={(n) => { last = n; }} />,
+    );
+    const field = getByPlaceholderText('Name the protein');
+    fireEvent.changeText(field, '');
+    fireEvent(field, 'blur');
+    expect(last).toEqual({ main: null, alsoContains: ['kangaroo', 'chicken'] });
+    expect(pickerPrimaryProtein(last.main)).toBeNull();
+  });
+
+  it('still files no partial word when retyping over a custom main', () => {
+    // The two fixes must not undo each other: demote the committed value, and
+    // ONLY the committed value.
+    let last: PickerProteins = { main: 'kangaroo', alsoContains: [] };
+    const { getByPlaceholderText } = render(
+      <Host initial={last} onEmit={(n) => { last = n; }} />,
+    );
+    const field = getByPlaceholderText('Name the protein');
+    for (const t of ['e', 'em', 'emu']) fireEvent.changeText(field, t);
+    fireEvent(field, 'blur');
+    expect(last).toEqual({ main: 'emu', alsoContains: ['kangaroo'] });
+  });
+
+  // ── The property test (B-414's lesson, applied here) ────────────────────────
+  // Every defect above passed a green example suite. The reason is the same one
+  // that let B-414 ship: examples cover the shapes you thought of, and all three
+  // bugs lived at the seam between two components neither file's examples cross.
+  //
+  // THE INVARIANT: after any sequence of picker interactions, every persisted
+  // key is either a chip value, a value the owner committed, or a value that was
+  // in the seeded set. Nothing may be INVENTED — a fabricated key is not merely
+  // wrong, it reaches the correlation engine, the Patterns ranking, the vet
+  // report and the §8 contaminant check as a protein this pet was exposed to.
+  it('PROPERTY: no interaction sequence can invent a protein key', () => {
+    const SEEDS: PickerProteins[] = [
+      { main: 'chicken', alsoContains: [] },
+      { main: 'kangaroo', alsoContains: ['chicken'] },
+      { main: null, alsoContains: ['duck'] },
+      { main: 'Chicken By-Product Meal', alsoContains: ['salmon'] },
+    ];
+    const WORDS = ['bison', 'emu', 'buffalo', 'chicken liver', ''];
+
+    for (const seed of SEEDS) {
+      for (const word of WORDS) {
+        for (const viaChip of [true, false]) {
+          let last: PickerProteins = seed;
+          const { getByRole, queryByPlaceholderText, unmount } = render(
+            <Host initial={seed} onEmit={(n) => { last = n; }} />,
+          );
+          if (viaChip) fireEvent.press(getByRole('radio', { name: 'Other' }));
+          const field = queryByPlaceholderText('Name the protein');
+          if (field) {
+            // Keystroke by keystroke — the emitter is continuous, and that is
+            // exactly where the fabricated keys came from.
+            for (let i = 1; i <= word.length; i++) fireEvent.changeText(field, word.slice(0, i));
+            if (word === '') fireEvent.changeText(field, '');
+            fireEvent(field, 'blur');
+          }
+
+          const persisted = pickerProteinsToSet(last.main, last.alsoContains);
+          const committed = normalizeExtractedProtein(word);
+          const allowed = new Set<string>([
+            ...COMMON_PROTEINS,
+            ...pickerProteinsToSet(seed.main, seed.alsoContains),
+            ...(committed ? [committed] : []),
+            ...(canonicalizeProtein(word) ? [canonicalizeProtein(word) as string] : []),
+          ]);
+          for (const key of persisted) {
+            if (!allowed.has(key)) {
+              throw new Error(
+                `INVENTED protein key ${JSON.stringify(key)} from seed ` +
+                `${JSON.stringify(seed)} + typing ${JSON.stringify(word)} ` +
+                `(viaChip=${viaChip}) → persisted ${JSON.stringify(persisted)}`,
+              );
+            }
+          }
+          unmount();
+        }
+      }
+    }
+  });
+
+  it('PROPERTY: a no-op interaction is a fixpoint through save and reseed', () => {
+    const SEEDS: PickerProteins[] = [
+      { main: 'chicken', alsoContains: ['duck', 'salmon'] },
+      { main: null, alsoContains: ['duck'] },
+      { main: 'kangaroo', alsoContains: [] },
+      { main: null, alsoContains: [] },
+    ];
+    for (const seed of SEEDS) {
+      const set = pickerProteinsToSet(seed.main, seed.alsoContains);
+      const primary = pickerPrimaryProtein(seed.main);
+      const reseeded = seedPickerProteins(primary, set);
+      // Idempotent: persisting an untouched picker and reading it back must land
+      // on the same two lines, or an owner who opens a food and saves it
+      // unchanged would see it quietly rearrange itself.
+      expect(pickerProteinsToSet(reseeded.main, reseeded.alsoContains)).toEqual(set);
+      expect(pickerPrimaryProtein(reseeded.main)).toEqual(primary);
+    }
   });
 });
