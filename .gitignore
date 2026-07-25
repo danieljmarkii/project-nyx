@@ -55,3 +55,6 @@ supabase/.temp/
 
 # Deno dependency cache (DENO_DIR for `deno check`/`deno test` during edge deploys)
 .deno-cache/
+
+# Adversarial-reviewer scratch probes (never committed)
+components/**/__adv*.test.tsx

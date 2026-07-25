@@ -91,6 +91,15 @@ export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
     // replaces the draft it grew out of, so demoting "biso" would be just as
     // wrong. Only a chip tap ('select') is an owner saying "the main is now this
     // one, and the old one is still in the food".
+    // KNOWN, DELIBERATE LIMIT of this rule: editing the Other text over an
+    // existing CUSTOM main ("kangaroo" → "emu"), or backspacing it to empty,
+    // replaces that value without demoting it — so kangaroo is not kept. That is
+    // the right call for the overwhelmingly common case (correcting a typo, where
+    // demoting the misspelling into "Also contains" is exactly the junk-key bug
+    // above), and the owner has an explicit path when they do mean to swap: tap a
+    // chip, which demotes properly. Editing text is an edit; tapping a chip is a
+    // designation. A COMMON main is unaffected either way — tapping "Other" is
+    // itself a select, so it demotes before any typing starts.
     if (kind !== 'select') {
       onChange({ main: next, alsoContains });
       return;
