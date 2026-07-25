@@ -4,7 +4,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 _**Size budget (enforced at `/wrap`, added 2026-07-19 workflow retro):** target under ~200 lines. Recent Sessions ≤ ~10 one-line entries; **no "Previous:" narrative archive** at the top (it duplicates Recent Sessions); **completed PM action items are deleted, not left checked** — `git log` is the archive. If a section is growing unbounded, that's the signal to prune, not to keep appending._
 
-**Last updated:** 2026-07-25 — **B-417 diet-trial: the mock round shipped — `docs/nyx-diet-trial-mockups.html`.** The §0.4 gate between spec v0.97 and v1.0. Three surfaces drawn (start-a-trial modal, trial card v2 in every state, completion milestone) plus **§7's trial block in the two variants C4 was deferred to**. **Seven items back to the PM, three of them PR 1-timed while the schema is still free at zero live rows:** the C4 ruling itself (rec: three of the four — `diet_class` is the only addition needing new capture, and **hydrolyzed, the class the clinical argument turns on, is not derivable from `food_items`**, so a real `diet_class` reopens migration 040); A-2 (`paused`); A-3 (drawn); the **species × indication duration table has no cat cells, so PR 3 cannot build the lookup it is required to build**; the still-undefined coverage floor that card state 4 depends on; §8's Home-Trend ruling. Drawing the states also found §4.2's "seven states" is **ten** — PR 4's AC undercounts by three.
+**Last updated:** 2026-07-25 — **B-417 diet-trial: the mock round shipped — `docs/nyx-diet-trial-mockups.html`** (also published as an artifact for review). The §0.4 gate between spec v0.97 and v1.0. Three surfaces drawn (start-a-trial modal, trial card v2 in **eleven** states, completion milestone) plus **§7’s trial block in the two variants C4 was deferred to**. A `pm-feature-review` pass as Jordan then caught three defects worth the round on its own — chiefly **the §7 block rendering 168 permitted feedings inside a total of 84, in both C4 variants**, and **state 7b rendering the clean-trial statement over a pet that refused the diet** (a breach of PR 5’s "no clean-trial statement *anywhere*" AC, and proof that §5.2’s composition rule must be terminal-state-aware, not live-flag-only). All fixed; three missing surfaces added (allowed-set read-back, off-diet list, §5.6 multi-pet caveat). **Fourteen items back to the PM, three PR 1-timed while the schema is free at zero live rows** — including two that touch **LOCKED** copy. PR 4’s AC undercounts the states by four.
 
 ---
 
@@ -151,7 +151,7 @@ Spec `docs/nyx-stool-analysis-requirements.md` (§8 = 10-PR plan). Second child 
 
 ## Blocking Open Questions
 
-**Diet trial (B-417) — the ten spec rulings are closed; the mock round returned seven new items, three of them PR 1-timed.** Mock: `docs/nyx-diet-trial-mockups.html`. Nothing here blocks PRs 1–2 *except* items 1–3, which are free today and a migration once PR 1 merges.
+**Diet trial (B-417) — the ten spec rulings are closed; the mock round returned fourteen new items, three of them PR 1-timed.** Mock: `docs/nyx-diet-trial-mockups.html`. Nothing here blocks PRs 1–2 *except* items 1–3, which are free today and a migration once PR 1 merges.
 
 1. **C4 — two elements or four?** Both variants rendered in the report's own register. Rec: **three** — medication overlap + interpretability + the derived prior-diet line. Any ruling must keep the interpretability row, or G2's coverage floor loses its only consequence.
 2. **Does `diet_class` become a real column in migration 040?** Only under a four-element C4. It is partly derivable (`is_prescription`, `is_novel_protein`, `food_type`) but **there is no hydrolyzed flag anywhere in the schema**, and hydrolyzed is the class Dr. Chen's argument turns on. **PR 1-timed.**
@@ -160,6 +160,16 @@ Spec `docs/nyx-stool-analysis-requirements.md` (§8 = 10-PR plan). Second child 
 5. **The species × indication duration table has no cat cells.** G3 ruled the key; the spec supplies only GI 28 / skin 56, both dog-derived. **PR 3 cannot build the lookup it is required to build.** Needs Dr. Chen; a lookup constant, not schema.
 6. **The coverage floor still has no number** (three defensible definitions read 100% / 84% / 19% over the same live 70 days). Card state 4 and its AC cannot be written until the metric is pinned — PR 5 work that PR 4 renders.
 7. **§8's open ruling — does a trial displace the Home symptom chart?** Drawn as the team lean (**no**: the symptom is why the trial exists, and Principle 3 says concern leads). Unruled ships whichever branch of `TrendZone.tsx:35` happens to be first.
+
+Seven more from the Jordan review, two of which touch **LOCKED** copy and must be ruled **before the copy pack locks**:
+
+8. **The card's headline welds two metrics' denominators.** §5.2's LOCKED *"84 feedings logged across 22 of 30 days"* pairs a **treat-inclusive** count with a **non-treat-only** day ratio (§5.1) — so a treat-only day is excluded from the 22 and included in the 84, which is false on **15.7%** of live covered days. Split into two sentences, or ratify the conflation.
+9. **The blind-spot qualifier contradicts C3 on nine surfaces.** The LOCKED *"flavoured medications … aren't visible here"* still ships while rung 4 now **detects** flavoured chewables — on the vet report it tells Dr. Chen to discount a line in his own Appendix C. Proposed rewording keeps the honest B-419 residual: *"flavoured liquids and tablets, other households and foraging."*
+10. **A four-element C4 outgrows the C6 consent string.** The disclosure is scoped to *"while the trial runs"*; variant B renders the **90 days before it started**, itemised. T&S/consent change, not a layout ruling.
+11. **Does the indication chip ship pre-selected?** Two taps, or a silent 56-day default that also suppresses the ≥12-week GI line for the owner who never looked.
+12. **The GI milestone contradicts itself** — *"continued for around three months"* directly above *"Keep going — 2 more weeks"*. §4.3 sets +14d, so the mock rendered the spec faithfully and the spec is wrong on the card meant to prevent a premature stop.
+13. **Do rung-4 oral-route exposures share page 1's numerator with a treat?** Ten exposures of which two are prescribed chewables describes a different owner than ten table scraps — and a prescribed dose counted as the owner's exposure is where §6.9 comes closest to breaking.
+14. **Nothing distinguishes "fed" from "eaten".** The severe case is caught by the intake-decline replacement; the partial eater who leaves half the bowl for eight weeks reads a clean card throughout. Either the noun changes, or coverage reads `intakeRating`.
 
 **Not blocking, but PM-visible:** **B-420** — the "20–30% diet-trial adherence" figure in the wedge's framing could not be traced to any published veterinary source in two independent lanes.
 
