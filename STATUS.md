@@ -186,6 +186,11 @@ Nearest live PM gates, none of which block code already in flight:
 
 ## Open PM Action Items
 
+**B-351 slice 4 (#447) — one blocker, one copy call, one QA limitation**
+- [ ] **BLOCKER — CI has never run on PR #447.** Four pushes, zero workflow runs on `claude/b351-phase-a-slice-4-6h2cr1`, while sibling branches got `pull_request` runs the same afternoon (17:09Z). The `main` ruleset requires both checks with an **empty bypass list**, so this cannot merge until a run exists — it is not a red check, it is *no* check. Locally: `tsc` clean, jest 118 suites / 1898 green. Try marking the PR ready-for-review, or close→reopen (fires `reopened`); if neither fires a run, the trigger itself needs a look.
+- [ ] **Copy call — "trial diet" vs "elimination trial" on the add-time soft confirm.** The PM-reviewed mock said "elimination trial"; `diet_trials` has no indication column (D6 deferred it), so the app cannot know a trial's *type* and asserting one is a fabricated clinical detail on copy an owner may repeat to their vet. Ratify the substitution, or add the column and say the specific thing.
+- [ ] **Tier 2 cannot be QA'd on device as-is.** There is **no `diet_trials` write path anywhere in the app** (B-417 PR 1 is the gate; production holds zero rows), so the whole trial-contaminant half is unverifiable outside unit tests without hand-inserting a trial row via SQL. Tier 1 (disclosure) is fully testable today.
+
 **CI ruleset polish (B-433) — optional, ~15s**
 - [ ] **Set the `main` ruleset's Allowed merge methods to Squash only.** It currently permits Merge/Squash/Rebase while the Git Workflow rule is squash-only, so the written convention is enforceable but not enforced. Ruleset `main` → *Require a pull request before merging* → Allowed merge methods. (Makes `Require linear history` redundant — don't tick both.) Not urgent; the B-390 gate itself is live and binding.
 

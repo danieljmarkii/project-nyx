@@ -104,6 +104,16 @@ Fixed by counting what we actually *said*: a small persisted ledger keyed by tri
 
 **On the "INSUFFICIENT" verdict for the I/O layer:** fair, and the B1 fix shrank it. The ledger is now unit-tested (it is AsyncStorage, which mocks cleanly), and the SQL it replaced is gone. What remains untested is `loadTrialProteinContext`'s assembly — and the reviewer is right that there is no runnable on-device script for it either, because **no `diet_trials` write path exists anywhere in the app** (B-417 PR 1 is the gate; production holds zero rows). Exercising Tier 2 end-to-end needs a hand-inserted row until that lands.
 
+## Base drift, and the break only the merge could show
+
+`main` moved while this was in review (B-280 PR 1, #444). The merge conflicted on `lib/session.ts` — both sides add an independent teardown step to `wipeLocalSession`, so both were kept.
+
+The useful part was what the merge *exposed*. B-280 shipped `lib/session.test.ts`, which imports `lib/session.ts` — which now imports `lib/trialContaminant.ts` → `lib/supabase`, and that fail-fasts on missing env under jest. **Neither branch's suite caught it alone; it exists only where the two meet.** Fixed in that file's own stated idiom ("the native-heavy halves are mocked; the AsyncStorage-backed halves run for real"): stub the supabase client, let both trial teardown functions run for real. That turned a silencing fix into coverage — the suite now *asserts* the heads-up ledger is wiped on sign-out, which matters because the ledger is per-account bookkeeping in AsyncStorage, outside the SQLite `clearLocalData` wipes; without the explicit clear it survives sign-out and the next account inherits "already told you about that food" for foods it has never seen.
+
+## Not merged — CI has never run on this branch
+
+Four pushes, zero workflow runs on `claude/b351-phase-a-slice-4-6h2cr1`, while sibling branches got `pull_request` runs the same afternoon. This is **not a red check — it is no check**, and the `main` ruleset requires both with an empty bypass list, so the PR cannot merge until a run exists. Locally `tsc` is clean and jest is 118 suites / 1898 green, and `deno test` was never runnable here (no deno in this environment), so the Edge Function suites remain unverified for this branch — though it touches no file under `supabase/functions/`.
+
 ## Deferred, recorded
 
 - **B-437** — an explicit protein-set provenance column (D10's own named upgrade). The derived predicate under-claims for an owner who types the full panel *and* curates the full set by hand; under-claiming is the safe direction, so this is polish. Do **not** fix by lowering the confidence floor.
