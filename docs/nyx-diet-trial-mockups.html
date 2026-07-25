@@ -113,8 +113,15 @@
   }
   .stack { display: flex; flex-direction: column; gap: 9px; width: 306px; max-width: 100%; }
   .stack.wide { width: 640px; }
-  .caption { font-size: 11.5px; color: rgba(255,255,255,0.92); text-shadow: 0 1px 2px rgba(0,0,0,0.32); font-weight: 500; line-height: 1.5; }
-  .caption b { color: #fff; }
+  /* Captions are long here (the widget mock's were one-liners), so they get a
+     legible plate rather than white-on-gradient. */
+  .caption {
+    font-size: 11.5px; line-height: 1.55; font-weight: 500;
+    color: #33403F; background: rgba(255,255,255,0.72);
+    border-radius: 12px; padding: 9px 11px;
+  }
+  .caption b { color: #14201F; font-weight: 700; }
+  .caption code { background: rgba(255,255,255,0.75); color: #14201F; }
 
   /* device */
   .device {
@@ -569,8 +576,8 @@
             <div class="cday">Day 61 — 5 days past the window you set</div>
             <div class="cends">Window ended 27 August</div>
             <div class="track"><div class="fill" style="width:100%"></div></div>
-            <div class="fact">182 feedings logged across 58 of 61 days.</div>
-            <div class="fact">176 matched the trial diet or a permitted food; <span class="tap">6 did not ›</span></div>
+            <div class="fact">196 feedings logged across 58 of 61 days.</div>
+            <div class="fact">190 matched the trial diet or a permitted food; <span class="tap">6 did not ›</span></div>
             <div class="qual">Nyx only sees what’s logged — flavoured medications, other households and foraging aren’t visible here.</div>
             <div class="flagline"><span class="hd">Still running.</span> Plenty of trials run past their window on the vet’s say-so. When you know what’s next, tell Nyx so the record closes properly.</div>
             <div class="btn tint sm">Update the trial</div>

@@ -4,7 +4,7 @@ _Canonical answer to "where are we?". High-churn: update inline at session end a
 
 _**Size budget (enforced at `/wrap`, added 2026-07-19 workflow retro):** target under ~200 lines. Recent Sessions ≤ ~10 one-line entries; **no "Previous:" narrative archive** at the top (it duplicates Recent Sessions); **completed PM action items are deleted, not left checked** — `git log` is the archive. If a section is growing unbounded, that's the signal to prune, not to keep appending._
 
-**Last updated:** 2026-07-25 — **B-417 diet-trial: every PM ruling closed.** All four gates (G1/G2/G3/§0.2) and six conflicts (C1–C6) ruled in one sitting; spec → **v0.97**, and **PRs 1–2 are now build-ready**. Two PM overrides of the team rec: **C3** (detect the oral route in v1 — zero new schema) and **C5** (no owner-scored severity; severity comes from logged events, with §7 disclosing logging density to expose the attention-decay bias instead). Record: `docs/diet-trial-requirements-review-2026-07.md` §0.
+**Last updated:** 2026-07-25 — **B-417 diet-trial: the mock round shipped — `docs/nyx-diet-trial-mockups.html`.** The §0.4 gate between spec v0.97 and v1.0. Three surfaces drawn (start-a-trial modal, trial card v2 in every state, completion milestone) plus **§7's trial block in the two variants C4 was deferred to**. **Seven items back to the PM, three of them PR 1-timed while the schema is still free at zero live rows:** the C4 ruling itself (rec: three of the four — `diet_class` is the only addition needing new capture, and **hydrolyzed, the class the clinical argument turns on, is not derivable from `food_items`**, so a real `diet_class` reopens migration 040); A-2 (`paused`); A-3 (drawn); the **species × indication duration table has no cat cells, so PR 3 cannot build the lookup it is required to build**; the still-undefined coverage floor that card state 4 depends on; §8's Home-Trend ruling. Drawing the states also found §4.2's "seven states" is **ten** — PR 4's AC undercounts by three.
 
 ---
 
@@ -151,9 +151,15 @@ Spec `docs/nyx-stool-analysis-requirements.md` (§8 = 10-PR plan). Second child 
 
 ## Blocking Open Questions
 
-**None on the diet-trial track — all ten rulings closed 2026-07-25.** Record: `docs/diet-trial-requirements-review-2026-07.md` §0; outcomes written throughout `docs/nyx-diet-trial-requirements.md` v0.97.
+**Diet trial (B-417) — the ten spec rulings are closed; the mock round returned seven new items, three of them PR 1-timed.** Mock: `docs/nyx-diet-trial-mockups.html`. Nothing here blocks PRs 1–2 *except* items 1–3, which are free today and a migration once PR 1 merges.
 
-Two §2.2 amendments remain unruled but block nothing: **A-2** (a `paused` lifecycle state — free in PR 1, a migration afterwards, so worth a call before PR 1 opens) and **A-3** (a mid-trial card state; not schema, can land any time).
+1. **C4 — two elements or four?** Both variants rendered in the report's own register. Rec: **three** — medication overlap + interpretability + the derived prior-diet line. Any ruling must keep the interpretability row, or G2's coverage floor loses its only consequence.
+2. **Does `diet_class` become a real column in migration 040?** Only under a four-element C4. It is partly derivable (`is_prescription`, `is_novel_protein`, `food_type`) but **there is no hydrolyzed flag anywhere in the schema**, and hydrolyzed is the class Dr. Chen's argument turns on. **PR 1-timed.**
+3. **A-2 (`paused`)** — drawing card state 7b made the cost concrete: a vet-directed hold renders to the vet who ordered it as "stopped early". **PR 1-timed** (`ALTER TYPE trial_status ADD VALUE 'paused'`).
+4. **A-3 (mid-trial card state at ~40%)** — drawn. Card state only, no schema, no push. Rec: yes.
+5. **The species × indication duration table has no cat cells.** G3 ruled the key; the spec supplies only GI 28 / skin 56, both dog-derived. **PR 3 cannot build the lookup it is required to build.** Needs Dr. Chen; a lookup constant, not schema.
+6. **The coverage floor still has no number** (three defensible definitions read 100% / 84% / 19% over the same live 70 days). Card state 4 and its AC cannot be written until the metric is pinned — PR 5 work that PR 4 renders.
+7. **§8's open ruling — does a trial displace the Home symptom chart?** Drawn as the team lean (**no**: the symptom is why the trial exists, and Principle 3 says concern leads). Unruled ships whichever branch of `TrendZone.tsx:35` happens to be first.
 
 **Not blocking, but PM-visible:** **B-420** — the "20–30% diet-trial adherence" figure in the wedge's framing could not be traced to any published veterinary source in two independent lanes.
 
