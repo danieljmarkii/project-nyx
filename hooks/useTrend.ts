@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { getDietTrialProgress } from '../lib/analytics';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
+import { toLocalDayKey } from '../lib/utils';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
@@ -107,16 +109,35 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
 
           if (trial) {
             hasTrial = true;
-            const startISO = new Date(trial.started_at as string).toISOString().split('T')[0];
-            trialDaysElapsed = Math.max(
-              1,
-              Math.floor((Date.now() - new Date(trial.started_at as string).getTime()) / 86_400_000),
+            // Day math via the one shared helper (B-421) — this used to be a raw ms
+            // span with no `+1`, so it read a day behind the trial card next to it.
+            const progress = getDietTrialProgress(
+              {
+                startedAt: trial.started_at as string,
+                targetDurationDays: trial.target_duration_days as number,
+              },
+              Date.now(),
             );
+            trialDaysElapsed = progress?.dayCounter ?? 1;
             trialTargetDays = trial.target_duration_days as number;
+
+            // The numerator has to be on the SAME clock as the denominator above,
+            // or the ratio is not a ratio. It used to bucket by UTC day key while
+            // `trialDaysElapsed` is a local-day count, which for a behind-UTC owner
+            // counts each local day twice at the boundary — Home rendered
+            // "6 of 5 days logged — 120% food compliance" against the profile card's
+            // 100% for the same pet at the same second. Local day key on both sides.
+            // (B-421. This corrects the CLOCK only. The numerator still counts a meal
+            // of any food rather than the trial diet — that mislabel is B-418, and
+            // redefining the metric is B-417 PR 5's job.)
+            const startDayKey = /^\d{4}-\d{2}-\d{2}$/.test(trial.started_at as string)
+              ? (trial.started_at as string)
+              : toLocalDayKey(new Date(trial.started_at as string));
             trialCompliantDays = new Set(
               rawEvents
-                .filter(e => e.event_type === 'meal' && e.occurred_at >= startISO)
-                .map(e => e.occurred_at.split('T')[0]),
+                .filter(e => e.event_type === 'meal')
+                .map(e => toLocalDayKey(new Date(e.occurred_at)))
+                .filter(k => k >= startDayKey),
             ).size;
           }
         } catch {
