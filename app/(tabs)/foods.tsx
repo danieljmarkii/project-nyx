@@ -12,6 +12,16 @@ import {
 } from '../../lib/db';
 import { proteinSummaryLine } from '../../components/food/ProteinDisclosure';
 import { proteinsFromCacheText } from '../../lib/protein';
+import {
+  groupFoodsByType, groupFoodsByBrand, foodIntakeKey, foodIntakeNote, indexIntakeStats,
+  foodFavoriteNote, type ReliableFavorite,
+} from '../../lib/food';
+import { getReliableFavorites } from '../../lib/foodFavorites';
+import { getSignedUrls } from '../../lib/storage';
+import { restoreFood } from '../../lib/foodArchive';
+import { usePetStore } from '../../store/petStore';
+import { useFoodLibraryStore } from '../../store/foodLibraryStore';
+import { useSnackbarStore } from '../../store/snackbarStore';
 
 /** Decode the cache's raw ai_extraction_confidence JSON text. Anything malformed
  *  reads as null, which the D10 gate treats as "panel unread" — the safe
@@ -24,16 +34,6 @@ function parseCachedConfidence(text: string | null): unknown {
     return null;
   }
 }
-import {
-  groupFoodsByType, groupFoodsByBrand, foodIntakeKey, foodIntakeNote, indexIntakeStats,
-  foodFavoriteNote, type ReliableFavorite,
-} from '../../lib/food';
-import { getReliableFavorites } from '../../lib/foodFavorites';
-import { getSignedUrls } from '../../lib/storage';
-import { restoreFood } from '../../lib/foodArchive';
-import { usePetStore } from '../../store/petStore';
-import { useFoodLibraryStore } from '../../store/foodLibraryStore';
-import { useSnackbarStore } from '../../store/snackbarStore';
 
 // The thumbnail props a row needs (B-004 PR 6), resolved per-food by `thumbFor`
 // in the screen and spread onto FoodRow by both the group list and the shelf.

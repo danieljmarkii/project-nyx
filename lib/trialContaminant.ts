@@ -326,7 +326,10 @@ interface TrialRow { id: string; started_at: string; food_item_id: string | null
 interface CacheEntry { atMs: number; ctx: TrialProteinContext | null }
 const contextCache = new Map<string, CacheEntry>();
 
-/** Test seam — drop the memoized contexts (also used on pet switch / sign-out). */
+/** Drop every memoized context. Wired into the sign-out wipe (lib/session.ts),
+ *  because the cache holds account data in JS memory that clearLocalData never
+ *  touches. NOT needed on a pet switch — the map is keyed by petId, so switching
+ *  simply reads the other pet's entry. Also the test seam. */
 export function clearTrialContextCache(): void {
   contextCache.clear();
 }

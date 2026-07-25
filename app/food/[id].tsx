@@ -295,10 +295,17 @@ export default function FoodDetailScreen() {
     try {
       const db = getDb();
       await db.runAsync(
-        // ingredients_notes rides along because the cache now backs the Tier-1
-        // disclosure's completeness gate (B-351 slice 4) — an owner who types the
-        // panel here would otherwise see the library row keep saying "ingredient
-        // list not read" until the next full sync.
+        // ingredients_notes rides along so the cached row matches the server row
+        // this save just wrote — the cache now backs the Tier-1 disclosure, and a
+        // stale panel there would be read by a gate that cares about it.
+        // NOTE it does NOT flip the row to "read": D10 is a CONJUNCTION, and this
+        // screen has no honest value to write for the other arm
+        // (ai_extraction_confidence attests an EXTRACTION, and none ran here). An
+        // owner-typed panel therefore still reads as not-captured — the
+        // deliberate under-claim documented on proteinSetCompleteness, and B-437
+        // is the provenance-column fix. Do not "close" this by inventing a
+        // confidence value; that trades a harmless qualifier for a false
+        // completeness claim on the vet report.
         `UPDATE food_items_cache
            SET brand = ?, product_name = ?, format = ?, food_type = ?, ingredients_notes = ?
          WHERE id = ?`,
