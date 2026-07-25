@@ -1,0 +1,5 @@
+# B-351 slice 0 — the Class-A convergence fix (B-414) + the D3a merge rule
+
+**Date:** 2026-07-24
+
+`canonicalizeProtein` trimmed boundary punctuation ONCE, before the qualifier loop, so a strip that exposed punctuation returned the non-key `chicken -` and dropped that food out of every correlation/top-protein/contaminant read; the two now run to a joint fixpoint (+ hyphen-joined qualifiers, + a term-length guard for the O(n²) loop). Guarded by a **cross-product convergence property test** (~5.4k variants) — the four-item example list it replaces passed for months under a docstring claiming idempotence. PM ruled **D3a** (Class A orthographic/artifact merges = permitted on read, retroactively; Class B semantic = write-path only — narrows D3's blanket ban), **D9** (B-412: "Other" normalizes on write with a legible inline note, not a toast) and **D10** (B-413: rendering gates on a derived completeness predicate) → slices 3/4/5 unblocked. Audits: 0 of 59 rows re-key; 0 desync rows (no reconcile migration needed); **all 59 rows still single-protein → B-416 filed**. jest 1688/110 suites, tsc clean, deno un-run (no deno in env). Spec → v1.1. **shipped via #433**
