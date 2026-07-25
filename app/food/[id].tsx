@@ -26,7 +26,7 @@ import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload } from '../../lib/storage';
 import { getDb } from '../../lib/db';
-import { seedPickerProteins, pickerProteinsToSet, proteinsToCacheText } from '../../lib/protein';
+import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../../lib/protein';
 import { archiveFood, restoreFood, type ArchiveResult } from '../../lib/foodArchive';
 import { useSnackbarStore } from '../../store/snackbarStore';
 import { useFoodLibraryStore } from '../../store/foodLibraryStore';
@@ -207,7 +207,7 @@ export default function FoodDetailScreen() {
     const proteinChanged =
       proteinTouched.current &&
       (proteinSet.join(' ') !== (row.proteins ?? []).join(' ') ||
-        (proteinSet[0] ?? null) !== base.primary_protein);
+        (pickerPrimaryProtein(primaryProtein)) !== base.primary_protein);
 
     const changed =
       brand.trim() !== base.brand ||
@@ -241,7 +241,7 @@ export default function FoodDetailScreen() {
     // same never-clobber rule the capture screen applies. Saving an edit to the
     // brand must not re-key a stored protein the owner never authored.
     if (proteinTouched.current) {
-      update.primary_protein = proteinSet[0] ?? null;
+      update.primary_protein = pickerPrimaryProtein(primaryProtein);
       update.proteins = proteinSet;
     }
     const { error } = await supabase
@@ -270,7 +270,7 @@ export default function FoodDetailScreen() {
       if (proteinTouched.current) {
         await db.runAsync(
           `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
-          [proteinSet[0] ?? null, proteinsToCacheText(proteinSet), row.id],
+          [pickerPrimaryProtein(primaryProtein), proteinsToCacheText(proteinSet), row.id],
         );
       }
     } catch (err) {

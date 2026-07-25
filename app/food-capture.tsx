@@ -32,7 +32,7 @@ import { supabase } from '../lib/supabase';
 import { insertMeal } from '../lib/meals';
 import { uploadPhoto, compressForUpload } from '../lib/storage';
 import { uuid, exifDateToISO, trustedPastExifIso, formatExifAttribution } from '../lib/utils';
-import { seedPickerProteins, pickerProteinsToSet, proteinsToCacheText } from '../lib/protein';
+import { seedPickerProteins, pickerProteinsToSet, pickerPrimaryProtein, proteinsToCacheText } from '../lib/protein';
 import { useAppConfig } from '../hooks/useAppConfig';
 import { parseGateResponse } from '../lib/appConfig';
 import { EARLY_ACCESS_LABEL, foodCapCopy, careFirstLine } from '../constants/monetizationCopy';
@@ -493,7 +493,7 @@ export default function FoodCaptureScreen() {
     if (proteinTouched.current) {
       await db.runAsync(
         `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
-        [proteinSet[0] ?? null, proteinsToCacheText(proteinSet), foodId],
+        [pickerPrimaryProtein(primaryProtein), proteinsToCacheText(proteinSet), foodId],
       );
     }
 
@@ -521,7 +521,7 @@ export default function FoodCaptureScreen() {
     // update, so an AI-extracted protein set survives the owner saving the
     // confirm screen without editing it (B-332 AC, extended to the set).
     if (proteinTouched.current) {
-      foodUpsert.primary_protein = proteinSet[0] ?? null;
+      foodUpsert.primary_protein = pickerPrimaryProtein(primaryProtein);
       foodUpsert.proteins = proteinSet;
     }
     supabase.from('food_items').upsert(foodUpsert, { onConflict: 'id' }).then(({ error }) => {

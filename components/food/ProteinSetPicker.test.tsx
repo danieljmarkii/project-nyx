@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import { ProteinSetPicker } from './ProteinSetPicker';
-import type { PickerProteins } from '../../lib/protein';
+import {
+  pickerProteinsToSet,
+  pickerPrimaryProtein,
+  seedPickerProteins,
+  type PickerProteins,
+} from '../../lib/protein';
 
 // A stateful host, because the two lines only make sense together: an auto-demote
 // is a main change AND a tail change in one emission, and testing it against a
@@ -188,5 +193,79 @@ describe('ProteinSetPicker (B-351 D8 two-line picker)', () => {
     fireEvent.changeText(getByPlaceholderText('Name the protein'), 'Emu');
     fireEvent(getByPlaceholderText('Name the protein'), 'blur');
     expect(onEmit).toHaveBeenLastCalledWith({ main: 'duck', alsoContains: ['emu'] });
+  });
+
+  // ── Regression: the three defects the adversarial pass found (2026-07-25) ────
+  // All three are the same shape — a rule that is correct for a DISCRETE
+  // interaction, applied to a CONTINUOUS one, or to a value the owner never
+  // authored. None were caught by the original suite because it tested chip taps
+  // through this component and typing only through a bare ProteinPicker host.
+
+  it('typing into the MAIN Other field does not file every prefix as a secondary', () => {
+    // THE BAD ONE. onChange fires per keystroke, and auto-demote treated each
+    // emission as a new designation: typing "bison" wrote
+    // proteins = ["bison","biso","bis","bi","b","chicken"] — five junk keys into
+    // the column the correlation engine, Patterns and the vet report all read.
+    let last: PickerProteins = { main: 'chicken', alsoContains: [] };
+    const { getByRole, getByPlaceholderText } = render(
+      <Host initial={last} onEmit={(n) => { last = n; }} />,
+    );
+    fireEvent.press(getByRole('radio', { name: 'Other' }));
+    const field = getByPlaceholderText('Name the protein');
+    for (const t of ['b', 'bi', 'bis', 'biso', 'bison']) fireEvent.changeText(field, t);
+    fireEvent(field, 'blur');
+    expect(last).toEqual({ main: 'bison', alsoContains: ['chicken'] });
+    expect(pickerProteinsToSet(last.main, last.alsoContains)).toEqual(['bison', 'chicken']);
+  });
+
+  it('a commit replaces the draft it grew out of, never demotes it', () => {
+    let last: PickerProteins = { main: null, alsoContains: ['duck'] };
+    const { getByRole, getByPlaceholderText } = render(
+      <Host initial={last} onEmit={(n) => { last = n; }} />,
+    );
+    fireEvent.press(getByRole('radio', { name: 'Other' }));
+    const field = getByPlaceholderText('Name the protein');
+    fireEvent.changeText(field, 'chicken liver');
+    fireEvent(field, 'blur');
+    // "chicken liver" must not survive as a secondary alongside its own fold.
+    expect(last).toEqual({ main: 'chicken', alsoContains: ['duck'] });
+  });
+
+  it('blurring a seeded custom main WITHOUT typing never re-keys it', () => {
+    // D3a: `ocean whitefish` (3 live rows) is a CLASS-B merge. D9's warrant is
+    // that the owner is looking at a value they just typed — merely tapping
+    // through the screen is not that warrant, and rewriting it here would be the
+    // retroactive re-key the whole Class-A/Class-B split exists to prevent.
+    const onEmit = jest.fn();
+    const { getByPlaceholderText } = render(
+      <Host initial={{ main: 'ocean whitefish', alsoContains: ['chicken'] }} onEmit={onEmit} />,
+    );
+    const field = getByPlaceholderText('Name the protein');
+    fireEvent(field, 'focus');
+    fireEvent(field, 'blur');
+    expect(onEmit).not.toHaveBeenCalled();
+    expect(field.props.value).toBe('ocean whitefish');
+  });
+
+  it('clearing the main SURVIVES a save/reopen round trip', () => {
+    // The demote puts the old main at proteins[0], so writing primary_protein =
+    // proteins[0] republished the designation the owner had just cleared — and
+    // the reseed put it straight back on the main line. The clear silently undid
+    // itself. pickerPrimaryProtein writes NULL for a cleared main instead.
+    let last: PickerProteins = { main: 'duck', alsoContains: ['chicken'] };
+    const { getByRole } = render(
+      <Host initial={last} onEmit={(n) => { last = n; }} />,
+    );
+    fireEvent.press(getByRole('radio', { name: 'Duck' }));
+    expect(last).toEqual({ main: null, alsoContains: ['duck', 'chicken'] });
+
+    const set = pickerProteinsToSet(last.main, last.alsoContains);
+    const primary = pickerPrimaryProtein(last.main);
+    expect(primary).toBeNull();          // no main designated
+    expect(set).toEqual(['duck', 'chicken']); // …and no exposure lost
+    expect(seedPickerProteins(primary, set)).toEqual({
+      main: null,
+      alsoContains: ['duck', 'chicken'],
+    });
   });
 });

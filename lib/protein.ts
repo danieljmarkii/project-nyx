@@ -466,6 +466,28 @@ export function seedPickerProteins(
  * the owner sees it (D9); re-deriving stored primaries is spec §11's separate,
  * PM-gated backfill question.
  */
+/**
+ * The `primary_protein` a save should write for a given picker state.
+ *
+ * NOT `proteins[0]` — that is the trap. When the owner clears the main while
+ * secondaries remain, §6's demote rule moves the old main into the tail, so
+ * `proteins[0]` is a *demoted* protein. Writing it as the primary republishes
+ * the very designation the owner just cleared, and the next open reseeds it
+ * straight back into the main line: the clear silently undoes itself.
+ *
+ * So a null main writes a NULL primary, and `seedPickerProteins` reads that back
+ * as "no main designated" — the two halves of one round-trip. It is the one case
+ * where `primary_protein !== proteins[0]`, and it is deliberate: the exposure
+ * stays in `proteins` (nothing is lost), while the primary honestly records that
+ * the owner named no headline protein.
+ *
+ * Otherwise the main is canonicalized — a CLASS-A merge, permitted always — so
+ * the pair is exactly consistent on every ordinary write.
+ */
+export function pickerPrimaryProtein(main: string | null): string | null {
+  return canonicalizeProtein(main);
+}
+
 export function pickerProteinsToSet(
   main: string | null,
   alsoContains: readonly string[],

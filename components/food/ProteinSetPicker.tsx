@@ -33,7 +33,7 @@ import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ChipGroupOption } from '../ui/ChipGroup';
 import { MultiChipGroup } from '../ui/MultiChipGroup';
-import { ProteinPicker } from './ProteinPicker';
+import { ProteinPicker, type ProteinChangeKind } from './ProteinPicker';
 import { NormalizedProteinNote, proteinNoteFor, type ProteinRewrite } from './proteinNote';
 import {
   COMMON_PROTEINS,
@@ -78,8 +78,24 @@ export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
     { value: OTHER, label: 'Other' },
   ];
 
-  function handleMainChange(next: string | null) {
+  function handleMainChange(next: string | null, kind: ProteinChangeKind) {
     const nextKey = canonicalizeProtein(next);
+
+    // A DRAFT REPLACES THE MAIN IN PLACE — it never demotes.
+    //
+    // The typed escape emits per keystroke, so treating every emission as a new
+    // designation filed every prefix of the word into "Also contains": typing
+    // "bison" wrote proteins = ["bison","biso","bis","bi","b", …], five junk keys
+    // straight into the column the correlation engine, the Patterns ranking and
+    // the vet report all read. A 'commit' is the same story one step later — it
+    // replaces the draft it grew out of, so demoting "biso" would be just as
+    // wrong. Only a chip tap ('select') is an owner saying "the main is now this
+    // one, and the old one is still in the food".
+    if (kind !== 'select') {
+      onChange({ main: next, alsoContains });
+      return;
+    }
+
     let rest = alsoContains;
     // Auto-demote: the outgoing main keeps its exposure, at the FRONT of the
     // tail because it was the most prominent protein and the array is

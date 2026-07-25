@@ -46,13 +46,32 @@ const OPTIONS: ChipGroupOption[] = [
   { value: OTHER, label: 'Other' },
 ];
 
+/**
+ * WHY the host is told what KIND of change this was.
+ *
+ * The typed escape emits on every keystroke (so nothing an owner types is ever
+ * lost), which means "onChange fired" does NOT mean "the owner designated a new
+ * protein" — mid-word, `value` is the partial string `bis`. A host that treats
+ * every emission as a designation does something destructive with it: the D8
+ * two-line picker's auto-demote read `b`, `bi`, `bis`, `biso` as four successive
+ * main proteins and filed each one into "Also contains" as a junk correlation
+ * key. So the kind is part of the contract, not a convenience:
+ *
+ *  • 'select' — a chip tap, including the second tap that clears. A real
+ *    designation; this is the ONLY kind that should move the outgoing value.
+ *  • 'typing' — a keystroke in the Other field. A draft, not a designation.
+ *  • 'commit' — the D9-normalized value resolved on blur/submit. It REPLACES the
+ *    draft it grew out of, so it must not move the draft anywhere either.
+ */
+export type ProteinChangeKind = 'select' | 'typing' | 'commit';
+
 interface Props {
   // The raw stored protein string (as it sits in food_items.primary_protein), or
   // null when unset. The picker highlights a chip by canonicalizing this value —
   // it never rewrites it, so a value that already matches a chip stays byte-equal
   // until the owner actually taps.
   value: string | null;
-  onChange: (next: string | null) => void;
+  onChange: (next: string | null, kind: ProteinChangeKind) => void;
   accessibilityLabel?: string;
 }
 
@@ -84,6 +103,15 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
   const [rewrite, setRewrite] = useState<ProteinRewrite | null>(null);
   const activeRewrite = rewrite && canon === rewrite.saved ? rewrite : null;
 
+  // Has the owner typed in the Other field since it was last opened or committed?
+  // The commit below fires on blur, and a mounted Other field can be focused and
+  // blurred without a keystroke — so without this, merely tapping through a food
+  // whose stored protein is `ocean whitefish` would rewrite it to `whitefish`.
+  // That is a CLASS-B merge applied retroactively to a value the owner never
+  // typed, which D3a forbids: D9's warrant is that the owner is looking at the
+  // value they just entered. No keystroke, no warrant, no rewrite.
+  const [otherDirty, setOtherDirty] = useState(false);
+
   // The "Other" field shows only when no common chip matches AND (the owner is
   // mid-entry OR there's a custom value). Gating on `matchedCommon === null`
   // makes it self-correcting: a common value winning always hides the field.
@@ -91,15 +119,16 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
   const selected: string | null = matchedCommon ?? (otherActive ? OTHER : null);
 
   function handleChipChange(next: string | null) {
+    setOtherDirty(false);
     if (next === OTHER) {
       setOtherTapped(true);
       // Preserve custom text if some already exists; otherwise emit null until
       // the owner types (so an opened-but-empty "Other" is a real "unset").
-      onChange(hasCustomValue ? value : null);
+      onChange(hasCustomValue ? value : null, 'select');
     } else {
       // A common canonical value, or null on a deselect tap.
       setOtherTapped(false);
-      onChange(next);
+      onChange(next, 'select');
     }
   }
 
@@ -107,6 +136,10 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
   // keystroke: normalizing mid-word would thrash the field while someone is
   // still typing "bison".
   function handleOtherCommit() {
+    // Only a value the owner typed in this session may be normalized — see the
+    // otherDirty note above.
+    if (!otherDirty) return;
+    setOtherDirty(false);
     const typed = (value ?? '').trim();
     if (!typed) return;
     const normalized = normalizeExtractedProtein(typed);
@@ -116,7 +149,7 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
     // for (its scope is aliased/stripped terms).
     if (normalized == null) return;
     setRewrite(proteinNoteFor(typed, normalized));
-    if (normalized !== value) onChange(normalized);
+    if (normalized !== value) onChange(normalized, 'commit');
   }
 
   return (
@@ -135,8 +168,12 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
           style={styles.otherInput}
           value={value ?? ''}
           // Raw per keystroke so nothing an owner types is ever lost; the
-          // canonical value resolves in handleOtherCommit below.
-          onChangeText={(t) => onChange(t.trim().length ? t : null)}
+          // canonical value resolves in handleOtherCommit below. Emitted as
+          // 'typing' — a partial word is a draft, never a designation.
+          onChangeText={(t) => {
+            setOtherDirty(true);
+            onChange(t.trim().length ? t : null, 'typing');
+          }}
           onBlur={handleOtherCommit}
           onSubmitEditing={handleOtherCommit}
           placeholder="Name the protein"

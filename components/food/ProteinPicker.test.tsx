@@ -32,14 +32,14 @@ describe('ProteinPicker', () => {
     const onChange = jest.fn();
     const { getByText } = render(<ProteinPicker value={null} onChange={onChange} />);
     fireEvent.press(getByText('Salmon'));
-    expect(onChange).toHaveBeenCalledWith('salmon');
+    expect(onChange).toHaveBeenCalledWith('salmon', 'select');
   });
 
   it('clears to null when the active chip is re-tapped', () => {
     const onChange = jest.fn();
     const { getByText } = render(<ProteinPicker value="chicken" onChange={onChange} />);
     fireEvent.press(getByText('Chicken'));
-    expect(onChange).toHaveBeenCalledWith(null);
+    expect(onChange).toHaveBeenCalledWith(null, 'select');
   });
 
   // A stored value outside the common set is a custom protein — Other is active
@@ -59,10 +59,10 @@ describe('ProteinPicker', () => {
     );
     fireEvent.press(getByText('Other'));
     // Opening Other with no prior custom value emits null (a real "unset").
-    expect(onChange).toHaveBeenLastCalledWith(null);
+    expect(onChange).toHaveBeenLastCalledWith(null, 'select');
     fireEvent.changeText(getByPlaceholderText('Name the protein'), 'bison');
     // Stored raw — canonicalized on read, exactly like an AI label.
-    expect(onChange).toHaveBeenLastCalledWith('bison');
+    expect(onChange).toHaveBeenLastCalledWith('bison', 'typing');
   });
 
   it('treats a whitespace-only Other value as unset', () => {
@@ -72,7 +72,7 @@ describe('ProteinPicker', () => {
     );
     fireEvent.press(getByText('Other'));
     fireEvent.changeText(getByPlaceholderText('Name the protein'), '   ');
-    expect(onChange).toHaveBeenLastCalledWith(null);
+    expect(onChange).toHaveBeenLastCalledWith(null, 'typing');
   });
 
   // Reseed regression guard (code-review fix): when the value prop transitions
@@ -125,7 +125,7 @@ describe('ProteinPicker', () => {
     fireEvent.press(getByText('Other'));
     fireEvent.changeText(getByPlaceholderText('Name the protein'), 'buffalo');
     // Mid-word rewriting would thrash the field while someone is still typing.
-    expect(onChange).toHaveBeenLastCalledWith('buffalo');
+    expect(onChange).toHaveBeenLastCalledWith('buffalo', 'typing');
   });
 
   it('normalizes an aliased value on blur and says so', () => {
@@ -138,7 +138,7 @@ describe('ProteinPicker', () => {
     // Controlled component: the host echoes the raw value back before blur.
     rerender(<ProteinPicker value="Buffalo" onChange={onChange} />);
     fireEvent(getByPlaceholderText('Name the protein'), 'blur');
-    expect(onChange).toHaveBeenLastCalledWith('bison');
+    expect(onChange).toHaveBeenLastCalledWith('bison', 'commit');
     rerender(<ProteinPicker value="bison" onChange={onChange} />);
     expect(getByText("Saved as Bison — that's the label name for buffalo.")).toBeTruthy();
   });
@@ -154,7 +154,7 @@ describe('ProteinPicker', () => {
     fireEvent.changeText(getByPlaceholderText('Name the protein'), 'chicken liver');
     rerender(<ProteinPicker value="chicken liver" onChange={onChange} />);
     fireEvent(getByPlaceholderText('Name the protein'), 'blur');
-    expect(onChange).toHaveBeenLastCalledWith('chicken');
+    expect(onChange).toHaveBeenLastCalledWith('chicken', 'commit');
     rerender(<ProteinPicker value="chicken" onChange={onChange} />);
     expect(getByRole('radio', { name: 'Chicken' }).props.accessibilityState.selected).toBe(true);
     expect(queryByPlaceholderText('Name the protein')).toBeNull();
@@ -170,7 +170,7 @@ describe('ProteinPicker', () => {
     fireEvent.changeText(getByPlaceholderText('Name the protein'), 'Kangaroo');
     rerender(<ProteinPicker value="Kangaroo" onChange={onChange} />);
     fireEvent(getByPlaceholderText('Name the protein'), 'blur');
-    expect(onChange).toHaveBeenLastCalledWith('kangaroo');
+    expect(onChange).toHaveBeenLastCalledWith('kangaroo', 'commit');
     rerender(<ProteinPicker value="kangaroo" onChange={onChange} />);
     expect(queryByText(/^Saved as/)).toBeNull();
   });
@@ -187,7 +187,7 @@ describe('ProteinPicker', () => {
     fireEvent.changeText(getByPlaceholderText('Name the protein'), 'fresh');
     rerender(<ProteinPicker value="fresh" onChange={onChange} />);
     fireEvent(getByPlaceholderText('Name the protein'), 'blur');
-    expect(onChange).toHaveBeenLastCalledWith('fresh');
+    expect(onChange).toHaveBeenLastCalledWith('fresh', 'typing');
     expect(getByPlaceholderText('Name the protein').props.value).toBe('fresh');
   });
 
