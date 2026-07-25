@@ -2,7 +2,7 @@
 
 **Version:** 1.1 — *revised after review; §6.4 rewritten* | **Last Updated:** 2026-07-24
 **Backlog:** B-280 (`Now`) · touches B-152, B-278, B-281, B-401, B-271 · files B-418/B-419/B-420/B-421
-**Status:** design session complete. **PR 1 build-ready.** PR 2 gated on **three PM rulings (D1c, D4, D6b)** + **three device checks (§9.3)** — see §0.
+**Status:** design session complete. **PR 1 build-ready.** **D1c ✅ accepted · D4 ✅ yes (+ email change scoped → D9) · D6b ⏳ open** — PM asked for the App Review + best-practice position first; answered in **§7.1**, and the team recommendation **changed to "yes"** as a result. PR 2 also gated on the **three device checks (§9.3)**.
 **Reviews run:** `nyx-voice` ✓ · `pm-feature-review` (2 SHIP-SHAPED / 2 NEEDS-WORK / 1 INSUFFICIENT) · `rls-privacy-reviewer` **FAIL on v1.0 — 5 merge blockers, all folded in**. Full record + attack log: **§12**.
 
 > **v1.0 → v1.1 in one line:** the privacy gate broke the original cross-account fix five ways, because `wipeLocalSession()` was built for the `SIGNED_OUT` transition (session → **null**) and a recovery swap is non-null → non-null. §6.4 now forces a real `signOut()` before the exchange and reuses the shipped teardown instead of inventing a second one.
@@ -45,9 +45,9 @@ Both were found by reading `app/_layout.tsx` against the Supabase recovery flow.
 
 | # | Ruling needed | Team recommendation | Blocks |
 |---|---|---|---|
-| **D1c** | Ship v1 with the **custom-scheme** redirect (same-device only) and accept the desktop-open dead end as a documented limit? Or fund the https interstitial + universal links first? | **Custom scheme now**, interstitial → backlog (B-418). The desktop case is *already* broken and the mitigation is one line of copy. | PR 2 |
-| **D4** | Does this track also build **in-app password change** in settings (retiring half the "coming soon" line)? | **Yes, as PR 3** — trivial on an authenticated session, removes a "half-built" signal the audit's Designer lens flagged. **Email change stays out** (needs dual-address re-verification and touches vet-report owner identity). | PR 3 only |
-| **D6b** | After a successful reset, **sign out the owner's other devices**? | **No, not in v1** — and this is a genuine conflict, recorded in §7. | PR 2 |
+| **D1c** | Ship v1 with the **custom-scheme** redirect (same-device only) and accept the desktop-open dead end as a documented limit? | **✅ RULED 2026-07-25 — ACCEPT.** Custom scheme ships; the https interstitial + universal links stay filed as **B-418**, post-submission. §9.3-Q1 still runs, because if a desktop open *burns* the token the mitigation copy has to move into the email template. | — |
+| **D4** | Does this track also build **in-app password change** in settings? | **✅ RULED 2026-07-25 — YES, and email change is now scoped too** (→ **D9**, §3). Password change = PR 3. Email change is **specified**, with its build slot left open. | — |
+| **D6b** | After a successful reset, **sign out the owner's other devices**? | **⏳ OPEN — PM asked for the App Review + best-practice position before ruling.** Answered in §7.1; the team recommendation **has changed to "yes on reset, optional on change"** as a result. | PR 2 |
 
 Everything else in §3 is ruled recommend-and-proceed with the rationale stated, per the standing convention.
 
@@ -148,9 +148,22 @@ The UX cost is real and is paid for explicitly: an owner who typos their address
 **D3 — Where the new password is typed: in-app.** *(recommend-and-proceed)*
 `app/(auth)/reset-password.tsx`, reusing `TextField` + `PrimaryButton` + the same validators as signup (`passwordError` from `lib/authValidation.ts`), so the rules an owner meets on the way in are the rules they meet on the way back. A Supabase-hosted page would break voice, break Jordan's no-re-entry rule, and hand off the most trust-sensitive screen in the app to a page we don't style.
 
-**D4 — Scope: password *change* in settings. → PM (§0.4).**
-Recommendation **in, as PR 3**: `updateUser({ password })` on an authenticated session, behind the current-password re-check. It retires half of the `settings.tsx:133` "coming soon" line, and the audit's Designer lens specifically flagged that a curious stranger meets three "Coming soon" surfaces in session one and reads the app as half-built.
-**Email change stays out** — it needs verification of both the old and new addresses, and the owner email is what the vet report's "Owner:" line and every share artifact key on. That is its own track, filed as **B-419**.
+**D4 — Scope: password *change* in settings. ✅ RULED 2026-07-25 — YES.**
+`updateUser({ password })` on an authenticated session, behind a current-password re-check (**which requires the dashboard's "Secure password change" setting to be ON — otherwise the field is decorative**, §9.2). Ships as **PR 3**. It retires the `settings.tsx:133` "coming soon" line, which the audit's Designer lens flagged as part of the three-"coming soon" half-built signal a curious stranger meets in session one.
+
+**D9 — Email change: SCOPED 2026-07-25 (PM), build slot open.** *(new; supersedes D4's original "stays out")*
+
+**A correction to the record first.** The v1 spec justified excluding email change partly on the claim that *"the owner email is what the vet report's 'Owner:' line keys on."* **That was wrong, and checking it changed the answer.** `generate-report/index.ts:670-679` reads `user_profiles.display_name` **first**; the account email is only a **fallback** used when no display name is set (the §7.1 PIMS-filing fallback, PM-ruled 2026-07-03). So the real coupling is narrower: changing the email changes the Owner line **only for owners who never set a display name** — and every owner who completed B-251 onboarding has one written by `updateOwnerName`.
+
+That makes email change a materially smaller change than the v1 spec implied, which is why it is now in scope to **specify**. What it genuinely needs:
+
+1. **Double confirmation.** Supabase's *Secure email change* setting sends a confirmation to **both** the old and new addresses. It must be **ON** — with it off, a single compromised session silently re-homes the account and locks the real owner out permanently. Dashboard item (§9.2).
+2. **Both confirmation links are deep links**, so they inherit this track's entire handler, `flowType: 'pkce'`, provenance (FR-14) and gate machinery — which is exactly why it belongs in *this* spec rather than a standalone track. It is largely a second consumer of PR 1's foundations.
+3. **A designed pending state.** Between request and both confirmations the account has two addresses in play; the owner must be able to see that and cancel.
+4. **The vet-report fallback interaction** above — a previously-issued report is a static artifact and does not retro-change, but a *newly* generated one will show the new address for a display-name-less owner. Worth one line in the change screen, not a blocker.
+5. **The B-421 tie-in:** email change is the *self-service* half of "I lost access to my signup mailbox." It only helps an owner who can still authenticate — someone locked out **and** without their mailbox still needs the manual ops path. Scoping this narrows B-421's surface; it does not close it.
+
+**Build slot deliberately left open** (PM: *"we don't necessarily have to"*). Recommended as **PR 5**, after the recovery flow is enabled and proven — it shares PR 1's foundations, so the marginal cost drops the later it runs, and it is not on the submission path. **B-419 is now spec'd-not-filed**; the row points here.
 
 **D5 — Social-auth accounts (B-281).** *(recommend-and-proceed)*
 Moot today (`SOCIAL_AUTH_ENABLED = false` — every account is email/password) but must not become a leak later. D2's neutral copy is already the correct answer: it holds for an OAuth-only account without disclosing the account's auth method. Setting a password on an OAuth account is legitimate — it adds a credential rather than replacing the identity. **Re-verify at B-251 PR 11** when the flag flips; noted on the B-281 row.
@@ -347,6 +360,47 @@ A recovery session is a full-privilege JWT. Adopting it at step 6 starts `useSyn
 
 ---
 
+## §7.1 — D6b: what App Review says, what best practice says *(added 2026-07-25 at PM request)*
+
+Two questions with **different** answers, which is exactly why they were worth asking separately.
+
+### Would App Store reviewers care? — No, and this should not drive the decision.
+
+There is **no App Store Review Guideline requiring session invalidation on password reset.** The account-related guidelines Culprit must satisfy are 5.1.1(v) (in-app account deletion — **done**, B-039) and the sign-in/data-collection rules; none of them reach session-management posture. It is also **not testable by a reviewer**: App Review exercises functionality against a demo account, and whether a *second, unseen* device kept its session is invisible from the outside. Nobody will ever check.
+
+So D6b is a **product and security decision, not a compliance one.** Ruling it "yes" buys nothing at submission; ruling it "no" risks nothing at submission. Deciding it on imagined Apple pressure would be cargo-culting.
+
+### Is there a best practice? — Yes, and it is clear.
+
+The standard control (OWASP ASVS, session-management/forgot-password guidance) is that after a successful password change **or reset**, an application terminates the user's other active sessions — commonly phrased as *giving the user the option* to do so. The rationale is narrow and decisive:
+
+> **A password reset that evicts nothing provides no remediation for the case people reset passwords for.** If someone else has your account, changing the password leaves their session live — and under Supabase, a refresh token renews indefinitely. The attacker keeps access **forever**, and the owner believes they fixed it. That is worse than not offering recovery, because it manufactures false confidence.
+
+The original team recommendation ("no in v1") weighed the household cost carefully but **never checked the standard control**, and never articulated the argument above. That is a gap in the earlier deliberation, not a difference of judgement — so the recommendation changes.
+
+### Revised recommendation: **yes on reset (default), optional on change**
+
+The two paths have genuinely different threat models, and consumer practice splits them the same way:
+
+| Path | Posture | Why |
+|---|---|---|
+| **Reset** (forgot-password, PR 2) | **Terminate other sessions**, no prompt | We cannot distinguish "I forgot" from "someone took my account" — they present identically. This is the compromise-remediation path, so it must actually remediate. |
+| **Change** (settings, knows current password, PR 3) | **Offer** it — a "Also sign out other devices" checkbox, default off | The owner is already authenticated and in control. Nothing suggests compromise, so a deliberate choice beats a surprise. |
+
+### What this costs, stated honestly
+
+Sam's objection stands and does not disappear — it gets **bounded**:
+
+- **The eviction is not instant.** Supabase revokes other *refresh* tokens; existing *access* tokens stay valid until expiry (≈1 hour). A co-resident's device that is online in that window flushes its queue normally. The unsynced-data loss only reaches a device that is offline for the whole window and reconnects after revocation.
+- **The residual loss is real but narrow**, and it is a pre-existing property of our sign-out path (any `SIGNED_OUT` wipes unsynced rows), not something recovery introduces.
+- **Two conditions attach if this is ruled "yes":**
+  1. **The evicted device needs a designed state.** Today `SIGNED_OUT` routes to the Landing with no explanation — the "the app logged me out at random" bug class that `lib/authRouting.ts` exists to prevent. Reuse the B-039 one-shot banner pattern (`justDeletedAccount`) to say plainly: *"You were signed out because your password was changed."* Without this, the security win is paid for in trust.
+  2. **The password-changed notification email must be on** (§9.2) — it is the owner's only evidence the reset happened at all.
+
+**Net:** "yes" costs a bounded, mitigable inconvenience to a co-resident. "No" costs the feature its actual security purpose. Recommend **yes**, with the two conditions.
+
+---
+
 ## §7 — Safety, privacy, and the invariants
 
 - **The clinical invariants are not implicated.** No pet-health inference, no n=1 read, no AI. `clinical-guardrails` is **N/A** here, stated explicitly rather than left silent.
@@ -375,8 +429,9 @@ Deliberately **not** an `app_config` allowlist flag: this is not an experiment b
 |---|---|---|---|
 | **1** | Foundations — `flowType: 'pkce'`, `lib/passwordRecovery.ts` + tests (FR-4's **two** classifications), the **persisted** `recoveryInProgress` (FR-6), FR-12's request marker, **FR-17's redaction widening**, the `PASSWORD_RECOVERY_ENABLED` constant (off). **No user-visible change.** | `code-reviewer`; `npm test` | ✅ **Yes — today.** Independent of every open ruling. FR-4's contract was re-scoped before its tests get written, which was the reviewer's one PR-1 ask. |
 | **2** | The whole flow — FR-1 → FR-16: login link + §5.1b alert, request, Sent, deep-link handler, the §6.4 sign-out-first ordering, the §6.5 router gate, §6.6's escape, set-password, link-no-longer-works, wrong-device, request-failed. | **`rls-privacy-reviewer` (mandatory, merge gate — must clear F1–F5)** · `nyx-voice` · `pm-feature-review` · `code-reviewer` | ⚠️ **On D1c + §9.3 device checks.** |
-| **3** | Settings → change password (§5.7); retires half the "coming soon" line. | `nyx-voice` · `code-reviewer` | ⚠️ **On D4.** |
+| **3** | Settings → change password (§5.7); retires the "coming soon" line. If **D6b** = yes, also carries the "Also sign out other devices" option (default off, §7.1). | `nyx-voice` · `code-reviewer` | ✅ **D4 ruled** — buildable once PR 1 lands. Needs the "Secure password change" dashboard setting, or the current-password field is decorative. |
 | **4** | Enablement — flip `PASSWORD_RECOVERY_ENABLED`, on-device end-to-end verification, dashboard checklist confirmed. | On-device QA (§10) | ⛔ **On B-152 SMTP** (PM). |
+| **5** | **Email change** (D9) — request, dual confirmation, pending state, cancel. Reuses PR 1's handler/gate/provenance wholesale. | **`rls-privacy-reviewer` (mandatory — account re-homing)** · `nyx-voice` · `code-reviewer` | 🔓 **Scoped, slot open.** Recommended after PR 4; not on the submission path. Needs "Secure email change" ON. |
 
 **PR 2 is deliberately not split further.** Request-without-handler ships an email whose link goes nowhere; handler-without-request ships unreachable code. Splitting this particular flow would ship a dead end — the exact defect the track exists to remove.
 
@@ -392,7 +447,8 @@ PR 1 is disjoint from every other live track (`lib/`, `store/authStore.ts`, `con
 - [ ] Confirm rate limits on the recovery endpoint are sane for a real user retrying twice.
 - [ ] **OTP / recovery link expiry — read the actual value.** §5.5's "they don't last long" is an assertion the repo cannot verify.
 - [ ] **"Secure password change" (require re-authentication) — confirm ON before PR 3 ships.** Supabase's `updateUser({ password })` does **not** require the current password unless this is enabled, which makes §5.7's current-password field **decorative**: an unlocked, unattended phone becomes a Settings-screen account takeover. This is a server-control item, not a copy detail.
-- [ ] **Password-changed notification email — confirm enabled.** Load-bearing if D6b is declined (see above).
+- [ ] **Password-changed notification email — confirm enabled.** Load-bearing **either way**: if D6b is declined it is the *only* compensating control; if D6b is accepted it is how an evicted co-resident learns why (§7.1).
+- [ ] **"Secure email change" (confirm to BOTH old and new address) — confirm ON before PR 5 ships** (D9). With it off, one compromised session silently re-homes the account and locks the real owner out permanently.
 - [ ] **Enumeration protection — read the *current* state before flipping**, then re-run signup's already-registered path and login's wrong-address path on device and compare rendered output. The setting changes shipped behaviour on both screens (D2).
 - [ ] **Build entitlement check for the FR-7 QA.** In Expo Go or a pre-W3 dev client, `getAppGroupContainer()` returns null and **every App Group / widget wipe silently no-ops** (`lib/appGroup.ts:44-52`) — so §10 row 7 would pass **vacuously on the wrong binary**. That row must run on a dev client carrying `com.apple.security.application-groups`, with a widget actually placed on the Home Screen.
 
@@ -449,7 +505,7 @@ Rows **7, 11, and 12** fail silently if the §6.4 ordering is wrong. Row **2** i
 | Item | Row |
 |---|---|
 | https interstitial + universal links (D1c alternative) | **B-418** |
-| Change email address (D4's excluded half) | **B-419** |
+| Change email address | **B-419 — now SPEC'D, not deferred** (D9, PM 2026-07-25). Build slot open; recommended as PR 5. |
 | Deep-link scheme `nyx://` → `culprit://` | **B-278** (existing; cost/benefit changed — see §1) |
 | Social-auth recovery re-verification | **B-281** (existing; noted) |
 | "Verify later · continue for now" routes to the login wall | **B-401** (existing; belongs to B-152 part 2) |
