@@ -7,13 +7,15 @@
 
 **What is different about this pass:** the June refresh benchmarked us against a *documented* version of Culprit that no longer matches the code. This pass re-derived our own feature set from source first, then compared. Several things the docs claim we ship, we do not — and several things we ship, the docs never recorded. The most consequential findings in this review are about **us**, not about competitors.
 
+> **Relationship to the B-417 diet-trial track (read this first).** A parallel session (#431, #439, 2026-07-24/25) ran a *feature-scoped* landscape for the diet-trial lifecycle: `docs/research/2026-07-diet-trial-competitive-landscape.md` (evidence) + `docs/nyx-diet-trial-requirements.md` (spec v0.95) + `docs/diet-trial-requirements-review-2026-07.md` (review record). **The two passes were run independently and agree on both load-bearing claims** — that `diet_trials` has no write path, and that no surveyed competitor ships a diet-trial object. That is mutual corroboration by different methods, not a shared source. **Division of labour:** this document owns the *app-category* landscape and the feature head-to-head; the B-417 brief owns the *diet-trial protocol* depth (contamination classes, trial-length clinical consensus, adherence instruments) and is the better reference for anything trial-specific. Where they differ in depth on diet trials, the B-417 brief wins.
+
 ---
 
 ## 1. Executive summary — the seven findings that matter
 
 **① The wedge is still unoccupied — verified harder than last time, and the verdict is unchanged.** Across ~106 players examined by seven independent researchers, **not one combines frictionless event logging + food/protein exposure capture + a deterministic statistical correlation engine + a portable clinical report.** Every player holds at most two of four. Two independent agents reached this conclusion without contact. `[E]`
 
-**② …but our own front door to that wedge does not exist.** `diet_trials` has **zero write paths in the entire codebase** and **zero rows in production** — 18 files read the table, none writes it. An owner sent home on an elimination trial — the user CLAUDE.md says everything follows from — **cannot start one in the app.** Every trial-aware branch (Signal rank promotion, staple-washout suppression, diet-churn suppression, `getDietTrialProgress`, Ask's `dietTrialStatus` tool, the vet report's trial section) is written, tested, and dead. `[C]` **This is the single most important finding in the review.**
+**② …but our own front door to that wedge does not exist.** `diet_trials` has **zero write paths in the entire codebase** and **zero rows in production** — 18 files read the table, none writes it. An owner sent home on an elimination trial — the user CLAUDE.md says everything follows from — **cannot start one in the app.** Every trial-aware branch (Signal rank promotion, staple-washout suppression, diet-churn suppression, `getDietTrialProgress`, Ask's `dietTrialStatus` tool, the vet report's trial section) is written, tested, and dead. `[C]` **This is the single most important fact in the review — and it is already tracked and specced as B-417** (priority `Now`, spec v0.95, 7-PR plan, six open PM rulings). This pass reached it independently from the competitive side; treat that as corroboration of B-417's priority, not as a new discovery. **The competitive implication B-417 does not cover:** every differentiator in §6 below is currently gated behind that missing door, which is why it outranks every other item in §10.
 
 **③ The elimination-diet lane is not just unoccupied — it is uncontested to a degree that is hard to believe.** Across 14 direct competitors, **not one** has a diet-trial construct, a protein model, ingredient extraction, or novel-protein/contaminant logic. `[E]` Across 207 harvested US App Store pet listings, **zero** contain the strings "elimination diet", "food trial", "novel protein", or "hydrolyzed". `[E]` Meanwhile vet sources describe the elimination trial as an 8–12 week protocol whose named failure mode is *owner compliance*. A clinically-endorsed, high-intent, well-documented job with no purpose-built software.
 
@@ -176,7 +178,7 @@ Honest, ranked by how much it costs us.
 5. **The multi-protein promise is not delivered where it counts.** Extraction emits the set; the engine and report still use `primary_protein`, and every live row is single-protein. **For an elimination-trial product this is the substance of the wedge** — a rabbit-and-chicken food currently reads as clean rabbit.
 6. **No published validation.** IAMS PoopScan publishes 90% accuracy on 14,000+ expert-labelled images with a 10-expert panel; Vet-AI/Joii publishes 65k vet-labelled images. We publish nothing, and **no real vet has read our report.** Our rigor is real but invisible.
 7. **No passive capture story.** Not a gap to close by building hardware — but we need an answer when an owner asks "why log when my litter box does it?" (Answer: the box sees one box; vomit on the stairs, the spouse's treat, and the food's identity are all invisible to it.)
-8. **Operational maturity is close to zero.** No CI on ~430 merges, no crash reporting (a production crash is a silent white screen), no password reset (the first user who forgets is locked out permanently), no data export. Reliability — not features — is what kills apps in this category: the dominant negative-review theme everywhere is crashes, lost data and botched migrations.
+8. **Operational maturity is close to zero.** No CI on ~430 merges, no crash reporting (a production crash is a silent white screen), no data export, and **no password reset in code** — the first user who forgets is locked out permanently. *(Password recovery was specced in a parallel session the same week — B-280, requirements v1.2 + design session, #437 — so that one is queued rather than unconsidered; it is still absent from the binary.)* Reliability — not features — is what kills apps in this category: the dominant negative-review theme everywhere is crashes, lost data and botched migrations.
 9. **Platform reach is one platform.** iOS-only in practice, English-only, no dark mode, no tablet, no web. Android has config scaffolding and no evidence of a build.
 10. **Two things we say we have, we don't:** the widget (built, never on a device) and Ask (deployed, allowlisted to one user). Both are real work; neither is shippable copy yet.
 
@@ -209,9 +211,9 @@ Honest, ranked by how much it costs us.
 ## 10. Recommendations
 
 **Do before submission (days):**
-1. **Build the diet-trial front door.** Even a minimal create/end-trial surface. Everything downstream is already built and currently dead. Highest value-per-hour in the product by a wide margin.
+1. **Land B-417 (diet-trial lifecycle).** Already specced (v0.95, 7 PRs) — this review adds competitive weight to its `Now` priority, not new scope. Everything downstream is built and currently dead, and every §6 differentiator is gated behind it. PR 1 (schema, ~9 decisions, free today at zero live rows) is the gate the whole track queues behind.
 2. **Close the three live security items** — delete `view-report` + `zz-deploy-probe`, owner-scope `nyx-vet-attachments`, fix the anon-writable `nyx-pet-photos` INSERT policy.
-3. **Password reset**, remove the diagnostics long-press from release, fix the `nyx-pet-photos` dev-jargon alert.
+3. **Password reset** (B-280, specced), remove the diagnostics long-press from release, fix the `nyx-pet-photos` dev-jargon alert.
 4. **Add a ~20-line CI workflow** (tsc + jest). 430 merges with zero automated checks is the soft spot any technical diligence finds first.
 5. **Deploy the merged-but-undeployed engine changes** (stool red flag, protein canonicalizer) or explicitly accept the gap.
 
@@ -239,7 +241,7 @@ Honest, ranked by how much it costs us.
 4. **Promote CompanAIn to watch-list #1** with the vet-portal + pre-seed facts.
 5. **Add PETKIT / Petlibro / Whisker as a named passive-capture segment**, and Petalife as the first shipped per-incident-vision analog.
 6. **Add the §3.2 doc-drift table to STATUS.md** as a standing "claims we cannot make" list.
-7. Backlog candidates: diet-trial front door (P0) · household sharing (B-292, re-prioritise to Now) · CI workflow · vet-side response loop · published-validation program.
+7. Backlog candidates: household sharing (B-292 — re-prioritise to `Now`; it is a table-stakes gap *and* the fix for the worst trial contaminant) · CI workflow · vet-side response loop · published-validation program. *(The diet-trial front door is already B-417 — no new row needed.)*
 8. New Open Question: **do we build a vet-side surface, or stay a one-way artifact?**
 
 ---
@@ -250,7 +252,7 @@ Honest, ranked by how much it costs us.
 >
 > **Designer / Jordan / Product Owner:** The engine is unreachable by a new owner for weeks and invisible when it fires on healthy data. What owners actually buy — verified in the traction data — is convenience and coordination: Zoetis ~250k downloads with zero AI, DogLog 100k+ with zero AI, versus every AI-forward player in single or double digits. **Reminders and household sharing are the acquisition and retention story; the engine is the reason they stay by month three.**
 >
-> **PM decision needed:** after the security/submission fixes, does the next block of work go to **the wedge front door + multi-protein** (make the differentiator reachable) or **reminders + household sharing** (close the table-stakes gaps that drive acquisition)? Both are correct; the sequencing is a real call and this review does not resolve it.
+> **PM decision needed:** after the security/submission fixes, does the next block of work go to **B-417 + multi-protein** (make the differentiator reachable) or **reminders + household sharing** (close the table-stakes gaps that drive acquisition)? Both are correct; the sequencing is a real call and this review does not resolve it. Note the two are **disjoint** (trial lifecycle + engine vs. notifications + sharing) and could run as concurrent tracks if there is capacity for both.
 
 ---
 
