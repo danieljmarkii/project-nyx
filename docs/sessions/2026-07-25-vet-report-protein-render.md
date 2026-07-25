@@ -88,6 +88,30 @@ Four findings were real but out of this slice's blast radius, and are filed rath
 - **B-444 / B-445** — the false "reads in black & white" claim, and trend arrows that split the window
   into unequal halves and so bias toward "worsening".
 
+## What the second cold read added
+
+The re-read confirmed both blocking findings resolved and caught that two of its three new
+problems were the fix's own loose ends: the exposure chart counted chicken as 7 discrete feedings
+directly beneath a line saying chicken was continuously available (same page, same snapshot, two
+renderers — appendix C had carried that caveat all along), and promoting the contamination claim to
+page 1 left its provenance behind in appendix B. Both fixed, and both computations now come from one
+`trialProteinBreaches` helper, because "same fact, two renderers, one missing it" is how the
+contradiction happened in the first place.
+
+Its top remaining risk was **placement, not omission** — a real improvement in class, but still
+wrong: the headline asserted "day 46 of 56", so a scan that stopped early read the case as a failing
+trial rather than an invalid one. That was one clause with no new machinery, so it was taken here
+even though the reviewer scoped it out: the headline now names what reached the pet and stops short
+of any verdict on whether the trial failed.
+
+## What merging `main` surfaced
+
+B-421 landed mid-session and established that the diet-trial day counter has exactly one
+implementation, guarded by a source scan. Its consumer list is client-only — so
+`generate-report/report.ts`'s `daysElapsed`, the number printed on the vet report, is a **fifth**
+implementation that nothing pins. Probably correct today; "each implementation independently happens
+to be right today" is the state B-421's own header says precedes the drift. Filed as **B-449**.
+
 ## Notes for the next session here
 
 - **Phase A is complete with this slice.** Phase B (slice 6, set-membership *correlation* with
