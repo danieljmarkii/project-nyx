@@ -69,6 +69,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Yes, the Deno job needs the npm tree — this is not a copy-paste slip.
+      # `deno test` type-checks, and typing `node:assert` pulls a
+      # `@types/node` type-reference that Deno resolves out of `node_modules`
+      # (because package.json is present, so Deno is in npm-workspace mode).
+      # `@types/node` is only a TRANSITIVE dependency here — nothing declares it
+      # — which is why this is invisible locally, where node_modules always
+      # exists, and why the first CI run failed with
+      # "Could not find a matching package for 'npm:@types/node'".
+      # Same command and lockfile as the app job, deliberately.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Set up Deno
         uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
