@@ -15,6 +15,7 @@ import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload, getPublicUrl } from '../../lib/storage';
 import { archiveBlockedCopy } from '../../lib/utils';
+import { getDietTrialProgress } from '../../lib/analytics';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
@@ -99,8 +100,14 @@ function routeLabel(route: string | null): string | null {
   return MEDICATION_ROUTE_OPTIONS.find((o) => o.value === route)?.label ?? null;
 }
 
-// Whole days the regimen has run, ≥1 — the same local-midnight span the diet-trial
-// card uses, so the two compliance reads agree on "what counts as a day".
+// Whole days the regimen has run, ≥1. NOTE (B-421): this carries the local-midnight
+// arithmetic the diet-trial card used to duplicate, including its flaw — a date-only
+// `started_at` is parsed as UTC midnight before being floored to LOCAL midnight, so
+// for anyone behind UTC the start lands on the previous local day and the count reads
+// one too high. The trial counter now routes through `lib/utils.localDayIndexOf`,
+// which indexes a DATE verbatim; this one was left alone because it is a different
+// feature's counter and feeds clinical-guardrails compliance copy that has no tests
+// here. Route it through the same primitive when regimens are next touched — B-441.
 function regimenDaysElapsed(startedAt: string): number {
   const start = new Date(startedAt);
   start.setHours(0, 0, 0, 0);
@@ -193,14 +200,14 @@ export default function ProfileScreen() {
 
       const row = trial as unknown as DietTrialRow;
 
-      const startedAt = new Date(row.started_at);
-      startedAt.setHours(0, 0, 0, 0);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const daysElapsed = Math.max(
-        1,
-        Math.floor((today.getTime() - startedAt.getTime()) / (1000 * 60 * 60 * 24)) + 1,
-      );
+      // Day math via the one shared helper (B-421). This screen used to floor
+      // `new Date(started_at)` to local midnight itself — which read the DATE column
+      // as UTC midnight first, landing on the PREVIOUS local day for anyone behind
+      // UTC and counting a day too many.
+      const daysElapsed = getDietTrialProgress(
+        { startedAt: row.started_at, targetDurationDays: row.target_duration_days },
+        Date.now(),
+      )?.dayCounter ?? 1;
 
       const { data: mealEvents } = await supabase
         .from('events')

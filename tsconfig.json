@@ -2,7 +2,14 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "types": ["jest"]
+    "types": ["jest"],
+    // A `lib/` module that is shared with the Deno Edge Functions must spell its
+    // own intra-lib imports with the `.ts` extension, because Deno will not
+    // resolve an extensionless specifier and CI type-checks that graph
+    // (`deno test` over supabase/functions). Safe here: `noEmit` is on, so no
+    // emitted path is ever rewritten, and Metro/esbuild both resolve it.
+    // First needed by lib/trialProtein.ts (B-351 slice 5).
+    "allowImportingTsExtensions": true
   },
   "exclude": ["supabase/functions", "docs/design-system"]
 }

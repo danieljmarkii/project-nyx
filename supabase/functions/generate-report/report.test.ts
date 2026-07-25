@@ -26,6 +26,9 @@ import {
   type ReportDoseInput,
 } from './report.ts'
 import type { FoodFormat } from '../generate-signal/detection.ts'
+// The Class-A key, imported so the parity assertion below compares against the REAL
+// read-path keying rather than a string literal that could drift from it.
+import { canonicalizeProtein as canonicalizeProteinForTest } from '../generate-signal/protein.ts'
 
 // ── Fixture helpers ────────────────────────────────────────────────────────────
 
@@ -1655,4 +1658,435 @@ Deno.test('PR7/B-246 slice — chronicity flag daysSinceLastEpisode agrees with 
     snap.atAGlance.daysSinceLastEpisode,
     'the lead safety flag and the At-a-glance tile show the same local-day gap',
   )
+})
+
+// ── B-351 slice 5 — the captured protein set on the vet report (§9, D10) ───────
+//
+// Two questions run through every test below, and they are NOT the same question:
+//   (1) WHAT IS IN THIS FOOD?   — present-only, always safe to state, and the whole
+//       sensitivity win: a hidden secondary protein is the textbook reason an
+//       elimination trial silently fails, and until slice 1 we never stored it.
+//   (2) IS THAT EVERYTHING?     — a claim about ABSENCE, licensed ONLY by D10's
+//       completeness gate. `proteins: ['duck']` off a marketing-name-only read is
+//       byte-identical to a duck food whose panel was genuinely read, and the report
+//       is served under a provenance line saying the labels were read — so getting
+//       this wrong tells a vet a contaminated elimination food is clean.
+
+const PANEL_DUCK_CHICKEN = 'Duck, duck meal, chicken by-product meal, brewers rice, chicken fat.'
+
+/** A meal-ish event carrying a food with an explicit protein set. */
+function proteinMeal(opts: {
+  occurredAt: string
+  foodItemId?: string
+  foodType?: 'meal' | 'treat' | 'other'
+  format?: FoodFormat
+  primaryProtein?: string | null
+  proteins?: string[] | null
+  ingredientsNotes?: string | null
+  extractionConfidence?: unknown
+  brand?: string
+  productName?: string
+  intakeRating?: 'all' | 'most' | 'some' | null
+}): ReportEventInput {
+  return makeEvent({
+    type: 'meal',
+    occurredAt: opts.occurredAt,
+    meal: {
+      foodItemId: opts.foodItemId ?? 'food-x',
+      intakeRating: opts.intakeRating ?? null,
+      quantity: null,
+      foodType: opts.foodType ?? 'treat',
+      format: opts.format ?? 'treat',
+      primaryProtein: opts.primaryProtein ?? null,
+      proteins: opts.proteins ?? null,
+      ingredientsNotes: opts.ingredientsNotes ?? null,
+      extractionConfidence: opts.extractionConfidence ?? null,
+      brand: opts.brand ?? 'Brand',
+      productName: opts.productName ?? 'Product',
+    },
+  })
+}
+
+Deno.test('B-351 §9 — an off-diet feeding counts for EVERY protein in its food, not just the primary', () => {
+  // The sensitivity win, stated as a count: one duck-and-chicken treat is one duck
+  // exposure AND one chicken exposure. Tallying only `primary_protein` is exactly what
+  // made the contaminant invisible to every clinical surface.
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        proteinMeal({
+          occurredAt: at('2026-06-10'),
+          primaryProtein: 'duck',
+          proteins: ['duck', 'chicken'],
+          ingredientsNotes: PANEL_DUCK_CHICKEN,
+          extractionConfidence: { proteins: 0.92 },
+        }),
+      ],
+    }),
+  )
+  assert.equal(snap.provenance.proteinExposureTally.duck, 1)
+  assert.equal(snap.provenance.proteinExposureTally.chicken, 1, 'the hidden secondary is a real exposure')
+  assert.equal(snap.proteinTimeline.totalFeedings, 1, 'still ONE feeding — exposures and feedings are different units')
+  assert.equal(
+    snap.proteinTimeline.feedingsByWeek.reduce((a, b) => a + b, 0),
+    1,
+    'the weekly feeding denominator counts the feeding once',
+  )
+  assert.equal(
+    snap.proteinTimeline.bins.flat().reduce((a, b) => a + b, 0),
+    2,
+    'but the stack carries both bands — sum-over-bins is an exposure count',
+  )
+})
+
+Deno.test('B-351 D10 — a set is COMPLETE only when the panel was captured AND legibly read', () => {
+  const mk = (notes: string | null, conf: unknown) =>
+    assembleReport(
+      baseInput({
+        events: [
+          proteinMeal({
+            occurredAt: at('2026-06-10'),
+            primaryProtein: 'duck',
+            proteins: ['duck'],
+            ingredientsNotes: notes,
+            extractionConfidence: conf,
+          }),
+        ],
+      }),
+    ).provenance.confounders[0].proteinSet
+
+  assert.equal(mk(PANEL_DUCK_CHICKEN, { proteins: 0.92 }).complete, true, 'panel captured + read')
+  assert.equal(mk(null, { proteins: 0.92 }).complete, false, 'no panel text — a marketing-name-only read')
+  assert.equal(mk(PANEL_DUCK_CHICKEN, { proteins: 0.2 }).complete, false, 'panel present but not legibly read')
+  assert.equal(mk(PANEL_DUCK_CHICKEN, null).complete, false, 'legacy row with no confidence is never assumed fine')
+  // The routine partial tool call: a legible panel read at high confidence with the
+  // `proteins` array simply omitted. An absent field is not an attested absence.
+  const empty = assembleReport(
+    baseInput({
+      events: [
+        proteinMeal({
+          occurredAt: at('2026-06-10'),
+          primaryProtein: null,
+          proteins: [],
+          ingredientsNotes: PANEL_DUCK_CHICKEN,
+          extractionConfidence: { proteins: 0.95 },
+        }),
+      ],
+    }),
+  ).provenance.confounders[0].proteinSet
+  assert.deepEqual(empty.proteins, [])
+  assert.equal(empty.complete, false, 'an EMPTY set can never carry a completeness claim')
+})
+
+Deno.test('B-351 D10 — incompleteFeedings makes the tally a disclosed FLOOR, never a silent under-count', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        // Read off a real panel.
+        proteinMeal({
+          occurredAt: at('2026-06-10'),
+          foodItemId: 'f-read',
+          primaryProtein: 'duck',
+          proteins: ['duck', 'chicken'],
+          ingredientsNotes: PANEL_DUCK_CHICKEN,
+          extractionConfidence: { proteins: 0.92 },
+        }),
+        // Never read — its secondaries, whatever they are, are missing from the tally.
+        proteinMeal({ occurredAt: at('2026-06-11'), foodItemId: 'f-unread', primaryProtein: 'beef', proteins: ['beef'] }),
+        proteinMeal({ occurredAt: at('2026-06-12'), foodItemId: 'f-unread', primaryProtein: 'beef', proteins: ['beef'] }),
+      ],
+    }),
+  )
+  assert.equal(snap.proteinTimeline.totalFeedings, 3)
+  assert.equal(snap.proteinTimeline.incompleteFeedings, 2, 'both unread feedings are disclosed')
+})
+
+Deno.test('B-351 §8 shape ① — the trial food carrying an off-trial protein is surfaced on the trial itself', () => {
+  const snap = assembleReport(
+    baseInput({
+      dietTrials: [
+        {
+          id: 'dt1',
+          foodItemId: 'f-trial',
+          startedAt: '2026-05-08',
+          targetDurationDays: 56,
+          status: 'active',
+          completedAt: null,
+          vetName: 'Dr. Chen',
+          foodLabel: 'Novel Duck',
+          primaryProtein: 'duck',
+          proteins: ['duck', 'chicken'],
+          ingredientsNotes: PANEL_DUCK_CHICKEN,
+          extractionConfidence: { proteins: 0.9 },
+        },
+      ],
+    }),
+  )
+  assert.equal(snap.diet.trialTargetProtein, 'duck')
+  assert.deepEqual(snap.diet.activeTrial!.proteinSet.proteins, ['duck', 'chicken'])
+  assert.deepEqual(
+    snap.diet.activeTrial!.proteinSet.offTrial,
+    ['chicken'],
+    'the duck trial diet lists chicken — the finding this whole spec exists for',
+  )
+})
+
+Deno.test('B-351 §8 shape ② — an off-diet food fed during the trial carries its off-trial proteins', () => {
+  const snap = assembleReport(
+    baseInput({
+      dietTrials: [
+        {
+          id: 'dt1',
+          foodItemId: 'f-trial',
+          startedAt: '2026-05-08',
+          targetDurationDays: 56,
+          status: 'active',
+          completedAt: null,
+          vetName: null,
+          foodLabel: 'Novel Duck',
+          primaryProtein: 'duck',
+          proteins: ['duck'],
+          ingredientsNotes: 'Duck, duck meal, brewers rice, sunflower oil.',
+          extractionConfidence: { proteins: 0.9 },
+        },
+      ],
+      events: [
+        proteinMeal({
+          occurredAt: at('2026-06-10'),
+          primaryProtein: 'chicken',
+          proteins: ['chicken', 'salmon'],
+          ingredientsNotes: 'Chicken, chicken meal, salmon meal, rice.',
+          extractionConfidence: { proteins: 0.88 },
+        }),
+      ],
+    }),
+  )
+  assert.deepEqual(snap.provenance.confounders[0].proteinSet.offTrial, ['chicken', 'salmon'])
+  assert.deepEqual(snap.diet.activeTrial!.proteinSet.offTrial, [], 'the trial diet itself is clean here')
+})
+
+Deno.test('B-351 — no active trial means NO off-trial marking anywhere (silence, never an all-clear)', () => {
+  const snap = assembleReport(
+    baseInput({
+      events: [proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: 'chicken', proteins: ['chicken', 'salmon'] })],
+    }),
+  )
+  assert.equal(snap.diet.trialTargetProtein, null)
+  assert.deepEqual(snap.provenance.confounders[0].proteinSet.offTrial, [])
+  assert.deepEqual(snap.provenance.confounders[0].proteinSet.proteins, ['chicken', 'salmon'], 'the set is still captured')
+})
+
+Deno.test('B-351 — a trial food whose main protein was CLEARED disables the check rather than inverting it', () => {
+  // Slice 3 demotes a cleared main into the tail and writes a NULL primary, so
+  // `proteins[0]` is then a protein the owner explicitly un-designated. Keying the
+  // target off proteins[0] would resurrect it AND invert the check — every OTHER
+  // protein, including the real trial protein, would be reported as the contaminant.
+  const snap = assembleReport(
+    baseInput({
+      dietTrials: [
+        {
+          id: 'dt1',
+          foodItemId: 'f-trial',
+          startedAt: '2026-05-08',
+          targetDurationDays: 56,
+          status: 'active',
+          completedAt: null,
+          vetName: null,
+          foodLabel: 'Novel Duck',
+          primaryProtein: null,
+          proteins: ['duck', 'chicken'],
+          ingredientsNotes: PANEL_DUCK_CHICKEN,
+          extractionConfidence: { proteins: 0.9 },
+        },
+      ],
+      events: [proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: 'duck', proteins: ['duck'] })],
+    }),
+  )
+  assert.equal(snap.diet.trialTargetProtein, null, 'no designated target — the check is disabled')
+  assert.deepEqual(snap.diet.activeTrial!.proteinSet.offTrial, [])
+  assert.deepEqual(snap.provenance.confounders[0].proteinSet.offTrial, [], 'the real trial protein is NOT blamed')
+})
+
+Deno.test('B-351 — a legacy row with only primary_protein still yields a one-element (incomplete) set', () => {
+  // Migration 039 backfilled `proteins` from `primary_protein`, but a row written
+  // through the pre-slice-3 window can still arrive with the array absent. It must
+  // degrade to the primary, not drop out of the report's protein picture entirely.
+  const snap = assembleReport(
+    baseInput({ events: [proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: 'Chicken By-Product Meal', proteins: null })] }),
+  )
+  const set = snap.provenance.confounders[0].proteinSet
+  assert.deepEqual(set.proteins, ['chicken'], 'canonicalized, so it pools with every other chicken exposure')
+  assert.equal(set.complete, false)
+  assert.equal(snap.provenance.proteinExposureTally.chicken, 1)
+})
+
+Deno.test('B-351 — a feeding with no usable protein is counted as unknown, never tallied as a protein', () => {
+  // The §5.1 guarantee, re-checked under set-membership: the junk sentinel path must
+  // still route to proteinUnknownCount rather than producing a "null ×N" tally line.
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: 'null', proteins: null }),
+        proteinMeal({ occurredAt: at('2026-06-11'), primaryProtein: null, proteins: [] }),
+      ],
+    }),
+  )
+  assert.equal(snap.provenance.proteinUnknownCount, 2)
+  assert.deepEqual(Object.keys(snap.provenance.proteinExposureTally), [])
+  assert.equal(snap.proteinTimeline.unknownByWeek.reduce((a, b) => a + b, 0), 2)
+})
+
+Deno.test('B-351 — §5.6 reconciles in FEEDINGS: appendix rows, totalFeedings and feedingsByWeek agree', () => {
+  // Set-membership broke the old "sum-over-bins === feeding count" identity on purpose
+  // (a feeding can now contribute several bands). The reconciliation that must survive
+  // is the one the render actually cites: feedings.
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: 'duck', proteins: ['duck', 'chicken'] }),
+        proteinMeal({ occurredAt: at('2026-06-17'), primaryProtein: 'beef', proteins: ['beef'] }),
+        proteinMeal({ occurredAt: at('2026-06-24'), primaryProtein: null, proteins: [] }),
+      ],
+    }),
+  )
+  assert.equal(snap.provenance.confounders.length, snap.proteinTimeline.totalFeedings)
+  assert.equal(
+    snap.proteinTimeline.feedingsByWeek.reduce((a, b) => a + b, 0),
+    snap.proteinTimeline.totalFeedings,
+  )
+})
+
+// ── B-351 slice 5 — END-TO-END, from STORED COLUMN SHAPES to rendered HTML ─────
+//
+// The adversarial pass named a structural blind spot in the tests above: report.test
+// exercises derivation with no HTML, and render.test hand-builds `ProteinSetView`s and
+// never runs `proteinView`. So the seam BETWEEN them — how a stored row becomes a set,
+// and whether that set is keyed the same way as the trial target — was covered by
+// nothing, which is exactly where the worst bug lived. These run the whole pipe.
+
+Deno.test('B-351 — a Class-B-mappable protein does NOT report itself as its own contaminant', () => {
+  // THE REGRESSION. `deriveProteinSet` (write path) applies D3a's Class-B rules —
+  // aliases, tissue and descriptor strips — while the trial target resolves through
+  // `canonicalizeProtein` (Class A). Keying the two sides differently made an
+  // `ocean whitefish` trial food announce, in bold on page 1, that its own label also
+  // listed whitefish. Spec §11 records three such rows live; `Buffalo`, `Deer`,
+  // `Deboned Chicken` and `Chicken Liver` all reproduce it.
+  for (const stored of ['ocean whitefish', 'Buffalo', 'Deer', 'Deboned Chicken', 'Chicken Liver', 'Egg Whites']) {
+    const snap = assembleReport(
+      baseInput({
+        dietTrials: [
+          {
+            id: 'dt1',
+            foodItemId: 'f-trial',
+            startedAt: '2026-05-08',
+            targetDurationDays: 56,
+            status: 'active',
+            completedAt: null,
+            vetName: null,
+            foodLabel: 'Novel Diet',
+            primaryProtein: stored,
+            proteins: [stored],
+            ingredientsNotes: `${stored}, brewers rice, sunflower oil, dried beet pulp.`,
+            extractionConfidence: { proteins: 0.93 },
+          },
+        ],
+      }),
+    )
+    assert.deepEqual(
+      snap.diet.activeTrial!.proteinSet.offTrial,
+      [],
+      `"${stored}" must not be off-trial against itself`,
+    )
+    // And the set must key IDENTICALLY to the target, so the two can be compared at all.
+    assert.deepEqual(
+      snap.diet.activeTrial!.proteinSet.proteins,
+      [snap.diet.trialTargetProtein],
+      `"${stored}" keys the same on both sides of the off-trial comparison`,
+    )
+  }
+})
+
+Deno.test('B-351 — a stored row keys the same on the read path as the client does', () => {
+  // The client (lib/trialContaminant + ProteinDisclosure) reads stored values through
+  // canonicalizeProtein. If the report normalized further, the app would tell the owner
+  // a trial is clean while the report told the vet it was contaminated — the split
+  // lib/trialProtein.ts exists to prevent, one layer down.
+  const snap = assembleReport(
+    baseInput({
+      events: [proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: 'Ocean Whitefish', proteins: ['Ocean Whitefish', 'Chicken Meal'] })],
+    }),
+  )
+  assert.deepEqual(
+    snap.provenance.confounders[0].proteinSet.proteins,
+    [canonicalizeProteinForTest('Ocean Whitefish'), canonicalizeProteinForTest('Chicken Meal')],
+  )
+})
+
+Deno.test('B-351 — a feeding with no food at all is "no protein recorded", not "panel not captured"', () => {
+  // The floor line counts foods whose ingredient panel was never READ. A bare
+  // human-food log has no food row to have a panel, and is already disclosed as
+  // unknown — counting it twice made the sentence say something untrue.
+  const snap = assembleReport(
+    baseInput({
+      events: [
+        proteinMeal({ occurredAt: at('2026-06-10'), primaryProtein: null, proteins: [] }),
+        proteinMeal({ occurredAt: at('2026-06-11'), primaryProtein: null, proteins: [] }),
+        proteinMeal({ occurredAt: at('2026-06-12'), primaryProtein: 'beef', proteins: ['beef'] }),
+      ],
+    }),
+  )
+  assert.equal(snap.proteinTimeline.totalFeedings, 3)
+  assert.equal(snap.provenance.proteinUnknownCount, 2)
+  assert.equal(snap.proteinTimeline.incompleteFeedings, 1, 'only the food that HAS a protein but no read panel')
+})
+
+Deno.test('B-351 — PROPERTY: a trial food is never off-trial against itself, over a dirty cross-product', () => {
+  // The example-list version of this test above pins six known-bad values. The adversarial
+  // re-check pointed out that this is the exact coverage shape `lib/protein.ts`'s own header
+  // says is NOT sufficient — an example list is what let B-414 ship a `chicken -` key under a
+  // docstring claiming idempotence. So the durable form is the PROPERTY: for any stored
+  // primary P, `canonicalizeProtein(P)` is in the derived set and is never reported as
+  // off-trial against a target resolved from the same P. That is the invariant whose failure
+  // put "The trial food's own label also lists Whitefish" on page 1 of a whitefish trial.
+  const PRIMARIES = [
+    'Ocean Whitefish', 'ocean whitefish', 'Buffalo', 'Deer', 'Chicken Liver', 'Deboned Chicken',
+    'Egg Whites', 'chicken - meal', 'Chicken By-Product Meal', 'CHICKEN', '  salmon  ', 'green tripe',
+    'hydrolyzed soy protein', 'lamb meal', 'Turkey Giblets', 'whitefish', 'bison', 'venison',
+  ]
+  const WRAPPERS = [(x: string) => x, (x: string) => x.toUpperCase(), (x: string) => `  ${x}  `, (x: string) => `${x} meal`]
+  const ARRAY_SHAPES: unknown[] = [null, [], ['chicken'], ['duck', 'salmon'], 'not-an-array', [null, 5, {}], undefined]
+
+  let checked = 0
+  for (const base of PRIMARIES) {
+    for (const wrap of WRAPPERS) {
+      const primary = wrap(base)
+      const target = canonicalizeProteinForTest(primary)
+      if (target == null) continue // protein-unknown disables the check entirely — nothing to assert
+      for (const arr of ARRAY_SHAPES) {
+        const snap = assembleReport(
+          baseInput({
+            dietTrials: [
+              {
+                id: 'dt1', foodItemId: 'f-trial', startedAt: '2026-05-08', targetDurationDays: 56,
+                status: 'active', completedAt: null, vetName: null, foodLabel: 'Trial',
+                primaryProtein: primary,
+                proteins: arr as string[] | null,
+                ingredientsNotes: 'A captured panel, long enough to clear the floor.',
+                extractionConfidence: { proteins: 0.9 },
+              },
+            ],
+          }),
+        )
+        const view = snap.diet.activeTrial!.proteinSet
+        assert.equal(snap.diet.trialTargetProtein, target, `target keys from the stored primary (${primary})`)
+        assert.ok(view.proteins.includes(target), `the target is IN its own set (${primary} / ${JSON.stringify(arr)})`)
+        assert.ok(
+          !view.offTrial.includes(target),
+          `the trial protein is never its own contaminant (${primary} / ${JSON.stringify(arr)})`,
+        )
+        checked++
+      }
+    }
+  }
+  assert.ok(checked > 300, `the cross-product actually ran (${checked} cases)`)
 })

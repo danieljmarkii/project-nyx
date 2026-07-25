@@ -1150,23 +1150,31 @@ export interface DietTrialStatusResult {
   complete: boolean
 }
 
-/** Diet-trial progress — a faithful port of lib/analytics.ts getDietTrialProgress. A null OR
+/** Diet-trial progress — a faithful port of lib/analytics.ts getDietTrialProgress (G5: Ask
+ *  must never quote a different Day N than the trial card the owner is looking at). A null OR
  *  soft-deleted trial ⇒ inactive (no trial to report), never an invented span. The trial
  *  carries its own `deletedAt` so this core enforces the soft-delete contract itself (§5.2 /
- *  B-071), rather than trusting the caller — matching `liveEvents` everywhere else. */
+ *  B-071), rather than trusting the caller — matching `liveEvents` everywhere else.
+ *
+ *  The day boundary is the OWNER'S midnight (§5.1, B-421), not UTC. The client can read the
+ *  device clock; the server cannot, so it buckets by `user_profiles.timezone` exactly as
+ *  `localHourOfDay` below and detection.ts already do. Unlike time_of_day, an absent or
+ *  invalid zone does NOT go silent here — it falls back to UTC, which is the behaviour this
+ *  shipped with, because a day counter is a plain fact the owner is owed and a "Day —" is a
+ *  worse answer than a possibly-off-by-one one. */
 export function dietTrialStatus(
   trial: { startedAt: string; targetDurationDays: number; status?: string | null; deletedAt?: string | null } | null,
   nowMs: number,
+  timezone?: string | null,
 ): DietTrialStatusResult {
   if (!trial || trial.deletedAt != null) {
     return { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
   }
-  const startMs = Date.parse(trial.startedAt)
-  if (!Number.isFinite(startMs) || !Number.isFinite(nowMs)) {
+  const startIndex = zonedDayIndexOf(trial.startedAt, timezone ?? null)
+  if (startIndex === null || !Number.isFinite(nowMs)) {
     return { kind: 'diet_trial_status', active: false, dayCounter: null, targetDays: null, daysRemaining: null, complete: false }
   }
-  const startIndex = Math.floor(startMs / MS_PER_DAY)
-  const todayIndex = Math.floor(nowMs / MS_PER_DAY)
+  const todayIndex = zonedDayIndex(nowMs, timezone ?? null)
   const dayCounter = Math.max(1, todayIndex - startIndex + 1)
   const targetDays = Math.max(0, Math.floor(trial.targetDurationDays))
   const daysRemaining = Math.max(0, targetDays - dayCounter)
@@ -1490,6 +1498,50 @@ function kgToLbsNum(kg: number): number {
  * time-of-day bucketing and the Signal's clustering agree on the local clock. Built on
  * Intl (portable across Deno Edge + the Node test runner; DST handled per-instant).
  */
+/**
+ * Epoch-day index (whole days since 1970-01-01) of the calendar day `ms` falls on in
+ * `timezone` — the server's stand-in for the device's local midnight (B-421). Ported
+ * from lib/utils.ts localDayIndex, with Intl supplying the calendar components the
+ * client reads off the Date directly. An absent or invalid zone falls back to the UTC
+ * index (see dietTrialStatus for why the fallback is UTC and not silence).
+ */
+function zonedDayIndex(ms: number, timezone: string | null): number {
+  if (!timezone) return Math.floor(ms / MS_PER_DAY)
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).formatToParts(new Date(ms))
+    const y = Number(parts.find((p) => p.type === 'year')?.value)
+    const m = Number(parts.find((p) => p.type === 'month')?.value)
+    const d = Number(parts.find((p) => p.type === 'day')?.value)
+    if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) {
+      return Math.floor(ms / MS_PER_DAY)
+    }
+    return Math.floor(Date.UTC(y, m - 1, d) / MS_PER_DAY)
+  } catch {
+    return Math.floor(ms / MS_PER_DAY) // invalid IANA zone → Intl throws
+  }
+}
+
+/**
+ * Epoch-day index of a stored date value — ported from lib/utils.ts localDayIndexOf.
+ * 'YYYY-MM-DD' (a Postgres DATE, which is what `diet_trials.started_at` is) is ALREADY
+ * a calendar day and is indexed verbatim: running it through Date.parse would read it
+ * as UTC midnight, which for a zone behind UTC is the previous local day and inflates
+ * the counter by one. Anything else is an instant, indexed by its day in `timezone`.
+ * Null when the value is neither, so the caller reports inactive rather than a guess.
+ */
+function zonedDayIndexOf(value: string, timezone: string | null): number | null {
+  const key = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (key) return Math.floor(Date.UTC(Number(key[1]), Number(key[2]) - 1, Number(key[3])) / MS_PER_DAY)
+  const ms = Date.parse(value)
+  if (!Number.isFinite(ms)) return null
+  return zonedDayIndex(ms, timezone)
+}
+
 function localHourOfDay(ms: number, timezone: string): number | null {
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
