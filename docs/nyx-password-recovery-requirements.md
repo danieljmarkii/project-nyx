@@ -1,11 +1,11 @@
 # Password Recovery — Requirements & Design (B-280)
 
 **Version:** 1.2 — *all PM rulings landed; §7.2 session lifecycle scoped* | **Last Updated:** 2026-07-24
-**Backlog:** B-280 (`Now`) · touches B-152, B-278, B-281, B-401, B-271 · files B-418/B-419/B-420/B-421
+**Backlog:** B-280 (`Now`) · touches B-152, B-278, B-281, B-401, B-271 · files B-426/B-427/B-428/B-429
 **Status:** design session complete; **all three PM rulings landed 2026-07-25.** **D1c ✅ accept · D4 ✅ yes (+ email change scoped → D9) · D6b ✅ yes — best-practice session workflow adopted and scoped in §7.2.** PR 1 build-ready; PR 2 now gated only on the **three device checks (§9.3)**.
 **Reviews run:** `nyx-voice` ✓ · `pm-feature-review` (2 SHIP-SHAPED / 2 NEEDS-WORK / 1 INSUFFICIENT) · `rls-privacy-reviewer` **FAIL on v1.0 — 5 merge blockers, all folded in**. Full record + attack log: **§12**.
 
-> **v1.1 → v1.2:** D1c/D4/D6b all ruled. D6b adopted the best-practice control (terminate other sessions on reset), scoped in **§7.2** — including the constraint that the evicted device *cannot know why* it was signed out and must not claim a cause. Email change scoped as **D9**. Files **B-422**.
+> **v1.1 → v1.2:** D1c/D4/D6b all ruled. D6b adopted the best-practice control (terminate other sessions on reset), scoped in **§7.2** — including the constraint that the evicted device *cannot know why* it was signed out and must not claim a cause. Email change scoped as **D9**. Files **B-430**.
 >
 > **v1.0 → v1.1 in one line:** the privacy gate broke the original cross-account fix five ways, because `wipeLocalSession()` was built for the `SIGNED_OUT` transition (session → **null**) and a recovery swap is non-null → non-null. §6.4 now forces a real `signOut()` before the exchange and reuses the shipped teardown instead of inventing a second one.
 
@@ -47,7 +47,7 @@ Both were found by reading `app/_layout.tsx` against the Supabase recovery flow.
 
 | # | Ruling needed | Team recommendation | Blocks |
 |---|---|---|---|
-| **D1c** | Ship v1 with the **custom-scheme** redirect (same-device only) and accept the desktop-open dead end as a documented limit? | **✅ RULED 2026-07-25 — ACCEPT.** Custom scheme ships; the https interstitial + universal links stay filed as **B-418**, post-submission. §9.3-Q1 still runs, because if a desktop open *burns* the token the mitigation copy has to move into the email template. | — |
+| **D1c** | Ship v1 with the **custom-scheme** redirect (same-device only) and accept the desktop-open dead end as a documented limit? | **✅ RULED 2026-07-25 — ACCEPT.** Custom scheme ships; the https interstitial + universal links stay filed as **B-426**, post-submission. §9.3-Q1 still runs, because if a desktop open *burns* the token the mitigation copy has to move into the email template. | — |
 | **D4** | Does this track also build **in-app password change** in settings? | **✅ RULED 2026-07-25 — YES, and email change is now scoped too** (→ **D9**, §3). Password change = PR 3. Email change is **specified**, with its build slot left open. | — |
 | **D6b** | After a successful reset, **sign out the owner's other devices**? | **✅ RULED 2026-07-25 — YES, best-practice workflow adopted.** Terminate on reset (default, no prompt); **offer** it on change (default off). Scoped in **§7.2**: ordering, the honesty constraint on the evicted device, the involuntary-vs-deliberate discrimination, and the accepted residual. | — |
 
@@ -134,7 +134,7 @@ A link opened on a laptop redirects to `nyx://…`, which the desktop browser ca
 If confirmed (§9.3-Q1), the mitigation is load-bearing rather than a convenience hint, and its primary home is the **email template** — above the button, where the desktop owner is actually looking — not only the in-app Sent state they never see: *"Open this link on the phone where you asked for it — opening it anywhere else uses it up."*
 
 - **Team rec — accept as a documented limit in v1.** Mitigate with copy in the Sent state ("Open the link on this phone") and a matching, appropriately-strengthened line in the email template. Cost: one sentence — or one sentence and a device check.
-- **Alternative — an https interstitial** at `getculprit.app/reset` that deep-links into the app and explains itself on desktop. Correct long-term, but it is cross-repo work in `culprit-web` plus (for a seamless hop) an `associatedDomains` entitlement and an `apple-app-site-association` file — a native-config change and a build-cut. → filed as **B-418**, recommended post-submission.
+- **Alternative — an https interstitial** at `getculprit.app/reset` that deep-links into the app and explains itself on desktop. Correct long-term, but it is cross-repo work in `culprit-web` plus (for a seamless hop) an `associatedDomains` entitlement and an `apple-app-site-association` file — a native-config change and a build-cut. → filed as **B-426**, recommended post-submission.
 
 **D2 — Enumeration posture: always neutral.** *(T&S-led, recommend-and-proceed; **scope widened after review**)*
 
@@ -163,9 +163,9 @@ That makes email change a materially smaller change than the v1 spec implied, wh
 2. **Both confirmation links are deep links**, so they inherit this track's entire handler, `flowType: 'pkce'`, provenance (FR-14) and gate machinery — which is exactly why it belongs in *this* spec rather than a standalone track. It is largely a second consumer of PR 1's foundations.
 3. **A designed pending state.** Between request and both confirmations the account has two addresses in play; the owner must be able to see that and cancel.
 4. **The vet-report fallback interaction** above — a previously-issued report is a static artifact and does not retro-change, but a *newly* generated one will show the new address for a display-name-less owner. Worth one line in the change screen, not a blocker.
-5. **The B-421 tie-in:** email change is the *self-service* half of "I lost access to my signup mailbox." It only helps an owner who can still authenticate — someone locked out **and** without their mailbox still needs the manual ops path. Scoping this narrows B-421's surface; it does not close it.
+5. **The B-429 tie-in:** email change is the *self-service* half of "I lost access to my signup mailbox." It only helps an owner who can still authenticate — someone locked out **and** without their mailbox still needs the manual ops path. Scoping this narrows B-429's surface; it does not close it.
 
-**Build slot deliberately left open** (PM: *"we don't necessarily have to"*). Recommended as **PR 5**, after the recovery flow is enabled and proven — it shares PR 1's foundations, so the marginal cost drops the later it runs, and it is not on the submission path. **B-419 is now spec'd-not-filed**; the row points here.
+**Build slot deliberately left open** (PM: *"we don't necessarily have to"*). Recommended as **PR 5**, after the recovery flow is enabled and proven — it shares PR 1's foundations, so the marginal cost drops the later it runs, and it is not on the submission path. **B-427 is now spec'd-not-filed**; the row points here.
 
 **D5 — Social-auth accounts (B-281).** *(recommend-and-proceed)*
 Moot today (`SOCIAL_AUTH_ENABLED = false` — every account is email/password) but must not become a leak later. D2's neutral copy is already the correct answer: it holds for an OAuth-only account without disclosing the account's auth method. Setting a password on an OAuth account is legitimate — it adds a credential rather than replacing the identity. **Re-verify at B-251 PR 11** when the flag flips; noted on the B-281 row.
@@ -457,7 +457,7 @@ A device that is offline for the **entire** access-token window and reconnects a
 - flushing at `SIGNED_OUT` time is impossible: the session is already revoked, so any push would 401;
 - and it is a **pre-existing** property of every sign-out, not something this decision introduces.
 
-It is written down here so the next person who meets it recognises it as a known cost rather than a new bug. → **B-422** tracks the general "sign-out discards unsynced captures" gap, which is worth solving on its own merits and would retire this residual as a side effect.
+It is written down here so the next person who meets it recognises it as a known cost rather than a new bug. → **B-430** tracks the general "sign-out discards unsynced captures" gap, which is worth solving on its own merits and would retire this residual as a side effect.
 
 ## §7 — Safety, privacy, and the invariants
 
@@ -571,14 +571,14 @@ Rows **7, 11, and 12** fail silently if the §6.4 ordering is wrong. Row **2** i
 
 | Item | Row |
 |---|---|
-| https interstitial + universal links (D1c alternative) | **B-418** |
-| Change email address | **B-419 — now SPEC'D, not deferred** (D9, PM 2026-07-25). Build slot open; recommended as PR 5. |
+| https interstitial + universal links (D1c alternative) | **B-426** |
+| Change email address | **B-427 — now SPEC'D, not deferred** (D9, PM 2026-07-25). Build slot open; recommended as PR 5. |
 | Deep-link scheme `nyx://` → `culprit://` | **B-278** (existing; cost/benefit changed — see §1) |
 | Social-auth recovery re-verification | **B-281** (existing; noted) |
 | "Verify later · continue for now" routes to the login wall | **B-401** (existing; belongs to B-152 part 2) |
-| Sign-out discards unsynced captures | **B-422** — every `SIGNED_OUT` wipes `synced=0` rows, so an involuntary eviction (FR-18) can cost a co-resident their offline logs. Pre-existing and worth solving on its own merits; would retire §7.2.5's residual as a side effect |
-| Password reveal toggle on `components/ui/TextField` | **B-420** — app-wide gap (login, signup, reset, change all mask with no reveal and no confirm field); recovery is where a silent typo costs most, since it surfaces days later at the next cold start with the link already spent |
-| Manual ops runbook: owner has lost access to their signup email | **B-421** — recovery is **single-factor on an address B-419 defers making changeable**. An owner who loses that mailbox has *no path back into their pet's record at all*, and "contact support" is currently the whole answer, with no documented procedure behind it |
+| Sign-out discards unsynced captures | **B-430** — every `SIGNED_OUT` wipes `synced=0` rows, so an involuntary eviction (FR-18) can cost a co-resident their offline logs. Pre-existing and worth solving on its own merits; would retire §7.2.5's residual as a side effect |
+| Password reveal toggle on `components/ui/TextField` | **B-428** — app-wide gap (login, signup, reset, change all mask with no reveal and no confirm field); recovery is where a silent typo costs most, since it surfaces days later at the next cold start with the link already spent |
+| Manual ops runbook: owner has lost access to their signup email | **B-429** — recovery is **single-factor on an address B-427 defers making changeable**. An owner who loses that mailbox has *no path back into their pet's record at all*, and "contact support" is currently the whole answer, with no documented procedure behind it |
 
 **Recorded on B-401 — D1a arms a landmine on the B-152 flip.** `flowType: 'pkce'` is behaviour-neutral *today* only because email confirmation is off. The day B-152 part 2 turns it on, **signup-confirmation links become same-device-only PKCE links pointing at a redirect nothing handles.** B-401 already owns fixing that path's routing; it now also owns this. Noted on the row rather than left for whoever flips the switch to discover.
 
