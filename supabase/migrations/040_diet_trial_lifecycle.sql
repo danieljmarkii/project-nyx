@@ -114,41 +114,29 @@ ALTER TABLE diet_trials
   ADD COLUMN ended_at             DATE,
   ADD COLUMN transition_started_at DATE;
 
+-- NOTE: the COMMENT ON bodies below are the text that is PERSISTED in the
+-- database, and are kept byte-identical to what is live (verified by reading
+-- pg_description back after apply) so a fresh apply from this file reproduces
+-- the database exactly. The longer `--` rationale above and below is file-only
+-- by design — it does not persist, and is where the full argument lives.
+
 COMMENT ON COLUMN diet_trials.food_label IS
-  'B-417 §3.1: denormalized display fallback for the trial diet. food_item_id is '
-  'ON DELETE SET NULL, so archiving the trial food today silently blanks the '
-  'trial''s identity on the card AND the vet report. Closes the gap '
-  'nyx-medication-logging-requirements.md §4.3 called "a known minor gap".';
+  'B-417 §3.1: denormalized display fallback for the trial diet. food_item_id is ON DELETE SET NULL, so archiving the trial food today silently blanks the trial''s identity on the card AND the vet report.';
 
 COMMENT ON COLUMN diet_trials.indication IS
-  'B-417 §3.1/§4.1: what the trial is FOR. Drives the species x indication '
-  'duration default (P-1, provisional pending Dr. Chen) and is rendered verbatim '
-  'to a clinician on the vet report. Closed set by construction — see migration '
-  'comment for why this is not TEXT.';
+  'B-417 §3.1/§4.1: what the trial is FOR. Drives the species x indication duration default (P-1, provisional pending Dr. Chen) and is rendered verbatim to a clinician on the vet report. ENUM not TEXT: a free-text typo would fall through to a default silently and reach the vet verbatim.';
 
 COMMENT ON COLUMN diet_trials.ended_at IS
-  'B-417 §3.1: written on BOTH completed and abandoned trials — this is not '
-  'optional and not a duplicate of completed_at. completed_at alone leaves an '
-  'ABANDONED trial with no end date, so report.ts:2813 reads the null end as '
-  '"open-ended -> active through the window end" and renders an intervention the '
-  'owner stopped weeks ago as still ongoing, while getDietTrialProgress renders '
-  '"Day 104 of 28". Mirrors the already-shipped medications.ended_at.';
+  'B-417 §3.1: written on BOTH completed and abandoned trials — not optional, not a duplicate of completed_at. completed_at alone leaves an ABANDONED trial with no end date, so report.ts:2813 reads the null end as open-ended and renders a stopped intervention as ongoing, while getDietTrialProgress renders "Day 104 of 28". Mirrors medications.ended_at.';
 
 COMMENT ON COLUMN diet_trials.transition_started_at IS
-  'B-417 §4.1: the first day of the >=1-week TRANSITION onto the trial diet. '
-  'started_at is the first day of EXCLUSIVE feeding — the day the clinical '
-  'countdown begins (CAVD: "start the 8-week countdown on the first day you feed '
-  'only the elimination diet"). Recording the transition separately lets PR 5 '
-  'exclude transition-window feedings from the exposure count BY CONSTRUCTION, '
-  'rather than relying on owner discipline to not log them.';
+  'B-417 §4.1: the first day of the >=1-week TRANSITION onto the trial diet. started_at is the first day of EXCLUSIVE feeding — where the clinical countdown begins. Recording the transition separately lets PR 5 exclude transition-window feedings from the exposure count BY CONSTRUCTION rather than by owner discipline.';
 
 COMMENT ON COLUMN diet_trials.stopped_reason IS
-  'B-417 §4.3: free text, owner-supplied, on an abandoned trial. A refusal '
-  'reason routes to the intake lane (intake is not preference).';
+  'B-417 §4.3: free text, owner-supplied, on an abandoned trial. A refusal reason routes to the intake lane (intake is not preference).';
 
 COMMENT ON COLUMN diet_trials.outcome IS
-  'B-417 §4.3 (D6): OWNER-REPORTED at completion, and must be rendered as such '
-  'everywhere. Not a computed verdict and never presented as one.';
+  'B-417 §4.3 (D6): OWNER-REPORTED at completion, and must be rendered as such everywhere. Not a computed verdict and never presented as one.';
 
 
 -- ============================================================
@@ -292,20 +280,13 @@ CREATE POLICY "diet_trial_foods_owner" ON diet_trial_foods
   );
 
 COMMENT ON TABLE diet_trial_foods IS
-  'B-417 §3.2 (D3): the ALLOWED SET for a diet trial — every food the trial '
-  'permits, with its role and its DATED membership. This is the sanctioned set '
-  'that PR 5''s single off-diet predicate (lib/dietTrial.ts) computes against; '
-  'diet_trials.food_item_id is display-only legacy (§4.1) and no computation '
-  'reads it.';
+  'B-417 §3.2 (D3): the ALLOWED SET for a diet trial — every food the trial permits, with its role and its DATED membership. This is the sanctioned set PR 5''s single off-diet predicate (lib/dietTrial.ts) computes against; diet_trials.food_item_id is display-only legacy (§4.1) and no computation reads it.';
 
 COMMENT ON COLUMN diet_trial_foods.food_label IS
-  'B-417 §3.2: captured at write time because the row does not survive the food '
-  '(ON DELETE CASCADE) and the snapshot readers do — a vet report rendering a '
-  'completed trial must still be able to name what was allowed.';
+  'B-417 §3.2: captured at write time because the row does not survive the food (ON DELETE CASCADE) and the snapshot readers do — a vet report rendering a completed trial must still be able to name what was allowed. NOT NULL for that reason.';
 
 COMMENT ON COLUMN diet_trial_foods.allowed_from IS
-  'B-417 §3.2: membership is DATED. An edit to the allowed set must never '
-  'retroactively re-score prior feedings — see the migration comment.';
+  'B-417 §3.2: membership is DATED. Without it, editing the allowed set retroactively rewrites the trial''s entire exposure history with no audit trail. Removing a food is an UPDATE (allowed_until/deleted_at), never a DELETE; re-adding it later is a NEW ROW with a later allowed_from.';
 
 
 -- ============================================================
