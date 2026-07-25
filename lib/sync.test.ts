@@ -175,7 +175,9 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
       id TEXT PRIMARY KEY, brand TEXT, product_name TEXT, format TEXT,
       food_type TEXT, primary_protein TEXT, proteins TEXT, is_novel_protein INTEGER,
       is_grain_free INTEGER, is_prescription INTEGER, photo_path TEXT,
-      last_used_at TEXT, archived_at TEXT, cached_at TEXT
+      last_used_at TEXT, archived_at TEXT,
+      -- B-351 slice 4: the two D10 completeness arms the cache now mirrors.
+      ingredients_notes TEXT, ai_extraction_confidence TEXT, cached_at TEXT
     );`);
     // Pre-existing cached row: the user fed this food recently (last_used_at set),
     // it is NOT archived yet, and its metadata is stale — the state a sync must

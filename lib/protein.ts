@@ -568,3 +568,150 @@ export function canonicalizeProtein(raw: string | null | undefined): string | nu
   if (PROTEIN_JUNK.has(v) || v.length === 0) return null;
   return v;
 }
+
+// ── D10 — the protein-set completeness gate (B-351 Phase A, PR 4; B-413) ──────
+//
+// THE PROBLEM THIS EXISTS FOR. `proteins` is a bare TEXT[]. A marketing-name-only
+// read of the front of a bag yields `['duck']` — a value INDISTINGUISHABLE in the
+// column from a set genuinely read off the ingredient panel of a single-protein
+// food. Render that plainly and Tier-1 disclosure says "Duck · nothing else" and
+// the vet report serves it under "Proteins as read from product labels". On both
+// surfaces the ABSENCE of secondaries reads as "clean" when it actually means
+// "nobody read the panel" — reassurance-on-absence (`clinical-guardrails`), on
+// the surface a vet trusts most.
+//
+// FOUR PROVENANCES, NOT TWO. The set can arrive from:
+//   1. manual capture      — never extracted; `ai_extraction_confidence` is NULL
+//   2. failed / capped     — extraction did not run or did not return
+//   3. front-of-pack only  — a photo of the bag face; `ingredients_notes` empty,
+//                            `confidence.proteins` ≈ 0
+//   4. panel-read          — the ingredient panel was photographed AND read
+// Only (4) may render as a complete set.
+//
+// WHY A CONJUNCTION (the PM ruling, D10). Gating on `confidence.proteins` alone
+// would trust a model's SELF-REPORT — the least trustworthy field in the payload,
+// and the one a hallucinating read inflates. Gating on panel text alone would pass
+// a panel that was captured but illegible. Requiring BOTH means the claim
+// "complete" rests on one attested artifact (the stored panel text) plus one
+// legibility signal, and either failing degrades to the honest "not captured".
+//
+// SAFE DIRECTION: this predicate under-claims by construction. A manual food
+// whose owner typed the full panel AND the full protein set reads as incomplete,
+// because nothing in the row attests that the second was derived from the first.
+// Under-claiming costs a qualifier the owner does not need; over-claiming tells a
+// vet a contaminated food is clean. An explicit provenance column is D10's named
+// upgrade (the deferred D4a widening) if this proves too coarse — B-437.
+//
+// Lives HERE, next to the keying it qualifies, because slice 5's `generate-report`
+// must gate on the SAME predicate the client does (§10 D10's consequence: the
+// report's food join widens to `proteins, ai_extraction_confidence,
+// ingredients_notes`). Two implementations would let the app and the vet report
+// disagree about whether a food's set is trustworthy — which is exactly the class
+// of split this module exists to prevent. Dependency-free, like everything above.
+
+/** Minimum trimmed length of `ingredients_notes` that counts as a captured panel.
+ *  A real AAFCO panel runs to hundreds of characters; the shortest plausible
+ *  honest one is a single-ingredient treat ("Chicken breast."). This floor only
+ *  rejects a stray fragment ("Ingredients:", "see bag") — it is a junk guard, not
+ *  a completeness measure. The confidence arm below is what judges legibility. */
+export const MIN_PANEL_TEXT_LENGTH = 12;
+
+/** Minimum `ai_extraction_confidence.proteins` that counts as a read panel.
+ *  The model emits 0.0 (not visible / guessed) → 1.0 (clearly legible). 0.5 is the
+ *  midpoint: a read the model itself rates as more-likely-guessed-than-read must
+ *  not license a completeness claim. Deliberately NOT higher — the conjunction
+ *  with captured panel text already carries most of the weight, and pushing the
+ *  floor up buys little while silently retiring the Tier-1 education win on
+ *  legitimately-read labels. */
+export const MIN_PROTEIN_READ_CONFIDENCE = 0.5;
+
+/** Why a set is (in)complete. Carried for tests and for a future surface that
+ *  wants to distinguish the causes; every incomplete reason renders the SAME
+ *  owner-facing copy today (the owner does not care which arm failed). */
+export type ProteinSetProvenance =
+  | 'panel_read'      // (4) — the only complete provenance
+  | 'no_panel_text'   // (1)/(2)/(3) — nothing substantive in ingredients_notes
+  | 'low_confidence'; // panel text present, protein sources not legibly read
+
+export interface ProteinSetCompleteness {
+  /** True ONLY for 'panel_read'. Gate every "and nothing else" claim on this. */
+  complete: boolean;
+  provenance: ProteinSetProvenance;
+}
+
+/**
+ * Pull `confidence.proteins` out of a raw `ai_extraction_confidence` value.
+ *
+ * Tolerant by design — the column is untyped jsonb and rows extracted before
+ * B-351 PR 2 have no `proteins` key at all. Anything that is not a finite number
+ * reads as 0 (= unread), never as "assume it was fine".
+ */
+export function proteinReadConfidence(raw: unknown): number {
+  if (raw == null || typeof raw !== 'object') return 0;
+  const v = (raw as Record<string, unknown>).proteins;
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+}
+
+// A leading "Ingredients:" label is the panel's HEADING, not its content — and
+// "Ingredients:" is itself exactly 12 characters, so without this strip the bare
+// heading would clear the length floor on its own and license a completeness
+// claim over an empty panel. Stripped before measuring so the floor applies to
+// the ingredient list itself.
+const PANEL_LABEL_PREFIX = /^\s*ingredients?(\s+list)?\s*[:\-–—]?\s*/i;
+
+/** True when `ingredients_notes` holds a substantive captured panel. */
+export function hasCapturedPanelText(notes: string | null | undefined): boolean {
+  if (typeof notes !== 'string') return false;
+  return notes.replace(PANEL_LABEL_PREFIX, '').trim().length >= MIN_PANEL_TEXT_LENGTH;
+}
+
+/**
+ * D10's gate: may a surface present this food's `proteins` as the COMPLETE set?
+ *
+ * `false` does not mean the captured proteins are wrong — they are still real
+ * exposures and still feed the contaminant check (which fires on PRESENCE only,
+ * so an unknown set yields silence, never an all-clear). It means only that no
+ * surface may say "and nothing else".
+ */
+/**
+ * May a surface present this food's protein set as COMPLETE — i.e. say anything
+ * about what is NOT in it?
+ *
+ * Strictly stronger than `proteinSetCompleteness` below, and the difference is a
+ * defect the adversarial pass found: that predicate answers "was the ingredient
+ * panel read?", which says nothing about whether the extraction actually
+ * ANSWERED. `proteins` is OPTIONAL in the extractor's tool schema while
+ * `confidence.proteins` is REQUIRED, so a model that reads a legible panel,
+ * returns the full ingredients text at confidence 0.9, and simply omits the
+ * `proteins` array yields an EMPTY set that passes the panel gate — and the
+ * surface then renders a positive claim ("no animal proteins on the label") over
+ * a chicken-and-salmon food. An absent field is not an attested absence.
+ *
+ * So an empty set may never carry a completeness claim, whatever the panel says.
+ * The theoretical loss — a genuinely protein-free diet, read off a real panel —
+ * is close to vacuous, because the extraction prompt explicitly instructs the
+ * model to emit `hydrolyzed soy protein` / `pea protein`, so a real hydrolysed
+ * diet comes back NON-empty. The gain is that the one reassuring string in the
+ * feature cannot be manufactured from a partial tool call.
+ */
+export function mayClaimCompleteProteinSet(
+  proteins: readonly string[],
+  ingredientsNotes: string | null | undefined,
+  extractionConfidence: unknown,
+): boolean {
+  if (proteins.length === 0) return false;
+  return proteinSetCompleteness(ingredientsNotes, extractionConfidence).complete;
+}
+
+export function proteinSetCompleteness(
+  ingredientsNotes: string | null | undefined,
+  extractionConfidence: unknown,
+): ProteinSetCompleteness {
+  if (!hasCapturedPanelText(ingredientsNotes)) {
+    return { complete: false, provenance: 'no_panel_text' };
+  }
+  if (proteinReadConfidence(extractionConfidence) < MIN_PROTEIN_READ_CONFIDENCE) {
+    return { complete: false, provenance: 'low_confidence' };
+  }
+  return { complete: true, provenance: 'panel_read' };
+}

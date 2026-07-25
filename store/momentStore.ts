@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { IntakeRating } from '../components/log/IntakeChipRow';
 import type { DoseAdherence } from '../components/log/AdherenceChipRow';
 import type { DoseVehicle } from '../lib/medications';
+import type { TrialContaminantFlag } from '../lib/trialContaminant';
 
 // The earned completion surface, played after a successful log on any path so
 // the fastest taps get the same closure as the full flow (B-063). One store
@@ -63,6 +64,15 @@ export interface MealPayload {
   // In-flight intake rating. Starts null; updated optimistically via
   // patchIntakeRating when the owner taps a chip.
   intakeRating: IntakeRating | null;
+  // B-351 slice 4 — the Tier-2 trial-contaminant heads-up, resolved by
+  // evaluateMealTrialFlag AFTER the meal was committed and passed in at show
+  // time. Absent/null means nothing to say, which is NEVER an all-clear: the
+  // evaluator returns null for every uncertainty too (offline, unread panel, no
+  // trial), so the card must not — and does not — render any negative form.
+  // Passive by construction: it carries no action, so it does not make the card's
+  // deliberately-narrow affordance budget a line longer (Principle 1 — the log
+  // stays one tap and this never gates it).
+  trialFlag?: TrialContaminantFlag | null;
 }
 
 export interface MedicationPayload {
@@ -127,6 +137,14 @@ interface MomentState {
   // Mutates the in-flight MEAL card's intakeRating after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on a beat payload.
   patchIntakeRating: (rating: IntakeRating | null) => void;
+  // B-351 slice 4 — land the trial-contaminant heads-up on a card that is ALREADY
+  // showing. The card fires the instant the meal is written; the check (which may
+  // need one network round-trip on a cold cache) patches in when it resolves, so
+  // nothing about the log path ever waits on it. Guarded by eventId: a second log
+  // during the wait replaces the payload, and a late answer for the PREVIOUS meal
+  // must not decorate the new one. Returns whether it landed, so the caller only
+  // spends rule 3's one-per-food budget on a heads-up actually rendered.
+  patchTrialFlag: (eventId: string, flag: TrialContaminantFlag) => boolean;
   // Mutates the in-flight MEDICATION card's adherence after a chip tap. Pair with
   // rescheduleHide() for a visible confirmation window. No-op on other payloads.
   patchAdherence: (adherence: DoseAdherence | null) => void;
@@ -146,6 +164,14 @@ const BEAT_DURATION_MS = 1400;
 // read the five WSAVA labels and tap deliberately before it auto-dismisses
 // (mirrors the retired toast's 5s window).
 const MEAL_DURATION_MS = 5000;
+// Meal-card dwell when a B-351 trial-contaminant heads-up is riding along: the
+// same card now carries two more lines of prose that the owner has not seen
+// before and cannot get back by tapping (the note is passive by design). 7s reads
+// them at a calm pace without turning a completion beat into a modal. Applied in
+// showMeal rather than at each call site so a future meal-entry path cannot ship
+// a flagged card that flashes past — the same can't-forget reasoning that puts
+// every meal path through showMeal in the first place.
+export const MEAL_FLAGGED_DURATION_MS = 7000;
 // Medication-card dwell: same rationale as the meal card — interactive (the
 // adherence chip row needs reading + a deliberate tap before auto-dismiss).
 const MEDICATION_DURATION_MS = 5000;
@@ -193,7 +219,12 @@ export const useMomentStore = create<MomentState>((set) => ({
   show: (payload, opts) =>
     present(set, { kind: 'beat', tone: payload.tone, title: payload.title ?? 'Logged' }, opts, BEAT_DURATION_MS),
   showMeal: (payload, opts) =>
-    present(set, { kind: 'meal', ...payload }, opts, MEAL_DURATION_MS),
+    present(
+      set,
+      { kind: 'meal', ...payload },
+      opts,
+      payload.trialFlag ? MEAL_FLAGGED_DURATION_MS : MEAL_DURATION_MS,
+    ),
   showMedication: (payload, opts) =>
     present(set, { kind: 'medication', ...payload }, opts, MEDICATION_DURATION_MS),
   hide: () => {
@@ -212,6 +243,15 @@ export const useMomentStore = create<MomentState>((set) => ({
         ? { payload: { ...state.payload, intakeRating } }
         : {}
     ),
+  patchTrialFlag: (eventId, trialFlag) => {
+    const state = useMomentStore.getState();
+    if (state.payload?.kind !== 'meal' || state.payload.eventId !== eventId) return false;
+    // Also require the card to still be visible — patching a dismissed card would
+    // burn the food's one heads-up on something nobody saw.
+    if (!state.visible) return false;
+    set({ payload: { ...state.payload, trialFlag } });
+    return true;
+  },
   patchAdherence: (adherence) =>
     set((state) =>
       state.payload?.kind === 'medication'

@@ -12,14 +12,17 @@ import { PetAvatar } from '../pet/PetAvatar';
 import { PetSwitcherSheet } from '../pet/PetSwitcherSheet';
 import { useEventStore } from '../../store/eventStore';
 import { usePetStore } from '../../store/petStore';
-import { useMomentStore } from '../../store/momentStore';
+import { useMomentStore, MEAL_FLAGGED_DURATION_MS } from '../../store/momentStore';
 import { getRecentFoods, PickerFood } from '../../lib/db';
 import { insertMeal } from '../../lib/meals';
+import { evaluateMealTrialFlag, noteTrialFlagShown } from '../../lib/trialContaminant';
 
 export function FAB() {
   const { prependEvent } = useEventStore();
   const { pets, activePet } = usePetStore();
   const showMealMoment = useMomentStore((s) => s.showMeal);
+  const patchTrialFlag = useMomentStore((s) => s.patchTrialFlag);
+  const rescheduleMoment = useMomentStore((s) => s.rescheduleHide);
 
   const [open, setOpen] = useState(false);
   const [switcherVisible, setSwitcherVisible] = useState(false);
@@ -58,6 +61,24 @@ export function FAB() {
       .catch((e) => console.warn('[FAB] recent foods load failed:', e));
     return () => { cancelled = true; };
   }, [open, activePet]);
+
+  // B-351 slice 4 — resolve the trial-contaminant heads-up and land it on the
+  // card that is already showing. Fire-and-forget by design: the meal is written,
+  // the card is up, and this is strictly additive information. The ledger write
+  // happens ONLY if the patch landed, so the food's one-per-trial budget can never
+  // be spent on a heads-up the owner did not see.
+  async function applyTrialFlag(
+    eventId: string,
+    petId: string,
+    foodId: string,
+    occurredAt: string,
+  ) {
+    const flag = await evaluateMealTrialFlag({ petId, foodId, occurredAt });
+    if (!flag) return;
+    if (!patchTrialFlag(eventId, flag)) return;
+    rescheduleMoment(MEAL_FLAGGED_DURATION_MS);
+    await noteTrialFlagShown(flag);
+  }
 
   async function handleQuickMeal(food: PickerFood) {
     // Write-time pet identity (multi-pet spec §6): read the store at the moment
@@ -115,6 +136,13 @@ export function FAB() {
         foodProductName: food.product_name,
         intakeRating: null,
       });
+      // B-351 slice 4 — resolve the trial heads-up and patch it onto the card that
+      // is already up. NOT awaited before the card: on a cold trial cache this
+      // makes one network call, and awaiting it here also held the tapped row's
+      // spinner (setLogging(null) is in the finally) for the whole round-trip on
+      // the wedge's fastest path. The ledger write happens only if the patch
+      // lands, so a heads-up the owner never saw can't spend the food's budget.
+      void applyTrialFlag(eventId, pet.id, food.id, occurredAtIso);
     } finally {
       setLogging(null);
     }

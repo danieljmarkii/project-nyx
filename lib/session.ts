@@ -5,6 +5,7 @@ import { clearWidgetTimeline } from './widgetBridge';
 import { clearRecoveryRequest } from './recoveryMarker';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
+import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
 
 // The local teardown that must run on sign-out AND on post-deletion sign-out
 // (B-054 FR-9): abort in-flight hydration, wipe the synced SQLite copy + the
@@ -55,4 +56,18 @@ export async function wipeLocalSession(): Promise<void> {
   // moment it is needed — the same trap `justDeletedAccount` avoids by not being
   // touched on teardown (spec §6.3).
   await clearRecoveryRequest();
+  // B-351 slice 4: the active-trial protein context is memoized per pet in a
+  // module-level Map with a 5-minute TTL. It is account data — the trial's target
+  // protein and the trial food's own protein set — and it lives in JS memory, so
+  // clearLocalData never touches it. Without this, signing into a second account
+  // within the TTL could evaluate the new account's meals against the previous
+  // account's trial (pet ids are uuids so a collision is not the risk; a lingering
+  // context for a pet id that is simply gone is). Same FR-9 parity reasoning as the
+  // App Group wipe above: wipe every place account data rests, not just SQLite.
+  clearTrialContextCache();
+  // …and the persisted "which foods have we already flagged" ledger, which lives
+  // in AsyncStorage (outside the SQLite clearLocalData wipes) and is per-account
+  // bookkeeping. Awaited-with-catch like the rest: never throws, always completes.
+  await clearTrialHeadsUpLedger().catch((e) =>
+    console.warn('[session] trial heads-up ledger clear failed:', e));
 }

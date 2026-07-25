@@ -8,6 +8,9 @@ import {
   MAX_CAPTURED_PROTEINS,
   seedPickerProteins,
   pickerProteinsToSet,
+  proteinSetCompleteness,
+  proteinReadConfidence,
+  MIN_PROTEIN_READ_CONFIDENCE,
 } from './protein';
 
 // The picker's offered set (B-332) must stay in lockstep with the canonicalizer,
@@ -357,5 +360,86 @@ describe('seedPickerProteins / pickerProteinsToSet (B-351 D8 picker)', () => {
   it('bounds a pathological set at MAX_CAPTURED_PROTEINS', () => {
     const many = Array.from({ length: 40 }, (_, i) => `protein${i}`);
     expect(pickerProteinsToSet('duck', many)).toHaveLength(MAX_CAPTURED_PROTEINS);
+  });
+});
+
+// ── D10 — the protein-set completeness gate (B-351 slice 4 / B-413) ───────────
+//
+// The property under test is asymmetric on purpose: the gate may only ever say
+// "complete" when BOTH arms attest a read panel, and every other input — missing,
+// short, malformed, legacy, low-confidence — must land on "not complete". An
+// over-claim here is reassurance-on-absence on the vet report; an under-claim
+// costs a qualifier nobody needed.
+describe('proteinSetCompleteness (D10)', () => {
+  const PANEL =
+    'Chicken, chicken by-product meal, brewers rice, corn gluten meal, salmon oil.';
+
+  it('is complete only when panel text AND protein confidence both clear the floor', () => {
+    expect(proteinSetCompleteness(PANEL, { proteins: 0.9 })).toEqual({
+      complete: true,
+      provenance: 'panel_read',
+    });
+  });
+
+  it('rejects the front-of-pack-only read (no panel text, high confidence)', () => {
+    // The provenance B-413 was actually found on: a marketing-name read that
+    // yields proteins:['duck'] and looks identical in the column to a real
+    // single-protein panel read.
+    expect(proteinSetCompleteness(null, { proteins: 1 }).complete).toBe(false);
+    expect(proteinSetCompleteness('', { proteins: 1 }).provenance).toBe('no_panel_text');
+    expect(proteinSetCompleteness('  ', { proteins: 1 }).provenance).toBe('no_panel_text');
+  });
+
+  it('rejects a captured-but-illegible panel (panel text, low confidence)', () => {
+    expect(proteinSetCompleteness(PANEL, { proteins: 0.2 })).toEqual({
+      complete: false,
+      provenance: 'low_confidence',
+    });
+  });
+
+  it('rejects the manual provenance — no extraction ever ran', () => {
+    // An owner may have typed the whole panel AND the whole protein set; nothing
+    // in the row attests the second was derived from the first, so the gate
+    // under-claims. That is the deliberate safe direction (see the module note).
+    expect(proteinSetCompleteness(PANEL, null).complete).toBe(false);
+    expect(proteinSetCompleteness(PANEL, undefined).complete).toBe(false);
+  });
+
+  it('rejects a legacy row whose confidence JSON predates the proteins field', () => {
+    expect(
+      proteinSetCompleteness(PANEL, { brand: 0.9, product_name: 0.9, primary_protein: 0.8 })
+        .complete,
+    ).toBe(false);
+  });
+
+  it('never treats garbage as a completeness warrant', () => {
+    for (const junk of ['x', 'see bag', 'Ingredients:', '  Ingredients — '] as const) {
+      // "Ingredients:" is itself exactly MIN_PANEL_TEXT_LENGTH characters, so the
+      // bare heading would clear the raw length floor; the label strip is what
+      // stops an empty panel licensing a completeness claim.
+      expect(proteinSetCompleteness(junk, { proteins: 1 }).complete).toBe(false);
+    }
+    // …but the same heading in front of real content still counts.
+    expect(proteinSetCompleteness('Ingredients: Deboned chicken.', { proteins: 1 }).complete)
+      .toBe(true);
+    for (const junk of [42, 'yes', [], { proteins: 'high' }, { proteins: NaN }] as unknown[]) {
+      expect(proteinSetCompleteness(PANEL, junk).complete).toBe(false);
+    }
+  });
+
+  it('reads the confidence floor as inclusive, and clamps nothing above it', () => {
+    expect(proteinSetCompleteness(PANEL, { proteins: MIN_PROTEIN_READ_CONFIDENCE }).complete)
+      .toBe(true);
+    expect(
+      proteinSetCompleteness(PANEL, { proteins: MIN_PROTEIN_READ_CONFIDENCE - 0.01 }).complete,
+    ).toBe(false);
+  });
+
+  it('proteinReadConfidence degrades every non-number to 0', () => {
+    expect(proteinReadConfidence({ proteins: 0.7 })).toBe(0.7);
+    expect(proteinReadConfidence({})).toBe(0);
+    expect(proteinReadConfidence(null)).toBe(0);
+    expect(proteinReadConfidence('0.9')).toBe(0);
+    expect(proteinReadConfidence({ proteins: Infinity })).toBe(0);
   });
 });
