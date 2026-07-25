@@ -873,8 +873,25 @@ describe('getDietTrialProgress — timezone honesty (B-421)', () => {
   });
 
   it('an unusable zone degrades to the device zone rather than throwing', () => {
-    const out = getDietTrialProgress(TRIAL, Date.parse('2026-06-14T12:00:00.000Z'), 'Not/AZone');
-    expect(out?.dayCounter).toBe(5);
+    // Assert the PROPERTY (equals the no-zone result), not a literal. A literal here
+    // only holds in a band of host zones — the first draft asserted `5` and failed
+    // under TZ=Pacific/Kiritimati (UTC+14), where the device day is genuinely 6.
+    // `jest.config.js` pins no TZ, so a literal would be CI's UTC leaking into the
+    // assertion rather than a claim about the code.
+    const now = Date.parse('2026-06-14T12:00:00.000Z');
+    const deviceZone = getDietTrialProgress(TRIAL, now);
+    expect(getDietTrialProgress(TRIAL, now, 'Not/AZone')).toEqual(deviceZone);
+    expect(deviceZone).not.toBeNull();
+  });
+
+  it('a shape-valid but impossible date is null, not a confidently wrong day', () => {
+    // `Date.UTC` rolls over, so without a round-trip check '2026-13-45' becomes
+    // 2027-02-14 and the counter reports a large, wrong, confident number.
+    for (const bad of ['2026-13-45', '2026-00-00', '2026-02-30', '2026-04-31']) {
+      expect(getDietTrialProgress({ startedAt: bad, targetDurationDays: 14 }, NOW)).toBeNull();
+    }
+    // …and a real leap day still works.
+    expect(getDietTrialProgress({ startedAt: '2028-02-29', targetDurationDays: 14 }, NOW)).not.toBeNull();
   });
 
   it('the derived fields track the corrected counter, not a stale one', () => {

@@ -47,6 +47,38 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(read('hooks/useTrend.ts')).not.toMatch(DAY_DIVISION);
   });
 
+  it('the Home trend strip keys its coverage numerator on the SAME clock as the denominator', () => {
+    // The denominator is a LOCAL-day count. Keying the numerator by UTC day
+    // (`occurred_at.split('T')[0]`) counts a behind-UTC owner's local day twice at
+    // the boundary and renders "6 of 5 days logged — 120% food compliance" beside
+    // the profile card's 100%. A ratio whose halves are on different clocks is not
+    // a ratio; this pins them together.
+    // Scoped to the trial derivation. The 14-day CHART buckets elsewhere in this file
+    // are UTC-keyed on purpose (the module's trailing-UTC-window convention, which
+    // matches detection.ts) — that is a chart axis, not a ratio, and is left alone.
+    const src = read('hooks/useTrend.ts');
+    const start = src.indexOf('if (trial) {');
+    const end = src.indexOf('} catch {', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const trialBlock = src.slice(start, end);
+    expect(trialBlock).toMatch(/getDietTrialProgress\(/); // the slice really is the trial block
+    expect(trialBlock).toMatch(/toLocalDayKey\(new Date\(e\.occurred_at\)\)/);
+    expect(trialBlock).not.toMatch(/occurred_at\.split\('T'\)\[0\]/);
+  });
+
+  // Scope honesty: the "one implementation" claim is CLIENT-side. `generate-report`
+  // keeps its own counter, deliberately anchored on the report's scope end rather
+  // than today, and floored at 0 rather than 1 — so a future-dated start prints
+  // "day 0 of 14" where the card says "Day 1 of 14". Changing the vet report's
+  // headline is not this PR's call; B-442 owns reconciling it. This test exists so
+  // the divergence is a recorded fact rather than a thing someone rediscovers.
+  it('records the vet report as a KNOWN separate counter (B-442), not an oversight', () => {
+    const report = read('supabase/functions/generate-report/report.ts');
+    expect(report).toMatch(/daysElapsed:\s*Math\.max\(0,\s*endDayNum/);
+  });
+
   it('the widget resolver computes no day span of its own', () => {
     expect(read('lib/widgetResolution.ts')).not.toMatch(DAY_DIVISION);
   });

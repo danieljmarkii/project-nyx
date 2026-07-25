@@ -524,6 +524,33 @@ Deno.test('dietTrialStatus — an absent or invalid timezone degrades to UTC, ne
   }
 })
 
+// ── The LIMIT of the G5 parity claim — recorded, not papered over (B-443) ──────────
+//
+// Every case above hands BOTH sides an explicit zone, so they agree by construction.
+// The one place client and server differ by design is the fallback: the client's
+// fallback is the DEVICE zone, the server's is UTC. And `user_profiles.timezone` is
+// `NOT NULL DEFAULT 'America/New_York'` (migration 001), so the reachable failure is
+// not an absent zone at all — it is a STALE DEFAULT that never reaches the fallback
+// and buckets a Sydney owner's day by New York. These tests pin the disagreement so
+// it is a known, sized bug with a backlog row rather than a claim nobody checked.
+
+Deno.test('dietTrialStatus — B-443: a MISSING zone disagrees with an ahead-of-UTC device by one day', () => {
+  const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
+  const at8amSydney = Date.parse('2026-06-13T21:00:00.000Z') // 14 Jun 08:00 in UTC+10
+  // What the owner's card shows (device zone), vs what Ask says with no stored zone.
+  assert.equal(dietTrialStatus(trial, at8amSydney, 'Australia/Sydney').dayCounter, 5)
+  assert.equal(dietTrialStatus(trial, at8amSydney, null).dayCounter, 4) // ← the gap
+})
+
+Deno.test('dietTrialStatus — B-443: the STALE DEFAULT zone is the reachable case, and it also disagrees', () => {
+  const trial = { startedAt: '2026-06-10', targetDurationDays: 14 }
+  const at8amSydney = Date.parse('2026-06-13T21:00:00.000Z')
+  // A profile whose timezone was never stamped carries the migration-001 default.
+  assert.equal(dietTrialStatus(trial, at8amSydney, 'America/New_York').dayCounter, 4)
+  // Correct once the real zone is stored — which is what B-443 has to guarantee.
+  assert.equal(dietTrialStatus(trial, at8amSydney, 'Australia/Sydney').dayCounter, 5)
+})
+
 Deno.test('dietTrialStatus — a date-only start is never re-read as UTC midnight', () => {
   // The DATE column has no time. Parsing '2026-06-10' as an instant lands it on
   // 9 Jun local for anyone behind UTC, inflating every counter built on it by one.

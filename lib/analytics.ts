@@ -848,8 +848,13 @@ export interface DietTrialProgress {
  *  the rest of this module uses for CHARTS: a chart bucket is an analyst's window,
  *  but the day counter is a claim to the owner about the calendar day they are
  *  living in — "Day 14" has to flip when their own midnight passes, not Greenwich's.
- *  Coverage/adherence numerators are local-day too, so this keeps the numerator and
- *  the denominator on the same clock (B-417 PR 5).
+ *
+ *  This value is a DENOMINATOR. Any surface dividing by it must put its numerator on
+ *  the same clock — a local-day count over a UTC-day-keyed numerator is not a ratio,
+ *  and renders absurdities like "6 of 5 days logged". `useTrend.ts` and `profile.tsx`
+ *  both key their coverage numerator by LOCAL day for exactly this reason; B-417 PR 5
+ *  inherits the constraint when it redefines the metric. The vet report keeps its own
+ *  counter (`generate-report/report.ts`), which is NOT this one — see B-442.
  *
  *  `timeZone` is optional and every production client caller OMITS it — the device
  *  zone is the owner's midnight. It is here so the boundary can be stated explicitly

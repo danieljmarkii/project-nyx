@@ -110,7 +110,20 @@ export function localDayIndex(ms: number, timeZone?: string): number {
 // guessed day number.
 export function localDayIndexOf(value: string, timeZone?: string): number | null {
   const key = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (key) return Math.floor(Date.UTC(Number(key[1]), Number(key[2]) - 1, Number(key[3])) / MS_PER_DAY);
+  if (key) {
+    const [y, m, d] = [Number(key[1]), Number(key[2]), Number(key[3])];
+    // The regex validates SHAPE, not validity, and Date.UTC silently rolls over:
+    // '2026-13-45' would become 2027-02-14 and '2026-02-30' 2026-03-02 — turning a
+    // malformed value into a confident wrong day rather than the documented null.
+    // Round-trip the components to reject anything that did not survive intact.
+    // (Date.UTC also maps years 0–99 to 1900+y, which the ms round-trip catches.)
+    const utc = Date.UTC(y, m - 1, d);
+    const back = new Date(utc);
+    if (back.getUTCFullYear() !== y || back.getUTCMonth() !== m - 1 || back.getUTCDate() !== d) {
+      return null;
+    }
+    return Math.floor(utc / MS_PER_DAY);
+  }
   const ms = Date.parse(value);
   if (!Number.isFinite(ms)) return null;
   return localDayIndex(ms, timeZone);
