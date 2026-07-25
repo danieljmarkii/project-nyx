@@ -106,13 +106,26 @@ interface PetRow {
   weight_kg: number | string | null
 }
 
+// B-351 slice 5 (§9, D10): the join carries the full captured protein SET plus the
+// two facts that say whether that set may be read as COMPLETE — the verbatim panel
+// text and the extractor's own per-field confidence. `primary_protein` stays (it is
+// `proteins[0]` by migration 039's contract) so every pre-existing read is untouched.
+// Without the latter two, `proteins = ['duck']` off a marketing-name-only read is
+// byte-identical to a duck food whose panel was actually read, and the report would
+// serve the first as a clean single-protein diet under a provenance line claiming the
+// label was read — reassurance-on-absence on the surface a vet trusts most.
 type FoodItemJoin = {
   food_type: string | null
   format: string | null
   primary_protein: string | null
+  proteins: string[] | null
+  ingredients_notes: string | null
+  ai_extraction_confidence: unknown
   brand: string
   product_name: string
 }
+/** The three protein columns, as every food join selects them. */
+const FOOD_PROTEIN_COLS = 'primary_protein, proteins, ingredients_notes, ai_extraction_confidence'
 type MealJoin = {
   food_item_id: string | null
   intake_rating: string | null
@@ -214,7 +227,14 @@ interface VetVisitRow {
   reason: string | null
 }
 
-type ArrangementFoodJoin = { primary_protein: string | null; brand: string; product_name: string }
+type ArrangementFoodJoin = {
+  primary_protein: string | null
+  proteins: string[] | null
+  ingredients_notes: string | null
+  ai_extraction_confidence: unknown
+  brand: string
+  product_name: string
+}
 interface ArrangementRow {
   id: string
   food_item_id: string
@@ -300,6 +320,20 @@ export function mapPet(row: PetRow): ReportPetInput {
   }
 }
 
+/** The raw protein evidence off a food join, unmapped and un-derived — report.ts owns
+ *  the derivation so the whole protein view stays offline-testable in the pure layer. */
+function mapFoodProteins(fi: { proteins: string[] | null; ingredients_notes: string | null; ai_extraction_confidence: unknown } | null): {
+  proteins: string[] | null
+  ingredientsNotes: string | null
+  extractionConfidence: unknown
+} {
+  return {
+    proteins: fi?.proteins ?? null,
+    ingredientsNotes: fi?.ingredients_notes ?? null,
+    extractionConfidence: fi?.ai_extraction_confidence ?? null,
+  }
+}
+
 function mapMealDetail(meal: MealJoin): ReportMealDetail {
   const fi = first(meal.food_items)
   return {
@@ -309,6 +343,7 @@ function mapMealDetail(meal: MealJoin): ReportMealDetail {
     foodType: (fi?.food_type ?? null) as ReportMealDetail['foodType'],
     format: (fi?.format ?? null) as ReportMealDetail['format'],
     primaryProtein: fi?.primary_protein ?? null,
+    ...mapFoodProteins(fi),
     brand: fi?.brand ?? null,
     productName: fi?.product_name ?? null,
   }
@@ -447,6 +482,7 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
       vetName: r.vet_name ?? null,
       foodLabel: foodLabel(fi),
       primaryProtein: fi?.primary_protein ?? null,
+      ...mapFoodProteins(fi),
     }
   })
 }
@@ -471,6 +507,7 @@ export function mapFeedingArrangementRows(rows: ArrangementRow[]): ReportFeeding
       activeUntil: r.active_until ?? null,
       isShared: r.is_shared,
       primaryProtein: fi?.primary_protein ?? null,
+      ...mapFoodProteins(fi),
       foodLabel: foodLabel(fi),
     }
   })
@@ -649,7 +686,7 @@ export async function generateReportForPet(
       .from('diet_trials')
       .select(
         'id, food_item_id, started_at, target_duration_days, status, completed_at, vet_name, ' +
-          'food_items(food_type, format, primary_protein, brand, product_name)',
+          `food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name)`,
       )
       .eq('pet_id', petId),
   ])
@@ -722,7 +759,7 @@ export async function generateReportForPet(
       .select(
         'id, event_type, occurred_at, occurred_at_confidence, occurred_at_earliest, occurred_at_latest, ' +
           'severity, notes, created_at, ' +
-          'meals(food_item_id, intake_rating, quantity, food_items(food_type, format, primary_protein, brand, product_name))',
+          `meals(food_item_id, intake_rating, quantity, food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name))`,
       )
       .eq('pet_id', petId)
       .is('deleted_at', null)
@@ -770,7 +807,9 @@ export async function generateReportForPet(
     // in report.ts. Soft-deleted arrangements excluded.
     supabase
       .from('feeding_arrangements')
-      .select('id, food_item_id, method, active_from, active_until, is_shared, food_items(primary_protein, brand, product_name)')
+      .select(
+        `id, food_item_id, method, active_from, active_until, is_shared, food_items(${FOOD_PROTEIN_COLS}, brand, product_name)`,
+      )
       .eq('pet_id', petId)
       .is('deleted_at', null),
     supabase.from('conditions').select('condition_name, status, diagnosed_at').eq('pet_id', petId),

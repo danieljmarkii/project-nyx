@@ -92,7 +92,7 @@ Deno.test('mapEventRows: meal detail attached ONLY for meal events, food join no
       // embed returned as a single-element array (the ambiguous Supabase shape)
       meals: [{
         food_item_id: 'f1', intake_rating: 'all', quantity: 'full',
-        food_items: { food_type: 'meal', format: 'kibble', primary_protein: 'duck', brand: 'RC', product_name: 'Weight' },
+        food_items: { food_type: 'meal', format: 'kibble', primary_protein: 'duck', proteins: ['duck', 'chicken'], ingredients_notes: 'Duck, duck meal, chicken by-product meal, rice.', ai_extraction_confidence: { proteins: 0.9 }, brand: 'RC', product_name: 'Weight' },
       }],
     },
   ])
@@ -280,7 +280,7 @@ Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () =>
   const rows = mapDietTrialRows([{
     id: 't1', food_item_id: 'f1', started_at: '2026-05-01', target_duration_days: 56,
     status: 'active', completed_at: null, vet_name: 'Dr Chen',
-    food_items: { food_type: 'meal', format: 'kibble', primary_protein: 'duck', brand: 'Royal Canin', product_name: 'Hydrolyzed' },
+    food_items: { food_type: 'meal', format: 'kibble', primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'Royal Canin', product_name: 'Hydrolyzed' },
   }])
   assert.equal(rows[0].foodLabel, 'Royal Canin Hydrolyzed')
   assert.equal(rows[0].primaryProtein, 'duck')
@@ -290,7 +290,7 @@ Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared
   const rows = mapFeedingArrangementRows([{
     id: 'a1', food_item_id: 'f1', method: 'free_choice', active_from: '2026-04-01',
     active_until: null, is_shared: false,
-    food_items: { primary_protein: 'duck', brand: 'RC', product_name: 'Weight' },
+    food_items: { primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'RC', product_name: 'Weight' },
   }])
   assert.equal(rows[0].method, 'free_choice')
   assert.equal(rows[0].isShared, false)
