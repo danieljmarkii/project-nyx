@@ -12,8 +12,9 @@ interface Props {
   onPress: () => void;
   variant?: Variant;
   // When this chip is one option in a single-select group (ChipGroup), the group
-  // passes 'radio' so the active state is announced as a radio selection. Left
-  // undefined for filter/toggle usages, which keep TouchableOpacity's button role.
+  // passes 'radio' so the active state is announced as a radio selection; a
+  // multi-select group (MultiChipGroup) passes 'checkbox'. Left undefined for
+  // filter/toggle usages, which keep TouchableOpacity's button role.
   accessibilityRole?: AccessibilityRole;
 }
 
@@ -25,7 +26,13 @@ export function FilterChip({ label, active, onPress, variant = 'default', access
       onPress={onPress}
       activeOpacity={0.7}
       accessibilityRole={accessibilityRole}
-      accessibilityState={accessibilityRole ? { selected: active } : undefined}
+      // A checkbox announces `checked`, not `selected` — TalkBack reads a
+      // checkbox with no checked state as "not checked" regardless of selection.
+      accessibilityState={
+        accessibilityRole === 'checkbox' ? { checked: active }
+        : accessibilityRole ? { selected: active }
+        : undefined
+      }
       // Chips are ~32pt tall; expand the tap zone vertically to the 44pt floor
       // (Designer anti-pattern: sub-44pt targets need hitSlop). Vertical-only so
       // adjacent chips in a horizontal row never share a tap zone.

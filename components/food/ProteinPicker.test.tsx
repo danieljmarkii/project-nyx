@@ -32,14 +32,14 @@ describe('ProteinPicker', () => {
     const onChange = jest.fn();
     const { getByText } = render(<ProteinPicker value={null} onChange={onChange} />);
     fireEvent.press(getByText('Salmon'));
-    expect(onChange).toHaveBeenCalledWith('salmon');
+    expect(onChange).toHaveBeenCalledWith('salmon', 'select');
   });
 
   it('clears to null when the active chip is re-tapped', () => {
     const onChange = jest.fn();
     const { getByText } = render(<ProteinPicker value="chicken" onChange={onChange} />);
     fireEvent.press(getByText('Chicken'));
-    expect(onChange).toHaveBeenCalledWith(null);
+    expect(onChange).toHaveBeenCalledWith(null, 'select');
   });
 
   // A stored value outside the common set is a custom protein — Other is active
@@ -59,10 +59,10 @@ describe('ProteinPicker', () => {
     );
     fireEvent.press(getByText('Other'));
     // Opening Other with no prior custom value emits null (a real "unset").
-    expect(onChange).toHaveBeenLastCalledWith(null);
+    expect(onChange).toHaveBeenLastCalledWith(null, 'select');
     fireEvent.changeText(getByPlaceholderText('Name the protein'), 'bison');
     // Stored raw — canonicalized on read, exactly like an AI label.
-    expect(onChange).toHaveBeenLastCalledWith('bison');
+    expect(onChange).toHaveBeenLastCalledWith('bison', 'typing');
   });
 
   it('treats a whitespace-only Other value as unset', () => {
@@ -72,7 +72,7 @@ describe('ProteinPicker', () => {
     );
     fireEvent.press(getByText('Other'));
     fireEvent.changeText(getByPlaceholderText('Name the protein'), '   ');
-    expect(onChange).toHaveBeenLastCalledWith(null);
+    expect(onChange).toHaveBeenLastCalledWith(null, 'typing');
   });
 
   // Reseed regression guard (code-review fix): when the value prop transitions
@@ -110,5 +110,100 @@ describe('ProteinPicker', () => {
     expect(getByRole('radio', { name: 'Chicken' }).props.accessibilityState.selected).toBe(false);
     expect(getByRole('radio', { name: 'Other' }).props.accessibilityState.selected).toBe(false);
     expect(queryByPlaceholderText('Name the protein')).toBeNull();
+  });
+
+  // ── D9: the typed escape normalizes on COMMIT (B-351 PR 3 / B-412) ──────────
+  // An owner typing "Buffalo" used to store `buffalo` while an AI read of the
+  // same label stored `bison` — one animal, two keys, exposure split across both
+  // and each under the effective-n floor. The fix must be legible, not silent.
+
+  it('does NOT normalize per keystroke — only on commit', () => {
+    const onChange = jest.fn();
+    const { getByText, getByPlaceholderText } = render(
+      <ProteinPicker value={null} onChange={onChange} />,
+    );
+    fireEvent.press(getByText('Other'));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'buffalo');
+    // Mid-word rewriting would thrash the field while someone is still typing.
+    expect(onChange).toHaveBeenLastCalledWith('buffalo', 'typing');
+  });
+
+  it('normalizes an aliased value on blur and says so', () => {
+    const onChange = jest.fn();
+    const { getByText, getByPlaceholderText, rerender } = render(
+      <ProteinPicker value={null} onChange={onChange} />,
+    );
+    fireEvent.press(getByText('Other'));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'Buffalo');
+    // Controlled component: the host echoes the raw value back before blur.
+    rerender(<ProteinPicker value="Buffalo" onChange={onChange} />);
+    fireEvent(getByPlaceholderText('Name the protein'), 'blur');
+    expect(onChange).toHaveBeenLastCalledWith('bison', 'commit');
+    rerender(<ProteinPicker value="bison" onChange={onChange} />);
+    expect(getByText("Saved as Bison — that's the label name for buffalo.")).toBeTruthy();
+  });
+
+  it('selects the matching chip when the rewrite lands a common protein, and still explains it', () => {
+    // "chicken liver" folds to a COMMON protein, so the Other field closes — the
+    // note has to render outside it or the most confusing rewrite goes unexplained.
+    const onChange = jest.fn();
+    const { getByText, getByRole, getByPlaceholderText, queryByPlaceholderText, rerender } = render(
+      <ProteinPicker value={null} onChange={onChange} />,
+    );
+    fireEvent.press(getByText('Other'));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'chicken liver');
+    rerender(<ProteinPicker value="chicken liver" onChange={onChange} />);
+    fireEvent(getByPlaceholderText('Name the protein'), 'blur');
+    expect(onChange).toHaveBeenLastCalledWith('chicken', 'commit');
+    rerender(<ProteinPicker value="chicken" onChange={onChange} />);
+    expect(getByRole('radio', { name: 'Chicken' }).props.accessibilityState.selected).toBe(true);
+    expect(queryByPlaceholderText('Name the protein')).toBeNull();
+    expect(getByText("Saved as Chicken — that's the protein in chicken liver.")).toBeTruthy();
+  });
+
+  it('stays silent when only casing changed — nothing to explain', () => {
+    const onChange = jest.fn();
+    const { getByText, getByPlaceholderText, queryByText, rerender } = render(
+      <ProteinPicker value={null} onChange={onChange} />,
+    );
+    fireEvent.press(getByText('Other'));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'Kangaroo');
+    rerender(<ProteinPicker value="Kangaroo" onChange={onChange} />);
+    fireEvent(getByPlaceholderText('Name the protein'), 'blur');
+    expect(onChange).toHaveBeenLastCalledWith('kangaroo', 'commit');
+    rerender(<ProteinPicker value="kangaroo" onChange={onChange} />);
+    expect(queryByText(/^Saved as/)).toBeNull();
+  });
+
+  it('keeps text the normalizer cannot use, rather than wiping the field', () => {
+    // "fresh" is a bare descriptor and names no animal. Silently emptying a field
+    // someone just filled is the wrong direction; D9's scope is aliased/stripped
+    // terms, not junk rejection.
+    const onChange = jest.fn();
+    const { getByText, getByPlaceholderText, rerender } = render(
+      <ProteinPicker value={null} onChange={onChange} />,
+    );
+    fireEvent.press(getByText('Other'));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'fresh');
+    rerender(<ProteinPicker value="fresh" onChange={onChange} />);
+    fireEvent(getByPlaceholderText('Name the protein'), 'blur');
+    expect(onChange).toHaveBeenLastCalledWith('fresh', 'typing');
+    expect(getByPlaceholderText('Name the protein').props.value).toBe('fresh');
+  });
+
+  it('clears the note once the explained value leaves the field', () => {
+    const onChange = jest.fn();
+    const { getByText, getByPlaceholderText, queryByText, rerender } = render(
+      <ProteinPicker value={null} onChange={onChange} />,
+    );
+    fireEvent.press(getByText('Other'));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'buffalo');
+    rerender(<ProteinPicker value="buffalo" onChange={onChange} />);
+    fireEvent(getByPlaceholderText('Name the protein'), 'blur');
+    rerender(<ProteinPicker value="bison" onChange={onChange} />);
+    expect(queryByText(/^Saved as/)).not.toBeNull();
+    fireEvent.press(getByText('Duck'));
+    rerender(<ProteinPicker value="duck" onChange={onChange} />);
+    expect(queryByText(/^Saved as/)).toBeNull();
   });
 });

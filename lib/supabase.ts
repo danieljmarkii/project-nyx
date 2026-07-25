@@ -40,6 +40,27 @@ export const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // PKCE (B-280 D1a). The recovery code arrives as a QUERY parameter, so
+    // expo-linking surfaces it natively and no access/refresh token ever transits
+    // a URL, a browser history entry, or a referrer header. We knowingly diverge
+    // from Supabase's documented RN example, which uses the implicit flow: that
+    // returns its tokens in the URL *fragment*, which `Linking.parse()` does not
+    // surface — hence their reach for `expo-auth-session`, a dependency we don't
+    // ship. Implicit's documented cross-device benefit is unrealisable here
+    // anyway, because the redirect target is a custom scheme a desktop browser
+    // cannot open regardless of flow type. So PKCE's same-device requirement
+    // costs nothing and removes tokens-from-URL entirely.
+    //
+    // Client-wide but behaviour-neutral TODAY: the only other consumers are
+    // signup-confirmation links (dormant — confirmation is off, B-152) and magic
+    // links (unused). The day B-152 part 2 turns confirmation ON, those links
+    // become same-device-only PKCE links pointing at a redirect nothing handles
+    // yet — recorded on B-401, which owns that path's routing.
+    //
+    // `detectSessionInUrl` deliberately stays false: the app handles the link
+    // explicitly (§6.4's sign-out-first ordering) rather than letting auth-js
+    // adopt a session behind the router's back, which is Trap 1 by another route.
+    flowType: 'pkce',
     // Serialize every auth operation in-process. On React Native auth-js defaults
     // to `lockNoOp` (no serialization), so the app's concurrent auth traffic — the
     // foreground autoRefresh tick + syncNow's ~10 getSession() calls + fire-and-
