@@ -177,9 +177,13 @@ Spec `docs/nyx-stool-analysis-requirements.md` (§8 = 10-PR plan). Second child 
 
 ## Blocking Open Questions
 
-**None on the diet-trial track — all ten rulings closed 2026-07-25.** Record: `docs/diet-trial-requirements-review-2026-07.md` §0; outcomes written throughout `docs/nyx-diet-trial-requirements.md` v0.97.
+**Diet trial (B-417) — spec is v1.0 BUILD-READY; mocks design-locked at round 4.** `docs/nyx-diet-trial-requirements.md` v1.0 + `docs/nyx-diet-trial-mockups.html` (artifact live). Every gate, conflict and design decision is ruled. **Nothing blocks PRs 1–4.** **PR 4's day-counter prerequisite is closed — B-421 shipped via #449** (`getDietTrialProgress` re-anchored to LOCAL midnight in `lib/utils.localDayIndexOf`; the duplicated math in `useTrend.ts`/`profile.tsx` deleted so there is one client implementation; `ask/tools.ts` ported and bucketing by `user_profiles.timezone`). PR 4 inherits its timezone oracle — do **not** reintroduce per-surface day math. PR 5 sequences after B-351 completes (PM finishing it now; **slices 3 and 4 landed #446/#447**). Slice 4 shipped `lib/trialContaminant.ts` — well-coordinated (presence-only, C2 standing-fact shape, deliberately not named `dietTrial.ts`), but it carries **two forward-conflicts recorded in the spec §0.2**: PR 4 must **re-site** the trial-card note slice 4 shipped rather than delete it, and PR 5 must **re-base its single-food `food_item_id` derivation onto `diet_trial_foods`** before PR 3's multi-select reaches users, or a legitimately-allowed second trial food flags as a contaminant.
 
-Two §2.2 amendments remain unruled but block nothing: **A-2** (a `paused` lifecycle state — free in PR 1, a migration afterwards, so worth a call before PR 1 opens) and **A-3** (a mid-trial card state; not schema, can land any time).
+Two **provisional** decisions ride at the PR that consumes them, flagged for Dr. Chen, blocking nothing:
+- **P-1 — duration defaults, all four cells:** dog·skin 56d, dog·gut 28d, cat·skin 56d, **cat·gut 42d** (the only new number; cats reach ~50% remission at 4wk vs dogs >90% at 5). Consumed at **PR 3**. Lookup constant, no schema.
+- **P-2 — no `paused` state** (PM: "a trial is either active or not"). Consumed at **PR 1** by omission. Adding the enum value later is a migration; the accepted cost is that a vet-directed hold becomes two rows.
+
+**One residual with no number yet:** the **coverage floor**. Three defensible definitions of coverage read 100% / 84% / 19% over the same live 70 days, so **PR 5 pins the metric, then sets the floor**. It gates only §7.2's interpretability sentence — not the counts, not the card, and no alarm in either direction.
 
 **Not blocking, but PM-visible:** **B-420** — the "20–30% diet-trial adherence" figure in the wedge's framing could not be traced to any published veterinary source in two independent lanes.
 

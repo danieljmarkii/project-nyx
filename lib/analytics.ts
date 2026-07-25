@@ -45,6 +45,7 @@
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
 import { canonicalizeProtein } from './protein';
+import { localDayIndex, localDayIndexOf } from './utils';
 
 // ── Shared constants ─────────────────────────────────────────────────────────
 
@@ -834,12 +835,39 @@ export interface DietTrialProgress {
 }
 
 /** Pure: progress toward a diet trial's target, from its start date and `now`.
- *  Returns null only when `startedAt` is unparseable. */
-export function getDietTrialProgress(trial: DietTrial, nowMs: number): DietTrialProgress | null {
-  const startMs = Date.parse(trial.startedAt);
-  if (!Number.isFinite(startMs) || !Number.isFinite(nowMs)) return null;
-  const startIndex = Math.floor(startMs / MS_PER_DAY);
-  const todayIndex = Math.floor(nowMs / MS_PER_DAY);
+ *  Returns null only when `startedAt` is unparseable.
+ *
+ *  THE SINGLE CLIENT-SIDE DAY-MATH PATH (B-421). The trial card, the Home trend
+ *  strip and the widget header all call this and nothing else — before B-421 each
+ *  had its own arithmetic and the three disagreed by up to two days on one screen
+ *  unlock. If a new surface needs "what day of the trial is it", it calls this.
+ *
+ *  The boundary is LOCAL midnight, defined once in the requirements (§5.1) and
+ *  implemented once in `localDayIndexOf`. Deliberately NOT the UTC epoch-day index
+ *  this used to compute, and deliberately not the trailing-UTC-window convention
+ *  the rest of this module uses for CHARTS: a chart bucket is an analyst's window,
+ *  but the day counter is a claim to the owner about the calendar day they are
+ *  living in — "Day 14" has to flip when their own midnight passes, not Greenwich's.
+ *
+ *  This value is a DENOMINATOR. Any surface dividing by it must put its numerator on
+ *  the same clock — a local-day count over a UTC-day-keyed numerator is not a ratio,
+ *  and renders absurdities like "6 of 5 days logged". `useTrend.ts` and `profile.tsx`
+ *  both key their coverage numerator by LOCAL day for exactly this reason; B-417 PR 5
+ *  inherits the constraint when it redefines the metric. The vet report keeps its own
+ *  counter (`generate-report/report.ts`), which is NOT this one — see B-442.
+ *
+ *  `timeZone` is optional and every production client caller OMITS it — the device
+ *  zone is the owner's midnight. It is here so the boundary can be stated explicitly
+ *  (see lib/utils.localDayIndex), which is how this is pinned against the Edge
+ *  Function port that has to bucket by `user_profiles.timezone` instead. */
+export function getDietTrialProgress(
+  trial: DietTrial,
+  nowMs: number,
+  timeZone?: string,
+): DietTrialProgress | null {
+  const startIndex = localDayIndexOf(trial.startedAt, timeZone);
+  if (startIndex === null || !Number.isFinite(nowMs)) return null;
+  const todayIndex = localDayIndex(nowMs, timeZone);
   const dayCounter = Math.max(1, todayIndex - startIndex + 1);
   const targetDays = Math.max(0, Math.floor(trial.targetDurationDays));
   const daysRemaining = Math.max(0, targetDays - dayCounter);
