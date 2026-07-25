@@ -74,11 +74,17 @@ import { supabase } from './supabase';
 import { getDb } from './db';
 import { foodIntakeKey } from './food';
 import {
-  canonicalizeProtein,
   proteinSetCompleteness,
   proteinsFromCacheText,
   type ProteinSetCompleteness,
 } from './protein';
+// The pure off-trial predicates moved to `./trialProtein` (B-351 slice 5) so the
+// vet-report Edge Function can import the SAME implementation — this module's
+// AsyncStorage/supabase/db imports make it unreachable from Deno. Re-exported
+// here so every existing call site and test keeps its import path.
+import { offTrialProteins, resolveTargetProtein, proteinList } from './trialProtein';
+
+export { offTrialProteins, resolveTargetProtein, proteinList } from './trialProtein';
 
 // ── The pure predicate layer ─────────────────────────────────────────────────
 
@@ -127,55 +133,6 @@ export interface FoodProteinRecord {
   extractionConfidence: unknown;
   /** Case-folded brand+product — the rule-2 duplicate-capture key. */
   foodKey: string;
-}
-
-/**
- * The proteins in `foodProteins` that the trial diet does not include.
- *
- * The comparison is EXACT canonical-key equality, and that is load-bearing for
- * B-411's two deliberate non-resolutions. `poultry` is never folded into
- * `chicken` (it may be chicken OR turkey, and inventing a specific exposure is
- * the unsafe direction) and `chicken fat` is never folded into `chicken` (that
- * would invent a protein exposure out of a near-protein-free ingredient). Under
- * the "everything but the target" model here, both still surface — they are not
- * the target key, so they are off-trial — which means B-411's under-claim gap
- * does NOT open a hole in this check the way it would in an excluded-list model.
- * What it costs instead is precision in the copy: the owner is told the food has
- * `poultry`, not that it has chicken, which is exactly as much as we know.
- *
- * Order is preserved (prominence order, as captured) so the copy names the most
- * prominent off-trial protein first.
- */
-export function offTrialProteins(
-  foodProteins: readonly string[],
-  targetProtein: string | null,
-): string[] {
-  if (!targetProtein) return [];
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of foodProteins) {
-    const key = canonicalizeProtein(raw);
-    if (key == null || key === targetProtein || seen.has(key)) continue;
-    seen.add(key);
-    out.push(key);
-  }
-  return out;
-}
-
-/**
- * The trial target: the trial food's OWNER-DESIGNATED `primary_protein`, and
- * deliberately NOT `proteins[0]`.
- *
- * They are the same value on every ordinary row (migration 039's contract), and
- * differ in exactly one case: when the owner CLEARS the main protein, slice 3
- * demotes the old main into the tail and writes a NULL primary — so `proteins[0]`
- * is then a protein the owner explicitly un-designated. Reading the target from
- * `proteins[0]` would resurrect that cleared designation and, worse, invert the
- * whole check: every OTHER protein — including the real trial protein — would be
- * reported as the contaminant. A null target disables the check (rule 1).
- */
-export function resolveTargetProtein(primaryProtein: string | null | undefined): string | null {
-  return canonicalizeProtein(primaryProtein);
 }
 
 /**
@@ -256,12 +213,7 @@ function display(key: string): string {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
-/** "chicken" · "chicken and salmon" · "chicken, salmon and beef". */
-export function proteinList(keys: readonly string[]): string {
-  if (keys.length === 0) return '';
-  if (keys.length === 1) return keys[0];
-  return `${keys.slice(0, -1).join(', ')} and ${keys[keys.length - 1]}`;
-}
+// `proteinList` now lives in ./trialProtein (re-exported at the top of this file).
 
 /**
  * The log-time heads-up, as it rides the meal completion card (mock §2, bottom).

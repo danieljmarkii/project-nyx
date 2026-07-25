@@ -77,7 +77,16 @@ import {
 // key off the canonical protein, or one real protein fragments across case/qualifier
 // variants and junk sentinels print as proteins ("chicken ×238, null ×24, Chicken ×11,
 // Chicken By-Product Meal ×15" on the first real artifact — B-052's exact bug class).
-import { canonicalizeProtein } from '../generate-signal/protein.ts'
+import {
+  canonicalizeProtein,
+  readProteinSet,
+  mayClaimCompleteProteinSet,
+} from '../generate-signal/protein.ts'
+// The SAME off-trial predicate the client's contaminant flag runs (B-351 slice 4).
+// Re-deriving "which proteins here aren't the trial protein?" locally is the exact
+// failure B-417 §5.3 documents — three contradictory off-diet predicates, one of
+// them already shipped in this file. One implementation, imported.
+import { offTrialProteins, resolveTargetProtein } from '../../../lib/trialProtein.ts'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -169,8 +178,27 @@ export interface ReportPetInput {
   weightKg: number | null
 }
 
+/**
+ * The three stored facts every protein-set decision needs (B-351 slice 5, D10).
+ *
+ * Carried RAW through the input layer and derived here in the pure module, so the
+ * completeness gate is exercised by `deno test` rather than only in production.
+ * OPTIONAL on purpose: every one of these interfaces is a public input shape with
+ * existing callers (and a large fixture corpus), and a food whose columns are
+ * absent must degrade to "nothing captured" — which is exactly what the gate
+ * already does with a null. A missing field is never read as "assume it was fine".
+ */
+export interface ReportFoodProteinInput {
+  /** `food_items.proteins` — prominence-ordered canonical keys (migration 039). */
+  proteins?: string[] | null
+  /** `food_items.ingredients_notes` — the verbatim panel, if it was ever captured. */
+  ingredientsNotes?: string | null
+  /** `food_items.ai_extraction_confidence` — untyped jsonb; the gate is tolerant. */
+  extractionConfidence?: unknown
+}
+
 /** Meal detail (events⋈meals⋈food_items). Present only on a type==='meal' event. */
-export interface ReportMealDetail {
+export interface ReportMealDetail extends ReportFoodProteinInput {
   foodItemId: string | null
   intakeRating: IntakeRating | null
   quantity: string | null
@@ -271,7 +299,7 @@ export interface ReportMedicationInput {
 }
 
 /** diet_trials row (schema migration 001) + optional joined food label/protein. */
-export interface ReportDietTrialInput {
+export interface ReportDietTrialInput extends ReportFoodProteinInput {
   id: string
   foodItemId: string | null
   startedAt: string // DATE
@@ -292,7 +320,7 @@ export interface ReportVetVisitInput {
 }
 
 /** feeding_arrangements row (migration 018) + joined food label/protein — B-040. */
-export interface ReportFeedingArrangementInput {
+export interface ReportFeedingArrangementInput extends ReportFoodProteinInput {
   id: string
   foodItemId: string
   method: string // 'free_choice'|'meal_fed'
@@ -924,7 +952,46 @@ export interface WeightSection {
   trend: WeightTrendView | null
 }
 
+/**
+ * One food's captured protein exposure, as every render surface consumes it
+ * (B-351 slice 5 — spec §9, gated by D10).
+ *
+ * THE WHOLE POINT OF `complete` IS THAT THE ARRAY CANNOT SPEAK FOR ITSELF.
+ * `proteins: ['duck']` read off a real ingredient panel and `['duck']` typed from
+ * the front of the bag are byte-identical, and the report is served under a
+ * provenance line saying "as read from product labels" — so rendering the second
+ * as a clean single-protein diet tells a vet a possibly-contaminated elimination
+ * food is clean. That is reassurance-on-absence (`clinical-guardrails`) on the
+ * surface with the highest consequence. `complete` is the ONLY licence to say
+ * anything about what is NOT in a food; every other claim here is present-only.
+ *
+ * `offTrial` is likewise PRESENT-ONLY and never causal (Dr. Chen's §9 condition
+ * 3): it names proteins that are in the food and are not the trial protein. It
+ * asserts nothing about whether they caused anything, and an EMPTY `offTrial` is
+ * never an all-clear — under `complete: false` it mostly means nobody read the
+ * label.
+ */
+export interface ProteinSetView {
+  /** Canonical, prominence-ordered, deduped. `[0]` is the primary (§9 condition 2). */
+  proteins: string[]
+  /** D10's gate. FALSE ⇒ no surface may claim this set is everything in the food. */
+  complete: boolean
+  /** Off-trial proteins present in THIS food, prominence-ordered. Empty when there
+   *  is no active trial, no resolvable target protein, or none are present. */
+  offTrial: string[]
+}
+
 export interface DietSummary {
+  /**
+   * The active trial's canonical target protein — the one key every `offTrial` on this
+   * snapshot was computed against, resolved once (B-351 slice 5).
+   *
+   * NULL whenever the off-trial check is disabled: no active trial, or a trial food
+   * whose main protein the owner never designated (or cleared). Null means SILENCE,
+   * never an all-clear — a render must not conclude anything from an empty `offTrial`
+   * when this is null, because nothing was compared.
+   */
+  trialTargetProtein: string | null
   activeTrial: {
     foodLabel: string | null
     primaryProtein: string | null
@@ -932,9 +999,25 @@ export interface DietSummary {
     targetDurationDays: number
     daysElapsed: number
     vetName: string | null
+    /** The trial food's OWN set — shape ① (§8): the "duck" trial diet that also
+     *  lists chicken. `offTrial` here is the trial diet contaminating itself. */
+    proteinSet: ProteinSetView
   } | null
   /** Active free_choice arrangements → "Intake not directly observed" (B-040, verbatim in render). */
-  freeFed: Array<{ foodLabel: string | null; primaryProtein: string | null; activeFrom: string | null; activeUntil: string | null }>
+  freeFed: Array<{
+    foodLabel: string | null
+    primaryProtein: string | null
+    activeFrom: string | null
+    activeUntil: string | null
+    proteinSet: ProteinSetView
+    /** B-040: the bowl is shared with another pet, so a protein in it is available to
+     *  this pet but not evidence this pet ate it. Reaches detection as a low
+     *  attribution confidence; carried here so the RENDER can qualify a promoted
+     *  claim too — an adversarial pass found the page-1 line asserting consumption
+     *  from a communal bowl with its "intake not directly observed" caveat left a
+     *  block below, on the very line a scanner stops before. */
+    isShared: boolean
+  }>
   intakeNotDirectlyObserved: boolean
   /**
    * MEALS-ONLY completion (treats + free-fed excluded, B-040). Null when no rated meals.
@@ -959,6 +1042,7 @@ export interface DietSummary {
     firstDate: string | null
     lastDate: string | null
     intakeMode: IntakeRating | null
+    proteinSet: ProteinSetView
   }>
   treats: { count: number; distinctItems: number }
   /** The #1 diet-trial confounder, on its own line (B-102). */
@@ -1102,6 +1186,9 @@ export interface ConfounderExposure {
   format: FoodFormat | null
   foodType: 'meal' | 'treat' | 'other' | null
   note: string | null
+  /** The full captured set for this feeding's food (B-351 slice 5). `primaryProtein`
+   *  above is unchanged and still `proteinSet.proteins[0]`'s stored spelling. */
+  proteinSet: ProteinSetView
 }
 
 /**
@@ -1203,19 +1290,42 @@ export interface AtAGlance {
  * can't ("a lot of proteins early, then collapsed"). Off-diet only (treats + human food, the
  * confounder set), so sum-over-bins reconciles to the Appendix C protein tally (§5.6).
  */
+/**
+ * SET-MEMBERSHIP SINCE B-351 SLICE 5 (§9): a feeding contributes ONE to EVERY
+ * protein its food contains, not one to its primary. A duck-and-chicken treat is
+ * a chicken exposure — that is the entire clinical point, and counting it only
+ * under "duck" is what made the contaminant invisible.
+ *
+ * The consequence is a reconciliation change the render must state, not hide:
+ * sum-over-proteins is now an EXPOSURE count and can exceed the FEEDING count, so
+ * the two are carried separately (`totalByProtein` vs `feedingsByWeek` /
+ * `totalFeedings`) and §5.6 reconciles feedings-to-feedings. Appendix C's row
+ * count still equals `totalFeedings`.
+ *
+ * And every count here is a FLOOR, never a total: a food whose ingredient panel
+ * was never read contributes only its primary, so its hidden secondaries are
+ * missing from the tally. `incompleteFeedings` is what lets the render say so
+ * rather than presenting an under-count as complete (D10).
+ */
 export interface ProteinTimeline {
   /** One week-start day key per bucket — shares the symptom chart's x-axis exactly. */
   weekStartDates: string[]
   /** Canonical protein keys present, ordered by total desc (largest sits on the stack baseline). */
   proteins: string[]
-  /** bins[weekIndex][proteinIndex] = off-diet feeding count for that protein that week. */
+  /** bins[weekIndex][proteinIndex] = off-diet feedings that week CONTAINING that protein. */
   bins: number[][]
   /** Per-week count of off-diet feedings with no recorded protein (disclosed, never dropped, §5.1). */
   unknownByWeek: number[]
+  /** Per-week count of off-diet FEEDINGS (each counted once) — the honest denominator
+   *  behind a stack whose segments may now sum higher than the feedings that produced it. */
+  feedingsByWeek: number[]
   /** Sum over the window per protein — reconciles to provenance.proteinExposureTally. */
   totalByProtein: Record<string, number>
   hasUnknown: boolean
   totalFeedings: number
+  /** Off-diet feedings whose food's protein set may NOT be read as complete (D10).
+   *  > 0 ⇒ the tally is a floor and the render must disclose it. */
+  incompleteFeedings: number
 }
 
 /**
@@ -1546,6 +1656,14 @@ function buildDetectionInput(
       isMedicationVehicle: pairedEventIds.has(e.id),
       occurredAtConfidence: e.occurredAtConfidence,
       foodItemId: e.meal.foodItemId,
+      // STILL THE PRIMARY ONLY, deliberately. B-351 slice 5 widened what the report
+      // DISPLAYS to the full captured set; keying the CORRELATION on set membership is
+      // slice 6 (Phase B), which needs the collinearity clustering that stops the engine
+      // falsely blaming duck when it cannot separate duck from chicken (§7) — and is
+      // `adversarial-reviewer`-mandatory. Feeding sets in here without that guardrail
+      // would inflate the candidate family and credit collinear proteins. So the report
+      // currently shows a wider exposure picture than it correlates over, which is the
+      // spec's intended phase boundary, not an oversight.
       primaryProtein: e.meal.primaryProtein,
       intakeRating: e.meal.intakeRating,
       foodType: e.meal.foodType,
@@ -1970,6 +2088,38 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
 
   // ── Diet / confounder summary (§3.8) ─────────────────────────────────────────
   const activeTrialInput = input.dietTrials.find((t) => t.status === 'active') ?? null
+
+  // The trial's target protein, resolved ONCE and threaded into every protein view
+  // below (B-351 slice 5). Null — no active trial, or a trial food with no
+  // designated main protein — disables the off-trial marking entirely: silence,
+  // never an all-clear. Deliberately the owner-designated `primary_protein` and NOT
+  // `proteins[0]`; see resolveTargetProtein for why reading the derived primary
+  // would invert the check on a cleared designation.
+  const trialTargetProtein = activeTrialInput ? resolveTargetProtein(activeTrialInput.primaryProtein) : null
+
+  /**
+   * Build the render-ready protein view for one food.
+   *
+   * `readProteinSet` — NOT `deriveProteinSet`. This is a read path over stored rows,
+   * so it keys Class-A only (`canonicalizeProtein`). Using the write-path derivation
+   * here applied D3a's semantic merges retroactively and, worse, keyed the SET
+   * differently from the TARGET (which resolves through `canonicalizeProtein`), so an
+   * `ocean whitefish` trial food reported itself as contaminated with whitefish. One
+   * read path, one keying function. A legacy row carrying only `primary_protein` still
+   * yields a one-element set rather than dropping out.
+   *
+   * `mayClaimCompleteProteinSet` is the same gate the client's Tier-1 disclosure runs —
+   * the whole reason it lives in lib/protein.ts.
+   */
+  function proteinView(food: ReportFoodProteinInput & { primaryProtein?: string | null }): ProteinSetView {
+    const proteins = readProteinSet(food.proteins ?? null, food.primaryProtein ?? null)
+    return {
+      proteins,
+      complete: mayClaimCompleteProteinSet(proteins, food.ingredientsNotes ?? null, food.extractionConfidence),
+      offTrial: offTrialProteins(proteins, trialTargetProtein),
+    }
+  }
+
   const activeTrial = activeTrialInput
     ? {
         foodLabel: activeTrialInput.foodLabel ?? null,
@@ -1978,6 +2128,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         targetDurationDays: activeTrialInput.targetDurationDays,
         daysElapsed: Math.max(0, endDayNum - (dayNumber(activeTrialInput.startedAt) ?? endDayNum) + 1),
         vetName: activeTrialInput.vetName,
+        proteinSet: proteinView(activeTrialInput),
       }
     : null
 
@@ -1993,6 +2144,8 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       primaryProtein: a.primaryProtein,
       activeFrom: a.activeFrom,
       activeUntil: a.activeUntil,
+      proteinSet: proteinView(a),
+      isShared: a.isShared,
     }))
 
   const windowMeals = windowEvents.filter((e) => e.type === 'meal' && e.meal)
@@ -2014,7 +2167,15 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // Appendix B treat grouping. Descriptive only — orthogonal to the intake-decline engine.
   const mealGroups = new Map<
     string,
-    { foodLabel: string | null; primaryProtein: string | null; count: number; firstDate: string | null; lastDate: string | null; intakes: IntakeRating[] }
+    {
+      foodLabel: string | null
+      primaryProtein: string | null
+      count: number
+      firstDate: string | null
+      lastDate: string | null
+      intakes: IntakeRating[]
+      proteinSet: ProteinSetView
+    }
   >()
   for (const e of ratedMeals) {
     const m = e.meal!
@@ -2038,6 +2199,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
         firstDate: dayKey,
         lastDate: dayKey,
         intakes: [m.intakeRating as IntakeRating],
+        // The group key IS food identity (item id, else label), so every member is the
+        // same food and the first member's set is the group's set — never a merge
+        // across foods, which would invent an exposure no single food carried. The one
+        // exception is the fixed `__unlabeled__` bucket, whose members have no food
+        // join at all and therefore all derive the same empty, incomplete set.
+        proteinSet: proteinView(m),
       })
     }
   }
@@ -2049,6 +2216,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       firstDate: g.firstDate,
       lastDate: g.lastDate,
       intakeMode: strictPluralityIntake(g.intakes),
+      proteinSet: g.proteinSet,
     }))
     .sort((a, b) => b.count - a.count || (a.foodLabel ?? '').localeCompare(b.foodLabel ?? ''))
 
@@ -2073,6 +2241,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
 
   const diet: DietSummary = {
+    trialTargetProtein,
     activeTrial,
     freeFed,
     intakeNotDirectlyObserved: freeFed.length > 0,
@@ -2257,45 +2426,81 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     format: e.meal!.format,
     foodType: e.meal!.foodType,
     note: e.notes,
+    proteinSet: proteinView(e.meal!),
   }))
   // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"
   // are one antigen for the vet weighing exposures. Feedings with no usable protein are
   // counted separately and disclosed in the render — never a "null ×N" tally line, never
   // silently dropped.
+  //
+  // SET-MEMBERSHIP SINCE B-351 SLICE 5 (§9). A feeding counts once for EVERY protein its
+  // food contains, so a duck-and-chicken treat lands in BOTH bands. This is the whole
+  // clinical point — the hidden secondary is the textbook reason an elimination trial
+  // silently fails, and tallying only the primary is what kept it invisible. Two
+  // consequences, both handled rather than hidden:
+  //   (a) sum-over-proteins is an EXPOSURE count and may EXCEED the feeding count, so the
+  //       feeding count is carried separately and §5.6 reconciles feedings-to-feedings
+  //       (Appendix C's rows still sum to `totalFeedings`);
+  //   (b) a food whose panel was never read contributes only its primary, so every count
+  //       here is a FLOOR — `incompleteFeedings` is what lets the render say so (D10).
+  // A feeding is "unknown" iff its whole derived set is empty — unchanged semantics.
   const proteinExposureTally: Record<string, number> = {}
   let proteinUnknownCount = 0
+  let incompleteFeedings = 0
   for (const c of confounders) {
-    const key = canonicalizeProtein(c.primaryProtein)
-    if (key) proteinExposureTally[key] = (proteinExposureTally[key] ?? 0) + 1
-    else proteinUnknownCount++
+    if (c.proteinSet.proteins.length === 0) {
+      // NOT counted as an unread panel: a feeding with no captured protein at all
+      // (often no food row at all — a bare human-food log) is already disclosed as
+      // "no recorded protein". Counting it here too made the floor line say N
+      // feedings "involved a food whose ingredient panel was never captured" when
+      // there was no food. Over-disclosure in the safe direction, but the sentence
+      // did not mean what it said.
+      proteinUnknownCount++
+      continue
+    }
+    if (!c.proteinSet.complete) incompleteFeedings++
+    for (const key of c.proteinSet.proteins) {
+      proteinExposureTally[key] = (proteinExposureTally[key] ?? 0) + 1
+    }
   }
 
   // Off-diet protein exposure over time (#9) — bin the SAME confounder set by the SAME weekly
   // buckets as the symptom chart, by canonical protein. Every confounder bins (a null local-day
   // key falls back to the UTC slice, which is always parseable), so sum-over-bins === the tally
-  // above === the Appendix C total (§5.6 reconciliation). Largest protein first → stack baseline.
+  // above, and sum-over-`feedingsByWeek` === the Appendix C total (§5.6 reconciliation, now
+  // stated in feedings because a stack segment counts exposures). Largest protein first →
+  // stack baseline.
   const timelineProteins = Object.keys(proteinExposureTally).sort(
     (a, b) => proteinExposureTally[b] - proteinExposureTally[a] || a.localeCompare(b),
   )
   const proteinIdx = new Map(timelineProteins.map((p, i) => [p, i]))
   const timelineBins: number[][] = Array.from({ length: numBuckets }, () => new Array(timelineProteins.length).fill(0))
   const unknownByWeek: number[] = new Array(numBuckets).fill(0)
+  const feedingsByWeek: number[] = new Array(numBuckets).fill(0)
   for (const c of confounders) {
     const dn = dayNumber(c.dayKey ?? c.occurredAt.slice(0, 10))
     if (dn === null) continue
     const w = bucketIndexOfDay(dn)
-    const key = canonicalizeProtein(c.primaryProtein)
-    if (key) timelineBins[w][proteinIdx.get(key)!]++
-    else unknownByWeek[w]++
+    feedingsByWeek[w]++
+    if (c.proteinSet.proteins.length === 0) {
+      unknownByWeek[w]++
+      continue
+    }
+    for (const key of c.proteinSet.proteins) {
+      const j = proteinIdx.get(key)
+      if (j !== undefined) timelineBins[w][j]++
+    }
   }
   const proteinTimeline: ProteinTimeline = {
     weekStartDates: bucketStartDates,
     proteins: timelineProteins,
     bins: timelineBins,
     unknownByWeek,
+    feedingsByWeek,
     totalByProtein: proteinExposureTally,
     hasUnknown: proteinUnknownCount > 0,
     totalFeedings: confounders.length,
+    incompleteFeedings,
   }
 
   // ── Intake appendix (B-213) — recent rated meals, ONLY when an intake flag fired ─────

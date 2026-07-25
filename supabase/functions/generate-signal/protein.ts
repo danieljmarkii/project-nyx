@@ -17,3 +17,17 @@
 // strip + junk-drop only; no B-048 synonym mapping), and the documented examples.
 
 export { canonicalizeProtein } from '../../../lib/protein.ts'
+
+// B-351 slice 5 widens this re-export: `generate-report` renders the captured
+// protein SET (not just the derived primary), and D10 forbids any claim about
+// what is NOT in a food unless the ingredient panel was actually read. Both the
+// set derivation and that gate must be the SAME code the client runs, or the app
+// and the vet report would disagree about which foods are trustworthy — see the
+// gate's own rationale in lib/protein.ts.
+export {
+  readProteinSet,
+  mayClaimCompleteProteinSet,
+  proteinSetCompleteness,
+  type ProteinSetCompleteness,
+  type ProteinSetProvenance,
+} from '../../../lib/protein.ts'
