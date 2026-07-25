@@ -40,4 +40,13 @@ Per the PM's instruction to roll remaining decisions into the PRs rather than ho
 
 The **coverage floor still has no number** — three defensible definitions read 100% / 84% / 19% over the same live 70 days, so PR 5 pins the metric and then sets the floor. It gates only §7.2's interpretability sentence. And **an undeclared protein can never be in the array** (33–83% mislabeling in exactly these products), which is what §5.5's standing fact discloses rather than detects. The **vet report reorder** on the Pet tab is filed separately rather than bundled into a diet-trial PR.
 
+## Reconciled at wrap — B-351 slices 3 and 4 landed mid-session
+
+**Slice 3 (#446)** shipped the manual multi-protein picker, closing the one dependency round 3 had named by hand: a hand-entered food now carries its full protein array, so PR 5's rung 2 will see hand-entered contaminants and not only AI-extracted ones.
+
+**Slice 4 (#447)** shipped `lib/trialContaminant.ts` an hour after this spec was ratified. It is well-coordinated — presence-only per D10, C2's standing-fact shape, and deliberately *not* named `dietTrial.ts` so PR 5 absorbs it as the protein arm rather than reconciling a fourth definition (B-438). But it carries **two forward-conflicts**, both created by decisions in this doc that postdate it, now recorded in §0.2:
+
+1. **PR 4 must re-site the trial-card note, not delete it.** §0.2's option (c) said the note was cut from slice 4 and rebuilt in PR 4; slice 4 shipped it anyway (`profile.tsx:817`). The content is correct, so the rebuild carries it.
+2. **Slice 4 derives the trial diet from `diet_trials.food_item_id`** — the single legacy column that §4.1 now rules display-only. Once multi-food trials exist, that derivation computes the sanctioned set from one food and would flag a legitimately-allowed second trial food as a contaminant. **PR 5 re-bases it onto `diet_trial_foods`, and PR 3's multi-select must not reach users before that lands.**
+
 Docs only — no app code, no schema, no deploy. Shipped via #443.
