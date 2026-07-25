@@ -59,7 +59,7 @@ The add-time sheet says **"trial diet"** where the mock said **"elimination tria
 
 `diet_trials` carries no indication column — D6 ratified deferring that schema change, and v1 keys off the trial food's own designated protein. So the app genuinely does not know whether a trial is an elimination trial, a GI trial, or a hydrolysed one. Asserting a trial *type* we were never told is a fabricated clinical detail on copy an owner may repeat to their vet. The rest of the mock's copy is used as written, including the log-time card's `"{Pet}'s duck trial should skip chicken. The meal's saved — just worth knowing, and maybe a note for your vet."` A test pins the absence of the type claim.
 
-**PM call wanted:** ratify the substitution, or add the indication column and say the specific thing.
+**RULED 2026-07-25 (PM): leave it as is.** "Trial diet" ships; the mock's wording is not restored. B-417 is being built on a parallel track and owns the trial model — if it introduces an indication, the specific wording becomes available then, and this line is the natural place to spend it.
 
 ---
 
