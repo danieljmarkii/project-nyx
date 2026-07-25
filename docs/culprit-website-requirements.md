@@ -1,6 +1,6 @@
 # Culprit — Web Presence Requirements
 
-**Created:** 2026-07-08 · **Status:** Build-ready DRAFT — awaiting PM ratification of the §3 decisions (all recommend-and-proceed) and the §12 open calls.
+**Created:** 2026-07-08 · **Last Updated:** 2026-07-24 · **Status:** Build-ready DRAFT — awaiting PM ratification of the §3 decisions (all recommend-and-proceed) and the §12 open calls. **§5.2 sender address ratified 2026-07-24 (`support@`, see below).**
 **Owner lenses:** Dir. of Engineering (stack/hosting/DNS), Trust & Safety / Privacy (legal pages, email, analytics), Sr. Product Designer + `nyx-voice` (landing content), PM (positioning, pre-launch state).
 
 **What this is:** the build-ready spec for standing up `getculprit.app` — a branded Culprit landing page plus the support / privacy / terms pages the App Store submission requires, plus email on the domain.
@@ -87,7 +87,10 @@ The PM's ask ("an email address for App Store contact and support") is **§5.1**
 ### 5.2 Sending / transactional mail — Supabase auth via SMTP (this is step 4 / B-152)
 
 - Supabase sends account-confirmation and password-reset emails. The built-in service is rate-limited (testing only). Production needs a real SMTP provider — **Resend** is the guide's default.
-- Verifying `getculprit.app` as a sending domain in Resend adds DKIM/SPF records (§5.4). Sender address: `noreply@getculprit.app` (or `hello@`).
+- Verifying `getculprit.app` as a sending domain in Resend adds DKIM/SPF records (§5.4). **Sender address: `support@getculprit.app`, sender name `Culprit`** — PM-ratified 2026-07-24, superseding this spec's original `noreply@` recommendation. Configured live in Supabase the same day.
+  - **Why the override:** a `noreply@` sender is the convention, but it is also a small act of rudeness — it invites a reply and then discards it. Culprit's whole posture is that a worried owner should be able to reach a person, and at pre-launch volume the support inbox can absorb it. Consistent with Principle 4's warm register and with `support@` being the address App Review will use anyway.
+  - **The cost, accepted knowingly:** replies to automated confirmation mail — plus auto-responders, out-of-office bounces, and any spam that follows the From header — land in the same inbox App Store Review uses to contact us. If that inbox gets noisy enough to bury a Review message, revisit; the fix is a `noreply@` sender plus a `Reply-To: support@`, which keeps the courtesy without the noise.
+  - **Knock-on:** this promotes §5.3 (replying *as* `support@`) from "minor, defer" to something worth doing before launch — an owner who replies to a confirmation email and gets an answer from a personal Gmail address will reasonably wonder who has their pet's data.
 - **This spec's only job here** is to note that the sending-domain DNS records live at Cloudflare alongside §5.1, so they're added together. The provider choice + Supabase config remain **step 4 / B-152** (PM action).
 
 ### 5.3 Replying *as* support@ (minor, flag)
@@ -202,7 +205,7 @@ vs. a Squarespace-style bundle at ~$200–280/yr. The decoupled approach holds.
 
 1. **D1–D5** (§3): ratify or overrule. Defaults proceed if silent.
 2. **Waitlist / email capture on the landing page?** Adds a form + somewhere to store addresses + a privacy-policy line. Recommendation: **defer** — a "coming soon" + `support@` contact is enough for v1; revisit if pre-launch demand-collection becomes a goal. → backlog **B-282**.
-3. **Reply-as-`support@`** (§5.3): set up Gmail "send-as" now, or reply from personal until launch? Recommendation: **defer** to a send-as setup once Resend exists (step 4).
+3. **Reply-as-`support@`** (§5.3): set up Gmail "send-as" now, or reply from personal until launch? ~~Recommendation: **defer**~~ — **upgraded 2026-07-24**: the §5.2 ruling makes `support@` the *sender* of every confirmation email, so owners will reply to it expecting a human. Replying from a personal Gmail undercuts that on a health-data product. Resend now exists, so the blocker named in the original deferral is gone. Recommendation: **set up Gmail "send-as" through Resend before launch** (not a submission blocker, but ahead of first real users).
 4. **Canonical host:** apex `getculprit.app` (recommended) vs `www.` — pick one; the other 301-redirects.
 
 ---

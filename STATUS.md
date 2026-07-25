@@ -149,15 +149,11 @@ Spec `docs/nyx-stool-analysis-requirements.md` (§8 = 10-PR plan). Second child 
 
 ## Blocking Open Questions
 
-**Six live rulings, all on the diet-trial track (B-417)** — full tee-up with evidence, options and named dissent in **`docs/diet-trial-requirements-review-2026-07.md`** §3–§4.
+**None on the diet-trial track — all ten rulings closed 2026-07-25.** Record: `docs/diet-trial-requirements-review-2026-07.md` §0; outcomes written throughout `docs/nyx-diet-trial-requirements.md` v0.97.
 
-- **G1 / D3 — the allowed-food set.** Team rec **ratify**, unanimous across nine lenses and now empirical: the *shipped* off-diet definition would report **~530 exposures across 645 feedings** on live data. Locks migration 040.
-- **G2 — reframed from a threshold to a rule.** "Below what coverage may the app say *no off-diet foods logged*?" is malformed — four code-grounded proofs say the sentence is never true. **Team rec: delete the negative claim at every coverage**; render a positive statement about the *record*, qualifier inline.
-- **G3 — durations.** Numbers stand; semantics change; §0.3's "low end" framing of skin 56d is wrong (it IS the >90% band). Key on **species × indication**. The GI milestone must never read as permission to stop a diet ACVIM says to continue ≥12 weeks.
-- **§0.2 sequencing vs. B-351 slice 4.** Team rec **(c)** — and the dependency is **soft, not hard** (D10 is presence-only), which unblocks PRs 4 and 5.
-- **Conflicts C1–C6** — PR 5's half-path; trial-diet self-contamination; the oral-route lane; how much §7 may grow (a genuine Principle-6 conflict); an owner-scored severity value (amendment against D1); and the "Start a trial" disclosure (T&S: Nyx's first record that judges a *person*).
+Two §2.2 amendments remain unruled but block nothing: **A-2** (a `paused` lifecycle state — free in PR 1, a migration afterwards, so worth a call before PR 1 opens) and **A-3** (a mid-trial card state; not schema, can land any time).
 
-**Not blocking, but PM-visible:** **B-428** — the "20–30% diet-trial adherence" figure in the wedge's framing **could not be traced to any published veterinary source** in two independent lanes. The argument survives qualitatively; the number has reached investor-adjacent material.
+**Not blocking, but PM-visible:** **B-420** — the "20–30% diet-trial adherence" figure in the wedge's framing could not be traced to any published veterinary source in two independent lanes.
 
 Nearest live PM gates, none of which block code already in flight:
 - **B-182 chronicity D1/D2** — Dr. Chen's `minEpisodes` 6-vs-5 sensitivity call, and the B-247 stool ruling-(a) formal clinical sign-off. Both gate *ratification*, not the shipped code.
@@ -165,6 +161,17 @@ Nearest live PM gates, none of which block code already in flight:
 ---
 
 ## Open PM Action Items
+
+**CI ruleset polish (B-433) — optional, ~15s**
+- [ ] **Set the `main` ruleset's Allowed merge methods to Squash only.** It currently permits Merge/Squash/Rebase while the Git Workflow rule is squash-only, so the written convention is enforceable but not enforced. Ruleset `main` → *Require a pull request before merging* → Allowed merge methods. (Makes `Require linear history` redundant — don't tick both.) Not urgent; the B-390 gate itself is live and binding.
+
+**Email confirmation / SMTP (guide steps 4 + 9 — B-152; blocks B-271 demo account AND B-280 PR 4)**
+- [ ] **Confirmation is ON with a mail path that has never sent.** Signup currently succeeds and then silently strands the owner if SMTP is misconfigured — it is the one state with no visible failure. Either send the test below, or flip **Confirm email OFF** until you do. Two `auth.users` rows are already stuck unconfirmed from earlier attempts.
+- [ ] **Trigger one real send** (no app/device needed, from the Codespace): `curl -X POST "$EXPO_PUBLIC_SUPABASE_URL/auth/v1/signup" -H "apikey: $EXPO_PUBLIC_SUPABASE_ANON_KEY" -H "Content-Type: application/json" -d '{"email":"danieljmarkii+smtp1@gmail.com","password":"testpass123"}'` — then check Supabase **Logs → Auth** for `535`/`550`, and Resend → Emails for delivery. A `535` means the SMTP username isn't exactly `resend`. Closes step 4.
+- [ ] **Set Supabase → Authentication → URL Configuration → Site URL** — it is where the confirmation link lands. If unset/localhost a brand-new owner hits a browser error at the moment of most trust (the account still confirms). → **B-432**.
+- [ ] **The two RLS dashboard checks folded into B-152:** "Confirm email" + **email-enumeration protection** enabled, and the Auth email rate limits sane. #436's `invalid_credentials` copy is written to not undo enumeration protection from the client — worth having the server setting actually on.
+- [ ] **Auth email templates still say "Nyx"** (hardening audit §B7) — Authentication → Emails → Templates. A reviewer creating an account sees the wrong brand. Pairs with the sends above.
+- [ ] **Secrets Register row for the Resend API key** — I'll add it once you confirm step 4; the key lives only in Supabase's SMTP config, never the repo.
 
 **Storage hardening — two holes verified live 2026-07-25 (competitive-review audit, `pg_policies`)**
 - [ ] **`nyx-vet-attachments` is wider than B-248 states — `SELECT`, `INSERT` *and* `DELETE` are all `TO authenticated` scoped only by `bucket_id`.** So a second user could *delete* another owner's prescriptions/visit summaries, not only read them. Already `Now` and correctly called a pre-multi-user blocker; the row is updated with the delete finding. Dormant only because n=1 — it goes live the moment user #2 exists, which App Store review makes real. Fix = migration 025's pattern (path CHECK + owner-scoped policies), its own schema PR.
@@ -273,7 +280,7 @@ eas build --platform ios --profile production --auto-submit
 
 ## Recent Sessions
 
-**Moved to [`docs/sessions/`](docs/sessions/) — one file per session (2026-07-25).** Kept out of this file because a shared, prepend-ordered list is a guaranteed merge conflict between parallel sessions; a new file per session is a guaranteed non-conflict. Nothing was discarded — the ten entries that were here became the ten oldest files in that directory.
+**Moved to [`docs/sessions/`](docs/sessions/) — one file per session (2026-07-25).** Kept out of this file because a shared, prepend-ordered list is a guaranteed merge conflict between parallel sessions; a new file per session is a guaranteed non-conflict. Nothing was discarded — every entry that was here became a file in that directory, including the three that landed on `main` while this change was in flight.
 
 ```bash
 ls docs/sessions/ | sort -r | head -10

@@ -24,6 +24,7 @@ import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { Divider } from '../../components/ui/Divider';
 import { emailError, passwordError, requiredNameError } from '../../lib/authValidation';
+import { authErrorCopy } from '../../lib/authErrors';
 
 // Account creation — the first screen that captures OWNER identity (B-251 PR 6,
 // spec §3.1 / §1a, mockup 04–05). Reached from the Landing's "Create account".
@@ -77,7 +78,11 @@ export default function SignupScreen() {
     setLoading(false);
 
     if (error) {
-      Alert.alert("Couldn't create your account", error.message);
+      // Mapped, never raw — see lib/authErrors. Supabase's own strings name
+      // system states ("Email not confirmed", "For security purposes…"), which
+      // tell an owner nothing about what to do next.
+      const copy = authErrorCopy(error, 'signup', cleanEmail);
+      Alert.alert(copy.title, copy.message);
       return;
     }
 
@@ -129,7 +134,13 @@ export default function SignupScreen() {
     const { error } = await supabase.auth.resend({ type: 'signup', email: verifyEmail });
     setResending(false);
     if (error) {
-      Alert.alert("Couldn't resend", error.message);
+      // The likeliest failure here by far is the per-user send interval (the
+      // Supabase SMTP "Minimum interval per user" setting, 60s), because "nothing
+      // arrived, tap it again" is the obvious human response to a slow email.
+      // Raw, that reads as "For security purposes, you can only request this
+      // after 47 seconds" — an accusation. Mapped, it's a wait.
+      const copy = authErrorCopy(error, 'resend', verifyEmail);
+      Alert.alert(copy.title, copy.message);
       return;
     }
     Alert.alert('Link sent', `We sent another link to ${verifyEmail}.`);
@@ -184,8 +195,16 @@ export default function SignupScreen() {
             <Mail size={44} color={theme.colorAccent} strokeWidth={1.5} />
           </View>
           <Text style={styles.title}>Check your inbox</Text>
+          {/* B-401: this line used to end "you can do this anytime", which framed
+              confirmation as optional. With email confirmation ON it is the only
+              way into the account, so the copy now names the real sequence —
+              confirm, come back, sign in. There is no auth deep-link handler
+              (signUp sends no emailRedirectTo and nothing converts the link into
+              a session), so the return trip really is manual; promising anything
+              smoother would be a lie the owner discovers at the worst moment. */}
           <Text style={styles.verifySub}>
-            We sent a link to {verifyEmail}. Tap it to verify — you can do this anytime.
+            We sent a link to {verifyEmail}. Tap it to confirm your address, then come back here and
+            sign in.
           </Text>
           <View style={styles.grow} />
 
@@ -212,14 +231,22 @@ export default function SignupScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* B-401: was "Verify later · continue for now" routing to /login — a
+              promise of entry the app cannot keep, since an unconfirmed account
+              cannot pass the login wall. The label now promises only what it
+              delivers (leaving this screen), and the destination is the Landing
+              rather than a sign-in form the owner would immediately fail: being
+              handed a password field seconds after being told to go read an email
+              invites exactly the failed attempt this fix exists to prevent.
+              The account is already created — nothing is lost by leaving. */}
           <TouchableOpacity
-            onPress={() => router.replace('/(auth)/login')}
+            onPress={() => router.replace('/(auth)')}
             style={styles.continueLater}
             accessibilityRole="button"
-            accessibilityLabel="Verify later and continue"
+            accessibilityLabel="Close and confirm your email later"
             testID="verify-continue"
           >
-            <Text style={styles.continueLaterText}>Verify later · continue for now</Text>
+            <Text style={styles.continueLaterText}>I'll do this later</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

@@ -15,7 +15,7 @@ jest.mock('expo-router', () => ({
   router: { replace: jest.fn(), back: jest.fn(), push: jest.fn(), canGoBack: jest.fn(() => true) },
 }));
 jest.mock('../../lib/supabase', () => ({
-  supabase: { auth: { signInWithPassword: jest.fn() } },
+  supabase: { auth: { signInWithPassword: jest.fn(), resend: jest.fn() } },
 }));
 // SafeAreaView needs a provider in a real tree; pass it through headless.
 jest.mock('react-native-safe-area-context', () => {
@@ -24,7 +24,21 @@ jest.mock('react-native-safe-area-context', () => {
 });
 
 const mockSignIn = supabase.auth.signInWithPassword as jest.Mock;
+const mockResend = supabase.auth.resend as jest.Mock;
 const mockReplace = router.replace as jest.Mock;
+
+// Alert.alert's third parameter is optional in the RN types, so reading buttons
+// off a recorded call needs a narrowing step. One helper keeps the assertions
+// below readable instead of repeating the cast at every call site.
+type AlertButtonCall = { text: string; onPress?: () => void | Promise<void> };
+function alertCall(spy: jest.SpyInstance, index = 0) {
+  const [title, message, buttons] = spy.mock.calls[index] as unknown as [
+    string,
+    string,
+    AlertButtonCall[],
+  ];
+  return { title, message, buttons };
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -73,10 +87,79 @@ describe('LoginScreen — sign in', () => {
     fireEvent.changeText(utils.getByTestId('login-password'), 'wrongpass');
     fireEvent.press(utils.getByTestId('login-submit'));
 
-    await waitFor(() =>
-      expect(alertSpy).toHaveBeenCalledWith("Couldn't sign you in", 'Invalid login credentials'),
-    );
+    // B-152: the raw provider string ("Invalid login credentials") no longer
+    // reaches the owner — lib/authErrors maps it. This assertion used to pin the
+    // passthrough, which was the bug.
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    const { title, message } = alertCall(alertSpy);
+    expect(title).toBe("That didn't match");
+    expect(message).toBe('Check your email and password, then try again.');
     expect(mockReplace).not.toHaveBeenCalledWith('/(tabs)');
+    alertSpy.mockRestore();
+  });
+});
+
+// The path that only exists once email confirmation is ON (B-152 part 2). Before
+// this, an owner who signed up and never got the email hit Supabase's literal
+// "Email not confirmed" with no way forward but re-running signup.
+describe('LoginScreen — unconfirmed email', () => {
+  const UNCONFIRMED = { error: { code: 'email_not_confirmed', message: 'Email not confirmed' } };
+
+  it('explains the real state and offers to resend, instead of a raw error', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockSignIn.mockResolvedValue(UNCONFIRMED);
+    const utils = render(<LoginScreen />);
+    fireEvent.changeText(utils.getByTestId('login-email'), 'jordan@email.com');
+    fireEvent.changeText(utils.getByTestId('login-password'), 'secret123');
+    fireEvent.press(utils.getByTestId('login-submit'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    const { title, message, buttons } = alertCall(alertSpy);
+    expect(title).toBe('One step left');
+    // Names the specific inbox to go look in, not a generic "your email".
+    expect(message).toContain('jordan@email.com');
+    expect(message).not.toContain('Email not confirmed');
+    // The remedy rides on the alert — no bounce back through signup.
+    expect(buttons.map((b) => b.text)).toEqual(['Not now', 'Resend link']);
+    expect(mockReplace).not.toHaveBeenCalledWith('/(tabs)');
+    alertSpy.mockRestore();
+  });
+
+  it('resends to the trimmed address when the owner taps Resend link', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockSignIn.mockResolvedValue(UNCONFIRMED);
+    mockResend.mockResolvedValue({ error: null });
+    const utils = render(<LoginScreen />);
+    fireEvent.changeText(utils.getByTestId('login-email'), '  jordan@email.com  ');
+    fireEvent.changeText(utils.getByTestId('login-password'), 'secret123');
+    fireEvent.press(utils.getByTestId('login-submit'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    await alertCall(alertSpy).buttons[1].onPress?.();
+
+    expect(mockResend).toHaveBeenCalledWith({ type: 'signup', email: 'jordan@email.com' });
+    alertSpy.mockRestore();
+  });
+
+  it('maps a rate-limited resend to a wait, not a security lecture', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockSignIn.mockResolvedValue(UNCONFIRMED);
+    // What Supabase's "Minimum interval per user" (60s on this project) returns.
+    mockResend.mockResolvedValue({
+      error: { message: 'For security purposes, you can only request this after 47 seconds.' },
+    });
+    const utils = render(<LoginScreen />);
+    fireEvent.changeText(utils.getByTestId('login-email'), 'jordan@email.com');
+    fireEvent.changeText(utils.getByTestId('login-password'), 'secret123');
+    fireEvent.press(utils.getByTestId('login-submit'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    await alertCall(alertSpy).buttons[1].onPress?.();
+
+    const { title, message } = alertCall(alertSpy, 1);
+    expect(title).toBe('Give it a moment');
+    expect(message).toContain('47 seconds');
+    expect(message).not.toContain('For security purposes');
     alertSpy.mockRestore();
   });
 });

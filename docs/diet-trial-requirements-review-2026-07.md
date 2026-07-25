@@ -9,6 +9,35 @@
 
 ---
 
+## 0. PM RULINGS — closed 2026-07-25
+
+All four gates and all six conflicts were ruled in a single sitting. **This section is the record; §3 and §4 below are the tee-ups that produced it and are preserved unedited.**
+
+| # | Ruling | Outcome |
+|---|---|---|
+| **G1 / D3** | Allowed-food set vs. B-351 D6 | **RATIFIED — both ship, one detection path.** `diet_trial_foods` is built; D6 keeps the protein axis; §5.3 consults both in one ordered predicate where the protein arm can only *add* a verdict. Locks migration 040. |
+| **G2** | What the app may say | **RULE, NOT THRESHOLD — the negative claim is deleted from the product at every coverage, on every surface.** Positive form about the *record*, qualifier inline, exposure count is a floor never a total, two-sided (no absence-based alarms below the floor either). A floor still exists but gates the report's **interpretability statement**, not the exposure count. |
+| **G3** | Duration defaults | **Numbers stand; keyed on species × indication; semantics fixed.** §0.3's "low end" framing of skin 56d is corrected — it IS the >90% band. The milestone names only the window the owner set and never reads as permission to stop. `Extend` gets equal weight + a named default. |
+| **§0.2** | Sequencing vs. B-351 slice 4 | **Option (c) — merge.** Slice 4's diet-trial-card note is cut from B-351 and rebuilt in PR 4; B-351 keeps the food-surface disclosure. PR 5 **owns** the shared predicate (`lib/dietTrial.ts`); B-351's Tier-2 flag consumes it. |
+| **C1** | PR 5's half-path | **Render the exposure count under the §5.2 floor framing** while the protein arm is stubbed. G2's ruling already removed the clean-trial phrasing Chen's objection targeted; the temporarily-silent arm is one more named blind spot, not a different kind of gap. |
+| **C2** | Trial-diet self-contamination | **Trial-level standing fact — card + report.** Computed once per trial from the `primary_diet` rows; never a per-feeding verdict. Preserves Chen's clinical content; removes the alarm-fatigue mechanism. |
+| **C3** | The oral-route lane | **DETECT IN V1 — PM override of the chair's recommendation.** §5.3 gains a third ordered check over in-window `medication` events keyed on `medication_items.form = 'chewable'` plus any dose carrying a `paired_event_id` food vehicle. The day-0 substitution line ships too. **B-419 narrows** to the residual (flavoured non-chewable forms, needing the capture work that was cut). |
+| **C4** | How much §7 may grow | **DEFERRED to the mock round.** The mock must render the trial block in **at least two variants** (two-element and four-element) so the ruling is made against a real artifact. Dependency: G2 put the coverage floor on the interpretability statement, so a later "medication overlap only" outcome needs another home for it. |
+| **C5** | Owner-scored severity | **REJECTED, and the premise corrected — PM ruling.** Severity comes from the **logged events**, not a subjective score. **A-1 is dropped: no severity columns in migration 040.** §7 instead renders the symptom trend against **logging density** over the same window, so a vet can see whether a falling itch count tracks a falling total-log count — §5.2's coverage-denominator honesty applied one surface over. D1 holds unamended. |
+| **C6** | The start-trial disclosure | **Name the itemisation, at the confirm action.** One line, warm register, before the owner commits: *"While the trial runs, Nyx records which feedings matched the trial diet and which didn't, with dates. That's the part your vet needs."* |
+
+### Where the review was wrong, and the PM caught it
+
+**C5 is a correction to this review, not just a decision within it.** The panel's Dr. Chen argued for capturing an owner-scored 0–10, citing COSCAD'18. That argument contradicts **Dr. Chen's own persona definition** (`docs/personas.md`): *"Severity scores entered by owners who underestimate or catastrophize — she trusts frequency over owner-rated severity"* — and Jordan's: *"Severity sliders when Mochi just vomited — Jordan doesn't know what '3 out of 5' means clinically."* It also contradicts a shipped, deliberate design decision: **every** event type in `constants/eventTypes.ts` carries `hasSeverity: false`, not just `itch`. The review presented `itch`'s flag as a gap specific to skin trials; it is app-wide and intentional.
+
+The clinical finding underneath it survives and is **not** discharged by the ruling: owner-logged event streams decay with attention, so an itch count is biased toward apparent improvement. What changed is the remedy — **measure and disclose the bias rather than trying to correct it with an instrument the app has deliberately refused everywhere else.**
+
+### Still open (not part of this sitting)
+
+Two §2.2 amendments were not in the four-gates/six-conflicts set and remain unruled: **A-2** (a `paused` lifecycle state for a vet-directed hold) and **A-3** (a mid-trial card state at ~40% of target). Both are schema-or-nothing for A-2 and card-state-only for A-3.
+
+---
+
 ## 1. The headline
 
 The spec's substance is sound — the coverage/adherence split (D2), the explicit allowed set (D3) and the never-score-the-trial invariant (D6) all survived every attack in the packet, and the allowed set is now backed by *empirical* evidence it did not have. What did not survive is the spec's account of **what the app is permitted to say**: the sentence §4.2 renders — *"No off-diet foods logged"* — cannot be made true at any coverage level, which means G2 as posed is asking the wrong question, and all nine lenses reached that independently.
