@@ -158,6 +158,71 @@ describe('SignupScreen — no session (email confirmation on)', () => {
     expect(utils.getByTestId('verify-continue')).toBeTruthy();
   });
 
+  // B-401: the tertiary action used to read "Verify later · continue for now"
+  // and route to /login — promising entry the app cannot grant, since an
+  // unconfirmed account cannot pass the login wall. Harmless while confirmation
+  // was OFF; a stranding dead-end the day it flipped ON.
+  it('offers an honest exit that promises only what it delivers', async () => {
+    mockSignUp.mockResolvedValue({
+      data: { session: null, user: { id: 'u1', identities: [{}] } },
+      error: null,
+    });
+    const utils = render(<SignupScreen />);
+    fillValidForm(utils);
+    fireEvent.press(utils.getByTestId('signup-submit'));
+    await waitFor(() => expect(utils.getByText('Check your inbox')).toBeTruthy());
+
+    // The label no longer claims the owner can carry on into the app.
+    expect(utils.queryByText('Verify later · continue for now')).toBeNull();
+    expect(utils.getByText("I'll do this later")).toBeTruthy();
+
+    fireEvent.press(utils.getByTestId('verify-continue'));
+    // Lands on the Landing, NOT the sign-in form they would immediately fail.
+    expect(mockReplace).toHaveBeenCalledWith('/(auth)');
+    expect(mockReplace).not.toHaveBeenCalledWith('/(auth)/login');
+  });
+
+  it('does not frame confirmation as optional (it is now the only way in)', async () => {
+    mockSignUp.mockResolvedValue({
+      data: { session: null, user: { id: 'u1', identities: [{}] } },
+      error: null,
+    });
+    const utils = render(<SignupScreen />);
+    fillValidForm(utils, 'jordan@email.com');
+    fireEvent.press(utils.getByTestId('signup-submit'));
+    await waitFor(() => expect(utils.getByText('Check your inbox')).toBeTruthy());
+
+    // "you can do this anytime" read as optional; there is also no auth deep-link
+    // handler, so the return trip is manual and the copy must say so.
+    expect(utils.queryByText(/you can do this anytime/)).toBeNull();
+    expect(utils.getByText(/come back here and\s+sign in/)).toBeTruthy();
+  });
+
+  it('maps a rate-limited resend to a wait, not a security lecture', async () => {
+    const { Alert } = require('react-native');
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    mockSignUp.mockResolvedValue({
+      data: { session: null, user: { id: 'u1', identities: [{}] } },
+      error: null,
+    });
+    (supabase.auth.resend as jest.Mock).mockResolvedValue({
+      error: { message: 'For security purposes, you can only request this after 47 seconds.' },
+    });
+    const utils = render(<SignupScreen />);
+    fillValidForm(utils);
+    fireEvent.press(utils.getByTestId('signup-submit'));
+    await waitFor(() => expect(utils.getByText('Check your inbox')).toBeTruthy());
+
+    fireEvent.press(utils.getByTestId('verify-resend'));
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+    const [title, message] = alertSpy.mock.calls[0];
+    expect(title).toBe('Give it a moment');
+    expect(message).toContain('47 seconds');
+    expect(message).not.toContain('For security purposes');
+    alertSpy.mockRestore();
+  });
+
   it('lets a stranded user go back from verify to fix a mistyped email (no dead end)', async () => {
     mockSignUp.mockResolvedValue({
       data: { session: null, user: { id: 'u1', identities: [{}] } },
