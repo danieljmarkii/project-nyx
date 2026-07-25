@@ -562,11 +562,35 @@ function proteinSetPhrase(v: ProteinSetView, markOffTrial: boolean): string {
  * worst form of shape ② — an ad-lib competing antigen the discrete tally structurally
  * cannot count, because it is not a feeding event at all.
  */
-function trialProteinBreaches(snap: ReportSnapshot): { inTrialFood: string[]; freeFed: string[] } {
-  if (!snap.diet.activeTrial || snap.diet.trialTargetProtein == null) return { inTrialFood: [], freeFed: [] }
+function trialProteinBreaches(snap: ReportSnapshot): {
+  inTrialFood: string[]
+  freeFed: string[]
+  /** True when the off-trial check could NOT be run at all — an active trial whose food
+   *  carries more than one protein but no designated main, so there is nothing to compare
+   *  against. Distinct from "no breaches found", and the render must not let the two share
+   *  a silence. */
+  targetUnknown: boolean
+  /** Any breach came from a bowl shared with another pet ⇒ availability, not intake. */
+  fromSharedBowl: boolean
+} {
+  const empty = { inTrialFood: [], freeFed: [], targetUnknown: false, fromSharedBowl: false }
+  if (!snap.diet.activeTrial) return empty
+  if (snap.diet.trialTargetProtein == null) {
+    // The THIRD meaning of page-1 silence, found by the adversarial re-check. The fix
+    // commit enumerated two ("this diet is single-protein" and "nobody read the label")
+    // and wrote a string for one. This is the case where the owner CLEARED the main
+    // protein — a supported action — so the trial food may carry a fully-read,
+    // multi-protein set and the check still cannot run, because nothing says which
+    // protein the trial is built on. `complete` is true, so the unread escape hatch
+    // never fires, and page 1 goes completely quiet on a self-contaminated trial diet.
+    return { ...empty, targetUnknown: snap.diet.activeTrial.proteinSet.proteins.length > 1 }
+  }
+  const freeFedBreaches = snap.diet.freeFed.filter((f) => f.proteinSet.offTrial.length > 0)
   return {
     inTrialFood: snap.diet.activeTrial.proteinSet.offTrial,
-    freeFed: [...new Set(snap.diet.freeFed.flatMap((f) => f.proteinSet.offTrial))],
+    freeFed: [...new Set(freeFedBreaches.flatMap((f) => f.proteinSet.offTrial))],
+    targetUnknown: false,
+    fromSharedBowl: freeFedBreaches.some((f) => f.isShared),
   }
 }
 
@@ -1061,11 +1085,22 @@ function headline(snap: ReportSnapshot): string {
     // the clinician's call and not derivable from an exposure set.
     const breach = trialProteinBreaches(snap)
     const breachNames = [...new Set([...breach.inTrialFood, ...breach.freeFed])]
-    const breachBit = breachNames.length
-      ? ` <b>The record shows ${h(
-          proteinList(breachNames.map(capProtein)),
-        )} reaching ${h(snap.signalment.name)} during the trial</b> — see the diet section before reading the trial as a result.`
+    // "reaching {pet}" asserted CONSUMPTION, and a free-fed bowl is exactly the exposure
+    // we cannot say that about — more so a bowl shared with another pet, whose
+    // "intake not directly observed" caveat sits a block below, on the line a scanner
+    // stops before. Promoting the fact has to promote its qualifier with it: "in the
+    // diet" is true of a contaminated trial food AND an available bowl without claiming
+    // either was eaten.
+    const availabilityBit = breach.freeFed.length
+      ? ` (some of it${breach.fromSharedBowl ? ' in a bowl shared with another pet' : ' free-fed'}; intake not directly observed)`
       : ''
+    const breachBit = breachNames.length
+      ? ` <b>The record shows ${h(proteinList(breachNames.map(capProtein)))} in ${h(
+          snap.signalment.name,
+        )}&rsquo;s diet during the trial${availabilityBit}</b> — see the diet section before reading the trial as a result.`
+      : breach.targetUnknown
+        ? ` <b>No main protein is recorded for the trial food, so its other proteins cannot be checked against the trial.</b> Its full set is in appendix&nbsp;B.`
+        : ''
     return `
   <div class="headline">Tracking <b>${food}</b> as a diet trial${vet} — day ${num(t.daysElapsed)} of ${num(
     t.targetDurationDays,

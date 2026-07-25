@@ -2039,3 +2039,54 @@ Deno.test('B-351 — a feeding with no food at all is "no protein recorded", not
   assert.equal(snap.provenance.proteinUnknownCount, 2)
   assert.equal(snap.proteinTimeline.incompleteFeedings, 1, 'only the food that HAS a protein but no read panel')
 })
+
+Deno.test('B-351 — PROPERTY: a trial food is never off-trial against itself, over a dirty cross-product', () => {
+  // The example-list version of this test above pins six known-bad values. The adversarial
+  // re-check pointed out that this is the exact coverage shape `lib/protein.ts`'s own header
+  // says is NOT sufficient — an example list is what let B-414 ship a `chicken -` key under a
+  // docstring claiming idempotence. So the durable form is the PROPERTY: for any stored
+  // primary P, `canonicalizeProtein(P)` is in the derived set and is never reported as
+  // off-trial against a target resolved from the same P. That is the invariant whose failure
+  // put "The trial food's own label also lists Whitefish" on page 1 of a whitefish trial.
+  const PRIMARIES = [
+    'Ocean Whitefish', 'ocean whitefish', 'Buffalo', 'Deer', 'Chicken Liver', 'Deboned Chicken',
+    'Egg Whites', 'chicken - meal', 'Chicken By-Product Meal', 'CHICKEN', '  salmon  ', 'green tripe',
+    'hydrolyzed soy protein', 'lamb meal', 'Turkey Giblets', 'whitefish', 'bison', 'venison',
+  ]
+  const WRAPPERS = [(x: string) => x, (x: string) => x.toUpperCase(), (x: string) => `  ${x}  `, (x: string) => `${x} meal`]
+  const ARRAY_SHAPES: unknown[] = [null, [], ['chicken'], ['duck', 'salmon'], 'not-an-array', [null, 5, {}], undefined]
+
+  let checked = 0
+  for (const base of PRIMARIES) {
+    for (const wrap of WRAPPERS) {
+      const primary = wrap(base)
+      const target = canonicalizeProteinForTest(primary)
+      if (target == null) continue // protein-unknown disables the check entirely — nothing to assert
+      for (const arr of ARRAY_SHAPES) {
+        const snap = assembleReport(
+          baseInput({
+            dietTrials: [
+              {
+                id: 'dt1', foodItemId: 'f-trial', startedAt: '2026-05-08', targetDurationDays: 56,
+                status: 'active', completedAt: null, vetName: null, foodLabel: 'Trial',
+                primaryProtein: primary,
+                proteins: arr as string[] | null,
+                ingredientsNotes: 'A captured panel, long enough to clear the floor.',
+                extractionConfidence: { proteins: 0.9 },
+              },
+            ],
+          }),
+        )
+        const view = snap.diet.activeTrial!.proteinSet
+        assert.equal(snap.diet.trialTargetProtein, target, `target keys from the stored primary (${primary})`)
+        assert.ok(view.proteins.includes(target), `the target is IN its own set (${primary} / ${JSON.stringify(arr)})`)
+        assert.ok(
+          !view.offTrial.includes(target),
+          `the trial protein is never its own contaminant (${primary} / ${JSON.stringify(arr)})`,
+        )
+        checked++
+      }
+    }
+  }
+  assert.ok(checked > 300, `the cross-product actually ran (${checked} cases)`)
+})

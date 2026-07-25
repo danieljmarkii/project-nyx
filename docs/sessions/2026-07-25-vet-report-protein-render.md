@@ -112,6 +112,36 @@ implementation, guarded by a source scan. Its consumer list is client-only — s
 implementation that nothing pins. Probably correct today; "each implementation independently happens
 to be right today" is the state B-421's own header says precedes the drift. Filed as **B-449**.
 
+## The adversarial re-check of the fix
+
+Running the reviewer again *on the repair* was worth it, and is now the habit to keep: the first
+pass broke this code, and merging the repair unverified would have been the wrong lesson.
+
+It returned **PASS** — a 320-case fuzz over dirty primaries × stored-array shapes found 0 violations
+of the invariant, the live `ocean whitefish` row reproduces clean end-to-end, and it showed the
+Class-A under-merge cannot hide a contaminant *structurally* (the predicate is "everything not equal
+to the target", so a finer key can only ever add). It also found two residuals that were mine:
+
+- **A third meaning of page-1 silence.** The fix commit enumerated two ("this diet is
+  single-protein" / "nobody read the label") and wrote a string for one. The third is a trial food
+  whose main protein the owner *cleared* — a supported action — leaving a fully-read multi-protein
+  set with no target to compare against. `complete` is true, so the unread escape hatch never fires,
+  and page 1 went completely quiet on a self-contaminated trial diet. Now says the check could not
+  run, and only when there are actually other proteins to check.
+- **`isShared` was dropped on the render path.** It reaches detection as a low attribution
+  confidence and never reached the renderer, so a communal multi-cat bowl produced a bold *"reaching
+  Nyx"* — a consumption claim — with its "intake not directly observed" caveat a block below, on the
+  line a scanner stops before. Promoting a fact has to promote its qualifier: the headline now says
+  "in {pet}'s diet", and names a shared bowl as shared.
+
+Its fourth point landed too: the regression test was a **six-value example list**, which is the exact
+coverage shape `lib/protein.ts`'s own header says is insufficient and that let B-414 ship. Replaced
+with the property over a dirty cross-product — verified to fail against the old code.
+
+Its forward-looking finding is written into **B-416** rather than left in a review: that backfill is
+where this bug can return as *data* instead of code, so the row now carries two guards (rewrite both
+columns atomically; append secondaries through the write-path normalizer).
+
 ## Notes for the next session here
 
 - **Phase A is complete with this slice.** Phase B (slice 6, set-membership *correlation* with

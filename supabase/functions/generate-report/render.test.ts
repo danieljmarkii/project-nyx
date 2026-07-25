@@ -475,7 +475,7 @@ Deno.test('#7/#8 meals-only Appendix E — grouped meal foods render WITHOUT an 
       // that previously left the wet food unnamed + cited a non-existent appendix.
       diet: {
         ...base().diet,
-        freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null }],
+        freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
         mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.107, intakeMode: 'some' },
         mealItems: [
           { foodLabel: 'Instinct Chicken', primaryProtein: 'chicken', proteinSet: pset(['chicken']), count: 18, firstDate: '2026-05-14', lastDate: '2026-07-03', intakeMode: 'some' },
@@ -500,7 +500,7 @@ Deno.test('#7/#8 — meals appendix E renders the grouped meal foods even with N
       diet: {
         trialTargetProtein: null,
         activeTrial: null,
-        freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-05-01', activeUntil: null }],
+        freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-05-01', activeUntil: null , isShared: false }],
         intakeNotDirectlyObserved: true,
         mealCompletion: { ratedMeals: 28, finishedMeals: 3, rate: 0.1, intakeMode: 'some' },
         mealItems: [
@@ -617,7 +617,7 @@ Deno.test('free-fed arrangement → verbatim "Intake not directly observed"', ()
       diet: {
         trialTargetProtein: null,
         activeTrial: null,
-        freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-05-01', activeUntil: null }],
+        freeFed: [{ foodLabel: 'Royal Canin Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: '2026-05-01', activeUntil: null , isShared: false }],
         intakeNotDirectlyObserved: true,
         mealCompletion: null,
         mealItems: [],
@@ -1021,7 +1021,7 @@ Deno.test('A2 — an active trial + a free-fed bowl: the bowl shows in Appendix 
           vetName: null,
           proteinSet: pset(['hydrolyzed']),
         },
-        freeFed: [{ foodLabel: 'Duck & pea kibble (bowl down)', primaryProtein: 'duck', proteinSet: pset(['duck']), activeFrom: '2026-01-01', activeUntil: null }],
+        freeFed: [{ foodLabel: 'Duck & pea kibble (bowl down)', primaryProtein: 'duck', proteinSet: pset(['duck']), activeFrom: '2026-01-01', activeUntil: null , isShared: false }],
         intakeNotDirectlyObserved: true,
         mealCompletion: null,
         mealItems: [],
@@ -1420,7 +1420,7 @@ Deno.test('R2-3 — a free-fed grazer with NO decline flag gets a descriptive fe
   const snap = base({
     diet: {
       ...base().diet,
-      freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null }],
+      freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
       intakeNotDirectlyObserved: true,
       mealCompletion: { ratedMeals: 25, finishedMeals: 0, rate: 0, intakeMode: 'some' },
       mealItems: [],
@@ -1450,7 +1450,7 @@ Deno.test('R2-3 — a free-fed pet WITH a decline flag keeps the scored figure (
   const snap = base({
     diet: {
       ...base().diet,
-      freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null }],
+      freeFed: [{ foodLabel: 'RC Weight', primaryProtein: 'chicken', proteinSet: pset(['chicken']), activeFrom: null, activeUntil: null , isShared: false }],
       intakeNotDirectlyObserved: true,
       mealCompletion: { ratedMeals: 25, finishedMeals: 5, rate: 0.2, intakeMode: 'some' },
       mealItems: [],
@@ -2007,6 +2007,7 @@ Deno.test('B-351 — a food whose OWN PRIMARY is off-trial marks cleanly, withou
             activeFrom: null,
             activeUntil: null,
             proteinSet: pset(['chicken', 'turkey'], { complete: true, offTrial: ['chicken', 'turkey'] }),
+            isShared: false,
           },
         ],
         intakeNotDirectlyObserved: true,
@@ -2037,6 +2038,7 @@ Deno.test('B-351 — a continuously-available off-trial protein reaches PAGE 1, 
             activeFrom: null,
             activeUntil: null,
             proteinSet: pset(['chicken', 'turkey'], { complete: true, offTrial: ['chicken', 'turkey'] }),
+            isShared: false,
           },
         ],
         intakeNotDirectlyObserved: true,
@@ -2163,6 +2165,7 @@ function breachedTrialSnap() {
           activeFrom: null,
           activeUntil: null,
           proteinSet: pset(['chicken', 'turkey'], { complete: true, offTrial: ['chicken', 'turkey'] }),
+          isShared: false,
         },
       ],
       intakeNotDirectlyObserved: true,
@@ -2192,9 +2195,14 @@ Deno.test('B-351 — the HEADLINE qualifies "day N of M" when the record shows o
   // plans, and the page invited the expensive one.
   const html = renderReport(breachedTrialSnap())
   const p1 = text(pageOne(html))
+  // "reaching Nyx" asserted CONSUMPTION; a free-fed bowl is exactly the exposure we
+  // cannot say that about, and its "intake not directly observed" caveat sits a block
+  // below — on the line a scanner stops before. Promoting the fact promotes its qualifier.
   assert.ok(
-    /The record shows Chicken and Turkey reaching Nyx during the trial/.test(p1),
-    'the headline names what reached the pet',
+    /The record shows Chicken and Turkey in Nyx&rsquo;s diet during the trial \(some of it free-fed; intake not directly observed\)/.test(
+      p1,
+    ),
+    'the headline names the exposure without claiming it was eaten',
   )
   assert.ok(/before reading the trial as a result/.test(p1))
   // Present-only: it reports exposure, never a verdict on whether the trial failed.
@@ -2267,4 +2275,64 @@ Deno.test('B-351 — the trial-diet parenthetical stops asserting composition wh
     ),
   )
   assert.ok(/\(duck\)/.test(clean) && !/\(labelled duck\)/.test(clean), 'unchanged when there is no contradiction')
+})
+
+Deno.test('B-351 — a SHARED bowl is named as shared, not as something the pet was shown to eat', () => {
+  // `isShared` reaches detection as a low attribution confidence but was dropped entirely
+  // on the render path, so a communal multi-cat bowl produced a bold consumption claim.
+  const snap = breachedTrialSnap()
+  snap.diet.freeFed[0].isShared = true
+  const p1 = text(pageOne(renderReport(snap)))
+  assert.ok(/in a bowl shared with another pet; intake not directly observed/.test(p1))
+  assert.ok(!/reaching Nyx/.test(p1), 'no consumption claim about a shared bowl')
+})
+
+Deno.test('B-351 — a trial food with NO designated main protein says the check could not run', () => {
+  // The THIRD meaning of page-1 silence. The owner clearing the main is a supported
+  // action, and it leaves a fully-READ multi-protein trial food with no target to compare
+  // against — so `complete` is true, the unread escape hatch never fires, and page 1 went
+  // completely quiet on a self-contaminated trial diet.
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
+      diet: {
+        trialTargetProtein: null,
+        activeTrial: { ...DUCK_TRIAL, primaryProtein: null, proteinSet: pset(['duck', 'chicken'], { complete: true }) },
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        mealItems: [],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  const p1 = text(pageOne(html))
+  assert.ok(
+    /No main protein is recorded for the trial food, so its other proteins cannot be checked against the trial/.test(p1),
+    'the un-runnable check is stated, not silent',
+  )
+  // Still present-only: it says the check could not run, never that the food is clean.
+  assert.ok(!/nothing else|no other proteins|clean/i.test(p1))
+})
+
+Deno.test('B-351 — a SINGLE-protein trial food with no main protein stays silent (nothing to say)', () => {
+  // The un-runnable-check line earns its place only when there is actually an unchecked
+  // set. A one-protein food has no "other proteins", so the line would be noise.
+  const html = renderReport(
+    base({
+      clinicalQuestion: { question: 'diet_trial_working', primarySymptom: 'diarrhea' },
+      diet: {
+        trialTargetProtein: null,
+        activeTrial: { ...DUCK_TRIAL, primaryProtein: null, proteinSet: pset(['duck'], { complete: true }) },
+        freeFed: [],
+        intakeNotDirectlyObserved: false,
+        mealCompletion: null,
+        mealItems: [],
+        treats: { count: 0, distinctItems: 0 },
+        humanFood: { count: 0, days: 0, items: [] },
+      },
+    }),
+  )
+  assert.ok(!/cannot be checked against the trial/.test(html))
 })

@@ -1010,6 +1010,13 @@ export interface DietSummary {
     activeFrom: string | null
     activeUntil: string | null
     proteinSet: ProteinSetView
+    /** B-040: the bowl is shared with another pet, so a protein in it is available to
+     *  this pet but not evidence this pet ate it. Reaches detection as a low
+     *  attribution confidence; carried here so the RENDER can qualify a promoted
+     *  claim too — an adversarial pass found the page-1 line asserting consumption
+     *  from a communal bowl with its "intake not directly observed" caveat left a
+     *  block below, on the very line a scanner stops before. */
+    isShared: boolean
   }>
   intakeNotDirectlyObserved: boolean
   /**
@@ -2138,6 +2145,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       activeFrom: a.activeFrom,
       activeUntil: a.activeUntil,
       proteinSet: proteinView(a),
+      isShared: a.isShared,
     }))
 
   const windowMeals = windowEvents.filter((e) => e.type === 'meal' && e.meal)
