@@ -19,6 +19,7 @@ import { TextField } from '../../components/ui/TextField';
 import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { emailError } from '../../lib/authValidation';
+import { authErrorCopy, isEmailNotConfirmed } from '../../lib/authErrors';
 
 // Returning-owner sign-in (B-251). Rebuilt on the same design system as the
 // Landing (index) and account (signup) screens so the unauthenticated entry reads
@@ -72,19 +73,48 @@ export default function LoginScreen() {
     // are already rendering (submitted=true) — just stop.
     if (emailError(email) || !password) return;
 
+    const cleanEmail = email.trim();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
+      email: cleanEmail,
       password,
     });
     setLoading(false);
-    if (error) {
-      // Server errors (wrong credentials, unconfirmed email) surface in an alert —
-      // the same shape signup uses for its server-side failures. Copy stays calm.
-      Alert.alert("Couldn't sign you in", error.message);
-    } else {
+    if (!error) {
       router.replace('/(tabs)');
+      return;
     }
+
+    // Server errors surface in an alert — the same shape signup uses. The copy is
+    // always mapped (lib/authErrors), never Supabase's raw string.
+    const copy = authErrorCopy(error, 'login', cleanEmail);
+
+    // The unconfirmed-email case is the one failure where the owner is stuck
+    // through no fault of their own — the account is fine, the email just never
+    // arrived (spam, a typo, a slow relay). An OK-only alert would send them back
+    // to signup to get a new link, which re-treads account creation for what is
+    // really a one-tap need. So the remedy rides on the alert itself (B-152).
+    if (isEmailNotConfirmed(error)) {
+      Alert.alert(copy.title, copy.message, [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Resend link', onPress: () => resendConfirmation(cleanEmail) },
+      ]);
+      return;
+    }
+
+    Alert.alert(copy.title, copy.message);
+  }
+
+  async function resendConfirmation(target: string) {
+    const { error } = await supabase.auth.resend({ type: 'signup', email: target });
+    if (error) {
+      // Most likely the per-user send interval if they've just tried from the
+      // signup screen — mapped to a wait, not a security lecture.
+      const copy = authErrorCopy(error, 'resend', target);
+      Alert.alert(copy.title, copy.message);
+      return;
+    }
+    Alert.alert('Link sent', `We sent another link to ${target}.`);
   }
 
   return (

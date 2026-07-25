@@ -126,7 +126,7 @@ jobs:
       # the pre-SDK-57 package.json, so `--frozen` fails on a clean checkout and
       # would keep failing after every dependency bump until someone remembered
       # to regenerate the lockfile. Remote-hash integrity is the part that
-      # matters and plain `--lock` gives it. (Lockfile drift → B-432.)
+      # matters and plain `--lock` gives it. (Lockfile drift → B-434.)
       - name: Warm the Deno module cache
         shell: bash
         run: |
