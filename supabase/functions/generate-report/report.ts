@@ -1649,6 +1649,14 @@ function buildDetectionInput(
       isMedicationVehicle: pairedEventIds.has(e.id),
       occurredAtConfidence: e.occurredAtConfidence,
       foodItemId: e.meal.foodItemId,
+      // STILL THE PRIMARY ONLY, deliberately. B-351 slice 5 widened what the report
+      // DISPLAYS to the full captured set; keying the CORRELATION on set membership is
+      // slice 6 (Phase B), which needs the collinearity clustering that stops the engine
+      // falsely blaming duck when it cannot separate duck from chicken (§7) — and is
+      // `adversarial-reviewer`-mandatory. Feeding sets in here without that guardrail
+      // would inflate the candidate family and credit collinear proteins. So the report
+      // currently shows a wider exposure picture than it correlates over, which is the
+      // spec's intended phase boundary, not an oversight.
       primaryProtein: e.meal.primaryProtein,
       intakeRating: e.meal.intakeRating,
       foodType: e.meal.foodType,
