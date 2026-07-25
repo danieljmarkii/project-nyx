@@ -65,6 +65,12 @@ jobs:
     name: Edge Functions (deno test)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Pinned to a known path so the cache step below can persist it. Without
+      # this the graph is re-fetched from deno.land/esm.sh on every single run,
+      # which makes every run depend on a third-party CDN being up — and on
+      # 2026-07-25 esm.sh returned 522 for ~2.5 minutes and reddened this job.
+      DENO_DIR: ${{ github.workspace }}/.deno-cache
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -95,11 +101,24 @@ jobs:
           # (run the suite locally first), not by drifting.
           deno-version: 2.9.4
 
-      # The function suites import their deps by URL
-      # (`https://deno.land/std@0.224.0/...`, `https://esm.sh/...`) rather than
-      # vendoring them, so the module graph has to be fetched. That is confined
-      # to THIS step — retried, because a registry blip is an infra failure, not
-      # a code failure — and the assertion step below then runs `--cached-only`.
+      # The real mitigation for CDN flakiness: the module graph is pinned by
+      # deno.lock, so it is byte-identical between runs and can simply be
+      # restored. On a hit the `deno cache` step below is a no-op and this job
+      # touches the network zero times — the outage window shrinks from "every
+      # run" to "only runs that change deno.lock or bump Deno".
+      - name: Restore the Deno module cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.0.0
+        with:
+          path: ${{ env.DENO_DIR }}
+          key: deno-${{ runner.os }}-2.9.4-${{ hashFiles('deno.lock') }}
+          # A partial hit still saves most of the fetch when deno.lock moves.
+          restore-keys: |
+            deno-${{ runner.os }}-2.9.4-
+
+      # On a cache hit this is a no-op. On a miss it is the only step in the
+      # workflow that touches the network, and it is retried, because a CDN
+      # outage is an infra failure rather than a code failure — the assertion
+      # step below then runs `--cached-only` and cannot fail on the network.
       #
       # `--lock=deno.lock` verifies every remote file against its committed
       # hash, so a URL whose content silently changed fails here. Deliberately
@@ -120,15 +139,38 @@ jobs:
             exit 1
           fi
           echo "Caching the module graph for ${#suites[@]} suites."
-          for attempt in 1 2 3; do
-            if deno cache --lock=deno.lock "${suites[@]}"; then
+          # 4 attempts with 10/20/40s backoff. The observed esm.sh 522 outage
+          # lasted ~2.5 min and the old 3×(5/10/15s) budget gave up ~30s in;
+          # this rides out roughly that long. Only reached on a cache miss, so
+          # being patient here costs nothing on the common path.
+          # `timeout` guards the other failure mode: a stalled connection that
+          # never returns would otherwise sit on one attempt until the job's
+          # timeout-minutes, never reaching the retry. (Not what happened on
+          # 2026-07-25 — those attempts each failed cleanly in ~39s — but a
+          # retry loop that only handles clean failures is half a retry loop.)
+          for attempt in 1 2 3 4; do
+            # `|| status=$?`, not `if ...; then` — a compound `if` whose
+            # condition fails and has no else branch itself returns 0, so `$?`
+            # read after the `fi` is 0 and the real exit code is lost.
+            status=0
+            timeout 120 deno cache --lock=deno.lock "${suites[@]}" || status=$?
+            if [ "${status}" -eq 0 ]; then
               exit 0
             fi
-            delay=$((attempt * 5))
-            echo "::warning::deno cache attempt ${attempt} failed; retrying in ${delay}s"
+            if [ "${status}" -eq 124 ]; then
+              reason="timed out after 120s (stalled fetch)"
+            else
+              reason="failed with exit ${status}"
+            fi
+            if [ "${attempt}" -eq 4 ]; then
+              echo "::error::deno cache ${reason} on the final attempt"
+              break
+            fi
+            delay=$((10 * (2 ** (attempt - 1))))
+            echo "::warning::deno cache attempt ${attempt} ${reason}; retrying in ${delay}s"
             sleep "${delay}"
           done
-          echo "::error::could not fetch the Edge Function module graph after 3 attempts"
+          echo "::error::could not fetch the Edge Function module graph after 4 attempts — this is an upstream CDN failure (deno.land / esm.sh), not a code failure; re-run the job"
           exit 1
 
       # `--cached-only` forbids network here, so this step can only fail on the
