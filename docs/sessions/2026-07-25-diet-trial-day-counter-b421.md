@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-25
 
-Shipped via **#449**. Prerequisite for B-417 PR 4; spawned **B-441**.
+Shipped via **#449**. Prerequisite for B-417 PR 4; spawned **B-441**, **B-442**, **B-443**.
 
 ## What was wrong
 
@@ -56,7 +56,7 @@ The oracle is written against B-417 PR 4's acceptance criterion, so **PR 4 inher
 
 The same skepticism caught a bug in the guard test itself: an initial slice had its bounds reversed (`loadConditions` precedes `loadDietTrial` in the file), returning `''` — which made every `not.toMatch` pass vacuously. A guard test that fails open is worse than no guard test. Now asserted non-empty and correctly ordered before any negative assertion runs.
 
-`tsc --noEmit` clean · jest **1927 passed / 119 suites** · `deno test` **835 passed / 0 failed** · CI green on both required checks.
+`tsc --noEmit` clean · jest **1930 passed / 119 suites** · `deno test` **837 passed / 0 failed** · CI green on both required checks. (Counts are after the adversarial fixes below; the first cut was 1927 / 835.)
 
 ## The adversarial pass failed the first cut, and was right to
 
