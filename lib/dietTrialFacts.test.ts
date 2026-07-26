@@ -34,12 +34,16 @@ jest.mock('./trialContaminant', () => ({
   trialDietNote: () => null,
 }));
 
+const declineResult = { value: { status: 'none', flags: [] } as unknown };
 jest.mock('./analytics', () => {
   const actual = jest.requireActual('./analytics') as Record<string, unknown>;
-  return { ...actual, getIntakeDecline: () => Promise.resolve({ status: 'ok', flags: [] }) };
+  return { ...actual, getIntakeDecline: () => Promise.resolve(declineResult.value) };
 });
 
-jest.mock('./feedingArrangements', () => ({ getActiveArrangementsForPet: () => Promise.resolve([]) }));
+const arrangementRows = { value: [] as unknown[] };
+jest.mock('./feedingArrangements', () => ({
+  getActiveArrangementsForPet: () => Promise.resolve(arrangementRows.value),
+}));
 
 import { loadDietTrialFacts } from './dietTrialFacts';
 
@@ -93,6 +97,8 @@ beforeEach(() => {
   db.feedings = [];
   db.doses = [];
   trialCtx.value = ALLOWED_CTX;
+  declineResult.value = { status: 'none', flags: [] };
+  arrangementRows.value = [];
 });
 
 it('reports coverage and exposures as two facts with their own denominators', async () => {
@@ -164,6 +170,10 @@ it('a chewable dose does not enter the feeding ratio', async () => {
     occurred_at: new Date(2026, 6, 5, 9).toISOString(),
     paired_event_id: null,
     form: 'chewable',
+    adherence: 'missed',
+    vehicle_food_item_id: null,
+    vehicle_brand: null,
+    vehicle_product_name: null,
     generic_name: 'afoxolaner',
     brand_name: 'NexGard',
   }];
@@ -182,4 +192,135 @@ it('raises no floor alarm before the record is old enough to read', async () => 
   db.feedings = [];
   const input = await loadDietTrialFacts({ pet: PET, nowMs: new Date(2026, 6, 3, 12).getTime() });
   expect(input.belowCoverageFloor).toBe(false);
+});
+
+// ── The adversarial pass's breaks — the wiring half ──────────────────────────
+//
+// Every one of these produced a false sentence on a real card. They are grouped
+// here rather than in `dietTrial.test.ts` because the module was right in all
+// four cases and this file was where the answer got thrown away.
+
+describe('adversarial regressions — the wiring half', () => {
+  // BREAK 3 — the guard was half-applied. `primaryCount === 0` catches an allowed
+  // set that has not arrived; it does NOT catch one whose `food_items_cache` rows
+  // have not, which reports a positive count with null keys and empty arrays. The
+  // measured result: 40 feedings of the PRESCRIBED diet rendering as "0 matched,
+  // 40 did not", naming the trial's own protein as the contaminant — three lines
+  // under a standing note reading "the trial food hasn't loaded on this device
+  // yet, so there's nothing to compare against".
+  it('an allowed set whose FOOD ROWS have not hydrated makes no exposure claim', async () => {
+    db.feedings = Array.from({ length: 40 }, (_, i) => meal((i % 9) + 1, { id: `m${i}`, food_item_id: 'trial-food-v2' }));
+    trialCtx.value = {
+      ...ALLOWED_CTX,
+      primaryResolved: 0,
+      allowedFoods: [{ ...ALLOWED_CTX.allowedFoods[0], foodKey: null, primaryProtein: null, proteins: [] }],
+    };
+    const input = await loadDietTrialFacts({ pet: PET, nowMs: NOW });
+    expect(input.exposures).toBeNull();
+    expect(input.belowCoverageFloor).toBe(false);
+  });
+
+  // BREAK 1 — §5.2 proof #1. `detectIntakeDecline` returns `{status:'none'}` for a
+  // diet refused from day 1 (no prior baseline to decline FROM), so the card's
+  // structural replacement never fired and the clean two-fact sentence rendered
+  // over a cat that had not eaten in two weeks.
+  it('a refused trial diet replaces the adherence line and withholds the claim', async () => {
+    db.feedings = Array.from({ length: 20 }, (_, i) =>
+      meal(Math.floor(i / 2) + 1, { id: `r${i}`, intake_rating: 'refused' }),
+    );
+    const input = await loadDietTrialFacts({ pet: PET, nowMs: NOW });
+    expect(input.exposures).toBeNull();
+    expect(input.intakeDeclineHeadline).toMatch(/logged as refused/);
+    expect(input.intakeDeclineHeadline).not.toMatch(/pick|fussy|prefer/i);
+    // The owner kept a perfect record and is not scored for the pet's illness.
+    expect(input.coverage).toEqual({ daysLogged: 10, daysElapsed: 10 });
+  });
+
+  it('the CLINICAL detector always wins the replacement slot', async () => {
+    // §6.5: the trial's viability line never softens or displaces the health
+    // lane. When `detectIntakeDecline` speaks, it is what renders.
+    declineResult.value = {
+      status: 'watch',
+      flags: [{ trigger: 'refused_normal_food', class: 'health_watch', refusedFoodLabel: 'her usual dinner' }],
+    };
+    db.feedings = Array.from({ length: 20 }, (_, i) =>
+      meal(Math.floor(i / 2) + 1, { id: `r${i}`, intake_rating: 'refused' }),
+    );
+    const input = await loadDietTrialFacts({ pet: PET, nowMs: NOW });
+    expect(input.intakeDeclineHeadline).toMatch(/just turned down her usual dinner/);
+  });
+
+  // BREAK 2 — the free-choice bowl. Its off-list membership was computed and
+  // discarded, and the card affirmed the opposite; separately, `loggedFeedings`
+  // counted RAW rows while `offDiet` counted CLASSIFIED ones, so the two sides of
+  // the free-fed sentence were on different denominators.
+  it('an off-list free-choice bowl withholds the claim, on one denominator', async () => {
+    arrangementRows.value = [{
+      id: 'a1',
+      food_item_id: 'aldi-chicken',
+      active_from: '2026-06-01',
+      updated_at: new Date(2026, 5, 1).toISOString(),
+      brand: 'Aldi',
+      product_name: 'Chicken Dry',
+      format: 'dry_kibble',
+    }];
+    db.feedings = [meal(1), meal(2), meal(3, { food_item_id: null, brand: null, product_name: null })];
+    const input = await loadDietTrialFacts({ pet: PET, nowMs: NOW });
+    expect(input.exposures).toBeNull();
+    // 3 raw rows, 2 classifiable → the replacement count is the CLASSIFIED one.
+    expect(input.freeFed).toEqual({ loggedFeedings: 2 });
+  });
+
+  // BREAK 6 — a chewable was computed as an oral-route exposure and then dropped,
+  // under a qualifier telling the reader that flavoured products "aren't visible
+  // here". The one that IS visible must not be the one dropped.
+  it('an oral-route exposure withholds the affirmative claim', async () => {
+    db.feedings = [meal(1), meal(2)];
+    db.doses = [{
+      id: 'd-1',
+      occurred_at: new Date(2026, 6, 5, 9).toISOString(),
+      paired_event_id: null,
+      form: 'chewable',
+      adherence: 'given',
+      vehicle_food_item_id: null,
+      vehicle_brand: null,
+      vehicle_product_name: null,
+      generic_name: 'afoxolaner',
+      brand_name: 'NexGard',
+    }];
+    expect((await loadDietTrialFacts({ pet: PET, nowMs: NOW })).exposures).toBeNull();
+  });
+
+  it('a REAL exposure still renders — the gate withholds the claim, not the finding', async () => {
+    db.feedings = [
+      meal(1),
+      meal(2, { id: 'jerky', food_item_id: 'zukes', brand: 'Zuke’s', product_name: 'Mini Naturals', food_type: 'treat', proteins: JSON.stringify(['chicken']) }),
+    ];
+    db.doses = [{
+      id: 'd-1',
+      occurred_at: new Date(2026, 6, 5, 9).toISOString(),
+      paired_event_id: null,
+      form: 'chewable',
+      adherence: 'given',
+      vehicle_food_item_id: null,
+      vehicle_brand: null,
+      vehicle_product_name: null,
+      generic_name: 'afoxolaner',
+      brand_name: 'NexGard',
+    }];
+    const input = await loadDietTrialFacts({ pet: PET, nowMs: NOW });
+    expect(input.exposures).toMatchObject({ totalFeedings: 2, offDiet: 1 });
+  });
+
+  // BREAK 5 — a dose that never went in, and a pill hidden in the trial diet.
+  it('a missed dose and a dose hidden in the trial diet are not exposures', async () => {
+    db.feedings = [meal(1), meal(2)];
+    db.doses = [
+      { id: 'd-1', occurred_at: new Date(2026, 6, 5, 9).toISOString(), paired_event_id: null, form: 'chewable', adherence: 'missed', vehicle_food_item_id: null, vehicle_brand: null, vehicle_product_name: null, generic_name: 'afoxolaner', brand_name: 'NexGard' },
+      { id: 'd-2', occurred_at: new Date(2026, 6, 6, 9).toISOString(), paired_event_id: 'm-1', form: 'tablet', adherence: 'given', vehicle_food_item_id: 'trial-food', vehicle_brand: 'Zignature', vehicle_product_name: 'Duck Formula', generic_name: 'oclacitinib', brand_name: 'Apoquel' },
+    ];
+    // Neither withholds the claim, because neither is an exposure.
+    expect((await loadDietTrialFacts({ pet: PET, nowMs: NOW })).exposures)
+      .toMatchObject({ totalFeedings: 2, offDiet: 0 });
+  });
 });

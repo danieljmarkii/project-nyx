@@ -112,6 +112,15 @@ export interface TrialFeeding {
   /** `food_items.food_type` — 'meal' | 'treat' | 'other' | null. */
   foodType: string | null;
   proteins: readonly string[];
+  /** `meals.intake_rating` — 'all' | 'most' | 'some' | 'refused' | null.
+   *
+   *  §5.1's fourth definitional correction: "coverage does not read intake, and
+   *  must". It still does not enter the coverage RATIO — a bowl put down and
+   *  refused is a day the owner kept the record, and scoring it as a gap would
+   *  punish the most diligent owner in the app. What it feeds is
+   *  `trialDietRefusal` below, which is what stops the clean two-fact card
+   *  rendering over an animal that has not eaten. */
+  intakeRating?: string | null;
 }
 
 /** One logged dose, for rung 4 (C3 — the oral route). */
@@ -123,6 +132,15 @@ export interface TrialDose {
   form: string | null;
   /** B-156's shipped pairing: the food this dose was given inside. */
   pairedEventId: string | null;
+  /** `medication_administrations.adherence` — 'given' | 'missed' | 'refused',
+   *  or NULL for a dose whose answer is still unconfirmed (B-156 PR B3's
+   *  fail-safe). A drug that did not go in carried no flavouring into the pet. */
+  adherence?: string | null;
+  /** The paired vehicle's food identity, when there is one. Without it rung 4
+   *  cannot tell a pill hidden in peanut butter from a pill hidden in the
+   *  PRESCRIBED DIET — see `classifyDose`. */
+  vehicleFoodItemId?: string | null;
+  vehicleFoodKey?: string | null;
 }
 
 /** An overlapping `free_choice` feeding arrangement (§5.6). */
@@ -251,15 +269,32 @@ export function sanctionedProteinsOn(ctx: TrialContext, dayIndex: number): Set<s
   const out = new Set<string>();
   for (const food of allowedFoodsOn(ctx, dayIndex)) {
     if (food.role !== 'primary_diet') continue;
+    // A FOOD WITH NO DESIGNATED PRIMARY CONTRIBUTES NOTHING, and that is the fix
+    // for the worst self-consistency break the adversarial pass found. Consider a
+    // trial food carrying `['duck','chicken']` with a NULL `primary_protein` —
+    // reachable three ways the code itself names (an AI extraction that designated
+    // nothing, slice 3's "clear the main protein", an unresolved row). Unioning
+    // its whole array would put CHICKEN into the sanctioned set, so:
+    //   • the contaminant sanctions itself, and every chicken chew for the next
+    //     eight weeks classifies with `antigens: []`;
+    //   • `trialContamination` skips the same food (it has no comparator), so
+    //     D-A — the entire reason B-351 shape ① exists — goes silent too;
+    //   • and nothing anywhere tells the owner the check is off.
+    // Requiring the designation makes the two sets agree: a food we cannot
+    // evaluate for contamination is a food we do not let define the diet. The
+    // sanctioned set can then come back EMPTY, which disables the protein arm and
+    // fires `trialDietNote`'s B9 disclosure — silence plus a sentence, never a
+    // confident wrong answer (D10).
+    const primary = canonicalizeProtein(food.primaryProtein);
+    if (!primary) continue;
+    // The designated primary is part of the diet even on a row whose array was
+    // never captured — otherwise a manually-entered trial food with a main
+    // protein and no ingredient panel sanctions nothing at all.
+    out.add(primary);
     for (const raw of food.proteins) {
       const key = canonicalizeProtein(raw);
       if (key) out.add(key);
     }
-    // The designated primary is part of the diet even on a row whose array was
-    // never captured — otherwise a manually-entered trial food with a main
-    // protein and no ingredient panel sanctions nothing at all.
-    const primary = canonicalizeProtein(food.primaryProtein);
-    if (primary) out.add(primary);
   }
   return out;
 }
@@ -401,6 +436,18 @@ export function classifyFeeding(
   }
   const day = dayIndex as number;
   const sanctioned = sanctionedProteinsOn(ctx, day);
+  // AN EMPTY SANCTIONED SET TURNS THE PROTEIN ARM OFF, it does not turn it on.
+  // Empty means "nothing here can say what the trial diet is built on" — no
+  // `primary_diet` row has hydrated, or none carries a designated primary. Under
+  // a naive set difference EVERY protein is then unsanctioned, so every food in
+  // the library would be reported as carrying a contaminant, and the vet report's
+  // antigen tally would attribute exposures against a diet nobody has
+  // characterised. That is the inversion `resolveTargetProtein` documents at the
+  // single-protein scale, arriving at set scale.
+  //
+  // Dark, not permissive: rung 3 still RECORDS the feeding. §5.3's own words —
+  // "a dark rung 2 costs attribution, not detection".
+  const canAttribute = sanctioned.size > 0;
 
   // Rung 1 — the ONLY permit path.
   const hit = matchAllowed(allowedFoodsOn(ctx, day), feeding.foodItemId, feeding.foodKey);
@@ -415,7 +462,7 @@ export function classifyFeeding(
       // by construction rather than by a special case: the trial diet's own
       // contamination is a trial-level standing fact (`trialContamination`),
       // never a per-feeding verdict fired 100+ times across 56 days.
-      antigens: unsanctionedProteins(feeding.proteins, sanctioned),
+      antigens: canAttribute ? unsanctionedProteins(feeding.proteins, sanctioned) : [],
       role: hit.food.role,
       matchedBy: hit.matchedBy,
       permittedBy: hit.food,
@@ -433,7 +480,7 @@ export function classifyFeeding(
 
   // Rung 2 — the derived protein arm. It may only ADD a verdict; an empty or
   // unread array is SILENCE and falls through to rung 3, never to an all-clear.
-  const antigens = unsanctionedProteins(feeding.proteins, sanctioned);
+  const antigens = canAttribute ? unsanctionedProteins(feeding.proteins, sanctioned) : [];
   if (antigens.length > 0) {
     return {
       verdict: 'off_diet_protein',
@@ -502,17 +549,40 @@ export interface OralRouteExposure {
  * after the exposure it reports; the setup line acts on day 0.
  */
 export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExposure | null {
-  if (!isInTrialWindow(ctx, dayIndexOf(ctx, dose.occurredAt))) return null;
+  const dayIndex = dayIndexOf(ctx, dose.occurredAt);
+  if (!isInTrialWindow(ctx, dayIndex)) return null;
+
+  // A DOSE THAT DID NOT GO IN CARRIED NOTHING WITH IT. `generate-signal`'s
+  // detection layer already rules exactly this for the same events — a
+  // `missed`/`refused` dose is not on board, and B-174 extended it to the
+  // in-doubt combo — so counting one here would ship a SECOND, contradictory
+  // definition of "the drug went in" against the one already live. A NULL
+  // adherence is the fail-safe unconfirmed state (B-156 PR B3) and is likewise
+  // not evidence that anything was swallowed.
+  const adherence = dose.adherence?.trim().toLowerCase() ?? null;
+  if (adherence !== 'given') return null;
+
   const form = dose.form?.trim().toLowerCase() ?? null;
-  const trigger: OralRouteTrigger | null =
-    form === 'chewable' ? 'chewable' : dose.pairedEventId ? 'food_vehicle' : null;
-  if (!trigger) return null;
-  return {
-    eventId: dose.eventId,
-    occurredAt: dose.occurredAt,
-    drugLabel: dose.drugLabel,
-    trigger,
-  };
+  if (form === 'chewable') {
+    return { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger: 'chewable' };
+  }
+  if (!dose.pairedEventId) return null;
+
+  // THE VEHICLE HAS TO BE OFF THE LIST TO BE AN EXPOSURE. A daily pill hidden in
+  // the PRESCRIBED DIET is the commonest way an owner gives a tablet on an
+  // elimination trial, and counting it produced 56 oral-route exposures across a
+  // 56-day trial — C2's alarm-fatigue failure (never fire on the food the owner
+  // cannot stop feeding) applied to rungs 1–3 and forgotten at rung 4. The
+  // vehicle resolves on the same identity rule as rung 1, so a re-photographed
+  // bag of the trial diet is still the trial diet here too.
+  const day = dayIndex as number;
+  if (matchAllowed(allowedFoodsOn(ctx, day), dose.vehicleFoodItemId ?? null, dose.vehicleFoodKey ?? null)) {
+    return null;
+  }
+  // An UNKNOWN vehicle still counts: the food was not on the list as far as
+  // anything can tell, and the closed-world rule says record it. What is lost is
+  // attribution, not detection.
+  return { eventId: dose.eventId, occurredAt: dose.occurredAt, drugLabel: dose.drugLabel, trigger: 'food_vehicle' };
 }
 
 // ── §5.5 — the standing contamination fact (D-A) ─────────────────────────────
@@ -648,6 +718,39 @@ export type Interpretability =
   | 'does_not_support'
   | 'not_yet';
 
+/**
+ * §5.2 proof #1, made computable — the fact that stops the clean two-fact card
+ * rendering over an animal that has not eaten.
+ *
+ * WHY THIS EXISTS AND IS NOT DELEGATED. §5.2 says the composition with intake is
+ * structural: a live `IntakeDeclineFlag` REPLACES the adherence line. The
+ * replacement is structural on the card — but the detector behind it,
+ * `lib/analytics.detectIntakeDecline`, is a RELATIVE-decline detector, and the
+ * adversarial pass ran the spec's own worked example through it: a cat refusing
+ * the new hydrolyzed diet twice a day for 14 days, every bowl logged and rated
+ * `refused`, returns `{ status: 'none' }`. Trigger A needs recent days BELOW a
+ * higher baseline, and a diet refused from day 1 is uniformly low, not declining.
+ * Trigger B needs a prior mean for THAT FOOD, and a never-eaten trial diet has
+ * none. Worse, the chronic case DECAYS INTO the clean case: a pet that ate
+ * normally and then refused from trial start fires for about three days and then
+ * goes quiet, so the card upgrades from the safety state to the clean state
+ * exactly as the anorexia becomes chronic.
+ *
+ * So the trial owns a second, NON-CLINICAL path, which §6.5 explicitly sanctions:
+ * *"a second path may surface 'this diet isn't being eaten' as a TRIAL-VIABILITY
+ * fact pointing at the vet, without softening the first."* It never softens to
+ * preference (intake is not preference), never replaces `detectIntakeDecline`,
+ * and its only job on the card is to make the affirmative claim unsayable.
+ */
+export interface TrialDietRefusal {
+  /** In-window feedings of a `primary_diet` food rated `refused`. */
+  refusedFeedings: number;
+  /** In-window feedings of a `primary_diet` food carrying ANY rating. */
+  ratedFeedings: number;
+  /** Distinct local days those refusals fall on. */
+  days: number;
+}
+
 export interface TrialFacts {
   range: TrialRange | null;
   coverage: TrialCoverage | null;
@@ -655,6 +758,12 @@ export interface TrialFacts {
   oralRoute: OralRouteExposure[];
   contamination: ContaminationFact[];
   arrangementExposures: ArrangementExposure[];
+  /** Null unless the floors below are cleared. Presence-only, like everything
+   *  else here: its absence is not evidence the pet is eating. */
+  trialDietRefusal: TrialDietRefusal | null;
+  /** §10 S3 — days between `started_at` and the first logged feeding. Reported
+   *  as UNTRACKED, never counted as failure, and excluded from the range. */
+  untrackedDaysBeforeFirstLog: number;
   interpretability: Interpretability;
   /** §5.2's floor. Gates §7.2's statement — NOT the counts, NOT the card's
    *  facts, and no alarm in either direction. */
@@ -692,12 +801,30 @@ export interface TrialFacts {
 // hands the emptiest card in the app to an owner on day 3 of 56. Below the
 // minimum the answer is `not_yet` — no claim, no alarm.
 //
+// ONE CAVEAT BELONGS IN THE FLAG ALONGSIDE THE NUMBERS, raised by the
+// adversarial pass: `COVERAGE_SUPPORTS` sits over a DAY-GRANULAR metric that
+// SATURATES on the first meal of the day (§5.2's own proof #3). So "supports
+// interpreting it" is affirmable for a once-a-day logger whose partner slips an
+// unlogged jerky every evening — the exact under-capturing profile the floor
+// exists to catch. That is the single affirmative adequacy claim this module
+// makes, and whether 0.8 over a saturating metric is the right bar for it is a
+// clinical question, not an arithmetic one.
+//
 // FLAGGED FOR DR. CHEN, in the shape §0.4 uses for P-1/P-2: these are clinical
 // values, not product decisions. Ratification changes three constants and no
 // schema, no migration, no shape.
 export const COVERAGE_SUPPORTS = 0.8;
 export const COVERAGE_FLOOR = 0.5;
 export const MIN_INTERPRETABLE_DAYS = 7;
+
+/** Floors for the trial-viability fact above. Deliberately conservative in the
+ *  direction of FIRING: what firing does is withhold an affirmative claim, and
+ *  silence is cheap. Three rated samples across two distinct days stops one bad
+ *  dinner reading as refusal; the half-share stops a fussy week reading as one.
+ *  The §5.2 worked example (two refused bowls a day) clears all three on day 2. */
+export const REFUSAL_MIN_RATED = 3;
+export const REFUSAL_MIN_DAYS = 2;
+export const REFUSAL_SHARE = 0.5;
 
 export function interpretabilityOf(coverage: TrialCoverage | null): Interpretability {
   if (!coverage || coverage.daysElapsed < MIN_INTERPRETABLE_DAYS) return 'not_yet';
@@ -750,6 +877,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     oralRoute: [],
     contamination: trialContamination(ctx),
     arrangementExposures: arrangementHits,
+    trialDietRefusal: null,
+    untrackedDaysBeforeFirstLog: 0,
     interpretability: 'not_yet',
     belowCoverageFloor: false,
     intakeNotDirectlyObserved: (input.arrangements ?? []).length > 0,
@@ -764,12 +893,32 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     : null;
   const scopeEndIndex = input.scopeEnd ? localDayIndexOf(input.scopeEnd, input.timeZone) : null;
 
-  const startDayIndex = Math.max(ctx.startDayIndex, scopeStartIndex ?? ctx.startDayIndex);
+  const scopedStart = Math.max(ctx.startDayIndex, scopeStartIndex ?? ctx.startDayIndex);
   const upperBounds = [todayIndex, ctx.endDayIndex, scopeEndIndex].filter(
     (v): v is number => v !== null,
   );
   const endDayIndex = Math.min(...upperBounds);
-  if (endDayIndex < startDayIndex) return base;
+  if (endDayIndex < scopedStart) return base;
+
+  // §10 S3 — COVERAGE REPORTS FROM `max(trial start, first log)`, and the
+  // pre-adoption span is NAMED AS UNTRACKED rather than counted as failure.
+  //
+  // The case this exists for is the normal vet-directed setup, not an edge: the
+  // owner is handed the diet at the clinic, back-dates the trial to the day the
+  // vet started it, and begins logging when they get home. Denominating from
+  // `started_at` scores them for the days before the app existed on their phone —
+  // 1 of 15 days, `does_not_support`, and the sentence reaches the vet report
+  // verbatim. Days the owner could not have logged are not a gap in their record.
+  //
+  // The clip is bounded by the FIRST LOG, so it can never hide a genuine gap in
+  // the middle or at the end of a trial — only the head, and only up to the first
+  // day there is any evidence the app was in use.
+  const loggedDays = input.feedings
+    .map((f) => dayIndexOf(ctx, f.occurredAt))
+    .filter((d): d is number => d !== null && d >= scopedStart && d <= endDayIndex);
+  const firstLoggedDay = loggedDays.length > 0 ? Math.min(...loggedDays) : null;
+  const startDayIndex = firstLoggedDay ?? scopedStart;
+  const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
 
   const range: TrialRange = {
     startDayIndex,
@@ -785,6 +934,12 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   let offDiet = 0;
   let unclassifiable = 0;
   const byRung = { derived_protein: 0, unrecognised: 0 };
+  // The trial-viability counters (§6.5's second path). Counted over feedings of
+  // the TRIAL DIET only — a refused chicken chew says nothing about whether the
+  // prescribed food is being eaten.
+  let refusedFeedings = 0;
+  let ratedFeedings = 0;
+  const refusedDays = new Set<number>();
 
   for (const feeding of input.feedings) {
     const day = dayIndexOf(ctx, feeding.occurredAt);
@@ -795,6 +950,12 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // entirely by treat data. A NULL `food_type` is NOT assumed to be a treat: it
     // is a feeding nobody has classified, and dropping it would under-report a
     // record the owner actually kept.
+    //
+    // AND IT DOES NOT READ `intakeRating`, deliberately: a bowl put down and
+    // refused is a day the owner kept the record. Scoring it as a gap would
+    // punish the most diligent owner in the app for the pet's illness. The
+    // refusal is carried by `trialDietRefusal` instead, which is a fact about the
+    // ANIMAL rather than a hole in the RECORD.
     if (feeding.foodType !== 'treat') coveredDays.add(day);
 
     const classification = classifyFeeding(ctx, feeding);
@@ -803,6 +964,14 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       continue;
     }
     if (!classification.countsAsFeeding) continue;
+
+    if (classification.role === 'primary_diet' && feeding.intakeRating) {
+      ratedFeedings += 1;
+      if (feeding.intakeRating.trim().toLowerCase() === 'refused') {
+        refusedFeedings += 1;
+        refusedDays.add(day);
+      }
+    }
 
     totalFeedings += 1;
     const item: TrialExposureItem = {
@@ -844,6 +1013,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     if (hit) oralRoute.push(hit);
   }
 
+  const trialDietRefusal: TrialDietRefusal | null =
+    ratedFeedings >= REFUSAL_MIN_RATED &&
+    refusedDays.size >= REFUSAL_MIN_DAYS &&
+    refusedFeedings / ratedFeedings >= REFUSAL_SHARE
+      ? { refusedFeedings, ratedFeedings, days: refusedDays.size }
+      : null;
+
   return {
     ...base,
     range,
@@ -858,6 +1034,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       antigenTally: [...antigens.values()].sort((a, b) => b.feedings - a.feedings),
     },
     oralRoute,
+    trialDietRefusal,
+    untrackedDaysBeforeFirstLog,
     interpretability,
     belowCoverageFloor: interpretability === 'does_not_support',
   };
@@ -1077,4 +1255,70 @@ export function interpretabilityStatement(facts: TrialFacts): string | null {
     default:
       return null;
   }
+}
+
+/**
+ * MAY A SURFACE STATE THE AFFIRMATIVE "all N matched" SENTENCE?
+ *
+ * The rule lives here, once, because the adversarial pass found that every break
+ * at the wiring boundary was the same break: `computeTrialFacts` returns five
+ * disclosure channels — `unclassifiable`, `oralRoute`, `arrangementExposures`,
+ * `trialDietRefusal`, `antigenTally` — and only `offDiet` reached a surface. So
+ * the module's care about "a floor, never a total" was discarded one call later
+ * and the unqualified sentence rendered anyway.
+ *
+ * Every clause below is a case where the app HAS computed a reason the sentence
+ * is false, and would otherwise have said it:
+ *
+ *   • `trialDietRefusal` — §5.2 proof #1. A cat refusing the hydrolyzed diet
+ *     twice a day for fourteen days, every bowl dutifully logged, otherwise reads
+ *     100% coverage / 0 exposures: a maximally clean trial rendered over a
+ *     starving animal, seven times past the feline 48h hepatic-lipidosis window.
+ *   • `arrangementExposures` — §5.6. A free-choice bowl of something off the list
+ *     is a CONTINUOUS exposure that emits no meal events, so it is invisible to
+ *     every count above. It was computed, and then the card said "all 12 were the
+ *     trial diet".
+ *   • `oralRoute` — C3. The blind-spot qualifier tells the reader that flavoured
+ *     products "aren't visible here", so the one oral exposure that IS visible
+ *     must not be the one dropped.
+ *   • `unclassifiable` — a feeding naming no food is neither matched nor
+ *     off-diet, and folding it into "all N matched" is the reassurance G2 deletes.
+ *
+ * This is a one-directional gate: it can only ever WITHHOLD a claim. There is no
+ * input that makes it turn a claim on.
+ */
+export function mayClaimAllMatched(facts: TrialFacts): boolean {
+  if (facts.trialDietRefusal) return false;
+  if (facts.arrangementExposures.length > 0) return false;
+  if (facts.oralRoute.length > 0) return false;
+  if (facts.exposures.unclassifiable > 0) return false;
+  return true;
+}
+
+/**
+ * §6.5's SECOND, non-clinical path: "this diet isn't being eaten", as a
+ * trial-VIABILITY fact pointing at the vet.
+ *
+ * Three rules govern this string and none of them is negotiable:
+ *   • It never softens toward preference. No "picky", no "fussy", no "doesn't
+ *     seem to like it" — decline is frequently a DISEASE signal, and the trial is
+ *     not a reason to reclassify it as taste.
+ *   • It does not replace `detectIntakeDecline`, which owns the clinical lane and
+ *     whose flag is checked first by every surface that renders both.
+ *   • It reports the RECORD ("logged as refused"), not a diagnosis, and the
+ *     action it names is the vet — a different hydrolysate is the standard
+ *     answer, and that is a decision only the vet can make.
+ */
+export function trialViabilityHeadline(
+  refusal: TrialDietRefusal,
+  petName: string,
+): string {
+  const n = refusal.refusedFeedings;
+  const meals = n === 1 ? '1 meal' : `${n} meals`;
+  const days = refusal.days === 1 ? 'a day' : `${refusal.days} days`;
+  return (
+    `${meals} of the trial diet across ${days} are logged as refused. ` +
+    `Worth telling your vet — a diet ${petName} won’t eat can’t answer the question ` +
+    'the trial was started for.'
+  );
 }

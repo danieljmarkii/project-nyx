@@ -143,7 +143,11 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     // here, and the arithmetic is asserted in the predicate's own case below.
     const src = readCode('lib/dietTrialFacts.ts');
     expect(src).toMatch(/computeTrialFacts\(/);
-    expect(src).toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
+    // The loader no longer buckets a feeding into a day AT ALL — a stronger
+    // guarantee than "it uses the local helper". The only calendar work left here
+    // is the query's lower bound, which is deliberately loose so the local-day
+    // filter inside the predicate is what decides membership.
+    expect(src).not.toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
     expect(src).not.toMatch(/toDateString\(\)/);
     expect(src).not.toMatch(DAY_DIVISION);
   });

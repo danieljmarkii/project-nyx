@@ -24,10 +24,12 @@ import { getDietTrialProgress, getIntakeDecline, type IntakeDeclineFlag } from '
 import { getDb } from './db';
 import {
   computeTrialFacts,
+  mayClaimAllMatched,
+  trialViabilityHeadline,
   type TrialDose,
   type TrialFeeding,
 } from './dietTrial';
-import { getActiveArrangementsForPet } from './feedingArrangements';
+import { getActiveArrangementsForPet, type ActiveArrangementView } from './feedingArrangements';
 import { foodIntakeKey, relativeDayLabel } from './food';
 import { proteinsFromCacheText } from './protein';
 import { loadTrialProteinContext, trialDietNote } from './trialContaminant';
@@ -134,10 +136,15 @@ export async function loadDietTrialFacts(args: {
     nowMs,
   );
 
-  const [facts, decline, freeFed, standingNote] = await Promise.all([
-    readTrialFacts(pet, row, nowMs),
+  // ONE arrangements read, shared. `readTrialFacts` needs it to resolve §5.6's
+  // standing off-diet arrangement and `readFreeFed` needs it to decide whether
+  // the coverage ratio is replaceable at all — the same query for the same pet,
+  // fetched twice before this.
+  const arrangements = await getActiveArrangementsForPet(pet.id).catch(() => []);
+
+  const [facts, decline, standingNote] = await Promise.all([
+    readTrialFacts(pet, row, nowMs, arrangements),
     readIntakeDecline(pet, nowMs),
-    readFreeFed(pet.id, row.started_at),
     readStandingNote(pet.id, pet.name),
   ]);
 
@@ -147,8 +154,13 @@ export async function loadDietTrialFacts(args: {
     coverage: facts.coverage,
     exposures: facts.exposures,
     belowCoverageFloor: facts.belowCoverageFloor,
-    intakeDeclineHeadline: decline,
-    freeFed,
+    // §5.2's replacement slot, and the ORDER is the safety rule: the clinical
+    // detector always wins. `detectIntakeDecline` owns the health lane (§6.5),
+    // and the trial's own viability line only speaks when that lane is silent —
+    // which, as the adversarial pass demonstrated, is exactly the case the spec's
+    // own worked example lands in.
+    intakeDeclineHeadline: decline ?? facts.viabilityHeadline,
+    freeFed: facts.freeFed,
     standingNote,
   };
 }
@@ -157,37 +169,62 @@ interface CardFacts {
   coverage: TrialCoverageFacts | null;
   exposures: TrialExposureFacts | null;
   belowCoverageFloor: boolean;
+  /** §6.5's second path — set only when the clinical detector is silent. */
+  viabilityHeadline: string | null;
+  /** §5.6's replacement. Its count comes from the SAME classified pass as the
+   *  exposure numbers, so the two are on one denominator. */
+  freeFed: { loggedFeedings: number } | null;
 }
 
 /** Assemble the rows `computeTrialFacts` needs and hand back what the card takes.
  *
  *  The allowed set comes from `loadTrialProteinContext`, which already reads it
  *  off the local mirror for the standing note — one loader, one cache, one query
- *  budget. When that context is unavailable (no active trial, a cold db, an
- *  allowed set that has not hydrated) the exposure half is NULL and only the
- *  coverage half renders: coverage is a statement about the RECORD and needs no
- *  allowed set, while an exposure count without one is a fabricated accusation.
+ *  budget.
  *
- *  `belowCoverageFloor` likewise stays false when the facts cannot be computed —
- *  §5.2's floor is two-sided, so an unknown record raises no alarm either. */
+ *  THREE GATES WITHHOLD THE EXPOSURE HALF, and each one is a false claim the
+ *  adversarial pass actually produced:
+ *
+ *  1. NO USABLE ALLOWED SET → no exposure claim. With an empty or half-hydrated
+ *     set every feeding classifies off-diet: the measured case was 40 feedings of
+ *     the PRESCRIBED diet rendering as "0 matched, 40 did not", naming the
+ *     trial's own protein as the contaminant. `primaryCount === 0` alone was not
+ *     enough — a set whose `food_items_cache` rows have not arrived reports a
+ *     positive count with null keys and empty protein arrays, which is the same
+ *     state with a different shape. `trialDietNote` already distinguishes the
+ *     two; this gate now honours both.
+ *  2. THE MODULE COMPUTED A REASON THE AFFIRMATIVE SENTENCE IS FALSE
+ *     (`mayClaimAllMatched`) — a refused trial diet, an off-list free-choice
+ *     bowl, an oral-route exposure, an unclassifiable feeding. The count is
+ *     withheld rather than rendered without its qualifier; the card then says
+ *     nothing about matching, which is the ruled posture.
+ *  3. Anything throws.
+ *
+ *  Coverage survives all three: it is a statement about the RECORD, needs no
+ *  allowed set, and dropping it would hand the emptiest card in the app to an
+ *  owner whose only problem is a cold cache. `belowCoverageFloor` likewise stays
+ *  false when the facts cannot be computed — §5.2's floor is two-sided, so an
+ *  unknown record raises no alarm either. */
 async function readTrialFacts(
   pet: DietTrialFactsPet,
   row: TrialRow,
   nowMs: number,
+  arrangements: readonly ActiveArrangementView[],
 ): Promise<CardFacts> {
-  const none: CardFacts = { coverage: null, exposures: null, belowCoverageFloor: false };
+  const none: CardFacts = {
+    coverage: null,
+    exposures: null,
+    belowCoverageFloor: false,
+    viabilityHeadline: null,
+    freeFed: null,
+  };
   try {
-    const [ctx, feedings, doses, arrangements] = await Promise.all([
+    const [ctx, feedings, doses] = await Promise.all([
       loadTrialProteinContext(pet.id),
       readFeedings(pet.id, row.started_at),
       readDoses(pet.id, row.started_at),
-      getActiveArrangementsForPet(pet.id).catch(() => []),
     ]);
 
-    // No allowed set → no exposure claim. The coverage fact still renders, from
-    // the same one-pass computation, with an EMPTY allowed set: every feeding
-    // then classifies off-diet, which is precisely why `exposures` is dropped
-    // below rather than reported.
     const facts = computeTrialFacts({
       trial: {
         id: row.id,
@@ -214,13 +251,35 @@ async function readTrialFacts(
       ? { daysLogged: facts.coverage.daysLogged, daysElapsed: facts.coverage.daysElapsed }
       : null;
 
-    if (!ctx || ctx.primaryCount === 0) {
-      return { ...none, coverage };
+    // The §5.6 replacement's count is the CLASSIFIED total, not a raw row count.
+    // Mixing them was an arithmetic defect in its own right: with 20 raw rows, 12
+    // classifiable and 4 off-diet, the card rendered "20 logged; 16 were the
+    // trial diet, 4 were not" when only 8 matched.
+    const freeFed = arrangements.length > 0
+      ? { loggedFeedings: facts.exposures.totalFeedings }
+      : null;
+
+    const viabilityHeadline = facts.trialDietRefusal
+      ? trialViabilityHeadline(facts.trialDietRefusal, pet.name)
+      : null;
+
+    const usableAllowedSet = !!ctx && ctx.primaryCount > 0 && ctx.primaryResolved >= ctx.primaryCount;
+    // Gate 2 is NARROW ON PURPOSE. It withholds only the state where the card
+    // would render the AFFIRMATIVE "all N matched" sentence — i.e. zero off-diet
+    // feedings. With one or more exposures the card says "81 matched, 3 did not"
+    // and drags the floor caveat with it, which is already honest; suppressing
+    // that would throw away a real finding to avoid an over-claim it does not
+    // make.
+    const wouldClaimAllMatched = facts.exposures.offDiet === 0;
+    if (!usableAllowedSet || (wouldClaimAllMatched && !mayClaimAllMatched(facts))) {
+      return { ...none, coverage, freeFed, viabilityHeadline };
     }
 
     const mostRecent = facts.exposures.mostRecent;
     return {
       coverage,
+      freeFed,
+      viabilityHeadline,
       exposures: {
         totalFeedings: facts.exposures.totalFeedings,
         offDiet: facts.exposures.offDiet,
@@ -274,8 +333,9 @@ async function readFeedings(petId: string, startedAt: string): Promise<TrialFeed
     product_name: string | null;
     food_type: string | null;
     proteins: string | null;
+    intake_rating: string | null;
   }>(
-    `SELECT e.id, e.occurred_at, m.food_item_id,
+    `SELECT e.id, e.occurred_at, m.food_item_id, m.intake_rating,
             f.brand, f.product_name, f.food_type, f.proteins
        FROM meals m
        JOIN events e ON e.id = m.event_id
@@ -296,24 +356,46 @@ async function readFeedings(petId: string, startedAt: string): Promise<TrialFeed
     label: `${r.brand ?? ''} ${r.product_name ?? ''}`.trim() || null,
     foodType: r.food_type,
     proteins: proteinsFromCacheText(r.proteins),
+    intakeRating: r.intake_rating,
   }));
 }
 
-/** Doses, for §5.3 rung 4 (C3 — the oral route). */
+/** Doses, for §5.3 rung 4 (C3 — the oral route).
+ *
+ *  Two columns beyond the obvious, and rung 4 is wrong without either:
+ *
+ *  • `ma.adherence` — a `missed`/`refused`/unconfirmed dose carried no flavouring
+ *    into the pet. `generate-signal/detection.ts` already rules this for the same
+ *    events, so omitting it here would ship a second, contradictory definition of
+ *    "the drug went in".
+ *  • the VEHICLE's identity, via B-156's `paired_event_id`. Without it a daily
+ *    pill hidden in the PRESCRIBED DIET counts as an exposure every single day of
+ *    the trial. The join routes through `events pe … deleted_at IS NULL`, the same
+ *    shape `lib/db.ts`'s timeline read uses, so a soft-deleted vehicle nulls the
+ *    identity out rather than resurrecting a removed meal. */
 async function readDoses(petId: string, startedAt: string): Promise<TrialDose[]> {
   const rows = await getDb().getAllAsync<{
     id: string;
     occurred_at: string;
     paired_event_id: string | null;
     form: string | null;
+    adherence: string | null;
+    vehicle_food_item_id: string | null;
+    vehicle_brand: string | null;
+    vehicle_product_name: string | null;
     generic_name: string | null;
     brand_name: string | null;
   }>(
-    `SELECT e.id, e.occurred_at, ma.paired_event_id,
+    `SELECT e.id, e.occurred_at, ma.paired_event_id, ma.adherence,
+            pm.food_item_id AS vehicle_food_item_id,
+            pf.brand AS vehicle_brand, pf.product_name AS vehicle_product_name,
             mi.form, mi.generic_name, mi.brand_name
        FROM medication_administrations ma
        JOIN events e ON e.id = ma.event_id
        LEFT JOIN medication_items_cache mi ON mi.id = ma.medication_item_id
+       LEFT JOIN events pe ON pe.id = ma.paired_event_id AND pe.deleted_at IS NULL
+       LEFT JOIN meals pm ON pm.event_id = pe.id
+       LEFT JOIN food_items_cache pf ON pf.id = pm.food_item_id
       WHERE e.pet_id = ? AND e.deleted_at IS NULL AND e.occurred_at >= ?`,
     [petId, windowFloorISO(startedAt)],
   );
@@ -323,6 +405,12 @@ async function readDoses(petId: string, startedAt: string): Promise<TrialDose[]>
     drugLabel: r.brand_name ?? r.generic_name,
     form: r.form,
     pairedEventId: r.paired_event_id,
+    adherence: r.adherence,
+    vehicleFoodItemId: r.vehicle_food_item_id,
+    vehicleFoodKey:
+      r.vehicle_brand !== null || r.vehicle_product_name !== null
+        ? foodIntakeKey(r.vehicle_brand ?? '', r.vehicle_product_name ?? '')
+        : null,
   }));
 }
 
@@ -363,41 +451,6 @@ export function declineHeadline(flag: IntakeDeclineFlag, petName: string): strin
   return days <= 1
     ? `${petName} has eaten less than usual today.`
     : `${petName} has left most of their food for ${days} days.`;
-}
-
-/** §5.6 free-fed. A `free_choice` arrangement emits no meal events, so the
- *  coverage RATIO has no denominator and is replaced by the not-directly-observed
- *  marker — otherwise the most tightly controlled feline trial in the app scores
- *  near-zero coverage and Culprit spends eight weeks telling a compliant owner
- *  she is failing. */
-async function readFreeFed(
-  petId: string,
-  startedAt: string,
-): Promise<{ loggedFeedings: number } | null> {
-  try {
-    const arrangements = await getActiveArrangementsForPet(petId);
-    if (arrangements.length === 0) return null;
-    const db = getDb();
-    const startKey = /^\d{4}-\d{2}-\d{2}$/.test(startedAt)
-      ? startedAt
-      : toLocalDayKey(new Date(startedAt));
-    const rows = await db.getAllAsync<{ occurred_at: string }>(
-      `SELECT e.occurred_at
-         FROM meals m
-         JOIN events e ON e.id = m.event_id
-        WHERE e.pet_id = ? AND e.deleted_at IS NULL AND e.occurred_at >= ?`,
-      [petId, new Date(`${startKey}T00:00:00Z`).toISOString()],
-    );
-    // FEEDINGS in-window, not days — this replaces the coverage RATIO, so the
-    // number it renders has to be a count with no denominator to mislead about.
-    const inWindow = rows.filter(
-      (r) => toLocalDayKey(new Date(r.occurred_at)) >= startKey,
-    ).length;
-    return { loggedFeedings: inWindow };
-  } catch (e) {
-    console.error('[DietTrial] free-fed read failed:', e);
-    return null;
-  }
 }
 
 /** C2's standing fact, re-sited from B-351 slice 4. A null context renders

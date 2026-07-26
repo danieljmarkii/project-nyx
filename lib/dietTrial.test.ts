@@ -20,9 +20,11 @@ import {
   explainVerdict,
   interpretabilityStatement,
   isWithinChallengeWindow,
+  mayClaimAllMatched,
   oralRouteCopy,
   sanctionedProteinsOn,
   trialContamination,
+  trialViabilityHeadline,
   type AllowedFood,
   type TrialFeeding,
   type TrialSpec,
@@ -397,6 +399,7 @@ describe('§5.3 rung 4 — the oral route', () => {
       drugLabel: 'NexGard',
       form: 'chewable',
       pairedEventId: null,
+      adherence: 'given',
     });
     expect(hit?.trigger).toBe('chewable');
   });
@@ -408,6 +411,9 @@ describe('§5.3 rung 4 — the oral route', () => {
       drugLabel: 'Apoquel',
       form: 'tablet',
       pairedEventId: 'meal-9',
+      adherence: 'given',
+      vehicleFoodItemId: 'peanut-butter',
+      vehicleFoodKey: 'genericpeanut butter',
     });
     expect(hit?.trigger).toBe('food_vehicle');
   });
@@ -420,6 +426,7 @@ describe('§5.3 rung 4 — the oral route', () => {
         drugLabel: 'Metronidazole',
         form: 'tablet',
         pairedEventId: null,
+        adherence: 'given',
       }),
     ).toBeNull();
   });
@@ -444,7 +451,7 @@ describe('§5.3 rung 4 — the oral route', () => {
       allowedFoods: ALLOWED,
       feedings: [],
       doses: [
-        { eventId: 'd1', occurredAt: at('2026-07-15'), drugLabel: 'NexGard', form: 'chewable', pairedEventId: null },
+        { eventId: 'd1', occurredAt: at('2026-07-15'), drugLabel: 'NexGard', form: 'chewable', pairedEventId: null, adherence: 'given' },
       ],
       nowMs: new Date(2026, 6, 20, 12).getTime(),
     });
@@ -471,7 +478,10 @@ describe('§5.1 — coverage and exposures are independent facts', () => {
       ],
       nowMs,
     });
-    expect(facts.coverage).toMatchObject({ daysLogged: 1, daysElapsed: 30 });
+    // §10 S3: the range opens at the FIRST LOG (2 July), not `started_at`, so the
+    // one untracked day before it is named rather than scored — 29 days, not 30.
+    expect(facts.coverage).toMatchObject({ daysLogged: 1, daysElapsed: 29 });
+    expect(facts.untrackedDaysBeforeFirstLog).toBe(1);
     expect(facts.exposures.totalFeedings).toBe(2);
   });
 
@@ -702,6 +712,223 @@ describe('§5.5 — exposure↔symptom juxtaposition is forward-only', () => {
 
   it('an unknown species takes the WIDER window — missing a flare is the worse error', () => {
     expect(CHALLENGE_WINDOW_DAYS.other).toBe(CHALLENGE_WINDOW_DAYS.dog);
+  });
+});
+
+// ── The adversarial pass's breaks, each pinned by the input that produced it ──
+//
+// The `adversarial-reviewer` returned FAIL on the first cut with eight breaks,
+// and its structural finding was that almost every one was at the WIRING
+// boundary: this module computes five disclosure channels and only `offDiet`
+// reached a surface, so everything it got right about "a floor, never a total"
+// was discarded one call later. The module-side halves are pinned here; the
+// wiring halves are in `dietTrialFacts.test.ts`.
+
+describe('adversarial regressions — the module half', () => {
+  const nowMs = new Date(2026, 6, 15, 12).getTime();
+
+  // BREAK 1 — §5.2 proof #1 run end-to-end. `detectIntakeDecline` is a RELATIVE
+  // decline detector: a diet refused from day 1 is uniformly low, not declining,
+  // and has no prior mean for that food — so it returns `{status:'none'}` and the
+  // card's structural replacement never fires. The clean two-fact sentence then
+  // renders over a cat seven times past the 48h hepatic-lipidosis window.
+  it('a refused trial diet is a computed fact, not a silence', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: ALLOWED,
+      feedings: Array.from({ length: 28 }, (_, i) =>
+        feeding({
+          eventId: `r${i}`,
+          occurredAt: at(`2026-07-${String(Math.floor(i / 2) + 1).padStart(2, '0')}`, 8 + (i % 2) * 10),
+          foodItemId: DRY_DUCK.foodItemId,
+          foodKey: DRY_DUCK.foodKey,
+          intakeRating: 'refused',
+        }),
+      ),
+      nowMs: new Date(2026, 6, 14, 22).getTime(),
+    });
+    expect(facts.trialDietRefusal).toEqual({ refusedFeedings: 28, ratedFeedings: 28, days: 14 });
+    // …and the affirmative sentence becomes unsayable, which is the whole job.
+    expect(mayClaimAllMatched(facts)).toBe(false);
+    // Coverage is UNCHANGED — the owner kept a perfect record and is not scored
+    // for the pet's illness.
+    expect(facts.coverage).toMatchObject({ daysLogged: 14, daysElapsed: 14 });
+  });
+
+  it('the viability line names the record and the vet, never a preference', () => {
+    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 28, days: 14 }, 'Mochi');
+    expect(line).toMatch(/logged as refused/);
+    expect(line).toMatch(/your vet/);
+    expect(line).not.toMatch(/pick|fussy|prefer|doesn’t like|taste/i);
+  });
+
+  it('does not fire on one bad dinner', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [
+        feeding({ eventId: 'a', occurredAt: at('2026-07-05', 8), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+        feeding({ eventId: 'b', occurredAt: at('2026-07-05', 18), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'all' }),
+        feeding({ eventId: 'c', occurredAt: at('2026-07-06', 8), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'all' }),
+      ],
+      nowMs,
+    });
+    expect(facts.trialDietRefusal).toBeNull();
+    expect(mayClaimAllMatched(facts)).toBe(true);
+  });
+
+  // BREAK 2 — the free-choice bowl of an off-list food is a standing exposure
+  // that emits no meal events. It was computed and then discarded, and the card
+  // said "all 12 were the trial diet".
+  it('an off-list free-choice bowl makes the affirmative claim unsayable', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [feeding({ eventId: 'a', occurredAt: at('2026-07-05'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey })],
+      arrangements: [{ foodItemId: 'aldi', foodKey: 'aldichicken dry', label: 'Aldi Chicken Dry', startedAt: '2026-06-01' }],
+      nowMs,
+    });
+    expect(facts.arrangementExposures).toHaveLength(1);
+    expect(mayClaimAllMatched(facts)).toBe(false);
+  });
+
+  // BREAK 4 — a trial food carrying `['duck','chicken']` with a NULL designated
+  // primary used to put CHICKEN into the sanctioned set (the contaminant
+  // sanctioning itself) while `trialContamination` skipped the same food for
+  // lack of a comparator. Both halves went silent at once, and nothing said so.
+  it('an undesignated trial food defines nothing, and the check says so', () => {
+    const undesignated = food({
+      foodItemId: 'dirty',
+      foodKey: 'brandduck formula',
+      primaryProtein: null,
+      proteins: ['duck', 'chicken'],
+    });
+    const c = buildTrialContext(TRIAL, [undesignated]);
+    // It does NOT sanction its own contaminant…
+    expect([...sanctionedProteinsOn(c, localDayIndexOf('2026-07-10') as number)]).toEqual([]);
+    // …so the protein arm is dark, and a chicken chew is still RECORDED (rung 3,
+    // closed-world) rather than silently cleared.
+    const chew = classifyFeeding(c, feeding({ eventId: 'x', foodItemId: 'chew', foodKey: 'bchicken chew', proteins: ['chicken'] }));
+    expect(chew.verdict).toBe('off_diet_unrecognised');
+    expect(chew.offDiet).toBe(true);
+  });
+
+  // BREAK 5a — a dose that was never swallowed carried no flavouring with it.
+  // `generate-signal/detection.ts` already rules this for the same events, so
+  // counting one here would ship a second, contradictory definition.
+  it.each(['missed', 'refused', null])('a %s dose is not an oral-route exposure', (adherence) => {
+    expect(
+      classifyDose(ctx(), {
+        eventId: 'd',
+        occurredAt: at('2026-07-10'),
+        drugLabel: 'NexGard',
+        form: 'chewable',
+        pairedEventId: null,
+        adherence,
+      }),
+    ).toBeNull();
+  });
+
+  // BREAK 5b — a daily pill hidden in the PRESCRIBED DIET produced 56 oral-route
+  // exposures across a 56-day trial. That is C2's alarm-fatigue reasoning applied
+  // to rungs 1–3 and forgotten at rung 4.
+  it('a dose hidden in the trial diet itself is not an exposure', () => {
+    expect(
+      classifyDose(ctx(), {
+        eventId: 'd',
+        occurredAt: at('2026-07-10'),
+        drugLabel: 'Apoquel',
+        form: 'tablet',
+        pairedEventId: 'the-duck-meal',
+        adherence: 'given',
+        vehicleFoodItemId: DRY_DUCK.foodItemId,
+        vehicleFoodKey: DRY_DUCK.foodKey,
+      }),
+    ).toBeNull();
+  });
+
+  it('a dose hidden in an UNKNOWN vehicle still counts (closed-world)', () => {
+    expect(
+      classifyDose(ctx(), {
+        eventId: 'd',
+        occurredAt: at('2026-07-10'),
+        drugLabel: 'Apoquel',
+        form: 'tablet',
+        pairedEventId: 'some-meal',
+        adherence: 'given',
+        vehicleFoodItemId: null,
+        vehicleFoodKey: null,
+      })?.trigger,
+    ).toBe('food_vehicle');
+  });
+
+  // BREAK 6 — `unclassifiable` and `oralRoute` were both absorbed at the card
+  // boundary. The blind-spot qualifier says flavoured products "aren't visible
+  // here", so the one oral exposure that IS visible must not be the one dropped.
+  it('an oral-route exposure or an unclassifiable feeding blocks the claim', () => {
+    const withDose = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [feeding({ eventId: 'a', occurredAt: at('2026-07-05'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey })],
+      doses: [{ eventId: 'd', occurredAt: at('2026-07-06'), drugLabel: 'NexGard', form: 'chewable', pairedEventId: null, adherence: 'given' }],
+      nowMs,
+    });
+    expect(mayClaimAllMatched(withDose)).toBe(false);
+
+    const withOrphan = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [
+        feeding({ eventId: 'a', occurredAt: at('2026-07-05'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey }),
+        feeding({ eventId: 'b', occurredAt: at('2026-07-06'), foodItemId: null, foodKey: null }),
+      ],
+      nowMs,
+    });
+    expect(withOrphan.exposures.unclassifiable).toBe(1);
+    expect(mayClaimAllMatched(withOrphan)).toBe(false);
+  });
+
+  it('the gate is one-directional — it can only ever withhold', () => {
+    // A clean trial with nothing else computed still permits the claim, so the
+    // gate has not quietly deleted the sentence outright.
+    const clean = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [feeding({ eventId: 'a', occurredAt: at('2026-07-05'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey })],
+      nowMs,
+    });
+    expect(mayClaimAllMatched(clean)).toBe(true);
+  });
+
+  // BREAK 8 — §10 S3. The vet-directed setup is: handed the diet at the clinic,
+  // back-date to the day the vet started it, log from home. Denominating from
+  // `started_at` scored the owner for days before the app was on their phone.
+  it('the range opens at the first log, and names the untracked head', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [feeding({ eventId: 'a', occurredAt: at('2026-07-15'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey })],
+      nowMs,
+    });
+    expect(facts.untrackedDaysBeforeFirstLog).toBe(14);
+    expect(facts.coverage).toMatchObject({ daysLogged: 1, daysElapsed: 1 });
+    expect(facts.range?.clipped).toBe(true);
+  });
+
+  it('the clip cannot hide a gap in the middle or the tail', () => {
+    // Logged on days 1 and 2, then nothing for twelve days. The head is not
+    // clipped (there IS a log on day 1), so the gap is fully counted.
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [1, 2].map((d) =>
+        feeding({ eventId: `a${d}`, occurredAt: at(`2026-07-0${d}`), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey }),
+      ),
+      nowMs,
+    });
+    expect(facts.untrackedDaysBeforeFirstLog).toBe(0);
+    expect(facts.coverage).toMatchObject({ daysLogged: 2, daysElapsed: 15 });
+    expect(facts.belowCoverageFloor).toBe(true);
   });
 });
 
