@@ -55,12 +55,94 @@ jest.mock('./medications', () => ({
 }));
 
 import {
+  markSynced,
   prepareAttachmentUpload,
   refreshFoodCache,
   refreshMedicationCache,
   syncPendingDietTrials,
   syncPendingDietTrialFoods,
 } from './sync';
+
+// B-125 — the post-push `synced = 1` sweep every writer shares.
+//
+// The bug class this closes is structural rather than live: the seven writers
+// each interpolated their own id list into `WHERE id IN (…)`, which is safe only
+// because device-minted UUIDs cannot carry a quote. The tests below pin the two
+// properties that make the query correct regardless of what the ids are — the
+// ids travel as BOUND params, and the statement never grows past SQLite's
+// variable ceiling — plus one real-SQLite execution so "bound" means the row
+// actually updates, not just that the string looks right.
+describe('markSynced (B-125)', () => {
+  const fakeDb = { runAsync: (...args: unknown[]) => mockRunAsync(...args) } as never;
+
+  beforeEach(() => {
+    mockRunAsync.mockReset();
+    mockRunAsync.mockResolvedValue(undefined);
+  });
+
+  it('binds the ids as params — no id is ever interpolated into the SQL', async () => {
+    // A hostile id alongside two ordinary ones: the whole point of binding is
+    // that the quote/`--` cannot reach the statement, so an id that WOULD break
+    // the old interpolated form is the honest case to assert on.
+    const ids = ['9f3b-0001', "9f3b'); DROP TABLE meals; --", '9f3b-0002'];
+    await markSynced(fakeDb, 'meals', ids);
+
+    expect(mockRunAsync).toHaveBeenCalledTimes(1);
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toBe('UPDATE meals SET synced = 1 WHERE id IN (?,?,?)');
+    expect(params).toEqual(ids);
+    // The property that matters: no id fragment reaches the SQL at all.
+    expect(sql).not.toMatch(/9f3b|DROP/);
+  });
+
+  it('chunks past SQLite\'s variable limit instead of emitting one huge statement', async () => {
+    const ids = Array.from({ length: 950 }, (_, i) => `id-${i}`);
+    await markSynced(fakeDb, 'events', ids);
+
+    // 950 ids at a 400 chunk → 400 / 400 / 150, and every chunk stays under the
+    // 999-variable ceiling an older SQLite build compiles with.
+    const calls = mockRunAsync.mock.calls as [string, unknown[]][];
+    expect(calls.map(([, p]) => p.length)).toEqual([400, 400, 150]);
+    for (const [sql, params] of calls) {
+      expect((sql.match(/\?/g) ?? []).length).toBe(params.length);
+      expect(params.length).toBeLessThan(999);
+    }
+    // Every id is covered exactly once — chunking must not drop or duplicate a
+    // row, or a pushed row stays queued forever (or a queued row is lost).
+    expect(calls.flatMap(([, p]) => p as string[])).toEqual(ids);
+  });
+
+  it('is a no-op on an empty id list — never emits a `WHERE id IN ()`', async () => {
+    await markSynced(fakeDb, 'vet_visits', []);
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it('actually flips only the named rows, against a real SQLite', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(':memory:');
+    db.exec('CREATE TABLE meals (id TEXT PRIMARY KEY, synced INTEGER NOT NULL DEFAULT 0)');
+    for (const id of ['m1', 'm2', 'm3']) {
+      db.prepare('INSERT INTO meals (id, synced) VALUES (?, 0)').run(id);
+    }
+
+    // Run the real SQL + params markSynced emits (captured from the mock, so a
+    // change to the production statement is exercised — not a copy of it).
+    await markSynced(fakeDb, 'meals', ['m1', 'm3']);
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, string[]];
+    db.prepare(sql).run(...params);
+
+    const rows = db.prepare('SELECT id, synced FROM meals ORDER BY id').all() as {
+      id: string; synced: number;
+    }[];
+    expect(rows).toEqual([
+      { id: 'm1', synced: 1 },
+      { id: 'm2', synced: 0 },
+      { id: 'm3', synced: 1 },
+    ]);
+    db.close();
+  });
+});
 
 describe('prepareAttachmentUpload (attachment re-upload compression guard)', () => {
   let warnSpy: jest.SpyInstance;
