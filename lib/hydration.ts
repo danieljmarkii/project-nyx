@@ -265,10 +265,11 @@ export const LOCAL_WIPE_TABLES = [
   // sign-out: the trial diet, the vet's name, and `indication` — and
   // `indication = 'skin'` is a closed clinical enum naming a suspected condition.
   // Together that is a de facto diagnosis disclosure surviving sign-out, on a
-  // device now in someone else's hands. (See also B-424: this list fails OPEN —
-  // a table absent from it is silently never wiped, with no test that would
-  // notice. The exact-set assertion in hydration.test.ts is the only thing
-  // standing in for that, which is why it must be extended with every mirror.)
+  // device now in someone else's hands. (This list still fails OPEN by
+  // construction — a table absent from it is silently never wiped — but B-424
+  // closed the gap in the guard: hydration.test.ts now derives the expected set
+  // from a real `sqlite_master` built from the production DDL, so a new local
+  // table that nobody added here breaks the build instead of going unnoticed.)
   'diet_trial_foods',
   'diet_trials',
   'events',
