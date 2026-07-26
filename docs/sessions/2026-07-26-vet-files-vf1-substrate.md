@@ -58,6 +58,26 @@ That residual is what `scopeVetDocumentPaths` exists for. 043 recorded it, reaso
 
 Tests: app 134 suites / 2376 cases, Edge Functions 913 cases, `tsc --noEmit` clean. Deno isn't installed in this environment by default — installed the CI-pinned 2.9.4 rather than push the Edge changes untested.
 
+## The review pass — FAIL, six findings, all fixed
+
+`rls-privacy-reviewer` (mandatory on VF-1 per §6.1) returned **FAIL**. It did not review by reading: it stood up a real PostgreSQL cluster, replayed 044's table/RLS/trigger half verbatim with two accounts and three pets, and **executed** every attack. All six findings were real. The fixes are commit `e7382cd`; the full write-up is a comment on #479.
+
+**The lesson worth keeping.** The worst finding was not a code hole — it was that `scopeVetDocumentPaths` didn't do what I said it did in four places. I copied `scopeFoodPaths`' first-segment test, but in `{ownPetId}/../{victimPetId}/x.pdf` the first segment **is** the owned pet; the `..` is the second. So the function kept the exact key it existed to drop, while 044's header, `plan.ts` and `index.ts` all asserted the residual was closed and the boundary still rested on Storage treating names as opaque — the dependency 044 explicitly disclaimed.
+
+The tell was already in the repo: I wrote the test *body* honestly (it asserts the path survives, with a comment explaining why) and gave it a **title** claiming the opposite. `deno test` printed a green line reading "drops the `..` traversal key". A test name that disagrees with its own assertions is worse than no test, because it converts a known gap into apparent coverage. Fixed by validating the whole `{pet_id}/{document_id}.{ext}` shape — and the corrected prose says explicitly that an earlier revision was wrong, rather than reading as though it were always right.
+
+The second-order hazard the fix creates is guarded: the two-segment rule must **not** be lifted into `scopeFoodPaths` or the attachment lists, because `nyx-vet-attachments` keys have three segments and the same predicate would drop every legitimate one, silently turning account deletion into a no-op for that bucket. There is a test pinning that.
+
+**The polarity finding is the one to carry to other tables.** 044's trigger had two checks that are equally RLS-blind under SECURITY INVOKER, and only one was safe — by accident. `NOT EXISTS(match) → RAISE` fails *closed* when the lookup can't see the row; `EXISTS(conflict) → RAISE` fails *open*. Check (a) was the first shape, check (b) the second, so (b) allowed a demonstrated cross-account `document_group_id` collision. Migration 045 makes the function `SECURITY DEFINER` (the `search_path` was already pinned, which is what makes that safe). `023` and `041` are the same class on tables with live rows → **B-493**, deliberately not carried in a boundary hotfix.
+
+The rest: `storage_path` was mutable, so one RLS-legal PATCH orphaned the object from every purge — strictly worse than 043's `move()` note, which at least needed a Storage call; check (b) raced between concurrent transactions (advisory lock); the sign-out wipe deleted rows but left the captured **files** on disk (that UNION in `db.ts` is a hardcoded list that fails open exactly as the row half did before B-424 → **B-492**); and `delete-account`'s owned-path reads were unpaginated while the app's own hydration has paged since B-054, which matters here because §4.4 makes this the first table where one document is N rows.
+
+Two attacks the reviewer *expected* to break and which held are worth recording, because they are what a future change is most likely to reintroduce: a single multi-row `INSERT` sharing a group id across two pets (plpgsql's SPI does a `CommandCounterIncrement`, so row 2's trigger sees row 1) and a cross-account upsert onto another owner's document id.
+
+It also resolved one open question beyond this PR: `storage.search` is `prosecdef = false`, so the bucket SELECT policies genuinely govern `list()` — if it had been `SECURITY DEFINER`, every bucket-scoping claim in the 021/025/033/036/042/043/044 family would have been decoration for the list path.
+
+Re-verified live after the fixes: both demonstrated breaks BLOCKED, plus move-between-own-pets, with the regressions that would have made this a bad trade all passing — the upsert re-push that re-sends the same `storage_path`, a legitimate second page of a group, a metadata edit, and soft delete. `delete-account` redeployed **v6**.
+
 ## Two things left honest rather than claimed
 
 **AC 8 is PASS-by-construction, not PASS-by-count.** A real "zero rows and zero objects after deletion" verification needs a throwaway account that has actually uploaded a document, which cannot exist until VF-3 ships a capture surface. QA's own note flags this as one of the two easiest criteria to hand-wave — carried forward to VF-6 rather than ticked.
@@ -71,3 +91,5 @@ Tests: app 134 suites / 2376 cases, Edge Functions 913 cases, `tsc --noEmit` cle
 - The `vet_documents_mime_type_check` mirrors the bucket's `allowed_mime_types` deliberately (the bucket is the outer gate, the CHECK the inner one). If the bucket's list is ever widened in the dashboard, widen the CHECK in the same change or the new type uploads fine and then fails to insert.
 - `lib/vetDocuments.test.ts` reads migration 044 and fails if the `kind` / `source` / `mime` constants drift from its CHECK constraints. That is not tidiness: a kind the client can emit but the DB rejects is a terminal `23514` on the push flush, which the offline queue cannot retry its way out of, on a row the owner believes is saved.
 - The signed-URL read path (`getSignedUrls`) is still VF-2's to build; VF-1 ships no reader.
+- **`storage_path` is now immutable server-side** (migration 045). Nothing may re-point it, including a pet-to-pet move — that is not a bug to work around but the guard that keeps every stored object reachable by the deletion purge. If VF-3 or VF-4 ever needs to relocate a document, the correct shape is a new row plus a new object (which is also what D13's duplicate-on-add already does), never an UPDATE.
+- Two PM/dashboard confirmations before VF-3's first upload, neither blocking VF-1: `storage.buckets.owner` must be **non-null** for `nyx-vet-documents` (the SQL-created-bucket 42501 landmine — it was dashboard-created, so this is a confirmation, not a suspicion), and the PostgREST **Max rows** setting is worth knowing now that `delete-account` pages against it.
