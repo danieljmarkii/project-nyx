@@ -125,6 +125,31 @@ describe('useSubmitGuard', () => {
     expect(write).toHaveBeenCalledTimes(1);
   });
 
+  it('stays latched when a COMMITTED write is followed by failing presentation — the caller contract', async () => {
+    // The counterexample that shaped `app/log.tsx`: the guard releases on a throw
+    // (so a pre-write failure leaves the picker usable), which means a handler that
+    // let a POST-write throw escape would release a guard whose event is already on
+    // disk — and the next tap would write a second dose for the same pill. Both
+    // handlers therefore settle their answer on the write and wrap everything after
+    // it. This pins that shape.
+    const { result } = renderHook(() => useSubmitGuard());
+    const insert = jest.fn();
+    const write = jest.fn(async () => {
+      insert();
+      try {
+        throw new Error('completion card blew up');
+      } catch {
+        // swallowed on purpose — the event is written; the card is cosmetic
+      }
+      return true;
+    });
+
+    await act(async () => { await result.current(write); });
+    await act(async () => { await result.current(write); });
+
+    expect(insert).toHaveBeenCalledTimes(1);
+  });
+
   it('returns a stable callback identity across renders', async () => {
     const { result, rerender } = renderHook(() => useSubmitGuard());
     const first = result.current;
