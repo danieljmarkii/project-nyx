@@ -1000,7 +1000,26 @@ export async function syncPendingDietTrials(): Promise<void> {
   const foodIds = [...new Set(unsynced.map((t) => t.food_item_id).filter(Boolean))] as string[];
   await presyncFoodItems(db, session.user.id, foodIds);
 
-  await pushDietTrialRows(db, 'diet_trials', unsynced, dietTrialRowToRemote);
+  // TWO PASSES, ENDING TRIALS FIRST — the wire half of PR 3's "complete-then-start
+  // must be ORDERED" (§3.3). Migration 040 made the active-trial index UNIQUE, so
+  // an owner who ends one trial and starts another while offline queues two rows
+  // that CANNOT both be active server-side. Sent in one batch, the new row's
+  // insert can be evaluated before the old row's status update and comes back
+  // 23505 — which this file classifies as TERMINAL, so the new trial would be
+  // quarantined and the owner would be left with the trial they just ended.
+  //
+  // Splitting the batch makes the ordering explicit rather than dependent on how
+  // Postgres happens to evaluate a multi-row upsert. Cost is one extra request in
+  // the rare cycle that carries both; every other cycle has one non-empty pass and
+  // is unchanged.
+  const ending = unsynced.filter((t) => t.status !== 'active');
+  const starting = unsynced.filter((t) => t.status === 'active');
+  if (ending.length > 0) {
+    await pushDietTrialRows(db, 'diet_trials', ending, dietTrialRowToRemote);
+  }
+  if (starting.length > 0) {
+    await pushDietTrialRows(db, 'diet_trials', starting, dietTrialRowToRemote);
+  }
 }
 
 // Flush unsynced allowed-set rows (B-417). Runs AFTER syncPendingDietTrials in

@@ -1,4 +1,5 @@
-import { Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, View, StyleSheet, TouchableOpacity } from 'react-native';
+import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
 
 interface Props {
@@ -25,6 +26,13 @@ interface Props {
   // Liver" and "…Chicken & Tuna" read identically on the exact picky-eater shelf this
   // widening serves. Legible-when-needed beats maximally-short-but-ambiguous.
   compact?: boolean;
+  // B-417 PR 3 — SELECTION mode. `undefined` (the default) keeps the tile a
+  // one-tap LOG control, which is what every existing caller wants. A boolean puts
+  // the tile in a picker that is building a SET (the trial diet, the allowed set):
+  // it renders a selected state and, just as importantly, announces itself as a
+  // checkbox with its checked state instead of a button whose hint says "Logs this
+  // food" — a lie in a surface where a tap adds a food to a list and logs nothing.
+  selected?: boolean;
 }
 
 // Exported so the standalone Foods-tab row (components/foods/FoodRow) renders
@@ -58,7 +66,11 @@ export const FORMAT_LABEL: Record<string, string> = {
 // WET" eyebrow and the product name as two separate fragments. The hint names the
 // action because here a tap LOGS (the picker is the quick-log surface), whereas a
 // FoodRow tap navigates to detail.
-export function FoodTile({ brand, productName, format, onPress, onLongPress, hideBrand = false, compact = false }: Props) {
+export function FoodTile({
+  brand, productName, format, onPress, onLongPress,
+  hideBrand = false, compact = false, selected,
+}: Props) {
+  const selecting = selected !== undefined;
   const typeLabel = FORMAT_LABEL[format] ?? '';
   const formatMeta = typeLabel.toUpperCase();
   // Under a brand header the brand is redundant — show the format alone (or
@@ -72,14 +84,15 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress, hid
 
   return (
     <TouchableOpacity
-      style={[styles.tile, compact && styles.tileCompact]}
+      style={[styles.tile, compact && styles.tileCompact, selected && styles.tileSelected]}
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={350}
       activeOpacity={0.7}
-      accessibilityRole="button"
+      accessibilityRole={selecting ? 'checkbox' : 'button'}
       accessibilityLabel={`${brand} ${productName}`}
-      accessibilityHint="Logs this food"
+      accessibilityState={selecting ? { checked: selected } : undefined}
+      accessibilityHint={selecting ? undefined : 'Logs this food'}
     >
       {/* Guarded so a hideBrand tile with an unlabeled format ('other') doesn't
           render an empty eyebrow line above the product name. */}
@@ -95,6 +108,14 @@ export function FoodTile({ brand, productName, format, onPress, onLongPress, hid
       <Text style={styles.product} numberOfLines={2}>
         {productName}
       </Text>
+      {/* A glyph, not just the tint — selection must not be signalled by colour
+          alone. The screen-reader path is covered separately by the checkbox role
+          + checked state above. */}
+      {selected ? (
+        <View style={styles.check}>
+          <Check size={14} color={theme.colorAccentInk} strokeWidth={3} />
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -113,6 +134,17 @@ const styles = StyleSheet.create({
   // B-346 rotation shelf — a shorter tile (min-height stays above the 44pt tap
   // floor) with tighter vertical padding. Longhand paddingVertical wins over the
   // base `padding` shorthand in RN's style merge, so horizontal padding is kept.
+  // Selection state (B-417 PR 3). Border colour + tint only — the border WIDTH
+  // stays 1 so selecting a tile never reflows the 2-up grid around it.
+  tileSelected: {
+    borderColor: theme.colorAccent,
+    backgroundColor: theme.colorAccentLight,
+  },
+  check: {
+    position: 'absolute',
+    top: theme.space1,
+    right: theme.space1,
+  },
   tileCompact: {
     minHeight: 62,
     paddingVertical: theme.space1,

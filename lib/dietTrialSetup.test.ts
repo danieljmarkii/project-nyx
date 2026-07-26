@@ -1,0 +1,392 @@
+// B-417 PR 3 — the start-a-trial write path and the decisions it encodes.
+//
+// What is worth pinning here, in rough order of what would hurt if it broke:
+//   • the legacy `food_item_id` gets the FIRST primary food and the allowed set
+//     gets ALL of them — the multi-select ruling's whole payload contract;
+//   • the end date is INCLUSIVE (start + target − 1). An off-by-one here is an
+//     off-by-one on the milestone that decides whether an owner stops a diet;
+//   • the duration lookup resolves every cell, and both unruled gaps resolve
+//     toward the LONGER window (the safe direction — a short default reads as
+//     permission to stop);
+//   • `allowed_from` opens on the TRIAL's start day, not today, so a back-dated
+//     trial does not render its own prescribed diet as un-permitted;
+//   • ending a trial writes `ended_at` on BOTH outcomes and clears `sync_error`.
+//
+// jest hoists jest.mock() above the imports, so anything a factory closes over
+// must be `mock`-prefixed.
+
+const mockRunAsync = jest.fn().mockResolvedValue({ changes: 1, lastInsertRowId: 0 });
+const mockGetFirstAsync = jest.fn().mockResolvedValue(null);
+jest.mock('./db', () => ({
+  getDb: () => ({ runAsync: mockRunAsync, getFirstAsync: mockGetFirstAsync }),
+}));
+
+const mockSyncTrials = jest.fn().mockResolvedValue(undefined);
+const mockSyncTrialFoods = jest.fn().mockResolvedValue(undefined);
+jest.mock('./sync', () => ({
+  syncPendingDietTrials: () => mockSyncTrials(),
+  syncPendingDietTrialFoods: () => mockSyncTrialFoods(),
+}));
+
+let mockIdSeq = 0;
+jest.mock('./utils', () => {
+  const actual = jest.requireActual('./utils');
+  return { ...actual, uuid: () => `id-${++mockIdSeq}` };
+});
+
+import {
+  buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
+  durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
+  getActiveTrialForPet, permittedRoleForFood, secondTrialIntro, startDietTrial,
+  stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
+  type StartTrialInput,
+} from './dietTrialSetup';
+import { toLocalDayKey } from './utils';
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
+const DRY = { id: 'food-dry', brand: 'Zignature', product_name: 'Kangaroo Formula', food_type: 'meal' };
+const WET = { id: 'food-wet', brand: 'Zignature', product_name: 'Kangaroo Canned', food_type: 'meal' };
+const JERKY = { id: 'food-jerky', brand: 'Real Meat', product_name: 'Kangaroo Jerky', food_type: 'treat' };
+
+function input(overrides: Partial<StartTrialInput> = {}): StartTrialInput {
+  return {
+    petId: 'pet-1',
+    primaryFoods: [DRY, WET],
+    permittedFoods: [],
+    indication: 'skin',
+    targetDurationDays: 56,
+    startedAt: '2026-07-03',
+    vetName: null,
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  mockIdSeq = 0;
+  mockRunAsync.mockClear();
+  mockGetFirstAsync.mockClear().mockResolvedValue(null);
+  mockSyncTrials.mockClear();
+  mockSyncTrialFoods.mockClear();
+});
+
+// ── The duration table (P-1, provisional pending Dr. Chen) ──────────────────
+
+describe('defaultDurationDays', () => {
+  it('returns the four ruled cells', () => {
+    expect(defaultDurationDays('dog', 'skin')).toBe(56);
+    expect(defaultDurationDays('dog', 'gi')).toBe(28);
+    expect(defaultDurationDays('cat', 'skin')).toBe(56);
+    // The one NEW number: cats reach only ~50% remission at 4 weeks.
+    expect(defaultDurationDays('cat', 'gi')).toBe(42);
+  });
+
+  it('resolves the unruled gaps toward the LONGER window', () => {
+    // No cell exists for 'other' — take the skin (longer) value rather than the
+    // GI one, because a short default produces a milestone that reads as
+    // permission to stop a diet the vet wanted continued.
+    expect(defaultDurationDays('dog', 'other')).toBe(56);
+    // Unknown species → the longer of the two species' cells for that indication.
+    expect(defaultDurationDays(null, 'gi')).toBe(42);
+    expect(defaultDurationDays('ferret', 'gi')).toBe(42);
+  });
+});
+
+// ── End date: INCLUSIVE of day 1 ────────────────────────────────────────────
+
+describe('trialEndDayKey', () => {
+  it('is inclusive — 56 days from 3 July ends 27 August, not 28', () => {
+    // Both of the mock's worked examples encode the inclusive form, and
+    // getDietTrialProgress counts day 1 as the start day.
+    expect(trialEndDayKey('2026-07-03', 56)).toBe('2026-08-27');
+    expect(trialEndDayKey('2026-07-25', 56)).toBe('2026-09-18');
+  });
+
+  it('handles a one-day trial and rejects nonsense', () => {
+    expect(trialEndDayKey('2026-07-03', 1)).toBe('2026-07-03');
+    expect(trialEndDayKey('2026-07-03', 0)).toBeNull();
+    expect(trialEndDayKey('not-a-date', 56)).toBeNull();
+  });
+
+  it('crosses a year boundary', () => {
+    expect(trialEndDayKey('2026-12-01', 56)).toBe('2027-01-25');
+  });
+});
+
+describe('formatTrialEndDate', () => {
+  // Day/month ORDER is the device locale's business (the repo formats every
+  // owner-facing date with `toLocaleDateString([])`); what this pins is the two
+  // things that are ours: the parts present, and the year rule.
+  it('omits the year in-year and includes it across the boundary', () => {
+    const now = new Date(2026, 6, 25);
+    const inYear = formatTrialEndDate('2026-08-27', now)!;
+    expect(inYear).toContain('27');
+    expect(inYear).toContain('August');
+    expect(inYear).not.toContain('2026');
+
+    // A 12-week trial started in November ends in a year a bare "25 January"
+    // leaves genuinely ambiguous.
+    expect(formatTrialEndDate('2027-01-25', now)).toContain('2027');
+  });
+});
+
+describe('durationHelperLine', () => {
+  it('names the default and its resulting end DATE, not just a day count', () => {
+    const now = new Date(2026, 6, 25);
+    const line = durationHelperLine('skin', 56, toLocalDayKey(now), '2026-09-18', now);
+    expect(line).toContain('8 weeks');
+    expect(line).toContain('Starting today');
+    expect(line).toContain('September');
+    expect(line).toContain('18');
+  });
+
+  it('stays true after a back-date — never "starting today" on a June trial', () => {
+    const now = new Date(2026, 6, 25);
+    const line = durationHelperLine('skin', 56, '2026-06-01', '2026-07-26', now);
+    expect(line).not.toContain('Starting today');
+    expect(line).toContain('June');
+  });
+});
+
+// ── The payload ─────────────────────────────────────────────────────────────
+
+describe('buildTrialRows', () => {
+  it('writes N primary_diet rows and puts the FIRST food on the legacy column', () => {
+    const rows = buildTrialRows(input(), '2026-07-03T09:00:00.000Z');
+
+    // §4.1 — `diet_trials.food_item_id` is display-only legacy for the seven
+    // shipped readers; every computation reads diet_trial_foods.
+    expect(rows.trial.food_item_id).toBe('food-dry');
+    expect(rows.trial.food_label).toBe('Zignature Kangaroo Formula');
+
+    const primaries = rows.foods.filter((f) => f.role === 'primary_diet');
+    expect(primaries.map((f) => f.food_item_id)).toEqual(['food-dry', 'food-wet']);
+    expect(primaries.every((f) => f.diet_trial_id === rows.trial.id)).toBe(true);
+    expect(primaries.every((f) => f.pet_id === 'pet-1')).toBe(true);
+  });
+
+  it('denormalizes a NOT NULL food_label onto every allowed-set row', () => {
+    // The row FKs ON DELETE CASCADE, so a label that had to be re-derived from
+    // the food would die with it.
+    const rows = buildTrialRows(input({ permittedFoods: [JERKY] }), 'now');
+    expect(rows.foods.every((f) => f.food_label.length > 0)).toBe(true);
+    expect(rows.foods.find((f) => f.food_item_id === 'food-jerky')?.food_label)
+      .toBe('Real Meat Kangaroo Jerky');
+  });
+
+  it('infers a permitted extra’s role from the library’s own food_type', () => {
+    const rows = buildTrialRows(input({ permittedFoods: [JERKY, { ...WET, id: 'food-x' }] }), 'now');
+    const byId = Object.fromEntries(rows.foods.map((f) => [f.food_item_id, f.role]));
+    expect(byId['food-jerky']).toBe('permitted_treat');
+    expect(byId['food-x']).toBe('permitted_other');
+    // Never asked for, never guessed at: 'supplement' is not capturable in v1.
+    expect(rows.foods.some((f) => f.role === 'supplement')).toBe(false);
+  });
+
+  it('opens membership on the TRIAL’s start day, not today', () => {
+    // A back-dated trial must not render its own prescribed diet as un-permitted
+    // for the days before the owner got around to telling us.
+    const rows = buildTrialRows(input({ startedAt: '2026-06-01' }), 'now');
+    expect(rows.foods.every((f) => f.allowed_from === '2026-06-01')).toBe(true);
+  });
+
+  it('leaves transition_started_at null — the v1 decision, not an omission', () => {
+    expect(buildTrialRows(input(), 'now').trial.transition_started_at).toBeNull();
+  });
+
+  it('always starts elimination/active and trims an empty vet name to null', () => {
+    const rows = buildTrialRows(input({ vetName: '   ' }), 'now');
+    expect(rows.trial.phase).toBe('elimination');
+    expect(rows.trial.status).toBe('active');
+    expect(rows.trial.vet_name).toBeNull();
+  });
+});
+
+describe('canStartTrial', () => {
+  it('needs a trial food and an indication, and nothing else', () => {
+    expect(canStartTrial({ primaryFoods: [DRY], indication: 'skin' })).toBe(true);
+    expect(canStartTrial({ primaryFoods: [], indication: 'skin' })).toBe(false);
+    expect(canStartTrial({ primaryFoods: [DRY], indication: null })).toBe(false);
+  });
+});
+
+// ── Local writes ────────────────────────────────────────────────────────────
+
+describe('startDietTrial', () => {
+  it('writes the trial then its allowed set, all unsynced with no error', async () => {
+    await startDietTrial(input({ permittedFoods: [JERKY] }));
+
+    // 1 trial + 2 primaries + 1 permitted.
+    expect(mockRunAsync).toHaveBeenCalledTimes(4);
+    const [trialSql] = mockRunAsync.mock.calls[0];
+    expect(trialSql).toContain('INSERT INTO diet_trials');
+    // The mirror's contract for every local mutation.
+    expect(trialSql).toContain('0, NULL');
+    for (let i = 1; i < 4; i++) {
+      expect(mockRunAsync.mock.calls[i][0]).toContain('INSERT INTO diet_trial_foods');
+    }
+  });
+
+  it('binds one parameter per placeholder on both statements', async () => {
+    // The B-057 placeholder/param-drift guard: a silent off-by-one here writes a
+    // date into an enum column and the row is rejected server-side forever.
+    await startDietTrial(input());
+    for (const [sql, params] of mockRunAsync.mock.calls) {
+      const placeholders = (sql as string).match(/\?/g)?.length ?? 0;
+      expect((params as unknown[]).length).toBe(placeholders);
+    }
+  });
+
+  it('kicks the parent flush before the child flush', async () => {
+    await startDietTrial(input());
+    await flush();
+    expect(mockSyncTrials).toHaveBeenCalled();
+    expect(mockSyncTrialFoods).toHaveBeenCalled();
+    expect(mockSyncTrials.mock.invocationCallOrder[0])
+      .toBeLessThan(mockSyncTrialFoods.mock.invocationCallOrder[0]);
+  });
+
+  it('still writes locally when the flush fails — offline is the target case', async () => {
+    mockSyncTrials.mockRejectedValueOnce(new Error('offline'));
+    await expect(startDietTrial(input())).resolves.toEqual(expect.any(String));
+    await flush();
+    expect(mockRunAsync).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('endActiveTrial', () => {
+  it('writes ended_at AND completed_at when the trial ran its course', async () => {
+    await endActiveTrial({ trialId: 't-1', reason: 'completed' });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('UPDATE diet_trials');
+    expect(params[0]).toBe('completed');
+    expect(params[1]).toEqual(expect.any(String)); // ended_at
+    expect(params[2]).toBe(params[1]);             // completed_at
+    expect(params[3]).toBeNull();                  // no stopped_reason
+  });
+
+  it('abandons with a reason and STILL writes ended_at', async () => {
+    // ended_at on both outcomes is not optional: a null end date makes
+    // report.ts read the trial as ongoing and renders "Day 104 of 28".
+    await endActiveTrial({ trialId: 't-1', reason: 'refused' });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[0]).toBe('abandoned');
+    expect(params[1]).toEqual(expect.any(String)); // ended_at
+    expect(params[2]).toBeNull();                  // completed_at
+    expect(params[3]).toBe('refused');
+  });
+
+  it('re-arms a quarantined push rather than leaving the row parked', async () => {
+    await endActiveTrial({ trialId: 't-1', reason: 'vet_advised' });
+    const [sql] = mockRunAsync.mock.calls[0] as [string];
+    expect(sql).toContain('synced = 0');
+    expect(sql).toContain('sync_error = NULL');
+  });
+
+  it('never DELETEs — a trial ends by status', async () => {
+    await endActiveTrial({ trialId: 't-1', reason: 'other' });
+    expect((mockRunAsync.mock.calls[0][0] as string).toUpperCase()).not.toContain('DELETE');
+  });
+});
+
+describe('getActiveTrialForPet', () => {
+  it('reads the local mirror and prefers the row the server accepted', async () => {
+    mockGetFirstAsync.mockResolvedValueOnce({
+      id: 't-1', started_at: '2026-07-03', target_duration_days: 56, food_label: 'Zignature Kangaroo Formula',
+    });
+    const trial = await getActiveTrialForPet('pet-1');
+    expect(trial).toEqual({
+      id: 't-1', startedAt: '2026-07-03', targetDurationDays: 56,
+      foodLabel: 'Zignature Kangaroo Formula',
+    });
+    const [sql, params] = mockGetFirstAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('FROM diet_trials');
+    // The split-brain rule: the row the server has wins the display.
+    expect(sql).toContain('ORDER BY t.synced DESC');
+    expect(params).toEqual(['pet-1']);
+  });
+
+  it('returns null when the pet has no active trial', async () => {
+    expect(await getActiveTrialForPet('pet-1')).toBeNull();
+  });
+});
+
+// ── Screen D — the ordered second-trial gate ────────────────────────────────
+
+describe('stopReasonOptions', () => {
+  const running = { id: 't', startedAt: '2026-07-03', targetDurationDays: 56, foodLabel: 'X' };
+  const nowMidTrial = new Date(2026, 6, 25).getTime(); // day 23 of 56
+
+  it('withholds "it ran its course" mid-trial', () => {
+    expect(describeActiveTrial(running, nowMidTrial)).toEqual({ dayLine: 'Day 23 of 56', complete: false });
+    const values = stopReasonOptions('Biscuit', false).map((o) => o.value);
+    // Offering it would write `completed` over an abandoned trial and destroy the
+    // stopped_reason a vet prescribes differently from.
+    expect(values).not.toContain('completed');
+    expect(values).toEqual(['vet_advised', 'refused', 'other']);
+  });
+
+  it('offers it once the trial has reached its target', () => {
+    const done = describeActiveTrial(running, new Date(2026, 7, 27).getTime());
+    expect(done.complete).toBe(true);
+    expect(stopReasonOptions('Biscuit', true).map((o) => o.value)[0]).toBe('completed');
+  });
+
+  it('keeps `refused` a stable token — PR 6/7 route it to the intake lane', () => {
+    const refused = stopReasonOptions('Biscuit', false).find((o) => o.value === 'refused');
+    expect(refused?.label).toBe('Biscuit wouldn’t eat it');
+  });
+});
+
+describe('secondTrialIntro', () => {
+  it('names the running trial and why it blocks the new one', () => {
+    const line = secondTrialIntro(
+      'Biscuit',
+      { id: 't', startedAt: '2026-07-03', targetDurationDays: 56, foodLabel: 'Zignature Kangaroo Formula' },
+      new Date(2026, 6, 25).getTime(),
+    );
+    expect(line).toContain('Zignature Kangaroo Formula');
+    expect(line).toContain('day 23 of 56');
+    expect(line).toContain('one trial at a time');
+  });
+});
+
+// ── LOCKED copy ─────────────────────────────────────────────────────────────
+
+describe('locked copy', () => {
+  it('the C6 disclosure names the itemisation, the dates and the audience', () => {
+    expect(TRIAL_RECORD_DISCLOSURE).toBe(
+      'While the trial runs, Culprit records which feedings matched the trial diet and ' +
+      'which didn’t, with dates. That’s the part your vet needs.',
+    );
+  });
+
+  it('the two setup lines are addressed to the pet by name', () => {
+    const [everyone, oral] = trialSetupLines('Biscuit');
+    expect(everyone).toContain('Everyone who feeds Biscuit');
+    expect(oral).toContain('flavoured chewables');
+  });
+
+  it('renders no negative claim about the world (R1 is two-sided)', () => {
+    // G2 is a RULE, not a threshold: the negative claim is deleted from the
+    // product at every coverage on every surface. Nothing this PR ships may
+    // assert an absence.
+    const strings = [
+      TRIAL_RECORD_DISCLOSURE,
+      ...trialSetupLines('Biscuit'),
+      durationHelperLine('skin', 56, '2026-07-25', '2026-09-18'),
+    ].join(' ').toLowerCase();
+    expect(strings).not.toContain('no off-diet');
+    expect(strings).not.toContain('clean');
+    expect(strings).not.toContain('compliance');
+  });
+});
+
+describe('foodLabel / permittedRoleForFood', () => {
+  it('joins brand and product, and treats are treats', () => {
+    expect(foodLabel({ brand: 'Zignature', product_name: 'Kangaroo Formula' }))
+      .toBe('Zignature Kangaroo Formula');
+    expect(permittedRoleForFood('treat')).toBe('permitted_treat');
+    expect(permittedRoleForFood(null)).toBe('permitted_other');
+  });
+});

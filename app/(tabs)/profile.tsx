@@ -14,7 +14,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload, getPublicUrl } from '../../lib/storage';
-import { archiveBlockedCopy } from '../../lib/utils';
+import { archiveBlockedCopy, petPronouns } from '../../lib/utils';
 import { getDietTrialProgress } from '../../lib/analytics';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
@@ -24,6 +24,7 @@ import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
+import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { TrialContaminantNote } from '../../components/food/TrialContaminantNote';
 import {
@@ -156,6 +157,7 @@ export default function ProfileScreen() {
 
   const [dietTrial, setDietTrial] = useState<DietTrialDisplay | null>(null);
   const [trialLoading, setTrialLoading] = useState(true);
+  const [startTrialVisible, setStartTrialVisible] = useState(false);
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -782,10 +784,66 @@ export default function ProfileScreen() {
           )}
         </Card>
 
-        {/* ── Diet trial card ── */}
+        {/* ── Diet trial card ──
+            B-417 PR 3 — the card now ALWAYS renders, mirroring the medications
+            card, because it is the ONLY entry point to starting a trial (§4.1 D5:
+            no menu item, no second path). Before this, a pet with no trial had no
+            diet-trial card at all — which is why `diet_trials` shipped in
+            migration 001 and production still holds zero rows.
+            SCOPE: this PR adds state 0 (the designed empty state) and the entry
+            action. The ACTIVE render below is untouched — PR 4 rebuilds it, and
+            that is where the "% compliance" string AND the compliance-bound
+            progress bar are deleted (§1.3: the bar is the more misleading of the
+            two, and deleting only the string would ship it). */}
+        {!trialLoading && !dietTrial && (
+          <Card style={styles.sectionGap}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.trialLabel}>Diet trial</Text>
+              <TouchableOpacity
+                style={styles.cardActionTouch}
+                onPress={() => setStartTrialVisible(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Start a diet trial"
+              >
+                <Text style={styles.sectionAction}>+ Start</Text>
+              </TouchableOpacity>
+            </View>
+            {/* Warm, honest, forward-looking (Principle 5) — and it names the
+                PAYOFF (the record the vet asks for at the recheck) rather than the
+                feature. Design-locked, mock state 0. */}
+            <Text style={styles.trialEmptyLead}>No trial running.</Text>
+            <Text style={styles.emptyConditionsText}>
+              If {activePet.name}’s vet has put {petPronouns(activePet.sex).object} on an
+              elimination diet, tell Culprit — it keeps the dated record your vet will
+              ask for at the recheck.
+            </Text>
+            <PrimaryButton
+              label="Start a diet trial"
+              variant="secondary"
+              onPress={() => setStartTrialVisible(true)}
+              style={styles.trialEmptyCta}
+            />
+          </Card>
+        )}
+
         {!trialLoading && dietTrial && (
           <Card style={styles.sectionGap}>
-            <Text style={styles.trialLabel}>Diet trial</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.trialLabel}>Diet trial</Text>
+              {/* One active trial per pet is a DATABASE constraint (migration 040's
+                  UNIQUE partial index), so this opens the ordered "end the running
+                  one first" sheet — never a second concurrent trial. */}
+              <TouchableOpacity
+                style={styles.cardActionTouch}
+                onPress={() => setStartTrialVisible(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Change this diet trial"
+              >
+                <Text style={styles.sectionAction}>Change</Text>
+              </TouchableOpacity>
+            </View>
             {dietTrial.food_items && (
               <Text style={styles.trialFood}>
                 {dietTrial.food_items.brand} {dietTrial.food_items.product_name}
@@ -900,6 +958,22 @@ export default function ProfileScreen() {
             prev.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
           )
         }
+      />
+
+      {/* B-417 PR 3. Kept MOUNTED across dismissals on purpose: "Snap a new food"
+          routes out to `/food-capture` (the trial food is usually a bag the owner
+          was handed ten minutes ago, so it is rarely in the library yet), and the
+          half-filled form has to still be there when they come back. The form is
+          reset on Cancel and after a successful start — never by a dismissal. */}
+      <StartTrialModal
+        visible={startTrialVisible}
+        petId={activePet.id}
+        petName={activePet.name}
+        species={activePet.species}
+        onClose={() => setStartTrialVisible(false)}
+        onStarted={loadDietTrial}
+        onAddFood={() => { setStartTrialVisible(false); router.push('/food-capture'); }}
+        onLogFirstMeal={() => { setStartTrialVisible(false); router.push('/log?type=meal'); }}
       />
     </SafeAreaView>
   );
@@ -1122,6 +1196,15 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     textTransform: 'uppercase',
     letterSpacing: theme.trackingWidest,
+  },
+  // State 0 (mock, design-locked): the fact line leads, the forward line follows.
+  trialEmptyLead: {
+    fontSize: theme.textLG,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
+  },
+  trialEmptyCta: {
+    marginTop: theme.space1,
   },
   trialFood: {
     fontSize: theme.textLG,
