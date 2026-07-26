@@ -1,6 +1,6 @@
 # Culprit on iPad — Scope & Requirements
 
-**Version:** 0.2 (draft — D2/D3 ruled, D1 narrowed) | **Last Updated:** 2026-07-26
+**Version:** 0.3 (draft — breakpoint corrected; D2/D3 ruled, D1 narrowed) | **Last Updated:** 2026-07-26
 **Backlog:** B-451 | **Related:** B-269 (`supportsTablet` flip), B-415 (widget device family)
 **Mockups:** `docs/culprit-ipad-mockups.html`
 
@@ -28,6 +28,57 @@ Read this first; it supersedes the scope table's original framing.
   This changes the ROI calculation for responsive work and is analysed in §10. It is
   not a decision this doc asks for; it is a fork that changes which work is a down
   payment and which is a detour.
+
+### 0.0 Correction — the breakpoint was wrong (v0.3, 2026-07-26)
+
+PM asked: *"are you advocating to use the regular iPhone app on the iPad?"* No — but
+the v0.2 plan would have produced exactly that on some iPads, so the question found a
+real error. Recorded rather than quietly patched, because the fix changes R2/R3/R10
+and drops D3's stakes.
+
+**The bug.** v0.2 put the sidebar breakpoint at 900pt. iPad portrait widths run
+~744–1024pt by model, so:
+
+| Device / orientation | Width | v0.2 result |
+|---|---:|---|
+| iPad mini portrait | 744 | ❌ phone column |
+| iPad 10.9" / Air 11" portrait | 820 | ❌ phone column |
+| **iPad Pro 11" portrait** | **834** | ❌ **phone column — the PM's likely device** |
+| iPad Pro / Air 13" portrait | 1024 | ✓ iPad layout |
+| All iPad landscape | 1133–1366 | ✓ iPad layout |
+
+Three of five iPad models would have shown a 560pt centred column in portrait — the
+phone layout with margins.
+
+**The second bug, from the same assumption.** Width alone does not identify a tablet.
+An iPhone 15/16 Pro Max in landscape is **~932–956pt wide** — above the 900pt
+breakpoint. Once B7 unlocks landscape, a Pro Max would have rendered an iPad sidebar
+on a phone, in ~430pt of height.
+
+**The fix — two breakpoints, gated on device class, not width alone:**
+
+| Token | Value | Effect |
+|---|---:|---|
+| `bpRegular` | **700pt** | Sidebar replaces the tab bar; iPad chrome begins. Catches every full-screen iPad, mini through 13", **both orientations** |
+| `bpWide` | **1000pt** | Content goes two-column. 11" portrait (834) → sidebar + one column; 11" landscape (1194) and 13" portrait (1024) → sidebar + two |
+| `contentMaxWidth` | 560pt | **Now the compact fallback only** — a narrow Split View pane, and iPhone |
+
+Both breakpoints are additionally gated on the device being an iPad (`Platform.isPad`),
+so a landscape Pro Max stays on the phone layout. Width alone never promotes a phone.
+
+**Consequences:**
+
+- **R2/R3 amended** (§4.1) — two tokens, not one, plus the device gate.
+- **R10 amended** — landscape must be unlocked **on iPad only**, via the separate
+  `UISupportedInterfaceOrientations~ipad` Info.plist key, leaving iPhone
+  portrait-locked. A global `orientation` flip in `app.json` cannot express this.
+- **D3's stakes drop sharply.** 560pt no longer governs the iPad experience at all —
+  it binds only in the ~560–700pt band. The Designer's ruling stands; it just matters
+  far less than when it was made.
+- **Figures 2 and 3 are re-labelled.** They are no longer "what B− renders in
+  portrait" — that claim was the error. They show Scope A, and B−'s compact fallback.
+- **B3 grows slightly.** Home now needs *two* width states (sidebar+one column,
+  sidebar+two), not one. Still PR B3; a little more work inside it.
 
 ---
 
@@ -111,19 +162,23 @@ Numbered for QA. Each is verifiable on device.
 
 - **R1.** `ios.supportsTablet` is `true`. Effective at the next native build-cut,
   not via `eas update` OTA.
-- **R2.** `constants/theme.ts` gains breakpoint tokens. Minimum: a `regular`
-  breakpoint (≥700pt) and a `contentMaxWidth` (proposed **560pt**). Tokens only —
-  no component consumes them outside the rules below.
-- **R3.** Above the `regular` breakpoint, primary scroll content is constrained to
-  `contentMaxWidth` and centered. The margin either side is the brand night ground
-  (`colorBrandNight`), not white — the register rule (`culprit-in-app-brand-requirements.md`
-  §1.2) already reserves night for "the app working on the pet's behalf", and a
-  neutral grey margin reads as an unstyled letterbox.
-- **R4.** The tab bar is capped at `contentMaxWidth` and centered. Four labels
-  spread across 834pt read as a broken layout, not a wide one.
+- **R2. AMENDED (§0.0).** `constants/theme.ts` gains **two** breakpoint tokens —
+  `bpRegular: 700` (iPad chrome / sidebar) and `bpWide: 1000` (two-column content) —
+  plus `contentMaxWidth: 560`. Both breakpoints are gated on `Platform.isPad`, so
+  width alone never promotes a phone to the iPad layout. Tokens only.
+- **R3. AMENDED (§0.0).** `contentMaxWidth` centring applies **below** `bpRegular`
+  only — a narrow Split View pane. It is no longer the iPad full-screen experience.
+  Where it does apply, the margin either side is the brand night ground
+  (`colorBrandNight`), not white — the register rule
+  (`culprit-in-app-brand-requirements.md` §1.2) already reserves night for "the app
+  working on the pet's behalf", and a neutral grey margin reads as an unstyled
+  letterbox.
+- **R4. AMENDED (§0.0).** Below `bpRegular` the tab bar caps at `contentMaxWidth` and
+  centres. At or above it, the tab bar is **replaced by the sidebar** (PR B2) and this
+  requirement does not apply.
 - **R5.** The FAB re-anchors to the content column's right edge, never the screen's.
-  At 834pt the screen corner is outside comfortable reach and outside the visual
-  frame the column establishes.
+  Applies in both the compact and the sidebar layouts — the screen corner on any iPad
+  is outside comfortable reach and outside the frame the content establishes.
 
 ### 4.2 Correctness
 
@@ -147,9 +202,12 @@ Numbered for QA. Each is verifiable on device.
 
 ### 4.4 Orientation & windowing
 
-- **R10.** `app.json` keeps `"orientation": "portrait"` for Scope A. Landscape is a
-  Scope B concern; shipping a portrait-locked iPad app is legitimate, shipping a
-  landscape layout nobody designed is not.
+- **R10. AMENDED (§0.0).** Portrait-locked through B1–B6. **PR B7 unlocks landscape
+  on iPad only**, via the separate `UISupportedInterfaceOrientations~ipad` Info.plist
+  key — iPhone stays portrait-locked. A global `orientation` flip in `app.json` cannot
+  express this, and would put an iPhone Pro Max at ~932–956pt of landscape width,
+  above `bpRegular`. The `Platform.isPad` gate in R2 is the second line of defence;
+  this key is the first.
 - **R11. Blocked pending verification** — recent iPadOS windowing allows arbitrary
   window widths regardless of the orientation key. If that applies to the current
   App Review baseline, R10 is not sufficient and Scope A must handle arbitrary

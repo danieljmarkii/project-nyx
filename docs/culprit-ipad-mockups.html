@@ -542,7 +542,7 @@ footer{
     "whether" and became "how far, and what's the PR that turns a large into an extra-large."
   </p>
   <div class="meta">
-    <span><b>Doc</b> nyx-ipad-support-requirements.md v0.2</span>
+    <span><b>Doc</b> nyx-ipad-support-requirements.md v0.3</span>
     <span><b>Backlog</b> B-451</span>
     <span><b>Measured</b> 2026-07-26 on main</span>
     <span><b>Ruled</b> D2 · D3 — D1 narrowed</span>
@@ -746,19 +746,28 @@ footer{
 <!-- ─────────────────────────────────────────── 04 -->
 <section>
   <div class="sec-head"><span class="sec-num">04</span><h2>The narrow case, drawn</h2></div>
+
+  <div class="conflict" style="border-left-color:var(--break);max-width:var(--measure);margin:0 0 30px">
+    <div class="voice">
+      <div class="voice-name" style="color:var(--break)">Correction — this section's claim was wrong</div>
+      <p>
+        An earlier draft said these two figures were "what B− renders in portrait", on the
+        basis of a 900pt sidebar breakpoint. <strong>That was an error.</strong> iPad portrait
+        widths run ~744–1024pt, so three of five iPad models — including the 11" Pro at
+        ~834pt — would have fallen below 900 and shown this centred column: the phone
+        layout with margins. The breakpoint is now <strong>700pt</strong>, and every
+        full-screen iPad gets the iPad layout in both orientations. See §07.
+      </p>
+    </div>
+  </div>
+
   <div class="prose">
     <p>
-      The content column caps at <strong>560pt</strong> and centres. The margin either side is
-      the brand night ground — not grey. Culprit already reserves night for the moments the app
-      is working on the pet's behalf, so the iPad margin reads as the product's own world rather
-      than an unstyled letterbox. The tab bar caps with the column. The FAB anchors to the
-      column's edge, not the screen's.
-    </p>
-    <p>
-      <strong>These two figures survive the move to B−.</strong> The sidebar arrives at 900pt,
-      and iPad portrait is 834 — so this <em>is</em> what B− renders in portrait, with §06's
-      sidebar and two columns taking over in landscape. Scope A was never throwaway work; it's
-      B−'s narrow breakpoint, which is why B1 ships it first.
+      So what these figures actually show is the <strong>compact fallback</strong> — a narrow
+      Split View pane — and what Scope A alone would have shipped. The content column caps at
+      <strong>560pt</strong> and centres. The margin either side is the brand night ground, not
+      grey: Culprit already reserves night for the moments the app is working on the pet's
+      behalf, so the margin reads as the product's own world rather than an unstyled letterbox.
     </p>
   </div>
 
@@ -766,7 +775,7 @@ footer{
     <div class="fig-head">
       <span class="fig-tag">Figure 2</span>
       <h3>Home — centred column on night ground</h3>
-      <span class="pill keep verdict">B− narrow breakpoint · PR B1</span>
+      <span class="pill scope verdict">Compact fallback · not the iPad layout</span>
     </div>
     <div class="fig-body rig-md">
       <div class="stack">
@@ -819,7 +828,7 @@ footer{
             <div class="fab" style="right:auto;left:calc(617*var(--u));bottom:calc(112*var(--u))">+</div>
           </div>
         </div>
-        <div class="caption"><b>iPad Pro 11"</b> · 834pt · 560pt column</div>
+        <div class="caption"><b>Compact pane</b> · 560pt column · <b>not</b> what an 11" iPad now gets</div>
       </div>
 
       <div class="keys">
@@ -838,7 +847,7 @@ footer{
     <div class="fig-head">
       <span class="fig-tag">Figure 3</span>
       <h3>History — the same rule, a list screen</h3>
-      <span class="pill keep verdict">B− narrow breakpoint · PR B1</span>
+      <span class="pill scope verdict">Compact fallback · not the iPad layout</span>
     </div>
     <div class="fig-body rig-md">
       <div class="stack">
@@ -873,7 +882,7 @@ footer{
             <div class="tabbar capped"><span>Home</span><span class="on">History</span><span>Foods</span><span>Pet</span></div>
           </div>
         </div>
-        <div class="caption"><b>iPad Pro 11"</b> · 834pt · same 560pt rule</div>
+        <div class="caption"><b>Compact pane</b> · same 560pt rule</div>
       </div>
 
       <div class="keys">
@@ -1054,11 +1063,37 @@ footer{
 <!-- ─────────────────────────────────────────── 07 -->
 <section>
   <div class="sec-head"><span class="sec-num">07</span><h2>What the L actually costs</h2></div>
+
   <div class="prose">
     <p>
-      Asked for after the first read: <strong>how many PRs, and how risky?</strong>
-      The useful finding is that risk isn't spread across 39 screens. Seven screens
-      over 900 lines carry it — and four of those seven are capture flows.
+      <strong>First, the breakpoints — corrected.</strong> The plan originally put the
+      sidebar at 900pt, which would have left three of five iPad models on the phone
+      column in portrait, and would have handed an iPhone Pro Max a sidebar in landscape
+      (it's ~932–956pt wide). Width alone doesn't identify a tablet.
+    </p>
+  </div>
+
+  <div class="tbl-scroll" style="margin-top:24px">
+    <table>
+      <thead><tr><th>Token</th><th style="text-align:right">Value</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">bpRegular</code></td><td style="text-align:right;font-variant-numeric:tabular-nums"><b>700pt</b></td><td>Sidebar replaces the tab bar. Catches <b>every full-screen iPad</b>, mini through 13", both orientations</td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">bpWide</code></td><td style="text-align:right;font-variant-numeric:tabular-nums"><b>1000pt</b></td><td>Content goes two-column. 11" portrait (834) → sidebar + one column; 11" landscape (1194) and 13" portrait (1024) → sidebar + two</td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">contentMaxWidth</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">560pt</td><td>Now the <b>compact fallback only</b> — a narrow Split View pane, and iPhone</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose" style="margin-top:22px">
+    <p>
+      Both breakpoints are additionally gated on <code>Platform.isPad</code>, so width alone
+      never promotes a phone. And landscape unlocks on <strong>iPad only</strong>, via the
+      separate <code>UISupportedInterfaceOrientations~ipad</code> Info.plist key — a global
+      <code>orientation</code> flip in <code>app.json</code> can't express that.
+    </p>
+    <p>
+      <strong>Now the cost.</strong> Risk isn't spread across 39 screens. Seven screens over
+      900 lines carry it — and four of those seven are capture flows.
     </p>
   </div>
 
@@ -1094,13 +1129,13 @@ footer{
     <table>
       <thead><tr><th>PR</th><th>Scope</th><th>Risk</th><th>Note</th></tr></thead>
       <tbody>
-        <tr><td><strong>B1</strong></td><td>Foundation — breakpoint tokens, <code style="font-family:var(--mono);font-size:12px">useBreakpoint()</code>, responsive container, the two <code style="font-family:var(--mono);font-size:12px">Dimensions</code> fixes, the flag flip</td><td><span class="pill keep">Low</span></td><td>No phone-visible change. Ships the R6 rotation fix regardless of what follows. <b>Unlocks your iPad testing</b></td></tr>
+        <tr><td><strong>B1</strong></td><td>Foundation — the two breakpoint tokens above + the <code style="font-family:var(--mono);font-size:12px">isPad</code> gate, <code style="font-family:var(--mono);font-size:12px">useBreakpoint()</code>, responsive container, the two <code style="font-family:var(--mono);font-size:12px">Dimensions</code> fixes, the flag flip</td><td><span class="pill keep">Low</span></td><td>No phone-visible change. Ships the R6 rotation fix regardless of what follows. <b>Unlocks your iPad testing</b></td></tr>
         <tr><td><strong>B2</strong></td><td>Shell — sidebar ≥900pt, tab bar below; FAB re-anchor</td><td><span class="pill break">Med-high</span></td><td><b>The riskiest PR.</b> Navigation breaks every route at once. Keep <code style="font-family:var(--mono);font-size:12px">expo-router</code> Tabs with a row-layout custom <code style="font-family:var(--mono);font-size:12px">tabBar</code> — never <code style="font-family:var(--mono);font-size:12px">Drawer</code></td></tr>
-        <tr><td><strong>B3</strong></td><td>Home two-column — Figure 5's right side</td><td><span class="pill scope">Medium</span></td><td>Risk is <em>product</em>, not code: Principle 3 governs what leads. Which zone earns the primary column is a Designer ruling</td></tr>
+        <tr><td><strong>B3</strong></td><td>Home at width — <b>two</b> states: sidebar + one column (≥700), sidebar + two (≥1000)</td><td><span class="pill scope">Medium</span></td><td>Grew with the breakpoint fix. Risk is <em>product</em>, not code: Principle 3 governs what leads. Which zone earns the primary column is a Designer ruling</td></tr>
         <tr><td><strong>B4</strong></td><td>Foods + Profile at width</td><td><span class="pill scope">Medium</span></td><td>Two dense screens, no navigation change</td></tr>
         <tr><td><strong>B5</strong></td><td>Read surfaces — report, insights, Ask, history, rundown, vet-visit</td><td><span class="pill keep">Low-med</span></td><td><b>Highest product value in the plan</b> — the consumption half</td></tr>
         <tr><td><strong>B6</strong></td><td>Capture flows capped, <b>not</b> redesigned</td><td><span class="pill keep">Low</span></td><td>The scope cut, made explicit so it can't quietly re-expand</td></tr>
-        <tr><td><strong>B7</strong></td><td>Landscape + rotation</td><td><span class="pill scope">Medium</span></td><td>Where R11 bites. Can't be scoped until R11 is verified</td></tr>
+        <tr><td><strong>B7</strong></td><td>Landscape + rotation — <b>iPad only</b>, via <code style="font-family:var(--mono);font-size:12px">~ipad</code> Info.plist key</td><td><span class="pill scope">Medium</span></td><td>Where R11 bites. Can't be scoped until R11 is verified</td></tr>
         <tr><td><strong>B8</strong></td><td>Widget size classes + B-415</td><td><span class="pill keep">Low-med</span></td><td><em>Optional / deferrable</em></td></tr>
         <tr><td><strong>B9</strong></td><td>iPad screenshots, build cut, submission</td><td><span class="pill keep">Low</span></td><td>Mostly PM/ops</td></tr>
       </tbody>
@@ -1200,7 +1235,7 @@ footer{
       <thead><tr><th>#</th><th>Decision</th><th>Status</th></tr></thead>
       <tbody>
         <tr><td><strong>D2</strong></td><td>On the runway, or after v1?</td><td><span class="pill keep">Ruled</span> <b>On, and on the runway.</b> Platform breadth is the cheapest competitive surface available; and the PM's primary dev device is an iPad Pro.</td></tr>
-        <tr><td><strong>D3</strong></td><td><code style="font-family:var(--mono);font-size:12px">contentMaxWidth: 560pt</code>?</td><td><span class="pill keep">Ruled</span> Deferred to the Designer. <b>560pt stands.</b></td></tr>
+        <tr><td><strong>D3</strong></td><td><code style="font-family:var(--mono);font-size:12px">contentMaxWidth: 560pt</code>?</td><td><span class="pill keep">Ruled</span> Deferred to the Designer. <b>560pt stands</b> — but §07's breakpoint fix means it now governs only compact panes, not the iPad experience. Much lower stakes than when ruled.</td></tr>
         <tr><td><strong>D1</strong></td><td>Which scope?</td><td><span class="pill scope">Narrowed</span> A is under-built given D2; full B risks XL. <b>§07 recommends B−.</b> Two confirmations left, below.</td></tr>
       </tbody>
     </table>
