@@ -4,15 +4,21 @@
 
 ## Outcome
 
-**Pre-flight complete; the deletion itself is blocked on the PM.** The Supabase
-MCP has no tool to delete an Edge Function, so the one action B-397 actually
-asks for cannot be performed from a cloud session. Everything that *could* be
-done was: both orphans confirmed live, zero-impact deletion re-verified against
-production data, and the deployed source archived so the deletion is
-recoverable.
+**B-397 CLOSED.** The session did the pre-flight — both orphans confirmed live,
+zero-impact deletion re-verified against production data, and the deployed
+source archived so the deletion was recoverable. The deletion itself could not
+be done from a cloud session (the Supabase MCP has no delete tool for Edge
+Functions), so it went to the PM as a dashboard action; **the PM deleted both
+the same day and the result was verified from this session.**
 
-Backlog row B-397 stays **Open** with the finding recorded. It was not marked
-Done — the functions are still deployed.
+**Verified after-state** (`list_edge_functions`, 2026-07-26):
+
+- **10 → 8** deployed functions; `view-report` and `zz-deploy-probe` both gone.
+- The 8 remaining are an **exact match** for the 8 dirs in
+  `supabase/functions/` — no orphan in either direction.
+- **All 8 are `verify_jwt=true`.** `view-report` was the project's only
+  `verify_jwt=false` function, so that exposure class is now *empty*, not
+  merely reduced.
 
 ## The blocker
 
@@ -89,10 +95,19 @@ The design intent is sound; the unreviewed implementation is what goes.
 
 ## PM action item
 
-- [ ] **Supabase Dashboard → Edge Functions → delete `view-report` and
-      `zz-deploy-probe`** — the only step that closes B-397, and the only one a
-      cloud session cannot do. Verify with `list_edge_functions`: it should
-      return **8** functions, matching `supabase/functions/`.
+- [x] **Supabase Dashboard → Edge Functions → delete `view-report` and
+      `zz-deploy-probe`** — done by the PM 2026-07-26, verified from this
+      session (see Outcome above). No open PM items remain for B-397.
+
+## Follow-on worth filing
+
+Teardown has no cloud-session path. Deploys and migrations run from the session
+via the MCP under B-082, but **deleting** an Edge Function is dashboard-only.
+Closing that gap needs a PAT provisioned as a cloud-env secret, which the
+Secrets Register currently rules out by policy — so this is a real trade-off
+(one manual step per teardown vs. a long-lived deploy credential in the
+environment), not an oversight. Teardown is rare; leaving it manual is
+defensible. Flagged rather than decided.
 
 ## Files touched
 

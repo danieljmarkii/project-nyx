@@ -7,7 +7,12 @@
 The verbatim source of the `view-report` Edge Function as it was deployed to
 production (project `aigchluqluzuhtbfllgh`, v1, created 2026-07-05,
 `verify_jwt=false`, sha256 `d67756e419401dfe26c0d3c9916403dc975255ac783be852069a2e22170766a3`),
-captured via the Supabase MCP `get_edge_function` before B-397 deletes it.
+captured via the Supabase MCP `get_edge_function` immediately before B-397
+deleted it.
+
+**The deployment no longer exists** — it was deleted from the Supabase dashboard
+on 2026-07-26 and the removal verified (`list_edge_functions` 10 → 8). **This
+file is now the only surviving copy of that source anywhere.**
 
 It is archived here because **the repo never held a copy** — `supabase/functions/`
 has no `view-report` directory, so deleting the deployment destroys the only
@@ -27,7 +32,7 @@ picked up by `scripts/deploy-edge.sh` or mistaken for a live source tree.
 
 ## Why it was safe to delete
 
-Verified 2026-07-26 before deletion was requested:
+Verified 2026-07-26, before the deletion:
 
 - `vet_reports` holds **0 rows** and **0 live tokens** — every request to this
   function resolved to the "invalid" 404 page, so it served nothing. The
