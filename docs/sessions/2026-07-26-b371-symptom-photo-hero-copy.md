@@ -46,4 +46,4 @@ First-person app voice ("I can read…") matches what already ships in `app/ask.
 
 `tsc --noEmit` clean · 22 cases in `lib/eventPhoto.test.ts` (8 pre-existing B-207 + 14 new) · full suite **139 suites / 2656 tests** green. No schema, no secrets, no Edge Function, no deploy.
 
-Shipped via #TBD.
+Shipped via #486.
