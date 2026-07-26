@@ -15,6 +15,7 @@
 
 import type {
   CachedFinding,
+  CorrelationFinding,
   CoverageDiagnostic,
   IncidentCategory,
   IncidentFlagKind,
@@ -50,6 +51,31 @@ const INCIDENT_NOUN: Record<IncidentCategory, string> = {
 
 function count(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+// ── Protein cluster (B-351 slice 6) ───────────────────────────────────────────
+
+/**
+ * The finding's protein cluster, tolerant of a CACHED finding written before slice 6
+ * shipped (`ai_signals.findings` has a 24h TTL, so those rows are read for up to a day
+ * after deploy — and indefinitely if regeneration fails). Falls back to the single
+ * label, which is exactly what those rows mean.
+ *
+ * Every client consumer goes through this rather than reading `finding.proteins`
+ * directly, so an old cached row can never render as an empty list.
+ */
+export function proteinCluster(finding: CorrelationFinding): string[] {
+  return finding.proteins && finding.proteins.length > 0 ? finding.proteins : [finding.protein];
+}
+
+/** True when the engine could not separate this candidate's proteins (D5). */
+export function isJointCandidate(finding: CorrelationFinding): boolean {
+  return finding.jointCandidate === true && proteinCluster(finding).length > 1;
+}
+
+/** Title-cased cluster member for the linked-pair chips ("chicken" → "Chicken"). */
+export function displayProteinName(protein: string): string {
+  return protein.charAt(0).toUpperCase() + protein.slice(1);
 }
 
 // Per-incident red-flag phrasing (B-340) — "possible" because these are AI reads of a single
@@ -334,10 +360,18 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
   if (finding.type === 'food_symptom_correlation') {
     const symptom = SYMPTOM_LABEL[finding.symptomType];
     const window = Math.round(finding.correlationWindowHours);
+    // A JOINT candidate (B-351 slice 6) earns one extra clause, and it is the honest
+    // one: WHY the app can't say which protein it is. The card sentence already carries
+    // the resolving action, so the tap-through explains the evidence rather than
+    // repeating the ask. `finding.protein` already names every member of the cluster.
+    const cantSeparate = isJointCandidate(finding)
+      ? ` Those proteins always turn up together in what you've logged, so this pattern can't tell them apart yet — it's both of them or either one.`
+      : '';
     return (
       `Across ${count(finding.matchedPairs, 'matched day', 'matched days')} of logs, ${petName}'s ${symptom} ` +
-      `has tended to follow meals containing ${finding.protein} within about ${window} hours. ` +
-      `This is a pattern in your logs, not a proven link — worth mentioning to your vet.`
+      `has tended to follow meals containing ${finding.protein} within about ${window} hours.` +
+      cantSeparate +
+      ` This is a pattern in your logs, not a proven link — worth mentioning to your vet.`
     );
   }
   if (finding.type === 'reflection') {

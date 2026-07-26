@@ -6,6 +6,9 @@ import {
   confidenceTag,
   sampleLine,
   evidenceText,
+  proteinCluster,
+  isJointCandidate,
+  displayProteinName,
   coverageCopy,
   selectCrossPetSafetyFinding,
   bannerCopy,
@@ -288,6 +291,58 @@ describe('evidenceText — correlation', () => {
     expect(s).toContain('vet');
     expect(s.includes('!')).toBe(false);
     expect(CAUSAL_RE.test(s)).toBe(false);
+  });
+});
+
+describe('B-351 slice 6 — the joint candidate (D5)', () => {
+  const joint = (over: Partial<CorrelationFinding> = {}) =>
+    correlation({
+      protein: 'chicken and duck',
+      proteins: ['chicken', 'duck'],
+      jointCandidate: true,
+      ...over,
+    });
+
+  it('proteinCluster falls back to [protein] for a finding cached before slice 6', () => {
+    // ai_signals has a 24h TTL, so pre-slice-6 rows are read for at least a day after
+    // deploy — and indefinitely if regeneration keeps failing. They must render, not blank.
+    expect(proteinCluster(correlation({ protein: 'chicken' }))).toEqual(['chicken']);
+    expect(proteinCluster(correlation({ protein: 'chicken', proteins: [] }))).toEqual(['chicken']);
+    expect(isJointCandidate(correlation({ protein: 'chicken' }))).toBe(false);
+  });
+
+  it('isJointCandidate needs BOTH the flag and a real cluster (a lone member is not a pair)', () => {
+    expect(isJointCandidate(joint())).toBe(true);
+    // Defensive: a malformed row claiming jointness with one protein renders as a normal
+    // single-protein card rather than a linked pair with nothing to link.
+    expect(isJointCandidate(correlation({ jointCandidate: true, proteins: ['chicken'] }))).toBe(false);
+  });
+
+  it('evidenceText explains WHY the proteins cannot be separated, names both, stays associational', () => {
+    const s = evidenceText(joint(), 'Pixel');
+    expect(s).toContain('chicken');
+    expect(s).toContain('duck');
+    expect(s).toContain("can't tell them apart");
+    expect(s).toContain('vet');
+    expect(s.includes('!')).toBe(false);
+    expect(CAUSAL_RE.test(s)).toBe(false);
+  });
+
+  it('evidenceText never reassures about a member it did not single out', () => {
+    // There is no un-named member — that is the whole design — so no wellness verdict
+    // about "the other one" can appear.
+    const s = evidenceText(joint(), 'Pixel');
+    expect(/\b(fine|okay|all clear|nothing to worry|no concern|rule(d)? out)\b/i.test(s)).toBe(false);
+  });
+
+  it("a single-protein finding gets NO can't-separate clause (regression fence)", () => {
+    const s = evidenceText(correlation({ protein: 'chicken' }), 'Pixel');
+    expect(s).not.toContain('always turn up together');
+  });
+
+  it('displayProteinName title-cases a canonical key for the linked-pair chips', () => {
+    expect(displayProteinName('chicken')).toBe('Chicken');
+    expect(displayProteinName('')).toBe('');
   });
 });
 

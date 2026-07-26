@@ -44,7 +44,7 @@
 
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
-import { canonicalizeProtein } from './protein';
+import { canonicalizeProtein, proteinsFromCacheText, readProteinSet } from './protein';
 import { localDayIndex, localDayIndexOf } from './utils';
 
 // ── Shared constants ─────────────────────────────────────────────────────────
@@ -209,6 +209,10 @@ export interface AnalyticsMeal {
   foodType: string | null;
   /** Raw primary_protein — canonicalized inside the protein core, never before. */
   primaryProtein: string | null;
+  /** The food's full captured protein set (`food_items.proteins`, B-351). Read through
+   *  `readProteinSet` inside the protein core, never before — that helper hoists the
+   *  primary and applies the Class-A read key. Absent/empty degrades to the primary. */
+  proteins?: string[] | null;
   /** WSAVA rating string, or null when unrated. */
   intakeRating: string | null;
 }
@@ -624,7 +628,11 @@ export interface RankedProtein {
   /** Total protein-EXPOSURE feedings (meals + treats) carrying this protein in the window.
    *  Treats ARE counted (B-111): a chicken treat is real chicken exposure, not noise. */
   count: number;
-  /** count / total protein-identified feedings, [0,1] — "share of servings" (drives the bar). */
+  /** count / total protein-identified feedings, [0,1] — the share of servings that
+   *  CONTAINED this protein (drives the bar). Post-B-351 a serving can contain several
+   *  proteins, so these shares no longer sum to 1 across the card — each bar is an
+   *  independent "how much of what was logged had this in it", which is the honest
+   *  reading of a set and the one the card copy states. */
   shareOfDiet: number;
   /** Meal INTAKE quality: finished-rate over this protein's NON-TREAT meals only (§11 #1 —
    *  a treat's ceiling finish-rate must never inflate it / mask a meal refusal). null below
@@ -680,12 +688,18 @@ export function computeTopProteins(rows: AnalyticsMeal[], opts: RankOptions = {}
   // per-piece handful can't inflate a treat protein's count/share/rank/floor (the
   // diet-confounder line bridges to the vet report). Meals untouched → §11 #1 holds.
   for (const m of collapseTreatRelogs(rows)) {
-    const key = canonicalizeProtein(m.primaryProtein);
-    if (key === null) continue;
+    // B-351 slice 6: a feeding contributes its WHOLE protein set, so a protein that
+    // reaches the pet as a hidden SECONDARY (the chicken in a "duck" formula) is counted
+    // as the real exposure it is — the same widening the correlation engine got, applied
+    // here so the dashboard and the engine cannot disagree about what the pet ate.
+    const keys = readProteinSet(m.proteins, m.primaryProtein);
+    if (keys.length === 0) continue;
     identified += 1; // treats count as protein EXPOSURE (B-111) — no longer dropped
-    const arr = byProtein.get(key);
-    if (arr) arr.push(m);
-    else byProtein.set(key, [m]);
+    for (const key of keys) {
+      const arr = byProtein.get(key);
+      if (arr) arr.push(m);
+      else byProtein.set(key, [m]);
+    }
   }
   if (identified < ANALYTICS_FLOORS.minMealsForRanking) {
     return notEnoughData(identified, ANALYTICS_FLOORS.minMealsForRanking);
@@ -1085,11 +1099,13 @@ async function readMealRows(petId: string, startMs: number, endMs: number): Prom
     occurred_at: string;
     food_type: string | null;
     primary_protein: string | null;
+    // Mirrored into food_items_cache as the JSON text `proteinsToCacheText` writes.
+    proteins: string | null;
     brand: string | null;
     product_name: string | null;
   }>(
     `SELECT m.food_item_id, m.intake_rating, e.occurred_at,
-            f.food_type, f.primary_protein, f.brand, f.product_name
+            f.food_type, f.primary_protein, f.proteins, f.brand, f.product_name
      FROM meals m
      JOIN events e ON e.id = m.event_id
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
@@ -1107,6 +1123,7 @@ async function readMealRows(petId: string, startMs: number, endMs: number): Prom
       foodLabel: foodLabelOf(r.brand, r.product_name),
       foodType: r.food_type,
       primaryProtein: r.primary_protein,
+      proteins: proteinsFromCacheText(r.proteins),
       intakeRating: r.intake_rating,
     }))
     .filter((r) => Number.isFinite(r.ms));

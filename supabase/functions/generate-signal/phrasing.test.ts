@@ -16,6 +16,7 @@
 import { strict as assert } from 'node:assert'
 import {
   templateCorrelation,
+  phrasingPayload,
   templateIntakeDecline,
   templateReflection,
   templateWorsening,
@@ -60,6 +61,8 @@ const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding
   tier: 'early',
   symptomType: 'vomit',
   protein: 'chicken',
+  proteins: ['chicken'],
+  jointCandidate: false,
   matchedPairs: 4,
   caseExposed: 4,
   controlExposed: 1,
@@ -204,6 +207,67 @@ Deno.test('templateCorrelation — established cites the matched-days sample siz
   assert.equal(CAUSAL.test(t), false)
   assert.equal(t.includes('!'), false)
   assert.ok(validatePhrasing(t, correlation({ tier: 'established' })))
+})
+
+// ── templateCorrelation — the JOINT candidate (B-351 slice 6, D5) ───────────────
+
+const joint = (over: Partial<CorrelationFinding> = {}) =>
+  correlation({
+    protein: 'chicken and duck',
+    proteins: ['chicken', 'duck'],
+    jointCandidate: true,
+    ...over,
+  })
+
+Deno.test('templateCorrelation — a joint candidate names EVERY member of the cluster', () => {
+  // The load-bearing property. Naming one member would credit it falsely AND exonerate the
+  // other by omission — on the wedge's own surface, for the elimination-trial owner.
+  for (const tier of ['early', 'established'] as const) {
+    const t = templateCorrelation(joint({ tier }), 'Mochi')
+    assert.ok(t.includes('chicken'), `${tier}: names chicken`)
+    assert.ok(t.includes('duck'), `${tier}: names duck`)
+  }
+  const three = templateCorrelation(
+    joint({ protein: 'beef, chicken and duck', proteins: ['beef', 'chicken', 'duck'] }),
+    'Mochi',
+  )
+  for (const p of ['beef', 'chicken', 'duck']) assert.ok(three.includes(p), `names ${p}`)
+})
+
+Deno.test('templateCorrelation — the joint sentence ends on the ACTION, not the ambiguity (D5)', () => {
+  // "We can't separate them" is a dead end for an owner; "feed one without the other" is
+  // the one move that resolves it — and it resolves it in the engine too, since a single
+  // divergent window splits the cluster.
+  const t = templateCorrelation(joint(), 'Mochi')
+  assert.ok(/always fed together/i.test(t), 'says why they cannot be separated')
+  assert.ok(/feeding one without the other/i.test(t), 'gives the resolving action')
+  assert.ok(t.trimEnd().endsWith('apart.'), 'the action is the last thing the owner reads')
+})
+
+Deno.test('templateCorrelation — the joint sentence is non-causal, non-reassuring, and self-validating', () => {
+  for (const tier of ['early', 'established'] as const) {
+    const f = joint({ tier })
+    const t = templateCorrelation(f, 'Mochi')
+    assert.equal(CAUSAL.test(t), false, `${tier}: never causal — and notably never "trigger"`)
+    assert.equal(t.includes('!'), false)
+    // It must never reassure about a member it did not blame — there is no such member.
+    assert.equal(/\b(fine|okay|all clear|nothing to worry|no concern)\b/i.test(t), false)
+    assert.ok(validatePhrasing(t, f), `${tier}: own template passes validation`)
+  }
+})
+
+Deno.test('templateCorrelation — a single-protein finding is UNCHANGED by slice 6', () => {
+  // Regression fence: the joint branch must be reachable only via jointCandidate.
+  const single = correlation({ tier: 'early', protein: 'chicken', proteins: ['chicken'] })
+  const t = templateCorrelation(single, 'Mochi')
+  assert.equal(/always fed together/i.test(t), false)
+  assert.ok(/an early pattern worth keeping an eye on/i.test(t), 'the shipped early copy, verbatim')
+})
+
+Deno.test('phrasingPayload — carries the whole cluster, so a member can never be lost in the payload', () => {
+  const payload = phrasingPayload(joint(), 'Mochi') as Record<string, unknown>
+  assert.deepEqual(payload.proteins, ['chicken', 'duck'])
+  assert.equal(payload.protein, 'chicken and duck', 'even the scalar names both')
 })
 
 // ── templateIntakeDecline (safety — never reassure, never "picky") ──────────────
