@@ -538,14 +538,14 @@ footer{
   <div class="eyebrow">Culprit · scope sketch · draft for PM ratification</div>
   <h1>What it costs to put Culprit on an <em>iPad</em></h1>
   <p class="standfirst">
-    Three possible answers, drawn to scale. The recommendation is the smallest one —
-    because for this product, the iPad is where you read, not where you log.
+    Scopes drawn to scale, then costed. iPad is <em>on</em> — so the question stopped being
+    "whether" and became "how far, and what's the PR that turns a large into an extra-large."
   </p>
   <div class="meta">
-    <span><b>Doc</b> nyx-ipad-support-requirements.md v0.1</span>
+    <span><b>Doc</b> nyx-ipad-support-requirements.md v0.2</span>
     <span><b>Backlog</b> B-451</span>
     <span><b>Measured</b> 2026-07-26 on main</span>
-    <span><b>Related</b> B-269 · B-415</span>
+    <span><b>Ruled</b> D2 · D3 — D1 narrowed</span>
   </div>
 </header>
 
@@ -707,23 +707,28 @@ footer{
           <td class="size">S<br><span style="font-family:var(--sans);font-size:12px;font-weight:400;color:var(--ink-3)">1 session · 1 PR</span></td>
           <td>Breakpoint tokens, a max-width content column, the two <code style="font-family:var(--mono);font-size:12px">Dimensions</code> fixes, a modal audit, a re-anchored FAB, a capped tab bar. Looks deliberate. Not native.</td>
         </tr>
+        <tr style="background:var(--keep-bg)">
+          <td><strong>B− · Two-column, no split</strong><br><span style="font-size:12px;color:var(--keep);font-weight:600">◆ recommended</span></td>
+          <td class="size">L<br><span style="font-family:var(--sans);font-size:12px;font-weight:400;color:var(--ink-3)">9 PRs · 7 build</span></td>
+          <td>B's shape minus list-and-detail. Sidebar shell, two-column Home, read surfaces at width, capture flows capped rather than redesigned. Costed in §07.</td>
+        </tr>
         <tr>
           <td><strong>B · Native-feeling</strong></td>
-          <td class="size">L<br><span style="font-family:var(--sans);font-size:12px;font-weight:400;color:var(--ink-3)">multi-session track</span></td>
-          <td>A, plus a sidebar shell, per-screen passes across 39 screens, list-and-detail splits, landscape, iPadOS windowing, camera flows re-thought, iPad widget size classes, iPad screenshots — and a permanent two-form-factor QA tax.</td>
+          <td class="size">L+<br><span style="font-family:var(--sans);font-size:12px;font-weight:400;color:var(--ink-3)">11 PRs + nav change</span></td>
+          <td>B−, plus <code style="font-family:var(--mono);font-size:12px">History → event</code> and <code style="font-family:var(--mono);font-size:12px">Foods → food</code> detail panes. Those two additions are the L→XL vector — see §07.</td>
         </tr>
         <tr>
           <td><strong>C · iPad-first vet surface</strong></td>
           <td class="size">XL</td>
-          <td>A different product for a different user. Needs its own requirements doc, not an estimate.</td>
+          <td>A different product for a different user. Needs its own requirements doc, not an estimate — though the vet-login roadmap may make it nearer than it looks (§08).</td>
         </tr>
       </tbody>
     </table>
   </div>
 
   <div class="thesis">
-    Ship A. Take B only for the review surfaces — report, trends, history, Ask — and
-    only if usage justifies it.
+    Ship B−. It is the two-column shape, without the one decision that turns a large
+    into an extra-large.
   </div>
 
   <div class="prose">
@@ -731,14 +736,16 @@ footer{
       Jordan logs while the dog is being weird on the kitchen floor: phone, pocket, ten seconds.
       Sam reads trends on the couch. Dr. Chen wants the report on a big screen.
       <strong>For Culprit, the iPad is a consumption device, not a capture device.</strong>
-      That is the whole argument for spending an S here and not an L.
+      That no longer argues for spending less — it argues for spending it in the right place:
+      on the read surfaces, and not on the four capture screens that make up 61% of the
+      heavy code (§07).
     </p>
   </div>
 </section>
 
 <!-- ─────────────────────────────────────────── 04 -->
 <section>
-  <div class="sec-head"><span class="sec-num">04</span><h2>Scope A, drawn</h2></div>
+  <div class="sec-head"><span class="sec-num">04</span><h2>The narrow case, drawn</h2></div>
   <div class="prose">
     <p>
       The content column caps at <strong>560pt</strong> and centres. The margin either side is
@@ -747,13 +754,19 @@ footer{
       than an unstyled letterbox. The tab bar caps with the column. The FAB anchors to the
       column's edge, not the screen's.
     </p>
+    <p>
+      <strong>These two figures survive the move to B−.</strong> The sidebar arrives at 900pt,
+      and iPad portrait is 834 — so this <em>is</em> what B− renders in portrait, with §06's
+      sidebar and two columns taking over in landscape. Scope A was never throwaway work; it's
+      B−'s narrow breakpoint, which is why B1 ships it first.
+    </p>
   </div>
 
   <figure class="fig">
     <div class="fig-head">
       <span class="fig-tag">Figure 2</span>
       <h3>Home — centred column on night ground</h3>
-      <span class="pill scope verdict">Scope A</span>
+      <span class="pill keep verdict">B− narrow breakpoint · PR B1</span>
     </div>
     <div class="fig-body rig-md">
       <div class="stack">
@@ -825,7 +838,7 @@ footer{
     <div class="fig-head">
       <span class="fig-tag">Figure 3</span>
       <h3>History — the same rule, a list screen</h3>
-      <span class="pill scope verdict">Scope A</span>
+      <span class="pill keep verdict">B− narrow breakpoint · PR B1</span>
     </div>
     <div class="fig-body rig-md">
       <div class="stack">
@@ -866,7 +879,7 @@ footer{
       <div class="keys">
         <div class="key"><div class="key-n ok">1</div><div class="key-t"><b>One rule, every screen</b>History inherits the column from R3 with no per-screen work. This is the property that keeps Scope A at one PR.</div></div>
         <div class="key"><div class="key-n ok">2</div><div class="key-t"><b>ScopeMenu pills unchanged</b>The filter pattern from <code>#421</code> already sizes to content, so it needs nothing at width.</div></div>
-        <div class="key"><div class="key-n ok">3</div><div class="key-t"><b>And here is the honest cost</b>An iPad user looking at a list has 274pt of unused width where a detail pane obviously belongs. Scope A leaves that on the table on purpose.</div></div>
+        <div class="key"><div class="key-n ok">3</div><div class="key-t"><b>And here is the honest cost</b>An iPad user looking at a list has 274pt of unused width where a detail pane obviously belongs. <b>B− leaves that on the table on purpose</b> — claiming it is the L→XL vector (§07).</div></div>
       </div>
     </div>
   </figure>
@@ -938,7 +951,7 @@ footer{
       </div>
       <div class="keys">
         <div class="key"><div class="key-n ok">1</div><div class="key-t"><b>Dr. Chen's case</b>The report is the artifact that most wants a big screen, and the only one that gets better without a single line of layout work.</div></div>
-        <div class="key"><div class="key-n ok">2</div><div class="key-t"><b>Caveat</b>This frame is landscape. Scope A keeps the app portrait-locked (R10), so on shipped Scope A the report renders at 834pt — better than phone, short of 1:1. Landscape is a Scope B item.</div></div>
+        <div class="key"><div class="key-n ok">2</div><div class="key-t"><b>Needs landscape to be literally true</b>This frame is landscape, which arrives with PR <b>B7</b>. Until then the report renders at 834pt portrait — better than phone, short of 1:1. Under B− this figure is real; under A alone it stays aspirational.</div></div>
       </div>
     </div>
   </figure>
@@ -946,13 +959,17 @@ footer{
 
 <!-- ─────────────────────────────────────────── 06 -->
 <section>
-  <div class="sec-head"><span class="sec-num">06</span><h2>What the L would buy you</h2></div>
+  <div class="sec-head"><span class="sec-num">06</span><h2>What the L buys you</h2></div>
   <div class="prose">
     <p>
-      For contrast, not for costing. This is the shape Scope B takes: the tab bar becomes a
-      sidebar, the canvas becomes two columns, and lists gain the detail pane they have been
-      asking for. Every one of those is a per-screen design decision across 39 screens, which
-      is precisely why it is an L and not an S.
+      This is the shape: the tab bar becomes a sidebar, and the canvas becomes two columns.
+      <strong>Everything in this frame is inside B−</strong> — it is PRs B2 and B3, and it
+      is the part worth having.
+    </p>
+    <p>
+      What is <em>not</em> in the frame is the thing to notice. There is no detail pane. Tap
+      an event here and it still pushes a route, exactly as it does on the phone. That is the
+      whole difference between the L and the XL, and §07 explains why it is the line to hold.
     </p>
   </div>
 
@@ -960,7 +977,7 @@ footer{
     <div class="fig-head">
       <span class="fig-tag">Figure 5</span>
       <h3>Home — sidebar shell, two columns</h3>
-      <span class="pill scope verdict">Scope B — reference only</span>
+      <span class="pill keep verdict">Scope B− · PRs B2 + B3</span>
     </div>
     <div class="fig-body rig-md">
       <div class="stack">
@@ -1025,8 +1042,10 @@ footer{
         <div class="caption"><b>iPad Pro 11", landscape</b> · 1194 × 834pt · reference only</div>
       </div>
       <div class="keys">
-        <div class="key"><div class="key-n">!</div><div class="key-t"><b>Not costed, not proposed</b>Shown so the gap between S and L is felt rather than argued. Committing to this shape means committing to it on all 39 screens.</div></div>
-        <div class="key"><div class="key-n">!</div><div class="key-t"><b>And forever</b>Every PR after it carries two form factors. CI runs <code>tsc</code> and <code>jest</code>; neither catches a layout regression at 1194pt.</div></div>
+        <div class="key"><div class="key-n ok">1</div><div class="key-t"><b>Sidebar replaces the tab bar</b>PR B2 — the riskiest in the plan, because navigation breaks every route at once. Kept as a row-layout custom <code>tabBar</code>, never a <code>Drawer</code>.</div></div>
+        <div class="key"><div class="key-n ok">2</div><div class="key-t"><b>Two columns under the Signal</b>PR B3. The layout is the easy half; <em>which zone earns the primary column</em> is a Principle 3 ruling for the Designer.</div></div>
+        <div class="key"><div class="key-n ok">3</div><div class="key-t"><b>No detail pane — deliberately</b>Tapping an event still pushes a route. Holding this line is what keeps B− an L.</div></div>
+        <div class="key"><div class="key-n">4</div><div class="key-t"><b>The standing cost</b>Every PR after this carries two form factors. CI runs <code>tsc</code> and <code>jest</code>; neither catches a layout regression at 1194pt.</div></div>
       </div>
     </div>
   </figure>
@@ -1034,7 +1053,127 @@ footer{
 
 <!-- ─────────────────────────────────────────── 07 -->
 <section>
-  <div class="sec-head"><span class="sec-num">07</span><h2>Requirements — Scope A</h2></div>
+  <div class="sec-head"><span class="sec-num">07</span><h2>What the L actually costs</h2></div>
+  <div class="prose">
+    <p>
+      Asked for after the first read: <strong>how many PRs, and how risky?</strong>
+      The useful finding is that risk isn't spread across 39 screens. Seven screens
+      over 900 lines carry it — and four of those seven are capture flows.
+    </p>
+  </div>
+
+  <div class="tbl-scroll" style="margin-top:26px">
+    <table>
+      <thead><tr><th>Screen</th><th style="text-align:right">Lines</th><th>iPad value</th></tr></thead>
+      <tbody>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/log.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1593</td><td><span class="pill break">Low · capture</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/food-capture.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1503</td><td><span class="pill break">Low · capture</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/(tabs)/profile.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1225</td><td><span class="pill keep">High</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/event/[id].tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1035</td><td><span class="pill keep">High</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/medication-capture.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1007</td><td><span class="pill break">Low · capture</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/edit-event.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">928</td><td><span class="pill break">Low · capture</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/food/[id].tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">920</td><td><span class="pill scope">Medium</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="thesis">
+    The four capture flows are 5,031 of those 8,211 lines — 61% of the heavy surface,
+    and the lowest iPad value in the app. Capping them at the column instead of
+    redesigning them removes most of the plan's mass at almost no product cost.
+  </div>
+
+  <div class="prose">
+    <p>
+      That scope cut is what holds the line at L. The plan below is <strong>Scope B−</strong>:
+      B's shape, minus the one decision that turns L into XL.
+    </p>
+  </div>
+
+  <div class="tbl-scroll" style="margin-top:26px">
+    <table>
+      <thead><tr><th>PR</th><th>Scope</th><th>Risk</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td><strong>B1</strong></td><td>Foundation — breakpoint tokens, <code style="font-family:var(--mono);font-size:12px">useBreakpoint()</code>, responsive container, the two <code style="font-family:var(--mono);font-size:12px">Dimensions</code> fixes, the flag flip</td><td><span class="pill keep">Low</span></td><td>No phone-visible change. Ships the R6 rotation fix regardless of what follows. <b>Unlocks your iPad testing</b></td></tr>
+        <tr><td><strong>B2</strong></td><td>Shell — sidebar ≥900pt, tab bar below; FAB re-anchor</td><td><span class="pill break">Med-high</span></td><td><b>The riskiest PR.</b> Navigation breaks every route at once. Keep <code style="font-family:var(--mono);font-size:12px">expo-router</code> Tabs with a row-layout custom <code style="font-family:var(--mono);font-size:12px">tabBar</code> — never <code style="font-family:var(--mono);font-size:12px">Drawer</code></td></tr>
+        <tr><td><strong>B3</strong></td><td>Home two-column — Figure 5's right side</td><td><span class="pill scope">Medium</span></td><td>Risk is <em>product</em>, not code: Principle 3 governs what leads. Which zone earns the primary column is a Designer ruling</td></tr>
+        <tr><td><strong>B4</strong></td><td>Foods + Profile at width</td><td><span class="pill scope">Medium</span></td><td>Two dense screens, no navigation change</td></tr>
+        <tr><td><strong>B5</strong></td><td>Read surfaces — report, insights, Ask, history, rundown, vet-visit</td><td><span class="pill keep">Low-med</span></td><td><b>Highest product value in the plan</b> — the consumption half</td></tr>
+        <tr><td><strong>B6</strong></td><td>Capture flows capped, <b>not</b> redesigned</td><td><span class="pill keep">Low</span></td><td>The scope cut, made explicit so it can't quietly re-expand</td></tr>
+        <tr><td><strong>B7</strong></td><td>Landscape + rotation</td><td><span class="pill scope">Medium</span></td><td>Where R11 bites. Can't be scoped until R11 is verified</td></tr>
+        <tr><td><strong>B8</strong></td><td>Widget size classes + B-415</td><td><span class="pill keep">Low-med</span></td><td><em>Optional / deferrable</em></td></tr>
+        <tr><td><strong>B9</strong></td><td>iPad screenshots, build cut, submission</td><td><span class="pill keep">Low</span></td><td>Mostly PM/ops</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose" style="margin-top:30px">
+    <p>
+      <strong>What B− excludes, and why that's the whole point.</strong> No
+      <code>History → event</code> pane. No <code>Foods → food</code> pane. A detail pane
+      converts navigation from push-based to pane-based — <code>event/[id]</code> (1035
+      lines) and <code>food/[id]</code> (920) are currently <em>routes</em>, so making them
+      panes means either rendering a route component inline or maintaining two
+      presentations of the same screen. <strong>Every iPad port that has ballooned,
+      ballooned here.</strong> Full B is 11 PRs plus a navigation-model change, and it's the
+      navigation-model change that doesn't stay contained.
+    </p>
+    <p>
+      <strong>Calibration:</strong> B− at ~7 build PRs is roughly one standard feature track
+      for this repo — the widget track was W1–W6, diet trial is PRs 1–7, Ask is A1–A8. It is
+      not a new category of undertaking. Full B would be the largest track the repo has run.
+    </p>
+  </div>
+
+  <figure class="fig">
+    <div class="fig-head">
+      <span class="fig-tag">Risk register</span>
+      <h3>The five things that could go wrong</h3>
+    </div>
+    <div class="fig-body" style="display:block;padding:0">
+      <div class="reqs" style="border:none;border-radius:0">
+        <div class="req"><div class="req-id">1</div><div class="req-b"><b>B2's sidebar breaks navigation app-wide.</b> <em>Medium.</em> Mitigation: custom <code>tabBar</code> in a row layout, never <code>Drawer</code>; B2 lands alone, ahead of every layout PR, so a regression is isolated.</div></div>
+        <div class="req blocked"><div class="req-id">2</div><div class="req-b"><b>R11 unverified.</b> <em>Unknown.</em> If iPadOS mandates arbitrary window widths, every PR's width assumptions shift. <b>Verify before B1</b> — cheap now, expensive at B7.</div></div>
+        <div class="req"><div class="req-id">3</div><div class="req-b"><b>Scope creep at the list screens</b> — the L→XL vector. <em>High; this is the default failure mode.</em> Mitigation: the exclusion is explicit and named. Any PR proposing a detail pane is a new PM decision, not a B− PR.</div></div>
+        <div class="req"><div class="req-id">4</div><div class="req-b"><b>Two-form-factor QA tax, forever.</b> <em>Certain.</em> Accepted cost of shipping iPad. CI catches no layout regression; this stays manual.</div></div>
+        <div class="req"><div class="req-id">5</div><div class="req-b"><b>Session cost exceeds appetite.</b> <em>Low-medium.</em> B1–B9 are independently valuable and land in order — the track can stop after any PR. B1 and B5 alone deliver most of the value.</div></div>
+      </div>
+    </div>
+  </figure>
+</section>
+
+<!-- ─────────────────────────────────────────── 08 -->
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>Does this compound toward a vet login?</h2></div>
+  <div class="prose">
+    <p>
+      A vet-facing login is on the eventual roadmap, possibly desktop. Whether that makes
+      B− a down payment or a detour turns on a fork worth naming now, because it's cheap
+      to note and expensive to discover late.
+    </p>
+    <p>
+      <strong>If the vet surface is a separate web app</strong> — the React Native
+      responsive work <strong>does not transfer</strong>. RN layout primitives are not web
+      layout primitives. What does transfer is what already exists:
+      <code>generate-report</code> emits real HTML at A4, which is already a web artifact
+      and already the right shape for a vet portal.
+    </p>
+    <p>
+      <strong>If the vet surface lives in the same Expo codebase</strong> — B1's breakpoint
+      tokens and B2's responsive shell are directly reused, and B− becomes foundation work
+      for Scope C rather than iPad-only spend.
+    </p>
+    <p>
+      Neither answer changes the recommendation — iPad is justified on its own. But the
+      second materially raises its value, and the fork should be decided <em>before</em>
+      Scope C is scoped, not during it. <strong>Not a decision this doc asks for.</strong>
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────── 09 -->
+<section>
+  <div class="sec-head"><span class="sec-num">09</span><h2>Requirements — Scope A foundation</h2></div>
   <div class="prose"><p>Each is verifiable on device. Full text in <code>docs/nyx-ipad-support-requirements.md</code>.</p></div>
 
   <div class="reqs" style="margin-top:28px">
@@ -1047,38 +1186,48 @@ footer{
     <div class="req"><div class="req-id">R7</div><div class="req-b">All 13 <code>Modal</code> sites checked at ≥700pt — <code>pageSheet</code> presents as a centred card on iPad, not full-bleed.</div></div>
     <div class="req"><div class="req-id">R8</div><div class="req-b">Full-bleed grounds (<code>NightHeroGround</code>, <code>PullToRefreshSky</code>) verified to fill, not tile or clip, at iPad aspect ratios.</div></div>
     <div class="req"><div class="req-id">R9</div><div class="req-b">Vet-report WebView verified at iPad width. No render changes expected — verification, not build.</div></div>
-    <div class="req"><div class="req-id">R10</div><div class="req-b"><code>app.json</code> stays <code>"orientation": "portrait"</code>. Shipping portrait-locked is legitimate; shipping a landscape layout nobody designed is not.</div></div>
+    <div class="req"><div class="req-id">R10</div><div class="req-b"><b>Amended under B−.</b> <code>app.json</code> stays <code>"orientation": "portrait"</code> <em>through B1–B6</em> — shipping a landscape layout nobody has designed yet is not legitimate. <b>PR B7 unlocks it</b>, once there is a designed landscape to unlock into.</div></div>
     <div class="req blocked"><div class="req-id">R11</div><div class="req-b"><b>Blocked — needs verification before build.</b> Recent iPadOS windowing may allow arbitrary window widths regardless of the orientation key. If that holds against the current App Review baseline, R10 is insufficient, Scope A must handle arbitrary widths, and R6 becomes load-bearing rather than cosmetic. <b>I have not confirmed this</b> — check live guidelines.</div></div>
   </div>
 </section>
 
-<!-- ─────────────────────────────────────────── 08 -->
+<!-- ─────────────────────────────────────────── 10 -->
 <section>
-  <div class="sec-head"><span class="sec-num">08</span><h2>What needs you</h2></div>
+  <div class="sec-head"><span class="sec-num">10</span><h2>Where the decisions stand</h2></div>
 
   <div class="tbl-scroll" style="margin-bottom:8px">
     <table>
-      <thead><tr><th>#</th><th>Decision</th><th>Why it needs you</th></tr></thead>
+      <thead><tr><th>#</th><th>Decision</th><th>Status</th></tr></thead>
       <tbody>
-        <tr><td><strong>D1</strong></td><td>Ship A, or hold iPad until it's genuinely designed?</td><td>Live persona conflict — below.</td></tr>
-        <tr><td><strong>D2</strong></td><td>Does iPad go on the current App Store runway, or after v1?</td><td>B-269's iPad slice is closed as iPhone-only and prebuild-verified. Reopening means a new iPad screenshot set and a new build-cut.</td></tr>
-        <tr><td><strong>D3</strong></td><td>Is <code style="font-family:var(--mono);font-size:12px">contentMaxWidth: 560pt</code> right?</td><td>560 keeps body copy near 65 characters. 600–640 feels less austere but strains the Signal card's display line. Designer proposes 560; it's a taste call.</td></tr>
+        <tr><td><strong>D2</strong></td><td>On the runway, or after v1?</td><td><span class="pill keep">Ruled</span> <b>On, and on the runway.</b> Platform breadth is the cheapest competitive surface available; and the PM's primary dev device is an iPad Pro.</td></tr>
+        <tr><td><strong>D3</strong></td><td><code style="font-family:var(--mono);font-size:12px">contentMaxWidth: 560pt</code>?</td><td><span class="pill keep">Ruled</span> Deferred to the Designer. <b>560pt stands.</b></td></tr>
+        <tr><td><strong>D1</strong></td><td>Which scope?</td><td><span class="pill scope">Narrowed</span> A is under-built given D2; full B risks XL. <b>§07 recommends B−.</b> Two confirmations left, below.</td></tr>
       </tbody>
     </table>
   </div>
 
+  <div class="prose" style="margin-top:26px">
+    <p>
+      <strong>The original persona conflict is resolved by D2.</strong> Designer's "a centred
+      column is honest restraint" vs. Engineering's "a column reads as a lazy port" was a
+      conflict about whether to ship <em>A</em>. Once iPad is a platform we've decided to be
+      on, both personas agree A is under-built. Engineering's objection was never to iPad —
+      it was to shipping a phone layout and calling it iPad support. B− answers it.
+    </p>
+  </div>
+
   <div class="conflict">
     <div class="voice">
-      <div class="voice-name">Sr. Product Designer</div>
-      <p>A centred column on a night ground is the honest answer at S-scope — restraint over a fake native layout, and it matches the brand register rather than inventing a new one.</p>
+      <div class="voice-name">Still needs you · D1 residual</div>
+      <p><b>1 · Confirm B− over full B</b> — accept that list-and-detail panes are out of scope. This is the single decision that holds the line at L.</p>
     </div>
     <div class="voice">
-      <div class="voice-name">Dir. of Engineering</div>
-      <p>A centred column on a 13-inch iPad reads as a lazy port. That's a quality-bar and App Review risk, and it's the exact reason we set <code style="font-family:var(--mono);font-size:13px">supportsTablet: false</code> two days ago. If the answer is "a column", the answer may just as well be "not yet."</p>
+      <div class="voice-name">&nbsp;</div>
+      <p><b>2 · Confirm the appetite</b> — ~7 build PRs, roughly one standard feature track. The track can stop after any PR; B1 and B5 alone deliver most of the value.</p>
     </div>
     <div class="voice ask">
-      <div class="voice-name">PM decision needed · D1</div>
-      <p>Is "deliberate but obviously phone-shaped" good enough to ship — or does iPad only go on when it's genuinely designed?</p>
+      <div class="voice-name">Two verifications before B1 — not decisions</div>
+      <p><b>R11</b> — whether iPadOS mandates arbitrary window widths. <b>§9.4</b> — whether your iPad Pro runs Expo Go or a dev client, which determines whether B1 actually delivers the testing benefit.</p>
     </div>
   </div>
 </section>
