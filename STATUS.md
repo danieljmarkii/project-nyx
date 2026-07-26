@@ -194,6 +194,9 @@ Nearest live PM gates, none of which block code already in flight:
 
 ## Open PM Action Items
 
+**The Category Play (2026-07-26) — swing-for-the-fences roadmap, PROPOSED, awaiting ratification**
+- [ ] Read **`docs/culprit-category-play-2026-07.md`** and clear its §6 decision checklist (D1–D9): ratify the plan · rule B-288 (confirmations vs Principle 4) · ratify B-292 OQ2 + the `Now` re-prioritization · the vet-response-loop Open Question · pricing shape vs D-M5 · re-sequence Ask · the competitive review's §11 Tier-2 edits · **send the R1 email (open since 2026-07-02 — the cheapest strategic unlock in the plan)** · the B-416 Class-B sub-decision. One sitting clears D1–D7+D9; D8 is an email.
+
 **B-351 slice 4 (#447) — one blocker, one copy call, one QA limitation**
 - [ ] **Tier 2 is now QA-able on device — no SQL needed.** B-417 **PR 3 shipped the start-a-trial modal** (#456), so a trial can be created from the Pet tab and the trial-contaminant half is finally exercisable end-to-end. One caveat that is itself the thing to check: start a **single-food** trial for this pass. PR 3's multi-food guard makes `loadTrialProteinContext` go **silent** on any trial with 2+ `primary_diet` foods (B-453), so a wet+dry trial correctly renders no standing note and would read as a false negative.
 
