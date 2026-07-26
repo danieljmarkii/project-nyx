@@ -59,8 +59,9 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Last-write-wins on sync conflicts. No merge logic.
 - Correlation engine runs server-side via Edge Functions. Not on-device.
 - PDF generation is server-side. No client-side PDF attempts.
-- Food items are globally scoped. No `user_id` on `food_items`.
-- Every new table must include `pet_id`. Multi-pet is a sprint away.
+- `food_items` and `medication_items` are **per-account**, never global. `created_by_user_id` is the ownership scope (`NOT NULL`, `DEFAULT auth.uid()`, `ON DELETE CASCADE`) and RLS is default-deny to other accounts on all four verbs. B-354 (migration 033) inverted the old "globally scoped, no `user_id`" rule — **no code may assume the global catalog.** A shared catalog returns only as a separate curated layer, never by un-scoping user rows.
+- Removing a food from the library **archives, never deletes.** `food_items.archived_at` is a reversible flag flip (`lib/foodArchive.ts`) that leaves logged meals, `diet_trials` references, and vet reports intact; filter `archived_at` **only** at picker/library reads, never on history, analytics, or report joins (B-005). The one hard delete of a catalog row is the account-deletion cascade — there is no owner-reachable one.
+- `app_config` is the sole sanctioned globally-scoped table. Every other new table includes `pet_id` and RLS.
 
 **Anti-patterns to prevent:**
 - Hardcoded colors or spacing values instead of theme tokens from `constants/theme.ts`
@@ -133,7 +134,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - Single event timeline (Option A) — meals are events with a child `meals` row, not a separate table
 - The correlation engine's power depends on `occurred_at` precision — never round or approximate timestamps
 - Soft deletes preserve correlation integrity — a deleted vomit event still anchors a meal-to-symptom window
-- The food library grows passively — every food a user adds is immediately available to the correlation engine
+- The food library grows passively — every food a user adds is immediately available to the correlation engine, **within that account only** (per-account since B-354; dedup and n are within-account by construction)
 - Diet trial compliance is calculated from meal events against `diet_trials.started_at` and `target_duration_days`
 
 **Anti-patterns to prevent:**
@@ -240,7 +241,7 @@ The PM owns product vision, roadmap, and all final calls. When something require
 - User logs while offline, reconnects hours later with a queue of events
 - User back-dates an event to before the diet trial started
 - Pet has zero events — every surface must have a designed empty state
-- Food item added by one user is referenced in another user's correlation query
+- A food archived from the library is still referenced by logged meals, an active diet trial, and past vet reports — every one of those must still resolve its name (B-005; archive is not delete, and `archived_at` filters only picker/library reads)
 - Vet report share token accessed after 30-day expiry
 - User deletes a pet — cascade behavior across all child tables
 - Two devices logged in as the same user submit conflicting events simultaneously
