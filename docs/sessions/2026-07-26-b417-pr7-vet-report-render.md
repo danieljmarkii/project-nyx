@@ -145,7 +145,7 @@ Two of those fixes are worth naming for how they were done. The dated-membership
 
 ## Gates
 
-`vet-report-cold-read` (mandatory) run on rendered artifacts, **six rounds** — rounds 1 and 2 returned NOT READY (and round 2 caught a *regression introduced by round 1's fix*, which is the reason the rounds kept going), round 3 CLINIC-READY, round 4 re-run cold after the ten adversarial fixes landed. `adversarial-reviewer` FAIL → all ten fixed in-PR with 11 named regression tests. `tsc --noEmit` clean · **jest 132 suites / 2339 tests** · **`deno test` 967 cases** over `supabase/functions/` · `deno check` clean on the sample-render script (now a CI step).
+`vet-report-cold-read` (mandatory) run on rendered artifacts, **six rounds** — 1 and 2 NOT READY (round 2 catching a *regression introduced by round 1's fix*, which is why the rounds kept going), 3 CLINIC-READY, 4/5/6 NOT READY again after the adversarial and subsequent fixes. Rounds 2, 4, 5 and 6 each caught something a previous *fix* had introduced; that is the single most useful output of this PR. `adversarial-reviewer` FAIL → all ten fixed in-PR with 11 named regression tests. `tsc --noEmit` clean · **jest 132 suites / 2357 tests** · **`deno test` 972 cases** over `supabase/functions/` · `deno check` clean on the sample-render script (now a CI step).
 
 ## Rounds 5 and 6, and the ruling that closed the session
 
@@ -157,9 +157,22 @@ Six more round-5 findings, all in this PR's code, all fixed: the medication over
 
 **Three more filed:** **B-502** (page 1 is ~1,400 words — Principle 6's *decoration* half passes cleanly and its *scannable* half does not, because individually-correct caveats repeat until they displace ranking) · **B-503** (the coverage tile reads 100% under a heading naming a different denominator) · **B-504** (a refused trial never states that intake has been unlogged for 13 days).
 
+### Round 6, and the triage that made the ruling actionable
+
+Round 6 was asked for two things kept separate: a full cold read, and an explicit bucketing of every blocker into **TRIAL-BLOCK** (the diet-trial section, appendix C, the trial's medication line, the interpretability callout, the allowed list, the trial-scoped page-1 figures) versus **REPORT-WIDE** (the safety band, the tile grid, the symptom charts, appendices A/B/D/E, the correlation line, the legend). It split them **5 and 5** — and named the one that matters: *"the single patient-safety blocker is REPORT-WIDE machinery even though the trial block is what surfaced it. Fixing only the diet-trial section would leave Mira's page triaging wrong."*
+
+That is the sentence the scope decision rests on, and it is why the deploy hold is the right shape rather than a compromise.
+
+The five trial-block findings were fixed. Two are worth recording because they are the *same* error caught a fourth and a third time:
+
+- **The scope clause conflated the logged overlap range with the trial** — *"This covers the trial's 43 days"* three inches under a headline reading *"day 46 of 56"*, then *"which extends before it"* where the window and the trial start on the **same day** and only the first log is later. Both halves false about the trial, both true about the range. This is precisely the distinction the medication-overlap fix had drawn one section earlier in the same round — coverage is a statement about the *record*, a drug course is a statement about the *world* — and I did not carry it across. Fourth attempt at that clause; it now names the range by its dates and asserts nothing about the trial's length or about which end is wider.
+- **The dagger footnote disclosed the wrong quantity, twice.** Round 5 moved it from a per-type maximum to the union of symptom days; round 6 showed the union is still not the marker's own rate. The dagger fires when a symptom falls in the days *after* a feeding, so its discriminating power is the share of days on which **any** feeding would have earned it — **83%** on the dog artifact against the **37%** the footnote printed. Halving it makes *"it marks 3 of 4 rows"* read as a selective finding, inside the footnote that exists to say the opposite.
+
+Also fixed: the oral-route line named a hazard the page's own antigen tally silently contradicts (the flavour has no ingredient panel in this data model and the tally omits these exposures — so both facts are now *disclosed* rather than papered over), and the exposure tile rendered a bare **em-dash** in a count grid on the refused cat, where a dash scans as zero and this branch is reached *exactly* when the report has a reason it may not state a count.
+
 ### The scope ruling
 
-By round 5 the pattern was unambiguous: **this PR's trial block was converging; the report-wide machinery around it was not.** Of round 5's seven blockers, one was fully mine and fixed, one partly, and five were pre-existing defects in surfaces every non-trial report shares. The PM ruled **merge #467, hold the deploy**, and delegated the B-494 release-bar call to the product team.
+By round 5 the pattern was unambiguous: **this PR's trial block was converging; the report-wide machinery around it was not.** Of round 5's seven blockers, one was fully mine and fixed, one partly, and five were pre-existing defects in surfaces every non-trial report shares — a split round 6 then confirmed independently, 5 and 5, when asked to bucket them. The PM ruled **merge #467, hold the deploy**, and delegated the B-494 release-bar call to the product team.
 
 **The team ruled B-494 blocking for the DEPLOY, not for the merge.** Dr. Chen carries that lens and two of three independent cold reads called it blocking, with a mechanism the counter-lenses do not rebut: the report *teaches* the reader to scan the flag zone, and the legend then states affirmatively that no reduced-intake flag fired — so an empty band reads as a **negative result** rather than as silence. That is reassurance-on-absence at the report layer, which `clinical-guardrails` forbids outright, and *intake is not preference* routes refusal toward a health flag by invariant. The usual counter — alarm fatigue, don't cry wolf — does not apply: 38-of-38 refusals with ~7% body-weight loss in an 8-year-old cat with active chronic vomiting is not a marginal detector firing, it is the canonical case.
 
