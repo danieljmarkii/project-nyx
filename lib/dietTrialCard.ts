@@ -83,11 +83,7 @@ export interface TrialCoverageFacts {
 }
 
 /** §5.1 exposures: in-window feedings classified by §5.3, with their OWN feeding
- *  denominator. Supplied by PR 5's `computeTrialFacts`. Still NULLABLE, and the
- *  null is load-bearing rather than vestigial: `lib/dietTrialFacts` withholds
- *  these numbers whenever the allowed set has not fully hydrated, or whenever the
- *  predicate computed a reason the affirmative "all N matched" sentence would be
- *  false (`mayClaimAllMatched`). Silence, never an all-clear. */
+ *  denominator. Supplied by PR 5's `classifyFeeding`; null until it ships. */
 export interface TrialExposureFacts {
   /** Every in-window feeding — treats included. */
   totalFeedings: number;
@@ -107,17 +103,6 @@ export interface TrialCardInput {
   exposures?: TrialExposureFacts | null;
   /** §5.2 — a live intake-decline flag REPLACES the adherence line entirely. */
   intakeDeclineHeadline?: string | null;
-  /** TRUE when the headline above came from the trial's own VIABILITY lane
-   *  (§6.5's second, non-clinical path) rather than from `detectIntakeDecline`.
-   *
-   *  The two must not share a register. Routing a viability fact through this
-   *  slot without the flag made it inherit the clinical note — "A cat that stops
-   *  eating needs a call today" — which the adversarial pass rendered on day 50
-   *  of a trial off three refused bowls during the transition week. §6.5 says the
-   *  second path must not soften the first; impersonating it is the same error in
-   *  the other direction, and it spends the safety register's credibility on a
-   *  fact that is not an emergency. */
-  intakeDeclineIsViability?: boolean;
   /** §5.6 — an overlapping free-choice arrangement replaces the coverage RATIO. */
   freeFed?: { loggedFeedings: number } | null;
   /** §5.6 — other non-archived pets in the household. Gates the CLAIM only. */
@@ -273,15 +258,8 @@ function exposureLine(ex: TrialExposureFacts): string {
   return `${total} ${noun} in total — ${total - ex.offDiet} matched, ${ex.offDiet} did not.`;
 }
 
-/** §5.2: "the exposure count is a floor, never a total." Said ON the claim.
- *
- *  IT IS SAID ON THE CLEAN CLAIM TOO (added at PR 5, after the adversarial pass).
- *  The first cut appended this only when `offDiet > 0`, so §5.2's floor rule was
- *  stated on every card EXCEPT the one where it is load-bearing: "all 84 matched
- *  the trial diet or a permitted food" is precisely the sentence a reader can
- *  mistake for a total, and it was the only one carrying no qualifier. */
+/** §5.2: "the exposure count is a floor, never a total." Said ON the claim. */
 function floorSuffix(offDiet: number): string {
-  if (offDiet <= 0) return ' That’s what’s been logged, not everything that happened.';
   return offDiet === 1
     ? ' That 1 is what’s been logged, not a total.'
     : ` The ${offDiet} are what’s been logged, not a total.`;
@@ -460,23 +438,16 @@ function activeCard(
     });
     const n = input.freeFed.loggedFeedings;
     const ex = input.exposures;
-    // NO AFFIRMATIVE VARIANT IN THIS STATE. A free-choice bowl is the one shape
-    // where nothing in the app can observe what was eaten — both intake lanes are
-    // structurally blind — so `mayClaimAllMatched` returns false for ANY
-    // arrangement and `exposures` arrives null on the clean path. What remains is
-    // the count and, when there are exposures, the split. ("1 were not" was also
-    // wrong: this line had no singular branch, unlike `exposureLine`.)
-    const matched = ex ? n - ex.offDiet : 0;
     lines.push({
       role: 'fact',
-      text: ex && ex.offDiet > 0
-        ? `${n} bowl top-ups and wet meals logged; ${matched} matched the trial diet, ` +
-          `${ex.offDiet} did ${ex.offDiet === 1 ? 'not' : 'not'}.`
-        : `${n} bowl top-ups and wet meals logged.`,
+      text:
+        ex && ex.offDiet <= 0
+          ? `${n} bowl top-ups and wet meals logged; all ${n} were the trial diet.`
+          : ex
+            ? `${n} bowl top-ups and wet meals logged; ${n - ex.offDiet} were the trial diet, ${ex.offDiet} were not.`
+            : `${n} bowl top-ups and wet meals logged.`,
     });
-    // The floor caveat belongs here MOST of all — this is the state with the
-    // largest unmeasured term — and it was the one state that never got it.
-    lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER + floorSuffix(ex?.offDiet ?? 0) });
+    lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
     pushScopeCaveat(lines, input);
     return {
       ...base,
@@ -580,19 +551,6 @@ function activeCard(
 function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
   if (!input.intakeDeclineHeadline) return;
   lines.push({ role: 'lead', text: input.intakeDeclineHeadline });
-  if (input.intakeDeclineIsViability) {
-    // §6.5's second path: a fact about whether the TRIAL can answer its question,
-    // pointing at the vet for a different hydrolysate. Forward-looking, no
-    // urgency, and it does NOT claim the pet is in trouble — `detectIntakeDecline`
-    // owns that claim and is checked first.
-    lines.push({
-      role: 'note',
-      text:
-        'Culprit isn’t showing the trial numbers while this is going on — a diet that ' +
-        'isn’t being eaten can’t be read either way.',
-    });
-    return;
-  }
   lines.push({
     role: 'note',
     text:
@@ -630,7 +588,7 @@ function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
     lines.push({ role: 'fact', text: exposureLine(ex) });
     lines.push({
       role: 'qualifier',
-      text: BLIND_SPOT_QUALIFIER + floorSuffix(ex.offDiet),
+      text: BLIND_SPOT_QUALIFIER + (ex.offDiet > 0 ? floorSuffix(ex.offDiet) : ''),
     });
     pushScopeCaveat(lines, input);
     return;

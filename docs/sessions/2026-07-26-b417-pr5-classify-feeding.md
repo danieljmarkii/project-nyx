@@ -12,7 +12,7 @@ Pure and dependency-free by hard constraint — only `./protein.ts` and `./utils
 
 **The §5.1 metric is pinned, and only then the floor.** Coverage is distinct local days with ≥1 non-treat feeding over days elapsed, both halves on one overlap range and one clock (B-421's `localDayIndexOf`). Over that: `COVERAGE_SUPPORTS 0.8` / `COVERAGE_FLOOR 0.5` / `MIN_INTERPRETABLE_DAYS 7`, gating §7.2's interpretability sentence only. Filed as **P-3**, provisional pending Dr. Chen in the shape §0.4 uses for P-1/P-2.
 
-The card also gets real numbers for the first time: `dietTrialFacts` supplies `exposures` and `belowCoverageFloor`, so states 3 and 4 are reachable.
+The card does **not** get real numbers in this PR — see below. `exposures` stays null, as PR 4 shipped it.
 
 ## The `adversarial-reviewer` FAILED the first cut, with eight breaks, and its structural finding was the valuable part
 
@@ -34,6 +34,20 @@ All of it is now behind one exported rule, `mayClaimAllMatched`, which is one-di
 
 **What held**, each with the input tried: the §5.5 named counterexample (same-day, backwards and beyond-window pairings all rejected; dog 14d / cat 7d / `other` 14d — the wider window, because a missed flare and a false pairing are not symmetric costs) · a permitted treat × 168 feedings across 56 days → one verdict, no alarm fatigue · the duck-that-lists-chicken with `proteins[0]` sanctioned → rung 2 fires · a permitted extra as a loophole → sanctioned set unwidened · D-B's tally with no leak into compliance · C2 by construction · dated membership in both directions · the re-captured duplicate with a hydrated set · the blank-key collision · one clock / one range against B-421's oracle · two-sidedness below the minimum span · the terminal-state refusal · the greppable negative-claim guard.
 
+## Three adversarial passes, three FAILs — and the scope call they forced
+
+The reviewer ran three times. **The predicate held every time. Every break in all three rounds was at the same seam**, and by round three the pattern was the finding rather than the bugs:
+
+`computeTrialFacts` returns five disclosure channels — `unclassifiable`, `oralRoute`, `arrangementExposures`, `trialDietRefusal`, the untracked head — and the card takes **one** number. So every fix took the shape *"withhold the claim"*, and each round of withholding found a new way to **delete a real finding**. Round three measured the worst of it: one meal whose food row had been deleted (`meals.food_item_id ON DELETE SET NULL` — one library delete nulls every past meal of that food, in bulk) withheld **twelve genuine off-diet exposures** and flipped a 35%-coverage trial from state 4 to `clean`.
+
+Withholding is the wrong instrument. §5.2 rules the exposure count a **floor**, and the floor direction is *disclose more*, not say less. Disclosing properly needs card states that **do not exist in `docs/nyx-diet-trial-mockups.html`, which is design-locked at round 4** — an unclassifiable count, an untracked-head line (§5.1's "render the range explicitly" and §10 S3's "named as untracked" both have no renderer), an oral-route line, the §5.6 standing arrangement, and a viability register distinct from the clinical one. Two rounds of this PR were spent inventing those states inside a build PR, which is exactly the thing a design lock exists to prevent. §11 also scopes PR 5 to the predicate; the card was PR 4's.
+
+**So the wiring came out.** `lib/dietTrialFacts.ts` and `lib/dietTrialCard.ts` are back to what PR 4 shipped, `exposures` stays null, and the card keeps its honest silence until there is a designed surface to be honest on. Filed as **B-474** with every one of the reviewer's boundary findings carried into it, including four the wiring round surfaced that outlive it: the free-fed lane must exclude free-fed ratings the way `analytics` invariant #6 does and must not pre-empt the `free_fed` state; `getActiveArrangementsForPet` filters `active_until IS NULL`, so an arrangement that *ended* mid-trial is invisible and needs an overlap query; the gate must use `isUsableFoodKey`, not `foodKey !== null` (the bare separator passes the weaker test); and `REFUSAL_SHARE` was calibrated against a `refused`-only predicate.
+
+**What the module kept**, because all of it held: the WSAVA not-finished predicate (round two found a cat rated `picked` on every bowl for fourteen days was invisible to the lane built for that exact case — §5.2 proof #1 with one rating value changed — and that `picked` ratings *raised the denominator*, scoring a picking cat as more viable than a refusing one); `given|partial|null` on board at rung 4, matching `generate-signal/detection.ts:458` rather than contradicting it; a 14-day recency bound and a span guard on the refusal fact; the head-clip anchored on non-treat feedings and moving the **coverage** denominator only.
+
+**This is the honest state of the PR:** the predicate is shipped, adversarially hardened over three rounds, and has no consumer yet. That is not a half-finished feature — it is the sequencing §11 specified, with the wiring correctly refused rather than forced.
+
 ## Decisions taken
 
 - **P-3 — the coverage floor** (0.8 / 0.5 / 7 days), provisional pending Dr. Chen. Two anchors, both about the **record** rather than the pet: ≥0.8 is the conventional documentation-adequacy cut-point in adherence measurement, and below 0.5 the modal day in the window has no data at all. The reviewer's caveat rides with the flag: the metric is day-granular and **saturates on the first meal of the day**, so "supports interpreting it" is affirmable for a once-a-day logger whose partner slips an unlogged jerky nightly — whether 0.8 over a saturating metric is the right bar is a clinical question, not an arithmetic one.
@@ -42,9 +56,9 @@ All of it is now behind one exported rule, `mayClaimAllMatched`, which is one-di
 
 ## Known limits, all filed
 
-- **B-463** — §12's *"every flag is tappable to its reason"* is **unmet**. `explainVerdict` is complete and has zero callers, because the "Outside the trial diet" list screen was deferred out of PR 4 as **B-458**. The criterion is not met until B-458 lands, and PR 5 must not be recorded as having met it.
-- **B-464** — rung 1 permits on a fuzzy key and stops the chain, so a brand+product collision is a false **permit**. §5.4 optimised the key against false accusation and inherited the opposite tail.
-- **B-465** — a re-logged duplicate of one slip counts twice in the floor and twice in Appendix C. Over-counting is the honest direction for a floor, but the itemisation makes the duplication visible without explaining it.
+- **B-471** — §12's *"every flag is tappable to its reason"* is **unmet**. `explainVerdict` is complete and has zero callers, because the "Outside the trial diet" list screen was deferred out of PR 4 as **B-458**. The criterion is not met until B-458 lands, and PR 5 must not be recorded as having met it.
+- **B-472** — rung 1 permits on a fuzzy key and stops the chain, so a brand+product collision is a false **permit**. §5.4 optimised the key against false accusation and inherited the opposite tail.
+- **B-473** — a re-logged duplicate of one slip counts twice in the floor and twice in Appendix C. Over-counting is the honest direction for a floor, but the itemisation makes the duplication visible without explaining it.
 - **B-454 is not dissolved by this PR**, as its own row predicted: a half-hydrated allowed set still yields a too-narrow sanctioned set. The fix is wrapping `hydrateDietTrialFoods`'s per-row loop in a transaction — shipped sync semantics, its own diff. What PR 5 *did* add is the `primaryResolved` gate, which stops the worst downstream consequence (the exposure claim) even when the set is partial.
 - `isWithinChallengeWindow`, `interpretabilityStatement` and `antigenTally` have no consumers yet. That is PR 7's wiring, and the reviewer's note stands: when PR 7 routes through the challenge window, its day indices must come from `dayIndexOf(ctx, …)` — a UTC epoch-day would silently shift the window by up to a day at each end.
 
