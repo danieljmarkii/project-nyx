@@ -207,6 +207,20 @@ export interface TrialCardModel {
   foodLabel: string | null;
   /** "Day 23 of 56" | "Day 61 — 5 days past the window you set" | a date range. */
   dayLine: string | null;
+  /**
+   * How the day line reads: quiet metadata on every ordinary day, a HEADLINE at
+   * the milestone.
+   *
+   * On the model rather than inferred from `state` in the view, for the same
+   * reason `TrialCardAction.emphasis` is: the design lock draws the milestone's
+   * day line as a 21px serif headline (`.milestone-h`) and every other day's as
+   * caption-scale secondary text, and PR 6's first cut routed both through the
+   * same `styles.dayLine` — so the sentence that has to stop an owner on the one
+   * day it matters rendered exactly like "Day 23 of 56" on an ordinary Tuesday,
+   * and the largest text on the milestone card was the food label. A view that
+   * decides that from `state` puts a §4.3 requirement somewhere no test reaches.
+   */
+  dayLineRole: 'meta' | 'headline';
   /** "Ends 27 August" | "Window ended 27 August". */
   windowLine: string | null;
   /** DAY progress in [0,1], or null when a bar would carry no information.
@@ -340,6 +354,7 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
           : 'Diet trial',
       foodLabel: trial.foodLabel ?? null,
       dayLine: null,
+      dayLineRole: 'meta',
       windowLine: null,
       progressFraction: null,
       lines: [],
@@ -363,6 +378,7 @@ function noTrialCard(petName: string, objectPronoun: string): TrialCardModel {
     kicker: 'Diet trial',
     foodLabel: null,
     dayLine: null,
+    dayLineRole: 'meta',
     windowLine: null,
     progressFraction: null,
     lines: [
@@ -420,9 +436,29 @@ function activeCard(
       ...base,
       state: 'intake_decline',
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      actions: [],
+      // THE DECLINE REPLACES THE RECORD LINES, NOT THE WAY OUT OF THE TRIAL.
+      //
+      // This branch returned `actions: []` unconditionally, which meant that while
+      // a decline flag was live a trial that had reached its window had NO
+      // affordance at all: §4.3's "never expires and re-surfaces until acted on"
+      // silently failed, the trial stayed `active`, and §7 then rendered a stopped
+      // intervention as one still under way — on the sickest patient the feature
+      // has. Found by `adversarial-reviewer`; `pm-feature-review` reached the same
+      // place from the owner's side.
+      //
+      // What §5.2 actually says is that the flag replaces the ADHERENCE LINE, and
+      // the record lines above are duly gone. The decision is a different thing,
+      // and it stays reachable — quietly, as one link rather than the three-button
+      // row, because a card about a pet that has stopped eating is not a decision
+      // surface. Only once the window is actually up; mid-trial there is nothing
+      // to decide.
+      actions:
+        overrunDays >= 0
+          ? [{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }]
+          : [],
     };
   }
 
@@ -453,7 +489,16 @@ function activeCard(
       ...base,
       state: 'milestone',
       dayLine: `Day ${progress.dayCounter} of ${progress.targetDays} — the window you set is done.`,
+      dayLineRole: 'headline',
       windowLine: null,
+      // NO BAR HERE, and it is the same argument `completedCard` already makes one
+      // state along ("a full bar would be decoration, and decoration on this card
+      // is what R2 exists to stop") — only stronger. At the milestone the bar is
+      // pinned at 100% directly above copy working hard to avoid saying the trial
+      // is complete: R2 governs what the bar MEASURES, but a saturated bar is
+      // completion vocabulary drawn in pixels, which is the one thing §4.3 forbids
+      // this state from saying. The design lock draws the milestone with no bar.
+      progressFraction: null,
       lines: [{ role: 'note', text: milestoneNote(trial.indication) }],
       actions: trialDecisionChoices(trial.indication).map((c) => ({
         id: DECISION_ACTION_ID[c.id],
@@ -487,6 +532,7 @@ function activeCard(
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
       actions: [],
@@ -523,6 +569,7 @@ function activeCard(
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
       actions: [],
@@ -553,6 +600,7 @@ function activeCard(
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
       actions: [],
@@ -579,6 +627,7 @@ function activeCard(
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
       actions: [{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }],
@@ -606,6 +655,7 @@ function activeCard(
     ...base,
     state,
     dayLine: dayLineFor(progress, overrunDays),
+    dayLineRole: 'meta',
     windowLine: windowLineFor(endIndex, overrunDays),
     lines,
     actions:
@@ -774,6 +824,7 @@ function completedCard(
     kicker: 'Diet trial · finished',
     foodLabel: trial.foodLabel ?? null,
     dayLine: terminalRange(trial, startIndex),
+    dayLineRole: 'meta',
     windowLine: null,
     // A finished window has no progress left to encode; a full bar here would be
     // decoration, and decoration on this card is what R2 exists to stop.
@@ -785,12 +836,29 @@ function completedCard(
   };
 }
 
-/** PR 3's stored tokens → the owner-facing phrase. The fallback renders an
- *  unrecognised value verbatim so a future reason is never a silent blank. */
+/** The stored tokens → the owner-facing phrase.
+ *
+ *  ALL SIX OF §4.3's REASONS ARE MAPPED, and the three PR 6 added are the reason
+ *  this comment is longer than the function. The fallback renders an unrecognised
+ *  value verbatim so a future reason is never a silent blank — which is a good
+ *  failure mode for a token nobody has got to yet, and a terrible one for a token
+ *  this very PR introduced. PR 6 added `cost` / `too_hard` / `symptoms_resolved`
+ *  to `trialStopReasons` and, in its first cut, mapped none of them: the owner who
+ *  tapped "Too expensive" read **"Stopped because cost."** and the one who tapped
+ *  "Too hard to keep him off everything else" read **"Stopped because too_hard."**
+ *  The sibling map in `generate-report/render.ts` had the same hole, so the vet
+ *  read "Stopped: too_hard." on a clinical page. Adding a reason means touching
+ *  BOTH maps; the fallback is not a substitute for either. */
 function stoppedBecauseLine(petName: string, trial: TrialCardTrial): string {
   switch (trial.stoppedReason) {
     case 'refused': return `Stopped because ${petName} wouldn’t eat it.`;
     case 'vet_advised': return 'Stopped because the vet said to change diets.';
+    case 'cost': return 'Stopped because of the cost.';
+    // Names the difficulty without naming the owner as its cause (§6.9 — Culprit
+    // never scores the owner). "Stopped because you couldn't keep him off other
+    // food" is the same fact written as a failing.
+    case 'too_hard': return 'Stopped because keeping other food away was too hard.';
+    case 'symptoms_resolved': return 'Stopped because the symptoms cleared up.';
     case 'other': return 'Stopped early.';
     default: return `Stopped because ${trial.stoppedReason}.`;
   }
@@ -823,6 +891,7 @@ function abandonedCard(
       kicker: 'Diet trial · stopped early',
       foodLabel: trial.foodLabel ?? null,
       dayLine: range,
+      dayLineRole: 'meta',
       windowLine: null,
       progressFraction: null,
       lines,
@@ -872,6 +941,7 @@ function abandonedCard(
     kicker: 'Diet trial · stopped early',
     foodLabel: trial.foodLabel ?? null,
     dayLine: range,
+    dayLineRole: 'meta',
     windowLine: null,
     progressFraction: null,
     lines,

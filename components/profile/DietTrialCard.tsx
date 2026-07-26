@@ -39,11 +39,22 @@ interface Props {
    *  (migration 040's UNIQUE partial index), so on a running trial this opens the
    *  ordered "end the running one first" sheet, never a second concurrent trial. */
   onManage?: () => void;
+  /** The action currently mid-write, drawn in `PrimaryButton`'s loading state and
+   *  press-blocked. `Keep going` is a one-tap write with no confirm (deliberately
+   *  — the named default is the whole affordance), so the pending state is what
+   *  stops a slow write earning a second tap and a double extension. */
+  busyAction?: TrialCardActionId | null;
   style?: ViewStyle;
 }
 
-export function DietTrialCard({ model, actions, onManage, style }: Props) {
+export function DietTrialCard({ model, actions, onManage, busyAction, style }: Props) {
   const manageLabel = model.state === 'no_trial' ? '+ Start' : 'Change';
+  // NORMALISED, because the prop is optional and `undefined !== null`. The first
+  // cut compared `busyAction !== null` directly, so on every surface that does not
+  // pass the prop at all — which is every state but the milestone — the guard read
+  // true and DISABLED every button on the card, including "Start a diet trial" on
+  // the empty state. Caught by the existing entry-point test.
+  const busyId = busyAction ?? null;
 
   return (
     <Card style={style}>
@@ -68,7 +79,18 @@ export function DietTrialCard({ model, actions, onManage, style }: Props) {
         <Text style={styles.food}>{model.foodLabel}</Text>
       )}
 
-      {model.dayLine !== null && <Text style={styles.dayLine}>{model.dayLine}</Text>}
+      {/* The day line is caption-scale metadata on every ordinary day and a
+          HEADLINE at the milestone — the role comes off the model, not from
+          `state`, so §4.3's "never reads as permission to stop" doesn't depend on
+          a view remembering which day is the important one. */}
+      {model.dayLine !== null && (
+        <Text
+          testID="trial-day-line"
+          style={model.dayLineRole === 'headline' ? styles.dayHeadline : styles.dayLine}
+        >
+          {model.dayLine}
+        </Text>
+      )}
       {model.windowLine !== null && (
         <Text style={styles.windowLine}>{model.windowLine}</Text>
       )}
@@ -151,6 +173,7 @@ export function DietTrialCard({ model, actions, onManage, style }: Props) {
             </Pressable>
           );
         }
+        const busy = busyId === action.id;
         return (
           <PrimaryButton
             key={action.id}
@@ -158,6 +181,8 @@ export function DietTrialCard({ model, actions, onManage, style }: Props) {
             label={action.label}
             variant={action.emphasis === 'primary' ? 'primary' : 'secondary'}
             onPress={onPress}
+            loading={busy}
+            disabled={busyId !== null && !busy}
             style={styles.primaryAction}
           />
         );
@@ -199,6 +224,19 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginTop: 2,
+  },
+  // The milestone's day line, drawn as the design lock draws it (`.milestone-h` —
+  // serif, 21px, tight leading). `fontDisplay` is the same Newsreader the AI
+  // Signal headline uses; this is the second sentence in the app that earns it,
+  // and it earns it for the same reason: it is the one line on the screen that
+  // has to be read rather than scanned.
+  dayHeadline: {
+    fontFamily: theme.fontDisplay,
+    fontSize: theme.textXL,
+    lineHeight: theme.textXL * 1.3,
+    letterSpacing: -0.2,
+    color: theme.colorNeutralDark,
+    marginTop: theme.space1,
   },
   windowLine: {
     fontSize: theme.textSM,

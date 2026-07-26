@@ -153,6 +153,12 @@ export default function ProfileScreen() {
   const [startTrialVisible, setStartTrialVisible] = useState(false);
   // B-417 PR 6 — which completion screen is open, if any. `null` is closed.
   const [completionEntry, setCompletionEntry] = useState<TrialCompletionEntry | null>(null);
+  // The extension is a one-tap write with no confirm (see `handleExtendTrial`),
+  // which makes a pending state non-optional rather than polish: without one the
+  // owner taps the biggest button on the card, nothing visibly happens until the
+  // write and reload land, and a slow write earns a second tap — two extensions
+  // from one decision.
+  const [extendingTrial, setExtendingTrial] = useState(false);
 
   /**
    * `Keep going` — B-417 PR 6 (§4.3). One implementation, called by BOTH the
@@ -168,13 +174,14 @@ export default function ProfileScreen() {
    */
   const handleExtendTrial = useCallback(async () => {
     const trial = trialInput?.trial;
-    if (!trial?.id) return;
+    if (!trial?.id || extendingTrial) return;
     const progress = getDietTrialProgress(
       { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
       Date.now(),
     );
     if (!progress) return;
     setCompletionEntry(null);
+    setExtendingTrial(true);
     try {
       await extendTrial({
         trialId: trial.id,
@@ -191,8 +198,10 @@ export default function ProfileScreen() {
         'That didn’t save',
         'The trial is still running on its current window. Have another go in a moment.',
       );
+    } finally {
+      setExtendingTrial(false);
     }
-  }, [trialInput, reloadTrial]);
+  }, [trialInput, reloadTrial, extendingTrial]);
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -810,6 +819,7 @@ export default function ProfileScreen() {
           <DietTrialCard
             model={trialCard}
             style={styles.sectionGap}
+            busyAction={extendingTrial ? 'trial_extend' : null}
             actions={{
               start_trial: () => setStartTrialVisible(true),
               // B-417 PR 6. The milestone's three buttons and the overrun card's
@@ -928,6 +938,7 @@ export default function ProfileScreen() {
         entry={completionEntry}
         trial={sheetTrial}
         petName={activePet.name}
+        species={activePet.species}
         pronouns={petPronouns(activePet.sex ?? 'unknown')}
         dayCounter={sheetDayCounter}
         intakeDeclineHeadline={trialInput?.intakeDeclineHeadline ?? null}

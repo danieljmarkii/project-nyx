@@ -385,6 +385,19 @@ describe('state 5 — the milestone (PR 6, §4.3)', () => {
     expect(allStrings(model).join(' ')).not.toMatch(/complete|finished|you can stop|all done/i);
   });
 
+  it('renders the day line as a HEADLINE and drops the bar', () => {
+    // The design lock draws this as `.milestone-h` (serif, 21px) with NO progress
+    // bar. PR 6's first cut routed it through the ordinary `dayLine` style and
+    // kept a 100%-full accent bar — so the sentence that has to stop an owner
+    // rendered exactly like "Day 23 of 56" on a Tuesday, under a saturated bar
+    // that is completion vocabulary drawn in pixels. Caught by `pm-feature-review`.
+    expect(model.dayLineRole).toBe('headline');
+    expect(model.progressFraction).toBeNull();
+    // Every other state keeps the quiet treatment.
+    expect(resolveTrialCard(activeInput()).dayLineRole).toBe('meta');
+    expect(resolveTrialCard(activeInput({ nowMs: localNoon(2026, 9, 1) })).dayLineRole).toBe('meta');
+  });
+
   it('offers the three-way decision, action before verdict', () => {
     expect(model.actions.map((a) => a.id)).toEqual([
       'trial_extend', 'trial_complete', 'trial_stopped_early',
@@ -427,6 +440,53 @@ describe('state 5 — the milestone (PR 6, §4.3)', () => {
 
     // Skin and an unset indication both take the base note and the 28-day default.
     expect(textOf(model, 'note')[0]).not.toMatch(/three months/);
+  });
+});
+
+describe('the stopped-early reasons render as sentences, not tokens', () => {
+  // PR 6 added `cost` / `too_hard` / `symptoms_resolved` to the reason set and, in
+  // its first cut, to neither renderer — so the card read "Stopped because cost."
+  // and "Stopped because too_hard.", and the vet report read "Stopped: too_hard."
+  // The verbatim fallback is a good failure mode for a token nobody has got to
+  // yet and a terrible one for a token the same PR introduced.
+  it.each([
+    ['refused', 'Stopped because Biscuit wouldn’t eat it.'],
+    ['vet_advised', 'Stopped because the vet said to change diets.'],
+    ['cost', 'Stopped because of the cost.'],
+    ['too_hard', 'Stopped because keeping other food away was too hard.'],
+    ['symptoms_resolved', 'Stopped because the symptoms cleared up.'],
+    ['other', 'Stopped early.'],
+  ])('%s renders as a sentence', (reason, expected) => {
+    const model = resolveTrialCard(
+      activeInput({
+        trial: {
+          status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+          targetDurationDays: 56, foodLabel: FOOD, stoppedReason: reason,
+        },
+      }),
+    );
+    expect(textOf(model, 'lead')).toContain(expected);
+    // No raw token reaches the owner, on any reason.
+    for (const s of allStrings(model)) expect(s).not.toMatch(/_/);
+  });
+
+  it('never blames the owner for the reason (§6.9)', () => {
+    const all = ['cost', 'too_hard', 'symptoms_resolved'].map((reason) =>
+      allStrings(
+        resolveTrialCard(
+          activeInput({
+            trial: {
+              status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+              targetDurationDays: 56, foodLabel: FOOD, stoppedReason: reason,
+            },
+          }),
+        ),
+      ).join(' '),
+    ).join(' ');
+    // "Stopped because YOU couldn't keep him off other food" is the same fact
+    // written as a failing.
+    expect(all).not.toMatch(/\byou (?:couldn’t|didn’t|failed)/i);
+    expect(all).not.toMatch(/fail|gave up|too expensive for you/i);
   });
 });
 

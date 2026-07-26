@@ -36,6 +36,8 @@ const FACTS: TrialOutcomeFacts = {
   duringDays: 56,
   beforeDays: 56,
   beforeTracked: true,
+  beforeLoggedDays: 48,
+  duringLoggedDays: 54,
   symptoms: [{ symptomType: 'itch', label: 'Itch/Scratch', before: 14, during: 3 }],
   meals: { before: { daysLogged: 41, days: 56 }, during: { daysLogged: 52, days: 56 } },
 };
@@ -46,6 +48,7 @@ function renderSheet(props: Partial<React.ComponentProps<typeof TrialCompletionS
       entry="complete"
       trial={TRIAL}
       petName="Biscuit"
+      species="cat"
       pronouns={{ object: 'him', possessive: 'his' }}
       dayCounter={56}
       onClose={jest.fn()}
@@ -73,7 +76,7 @@ describe('the outcome sheet', () => {
       .findAllByType(require('react-native').Text)
       .map((n: { props: { children: unknown } }) => String(n.props.children));
     const factAt = texts.findIndex((t: string) => t.includes('Itch/Scratch: 14 before · 3 during.'));
-    const densityAt = texts.findIndex((t: string) => t.startsWith('Meals logged:'));
+    const densityAt = texts.findIndex((t: string) => t.startsWith('Days you logged any food:'));
     const questionAt = texts.findIndex((t: string) => t.includes('Does that match what you’ve seen?'));
 
     expect(factAt).toBeGreaterThanOrEqual(0);
@@ -85,7 +88,7 @@ describe('the outcome sheet', () => {
     const tree = renderSheet();
     const density = await waitFor(() => tree.getByTestId('trial-outcome-density'));
     expect(String(density.props.children)).toContain(
-      'Meals logged: 41 of 56 days before, 52 of 56 during.',
+      'Days you logged any food: 41 of 56 before, 52 of 56 during.',
     );
   });
 
@@ -124,8 +127,31 @@ describe('the outcome sheet', () => {
     // has stopped eating NOW.
     expect(tree.queryAllByTestId('trial-outcome-fact')).toHaveLength(0);
     expect(tree.queryByTestId('trial-outcome-density')).toBeNull();
-    // The question still stands — it is the one thing the counts cannot supply.
-    expect(tree.getByText('Does that match what you’ve seen?')).toBeTruthy();
+
+    // The strongest safety sentence in the feature must be ON this screen — the
+    // one that ENDS the intervention. PR 6's first cut dropped it here and kept it
+    // only on the card, so the terminal surface said less about a cat that had
+    // stopped eating than the card said about one skipped dinner. Species-aware:
+    // the 48h hepatic-lipidosis window is feline.
+    expect(
+      String(tree.getByTestId('trial-outcome-decline-note').props.children),
+    ).toContain('needs a call today');
+
+    // The question still stands — it is the one thing the counts cannot supply —
+    // but it no longer points at counts that are not on screen.
+    expect(tree.getByText('How has it seemed to you?')).toBeTruthy();
+    expect(tree.queryByText('Does that match what you’ve seen?')).toBeNull();
+  });
+
+  it('keeps the decline note firm-not-feline for a dog', async () => {
+    const tree = renderSheet({
+      species: 'dog',
+      intakeDeclineHeadline: 'Biscuit has left most of his food for 3 days.',
+    });
+    await waitFor(() => tree.getByTestId('trial-outcome-decline-note'));
+    const note = String(tree.getByTestId('trial-outcome-decline-note').props.children);
+    expect(note).toContain('needs a call');
+    expect(note).not.toContain('today');
   });
 
   it('asks the question anyway when the counts cannot be read', async () => {

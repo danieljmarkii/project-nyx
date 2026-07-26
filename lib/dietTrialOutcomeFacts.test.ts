@@ -145,6 +145,98 @@ describe('the C5 density series', () => {
   });
 });
 
+// ── The day boundary, at the two offsets §12 names ──────────────────────────
+//
+// §12's PR-4 criterion pins the CARD's day counter "under UTC−7 and UTC+11 at
+// 00:30 and 23:30 local". PR 6 introduced a SECOND day-math path — which is the
+// exact thing B-421 exists to prevent — and pinned it at neither, so it shipped a
+// UTC/local inversion that `adversarial-reviewer` reproduced at UTC−7: the before
+// window ran a day long, the during window lost TODAY, and both errors biased
+// toward "improved" on the screen where an owner decides whether to stop a
+// medical intervention.
+//
+// The runner's own TZ is one value, so these re-run the suite's assertions under
+// a forced offset by shifting the clock rather than the zone where possible, and
+// document the command that reproduces the original break:
+//   TZ=America/Los_Angeles npx jest lib/dietTrialOutcomeFacts.test.ts
+describe('the day boundary is stable across offsets', () => {
+  // The inverse of `localDayIndexOf` must be a UTC read. If it is not, a key
+  // round-tripped through an index comes back one day early at any negative
+  // offset — which is the whole defect, isolated.
+  it('round-trips every day key through the index unchanged', async () => {
+    // Each case is a LOCAL calendar date and LOCAL noon on it. The first cut of
+    // this test used `${key}T12:00:00Z`, which at UTC+13 is already the next local
+    // day — so it failed in Auckland against correct code. Worth recording: the
+    // fixture repeated in miniature the exact confusion the module had, which is
+    // why the dates below include a DST boundary in each hemisphere.
+    for (const [y, m, d] of [
+      [2026, 1, 1], [2026, 3, 8], [2026, 4, 5], [2026, 6, 30],
+      [2026, 7, 15], [2026, 10, 4], [2026, 11, 1], [2026, 12, 31], [2027, 2, 28],
+    ]) {
+      const key = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const facts = await loadTrialOutcomeFacts({
+        petId: 'p', startedAt: key, nowMs: new Date(y, m - 1, d, 12).getTime(),
+      });
+      // A trial starting and ending on the same key is exactly one day, in every
+      // zone. Under the original inversion this collapsed the during-window to
+      // an unsatisfiable range and every during count became a hard 0.
+      expect(facts!.duringDays).toBe(1);
+    }
+  });
+
+  it('counts an event logged TODAY on a trial started today', async () => {
+    // The worst case of the inversion: `duringEndKey` resolved to yesterday, the
+    // membership test `key >= startKey && key <= duringEndKey` became
+    // unsatisfiable, and three vomits today rendered as `Vomit: N before · 0
+    // during` — a hard zero, in the reassuring direction, on day one.
+    const today = new Date(2026, 6, 28, 12);
+    const key = '2026-07-28';
+    mockGetAllAsync.mockResolvedValueOnce([
+      ev('vomit', at(2026, 7, 28, 9)),
+      ev('vomit', at(2026, 7, 28, 14)),
+    ]);
+    const facts = await loadTrialOutcomeFacts({
+      petId: 'p', startedAt: key, nowMs: today.getTime(),
+    });
+    expect(facts!.symptoms[0]).toMatchObject({ symptomType: 'vomit', during: 2 });
+  });
+
+  it('never lets the before-window run longer than its own denominator', async () => {
+    // The other half of the inversion: `beforeStartKey` shifted a day early, so
+    // the before window covered 57 days against a denominator of 56 — inflating
+    // the "before" count, again in the flattering direction.
+    const facts = await load([
+      ev('itch', at(2026, 6, 30, 12)),  // one day OUTSIDE the 14-day before window
+      ev('itch', at(2026, 7, 1, 12)),   // first day INSIDE it
+    ]);
+    const itch = facts!.symptoms.find((s) => s.symptomType === 'itch')!;
+    expect(itch.before).toBe(1);
+    expect(facts!.beforeDays).toBe(14);
+  });
+});
+
+// ── Observability, not a boolean ────────────────────────────────────────────
+
+describe('beforeLoggedDays — how much of the stretch is actually observable', () => {
+  it('counts days with ANY event, so a thin stretch is visible as thin', async () => {
+    // The install-during-a-flare case: three days of heavy logging immediately
+    // before a vet-prescribed trial. `beforeTracked` is true and says nothing
+    // useful; the COUNT is what stops the sheet describing four observable days
+    // as "the 8 weeks before it started".
+    const facts = await load([
+      ev('itch', at(2026, 7, 12, 9)),
+      ev('itch', at(2026, 7, 12, 18)),
+      ev('itch', at(2026, 7, 13, 9)),
+      ev('itch', at(2026, 7, 14, 9)),
+      ev('meal', at(2026, 7, 20, 9)),
+    ]);
+    expect(facts!.beforeTracked).toBe(true);
+    expect(facts!.beforeLoggedDays).toBe(3);
+    expect(facts!.beforeDays).toBe(14);
+    expect(facts!.duringLoggedDays).toBe(1);
+  });
+});
+
 describe('degradation', () => {
   it('returns null rather than guessed counts when the read fails', async () => {
     mockGetAllAsync.mockRejectedValueOnce(new Error('database is locked'));

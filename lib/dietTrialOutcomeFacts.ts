@@ -13,13 +13,40 @@ import type { TrialOutcomeFacts, TrialSymptomDelta } from './dietTrialCompletion
 
 const SYMPTOM_SET: ReadonlySet<string> = new Set(SYMPTOM_EVENT_TYPES);
 
-/** Local-day key arithmetic, kept in LOCAL days end to end (B-421). The day
- *  boundary on this feature is local midnight, defined once in §5.1, and the two
- *  stretches this sheet compares are both denominated in it. */
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Day index → 'YYYY-MM-DD'. **The inverse of `localDayIndexOf`, and it must be a
+ * UTC read.**
+ *
+ * `localDayIndexOf` returns a UTC-ANCHORED index of a LOCAL calendar day — the
+ * index times a day is UTC midnight of that date, which is not midnight anywhere
+ * else. Inverting it with `toLocalDayKey` (which reads `getFullYear/getMonth/
+ * getDate`) lands on the PREVIOUS day at every negative UTC offset, and PR 6's
+ * first cut did exactly that.
+ *
+ * The damage was not symmetric, which is why this is the headline fix rather than
+ * an off-by-one: at UTC−7 the before-window ran a day LONG against a 56-day
+ * denominator while the during-window LOST TODAY — the day the owner is deciding.
+ * Both errors push the same way, *before* up and *during* down, i.e. toward "it
+ * improved", on the one screen where an owner decides whether to stop a medical
+ * intervention. Worst case, a trial started today: `duringEndKey` resolved to
+ * yesterday, the membership test became unsatisfiable, and every during-count
+ * rendered a hard 0 — three vomits today read as `Vomit: 4 before · 0 during`.
+ *
+ * Found by `adversarial-reviewer` under `TZ=America/Los_Angeles`, where this
+ * module's own test fails. B-421 exists because this feature already grew three
+ * disagreeing day-math paths; PR 6 quietly added a fourth. The tests below now pin
+ * it at UTC−7 and UTC+11, the same two offsets §12's PR-4 criterion names.
+ */
+function dayKeyFromIndex(index: number): string {
+  return new Date(index * MS_PER_DAY).toISOString().slice(0, 10);
+}
+
 function shiftDayKey(dayKey: string, deltaDays: number): string | null {
   const index = localDayIndexOf(dayKey);
   if (index === null) return null;
-  return toLocalDayKey(new Date((index + deltaDays) * 86_400_000));
+  return dayKeyFromIndex(index + deltaDays);
 }
 
 /**
@@ -49,7 +76,7 @@ export async function loadTrialOutcomeFacts(args: {
 
     const duringDays = Math.max(1, todayIndex - startIndex + 1);
     const beforeDays = duringDays;
-    const duringEndKey = toLocalDayKey(new Date(Math.max(todayIndex, startIndex) * 86_400_000));
+    const duringEndKey = dayKeyFromIndex(Math.max(todayIndex, startIndex));
     const beforeStartKey = shiftDayKey(startKey, -beforeDays);
     if (!beforeStartKey) return null;
 
@@ -72,7 +99,10 @@ export async function loadTrialOutcomeFacts(args: {
     const during: Record<string, number> = {};
     const beforeMealDays = new Set<string>();
     const duringMealDays = new Set<string>();
-    let beforeTracked = false;
+    // Days with ANY logged event, so the before-stretch's OBSERVABILITY is a count
+    // rather than a yes/no. See `beforeLoggedDays` on TrialOutcomeFacts.
+    const beforeAnyDays = new Set<string>();
+    const duringAnyDays = new Set<string>();
 
     for (const r of rows) {
       const ms = Date.parse(r.occurred_at);
@@ -82,7 +112,7 @@ export async function loadTrialOutcomeFacts(args: {
       const inBefore = !inDuring && key >= beforeStartKey && key < startKey;
       if (!inDuring && !inBefore) continue;
 
-      if (inBefore) beforeTracked = true;
+      (inDuring ? duringAnyDays : beforeAnyDays).add(key);
 
       // The density series is MEAL-TYPE days — treats included, because treats are
       // meal events and this series measures whether the owner kept logging at
@@ -114,7 +144,9 @@ export async function loadTrialOutcomeFacts(args: {
     return {
       duringDays,
       beforeDays,
-      beforeTracked,
+      beforeTracked: beforeAnyDays.size > 0,
+      beforeLoggedDays: beforeAnyDays.size,
+      duringLoggedDays: duringAnyDays.size,
       symptoms,
       meals: {
         before: { daysLogged: beforeMealDays.size, days: beforeDays },

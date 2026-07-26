@@ -62,6 +62,8 @@ interface Props {
   entry: TrialCompletionEntry | null;
   trial: CompletionSheetTrial | null;
   petName: string;
+  /** Drives the decline note's register — the 48h window is feline. */
+  species?: 'dog' | 'cat' | 'other';
   /** From the shipped `petPronouns`; the copy layer defaults to they/them. */
   pronouns?: { object: string; possessive: string };
   /** The day the owner is actually on, from `getDietTrialProgress`. */
@@ -82,7 +84,7 @@ function stepFor(entry: TrialCompletionEntry): Step {
 }
 
 export function TrialCompletionSheet({
-  entry, trial, petName, pronouns, dayCounter,
+  entry, trial, petName, species, pronouns, dayCounter,
   intakeDeclineHeadline, onClose, onExtend, onChanged,
 }: Props) {
   const [step, setStep] = useState<Step>('decision');
@@ -165,7 +167,9 @@ export function TrialCompletionSheet({
   if (!entry || !trial) return null;
 
   const sheet: TrialOutcomeSheetModel | null = facts
-    ? buildOutcomeSheet({ facts, petName, intakeDeclineHeadline })
+    ? buildOutcomeSheet({
+        facts, petName, species, indication: trial?.indication, intakeDeclineHeadline,
+      })
     : null;
 
   const outcomeOptions = (
@@ -255,8 +259,8 @@ export function TrialCompletionSheet({
                         <Text testID="trial-outcome-decline" style={styles.declineLead}>
                           {sheet.declineLead}
                         </Text>
-                        <Text style={styles.sheetSub}>
-                          Culprit isn’t showing the trial’s numbers while this is going on.
+                        <Text testID="trial-outcome-decline-note" style={styles.sheetSub}>
+                          {sheet.declineNote}
                         </Text>
                       </>
                     ) : (
@@ -276,6 +280,12 @@ export function TrialCompletionSheet({
                     )}
 
                     <Divider style={styles.divider} />
+                    {/* §4.3 is a property of the FLOW: the continuation sentence
+                        travels with the owner onto the screen that actually ends
+                        the trial, not only onto the card that offered to. */}
+                    <Text testID="trial-outcome-continuation" style={styles.continuation}>
+                      {sheet.continuationNote}
+                    </Text>
                     <Text style={styles.question}>{sheet.question}</Text>
                     <Text style={styles.sheetSub}>{sheet.questionNote}</Text>
                     {outcomeOptions}
@@ -433,6 +443,12 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
     marginTop: theme.space1,
+  },
+  continuation: {
+    fontSize: theme.textSM,
+    lineHeight: theme.textSM * 1.45,
+    color: theme.colorTextPrimary,
+    marginBottom: theme.space2,
   },
   question: {
     fontSize: theme.textMD,

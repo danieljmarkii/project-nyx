@@ -304,6 +304,31 @@ export interface TrialOutcomeFacts {
    * comparison on the screen where an owner decides what the trial meant.
    */
   beforeTracked: boolean;
+  /**
+   * Days in the before-stretch carrying ANY logged event — the stretch's
+   * OBSERVABILITY as a count rather than a yes/no.
+   *
+   * `beforeTracked` alone implements §5.2's S3 rule only for the all-or-nothing
+   * case, and `adversarial-reviewer` broke the middle: an owner who installs
+   * Culprit *because* of a flare, logs scratching hard for three days, and starts
+   * a vet-prescribed trial the following week has `beforeTracked === true` over a
+   * 56-day stretch of which four days are observable — and those four are the
+   * attention peak AND the symptom peak. The sheet then rendered
+   * `Itch/Scratch: 11 before · 3 during` with nothing saying the 11 came from four
+   * days: an attention spike plus regression to the mean, drawn as a 4×
+   * improvement, above a button that ends the trial. The mirror case alarms
+   * instead — one logged meal the day before, then diligent logging, renders
+   * `0 before · 9 during` and reads as the diet making the dog worse.
+   *
+   * Measure and disclose rather than gate (the same instrument C5 uses, and the
+   * same one §7 uses for the symptom trend): the count is rendered, so a reader
+   * can see how much of the stretch the comparison is actually built on. No floor
+   * is invented here — §5.2 deliberately left the coverage floor's number undefined
+   * and PR 5 owns it.
+   */
+  beforeLoggedDays: number;
+  /** The same count for the trial stretch, so the two are comparable. */
+  duringLoggedDays: number;
   /** Every symptom type with activity in either stretch, most-during first. */
   symptoms: TrialSymptomDelta[];
   meals: { before: TrialMealDensity; during: TrialMealDensity };
@@ -324,10 +349,36 @@ export const OUTCOME_QUESTION_NOTE =
   'Culprit reports what happened; your vet decides what it means. Your read goes ' +
   'on the report next to these counts.';
 
+/** The same question with NO REFERENT TO THE COUNTS, for the state where a live
+ *  intake-decline flag has replaced them.
+ *
+ *  Both default strings point at content the decline branch deliberately removes:
+ *  "Does *that* match" — match what? — and "next to *these* counts", of which
+ *  there are none on screen. The suppression is right and the two sentences that
+ *  survived it were pointing at nothing. Caught by `pm-feature-review`. */
+export const OUTCOME_QUESTION_NO_COUNTS = 'How has it seemed to you?';
+
+export const OUTCOME_QUESTION_NOTE_NO_COUNTS =
+  'Culprit reports what happened; your vet decides what it means. Your read goes ' +
+  'on the report in your name.';
+
 export const OUTCOME_NOTES_PLACEHOLDER = 'Anything you want your vet to know (optional)';
 
 export interface TrialOutcomeSheetModel {
   title: string;
+  /**
+   * The indication-keyed continuation sentence, carried ONTO the outcome sheet.
+   *
+   * §4.3's "never reads as permission to stop" is a property of the FLOW, not of
+   * one card. PR 6's first cut put the ACVIM continuation sentence on the decision
+   * point only, so a GI owner who tapped `This trial is done` saw it once and then
+   * read two screens — this sheet, then `Diet trial · finished` — with no
+   * continuation statement anywhere. The screens an owner reads WHILE and AFTER
+   * ending a 28-day GI trial are exactly the ones that most need it. Caught by
+   * `adversarial-reviewer`; `pm-feature-review` reached it from the owner's side,
+   * noting the guardrail was wired to the least-travelled path.
+   */
+  continuationNote: string;
   /** The comparison's own scope, stated once rather than repeated per row. */
   comparisonLine: string;
   /** One per symptom type, or a single record-form line when there are none. */
@@ -349,6 +400,30 @@ export interface TrialOutcomeSheetModel {
    * outranks a symptom tally about the last eight weeks, whatever the tally says.
    */
   declineLead: string | null;
+  /**
+   * The sentence that names the priority — and its absence was the sharpest
+   * finding against PR 6's first cut.
+   *
+   * The card's `pushDeclineLines` says *"A cat that stops eating needs a call
+   * today, whatever the trial is doing."* The sheet said only that Culprit was not
+   * showing the numbers — so the strongest safety sentence in the whole feature
+   * was missing from the one terminal screen that ENDS the intervention, on the
+   * one patient it matters most for. Species-aware for the same reason the card's
+   * is: the 48h hepatic-lipidosis window is feline, and a dog line must be firm
+   * without borrowing a feline urgency.
+   */
+  declineNote: string | null;
+}
+
+/**
+ * Is the before-stretch too thinly observed for its calendar length to describe
+ * it? Half its days, which is a DISCLOSURE trigger and not a coverage floor —
+ * §5.2 leaves the floor's number to PR 5, and nothing here gates a claim on this.
+ * Below it the sheet says how many days it can actually see; above it the stretch
+ * is described by its length as before. Either way both counts still render.
+ */
+function isSparseBefore(facts: TrialOutcomeFacts): boolean {
+  return facts.beforeLoggedDays * 2 < facts.beforeDays;
 }
 
 /** "8 weeks" once there are whole weeks to speak of, else "30 days". */
@@ -391,28 +466,63 @@ function spanPhrase(days: number): string {
  */
 export function densityLine(facts: TrialOutcomeFacts, petName: string): string {
   const { before, during } = facts.meals;
+  const tail =
+    `That’s how much got logged, not how ${petName} was — read it alongside the ` +
+    'counts above. Culprit doesn’t judge whether a change in one explains a ' +
+    'change in the other.';
+
+  // THE BEFORE-HALF IS DROPPED WHEN THERE IS NO BEFORE-STRETCH TO REPORT ON, and
+  // this branch is a bug fix, not a refinement. Without it the sheet contradicted
+  // itself in two adjacent lines: "Nothing was logged in the 8 weeks before the
+  // trial started, so there's nothing to compare these with" — and then "Meals
+  // logged: 0 of 56 days before, 52 of 56 during." That 0 is precisely the
+  // fabricated comparison `beforeTracked` exists to prevent, rendered by the one
+  // line that was not consulting it. (The guard test missed it too: it scanned
+  // `factLines` and not this string. Caught by `pm-feature-review`.)
+  // "DAYS YOU LOGGED ANY FOOD", not "Meals logged".
+  //
+  // The card's coverage line reads "Meals logged on 41 of 56 days" and EXCLUDES
+  // treats (§5.1 — 15.7% of live covered days are treat-only, so a coverage floor
+  // would otherwise be clearable on treat data alone). This series INCLUDES them,
+  // deliberately, because it measures whether the owner kept logging at all. Two
+  // metrics with two denominators is correct; two metrics with the same NAME two
+  // taps apart on the decision path is not — and the sheet's number is
+  // systematically the larger of the two, so the collision reads as the record
+  // improving between screens. Caught by `adversarial-reviewer`.
+  if (!facts.beforeTracked) {
+    return `Days you logged any food during the trial: ${during.daysLogged} of ${during.days}. ${tail}`;
+  }
+
   return (
-    `Meals logged: ${before.daysLogged} of ${before.days} days before, ` +
-    `${during.daysLogged} of ${during.days} during. That’s how much got logged, ` +
-    `not how ${petName} was — read it alongside the counts above. Culprit doesn’t ` +
-    'judge whether a change in one explains a change in the other.'
+    `Days you logged any food: ${before.daysLogged} of ${before.days} before, ` +
+    `${during.daysLogged} of ${during.days} during. ${tail}`
   );
 }
 
 export function buildOutcomeSheet(args: {
   facts: TrialOutcomeFacts;
   petName: string;
+  species?: 'dog' | 'cat' | 'other';
+  indication?: TrialIndication | null;
   intakeDeclineHeadline?: string | null;
 }): TrialOutcomeSheetModel {
   const { facts, petName } = args;
 
-  const comparisonLine = facts.beforeTracked
-    ? `Compared with the ${spanPhrase(facts.beforeDays)} before it started.`
-    : // Named as untracked, never counted as zero. The owner is told plainly that
+  const comparisonLine = !facts.beforeTracked
+    ? // Named as untracked, never counted as zero. The owner is told plainly that
       // the comparison cannot be made, rather than shown a number that implies it
       // was made and came out well.
       `Nothing was logged in the ${spanPhrase(facts.beforeDays)} before the trial ` +
-      'started, so there’s nothing to compare these with.';
+      'started, so there’s nothing to compare these with.'
+    : isSparseBefore(facts)
+      ? // The middle case, and the one that flatters. The stretch is named by the
+        // days it can actually see rather than by its calendar length, so a
+        // four-day install-during-a-flare window never renders as "the 8 weeks
+        // before it started". Disclosure, not a floor.
+        `Compared with the ${spanPhrase(facts.beforeDays)} before it started — though ` +
+        `only ${facts.beforeLoggedDays} of those ${facts.beforeDays} days have anything ` +
+        'logged, so there’s much less to compare with than it looks.'
+      : `Compared with the ${spanPhrase(facts.beforeDays)} before it started.`;
 
   const factLines =
     facts.symptoms.length === 0
@@ -425,16 +535,33 @@ export function buildOutcomeSheet(args: {
             : `${s.label}: ${s.during} during the trial.`,
         );
 
+  const declineLead = args.intakeDeclineHeadline ?? null;
+
   return {
-    title: `What changed over the ${spanPhrase(facts.duringDays)}`,
+    // With the counts suppressed there is no span being reported on, so the
+    // title stops promising one.
+    title: declineLead
+      ? 'Before you close this trial'
+      : `What changed over the ${spanPhrase(facts.duringDays)}`,
+    continuationNote: milestoneNote(args.indication),
     comparisonLine,
     factLines,
     densityLine: densityLine(facts, petName),
-    question: OUTCOME_QUESTION,
-    questionNote: OUTCOME_QUESTION_NOTE,
+    // The referent-free variants when the decline branch has removed the counts
+    // these two sentences otherwise point at.
+    question: declineLead ? OUTCOME_QUESTION_NO_COUNTS : OUTCOME_QUESTION,
+    questionNote: declineLead ? OUTCOME_QUESTION_NOTE_NO_COUNTS : OUTCOME_QUESTION_NOTE,
     options: OUTCOME_OPTIONS,
     notesPlaceholder: OUTCOME_NOTES_PLACEHOLDER,
     saveLabel: 'Save',
-    declineLead: args.intakeDeclineHeadline ?? null,
+    declineLead,
+    // Verbatim in register with `dietTrialCard.pushDeclineLines`, because it is
+    // the same fact told to the same owner ten seconds later.
+    declineNote: declineLead
+      ? (args.species === 'cat'
+          ? 'A cat that stops eating needs a call today, whatever the trial is doing.'
+          : `A pet that goes off their food needs a call, whatever the trial is doing.`) +
+        ' Culprit isn’t showing the trial’s numbers while this is going on.'
+      : null,
   };
 }

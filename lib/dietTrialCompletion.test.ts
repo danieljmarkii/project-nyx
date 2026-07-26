@@ -24,6 +24,8 @@ function facts(over: Partial<TrialOutcomeFacts> = {}): TrialOutcomeFacts {
     duringDays: 56,
     beforeDays: 56,
     beforeTracked: true,
+    beforeLoggedDays: 48,
+    duringLoggedDays: 54,
     symptoms: [
       { symptomType: 'itch', label: 'Itch/Scratch', before: 14, during: 3 },
       { symptomType: 'skin_reaction', label: 'Skin reaction', before: 4, during: 1 },
@@ -273,8 +275,39 @@ describe('the outcome sheet — the data leads, the question follows', () => {
       'nothing to compare these with.',
     );
     expect(untracked.factLines).toEqual(['Itch/Scratch: 3 during the trial.']);
-    // The zero must not surface anywhere as a comparand.
-    expect(untracked.factLines.join(' ')).not.toMatch(/\b0 before\b/);
+
+    // THE ZERO MUST NOT SURFACE ANYWHERE, and "anywhere" is the whole assertion.
+    // The first cut of this test scanned `factLines` only and passed while the
+    // DENSITY line rendered "Meals logged: 0 of 56 days before, 52 of 56 during"
+    // two lines under "there's nothing to compare these with" — the sheet
+    // contradicting itself, and fabricating exactly the comparison `beforeTracked`
+    // exists to prevent. Caught by `pm-feature-review`. Scan every string.
+    const everyString = [
+      untracked.title, untracked.comparisonLine, ...untracked.factLines,
+      untracked.densityLine, untracked.question, untracked.questionNote,
+    ].join(' ');
+    expect(everyString).not.toMatch(/\b0 before\b/);
+    expect(everyString).not.toMatch(/0 of \d+ days before/);
+    // The during-half still renders: it is a fact about a stretch that happened.
+    expect(untracked.densityLine).toContain(
+      'Days you logged any food during the trial: 52 of 56.',
+    );
+  });
+
+  it('drops the referents to the counts when a decline flag removes them', () => {
+    // "Does THAT match" — match what? — and "next to THESE counts", of which there
+    // are none on screen. The suppression is right; the two sentences that
+    // survived it were pointing at nothing. Caught by `pm-feature-review`.
+    const declining = buildOutcomeSheet({
+      facts: facts(),
+      petName: 'Mochi',
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    });
+    expect(declining.question).toBe('How has it seemed to you?');
+    expect(declining.questionNote).toMatch(/on the report in your name\.$/);
+    expect(declining.questionNote).not.toMatch(/these counts/);
+    // …and the title stops promising a span it is no longer reporting on.
+    expect(declining.title).toBe('Before you close this trial');
   });
 
   it('lets a live intake-decline flag REPLACE the counts (§5.2, terminal-aware)', () => {
@@ -298,9 +331,14 @@ describe('the outcome sheet — the data leads, the question follows', () => {
 
 describe('the C5 logging-density line', () => {
   it('renders the MEAL series only, before vs during', () => {
+    // NOT "Meals logged" — that phrase belongs to the card's coverage line, which
+    // EXCLUDES treats. This series includes them by design, and two metrics
+    // sharing one name two taps apart (with this one systematically larger) reads
+    // as the record improving between screens.
     expect(densityLine(facts(), 'Biscuit')).toContain(
-      'Meals logged: 41 of 56 days before, 52 of 56 during.',
+      'Days you logged any food: 41 of 56 before, 52 of 56 during.',
     );
+    expect(densityLine(facts(), 'Biscuit')).not.toContain('Meals logged');
   });
 
   it('carries NO verdict, in either direction', () => {
@@ -333,7 +371,7 @@ describe('the C5 logging-density line', () => {
       }),
       petName: 'Biscuit',
     });
-    expect(short.densityLine).toContain('Meals logged: 5 of 7 days before, 7 of 7 during.');
+    expect(short.densityLine).toContain('Days you logged any food: 5 of 7 before, 7 of 7 during.');
   });
 
   it('says what it counts, so it is not mistaken for how the pet was', () => {
@@ -344,6 +382,48 @@ describe('the C5 logging-density line', () => {
 });
 
 // ── "Stopped early" ──────────────────────────────────────────────────────────
+
+describe('the continuation statement survives the decision', () => {
+  it('carries the ACVIM sentence onto the sheet that actually ends a GI trial', () => {
+    // §4.3 is a property of the FLOW. The first cut put the sentence on the
+    // decision point only, so a GI owner saw it once and then read the sheet that
+    // ends the trial — and the terminal card after it — with no continuation
+    // statement anywhere.
+    const gi = buildOutcomeSheet({ facts: facts(), petName: 'Biscuit', indication: 'gi' });
+    expect(gi.continuationNote).toMatch(/around three months/);
+    expect(gi.continuationNote).toContain('Your vet decides when the diet changes.');
+  });
+
+  it('carries the base sentence on every other indication', () => {
+    for (const ind of ['skin', 'other', null, undefined] as const) {
+      const sheet = buildOutcomeSheet({ facts: facts(), petName: 'Biscuit', indication: ind });
+      expect(sheet.continuationNote).toBe('Your vet decides when the diet changes.');
+    }
+  });
+});
+
+describe('a sparsely-logged before-stretch is named as sparse', () => {
+  it('says how many days it can actually see', () => {
+    // The install-during-a-flare case: four observable days inside a 56-day
+    // stretch, and those four are the attention AND symptom peak. Rendered as
+    // "the 8 weeks before it started" it is an attention spike plus regression to
+    // the mean, drawn as a 4x improvement above a button that ends the trial.
+    const sparse = buildOutcomeSheet({
+      facts: facts({ beforeLoggedDays: 4 }),
+      petName: 'Biscuit',
+    });
+    expect(sparse.comparisonLine).toContain('only 4 of those 56 days have anything logged');
+    expect(sparse.comparisonLine).toContain('much less to compare with than it looks');
+    // The counts still render — disclosure, never withholding (§5.2's floor
+    // direction is DISCLOSE MORE, not say less).
+    expect(sparse.factLines).toContain('Itch/Scratch: 14 before · 3 during.');
+  });
+
+  it('leaves a well-logged stretch described by its length', () => {
+    const dense = buildOutcomeSheet({ facts: facts({ beforeLoggedDays: 48 }), petName: 'B' });
+    expect(dense.comparisonLine).toBe('Compared with the 8 weeks before it started.');
+  });
+});
 
 describe('the stopped-early reason set', () => {
   const options = trialStopReasons('Biscuit', { object: 'him', possessive: 'his' });
