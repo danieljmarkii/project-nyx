@@ -2040,7 +2040,14 @@ function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
   if (c.hasEstablished && c.established.length > 0) {
     const e = c.established[0]
     // A JOINT candidate (B-351 slice 6) must declare itself HERE, on the most-scanned
-    // line of the report. Without the clause a vet reads "chicken and duck reached the
+    // line of the report.
+    //
+    // CURRENTLY UNREACHABLE BY CONSTRUCTION, and kept anyway. After the adversarial pass,
+    // a joint candidate caps at Early (§7 #4) and §8.5 admits only Established, so no joint
+    // finding reaches this line today. That cap is a spec-vs-build call the PM may rule
+    // either way; if it is ever relaxed, the report must not silently render a joint
+    // candidate bare. Defence in depth costs one branch here and would cost a vet a wrong
+    // diet decision there. Without the clause a vet reads "chicken and duck reached the
     // established association threshold" as two independently-implicated antigens and
     // may drop both from the diet — when the actual finding is that the record cannot
     // yet distinguish them, and the informative next step is to separate them. The
