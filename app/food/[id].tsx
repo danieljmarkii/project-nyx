@@ -20,7 +20,10 @@ import { Header } from '../../components/ui/Header';
 import { SectionLabel } from '../../components/ui/SectionLabel';
 import { FilterChip } from '../../components/ui/FilterChip';
 import { ChipGroup } from '../../components/ui/ChipGroup';
-import { ProteinSetPicker } from '../../components/food/ProteinSetPicker';
+import {
+  ProteinSetPicker,
+  type ProteinSetPickerHandle,
+} from '../../components/food/ProteinSetPicker';
 import { PhotoCarousel } from '../../components/food/PhotoCarousel';
 import { AlwaysAvailableCard } from '../../components/food/AlwaysAvailableCard';
 import { supabase } from '../../lib/supabase';
@@ -114,6 +117,7 @@ export default function FoodDetailScreen() {
   // food_items.proteins, with primaryProtein as its (raw, unrewritten) head.
   const [primaryProtein, setPrimaryProtein] = useState<string | null>(null);
   const [alsoContains, setAlsoContains] = useState<string[]>([]);
+  const proteinPickerRef = useRef<ProteinSetPickerHandle>(null);
   // Flipped only by an owner tap/keystroke in the picker. Gates BOTH the reseed
   // (an in-progress edit is never stomped by a realtime AI completion) and the
   // write (an untouched picker never re-keys a stored value the owner didn't
@@ -235,15 +239,28 @@ export default function FoodDetailScreen() {
     const trimmedIngredients = ingredients.trim() || null;
 
     const base = baseline.current;
+    // The protein "Other" field commits on blur — and this form lives in a
+    // ScrollView with keyboardShouldPersistTaps="handled", where tapping Save
+    // does NOT blur it. So ask the picker to resolve any open draft before
+    // reading the values, or a typed protein saves un-normalized AND the main it
+    // replaced is silently dropped instead of demoted.
+    const pendingProteins = proteinPickerRef.current?.commitPending() ?? null;
+    const mainToSave = pendingProteins ? pendingProteins.main : primaryProtein;
+    const tailToSave = pendingProteins ? pendingProteins.alsoContains : alsoContains;
+    if (pendingProteins) {
+      proteinTouched.current = true;
+      setPrimaryProtein(pendingProteins.main);
+      setAlsoContains(pendingProteins.alsoContains);
+    }
     // B-351: the picker's two lines flatten to one ordered set, with
     // primary_protein written as its derived head (migration 039's contract).
     // Both columns are written together or not at all — a partial write is what
     // opened the primary/proteins desync window this PR closes.
-    const proteinSet = pickerProteinsToSet(primaryProtein, alsoContains);
+    const proteinSet = pickerProteinsToSet(mainToSave, tailToSave);
     const proteinChanged =
       proteinTouched.current &&
       (proteinSet.join(' ') !== (row.proteins ?? []).join(' ') ||
-        (pickerPrimaryProtein(primaryProtein)) !== base.primary_protein);
+        (pickerPrimaryProtein(mainToSave)) !== base.primary_protein);
 
     const changed =
       brand.trim() !== base.brand ||
@@ -277,7 +294,7 @@ export default function FoodDetailScreen() {
     // same never-clobber rule the capture screen applies. Saving an edit to the
     // brand must not re-key a stored protein the owner never authored.
     if (proteinTouched.current) {
-      update.primary_protein = pickerPrimaryProtein(primaryProtein);
+      update.primary_protein = pickerPrimaryProtein(mainToSave);
       update.proteins = proteinSet;
     }
     const { error } = await supabase
@@ -317,7 +334,7 @@ export default function FoodDetailScreen() {
       if (proteinTouched.current) {
         await db.runAsync(
           `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
-          [pickerPrimaryProtein(primaryProtein), proteinsToCacheText(proteinSet), row.id],
+          [pickerPrimaryProtein(mainToSave), proteinsToCacheText(proteinSet), row.id],
         );
       }
     } catch (err) {
@@ -640,6 +657,7 @@ export default function FoodDetailScreen() {
             />
 
             <ProteinSetPicker
+              ref={proteinPickerRef}
               main={primaryProtein}
               alsoContains={alsoContains}
               onChange={(next) => {
