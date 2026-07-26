@@ -358,10 +358,27 @@ export async function clearLocalData(): Promise<void> {
 
   // Delete the captured local image files referenced by attachment rows.
   try {
+    // ⚠ THIS UNION IS A HARDCODED LIST AND IT FAILS OPEN — a table missing from it
+    // has its ROWS wiped by LOCAL_WIPE_TABLES while its captured FILES stay on disk,
+    // and once the row is gone nothing will ever find them again. That is the exact
+    // shape B-424 eliminated for the row half (hydration.test.ts derives the wipe set
+    // from a real sqlite_master, so a new table breaks the build); the FILE half has
+    // no equivalent guard yet — filed as B-519.
+    //
+    // vet_documents was added here in the same PR that created it (B-478 VF-1), found
+    // by that PR's rls-privacy-reviewer. It shares persistCapture's
+    // `Paths.document/attachments/` directory with the two attachment tables, and its
+    // rows are lab results, vaccination certificates and clinic correspondence — the
+    // thing LOCAL_WIPE_TABLES exists to keep off a shared device. Wiping the row and
+    // leaving the image would have made that promise true only on paper. Not yet
+    // reachable (local_uri is '' until VF-3 writes one), which is precisely why it is
+    // cheap to close now.
     const files = await database.getAllAsync<{ local_uri: string | null }>(
       `SELECT local_uri FROM event_attachments
        UNION ALL
-       SELECT local_uri FROM vet_visit_attachments`,
+       SELECT local_uri FROM vet_visit_attachments
+       UNION ALL
+       SELECT local_uri FROM vet_documents`,
     );
     for (const f of files) {
       if (!f.local_uri) continue; // hydrated rows carry '' — no local file to remove
