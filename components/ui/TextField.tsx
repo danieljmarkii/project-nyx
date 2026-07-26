@@ -13,6 +13,12 @@ import {
 } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { useAppActive } from '../../hooks/useAppActive';
+
+// The reveal toggle's own hit box. A 20pt glyph propped up by hitSlop met 44pt
+// only by spilling over the input, so keep the number here and let the test
+// assert the resolved box rather than trusting the slop arithmetic.
+const REVEAL_TARGET = 44;
 
 // The pass-through subset of native TextInput props onboarding + auth screens
 // actually reach for (email/password autofill, keyboard type, submit handling).
@@ -77,8 +83,20 @@ export function TextField({
 }: Props) {
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const appActive = useAppActive();
 
   const hasError = !!error;
+
+  // Reveal is a glance, not a mode: drop back to masked whenever the app leaves
+  // the foreground. The guaranteed win is the return trip — an owner who reveals
+  // their password and then gets interrupted comes back to a masked field instead
+  // of plaintext sitting on screen for whoever is holding the phone. It also
+  // narrows the iOS app-switcher snapshot, though only best-effort there: the
+  // snapshot is taken around the same resign-active transition this fires on, so
+  // treat that as a narrowing, not a guarantee.
+  useEffect(() => {
+    if (!appActive) setRevealed(false);
+  }, [appActive]);
 
   // `accessibilityLiveRegion` on the error text is Android-only; announce
   // imperatively on iOS (Nyx ships iOS-first) so VoiceOver reads a newly
@@ -132,8 +150,6 @@ export function TextField({
             onPress={() => setRevealed((r) => !r)}
             accessibilityRole="button"
             accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
-            // Icon glyph is ~20pt; expand the tap zone to clear the 44pt floor.
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
             style={styles.eyeButton}
             testID={testID ? `${testID}-reveal` : undefined}
           >
@@ -189,7 +205,15 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space1,
   },
   eyeButton: {
-    paddingLeft: theme.space1,
+    // A real 44pt box instead of a 20pt glyph plus hitSlop. As a flex sibling it
+    // claims its own 44pt of the row, so the target stops overlapping the input —
+    // the old left slop swallowed the last few points of the text field, toggling
+    // the mask when the owner meant to place the cursor. Glyph stays flush right,
+    // so it lands optically where the old padding put it.
+    width: REVEAL_TARGET,
+    height: REVEAL_TARGET,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   error: {
     fontSize: theme.textSM,
