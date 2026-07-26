@@ -1,6 +1,6 @@
 # Nyx Vet Files — Central Vet Records Library — Requirements (B-467)
 
-**Version:** 0.1 (discovery draft) | **Date:** 2026-07-26 | **Status:** Discovery + requirements synthesis complete; **awaiting PM ratification of gates G1–G4 and the proposed decisions in §0.** Not build-ready until the gates close and the v1 surface gets a mock round.
+**Version:** 0.2 | **Date:** 2026-07-26 | **Status:** **PM ruled G1–G3 same day (2026-07-26); G4 (priority) deliberately left open — B-467 stays `Later` until promoted.** G1 was delegated to the team → the D3/D4 recommendation stands ratified (new `vet_documents` table + new `nyx-vet-documents` bucket). G2 = **yes, PDFs in v1** (store-and-view; VF-5 folds into VF-3/4). G3 = **pet-profile section.** **VF-0 and VF-1 are build-ready; VF-2–VF-4 await the mock round.**
 
 **Read with:** `docs/nyx-vet-report-requirements.md` (§8.3 scope cascade, §8/§12 attachment-handling pattern), `docs/nyx-ask-requirements.md` §6 (the D2 LLM-boundary template Phase 2 must mirror), `docs/monetization-and-throttling-requirements.md` §3 (the free-forever table), backlog rows B-467 / B-248 / B-466 / B-145 / B-041 / B-464.
 
@@ -14,21 +14,21 @@ Proposed decisions (team recommendation attached; PM ratifies or overrides). Ope
 |---|---|---|
 | D1 | **What Vet Files is** | A per-pet, owner-held library of vet-facing documents: email comms (screenshots/forwards), prior-vet records, lab results, vaccination certificates, discharge summaries, invoices, referral letters. **v1 is store + browse + share. AI over the corpus is Phase 2, separately gated (D8).** |
 | D2 | **Positioning** | A substrate feeding Nyx's two owned differentiators (correlation engine, clinical-grade report) — **never the headline value claim.** The competitive refresh repeatedly frames records-storage-as-the-product as the weak position (CompanAIn; PerkyPet's "dumb record locker"). Nyx's open lane is the fusion no one has: longitudinal owner-logged data + a document corpus + AI. |
-| D3 | **Data model** — **G1** | New table **`vet_documents`** (see §5.1) rather than relaxing `vet_visit_attachments.vet_visit_id` to nullable. Rationale: the existing table is a shipped per-visit photo attach with none of the needed metadata (kind/title/source/mime/deleted_at); overloading it makes every existing read ambiguous. `vet_visit_id` on the new table is an **optional** link. Existing `vet_visit_attachments` rows stay put; a later backfill can link them in (§12). |
-| D4 | **Storage** — **G1** | New **private** bucket **`nyx-vet-documents`**, created via dashboard (B-124 rule), with owner-scoped path policies, a `storage_path` prefix CHECK on the table, `file_size_limit`, and `allowed_mime_types` set **from day one** — correct-by-construction, so this bucket is never a B-248/B-464 class member. Do NOT grow `nyx-vet-attachments`: that is the bucket with the live cross-tenant read/delete hole. |
-| D5 | **File types (v1)** — **G2** | Images (the PM's primary use case is email screenshots) **plus PDF store-and-view** — inbound lab PDFs are the #1 continuity-of-care record type and arrive as PDFs by construction. PDF scope is strictly: accept, store, render in a native viewer/WebView on the detail screen, share out. **No PDF thumbnailing, no server-side PDF processing, no text extraction in v1** (the project has no PDF pipeline; B-144 is still an open spike). If G2 rules PDFs out of v1, they become VF-5. |
-| D6 | **Entry point** — **G3** | A **"Vet Files" section on the pet profile** (alongside the existing "Vet report" section), plus an add-document affordance inside the library itself. **Nothing on Home** (Principle 3: Home carries no shelf, no feature menu). Share-sheet / Files-app import is parked to a follow-up (§12) — high value, new capture class, not needed to prove the surface. |
+| D3 | **Data model** — ~~G1~~ **ratified** (delegated, 2026-07-26) | New table **`vet_documents`** (see §5.1) rather than relaxing `vet_visit_attachments.vet_visit_id` to nullable. Rationale: the existing table is a shipped per-visit photo attach with none of the needed metadata (kind/title/source/mime/deleted_at); overloading it makes every existing read ambiguous. `vet_visit_id` on the new table is an **optional** link. Existing `vet_visit_attachments` rows stay put; a later backfill can link them in (§12). |
+| D4 | **Storage** — ~~G1~~ **ratified** (delegated, 2026-07-26) | New **private** bucket **`nyx-vet-documents`**, created via dashboard (B-124 rule), with owner-scoped path policies, a `storage_path` prefix CHECK on the table, `file_size_limit`, and `allowed_mime_types` set **from day one** — correct-by-construction, so this bucket is never a B-248/B-464 class member. Do NOT grow `nyx-vet-attachments`: that is the bucket with the live cross-tenant read/delete hole. |
+| D5 | **File types (v1)** — ~~G2~~ **RATIFIED yes (PM, 2026-07-26)** | Images (the PM's primary use case is email screenshots) **plus PDF store-and-view** — inbound lab PDFs are the #1 continuity-of-care record type and arrive as PDFs by construction. PDF scope is strictly: accept, store, render in a native viewer/WebView on the detail screen, share out. **No PDF thumbnailing, no server-side PDF processing, no text extraction in v1** (the project has no PDF pipeline; B-144 is still an open spike). |
+| D6 | **Entry point** — ~~G3~~ **RATIFIED (PM, 2026-07-26)** | A **"Vet Files" section on the pet profile** (alongside the existing "Vet report" section), plus an add-document affordance inside the library itself. **Nothing on Home** (Principle 3: Home carries no shelf, no feature menu). Share-sheet / Files-app import is parked to a follow-up (§12) — high value, new capture class, not needed to prove the surface. |
 | D7 | **The report-window protection rule** | The vet report's scope cascade keys rung 1 off `vet_visits.visited_at`. Therefore: **uploading a document never creates, dates, or re-dates a `vet_visits` row** — not in v1, not in Phase 2, not by AI extraction. A document may *link* to an existing visit; it may never *mint* one. (Generalizes the B-156 G1 fail-safe: a surface may lower the cost of confirming; it may never assume the event happened.) |
 | D8 | **Phase 2 (AI over the corpus) is gated** | Out of v1 entirely. Requires a **D2-class PM ruling with T&S at the table** before any build, mirroring the Ask §6 five mechanisms (§7). Registered here so the v1 schema doesn't foreclose it, and so no session "helpfully" builds it early. |
 | D9 | **Monetization** | The library is **free forever** — `docs/monetization-and-throttling-requirements.md` §3 row 1 ("core logging… photos, attachments — the record is never gated") plus the export-as-data-right row settle this; changing a §3 row is a PM decision this spec does not propose. The only legitimately gateable layer is Phase 2 **extraction/enrichment**, under the D-M2 class rule (decided once, for the class, data-informed). |
 | D10 | **Provenance over polish** | Every document carries `source` (camera / photo library / files) and honest metadata. The original artifact is primary forever; any future AI read is an annotation linked back to it, never a replacement — the same owner-editable-analysis pattern as B-028. |
 
-### Open gates
+### Gates — rulings (PM, 2026-07-26, same day as the draft)
 
-- **G1 — Ratify the data model + bucket (D3/D4).** Blocks VF-1. The one alternative worth naming: relax the existing table instead (smaller migration, but pollutes a shipped shape and still needs all the new columns).
-- **G2 — PDF in v1? (D5.)** Blocks VF-3 scope. Team recommendation: yes, store-and-view only.
-- **G3 — Entry point (D6).** Blocks VF-4. Profile section (rec) vs. a Files tab vs. leaving it behind the rundown.
-- **G4 — Priority.** B-467 sits at **Later**; this spec doesn't change that. If the PM promotes it, the hard sequencing in §6.1 still holds (B-248/B-466 land first). Ruling this also rules where it sits relative to Step 10 and the widget/Ask tracks.
+- **G1 — CLOSED (delegated to the team → recommendation ratified).** New `vet_documents` table + new `nyx-vet-documents` bucket per D3/D4. VF-1 unblocked.
+- **G2 — CLOSED: YES, PDFs in v1** (store-and-view only, per D5's bounds — no thumbnails, no extraction, no server-side processing). VF-5 dissolves into VF-3/VF-4.
+- **G3 — CLOSED: pet-profile section** per D6. VF-2/VF-4 unblocked pending the mock round.
+- **G4 — DELIBERATELY OPEN.** PM is "open minded on priority": B-467 **stays `Later`** until actively promoted; the §10 conflict stands recorded, not resolved. The hard sequencing in §6.1 holds either way (VF-0 = B-248/B-466 is already `Now` on its own merits). Revisit when a build slot opens or the PM promotes it.
 
 ---
 
@@ -174,12 +174,12 @@ Deliberately thin here; a Phase-2 spec session happens after v1 ships and after 
 
 | PR | Scope | Gate |
 |---|---|---|
-| **VF-0** | B-248 + B-466: legacy bucket owner-scoping + `vet_visit_attachments` CHECK. Schema/RLS only, own PR, Migration Safety Pre-flight. | none — already `Now` |
-| **VF-1** | `vet_documents` migration + `nyx-vet-documents` bucket (dashboard, PM action) + RLS + delete-account coverage + local mirror + sync/hydration. Schema-isolated. | G1 |
-| **VF-2** | Library list + empty state + kind filter (read path incl. signed URLs). | G3, mock round |
-| **VF-3** | Add-document flow (camera/library/files, multi-select grouping, instant save). | G2 |
-| **VF-4** | Detail screen: viewer, metadata edit, visit link, share sheet, soft delete. | mock round |
-| **VF-5** | PDF store-and-view (folds into VF-3/4 if G2 says v1). | G2 |
+| **VF-0** | B-248 + B-466: legacy bucket owner-scoping + `vet_visit_attachments` CHECK. Schema/RLS only, own PR, Migration Safety Pre-flight. | none — already `Now`; **build-ready** |
+| **VF-1** | `vet_documents` migration + `nyx-vet-documents` bucket (dashboard, PM action) + RLS + delete-account coverage + local mirror + sync/hydration. Schema-isolated. | ~~G1~~ closed — **build-ready** |
+| **VF-2** | Library list + empty state + kind filter (read path incl. signed URLs). | ~~G3~~ closed — mock round |
+| **VF-3** | Add-document flow (camera/library/files incl. PDF pick, multi-select grouping, instant save). | ~~G2~~ closed — mock round |
+| **VF-4** | Detail screen: viewer (image + PDF), metadata edit, visit link, share sheet, soft delete. | mock round |
+| **VF-5** | ~~PDF store-and-view~~ **dissolved into VF-3/VF-4 by the G2 ruling.** | — |
 | **VF-6** | Copy/voice pass + `pm-feature-review` + on-device QA script. | — |
 
 Phase 2 gets its own spec + PR plan after the D8 ruling.
