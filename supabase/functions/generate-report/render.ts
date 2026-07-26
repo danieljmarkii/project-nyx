@@ -1286,7 +1286,18 @@ function dietTrialSection(snap: ReportSnapshot): string {
       // COUNTS, not membership (§7). "DentaStix — 168 feedings over 28 days" is the
       // D-B finding a vet cannot get from anywhere else: six dental chews a day
       // reads as a clean elimination to both owner and vet without it.
-      const count = f.feedings > 0 ? ` &times;${num(f.feedings)}` : ''
+      // A BARE COUNT NEXT TO A REFUSED DIET READS AS INTAKE. On the refused-cat report
+      // the allowed list rendered "Hill's z/d trial diet ×38" beside a page that says
+      // every one of those 38 was refused (round 5). The count is a count of FEEDINGS
+      // OFFERED, which is the right number for the allowed list — it just cannot stand
+      // unqualified on a trial the report elsewhere documents as uneaten.
+      const refusedTrial = (t.rangeRefusal ?? t.trialDietRefusal) !== null || t.stoppedReason === 'refused'
+      const count =
+        f.feedings > 0
+          ? refusedTrial && f.role === 'primary_diet'
+            ? ` &times;${num(f.feedings)} <span class="rnote">offered</span>`
+            : ` &times;${num(f.feedings)}`
+          : ''
       // THE SET, HERE, BECAUSE THERE IS NOWHERE ELSE. Appendix B's protein table holds
       // MEAL foods only, so the trailing "Full protein sets in appendix B" sent a vet
       // to a table the treats are not in, and round 4 found the second-most-fed item in
@@ -1370,7 +1381,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
     blind.push(
       `<b>${num(t.oralRoute.length)} dose${t.oralRoute.length === 1 ? '' : 's'} by mouth</b> during the trial carried a flavour into ${pet} (${drugs
         .map((d) => h(d))
-        .join(', ')}) &mdash; a chewable, or a dose given inside food. Dosing should continue exactly as prescribed; an unflavoured form is the substitution to consider.`,
+        .join(', ')}) &mdash; a chewable, or a dose given inside food. Dosing should continue exactly as prescribed.`,
     )
   }
   if (t.arrangementExposures.length > 0) {
@@ -1417,32 +1428,33 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // symptoms. So both are shown, each labelled, and the circularity in the second is
     // NAMED instead of being hidden inside a denominator.
     const m = d.meals
-    const o = d.other
     // The report window can be WIDER than the trial's overlap range on either side —
-    // untracked days before the first log (an ongoing trial) or charted days after the
-    // trial stopped. The old clause asserted "after the trial" for both and so read
-    // "3 of them after the trial" beside a headline "day 46 of 56", telling a vet a
-    // running trial had finished and putting its leading untracked days at the end.
+    // untracked days before the first log, or charted days after the trial stopped. The
+    // round-3 clause asserted "after the trial" for both and so read "3 of them after
+    // the trial" beside a headline "day 46 of 56", telling a vet a running trial had
+    // finished and putting its leading untracked days at the end. Round 4's fix
+    // retreated to "wider at one or both ends", and round 5 correctly called that a
+    // generated hedge where a fact is available — the two ranges are right here.
     const window = snap.atAGlance.windowDays
     const trialDays = m.firstHalf.days + m.lastHalf.days
+    const before = snap.trial!.rangeStartDate > snap.scope.startDate
+    const after = snap.trial!.rangeEndDate < snap.scope.endDate
+    const side =
+      before && after ? 'at both ends' : before ? 'before it' : after ? 'after it' : ''
     const scope =
-      window > trialDays
-        ? ` These cover the trial&rsquo;s ${num(trialDays)} days; the charts below span the report&rsquo;s ${num(
+      window > trialDays && side
+        ? ` This covers the trial&rsquo;s ${num(trialDays)} days; the charts below span the report&rsquo;s ${num(
             window,
-          )}-day window, which is wider at one or both ends than the overlap range above.`
+          )}-day window, which extends ${side}.`
         : ''
     rows.push(
       kv(
         'Symptoms vs logging',
-        `Days a <b>meal</b> was logged: ${num(m.firstHalf.daysLogged)} of ${num(
+        `Days a meal was logged: ${num(m.firstHalf.daysLogged)} of ${num(
           m.firstHalf.days,
         )} in the trial&rsquo;s first half, ${num(m.lastHalf.daysLogged)} of ${num(
           m.lastHalf.days,
-        )} in the second. Days any <b>other</b> event was logged: ${num(
-          o.firstHalf.daysLogged,
-        )} of ${num(o.firstHalf.days)}, then ${num(o.lastHalf.daysLogged)} of ${num(
-          o.lastHalf.days,
-        )}.${scope} <span class="qual">Read the symptom counts below against these. Meal logging is prompted and habitual, so it tracks whether the owner stayed engaged at all; the other stream often consists largely of the symptoms themselves, so it cannot be read as an independent check on them. Culprit does not judge whether a change in either explains a change in the other.</span>`,
+        )} in the second.${scope} <span class="qual">Meal logging is prompted and habitual, so this tracks whether the owner kept logging at all &mdash; read the symptom counts below with it in view. Culprit does not judge whether a change in one explains a change in the other.</span>`,
       ),
     )
   }
@@ -1685,7 +1697,14 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>, weight: stri
     // B-474, and this does not pre-empt or substitute for it.
     if (weight) bits.push(weight)
     bits.push(
-      `A diet that was not eaten cannot be read as one that was followed, so no adherence figure is reported for this trial. <b>Refusal of food is a clinical finding in its own right</b> &mdash; the ratings behind it are in appendix&nbsp;E and the feedings in appendix&nbsp;C.`,
+      // NO POINTER TO APPENDIX C HERE. It is the OFF-DIET table, so a trial-diet
+      // feeding can never appear in it by construction — the cross-reference could not
+      // resolve on any report ever generated, and on this one it lands a vet on "No
+      // feeding in this window is listed here." Round 5 counted four dangling pointers
+      // on this page; this was the one that was unresolvable in principle rather than
+      // by accident. Appendix E is named for what it actually holds — grouped intake
+      // ratings, not one row per feeding (itemising it is B-486).
+      `A diet that was not eaten cannot be read as one that was followed, so no adherence figure is reported for this trial. <b>Refusal of food is a clinical finding in its own right</b> &mdash; the intake ratings behind it are summarised in appendix&nbsp;E.`,
     )
     return bits
   }
@@ -1709,10 +1728,22 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>, weight: stri
         })`,
       )
     }
+    // THE THIRD REASON, which neither rung counts. Appendix C's Why column can now say
+    // "Fed before it was permitted", and round 5 caught page 1 still attributing every
+    // exposure to the two rungs — "Of those 4: 4 carried a protein the trial diet does
+    // not" over an appendix showing three protein rows and one dated-membership row. A
+    // vet cross-checking got 4 against 3, and the timing violation never reached page 1.
+    // Additive, not exclusive: a feeding can be both, so this reads "also".
+    const alsoEarly =
+      t.exposures.fedBeforePermitted > 0
+        ? ` ${num(t.exposures.fedBeforePermitted)} ${
+            t.exposures.fedBeforePermitted === 1 ? 'was' : 'were'
+          } also fed before that food was permitted.`
+        : ''
     return [
       `<b>${num(totalFeedings)} feedings in total &mdash; ${num(totalFeedings - offDiet)} matched, ${num(
         offDiet,
-      )} did not.</b> Of those ${num(offDiet)}: ${parts.join('; ')}. Dates in appendix&nbsp;C. <b>This is a floor, not a total.</b>`,
+      )} did not.</b> Of those ${num(offDiet)}: ${parts.join('; ')}.${alsoEarly} Dates in appendix&nbsp;C. <b>This is a floor, not a total.</b>`,
     ]
   }
 
@@ -3630,7 +3661,12 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // literature citation behind it. A marker whose density is disclosed can be discounted;
   // one whose density is hidden cannot.
   const daggerRows = grouped.filter((r) => r.symptomInChallengeWindow).length
-  const symptomDays = snap.symptoms.reduce((m, x) => Math.max(m, x.symptomDays), 0)
+  // THE UNION, not the per-type maximum. The marker fires on ANY symptom inside the
+  // window, so a base rate taken from the largest single symptom type understates its
+  // own denominator — "16 of 46" on a record with 16 itching days plus a separate
+  // loose-stool day — and makes the marker look more discriminating than it is, in the
+  // footnote that exists to admit it is not (cold read round 5).
+  const symptomDays = snap.atAGlance.anySymptomDays
   const daggerFootnote =
     trialDerived && daggerRows > 0
       ? `<p class="note"><b>&dagger;</b> a symptom was logged in the ${num(

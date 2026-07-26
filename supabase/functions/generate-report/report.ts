@@ -1436,6 +1436,16 @@ export interface AtAGlance {
   windowDays: number
   loggedDays: number
   /**
+   * Distinct in-window days carrying a symptom of ANY type — the union, not the
+   * per-type maximum. Appendix C's dagger footnote discloses its own base rate, and it
+   * was reading `max(symptomDays)` over the per-type aggregates: on a record with 16
+   * itching days plus one separate loose-stool day it printed "16 of 46" where the
+   * marker itself fires on any symptom, so the footnote understated the denominator and
+   * made the marker look more discriminating than it is — inside the footnote whose
+   * whole purpose is to admit that it is not (cold read round 5).
+   */
+  anySymptomDays: number
+  /**
    * §5.1 COVERAGE numerator for the trial: distinct local days in the overlap range
    * carrying ≥1 logged NON-TREAT feeding. Null when no trial describes this report.
    *
@@ -2484,23 +2494,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
           })),
         ],
         arrangements: input.feedingArrangements,
-        // TWO SERIES, SEPARATELY (§C5). Combining them is what broke this twice: all
-        // events lets habitual meal logging saturate the denominator and CERTIFY the
-        // artefact C5 discloses; non-meal events alone IS the symptom series on most
-        // records, so its verdict is a tautology that revokes the trial's own result.
-        // Neither is a denominator here — both are rendered, labelled, un-adjudicated.
+        // C5's density series: meal-type days. Deliberately NOT "days with any log" —
+        // that saturates and certifies the artefact C5 discloses — and deliberately not
+        // "non-meal days" either, which on a real record IS the symptom series and so
+        // circles back on the count it would be checking. See `TrialLoggingDensity`.
         mealLoggedDayIndices: [
           ...new Set(
             windowEvents
               .filter((e) => e.type === 'meal')
-              .map((e) => eventDayNumber(e.occurredAt, tz))
-              .filter((dn): dn is number => dn !== null),
-          ),
-        ],
-        otherLoggedDayIndices: [
-          ...new Set(
-            windowEvents
-              .filter((e) => e.type !== 'meal')
               .map((e) => eventDayNumber(e.occurredAt, tz))
               .filter((dn): dn is number => dn !== null),
           ),
@@ -3032,6 +3033,12 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
     totalSymptomIncidents,
     windowDays,
     loggedDays,
+    anySymptomDays: new Set(
+      windowEvents
+        .filter((e) => REPORT_SYMPTOM_SET.has(e.type))
+        .map((e) => eventDayNumber(e.occurredAt, tz))
+        .filter((dn): dn is number => dn !== null),
+    ).size,
     // ONE coverage definition. `countTrialDaysLogged` counted a meal of ANY food
     // over a trial-scoped floor — honest about what it counted, but its headline
     // noun phrase was not (§5.1), and it disagreed with the client's card. Deleted

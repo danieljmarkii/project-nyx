@@ -755,12 +755,9 @@ Deno.test('C5 — a falling symptom count over falling logging is disclosed, not
   // and a real symptom fall.
   assert.equal(d.meals.firstHalf.daysLogged, 16)
   assert.equal(d.meals.lastHalf.daysLogged, 0)
-  assert.equal(d.other.firstHalf.daysLogged, 10)
-  assert.equal(d.other.lastHalf.daysLogged, 0)
   const text = plain(renderReport(snap))
   // BOTH series render, each labelled for what it counts.
   assert.ok(/Days a meal was logged: 16 of 16 in the trial.s first half, 0 of 16 in the second/.test(text))
-  assert.ok(/Days any other event was logged: 10 of 16, then 0 of 16/.test(text))
   // AND NEITHER VERDICT. This test previously asserted "Logging fell over the trial" —
   // i.e. it encoded the defect cold-read round 4 rejected. On this very fixture that
   // sentence would tell a vet the symptom fall cannot be trusted, when meals were logged
@@ -769,7 +766,7 @@ Deno.test('C5 — a falling symptom count over falling logging is disclosed, not
   assert.ok(!/Logging fell over the trial/.test(text))
   assert.ok(!/Logging held up across the trial/.test(text))
   assert.ok(!/is not explained by a change in how often anything was logged/.test(text))
-  assert.ok(/does not judge whether a change in either explains a change in the other/.test(text))
+  assert.ok(/does not judge whether a change in one explains a change in the other/.test(text))
 })
 
 // ── §7.2 — the interpretability statement ────────────────────────────────────
@@ -842,7 +839,6 @@ Deno.test('the challenge window is 7 days for a cat, 14 for a dog (Olivry & Muel
     medications: [],
     arrangements: [],
     mealLoggedDayIndices: [],
-    otherLoggedDayIndices: [],
     symptomDayIndices: [],
     scope: { startDate: '2026-06-01', endDate: '2026-07-02', endDayNum: 20637 },
     nowMs: Date.parse(NOW),
@@ -1120,17 +1116,17 @@ Deno.test('the trial-scoped logging claim states its scope, so it cannot contrad
   assert.equal(snap.scope.basis, 'diet_trial')
   assert.equal(snap.trial?.rangeEndDate, '2026-06-20', 'the trial range stops at the trial')
   const text = plain(renderReport(snap))
-  // The clause no longer asserts WHICH END the extra days sit at. Round 4 caught it
-  // saying "3 of them after the trial" on an ONGOING trial ("day 46 of 56") whose extra
-  // days were leading untracked ones \u2014 telling a vet a running trial had finished and
-  // putting its first days at the end. It was only ever correct for the stopped-trial
-  // case this fixture builds, so the honest form names the width, not the side.
+  // Round 4 caught this clause saying "3 of them after the trial" on an ONGOING trial
+  // ("day 46 of 56") whose extra days were leading UNTRACKED ones \u2014 telling a vet a
+  // running trial had finished and putting its first days at the end. Round 4's fix
+  // retreated to "wider at one or both ends", and round 5 called that a generated hedge
+  // where the fact is available: the two ranges are right there. So it names the side.
+  // This fixture's trial STOPPED inside the window, so the extension is after it.
   assert.ok(
-    /These cover the trial\u2019s 20 days; the charts below span the report\u2019s 32-day window, which is wider at one or both ends than the overlap range above/.test(
+    /This covers the trial\u2019s 20 days; the charts below span the report\u2019s 32-day window, which extends after it/.test(
       text,
     ),
   )
-  assert.ok(!/after the trial/.test(text), 'never asserts a side the clause cannot know')
 })
 
 Deno.test('an ad-hoc course with NO regimen still reaches "Reading the trend" (round 3)', () => {
@@ -1254,7 +1250,6 @@ Deno.test('#3 — habitual meal logs must not saturate the C5 density denominato
   const d = snap.trial!.loggingDensity!
   assert.equal(d.meals.firstHalf.daysLogged, d.meals.firstHalf.days, 'meals logged every day')
   assert.equal(d.meals.lastHalf.daysLogged, d.meals.lastHalf.days)
-  assert.ok(d.other.firstHalf.daysLogged > d.other.lastHalf.daysLogged, 'discretionary logging fell')
   const text = plain(renderReport(snap))
   assert.ok(!/is not explained by a change in how often anything was logged/.test(text))
   assert.ok(!/cannot be separated from the fall in logging/.test(text))
@@ -1409,14 +1404,19 @@ Deno.test('R4 — C5 renders two series and adjudicates NEITHER', () => {
   input.events.push(symptom('2026-06-30'))
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(/Days a meal was logged: 16 of 16/.test(text), 'the habit series is shown')
-  assert.ok(/Days any other event was logged: 12 of 16, then 1 of 16/.test(text))
   assert.ok(!/Logging fell over the trial/.test(text))
   assert.ok(!/Logging held up across the trial/.test(text))
   assert.ok(!/cannot be separated from the fall in logging/.test(text))
   assert.ok(!/is not explained by a change in how often anything was logged/.test(text))
-  // And it says WHY the second series cannot be used as an independent check, rather
-  // than quietly being circular inside a denominator.
-  assert.ok(/often consists largely of the symptoms themselves/.test(text))
+  // ROUND 5: the second series is GONE, not caveated. Its label ("any other event") was
+  // false — treats are meal-typed, doses and weigh-ins are not events — so on both
+  // artifacts it was exactly the symptom count while 65 treat feedings, 3 weigh-ins and
+  // 2 doses went uncounted. A row that prints the symptom count and then says "read the
+  // symptom counts against these" induces the misreading it exists to prevent, and
+  // naming the circularity does not repair it.
+  assert.ok(!/Days any other event was logged/.test(text))
+  assert.ok(!/often consists largely of the symptoms themselves/.test(text))
+  assert.ok(/does not judge whether a change in one explains a change in the other/.test(text))
 })
 
 Deno.test('R4 — a sparse record never reads as "logging held up"', () => {

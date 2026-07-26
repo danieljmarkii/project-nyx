@@ -244,15 +244,25 @@ export interface TrialLoggingDensity {
    *   logging"* is a tautology that revokes the trial's own result. A vet reading it
    *   tells the owner six weeks were wasted.
    *
-   * Both verdicts were mine to write and neither was in C5, which says the trend is
-   * *rendered against* density — not adjudicated by it. So the verdict is deleted and
-   * both series are rendered, each labelled for what it counts, with the circularity
-   * **named** rather than hidden inside a denominator. Meals are the honest habit
-   * signal (independent of the symptom count, and 43/43 across both halves really does
-   * mean the owner never disengaged); other events are not, and the copy says so.
+   * Neither verdict was in C5, which says the trend is *rendered against* density — not
+   * adjudicated by it. Round 4 deleted the verdict and rendered both series, naming the
+   * circularity in the non-meal one rather than hiding inside it. **Round 5 rejected
+   * that too, and was right:** naming a defect does not repair it. Its label
+   * ("any other event") was also simply false — treats are meal-typed, and doses and
+   * weigh-ins are not in the event table at all, so on both artifacts the series was
+   * *exactly* the symptom count (Cooper 11/6 = his 11 and 6 symptom days; Mira 2/3 =
+   * her 5 vomiting days), while 65 treat feedings, 3 weigh-ins and 2 doses went
+   * uncounted. A row that prints the symptom count and then says "read the symptom
+   * counts below against these" induces the misreading it exists to prevent.
+   *
+   * So only the MEAL series survives. It is the one that answers C5's actual question —
+   * did the owner keep logging? — without circling, because it is independent of the
+   * symptom count by construction: 43-of-43 across both halves really does mean nobody
+   * disengaged, and 16-of-16 → 0-of-16 really does mean they did. The symptom charts
+   * already carry their own days-logged denominators. A second series that is either
+   * circular or empty adds nothing a vet can use.
    */
   meals: { firstHalf: { daysLogged: number; days: number }; lastHalf: { daysLogged: number; days: number } }
-  other: { firstHalf: { daysLogged: number; days: number }; lastHalf: { daysLogged: number; days: number } }
 }
 
 /** One off-diet feeding, resolved by `classifyFeeding` (§5.3). */
@@ -331,6 +341,15 @@ export interface TrialBlock {
     /** A FLOOR, never a total (§5.2). */
     offDiet: number
     byRung: { derived_protein: number; unrecognised: number }
+    /**
+     * Exposures whose food IS on the allowed list, just not on the day it was fed — the
+     * THIRD reason a row can be here, orthogonal to the two rungs and not counted by
+     * either. Round 5 caught page 1 saying "Of those 4: 4 carried a protein the trial
+     * diet does not" while appendix C's Why column showed three protein rows and one
+     * dated-membership row, so a vet cross-checking got 4 against 3 and the timing
+     * violation never surfaced on page 1 at all.
+     */
+    fedBeforePermitted: number
     /** Feedings naming no food — excluded from BOTH sides above and disclosed. */
     unclassifiable: number
     items: TrialExposure[]
@@ -488,12 +507,10 @@ export interface BuildTrialBlockArgs {
   medicationItems: readonly TrialMedItemSource[]
   medications: readonly TrialMedicationSource[]
   arrangements: readonly TrialArrangementSource[]
-  /** C5's two density series, kept apart on purpose — one of them is the honest
-   *  habit signal and the other is not independent of the symptom count. Neither
-   *  is combined into a single number, and no verdict is derived: see
-   *  `TrialLoggingDensity`. */
+  /** C5's density series: local-day indices of days carrying a meal-type event. The
+   *  only series that answers "did the owner keep logging?" without circling back on
+   *  the symptom count it would be checking — see `TrialLoggingDensity`. */
   mealLoggedDayIndices: readonly number[]
-  otherLoggedDayIndices: readonly number[]
   /** Local-day indices of every in-window symptom event. */
   symptomDayIndices: readonly number[]
   scope: { startDate: string; endDate: string; endDayNum: number }
@@ -765,6 +782,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       totalFeedings: facts.exposures.totalFeedings,
       offDiet: facts.exposures.offDiet,
       byRung: facts.exposures.byRung,
+      fedBeforePermitted: exposures.filter((x) => x.permittedLaterFrom !== null).length,
       unclassifiable: facts.exposures.unclassifiable,
       items: exposures,
     },
@@ -808,17 +826,19 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     outcomeNotes: trial.outcomeNotes ?? null,
     medicationOverlap: medicationOverlap(
       args.medications,
-      { startDayIndex, endDayIndex },
+      // THE TRIAL'S OWN SPAN, not the logged range. `startDayIndex` is
+      // `max(scope start, trial start)`, which is right for coverage and exposures —
+      // both are statements about the RECORD — and wrong for a drug overlap, which is
+      // a statement about the WORLD. A course does not pause on days the owner did not
+      // log. Round 5: a trial that began May 18 with logging from May 21 rendered
+      // "Apoquel · overlapping May 21–Jul 2 · 43 d" for a 46-day overlap, understating
+      // the exact confound the §7.2 callout below it rests on.
+      { startDayIndex: ctx.startDayIndex as number, endDayIndex },
       trial.indication ?? null,
       args.scope.endDayNum,
       timeZone,
     ),
-    loggingDensity: loggingDensity(
-      args.mealLoggedDayIndices,
-      args.otherLoggedDayIndices,
-      startDayIndex,
-      endDayIndex,
-    ),
+    loggingDensity: loggingDensity(args.mealLoggedDayIndices, startDayIndex, endDayIndex),
     challengeWindowDays: CHALLENGE_WINDOW_DAYS[species],
   }
 }
@@ -1048,13 +1068,11 @@ export function looksAntibacterial(drugName: string): boolean {
  * That is the report affirmatively certifying the exact artefact C5 exists to
  * disclose, on the modal tiring owner, in the direction that ends a trial early.
  *
- * So BOTH series are measured and neither is adjudicated — see the interface note.
- * The caller passes meal-days and non-meal-days separately; the copy labels each for
- * what it counts and names the circularity in the second rather than hiding inside it.
+ * One series, no verdict — see the interface note for why the second one was deleted
+ * rather than caveated.
  */
 function loggingDensity(
   mealDayIndices: readonly number[],
-  otherDayIndices: readonly number[],
   startDayIndex: number,
   endDayIndex: number,
 ): TrialLoggingDensity | null {
@@ -1081,7 +1099,7 @@ function loggingDensity(
       lastHalf: { daysLogged: last, days: lastDays },
     }
   }
-  return { meals: split(mealDayIndices), other: split(otherDayIndices) }
+  return { meals: split(mealDayIndices) }
 }
 
 /** Local-day index of a DATE or instant, on the report's clock — the SAME helper

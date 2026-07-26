@@ -89,6 +89,7 @@ export function trialBlockFixture(
       totalFeedings: 0,
       offDiet: 0,
       byRung: { derived_protein: 0, unrecognised: 0 },
+      fedBeforePermitted: 0,
       unclassifiable: 0,
       items: [],
     },
@@ -163,6 +164,7 @@ function baseSnapshot(overrides: Partial<ReportSnapshot> = {}): ReportSnapshot {
     atAGlance: {
       primarySymptom: null,
       totalSymptomIncidents: 0,
+      anySymptomDays: 0,
       windowDays: 91,
       loggedDays: 0,
       trialDaysLogged: null,
@@ -789,7 +791,7 @@ Deno.test('weight trend → sparkline + descriptive framing, never a loss flag',
           direction: 'down',
         },
       },
-      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8 },
+      atAGlance: { primarySymptom: null, totalSymptomIncidents: 0, anySymptomDays: 0, windowDays: 20, loggedDays: 16, trialDaysLogged: null, weightState: 'trend', sinceOnsetDays: null, daysSinceLastEpisode: null, loggedDaysSinceLastEpisode: null, firstHalfLoggedDays: 8, secondHalfLoggedDays: 8 },
     }),
   )
   assert.ok(html.includes('polyline'), 'sparkline drawn')
@@ -1472,6 +1474,7 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
     atAGlance: {
       primarySymptom: { type: 'vomit', count: 22 },
       totalSymptomIncidents: 22,
+      anySymptomDays: 0,
       windowDays: 91,
       loggedDays: 40,
       trialDaysLogged: null,
