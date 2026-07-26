@@ -1,21 +1,25 @@
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import Svg, { Circle, Defs, Ellipse, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, G, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { theme } from '../../constants/theme';
 
 // The Landing hero's night ground (B-284 PR N2b, spec §4): the colorBrandNight
-// field, the two aurora radials (violet upper / indigo lower), and a full-bleed
-// starfield of 12 dots.
+// field, the two aurora radials (violet upper / indigo lower), the whorl ground,
+// and a full-bleed starfield of 12 dots.
 //
-// The third "restrained teal" radial that used to sit on the Signal dot was REMOVED
-// after on-device QA (2026-07-12): at device scale it read as a prominent teal glow
-// blob behind the mark — off-brand (teal is the interactive accent, not an ambient
-// haze, §1.3) — and the mark's own dot/pulse already carries the teal. The moon now
-// sits on the clean violet/indigo night, no glow behind it.
+// The whorl ground (PM-ratified 2026-07-26 — Option B of
+// docs/culprit-landing-hero-mockups.html): the getculprit.app watermark brought
+// home — the Whorl motif's four concentric crescent ridges at hero scale, drawn
+// in colorBrandNightElevated at watermark opacity. It replaces the Signal-dot
+// ping as the hero's richness; the ridges are indigo, NEVER teal — teal stays
+// the mark's dot alone (§1.3; the same rule that removed the teal radial after
+// on-device QA 2026-07-12, when it read as an off-brand glow blob).
 //
-// Static by intent — the carved moon's Signal-dot ping is this screen's ONE
-// ambient loop (rule §1.5), so nothing here animates (no twinkle). Rendered as a
-// single full-screen SVG so the aurora gradients and stars share one paint pass
-// and sit behind the moon, which is a separate CulpritMark layer on top.
+// Static by intent — and now fully: the ring-train ping is retired from this
+// surface (the pulse contract ties `live` to a fresh unseen finding, and a
+// logged-out screen has none), so the Landing carries ZERO ambient loops, well
+// under the §1.5 budget. Nothing here animates (no twinkle, no drift). Rendered
+// as a single full-screen SVG so the aurora gradients, whorl, and stars share
+// one paint pass and sit behind the moon, a separate CulpritMark layer on top.
 //
 // Non-interactive: pointerEvents="none" so the hero's CTAs beneath stay tappable.
 
@@ -40,11 +44,35 @@ const STARS: { x: number; y: number; r: number; o: number }[] = [
   { x: 0.38, y: 0.44, r: 0.5, o: 0.6 },
 ];
 
+// The Whorl motif geometry, verbatim from the brand system (docs/brand/
+// culprit-direction.html — a 200×200 design space, arcs centred on 100,100 and
+// open to the right, the Signal-dot opening). `w`/`o` are the motif-space stroke
+// width and opacity locked in the Option-B mock; the whole group scales with the
+// screen, so the ridges keep the mock's proportions at any device width.
+const WHORL_ARCS = [
+  { d: 'M138 44 A70 70 0 1 0 138 156', w: 2.6, o: 0.75 },
+  { d: 'M132 60 A54 54 0 1 0 132 140', w: 2.2, o: 0.6 },
+  { d: 'M126 76 A38 38 0 1 0 126 124', w: 2.0, o: 0.48 },
+  { d: 'M120 92 A22 22 0 1 0 120 108', w: 1.8, o: 0.38 },
+];
+// Placement fractions + scale from the ratified mock (centre at 0.65w / 0.51h;
+// scale 2.6 on a 300px-wide frame → outer ridge ≈ 0.61 × screen width). The
+// exact opacity/scale is an on-device tuning AC, same as the night moment's —
+// these are the mock's starting values, to be locked at the QA pass.
+const WHORL_CX_FRAC = 0.65;
+const WHORL_CY_FRAC = 0.51;
+const WHORL_SCALE_PER_WIDTH = 2.6 / 300;
+const WHORL_MOTIF_CENTRE = 100;
+
 const VIOLET_ID = 'landingAuroraViolet';
 const INDIGO_ID = 'landingAuroraIndigo';
 
 export function NightHeroGround() {
   const { width, height } = useWindowDimensions();
+  // Whorl group transform: motif units → px, centred on the placement fractions.
+  const whorlScale = width * WHORL_SCALE_PER_WIDTH;
+  const whorlTx = width * WHORL_CX_FRAC - WHORL_MOTIF_CENTRE * whorlScale;
+  const whorlTy = height * WHORL_CY_FRAC - WHORL_MOTIF_CENTRE * whorlScale;
   return (
     // Decorative only — non-interactive (CTAs beneath stay tappable) and hidden
     // from screen readers (the hero's "Culprit" group carries the meaning), per
@@ -82,7 +110,24 @@ export function NightHeroGround() {
         <Ellipse cx={width * 0.5} cy={height * 0.24} rx={width * 0.72} ry={height * 0.4} fill={`url(#${VIOLET_ID})`} />
         <Ellipse cx={width * 0.5} cy={height * 0.99} rx={width * 0.78} ry={height * 0.48} fill={`url(#${INDIGO_ID})`} />
 
-        {/* Full-bleed starfield (static — the ping is the screen's one loop). */}
+        {/* The whorl ground — behind the stars so the field reads as depth over
+            the texture, and behind the moon (a separate layer above this SVG).
+            Indigo only; the ridges never speak teal (§1.3). */}
+        <G transform={`translate(${whorlTx} ${whorlTy}) scale(${whorlScale})`}>
+          {WHORL_ARCS.map((a, i) => (
+            <Path
+              key={i}
+              d={a.d}
+              fill="none"
+              stroke={theme.colorBrandNightElevated}
+              strokeWidth={a.w}
+              strokeOpacity={a.o}
+              strokeLinecap="round"
+            />
+          ))}
+        </G>
+
+        {/* Full-bleed starfield (static — the Landing carries no ambient loop). */}
         {STARS.map((s, i) => (
           <Circle key={i} cx={s.x * width} cy={s.y * height} r={s.r} fill={theme.colorStar} opacity={s.o} />
         ))}

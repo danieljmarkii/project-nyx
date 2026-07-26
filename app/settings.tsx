@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { theme } from '../constants/theme';
@@ -243,16 +243,7 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        {/* Long-press opens the temporary auth-diagnostics viewer (not a user
-            feature — a hidden entry for the session-persistence investigation). */}
-        <Pressable
-          onLongPress={() => router.push('/settings/diagnostics')}
-          delayLongPress={800}
-          hitSlop={12}
-          accessibilityRole="text"
-        >
-          <Text style={styles.version}>Culprit v{formatAppVersion(APP_VERSION, APP_BUILD)}</Text>
-        </Pressable>
+        <Text style={styles.version}>Culprit v{formatAppVersion(APP_VERSION, APP_BUILD)}</Text>
 
         <View style={styles.bottomPad} />
       </ScrollView>

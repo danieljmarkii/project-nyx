@@ -6,10 +6,20 @@ import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { CulpritMark } from '../../components/brand/CulpritMark';
 import { NightHeroGround } from '../../components/onboarding/NightHeroGround';
 
-// The Culprit Landing hero (B-284 PR N2b, spec §4) — the unauthenticated entry
-// point. A full-bleed night ground (aurora + starfield, NightHeroGround) carries
-// the carved moon at hero scale with its Signal-dot ping, the "Culprit" wordmark,
-// the one-line positioning sub, and the unchanged Create-account / Log-in stack.
+// The Culprit Landing hero (B-284 PR N2b, spec §4; hero recomposed 2026-07-26) —
+// the unauthenticated entry point. A full-bleed night ground (aurora + whorl
+// ground + starfield, NightHeroGround) carries the carved moon at hero scale
+// with a STATIC Signal dot, the "Culprit" wordmark, the one-line positioning
+// sub, and the unchanged Create-account / Log-in stack.
+//
+// The ring-train ping is retired from this surface (PM-ratified 2026-07-26,
+// Option B of docs/culprit-landing-hero-mockups.html). Two reasons, recorded so
+// nobody re-adds it as polish: (1) the pulse contract (spec §3) ties `live` to a
+// fresh unseen finding, and a logged-out screen has none — the ping here was
+// decoration wearing a semantic costume; (2) the B-322 ring train never played
+// clean on device. The hero's richness now comes from the static whorl ground
+// (the getculprit.app watermark, NightHeroGround), and the Landing carries zero
+// ambient loops.
 //
 // The value-preview carousel that used to live here now sits one tap behind the
 // "See how it works" link, on its own LIGHT screen (app/(auth)/how-it-works.tsx) —
@@ -18,9 +28,9 @@ import { NightHeroGround } from '../../components/onboarding/NightHeroGround';
 // a wall. Users with a live session + completed onboarding are routed straight to
 // the tabs by app/_layout, so they never see this.
 //
-// The moon renders `ground="night"` + `live` — CulpritMark owns the carve (the
-// mask cutout, so the ground + stars show through the crescent) and the reduced-
-// motion fallback (static glow, no ring), so this screen inherits both for free.
+// The moon renders `ground="night"`, no `live` — CulpritMark owns the carve (the
+// mask cutout, so the ground + stars show through the crescent) and renders its
+// static frame (crisp resting dot, no ring, no scale) when the pulse is off.
 export default function LandingScreen() {
   const { width } = useWindowDimensions();
   // ~44% of screen width (spec §4). The moon is the screen's focal graphic.
@@ -35,7 +45,7 @@ export default function LandingScreen() {
               the brand once (the moon stays a silent child via accessible={false},
               exactly as it does inside AuthBrandMark). */}
           <View style={styles.lockup} accessible accessibilityRole="image" accessibilityLabel="Culprit">
-            <CulpritMark size={moonSize} ground="night" live accessible={false} />
+            <CulpritMark size={moonSize} ground="night" accessible={false} />
             <Text style={styles.wordmark}>Culprit</Text>
           </View>
           <Text style={styles.sub}>

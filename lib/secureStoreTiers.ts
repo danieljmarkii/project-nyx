@@ -3,14 +3,14 @@
 // extension-side read-only session reader (lib/widgetSession.ts).
 //
 // Split out of secureStore.ts (W4 code review) for the same reason
-// captureRecord.ts exists: Metro bundles whole modules, and secureStore.ts
-// imports lib/authDebug.ts (AsyncStorage-backed diagnostic scaffolding) that
-// must not ship into the widget extension bundle. This module's imports are
-// only expo-secure-store (the options type + accessibility constant) and the
-// App Group id — both things the extension needs anyway. The adapter logic
-// (chunking, generations, retention) stays in secureStore.ts; what lives here
-// is exactly the contract both processes must agree on, so neither side can
-// drift from the other.
+// captureRecord.ts exists: Metro bundles whole modules, so the extension must
+// not have to import secureStore.ts to learn the contract — that would drag the
+// whole app-side adapter (and its react-native Platform import) into the widget
+// extension bundle. This module's imports are only expo-secure-store (the
+// options type + accessibility constant) and the App Group id — both things the
+// extension needs anyway. The adapter logic (chunking, generations, retention)
+// stays in secureStore.ts; what lives here is exactly the contract both
+// processes must agree on, so neither side can drift from the other.
 
 import * as SecureStore from 'expo-secure-store';
 import { APP_GROUP_ID } from './appGroup';
