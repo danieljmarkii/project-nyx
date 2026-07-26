@@ -24,6 +24,20 @@ import { join } from 'path';
 const ROOT = join(__dirname, '..');
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
+/** Source with whole-line comments removed. This file's assertions are mostly
+ *  `not.toMatch`, and the modules it guards NAME the defects they fixed in their
+ *  own header comments — so matching raw source makes a good comment fail the
+ *  test. Only full-line comments are stripped, which is where that prose lives;
+ *  a trailing comment on a line of code is left alone. */
+const readCode = (p: string) =>
+  read(p)
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*'));
+    })
+    .join('\n');
+
 /** Day arithmetic: a millisecond span divided into days, in any of the spellings the
  *  four original implementations used. Matches `/ 86_400_000`, `/ 86400000`,
  *  `/ MS_PER_DAY`, and `/ (1000 * 60 * 60 * 24)`. */
@@ -33,9 +47,13 @@ const DAY_DIVISION = /\/\s*(86_400_000|86400000|MS_PER_DAY|\(\s*1000\s*\*\s*60\s
 const MANUAL_MIDNIGHT = /setHours\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/;
 
 describe('B-421 — one diet-trial day counter, not four', () => {
+  // B-417 PR 4 moved the CARD's consumer: the trial card and the Home strip both
+  // render from `lib/dietTrialCard`, which is now the only client surface that
+  // asks the question. `app/(tabs)/profile.tsx` and `app/(tabs)/index.tsx` reach
+  // it through the resolver, so they are asserted on delegation to THAT rather
+  // than on a direct call they no longer make.
   const CONSUMERS = [
-    { file: 'hooks/useTrend.ts', what: 'the Home trend strip' },
-    { file: 'app/(tabs)/profile.tsx', what: 'the trial card' },
+    { file: 'lib/dietTrialCard.ts', what: 'the trial card + Home strip resolver' },
     { file: 'lib/widgetResolution.ts', what: 'the widget header' },
   ];
 
@@ -43,29 +61,35 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(read(file)).toMatch(/getDietTrialProgress\s*\(/);
   });
 
-  it('the Home trend strip computes no day span of its own', () => {
-    expect(read('hooks/useTrend.ts')).not.toMatch(DAY_DIVISION);
+  const RESOLVER_CONSUMERS = [
+    { file: 'app/(tabs)/profile.tsx', what: 'the Pet-tab card', fn: 'resolveTrialCard' },
+    { file: 'app/(tabs)/index.tsx', what: 'the Home strip', fn: 'resolveTrialStrip' },
+  ];
+
+  it.each(RESOLVER_CONSUMERS)('$what ($file) renders through $fn', ({ file, fn }) => {
+    expect(read(file)).toMatch(new RegExp(`${fn}\\s*\\(`));
   });
 
-  it('the Home trend strip keys its coverage numerator on the SAME clock as the denominator', () => {
-    // The denominator is a LOCAL-day count. Keying the numerator by UTC day
-    // (`occurred_at.split('T')[0]`) counts a behind-UTC owner's local day twice at
-    // the boundary and renders "6 of 5 days logged — 120% food compliance" beside
-    // the profile card's 100%. A ratio whose halves are on different clocks is not
-    // a ratio; this pins them together.
-    // Scoped to the trial derivation. The 14-day CHART buckets elsewhere in this file
-    // are UTC-keyed on purpose (the module's trailing-UTC-window convention, which
-    // matches detection.ts) — that is a chart axis, not a ratio, and is left alone.
-    const src = read('hooks/useTrend.ts');
-    const start = src.indexOf('if (trial) {');
-    const end = src.indexOf('} catch {', start);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
+  it('the resolver computes no day span of its own', () => {
+    const src = readCode('lib/dietTrialCard.ts');
+    // One deliberate exception: `formatTrialDate` multiplies a day INDEX back into
+    // an instant to name a calendar date. That is the inverse of the boundary
+    // helper, not a second definition of it — and it never divides.
+    expect(src).not.toMatch(DAY_DIVISION);
+    expect(src).not.toMatch(MANUAL_MIDNIGHT);
+  });
 
-    const trialBlock = src.slice(start, end);
-    expect(trialBlock).toMatch(/getDietTrialProgress\(/); // the slice really is the trial block
-    expect(trialBlock).toMatch(/toLocalDayKey\(new Date\(e\.occurred_at\)\)/);
-    expect(trialBlock).not.toMatch(/occurred_at\.split\('T'\)\[0\]/);
+  it('the Home trend zone no longer derives a trial day count AT ALL', () => {
+    // Before B-417 PR 4 this file computed its own trial-coverage ratio and
+    // rendered it as "% food compliance" — a second, unlisted metric with the
+    // same unfiltered defect as the card's, on a chart it also displaced. The
+    // whole derivation is gone, which is a stronger guarantee than "it delegates":
+    // there is nothing left here to drift.
+    const src = readCode('hooks/useTrend.ts');
+    expect(src).not.toMatch(DAY_DIVISION);
+    expect(src).not.toMatch(/getDietTrialProgress/);
+    expect(src).not.toMatch(/trialDaysElapsed|trialCompliantDays|trialTargetDays/);
+    expect(src).not.toMatch(/compliance/i);
   });
 
   // Scope honesty: the "one implementation" claim is CLIENT-side. `generate-report`
@@ -83,28 +107,39 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     expect(read('lib/widgetResolution.ts')).not.toMatch(DAY_DIVISION);
   });
 
-  it('the trial card no longer floors the trial start to midnight by hand', () => {
+  it('the trial card screen carries no trial day math of its own', () => {
     const src = read('app/(tabs)/profile.tsx');
 
-    // Slice the trial loader out by name. Assert the bounds are real and ordered
-    // first: `slice(a, b)` with a > b returns '', and an empty haystack passes every
-    // `not.toMatch` below — the test would fail open, which is the one thing a guard
-    // test may never do.
-    const start = src.indexOf('const loadDietTrial');
-    const end = src.indexOf('}, [activePet?.id]);', start);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
+    // The loader this used to slice out is gone: B-417 PR 4 moved the read into
+    // `lib/dietTrialFacts` and the arithmetic into `lib/dietTrialCard`, so the
+    // screen holds neither. Assert the ABSENCE positively rather than slicing a
+    // block that no longer exists — a slice with no bounds returns '' and passes
+    // every `not.toMatch`, which is the one thing a guard test may never do.
+    expect(src).not.toMatch(/const loadDietTrial/);
+    expect(src).toMatch(/resolveTrialCard\(/);
 
-    const trialLoader = src.slice(start, end);
-    expect(trialLoader).toMatch(/getDietTrialProgress\(/); // the slice really is the loader
-    expect(trialLoader).not.toMatch(MANUAL_MIDNIGHT);
-    expect(trialLoader).not.toMatch(DAY_DIVISION);
+    // The one day-division left in this file belongs to regimenDaysElapsed — a
+    // different feature's counter, deliberately left alone and annotated (B-441).
+    const divisions = readCode('app/(tabs)/profile.tsx')
+      .match(new RegExp(DAY_DIVISION.source, 'g')) ?? [];
+    expect(divisions).toHaveLength(1);
 
     // The only hand-rolled midnight left in this file is regimenDaysElapsed — a
     // different feature's counter, deliberately left alone and annotated (B-441).
     const occurrences = src.match(new RegExp(MANUAL_MIDNIGHT.source, 'g')) ?? [];
     expect(occurrences).toHaveLength(2); // both inside regimenDaysElapsed
     expect(src).toMatch(/function regimenDaysElapsed/);
+  });
+
+  it('the trial-facts loader keys coverage on the SAME clock as the denominator', () => {
+    // The denominator is `getDietTrialProgress().dayCounter`, a LOCAL-day count.
+    // The old numerator used `toDateString()` on a UTC-parsed timestamp — halves
+    // of a ratio on two different clocks, which is how Home rendered "6 of 5 days
+    // logged" beside the profile card's own number for the same pet.
+    const src = readCode('lib/dietTrialFacts.ts');
+    expect(src).toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
+    expect(src).not.toMatch(/toDateString\(\)/);
+    expect(src).not.toMatch(DAY_DIVISION);
   });
 
   it('the boundary is defined once, in lib/utils', () => {
