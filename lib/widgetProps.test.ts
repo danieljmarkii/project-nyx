@@ -56,6 +56,15 @@ describe('contextLineFor', () => {
     expect(contextLineFor(snapshot({ trialDay: 12, trialTargetDays: 28 }))).toBe('Day 12 of 28');
   });
 
+  // B-453 — the widget may not render a countdown that contradicts itself, and
+  // may not disagree with the trial card about the same trial on the same unlock.
+  it('never renders "Day N of M" past the window', () => {
+    expect(contextLineFor(snapshot({ trialDay: 61, trialTargetDays: 56 }))).toBe('Day 61 · 5d past');
+    expect(contextLineFor(snapshot({ trialDay: 57, trialTargetDays: 56 }))).toBe('Day 57 · 1d past');
+    // The boundary day is still the window's last day, not "0d past".
+    expect(contextLineFor(snapshot({ trialDay: 56, trialTargetDays: 56 }))).toBe('Day 56 of 56');
+  });
+
   it('falls back to the arrangement shape, then to nothing', () => {
     expect(contextLineFor(snapshot({ freeFed: true }))).toBe('free-fed');
     expect(

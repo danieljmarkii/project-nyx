@@ -31,7 +31,7 @@ Two artifacts, not one, and that distinction is the whole reason PR 4's acceptan
 
 1. **`exposures` is null and `belowCoverageFloor` is false until PR 5.** Off-diet classification needs `diet_trial_foods` rows only PR 3 can write. This is not laziness about a placeholder — with an **empty** allowed set every feeding classifies off-diet, so a fabricated exposure count would flag a perfectly compliant owner on every meal, which is a worse failure than the mislabel being replaced. The resolver renders coverage and says **nothing** about what matched: silence, not an all-clear, the same asymmetry as B-351 D10. §5.2 also leaves the coverage floor's number undefined on purpose (three defensible definitions read 100% / 84% / 19% over the same 70 days of live data), so state 4 is built, tested, and driven by an **input flag** PR 5 supplies rather than by a threshold invented here.
 
-2. **The two list screens are deferred → B-452.** §11 lists them under PR 4, but neither has a data source: the allowed-set list reads rows only PR 3 writes, the exposure list reads classifications only PR 5 produces. Both land by adding one handler — `DietTrialCard` draws an action **only** when the surface passes a handler for its id, so there are no dead buttons and no card change needed later. Same mechanism gates state 0 (PR 3's start modal) and the milestone actions (PR 6).
+2. **The two list screens are deferred → B-454.** §11 lists them under PR 4, but neither has a data source: the allowed-set list reads rows only PR 3 writes, the exposure list reads classifications only PR 5 produces. Both land by adding one handler — `DietTrialCard` draws an action **only** when the surface passes a handler for its id, so there are no dead buttons and no card change needed later. Same mechanism gates state 0 (PR 3's start modal) and the milestone actions (PR 6).
 
 3. **States 7a/7b are resolver-complete and test-covered but unreachable** until PR 6 writes a terminal status — and "how long does an ended trial keep its slot before the card returns to state 0" is a product rule PR 6 owns, not one to invent here.
 
@@ -51,13 +51,21 @@ PR 5 carries the mandatory `adversarial-reviewer` pass (this is a rendering laye
 
 ## Found, not fixed
 
-- **B-451** — the widget header still composes `Day N of M` unclamped, so an overrun renders the string the card just stopped rendering. Dr. Chen on the design lock: *"an app that renders Day 61 of 56 tells me nobody is reading it."* Deferred because `widgetSnapshot` is **PR 2's** scope and the header lives inside the `'widget'`-directive constraint, which wants that PR's harness rather than a drive-by edit.
+- **B-453 — found, deferred, then FIXED in the same PR.** The widget header composed `Day N of M` unclamped, so an overrun rendered the exact string the card had just stopped rendering. Dr. Chen on the design lock: *"an app that renders Day 61 of 56 tells me nobody is reading it."* It was deferred on the grounds that `widgetSnapshot` was **PR 2's** scope — and then PR 2 **merged while this PR was open**, leaving the deferral with no owner. Re-examined on that basis and the premise turned out to be wrong twice over: the string is composed in `lib/widgetProps.contextLineFor`, a pure and already-tested function in `lib/`, **app-side rather than inside the `'widget'`-directive runtime constraint** the deferral had assumed. Now reads `Day 61 · 5d past` (phrased for the narrower column). Both strings are read by the same owner about the same trial, sometimes on the same unlock; they may not disagree.
 - **B-450** (pre-existing, already tracked, owned by PR 7) — `render.ts:2668` still renders *"No off-diet exposures logged in this window."* on the vet report. A live G2 violation on the highest-consequence surface; confirmed still present by a sweep this session.
 
 ## Guard-test topology change
 
 `lib/dietTrialDayMath.guard.test.ts` (B-421's source-scan enforcement) named `hooks/useTrend.ts` and `app/(tabs)/profile.tsx` as direct consumers. Both moved: the card and strip now delegate through `lib/dietTrialCard`, and the read moved to `lib/dietTrialFacts`. The guard is updated and **strengthened** — it now pins that `useTrend` derives no trial day count **at all** (`not.toMatch(/compliance/i)`, no `getDietTrialProgress`, no trial fields), which is a stronger guarantee than "it delegates" because there is nothing left to drift. It also gained a `readCode` helper that strips whole-line comments before matching, since the modules it guards now *name* the defects they fixed in their own headers and a good comment was failing the test.
 
+## Merging PR 2 mid-flight
+
+`main` moved under this branch while the PR was open — **B-417 PR 2 landed (#453)** — and the PR went `mergeable_state: dirty`. That is *why* no CI run existed to check: GitHub cannot build a merge ref for a conflicted PR, so `pull_request` workflows never start. Worth remembering, because "no checks" reads at a glance like "CI is slow" and it is not the same thing.
+
+The conflicts were the two known collision files, `STATUS.md` and `docs/backlog.md`, resolved keeping both sides. One ID collision: the sibling session had taken **B-451**, so this session's two new rows renumbered to **B-453 / B-454**.
+
+The merge also surfaced a **real integration defect**, not just a textual conflict. PR 2 shipped the local SQLite mirror precisely so the wedge feature stops going blank in airplane mode — and this loader was reading `diet_trials` from **Supabase**, which would have shipped the trial card network-dependent on the very day that dependency was removed from the widget. `lib/dietTrialFacts.ts` now reads the local mirror. It keeps its own query rather than reusing `ACTIVE_DIET_TRIAL_QUERY` (the card needs `status`, `ended_at`, `stopped_reason` and `outcome`, which the widget's projection omits), but it inherits that query's two load-bearing shapes: the `food_label` COALESCE and the `synced DESC` tie-break. It also honours PR 2's rule about `indication` — diagnosis-grade, so not selected where it isn't needed.
+
 ## Verification
 
-`tsc --noEmit` clean. **123 suites / 2057 jest cases green.** No schema, no secret, no Edge Function deploy.
+`tsc --noEmit` clean. **124 suites / 2103 jest cases green** (including PR 2's 66). No schema, no secret, no Edge Function deploy.

@@ -27,7 +27,6 @@
 import { getDietTrialProgress, getIntakeDecline, type IntakeDeclineFlag } from './analytics';
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
-import { supabase } from './supabase';
 import { loadTrialProteinContext, trialDietNote } from './trialContaminant';
 import { toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
@@ -42,9 +41,41 @@ interface TrialRow {
   id: string;
   started_at: string;
   target_duration_days: number;
+  status: string;
+  ended_at: string | null;
+  stopped_reason: string | null;
+  outcome: string | null;
   food_label: string | null;
-  food_items: { brand: string; product_name: string } | null;
 }
+
+/** The card's read, against the LOCAL mirror B-417 PR 2 shipped (#453).
+ *
+ *  Reading Supabase here would have left the trial card — the wedge surface, the
+ *  thing an owner lives with for eight weeks — blank in airplane mode, on the
+ *  same day PR 2 removed exactly that dependency from the widget. The card needs
+ *  four columns the widget's projection deliberately omits (`status`, `ended_at`,
+ *  `stopped_reason`, `outcome`), so it is its own query rather than a reuse of
+ *  `ACTIVE_DIET_TRIAL_QUERY` — but it keeps that query's two load-bearing shapes:
+ *  the `food_label` COALESCE (so archiving the trial food cannot blank the
+ *  trial's identity, §3.1) and the `synced DESC` tie-break.
+ *
+ *  `indication` is NOT selected. It is diagnosis-grade — 'skin' names a suspected
+ *  condition — and the card has no use for it. The constraint PR 2 carries for
+ *  the App Group projection is worth honouring by default anywhere it isn't
+ *  needed. */
+const ACTIVE_TRIAL_FOR_CARD_SQL = `
+  SELECT t.id, t.started_at, t.target_duration_days, t.status,
+         t.ended_at, t.stopped_reason, t.outcome,
+         COALESCE(
+           NULLIF(TRIM(COALESCE(f.brand, '') || ' ' || COALESCE(f.product_name, '')), ''),
+           t.food_label
+         ) AS food_label
+    FROM diet_trials t
+    LEFT JOIN food_items_cache f ON f.id = t.food_item_id
+   WHERE t.pet_id = ? AND t.status = 'active'
+   ORDER BY t.synced DESC, t.started_at DESC, t.id
+   LIMIT 1
+`;
 
 /** Reads the pet's active trial and everything the card needs to describe it.
  *  Every read is best-effort: a failure degrades one line of the card, never the
@@ -71,29 +102,25 @@ export async function loadDietTrialFacts(args: {
   // sheet, and the question that comes with them — how long an ended trial keeps
   // its slot on the Pet tab before the card returns to state 0 — is a product
   // rule PR 6 owns rather than one to invent here.
-  const { data, error } = await supabase
-    .from('diet_trials')
-    .select('id, started_at, target_duration_days, food_label, food_items(brand, product_name)')
-    .eq('pet_id', pet.id)
-    .eq('status', 'active')
-    .maybeSingle();
-
-  if (error) {
-    console.error('[DietTrial] load trial failed:', error);
+  let row: TrialRow | null;
+  try {
+    row = await getDb().getFirstAsync<TrialRow>(ACTIVE_TRIAL_FOR_CARD_SQL, [pet.id]);
+  } catch (e) {
+    console.error('[DietTrial] load trial failed:', e);
     return base;
   }
-  if (!data) return base;
+  if (!row) return base;
 
-  const row = data as unknown as TrialRow;
   const trial: TrialCardTrial = {
-    status: 'active',
+    // Narrowed from the local TEXT column. Anything unrecognised reads as the
+    // active shape rather than throwing — the card's job is to keep rendering.
+    status: row.status === 'completed' || row.status === 'abandoned' ? row.status : 'active',
     startedAt: row.started_at,
+    endedAt: row.ended_at,
     targetDurationDays: row.target_duration_days,
-    // `food_label` first: `food_item_id` is ON DELETE SET NULL, so archiving the
-    // trial food would otherwise blank the trial's identity on the card and the
-    // vet report (§3.1's denormalization rationale).
-    foodLabel: row.food_label
-      ?? (row.food_items ? `${row.food_items.brand} ${row.food_items.product_name}` : null),
+    foodLabel: row.food_label,
+    stoppedReason: row.stopped_reason,
+    outcome: (row.outcome as TrialCardTrial['outcome']) ?? null,
   };
 
   const progress = getDietTrialProgress(
