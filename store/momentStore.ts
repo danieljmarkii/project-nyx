@@ -80,8 +80,11 @@ export interface MedicationPayload {
   eventId: string;
   // ISO UTC of the logged dose's occurred_at.
   occurredAt: string;
-  // Drug name (generic_name) for the "Gave {drug}" line — a one-glance reminder
-  // of what was logged.
+  // The OWNER-FACING drug name for the card's "Logged · {drug}" line — a one-glance
+  // reminder of what was logged. Resolved at the call site through drugDisplayName
+  // (B-171: brand when present, generic otherwise), so this field carries a
+  // display-ready string, exactly like pairedFoodName below — the card renders it and
+  // never re-derives a name.
   drugName: string;
   // In-flight adherence. Unlike intake (which starts null), a one-tap dose log
   // starts 'given' — the owner's affirmative tap = "I gave this dose." Updated
