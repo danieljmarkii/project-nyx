@@ -59,9 +59,17 @@ export interface TrialCardTrial {
   targetDurationDays: number;
   /** `diet_trials.food_label`, else the joined food's "Brand Product". */
   foodLabel?: string | null;
-  /** Free text from the completion sheet (PR 6), e.g. "wouldn't eat it". */
+  /** The stored `stopped_reason`. PR 3's `endActiveTrial` writes a closed set of
+   *  TOKENS (`vet_advised` / `refused` / `other` / `completed`), documented in
+   *  `lib/dietTrialSetup.ts` as load-bearing — so this resolver maps the tokens
+   *  to display phrases itself and never interpolates the raw value ("Stopped
+   *  because refused." is not a sentence). Unrecognised values render verbatim,
+   *  which keeps PR 6 free to add reasons without a silent blank. */
   stoppedReason?: string | null;
-  /** True when `stopped_reason` is the refusal option — see `refusal` below. */
+  /** True when the trial was abandoned because the pet refused the diet.
+   *  DERIVED from the stored token when omitted — callers do not need to set it,
+   *  and the round-1b rule (a refused trial renders no adherence line anywhere)
+   *  cannot be lost to a caller that forgot the flag. */
   stoppedForRefusal?: boolean;
   outcome?: TrialOutcome | null;
 }
@@ -355,24 +363,16 @@ function activeCard(
   // 100% coverage, 0 exposures, a maximally clean trial rendered over a starving
   // animal seven times past the feline 48h hepatic-lipidosis window.
   if (input.intakeDeclineHeadline) {
+    // The 48h hepatic-lipidosis window is FELINE, so the cat line names
+    // "today". The dog line is firm without borrowing a feline urgency.
+    const lines: TrialCardLine[] = [];
+    pushDeclineLines(lines, input);
     return {
       ...base,
       state: 'intake_decline',
       dayLine: dayLineFor(progress, overrunDays),
       windowLine: windowLineFor(endIndex, overrunDays),
-      lines: [
-        { role: 'lead', text: input.intakeDeclineHeadline },
-        {
-          role: 'note',
-          text:
-            // The 48h hepatic-lipidosis window is FELINE, so the cat line names
-            // "today". The dog line is firm without borrowing a feline urgency.
-            (input.species === 'cat'
-              ? 'A cat that stops eating needs a call today, whatever the trial is doing.'
-              : `A pet that goes off their food needs a call, whatever the trial is doing.`) +
-            ' Culprit isn’t showing the trial numbers while this is going on.',
-        },
-      ],
+      lines,
       action: null,
     };
   }
@@ -545,6 +545,22 @@ function activeCard(
   };
 }
 
+/** The §5.2 replacement, shared by the active and BOTH terminal cards: the
+ *  decline fact leads, the note names the priority, and no record line renders
+ *  while it is live. */
+function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
+  if (!input.intakeDeclineHeadline) return;
+  lines.push({ role: 'lead', text: input.intakeDeclineHeadline });
+  lines.push({
+    role: 'note',
+    text:
+      (input.species === 'cat'
+        ? 'A cat that stops eating needs a call today, whatever the trial is doing.'
+        : `A pet that goes off their food needs a call, whatever the trial is doing.`) +
+      ' Culprit isn’t showing the trial numbers while this is going on.',
+  });
+}
+
 function dayLineFor(
   progress: NonNullable<ReturnType<typeof getDietTrialProgress>>,
   overrunDays: number,
@@ -659,7 +675,19 @@ function completedCard(
   startIndex: number,
 ): TrialCardModel {
   const lines: TrialCardLine[] = [];
-  pushRecordFacts(lines, input);
+  // §5.2's composition is TERMINAL-STATE-AWARE, in both of its forms. The
+  // round-1b lesson was that a rule drawn as a live-flag replacement never
+  // reached the terminal states; the first cut of THIS file repeated that
+  // mistake in mirror image — it made refusal terminal-aware but let a live
+  // intake-decline flag through, so a completed trial rendered "182 feedings —
+  // 176 matched" over a cat that has stopped eating NOW. Found by the wrap's
+  // adversarial pass. The decline outranks the record on every state, because
+  // the animal outranks the trial.
+  if (input.intakeDeclineHeadline) {
+    pushDeclineLines(lines, input);
+  } else {
+    pushRecordFacts(lines, input);
+  }
   if (trial.outcome) {
     lines.push({
       role: 'note',
@@ -687,6 +715,23 @@ function completedCard(
   };
 }
 
+/** PR 3's stored tokens → the owner-facing phrase. The fallback renders an
+ *  unrecognised value verbatim so a future reason is never a silent blank. */
+function stoppedBecauseLine(petName: string, trial: TrialCardTrial): string {
+  switch (trial.stoppedReason) {
+    case 'refused': return `Stopped because ${petName} wouldn’t eat it.`;
+    case 'vet_advised': return 'Stopped because the vet said to change diets.';
+    case 'other': return 'Stopped early.';
+    default: return `Stopped because ${trial.stoppedReason}.`;
+  }
+}
+
+/** Refusal is derived from the stored token unless the caller asserts it —
+ *  structural, so the no-adherence-line rule cannot be dropped by omission. */
+function wasRefused(trial: TrialCardTrial): boolean {
+  return trial.stoppedForRefusal ?? trial.stoppedReason === 'refused';
+}
+
 function abandonedCard(
   input: TrialCardInput,
   trial: TrialCardTrial,
@@ -696,11 +741,32 @@ function abandonedCard(
   const range = terminalRange(trial, startIndex);
   const dayCount = range?.split('· ')[1] ?? 'these days';
 
-  if (trial.stoppedReason) {
-    lines.push({ role: 'lead', text: `Stopped because ${trial.stoppedReason}.` });
+  // Same terminal-state composition as completedCard — a live decline replaces
+  // every record line, whatever else this card would have said.
+  if (input.intakeDeclineHeadline) {
+    if (trial.stoppedReason) {
+      lines.push({ role: 'lead', text: stoppedBecauseLine(input.petName, trial) });
+    }
+    pushDeclineLines(lines, input);
+    return {
+      state: 'abandoned',
+      kicker: 'Diet trial · stopped early',
+      foodLabel: trial.foodLabel ?? null,
+      dayLine: range,
+      windowLine: null,
+      progressFraction: null,
+      lines,
+      action: null,
+      standingNote: input.standingNote ?? null,
+      standingMeta: input.standingMeta ?? null,
+    };
   }
 
-  if (trial.stoppedForRefusal) {
+  if (trial.stoppedReason) {
+    lines.push({ role: 'lead', text: stoppedBecauseLine(input.petName, trial) });
+  }
+
+  if (wasRefused(trial)) {
     // TERMINAL-STATE-AWARE, and this is a RULE change rather than a copy change
     // (the Jordan review, round 1b). §5.2's composition rule was drawn as a
     // LIVE-FLAG replacement only, so it never reached the terminal states —

@@ -76,8 +76,18 @@ Two things were taken **from PR 3** rather than kept from this branch, because P
 
 One thing was **dropped from PR 3** deliberately: its `localTrial` existence-oracle guard. PR 3 added it because its card read the network and an empty/failed read would render "No trial running." over a live trial — an absence-claim of exactly the shape §5.2 forbids. This PR's loader reads the **local mirror**, so that lie is structurally impossible rather than guarded against, and the guard has nothing left to do.
 
+## The wrap's adversarial pass — two findings, both fixed in-PR
+
+The `adversarial-reviewer` run at `/wrap` was cut short by a server error, but its partial harness produced two attacks that were then verified by hand against the code, and **both broke**:
+
+1. **The terminal-state intake-decline gap.** §5.2's live-flag replacement guarded only the ACTIVE card, so a *completed* or *abandoned* trial with a live `IntakeDeclineFlag` rendered its full adherence lines over a cat that has stopped eating now. This is round 1b's lesson in mirror image — the first cut made *refusal* terminal-aware but not the *live flag*. Fixed structurally: one shared `pushDeclineLines` feeds all three branches, and both terminal cards check the flag before any record line is built. Pinned by two new tests.
+
+2. **The refusal token mismatch.** PR 3's `endActiveTrial` stores `stopped_reason` as a closed set of **tokens** (`refused` / `vet_advised` / `other`), documented in `lib/dietTrialSetup.ts` as load-bearing — and the resolver interpolated the raw value ("Stopped because refused.") while its `stoppedForRefusal` boolean was never set by the loader, so the round-1b no-adherence-line rule would have silently not fired on real data. Unreachable today (the loader reads `status='active'` only) but PR 6 would have inherited both bugs the day it made terminal states loadable. Fixed: the resolver maps the tokens itself, and refusal is **derived from the token** (`wasRefused`) so the rule cannot be lost to a caller that forgets a flag. Pinned by three new tests.
+
+The falsification attempts that **held**, and why: the active-state decline replacement, the refused-abandoned suppression, the null-classifier silence, the bar-width independence and the day-N-of-M clamp all held for the structural reasons already described; the "No trial running." absence-claim held because the loader reads the local mirror, so the failed-network-read path that made PR 3's guard necessary does not exist here.
+
 ## Verification
 
-`tsc --noEmit` clean. **126 suites / 2154 jest cases green** (the count rises across the two merges as PR 2's and PR 3's suites join). Both CI checks green. No schema, no secret, no Edge Function deploy.
+`tsc --noEmit` clean. **126 suites / 2159 jest cases green** (the count rises across the two merges as PR 2's and PR 3's suites join). Both CI checks green. No schema, no secret, no Edge Function deploy.
 
 **Not verified: anything on a device.** Production held zero `diet_trials` rows until PR 3 landed mid-session, so no card state in this PR has ever rendered against real data. The PR carries the manual QA script, and it grew two checks over the session — the widget header string changed, and state 0 became reachable.

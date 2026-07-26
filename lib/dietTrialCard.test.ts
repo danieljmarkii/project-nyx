@@ -541,6 +541,93 @@ describe('replacement 8 — intake decline', () => {
   });
 });
 
+// The two defects the wrap's adversarial pass found — pinned so they stay dead.
+describe('the intake-decline replacement is TERMINAL-STATE-AWARE', () => {
+  // Round 1b's lesson, in mirror image: the first cut of this resolver made
+  // refusal terminal-aware but let a LIVE decline flag through the terminal
+  // branches, so a completed trial rendered its full adherence lines over a cat
+  // that has stopped eating NOW.
+  it('a completed trial with a live flag renders no record line', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
+      },
+      coverage: { daysLogged: 54, daysElapsed: 56 },
+      exposures: { totalFeedings: 182, offDiet: 6 },
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    }));
+    expect(textOf(m, 'fact')).toEqual([]);
+    expect(allStrings(m).join(' ')).not.toMatch(/matched|feedings in total|Meals logged on/);
+    expect(textOf(m, 'lead')).toEqual(['Mochi has left most of her food for 3 days.']);
+    // The owner's outcome still renders — it is attribution, not adherence.
+    expect(textOf(m, 'note').join(' ')).toContain('needs a call today');
+  });
+
+  it('an abandoned trial with a live flag renders no record line', () => {
+    const m = resolveTrialCard(activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trial: {
+        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+        targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'other',
+      },
+      coverage: { daysLogged: 18, daysElapsed: 19 },
+      exposures: { totalFeedings: 54, offDiet: 0 },
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    }));
+    expect(textOf(m, 'fact')).toEqual([]);
+    expect(allStrings(m).join(' ')).not.toMatch(/matched|feedings in total|Meals logged on/);
+  });
+});
+
+describe('the stopped_reason TOKEN contract (PR 3’s endActiveTrial)', () => {
+  // The shipped writer stores tokens (`refused` / `vet_advised` / `other`),
+  // documented in lib/dietTrialSetup.ts as load-bearing. The resolver maps them —
+  // "Stopped because refused." is not a sentence — and refusal is DERIVED from
+  // the token, so the no-adherence-line rule cannot be lost to a caller that
+  // forgot to set the boolean.
+  it('maps the tokens to owner-facing phrases', () => {
+    const withReason = (stoppedReason: string) => resolveTrialCard(activeInput({
+      trial: {
+        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+        targetDurationDays: 56, foodLabel: FOOD, stoppedReason,
+      },
+    }));
+    expect(textOf(withReason('refused'), 'lead'))
+      .toEqual(['Stopped because Biscuit wouldn’t eat it.']);
+    expect(textOf(withReason('vet_advised'), 'lead'))
+      .toEqual(['Stopped because the vet said to change diets.']);
+    expect(textOf(withReason('other'), 'lead')).toEqual(['Stopped early.']);
+  });
+
+  it('the raw token never renders', () => {
+    const m = resolveTrialCard(activeInput({
+      trial: {
+        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+        targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'vet_advised',
+      },
+    }));
+    expect(allStrings(m).join(' ')).not.toMatch(/vet_advised|because refused\./);
+  });
+
+  it('the token ALONE suppresses the adherence line — no boolean needed', () => {
+    const m = resolveTrialCard(activeInput({
+      trial: {
+        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+        targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'refused',
+        // NOTE: stoppedForRefusal deliberately NOT set.
+      },
+      coverage: { daysLogged: 18, daysElapsed: 19 },
+      exposures: { totalFeedings: 54, offDiet: 0 },
+    }));
+    expect(allStrings(m).join(' ')).not.toMatch(/matched the trial diet or a permitted food/i);
+    expect(textOf(m, 'fact').join(' ')).toContain('Culprit isn’t showing how clean');
+  });
+});
+
 describe('replacement 9 — free-fed', () => {
   const model = resolveTrialCard(activeInput({
     petName: 'Mochi',
