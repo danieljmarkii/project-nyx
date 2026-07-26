@@ -80,10 +80,25 @@ export async function loadTrialOutcomeFacts(args: {
     const beforeStartKey = shiftDayKey(startKey, -beforeDays);
     if (!beforeStartKey) return null;
 
-    // Pad a day either side and let the LOCAL-day-key filter below decide
-    // membership, so a timezone offset can never clip a boundary day out of
-    // either stretch (the same shape `readCoverage` uses).
-    const fromISO = new Date(`${beforeStartKey}T00:00:00Z`).toISOString();
+    // PAD BOTH ENDS. The comment here used to say "a day either side" while only
+    // the END was padded, and the code was wrong in the direction the comment
+    // denied: `${key}T00:00:00Z` is UTC midnight, so at a POSITIVE offset local
+    // midnight of that date is EARLIER in UTC — 12 hours earlier in Auckland — and
+    // the query silently dropped the first half of the before-stretch's first
+    // local day. A single 06:00 pre-trial log then vanished, and the sheet
+    // rendered "Nothing was logged in the 4 weeks before the trial started",
+    // which is FALSE and is exactly the fabricated negative claim §5.2's S3 rule
+    // forbids. Two-sided (it can delete an improvement or a worsening), and it
+    // landed on the thin-record population `beforeLoggedDays` exists to protect.
+    //
+    // The bounds are deliberately WIDER than the stretches; the local-day-key
+    // filter below is what decides membership, so over-fetching costs a few rows
+    // and under-fetching costs a true statement. Found by `adversarial-reviewer`
+    // on the fix commit — and its tests could not have caught it, because a mock
+    // that returns the whole fixture regardless of the bounds exercises the SQL
+    // window at zero offsets. `assertsSqlWindow` in the test file now does.
+    const paddedStart = shiftDayKey(beforeStartKey, -1) ?? beforeStartKey;
+    const fromISO = new Date(`${paddedStart}T00:00:00Z`).toISOString();
     const paddedEnd = shiftDayKey(duringEndKey, 2) ?? duringEndKey;
     const toISO = new Date(`${paddedEnd}T00:00:00Z`).toISOString();
 

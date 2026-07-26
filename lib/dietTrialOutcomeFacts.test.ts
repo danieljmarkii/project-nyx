@@ -237,6 +237,45 @@ describe('beforeLoggedDays — how much of the stretch is actually observable', 
   });
 });
 
+// ── The SQL window itself, not just the rows it returns ─────────────────────
+//
+// THE GAP THIS CLOSES IS THE REASON IT EXISTS. Every other test here mocks
+// `getAllAsync` to return its fixture REGARDLESS of the bounds, so the query
+// window was exercised at zero offsets and an unpadded lower bound was invisible
+// to the whole suite — `adversarial-reviewer` found it by construction, not by
+// running these. A bound is only tested by asserting on the bound.
+describe('the fetched window is wider than the stretches it filters', () => {
+  it('starts at or before LOCAL midnight of the before-stretch’s first day', async () => {
+    await load([]);
+    const [, params] = mockGetAllAsync.mock.calls[0] as [string, string[]];
+    const [, fromISO] = params;
+
+    // The before-stretch opens on 1 July local (14 days before 15 July).
+    const localMidnight = new Date(2026, 6, 1, 0, 0, 0).getTime();
+    expect(Date.parse(fromISO)).toBeLessThanOrEqual(localMidnight);
+  });
+
+  it('ends at or after the END of today, locally', async () => {
+    await load([]);
+    const [, params] = mockGetAllAsync.mock.calls[0] as [string, string[]];
+    const [, , toISO] = params;
+
+    // The during-stretch closes at the end of 28 July local — the bound is
+    // exclusive, so it must sit strictly after that instant.
+    const endOfToday = new Date(2026, 6, 29, 0, 0, 0).getTime();
+    expect(Date.parse(toISO)).toBeGreaterThanOrEqual(endOfToday);
+  });
+
+  it('holds for a trial started today, where both stretches are one day', async () => {
+    mockGetAllAsync.mockResolvedValueOnce([]);
+    await loadTrialOutcomeFacts({ petId: 'p', startedAt: '2026-07-28', nowMs: NOW });
+    const [, params] = mockGetAllAsync.mock.calls[0] as [string, string[]];
+    const [, fromISO, toISO] = params;
+    expect(Date.parse(fromISO)).toBeLessThanOrEqual(new Date(2026, 6, 27, 0, 0, 0).getTime());
+    expect(Date.parse(toISO)).toBeGreaterThanOrEqual(new Date(2026, 6, 29, 0, 0, 0).getTime());
+  });
+});
+
 describe('degradation', () => {
   it('returns null rather than guessed counts when the read fails', async () => {
     mockGetAllAsync.mockRejectedValueOnce(new Error('database is locked'));

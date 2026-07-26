@@ -485,7 +485,7 @@ Deno.test('PR 6 — the three new stop reasons render as clinical sentences, not
   // nobody has got to yet and a terrible one for a token the same PR introduced.
   const cases: [string, RegExp][] = [
     ['cost', /Stopped on cost grounds\./],
-    ['too_hard', /Stopped — the owner could not maintain exclusive feeding\./],
+    ['too_hard', /Stopped — exclusive feeding could not be maintained in the household\./],
     ['symptoms_resolved', /Stopped because the owner reported the symptoms had resolved\./],
   ]
   for (const [reason, expected] of cases) {
@@ -499,6 +499,23 @@ Deno.test('PR 6 — the three new stop reasons render as clinical sentences, not
     // No raw token reaches a clinician.
     assert.ok(!new RegExp(`Stopped: ${reason}`).test(text), `${reason} is not a bare token`)
     assert.ok(!/_/.test(text.match(/Stopped[^.]*\./)?.[0] ?? ''), `${reason} carries no snake_case`)
+  }
+})
+
+Deno.test('PR 6 — no stop-reason line names the owner as the cause (§6.9)', () => {
+  // This page is shown to the OWNER in-app under the HTML-first ruling, so §6.9
+  // binds here exactly as it does on the card. The first cut read "the owner could
+  // not maintain exclusive feeding" — the owner named as cause, stated as an
+  // inability — while the card's sibling line was already agentless. The vet needs
+  // the fact; the agent is optional.
+  for (const reason of ['refused', 'cost', 'too_hard', 'symptoms_resolved', 'other']) {
+    const input = wellLoggedTrialInput({ events: days('2026-06-01', '2026-06-19').map((d) => meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] })) })
+    input.dietTrials[0].status = 'abandoned'
+    input.dietTrials[0].completedAt = null
+    input.dietTrials[0].endedAt = '2026-06-19'
+    input.dietTrials[0].stoppedReason = reason
+    const line = plain(renderReport(assembleReport(input))).match(/Stopped[^.]*\./)?.[0] ?? ''
+    assert.ok(!/the owner could not|the owner failed|the owner did not/i.test(line), `${reason}: ${line}`)
   }
 })
 

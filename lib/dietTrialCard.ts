@@ -455,6 +455,12 @@ function activeCard(
       // row, because a card about a pet that has stopped eating is not a decision
       // surface. Only once the window is actually up; mid-trial there is nothing
       // to decide.
+      // Same rule the milestone applies one branch down: at or past the target the
+      // bar is pinned at 100%, and a saturated bar is completion vocabulary drawn
+      // in pixels. It was doubly wrong here — drawn over a pet that has stopped
+      // eating, on the card whose entire job is to say the animal outranks the
+      // trial. Mid-trial the bar still carries real day progress, so it stays.
+      progressFraction: overrunDays >= 0 ? null : progress.fraction,
       actions:
         overrunDays >= 0
           ? [{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }]
@@ -808,6 +814,16 @@ function completedCard(
   } else {
     pushRecordFacts(lines, input);
   }
+  // §4.3 IS A PROPERTY OF THE FLOW, AND THIS IS THE SCREEN AN OWNER LIVES WITH
+  // AFTER ENDING IT. The fix commit carried the continuation sentence onto the
+  // outcome SHEET and stopped there, so a GI owner read it once while deciding and
+  // then saw a card headed "Diet trial · finished" with nothing about continuing —
+  // on the indication ACVIM says continue >=12 weeks. Found by the second
+  // `adversarial-reviewer` pass, which correctly called it this project's own
+  // B-494 rule one surface over: a flow that teaches the owner it will tell them
+  // about continuation may not then go silent.
+  pushContinuation(lines, trial);
+
   if (trial.outcome) {
     lines.push({
       role: 'note',
@@ -862,6 +878,25 @@ function stoppedBecauseLine(petName: string, trial: TrialCardTrial): string {
     case 'other': return 'Stopped early.';
     default: return `Stopped because ${trial.stoppedReason}.`;
   }
+}
+
+/**
+ * The indication-keyed continuation sentence, on a terminal card.
+ *
+ * SKIPPED ON `vet_advised` ALONE, and that carve-out is the whole judgement here:
+ * everywhere else the sentence answers a question the owner has just left open,
+ * but when the vet is the one who said stop, "Your vet decides when the diet
+ * changes" is Culprit restating a decision that has already been made — which
+ * reads as second-guessing the clinician rather than deferring to them.
+ *
+ * The case it most exists for is `symptoms_resolved` on a GI trial: an owner who
+ * stopped BECAUSE things improved has stopped a diet that may be working, short
+ * of the ACVIM window, and without this the card renders their own stated reason
+ * back at them unanswered.
+ */
+function pushContinuation(lines: TrialCardLine[], trial: TrialCardTrial): void {
+  if (trial.stoppedReason === 'vet_advised') return;
+  lines.push({ role: 'note', text: milestoneNote(trial.indication) });
 }
 
 /** Refusal is derived from the stored token unless the caller asserts it —
@@ -933,6 +968,8 @@ function abandonedCard(
   } else {
     pushRecordFacts(lines, input);
   }
+
+  pushContinuation(lines, trial);
 
   return {
     state: 'abandoned',

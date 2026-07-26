@@ -218,6 +218,16 @@ export function TrialCompletionSheet({
             {step === 'decision' && (
               <>
                 <Text style={styles.sheetTitle}>Day {dayCounter} — what’s next?</Text>
+                {/* The decline outranks the decision here too. This is the one
+                    screen that offers the PRIMARY action on a pet that has stopped
+                    eating, and it was the only one in the flow not carrying the
+                    sentence — the card before it does, the outcome step after it
+                    does. */}
+                {intakeDeclineHeadline && (
+                  <Text testID="trial-decision-decline" style={styles.declineLead}>
+                    {intakeDeclineHeadline}
+                  </Text>
+                )}
                 <Text style={styles.sheetSub}>{milestoneNote(trial.indication)}</Text>
                 <View style={styles.decisionRow}>
                   {trialDecisionChoices(trial.indication).map((c) => (

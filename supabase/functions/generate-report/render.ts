@@ -1881,7 +1881,13 @@ function stoppedReasonLine(petName: string, reason: string): string {
     case 'cost':
       return 'Stopped on cost grounds.'
     case 'too_hard':
-      return 'Stopped — the owner could not maintain exclusive feeding.'
+      // AGENTLESS, deliberately. "the owner could not maintain exclusive feeding"
+      // names the owner as the cause and states it as an inability — and this page
+      // is shown to the OWNER in-app under the HTML-first ruling, so §6.9 (Culprit
+      // never scores the owner) binds here exactly as it does on the card. The vet
+      // needs the fact; the agent is optional. The card's sibling line already got
+      // this right, which is how the divergence was spotted.
+      return 'Stopped — exclusive feeding could not be maintained in the household.'
     // Clinically load-bearing, and the one reason a vet may want to act on
     // directly: an owner who stopped BECAUSE things improved has stopped a diet
     // that may be working, and on a GI indication that is short of the ACVIM

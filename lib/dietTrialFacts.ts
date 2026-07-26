@@ -223,6 +223,15 @@ export async function loadDietTrialFacts(args: {
   };
 }
 
+/** Day key shifted by N local days, via the UTC-anchored index. The inverse of
+ *  `localDayIndexOf` must be a UTC read — see `dietTrialOutcomeFacts.dayKeyFromIndex`
+ *  for what happens when it isn't. */
+function shiftDayKey(dayKey: string, deltaDays: number): string {
+  const index = localDayIndexOf(dayKey);
+  if (index === null) return dayKey;
+  return new Date((index + deltaDays) * 86_400_000).toISOString().slice(0, 10);
+}
+
 /** Inclusive local-day span between two day keys, ≥1. Day 1 IS the start day, the
  *  same inclusive convention `getDietTrialProgress` and `trialEndDayIndex` use. */
 function spanDays(startedAt: string, endKey: string): number {
@@ -264,7 +273,15 @@ async function readCoverage(
     // Read from one local day BEFORE the trial's first day so a timezone offset
     // can never clip the boundary day out of the window; the local-day-key
     // filter below is what actually decides membership.
-    const fromISO = new Date(`${startKey}T00:00:00Z`).toISOString();
+    //
+    // AND IT NOW ACTUALLY DOES THAT. The comment promised a day's padding and the
+    // code sent `${startKey}T00:00:00Z` — UTC midnight, which at a POSITIVE offset
+    // is LATER than local midnight of that date, so the first hours of day 1 were
+    // dropped (12 in Auckland, 5.5 in Kolkata) and coverage under-counted its own
+    // first day. Same defect the outcome read had; found there by
+    // `adversarial-reviewer`, which noted it as a shared pattern worth fixing
+    // rather than shipping a third time.
+    const fromISO = new Date(`${shiftDayKey(startKey, -1)}T00:00:00Z`).toISOString();
 
     const rows = await db.getAllAsync<{ occurred_at: string; food_type: string | null }>(
       `SELECT e.occurred_at, f.food_type

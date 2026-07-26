@@ -208,6 +208,20 @@ describe('the decision step (the overrun entry)', () => {
     expect(tree.getByText('Stopped early')).toBeTruthy();
   });
 
+  it('carries the decline sentence on the screen that offers the primary action', () => {
+    // F3: this is the one step in the flow that offers `Keep going` as a filled
+    // button, and it was the only one not carrying the decline lead — the card
+    // before it does and the outcome step after it does.
+    const tree = renderSheet({
+      entry: 'decision',
+      dayCounter: 61,
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+    });
+    expect(
+      String(tree.getByTestId('trial-decision-decline').props.children),
+    ).toContain('left most of her food');
+  });
+
   it('delegates `Keep going` to the host — one extension implementation', () => {
     const onExtend = jest.fn();
     const tree = renderSheet({ entry: 'decision', dayCounter: 61, onExtend });
