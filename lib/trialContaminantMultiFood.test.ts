@@ -1,52 +1,55 @@
-// B-417 PR 3 — the multi-food guard on `loadTrialProteinContext`.
+// B-417 PR 5 — `loadTrialProteinContext` over a MULTI-FOOD trial (closes B-453).
 //
 // Why this needs its own suite: trialContaminant.test.ts deliberately stubs both
-// `./db` (throws) and `./supabase` ({}) so the pure predicate layer can be tested
-// without either. The guard lives in the I/O half, and it is the one thing in that
-// half that is a SAFETY decision rather than assembly — so it gets a harness.
+// `./db` (throws) and `./supabase` ({}) so the pure layer can be tested without
+// either. This half is the I/O — and it is the one thing in that half that is a
+// SAFETY decision rather than assembly, so it gets a harness.
 //
-// What it protects: B-351 slice 4 derives the trial diet from the single
-// `diet_trials.food_item_id` column. §4.1 has since ruled that column display-only
-// legacy — the trial diet is N `diet_trial_foods` rows — and PR 3 is what makes N
-// > 1 possible for the first time. Until PR 5 re-bases the derivation, a two-food
-// trial (a wet and a dry of the same diet: the NORMAL case) would compute the
-// sanctioned protein set from one food and flag the other, legitimately-allowed
-// trial food as a contaminant. That is the alarm-fatigue failure C2 exists to
-// prevent, aimed at a food the owner cannot stop feeding.
+// WHAT THIS FILE USED TO PIN, AND WHY IT NO LONGER DOES. B-351 slice 4 derived
+// the trial diet from the single `diet_trials.food_item_id` column. §4.1 has
+// since ruled that column display-only legacy — the trial diet is N
+// `diet_trial_foods` rows — so on a two-food trial (a wet and a dry of the same
+// diet: the NORMAL case) the old derivation computed the sanctioned set from ONE
+// food and flagged the other, legitimately-allowed trial food as a contaminant.
+// PR 3 shipped a STOPGAP for that: go silent unless the `primary_diet` count is
+// exactly 1. B-453 said to delete the stopgap at this re-base, and it is deleted
+// — the multi-food case is now handled rather than muted, and these tests assert
+// the handling.
 //
-// The guard's answer is SILENCE — never an all-clear (B-351 D10).
+// The read is also LOCAL now. PR 2 (#453) gave both tables a mirror precisely so
+// the wedge surface survives airplane mode; the Supabase read this used to mock
+// is gone, so there is no `./supabase` stub here at all.
 
-const mockTrialRows: { data: unknown; error: unknown } = { data: [], error: null };
-jest.mock('./supabase', () => ({
-  supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          eq: () => ({ limit: () => Promise.resolve(mockTrialRows) }),
-        }),
-      }),
-    }),
-  },
-}));
+interface TrialRow { id: string; started_at: string; ended_at: string | null }
+interface AllowedRow {
+  food_item_id: string;
+  role: string;
+  food_label: string;
+  allowed_from: string;
+  allowed_until: string | null;
+  brand: string | null;
+  product_name: string | null;
+  primary_protein: string | null;
+  proteins: string | null;
+  ingredients_notes: string | null;
+  ai_extraction_confidence: string | null;
+}
 
-let mockPrimaryCount: number | null = 1;
-let mockCountThrows = false;
-const mockFoodRow = {
-  brand: 'Zignature',
-  product_name: 'Kangaroo Formula',
-  primary_protein: 'kangaroo',
-  proteins: JSON.stringify(['kangaroo']),
-  ingredients_notes: 'kangaroo, chickpeas',
-  ai_extraction_confidence: null,
+const state: { trial: TrialRow | null; allowed: AllowedRow[]; throws: boolean } = {
+  trial: null,
+  allowed: [],
+  throws: false,
 };
+
 jest.mock('./db', () => ({
   getDb: () => ({
-    getFirstAsync: (sql: string) => {
-      if (sql.includes('COUNT(*)')) {
-        if (mockCountThrows) throw new Error('db unavailable');
-        return Promise.resolve(mockPrimaryCount === null ? null : { n: mockPrimaryCount });
-      }
-      return Promise.resolve(mockFoodRow);
+    getFirstAsync: () => {
+      if (state.throws) throw new Error('db unavailable');
+      return Promise.resolve(state.trial);
+    },
+    getAllAsync: () => {
+      if (state.throws) throw new Error('db unavailable');
+      return Promise.resolve(state.allowed);
     },
   }),
 }));
@@ -61,56 +64,111 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-import { clearTrialContextCache, loadTrialProteinContext } from './trialContaminant';
+import {
+  clearTrialContextCache,
+  foodContaminantFlag,
+  loadTrialProteinContext,
+  sanctionedProteinsForTrial,
+} from './trialContaminant';
 
-const ACTIVE_TRIAL = [{ id: 't-1', started_at: '2026-07-03', food_item_id: 'food-dry' }];
+const DRY: AllowedRow = {
+  food_item_id: 'food-dry',
+  role: 'primary_diet',
+  food_label: 'Zignature Kangaroo Dry',
+  allowed_from: '2020-01-01',
+  allowed_until: null,
+  brand: 'Zignature',
+  product_name: 'Kangaroo Formula',
+  primary_protein: 'kangaroo',
+  proteins: JSON.stringify(['kangaroo']),
+  ingredients_notes: 'kangaroo, chickpeas',
+  ai_extraction_confidence: null,
+};
+
+const WET: AllowedRow = {
+  ...DRY,
+  food_item_id: 'food-wet',
+  food_label: 'Zignature Kangaroo Wet',
+  product_name: 'Kangaroo Wet',
+};
 
 beforeEach(() => {
   clearTrialContextCache();
-  mockTrialRows.data = ACTIVE_TRIAL;
-  mockTrialRows.error = null;
-  mockPrimaryCount = 1;
-  mockCountThrows = false;
+  state.trial = { id: 't-1', started_at: '2020-01-01', ended_at: null };
+  state.allowed = [DRY];
+  state.throws = false;
 });
 
-it('resolves the context normally on a single-food trial', async () => {
+it('resolves the context on a single-food trial', async () => {
   const ctx = await loadTrialProteinContext('pet-1');
   expect(ctx?.trialId).toBe('t-1');
-  expect(ctx?.targetProtein).toBe('kangaroo');
+  expect(ctx?.primaryCount).toBe(1);
+  expect(sanctionedProteinsForTrial(ctx!)).toEqual(['kangaroo']);
 });
 
-it('goes SILENT on a two-food trial rather than flagging the second food', async () => {
-  mockPrimaryCount = 2;
-  expect(await loadTrialProteinContext('pet-1')).toBeNull();
+it('RESOLVES a two-food trial rather than going silent (B-453 deleted)', async () => {
+  state.allowed = [DRY, WET];
+  const ctx = await loadTrialProteinContext('pet-1');
+  expect(ctx).not.toBeNull();
+  expect(ctx?.primaryCount).toBe(2);
+  // …and neither trial food flags against the other, which is the whole point.
+  expect(foodContaminantFlag(ctx!, 'food-wet', ['kangaroo'])).toBeNull();
+  expect(foodContaminantFlag(ctx!, 'food-dry', ['kangaroo'])).toBeNull();
 });
 
-it('caches the multi-food answer — it is a settled fact, not a race', async () => {
-  mockPrimaryCount = 2;
-  expect(await loadTrialProteinContext('pet-1')).toBeNull();
-  // A settled null is cached, so flipping the underlying count does not resurrect
-  // the derivation inside the TTL.
-  mockPrimaryCount = 1;
-  expect(await loadTrialProteinContext('pet-1')).toBeNull();
-  expect(await loadTrialProteinContext('pet-1', { force: true })).not.toBeNull();
+it('unions the proteins of every primary_diet food', async () => {
+  state.allowed = [DRY, { ...WET, primary_protein: 'kangaroo', proteins: JSON.stringify(['kangaroo', 'pork']) }];
+  const ctx = await loadTrialProteinContext('pet-1');
+  expect(sanctionedProteinsForTrial(ctx!).sort()).toEqual(['kangaroo', 'pork']);
 });
 
-it('does NOT cache a zero count — the allowed set simply has not hydrated yet', async () => {
-  // `diet_trials` and `diet_trial_foods` are separate pulls, so a fresh install can
-  // hold the trial without its set. Caching that for five minutes would silently
-  // disable the check for the whole window — the same reasoning the trial-food
-  // resolution check already applies.
-  mockPrimaryCount = 0;
+it('a permitted extra is in the allowed set but NOT in the sanctioned proteins', async () => {
+  state.allowed = [
+    DRY,
+    { ...DRY, food_item_id: 'jerky', role: 'permitted_treat', brand: 'Brand', product_name: 'Rabbit Jerky', primary_protein: 'rabbit', proteins: JSON.stringify(['rabbit', 'chicken']) },
+  ];
+  const ctx = await loadTrialProteinContext('pet-1');
+  expect(sanctionedProteinsForTrial(ctx!)).toEqual(['kangaroo']);
+  // Permitted → silent at log time (§6.9); a different chicken food → flagged.
+  expect(foodContaminantFlag(ctx!, 'jerky', ['rabbit', 'chicken'])).toBeNull();
+  expect(foodContaminantFlag(ctx!, 'other', ['chicken'])?.proteins).toEqual(['chicken']);
+});
+
+it('does NOT cache an empty allowed set — it simply has not hydrated yet', async () => {
+  // `diet_trials` and `diet_trial_foods` are separate pulls, so a fresh install
+  // can hold the trial without its set. Caching that for five minutes would
+  // silently disable the check for the whole window.
+  state.allowed = [];
+  expect((await loadTrialProteinContext('pet-1'))?.primaryCount).toBe(0);
+  state.allowed = [DRY];
+  expect(sanctionedProteinsForTrial((await loadTrialProteinContext('pet-1'))!)).toEqual(['kangaroo']);
+});
+
+it('does NOT cache an unhydrated food row — same transient, same rule', async () => {
+  state.allowed = [{ ...DRY, brand: null, product_name: null, primary_protein: null, proteins: null }];
+  const cold = await loadTrialProteinContext('pet-1');
+  expect(cold?.primaryResolved).toBe(0);
+  state.allowed = [DRY];
+  expect(sanctionedProteinsForTrial((await loadTrialProteinContext('pet-1'))!)).toEqual(['kangaroo']);
+});
+
+it('the D10 completeness gate is over EVERY primary food, not the first', async () => {
+  // One read panel and one unread one means "anything else in it is still
+  // unknown" is TRUE of the trial. Claiming completeness off the read half is
+  // the all-clear-on-an-unread-record D10 forbids.
+  state.allowed = [DRY, { ...WET, ingredients_notes: null }];
+  const ctx = await loadTrialProteinContext('pet-1');
+  expect(ctx?.trialFoodCompleteness.complete).toBe(false);
+});
+
+it('treats a failed local read as unknown, and does not cache it', async () => {
+  state.throws = true;
   expect(await loadTrialProteinContext('pet-1')).toBeNull();
-  mockPrimaryCount = 1;
+  state.throws = false;
   expect((await loadTrialProteinContext('pet-1'))?.trialId).toBe('t-1');
 });
 
-it('treats a failed count as unknown, not as a single-food trial', async () => {
-  mockCountThrows = true;
-  expect(await loadTrialProteinContext('pet-1')).toBeNull();
-});
-
 it('still returns null when there is no active trial at all', async () => {
-  mockTrialRows.data = [];
+  state.trial = null;
   expect(await loadTrialProteinContext('pet-1')).toBeNull();
 });

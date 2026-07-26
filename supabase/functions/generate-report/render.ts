@@ -2039,11 +2039,29 @@ function unlinkedMedLine(u: UnlinkedMedicationGroup): string {
 function timingLine(c: CorrelationSummary, snap: ReportSnapshot): string {
   if (c.hasEstablished && c.established.length > 0) {
     const e = c.established[0]
+    // A JOINT candidate (B-351 slice 6) must declare itself HERE, on the most-scanned
+    // line of the report.
+    //
+    // CURRENTLY UNREACHABLE BY CONSTRUCTION, and kept anyway. After the adversarial pass,
+    // a joint candidate caps at Early (§7 #4) and §8.5 admits only Established, so no joint
+    // finding reaches this line today. That cap is a spec-vs-build call the PM may rule
+    // either way; if it is ever relaxed, the report must not silently render a joint
+    // candidate bare. Defence in depth costs one branch here and would cost a vet a wrong
+    // diet decision there. Without the clause a vet reads "chicken and duck reached the
+    // established association threshold" as two independently-implicated antigens and
+    // may drop both from the diet — when the actual finding is that the record cannot
+    // yet distinguish them, and the informative next step is to separate them. The
+    // engine already refuses to credit one; the report must not un-refuse it by
+    // omission.
+    const joint =
+      e.proteins && e.proteins.length > 1
+        ? ` These proteins co-occur in every exposure on record, so the association <b>cannot be attributed to either one individually</b> — separating them would be informative.`
+        : ''
     return `${h(e.protein)} reached the established association threshold for ${h(
       symptomLabel(e.symptomType).toLowerCase(),
     )} over this window (${num(e.caseExposed)}/${num(e.matchedPairs)} exposed cases vs ${num(
       e.controlExposed,
-    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>. Detail in appendix&nbsp;C.`
+    )} controls; p&nbsp;=&nbsp;${e.pValue.toFixed(3)}). An association, <b>not a proven cause</b>.${joint} Detail in appendix&nbsp;C.`
   }
   const staple = c.stapleProtein
     ? ` — ${h(c.stapleProtein)} is in most of what ${h(snap.signalment.name)} eats, so it can't be isolated`
