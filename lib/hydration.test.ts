@@ -382,6 +382,14 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
     // contract so a future local FK can't turn a silent reordering into a
     // half-failed wipe (and a half-failed wipe is a data-leak, not a warning).
     expect(order('diet_trial_foods')).toBeLessThan(order('diet_trials'));
+    // B-478 — vet_documents declares no local FK on vet_visit_id (a document may
+    // reference a visit this device has not pulled yet, and a local FK would turn
+    // that ordinary transient into a hard insert failure), so nothing would throw
+    // on a parent-first order. Same rule as the diet-trial pair above: pin the
+    // stated children-first contract so a future local FK cannot turn a silent
+    // reordering into a half-failed wipe — and a half-failed wipe of a vet-records
+    // library is a data leak, not a warning.
+    expect(order('vet_documents')).toBeLessThan(order('vet_visits'));
   });
 
   // B-424 — this used to compare the constant against a HARDCODED list, which

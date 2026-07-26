@@ -140,6 +140,67 @@ export const BASE_SCHEMA_SQL = `
       created_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- vet_documents — the Vet Files library (B-478 VF-1). Mirrors
+    -- supabase/migrations/044_vet_documents.sql.
+    --
+    -- Distinct from vet_visit_attachments above, which is a per-visit photo attach
+    -- with a NOT NULL visit FK and no metadata. This is the owner's document
+    -- library: lab PDFs, vaccination certificates, discharge summaries, clinic
+    -- correspondence — most of which are attached to NO visit at all.
+    --
+    -- An LWW table, not insert-only: it carries updated_at and deleted_at because a
+    -- rename or a soft delete on one device has to be able to reach another. (An
+    -- insert-only sync contract is "never overwrite an existing local row", which
+    -- would make a delete unable to travel — the 040 argument.)
+    --
+    -- NO local FK is declared on vet_visit_id, deliberately: hydration pulls
+    -- vet_visits before vet_documents but a document can legitimately reference a
+    -- visit this device has not pulled yet (a mid-cycle failure on the visits step
+    -- skips it and the next trigger retries), and a local FK would turn that
+    -- ordinary transient into a hard insert failure. The same-pet integrity of the
+    -- link is enforced server-side by enforce_vet_document_pet_scope(), which is
+    -- where it belongs — the client mirror is not a security boundary.
+    --
+    -- local_uri is LOCAL-ONLY and follows the event_attachments convention: the
+    -- durable on-device path for a capture from this phone, and '' for a hydrated
+    -- row whose bytes live only in Storage. It is never pushed and never
+    -- overwritten by hydration.
+    CREATE TABLE IF NOT EXISTS vet_documents (
+      id                TEXT PRIMARY KEY,
+      pet_id            TEXT NOT NULL,
+      vet_visit_id      TEXT,
+      document_group_id TEXT NOT NULL,
+      kind              TEXT NOT NULL DEFAULT 'other',
+      -- NULL = never named by the owner, which is the expected steady state (D11).
+      -- The default title is rendered, never stored.
+      title             TEXT,
+      document_date     TEXT,
+      notes             TEXT,
+      source            TEXT NOT NULL,
+      local_uri         TEXT NOT NULL DEFAULT '',
+      storage_path      TEXT NOT NULL,
+      mime_type         TEXT NOT NULL,
+      file_size_bytes   INTEGER,
+      page_index        INTEGER NOT NULL DEFAULT 0,
+      deleted_at        TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      synced            INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_vet_documents_unsynced
+      ON vet_documents(synced)
+      WHERE synced = 0;
+
+    -- The library read (§4.1 reverse-chron, soft-deleted rows hidden).
+    CREATE INDEX IF NOT EXISTS idx_vet_documents_pet
+      ON vet_documents(pet_id, document_date DESC, created_at DESC)
+      WHERE deleted_at IS NULL;
+
+    -- The detail-view page fetch (§4.4 swipeable stack).
+    CREATE INDEX IF NOT EXISTS idx_vet_documents_group
+      ON vet_documents(document_group_id, page_index);
+
     -- feeding_arrangements — pet↔food standing fact ("always available / free-fed").
     -- B-040 R1 (PR 2). Mirrors supabase/migrations/018_feeding_arrangements.sql.
     -- A STANDING FACT, not a per-nibble log: one row per (pet, food) free-choice

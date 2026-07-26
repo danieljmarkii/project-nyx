@@ -58,8 +58,14 @@ const CORS_HEADERS = {
 // medication paths to the deleting user's own `{uid}/` prefix (B-128), and
 // `ownedFoodItemIds` re-scopes the food paths to the set of food ids this user created
 // (B-354 FR-7, food paths being `{foodItemId}/…`) — so a crafted cross-tenant path never
-// reaches the service-role purge. The pet/event/vet paths need no such guard: they come
-// from pet-scoped rows.
+// reaches the service-role purge. The pet/event/vet-attachment/vet-report paths need no
+// such guard: they come from pet-scoped rows.
+//
+// `vet_documents` (B-478) is pet-scoped too, and is nonetheless re-scoped via a third
+// key, `ownedPetIds`. Not because the ROW source is untrusted, but because
+// `storage_path`'s `starts_with` CHECK is a PREFIX test that admits
+// `{ownPetId}/../{victimPetId}/x.pdf` — see scopeVetDocumentPaths for why that residual
+// is closed here rather than left to depend on Storage treating keys as opaque.
 async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): Promise<OwnedStoragePaths> {
   // Three independent top-level reads, in parallel: the user's pets (their own photos
   // PLUS the ownership scope for the child tables below), and the medication_items and
@@ -117,16 +123,30 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
   // medication AND food label photos are NOT pet-scoped, so they still ride this
   // early return (a user with zero pets can still have contributed catalog rows).
   if (petIds.length === 0) {
-    return { petPhotoPaths, eventAttachmentPaths: [], vetAttachmentPaths: [], vetReportPaths: [], medicationPhotoPaths, foodPhotoPaths, ownedFoodItemIds, ownerUserId: userId }
+    return { petPhotoPaths, eventAttachmentPaths: [], vetAttachmentPaths: [], vetDocumentPaths: [], vetReportPaths: [], medicationPhotoPaths, foodPhotoPaths, ownedFoodItemIds, ownedPetIds: petIds, ownerUserId: userId }
   }
 
-  const [eventAttRes, vetAttRes, vetReportRes] = await Promise.all([
+  const [eventAttRes, vetAttRes, vetDocRes, vetReportRes] = await Promise.all([
     adminClient.from('event_attachments').select('storage_path').in('pet_id', petIds),
     adminClient.from('vet_visit_attachments').select('storage_path').in('pet_id', petIds),
+    // B-478 VF-1 — the Vet Files library. Pet-scoped exactly like the two above.
+    adminClient.from('vet_documents').select('storage_path').in('pet_id', petIds),
     adminClient.from('vet_reports').select('storage_path').in('pet_id', petIds),
   ])
   if (eventAttRes.error) throw new Error(`Failed to read event_attachments: ${eventAttRes.error.message}`)
   if (vetAttRes.error) throw new Error(`Failed to read vet_visit_attachments: ${vetAttRes.error.message}`)
+  // vet_documents is a HARD failure, NOT the tolerated degrade vet_reports gets below.
+  // The distinction is deliberate. vet_reports is tolerated because its table genuinely
+  // does not exist yet (Step 9), so a read error there is the expected state rather
+  // than a fault. `vet_documents` ships in migration 044, in the same PR as this
+  // change and applied before it is deployed — so a read error here means something is
+  // actually wrong, and degrading it to "no documents" would let the run report a
+  // clean deletion while leaving every one of this owner's lab results and
+  // vaccination certificates sitting in the bucket. Silence in the direction of "we
+  // erased it" is the one failure mode an erasure path must not have (§6.2: verified
+  // in QA, not assumed). Throw so the whole run aborts and retries — it is idempotent
+  // by construction (FR-6: the auth delete is last), so the account survives intact.
+  if (vetDocRes.error) throw new Error(`Failed to read vet_documents: ${vetDocRes.error.message}`)
   // vet_reports is forward-looking (Step 9). Degrade a read error to "no PDFs"
   // rather than fail the whole deletion — there are no rows today, and when Step 9
   // ships the table read succeeds normally. The actual PDF removal is best-effort
@@ -142,10 +162,15 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
     petPhotoPaths,
     eventAttachmentPaths: (eventAttRes.data ?? []).map((r) => r.storage_path as string),
     vetAttachmentPaths: (vetAttRes.data ?? []).map((r) => r.storage_path as string),
+    vetDocumentPaths: (vetDocRes.data ?? []).map((r) => r.storage_path as string),
     vetReportPaths,
     medicationPhotoPaths,
     foodPhotoPaths,
     ownedFoodItemIds,
+    // The same pet ids that scoped the reads above, passed through so
+    // scopeVetDocumentPaths can re-check each vet-document key's first segment
+    // against them — a path and the ids that permit it always travel together.
+    ownedPetIds: petIds,
     ownerUserId: userId,
   }
 }
