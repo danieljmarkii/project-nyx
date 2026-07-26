@@ -64,6 +64,37 @@ function numWord(n: number): string {
 export function templateCorrelation(f: CorrelationFinding, petName: string): string {
   const symptom = SYMPTOM_LABEL[f.symptomType]
   const window = Math.round(f.correlationWindowHours)
+  if (f.jointCandidate) {
+    // JOINT CANDIDATE (B-351 slice 6, D5). These proteins are always fed together in
+    // this pet's logs, so the matched set cannot tell them apart — and the sentence must
+    // not pretend otherwise. Two rules govern this copy:
+    //   • Name EVERY member, never a representative. Naming one would credit it falsely
+    //     AND exonerate the other by omission, on the wedge's own surface.
+    //   • End on the ACTION, not the ambiguity (D5: "action-led, never ambiguity-led").
+    //     "We can't separate them" is a dead end for an owner; "feed one without the
+    //     other" is the one thing that actually resolves it — and it resolves it in the
+    //     engine too, since a single window where they differ splits the cluster.
+    // Deliberately NOT causal ("tended to follow", never "trigger"/"reaction") and
+    // deliberately never reassuring about the un-named member — there is no un-named
+    // member.
+    const lead =
+      f.tier === 'established'
+        ? `${petName}'s ${symptom} has tended to follow meals with ${f.protein}, across ${f.matchedPairs} matched days of logs`
+        : `${petName}'s ${symptom} has tended to follow meals with ${f.protein} within about ${window} hours`
+    // The ACTION is chosen by the engine, never here (f.jointGuidance). On an active diet
+    // trial the app must not tell the owner to vary a vet-directed elimination diet — it
+    // routes them to the person who can actually change it. `ask_vet` is also the honest
+    // default for an unset/unknown guidance, so a finding cached before this field existed
+    // degrades to the safe branch rather than the trial-breaking one.
+    if (f.jointGuidance === 'feed_apart') {
+      // Deliberately "start to separate them", not "tell them apart": separation only
+      // registers on a day the matcher selects as a case or control window, so the owner
+      // may feed them apart once and see nothing change. Promising a result we cannot
+      // guarantee on the next regeneration would be a promise the engine can silently break.
+      return `${lead} — they're always fed together, so feeding one without the other is what would start to separate them.`
+    }
+    return `${lead} — they're always fed together, so which one it is isn't clear yet. Worth raising with your vet before changing anything.`
+  }
   if (f.tier === 'established') {
     return `${petName}'s ${symptom} has tended to follow meals with ${f.protein}, across ${f.matchedPairs} matched days of logs.`
   }
@@ -387,6 +418,11 @@ export function phrasingPayload(finding: Finding, petName: string): Record<strin
       pet_name: petName,
       symptom: SYMPTOM_LABEL[finding.symptomType],
       protein: finding.protein,
+      // B-351 slice 6 — the machine-readable cluster. A joint candidate is phrased
+      // TEMPLATE-ONLY (index.ts) so this never actually reaches the model today; it is
+      // sent anyway, with the matching PHRASING_SYSTEM rule, so that the payload can
+      // never quietly become the reason a future routing change loses a member.
+      proteins: finding.proteins,
       evidence_tier: finding.tier, // 'early' | 'established'
       window_hours: Math.round(finding.correlationWindowHours),
       matched_days: finding.matchedPairs,
@@ -521,7 +557,10 @@ export const PHRASING_SYSTEM =
   '(4) For a food_symptom_correlation: ASSOCIATIONAL ONLY — say the symptom "tends to follow" ' +
   'meals with the protein. NEVER say or imply the food causes, triggers, or is responsible for the ' +
   'symptom, and never call it an allergy or intolerance. If evidence_tier is "early", say it is an ' +
-  'early pattern worth keeping an eye on. ' +
+  'early pattern worth keeping an eye on. If "proteins" holds MORE THAN ONE protein, they are always ' +
+  'fed together and cannot be told apart: name EVERY one of them, never single one out and never ' +
+  'leave one unmentioned, and close by saying that feeding one without the other would tell them ' +
+  'apart. ' +
   '(5) For an intake_decline: surface it calmly and clearly and point toward keeping an eye on it ' +
   'and a word with the vet. NEVER reassure, NEVER say the pet is fine/okay/healthy, NEVER call the ' +
   'pet "picky" or frame eating less as fussiness. ' +

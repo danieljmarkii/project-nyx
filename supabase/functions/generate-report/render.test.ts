@@ -928,6 +928,55 @@ Deno.test('diet/meds render an active trial, the human-food confounder line, and
   assert.ok(html.includes('chicken') && /not a proven cause/i.test(html), 'association, explicitly not causal')
 })
 
+// ── B-351 slice 6: a JOINT established correlation declares itself on the lead line ──
+
+Deno.test('a joint established correlation says it cannot be attributed to either protein', () => {
+  // Dr. Chen scans this line in seconds and acts on it. "Chicken and duck reached the
+  // established association threshold" reads as two independently-implicated antigens —
+  // and a vet who drops both from the diet has removed the one manipulation that would
+  // have told them which it was. The engine refuses to credit a member; the report must
+  // not un-refuse it by omission.
+  const joint = (over: Record<string, unknown> = {}) =>
+    base({
+      correlation: {
+        established: [
+          {
+            symptomType: 'vomit' as const,
+            protein: 'chicken and duck',
+            proteins: ['chicken', 'duck'],
+            matchedPairs: 20,
+            caseExposed: 8,
+            controlExposed: 2,
+            riskDifference: 0.3,
+            pValue: 0.02,
+            symptomEventCount: 12,
+            correlationWindowHours: 24,
+            ...over,
+          },
+        ],
+        hasEstablished: true,
+        noThreshold: false,
+        stapleProtein: null,
+        timing: [],
+      },
+    })
+
+  const html = renderReport(joint())
+  assert.ok(html.includes('chicken and duck'), 'both proteins are named on the lead line')
+  assert.ok(/cannot be attributed to either one individually/i.test(html), 'the caveat is stated')
+  assert.ok(/separating them would be informative/i.test(html), 'and the informative next step')
+  assert.ok(/not a proven cause/i.test(html), 'the existing non-causal framing survives')
+
+  // Regression fence: a single-protein established correlation is untouched.
+  const single = renderReport(joint({ protein: 'chicken', proteins: ['chicken'] }))
+  assert.equal(/cannot be attributed to either one individually/i.test(single), false)
+
+  // And a correlation cached before slice 6 (no `proteins` at all) still renders.
+  const legacy = renderReport(joint({ protein: 'chicken', proteins: undefined }))
+  assert.ok(legacy.includes('chicken'))
+  assert.equal(/cannot be attributed to either one individually/i.test(legacy), false)
+})
+
 // ── Coverage: reading-the-trend GP-0 note + a zero-count week renders a visible nub ─
 
 Deno.test('a zero-count week renders a nub (never blank) + the GP-0 note names concurrent changes', () => {
