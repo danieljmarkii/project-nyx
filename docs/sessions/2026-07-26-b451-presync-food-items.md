@@ -26,7 +26,9 @@ Behaviour is identical on the wire: same column list off `food_items_cache`, sam
 
 **Mutation-checked** rather than assumed: deleting the `proteins:` line from the helper fails 5 tests across all four writers. Before this PR that same deletion in any *one* copy would have failed nothing.
 
-`tsc --noEmit` clean; 139 suites / 2650 cases green.
+`tsc --noEmit` clean; 139 suites / 2650 cases green. Both CI checks (App typecheck+jest, Edge Functions deno test) green on the pushed head.
+
+At wrap, `main` had moved (#485, the B-171/B-172 dose-card copy session) — merged in cleanly, no conflicts, and re-verified: `tsc` clean, 139 suites / **2665** cases green (the sibling added 15). The post-merge duplicate-B-ID sweep came back empty.
 
 ## Decisions
 
