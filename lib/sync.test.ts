@@ -61,6 +61,8 @@ import {
   refreshMedicationCache,
   syncPendingDietTrials,
   syncPendingDietTrialFoods,
+  syncPendingFeedingArrangements,
+  syncPendingMeals,
 } from './sync';
 
 // B-125 — the post-push `synced = 1` sweep every writer shares.
@@ -293,6 +295,235 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
     expect(row.proteins).toBe('["chicken","salmon"]');
     // … and the LOCAL-ONLY last_used_at untouched (the footgun that must not regress).
     expect(row.last_used_at).toBe('2026-01-01T00:00:00Z');
+  });
+});
+
+// ── B-451 — the shared food_items FK pre-sync (Pattern 6) ────────────────────
+//
+// Four writers push rows that FK to food_items, and every one of them has to
+// guarantee the referenced food exists server-side first (the food may have been
+// captured offline, so the FK target can live only in food_items_cache). They
+// used to inline four copies of that block, and the drift was not hypothetical:
+// B-351 had to add `proteins` carriage to each copy separately, and a copy that
+// missed it silently flattens an offline-captured food's protein set to the
+// server's '{}' default — invisible until an exposure query reads it back.
+//
+// So the assertion that matters is not "the helper works" but "all four callers
+// emit the SAME payload". These tests drive each writer end-to-end through the
+// real supabase call chain and compare the food_items upsert they produce.
+describe('presyncFoodItems — one payload across all four callers (B-451)', () => {
+  // The cache row as SQLite actually hands it back: booleans are INTEGER, the
+  // protein set is JSON text. Both need transforming on the way to Postgres.
+  const CACHE_ROW = {
+    id: 'food-1', brand: 'Royal Canin', product_name: 'Hypoallergenic HP',
+    format: 'dry_kibble', food_type: 'meal', primary_protein: 'hydrolysed soy',
+    proteins: '["hydrolysed soy","chicken"]',
+    is_novel_protein: 1, is_grain_free: 0, is_prescription: 1,
+  };
+
+  // What every caller must put on the wire for CACHE_ROW.
+  const EXPECTED_PAYLOAD = {
+    id: 'food-1', brand: 'Royal Canin', product_name: 'Hypoallergenic HP',
+    format: 'dry_kibble', food_type: 'meal', primary_protein: 'hydrolysed soy',
+    // The B-351 carriage — the column that drifted once already.
+    proteins: ['hydrolysed soy', 'chicken'],
+    is_novel_protein: true, is_grain_free: false, is_prescription: true,
+    created_by_user_id: 'user-A',
+  };
+
+  const MEAL = {
+    id: 'm1', event_id: 'e1', pet_id: 'p1', food_item_id: 'food-1',
+    quantity: '1 cup', is_full_portion: 1, notes: null,
+    created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
+    intake_rating: 'finished', logged_via: 'app',
+  };
+  const ARRANGEMENT = {
+    id: 'a1', pet_id: 'p1', food_item_id: 'food-1', method: 'free_fed',
+    active_from: '2026-07-01', active_until: null, is_shared: 0, notes: null,
+    deleted_at: null,
+    created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
+  };
+  const TRIAL_ROW = {
+    id: 't1', pet_id: 'p1', food_item_id: 'food-1', started_at: '2026-07-01',
+    target_duration_days: 56, status: 'active', completed_at: null,
+    vet_name: null, notes: null, food_label: 'RC HP', indication: 'skin',
+    phase: 'elimination', outcome: null, outcome_notes: null, stopped_reason: null,
+    ended_at: null, transition_started_at: null,
+    created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
+    synced: 0, sync_error: null,
+  };
+  const TRIAL_FOOD_ROW = {
+    id: 'df1', diet_trial_id: 't1', pet_id: 'p1', food_item_id: 'food-1',
+    role: 'primary_diet', food_label: 'RC HP dry', allowed_from: '2026-07-01',
+    allowed_until: null, deleted_at: null,
+    created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
+    synced: 0, sync_error: null,
+  };
+
+  let foodUpsert: jest.Mock;
+  let dependentUpsert: jest.Mock;
+  let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
+
+  // The dependent writers differ in call shape — meals/arrangements await the
+  // upsert directly, the diet-trial pair chains .select('id') — so the stub is a
+  // thenable that also carries .select. Real chain, both shapes, one stub.
+  function dependentResult() {
+    const p = Promise.resolve({ data: [], error: null }) as Promise<unknown> & {
+      select: jest.Mock;
+    };
+    p.select = jest.fn().mockResolvedValue({ data: [], error: null });
+    return p;
+  }
+
+  // The cache read is the only query that mentions food_items_cache; everything
+  // else the writer asks for is its own push queue.
+  function queueReturns(rows: unknown[], cache: unknown[] = [CACHE_ROW]) {
+    mockGetAllAsync.mockImplementation((sql: string) =>
+      Promise.resolve(String(sql).includes('food_items_cache') ? cache : rows),
+    );
+  }
+
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    mockFrom.mockReset();
+    mockRunAsync.mockReset();
+    mockGetAllAsync.mockReset();
+    foodUpsert = jest.fn().mockResolvedValue({ error: null });
+    dependentUpsert = jest.fn().mockImplementation(() => dependentResult());
+    mockFrom.mockImplementation((table: string) =>
+      table === 'food_items' ? { upsert: foodUpsert } : { upsert: dependentUpsert },
+    );
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  const CALLERS: [string, unknown[], () => Promise<void>][] = [
+    ['syncPendingMeals', [MEAL], syncPendingMeals],
+    ['syncPendingFeedingArrangements', [ARRANGEMENT], syncPendingFeedingArrangements],
+    ['syncPendingDietTrials', [TRIAL_ROW], syncPendingDietTrials],
+    ['syncPendingDietTrialFoods', [TRIAL_FOOD_ROW], syncPendingDietTrialFoods],
+  ];
+
+  it.each(CALLERS)(
+    '%s pre-syncs food_items with the full payload — proteins carried, INTEGERs coerced',
+    async (_name, rows, run) => {
+      queueReturns(rows);
+      await run();
+
+      expect(mockFrom).toHaveBeenCalledWith('food_items');
+      expect(foodUpsert).toHaveBeenCalledTimes(1);
+      const [payload, opts] = foodUpsert.mock.calls[0] as [Record<string, unknown>[], unknown];
+      expect(payload).toEqual([EXPECTED_PAYLOAD]);
+      // ignoreDuplicates is load-bearing: the server row may be RICHER than the
+      // cache (photo_paths / ai_extraction_* written by the capture path), so the
+      // pre-sync must fill a gap, never clobber.
+      expect(opts).toEqual({ onConflict: 'id', ignoreDuplicates: true });
+      // Local-only cache columns must never reach the wire.
+      expect(payload[0]).not.toHaveProperty('last_used_at');
+      expect(payload[0]).not.toHaveProperty('cached_at');
+    },
+  );
+
+  it.each(CALLERS)(
+    '%s pre-syncs BEFORE the dependent upsert — the FK target lands first',
+    async (_name, rows, run) => {
+      const order: string[] = [];
+      foodUpsert.mockImplementation(() => {
+        order.push('food_items');
+        return Promise.resolve({ error: null });
+      });
+      dependentUpsert.mockImplementation(() => {
+        order.push('dependent');
+        return dependentResult();
+      });
+      queueReturns(rows);
+      await run();
+
+      expect(order[0]).toBe('food_items');
+      expect(order).toContain('dependent');
+    },
+  );
+
+  it.each(CALLERS)(
+    '%s still attempts the dependent upsert when the pre-sync fails (best-effort)',
+    async (_name, rows, run) => {
+      // A pre-sync failure is logged, not thrown. If the food genuinely is not
+      // there the dependent upsert fails its own FK check (23503, non-terminal)
+      // and stays queued — but if it IS there, a transient pre-sync blip must not
+      // strand a perfectly pushable row for the cycle.
+      foodUpsert.mockResolvedValue({ error: { message: 'network blip' } });
+      queueReturns(rows);
+      await run();
+
+      expect(dependentUpsert).toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('food_items pre-sync'),
+        'network blip',
+      );
+    },
+  );
+
+  it.each(CALLERS)(
+    '%s does not touch food_items when the cache has no matching row',
+    async (_name, rows, run) => {
+      // An id in the queue with nothing cached for it: emitting an empty upsert
+      // would be a pointless round-trip on every cycle.
+      queueReturns(rows, []);
+      await run();
+      expect(foodUpsert).not.toHaveBeenCalled();
+      expect(dependentUpsert).toHaveBeenCalled();
+    },
+  );
+
+  it('skips the pre-sync entirely for a meal with no food_item_id', async () => {
+    // A quick-logged meal can carry a null food. The empty-id early return means
+    // no cache read and no upsert at all — not a `WHERE id IN ()`.
+    queueReturns([{ ...MEAL, food_item_id: null }]);
+    await syncPendingMeals();
+
+    expect(foodUpsert).not.toHaveBeenCalled();
+    const cacheReads = mockGetAllAsync.mock.calls.filter(([sql]) =>
+      String(sql).includes('food_items_cache'),
+    );
+    expect(cacheReads).toHaveLength(0);
+  });
+
+  it('de-duplicates food ids and binds them as params, never interpolated', async () => {
+    // Three meals on the same food is the ordinary case (breakfast/lunch/dinner);
+    // sending the id three times would be a wasted payload. And the id reaches
+    // SQLite as a bound param — the markSynced (B-125) property, here too.
+    queueReturns([MEAL, { ...MEAL, id: 'm2' }, { ...MEAL, id: 'm3' }]);
+    await syncPendingMeals();
+
+    const [sql, params] = mockGetAllAsync.mock.calls.find(([s]) =>
+      String(s).includes('food_items_cache'),
+    ) as [string, string[]];
+    expect(sql).toContain('WHERE id IN (?)');
+    expect(params).toEqual(['food-1']);
+    expect(sql).not.toContain('food-1');
+  });
+
+  it('decodes an unhydrated NULL protein cache to [] — matching the column default', async () => {
+    // Legacy rows cached before B-351 have proteins = NULL. Sending NULL would
+    // violate the NOT NULL column; [] is what the server would have defaulted to.
+    queueReturns([MEAL], [{ ...CACHE_ROW, proteins: null }]);
+    await syncPendingMeals();
+
+    const [payload] = foodUpsert.mock.calls[0] as [Record<string, unknown>[]];
+    expect(payload[0].proteins).toEqual([]);
+  });
+
+  it.each(CALLERS)('%s never pre-syncs without a session (Pattern 4)', async (_name, rows, run) => {
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+    queueReturns(rows);
+    await run();
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });
 
