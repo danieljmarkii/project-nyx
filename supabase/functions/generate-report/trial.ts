@@ -427,6 +427,20 @@ export interface TrialBlock {
   /** The species' forward challenge window in days — the legend for
    *  `symptomInChallengeWindow`. */
   challengeWindowDays: number
+  /**
+   * The dagger's HONEST base rate: the share of in-range days on which a feeding would
+   * have earned the marker, i.e. days with any symptom inside the following
+   * `challengeWindowDays`. Percent, 0–100.
+   *
+   * The footnote used to disclose the SYMPTOM-DAY rate instead (17 of 46 days, 37%),
+   * which is a different quantity and always the smaller one — cold read round 6 worked
+   * the real figure out by hand from appendix A and got **83%**: itching ran May 21 –
+   * Jun 25 with no gap wider than 5 days, so every feeding date from May 18 to Jun 24
+   * qualified. Disclosing 37% where the operative rate is 83% makes "it marks 3 of 4
+   * rows" read as selective when it is very nearly unavoidable — in the footnote whose
+   * entire purpose is to admit the marker does not discriminate on a dense record.
+   */
+  challengeMarkerBaseRatePct: number
 }
 
 // ── Trial selection ──────────────────────────────────────────────────────────
@@ -840,6 +854,15 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     ),
     loggingDensity: loggingDensity(args.mealLoggedDayIndices, startDayIndex, endDayIndex),
     challengeWindowDays: CHALLENGE_WINDOW_DAYS[species],
+    challengeMarkerBaseRatePct: (() => {
+      const total = endDayIndex - (ctx.startDayIndex as number) + 1
+      if (total <= 0) return 0
+      let qualifying = 0
+      for (let dn = ctx.startDayIndex as number; dn <= endDayIndex; dn++) {
+        if (symptomDays.some((sd) => isWithinChallengeWindow(dn, sd, species))) qualifying += 1
+      }
+      return Math.round((qualifying / total) * 100)
+    })(),
   }
 }
 

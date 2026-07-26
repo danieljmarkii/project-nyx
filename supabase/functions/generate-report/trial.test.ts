@@ -1006,8 +1006,15 @@ Deno.test('the challenge-window marker discloses its own base rate', () => {
   input.events.push(meal({ date: '2026-06-10', brand: 'Zuke', product: 'Mini Naturals', foodItemId: 'f-z', foodType: 'treat', proteins: ['chicken'], ingredientsNotes: 'Chicken, rice' }))
   for (const d of days('2026-06-11', '2026-06-20')) input.events.push(symptom(d))
   const text = plain(renderReport(assembleReport(input)))
-  assert.ok(/It marks 1 of 1 row here, against symptoms logged on 10 of 32 days in the window/.test(text))
-  assert.ok(/the denser the symptom record, the less this marker distinguishes/.test(text))
+  // ROUND 6: the disclosed figure must be the MARKER'S OWN fire rate, not the
+  // symptom-day rate. The dagger fires when a symptom falls in the days AFTER a
+  // feeding, so what discloses its power is the share of days on which any feeding
+  // would have earned it. On the dog artifact those differ by more than half (37% vs
+  // 83%), and the smaller number made "3 of 4 rows" read as a selective finding.
+  assert.ok(/It marks 1 of 1 row here/.test(text))
+  assert.ok(/% of days would have earned it/.test(text))
+  assert.ok(!/against symptoms logged on \d+ of \d+ days in the window/.test(text))
+  assert.ok(/The denser the symptom record, the less this marker means/.test(text))
 })
 
 Deno.test('the legend never certifies the absence of a safety flag or an intake flag', () => {
@@ -1123,7 +1130,7 @@ Deno.test('the trial-scoped logging claim states its scope, so it cannot contrad
   // where the fact is available: the two ranges are right there. So it names the side.
   // This fixture's trial STOPPED inside the window, so the extension is after it.
   assert.ok(
-    /This covers the trial\u2019s 20 days; the charts below span the report\u2019s 32-day window, which extends after it/.test(
+    /These days are the logged overlap range \(Jun 1 . Jun 20, 2026\); the charts below span the report\u2019s 32-day window, which is wider/.test(
       text,
     ),
   )
@@ -1557,4 +1564,83 @@ Deno.test('R4 — an unread allowed-food label says so and never reads as an all
   assert.ok(/Royal Canin Hydrolyzed Treats permitted treat.*label not read/s.test(text))
   assert.ok(!/no animal proteins/i.test(text))
   assert.ok(!/carries nothing/i.test(text))
+})
+
+// ── Cold-read round 6 ────────────────────────────────────────────────────────
+//
+// Round 6 triaged its blockers into TRIAL-BLOCK and REPORT-WIDE at request, and
+// returned 5 of each. These pin the five that are this function's to own. The
+// report-wide five are filed (B-494/B-497–B-504) and gate the deploy, not the merge.
+
+Deno.test('R6 — the scope clause names the RANGE, never "the trial’s N days"', () => {
+  // Fourth attempt at this clause. Every earlier one conflated the logged OVERLAP RANGE
+  // with the TRIAL: it read "This covers the trial's 43 days" three inches under a
+  // headline saying "day 46 of 56", then "which extends before it" where the window and
+  // the trial start on the SAME day and only the first log is later. Both halves were
+  // false about the trial while true about the range.
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-04', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/These days are the logged overlap range/.test(text))
+  assert.ok(!/covers the trial’s \d+ days/.test(text), 'never restates the trial length here')
+  assert.ok(!/extends before it/.test(text), 'never asserts a side against the trial')
+})
+
+Deno.test('R6 — the dagger discloses its own fire rate, not the symptom-day rate', () => {
+  // A dense symptom record makes the marker near-unavoidable: on the dog artifact every
+  // feeding date from May 18 to Jun 24 qualified (83%), while the footnote printed the
+  // symptom-day rate (37%) — making "it marks 3 of 4 rows" read as a selective finding
+  // inside the footnote that exists to say the opposite.
+  const input = wellLoggedTrialInput()
+  input.events.push(meal({ date: '2026-06-10', time: '15:00:00', brand: 'Zuke', product: 'Mini Naturals', foodItemId: 'f-z', foodType: 'treat', proteins: ['chicken'] }))
+  // Symptoms every third day: no feeding day is more than the window from one.
+  for (const d of days('2026-06-01', '2026-07-02').filter((_, i) => i % 3 === 0)) input.events.push(symptom(d))
+  const snap = assembleReport(input)
+  assert.ok(snap.trial!.challengeMarkerBaseRatePct >= 90, 'a dense record makes the marker near-certain')
+  const text = plain(renderReport(snap))
+  assert.ok(/% of days would have earned it/.test(text))
+  assert.ok(!/against symptoms logged on \d+ of \d+ days in the window/.test(text))
+})
+
+Deno.test('R6 — the oral-route line says the flavour is unrecorded AND excluded from the tally', () => {
+  // On a report whose whole subject is antigen exposure, "carried a flavour into Cooper
+  // (NexGard)" names no protein — there is no source for one — and the antigen tally two
+  // rows up silently omits these exposures, so the line flags a hazard the page's own
+  // count then contradicts. Neither gap is fixable, so both are disclosed.
+  const input = wellLoggedTrialInput()
+  input.medicationItems = [{ id: 'mi-1', genericName: 'afoxolaner', brandName: 'NexGard', form: 'chewable' }] as ReportInput['medicationItems']
+  input.doses = [
+    { eventId: 'd-1', occurredAt: '2026-06-10T09:00:00Z', medicationItemId: 'mi-1', adherence: 'given', pairedEventId: null },
+  ] as unknown as ReportInput['doses']
+  input.events.push({ id: 'd-1', type: 'medication', occurredAt: '2026-06-10T09:00:00Z', deletedAt: null } as unknown as ReportEventInput)
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/carried a flavour into/.test(text))
+  assert.ok(/flavouring.s protein is not recorded anywhere/.test(text))
+  assert.ok(/not in the antigen tally above/.test(text))
+})
+
+Deno.test('R6 — the exposure tile never renders a bare dash in a count grid', () => {
+  // An em-dash in a count position scans as zero, and this branch is reached exactly
+  // when the report has a REASON it may not state a count — a refusal, an uncontrolled
+  // bowl, a below-floor record. Those are the cases where "0" is the most dangerous
+  // thing the cell could imply.
+  const input = wellLoggedTrialInput()
+  input.feedingArrangements = [
+    { id: 'fa-1', foodItemId: 'f-rival', method: 'free_choice', label: 'Purina ONE', activeFrom: '2026-06-01', activeUntil: null },
+  ] as unknown as ReportInput['feedingArrangements']
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Not countable/.test(text) || /Not stated/.test(text))
+  assert.ok(/off-list food was continuously available/.test(text))
+})
+
+Deno.test('R6 — a below-floor record says "Not stated", not a dash', () => {
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-25', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/^—$/m.test(text))
+  assert.ok(/Not stated|Not countable|feedings/.test(text))
 })

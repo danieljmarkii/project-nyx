@@ -113,6 +113,7 @@ export function trialBlockFixture(
     medicationOverlap: [],
     loggingDensity: null,
     challengeWindowDays: 14,
+    challengeMarkerBaseRatePct: 0,
     ...over,
   }
 }

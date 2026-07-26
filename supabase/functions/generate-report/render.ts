@@ -1378,10 +1378,18 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // missed critical dose is a worse outcome than a contaminated trial, so the
     // sentence names the fact and points at a substitution — never at the next dose.
     const drugs = [...new Set(t.oralRoute.map((o) => o.drugLabel ?? 'a medication'))]
+    // SAY THAT THE FLAVOUR IS UNIDENTIFIED, AND THAT THE TALLY EXCLUDES IT. Round 6, on
+    // a report whose whole subject is antigen exposure: *"2 doses by mouth … carried a
+    // flavour into Cooper (NexGard)"* names no protein — a drug flavouring has no
+    // ingredient panel in this data model — and the antigen tally two rows up silently
+    // omits these exposures, so the line flags a hazard the page's own count then
+    // contradicts. Neither gap is fixable here (there is no source for the flavour's
+    // composition), so both are DISCLOSED rather than papered over. Naming the exclusion
+    // is what stops the tally reading as complete.
     blind.push(
       `<b>${num(t.oralRoute.length)} dose${t.oralRoute.length === 1 ? '' : 's'} by mouth</b> during the trial carried a flavour into ${pet} (${drugs
         .map((d) => h(d))
-        .join(', ')}) &mdash; a chewable, or a dose given inside food. Dosing should continue exactly as prescribed.`,
+        .join(', ')}) &mdash; a chewable, or a dose given inside food. <b>The flavouring&rsquo;s protein is not recorded anywhere</b>, so these exposures are not in the antigen tally above and that tally does not describe them. Dosing should continue exactly as prescribed.`,
     )
   }
   if (t.arrangementExposures.length > 0) {
@@ -1423,29 +1431,29 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // revokes the one result the trial exists to produce. A vet acting on it tells the
     // owner six weeks were wasted.
     //
-    // C5 says the trend is RENDERED AGAINST density. It does not say adjudicated by it,
-    // and no series available here can adjudicate: meals saturate, non-meals are the
-    // symptoms. So both are shown, each labelled, and the circularity in the second is
-    // NAMED instead of being hidden inside a denominator.
+    // C5 says the trend is RENDERED AGAINST density, not adjudicated by it, and round 5
+    // deleted the second series outright: its "any other event" label was false (treats
+    // are meal-typed; doses and weigh-ins are not events), so it was exactly the symptom
+    // count while 65 treat feedings, 3 weigh-ins and 2 doses went uncounted.
     const m = d.meals
-    // The report window can be WIDER than the trial's overlap range on either side —
-    // untracked days before the first log, or charted days after the trial stopped. The
-    // round-3 clause asserted "after the trial" for both and so read "3 of them after
-    // the trial" beside a headline "day 46 of 56", telling a vet a running trial had
-    // finished and putting its leading untracked days at the end. Round 4's fix
-    // retreated to "wider at one or both ends", and round 5 correctly called that a
-    // generated hedge where a fact is available — the two ranges are right here.
+    // NAME THE RANGE, NOT "THE TRIAL". Fourth attempt at this clause, and every earlier
+    // one conflated the OVERLAP RANGE with the TRIAL. Round 6: it read "This covers the
+    // trial's 43 days" three inches under a headline saying "day 46 of 56" — 43 is the
+    // logged overlap, the trial has run 46 — and then "which extends before it", where
+    // the window and the trial start on the SAME day and only the first log is later.
+    // Both halves were false about the trial while being true about the range, which is
+    // exactly the distinction the medication-overlap fix drew one section up.
+    //
+    // So the clause describes the range explicitly, by its dates, and asserts nothing
+    // about which end or about the trial's own length. The trial's elapsed day count is
+    // already on the page, in the headline, where it cannot disagree with itself.
     const window = snap.atAGlance.windowDays
-    const trialDays = m.firstHalf.days + m.lastHalf.days
-    const before = snap.trial!.rangeStartDate > snap.scope.startDate
-    const after = snap.trial!.rangeEndDate < snap.scope.endDate
-    const side =
-      before && after ? 'at both ends' : before ? 'before it' : after ? 'after it' : ''
+    const rangeDays = m.firstHalf.days + m.lastHalf.days
     const scope =
-      window > trialDays && side
-        ? ` This covers the trial&rsquo;s ${num(trialDays)} days; the charts below span the report&rsquo;s ${num(
-            window,
-          )}-day window, which extends ${side}.`
+      window > rangeDays
+        ? ` These days are the logged overlap range (${h(
+            fmtRange(snap.trial!.rangeStartDate, snap.trial!.rangeEndDate),
+          )}); the charts below span the report&rsquo;s ${num(window)}-day window, which is wider.`
         : ''
     rows.push(
       kv(
@@ -2051,7 +2059,16 @@ function trialExposureTile(t: NonNullable<ReportSnapshot['trial']>): string {
       `All matched the trial diet or a permitted food<br/>a floor: Culprit only sees what&rsquo;s logged`,
     )
   }
-  return tile('—', '', `Off-diet exposures<br/>see the diet-trial block below`)
+  // AN EM-DASH IN A COUNT GRID SCANS AS ZERO. This branch is reached exactly when the
+  // report has a reason it may not state a count — a refusal, an uncontrolled free-fed
+  // bowl, a below-floor record — i.e. the cases where "0" is the most dangerous thing
+  // the tile could imply. Round 6 on the refused cat: the tile read "—" for a patient
+  // with a competing antigen continuously available, and appendix C got the same fact
+  // right in words. So the tile says the WORD, not a dash: a reader who takes nothing
+  // else from this cell must not take "none" from it.
+  return t.arrangementExposures.length > 0
+    ? tile('Not countable', '', `Off-diet exposures<br/>off-list food was continuously available &mdash; see below`)
+    : tile('Not stated', '', `Off-diet exposures<br/>see the diet-trial block below`)
 }
 
 /**
@@ -3661,12 +3678,15 @@ function offDietAppendix(snap: ReportSnapshot): string {
   // literature citation behind it. A marker whose density is disclosed can be discounted;
   // one whose density is hidden cannot.
   const daggerRows = grouped.filter((r) => r.symptomInChallengeWindow).length
-  // THE UNION, not the per-type maximum. The marker fires on ANY symptom inside the
-  // window, so a base rate taken from the largest single symptom type understates its
-  // own denominator — "16 of 46" on a record with 16 itching days plus a separate
-  // loose-stool day — and makes the marker look more discriminating than it is, in the
-  // footnote that exists to admit it is not (cold read round 5).
-  const symptomDays = snap.atAGlance.anySymptomDays
+  // THE MARKER'S OWN FIRE RATE, not the symptom-day rate. Round 5 fixed this from the
+  // per-type maximum to the union of symptom days; round 6 showed the union is still
+  // the wrong QUANTITY. The dagger fires when a symptom falls in the days AFTER a
+  // feeding, so what discloses its discriminating power is the share of days on which
+  // any feeding would have earned it — 83% on the dog artifact, against the 37%
+  // symptom-day rate the footnote was printing. Understating it by half makes "it marks
+  // 3 of 4 rows" read as a selective finding rather than a near-certainty, inside the
+  // footnote that exists to say the opposite.
+  const markerBaseRate = snap.trial?.challengeMarkerBaseRatePct ?? 0
   const daggerFootnote =
     trialDerived && daggerRows > 0
       ? `<p class="note"><b>&dagger;</b> a symptom was logged in the ${num(
@@ -3675,9 +3695,9 @@ function offDietAppendix(snap: ReportSnapshot): string {
           speciesPlural(snap.signalment.species),
         )} (Olivry &amp; Mueller). <b>Timing only.</b> It is not an attribution: an unlogged exposure is always possible, so no pairing here can be exclusive, and same-day pairs are deliberately excluded. It marks ${num(
           daggerRows,
-        )} of ${num(grouped.length)} row${grouped.length === 1 ? '' : 's'} here, against symptoms logged on ${num(
-          symptomDays,
-        )} of ${num(snap.atAGlance.windowDays)} days in the window &mdash; the denser the symptom record, the less this marker distinguishes.</p>`
+        )} of ${num(grouped.length)} row${grouped.length === 1 ? '' : 's'} here &mdash; but on this record <b>${num(
+          markerBaseRate,
+        )}% of days would have earned it</b>, so it distinguishes very little. The denser the symptom record, the less this marker means.</p>`
       : ''
 
   // Reconcile the caption with page 1, which reports treats and human food as SEPARATE counts.
