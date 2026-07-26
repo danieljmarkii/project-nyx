@@ -338,7 +338,10 @@ export default function ProfileScreen() {
       updatePet({ photo_path: storagePath });
     } catch (e) {
       console.error('[Profile] photo upload failed:', e);
-      Alert.alert('Upload failed', 'Could not save photo. Make sure the nyx-pet-photos storage bucket exists and has upload policies.');
+      // The cause (missing bucket, RLS, dropped connection) belongs in the log
+      // above, never in the alert — naming storage internals to an owner on one
+      // of their first actions in the app is unactionable (B-399).
+      Alert.alert("Couldn't save the photo", 'Check your connection and try again.');
     } finally {
       setPhotoUploading(false);
     }

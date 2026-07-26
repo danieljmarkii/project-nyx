@@ -125,7 +125,10 @@ export default function MedicationDetailScreen() {
         .maybeSingle();
       if (cancelled) return;
       if (error || !data) {
-        setLoadError(error?.message ?? 'Medication not found');
+        // A failed read is retryable, a missing row isn't — say which, without
+        // handing the owner the provider's string.
+        if (error) console.warn('[medication-detail] load failed:', error.message);
+        setLoadError(error ? "Couldn't load this medication. Check your connection and try again." : 'Medication not found');
         return;
       }
       const r = data as MedicationItemRow;
@@ -199,7 +202,8 @@ export default function MedicationDetailScreen() {
         .select('id');
 
       if (error) {
-        Alert.alert('Could not save', error.message);
+        console.error('[MedicationDetail] item update failed:', error);
+        Alert.alert('Could not save', 'Something went wrong. Try again in a moment.');
         return;
       }
       if (!data || data.length === 0) {
@@ -314,8 +318,8 @@ export default function MedicationDetailScreen() {
         console.warn('[medication-detail] cache photo update failed:', err);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('Could not update photo', msg);
+      console.error('[medication-detail] photo update failed:', err);
+      Alert.alert('Could not update photo', 'Try again in a moment.');
     } finally {
       setReplacingPhoto(false);
     }

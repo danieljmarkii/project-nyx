@@ -153,7 +153,10 @@ export function StoolAnalysisSection(
     const { error } = await triggerStoolAnalysis(eventId);
     setRetrying(false);
     if (error) {
-      Alert.alert('Could not start analysis', error);
+      // `error` is the raw functions.invoke message (lib/analysis.ts) — a
+      // transport string, not owner copy. Log it, show the calm retry line.
+      console.warn('[stool-analysis] retry failed:', error);
+      Alert.alert('Could not start analysis', 'Try again in a moment.');
       return;
     }
     setWorking(true);
