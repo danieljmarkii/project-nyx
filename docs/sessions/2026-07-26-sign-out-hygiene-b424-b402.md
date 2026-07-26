@@ -127,6 +127,11 @@ allowlist UUID and asserts the cache reads `null` after the wipe.
 
 ## Files
 
+- `CLAUDE.md` § Code Conventions — one new bullet: a new local SQLite table declares
+  its DDL in a schema constant and goes in `LOCAL_WIPE_TABLES`, both now enforced by
+  the build. Added inline (Tier 1) so the next session meets the rule before CI does,
+  not after. **No version bump** — the precedent for a convention bullet is the
+  2026-07-24 widget-layouts entry, which carries its own date and no version row.
 - `lib/localSchema.ts` (**new**) — `BASE_SCHEMA_SQL`, extracted verbatim from db.ts.
 - `lib/db.ts` — `initDb` now execs the constant; PRAGMAs stay inline.
 - `lib/hydration.ts` — the `LOCAL_WIPE_TABLES` B-424 comment updated: the list still
