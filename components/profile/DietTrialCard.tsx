@@ -43,7 +43,6 @@ interface Props {
 }
 
 export function DietTrialCard({ model, actions, onManage, style }: Props) {
-  const onAction = model.action ? actions?.[model.action.id] : undefined;
   const manageLabel = model.state === 'no_trial' ? '+ Start' : 'Change';
 
   return (
@@ -129,26 +128,40 @@ export function DietTrialCard({ model, actions, onManage, style }: Props) {
         </View>
       )}
 
-      {model.action && onAction && (
-        model.state === 'no_trial' ? (
+      {/* The action ROW. Emphasis comes off the model rather than being inferred
+          here, because §4.3 makes relative weight an acceptance criterion on the
+          milestone: `Keep going` is never weaker than `This trial is done`. A view
+          that decided weight from `state` or from array position would put that
+          criterion somewhere no test can reach it. */}
+      {model.actions.map((action) => {
+        const onPress = actions?.[action.id];
+        if (!onPress) return null;
+        if (action.emphasis === 'link') {
+          return (
+            <Pressable
+              key={action.id}
+              onPress={onPress}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              testID={`trial-action-${action.id}`}
+              style={styles.secondaryAction}
+            >
+              <Text style={styles.secondaryActionText}>{action.label} ›</Text>
+            </Pressable>
+          );
+        }
+        return (
           <PrimaryButton
-            label={model.action.label}
-            variant="secondary"
-            onPress={onAction}
+            key={action.id}
+            testID={`trial-action-${action.id}`}
+            label={action.label}
+            variant={action.emphasis === 'primary' ? 'primary' : 'secondary'}
+            onPress={onPress}
             style={styles.primaryAction}
           />
-        ) : (
-          <Pressable
-            onPress={onAction}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={model.action.label}
-            style={styles.secondaryAction}
-          >
-            <Text style={styles.secondaryActionText}>{model.action.label} ›</Text>
-          </Pressable>
-        )
-      )}
+        );
+      })}
     </Card>
   );
 }

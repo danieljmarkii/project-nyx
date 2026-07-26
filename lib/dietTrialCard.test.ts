@@ -49,7 +49,7 @@ function allStrings(model: TrialCardModel): string[] {
     model.foodLabel ?? '',
     model.dayLine ?? '',
     model.windowLine ?? '',
-    model.action?.label ?? '',
+    ...model.actions.map((a) => a.label),
     ...model.lines.map((l) => l.text),
   ];
 }
@@ -209,7 +209,9 @@ describe('state 0 — no trial', () => {
   });
 
   it('is the only entry point to PR 3', () => {
-    expect(model.action).toEqual({ id: 'start_trial', label: 'Start a diet trial' });
+    expect(model.actions).toEqual([
+      { id: 'start_trial', label: 'Start a diet trial', emphasis: 'secondary' },
+    ]);
   });
 });
 
@@ -278,7 +280,7 @@ describe('state 2 — mid-trial, clean', () => {
 
   it('has a forward line and no "Log a meal" action', () => {
     expect(textOf(model, 'forward')).toEqual(['5 weeks to go.']);
-    expect(model.action).toBeNull();
+    expect(model.actions).toEqual([]);
     expect(allStrings(model).join(' ')).not.toMatch(/log a meal/i);
   });
 });
@@ -371,7 +373,7 @@ describe('state 4 — below the coverage floor', () => {
   });
 });
 
-describe('state 5 — the milestone', () => {
+describe('state 5 — the milestone (PR 6, §4.3)', () => {
   const model = resolveTrialCard(activeInput({ nowMs: localNoon(2026, 8, 27) }));
 
   it('is action-first and never reads as permission to stop', () => {
@@ -381,6 +383,50 @@ describe('state 5 — the milestone', () => {
     // ACVIM 2026: continue the diet ≥12 weeks before transitioning away. A
     // day-28 "trial complete" would tell a GI owner to stop at a quarter of that.
     expect(allStrings(model).join(' ')).not.toMatch(/complete|finished|you can stop|all done/i);
+  });
+
+  it('offers the three-way decision, action before verdict', () => {
+    expect(model.actions.map((a) => a.id)).toEqual([
+      'trial_extend', 'trial_complete', 'trial_stopped_early',
+    ]);
+    // Nothing on this card asks how it went. §4.3: a milestone that asks the
+    // verdict first turns an unanswered card into a stalled trial, and a stalled
+    // trial is the one the vet report renders as still ongoing.
+    expect(allStrings(model).join(' ')).not.toMatch(/how did it go|better|worse/i);
+  });
+
+  it('`Keep going` names its default and is never the weaker option', () => {
+    const [keep, done] = model.actions;
+    expect(keep.label).toBe('Keep going — 4 more weeks');
+    expect(done.label).toBe('This trial is done');
+    // §4.3's weight rule, asserted where it can actually be asserted. The design
+    // lock draws filled-plus-ghost (equal-OR-greater); the criterion is that
+    // keep-going is never weaker, so this is the assertion that survives either
+    // PM ruling on the mock's flagged question.
+    const rank = { primary: 2, secondary: 1, link: 0 } as const;
+    expect(rank[keep.emphasis]).toBeGreaterThanOrEqual(rank[done.emphasis]);
+  });
+
+  it('carries the ACVIM continuation sentence on a GI trial, and only there', () => {
+    const gi = resolveTrialCard(
+      activeInput({
+        nowMs: localNoon(2026, 8, 27),
+        trial: {
+          status: 'active', startedAt: '2026-07-03', targetDurationDays: 56,
+          foodLabel: FOOD, indication: 'gi',
+        },
+      }),
+    );
+    // The live clinical harm §4.3 names: a milestone at the ASSESSMENT window
+    // reading as an ending, on a diet the vet wanted continued for three months.
+    expect(textOf(gi, 'note')).toEqual([
+      'Your vet decides when the diet changes. For gut problems, diets are often ' +
+      'continued for around three months even when things look better early.',
+    ]);
+    expect(gi.actions[0].label).toBe('Keep going — 2 more weeks');
+
+    // Skin and an unset indication both take the base note and the 28-day default.
+    expect(textOf(model, 'note')[0]).not.toMatch(/three months/);
   });
 });
 
@@ -448,7 +494,9 @@ describe('state 7a — completed', () => {
   });
 
   it('offers the report, not another trial action', () => {
-    expect(model.action).toEqual({ id: 'open_report', label: 'Open vet report' });
+    expect(model.actions).toEqual([
+      { id: 'open_report', label: 'Open vet report', emphasis: 'link' },
+    ]);
   });
 });
 
