@@ -17,6 +17,7 @@ import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
@@ -119,6 +120,13 @@ export default function LogModal() {
     petName: string;
     foodName: string | null;
   } | null>(null);
+
+  // B-336 — the double-submit guard shared by both one-tap picker paths (food +
+  // medication). A picker tile is the write, so a rapid double-tap used to run the
+  // handler twice and land two events for one meal/pill. One guard for the screen
+  // is correct rather than one per picker: only a single picker step is ever
+  // mounted, so the two paths can never be in flight at the same time.
+  const guardSubmit = useSubmitGuard();
 
   // Symptom state
   const [severity, setSeverity] = useState<number | null>(null);
@@ -281,7 +289,10 @@ export default function LogModal() {
     await noteTrialFlagShown(flag);
   }
 
-  async function handlePickFood(food: PickerFood) {
+  // Returns whether an event was COMMITTED — the double-submit guard's contract
+  // (B-336). A null result means handleConfirm wrote nothing and already alerted,
+  // so the tiles must stay live for the retry.
+  async function handlePickFood(food: PickerFood): Promise<boolean> {
     setSelectedFoodId(food.id);
     setSelectedFoodBrand(food.brand);
     setSelectedFoodProduct(food.product_name);
@@ -340,6 +351,7 @@ export default function LogModal() {
       // renders it.
       void applyTrialFlag(result.eventId, result.petId, food.id, result.occurredAt);
     }
+    return !!result;
   }
 
   // Dose log from the medication picker — the medication twin of handlePickFood
@@ -350,7 +362,12 @@ export default function LogModal() {
   // completion card — which binds the dose to the meal's pet + event (paired_event_id)
   // and infers the vehicle from the food. The only difference is which pet/link/vehicle
   // the write carries; everything downstream (regimen link, sync, card) is shared.
-  async function handlePickMedication(med: PickerMedication) {
+  // Returns whether a dose was COMMITTED — the double-submit guard's contract (B-336).
+  // The two early exits (no pet to write for; the dose write threw) wrote nothing and
+  // return false so the tile works again; every path past the successful insert returns
+  // true, including the retroactive-combo path that stays mounted behind the confirm
+  // sheet — the dose IS on disk there, so a second tap must not write another one.
+  async function handlePickMedication(med: PickerMedication): Promise<boolean> {
     // The pet this dose is written for. STANDALONE: the active pet, read at write time
     // (the queue-then-switch edge, multi-pet spec §6). COMBO (B-156 PR B2b): the MEAL's
     // pet (pairedPetId) — a dose given with a meal must land on the same pet as that
@@ -360,7 +377,7 @@ export default function LogModal() {
     const writePetId = isComboMode
       ? (pairedPetId ?? null)
       : (usePetStore.getState().activePet?.id ?? null);
-    if (!writePetId) return;
+    if (!writePetId) return false;
     // COMBO: infer the vehicle from the food it rode in (meal → in_food, treat →
     // in_treat). A best-guess seed, pre-selected on the card for the owner to confirm
     // or change; descriptive only, no adherence/safety meaning of its own.
@@ -418,7 +435,7 @@ export default function LogModal() {
     } catch (e) {
       console.error('[log] medication dose write failed:', e);
       Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
-      return;
+      return false;
     }
     // Optimistic timeline insert (B-117 PR 8) — only when the dose's pet is the one on
     // screen. In the rare combo queue-then-switch edge (writePetId is the meal's pet and
@@ -479,7 +496,7 @@ export default function LogModal() {
         // Finished / unrated vehicle → the dose is cleanly 'given'; just return to the treat.
         router.back();
       }
-      return;
+      return true;
     }
 
     // Dismiss the picker, then play the dose completion card at the root layer (delayMs
@@ -512,6 +529,7 @@ export default function LogModal() {
       },
       { delayMs: 450 },
     );
+    return true;
   }
 
   // B-325 — resolve a retroactive in-doubt combo dose from the confirm sheet, then return
@@ -986,7 +1004,9 @@ export default function LogModal() {
           <FoodPicker
             petId={activePet.id}
             petName={activePet.name}
-            onPickFood={handlePickFood}
+            // Guarded (B-336): the first tap latches, so a rapid double-tap on a
+            // tile can't write two meals.
+            onPickFood={(food) => { void guardSubmit(() => handlePickFood(food)); }}
             // Photo-first food capture (Step 5). On confirm, food-capture
             // logs the meal itself and routes back home — log.tsx is bypassed.
             onAddNew={() => router.push('/food-capture?fromLog=1')}
@@ -1038,7 +1058,10 @@ export default function LogModal() {
         {pickerPetId && (
           <MedicationPicker
             petId={pickerPetId}
-            onPickMedication={handlePickMedication}
+            // Guarded (B-336): the first tap latches, so a rapid double-tap on a
+            // tile can't write two doses — and on the retroactive combo path can't
+            // overwrite the first dose's pending confirm sheet.
+            onPickMedication={(med) => { void guardSubmit(() => handlePickMedication(med)); }}
             onAddNew={() => router.push('/medication-capture?fromLog=1')}
             // Long-press a tile opens the editable detail screen (B-117 PR 6).
             // One-tap dose-log stays on regular tap.
