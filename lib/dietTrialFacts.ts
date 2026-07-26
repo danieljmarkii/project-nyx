@@ -7,7 +7,8 @@
 //
 // ── WHAT THIS DOES NOT SUPPLY, AND WHY ───────────────────────────────────────
 //
-// `exposures` is NULL, and stays null until PR 5 ships `lib/dietTrial.ts`.
+// `exposures` IS STILL NULL, and PR 5 shipping `lib/dietTrial.ts` did not change
+// that — deliberately, after three adversarial passes. See the note below.
 // Off-diet classification is `classifyFeeding`'s job — four rungs over the
 // explicit allowed set, the derived protein arm, the unrecognised fallback and
 // the oral route — and it needs `diet_trial_foods` rows that only PR 3's start
@@ -19,11 +20,37 @@
 // coverage fact and says NOTHING about what matched. It never fills the gap with
 // a negative claim (R1 / G2) and never fills it with a reassuring one.
 //
-// `belowCoverageFloor` is FALSE for the same reason. §5.2 leaves the floor's
-// number undefined on purpose — three defensible definitions of coverage read
-// 100% / 84% / 19% over the same 70 days of live data — and PR 5 pins the metric
-// before it sets the threshold. State 4 is built, tested and reachable the moment
-// that flag is supplied; PR 4 does not invent a number to trigger it with.
+// `belowCoverageFloor` is FALSE for the same reason. §5.2 left the floor's number
+// undefined on purpose — three defensible definitions of coverage read
+// 100% / 84% / 19% over the same 70 days of live data — and PR 5 pinned the
+// metric and then set the threshold (P-3). State 4 is built, tested and reachable
+// the moment that flag is supplied.
+//
+// ── WHY PR 5 DID NOT SUPPLY EITHER (B-474) ───────────────────────────────────
+//
+// PR 5 built the classifier and then wired it into this file. Three
+// `adversarial-reviewer` passes failed that wiring — never the predicate, which
+// held every time. The pattern was identical in each round: `computeTrialFacts`
+// returns five disclosure channels (`unclassifiable`, `oralRoute`,
+// `arrangementExposures`, `trialDietRefusal`, the untracked head) and this file
+// could only ever pass ONE number to the card, so every fix took the shape
+// "withhold the claim" — and each one found a new way to DELETE A REAL FINDING.
+// The last round measured it: one meal whose food row had been deleted
+// (`ON DELETE SET NULL`, bulk-triggerable) withheld twelve genuine off-diet
+// exposures and flipped a 35%-coverage trial from state 4 to `clean`.
+//
+// Withholding is the wrong instrument. §5.2 rules the exposure count a FLOOR, and
+// the floor direction is DISCLOSE MORE, not say less. Disclosing properly means
+// new card states — an unclassifiable count, an untracked-head line, an
+// oral-route line, a viability register distinct from the clinical one — and NONE
+// of them exist in `docs/nyx-diet-trial-mockups.html`, which is design-locked at
+// round 4. Inventing them inside a build PR is how the last two rounds went
+// wrong.
+//
+// So the wiring is B-474: its own PR, with a mock round, the Designer, and
+// Dr. Chen on the register question. The predicate is shipped, tested and
+// waiting; this file keeps PR 4's honest silence until there is a designed
+// surface to be honest ON.
 import { getDietTrialProgress, getIntakeDecline, type IntakeDeclineFlag } from './analytics';
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
@@ -135,7 +162,7 @@ export async function loadDietTrialFacts(args: {
     readCoverage(pet.id, row.started_at, progress?.dayCounter ?? 1),
     readIntakeDecline(pet, nowMs),
     readFreeFed(pet.id, row.started_at),
-    readStandingNote(pet.id),
+    readStandingNote(pet.id, pet.name),
   ]);
 
   return {
@@ -280,12 +307,13 @@ async function readFreeFed(
  *  nothing at all rather than an all-clear (D10's presence-only rule). */
 async function readStandingNote(
   petId: string,
+  petName: string,
 ): Promise<{ title: string; body: string } | null> {
   try {
     // force: this screen is where an owner lands after editing a trial food, so
     // it re-reads rather than serving a 5-minute-old target protein.
     const ctx = await loadTrialProteinContext(petId, { force: true });
-    return ctx ? trialDietNote(ctx) : null;
+    return ctx ? trialDietNote(ctx, petName) : null;
   } catch (e) {
     console.error('[DietTrial] standing note read failed:', e);
     return null;

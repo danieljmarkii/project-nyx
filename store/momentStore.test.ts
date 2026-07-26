@@ -155,7 +155,7 @@ describe('momentStore', () => {
     // past at the unflagged 5s. Applied in the store rather than at each call
     // site, so a future meal-entry path cannot ship a flagged card that does.
     useMomentStore.getState().showMeal(mealPayload({
-      trialFlag: { proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' },
+      trialFlag: { proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1' },
     }));
     jest.advanceTimersByTime(5000);
     expect(useMomentStore.getState().visible).toBe(true);
@@ -168,7 +168,7 @@ describe('momentStore', () => {
     // in, so a cold trial-cache lookup never delays the owner's confirmation.
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-flag' }));
     const landed = useMomentStore.getState().patchTrialFlag('e-flag', {
-      proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1',
+      proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
     });
     expect(landed).toBe(true);
     const p = useMomentStore.getState().payload;
@@ -184,7 +184,7 @@ describe('momentStore', () => {
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-first' }));
     useMomentStore.getState().showMeal(mealPayload({ eventId: 'e-second' }));
     expect(useMomentStore.getState().patchTrialFlag('e-first', {
-      proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1',
+      proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
     })).toBe(false);
   });
 
@@ -193,7 +193,7 @@ describe('momentStore', () => {
     jest.advanceTimersByTime(5000);
     expect(useMomentStore.getState().visible).toBe(false);
     expect(useMomentStore.getState().patchTrialFlag('e-gone', {
-      proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1',
+      proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1',
     })).toBe(false);
   });
 

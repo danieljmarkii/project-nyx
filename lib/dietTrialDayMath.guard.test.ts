@@ -132,14 +132,39 @@ describe('B-421 — one diet-trial day counter, not four', () => {
   });
 
   it('the trial-facts loader keys coverage on the SAME clock as the denominator', () => {
-    // The denominator is `getDietTrialProgress().dayCounter`, a LOCAL-day count.
-    // The old numerator used `toDateString()` on a UTC-parsed timestamp — halves
-    // of a ratio on two different clocks, which is how Home rendered "6 of 5 days
-    // logged" beside the profile card's own number for the same pet.
+    // The denominator is a LOCAL-day count. The old numerator used
+    // `toDateString()` on a UTC-parsed timestamp — halves of a ratio on two
+    // different clocks, which is how Home rendered "6 of 5 days logged" beside
+    // the profile card's own number for the same pet.
+    //
+    // B-417 PR 5 pinned the metric in `lib/dietTrial.computeTrialFacts`, but the
+    // WIRING that would route this loader through it is deferred to B-474 after
+    // three failed adversarial passes — so this file still keys its own coverage
+    // day, and still has to key it LOCALLY. When B-474 lands, this assertion
+    // becomes a delegation check (`computeTrialFacts(`) instead.
     const src = readCode('lib/dietTrialFacts.ts');
     expect(src).toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
     expect(src).not.toMatch(/toDateString\(\)/);
     expect(src).not.toMatch(DAY_DIVISION);
+  });
+
+  it('the shared predicate indexes local days through lib/utils, not a ms divide', () => {
+    // `lib/dietTrial.ts` is the fifth surface that has to answer "which local day
+    // is this", and the one the vet report and Ask will inherit at PR 7. It uses
+    // the same `localDayIndexOf` oracle as `getDietTrialProgress` — a ms-span
+    // divide here would put the exposure window and the day counter on two clocks
+    // and disagree with the card by up to a day at either end.
+    const src = readCode('lib/dietTrial.ts');
+    expect(src).toMatch(/localDayIndexOf\(/);
+    expect(src).not.toMatch(DAY_DIVISION);
+    expect(src).not.toMatch(MANUAL_MIDNIGHT);
+  });
+
+  it('the log-time contaminant path asks for the day index, never divides for it', () => {
+    const src = readCode('lib/trialContaminant.ts');
+    expect(src).toMatch(/localDayIndex\(/);
+    expect(src).not.toMatch(DAY_DIVISION);
+    expect(src).not.toMatch(MANUAL_MIDNIGHT);
   });
 
   it('the boundary is defined once, in lib/utils', () => {
