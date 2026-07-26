@@ -841,9 +841,17 @@ export const MIN_INTERPRETABLE_DAYS = 7;
 
 /** The WSAVA ordinal, mirroring `lib/analytics.INTAKE_SCORE`. Duplicated rather
  *  than imported because `lib/analytics.ts` pulls `expo-sqlite` and this module
- *  must stay Deno-importable — the ONE place in this file where a second copy of
- *  a constant is the lesser evil, and it is pinned by a test that asserts the two
- *  agree. */
+ *  must stay Deno-importable.
+ *
+ *  ⚠️ IT IS NOT PINNED TO THE ORIGINAL, and an earlier docstring here claimed it
+ *  was. `INTAKE_SCORE` and `FINISHED_SCORE` are module-private in `analytics.ts`,
+ *  so no test can compare them; the suite asserts this copy against literals,
+ *  which would stay green if analytics moved its bar tomorrow. One divergence
+ *  already exists and is deliberate: `analytics.isFinishedMeal` scores an unknown
+ *  rating `?? 0` (not finished), while `feedingWasFinished` returns null
+ *  (excluded from both sides) — a rate wants a denominator, a floor wants
+ *  honesty. Exporting the constants from analytics and comparing them is the real
+ *  fix; it belongs with B-474, which is where this value gets consumed. */
 const INTAKE_SCORE: Record<string, number> = {
   refused: 0,
   picked: 1,
@@ -881,9 +889,17 @@ export const REFUSAL_WINDOW_DAYS = 14;
 
 /** EPISODE GUARD. "Two distinct local days" is a calendar-boundary test, not an
  *  episode test: a bowl refused at 20:00 and 22:00 and re-offered at midnight is
- *  ONE bout that satisfies it in four hours. Requiring the first and last refusal
- *  to be most of a day apart makes the floor mean what its docstring claims. */
-export const REFUSAL_MIN_SPAN_MS = 20 * 60 * 60 * 1000;
+ *  ONE bout that satisfies it in four hours.
+ *
+ *  TWELVE HOURS, NOT TWENTY. The first cut used 20h and the adversarial pass
+ *  priced it: a cat refusing dinner at 18:00, breakfast at 08:00 and lunch at
+ *  12:00 spans 18h — three refusals across two days, a third of the way into the
+ *  feline 48h hepatic-lipidosis window — and went silent. `detectIntakeDecline`
+ *  is structurally blind there (a brand-new trial diet has no baseline to decline
+ *  from), so this lane is the only thing watching. 12h still rejects the
+ *  midnight-straddle artefact the guard exists for, and it does not cost a real
+ *  overnight refusal. */
+export const REFUSAL_MIN_SPAN_MS = 12 * 60 * 60 * 1000;
 
 export function interpretabilityOf(coverage: TrialCoverage | null): Interpretability {
   if (!coverage || coverage.daysElapsed < MIN_INTERPRETABLE_DAYS) return 'not_yet';
@@ -1411,11 +1427,17 @@ export function trialViabilityHeadline(
   refusal: TrialDietRefusal,
   petName: string,
 ): string {
+  // "LEFT UNFINISHED", NOT "REFUSED". The predicate widened to not-finished
+  // (`refused` / `picked` / `some`) so it could see the cat that picks — but the
+  // copy kept saying "logged as refused", which asserts something the record does
+  // not contain about three meals the owner rated "ate some". §6.5's rule for
+  // this string is that it reports the RECORD; the string has to widen with the
+  // predicate or it stops doing that.
   const n = refusal.refusedFeedings;
   const meals = n === 1 ? '1 meal' : `${n} meals`;
   const days = refusal.days === 1 ? 'a day' : `${refusal.days} days`;
   return (
-    `${meals} of the trial diet across ${days} are logged as refused. ` +
+    `${meals} of the trial diet across ${days} were left unfinished. ` +
     `Worth telling your vet — a diet ${petName} won’t eat can’t answer the question ` +
     'the trial was started for.'
   );

@@ -762,7 +762,9 @@ describe('adversarial regressions — the module half', () => {
 
   it('the viability line names the record and the vet, never a preference', () => {
     const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 28, days: 14 }, 'Mochi');
-    expect(line).toMatch(/logged as refused/);
+    expect(line).toMatch(/were left unfinished/);
+    // Never asserts a refusal over a `some`/`picked` record.
+    expect(line).not.toMatch(/logged as refused/);
     expect(line).toMatch(/your vet/);
     expect(line).not.toMatch(/pick|fussy|prefer|doesn’t like|taste/i);
   });
@@ -1061,6 +1063,23 @@ describe('adversarial regressions — the second pass', () => {
       nowMs,
     });
     expect(facts.trialDietRefusal).toBeNull();
+  });
+
+  // …and the guard must not cost a REAL overnight refusal. Dinner 18:00,
+  // breakfast 08:00, lunch 12:00 is 18h with nothing eaten — a third of the way
+  // into the feline 48h hepatic-lipidosis window, and the only lane watching.
+  it('an 18h overnight refusal still fires', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: ALLOWED,
+      feedings: [
+        feeding({ eventId: 'a', occurredAt: at('2026-07-05', 18), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+        feeding({ eventId: 'b', occurredAt: at('2026-07-06', 8), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+        feeding({ eventId: 'c', occurredAt: at('2026-07-06', 12), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+      ],
+      nowMs,
+    });
+    expect(facts.trialDietRefusal).not.toBeNull();
   });
 
   // ⑤ (self-inflicted by the first round of fixes) — the §10 S3 clip anchored on
