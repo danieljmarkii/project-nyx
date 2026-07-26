@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 import { ImageOff } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
-import { FORMAT_LABEL } from '../log/FoodTile';
+import { FORMAT_LABEL } from '../../lib/food';
 
 interface Props {
   brand: string;

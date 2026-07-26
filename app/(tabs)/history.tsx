@@ -514,7 +514,9 @@ const styles = StyleSheet.create({
     gap: theme.space2,
   },
   title: {
-    fontSize: 24,
+    // Shared with the Foods tab's page title (B-107) — one token so the two tab
+    // headers can't drift apart the way a pair of hard-coded 24s eventually does.
+    fontSize: theme.textPageTitle,
     fontWeight: theme.fontWeightMedium,
     color: theme.colorNeutralDark,
   },
