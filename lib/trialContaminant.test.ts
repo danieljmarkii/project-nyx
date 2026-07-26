@@ -4,6 +4,12 @@
 // decision logic can be exercised without either. (The I/O half —
 // loadTrialProteinContext / evaluateMealTrialFlag — is a thin assembly over these
 // and is covered by the on-device QA script.)
+//
+// RE-BASED BY B-417 PR 5. The predicate itself now lives in `lib/dietTrial.ts`
+// and is tested there; what is exercised here is this module's own layer — the
+// context shape, the ledger, and the copy — plus the behaviours the re-base was
+// supposed to preserve. Every assertion below that survived a shape change kept
+// its original comment, because the defect it pins is unchanged.
 jest.mock('./supabase', () => ({ supabase: {} }));
 jest.mock('./db', () => ({ getDb: () => { throw new Error('no db in this suite'); } }));
 
@@ -32,30 +38,57 @@ import {
   trialFoodContaminants,
   foodContaminantFlag,
   trialDietNote,
+  sanctionedProteinsForTrial,
   proteinList,
   mealFlagCopy,
   addFlagCopy,
   standingFlagCopy,
   localMidnightMs,
+  type TrialContaminantFlag,
   type TrialProteinContext,
 } from './trialContaminant';
+import type { AllowedFood } from './dietTrial';
 
 // A duck elimination trial on "Zignature Duck", whose own panel WAS read and
-// lists only duck — the clean baseline every other case perturbs.
-function ctx(over: Partial<TrialProteinContext> = {}): TrialProteinContext {
+// lists only duck — the clean baseline every other case perturbs. The start date
+// is deliberately well in the past: membership and the trial window both resolve
+// against the wall clock on the log-time path, and a fixture that only works in
+// one month is a test that fails later for no reason.
+const TRIAL_FOOD: AllowedFood = {
+  foodItemId: 'trial-food',
+  foodKey: 'zignature\u001Fduck formula',
+  label: 'Zignature Duck',
+  role: 'primary_diet',
+  allowedFrom: '2020-01-01',
+  allowedUntil: null,
+  primaryProtein: 'duck',
+  proteins: ['duck'],
+};
+
+function ctx(
+  over: Partial<TrialProteinContext> = {},
+  /** Perturb the TRIAL FOOD itself — the shape-① cases. */
+  trialFood: Partial<AllowedFood> = {},
+): TrialProteinContext {
   return {
     trialId: 't1',
     petId: 'p1',
-    startedAtMs: new Date(2026, 6, 1).getTime(),
-    trialFoodId: 'trial-food',
+    startedAtMs: new Date(2020, 0, 1).getTime(),
+    spec: { id: 't1', startedAt: '2020-01-01' },
+    allowedFoods: [{ ...TRIAL_FOOD, ...trialFood }],
     trialFoodLabel: 'Zignature Duck',
-    trialFoodKey: 'zignature\u001Fduck formula',
-    targetProtein: 'duck',
-    trialFoodResolved: true,
-    trialFoodProteins: ['duck'],
+    primaryCount: 1,
+    primaryResolved: 1,
     trialFoodCompleteness: { complete: true, provenance: 'panel_read' },
     ...over,
   };
+}
+
+/** A trial whose diet is unknown — the state that disables every check. */
+const UNKNOWN_DIET = () => ctx({}, { primaryProtein: null, proteins: [] });
+
+function flag(over: Partial<TrialContaminantFlag> = {}): TrialContaminantFlag {
+  return { proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'f1', ...over };
 }
 
 describe('offTrialProteins', () => {
@@ -113,11 +146,56 @@ describe('resolveTargetProtein', () => {
   });
 });
 
-describe('foodContaminantFlag — shape ② (a food that is not the trial diet)', () => {
+// ── The re-base: the trial diet is N foods, not one ──────────────────────────
+describe('the sanctioned set is the union over every primary_diet food (B-453)', () => {
+  it('a two-food trial sanctions BOTH foods\' proteins', () => {
+    // The defect the stopgap existed to avoid, now fixed rather than muted: on a
+    // wet+dry trial the single-column derivation computed the set from ONE food
+    // and flagged the legitimately-allowed second trial food as a contaminant.
+    const twoFood = ctx({
+      allowedFoods: [
+        TRIAL_FOOD,
+        { ...TRIAL_FOOD, foodItemId: 'wet', foodKey: 'zignature\u001Fduck wet', primaryProtein: 'duck', proteins: ['duck', 'salmon'] },
+      ],
+      primaryCount: 2,
+      primaryResolved: 2,
+    });
+    expect(sanctionedProteinsForTrial(twoFood).sort()).toEqual(['duck', 'salmon']);
+    // …and the second trial food is silent, which is the whole point.
+    expect(foodContaminantFlag(twoFood, 'wet', ['duck', 'salmon'])).toBeNull();
+  });
+
+  it('a permitted extra never widens the sanctioned set (D-A)', () => {
+    const withTreat = ctx({
+      allowedFoods: [
+        TRIAL_FOOD,
+        { ...TRIAL_FOOD, foodItemId: 'jerky', foodKey: 'brand\u001Frabbit jerky', role: 'permitted_treat', primaryProtein: 'rabbit', proteins: ['rabbit', 'chicken'] },
+      ],
+    });
+    expect(sanctionedProteinsForTrial(withTreat)).toEqual(['duck']);
+    // A DIFFERENT chicken food still flags, even though a permitted treat has it.
+    expect(foodContaminantFlag(withTreat, 'other', ['chicken'])?.proteins).toEqual(['chicken']);
+  });
+
+  it('the permitted extra itself is silent at log time (§6.9)', () => {
+    // Rung 1 stops it. Flagging a food the vet TOLD the owner to give scores the
+    // owner for following instructions; D-B records the antigen for the report
+    // instead, which is `lib/dietTrial.ts`'s job and tested there.
+    const withTreat = ctx({
+      allowedFoods: [
+        TRIAL_FOOD,
+        { ...TRIAL_FOOD, foodItemId: 'jerky', foodKey: 'brand\u001Frabbit jerky', role: 'permitted_treat', primaryProtein: 'rabbit', proteins: ['rabbit', 'chicken'] },
+      ],
+    });
+    expect(foodContaminantFlag(withTreat, 'jerky', ['rabbit', 'chicken'])).toBeNull();
+  });
+});
+
+describe('foodContaminantFlag — shape ② (a food that is not on the allowed list)', () => {
   it('flags an off-trial protein in a different food', () => {
     expect(foodContaminantFlag(ctx(), 'other-food', ['chicken'])).toEqual({
       proteins: ['chicken'],
-      targetProtein: 'duck',
+      trialProteins: ['duck'],
       trialId: 't1',
       foodId: 'other-food',
     });
@@ -127,13 +205,13 @@ describe('foodContaminantFlag — shape ② (a food that is not the trial diet)'
     // B-417 C2, PM-ratified: a per-feeding flag on the prescribed food fires
     // 100+ times across a 56-day trial. The fact still surfaces, on the trial
     // card (trialDietNote) and the food's own detail screen.
-    expect(foodContaminantFlag(ctx({ trialFoodProteins: ['duck', 'chicken'] }),
-      'trial-food', ['duck', 'chicken'])).toBeNull();
+    expect(foodContaminantFlag(ctx({}, { proteins: ['duck', 'chicken'] }), 'trial-food',
+      ['duck', 'chicken'])).toBeNull();
   });
 
-  it('is silent with no context, no target, or nothing off-trial', () => {
+  it('is silent with no context, no known trial diet, or nothing off-trial', () => {
     expect(foodContaminantFlag(null, 'other-food', ['chicken'])).toBeNull();
-    expect(foodContaminantFlag(ctx({ targetProtein: null }), 'other-food', ['chicken'])).toBeNull();
+    expect(foodContaminantFlag(UNKNOWN_DIET(), 'other-food', ['chicken'])).toBeNull();
     expect(foodContaminantFlag(ctx(), 'other-food', ['duck'])).toBeNull();
   });
 
@@ -142,22 +220,42 @@ describe('foodContaminantFlag — shape ② (a food that is not the trial diet)'
     // disclosure caveat, never "nothing off-trial in this one".
     expect(foodContaminantFlag(ctx(), 'other-food', [])).toBeNull();
   });
+
+  it('is silent for a meal fed before the trial began', () => {
+    // The window check moved INSIDE the predicate at the re-base, so this pins
+    // that it did not get lost on the way.
+    expect(foodContaminantFlag(ctx(), 'other-food', ['chicken'], null, '2019-06-01T12:00:00Z'))
+      .toBeNull();
+  });
 });
 
-describe('trialFoodContaminants — shape ① (the trial diet itself)', () => {
+describe('trialFoodContaminants — shape ① (the allowed list itself)', () => {
   it('finds the chicken hiding in a "duck" formula', () => {
-    expect(trialFoodContaminants(ctx({ trialFoodProteins: ['duck', 'chicken'] })))
+    expect(trialFoodContaminants(ctx({}, { proteins: ['duck', 'chicken'] })))
       .toEqual(['chicken']);
   });
 
   it('finds nothing in a genuinely single-protein trial diet', () => {
     expect(trialFoodContaminants(ctx())).toEqual([]);
   });
+
+  it('D-A — also covers a contaminated PERMITTED extra', () => {
+    // The vet-approved rabbit jerky that also lists chicken fat is exactly as
+    // trial-invalidating as a contaminated primary diet, and less likely to be
+    // noticed.
+    const withTreat = ctx({
+      allowedFoods: [
+        TRIAL_FOOD,
+        { ...TRIAL_FOOD, foodItemId: 'jerky', role: 'permitted_treat', primaryProtein: 'rabbit', proteins: ['rabbit', 'chicken'] },
+      ],
+    });
+    expect(trialFoodContaminants(withTreat)).toEqual(['chicken']);
+  });
 });
 
 describe('trialDietNote — the trial card standing note', () => {
   it('names the contaminant when the trial diet carries one', () => {
-    const note = trialDietNote(ctx({ trialFoodProteins: ['duck', 'chicken'] }));
+    const note = trialDietNote(ctx({}, { proteins: ['duck', 'chicken'] }));
     expect(note?.title).toBe('The trial food also lists chicken');
     expect(note?.body).toContain('clean answer');
   });
@@ -168,7 +266,7 @@ describe('trialDietNote — the trial card standing note', () => {
     const note = trialDietNote(ctx({
       trialFoodCompleteness: { complete: false, provenance: 'no_panel_text' },
     }));
-    expect(note?.title).toContain("ingredients haven't been read");
+    expect(note?.title).toContain('ingredients haven’t been read');
     expect(note?.body).toContain('unknown');
   });
 
@@ -176,24 +274,25 @@ describe('trialDietNote — the trial card standing note', () => {
     expect(trialDietNote(ctx())).toBeNull();
   });
 
-  it('does NOT go silent when the target protein is unknown — see B9 below', () => {
-    // An unknown target disables every check in the module. Returning null here
+  it('does NOT go silent when the trial diet is unknown — see B9 below', () => {
+    // An unknown diet disables every check in the module. Returning null here
     // gave the MOST unknown state the LEAST disclosure; it now says so.
-    expect(trialDietNote(ctx({ targetProtein: null }))).not.toBeNull();
+    expect(trialDietNote(UNKNOWN_DIET())).not.toBeNull();
   });
 
   it('never emits a reassuring string in any state', () => {
     const states: TrialProteinContext[] = [
       ctx(),
-      ctx({ trialFoodProteins: ['duck', 'chicken'] }),
+      ctx({}, { proteins: ['duck', 'chicken'] }),
       ctx({ trialFoodCompleteness: { complete: false, provenance: 'low_confidence' } }),
-      ctx({ targetProtein: null }),
+      UNKNOWN_DIET(),
+      ctx({ primaryCount: 0, primaryResolved: 0, allowedFoods: [] }),
     ];
     for (const s of states) {
       const note = trialDietNote(s);
       if (!note) continue;
       const text = `${note.title} ${note.body}`.toLowerCase();
-      for (const banned of ['all clear', 'no other proteins', 'nothing else', 'looks clean', 'is clean', "you're fine"]) {
+      for (const banned of ['all clear', 'no other proteins', 'nothing else', 'looks clean', 'is clean', 'you’re fine']) {
         expect(text).not.toContain(banned);
       }
     }
@@ -208,37 +307,43 @@ describe('copy', () => {
   });
 
   it('the log-time heads-up reports a saved meal and never asks anything', () => {
-    const copy = mealFlagCopy({ proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' }, 'Mochi');
+    const copy = mealFlagCopy(flag(), 'Mochi');
     expect(copy.headline).toBe('This one has chicken.');
-    expect(copy.detail).toContain("Mochi's duck trial should skip chicken");
+    expect(copy.detail).toContain('Mochi’s duck trial should skip chicken');
     // Principle 1 — the log is already done; nothing here is a question or a gate.
-    expect(copy.detail).toContain("The meal's saved");
+    expect(copy.detail).toContain('The meal’s saved');
     expect(`${copy.headline}${copy.detail}`).not.toMatch(/\?|are you sure|log anyway|!/i);
   });
 
+  it('names EVERY trial protein on a multi-food trial, never just the first', () => {
+    // Naming one protein of a two-protein trial told the owner the other was a
+    // contaminant — the single-food projection surfacing in the copy layer.
+    const copy = mealFlagCopy(flag({ trialProteins: ['duck', 'salmon'] }), 'Mochi');
+    expect(copy.detail).toContain('Mochi’s duck and salmon trial');
+  });
+
   it('the add-time confirm does not assert a trial TYPE we were never told', () => {
-    // The mock read "elimination trial"; diet_trials carries no indication column
-    // (D6 deferred it), so claiming one would be a fabricated clinical detail.
-    const copy = addFlagCopy({ proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' }, 'Mochi');
+    // The mock read "elimination trial"; nothing in the schema records a diet
+    // CLASS, so claiming one would be a fabricated clinical detail.
+    const copy = addFlagCopy(flag(), 'Mochi');
     expect(copy.title).toBe('Heads up — this food lists chicken');
-    expect(copy.body).toContain("Mochi's trial diet is duck");
+    expect(copy.body).toContain('Mochi’s trial diet is duck');
     expect(copy.body).not.toMatch(/elimination|hydrolysed|hydrolyzed/i);
     expect(copy.body).toContain('vet');
   });
 
   it('the standing note names the food\'s property, not an event', () => {
-    const copy = standingFlagCopy({ proteins: ['chicken', 'salmon'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' }, 'Mochi');
-    expect(copy.title).toBe("Off Mochi's trial diet");
+    const copy = standingFlagCopy(flag({ proteins: ['chicken', 'salmon'] }), 'Mochi');
+    expect(copy.title).toBe('Off Mochi’s trial diet');
     expect(copy.body).toContain('chicken and salmon');
   });
 
   it('no owner-facing string carries an exclamation mark (nyx-voice)', () => {
-    const flag = { proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'f1' };
     const all = [
-      ...Object.values(mealFlagCopy(flag, 'Mochi')),
-      ...Object.values(addFlagCopy(flag, 'Mochi')),
-      ...Object.values(standingFlagCopy(flag, 'Mochi')),
-      ...Object.values(trialDietNote(ctx({ trialFoodProteins: ['duck', 'chicken'] })) ?? {}),
+      ...Object.values(mealFlagCopy(flag(), 'Mochi')),
+      ...Object.values(addFlagCopy(flag(), 'Mochi')),
+      ...Object.values(standingFlagCopy(flag(), 'Mochi')),
+      ...Object.values(trialDietNote(ctx({}, { proteins: ['duck', 'chicken'] })) ?? {}),
     ];
     for (const s of all) expect(s).not.toContain('!');
   });
@@ -324,31 +429,35 @@ describe('heads-up ledger — one per food per trial, counted in heads-ups given
 });
 
 // ── B7 — the duplicate capture of the trial diet ─────────────────────────────
-describe('rule 2 survives a duplicate capture of the trial food', () => {
+describe('rung 1 survives a duplicate capture of the trial food', () => {
   it('excludes a re-photographed bag of the trial diet by brand+product', () => {
     // food-capture mints a fresh uuid every time, so re-photographing the trial
     // diet (to finally capture its ingredient panel) creates a row whose id is
-    // not trialFoodId. An id-only exclusion turned the trial diet's own
+    // not the allowed row's. An id-only match turned the trial diet's own
     // contamination into exactly the per-feeding verdict C2 forbids.
-    const c = ctx({ trialFoodProteins: ['duck', 'chicken'] });
+    // The live scenario: the allowed row knows the trial diet as duck only,
+    // because nobody had read its panel when the trial was set up. The owner
+    // re-photographs the bag, the panel finally reads, and the new capture lists
+    // chicken as well — so without the key match this flags the PRESCRIBED food
+    // as a contaminant on a 100%-compliant owner.
+    const c = ctx();
     expect(foodContaminantFlag(c, 'a-fresh-uuid', ['duck', 'chicken'])).not.toBeNull();
-    expect(foodContaminantFlag(c, 'a-fresh-uuid', ['duck', 'chicken'], c.trialFoodKey))
+    expect(foodContaminantFlag(c, 'a-fresh-uuid', ['duck', 'chicken'], TRIAL_FOOD.foodKey))
       .toBeNull();
   });
 
   it('still flags a genuinely different food that happens to be captured twice', () => {
-    const c = ctx();
-    expect(foodContaminantFlag(c, 'other', ['chicken'], 'purina\u001Fone chicken'))
-      .toEqual({ proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'other' });
+    expect(foodContaminantFlag(ctx(), 'other', ['chicken'], 'purina\u001Fone chicken'))
+      .toEqual({ proteins: ['chicken'], trialProteins: ['duck'], trialId: 't1', foodId: 'other' });
   });
 });
 
 // ── B9 / B8 — the most-unknown state must not get the least disclosure ───────
-describe('an unknown trial target discloses that the check is off', () => {
+describe('an unknown trial diet discloses that the check is off', () => {
   it('B9 — says so rather than going silent', () => {
-    const note = trialDietNote(ctx({ targetProtein: null }));
+    const note = trialDietNote(UNKNOWN_DIET());
     expect(note).not.toBeNull();
-    expect(note?.title).toContain("can't tell");
+    expect(note?.title).toContain('can’t tell');
     expect(note?.body).toContain('no main protein set');
   });
 
@@ -361,23 +470,30 @@ describe('an unknown trial target discloses that the check is off', () => {
     // disclosure and asserts nothing about what is being watched.
     expect(trialTargetLine(ctx())).toBe('Trial protein · Duck');
     expect(trialTargetLine(ctx())).not.toMatch(/check|watch|monitor|scan/i);
-    expect(trialTargetLine(ctx({ targetProtein: null }))).toBeNull();
+    expect(trialTargetLine(UNKNOWN_DIET())).toBeNull();
+  });
+
+  it('B8 — pluralises rather than dropping the second trial protein', () => {
+    const twoFood = ctx({
+      allowedFoods: [TRIAL_FOOD, { ...TRIAL_FOOD, foodItemId: 'wet', primaryProtein: 'salmon', proteins: ['salmon'] }],
+      primaryCount: 2,
+      primaryResolved: 2,
+    });
+    expect(trialTargetLine(twoFood)).toBe('Trial proteins · Duck and salmon');
   });
 
   it('B9 — distinguishes "no protein designated" from "we never read the food"', () => {
     // Collapsing these asserted "the trial food has no main protein set" about a
     // food the app had never loaded — an unproven claim about the record, on a
     // clinical surface.
-    const unread = trialDietNote(ctx({ targetProtein: null, trialFoodResolved: false }));
-    expect(unread?.title).toContain("can't check other foods");
-    expect(unread?.body).toContain("hasn't loaded");
+    const unread = trialDietNote(ctx({ primaryCount: 1, primaryResolved: 0 }, { primaryProtein: null, proteins: [] }));
+    expect(unread?.title).toContain('can’t check other foods');
+    expect(unread?.body).toContain('hasn’t loaded');
 
-    const noFood = trialDietNote(
-      ctx({ targetProtein: null, trialFoodResolved: false, trialFoodId: null }),
-    );
+    const noFood = trialDietNote(ctx({ allowedFoods: [], primaryCount: 0, primaryResolved: 0 }));
     expect(noFood?.body).toContain('no food attached');
 
-    const designatedNone = trialDietNote(ctx({ targetProtein: null, trialFoodResolved: true }));
+    const designatedNone = trialDietNote(UNKNOWN_DIET());
     expect(designatedNone?.body).toContain('no main protein set');
   });
 });
@@ -398,9 +514,8 @@ describe('rule 3 spends its budget only on a heads-up that was SHOWN', () => {
     // then never fire again for the rest of the trial: verbatim the
     // "suppressed heads-up consumed the budget" defect rule 3 was rewritten to
     // eliminate. The read and the write are now split; this pins the split.
-    const flag = { proteins: ['chicken'], targetProtein: 'duck', trialId: 't1', foodId: 'jerky' };
     expect(await hasFlaggedFoodInTrial('t1', 'jerky')).toBe(false);
-    await noteTrialFlagShown(flag);
+    await noteTrialFlagShown(flag({ foodId: 'jerky' }));
     expect(await hasFlaggedFoodInTrial('t1', 'jerky')).toBe(true);
   });
 
@@ -441,7 +556,7 @@ describe('an empty brand+product key is not an identity', () => {
     // as a match would silently mark an unrelated food as the trial diet and
     // never flag it: the dangerous direction.
     const blank = '\u001F';
-    const c = ctx({ trialFoodKey: blank });
+    const c = ctx({}, { foodKey: blank });
     expect(foodContaminantFlag(c, 'some-other-food', ['chicken'], blank)).not.toBeNull();
   });
 });
