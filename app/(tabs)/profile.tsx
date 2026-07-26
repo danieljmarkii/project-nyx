@@ -14,7 +14,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload, getPublicUrl } from '../../lib/storage';
-import { archiveBlockedCopy } from '../../lib/utils';
+import { archiveBlockedCopy, petPronouns } from '../../lib/utils';
 import { getDietTrialProgress } from '../../lib/analytics';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
@@ -24,6 +24,10 @@ import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
+import { StartTrialModal } from '../../components/profile/StartTrialModal';
+import {
+  describeActiveTrial, getActiveTrialForPet, type ActiveTrialSummary,
+} from '../../lib/dietTrialSetup';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { TrialContaminantNote } from '../../components/food/TrialContaminantNote';
 import {
@@ -156,6 +160,7 @@ export default function ProfileScreen() {
 
   const [dietTrial, setDietTrial] = useState<DietTrialDisplay | null>(null);
   const [trialLoading, setTrialLoading] = useState(true);
+  const [startTrialVisible, setStartTrialVisible] = useState(false);
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -184,10 +189,36 @@ export default function ProfileScreen() {
   // context renders nothing at all rather than an all-clear.
   const [trialCtx, setTrialCtx] = useState<TrialProteinContext | null>(null);
 
+  // B-417 PR 3 — THE EXISTENCE ORACLE IS THE LOCAL MIRROR, NOT THE NETWORK.
+  //
+  // The card's active render below reads Supabase (PR 4 rebuilds it). That was
+  // harmless while a trial-less pet rendered NO card at all — but PR 3 added the
+  // always-rendering empty state, which turns every failed or empty network read
+  // into the sentence "No trial running." Three ways that becomes a lie, all of
+  // them on this feature's own target user:
+  //   • airplane mode with a live 8-week trial — the catch at :233 leaves
+  //     `dietTrial` null, so the Pet tab asserts no trial while the mirror-backed
+  //     widget is still counting "Day 34 of 56";
+  //   • a trial STARTED OFFLINE — the row exists only locally until the flush, so
+  //     the success sheet says day 1 and the card behind it says no trial;
+  //   • any transient PostgREST failure.
+  // So the mirror decides whether a trial EXISTS, and the empty state is gated on
+  // that. An absence-claim is exactly the shape §5.2 forbids, and PR 3 is what
+  // made this one speak.
+  const [localTrial, setLocalTrial] = useState<ActiveTrialSummary | null>(null);
+
   const loadDietTrial = useCallback(async () => {
     if (!activePet) return;
     setTrialLoading(true);
     try {
+      // First, and never inside the try/catch that guards the network read: this
+      // is the answer that has to survive the network read failing.
+      try {
+        setLocalTrial(await getActiveTrialForPet(activePet.id));
+      } catch (e) {
+        console.warn('[Profile] local trial read failed:', e);
+      }
+
       const { data: trial, error: trialError } = await supabase
         .from('diet_trials')
         .select('id, started_at, target_duration_days, vet_name, food_items(brand, product_name)')
@@ -782,10 +813,95 @@ export default function ProfileScreen() {
           )}
         </Card>
 
-        {/* ── Diet trial card ── */}
+        {/* ── Diet trial card ──
+            B-417 PR 3 — the card now ALWAYS renders, mirroring the medications
+            card, because it is the ONLY entry point to starting a trial (§4.1 D5:
+            no menu item, no second path). Before this, a pet with no trial had no
+            diet-trial card at all — which is why `diet_trials` shipped in
+            migration 001 and production still holds zero rows.
+            SCOPE: this PR adds state 0 (the designed empty state) and the entry
+            action. The ACTIVE render below is untouched — PR 4 rebuilds it, and
+            that is where the "% compliance" string AND the compliance-bound
+            progress bar are deleted (§1.3: the bar is the more misleading of the
+            two, and deleting only the string would ship it). */}
+        {/* The mirror knows a trial the network read didn't return — offline, or a
+            trial started offline and not yet flushed. Render the facts the mirror
+            actually holds (name + day counter via the one shared day-math helper)
+            rather than either lying or going blank. Deliberately NO adherence line
+            and NO progress bar: PR 4 owns the card's fact lines, and the bar it
+            owns is the one it has to DELETE (§1.3). */}
+        {!trialLoading && !dietTrial && localTrial && (
+          <Card style={styles.sectionGap}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.trialLabel}>Diet trial</Text>
+              <TouchableOpacity
+                style={styles.cardActionTouch}
+                onPress={() => setStartTrialVisible(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Change this diet trial"
+              >
+                <Text style={styles.sectionAction}>Change</Text>
+              </TouchableOpacity>
+            </View>
+            {localTrial.foodLabel ? (
+              <Text style={styles.trialFood}>{localTrial.foodLabel}</Text>
+            ) : null}
+            <Text style={styles.trialDays}>
+              {describeActiveTrial(localTrial).dayLine ?? 'Running'}
+            </Text>
+          </Card>
+        )}
+
+        {!trialLoading && !dietTrial && !localTrial && (
+          <Card style={styles.sectionGap}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.trialLabel}>Diet trial</Text>
+              <TouchableOpacity
+                style={styles.cardActionTouch}
+                onPress={() => setStartTrialVisible(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Start a diet trial"
+              >
+                <Text style={styles.sectionAction}>+ Start</Text>
+              </TouchableOpacity>
+            </View>
+            {/* Warm, honest, forward-looking (Principle 5) — and it names the
+                PAYOFF (the record the vet asks for at the recheck) rather than the
+                feature. Design-locked, mock state 0. */}
+            <Text style={styles.trialEmptyLead}>No trial running.</Text>
+            <Text style={styles.emptyConditionsText}>
+              If {activePet.name}’s vet has put {petPronouns(activePet.sex).object} on an
+              elimination diet, tell Culprit — it keeps the dated record your vet will
+              ask for at the recheck.
+            </Text>
+            <PrimaryButton
+              label="Start a diet trial"
+              variant="secondary"
+              onPress={() => setStartTrialVisible(true)}
+              style={styles.trialEmptyCta}
+            />
+          </Card>
+        )}
+
         {!trialLoading && dietTrial && (
           <Card style={styles.sectionGap}>
-            <Text style={styles.trialLabel}>Diet trial</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.trialLabel}>Diet trial</Text>
+              {/* One active trial per pet is a DATABASE constraint (migration 040's
+                  UNIQUE partial index), so this opens the ordered "end the running
+                  one first" sheet — never a second concurrent trial. */}
+              <TouchableOpacity
+                style={styles.cardActionTouch}
+                onPress={() => setStartTrialVisible(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Change this diet trial"
+              >
+                <Text style={styles.sectionAction}>Change</Text>
+              </TouchableOpacity>
+            </View>
             {dietTrial.food_items && (
               <Text style={styles.trialFood}>
                 {dietTrial.food_items.brand} {dietTrial.food_items.product_name}
@@ -900,6 +1016,22 @@ export default function ProfileScreen() {
             prev.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
           )
         }
+      />
+
+      {/* B-417 PR 3. Kept MOUNTED across dismissals on purpose: "Snap a new food"
+          routes out to `/food-capture` (the trial food is usually a bag the owner
+          was handed ten minutes ago, so it is rarely in the library yet), and the
+          half-filled form has to still be there when they come back. The form is
+          reset on Cancel and after a successful start — never by a dismissal. */}
+      <StartTrialModal
+        visible={startTrialVisible}
+        petId={activePet.id}
+        petName={activePet.name}
+        species={activePet.species}
+        onClose={() => setStartTrialVisible(false)}
+        onStarted={loadDietTrial}
+        onAddFood={() => { setStartTrialVisible(false); router.push('/food-capture'); }}
+        onLogFirstMeal={() => { setStartTrialVisible(false); router.push('/log?type=meal'); }}
       />
     </SafeAreaView>
   );
@@ -1122,6 +1254,15 @@ const styles = StyleSheet.create({
     color: theme.colorTextSecondary,
     textTransform: 'uppercase',
     letterSpacing: theme.trackingWidest,
+  },
+  // State 0 (mock, design-locked): the fact line leads, the forward line follows.
+  trialEmptyLead: {
+    fontSize: theme.textLG,
+    fontWeight: theme.weightMedium,
+    color: theme.colorNeutralDark,
+  },
+  trialEmptyCta: {
+    marginTop: theme.space1,
   },
   trialFood: {
     fontSize: theme.textLG,

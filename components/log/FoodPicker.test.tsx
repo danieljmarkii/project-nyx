@@ -143,3 +143,62 @@ describe('FoodPicker search-results mode', () => {
     expect(getByText('Snap a new food')).toBeTruthy();
   });
 });
+
+// B-417 PR 3 — selection mode. The picker was single-select for its whole life;
+// a real elimination trial is often a wet AND a dry of the same diet, so the
+// trial diet takes N foods and writes N `diet_trial_foods` rows. What matters
+// here is that the mode is opt-in (every existing caller is untouched) and that a
+// tile in it stops claiming it logs anything.
+describe('FoodPicker selection mode', () => {
+  function renderSelecting(selected: string[], onPickFood = jest.fn()) {
+    return {
+      onPickFood,
+      ...render(
+        <FoodPicker
+          petId="p1"
+          petName="Nyx"
+          selectedFoodIds={selected}
+          onPickFood={onPickFood}
+          onAddNew={jest.fn()}
+        />,
+      ),
+    };
+  }
+
+  // A rotation food is also a library food, so it renders twice by design —
+  // assert on every instance rather than picking one.
+  it('announces tiles as checkboxes carrying their checked state', async () => {
+    const { findAllByLabelText, getAllByLabelText } = renderSelecting(['r1']);
+    for (const picked of await findAllByLabelText('Acana Duck')) {
+      expect(picked.props.accessibilityRole).toBe('checkbox');
+      expect(picked.props.accessibilityState.checked).toBe(true);
+      // "Logs this food" is a lie on a surface where a tap builds a set.
+      expect(picked.props.accessibilityHint).toBeUndefined();
+    }
+    for (const other of getAllByLabelText('Orijen Fish')) {
+      expect(other.props.accessibilityState.checked).toBe(false);
+    }
+  });
+
+  it('leaves every existing caller on the one-tap-log path', async () => {
+    const { findAllByLabelText } = renderPicker();
+    const [tile] = await findAllByLabelText('Acana Duck');
+    expect(tile.props.accessibilityRole).toBe('button');
+    expect(tile.props.accessibilityHint).toBe('Logs this food');
+  });
+
+  it('hands the tapped food back so the caller can toggle it', async () => {
+    const { onPickFood, findByLabelText } = renderSelecting([]);
+    fireEvent.press(await findByLabelText('Tiki Cat Chicken'));
+    expect(onPickFood).toHaveBeenCalledWith(expect.objectContaining({ id: 'l1' }));
+  });
+
+  it('hides "Always available" — those are standing facts, not candidates', async () => {
+    const { findByText, queryByText } = renderSelecting([]);
+    await findByText("Nyx's rotation");
+    expect(queryByText('Always available')).toBeNull();
+    // The capture CTA stays: the trial food is usually a bag the owner was handed
+    // ten minutes ago, so "not in the library yet" is the common case here.
+    expect(queryByText('Snap a new food')).toBeTruthy();
+  });
+});

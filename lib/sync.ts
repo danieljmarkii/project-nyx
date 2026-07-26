@@ -922,7 +922,11 @@ async function pushDietTrialRows<L extends { id: string }>(
   // A concrete union rather than a free type parameter: supabase-js's
   // excess-property guard cannot check an unresolved generic payload.
   toRemote: (row: L) => RemoteDietTrialUpsert | RemoteDietTrialFoodUpsert,
-): Promise<void> {
+  // Returns the ids that ACTUALLY LANDED server-side. The caller needs this, not
+  // just "did it throw": syncPendingDietTrials orders an ending trial before a
+  // starting one, and "ordered" is only true if the second push can be held back
+  // when the first did not land (see there).
+): Promise<Set<string>> {
   const { data, error } = await supabase
     .from(table)
     .upsert(rows.map(toRemote), { onConflict: 'id' })
@@ -946,17 +950,18 @@ async function pushDietTrialRows<L extends { id: string }>(
         ids,
       );
     }
-    return;
+    return landed;
   }
 
   if (!isTerminalSyncError(error)) {
     console.error(`[sync] ${table} upsert failed:`, error.message);
-    return;
+    return new Set();
   }
 
   console.warn(
     `[sync] ${table} batch rejected permanently (${error.code}) — isolating ${rows.length} row(s)`,
   );
+  const isolated = new Set<string>();
   for (const row of rows) {
     const { data: one, error: rowError } = await supabase
       .from(table)
@@ -981,7 +986,9 @@ async function pushDietTrialRows<L extends { id: string }>(
       continue;
     }
     await db.runAsync(`UPDATE ${table} SET synced = 1, sync_error = NULL WHERE id = ?`, [row.id]);
+    isolated.add(row.id);
   }
+  return isolated;
 }
 
 // Flush unsynced diet trials (B-417). Refresh the JWT (Pattern 4), pre-sync the
@@ -1000,7 +1007,45 @@ export async function syncPendingDietTrials(): Promise<void> {
   const foodIds = [...new Set(unsynced.map((t) => t.food_item_id).filter(Boolean))] as string[];
   await presyncFoodItems(db, session.user.id, foodIds);
 
-  await pushDietTrialRows(db, 'diet_trials', unsynced, dietTrialRowToRemote);
+  // TWO PASSES, ENDING TRIALS FIRST — the wire half of PR 3's "complete-then-start
+  // must be ORDERED" (§3.3). Migration 040 made the active-trial index UNIQUE, so
+  // an owner who ends one trial and starts another while offline queues two rows
+  // that CANNOT both be active server-side. Sent in one batch, the new row's
+  // insert can be evaluated before the old row's status update and comes back
+  // 23505 — which this file classifies as TERMINAL, so the new trial would be
+  // quarantined and the owner would be left with the trial they just ended.
+  //
+  // Splitting the batch makes the ordering explicit rather than dependent on how
+  // Postgres happens to evaluate a multi-row upsert. Cost is one extra request in
+  // the rare cycle that carries both; every other cycle has one non-empty pass and
+  // is unchanged.
+  //
+  // AND THE SECOND PASS IS GATED ON THE FIRST — two ordered calls are not enough.
+  // pushDietTrialRows does not throw on a transient failure (a flap, a 503, a
+  // PGRST301: none carry a terminal code), so an unconditional second pass would
+  // send the STARTING row into a server where the old trial is still `active`,
+  // earn a 23505, and quarantine the new trial permanently — the precise outcome
+  // the ordering exists to prevent, reached by the ordering itself. Holding the
+  // starting rows costs one cycle; they are still queued and retry next flush,
+  // by which time the ending row has either landed or been quarantined (and a
+  // quarantined row drops out of the queue, so this cannot starve).
+  const ending = unsynced.filter((t) => t.status !== 'active');
+  const starting = unsynced.filter((t) => t.status === 'active');
+
+  if (ending.length > 0) {
+    const landed = await pushDietTrialRows(db, 'diet_trials', ending, dietTrialRowToRemote);
+    const stuck = ending.filter((t) => !landed.has(t.id));
+    if (stuck.length > 0) {
+      console.warn(
+        `[sync] diet_trials: ${stuck.length} ending trial(s) did not land — ` +
+        'holding the starting rows this cycle so they cannot 23505',
+      );
+      return;
+    }
+  }
+  if (starting.length > 0) {
+    await pushDietTrialRows(db, 'diet_trials', starting, dietTrialRowToRemote);
+  }
 }
 
 // Flush unsynced allowed-set rows (B-417). Runs AFTER syncPendingDietTrials in
