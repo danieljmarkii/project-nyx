@@ -22,6 +22,7 @@ const mockCompress = jest.fn();
 const mockGetSession = jest.fn();
 const mockFrom = jest.fn();
 const mockRunAsync = jest.fn();
+const mockGetAllAsync = jest.fn();
 
 jest.mock('./storage', () => ({
   uploadPhoto: jest.fn(),
@@ -34,7 +35,10 @@ jest.mock('./supabase', () => ({
   },
 }));
 jest.mock('./db', () => ({
-  getDb: () => ({ runAsync: (...args: unknown[]) => mockRunAsync(...args) }),
+  getDb: () => ({
+    runAsync: (...args: unknown[]) => mockRunAsync(...args),
+    getAllAsync: (...args: unknown[]) => mockGetAllAsync(...args),
+  }),
   getWatermark: jest.fn(),
   setWatermark: jest.fn(),
 }));
@@ -50,7 +54,13 @@ jest.mock('./medications', () => ({
   administrationRowToRemote: jest.fn(),
 }));
 
-import { prepareAttachmentUpload, refreshFoodCache, refreshMedicationCache } from './sync';
+import {
+  prepareAttachmentUpload,
+  refreshFoodCache,
+  refreshMedicationCache,
+  syncPendingDietTrials,
+  syncPendingDietTrialFoods,
+} from './sync';
 
 describe('prepareAttachmentUpload (attachment re-upload compression guard)', () => {
   let warnSpy: jest.SpyInstance;
@@ -201,5 +211,231 @@ describe('refreshFoodCache / refreshMedicationCache — per-account scoping (FR-
     expect(row.proteins).toBe('["chicken","salmon"]');
     // … and the LOCAL-ONLY last_used_at untouched (the footgun that must not regress).
     expect(row.last_used_at).toBe('2026-01-01T00:00:00Z');
+  });
+});
+
+// ── B-417 PR 2 — the diet-trial push writers ─────────────────────────────────
+//
+// These two writers are the first in this repo to depart from the shared
+// syncPending* shape, and both departures are behavioural, not stylistic:
+//
+//   • a landed-id SET COMPARISON instead of "no error ⟹ all rows landed" (an
+//     RLS-blocked write returns SUCCESS WITH ZERO ROWS — the 009 trap), and
+//   • a TERMINAL branch with per-row isolation, because migration 040's UNIQUE
+//     active-trial index made a permanent push failure reachable for the first
+//     time and the old shape would retry a doomed insert forever.
+//
+// Both are asserted here against the real mappers (lib/dietTrialMirror.ts is
+// pure, so it is imported, not stubbed) and the real supabase call chain shape:
+// supabase.from(t).upsert(rows, opts).select('id').
+describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () => {
+  let upsertSpy: jest.Mock;
+  let selectSpy: jest.Mock;
+  let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
+
+  const TRIAL = {
+    id: 't1', pet_id: 'p1', food_item_id: 'food-1', started_at: '2026-07-01',
+    target_duration_days: 56, status: 'active', completed_at: null,
+    vet_name: null, notes: null, food_label: 'RC HP', indication: 'skin',
+    phase: 'elimination', outcome: null, outcome_notes: null, stopped_reason: null,
+    ended_at: null, transition_started_at: null,
+    created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
+    synced: 0, sync_error: null,
+  };
+
+  const FOOD_ROW = {
+    id: 'df1', diet_trial_id: 't1', pet_id: 'p1', food_item_id: 'food-1',
+    role: 'primary_diet', food_label: 'RC HP dry', allowed_from: '2026-07-01',
+    allowed_until: null, deleted_at: null,
+    created_at: '2026-07-01T00:00:00.000Z', updated_at: '2026-07-01T00:00:00.000Z',
+    synced: 0, sync_error: null,
+  };
+
+  // The food_items pre-sync (Pattern 6) reads food_items_cache first; every test
+  // returns [] for it so the pre-sync no-ops, then the queue rows.
+  function queueReturns(rows: unknown[]) {
+    mockGetAllAsync.mockImplementation((sql: string) =>
+      Promise.resolve(sql.includes('food_items_cache') ? [] : rows),
+    );
+  }
+
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue({ data: { session: { user: { id: 'user-A' } } } });
+    mockFrom.mockReset();
+    mockRunAsync.mockReset();
+    mockGetAllAsync.mockReset();
+    selectSpy = jest.fn().mockResolvedValue({ data: [], error: null });
+    upsertSpy = jest.fn().mockReturnValue({ select: selectSpy });
+    mockFrom.mockReturnValue({ upsert: upsertSpy });
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('marks only the ids the server actually returned (RLS returns success-with-0-rows)', async () => {
+    // The 009 trap: a write RLS silently filters comes back { data: [], error: null }.
+    // Reading that as success is how a row gets flagged synced while absent
+    // server-side, which is invisible until something downstream reads it back.
+    queueReturns([TRIAL, { ...TRIAL, id: 't2' }]);
+    selectSpy.mockResolvedValue({ data: [{ id: 't1' }], error: null });
+
+    await syncPendingDietTrials();
+
+    const marks = mockRunAsync.mock.calls.filter(([sql]) => String(sql).includes('synced = 1'));
+    expect(marks).toHaveLength(1);
+    expect(marks[0][1]).toEqual(['t1']); // t2 stays queued — it never landed
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RLS-blocked'));
+  });
+
+  // ── B-417 PR 3: the ordered two-pass push ─────────────────────────────────
+  //
+  // Migration 040's UNIQUE partial index on diet_trials(pet_id) WHERE status =
+  // 'active' means an ending trial and a starting one cannot both be active
+  // server-side. A 23505 is TERMINAL here, so getting the order wrong does not
+  // cost a retry — it permanently quarantines the trial the owner just created and
+  // leaves them holding the one they just ended.
+
+  const ENDED = {
+    ...TRIAL, id: 't0', status: 'abandoned', ended_at: '2026-07-26',
+    stopped_reason: 'refused',
+  };
+
+  it('pushes the ENDING trial before the starting one, in separate batches', async () => {
+    queueReturns([TRIAL, ENDED]); // deliberately queued starting-first
+    selectSpy.mockImplementation(() => Promise.resolve({ data: [{ id: 't0' }, { id: 't1' }], error: null }));
+
+    await syncPendingDietTrials();
+
+    // Two upserts on diet_trials, not one — and the ending row is in the first.
+    const trialUpserts = upsertSpy.mock.calls.map(([rows]) => (rows as { id: string }[]).map((r) => r.id));
+    expect(trialUpserts).toEqual([['t0'], ['t1']]);
+  });
+
+  it('HOLDS the starting trial when the ending one did not land', async () => {
+    // The failure the ordering itself creates if the passes are not gated:
+    // pushDietTrialRows does NOT throw on a transient error (a flap, a 503, a
+    // PGRST301 — none carry a terminal code), so an unconditional second pass
+    // would send the new trial into a server where the old one is still active and
+    // earn it a permanent 23505.
+    queueReturns([TRIAL, ENDED]);
+    selectSpy.mockResolvedValue({ data: [], error: { code: 'PGRST301', message: 'JWT expired' } });
+
+    await syncPendingDietTrials();
+
+    const trialUpserts = upsertSpy.mock.calls.map(([rows]) => (rows as { id: string }[]).map((r) => r.id));
+    expect(trialUpserts).toEqual([['t0']]); // the starting row never went out
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('holding the starting rows'));
+  });
+
+  it('does not hold anything when there is no ending trial in the batch', async () => {
+    queueReturns([TRIAL]);
+    selectSpy.mockResolvedValue({ data: [{ id: 't1' }], error: null });
+    await syncPendingDietTrials();
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks nothing at all when the whole batch is silently blocked', async () => {
+    queueReturns([TRIAL]);
+    selectSpy.mockResolvedValue({ data: [], error: null });
+    await syncPendingDietTrials();
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
+
+  it('quarantines a 23505 row instead of retrying it forever — and never flags it synced', async () => {
+    // Two devices started a trial offline; this one lost the UNIQUE active-trial
+    // race and can NEVER land. Stopping the retry is the point; lying about the
+    // row's state would be the easy wrong fix.
+    queueReturns([TRIAL]);
+    selectSpy
+      .mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'duplicate key value' } })
+      .mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'duplicate key value' } });
+
+    await syncPendingDietTrials();
+
+    const quarantine = mockRunAsync.mock.calls.find(([sql]) => String(sql).includes('SET sync_error'));
+    expect(quarantine).toBeDefined();
+    expect(quarantine![1]).toEqual(['23505: duplicate key value', 't1']);
+    // Never flagged synced — the row genuinely is not on the server.
+    expect(mockRunAsync.mock.calls.some(([sql]) => String(sql).includes('synced = 1'))).toBe(false);
+  });
+
+  it('isolates a terminal batch so one doomed row cannot block the others', async () => {
+    // The larger of the two harms: the batch is ONE upsert, so without isolation
+    // a single un-landable trial keeps every other trial row queued forever.
+    queueReturns([TRIAL, { ...TRIAL, id: 't2' }]);
+    selectSpy
+      .mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'dup' } }) // batch
+      .mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'dup' } }) // t1 alone
+      .mockResolvedValueOnce({ data: [{ id: 't2' }], error: null }); // t2 alone — lands
+
+    await syncPendingDietTrials();
+
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      expect.stringContaining('SET sync_error'),
+      ['23505: dup', 't1'],
+    );
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      expect.stringContaining('synced = 1'),
+      ['t2'],
+    );
+  });
+
+  it('does NOT isolate or quarantine on a non-terminal failure — one retry next cycle', async () => {
+    // 23503 means the parent simply has not landed yet: the expected mid-cycle
+    // state. Re-sending N single-row requests would be strictly worse, and
+    // parking the row would strand a perfectly good trial.
+    queueReturns([TRIAL, { ...TRIAL, id: 't2' }]);
+    selectSpy.mockResolvedValue({ data: null, error: { code: '23503', message: 'fk' } });
+
+    await syncPendingDietTrials();
+
+    expect(selectSpy).toHaveBeenCalledTimes(1); // the batch only — no isolation pass
+    expect(mockRunAsync).not.toHaveBeenCalled(); // nothing marked, nothing parked
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('diet_trials'), 'fk');
+  });
+
+  it('skips entirely with no session (Pattern 4) — never writes on a dead JWT', async () => {
+    mockGetSession.mockResolvedValue({ data: { session: null } });
+    await syncPendingDietTrials();
+    await syncPendingDietTrialFoods();
+    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockGetAllAsync).not.toHaveBeenCalled();
+  });
+
+  it('pushes a removal as a soft delete on the upsert payload, never a DELETE', async () => {
+    // The cross-device acceptance criterion: a food removed on device A stops
+    // being permitted on device B. That only works if deleted_at TRAVELS.
+    queueReturns([{ ...FOOD_ROW, deleted_at: '2026-07-14T09:00:00.000Z' }]);
+    selectSpy.mockResolvedValue({ data: [{ id: 'df1' }], error: null });
+
+    await syncPendingDietTrialFoods();
+
+    expect(mockFrom).toHaveBeenCalledWith('diet_trial_foods');
+    const [payload, opts] = upsertSpy.mock.calls[0] as [Record<string, unknown>[], unknown];
+    expect(payload[0].deleted_at).toBe('2026-07-14T09:00:00.000Z');
+    expect(opts).toEqual({ onConflict: 'id' });
+    // No local-only columns on the wire.
+    expect(payload[0]).not.toHaveProperty('synced');
+    expect(payload[0]).not.toHaveProperty('sync_error');
+  });
+
+  it('quarantines a same-day re-add collision on the allowed set (23505 again)', async () => {
+    // UNIQUE (diet_trial_id, food_item_id, role, allowed_from). The local mirror
+    // replicates it so this normally fails at the action — but a row that reached
+    // the queue anyway must not be retried for the life of the install.
+    queueReturns([FOOD_ROW]);
+    selectSpy.mockResolvedValue({ data: null, error: { code: '23505', message: 'dup membership' } });
+
+    await syncPendingDietTrialFoods();
+
+    expect(mockRunAsync).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE diet_trial_foods SET sync_error'),
+      ['23505: dup membership', 'df1'],
+    );
   });
 });

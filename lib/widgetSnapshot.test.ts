@@ -14,7 +14,6 @@ jest.mock('expo-file-system', () => ({
 }));
 jest.mock('expo-sqlite', () => ({ openDatabaseSync: jest.fn() }));
 jest.mock('./db', () => ({ getDb: jest.fn() }));
-jest.mock('./supabase', () => ({ supabase: { from: jest.fn() } }));
 jest.mock('./feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn().mockResolvedValue([]),
 }));

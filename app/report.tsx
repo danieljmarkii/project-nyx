@@ -125,7 +125,11 @@ export default function ReportScreen() {
         setStatus('ready');
       } catch (e) {
         if (token?.cancelled) return;
-        setErrorMsg(e instanceof Error ? e.message : 'Something went wrong preparing the report.');
+        // generateVetReport wraps the transport failure ("Report generation
+        // failed: FunctionsHttpError …") for the log, not for the vet-report
+        // screen. The owner gets one honest line and the retry button below it.
+        console.error('[Report] generation failed:', e);
+        setErrorMsg('Something went wrong preparing the report. Try again in a moment.');
         setStatus('error');
       }
     },
@@ -151,7 +155,8 @@ export default function ReportScreen() {
         Alert.alert('Sharing unavailable', "This device can't open a share sheet.");
       }
     } catch (e) {
-      Alert.alert("Couldn't create the PDF", e instanceof Error ? e.message : 'Please try again.');
+      console.error('[Report] PDF share failed:', e);
+      Alert.alert("Couldn't create the PDF", 'Please try again.');
     } finally {
       setSharing(false);
     }

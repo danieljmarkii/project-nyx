@@ -57,7 +57,28 @@ export interface CorrelationFinding {
   priorityClass: 'insight';
   tier: EvidenceTier;
   symptomType: SignalSymptomType;
+  /**
+   * Owner-facing LABEL, never a key: one protein (`chicken`) or a whole collinearity
+   * cluster named together (`chicken and duck`). See detection.ts CorrelationFinding
+   * for why the joint case is carried in this field rather than a representative — the
+   * short version is that a reader which knows nothing about clusters must still name
+   * every implicated protein, so it can never exonerate one by omission.
+   */
   protein: string;
+  /**
+   * The candidate's protein cluster — canonical keys, ascending (B-351 slice 6).
+   *
+   * OPTIONAL ON PURPOSE. `ai_signals.findings` is a cache with a 24h TTL, so after this
+   * ships the client will read rows written by the PREVIOUS deployment of
+   * generate-signal, which had no such field. Every consumer must therefore fall back
+   * to `[protein]` rather than assume the array — see `proteinCluster`.
+   */
+  proteins?: string[];
+  /** `proteins.length > 1` — statistically inseparable in this pet's logged diet. */
+  jointCandidate?: boolean;
+  /** Which resolving action the engine authorised for a joint candidate. Mirrors
+   *  detection.ts; absent on a pre-slice-6 cached row (which is never joint anyway). */
+  jointGuidance?: 'feed_apart' | 'ask_vet' | null;
   matchedPairs: number;
   symptomEventCount: number;
   correlationWindowHours: number;

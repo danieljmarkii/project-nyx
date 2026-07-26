@@ -86,7 +86,7 @@ artifact byte-for-byte. `generate-report` minifies to **188 KB on a single
 vet-report function on — a corrupted deploy takes the report down until it is
 rebuilt, and the sha256 read-back catches it only *after* the overwrite. The bundles
 are built and verified (`node --check` clean); it is purely the transfer that is
-unsafe at this size, and `generate-report` only grows. Filed as **B-455**: provision
+unsafe at this size, and `generate-report` only grows. Filed as **B-485**: provision
 a Supabase access token as a cloud-env secret so `npx supabase functions deploy`
 uploads from disk and the agent never handles the bytes — the runbook's own §Security
 already names this as the escape hatch. Until then, large functions deploy via the
@@ -101,11 +101,59 @@ assumes the runbook's verify step is available.
 
 ## Filed, not fixed
 
-**B-451** widget unusable on-device (needs its own session with the device; establish
-which of the nine states renders before touching code) · **B-452** Landing Signal
+**B-481** widget unusable on-device (needs its own session with the device; establish
+which of the nine states renders before touching code) · **B-482** Landing Signal
 pulse redesign (PM: "absolute trash"; a Designer session against the brand spec, not
-a tweak) · **B-453** confirm-email lands on a localhost URL (Supabase Site URL still
-the default; one dashboard field, then B-432 for the deep-link version) · **B-454**
+a tweak) · **B-483** confirm-email lands on a localhost URL (Supabase Site URL still
+the default; one dashboard field, then B-432 for the deep-link version) · **B-484**
 delete the leftover `zz-deploy-probe` function.
 
 Blocks A, C (functionality) and E passed. E: "LOVE these filters."
+
+## The deploy path got fixed, not just documented
+
+The PM ran `scripts/deploy-edge.sh generate-report` and read its "Deploy
+(recommended…)" output as a receipt. It is not — the script's own header says *it
+does not deploy*, and `list_edge_functions` confirmed `generate-report` still at
+**v13**, `updated_at` untouched since Jul 18. Two useful things did come out of that
+run: the bundle's sha256 was **byte-identical** to the one built here (reproducible
+build), and their 218 Deno tests passed — the verification this container cannot run.
+
+So the gap closed properly: **`scripts/deploy-edge.sh <name> --deploy`** now does
+test → bundle → syntax-gate → sha256 → upload in one command.
+
+It stages the self-contained bundle into a throwaway project and points the CLI
+there (`--workdir`, `--use-api`) rather than running `supabase functions deploy`
+against `supabase/functions/`. A plain deploy re-bundles from source, which returns
+us to the mercy of how the CLI walks imports that escape the function directory
+(`../../../lib/protein.ts`, `../generate-signal/detection.ts`); handing it one
+self-contained file means there is no module graph to get wrong, and what ships is
+byte-identical to what `node --check` validated. `--use-api` bundles server-side, so
+no Docker daemon is needed in a Codespace.
+
+`verify_jwt` is the trap and is called out in code: the CLI defaults it **on**, which
+is right for every function here except **`view-report`** — deploying that one
+without `--no-verify-jwt` would start rejecting the unauthenticated share-link reads
+it exists to serve.
+
+**Verified:** syntax, help text, and the missing-token guard (fails with actionable
+instructions). **Not verified:** the upload itself — there is no token in this
+environment, so its first real run is its verification. The runbook now leads with
+this command and demotes the MCP call to the small-function fallback, with the size
+ceiling stated.
+
+## Two things the PM should know about the merge
+
+**Backlog IDs collided.** This session filed B-451–B-455; while it ran, sibling
+sessions claimed B-451–B-480 on `main`. The rows were renumbered to **B-481–B-485**
+at merge. Earlier commit messages and PR #462's body still name the original
+numbers — the backlog file is the authority.
+
+**`#459` deleted the B-411 row** (ambiguous label terms — `poultry`, `chicken fat`)
+rather than closing it `Done`, which the backlog's own convention forbids. Not
+restored here, because reversing another session's deliberate edit from inside a
+merge is how records get quietly rewritten twice. Flagged for the PM to rule on: it
+is either an absorption into B-351 that should have been recorded as one, or an
+accidental drop during that session's own conflict resolution.
+
+— shipped via #462

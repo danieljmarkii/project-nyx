@@ -9,6 +9,11 @@ import {
   LOCAL_WIPE_TABLES,
   type LocalRowMeta,
 } from './hydration';
+import { readdirSync, readFileSync } from 'fs';
+import { join } from 'path';
+import { BASE_SCHEMA_SQL } from './localSchema';
+import { MEDICATION_SCHEMA_SQL } from './medications';
+import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 
 const T0 = '2026-06-01T10:00:00.000Z';
 const T1 = '2026-06-01T11:00:00.000Z'; // one hour after T0
@@ -297,6 +302,69 @@ describe('mealsToDeleteByAbsence (FR-8 hard-deleted-meal reconciliation)', () =>
   });
 });
 
+// ── The sign-out wipe guard (B-424) ──────────────────────────────────────────
+// The sign-out wipe is what stops a shared or borrowed device leaking the prior
+// account's health record, and LOCAL_WIPE_TABLES fails OPEN by construction: a
+// local table absent from it is silently never cleared. So the expected set is
+// derived from a real database built from the production DDL — `sqlite_master`
+// is the only source that cannot forget a table.
+//
+// node:sqlite is Node ≥ 22 core; require() keeps it off the babel/jest-expo
+// transform path (the same precedent as medications.test.ts / cacheFlush.test.ts).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { DatabaseSync } = require('node:sqlite');
+
+// Every source of local DDL, i.e. everything initDb runs. Not bookkeeping: the
+// third test below scans the app source and fails if a CREATE TABLE exists that
+// none of these constants produce.
+const SCHEMA_SOURCES = [BASE_SCHEMA_SQL, MEDICATION_SCHEMA_SQL, DIET_TRIAL_SCHEMA_SQL];
+
+// Local tables deliberately NOT cleared on sign-out. Empty today, and adding a
+// name here is a Trust & Safety decision, not a way to quiet the test: it is a
+// claim that the table holds nothing traceable to the account that just signed
+// out. State the rationale inline when you add one.
+const NOT_WIPED_ON_SIGN_OUT: readonly string[] = [];
+
+// The real local schema's table names, from sqlite_master.
+function localTableNames(): string[] {
+  const db = new DatabaseSync(':memory:');
+  try {
+    for (const sql of SCHEMA_SOURCES) db.exec(sql);
+    return db
+      .prepare(
+        `SELECT name FROM sqlite_master
+          WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+          ORDER BY name`,
+      )
+      .all()
+      .map((r: { name: string }) => r.name);
+  } finally {
+    db.close();
+  }
+}
+
+// Every table name any non-test app source declares. The `\s*\(` is load-bearing:
+// without it the prose "CREATE TABLE IF NOT EXISTS covers every existing install"
+// in db.ts's comments parses as a table called `covers`.
+const CREATE_TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_]\w*)\s*\(/gi;
+const SOURCE_DIRS = ['lib', 'store', 'hooks', 'app', 'components'];
+
+function createTableNamesInSource(): string[] {
+  const found = new Set<string>();
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+        for (const m of readFileSync(full, 'utf8').matchAll(CREATE_TABLE_RE)) found.add(m[1]);
+      }
+    }
+  };
+  for (const dir of SOURCE_DIRS) walk(join(__dirname, '..', dir));
+  return [...found].sort();
+}
+
 describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
   const order = (t: string) => LOCAL_WIPE_TABLES.indexOf(t as never);
 
@@ -309,27 +377,50 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
     expect(order('medication_administrations')).toBeLessThan(order('events'));
     // B-186 — weight_checks FK→events ON DELETE CASCADE locally, same rule.
     expect(order('weight_checks')).toBeLessThan(order('events'));
+    // B-417 — the diet-trial mirror declares no local FK, so nothing would
+    // *throw* on a parent-first order; this pins the stated children-first
+    // contract so a future local FK can't turn a silent reordering into a
+    // half-failed wipe (and a half-failed wipe is a data-leak, not a warning).
+    expect(order('diet_trial_foods')).toBeLessThan(order('diet_trials'));
   });
 
-  it('covers exactly the account-scoped hydration target set plus the food cache and watermarks', () => {
-    expect([...LOCAL_WIPE_TABLES].sort()).toEqual(
-      [
-        'event_attachments',
-        'events',
-        'feeding_arrangements',
-        'food_items_cache',
-        'meals',
-        // B-117 medication mirror tables.
-        'medication_administrations',
-        'medications',
-        'medication_items_cache',
-        'sync_watermarks',
-        'vet_visit_attachments',
-        'vet_visits',
-        // B-186 weight-tracking child mirror.
-        'weight_checks',
-      ].sort(),
+  // B-424 — this used to compare the constant against a HARDCODED list, which
+  // fails OPEN: a new local table that nobody added to LOCAL_WIPE_TABLES was also
+  // never added to the list, so the guard stayed green while the wipe silently
+  // stopped being complete. The expected set is now DERIVED from `sqlite_master`
+  // after running the real DDL, so the only way to add a local table without
+  // deciding what happens to it on sign-out is to break this test.
+  it('wipes EVERY table in the real local schema — no table can be added silently (B-424)', () => {
+    const survivors = localTableNames().filter(
+      (t) => !LOCAL_WIPE_TABLES.includes(t as never) && !NOT_WIPED_ON_SIGN_OUT.includes(t),
     );
+    // If this fails: the named table(s) exist in local SQLite and are never
+    // cleared on sign-out, so the prior account's rows survive into the next
+    // account on a shared device. Add them to LOCAL_WIPE_TABLES (children first),
+    // or — only if they genuinely hold no account data — to NOT_WIPED_ON_SIGN_OUT
+    // with a rationale.
+    expect(survivors).toEqual([]);
+  });
+
+  it('names no table that the local schema does not actually have', () => {
+    // The other direction. `clearLocalData` catches and warns per table, so a
+    // stale entry (renamed/dropped table) is a silent no-op rather than a crash —
+    // and a typo'd entry looks like coverage while wiping nothing.
+    const real = localTableNames();
+    expect([...LOCAL_WIPE_TABLES].filter((t) => !real.includes(t))).toEqual([]);
+  });
+
+  it('has a schema-source list that covers every CREATE TABLE in the app source', () => {
+    // The guard on the guard. The test above can only see tables declared in the
+    // DDL constants SCHEMA_SOURCES imports — so a table created from a fourth
+    // source (a new schema constant, or a bare inline execAsync) would be invisible
+    // to it, and the whole thing would fail open again. This scans the app source
+    // for CREATE TABLE statements and asserts each one lands in the derived set.
+    const declared = createTableNamesInSource();
+    // Sanity: the scan itself must be finding something, or it proves nothing.
+    expect(declared.length).toBeGreaterThan(10);
+    const known = localTableNames();
+    expect(declared.filter((t) => !known.includes(t))).toEqual([]);
   });
 
   it('includes sync_watermarks so an account switch cold-starts (FR-3 × FR-9)', () => {

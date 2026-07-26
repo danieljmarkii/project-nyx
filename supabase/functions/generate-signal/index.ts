@@ -123,6 +123,17 @@ async function phraseFinding(finding: Finding, petName: string, phrasingEnabled 
   ) {
     return fallback
   }
+  // A JOINT correlation candidate (B-351 slice 6) is phrased deterministically too. Its
+  // sentence carries two load-bearing clauses that validatePhrasing structurally cannot
+  // police: that EVERY member of the cluster is named (a paraphrase that drops one credits
+  // the survivor falsely and exonerates the dropped protein by omission — the exact false
+  // attribution the cluster exists to prevent), and the resolving action. The keyword
+  // screen can catch a causal verb; it cannot count proteins or notice a missing one. So
+  // the joint card renders the template, which is correct by construction and tested.
+  // Single-protein correlations are unchanged and still model-phrased.
+  if (finding.type === 'food_symptom_correlation' && finding.jointCandidate) {
+    return fallback
+  }
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
   if (!apiKey) {
     console.warn('generate-signal: ANTHROPIC_API_KEY unset — using template')
@@ -257,6 +268,10 @@ interface SymptomRow {
 
 type FoodItemJoin = {
   primary_protein: string | null
+  // B-351 slice 1's captured set. Detection reads it through readProteinSet, which
+  // hoists primary_protein to position 0 — so a legacy row where the column is still
+  // NULL/empty degrades to exactly today's single-protein behavior.
+  proteins: string[] | null
   food_type: string | null
   // B-102 PR 5: physical-form enum. Read so detection can derive the human-food provenance
   // covariate (computeHumanFoodProvenance); ignored by every existing detector.
@@ -299,7 +314,10 @@ interface ArrangementRow {
   is_shared: boolean
   active_from: string | null
   active_until: string | null
-  food_items: { primary_protein: string | null } | { primary_protein: string | null }[] | null
+  food_items:
+    | { primary_protein: string | null; proteins: string[] | null }
+    | { primary_protein: string | null; proteins: string[] | null }[]
+    | null
 }
 
 // Map active free_choice arrangements to standing exposures (B-040 R1, PR 4). Only
@@ -313,6 +331,8 @@ function mapArrangementRows(rows: ArrangementRow[]): FeedingArrangement[] {
     return {
       id: r.id,
       primaryProtein: fi?.primary_protein ?? null,
+      // B-351 slice 6 — every protein a standing bowl carries is uncontrolled background.
+      proteins: fi?.proteins ?? null,
       activeFrom: r.active_from,
       activeUntil: r.active_until,
       attributionConfidence: r.is_shared ? 'low' : 'high',
@@ -410,6 +430,10 @@ function mapMealRows(rows: MealEventRow[], pairedEventIds: Set<string>): MealEve
       occurredAtConfidence: (r.occurred_at_confidence ?? null) as OccurredAtConfidence | null,
       foodItemId: meal?.food_item_id ?? null,
       primaryProtein: fi?.primary_protein ?? null,
+      // B-351 slice 6 — the food's FULL captured protein set, so a hidden secondary
+      // (the chicken in a "duck" formula) enters the case-crossover exposure set
+      // instead of being dropped on the floor. NULL/absent degrades to the primary.
+      proteins: fi?.proteins ?? null,
       intakeRating: (meal?.intake_rating ?? null) as IntakeRating | null,
       foodType: (fi?.food_type ?? null) as 'meal' | 'treat' | 'other' | null,
       // B-102 PR 5: feeds the human-food provenance covariate. Not yet surfaced anywhere
@@ -654,7 +678,7 @@ const handler = async (req: Request): Promise<Response> => {
       supabase
         .from('events')
         .select(
-          'id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, food_items(primary_protein, food_type, format, brand, product_name))',
+          'id, occurred_at, occurred_at_confidence, meals(food_item_id, intake_rating, food_items(primary_protein, proteins, food_type, format, brand, product_name))',
         )
         .eq('pet_id', petId)
         .eq('event_type', 'meal')
@@ -666,7 +690,7 @@ const handler = async (req: Request): Promise<Response> => {
       // The active-window overlap is resolved inside detection, not the query.
       supabase
         .from('feeding_arrangements')
-        .select('id, food_item_id, is_shared, active_from, active_until, food_items(primary_protein)')
+        .select('id, food_item_id, is_shared, active_from, active_until, food_items(primary_protein, proteins)')
         .eq('pet_id', petId)
         .eq('method', 'free_choice')
         .is('deleted_at', null),

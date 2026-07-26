@@ -10,7 +10,14 @@ import {
 } from 'react-native';
 import { theme } from '../../constants/theme';
 import { Badge } from '../ui/Badge';
-import { confidenceTag, evidenceText, sampleLine } from '../../lib/signalCopy';
+import {
+  confidenceTag,
+  displayProteinName,
+  evidenceText,
+  isJointCandidate,
+  proteinCluster,
+  sampleLine,
+} from '../../lib/signalCopy';
 import type { CachedFinding, InsightType, PriorityClass } from '../../lib/signal';
 
 // Enable the height animation on Android (off by default there).
@@ -46,10 +53,42 @@ function SentenceBody({ cached, isLead }: InsightBodyProps) {
   return (
     <View style={styles.body}>
       <Text style={[styles.sentence, isLead && styles.sentenceLead]}>{cached.text}</Text>
+      {cached.finding.type === 'food_symptom_correlation' && isJointCandidate(cached.finding) && (
+        <LinkedPair proteins={proteinCluster(cached.finding)} />
+      )}
       <View style={styles.metaRow}>
         {tag && <Badge label={tag} variant="muted" />}
         <Text style={styles.sample}>{sampleLine(cached.finding)}</Text>
       </View>
+    </View>
+  );
+}
+
+// The joint-candidate linked pair (B-351 D5, mock §3). Two proteins the engine cannot
+// separate, shown as linked chips with a three-word note — NOT a wrapping text pill,
+// which is what an earlier draft used and what the mock review rejected.
+//
+// Why a visual row and not just more sentence: the honesty here is a STANDING PROPERTY
+// of the finding ("these two travel together"), and a property reads better as structure
+// than as another clause the eye has to parse. The sentence keeps the action; this row
+// keeps the caveat. It renders for every member, at any cluster size — a cluster of four
+// shows four chips rather than silently truncating, because dropping a member from the
+// display is the exact false exoneration the joint candidate exists to prevent.
+function LinkedPair({ proteins }: { proteins: string[] }) {
+  return (
+    <View
+      style={styles.pairRow}
+      accessibilityLabel={`${proteins.map(displayProteinName).join(' and ')} — always fed together`}
+    >
+      {proteins.map((protein, i) => (
+        <View key={protein} style={styles.pairItem}>
+          {i > 0 && <Text style={styles.pairLink}>+</Text>}
+          <View style={styles.pairChip}>
+            <Text style={styles.pairChipText}>{displayProteinName(protein)}</Text>
+          </View>
+        </View>
+      ))}
+      <Text style={styles.pairNote}>always fed together</Text>
     </View>
   );
 }
@@ -159,6 +198,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: theme.space1,
+  },
+  // Linked pair (B-351 D5). Wraps rather than scrolls — a cluster member must never be
+  // hidden off-screen (the B-146 rule, and here it would also be a false exoneration).
+  pairRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: theme.space1,
+    marginTop: theme.spaceMicro,
+  },
+  pairItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.space1,
+  },
+  pairLink: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
+  },
+  pairChip: {
+    paddingHorizontal: theme.space1,
+    paddingVertical: theme.spaceMicro,
+    borderRadius: theme.radiusFull,
+    borderWidth: 1,
+    borderColor: theme.colorBorder,
+    backgroundColor: theme.colorSurfaceSubtle,
+  },
+  pairChipText: {
+    fontSize: theme.textXS,
+    fontWeight: theme.weightMedium,
+    color: theme.colorTextSecondary,
+  },
+  pairNote: {
+    fontSize: theme.textXS,
+    color: theme.colorTextTertiary,
   },
   sample: {
     fontSize: theme.textXS,

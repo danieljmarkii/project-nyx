@@ -6,6 +6,7 @@ import { clearRecoveryRequest } from './recoveryMarker';
 import { usePetStore, clearPersistedActivePetId } from '../store/petStore';
 import { useOnboardingDraftStore } from '../store/onboardingDraftStore';
 import { clearTrialContextCache, clearTrialHeadsUpLedger } from './trialContaminant';
+import { clearCachedAppConfig } from './appConfig';
 
 // The local teardown that must run on sign-out AND on post-deletion sign-out
 // (B-054 FR-9): abort in-flight hydration, wipe the synced SQLite copy + the
@@ -70,4 +71,13 @@ export async function wipeLocalSession(): Promise<void> {
   // bookkeeping. Awaited-with-catch like the rest: never throws, always completes.
   await clearTrialHeadsUpLedger().catch((e) =>
     console.warn('[session] trial heads-up ledger clear failed:', e));
+  // B-402 — the app_config last-known-good cache, also AsyncStorage-resident. The
+  // flags are global product config rather than this account's data, which is why
+  // this is hygiene and not a health-data leak — but the same blob holds the
+  // experimental allowlist, i.e. a set of other users' UUIDs left on a device the
+  // next person signs into. Same rule as the two clears above: wipe every place
+  // account-session state rests, not just SQLite. The next launch resolves from the
+  // shipped defaults until the first authenticated fetch, exactly as a fresh
+  // install does.
+  await clearCachedAppConfig();
 }

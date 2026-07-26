@@ -33,6 +33,18 @@ interface Props {
   // Long-press on a tile — opens the food detail screen for editing.
   // Kept separate from onPickFood so the one-tap log path stays clean.
   onOpenDetail?: (food: PickerFood) => void;
+  // B-417 PR 3 — SELECTION mode, and it is genuinely new behaviour rather than a
+  // prop that flips a flag. Passing an array (even an empty one) turns the picker
+  // from a one-tap-LOG surface into one that builds a SET: `onPickFood` becomes a
+  // toggle, tiles render their selected state, and the two sections that only make
+  // sense on the log path step aside (see below). Omitting it leaves every
+  // existing caller — app/log.tsx, the FAB — on exactly the path they have today.
+  //
+  // The set the trial diet needs is genuinely multi: a real elimination trial is
+  // often a wet and a dry of the same diet, so §4.1 writes N `diet_trial_foods`
+  // rows at role='primary_diet'. Opening this picker N times to pick N foods would
+  // have been the cheaper build and the worse screen.
+  selectedFoodIds?: readonly string[];
 }
 
 // B-346 — the "{Pet}'s rotation" shelf. Recent was 5 foods / 14 days in a hidden
@@ -44,7 +56,10 @@ const ROTATION_DAYS = 30;
 const ROTATION_LIMIT = 12;
 const SCREEN_PADDING = theme.space2;
 
-export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail }: Props) {
+export function FoodPicker({
+  petId, petName, onPickFood, onAddNew, onOpenDetail, selectedFoodIds,
+}: Props) {
+  const selecting = selectedFoodIds !== undefined;
   const [rotation, setRotation] = useState<PickerFood[]>([]);
   const [library, setLibrary] = useState<PickerFood[]>([]);
   const [arrangements, setArrangements] = useState<FoodArrangementGroup[]>([]);
@@ -285,6 +300,7 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
               compact
               onPickFood={onPickFood}
               onOpenDetail={onOpenDetail}
+              selectedFoodIds={selectedFoodIds}
             />
           </View>
         )}
@@ -315,12 +331,15 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
           ) : (
             <View style={styles.groups}>
               <LibraryGroup label="Meals"        foods={groupedLibrary.meals}
-                onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
+                onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                selectedFoodIds={selectedFoodIds} />
               <LibraryGroup label="Treats"       foods={groupedLibrary.treats}
-                onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
+                onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+                selectedFoodIds={selectedFoodIds} />
               <LibraryGroup label="Unclassified" foods={groupedLibrary.other}
                 onPickFood={onPickFood} onOpenDetail={onOpenDetail}
-                hint="Long-press a tile to classify it." />
+                selectedFoodIds={selectedFoodIds}
+                hint={selecting ? undefined : 'Long-press a tile to classify it.'} />
             </View>
           )}
         </View>
@@ -334,7 +353,12 @@ export function FoodPicker({ petId, petName, onPickFood, onAddNew, onOpenDetail 
             none (P5). Hidden in search-results mode — standing facts aren't
             matches, and an unfiltered list under filtered results would read as
             phantom hits. */}
-        {!searching && (
+        {/* Hidden in SELECTION mode (B-417 PR 3): a tap here opens a food's detail
+            screen, which is the wrong action — and navigating away mid-selection
+            from inside a modal would strand the set the owner was building. These
+            are standing facts about feeding, not candidates for a trial's allowed
+            set. */}
+        {!searching && !selecting && (
           <View style={styles.zone}>
             <SectionLabel label="Always available" />
             {arrangements.length === 0 ? (
@@ -488,13 +512,14 @@ function AddFoodCta({ onPress }: { onPress: () => void }) {
 // 10-second-test regression). The Foods tab headers every brand; the picker does
 // not, by design.
 function LibraryGroup({
-  label, foods, onPickFood, onOpenDetail, hint,
+  label, foods, onPickFood, onOpenDetail, hint, selectedFoodIds,
 }: {
   label: string;
   foods: PickerFood[];
   onPickFood: (food: PickerFood) => void;
   onOpenDetail?: (food: PickerFood) => void;
   hint?: string;
+  selectedFoodIds?: readonly string[];
 }) {
   if (foods.length === 0) return null;
   const { brandGroups, singles } = splitBrandGroupsForPicker(foods);
@@ -514,12 +539,14 @@ function LibraryGroup({
                 {bg.brand}
               </Text>
             ) : null}
-            <TileGrid foods={bg.foods} hideBrand onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
+            <TileGrid foods={bg.foods} hideBrand onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+              selectedFoodIds={selectedFoodIds} />
           </View>
         ))}
         {/* Single-variant brands: one flat grid, brand kept in each tile's eyebrow. */}
         {singles.length > 0 ? (
-          <TileGrid foods={singles} onPickFood={onPickFood} onOpenDetail={onOpenDetail} />
+          <TileGrid foods={singles} onPickFood={onPickFood} onOpenDetail={onOpenDetail}
+            selectedFoodIds={selectedFoodIds} />
         ) : null}
       </View>
     </View>
@@ -530,7 +557,7 @@ function LibraryGroup({
 // foods into 2-col rows (toFoodRows) so tiles in a row share a height; a trailing
 // odd tile gets a spacer to keep the last row left-aligned.
 function TileGrid({
-  foods, hideBrand = false, compact = false, onPickFood, onOpenDetail,
+  foods, hideBrand = false, compact = false, onPickFood, onOpenDetail, selectedFoodIds,
 }: {
   foods: PickerFood[];
   hideBrand?: boolean;
@@ -538,6 +565,7 @@ function TileGrid({
   compact?: boolean;
   onPickFood: (food: PickerFood) => void;
   onOpenDetail?: (food: PickerFood) => void;
+  selectedFoodIds?: readonly string[];
 }) {
   return (
     <View style={styles.grid}>
@@ -554,6 +582,9 @@ function TileGrid({
               format={f.format}
               hideBrand={hideBrand}
               compact={compact}
+              // `undefined` outside selection mode keeps the tile a log button;
+              // a boolean makes it a checkbox (see FoodTile).
+              selected={selectedFoodIds ? selectedFoodIds.includes(f.id) : undefined}
               onPress={() => onPickFood(f)}
               onLongPress={onOpenDetail ? () => onOpenDetail(f) : undefined}
             />
