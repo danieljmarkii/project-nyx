@@ -909,13 +909,18 @@ Deno.test('§7.2 — a refused trial does not read as interpretable just because
   // coverage-only §7.2 sentence said "supports interpreting it" over a trial in
   // which no elimination ever happened. A vet skimming that concludes the diet was
   // adequately documented and the result can be read.
+  // Refusals run to the WINDOW END, deliberately. PR 5 shipped a 14-day recency
+  // bound (`REFUSAL_WINDOW_DAYS`) so a wobble during the transition week cannot latch
+  // the fact for the remaining fifty days — measured on a cat that then ate every meal
+  // for forty-eight of them. A fixture whose refusals stop a fortnight before "now"
+  // therefore correctly reports NO refusal, and is the wrong fixture for this test.
   const input = wellLoggedTrialInput({ events: [] })
-  for (const d of days('2026-06-01', '2026-06-19')) {
+  for (const d of days('2026-06-01', '2026-07-02')) {
     input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
     input.events.push(meal({ date: d, time: '18:00:00', brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
   }
   const snap = assembleReport(input)
-  assert.equal(snap.trial?.coverage?.daysLogged, 19, 'coverage is high — the owner kept the record')
+  assert.equal(snap.trial?.coverage?.daysLogged, 32, 'coverage is high — the owner kept the record')
   assert.ok(snap.trial?.trialDietRefusal, 'and the diet went uneaten')
   const text = plain(renderReport(snap))
   assert.ok(/documents a refusal rather than an elimination/.test(text))
@@ -1050,7 +1055,13 @@ Deno.test('a refused trial COMPOSES the refusal with the weight change, as % of 
   // fact. -0.3 kg renders identically for a 32 kg dog and a 4.4 kg cat; on the cat it is
   // ~7% of body mass. This is a restatement of adjacent facts, not a new escalation lane
   // (that is B-474).
+  // STOPPED at day 19 — the artifact's own story, and the shape the recency bound
+  // wants: `endDayIndex` is the trial's end, so the 14-day refusal window closes
+  // there rather than at real-now a fortnight later.
   const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].completedAt = null
+  input.dietTrials[0].endedAt = '2026-06-19'
   for (const d of days('2026-06-01', '2026-06-19')) {
     input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
     input.events.push(meal({ date: d, time: '18:00:00', brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))

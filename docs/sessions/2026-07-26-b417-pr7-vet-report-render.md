@@ -64,7 +64,7 @@ The fix is structural, and the shape was already in the file: `freeFed` had alwa
 Three more from round two:
 
 - **§7.2 named the exposure caveat and left out the medication confound.** §7 says a derm trial is unreadable without it — a steroid course and a successful elimination produce the identical improving curve — and continuous oclacitinib with **zero doses logged** masks the trial's only endpoint. The overlap list stays un-judged (that is right); §7.2 now names it, because §7.2 is the line a reader lifts.
-- **Mira's page never composed its own facts.** 34-of-38 refused (trial block), 4.4 → 4.1 kg (a greyed fourth tile), *"Typical intake: Refused"* (Appendix E) and a free-fed bowl (feeding line) — every fact needed, across four sections, never put together, with a **legend entry on the last page** carrying a page-1 clinical fact. Composition is the whole job at minute zero. The Record row now states the weight change **as a percentage of body weight** beside the refusal. Deliberately not a flag and not a threshold — a restatement of adjacent facts in the register the report already uses. B-474 still owns the escalation lane, and Dr. Chen's own read is that deferring the *detector* is defensible while shipping the *page* silent is not, and that clearing it needed no threshold decision.
+- **Mira's page never composed its own facts.** 34-of-38 refused (trial block), 4.4 → 4.1 kg (a greyed fourth tile), *"Typical intake: Refused"* (Appendix E) and a free-fed bowl (feeding line) — every fact needed, across four sections, never put together, with a **legend entry on the last page** carrying a page-1 clinical fact. Composition is the whole job at minute zero. The Record row now states the weight change **as a percentage of body weight** beside the refusal. Deliberately not a flag and not a threshold — a restatement of adjacent facts in the register the report already uses. B-479 still owns the escalation lane, and Dr. Chen's own read is that deferring the *detector* is defensible while shipping the *page* silent is not, and that clearing it needed no threshold decision.
 - **The fix contradicted an uncorrected line.** *"Logging held up across the trial"* (true of the trial's range) sat eight lines from the new *"a fall here may be less logging"* (true of the charted window), with neither stating its scope, and the more assertive one was winning. The trial-scoped claim now names its own scope and the overrun.
 
 ### Round three — CLINIC-READY, and one finding I had created
@@ -77,7 +77,7 @@ The general case is what makes it worth fixing rather than noting: **a patient w
 
 Two smaller ones from the same round: the permitted-extra sentence inherited a trailing *"Full protein sets in appendix B"* written for a meal-fed food, and **appendix B's protein table holds only the meal-fed foods** — so a vet following it to see what else the chew carried landed on a table the chew is not in (now points at Appendix C). And *"not as a problem with the trial"* was doing two jobs with only one of them true: these are not a **compliance** problem, but they are very much a problem for **reading** the result, which §7.2 says two lines below.
 
-**Filed: B-476** — the chart's intervention marker is week-granular and centred, so the caption over-promises day precision and two starts in one week collapse to one line. The reviewer inferred a mis-render from two reports both marking `x=82.0`; that part is a false alarm (both trials start in bucket 0 and the geometry is identical), and saying so is part of the record.
+**Filed: B-481** — the chart's intervention marker is week-granular and centred, so the caption over-promises day precision and two starts in one week collapse to one line. The reviewer inferred a mis-render from two reports both marking `x=82.0`; that part is a false alarm (both trials start in bucket 0 and the geometry is identical), and saying so is part of the record.
 
 Two residuals were argued and **not** changed, with reasons on the PR: the Label-contamination row names one protein because the two sets answer different questions (`trialContamination` asks whether a food lists more than its own front-of-pack claim; Appendix C's stars ask whether a protein is the trial's — and cereal *is* what the chew says it is, and does appear in the antigen tally); and Cooper's bare negative-correlation line is pre-existing with a backlog row that wants the engine's own diagnostics, not a string edit.
 
@@ -95,8 +95,8 @@ The affirmative *"all N matched"* sentence has three renderers — the At-a-glan
 
 ## Filed, not fixed
 
-- **B-473** — the block has no Designer/Dr. Chen pass **as shipped**. The C4 mock round rendered only the two variants the PM chose between; the antigen line, the "Also during the trial" group, the four §7.2 caveats and the medication framing have no mock, and the block is now the longest thing on page 1.
-- **B-472** — seven duplicate backlog IDs (`B-432/441/442/443/463/464/465`). Found because the guard test cited "B-442" and there are two unrelated B-442 rows.
+- **B-478** — the block has no Designer/Dr. Chen pass **as shipped**. The C4 mock round rendered only the two variants the PM chose between; the antigen line, the "Also during the trial" group, the four §7.2 caveats and the medication framing have no mock, and the block is now the longest thing on page 1.
+- **B-477** — seven duplicate backlog IDs (`B-432/441/442/443/463/464/465`). Found because the guard test cited "B-442" and there are two unrelated B-442 rows.
 - **B-463 stays open and §12's tappable-reason criterion stays unmet** — `explainVerdict` still has zero callers; its destination is B-458, the exposures list screen deferred out of PR 4.
 
 ## One deliberate deviation from the spec
@@ -107,6 +107,12 @@ The affirmative *"all N matched"* sentence has three renderers — the At-a-glan
 
 `vet-report-cold-read` (mandatory) run on rendered artifacts, twice — two findings, both fixed and regression-tested. `tsc --noEmit` clean · **jest 131 suites / 2312 tests** · **`deno test` 936 cases** over `supabase/functions/`.
 
-## Deploy gate
+## Deploy gate — satisfied, and therefore a redeploy is owed
 
-**Do not deploy `generate-report` until the PR 4 client renderer has landed on `main`** (§11, the B-182 lesson). PR 7 changes the Edge Function's output; the client that renders it ships in #454.
+§11 (the B-182 lesson) says not to deploy `generate-report` until the PR 4 client renderer has landed. **It has** — #454 is on `main` (`5a64f99`), which was checked rather than assumed at wrap. So this is not a ship-dark change: until `generate-report` is redeployed, a report an owner generates still carries the pre-PR-7 off-diet definition. Bundle via `scripts/deploy-edge.sh generate-report` → Supabase MCP `deploy_edge_function`, preserving `verify_jwt=true`. No migration, no new secret.
+
+## Base drift, resolved in-branch rather than assumed
+
+PR 5 (#459) **merged mid-session**, and it merged **narrower** than the branch this work was built on: after three failed `adversarial-reviewer` passes its card wiring was split out to **B-474**, so `lib/dietTrialFacts.ts` and `lib/dietTrialCard.ts` went back to PR 4's shipped state. `lib/dietTrial.ts` also gained 162 lines (`feedingWasFinished`, `REFUSAL_WINDOW_DAYS`, `REFUSAL_MIN_SPAN_MS`). Because the squash-merge gave those files no shared history with the branch's copy, git reported them as add/add conflicts; each PR-5-owned file was resolved to **main's version** and the one PR-7 addition (`trialFoodKey`) re-applied on top, then the whole suite re-run against the predicate that actually shipped rather than the one this work was written against.
+
+The merge also produced **five ID collisions of this session's own making** — main had already published B-472–B-476 — so these rows renumbered to **B-477–B-481** (main's IDs are published; ours were not, the same rule the B-459 collision followed). That is a second instance of exactly what B-477 documents, and it happened *while filing B-477*.

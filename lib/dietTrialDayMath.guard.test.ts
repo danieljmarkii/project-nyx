@@ -157,17 +157,13 @@ describe('B-421 — one diet-trial day counter, not four', () => {
     // different clocks, which is how Home rendered "6 of 5 days logged" beside
     // the profile card's own number for the same pet.
     //
-    // B-417 PR 5 moved BOTH halves into `lib/dietTrial.computeTrialFacts`, so the
-    // loader no longer keys days at all for coverage; what it still keys locally
-    // is the free-fed count and the query's lower bound. Delegation is asserted
-    // here, and the arithmetic is asserted in the predicate's own case below.
+    // B-417 PR 5 pinned the metric in `lib/dietTrial.computeTrialFacts`, but the
+    // WIRING that would route this loader through it is deferred to B-474 after
+    // three failed adversarial passes — so this file still keys its own coverage
+    // day, and still has to key it LOCALLY. When B-474 lands, this assertion
+    // becomes a delegation check (`computeTrialFacts(`) instead.
     const src = readCode('lib/dietTrialFacts.ts');
-    expect(src).toMatch(/computeTrialFacts\(/);
-    // The loader no longer buckets a feeding into a day AT ALL — a stronger
-    // guarantee than "it uses the local helper". The only calendar work left here
-    // is the query's lower bound, which is deliberately loose so the local-day
-    // filter inside the predicate is what decides membership.
-    expect(src).not.toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
+    expect(src).toMatch(/toLocalDayKey\(new Date\(r\.occurred_at\)\)/);
     expect(src).not.toMatch(/toDateString\(\)/);
     expect(src).not.toMatch(DAY_DIVISION);
   });
