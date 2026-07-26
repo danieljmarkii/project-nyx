@@ -115,4 +115,6 @@ defensible. Flagged rather than decided.
 - `docs/backlog.md` — B-397 row updated with the blocker + pre-flight evidence
 - `docs/sessions/2026-07-26-b397-orphaned-edge-functions.md` (new) — this record
 
-No app code, no schema, no Edge Function deploys. Shipped via #TBD.
+- `STATUS.md` — hardening-audit action ① struck from the open PM list
+
+No app code, no schema, no Edge Function deploys. Shipped via #465.
