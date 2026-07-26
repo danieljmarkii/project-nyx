@@ -1,12 +1,26 @@
 import { useEffect, useState } from 'react';
-import { getDietTrialProgress } from '../lib/analytics';
 import { getDb } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { toLocalDayKey } from '../lib/utils';
 import { usePetStore } from '../store/petStore';
 import { useSyncStore } from '../store/syncStore';
 
-export type TrendMode = 'symptom' | 'feeding' | 'compliance';
+// B-417 PR 4 — the 'compliance' mode is GONE, and with it this hook's second,
+// unlisted "% compliance" (§1.1: v0.9 of the spec listed six readers of
+// `diet_trials` and missed this one). Two separate defects lived in that branch:
+//
+//   1. `TrendZone.tsx:35` tested compliance mode BEFORE symptom mode, so starting
+//      a trial REPLACED the Home symptom chart with a compliance bar. The symptom
+//      is WHY the trial exists, and Principle 3 says concern leads — so §8's
+//      ruling is additive, not replacement: the symptom chart stays and gains a
+//      trial-start marker.
+//   2. The number itself counted a meal of ANY food against days elapsed and
+//      called the result "food compliance" (B-418). An owner feeding chicken
+//      every day through a novel-protein trial read 100%.
+//
+// The trial's own surface is now the Home strip (`components/home/TrialStrip`)
+// and the Pet-tab card, both rendered from `lib/dietTrialCard`. This hook is back
+// to being about the pet's SYMPTOMS and FOOD, which is what a trend is.
+export type TrendMode = 'symptom' | 'feeding';
 
 export interface DayBucket {
   date: string; // YYYY-MM-DD UTC
@@ -17,9 +31,10 @@ export interface DayBucket {
 export interface TrendData {
   mode: TrendMode;
   buckets: DayBucket[]; // 14 days, oldest first
-  trialDaysElapsed: number;
-  trialTargetDays: number;
-  trialCompliantDays: number;
+  /** UTC day key of the active trial's start, when it falls inside the 14-day
+   *  window — the chart's marker, and the ONLY thing a trial contributes here.
+   *  Same key space as `buckets[].date` so the marker lands on the right column. */
+  trialStartDayKey: string | null;
   hasEnoughData: boolean; // true when >= 3 days have any events
   // Direction data for symptom mode
   dominantSymptomType: string | null;
@@ -93,62 +108,43 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
             .map(e => e.occurred_at.split('T')[0]),
         ).size;
 
-        // Check for active diet trial from Supabase (best-effort; falls back if offline)
-        let trialDaysElapsed = 0;
-        let trialTargetDays = 0;
-        let trialCompliantDays = 0;
+        // An active trial contributes exactly ONE thing to this chart: a marker on
+        // the day it started. No ratio, no numerator, no denominator — those live
+        // on the trial's own surfaces now. Best-effort; falls back silently if
+        // offline, and a missing marker degrades the chart by nothing.
+        let trialStartDayKey: string | null = null;
         let hasTrial = false;
 
         try {
           const { data: trial } = await supabase
             .from('diet_trials')
-            .select('started_at, target_duration_days')
+            .select('started_at')
             .eq('pet_id', activePet!.id)
             .eq('status', 'active')
             .maybeSingle();
 
           if (trial) {
             hasTrial = true;
-            // Day math via the one shared helper (B-421) — this used to be a raw ms
-            // span with no `+1`, so it read a day behind the trial card next to it.
-            const progress = getDietTrialProgress(
-              {
-                startedAt: trial.started_at as string,
-                targetDurationDays: trial.target_duration_days as number,
-              },
-              Date.now(),
-            );
-            trialDaysElapsed = progress?.dayCounter ?? 1;
-            trialTargetDays = trial.target_duration_days as number;
-
-            // The numerator has to be on the SAME clock as the denominator above,
-            // or the ratio is not a ratio. It used to bucket by UTC day key while
-            // `trialDaysElapsed` is a local-day count, which for a behind-UTC owner
-            // counts each local day twice at the boundary — Home rendered
-            // "6 of 5 days logged — 120% food compliance" against the profile card's
-            // 100% for the same pet at the same second. Local day key on both sides.
-            // (B-421. This corrects the CLOCK only. The numerator still counts a meal
-            // of any food rather than the trial diet — that mislabel is B-418, and
-            // redefining the metric is B-417 PR 5's job.)
-            const startDayKey = /^\d{4}-\d{2}-\d{2}$/.test(trial.started_at as string)
-              ? (trial.started_at as string)
-              : toLocalDayKey(new Date(trial.started_at as string));
-            trialCompliantDays = new Set(
-              rawEvents
-                .filter(e => e.event_type === 'meal')
-                .map(e => toLocalDayKey(new Date(e.occurred_at)))
-                .filter(k => k >= startDayKey),
-            ).size;
+            const raw = trial.started_at as string;
+            // Buckets are UTC day keys, so the marker must be one too or it lands
+            // on the wrong column. A DATE column is already 'YYYY-MM-DD'.
+            const key = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+              ? raw
+              : new Date(raw).toISOString().split('T')[0];
+            trialStartDayKey = buckets.some(b => b.date === key) ? key : null;
           }
         } catch {
-          // offline — no trial context available, continue with symptom/feeding mode
+          // offline — no trial context available, the chart renders without a marker
         }
 
-        // Determine chart mode
+        // Determine chart mode. During a trial the bar is lowered from 3 symptom
+        // events to 1: a trial exists BECAUSE of a symptom, so even one or two
+        // events are the thing this owner is watching, and Principle 3 says
+        // concern leads. With nothing at all to plot the feeding chart is still
+        // the more useful picture, so the floor is 1 rather than 0.
         const totalSymptoms = rawEvents.filter(e => SYMPTOM_TYPES.has(e.event_type)).length;
-        let mode: TrendMode = 'feeding';
-        if (hasTrial) mode = 'compliance';
-        else if (totalSymptoms >= 3) mode = 'symptom';
+        const symptomFloor = hasTrial ? 1 : 3;
+        const mode: TrendMode = totalSymptoms >= symptomFloor ? 'symptom' : 'feeding';
 
         const daysWithAnyEvent = buckets.filter(
           b => b.symptomCount > 0 || b.mealCount > 0,
@@ -158,9 +154,7 @@ export function useTrend(): { data: TrendData | null; isLoading: boolean } {
           setData({
             mode,
             buckets,
-            trialDaysElapsed,
-            trialTargetDays,
-            trialCompliantDays,
+            trialStartDayKey,
             hasEnoughData: daysWithAnyEvent >= 3,
             dominantSymptomType,
             thisWeekSymptomCount,

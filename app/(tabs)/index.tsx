@@ -11,8 +11,11 @@ import { HomeHeader } from '../../components/home/HomeHeader';
 import { PullToRefreshSky } from '../../components/home/PullToRefreshSky';
 import { CrossPetSafetyBanner } from '../../components/home/CrossPetSafetyBanner';
 import { SignalZone } from '../../components/home/SignalZone';
+import { TrialStrip } from '../../components/home/TrialStrip';
 import { TodayZone } from '../../components/home/TodayZone';
 import { TrendZone } from '../../components/home/TrendZone';
+import { useDietTrial } from '../../hooks/useDietTrial';
+import { resolveTrialStrip } from '../../lib/dietTrialCard';
 
 // Keep the "Checking for anything new…" band up long enough to read, even if the
 // sync + regen return almost instantly (the band would otherwise flash).
@@ -28,6 +31,9 @@ export default function HomeScreen() {
   // scrolling to top — no measured y-offset/onLayout tracking needed.
   const scrollRef = useRef<ScrollView>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Same loader as the Pet-tab card, so the two surfaces cannot disagree about
+  // the same trial (B-417 PR 4).
+  const { input: trialInput } = useDietTrial();
 
   useEffect(() => {
     loadTodayEvents();
@@ -94,6 +100,12 @@ export default function HomeScreen() {
               or when no other pet has a cached safety finding. */}
           <CrossPetSafetyBanner />
           <SignalZone />
+          {/* B-417 §4.2 — a running trial gets a compact strip here, BELOW Signal
+              and ABOVE Today. Deliberate: Principle 3 says safety insights always
+              lead, and a trial is context, not an insight. `resolveTrialStrip`
+              returns null unless a trial is ACTIVE, so Home gains nothing when
+              there isn't one. */}
+          <TrialStrip model={trialInput ? resolveTrialStrip(trialInput) : null} />
           <TodayZone />
           <TrendZone />
         </ScrollView>

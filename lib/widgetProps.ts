@@ -173,6 +173,18 @@ export function formatClock(iso: string): string {
 // wedge user's own countdown; otherwise the arrangement shape, or nothing.
 export function contextLineFor(snapshot: WidgetSnapshot): string {
   if (snapshot.trialDay !== null && snapshot.trialTargetDays !== null) {
+    // Past the window, `Day 61 of 56` is not a countdown — it is a contradiction,
+    // and with 70–80% of trials abandoned, stale-active is the STEADY state, not
+    // the edge case. Dr. Chen on the design lock: "a trial that has drifted past
+    // its window without anyone closing it is the most common thing I see, and an
+    // app that renders Day 61 of 56 tells me nobody is reading it."
+    //
+    // Same rule as the trial card's state 6 (`lib/dietTrialCard.ts`), deliberately
+    // — this string and the card's are read by the same owner about the same
+    // trial, sometimes on the same unlock, and they may not disagree. Phrased for
+    // the widget's narrower column: no "the window you set", which does not fit.
+    const past = snapshot.trialDay - snapshot.trialTargetDays;
+    if (past > 0) return `Day ${snapshot.trialDay} · ${past}d past`;
     return `Day ${snapshot.trialDay} of ${snapshot.trialTargetDays}`;
   }
   if (snapshot.trialDay !== null) return `Day ${snapshot.trialDay}`;
