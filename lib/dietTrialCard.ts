@@ -83,11 +83,7 @@ export interface TrialCoverageFacts {
 }
 
 /** §5.1 exposures: in-window feedings classified by §5.3, with their OWN feeding
- *  denominator. Supplied by PR 5's `computeTrialFacts`. Still NULLABLE, and the
- *  null is load-bearing rather than vestigial: `lib/dietTrialFacts` withholds
- *  these numbers whenever the allowed set has not fully hydrated, or whenever the
- *  predicate computed a reason the affirmative "all N matched" sentence would be
- *  false (`mayClaimAllMatched`). Silence, never an all-clear. */
+ *  denominator. Supplied by PR 5's `classifyFeeding`; null until it ships. */
 export interface TrialExposureFacts {
   /** Every in-window feeding — treats included. */
   totalFeedings: number;
@@ -262,15 +258,8 @@ function exposureLine(ex: TrialExposureFacts): string {
   return `${total} ${noun} in total — ${total - ex.offDiet} matched, ${ex.offDiet} did not.`;
 }
 
-/** §5.2: "the exposure count is a floor, never a total." Said ON the claim.
- *
- *  IT IS SAID ON THE CLEAN CLAIM TOO (added at PR 5, after the adversarial pass).
- *  The first cut appended this only when `offDiet > 0`, so §5.2's floor rule was
- *  stated on every card EXCEPT the one where it is load-bearing: "all 84 matched
- *  the trial diet or a permitted food" is precisely the sentence a reader can
- *  mistake for a total, and it was the only one carrying no qualifier. */
+/** §5.2: "the exposure count is a floor, never a total." Said ON the claim. */
 function floorSuffix(offDiet: number): string {
-  if (offDiet <= 0) return ' That’s what’s been logged, not everything that happened.';
   return offDiet === 1
     ? ' That 1 is what’s been logged, not a total.'
     : ` The ${offDiet} are what’s been logged, not a total.`;
@@ -599,7 +588,7 @@ function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
     lines.push({ role: 'fact', text: exposureLine(ex) });
     lines.push({
       role: 'qualifier',
-      text: BLIND_SPOT_QUALIFIER + floorSuffix(ex.offDiet),
+      text: BLIND_SPOT_QUALIFIER + (ex.offDiet > 0 ? floorSuffix(ex.offDiet) : ''),
     });
     pushScopeCaveat(lines, input);
     return;

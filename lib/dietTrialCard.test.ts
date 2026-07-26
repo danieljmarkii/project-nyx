@@ -265,13 +265,7 @@ describe('state 2 — mid-trial, clean', () => {
   });
 
   it('carries the blind-spot qualifier INLINE on the claim, never as a legend', () => {
-    // …and the FLOOR caveat rides with it, including here. B-417 PR 5's
-    // adversarial pass found §5.2's "a floor, never a total" was stated on every
-    // card except the clean one — the only sentence a reader can mistake for a
-    // total was the only one with no qualifier attached.
-    expect(textOf(model, 'qualifier')).toEqual([
-      `${BLIND_SPOT_QUALIFIER} That’s what’s been logged, not everything that happened.`,
-    ]);
+    expect(textOf(model, 'qualifier')).toEqual([BLIND_SPOT_QUALIFIER]);
     expect(BLIND_SPOT_QUALIFIER).toContain('flavoured liquids and tablets');
   });
 
