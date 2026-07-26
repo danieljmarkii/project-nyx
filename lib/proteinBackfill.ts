@@ -233,7 +233,7 @@ export interface DerivedProtein {
    * that animal — `beef` read from "dried beef cheese" rather than from "beef" or
    * "beef broth". These are the derivations most worth a human eye, and the ones
    * that would make the best owner-facing "did you know this had beef in it?"
-   * moment if the provenance ever reaches a surface (B-453).
+   * moment if the provenance ever reaches a surface (B-454).
    */
   unusual: boolean;
 }
@@ -492,7 +492,7 @@ export function planRow(row: BackfillRow, options: BackfillOptions): BackfillPla
 // provenance/coverage field written by an extractor that actually read the panel —
 // B-437 — not a value invented by a backfill.
 //
-// ── TWO EXCLUSIONS THAT ARE THE PM'S CALL, NOT THIS MODULE'S (B-454) ──────────
+// ── TWO EXCLUSIONS THAT ARE THE PM'S CALL, NOT THIS MODULE'S (B-455) ──────────
 //
 // The 2026-07-26 steer was *"err on surfacing a protein for the vet"*, and the
 // lexicon above was widened hard on it. Two categories were deliberately left out,
@@ -522,4 +522,4 @@ export function planRow(row: BackfillRow, options: BackfillOptions): BackfillPla
 //     "should skip chicken fat" is advice a vet would contradict.
 // The resolution is probably NOT a wider lexicon but a SECOND channel — a
 // vet-report disclosure line that is not a `proteins` key and therefore never
-// reaches the contaminant check. That needs a design pass, so it is B-454.
+// reaches the contaminant check. That needs a design pass, so it is B-455.

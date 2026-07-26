@@ -309,11 +309,22 @@ describe('LOCAL_WIPE_TABLES (FR-9 logout wipe order)', () => {
     expect(order('medication_administrations')).toBeLessThan(order('events'));
     // B-186 — weight_checks FK→events ON DELETE CASCADE locally, same rule.
     expect(order('weight_checks')).toBeLessThan(order('events'));
+    // B-417 — the diet-trial mirror declares no local FK, so nothing would
+    // *throw* on a parent-first order; this pins the stated children-first
+    // contract so a future local FK can't turn a silent reordering into a
+    // half-failed wipe (and a half-failed wipe is a data-leak, not a warning).
+    expect(order('diet_trial_foods')).toBeLessThan(order('diet_trials'));
   });
 
   it('covers exactly the account-scoped hydration target set plus the food cache and watermarks', () => {
     expect([...LOCAL_WIPE_TABLES].sort()).toEqual(
       [
+        // B-417 diet-trial mirror. Present here for a reason beyond FK order:
+        // `indication` is a closed clinical enum, so a surviving diet_trials row
+        // leaks a suspected diagnosis (plus the vet's name and the trial diet) to
+        // whoever signs in next on a shared device.
+        'diet_trial_foods',
+        'diet_trials',
         'event_attachments',
         'events',
         'feeding_arrangements',

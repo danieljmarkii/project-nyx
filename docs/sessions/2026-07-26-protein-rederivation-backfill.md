@@ -34,7 +34,7 @@ Surfaced early with the live blast radius measured first — **exactly 3 rows**,
 
 The argument that decided it was not "it's only 3 rows". It was that **declining would not have preserved the status quo.** `'ocean whitefish' → 'whitefish'` is *already shipped on the write path* — it is spec §5's own B-048 example, live in `EXTRACTION_PROTEIN_ALIASES` today. So a Fancy Feast Ocean Whitefish photographed tomorrow stores `whitefish` while these three keep `ocean whitefish` forever. Refusing bakes in a **widening** divergence. And the pass invents no species judgement of its own; it applies only a mapping already ratified and shipped.
 
-Recorded dissent (T&S / the D3a default): 2 of the 3 rows are `source='user'`, and B-416's own design constraint says no owner-edited value is overwritten. What resolved it: `Ocean Whitefish` is not producible from any `COMMON_PROTEINS` chip, so it was typed into the "Other" escape — and under D9 (shipped in PR 3) typing it *today* rewrites it to `Whitefish` **and tells the owner**. Stored data now matches what the product already does with that input. The residual — the owner sees the changed value without D9's inline note — is filed as **B-451** rather than papered over.
+Recorded dissent (T&S / the D3a default): 2 of the 3 rows are `source='user'`, and B-416's own design constraint says no owner-edited value is overwritten. What resolved it: `Ocean Whitefish` is not producible from any `COMMON_PROTEINS` chip, so it was typed into the "Other" escape — and under D9 (shipped in PR 3) typing it *today* rewrites it to `Whitefish` **and tells the owner**. Stored data now matches what the product already does with that input. The residual — the owner sees the changed value without D9's inline note — is filed as **B-452** rather than papered over.
 
 ## The reporting defect worth remembering
 
@@ -48,7 +48,7 @@ The general lesson: when a ruling is scoped to one class of change, the instrume
 
 The obvious alternative was to re-invoke the extractor's model over the stored panel text. Rejected on one ground: **a backfill over clinical data has to be reviewable row by row before it is applied**, and 43 model outputs nobody checked is not that. A lexicon scan is a pure function — unit-tested, stable across runs, diff fits on a screen, and it cannot hallucinate a protein into a novel-protein trial food.
 
-The cost is real and named (**B-452**): it finds only animals it knows. I originally called that under-capture "the safe direction", which the PM corrected the same day — see the addendum. It is only safe relative to capturing *nothing*; against the vet report's job it is the dangerous direction, and the lexicon was widened hard in response.
+The cost is real and named (**B-453**): it finds only animals it knows. I originally called that under-capture "the safe direction", which the PM corrected the same day — see the addendum. It is only safe relative to capturing *nothing*; against the vet report's job it is the dangerous direction, and the lexicon was widened hard in response.
 
 The exclusion list turned out to be the load-bearing part, not tidiness. `chicken fat` appears in Hill's **duck** entrée; without excluding fats, oils and flavours the pass would have appended `chicken` to a novel-protein trial food and fired a **false contaminant flag on a trial diet** — the most expensive false positive this feature can produce. Same mechanism correctly rejects `Natural Tuna Shrimp & Salmon Flavor` on a Temptations treat. (Hydrolysates were on this list too, and should not have been — the addendum explains why that was a defect rather than a bound.)
 
@@ -63,7 +63,7 @@ This backfill is where a bug fixed in *code* last session could return as *data*
 
 `ai_extraction_confidence` was left untouched. Writing it would have cleared the D10 gate and stopped these rows reading "ingredient list not read" on the vet report — which is the half of the PM's complaint this pass does *not* fix.
 
-It would also have been a lie. A keyword scan finds only what its lexicon contains, so attesting completeness off one licenses *"nothing else on the label"* over a panel that may list an animal the scan never knew — reassurance-on-absence, on the surface a vet trusts most. Under-claiming is D10's named safe direction. The real fix is a provenance/coverage field written by an extractor that actually read the panel (**B-437**), or re-extraction (**B-452**) — not a value invented by a backfill.
+It would also have been a lie. A keyword scan finds only what its lexicon contains, so attesting completeness off one licenses *"nothing else on the label"* over a panel that may list an animal the scan never knew — reassurance-on-absence, on the surface a vet trusts most. Under-claiming is D10's named safe direction. The real fix is a provenance/coverage field written by an extractor that actually read the panel (**B-437**), or re-extraction (**B-453**) — not a value invented by a backfill.
 
 ## Verification
 
@@ -81,8 +81,8 @@ One process note: the row dump was **checksummed row-by-row against the database
 
 ## Follow-ups filed
 
-- **B-451** — the 3 Class-B re-keys changed an owner-visible value without D9's inline disclosure (2 of 3 are `source='user'`). Do *not* fix by reverting the re-key; that reopens the widening split.
-- **B-452** — the lexicon finds only known animals; plant proteins and hydrolysates are deliberately out of scope. Re-extraction, not a longer word list, is the complete fix — a bigger lexicon buys coverage without ever buying the attestation.
+- **B-452** — the 3 Class-B re-keys changed an owner-visible value without D9's inline disclosure (2 of 3 are `source='user'`). Do *not* fix by reverting the re-key; that reopens the widening split.
+- **B-453** — the lexicon finds only known animals; plant proteins and hydrolysates are deliberately out of scope. Re-extraction, not a longer word list, is the complete fix — a bigger lexicon buys coverage without ever buying the attestation.
 
 ---
 
@@ -116,7 +116,7 @@ Both were predicted while writing the list and then confirmed by a failing test.
 
 End state re-verified from scratch: applying the two increments lands on a hash **identical** to one clean pass from the original data.
 
-### What I did NOT widen, and why that is the PM's call (B-454)
+### What I did NOT widen, and why that is the PM's call (B-455)
 
 `food_items.proteins` feeds the **shipped owner-facing contaminant flag** as well as the vet report, and every key in it becomes owner copy — *"This one has X. {Pet}'s duck trial should skip X."* So two categories are not a data decision:
 
@@ -125,4 +125,4 @@ End state re-verified from scratch: applying the two increments lands on a hash 
 
 Persona conflict recorded rather than resolved: **Dr. Chen** — disclose both, withholding an ingredient is my judgement to make. **Designer / Jordan** — every extra key spends the safety prompt's credibility, and *"should skip chicken fat"* is advice a vet would contradict.
 
-The likely resolution is not a wider lexicon but a **second channel**: a vet-report disclosure line that is not a `proteins` key and therefore never reaches the contaminant check. That needs a design round → **B-454**. Dairy is the precedent worth reading when it's taken up: it was included, and it cost zero new alarms.
+The likely resolution is not a wider lexicon but a **second channel**: a vet-report disclosure line that is not a `proteins` key and therefore never reaches the contaminant check. That needs a design round → **B-455**. Dairy is the precedent worth reading when it's taken up: it was included, and it cost zero new alarms.
