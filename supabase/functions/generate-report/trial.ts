@@ -203,6 +203,21 @@ export interface TrialPermittedFood {
   addedAfterStart: boolean
   /** The row's membership was closed before the window ended. */
   endedBeforeWindowEnd: boolean
+  /**
+   * The protein set read from this food's label, and whether a label was read at all.
+   *
+   * Rendered ON the allowed list because there is nowhere else it can go. Appendix B's
+   * protein table holds MEAL foods only, so page 1's trailing "Full protein sets in
+   * appendix B" pointed a vet at a table that does not contain the treats — and round 4
+   * found the second-most-fed item in the record ("Royal Canin Hydrolyzed Treats ×39")
+   * with no ingredient data anywhere in the document. The same page warns that "a
+   * vet-approved extra that carries a second protein is as trial-invalidating as a
+   * contaminated primary diet, and less likely to be noticed", so withholding the set
+   * for 39 feedings defeats the report's own stated hazard. Empty + `panelRead: false`
+   * is silence about an unread label, never an all-clear (D10).
+   */
+  proteins: string[]
+  panelRead: boolean
 }
 
 /** C5, ruled: the symptom trend is rendered AGAINST logging density over the same
@@ -212,11 +227,32 @@ export interface TrialPermittedFood {
  *  Measure and disclose the bias; do NOT correct it with an owner-scored severity
  *  instrument the app has refused on every event type (A-1 REJECTED). */
 export interface TrialLoggingDensity {
-  firstHalf: { daysLogged: number; days: number }
-  lastHalf: { daysLogged: number; days: number }
-  /** Logging fell between halves — the direction that makes a symptom drop
-   *  uninterpretable. Compared as RATES, since the halves can differ by a day. */
-  loggingFell: boolean
+  /**
+   * TWO SERIES, AND NO VERDICT — because there is no third series to adjudicate with.
+   *
+   * The cold read broke both single-series versions of this, in opposite directions,
+   * and the pair of failures is the finding:
+   *
+   * - denominating on ALL events let habitual, app-prompted meal logging saturate it,
+   *   so a 12 → 1 itch collapse rendered *"Logging held up … a change in symptom
+   *   counts is not explained by a change in how often anything was logged"* — the
+   *   report certifying the exact artefact C5 exists to disclose;
+   * - denominating on NON-MEAL events fixed the saturation and bought a worse bug: on
+   *   a pet whose only discretionary logs ARE its symptoms, the series **is** the
+   *   symptom series (11 + 6 = the 17 charted symptom events), so *"Logging fell over
+   *   the trial, so a fall in symptom counts cannot be separated from the fall in
+   *   logging"* is a tautology that revokes the trial's own result. A vet reading it
+   *   tells the owner six weeks were wasted.
+   *
+   * Both verdicts were mine to write and neither was in C5, which says the trend is
+   * *rendered against* density — not adjudicated by it. So the verdict is deleted and
+   * both series are rendered, each labelled for what it counts, with the circularity
+   * **named** rather than hidden inside a denominator. Meals are the honest habit
+   * signal (independent of the symptom count, and 43/43 across both halves really does
+   * mean the owner never disengaged); other events are not, and the copy says so.
+   */
+  meals: { firstHalf: { daysLogged: number; days: number }; lastHalf: { daysLogged: number; days: number } }
+  other: { firstHalf: { daysLogged: number; days: number }; lastHalf: { daysLogged: number; days: number } }
 }
 
 /** One off-diet feeding, resolved by `classifyFeeding` (§5.3). */
@@ -248,6 +284,12 @@ export interface TrialExposure {
    * it, and it hides the duplicate the vet most needs to spot.
    */
   panelWasRead: boolean
+  /**
+   * The date this same food *did* become permitted, when it is later than this
+   * feeding — so the Why column can name the reason that actually placed the row here.
+   * `null` when the food is never on the list (the ordinary case).
+   */
+  permittedLaterFrom: string | null
 }
 
 export interface TrialBlock {
@@ -446,9 +488,12 @@ export interface BuildTrialBlockArgs {
   medicationItems: readonly TrialMedItemSource[]
   medications: readonly TrialMedicationSource[]
   arrangements: readonly TrialArrangementSource[]
-  /** Local-day indices of days carrying a NON-MEAL event — the C5 density
-   *  numerator. Deliberately not "any event": see `loggingDensity`. */
-  discretionaryLoggedDayIndices: readonly number[]
+  /** C5's two density series, kept apart on purpose — one of them is the honest
+   *  habit signal and the other is not independent of the symptom count. Neither
+   *  is combined into a single number, and no verdict is derived: see
+   *  `TrialLoggingDensity`. */
+  mealLoggedDayIndices: readonly number[]
+  otherLoggedDayIndices: readonly number[]
   /** Local-day indices of every in-window symptom event. */
   symptomDayIndices: readonly number[]
   scope: { startDate: string; endDate: string; endDayNum: number }
@@ -584,6 +629,42 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // "read, and nothing in it is outside the trial diet", which is a different
       // sentence and a much more interesting one.
       panelWasRead: (e.meal.proteins ?? []).length > 0,
+      // THE OPERATIVE REASON, WHICH IS NEITHER RUNG. This same food IS on the allowed
+      // list — just not on this day. §7's dated-membership rule is what makes that
+      // possible ("feedings are scored against the list in force on the day"), and
+      // cold-read round 4 caught the Why column asserting the wrong check because of
+      // it: a Jun 2 DentaStix rendered "Protein not in the trial diet" while page 1
+      // listed the identical food as a "permitted treat (from Jun 8) ×25", and those 25
+      // later feedings of the identical protein set are correctly absent from this
+      // table. A vet cannot reconcile those two lines, and the protein reason is the
+      // misleading half — the feeding is here because it predates permission.
+      //
+      // Computed in the ADAPTER, from the allowed rows plus this feeding's day. The
+      // shared predicate is untouched: it answers "off-diet on this day?", and this
+      // answers "would it have been permitted later?", which is a report-shaped
+      // question about how to explain the row.
+      // ASKED OF THE ONE PREDICATE, not answered by a second copy of its identity
+      // rules. Re-implementing `matchAllowed`'s food_id-then-food_key match here is
+      // precisely the duplication this PR exists to delete, so instead the same
+      // feeding is re-classified as if fed on each later `allowedFrom` date and the
+      // predicate's own verdict is read back. Distinct dates are a handful at most.
+      permittedLaterFrom: (() => {
+        const laterDates = [
+          ...new Set(
+            allowedFoods
+              .map((f) => f.allowedFrom)
+              .filter((from) => {
+                const fromDn = dayIndexOfValue(from, timeZone)
+                return fromDn !== null && fromDn > dn
+              }),
+          ),
+        ].sort()
+        for (const from of laterDates) {
+          const asIfLater = classifyFeeding(ctx, { ...toTrialFeeding(e), occurredAt: from })
+          if (asIfLater.verdict === 'permitted') return from
+        }
+        return null
+      })(),
     })
   }
   exposures.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.eventId.localeCompare(b.eventId))
@@ -618,6 +699,8 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       addedAfterStart: openedAfter(f.allowedFrom, trial.startedAt, tz),
       endedBeforeWindowEnd:
         f.allowedUntil !== null && (dayIndexOfValue(f.allowedUntil, timeZone) ?? Infinity) < endDayIndex,
+      proteins: [...(f.proteins ?? [])],
+      panelRead: (f.proteins ?? []).length > 0,
     }))
     .sort(
       (a, b) =>
@@ -730,7 +813,12 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       args.scope.endDayNum,
       timeZone,
     ),
-    loggingDensity: loggingDensity(args.discretionaryLoggedDayIndices, startDayIndex, endDayIndex),
+    loggingDensity: loggingDensity(
+      args.mealLoggedDayIndices,
+      args.otherLoggedDayIndices,
+      startDayIndex,
+      endDayIndex,
+    ),
     challengeWindowDays: CHALLENGE_WINDOW_DAYS[species],
   }
 }
@@ -960,40 +1048,40 @@ export function looksAntibacterial(drugName: string): boolean {
  * That is the report affirmatively certifying the exact artefact C5 exists to
  * disclose, on the modal tiring owner, in the direction that ends a trial early.
  *
- * So the caller passes days carrying a NON-MEAL event — the logging an owner has to
- * choose to do. When the only discretionary logging IS the symptom stream the
- * measure becomes partly circular, and that is accepted deliberately: the circular
- * direction is toward CAVEATING a fall, never toward certifying one.
+ * So BOTH series are measured and neither is adjudicated — see the interface note.
+ * The caller passes meal-days and non-meal-days separately; the copy labels each for
+ * what it counts and names the circularity in the second rather than hiding inside it.
  */
 function loggingDensity(
-  loggedDayIndices: readonly number[],
+  mealDayIndices: readonly number[],
+  otherDayIndices: readonly number[],
   startDayIndex: number,
   endDayIndex: number,
 ): TrialLoggingDensity | null {
   const days = endDayIndex - startDayIndex + 1
-  // Under a fortnight the halves are too short for a rate comparison to mean
-  // anything, and a spurious "logging fell" caveat on a two-week trial would
-  // discredit a record that is fine. Silence, not a weak claim.
+  // Under a fortnight the halves are too short for the comparison to mean anything,
+  // and a spurious density note on a two-week trial would discredit a record that is
+  // fine. Silence, not a weak claim.
   if (days < 14) return null
   const firstDays = Math.floor(days / 2)
-  const mid = startDayIndex + firstDays
-  let first = 0
-  let last = 0
-  const seen = new Set<number>()
-  for (const dn of loggedDayIndices) {
-    if (dn < startDayIndex || dn > endDayIndex || seen.has(dn)) continue
-    seen.add(dn)
-    if (dn < mid) first += 1
-    else last += 1
-  }
   const lastDays = days - firstDays
-  const firstRate = firstDays > 0 ? first / firstDays : 0
-  const lastRate = lastDays > 0 ? last / lastDays : 0
-  return {
-    firstHalf: { daysLogged: first, days: firstDays },
-    lastHalf: { daysLogged: last, days: lastDays },
-    loggingFell: lastRate < firstRate,
+  const mid = startDayIndex + firstDays
+  const split = (indices: readonly number[]) => {
+    let first = 0
+    let last = 0
+    const seen = new Set<number>()
+    for (const dn of indices) {
+      if (dn < startDayIndex || dn > endDayIndex || seen.has(dn)) continue
+      seen.add(dn)
+      if (dn < mid) first += 1
+      else last += 1
+    }
+    return {
+      firstHalf: { daysLogged: first, days: firstDays },
+      lastHalf: { daysLogged: last, days: lastDays },
+    }
   }
+  return { meals: split(mealDayIndices), other: split(otherDayIndices) }
 }
 
 /** Local-day index of a DATE or instant, on the report's clock — the SAME helper

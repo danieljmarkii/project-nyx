@@ -1368,6 +1368,9 @@ export interface ConfounderExposure {
   /** The food's ingredient panel WAS captured, so a rung-3 verdict means "read, and
    *  nothing in it is outside the trial diet" rather than "we never looked". */
   panelWasRead?: boolean
+  /** This same food became permitted on a LATER date, so the row is here because the
+   *  feeding predates permission — the reason that outranks the rung. */
+  permittedLaterFrom?: string | null
 }
 
 /**
@@ -2481,13 +2484,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
           })),
         ],
         arrangements: input.feedingArrangements,
-        // NON-MEAL days only (§C5, and the adversarial pass's fourth break). Meal
-        // logging on a diet trial is habitual and app-prompted, so it saturates the
-        // denominator and turns the attention-decay disclosure into its opposite —
-        // the report certifying that a 12→1 symptom collapse is not a logging
-        // artefact, on the modal tiring owner. What C5 is measuring is the logging an
-        // owner CHOOSES to do.
-        discretionaryLoggedDayIndices: [
+        // TWO SERIES, SEPARATELY (§C5). Combining them is what broke this twice: all
+        // events lets habitual meal logging saturate the denominator and CERTIFY the
+        // artefact C5 discloses; non-meal events alone IS the symptom series on most
+        // records, so its verdict is a tautology that revokes the trial's own result.
+        // Neither is a denominator here — both are rendered, labelled, un-adjudicated.
+        mealLoggedDayIndices: [
+          ...new Set(
+            windowEvents
+              .filter((e) => e.type === 'meal')
+              .map((e) => eventDayNumber(e.occurredAt, tz))
+              .filter((dn): dn is number => dn !== null),
+          ),
+        ],
+        otherLoggedDayIndices: [
           ...new Set(
             windowEvents
               .filter((e) => e.type !== 'meal')
@@ -2735,6 +2745,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       antigens: x?.classification.antigens ?? [],
       symptomInChallengeWindow: x?.symptomInChallengeWindow ?? false,
       panelWasRead: x?.panelWasRead ?? false,
+      permittedLaterFrom: x?.permittedLaterFrom ?? null,
     }
   })
   // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"

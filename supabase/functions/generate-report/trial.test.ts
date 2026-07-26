@@ -745,11 +745,31 @@ Deno.test('C5 — a falling symptom count over falling logging is disclosed, not
   // …and then the owner stops logging.
   const snap = assembleReport(input)
   const d = snap.trial!.loggingDensity!
-  assert.ok(d.firstHalf.daysLogged > d.lastHalf.daysLogged)
-  assert.equal(d.loggingFell, true)
-  const html = renderReport(snap)
-  assert.ok(/<b>Logging fell over the trial<\/b>/.test(html))
-  assert.ok(/cannot be separated from the fall in logging/.test(html))
+  // Meals held across both halves; the discretionary stream fell away.
+  // This fixture is the owner who stopped logging ALTOGETHER — meals 16/16 -> 0/16 and
+  // symptoms 10/16 -> 0/16. It is the one case where the deleted "Logging fell" verdict
+  // was TRUE, so it is the right place to assert what replaced it: the two series carry
+  // the finding on their own, and a vet reading "16 of 16, then 0 of 16" reaches it
+  // without the report drawing the inference. Removing the inference is what stops the
+  // same sentence firing falsely on a record with meals logged every day of both halves
+  // and a real symptom fall.
+  assert.equal(d.meals.firstHalf.daysLogged, 16)
+  assert.equal(d.meals.lastHalf.daysLogged, 0)
+  assert.equal(d.other.firstHalf.daysLogged, 10)
+  assert.equal(d.other.lastHalf.daysLogged, 0)
+  const text = plain(renderReport(snap))
+  // BOTH series render, each labelled for what it counts.
+  assert.ok(/Days a meal was logged: 16 of 16 in the trial.s first half, 0 of 16 in the second/.test(text))
+  assert.ok(/Days any other event was logged: 10 of 16, then 0 of 16/.test(text))
+  // AND NEITHER VERDICT. This test previously asserted "Logging fell over the trial" —
+  // i.e. it encoded the defect cold-read round 4 rejected. On this very fixture that
+  // sentence would tell a vet the symptom fall cannot be trusted, when meals were logged
+  // every single day of both halves and it is the SYMPTOMS that fell. The report shows
+  // the two series and adjudicates neither.
+  assert.ok(!/Logging fell over the trial/.test(text))
+  assert.ok(!/Logging held up across the trial/.test(text))
+  assert.ok(!/is not explained by a change in how often anything was logged/.test(text))
+  assert.ok(/does not judge whether a change in either explains a change in the other/.test(text))
 })
 
 // ── §7.2 — the interpretability statement ────────────────────────────────────
@@ -821,7 +841,8 @@ Deno.test('the challenge window is 7 days for a cat, 14 for a dog (Olivry & Muel
     medicationItems: [],
     medications: [],
     arrangements: [],
-    discretionaryLoggedDayIndices: [],
+    mealLoggedDayIndices: [],
+    otherLoggedDayIndices: [],
     symptomDayIndices: [],
     scope: { startDate: '2026-06-01', endDate: '2026-07-02', endDayNum: 20637 },
     nowMs: Date.parse(NOW),
@@ -1099,7 +1120,17 @@ Deno.test('the trial-scoped logging claim states its scope, so it cannot contrad
   assert.equal(snap.scope.basis, 'diet_trial')
   assert.equal(snap.trial?.rangeEndDate, '2026-06-20', 'the trial range stops at the trial')
   const text = plain(renderReport(snap))
-  assert.ok(/This covers the trial\u2019s 20 days; the charts below span 32 days, 12 of them after the trial/.test(text))
+  // The clause no longer asserts WHICH END the extra days sit at. Round 4 caught it
+  // saying "3 of them after the trial" on an ONGOING trial ("day 46 of 56") whose extra
+  // days were leading untracked ones \u2014 telling a vet a running trial had finished and
+  // putting its first days at the end. It was only ever correct for the stopped-trial
+  // case this fixture builds, so the honest form names the width, not the side.
+  assert.ok(
+    /These cover the trial\u2019s 20 days; the charts below span the report\u2019s 32-day window, which is wider at one or both ends than the overlap range above/.test(
+      text,
+    ),
+  )
+  assert.ok(!/after the trial/.test(text), 'never asserts a side the clause cannot know')
 })
 
 Deno.test('an ad-hoc course with NO regimen still reaches "Reading the trend" (round 3)', () => {
@@ -1212,13 +1243,26 @@ Deno.test('#3 — habitual meal logs must not saturate the C5 density denominato
   }
   for (const d of days('2026-06-01', '2026-06-12')) input.events.push(symptom(d))
   input.events.push(symptom('2026-06-30'))
+  //
+  // ROUND 4 then broke the fix: with non-meal days as the denominator, the series on
+  // this very fixture IS the symptom series, so "Logging fell … a fall in symptom counts
+  // cannot be separated from the fall in logging" is a tautology revoking the trial's
+  // own result. Both series are now rendered and neither is adjudicated — so this test
+  // asserts the two halves of the trap are BOTH shut: meals never saturate a verdict,
+  // because there is no verdict.
   const snap = assembleReport(input)
   const d = snap.trial!.loggingDensity!
-  assert.ok(d.firstHalf.daysLogged > d.lastHalf.daysLogged, 'discretionary logging fell')
-  assert.equal(d.loggingFell, true)
+  assert.equal(d.meals.firstHalf.daysLogged, d.meals.firstHalf.days, 'meals logged every day')
+  assert.equal(d.meals.lastHalf.daysLogged, d.meals.lastHalf.days)
+  assert.ok(d.other.firstHalf.daysLogged > d.other.lastHalf.daysLogged, 'discretionary logging fell')
   const text = plain(renderReport(snap))
   assert.ok(!/is not explained by a change in how often anything was logged/.test(text))
-  assert.ok(/cannot be separated from the fall in logging/.test(text))
+  assert.ok(!/cannot be separated from the fall in logging/.test(text))
+  assert.ok(!/Logging (fell|held up)/.test(text))
+  // The meal series is still SHOWN — it is the honest habit signal, and 32-of-32 across
+  // both halves genuinely does mean the owner never disengaged. What is deleted is the
+  // inference drawn from it, not the fact.
+  assert.ok(/Days a meal was logged: 16 of 16/.test(text))
 })
 
 Deno.test('#4 — a window-scoped human-food count never sits under the trial\u2019s definition', () => {
@@ -1343,4 +1387,174 @@ Deno.test('#10a — the weight sentence is dropped when its span is not inside t
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(/logged as refused/.test(text), 'the refusal still leads')
   assert.ok(!/of body weight/.test(text), 'but a pre-trial loss is not offered as trial evidence')
+})
+
+// ── Cold-read round 4 ────────────────────────────────────────────────────────
+//
+// Round 3 returned CLINIC-READY; round 4 was re-run cold AFTER the ten adversarial
+// fixes landed, because two of the three prior rounds had each caught a defect that a
+// FIX introduced. It came back NOT READY, and the most important thing it found was
+// that adversarial fix #4 (the C5 denominator) had traded one bad verdict for a worse
+// one. These tests pin each finding to the page text.
+
+Deno.test('R4 — C5 renders two series and adjudicates NEITHER', () => {
+  // Both single-series verdicts were wrong, in opposite directions, on the two
+  // artifacts. Here is the dog case that broke the second one: meals logged every day
+  // of both halves, symptoms genuinely falling — and the page said "Logging fell over
+  // the trial, so a fall in symptom counts over the same stretch cannot be separated
+  // from the fall in logging", because the non-meal series IS the symptom series. That
+  // sentence revokes the one result the trial exists to produce.
+  const input = wellLoggedTrialInput()
+  for (const d of days('2026-06-01', '2026-06-12')) input.events.push(symptom(d))
+  input.events.push(symptom('2026-06-30'))
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Days a meal was logged: 16 of 16/.test(text), 'the habit series is shown')
+  assert.ok(/Days any other event was logged: 12 of 16, then 1 of 16/.test(text))
+  assert.ok(!/Logging fell over the trial/.test(text))
+  assert.ok(!/Logging held up across the trial/.test(text))
+  assert.ok(!/cannot be separated from the fall in logging/.test(text))
+  assert.ok(!/is not explained by a change in how often anything was logged/.test(text))
+  // And it says WHY the second series cannot be used as an independent check, rather
+  // than quietly being circular inside a denominator.
+  assert.ok(/often consists largely of the symptoms themselves/.test(text))
+})
+
+Deno.test('R4 — a sparse record never reads as "logging held up"', () => {
+  // Mira's numbers: 2 of 9 days in the first half, 3 of 10 in the second. The rate ROSE,
+  // so the old comparison emitted the affirmative data-quality all-clear on a 22%/30%
+  // record — while the caveat directly under the chart said the opposite.
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of ['2026-06-02', '2026-06-05']) input.events.push(symptom(d, 'vomit'))
+  for (const d of ['2026-06-20', '2026-06-24', '2026-06-28']) input.events.push(symptom(d, 'vomit'))
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/Logging held up/.test(text))
+  assert.ok(!/not explained by a change in how often anything was logged/.test(text))
+})
+
+Deno.test('R4 — the medication line states the drug’s own start, not the clipped overlap', () => {
+  // "Apoquel · May 21–Jul 2 · 43 d" on page 1 against "since Apr 30" in appendix D and
+  // in the concurrent-changes line — where May 21 was merely the first logged day.
+  // Clinically decisive: an antipruritic predating the trial by three weeks cannot
+  // explain a change at trial start; one beginning three days in can explain all of it.
+  const input = wellLoggedTrialInput()
+  input.medications = [
+    {
+      id: 'm-apoquel',
+      drugName: 'Apoquel',
+      isSupplement: false,
+      startedAt: '2026-04-30',
+      endedAt: null,
+      scheduleType: 'daily',
+      timesPerDay: 1,
+    } as unknown as ReportInput['medications'][number],
+  ]
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Apoquel · since Apr 30, overlapping Jun 1–Jul 2/.test(text))
+  assert.ok(!/Apoquel · Jun 1–Jul 2/.test(text), 'the clipped span is never rendered as the course')
+  // And the span's provenance is named, because a course can read "still running" with
+  // zero doses logged against it in a document that closes "Nothing is counted that the
+  // owner did not log."
+  assert.ok(/Spans are the courses as recorded, not evidence of administration/.test(text))
+})
+
+Deno.test('R4 — appendix C never prints a bare zero under a trial', () => {
+  // Page 1 renders this case as "—" deliberately; the appendix printed "0 off-diet
+  // exposures" three pages later, on the report whose trial block says food outside the
+  // allowed list was CONTINUOUSLY AVAILABLE. Every other exposure figure in the document
+  // carries "a floor, not a total"; the reassuring one had lost it.
+  const input = wellLoggedTrialInput()
+  input.feedingArrangements = [
+    {
+      id: 'fa-1',
+      foodItemId: 'f-rival',
+      method: 'free_choice',
+      label: 'Purina ONE',
+      activeFrom: '2026-06-01',
+      activeUntil: null,
+    } as unknown as ReportInput['feedingArrangements'][number],
+  ]
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/\b0 off-diet exposures/.test(text), 'a zero is never a number here')
+  assert.ok(/No exposure is listed here/.test(text))
+  assert.ok(/a floor, not a total/.test(text))
+})
+
+Deno.test('R4 — dated membership outranks the rung in the "Why" column', () => {
+  // A Jun 2 DentaStix read "Protein not in the trial diet" while page 1 listed the same
+  // food as a permitted treat from Jun 8 — and the later feedings of the identical
+  // protein set are correctly absent from the table. Unreconcilable on protein grounds,
+  // and the protein reason is the misleading half: the row is here because the feeding
+  // predates permission.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    {
+      ...PERMITTED_TREAT,
+      foodItemId: 'f-stix',
+      foodLabel: 'Pedigree Dentastix',
+      brand: 'Pedigree',
+      productName: 'Dentastix',
+      allowedFrom: '2026-06-08',
+      primaryProtein: 'cereal',
+      proteins: ['cereal', 'chicken'],
+    },
+  ]
+  // One feeding BEFORE permission, several after.
+  input.events.push(
+    meal({ date: '2026-06-02', time: '15:00:00', brand: 'Pedigree', product: 'Dentastix', foodItemId: 'f-stix', proteins: ['cereal', 'chicken'], foodType: 'treat' }),
+  )
+  for (const d of days('2026-06-10', '2026-06-14')) {
+    input.events.push(
+      meal({ date: d, time: '15:00:00', brand: 'Pedigree', product: 'Dentastix', foodItemId: 'f-stix', proteins: ['cereal', 'chicken'], foodType: 'treat' }),
+    )
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Fed before it was permitted \(allowed from Jun 8\)/.test(text))
+  assert.ok(!/Dentastix.*Protein not in the trial diet/s.test(text.slice(text.indexOf('Appendix C'))))
+})
+
+Deno.test('R4 — a TOTAL refusal is not hedged as "largely not eaten"', () => {
+  // The one line a vet reads for the bottom line, hedging the hardest fact on the page:
+  // "largely not eaten" over a record of every rated feeding refused. "Largely" reads as
+  // partial intake, which is a different consult — push on versus change the diet today.
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-14', '2026-07-02')) {
+    input.events.push(
+      meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }),
+    )
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Not one rated feeding of the trial diet was eaten/.test(text))
+  assert.ok(!/largely not eaten/.test(text))
+})
+
+Deno.test('R4 — each allowed food carries its own protein set, since appendix B does not', () => {
+  // The second-most-fed item in the record ("Royal Canin Hydrolyzed Treats ×39") had no
+  // ingredient data anywhere in the document, behind a page-1 pointer to appendix B —
+  // which holds MEAL foods only. On a page that warns a vet-approved extra carrying a
+  // second protein is as trial-invalidating as a contaminated primary diet, and less
+  // likely to be noticed.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    { ...PERMITTED_TREAT, proteins: ['soy', 'chicken'], primaryProtein: 'soy' },
+  ]
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Royal Canin Hydrolyzed Treats permitted treat Soy and Chicken/.test(text))
+  assert.ok(!/Full protein sets in appendix B/.test(text), 'the false pointer is gone under a trial')
+  assert.ok(/each allowed food.s set is on the allowed list above/.test(text))
+})
+
+Deno.test('R4 — an unread allowed-food label says so and never reads as an all-clear', () => {
+  // D10 at the allowed-list layer: an empty protein set is silence about a label nobody
+  // captured, never a statement that the food carries nothing.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    { ...PERMITTED_TREAT, proteins: null, primaryProtein: null, ingredientsNotes: null },
+  ]
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Royal Canin Hydrolyzed Treats permitted treat.*label not read/s.test(text))
+  assert.ok(!/no animal proteins/i.test(text))
+  assert.ok(!/carries nothing/i.test(text))
 })

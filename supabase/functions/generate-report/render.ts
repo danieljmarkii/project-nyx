@@ -1287,7 +1287,17 @@ function dietTrialSection(snap: ReportSnapshot): string {
       // D-B finding a vet cannot get from anywhere else: six dental chews a day
       // reads as a clean elimination to both owner and vet without it.
       const count = f.feedings > 0 ? ` &times;${num(f.feedings)}` : ''
-      return `${h(f.label)} <span class="rnote">${h(roleLabel(f.role))}</span>${dates}${count}`
+      // THE SET, HERE, BECAUSE THERE IS NOWHERE ELSE. Appendix B's protein table holds
+      // MEAL foods only, so the trailing "Full protein sets in appendix B" sent a vet
+      // to a table the treats are not in, and round 4 found the second-most-fed item in
+      // the record with no ingredient data anywhere in the document — on a page that
+      // warns a vet-approved extra carrying a second protein is as trial-invalidating
+      // as a contaminated primary diet, and less likely to be noticed. An unread label
+      // says so; it never renders as an all-clear (D10).
+      const set = f.panelRead
+        ? ` <span class="rnote">${h(proteinList(f.proteins.map(capProtein)))}</span>`
+        : ` <span class="rnote">label not read</span>`
+      return `${h(f.label)} <span class="rnote">${h(roleLabel(f.role))}</span>${dates}${count}${set}`
     })
     const changed = t.allowedSetChangedAfterStart
       ? ` <b>The allowed list changed after the trial started</b> &mdash; the dates above are when each food was permitted, and feedings are scored against the list in force on the day.`
@@ -1390,33 +1400,49 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // from a tiring owner. The remedy is to DISCLOSE the bias, not to correct it
     // with an owner-scored severity instrument the app has refused on every event
     // type. Rendering the two series together makes it visible at a glance.
-    // SCOPE THE CLAIM ON ITS OWN TEXT. Both halves of this sentence are true of the
-    // TRIAL's range, and the symptom charts below span the REPORT's window — which can
-    // extend past the trial by weeks on an ended one. The cold read found the positive
-    // form sitting eight lines from the trend block's new "a fall here may be less
-    // logging" caveat, saying the opposite about whether an improvement is real, with
-    // neither stating its scope. A clinical artifact may not carry both sides of that
-    // question, and the assertive form is the wrong one to win by default.
+    // NO VERDICT, AND THE LABEL NAMES WHAT IT COUNTS. Cold-read round 4 broke both
+    // adjudicating forms of this line, in opposite directions, on the two artifacts:
+    // *"Logging held up across the trial, so a change in symptom counts is not
+    // explained by a change in how often anything was logged"* on a cat logging 2-of-9
+    // then 3-of-10 days (an affirmative data-quality all-clear, false on its own
+    // numbers, contradicting the sparse-logging caveat directly under the chart); and
+    // *"Logging fell over the trial, so a fall in symptom counts cannot be separated
+    // from the fall in logging"* on a dog whose meals were logged 43 of 43 days — where
+    // the "logging" series WAS the symptom series, so the sentence is a tautology that
+    // revokes the one result the trial exists to produce. A vet acting on it tells the
+    // owner six weeks were wasted.
+    //
+    // C5 says the trend is RENDERED AGAINST density. It does not say adjudicated by it,
+    // and no series available here can adjudicate: meals saturate, non-meals are the
+    // symptoms. So both are shown, each labelled, and the circularity in the second is
+    // NAMED instead of being hidden inside a denominator.
+    const m = d.meals
+    const o = d.other
+    // The report window can be WIDER than the trial's overlap range on either side —
+    // untracked days before the first log (an ongoing trial) or charted days after the
+    // trial stopped. The old clause asserted "after the trial" for both and so read
+    // "3 of them after the trial" beside a headline "day 46 of 56", telling a vet a
+    // running trial had finished and putting its leading untracked days at the end.
     const window = snap.atAGlance.windowDays
-    const trialDays = d.firstHalf.days + d.lastHalf.days
-    const beyond = window - trialDays
+    const trialDays = m.firstHalf.days + m.lastHalf.days
     const scope =
-      beyond > 0
-        ? ` This covers the trial&rsquo;s ${num(trialDays)} days; the charts below span ${num(
+      window > trialDays
+        ? ` These cover the trial&rsquo;s ${num(trialDays)} days; the charts below span the report&rsquo;s ${num(
             window,
-          )} days, ${num(beyond)} of them after the trial &mdash; read the note under each chart for those.`
+          )}-day window, which is wider at one or both ends than the overlap range above.`
         : ''
-    const bias = d.loggingFell
-      ? ` <b>Logging fell over the trial</b>, so a fall in symptom counts over the same stretch cannot be separated from the fall in logging.${scope}`
-      : ` Logging held up across the trial, so a change in symptom counts over it is not explained by a change in how often anything was logged.${scope}`
     rows.push(
       kv(
         'Symptoms vs logging',
-        `Days with any log: <b>${num(d.firstHalf.daysLogged)} of ${num(
-          d.firstHalf.days,
-        )}</b> in the first half of the trial, <b>${num(d.lastHalf.daysLogged)} of ${num(
-          d.lastHalf.days,
-        )}</b> in the second.${bias} Symptom counts are charted below.`,
+        `Days a <b>meal</b> was logged: ${num(m.firstHalf.daysLogged)} of ${num(
+          m.firstHalf.days,
+        )} in the trial&rsquo;s first half, ${num(m.lastHalf.daysLogged)} of ${num(
+          m.lastHalf.days,
+        )} in the second. Days any <b>other</b> event was logged: ${num(
+          o.firstHalf.daysLogged,
+        )} of ${num(o.firstHalf.days)}, then ${num(o.lastHalf.daysLogged)} of ${num(
+          o.lastHalf.days,
+        )}.${scope} <span class="qual">Read the symptom counts below against these. Meal logging is prompted and habitual, so it tracks whether the owner stayed engaged at all; the other stream often consists largely of the symptoms themselves, so it cannot be read as an independent check on them. Culprit does not judge whether a change in either explains a change in the other.</span>`,
       ),
     )
   }
@@ -1461,9 +1487,22 @@ function dietTrialSection(snap: ReportSnapshot): string {
       'A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.',
     )
   }
-  if (t.rangeRefusal || t.trialDietRefusal || t.stoppedReason === 'refused') {
+  const refusalFact = t.rangeRefusal ?? t.trialDietRefusal
+  if (refusalFact || t.stoppedReason === 'refused') {
+    // SAY WHAT THE RECORD SAYS, NOT "LARGELY". This is the one line a vet reads for the
+    // bottom line, and round 4 caught it hedging the hardest fact on the page: "largely
+    // not eaten" over a record of 38 of 38 rated feedings refused. "Largely" reads as
+    // partial intake, which is a different consult — push on versus change the diet
+    // today. When every rated feeding was refused, the sentence says so.
+    const total =
+      refusalFact && refusalFact.ratedFeedings > 0 && refusalFact.refusedFeedings >= refusalFact.ratedFeedings
+    const eaten = total
+      ? `Not one rated feeding of the trial diet was eaten (${num(refusalFact!.refusedFeedings)} of ${num(
+          refusalFact!.ratedFeedings,
+        )})`
+      : 'The trial diet was largely not eaten'
     caveats.push(
-      `The trial diet was largely not eaten, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`,
+      `${eaten}, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`,
     )
   }
   if (t.arrangementExposures.length > 0) {
@@ -1712,7 +1751,19 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
     return 'No medication or supplement is recorded as overlapping the trial window.'
   }
   const rows = t.medicationOverlap.map((m) => {
-    const span = `${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
+    // SAY WHEN THE DRUG STARTED, NOT ONLY WHEN THE OVERLAP DID. `fromDate` is
+    // `max(drug start, range start)` — a correct OVERLAP, rendered as if it were the
+    // course. Cold-read round 4: page 1 read "Apoquel · May 21–Jul 2 · 43 d" while
+    // appendix D and the concurrent-changes line both said "since Apr 30", and May 21
+    // is merely the first logged day. That difference is clinically decisive — an
+    // antipruritic that predates the trial by three weeks cannot explain a change at
+    // trial start, and one beginning three days in can explain all of it. Rendering
+    // the clipped date silently picked the confounded reading.
+    const startedBefore =
+      m.startedAt !== null && m.startedAt.slice(0, 10) < m.fromDate ? m.startedAt.slice(0, 10) : null
+    const span = startedBefore
+      ? `since ${h(fmtDay(startedBefore))}, overlapping ${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
+      : `${h(fmtDay(m.fromDate))}&ndash;${h(fmtDay(m.toDate))}`
     const still = m.activeAtWindowEnd
       ? ' <b>still running at the end of this window</b>'
       : m.overlapsLast7Days
@@ -1737,7 +1788,13 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
   // their vet — but they are very much a problem for READING the result, which is what
   // §7.2 says two lines below. The cold read caught the downplaying clause sitting as
   // the weaker of two adjacent statements, and the assertive one should be the caveat.
-  return `${rows.join(' ')} <span class="qual">Routinely prescribed alongside a trial, so this is not a compliance problem &mdash; but it does bear on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
+  // NAME THE SOURCE OF THE SPAN. These dates come from the regimen the owner recorded,
+  // not from logged doses — a course can read "still running" with zero doses logged
+  // against it, in a document whose own appendix D closes with "Nothing is counted that
+  // the owner did not log." Round 4 read that as duration inferred from two ad-hoc
+  // doses. It is not inferred, but nothing on the page said so, and the fix is to cite
+  // where it comes from and where the per-regimen adherence lives.
+  return `${rows.join(' ')} <span class="qual">Spans are the courses as recorded, not evidence of administration &mdash; per-regimen adherence is in appendix&nbsp;D. Routinely prescribed alongside a trial, so this is not a compliance problem &mdash; but it does bear on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
 }
 
 function indicationLabel(indication: 'skin' | 'gi' | 'other'): string {
@@ -2588,8 +2645,15 @@ function dietMeds(snap: ReportSnapshot): string {
     // The claim was promoted to page 1; its provenance must come with it. A vet may change
     // a prescription diet on the strength of "the duck food also lists chicken", and that
     // sentence is an automated read of an owner's photo, not a transcription by a person.
+    // NAME WHICH SETS APPENDIX B ACTUALLY HOLDS. It carries the MEAL foods, so the bare
+    // pointer was false for exactly the foods the sentence above it is about — an
+    // allowed-list treat. Under a trial the allowed list on this page now carries each
+    // permitted food's own set, so point there instead of at a table it is not in.
+    const setPointer = snap.trial
+      ? 'Meal-food protein sets in appendix&nbsp;B; each allowed food&rsquo;s set is on the allowed list above.'
+      : 'Full protein sets in appendix&nbsp;B.'
     const contamBit = contamBits.length
-      ? ` <b>${contamBits.join(' ')}</b> ${PROTEIN_READ_CAVEAT} Full protein sets in appendix&nbsp;B.`
+      ? ` <b>${contamBits.join(' ')}</b> ${PROTEIN_READ_CAVEAT} ${setPointer}`
       : ''
     left.push(
       kv(
@@ -3319,6 +3383,9 @@ interface ConfounderRow {
   /** The food's ingredient panel WAS captured. Rung 3 then means "read, and nothing
    *  in it is outside the trial diet" — not "we never looked" (#6). */
   panelWasRead: boolean
+  /** This same food became permitted LATER — so the row is here because it predates
+   *  permission, which outranks whichever rung also fired. */
+  permittedLaterFrom: string | null
 }
 
 function confCategory(c: ConfounderExposure): 'human' | 'treat' | 'other' {
@@ -3351,6 +3418,7 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         rung: c.rung ?? null,
         symptomInChallengeWindow: c.symptomInChallengeWindow ?? false,
         panelWasRead: c.panelWasRead ?? false,
+        permittedLaterFrom: c.permittedLaterFrom ?? null,
       })
       continue
     }
@@ -3374,6 +3442,7 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         lastDay: day,
         rung: c.rung ?? null,
         panelWasRead: c.panelWasRead ?? false,
+        permittedLaterFrom: c.permittedLaterFrom ?? null,
         // ANY member is enough to mark the row: the marker means "at least one of
         // these feedings was followed by a symptom in the window", and a grouped row
         // that hid that would drop the only reason a vet reads a grouped row twice.
@@ -3409,13 +3478,22 @@ function confounderRowHtml(r: ConfounderRow, markOffTrial: boolean, trialDerived
   // has to say WHICH rung put it there, because rung 3 (the modal case on a real
   // library) means only "not on the list, and nobody has read its ingredients" and must
   // never be read as a contaminant assertion.
+  // DATED MEMBERSHIP OUTRANKS THE RUNG, because when both are true the date is the
+  // reason the row is here and the rung is the misleading half. Round 4: a Jun 2
+  // DentaStix read "Protein not in the trial diet" while page 1 listed the same food as
+  // a "permitted treat (from Jun 8) ×25" — and those 25 feedings of the identical
+  // protein set are correctly absent from this table. The two lines cannot be
+  // reconciled on protein grounds, and a vet reading the protein reason concludes a
+  // vet-permitted treat is a contaminant.
   const why = trialDerived
     ? `<td>${
-        r.rung === 'derived_protein'
-          ? 'Protein not in the trial diet'
-          : r.panelWasRead
-            ? 'Not on the trial&rsquo;s list; its label carries nothing the trial diet does not'
-            : 'Not on the trial&rsquo;s list; ingredients not read'
+        r.permittedLaterFrom
+          ? `Fed before it was permitted (allowed from ${h(fmtDay(r.permittedLaterFrom))})`
+          : r.rung === 'derived_protein'
+            ? 'Protein not in the trial diet'
+            : r.panelWasRead
+              ? 'Not on the trial&rsquo;s list; its label carries nothing the trial diet does not'
+              : 'Not on the trial&rsquo;s list; ingredients not read'
       }</td>`
     : ''
   // The Protein column carries the whole captured set, not the primary alone (§9) — the
@@ -3527,10 +3605,16 @@ function offDietAppendix(snap: ReportSnapshot): string {
     )
   }
   if (hasTrial && freeFedProteins.length) {
+    // DON'T POINT AT A PARAGRAPH THAT ISN'T THERE. `tally` is empty when no exposure
+    // was itemised, and this block is gated only on the free-fed set — so on the
+    // refused-cat report the one sentence describing the trial's dominant confounder
+    // referred to "the discrete tally above" with nothing above it (round 4).
     tallyParts.push(
       `<b>Free-fed alongside the trial:</b> ${freeFedProteins
         .map((p) => h(capProtein(p)))
-        .join(', ')} (continuously available; intake not directly observed) — a competing antigen the discrete tally above cannot count.`,
+        .join(', ')} (continuously available; intake not directly observed) — a competing antigen ${
+        tally ? 'the discrete tally above' : 'no per-feeding count'
+      } can capture.`,
     )
   }
   const tallyBit = tallyParts.length ? `<p class="note lead">${tallyParts.join(' ')}</p>` : ''
@@ -3597,9 +3681,20 @@ function offDietAppendix(snap: ReportSnapshot): string {
   <p class="appx-sub">${subtitle} Repeated items are grouped (with a feeding count and date span); human food is listed feeding-by-feeding. Protein shows the full set read from the label, most prominent first; &ldquo;list not read&rdquo; marks a food whose ingredient panel was never captured, so its set may be incomplete.</p>
   ${tallyBit}
   <table>
-    <caption>${num(conf.length)} off-diet exposure${conf.length === 1 ? '' : 's'}${breakdownBit} &middot; ${h(
+    <caption>${
+      // A BARE ZERO IS THE ONE EXPOSURE FIGURE THAT MUST NEVER STAND ALONE. Page 1
+      // renders this exact case as "—" on purpose, and cold-read round 4 found the
+      // appendix printing "0 off-diet exposures" three pages later — on the report
+      // whose own trial block says food outside the allowed list was CONTINUOUSLY
+      // AVAILABLE. Every other exposure figure in the document carries "a floor, not a
+      // total"; the reassuring one had lost it. Under a trial the count is never
+      // rendered bare, and a zero does not get to be a number at all.
+      trialDerived && conf.length === 0
+        ? 'No exposure is listed here'
+        : `${num(conf.length)} off-diet exposure${conf.length === 1 ? '' : 's'}${breakdownBit}`
+    } &middot; ${h(
     fmtRange(trialDerived ? snap.trial!.rangeStartDate : snap.scope.startDate, trialDerived ? snap.trial!.rangeEndDate : snap.scope.endDate),
-  )}</caption>
+  )}${trialDerived ? ' &middot; a floor, not a total' : ''}</caption>
     <thead><tr><th>Item</th><th style="width:92px">Category</th>${
       trialDerived ? '<th style="width:150px">Why it&rsquo;s here</th>' : ''
     }<th style="width:104px">Protein</th><th class="c" style="width:72px">Feedings</th><th style="width:118px">Dates</th></tr></thead>
