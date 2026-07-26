@@ -9,9 +9,14 @@
 // W3 owned the ENVELOPE + the ambient status facts; W4's resolution lib
 // (lib/widgetResolution.ts) now fills the picker fields — learned slot rows,
 // slot→named-food meal choices, the treat shortlist, and the trial day. All
-// resolution logic is pure and lives there; this module owns the DB/network
-// reads and the file writes. An empty field still renders as "nothing to offer
-// one-tap", never as a fabricated choice.
+// resolution logic is pure and lives there; this module owns the DB reads and
+// the file writes. An empty field still renders as "nothing to offer one-tap",
+// never as a fabricated choice.
+//
+// Every read here is LOCAL SQLite — no network, since B-417 PR 2 gave
+// `diet_trials` a mirror and retired the one Supabase call this file had. That
+// is what makes a publish work in airplane mode, which matters most for the
+// wedge user: the owner mid-diet-trial, whose widget header is a day counter.
 //
 // Safety invariants carried by CONSTRUCTION, not convention (spec §8 / D9):
 // the snapshot shape has no field that could hold Signal/AI copy, reassurance,
@@ -22,7 +27,7 @@
 
 import { File } from 'expo-file-system';
 import { getDb } from './db';
-import { supabase } from './supabase';
+import { ACTIVE_DIET_TRIAL_QUERY } from './dietTrialMirror';
 import { getSnapshotDirectory } from './appGroup';
 // toLocalDayKey (not feedingArrangements' localDateString twin): utils is
 // dependency-free, so the publisher doesn't drag the sync/supabase import graph
@@ -141,7 +146,8 @@ export function buildWidgetSnapshot(
     meals: SnapshotMealRow[];
     /** Authoritative [start, end) of the local day, epoch ms. */
     dayBounds: { startMs: number; endMs: number };
-    /** The active diet trial, or null (offline / none — see fetchActiveTrials). */
+    /** The active diet trial, or null when the pet has none. Read from the
+     *  local mirror (B-417 PR 2), so it is present offline. */
     trial: ActiveTrialInfo | null;
   },
 ): WidgetSnapshot {
@@ -252,72 +258,46 @@ async function readSnapshotInputs(petId: string, now: Date) {
      LIMIT 1`,
     [petId],
   );
+  // The pet's active diet trial, FROM THE LOCAL MIRROR (B-417 PR 2).
+  //
+  // This used to be a Supabase query behind a 5-minute module-scope TTL cache,
+  // and both halves were wrong. The network read meant the widget header lost
+  // "Day 12 of 28" in airplane mode — on the app's own wedge feature, whose whole
+  // premise is the owner mid-diet-trial — and the meal choices silently fell back
+  // to the learned usual food. The cache was worse than that: it was keyed on the
+  // pet-id set with no account dimension and was never cleared on sign-out, so a
+  // sign-out → sign-in inside the TTL could publish the PREVIOUS account's trial
+  // food and day counter onto the Home Screen. Reading the mirror removes both:
+  // there is no network, and there is no cache, because clearLocalData already
+  // wipes the mirror on sign-out (LOCAL_WIPE_TABLES) — one wipe, one truth.
+  //
+  // Read per pet rather than one batched query for all pets: it is a local index
+  // scan, ACTIVE_DIET_TRIAL_QUERY carries the conflict-resolution ORDER BY that
+  // only makes sense per pet, and it puts the trial read on the same footing as
+  // the meal and bowl reads above.
+  //
+  // `indication` is NOT selected — see the constraint on ACTIVE_DIET_TRIAL_QUERY.
+  const trialRow = await db.getFirstAsync<{
+    started_at: string;
+    target_duration_days: number;
+    food_item_id: string | null;
+    food_label: string | null;
+  }>(ACTIVE_DIET_TRIAL_QUERY, [petId]);
+  const trial: ActiveTrialInfo | null = trialRow
+    ? {
+        startedAt: trialRow.started_at,
+        targetDurationDays: trialRow.target_duration_days,
+        foodItemId: trialRow.food_item_id,
+        foodLabel: trialRow.food_label || null,
+      }
+    : null;
   return {
     meals,
     freeFed: !!bowl,
     bowlConfirmedAt: bowl?.updated_at ?? null,
     dayBounds: { startMs: bounds.startMs, endMs: bounds.endMs },
+    trial,
   };
-}
-
-// Active diet trials for the given pets, one Supabase query. BEST-EFFORT by
-// design: diet_trials has NO local mirror (it is Supabase-only — the same
-// posture as hooks/useTrend and the profile card), so offline this returns an
-// empty map and the snapshot publishes trialDay:null with the meal choices
-// degrading to the learned usual food. Honest degradation: mid-trial the
-// learned usual IS overwhelmingly the trial diet (it's what gets logged every
-// day), and a missing "Day N of 28" header line is staleness, not a fabricated
-// claim. A local diet_trials mirror is the real fix if this bites (backlog
-// candidate, not W4 scope).
-//
-// TTL-cached: the publisher fires on every store change + sync tick (1s
-// debounce), and a trial changes ~once per month — re-querying the network per
-// publish would be the only non-local read on that hot path. A successful
-// fetch is reused for TRIAL_FETCH_TTL_MS (day-granularity data; minutes of
-// staleness are invisible); a FAILED fetch is never cached, so offline →
-// online recovers on the next publish.
-export const TRIAL_FETCH_TTL_MS = 5 * 60 * 1000;
-let trialCache: { key: string; atMs: number; trials: Map<string, ActiveTrialInfo> } | null = null;
-
-async function fetchActiveTrials(petIds: string[]): Promise<Map<string, ActiveTrialInfo>> {
-  const out = new Map<string, ActiveTrialInfo>();
-  if (petIds.length === 0) return out;
-  const cacheKey = [...petIds].sort().join(',');
-  if (trialCache && trialCache.key === cacheKey && Date.now() - trialCache.atMs < TRIAL_FETCH_TTL_MS) {
-    return trialCache.trials;
-  }
-  try {
-    const { data, error } = await supabase
-      .from('diet_trials')
-      .select('pet_id, started_at, target_duration_days, food_item_id, food_items(brand, product_name)')
-      .in('pet_id', petIds)
-      .eq('status', 'active');
-    if (error) throw error;
-    for (const row of (data ?? []) as unknown as {
-      pet_id: string;
-      started_at: string;
-      target_duration_days: number;
-      food_item_id: string | null;
-      food_items: { brand: string; product_name: string } | null;
-    }[]) {
-      // One active trial per pet is the product model; if data ever holds two,
-      // first wins (deterministic — PostgREST returns a stable order per query).
-      if (out.has(row.pet_id)) continue;
-      const label = row.food_items
-        ? `${row.food_items.brand} ${row.food_items.product_name}`.trim()
-        : null;
-      out.set(row.pet_id, {
-        startedAt: row.started_at,
-        targetDurationDays: row.target_duration_days,
-        foodItemId: row.food_item_id,
-        foodLabel: label || null,
-      });
-    }
-    trialCache = { key: cacheKey, atMs: Date.now(), trials: out };
-  } catch (e) {
-    console.warn('[widgetSnapshot] trial fetch failed (offline?):', e);
-  }
-  return out;
 }
 
 // Read the previously-published pet-slot index, so assignments stay sticky
@@ -370,18 +350,16 @@ export async function publishWidgetSnapshots(
   // not guarded with extra state.
   const wanted = new Set(pets.map((p) => `${p.id}.json`));
 
-  // Trials fetched once for all pets (best-effort, empty offline).
-  const trials = await fetchActiveTrials(pets.map((p) => p.id));
-
   const published: WidgetSnapshot[] = [];
   for (const pet of pets) {
     try {
+      // Every input — meals, bowl, and (since B-417 PR 2) the active trial — now
+      // comes from local SQLite, so a publish makes no network call at all.
       const inputs = await readSnapshotInputs(pet.id, now);
       const snapshot = buildWidgetSnapshot(pet, {
         generatedAt,
         dayKey,
         ...inputs,
-        trial: trials.get(pet.id) ?? null,
       });
       // new File(...).write creates or overwrites; createFile would throw on an
       // existing snapshot (re-publish is the common case).
