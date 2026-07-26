@@ -112,7 +112,17 @@ export interface TrialFeeding {
   /** `food_items.food_type` — 'meal' | 'treat' | 'other' | null. */
   foodType: string | null;
   proteins: readonly string[];
-  /** `meals.intake_rating` — 'all' | 'most' | 'some' | 'refused' | null.
+  /** `meals.intake_rating` — the WSAVA 5-point scale, IN FULL:
+   *  `refused | picked | some | most | all`, or null when unrated.
+   *
+   *  The five values are written out because getting them wrong is not a typo
+   *  here. The first cut of `trialDietRefusal` tested `=== 'refused'` under a
+   *  docstring that listed only four of them — no `picked` — so a cat rated
+   *  "picked at it" on every bowl for fourteen days was invisible to this lane,
+   *  and each `picked` rating additionally RAISED the denominator and pushed the
+   *  refusal share down. A cat that picks was scored more viable than one that
+   *  refuses outright, which is backwards: partial anorexia is the presentation
+   *  an owner does not call about.
    *
    *  §5.1's fourth definitional correction: "coverage does not read intake, and
    *  must". It still does not enter the coverage RATIO — a bowl put down and
@@ -132,9 +142,11 @@ export interface TrialDose {
   form: string | null;
   /** B-156's shipped pairing: the food this dose was given inside. */
   pairedEventId: string | null;
-  /** `medication_administrations.adherence` — 'given' | 'missed' | 'refused',
-   *  or NULL for a dose whose answer is still unconfirmed (B-156 PR B3's
-   *  fail-safe). A drug that did not go in carried no flavouring into the pet. */
+  /** `medication_administrations.adherence` — the `dose_adherence` enum IN FULL:
+   *  `given | partial | missed | refused`, or NULL for a dose whose answer is
+   *  still unconfirmed. `partial` is owner-selectable and was missing from the
+   *  first cut's docstring AND its check, which dropped a half-chewed flavoured
+   *  chewable — unambiguously an exposure. See `classifyDose`. */
   adherence?: string | null;
   /** The paired vehicle's food identity, when there is one. Without it rung 4
    *  cannot tell a pill hidden in peanut butter from a pill hidden in the
@@ -552,15 +564,25 @@ export function classifyDose(ctx: TrialContext, dose: TrialDose): OralRouteExpos
   const dayIndex = dayIndexOf(ctx, dose.occurredAt);
   if (!isInTrialWindow(ctx, dayIndex)) return null;
 
-  // A DOSE THAT DID NOT GO IN CARRIED NOTHING WITH IT. `generate-signal`'s
-  // detection layer already rules exactly this for the same events — a
-  // `missed`/`refused` dose is not on board, and B-174 extended it to the
-  // in-doubt combo — so counting one here would ship a SECOND, contradictory
-  // definition of "the drug went in" against the one already live. A NULL
-  // adherence is the fail-safe unconfirmed state (B-156 PR B3) and is likewise
-  // not evidence that anything was swallowed.
+  // A DOSE THAT DID NOT GO IN CARRIED NOTHING WITH IT — and "did not go in" is
+  // defined ONCE, in `generate-signal/detection.ts:458`, over the same events:
+  // `missed` and `refused` are off board, and `given` / `partial` / **null** are
+  // ON. The `dose_adherence` enum is `given | partial | missed | refused`
+  // (migration 020), and the first cut of this check tested `!== 'given'` — which
+  // dropped a HALF-CHEWED flavoured chewable (unambiguously an exposure) and
+  // dropped an unrated dose, while its comment claimed to be preventing exactly
+  // the contradictory second definition it was creating.
+  //
+  // NULL IS ON BOARD HERE, and the asymmetry with B-156's fail-safe is deliberate.
+  // For a COMPLIANCE detector an unconfirmed dose must never read as given (there
+  // is no path to a reassuring verdict). For a CLOSED-WORLD EXPOSURE detector the
+  // safe direction is the opposite: an unrated logged dose is a logged
+  // administration, not an absence, and treating it as absent would quietly
+  // restore the "all N matched" sentence. Same value, two questions, two correct
+  // answers — which is why the rule is imported from the surface that already
+  // ruled it rather than re-decided here.
   const adherence = dose.adherence?.trim().toLowerCase() ?? null;
-  if (adherence !== 'given') return null;
+  if (adherence === 'missed' || adherence === 'refused') return null;
 
   const form = dose.form?.trim().toLowerCase() ?? null;
   if (form === 'chewable') {
@@ -817,6 +839,29 @@ export const COVERAGE_SUPPORTS = 0.8;
 export const COVERAGE_FLOOR = 0.5;
 export const MIN_INTERPRETABLE_DAYS = 7;
 
+/** The WSAVA ordinal, mirroring `lib/analytics.INTAKE_SCORE`. Duplicated rather
+ *  than imported because `lib/analytics.ts` pulls `expo-sqlite` and this module
+ *  must stay Deno-importable — the ONE place in this file where a second copy of
+ *  a constant is the lesser evil, and it is pinned by a test that asserts the two
+ *  agree. */
+const INTAKE_SCORE: Record<string, number> = {
+  refused: 0,
+  picked: 1,
+  some: 2,
+  most: 3,
+  all: 4,
+};
+/** `most` / `all` — the same bar `lib/analytics.FINISHED_SCORE` uses. */
+const FINISHED_SCORE = 3;
+
+/** Was this feeding actually EATEN? Unrated returns null — unknown, not eaten
+ *  and not refused, so it enters neither side of the refusal share. */
+export function feedingWasFinished(intakeRating: string | null | undefined): boolean | null {
+  if (intakeRating == null) return null;
+  const score = INTAKE_SCORE[intakeRating.trim().toLowerCase()];
+  return score === undefined ? null : score >= FINISHED_SCORE;
+}
+
 /** Floors for the trial-viability fact above. Deliberately conservative in the
  *  direction of FIRING: what firing does is withhold an affirmative claim, and
  *  silence is cheap. Three rated samples across two distinct days stops one bad
@@ -825,6 +870,20 @@ export const MIN_INTERPRETABLE_DAYS = 7;
 export const REFUSAL_MIN_RATED = 3;
 export const REFUSAL_MIN_DAYS = 2;
 export const REFUSAL_SHARE = 0.5;
+
+/** RECENCY BOUND. Without one the counters accumulate over the whole range with
+ *  no decay, so a two-day wobble during the transition week LATCHES the card into
+ *  a viability state for the remaining fifty days — measured on a cat that then
+ *  ate every meal for forty-eight of them. Fourteen days is the shortest window
+ *  that still spans the clinical picture the fact is about (ACVIM's response
+ *  window is 10–14 days) and short enough that recovery clears it. */
+export const REFUSAL_WINDOW_DAYS = 14;
+
+/** EPISODE GUARD. "Two distinct local days" is a calendar-boundary test, not an
+ *  episode test: a bowl refused at 20:00 and 22:00 and re-offered at midnight is
+ *  ONE bout that satisfies it in four hours. Requiring the first and last refusal
+ *  to be most of a day apart makes the floor mean what its docstring claims. */
+export const REFUSAL_MIN_SPAN_MS = 20 * 60 * 60 * 1000;
 
 export function interpretabilityOf(coverage: TrialCoverage | null): Interpretability {
   if (!coverage || coverage.daysElapsed < MIN_INTERPRETABLE_DAYS) return 'not_yet';
@@ -913,19 +972,34 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // The clip is bounded by the FIRST LOG, so it can never hide a genuine gap in
   // the middle or at the end of a trial — only the head, and only up to the first
   // day there is any evidence the app was in use.
+  //
+  // AND IT ANCHORS ON THE SAME EVENT SET AS THE NUMERATOR — non-treat feedings.
+  // Anchoring on ALL feedings let a single logged treat on day 9 erase eight
+  // untracked days from the DENOMINATOR, which is strictly worse than the
+  // treat-clearable numerator §5.1 already forbids: 7 of 8 days, `supports`,
+  // rendered two lines under "Day 16 of 56".
   const loggedDays = input.feedings
+    .filter((f) => f.foodType !== 'treat')
     .map((f) => dayIndexOf(ctx, f.occurredAt))
     .filter((d): d is number => d !== null && d >= scopedStart && d <= endDayIndex);
   const firstLoggedDay = loggedDays.length > 0 ? Math.min(...loggedDays) : null;
   const startDayIndex = firstLoggedDay ?? scopedStart;
   const untrackedDaysBeforeFirstLog = startDayIndex - scopedStart;
 
+  // THE CLIP MOVES THE COVERAGE DENOMINATOR ONLY — it must not move the exposure
+  // window. §5.1's whole point is that the two metrics have their OWN
+  // denominators: coverage is days-with-meals over days-elapsed, exposure is
+  // feedings over feedings. Letting the clip bound the feeding loop as well would
+  // silently DROP a treat fed on day 2 of a trial whose first meal was logged on
+  // day 3 — a real logged exposure, deleted from a count §5.2 rules a floor,
+  // which is the one direction a floor may never move.
   const range: TrialRange = {
     startDayIndex,
     endDayIndex,
     daysElapsed: endDayIndex - startDayIndex + 1,
     clipped: startDayIndex > ctx.startDayIndex,
   };
+  const exposureStart = scopedStart;
 
   const coveredDays = new Set<number>();
   const items: TrialExposureItem[] = [];
@@ -940,10 +1014,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   let refusedFeedings = 0;
   let ratedFeedings = 0;
   const refusedDays = new Set<number>();
+  const refusalStamps: number[] = [];
+  // The viability fact is about the pet NOW, not about the whole trial.
+  const refusalWindowStart = Math.max(startDayIndex, endDayIndex - REFUSAL_WINDOW_DAYS + 1);
 
   for (const feeding of input.feedings) {
     const day = dayIndexOf(ctx, feeding.occurredAt);
-    if (day === null || day < startDayIndex || day > endDayIndex) continue;
+    if (day === null || day < exposureStart || day > endDayIndex) continue;
 
     // Coverage numerator — NON-TREAT feedings only (§5.1). On live data 82% of
     // feedings are treats, so a "days with food logged" count is clearable
@@ -956,7 +1033,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // punish the most diligent owner in the app for the pet's illness. The
     // refusal is carried by `trialDietRefusal` instead, which is a fact about the
     // ANIMAL rather than a hole in the RECORD.
-    if (feeding.foodType !== 'treat') coveredDays.add(day);
+    if (feeding.foodType !== 'treat' && day >= startDayIndex) coveredDays.add(day);
 
     const classification = classifyFeeding(ctx, feeding);
     if (classification.verdict === 'unclassifiable') {
@@ -965,11 +1042,21 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     }
     if (!classification.countsAsFeeding) continue;
 
-    if (classification.role === 'primary_diet' && feeding.intakeRating) {
-      ratedFeedings += 1;
-      if (feeding.intakeRating.trim().toLowerCase() === 'refused') {
-        refusedFeedings += 1;
-        refusedDays.add(day);
+    // THE PREDICATE IS "NOT FINISHED", NOT "REFUSED". `refused` alone misses the
+    // cat that picks at every bowl for two weeks — and, because every non-refused
+    // rating still counted toward the denominator, `picked` ratings actively
+    // SUPPRESSED the fact. Not-finished (`refused` / `picked` / `some`) is the
+    // same bar `lib/analytics` already uses for "did this pet finish a meal", so
+    // the two surfaces cannot disagree about whether a diet is being eaten.
+    if (classification.role === 'primary_diet' && day >= refusalWindowStart) {
+      const finished = feedingWasFinished(feeding.intakeRating);
+      if (finished !== null) {
+        ratedFeedings += 1;
+        if (!finished) {
+          refusedFeedings += 1;
+          refusedDays.add(day);
+          refusalStamps.push(Date.parse(feeding.occurredAt));
+        }
       }
     }
 
@@ -1008,14 +1095,17 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const oralRoute: OralRouteExposure[] = [];
   for (const dose of input.doses ?? []) {
     const day = dayIndexOf(ctx, dose.occurredAt);
-    if (day === null || day < startDayIndex || day > endDayIndex) continue;
+    if (day === null || day < exposureStart || day > endDayIndex) continue;
     const hit = classifyDose(ctx, dose);
     if (hit) oralRoute.push(hit);
   }
 
+  const refusalSpanMs =
+    refusalStamps.length > 1 ? Math.max(...refusalStamps) - Math.min(...refusalStamps) : 0;
   const trialDietRefusal: TrialDietRefusal | null =
     ratedFeedings >= REFUSAL_MIN_RATED &&
     refusedDays.size >= REFUSAL_MIN_DAYS &&
+    refusalSpanMs >= REFUSAL_MIN_SPAN_MS &&
     refusedFeedings / ratedFeedings >= REFUSAL_SHARE
       ? { refusedFeedings, ratedFeedings, days: refusedDays.size }
       : null;
@@ -1292,6 +1382,14 @@ export function mayClaimAllMatched(facts: TrialFacts): boolean {
   if (facts.arrangementExposures.length > 0) return false;
   if (facts.oralRoute.length > 0) return false;
   if (facts.exposures.unclassifiable > 0) return false;
+  // ANY free-choice bowl, not only an off-list one. The first cut gated on
+  // `arrangementExposures`, which is empty when the bowl IS the trial diet — the
+  // tightly-controlled feline trial the free-fed state exists for. In that state
+  // BOTH intake lanes are structurally blind (a topped-up bowl produces no rated
+  // feedings, and `detectIntakeDecline` excludes free-fed foods by invariant #6),
+  // so the app was affirming "all 14 were the trial diet" over an animal nothing
+  // in it can observe eating. Unobservable is not clean.
+  if (facts.intakeNotDirectlyObserved) return false;
   return true;
 }
 

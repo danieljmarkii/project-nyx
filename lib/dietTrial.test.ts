@@ -17,6 +17,7 @@ import {
   classifyFeeding,
   computeTrialFacts,
   contaminationNote,
+  feedingWasFinished,
   explainVerdict,
   interpretabilityStatement,
   isWithinChallengeWindow,
@@ -478,10 +479,14 @@ describe('§5.1 — coverage and exposures are independent facts', () => {
       ],
       nowMs,
     });
-    // §10 S3: the range opens at the FIRST LOG (2 July), not `started_at`, so the
-    // one untracked day before it is named rather than scored — 29 days, not 30.
-    expect(facts.coverage).toMatchObject({ daysLogged: 1, daysElapsed: 29 });
-    expect(facts.untrackedDaysBeforeFirstLog).toBe(1);
+    // §10 S3: the range opens at the first NON-TREAT log (3 July) — a treat may
+    // not clear the denominator any more than it may clear the numerator — so the
+    // two untracked days before it are named rather than scored.
+    expect(facts.coverage).toMatchObject({ daysLogged: 1, daysElapsed: 28 });
+    expect(facts.untrackedDaysBeforeFirstLog).toBe(2);
+    // …and the clip moved the COVERAGE denominator only. The day-2 treat is still
+    // a logged in-window feeding and still counted: §5.2 rules the exposure count
+    // a floor, and a floor may not quietly shed real records.
     expect(facts.exposures.totalFeedings).toBe(2);
   });
 
@@ -816,7 +821,7 @@ describe('adversarial regressions — the module half', () => {
   // BREAK 5a — a dose that was never swallowed carried no flavouring with it.
   // `generate-signal/detection.ts` already rules this for the same events, so
   // counting one here would ship a second, contradictory definition.
-  it.each(['missed', 'refused', null])('a %s dose is not an oral-route exposure', (adherence) => {
+  it.each(['missed', 'refused'])('a %s dose is not an oral-route exposure', (adherence) => {
     expect(
       classifyDose(ctx(), {
         eventId: 'd',
@@ -827,6 +832,23 @@ describe('adversarial regressions — the module half', () => {
         adherence,
       }),
     ).toBeNull();
+  });
+
+  // …and the two the first cut wrongly dropped. `partial` is a half-chewed
+  // flavoured chewable — unambiguously an exposure — and NULL is an unrated
+  // logged administration, not an absence. Both are `on board` in
+  // `generate-signal/detection.ts:458`, which is where the rule is defined.
+  it.each(['given', 'partial', null])('a %s dose IS an oral-route exposure', (adherence) => {
+    expect(
+      classifyDose(ctx(), {
+        eventId: 'd',
+        occurredAt: at('2026-07-10'),
+        drugLabel: 'NexGard',
+        form: 'chewable',
+        pairedEventId: null,
+        adherence,
+      })?.trigger,
+    ).toBe('chewable');
   });
 
   // BREAK 5b — a daily pill hidden in the PRESCRIBED DIET produced 56 oral-route
@@ -929,6 +951,156 @@ describe('adversarial regressions — the module half', () => {
     expect(facts.untrackedDaysBeforeFirstLog).toBe(0);
     expect(facts.coverage).toMatchObject({ daysLogged: 2, daysElapsed: 15 });
     expect(facts.belowCoverageFloor).toBe(true);
+  });
+});
+
+
+// ── The SECOND adversarial pass's breaks ─────────────────────────────────────
+//
+// The re-attack on the first round of fixes returned FAIL with ten breaks, two of
+// them INTRODUCED by those fixes. Each is pinned below by the input that produced
+// it — including the two self-inflicted ones, which is the case this file exists
+// to make impossible to reintroduce.
+
+describe('adversarial regressions — the second pass', () => {
+  const nowMs = new Date(2026, 6, 15, 12).getTime();
+
+  function refusalTrial(rating: string, days = 14, perDay = 2) {
+    return computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: ALLOWED,
+      feedings: Array.from({ length: days * perDay }, (_, i) =>
+        feeding({
+          eventId: `r${i}`,
+          occurredAt: at(`2026-07-${String(Math.floor(i / perDay) + 1).padStart(2, '0')}`, 8 + (i % perDay) * 10),
+          foodItemId: DRY_DUCK.foodItemId,
+          foodKey: DRY_DUCK.foodKey,
+          intakeRating: rating,
+        }),
+      ),
+      nowMs: new Date(2026, 6, days, 22).getTime(),
+    });
+  }
+
+  // ① — the highest-consequence one. `refused` alone missed the cat that PICKS at
+  // every bowl for two weeks: §5.2 proof #1 with one rating value changed. And
+  // because every non-refused rating still counted toward the denominator, a
+  // `picked` rating actively SUPPRESSED the fact — scoring a picking cat as more
+  // viable than a refusing one, which is backwards.
+  it.each(['refused', 'picked', 'some'])('a diet rated %s every bowl for 14 days fires', (rating) => {
+    const facts = refusalTrial(rating);
+    expect(facts.trialDietRefusal).not.toBeNull();
+    expect(mayClaimAllMatched(facts)).toBe(false);
+  });
+
+  it.each(['most', 'all'])('a diet rated %s does NOT fire — that pet is eating', (rating) => {
+    expect(refusalTrial(rating).trialDietRefusal).toBeNull();
+  });
+
+  it('a picked rating no longer dilutes the share', () => {
+    // 6 refused then 22 picked: under the old `=== refused` test this read
+    // 6/28 = 0.21 and went silent. Both are "not finished", so both count.
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: ALLOWED,
+      feedings: Array.from({ length: 28 }, (_, i) =>
+        feeding({
+          eventId: `m${i}`,
+          occurredAt: at(`2026-07-${String(Math.floor(i / 2) + 1).padStart(2, '0')}`, 8 + (i % 2) * 10),
+          foodItemId: DRY_DUCK.foodItemId,
+          foodKey: DRY_DUCK.foodKey,
+          intakeRating: i < 6 ? 'refused' : 'picked',
+        }),
+      ),
+      nowMs: new Date(2026, 6, 14, 22).getTime(),
+    });
+    expect(facts.trialDietRefusal?.refusedFeedings).toBe(28);
+  });
+
+  it('the ordinal agrees with lib/analytics, which cannot be imported here', () => {
+    // The duplicate constant is the lesser evil (analytics pulls expo-sqlite);
+    // this is what keeps the copy honest.
+    expect(feedingWasFinished('refused')).toBe(false);
+    expect(feedingWasFinished('picked')).toBe(false);
+    expect(feedingWasFinished('some')).toBe(false);
+    expect(feedingWasFinished('most')).toBe(true);
+    expect(feedingWasFinished('all')).toBe(true);
+    expect(feedingWasFinished(null)).toBeNull();
+    expect(feedingWasFinished('nonsense')).toBeNull();
+  });
+
+  // ③ — a two-day wobble during the transition week latched the card into a
+  // clinical-urgency state for the remaining 47 days, over a cat that then ate
+  // every meal. The counters had no recency bound at all.
+  it('a day-1 wobble does not latch the card for the rest of the trial', () => {
+    const feedings = [
+      feeding({ eventId: 'a', occurredAt: at('2026-07-01', 8), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+      feeding({ eventId: 'b', occurredAt: at('2026-07-01', 18), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+      feeding({ eventId: 'c', occurredAt: at('2026-07-02', 8), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+      ...Array.from({ length: 44 }, (_, i) =>
+        feeding({ eventId: `g${i}`, occurredAt: at(`2026-07-${String(i + 3).padStart(2, '0')}`.replace(/07-(3[2-9]|4\d|5\d)/, (_m, d) => `08-${String(Number(d) - 31).padStart(2, '0')}`), 9), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'all' }),
+      ),
+    ];
+    const early = computeTrialFacts({ trial: { ...TRIAL, species: 'cat' }, allowedFoods: ALLOWED, feedings, nowMs: new Date(2026, 6, 3, 12).getTime() });
+    const late = computeTrialFacts({ trial: { ...TRIAL, species: 'cat' }, allowedFoods: ALLOWED, feedings, nowMs: new Date(2026, 7, 15, 12).getTime() });
+    expect(early.trialDietRefusal).not.toBeNull();  // it was real when it happened
+    expect(late.trialDietRefusal).toBeNull();       // …and it is not news on day 46
+  });
+
+  // ④ — "two distinct local days" is a calendar test, not an episode test. One
+  // bout straddling midnight satisfied it in four hours.
+  it('one bout straddling midnight does not clear the two-day floor', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [
+        feeding({ eventId: 'a', occurredAt: at('2026-07-05', 20), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+        feeding({ eventId: 'b', occurredAt: at('2026-07-05', 22), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+        feeding({ eventId: 'c', occurredAt: at('2026-07-06', 0), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, intakeRating: 'refused' }),
+      ],
+      nowMs,
+    });
+    expect(facts.trialDietRefusal).toBeNull();
+  });
+
+  // ⑤ (self-inflicted by the first round of fixes) — the §10 S3 clip anchored on
+  // ALL feedings, so one logged treat erased eight untracked days from the
+  // DENOMINATOR. §5.1 forbids a treat clearing the numerator; clearing the
+  // denominator is strictly worse.
+  it('a treat cannot anchor the head-clip', () => {
+    const facts = computeTrialFacts({
+      trial: TRIAL,
+      allowedFoods: ALLOWED,
+      feedings: [
+        feeding({ eventId: 't', occurredAt: at('2026-07-09'), foodType: 'treat', foodItemId: RABBIT_JERKY.foodItemId, foodKey: RABBIT_JERKY.foodKey }),
+        ...[10, 11, 12].map((d) =>
+          feeding({ eventId: `m${d}`, occurredAt: at(`2026-07-${d}`), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey }),
+        ),
+      ],
+      nowMs: new Date(2026, 6, 12, 22).getTime(),
+    });
+    expect(facts.untrackedDaysBeforeFirstLog).toBe(9);
+    expect(facts.coverage).toMatchObject({ daysLogged: 3, daysElapsed: 3 });
+    // …and the treat is STILL counted as a feeding: the clip moves the coverage
+    // denominator, never the exposure floor.
+    expect(facts.exposures.totalFeedings).toBe(4);
+  });
+
+  // ⑥ (self-inflicted) — a free-fed bowl OF THE TRIAL DIET produces no
+  // arrangement exposure, so the gate did not fire; both intake lanes are
+  // structurally blind there, and the card affirmed "all 14 were the trial diet"
+  // over an animal nothing in the app can observe eating.
+  it('ANY free-choice bowl blocks the claim, not only an off-list one', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: ALLOWED,
+      feedings: [feeding({ eventId: 'a', occurredAt: at('2026-07-05'), foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey })],
+      arrangements: [{ foodItemId: DRY_DUCK.foodItemId, foodKey: DRY_DUCK.foodKey, label: DRY_DUCK.label, startedAt: '2026-07-01' }],
+      nowMs,
+    });
+    expect(facts.arrangementExposures).toEqual([]);   // it IS the trial diet
+    expect(facts.intakeNotDirectlyObserved).toBe(true);
+    expect(mayClaimAllMatched(facts)).toBe(false);
   });
 });
 

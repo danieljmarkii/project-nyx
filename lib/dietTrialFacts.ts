@@ -160,8 +160,10 @@ export async function loadDietTrialFacts(args: {
     // which, as the adversarial pass demonstrated, is exactly the case the spec's
     // own worked example lands in.
     intakeDeclineHeadline: decline ?? facts.viabilityHeadline,
+    // Never lets the viability lane borrow the clinical lane's urgency register.
+    intakeDeclineIsViability: !decline && !!facts.viabilityHeadline,
     freeFed: facts.freeFed,
-    standingNote,
+    standingNote: standingNote ?? facts.arrangementNote,
   };
 }
 
@@ -174,6 +176,8 @@ interface CardFacts {
   /** §5.6's replacement. Its count comes from the SAME classified pass as the
    *  exposure numbers, so the two are on one denominator. */
   freeFed: { loggedFeedings: number } | null;
+  /** §5.6's standing off-diet arrangement, for the standing-note slot. */
+  arrangementNote: { title: string; body: string } | null;
 }
 
 /** Assemble the rows `computeTrialFacts` needs and hand back what the card takes.
@@ -217,6 +221,7 @@ async function readTrialFacts(
     belowCoverageFloor: false,
     viabilityHeadline: null,
     freeFed: null,
+    arrangementNote: null,
   };
   try {
     const [ctx, feedings, doses] = await Promise.all([
@@ -263,16 +268,58 @@ async function readTrialFacts(
       ? trialViabilityHeadline(facts.trialDietRefusal, pet.name)
       : null;
 
-    const usableAllowedSet = !!ctx && ctx.primaryCount > 0 && ctx.primaryResolved >= ctx.primaryCount;
+    // §5.6's STANDING off-diet arrangement, rendered at last. It was computed
+    // correctly, used only to withhold a claim, and named on no surface — so the
+    // continuous exposure that is plausibly the largest single term in the record
+    // was the one thing the card never mentioned. It rides the standing-note slot
+    // because that is exactly what it is: a trial-level fact, computed once, not
+    // a per-feeding verdict (C2). A contamination note wins the slot when both
+    // exist — that one names a protein, which is the more specific finding.
+    const arrangementNote = facts.arrangementExposures.length > 0
+      ? {
+          title: 'A bowl that’s always down isn’t on the trial list',
+          body:
+            `${facts.arrangementExposures.map((a) => a.label ?? 'A food').join(', ')} is left ` +
+            `out for ${pet.name} to graze on, and it isn’t one of the trial foods. ` +
+            'Worth raising with your vet.',
+        }
+      : null;
+
+    // WHAT "USABLE" HAS TO MEAN. `primaryResolved >= primaryCount` tests cache
+    // hydration of the PRIMARIES only, and the adversarial pass walked straight
+    // through the gap: an unresolved PERMITTED EXTRA (null key, null primary)
+    // still passes it, so a re-photographed bag of the vet-approved rabbit jerky
+    // failed rung 1 on the id, fell to rung 2, and rendered as an off-diet
+    // exposure naming RABBIT — the permitted protein — as its antigen, while D-A
+    // went dark on the same row and nothing disclosed either. The two things that
+    // actually have to hold are (a) the sanctioned set is non-empty, so rung 2
+    // can attribute at all, and (b) EVERY allowed row carries a usable identity,
+    // so rung 1 can match the food an owner has re-captured.
+    const usableAllowedSet =
+      !!ctx &&
+      ctx.primaryCount > 0 &&
+      ctx.primaryResolved >= ctx.primaryCount &&
+      ctx.allowedFoods.every((f) => f.foodKey !== null);
     // Gate 2 is NARROW ON PURPOSE. It withholds only the state where the card
     // would render the AFFIRMATIVE "all N matched" sentence — i.e. zero off-diet
     // feedings. With one or more exposures the card says "81 matched, 3 did not"
     // and drags the floor caveat with it, which is already honest; suppressing
     // that would throw away a real finding to avoid an over-claim it does not
     // make.
+    // …with ONE exception the first cut got wrong. `unclassifiable` does not just
+    // undermine the affirmative sentence, it falsifies the DENOMINATOR of both
+    // forms: with 83 classifiable and 12 unclassifiable feedings the card said
+    // "83 feedings in total — 80 matched, 3 did not" when 95 were logged, and the
+    // floor caveat qualifies the off-diet number rather than the total. So an
+    // unclassifiable feeding withholds regardless of how many exposures there are.
     const wouldClaimAllMatched = facts.exposures.offDiet === 0;
-    if (!usableAllowedSet || (wouldClaimAllMatched && !mayClaimAllMatched(facts))) {
-      return { ...none, coverage, freeFed, viabilityHeadline };
+    const totalWouldBeFalse = facts.exposures.unclassifiable > 0;
+    if (
+      !usableAllowedSet ||
+      totalWouldBeFalse ||
+      (wouldClaimAllMatched && !mayClaimAllMatched(facts))
+    ) {
+      return { ...none, coverage, freeFed, viabilityHeadline, arrangementNote };
     }
 
     const mostRecent = facts.exposures.mostRecent;
@@ -280,6 +327,7 @@ async function readTrialFacts(
       coverage,
       freeFed,
       viabilityHeadline,
+      arrangementNote,
       exposures: {
         totalFeedings: facts.exposures.totalFeedings,
         offDiet: facts.exposures.offDiet,

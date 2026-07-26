@@ -653,11 +653,30 @@ describe('replacement 9 — free-fed', () => {
     expect(allStrings(model).join(' ')).not.toMatch(/Meals logged on \d+ of \d+ days/);
   });
 
-  it('still reports what WAS logged', () => {
-    expect(textOf(model, 'fact')).toEqual([
-      '22 bowl top-ups and wet meals logged; all 22 were the trial diet.',
+  it('still reports what WAS logged, and claims NOTHING about it', () => {
+    // The affirmative variant is deleted from this state outright. A free-choice
+    // bowl is the one shape where neither intake lane can observe what was eaten
+    // — `detectIntakeDecline` excludes free-fed foods by invariant #6, and the
+    // trial's own viability fact needs rated feedings a topped-up bowl never
+    // produces — so "all 22 were the trial diet" was an affirmation over an
+    // animal nothing in the app can watch eat.
+    expect(textOf(model, 'fact')).toEqual(['22 bowl top-ups and wet meals logged.']);
+    // …and the floor caveat, which this state used to be the only one to miss —
+    // while carrying the largest unmeasured term in the product.
+    expect(textOf(model, 'qualifier')).toEqual([
+      `${BLIND_SPOT_QUALIFIER} That’s what’s been logged, not everything that happened.`,
     ]);
-    expect(textOf(model, 'qualifier')).toEqual([BLIND_SPOT_QUALIFIER]);
+  });
+
+  it('renders the split when there ARE exposures, with no singular slip', () => {
+    const withOne = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      freeFed: { loggedFeedings: 15 },
+      exposures: { totalFeedings: 15, offDiet: 1 },
+    }));
+    expect(textOf(withOne, 'fact')).toEqual([
+      '15 bowl top-ups and wet meals logged; 14 matched the trial diet, 1 did not.',
+    ]);
   });
 });
 
