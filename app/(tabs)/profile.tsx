@@ -15,7 +15,6 @@ import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
 import { uploadPhoto, compressForUpload, getPublicUrl } from '../../lib/storage';
 import { archiveBlockedCopy } from '../../lib/utils';
-import { getDietTrialProgress } from '../../lib/analytics';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
 import { useMomentStore } from '../../store/momentStore';
@@ -24,14 +23,11 @@ import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
+import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
-import { TrialContaminantNote } from '../../components/food/TrialContaminantNote';
-import {
-  loadTrialProteinContext,
-  trialDietNote,
-  trialTargetLine,
-  type TrialProteinContext,
-} from '../../lib/trialContaminant';
+import { DietTrialCard } from '../../components/profile/DietTrialCard';
+import { useDietTrial } from '../../hooks/useDietTrial';
+import { resolveTrialCard } from '../../lib/dietTrialCard';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
@@ -40,20 +36,6 @@ import {
 } from '../../lib/medications';
 
 const PET_PHOTO_BUCKET = 'nyx-pet-photos';
-
-interface DietTrialRow {
-  id: string;
-  started_at: string;
-  target_duration_days: number;
-  vet_name: string | null;
-  food_items: { brand: string; product_name: string } | null;
-}
-
-interface DietTrialDisplay extends DietTrialRow {
-  daysElapsed: number;
-  daysLogged: number;
-  compliance: number;
-}
 
 interface RegimenDisplay extends Regimen {
   daysElapsed: number;
@@ -154,8 +136,14 @@ export default function ProfileScreen() {
   const [medicationModalVisible, setMedicationModalVisible] = useState(false);
   const [editingRegimen, setEditingRegimen] = useState<Regimen | undefined>(undefined);
 
-  const [dietTrial, setDietTrial] = useState<DietTrialDisplay | null>(null);
-  const [trialLoading, setTrialLoading] = useState(true);
+  // B-417 PR 4 — the trial card reads through one shared loader with the Home
+  // strip, so the two surfaces cannot disagree about the same trial. It reads the
+  // LOCAL MIRROR, which is what makes PR 3's existence-oracle worry structural
+  // rather than a guard: an offline trial, or one started offline and not yet
+  // flushed, is still a row the card can see, so "No trial running." cannot be a
+  // lie told by a failed network read.
+  const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
+  const [startTrialVisible, setStartTrialVisible] = useState(false);
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -176,61 +164,6 @@ export default function ProfileScreen() {
       console.error('[Profile] load conditions failed:', e);
     } finally {
       setConditionsLoading(false);
-    }
-  }, [activePet?.id]);
-
-  // B-351 slice 4 — the protein context behind the trial card's standing note.
-  // Loaded alongside the trial itself; best-effort and TTL-cached, and a null
-  // context renders nothing at all rather than an all-clear.
-  const [trialCtx, setTrialCtx] = useState<TrialProteinContext | null>(null);
-
-  const loadDietTrial = useCallback(async () => {
-    if (!activePet) return;
-    setTrialLoading(true);
-    try {
-      const { data: trial, error: trialError } = await supabase
-        .from('diet_trials')
-        .select('id, started_at, target_duration_days, vet_name, food_items(brand, product_name)')
-        .eq('pet_id', activePet.id)
-        .eq('status', 'active')
-        .maybeSingle();
-
-      if (trialError) throw trialError;
-      if (!trial) { setDietTrial(null); return; }
-
-      const row = trial as unknown as DietTrialRow;
-
-      // Day math via the one shared helper (B-421). This screen used to floor
-      // `new Date(started_at)` to local midnight itself — which read the DATE column
-      // as UTC midnight first, landing on the PREVIOUS local day for anyone behind
-      // UTC and counting a day too many.
-      const daysElapsed = getDietTrialProgress(
-        { startedAt: row.started_at, targetDurationDays: row.target_duration_days },
-        Date.now(),
-      )?.dayCounter ?? 1;
-
-      const { data: mealEvents } = await supabase
-        .from('events')
-        .select('occurred_at')
-        .eq('pet_id', activePet.id)
-        .eq('event_type', 'meal')
-        .is('deleted_at', null)
-        .gte('occurred_at', row.started_at);
-
-      const distinctDays = new Set(
-        (mealEvents ?? []).map((e) => new Date(e.occurred_at).toDateString()),
-      ).size;
-
-      const compliance = Math.round((distinctDays / daysElapsed) * 100);
-
-      setDietTrial({ ...row, daysElapsed, daysLogged: distinctDays, compliance });
-      // force: this screen is where an owner lands after editing a trial food, so
-      // it re-reads rather than serving a 5-minute-old target protein.
-      setTrialCtx(await loadTrialProteinContext(activePet.id, { force: true }));
-    } catch (e) {
-      console.error('[Profile] load diet trial failed:', e);
-    } finally {
-      setTrialLoading(false);
     }
   }, [activePet?.id]);
 
@@ -337,8 +270,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadConditions();
-    loadDietTrial();
-  }, [loadConditions, loadDietTrial]);
+  }, [loadConditions]);
 
   // Medications reload on every FOCUS, not just mount — so the card reconciles to
   // ground truth whenever the owner returns to this tab. This is the clinical
@@ -351,7 +283,11 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       loadMedications();
-    }, [loadMedications]),
+      // The trial card reconciles on focus for the same reason: an owner returns
+      // to this tab after logging a meal, and the coverage line is denominated in
+      // days that only move forward.
+      reloadTrial();
+    }, [loadMedications, reloadTrial]),
   );
 
   async function handlePickPhoto() {
@@ -574,14 +510,12 @@ export default function ProfileScreen() {
     activePet.species.charAt(0).toUpperCase() + activePet.species.slice(1);
   const subtitle = [speciesLabel, activePet.breed].filter(Boolean).join(' · ');
 
-  // The trial diet's own standing protein note (B-351 slice 4 / B-417 C2). Null
-  // when there is nothing to say — no trial, no known target protein, offline, or
-  // a panel that WAS read and really is single-protein. Never a "clean" state.
-  const trialDietFlag = trialCtx ? trialDietNote(trialCtx) : null;
-  // The assumption the whole check rests on, rendered where the owner can see it
-  // is wrong (B8 — the target is an ungated AI read on an extracted food). Quiet
-  // metadata, not a safety card: it belongs with the trial's other facts.
-  const trialTarget = trialCtx ? trialTargetLine(trialCtx) : null;
+  // The card's eleven states resolve in `lib/dietTrialCard` — including B-351
+  // slice 4's standing protein note and target line, which are RE-SITED into the
+  // rebuilt card rather than dropped (§0.2's anticipated collision, landing in
+  // the opposite direction from the ruling: slice 4 shipped the note the ruling
+  // said it would cut, and it is correct content — C2's standing fact).
+  const trialCard = trialInput ? resolveTrialCard(trialInput) : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -749,7 +683,7 @@ export default function ProfileScreen() {
                       <View style={[styles.progressBar, { width: `${reg.compliance.percent}%` }]} />
                     </View>
                   )}
-                  <Text style={styles.trialCompliance}>{reg.complianceLine}</Text>
+                  <Text style={styles.medComplianceLine}>{reg.complianceLine}</Text>
                   {reg.flagLine && (
                     <View style={styles.medFlag}>
                       <Text style={styles.medFlagText}>{reg.flagLine}</Text>
@@ -782,49 +716,27 @@ export default function ProfileScreen() {
           )}
         </Card>
 
-        {/* ── Diet trial card ── */}
-        {!trialLoading && dietTrial && (
-          <Card style={styles.sectionGap}>
-            <Text style={styles.trialLabel}>Diet trial</Text>
-            {dietTrial.food_items && (
-              <Text style={styles.trialFood}>
-                {dietTrial.food_items.brand} {dietTrial.food_items.product_name}
-              </Text>
-            )}
-            <Text style={styles.trialDays}>
-              Day {dietTrial.daysElapsed} of {dietTrial.target_duration_days}
-            </Text>
-            <View style={styles.progressTrack}>
-              <View
-                style={[
-                  styles.progressBar,
-                  { width: `${Math.min(100, dietTrial.compliance)}%` },
-                ]}
-              />
-            </View>
-            <Text style={styles.trialCompliance}>
-              {dietTrial.compliance}% compliance · {dietTrial.daysLogged} days with food logged
-            </Text>
-            {dietTrial.vet_name && (
-              <Text style={styles.trialVet}>Vet: {dietTrial.vet_name}</Text>
-            )}
-            {/* B-351 slice 4 — the trial DIET's own protein story, as a trial-level
-                standing fact (B-417 C2: never a per-feeding verdict, because a flag
-                on the prescribed food would fire 100+ times across a 56-day trial
-                and train the owner to ignore the one that matters on day 22).
-                Two states, and the second is why D10 exists: when the trial food's
-                ingredient panel was never read, the card SAYS so rather than let
-                the absence of a flag read as an all-clear on the single food this
-                pet eats every day for eight weeks. */}
-            {trialTarget && (
-              <Text style={styles.trialVet}>{trialTarget}</Text>
-            )}
-            {trialDietFlag && (
-              <View style={styles.trialNoteWrap}>
-                <TrialContaminantNote title={trialDietFlag.title} body={trialDietFlag.body} />
-              </View>
-            )}
-          </Card>
+        {/* ── Diet trial card v2 (B-417 PR 4, §4.2 — PR 3's modal behind it) ──
+            Every string comes from `resolveTrialCard`; this screen only decides
+            where the card sits and which actions it can service. What used to be
+            here rendered a "% compliance" that counted a meal of ANY food (so an
+            owner feeding chicken through a novel-protein trial read 100%) and
+            bound the progress bar's WIDTH to that same number — day 2 of 56 drew
+            a nearly-full bar. Both are gone; the bar now encodes day progress.
+
+            The card ALWAYS renders, mirroring the medications card, because it is
+            the ONLY entry point to starting a trial (§4.1 D5: no menu item, no
+            second path). PR 3 landed that entry and its own state-0 markup; this
+            keeps the entry and folds the markup into the one card, so the eleven
+            states stay a switch over one layout rather than three Card blocks
+            that can drift. `onManage` is PR 3's header affordance, unchanged. */}
+        {!trialLoading && trialCard && (
+          <DietTrialCard
+            model={trialCard}
+            style={styles.sectionGap}
+            actions={{ start_trial: () => setStartTrialVisible(true) }}
+            onManage={() => setStartTrialVisible(true)}
+          />
         )}
 
         {/* ── Vet report (Step 9) ── */}
@@ -900,6 +812,22 @@ export default function ProfileScreen() {
             prev.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
           )
         }
+      />
+
+      {/* B-417 PR 3. Kept MOUNTED across dismissals on purpose: "Snap a new food"
+          routes out to `/food-capture` (the trial food is usually a bag the owner
+          was handed ten minutes ago, so it is rarely in the library yet), and the
+          half-filled form has to still be there when they come back. The form is
+          reset on Cancel and after a successful start — never by a dismissal. */}
+      <StartTrialModal
+        visible={startTrialVisible}
+        petId={activePet.id}
+        petName={activePet.name}
+        species={activePet.species}
+        onClose={() => setStartTrialVisible(false)}
+        onStarted={reloadTrial}
+        onAddFood={() => { setStartTrialVisible(false); router.push('/food-capture'); }}
+        onLogFirstMeal={() => { setStartTrialVisible(false); router.push('/log?type=meal'); }}
       />
     </SafeAreaView>
   );
@@ -1110,28 +1038,9 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
   },
 
-  // ── Diet trial ──
-  // Breathing room above the standing protein note so it reads as a distinct
-  // statement rather than another metric line under the compliance bar.
-  trialNoteWrap: {
-    marginTop: theme.space2,
-  },
-  trialLabel: {
-    fontSize: theme.textXS,
-    fontWeight: theme.weightMedium,
-    color: theme.colorTextSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: theme.trackingWidest,
-  },
-  trialFood: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightMedium,
-    color: theme.colorNeutralDark,
-  },
-  trialDays: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-  },
+  // The MEDICATION regimen bar. Its width is bound to dose adherence, which is a
+  // real ratio of discrete events; the diet-trial card's bar is bound to
+  // `getDietTrialProgress().fraction` and lives in components/profile/DietTrialCard.
   progressTrack: {
     height: 5,
     borderRadius: 3,
@@ -1143,11 +1052,10 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: theme.colorAccent,
   },
-  trialCompliance: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
-  },
-  trialVet: {
+  // Medication ADHERENCE line. Distinct from the diet trial in every way that
+  // matters: a dose either was or wasn't given, so a ratio is honest here — which
+  // is exactly why B-417 D2 splits the DIET metric that isn't.
+  medComplianceLine: {
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
   },

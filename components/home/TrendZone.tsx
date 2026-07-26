@@ -32,8 +32,6 @@ export function TrendZone() {
         <LoadingState />
       ) : !data.hasEnoughData ? (
         <EmptyState petName={petName} />
-      ) : data.mode === 'compliance' ? (
-        <ComplianceChart data={data} />
       ) : data.mode === 'symptom' ? (
         <SymptomChart data={data} />
       ) : (
@@ -96,8 +94,14 @@ function SymptomChart({ data }: { data: TrendData }) {
           const barH = bucket.symptomCount > 0
             ? Math.max(4, Math.round((bucket.symptomCount / maxCount) * MAX_BAR_HEIGHT))
             : 0;
+          const isTrialStart = data.trialStartDayKey === bucket.date;
           return (
             <View key={i} style={styles.barColumn}>
+              {/* B-417 §8 — the trial-start marker. A trial no longer REPLACES
+                  this chart; it annotates it, so the owner can see the symptom
+                  line against the day the diet changed. A rule, not a second
+                  series: the chart still plots one thing. */}
+              {isTrialStart && <View style={styles.trialMarker} testID="trial-start-marker" />}
               <View
                 style={[
                   styles.bar,
@@ -116,6 +120,13 @@ function SymptomChart({ data }: { data: TrendData }) {
         <Text style={styles.axisLabel}>{formatShortDate(fourteenDaysAgo.date)}</Text>
         <Text style={styles.axisLabel}>Today</Text>
       </View>
+      {data.trialStartDayKey !== null && (
+        // Named in words as well as drawn — the marker is a thin rule, so on its
+        // own it carries meaning by position and colour only.
+        <Text style={styles.trialMarkerLabel}>
+          Trial diet started {formatShortDate(data.trialStartDayKey)}
+        </Text>
+      )}
     </View>
   );
 }
@@ -168,29 +179,14 @@ function FeedingChart({ data, petName }: { data: TrendData; petName: string }) {
   );
 }
 
-// Diet trial compliance: progress bar + summary line
-function ComplianceChart({ data }: { data: TrendData }) {
-  const { trialDaysElapsed, trialTargetDays, trialCompliantDays } = data;
-  const progressPct = trialTargetDays > 0
-    ? Math.min(1, trialDaysElapsed / trialTargetDays)
-    : 0;
-  const compliancePct = trialDaysElapsed > 0
-    ? Math.round((trialCompliantDays / trialDaysElapsed) * 100)
-    : 0;
-
-  return (
-    <View>
-      <Text style={styles.chartSubLabel}>
-        Day {trialDaysElapsed} of {trialTargetDays} — {trialCompliantDays} of {trialDaysElapsed} days logged
-      </Text>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { flex: progressPct }]} />
-        <View style={{ flex: 1 - progressPct }} />
-      </View>
-      <Text style={styles.complianceNote}>{compliancePct}% food compliance</Text>
-    </View>
-  );
-}
+// B-417 PR 4 — `ComplianceChart` is DELETED, not moved. It rendered a second,
+// unlisted "% compliance" (§1.1) computed with the same unfiltered defect as the
+// profile card's, and `TrendZone` tested for it BEFORE symptom mode — so starting
+// a diet trial replaced this pet's symptom chart with a compliance bar. §8's
+// ruling is additive: the symptom chart stays and gains a trial-start marker
+// (below), because the symptom is why the trial exists and Principle 3 says
+// concern leads. The trial's own numbers live on the Home strip and the Pet-tab
+// card, where they render as two separate facts instead of one blended score.
 
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00Z');
@@ -291,22 +287,21 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colorChartEmpty,
   },
 
-  // Diet trial compliance
-  progressTrack: {
-    flexDirection: 'row',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: theme.colorChartEmpty,
-    overflow: 'hidden',
-    marginBottom: theme.space1,
-  },
-  progressFill: {
+  // Diet-trial start marker (B-417 §8). A thin accent rule behind the column,
+  // never a second bar — the chart plots symptoms, and the trial is context.
+  trialMarker: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%',
+    width: 1,
     backgroundColor: theme.colorAccent,
-    borderRadius: 3,
+    opacity: 0.6,
   },
-  complianceNote: {
-    fontSize: theme.textSM,
-    color: theme.colorTextSecondary,
+  trialMarkerLabel: {
+    fontSize: theme.textXS,
+    color: theme.colorAccent,
+    marginTop: 2,
   },
 
   // Loading skeleton

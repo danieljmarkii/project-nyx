@@ -292,6 +292,53 @@ describe('syncPendingDietTrials / syncPendingDietTrialFoods (B-417 PR 2)', () =>
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('RLS-blocked'));
   });
 
+  // ── B-417 PR 3: the ordered two-pass push ─────────────────────────────────
+  //
+  // Migration 040's UNIQUE partial index on diet_trials(pet_id) WHERE status =
+  // 'active' means an ending trial and a starting one cannot both be active
+  // server-side. A 23505 is TERMINAL here, so getting the order wrong does not
+  // cost a retry — it permanently quarantines the trial the owner just created and
+  // leaves them holding the one they just ended.
+
+  const ENDED = {
+    ...TRIAL, id: 't0', status: 'abandoned', ended_at: '2026-07-26',
+    stopped_reason: 'refused',
+  };
+
+  it('pushes the ENDING trial before the starting one, in separate batches', async () => {
+    queueReturns([TRIAL, ENDED]); // deliberately queued starting-first
+    selectSpy.mockImplementation(() => Promise.resolve({ data: [{ id: 't0' }, { id: 't1' }], error: null }));
+
+    await syncPendingDietTrials();
+
+    // Two upserts on diet_trials, not one — and the ending row is in the first.
+    const trialUpserts = upsertSpy.mock.calls.map(([rows]) => (rows as { id: string }[]).map((r) => r.id));
+    expect(trialUpserts).toEqual([['t0'], ['t1']]);
+  });
+
+  it('HOLDS the starting trial when the ending one did not land', async () => {
+    // The failure the ordering itself creates if the passes are not gated:
+    // pushDietTrialRows does NOT throw on a transient error (a flap, a 503, a
+    // PGRST301 — none carry a terminal code), so an unconditional second pass
+    // would send the new trial into a server where the old one is still active and
+    // earn it a permanent 23505.
+    queueReturns([TRIAL, ENDED]);
+    selectSpy.mockResolvedValue({ data: [], error: { code: 'PGRST301', message: 'JWT expired' } });
+
+    await syncPendingDietTrials();
+
+    const trialUpserts = upsertSpy.mock.calls.map(([rows]) => (rows as { id: string }[]).map((r) => r.id));
+    expect(trialUpserts).toEqual([['t0']]); // the starting row never went out
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('holding the starting rows'));
+  });
+
+  it('does not hold anything when there is no ending trial in the batch', async () => {
+    queueReturns([TRIAL]);
+    selectSpy.mockResolvedValue({ data: [{ id: 't1' }], error: null });
+    await syncPendingDietTrials();
+    expect(upsertSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('marks nothing at all when the whole batch is silently blocked', async () => {
     queueReturns([TRIAL]);
     selectSpy.mockResolvedValue({ data: [], error: null });
