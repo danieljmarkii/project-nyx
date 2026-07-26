@@ -36,6 +36,8 @@ CLAUDE.md (the stable operating manual) and `STATUS.md` (the volatile state) are
    grep -ohE '^\| B-[0-9]+ ' docs/backlog.md | sort | uniq -d
    ```
 
+   **Run it *after* bringing the branch up to date with `main`, not before.** A sibling's rows and yours are appended at different offsets, so git merges them cleanly and the collision appears only in the merged file — the check is worthless if it runs against a stale base. (2026-07-26: this session renumbered five collisions, then merging `main` at wrap showed a sibling had taken the exact block it renumbered *into*, and all five had to move again. Re-run after every merge from `main`, including a conflict resolution.)
+
    **Any output at all is a stop-and-fix before you commit.** Do not push a wrap with a colliding ID and do not downgrade it to "noted for a grooming pass" — four collisions sat on `main` for a day under exactly that note, and a fifth landed on top of them. Resolve with this rule so no session has to re-litigate it: **the row that landed on `main` first keeps the ID; the later arrival is renumbered** to the next free ID (`grep -ohE '^\| B-[0-9]+ ' docs/backlog.md | grep -oE '[0-9]+' | sort -n | tail -1`, then +1). First-lands-keeps is what protects the IDs that code comments, tests, and merged PR bodies already point at — check with `git log -S'<distinctive row phrase>' -- docs/backlog.md` if the order isn't obvious.
 
    Then fix the renumbered row's cross-references **by attribution, not by blind replace** — a bare `B-NNN` may belong to either row, so read every hit and update only the ones that mean the row you moved:
@@ -44,7 +46,7 @@ CLAUDE.md (the stable operating manual) and `STATUS.md` (the volatile state) are
    grep -rn 'B-NNN' --include='*.md' --include='*.ts' --include='*.tsx' . | grep -v node_modules
    ```
 
-   Give the renumbered row an inline provenance note in the row's _why_ cell — *"filed as B-441; **renumbered to B-482** — B-441 was taken on `main` by \<the other row\>"* — the shape the B-432 signup row already uses — so a `grep` from an older session record still lands somewhere true. `docs/sessions/` is append-only and is **not** rewritten to match (3a); the provenance note is what carries the old ID forward instead. _(Instituted 2026-07-26 — B-435 option (a), after the race hit three times in one day and left five live collisions in `main`.)_
+   Give the renumbered row an inline provenance note in the row's _why_ cell — *"filed as B-441; **renumbered to B-488** — B-441 was taken on `main` by \<the other row\>"* — the shape the B-432 signup row already uses — so a `grep` from an older session record still lands somewhere true. `docs/sessions/` is append-only and is **not** rewritten to match (3a); the provenance note is what carries the old ID forward instead. _(Instituted 2026-07-26 — B-435 option (a), after the race hit three times in one day and left five live collisions in `main`.)_
 
 5. **Emit the full Session Summary** in the exact format from CLAUDE.md (§ "Session End — Automatic Summary"): Build Phase, What Was Built, Decisions Made, Persona Flags Raised, Open Questions Surfaced, Known Issues / Tech Debt, PM Action Items, Recommended Next Steps, Next Session Kickoff, Documentation Updates. Name the persona lenses from `docs/personas.md` that applied.
 
