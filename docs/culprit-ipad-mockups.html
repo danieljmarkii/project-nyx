@@ -1,0 +1,1277 @@
+<title>Culprit on iPad — scope &amp; UX sketch</title>
+
+<style>
+/* ============================================================
+   TOKENS
+   Accent, night and semantic hues are inherited verbatim from
+   constants/theme.ts — this is the app's system, not a new one.
+   The neutrals are indigo-biased toward colorBrandNight #13112E
+   so the document chrome sits sympathetically beside the app.
+   ============================================================ */
+:root{
+  --ground:#F6F6F9;
+  --surface:#FFFFFF;
+  --surface-2:#EEEEF4;
+  --ink:#14131F;
+  --ink-2:#4A4760;
+  --ink-3:#7E7B96;
+  --rule:#E1E0EA;
+  --rule-2:#CFCDDC;
+
+  /* app tokens */
+  --accent:#00C2A8;
+  --accent-ink:#0B7B6C;
+  --accent-light:#E0FBF7;
+  --night:#13112E;
+  --night-2:#251F57;
+  --moonlight:#F2EEE4;
+  --on-night:#ECEAF6;
+  --on-night-muted:#A6A2CE;
+  --rose:#F43F5E;
+  --rose-light:#FFE4E6;
+  --med:#5B7A9E;
+  --med-light:#EAF0F7;
+
+  /* semantic, document-level */
+  --break:#C2334A;
+  --break-bg:#FDEBEE;
+  --keep:#0B7B6C;
+  --keep-bg:#E0FBF7;
+
+  --serif:"Newsreader","Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+
+  --measure:66ch;
+  --pad:clamp(20px,5vw,64px);
+}
+
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#0F0D20;
+    --surface:#181534;
+    --surface-2:#221D46;
+    --ink:#ECEAF6;
+    --ink-2:#B3AFD6;
+    --ink-3:#8480AE;
+    --rule:rgba(196,190,255,.16);
+    --rule-2:rgba(196,190,255,.26);
+    --break:#FB7185;
+    --break-bg:rgba(251,113,133,.13);
+    --keep:#5FD9C6;
+    --keep-bg:rgba(0,194,168,.13);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F0D20;
+  --surface:#181534;
+  --surface-2:#221D46;
+  --ink:#ECEAF6;
+  --ink-2:#B3AFD6;
+  --ink-3:#8480AE;
+  --rule:rgba(196,190,255,.16);
+  --rule-2:rgba(196,190,255,.26);
+  --break:#FB7185;
+  --break-bg:rgba(251,113,133,.13);
+  --keep:#5FD9C6;
+  --keep-bg:rgba(0,194,168,.13);
+}
+:root[data-theme="light"]{
+  --ground:#F6F6F9;
+  --surface:#FFFFFF;
+  --surface-2:#EEEEF4;
+  --ink:#14131F;
+  --ink-2:#4A4760;
+  --ink-3:#7E7B96;
+  --rule:#E1E0EA;
+  --rule-2:#CFCDDC;
+  --break:#C2334A;
+  --break-bg:#FDEBEE;
+  --keep:#0B7B6C;
+  --keep-bg:#E0FBF7;
+}
+
+*{box-sizing:border-box;}
+
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ============================================================
+   DOCUMENT SHELL
+   ============================================================ */
+.wrap{max-width:1180px;margin:0 auto;padding:0 var(--pad) 120px;}
+
+.masthead{
+  padding:clamp(48px,9vw,104px) 0 0;
+  display:flex;flex-direction:column;gap:28px;
+}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+.masthead h1{
+  font-family:var(--serif);
+  font-weight:400;
+  font-size:clamp(38px,7vw,68px);
+  line-height:1.04;
+  letter-spacing:-.02em;
+  margin:0;
+  text-wrap:balance;
+  max-width:16ch;
+}
+/* The accent needs different weights on the two grounds: the darkened teal
+   (colorAccentInk) carries on white, full-strength teal carries on night. */
+.masthead h1 em{font-style:italic;color:var(--accent-ink);}
+@media (prefers-color-scheme:dark){.masthead h1 em{color:var(--accent);}}
+:root[data-theme="dark"] .masthead h1 em{color:var(--accent);}
+:root[data-theme="light"] .masthead h1 em{color:var(--accent-ink);}
+
+.standfirst{
+  font-size:clamp(17px,2vw,20px);
+  line-height:1.55;
+  color:var(--ink-2);
+  max-width:52ch;
+  margin:0;
+}
+.meta{
+  display:flex;flex-wrap:wrap;gap:0 32px;
+  border-top:1px solid var(--rule);
+  padding-top:18px;
+  font-family:var(--mono);font-size:11.5px;
+  color:var(--ink-3);
+  letter-spacing:.02em;
+}
+.meta b{color:var(--ink-2);font-weight:500;}
+
+/* section rhythm */
+section{padding-top:clamp(56px,8vw,96px);}
+.sec-head{display:flex;align-items:baseline;gap:16px;border-bottom:1px solid var(--rule);padding-bottom:14px;margin-bottom:32px;}
+.sec-num{font-family:var(--mono);font-size:11.5px;color:var(--accent-ink);letter-spacing:.1em;}
+@media (prefers-color-scheme:dark){.sec-num{color:var(--accent);}}
+:root[data-theme="dark"] .sec-num{color:var(--accent);}
+:root[data-theme="light"] .sec-num{color:var(--accent-ink);}
+.sec-head h2{
+  font-family:var(--serif);font-weight:400;
+  font-size:clamp(24px,3.4vw,34px);line-height:1.15;letter-spacing:-.015em;
+  margin:0;
+}
+.prose{max-width:var(--measure);}
+.prose p{margin:0 0 18px;color:var(--ink-2);}
+.prose p strong{color:var(--ink);font-weight:600;}
+.prose > p:last-child{margin-bottom:0;}
+
+/* pull statement */
+.thesis{
+  max-width:var(--measure);
+  font-family:var(--serif);
+  font-size:clamp(21px,2.9vw,29px);
+  line-height:1.32;
+  letter-spacing:-.01em;
+  color:var(--ink);
+  border-left:2px solid var(--accent);
+  padding:2px 0 2px 26px;
+  margin:34px 0;
+  text-wrap:balance;
+}
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+.tbl-scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:10px;background:var(--surface);}
+table{border-collapse:collapse;width:100%;min-width:600px;font-size:14.5px;}
+th,td{text-align:left;padding:13px 18px;border-bottom:1px solid var(--rule);vertical-align:top;}
+thead th{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500;background:var(--surface-2);
+}
+tbody tr:last-child td{border-bottom:none;}
+td{color:var(--ink-2);}
+td strong{color:var(--ink);font-weight:600;}
+.size{font-family:var(--mono);font-weight:600;font-size:15px;color:var(--ink);}
+
+/* ============================================================
+   FIGURES + DEVICE RIG
+   Every device frame is drawn at true relative proportion.
+   --w / --h are real iOS point dimensions; --u is one design
+   point expressed in container units, so mockup content is
+   specified in real pt and scales exactly with the frame.
+   ============================================================ */
+figure{margin:0;}
+.fig{
+  margin-top:34px;
+  border:1px solid var(--rule);
+  border-radius:14px;
+  background:var(--surface);
+  overflow:hidden;
+}
+.fig-head{
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;
+  padding:16px 22px;border-bottom:1px solid var(--rule);
+  background:var(--surface-2);
+}
+.fig-tag{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+.fig-head h3{margin:0;font-size:15.5px;font-weight:600;letter-spacing:-.01em;}
+.fig-head .verdict{margin-left:auto;}
+.fig-body{padding:clamp(22px,4vw,44px);display:flex;flex-wrap:wrap;gap:clamp(26px,4vw,48px);align-items:flex-start;justify-content:center;}
+.fig-note{
+  padding:15px 22px;border-top:1px solid var(--rule);
+  font-size:13.5px;color:var(--ink-3);background:var(--surface-2);
+}
+
+.pill{
+  display:inline-flex;align-items:center;gap:6px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+  padding:4px 9px;border-radius:999px;white-space:nowrap;
+}
+.pill.break{background:var(--break-bg);color:var(--break);}
+.pill.keep{background:var(--keep-bg);color:var(--keep);}
+.pill.free{background:var(--keep-bg);color:var(--keep);}
+.pill.scope{background:var(--surface);color:var(--ink-2);border:1px solid var(--rule-2);}
+
+.stack{display:flex;flex-direction:column;gap:11px;align-items:center;}
+.caption{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;
+  color:var(--ink-3);text-align:center;
+}
+.caption b{color:var(--ink-2);font-weight:500;}
+
+/* --- the frame --- */
+.device{
+  --u:calc(100cqw / var(--w));
+  container-type:inline-size;
+  width:100%;
+  aspect-ratio:var(--w) / var(--h);
+  background:var(--night);
+  border-radius:calc(var(--w) * .028 * 1px);
+  padding:calc(var(--w) * .011 * 1px);
+  box-shadow:0 1px 2px rgba(10,10,20,.16),0 12px 34px rgba(10,10,20,.14);
+  flex:none;
+}
+.screen{
+  container-type:inline-size;
+  width:100%;height:100%;
+  border-radius:calc(var(--w) * .020 * 1px);
+  overflow:hidden;
+  background:#FAFAFA;
+  position:relative;
+  display:flex;flex-direction:column;
+  font-family:var(--sans);
+  color:#0A0A0A;
+}
+/* sizes are given in real device points */
+.device[data-dev="iphone"]{--w:393;--h:852;width:calc(393px * var(--k));}
+.device[data-dev="ipad-p"]{--w:834;--h:1194;width:calc(834px * var(--k));}
+.device[data-dev="ipad-l"]{--w:1194;--h:834;width:calc(1194px * var(--k));}
+.rig{--k:.30;}
+.rig-lg{--k:.62;}
+.rig-md{--k:.46;}
+@media (max-width:820px){
+  .rig{--k:.21;}
+  .rig-lg{--k:.34;}
+  .rig-md{--k:.28;}
+}
+@media (max-width:480px){
+  .rig{--k:.155;}
+  .rig-lg{--k:.235;}
+  .rig-md{--k:.20;}
+}
+
+/* ============================================================
+   APP MOCKUP INTERNALS — all sizing in device points via --u
+   ============================================================ */
+.app-head{
+  padding:calc(46*var(--u)) calc(20*var(--u)) calc(12*var(--u));
+  display:flex;align-items:center;gap:calc(9*var(--u));
+  background:#FFF;border-bottom:1px solid #EAEAEA;
+}
+.mark{
+  width:calc(22*var(--u));height:calc(22*var(--u));border-radius:50%;
+  background:#211E4E;position:relative;flex:none;
+}
+.mark::after{
+  content:"";position:absolute;inset:calc(-3*var(--u)) calc(-6*var(--u)) calc(-3*var(--u)) auto;
+  width:calc(19*var(--u));height:calc(28*var(--u));border-radius:50%;background:#FFF;
+}
+.pet-name{font-size:calc(24*var(--u));font-weight:600;letter-spacing:calc(-.4*var(--u));}
+
+.canvas{flex:1;overflow:hidden;background:#FAFAFA;}
+.col{width:100%;height:100%;padding:calc(16*var(--u)) calc(20*var(--u));display:flex;flex-direction:column;gap:calc(18*var(--u));}
+
+.zlabel{
+  font-size:calc(11*var(--u));letter-spacing:calc(.8*var(--u));text-transform:uppercase;
+  color:#737373;font-weight:500;margin-bottom:calc(8*var(--u));
+}
+.card{
+  background:#FFF;border:1px solid #EAEAEA;border-radius:calc(16*var(--u));
+  padding:calc(16*var(--u));
+}
+.signal-card{background:var(--night);border-color:transparent;position:relative;overflow:hidden;}
+.signal-card .zlabel{color:var(--on-night-muted);}
+.signal-dot{
+  position:absolute;top:calc(16*var(--u));right:calc(16*var(--u));
+  width:calc(7*var(--u));height:calc(7*var(--u));border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 calc(4*var(--u)) rgba(0,194,168,.14);
+}
+.signal-line{
+  font-family:var(--serif);font-weight:400;
+  font-size:calc(26*var(--u));line-height:calc(34*var(--u));
+  color:var(--moonlight);letter-spacing:calc(-.2*var(--u));
+}
+.signal-sample{
+  margin-top:calc(12*var(--u));font-size:calc(11*var(--u));color:#706BA6;
+}
+
+.row{display:flex;align-items:center;gap:calc(10*var(--u));padding:calc(9*var(--u)) 0;}
+.row + .row{border-top:1px solid #F0F0F0;}
+.glyph{
+  width:calc(26*var(--u));height:calc(26*var(--u));border-radius:50%;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  font-size:calc(11*var(--u));font-weight:600;
+}
+.g-meal{background:var(--accent-light);color:var(--accent-ink);}
+.g-med{background:var(--med-light);color:var(--med);}
+.g-sym{background:var(--rose-light);color:#B01C36;}
+.row-main{flex:1;min-width:0;}
+.row-t{font-size:calc(15*var(--u));font-weight:500;letter-spacing:calc(-.1*var(--u));}
+.row-s{font-size:calc(12*var(--u));color:#737373;margin-top:calc(1*var(--u));}
+.row-meta{font-size:calc(12*var(--u));color:#A3A3A3;flex:none;}
+
+.bars{display:flex;align-items:flex-end;gap:calc(7*var(--u));height:calc(58*var(--u));margin-top:calc(4*var(--u));}
+.bar{flex:1;background:var(--accent);border-radius:calc(3*var(--u)) calc(3*var(--u)) 0 0;min-height:calc(4*var(--u));}
+.bar.soft{background:#86D9CC;}
+.bar.none{background:#F0F0F0;}
+.bar-axis{display:flex;gap:calc(7*var(--u));margin-top:calc(6*var(--u));}
+.bar-axis span{flex:1;text-align:center;font-size:calc(10*var(--u));color:#A3A3A3;}
+
+.tabbar{
+  display:flex;background:#FFF;border-top:1px solid #EAEAEA;
+  height:calc(80*var(--u));padding-top:calc(10*var(--u));padding-bottom:calc(24*var(--u));
+  flex:none;
+}
+.tabbar span{flex:1;text-align:center;font-size:calc(13*var(--u));color:#737373;letter-spacing:calc(.4*var(--u));font-weight:500;}
+.tabbar span.on{color:#0A0A0A;}
+.tabbar.capped{max-width:calc(560*var(--u));margin:0 auto;width:100%;border-left:1px solid #EAEAEA;border-right:1px solid #EAEAEA;}
+
+.fab{
+  position:absolute;width:calc(56*var(--u));height:calc(56*var(--u));border-radius:50%;
+  background:var(--accent);display:flex;align-items:center;justify-content:center;
+  color:#FFF;font-size:calc(28*var(--u));font-weight:300;line-height:1;
+  box-shadow:0 calc(2*var(--u)) calc(6*var(--u)) rgba(0,0,0,.22);
+  bottom:calc(96*var(--u));right:calc(24*var(--u));
+}
+
+/* night margin treatment (scope A) */
+.ground-night{background:var(--night);}
+.centered{
+  width:100%;height:100%;display:flex;justify-content:center;
+  overflow:hidden;
+}
+.centered > .col{
+  max-width:calc(560*var(--u));
+  background:#FAFAFA;
+  border-left:1px solid rgba(196,190,255,.16);
+  border-right:1px solid rgba(196,190,255,.16);
+}
+
+/* callout pins */
+.pin{
+  position:absolute;z-index:5;
+  width:calc(20*var(--u));height:calc(20*var(--u));border-radius:50%;
+  background:var(--break);color:#FFF;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:calc(11*var(--u));font-weight:600;
+  box-shadow:0 0 0 calc(3*var(--u)) rgba(255,255,255,.85);
+}
+.pin.ok{background:var(--accent-ink);}
+
+/* keyed legend beside a figure */
+.keys{flex:1 1 260px;min-width:250px;max-width:400px;display:flex;flex-direction:column;gap:14px;padding-top:4px;}
+.key{display:flex;gap:12px;align-items:flex-start;}
+.key-n{
+  width:21px;height:21px;border-radius:50%;flex:none;margin-top:1px;
+  background:var(--break);color:#FFF;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:11px;font-weight:600;
+}
+.key-n.ok{background:var(--accent-ink);}
+@media (prefers-color-scheme:dark){.key-n.ok{background:var(--accent);color:#06231F;}}
+:root[data-theme="dark"] .key-n.ok{background:var(--accent);color:#06231F;}
+:root[data-theme="light"] .key-n.ok{background:var(--accent-ink);color:#FFF;}
+.key-t{font-size:14px;line-height:1.5;color:var(--ink-2);}
+.key-t b{color:var(--ink);font-weight:600;display:block;font-size:13.5px;}
+.key-t code{font-family:var(--mono);font-size:12px;color:var(--ink-3);}
+
+/* ============================================================
+   HISTORY MOCKUP
+   ============================================================ */
+.hist-head{padding:calc(46*var(--u)) calc(20*var(--u)) calc(14*var(--u));background:#FFF;border-bottom:1px solid #EAEAEA;}
+.hist-title{font-size:calc(24*var(--u));font-weight:600;letter-spacing:calc(-.4*var(--u));}
+.scopes{display:flex;gap:calc(8*var(--u));margin-top:calc(12*var(--u));}
+.scope-pill{
+  border:1px solid #D4D4D4;border-radius:999px;
+  padding:calc(6*var(--u)) calc(12*var(--u));font-size:calc(13*var(--u));color:#525252;
+}
+.scope-pill.on{border-color:var(--accent);background:var(--accent-light);color:var(--accent-ink);}
+.daygroup{
+  font-size:calc(11*var(--u));letter-spacing:calc(.8*var(--u));text-transform:uppercase;
+  color:#737373;font-weight:500;padding:calc(14*var(--u)) 0 calc(6*var(--u));
+}
+
+/* ============================================================
+   REPORT MOCKUP
+   ============================================================ */
+.rep-bar{
+  display:flex;align-items:center;gap:calc(10*var(--u));
+  padding:calc(40*var(--u)) calc(20*var(--u)) calc(10*var(--u));
+  background:#FFF;border-bottom:1px solid #EAEAEA;flex:none;
+}
+.rep-back{font-size:calc(15*var(--u));color:#525252;}
+.rep-title{font-size:calc(15*var(--u));font-weight:600;}
+.rep-stage{flex:1;background:#E8E8EC;display:flex;justify-content:center;padding:calc(18*var(--u));overflow:hidden;}
+.a4{
+  width:calc(794*var(--u));background:#FFF;
+  box-shadow:0 calc(2*var(--u)) calc(14*var(--u)) rgba(0,0,0,.13);
+  padding:calc(34*var(--u)) calc(38*var(--u));
+  font-size:calc(11*var(--u));color:#262626;line-height:1.5;
+}
+.a4 h4{
+  font-family:var(--serif);font-weight:400;
+  font-size:calc(21*var(--u));margin:0 0 calc(3*var(--u));letter-spacing:calc(-.2*var(--u));
+}
+.a4 .sub{font-size:calc(11*var(--u));color:#737373;margin-bottom:calc(16*var(--u));padding-bottom:calc(12*var(--u));border-bottom:calc(1.5*var(--u)) solid #0A0A0A;}
+.a4 h5{
+  font-size:calc(10*var(--u));letter-spacing:calc(.7*var(--u));text-transform:uppercase;
+  color:#737373;font-weight:600;margin:calc(15*var(--u)) 0 calc(6*var(--u));
+}
+.a4 p{margin:0 0 calc(7*var(--u));}
+.a4 .kv{display:flex;gap:calc(10*var(--u));border-bottom:1px solid #EAEAEA;padding:calc(5*var(--u)) 0;}
+.a4 .kv b{width:calc(150*var(--u));flex:none;font-weight:600;}
+.rep-foot{
+  display:flex;align-items:center;gap:calc(10*var(--u));
+  padding:calc(12*var(--u)) calc(20*var(--u)) calc(22*var(--u));
+  background:#FFF;border-top:1px solid #EAEAEA;flex:none;
+}
+.btn{
+  flex:1;background:var(--accent);color:#FFF;text-align:center;
+  padding:calc(13*var(--u)) 0;border-radius:calc(12*var(--u));
+  font-size:calc(15*var(--u));font-weight:600;
+}
+.rep-count{font-size:calc(12*var(--u));color:#737373;}
+
+/* ============================================================
+   SPLIT (scope B peek)
+   ============================================================ */
+.split{display:flex;width:100%;height:100%;}
+.split-l{width:calc(360*var(--u));flex:none;background:#FFF;border-right:1px solid #EAEAEA;padding:calc(40*var(--u)) calc(18*var(--u)) 0;overflow:hidden;}
+.split-r{flex:1;background:#FAFAFA;padding:calc(40*var(--u)) calc(28*var(--u)) 0;overflow:hidden;}
+.sidebar-item{
+  display:flex;align-items:center;gap:calc(10*var(--u));
+  padding:calc(10*var(--u)) calc(12*var(--u));border-radius:calc(10*var(--u));
+  font-size:calc(15*var(--u));color:#525252;font-weight:500;
+}
+.sidebar-item.on{background:var(--accent-light);color:var(--accent-ink);font-weight:600;}
+.sb-dot{width:calc(7*var(--u));height:calc(7*var(--u));border-radius:50%;background:currentColor;opacity:.5;flex:none;}
+.two-col{display:flex;gap:calc(20*var(--u));}
+.two-col > *{flex:1;min-width:0;}
+
+/* ============================================================
+   REQUIREMENT LIST
+   ============================================================ */
+.reqs{display:flex;flex-direction:column;gap:0;border:1px solid var(--rule);border-radius:12px;overflow:hidden;background:var(--surface);}
+.req{display:flex;gap:16px;padding:16px 20px;border-bottom:1px solid var(--rule);}
+.req:last-child{border-bottom:none;}
+.req-id{
+  font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent-ink);
+  flex:none;width:38px;padding-top:1px;
+}
+@media (prefers-color-scheme:dark){.req-id{color:var(--accent);}}
+:root[data-theme="dark"] .req-id{color:var(--accent);}
+:root[data-theme="light"] .req-id{color:var(--accent-ink);}
+.req-b{font-size:14.5px;color:var(--ink-2);line-height:1.55;}
+.req-b b{color:var(--ink);font-weight:600;}
+.req-b code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);padding:1px 5px;border-radius:4px;color:var(--ink-2);}
+.req.blocked{background:var(--break-bg);}
+.req.blocked .req-id{color:var(--break);}
+
+/* conflict block */
+.conflict{
+  border:1px solid var(--rule);border-left:3px solid var(--rose);
+  border-radius:12px;background:var(--surface);padding:26px 28px;
+  max-width:var(--measure);margin-top:30px;
+  display:flex;flex-direction:column;gap:18px;
+}
+.voice-name{
+  font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:5px;
+}
+.voice p{margin:0;color:var(--ink-2);font-size:15px;line-height:1.55;}
+.ask{border-top:1px solid var(--rule);padding-top:18px;}
+.ask .voice-name{color:var(--rose);}
+.ask p{color:var(--ink);font-weight:500;}
+
+footer{
+  margin-top:clamp(64px,9vw,110px);padding-top:26px;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:11.5px;color:var(--ink-3);
+  display:flex;flex-wrap:wrap;gap:8px 26px;
+}
+
+@media (prefers-reduced-motion:no-preference){
+  .fig{transition:box-shadow .3s ease;}
+}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px;}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <div class="eyebrow">Culprit · scope sketch · draft for PM ratification</div>
+  <h1>What it costs to put Culprit on an <em>iPad</em></h1>
+  <p class="standfirst">
+    Scopes drawn to scale, then costed. iPad is <em>on</em> — so the question stopped being
+    "whether" and became "how far, and what's the PR that turns a large into an extra-large."
+  </p>
+  <div class="meta">
+    <span><b>Doc</b> nyx-ipad-support-requirements.md v0.3</span>
+    <span><b>Backlog</b> B-451</span>
+    <span><b>Measured</b> 2026-07-26 on main</span>
+    <span><b>Ruled</b> D2 · D3 — D1 narrowed</span>
+  </div>
+</header>
+
+<!-- ─────────────────────────────────────────── 01 -->
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>Where we actually are</h2></div>
+  <div class="prose">
+    <p>
+      Two facts frame this. First, <strong><code>ios.supportsTablet: false</code> was set
+      deliberately two days ago</strong> — PR #430, on the advice that "zero iPad QA has been
+      run; add iPad when it's designed, not defaulted." This is a request to un-defer that
+      properly, not a new idea.
+    </p>
+    <p>
+      Second, <strong>Culprit already runs on iPad today</strong>, in iPhone compatibility
+      mode — a phone-shaped window floating on a 13-inch screen. The decision in front of you
+      is not whether iPad owners can install it. It is whether what they see looks intentional.
+    </p>
+  </div>
+
+  <div class="thesis">
+    The codebase is in unusually good shape for this: 198 flex-based layouts, 124 style
+    blocks, only two hardcoded widths in the entire app. The port is not the expensive part.
+    Keeping two form factors honest, forever, is.
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────── 02 -->
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>What breaks when you just flip the flag</h2></div>
+  <div class="prose">
+    <p>
+      Setting <code>supportsTablet: true</code> is a one-line change, and that is exactly the
+      trap. Nothing crashes. Every screen still works. It simply looks like nobody looked at it.
+      Below is Home at real iPad-portrait proportions, beside the phone it was designed for.
+    </p>
+  </div>
+
+  <figure class="fig">
+    <div class="fig-head">
+      <span class="fig-tag">Figure 1</span>
+      <h3>Home — today's layout at 834pt</h3>
+      <span class="pill break verdict">Ships broken</span>
+    </div>
+    <div class="fig-body rig">
+
+      <div class="stack">
+        <div class="device" data-dev="iphone">
+          <div class="screen">
+            <div class="app-head"><div class="mark"></div><div class="pet-name">Maya</div></div>
+            <div class="canvas"><div class="col">
+              <div>
+                <div class="card signal-card">
+                  <div class="signal-dot"></div>
+                  <div class="zlabel">Signal</div>
+                  <div class="signal-line">Three loose stools this week — each within four hours of the new kibble.</div>
+                  <div class="signal-sample">Based on 6 stool events · 14 meals · 7 days</div>
+                </div>
+              </div>
+              <div>
+                <div class="zlabel">Today</div>
+                <div class="card">
+                  <div class="row"><div class="glyph g-meal">M</div><div class="row-main"><div class="row-t">Breakfast</div><div class="row-s">Finished</div></div><div class="row-meta">7:12</div></div>
+                  <div class="row"><div class="glyph g-med">Rx</div><div class="row-main"><div class="row-t">Apoquel 16mg</div><div class="row-s">Given with food</div></div><div class="row-meta">7:15</div></div>
+                  <div class="row"><div class="glyph g-sym">!</div><div class="row-main"><div class="row-t">Loose stool</div><div class="row-s">Photo attached</div></div><div class="row-meta">11:40</div></div>
+                </div>
+              </div>
+              <div>
+                <div class="zlabel">Trend</div>
+                <div class="card">
+                  <div class="row-t">Meals &amp; treats</div>
+                  <div class="bars">
+                    <div class="bar" style="height:62%"></div><div class="bar" style="height:78%"></div>
+                    <div class="bar soft" style="height:44%"></div><div class="bar" style="height:71%"></div>
+                    <div class="bar" style="height:88%"></div><div class="bar soft" style="height:52%"></div>
+                    <div class="bar" style="height:66%"></div>
+                  </div>
+                  <div class="bar-axis"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+                </div>
+              </div>
+            </div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+            <div class="fab">+</div>
+          </div>
+        </div>
+        <div class="caption"><b>iPhone 16</b> · 393 × 852pt · as designed</div>
+      </div>
+
+      <div class="stack">
+        <div class="device" data-dev="ipad-p">
+          <div class="screen">
+            <div class="pin" style="top:calc(64*var(--u));left:calc(600*var(--u))">4</div>
+            <div class="pin" style="top:calc(150*var(--u));left:calc(770*var(--u))">1</div>
+            <div class="pin" style="bottom:calc(120*var(--u));right:calc(24*var(--u))">2</div>
+            <div class="pin" style="bottom:calc(28*var(--u));left:calc(400*var(--u))">3</div>
+
+            <div class="app-head"><div class="mark"></div><div class="pet-name">Maya</div></div>
+            <div class="canvas"><div class="col">
+              <div>
+                <div class="card signal-card">
+                  <div class="signal-dot"></div>
+                  <div class="zlabel">Signal</div>
+                  <div class="signal-line">Three loose stools this week — each within four hours of the new kibble.</div>
+                  <div class="signal-sample">Based on 6 stool events · 14 meals · 7 days</div>
+                </div>
+              </div>
+              <div>
+                <div class="zlabel">Today</div>
+                <div class="card">
+                  <div class="row"><div class="glyph g-meal">M</div><div class="row-main"><div class="row-t">Breakfast</div><div class="row-s">Finished</div></div><div class="row-meta">7:12</div></div>
+                  <div class="row"><div class="glyph g-med">Rx</div><div class="row-main"><div class="row-t">Apoquel 16mg</div><div class="row-s">Given with food</div></div><div class="row-meta">7:15</div></div>
+                  <div class="row"><div class="glyph g-sym">!</div><div class="row-main"><div class="row-t">Loose stool</div><div class="row-s">Photo attached</div></div><div class="row-meta">11:40</div></div>
+                </div>
+              </div>
+              <div>
+                <div class="zlabel">Trend</div>
+                <div class="card">
+                  <div class="row-t">Meals &amp; treats</div>
+                  <div class="bars">
+                    <div class="bar" style="height:62%"></div><div class="bar" style="height:78%"></div>
+                    <div class="bar soft" style="height:44%"></div><div class="bar" style="height:71%"></div>
+                    <div class="bar" style="height:88%"></div><div class="bar soft" style="height:52%"></div>
+                    <div class="bar" style="height:66%"></div>
+                  </div>
+                  <div class="bar-axis"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+                </div>
+              </div>
+            </div></div>
+            <div class="tabbar"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+            <div class="fab">+</div>
+          </div>
+        </div>
+        <div class="caption"><b>iPad Pro 11"</b> · 834 × 1194pt · flag flipped, nothing else</div>
+      </div>
+
+      <div class="keys">
+        <div class="key"><div class="key-n">1</div><div class="key-t"><b>Line length doubles</b>The Signal card's display face runs past 90 characters. Principle 6 asks the vet report to be scannable; the same discipline applies here.</div></div>
+        <div class="key"><div class="key-n">2</div><div class="key-t"><b>The FAB strands itself</b><code>bottom: 72, right: space3</code> pins it to a corner 834pt away from where the eye is. The primary logging action lands outside comfortable reach.</div></div>
+        <div class="key"><div class="key-n">3</div><div class="key-t"><b>The tab bar spreads</b>Four <code>flex: 1</code> tabs distribute across the full width, leaving each label marooned in its own quarter of empty white.</div></div>
+        <div class="key"><div class="key-n">4</div><div class="key-t"><b>Everything is one column, forever</b>An 834pt canvas showing exactly as much information as a 393pt one. Nothing is wrong; nothing was considered.</div></div>
+      </div>
+
+    </div>
+    <div class="fig-note">
+      Both frames are drawn at true relative proportion. The iPad canvas is 3.2× the area of the phone's — and today renders identical content.
+    </div>
+  </figure>
+</section>
+
+<!-- ─────────────────────────────────────────── 03 -->
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Three scopes, three sizes</h2></div>
+  <div class="tbl-scroll">
+    <table>
+      <thead><tr><th>Scope</th><th>Size</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>A · Compatible</strong></td>
+          <td class="size">S<br><span style="font-family:var(--sans);font-size:12px;font-weight:400;color:var(--ink-3)">1 session · 1 PR</span></td>
+          <td>Breakpoint tokens, a max-width content column, the two <code style="font-family:var(--mono);font-size:12px">Dimensions</code> fixes, a modal audit, a re-anchored FAB, a capped tab bar. Looks deliberate. Not native.</td>
+        </tr>
+        <tr style="background:var(--keep-bg)">
+          <td><strong>B− · Two-column, no split</strong><br><span style="font-size:12px;color:var(--keep);font-weight:600">◆ recommended</span></td>
+          <td class="size">L<br><span style="font-family:var(--sans);font-size:12px;font-weight:400;color:var(--ink-3)">9 PRs · 7 build</span></td>
+          <td>B's shape minus list-and-detail. Sidebar shell, two-column Home, read surfaces at width, capture flows capped rather than redesigned. Costed in §07.</td>
+        </tr>
+        <tr>
+          <td><strong>B · Native-feeling</strong></td>
+          <td class="size">L+<br><span style="font-family:var(--sans);font-size:12px;font-weight:400;color:var(--ink-3)">11 PRs + nav change</span></td>
+          <td>B−, plus <code style="font-family:var(--mono);font-size:12px">History → event</code> and <code style="font-family:var(--mono);font-size:12px">Foods → food</code> detail panes. Those two additions are the L→XL vector — see §07.</td>
+        </tr>
+        <tr>
+          <td><strong>C · iPad-first vet surface</strong></td>
+          <td class="size">XL</td>
+          <td>A different product for a different user. Needs its own requirements doc, not an estimate — though the vet-login roadmap may make it nearer than it looks (§08).</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="thesis">
+    Ship B−. It is the two-column shape, without the one decision that turns a large
+    into an extra-large.
+  </div>
+
+  <div class="prose">
+    <p>
+      Jordan logs while the dog is being weird on the kitchen floor: phone, pocket, ten seconds.
+      Sam reads trends on the couch. Dr. Chen wants the report on a big screen.
+      <strong>For Culprit, the iPad is a consumption device, not a capture device.</strong>
+      That no longer argues for spending less — it argues for spending it in the right place:
+      on the read surfaces, and not on the four capture screens that make up 61% of the
+      heavy code (§07).
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────── 04 -->
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>The narrow case, drawn</h2></div>
+
+  <div class="conflict" style="border-left-color:var(--break);max-width:var(--measure);margin:0 0 30px">
+    <div class="voice">
+      <div class="voice-name" style="color:var(--break)">Correction — this section's claim was wrong</div>
+      <p>
+        An earlier draft said these two figures were "what B− renders in portrait", on the
+        basis of a 900pt sidebar breakpoint. <strong>That was an error.</strong> iPad portrait
+        widths run ~744–1024pt, so three of five iPad models — including the 11" Pro at
+        ~834pt — would have fallen below 900 and shown this centred column: the phone
+        layout with margins. The breakpoint is now <strong>700pt</strong>, and every
+        full-screen iPad gets the iPad layout in both orientations. See §07.
+      </p>
+    </div>
+  </div>
+
+  <div class="prose">
+    <p>
+      So what these figures actually show is the <strong>compact fallback</strong> — a narrow
+      Split View pane — and what Scope A alone would have shipped. The content column caps at
+      <strong>560pt</strong> and centres. The margin either side is the brand night ground, not
+      grey: Culprit already reserves night for the moments the app is working on the pet's
+      behalf, so the margin reads as the product's own world rather than an unstyled letterbox.
+    </p>
+  </div>
+
+  <figure class="fig">
+    <div class="fig-head">
+      <span class="fig-tag">Figure 2</span>
+      <h3>Home — centred column on night ground</h3>
+      <span class="pill scope verdict">Compact fallback · not the iPad layout</span>
+    </div>
+    <div class="fig-body rig-md">
+      <div class="stack">
+        <div class="device" data-dev="ipad-p">
+          <div class="screen ground-night">
+            <div class="pin ok" style="top:calc(150*var(--u));left:calc(120*var(--u))">1</div>
+            <div class="pin ok" style="bottom:calc(160*var(--u));right:calc(200*var(--u))">2</div>
+            <div class="pin ok" style="bottom:calc(30*var(--u));left:calc(150*var(--u))">3</div>
+
+            <div class="app-head" style="max-width:calc(560*var(--u));margin:0 auto;width:100%;">
+              <div class="mark"></div><div class="pet-name">Maya</div>
+            </div>
+            <div class="canvas ground-night">
+              <div class="centered">
+                <div class="col">
+                  <div>
+                    <div class="card signal-card">
+                      <div class="signal-dot"></div>
+                      <div class="zlabel">Signal</div>
+                      <div class="signal-line">Three loose stools this week — each within four hours of the new kibble.</div>
+                      <div class="signal-sample">Based on 6 stool events · 14 meals · 7 days</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="zlabel">Today</div>
+                    <div class="card">
+                      <div class="row"><div class="glyph g-meal">M</div><div class="row-main"><div class="row-t">Breakfast</div><div class="row-s">Finished</div></div><div class="row-meta">7:12</div></div>
+                      <div class="row"><div class="glyph g-med">Rx</div><div class="row-main"><div class="row-t">Apoquel 16mg</div><div class="row-s">Given with food</div></div><div class="row-meta">7:15</div></div>
+                      <div class="row"><div class="glyph g-sym">!</div><div class="row-main"><div class="row-t">Loose stool</div><div class="row-s">Photo attached</div></div><div class="row-meta">11:40</div></div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="zlabel">Trend</div>
+                    <div class="card">
+                      <div class="row-t">Meals &amp; treats</div>
+                      <div class="bars">
+                        <div class="bar" style="height:62%"></div><div class="bar" style="height:78%"></div>
+                        <div class="bar soft" style="height:44%"></div><div class="bar" style="height:71%"></div>
+                        <div class="bar" style="height:88%"></div><div class="bar soft" style="height:52%"></div>
+                        <div class="bar" style="height:66%"></div>
+                      </div>
+                      <div class="bar-axis"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="tabbar capped"><span class="on">Home</span><span>History</span><span>Foods</span><span>Pet</span></div>
+            <!-- column spans 137→697pt; FAB sits inside its right edge at the 24pt inset -->
+            <div class="fab" style="right:auto;left:calc(617*var(--u));bottom:calc(112*var(--u))">+</div>
+          </div>
+        </div>
+        <div class="caption"><b>Compact pane</b> · 560pt column · <b>not</b> what an 11" iPad now gets</div>
+      </div>
+
+      <div class="keys">
+        <div class="key"><div class="key-n ok">1</div><div class="key-t"><b>Night margin, not grey</b>Reuses <code>colorBrandNight</code>. The column reads as framed by the product, not cropped by the OS.</div></div>
+        <div class="key"><div class="key-n ok">2</div><div class="key-t"><b>FAB on the column edge</b>Anchored to the content, so it sits where the eye already is and inside comfortable reach.</div></div>
+        <div class="key"><div class="key-n ok">3</div><div class="key-t"><b>Tab bar capped with the column</b>Four labels at their designed rhythm, hairlines continuing the column's edges down to the bottom of the screen.</div></div>
+        <div class="key"><div class="key-n ok">4</div><div class="key-t"><b>Every card untouched</b>Not one component re-laid-out. That is what makes this an S — and equally, what makes it obviously a phone layout on a big screen.</div></div>
+      </div>
+    </div>
+    <div class="fig-note">
+      Open decision D3: 560pt keeps body copy near a 65-character measure. 600–640 feels less austere but strains the Signal card's display line.
+    </div>
+  </figure>
+
+  <figure class="fig">
+    <div class="fig-head">
+      <span class="fig-tag">Figure 3</span>
+      <h3>History — the same rule, a list screen</h3>
+      <span class="pill scope verdict">Compact fallback · not the iPad layout</span>
+    </div>
+    <div class="fig-body rig-md">
+      <div class="stack">
+        <div class="device" data-dev="ipad-p">
+          <div class="screen ground-night">
+            <div class="hist-head" style="max-width:calc(560*var(--u));margin:0 auto;width:100%;">
+              <div class="hist-title">History</div>
+              <div class="scopes">
+                <div class="scope-pill on">All events</div>
+                <div class="scope-pill">Last 30 days</div>
+              </div>
+            </div>
+            <div class="canvas ground-night">
+              <div class="centered">
+                <div class="col" style="gap:0;padding-top:calc(4*var(--u))">
+                  <div class="daygroup">Today · 26 July</div>
+                  <div class="card" style="padding:calc(4*var(--u)) calc(14*var(--u))">
+                    <div class="row"><div class="glyph g-sym">!</div><div class="row-main"><div class="row-t">Loose stool</div><div class="row-s">Photo attached · worth a call</div></div><div class="row-meta">11:40</div></div>
+                    <div class="row"><div class="glyph g-med">Rx</div><div class="row-main"><div class="row-t">Apoquel 16mg</div><div class="row-s">Given with breakfast</div></div><div class="row-meta">7:15</div></div>
+                    <div class="row"><div class="glyph g-meal">M</div><div class="row-main"><div class="row-t">Breakfast · Hill's z/d</div><div class="row-s">Finished</div></div><div class="row-meta">7:12</div></div>
+                  </div>
+                  <div class="daygroup">Yesterday · 25 July</div>
+                  <div class="card" style="padding:calc(4*var(--u)) calc(14*var(--u))">
+                    <div class="row"><div class="glyph g-meal">M</div><div class="row-main"><div class="row-t">Dinner · Hill's z/d</div><div class="row-s">Left about half</div></div><div class="row-meta">18:30</div></div>
+                    <div class="row"><div class="glyph g-sym">!</div><div class="row-main"><div class="row-t">Scratching</div><div class="row-s">Ears, after the walk</div></div><div class="row-meta">16:05</div></div>
+                    <div class="row"><div class="glyph g-med">Rx</div><div class="row-main"><div class="row-t">Apoquel 16mg</div><div class="row-s">Given with breakfast</div></div><div class="row-meta">7:20</div></div>
+                    <div class="row"><div class="glyph g-meal">M</div><div class="row-main"><div class="row-t">Breakfast · Hill's z/d</div><div class="row-s">Finished</div></div><div class="row-meta">7:18</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="tabbar capped"><span>Home</span><span class="on">History</span><span>Foods</span><span>Pet</span></div>
+          </div>
+        </div>
+        <div class="caption"><b>Compact pane</b> · same 560pt rule</div>
+      </div>
+
+      <div class="keys">
+        <div class="key"><div class="key-n ok">1</div><div class="key-t"><b>One rule, every screen</b>History inherits the column from R3 with no per-screen work. This is the property that keeps Scope A at one PR.</div></div>
+        <div class="key"><div class="key-n ok">2</div><div class="key-t"><b>ScopeMenu pills unchanged</b>The filter pattern from <code>#421</code> already sizes to content, so it needs nothing at width.</div></div>
+        <div class="key"><div class="key-n ok">3</div><div class="key-t"><b>And here is the honest cost</b>An iPad user looking at a list has 274pt of unused width where a detail pane obviously belongs. <b>B− leaves that on the table on purpose</b> — claiming it is the L→XL vector (§07).</div></div>
+      </div>
+    </div>
+  </figure>
+</section>
+
+<!-- ─────────────────────────────────────────── 05 -->
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>The one surface that improves for free</h2></div>
+  <div class="prose">
+    <p>
+      The vet report is already server-rendered HTML at <code>viewport width=794</code> — A4.
+      On a phone that is scaled down to fit 393pt. On an iPad in landscape there is enough room
+      to render it at roughly <strong>1:1, the size the vet will actually print it</strong>.
+      No render changes. R9 is a verification requirement, not a build one.
+    </p>
+  </div>
+
+  <figure class="fig">
+    <div class="fig-head">
+      <span class="fig-tag">Figure 4</span>
+      <h3>Vet report — A4 at ~1:1</h3>
+      <span class="pill free verdict">No work required</span>
+    </div>
+    <div class="fig-body rig-md">
+      <div class="stack">
+        <div class="device" data-dev="ipad-l">
+          <div class="screen">
+            <div class="rep-bar">
+              <div class="rep-back">‹ Back</div>
+              <div class="rep-title">Health summary · Maya</div>
+            </div>
+            <div class="rep-stage">
+              <div class="a4">
+                <h4>Health summary — Maya</h4>
+                <div class="sub">Labrador retriever · female, spayed · 4y 2m · prepared 26 July 2026 · 42 days of records</div>
+
+                <h5>Reason for tracking</h5>
+                <p>Elimination diet trial, started 14 June 2026 on Hill's z/d. Presenting concern: recurrent loose stool and ear scratching.</p>
+
+                <h5>Diet trial</h5>
+                <div class="kv"><b>Trial diet</b><span>Hill's Prescription Diet z/d — 42 of 56 days elapsed</span></div>
+                <div class="kv"><b>Meals recorded</b><span>78 of an expected 84 (93%)</span></div>
+                <div class="kv"><b>Off-diet items recorded</b><span>3 — dental chew ×2 (18 Jun, 2 Jul), unknown table scrap (9 Jul)</span></div>
+                <div class="kv"><b>Note</b><span>Counts reflect what was logged. Unlogged exposures cannot be ruled out.</span></div>
+
+                <h5>Symptom timeline</h5>
+                <p>Loose stool: 6 events across 42 days, clustering 0–4h after a meal (5 of 6). Scratching: 11 events, no meal association detected.</p>
+                <div class="bars" style="height:calc(46*var(--u));margin-bottom:calc(10*var(--u))">
+                  <div class="bar" style="height:40%"></div><div class="bar" style="height:70%"></div>
+                  <div class="bar" style="height:30%"></div><div class="bar none" style="height:8%"></div>
+                  <div class="bar" style="height:55%"></div><div class="bar none" style="height:8%"></div>
+                  <div class="bar" style="height:22%"></div><div class="bar none" style="height:8%"></div>
+                </div>
+
+                <h5>Medication adherence</h5>
+                <div class="kv"><b>Apoquel 16mg</b><span>daily · 40 of 42 doses recorded given · 1 unconfirmed (3 Jul)</span></div>
+
+                <h5>Owner photographs</h5>
+                <p>4 incident photographs attached, dated and unedited.</p>
+              </div>
+            </div>
+            <div class="rep-foot">
+              <div class="rep-count">4 photos included</div>
+              <div class="btn">Share with your vet</div>
+            </div>
+          </div>
+        </div>
+        <div class="caption"><b>iPad Pro 11", landscape</b> · 1194 × 834pt · A4 at ~1:1</div>
+      </div>
+      <div class="keys">
+        <div class="key"><div class="key-n ok">1</div><div class="key-t"><b>Dr. Chen's case</b>The report is the artifact that most wants a big screen, and the only one that gets better without a single line of layout work.</div></div>
+        <div class="key"><div class="key-n ok">2</div><div class="key-t"><b>Needs landscape to be literally true</b>This frame is landscape, which arrives with PR <b>B7</b>. Until then the report renders at 834pt portrait — better than phone, short of 1:1. Under B− this figure is real; under A alone it stays aspirational.</div></div>
+      </div>
+    </div>
+  </figure>
+</section>
+
+<!-- ─────────────────────────────────────────── 06 -->
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>What the L buys you</h2></div>
+  <div class="prose">
+    <p>
+      This is the shape: the tab bar becomes a sidebar, and the canvas becomes two columns.
+      <strong>Everything in this frame is inside B−</strong> — it is PRs B2 and B3, and it
+      is the part worth having.
+    </p>
+    <p>
+      What is <em>not</em> in the frame is the thing to notice. There is no detail pane. Tap
+      an event here and it still pushes a route, exactly as it does on the phone. That is the
+      whole difference between the L and the XL, and §07 explains why it is the line to hold.
+    </p>
+  </div>
+
+  <figure class="fig">
+    <div class="fig-head">
+      <span class="fig-tag">Figure 5</span>
+      <h3>Home — sidebar shell, two columns</h3>
+      <span class="pill keep verdict">Scope B− · PRs B2 + B3</span>
+    </div>
+    <div class="fig-body rig-md">
+      <div class="stack">
+        <div class="device" data-dev="ipad-l">
+          <div class="screen">
+            <div class="split">
+              <div class="split-l">
+                <div style="display:flex;align-items:center;gap:calc(9*var(--u));padding:calc(6*var(--u)) calc(12*var(--u)) calc(18*var(--u))">
+                  <div class="mark"></div><div class="pet-name" style="font-size:calc(20*var(--u))">Maya</div>
+                </div>
+                <div class="sidebar-item on"><div class="sb-dot"></div>Home</div>
+                <div class="sidebar-item"><div class="sb-dot"></div>History</div>
+                <div class="sidebar-item"><div class="sb-dot"></div>Foods</div>
+                <div class="sidebar-item"><div class="sb-dot"></div>Pet</div>
+                <div style="margin-top:calc(20*var(--u));padding:0 calc(12*var(--u))">
+                  <div class="zlabel">Trial</div>
+                  <div class="card" style="padding:calc(12*var(--u))">
+                    <div class="row-t" style="font-size:calc(13*var(--u))">Hill's z/d</div>
+                    <div class="row-s">Day 42 of 56</div>
+                    <div class="bars" style="height:calc(5*var(--u));margin-top:calc(9*var(--u));gap:0">
+                      <div class="bar" style="height:100%;flex:75;border-radius:calc(3*var(--u))"></div>
+                      <div class="bar none" style="height:100%;flex:25;border-radius:calc(3*var(--u))"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="split-r">
+                <div class="card signal-card" style="margin-bottom:calc(18*var(--u))">
+                  <div class="signal-dot"></div>
+                  <div class="zlabel">Signal</div>
+                  <div class="signal-line" style="font-size:calc(24*var(--u));line-height:calc(31*var(--u))">Three loose stools this week — each within four hours of the new kibble.</div>
+                  <div class="signal-sample">Based on 6 stool events · 14 meals · 7 days</div>
+                </div>
+                <div class="two-col">
+                  <div>
+                    <div class="zlabel">Today</div>
+                    <div class="card">
+                      <div class="row"><div class="glyph g-meal">M</div><div class="row-main"><div class="row-t">Breakfast</div><div class="row-s">Finished</div></div><div class="row-meta">7:12</div></div>
+                      <div class="row"><div class="glyph g-med">Rx</div><div class="row-main"><div class="row-t">Apoquel 16mg</div><div class="row-s">With food</div></div><div class="row-meta">7:15</div></div>
+                      <div class="row"><div class="glyph g-sym">!</div><div class="row-main"><div class="row-t">Loose stool</div><div class="row-s">Photo attached</div></div><div class="row-meta">11:40</div></div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="zlabel">Trend</div>
+                    <div class="card">
+                      <div class="row-t">Meals &amp; treats</div>
+                      <div class="bars">
+                        <div class="bar" style="height:62%"></div><div class="bar" style="height:78%"></div>
+                        <div class="bar soft" style="height:44%"></div><div class="bar" style="height:71%"></div>
+                        <div class="bar" style="height:88%"></div><div class="bar soft" style="height:52%"></div>
+                        <div class="bar" style="height:66%"></div>
+                      </div>
+                      <div class="bar-axis"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="fab" style="bottom:calc(28*var(--u));right:calc(28*var(--u))">+</div>
+          </div>
+        </div>
+        <div class="caption"><b>iPad Pro 11", landscape</b> · 1194 × 834pt · reference only</div>
+      </div>
+      <div class="keys">
+        <div class="key"><div class="key-n ok">1</div><div class="key-t"><b>Sidebar replaces the tab bar</b>PR B2 — the riskiest in the plan, because navigation breaks every route at once. Kept as a row-layout custom <code>tabBar</code>, never a <code>Drawer</code>.</div></div>
+        <div class="key"><div class="key-n ok">2</div><div class="key-t"><b>Two columns under the Signal</b>PR B3. The layout is the easy half; <em>which zone earns the primary column</em> is a Principle 3 ruling for the Designer.</div></div>
+        <div class="key"><div class="key-n ok">3</div><div class="key-t"><b>No detail pane — deliberately</b>Tapping an event still pushes a route. Holding this line is what keeps B− an L.</div></div>
+        <div class="key"><div class="key-n">4</div><div class="key-t"><b>The standing cost</b>Every PR after this carries two form factors. CI runs <code>tsc</code> and <code>jest</code>; neither catches a layout regression at 1194pt.</div></div>
+      </div>
+    </div>
+  </figure>
+</section>
+
+<!-- ─────────────────────────────────────────── 07 -->
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>What the L actually costs</h2></div>
+
+  <div class="prose">
+    <p>
+      <strong>First, the breakpoints — corrected.</strong> The plan originally put the
+      sidebar at 900pt, which would have left three of five iPad models on the phone
+      column in portrait, and would have handed an iPhone Pro Max a sidebar in landscape
+      (it's ~932–956pt wide). Width alone doesn't identify a tablet.
+    </p>
+  </div>
+
+  <div class="tbl-scroll" style="margin-top:24px">
+    <table>
+      <thead><tr><th>Token</th><th style="text-align:right">Value</th><th>Effect</th></tr></thead>
+      <tbody>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">bpRegular</code></td><td style="text-align:right;font-variant-numeric:tabular-nums"><b>700pt</b></td><td>Sidebar replaces the tab bar. Catches <b>every full-screen iPad</b>, mini through 13", both orientations</td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">bpWide</code></td><td style="text-align:right;font-variant-numeric:tabular-nums"><b>1000pt</b></td><td>Content goes two-column. 11" portrait (834) → sidebar + one column; 11" landscape (1194) and 13" portrait (1024) → sidebar + two</td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">contentMaxWidth</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">560pt</td><td>Now the <b>compact fallback only</b> — a narrow Split View pane, and iPhone</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose" style="margin-top:22px">
+    <p>
+      Both breakpoints are additionally gated on <code>Platform.isPad</code>, so width alone
+      never promotes a phone. And landscape unlocks on <strong>iPad only</strong>, via the
+      separate <code>UISupportedInterfaceOrientations~ipad</code> Info.plist key — a global
+      <code>orientation</code> flip in <code>app.json</code> can't express that.
+    </p>
+    <p>
+      <strong>Now the cost.</strong> Risk isn't spread across 39 screens. Seven screens over
+      900 lines carry it — and four of those seven are capture flows.
+    </p>
+  </div>
+
+  <div class="tbl-scroll" style="margin-top:26px">
+    <table>
+      <thead><tr><th>Screen</th><th style="text-align:right">Lines</th><th>iPad value</th></tr></thead>
+      <tbody>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/log.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1593</td><td><span class="pill break">Low · capture</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/food-capture.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1503</td><td><span class="pill break">Low · capture</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/(tabs)/profile.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1225</td><td><span class="pill keep">High</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/event/[id].tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1035</td><td><span class="pill keep">High</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/medication-capture.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">1007</td><td><span class="pill break">Low · capture</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/edit-event.tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">928</td><td><span class="pill break">Low · capture</span></td></tr>
+        <tr><td><code style="font-family:var(--mono);font-size:12.5px">app/food/[id].tsx</code></td><td style="text-align:right;font-variant-numeric:tabular-nums">920</td><td><span class="pill scope">Medium</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="thesis">
+    The four capture flows are 5,031 of those 8,211 lines — 61% of the heavy surface,
+    and the lowest iPad value in the app. Capping them at the column instead of
+    redesigning them removes most of the plan's mass at almost no product cost.
+  </div>
+
+  <div class="prose">
+    <p>
+      That scope cut is what holds the line at L. The plan below is <strong>Scope B−</strong>:
+      B's shape, minus the one decision that turns L into XL.
+    </p>
+  </div>
+
+  <div class="tbl-scroll" style="margin-top:26px">
+    <table>
+      <thead><tr><th>PR</th><th>Scope</th><th>Risk</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td><strong>B1</strong></td><td>Foundation — the two breakpoint tokens above + the <code style="font-family:var(--mono);font-size:12px">isPad</code> gate, <code style="font-family:var(--mono);font-size:12px">useBreakpoint()</code>, responsive container, the two <code style="font-family:var(--mono);font-size:12px">Dimensions</code> fixes, the flag flip</td><td><span class="pill keep">Low</span></td><td>No phone-visible change. Ships the R6 rotation fix regardless of what follows. <b>Unlocks your iPad testing</b></td></tr>
+        <tr><td><strong>B2</strong></td><td>Shell — sidebar ≥900pt, tab bar below; FAB re-anchor</td><td><span class="pill break">Med-high</span></td><td><b>The riskiest PR.</b> Navigation breaks every route at once. Keep <code style="font-family:var(--mono);font-size:12px">expo-router</code> Tabs with a row-layout custom <code style="font-family:var(--mono);font-size:12px">tabBar</code> — never <code style="font-family:var(--mono);font-size:12px">Drawer</code></td></tr>
+        <tr><td><strong>B3</strong></td><td>Home at width — <b>two</b> states: sidebar + one column (≥700), sidebar + two (≥1000)</td><td><span class="pill scope">Medium</span></td><td>Grew with the breakpoint fix. Risk is <em>product</em>, not code: Principle 3 governs what leads. Which zone earns the primary column is a Designer ruling</td></tr>
+        <tr><td><strong>B4</strong></td><td>Foods + Profile at width</td><td><span class="pill scope">Medium</span></td><td>Two dense screens, no navigation change</td></tr>
+        <tr><td><strong>B5</strong></td><td>Read surfaces — report, insights, Ask, history, rundown, vet-visit</td><td><span class="pill keep">Low-med</span></td><td><b>Highest product value in the plan</b> — the consumption half</td></tr>
+        <tr><td><strong>B6</strong></td><td>Capture flows capped, <b>not</b> redesigned</td><td><span class="pill keep">Low</span></td><td>The scope cut, made explicit so it can't quietly re-expand</td></tr>
+        <tr><td><strong>B7</strong></td><td>Landscape + rotation — <b>iPad only</b>, via <code style="font-family:var(--mono);font-size:12px">~ipad</code> Info.plist key</td><td><span class="pill scope">Medium</span></td><td>Where R11 bites. Can't be scoped until R11 is verified</td></tr>
+        <tr><td><strong>B8</strong></td><td>Widget size classes + B-415</td><td><span class="pill keep">Low-med</span></td><td><em>Optional / deferrable</em></td></tr>
+        <tr><td><strong>B9</strong></td><td>iPad screenshots, build cut, submission</td><td><span class="pill keep">Low</span></td><td>Mostly PM/ops</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose" style="margin-top:30px">
+    <p>
+      <strong>What B− excludes, and why that's the whole point.</strong> No
+      <code>History → event</code> pane. No <code>Foods → food</code> pane. A detail pane
+      converts navigation from push-based to pane-based — <code>event/[id]</code> (1035
+      lines) and <code>food/[id]</code> (920) are currently <em>routes</em>, so making them
+      panes means either rendering a route component inline or maintaining two
+      presentations of the same screen. <strong>Every iPad port that has ballooned,
+      ballooned here.</strong> Full B is 11 PRs plus a navigation-model change, and it's the
+      navigation-model change that doesn't stay contained.
+    </p>
+    <p>
+      <strong>Calibration:</strong> B− at ~7 build PRs is roughly one standard feature track
+      for this repo — the widget track was W1–W6, diet trial is PRs 1–7, Ask is A1–A8. It is
+      not a new category of undertaking. Full B would be the largest track the repo has run.
+    </p>
+  </div>
+
+  <figure class="fig">
+    <div class="fig-head">
+      <span class="fig-tag">Risk register</span>
+      <h3>The five things that could go wrong</h3>
+    </div>
+    <div class="fig-body" style="display:block;padding:0">
+      <div class="reqs" style="border:none;border-radius:0">
+        <div class="req"><div class="req-id">1</div><div class="req-b"><b>B2's sidebar breaks navigation app-wide.</b> <em>Medium.</em> Mitigation: custom <code>tabBar</code> in a row layout, never <code>Drawer</code>; B2 lands alone, ahead of every layout PR, so a regression is isolated.</div></div>
+        <div class="req blocked"><div class="req-id">2</div><div class="req-b"><b>R11 unverified.</b> <em>Unknown.</em> If iPadOS mandates arbitrary window widths, every PR's width assumptions shift. <b>Verify before B1</b> — cheap now, expensive at B7.</div></div>
+        <div class="req"><div class="req-id">3</div><div class="req-b"><b>Scope creep at the list screens</b> — the L→XL vector. <em>High; this is the default failure mode.</em> Mitigation: the exclusion is explicit and named. Any PR proposing a detail pane is a new PM decision, not a B− PR.</div></div>
+        <div class="req"><div class="req-id">4</div><div class="req-b"><b>Two-form-factor QA tax, forever.</b> <em>Certain.</em> Accepted cost of shipping iPad. CI catches no layout regression; this stays manual.</div></div>
+        <div class="req"><div class="req-id">5</div><div class="req-b"><b>Session cost exceeds appetite.</b> <em>Low-medium.</em> B1–B9 are independently valuable and land in order — the track can stop after any PR. B1 and B5 alone deliver most of the value.</div></div>
+      </div>
+    </div>
+  </figure>
+</section>
+
+<!-- ─────────────────────────────────────────── 08 -->
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>Does this compound toward a vet login?</h2></div>
+  <div class="prose">
+    <p>
+      A vet-facing login is on the eventual roadmap, possibly desktop. Whether that makes
+      B− a down payment or a detour turns on a fork worth naming now, because it's cheap
+      to note and expensive to discover late.
+    </p>
+    <p>
+      <strong>If the vet surface is a separate web app</strong> — the React Native
+      responsive work <strong>does not transfer</strong>. RN layout primitives are not web
+      layout primitives. What does transfer is what already exists:
+      <code>generate-report</code> emits real HTML at A4, which is already a web artifact
+      and already the right shape for a vet portal.
+    </p>
+    <p>
+      <strong>If the vet surface lives in the same Expo codebase</strong> — B1's breakpoint
+      tokens and B2's responsive shell are directly reused, and B− becomes foundation work
+      for Scope C rather than iPad-only spend.
+    </p>
+    <p>
+      Neither answer changes the recommendation — iPad is justified on its own. But the
+      second materially raises its value, and the fork should be decided <em>before</em>
+      Scope C is scoped, not during it. <strong>Not a decision this doc asks for.</strong>
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────── 09 -->
+<section>
+  <div class="sec-head"><span class="sec-num">09</span><h2>Requirements — Scope A foundation</h2></div>
+  <div class="prose"><p>Each is verifiable on device. Full text in <code>docs/nyx-ipad-support-requirements.md</code>.</p></div>
+
+  <div class="reqs" style="margin-top:28px">
+    <div class="req"><div class="req-id">R1</div><div class="req-b"><code>ios.supportsTablet</code> is <code>true</code>. Takes effect at the next native build-cut, <b>not</b> via <code>eas update</code> OTA.</div></div>
+    <div class="req"><div class="req-id">R2</div><div class="req-b"><code>constants/theme.ts</code> gains breakpoint tokens — a <code>regular</code> breakpoint at ≥700pt and <code>contentMaxWidth</code> (proposed 560pt). Tokens only.</div></div>
+    <div class="req"><div class="req-id">R3</div><div class="req-b">Above <code>regular</code>, primary scroll content constrains to <code>contentMaxWidth</code> and centres. Margins use <code>colorBrandNight</code>, not grey.</div></div>
+    <div class="req"><div class="req-id">R4</div><div class="req-b">The tab bar caps at <code>contentMaxWidth</code> and centres.</div></div>
+    <div class="req"><div class="req-id">R5</div><div class="req-b">The FAB re-anchors to the content column's right edge, never the screen's.</div></div>
+    <div class="req"><div class="req-id">R6</div><div class="req-b"><b>Real bug, any scope.</b> <code>PhotoViewer</code> and <code>PhotoCarousel</code> move from <code>Dimensions.get('window')</code> to <code>useWindowDimensions()</code>. Both compute a paging width; <code>Dimensions.get</code> does not re-render on resize, so both page at a stale width after rotation.</div></div>
+    <div class="req"><div class="req-id">R7</div><div class="req-b">All 13 <code>Modal</code> sites checked at ≥700pt — <code>pageSheet</code> presents as a centred card on iPad, not full-bleed.</div></div>
+    <div class="req"><div class="req-id">R8</div><div class="req-b">Full-bleed grounds (<code>NightHeroGround</code>, <code>PullToRefreshSky</code>) verified to fill, not tile or clip, at iPad aspect ratios.</div></div>
+    <div class="req"><div class="req-id">R9</div><div class="req-b">Vet-report WebView verified at iPad width. No render changes expected — verification, not build.</div></div>
+    <div class="req"><div class="req-id">R10</div><div class="req-b"><b>Amended under B−.</b> <code>app.json</code> stays <code>"orientation": "portrait"</code> <em>through B1–B6</em> — shipping a landscape layout nobody has designed yet is not legitimate. <b>PR B7 unlocks it</b>, once there is a designed landscape to unlock into.</div></div>
+    <div class="req blocked"><div class="req-id">R11</div><div class="req-b"><b>Blocked — needs verification before build.</b> Recent iPadOS windowing may allow arbitrary window widths regardless of the orientation key. If that holds against the current App Review baseline, R10 is insufficient, Scope A must handle arbitrary widths, and R6 becomes load-bearing rather than cosmetic. <b>I have not confirmed this</b> — check live guidelines.</div></div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────────────────── 10 -->
+<section>
+  <div class="sec-head"><span class="sec-num">10</span><h2>Where the decisions stand</h2></div>
+
+  <div class="tbl-scroll" style="margin-bottom:8px">
+    <table>
+      <thead><tr><th>#</th><th>Decision</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><strong>D2</strong></td><td>On the runway, or after v1?</td><td><span class="pill keep">Ruled</span> <b>On, and on the runway.</b> Platform breadth is the cheapest competitive surface available; and the PM's primary dev device is an iPad Pro.</td></tr>
+        <tr><td><strong>D3</strong></td><td><code style="font-family:var(--mono);font-size:12px">contentMaxWidth: 560pt</code>?</td><td><span class="pill keep">Ruled</span> Deferred to the Designer. <b>560pt stands</b> — but §07's breakpoint fix means it now governs only compact panes, not the iPad experience. Much lower stakes than when ruled.</td></tr>
+        <tr><td><strong>D1</strong></td><td>Which scope?</td><td><span class="pill scope">Narrowed</span> A is under-built given D2; full B risks XL. <b>§07 recommends B−.</b> Two confirmations left, below.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose" style="margin-top:26px">
+    <p>
+      <strong>The original persona conflict is resolved by D2.</strong> Designer's "a centred
+      column is honest restraint" vs. Engineering's "a column reads as a lazy port" was a
+      conflict about whether to ship <em>A</em>. Once iPad is a platform we've decided to be
+      on, both personas agree A is under-built. Engineering's objection was never to iPad —
+      it was to shipping a phone layout and calling it iPad support. B− answers it.
+    </p>
+  </div>
+
+  <div class="conflict">
+    <div class="voice">
+      <div class="voice-name">Still needs you · D1 residual</div>
+      <p><b>1 · Confirm B− over full B</b> — accept that list-and-detail panes are out of scope. This is the single decision that holds the line at L.</p>
+    </div>
+    <div class="voice">
+      <div class="voice-name">&nbsp;</div>
+      <p><b>2 · Confirm the appetite</b> — ~7 build PRs, roughly one standard feature track. The track can stop after any PR; B1 and B5 alone deliver most of the value.</p>
+    </div>
+    <div class="voice ask">
+      <div class="voice-name">Two verifications before B1 — not decisions</div>
+      <p><b>R11</b> — whether iPadOS mandates arbitrary window widths. <b>§9.4</b> — whether your iPad Pro runs Expo Go or a dev client, which determines whether B1 actually delivers the testing benefit.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>Culprit · project-nyx</span>
+  <span>Draft v0.1 — not ratified</span>
+  <span>Mockups are static sketches, not built screens</span>
+  <span>26 July 2026</span>
+</footer>
+
+</div>
