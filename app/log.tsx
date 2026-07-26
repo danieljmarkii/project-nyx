@@ -17,6 +17,7 @@ import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
 import { useWidgetPetLink } from '../hooks/useWidgetPetLink';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
 import { useAuthStore } from '../store/authStore';
 import { useEventStore } from '../store/eventStore';
 import { useAttachmentStore } from '../store/attachmentStore';
@@ -119,6 +120,13 @@ export default function LogModal() {
     petName: string;
     foodName: string | null;
   } | null>(null);
+
+  // B-336 — the double-submit guard shared by both one-tap picker paths (food +
+  // medication). A picker tile is the write, so a rapid double-tap used to run the
+  // handler twice and land two events for one meal/pill. One guard for the screen
+  // is correct rather than one per picker: only a single picker step is ever
+  // mounted, so the two paths can never be in flight at the same time.
+  const guardSubmit = useSubmitGuard();
 
   // Symptom state
   const [severity, setSeverity] = useState<number | null>(null);
@@ -281,7 +289,10 @@ export default function LogModal() {
     await noteTrialFlagShown(flag);
   }
 
-  async function handlePickFood(food: PickerFood) {
+  // Returns whether an event was COMMITTED — the double-submit guard's contract
+  // (B-336). A null result means handleConfirm wrote nothing and already alerted,
+  // so the tiles must stay live for the retry.
+  async function handlePickFood(food: PickerFood): Promise<boolean> {
     setSelectedFoodId(food.id);
     setSelectedFoodBrand(food.brand);
     setSelectedFoodProduct(food.product_name);
@@ -302,18 +313,25 @@ export default function LogModal() {
         source: usingExif ? 'exif' : 'now',
       },
     });
-    // Defer the meal card past the modal dismiss so it appears at the root layer
-    // (not occluded by the still-presented modal on iOS) where the user can see
-    // and act on it. Meals fire the meal presentation of the completion moment —
-    // a single warmed bottom card (gold beat + "Logged {brand}") that ALSO
-    // carries the intake follow-up + "Change time" (B-064 unified what used to be
-    // a separate post-log toast). They deliberately skip the full-screen beat;
-    // firing both would double the surface. The WSAVA intake chip row renders for
-    // food_type 'meal' and 'treat' (B-014; treats added 2026-05-23). NOTE: every
-    // meal-entry path must route through showMeal — if a non-picker meal flow is
-    // ever added (e.g. a manual quick-add), it must fire showMeal too, or the
-    // intake capture surface vanishes for that path.
-    if (result) {
+    // B-336 — settle the double-submit guard's answer HERE, on the write itself,
+    // and make sure nothing below can change it. Everything past this point is
+    // presentation (the completion card, a fire-and-forget trial flag); the meal is
+    // already on disk. If presentation threw, the guard would release and a second
+    // tap would write a SECOND meal for the same bowl — a broken card is cosmetic,
+    // a duplicate meal corrupts the record the vet report reads.
+    if (!result) return false;
+    try {
+      // Defer the meal card past the modal dismiss so it appears at the root layer
+      // (not occluded by the still-presented modal on iOS) where the user can see
+      // and act on it. Meals fire the meal presentation of the completion moment —
+      // a single warmed bottom card (gold beat + "Logged {brand}") that ALSO
+      // carries the intake follow-up + "Change time" (B-064 unified what used to be
+      // a separate post-log toast). They deliberately skip the full-screen beat;
+      // firing both would double the surface. The WSAVA intake chip row renders for
+      // food_type 'meal' and 'treat' (B-014; treats added 2026-05-23). NOTE: every
+      // meal-entry path must route through showMeal — if a non-picker meal flow is
+      // ever added (e.g. a manual quick-add), it must fire showMeal too, or the
+      // intake capture surface vanishes for that path.
       const foodType = food.food_type === 'meal' || food.food_type === 'treat' || food.food_type === 'other'
         ? food.food_type
         : null;
@@ -339,7 +357,10 @@ export default function LogModal() {
       // problem: nothing waits, and the budget is spent by the surface that
       // renders it.
       void applyTrialFlag(result.eventId, result.petId, food.id, result.occurredAt);
+    } catch (e) {
+      console.error('[log] meal saved, but its completion card failed:', e);
     }
+    return true;
   }
 
   // Dose log from the medication picker — the medication twin of handlePickFood
@@ -350,7 +371,12 @@ export default function LogModal() {
   // completion card — which binds the dose to the meal's pet + event (paired_event_id)
   // and infers the vehicle from the food. The only difference is which pet/link/vehicle
   // the write carries; everything downstream (regimen link, sync, card) is shared.
-  async function handlePickMedication(med: PickerMedication) {
+  // Returns whether a dose was COMMITTED — the double-submit guard's contract (B-336).
+  // The two early exits (no pet to write for; the dose write threw) wrote nothing and
+  // return false so the tile works again; every path past the successful insert returns
+  // true, including the retroactive-combo path that stays mounted behind the confirm
+  // sheet — the dose IS on disk there, so a second tap must not write another one.
+  async function handlePickMedication(med: PickerMedication): Promise<boolean> {
     // The pet this dose is written for. STANDALONE: the active pet, read at write time
     // (the queue-then-switch edge, multi-pet spec §6). COMBO (B-156 PR B2b): the MEAL's
     // pet (pairedPetId) — a dose given with a meal must land on the same pet as that
@@ -360,7 +386,7 @@ export default function LogModal() {
     const writePetId = isComboMode
       ? (pairedPetId ?? null)
       : (usePetStore.getState().activePet?.id ?? null);
-    if (!writePetId) return;
+    if (!writePetId) return false;
     // COMBO: infer the vehicle from the food it rode in (meal → in_food, treat →
     // in_treat). A best-guess seed, pre-selected on the card for the owner to confirm
     // or change; descriptive only, no adherence/safety meaning of its own.
@@ -418,100 +444,112 @@ export default function LogModal() {
     } catch (e) {
       console.error('[log] medication dose write failed:', e);
       Alert.alert("Couldn't save that", 'Something went wrong. Please try again.');
-      return;
+      return false;
     }
-    // Optimistic timeline insert (B-117 PR 8) — only when the dose's pet is the one on
-    // screen. In the rare combo queue-then-switch edge (writePetId is the meal's pet and
-    // the active pet has since changed) the dose is still written + synced correctly for
-    // the meal's pet; skipping the prepend just avoids briefly showing it under the wrong
-    // pet — it appears when that pet's timeline next loads. A later adherence edit on the
-    // completion card / detail screen re-reads ground truth on focus.
-    if (writePetId === (usePetStore.getState().activePet?.id ?? null)) {
-      prependEvent({
-        id: result.eventId,
-        pet_id: writePetId,
-        event_type: 'medication',
-        occurred_at: result.occurredAtIso,
-        occurred_at_confidence: 'witnessed',
-        severity: null,
-        notes: null,
-        source: 'manual',
-        deleted_at: null,
-        created_at: result.now,
-        updated_at: result.now,
-        medication_item_id: med.id,
-        adherence, // mirrors the dose write — null for a not-finished-vehicle combo (B-156 PR B3)
-        // paired_event_id / paired_vehicle_intake / paired_food_name are deliberately
-        // omitted here: the in-doubt tag + note render only on the DB-backed read
-        // surfaces (History EventRow via getTimeline, dose detail via getEventById),
-        // never the Today zone, which reads this optimistic store row. If a Today-zone
-        // in-doubt tag is ever added, thread the paired fields through here.
-        drug_generic_name: med.generic_name,
-        drug_brand_name: med.brand_name,
-      });
-    }
-    // B-325 — RETROACTIVE combo (added from the treat's detail screen). No completion card
-    // here (that card is the moment-of-logging warmth for a FRESH log on Home; a retroactive
-    // add is a reflective edit). Instead we return to the treat detail screen, whose
-    // focus-refetch renders the paired-dose cross-link — the pairing lives there, persistent
-    // and editable-later on the dose's own screen (the G2 model; PM steer). When the vehicle
-    // was NOT finished, first present the deliberate confirm sheet (the discoverable home for
-    // PR B3's "still get it?" prompt): the dose is already written UNCONFIRMED, so the sheet
-    // only RESOLVES it — a dismiss leaves it unconfirmed (never a false 'given'), resurfaced
-    // calmly by History + the dose detail. Gate on the vehicle actually being not-finished
-    // (isVehicleNotFinished), NOT on adherence===null: a vehicle-read FAILURE also yields a
-    // null adherence, but there we have no evidence the food went unfinished, so we must not
-    // claim it did — skip the sheet and let the calm resurface handle it.
-    if (isRetroactiveCombo) {
-      if (isVehicleNotFinished(vehicleIntake)) {
-        // Keep /log mounted so the sheet renders over the picker; the sheet's handlers own
-        // the router.back() to the treat once the owner answers or dismisses.
-        const comboPetName =
-          (pairedPetId ? pets.find((p) => p.id === pairedPetId)?.name : null)
-          ?? usePetStore.getState().activePet?.name
-          ?? 'your pet';
-        setComboConfirm({
-          doseEventId: result.eventId,
-          petName: comboPetName,
-          foodName: pairedFoodName?.trim() || null,
+    // B-336 — the dose is ON DISK from here down. Everything below is presentation:
+    // the optimistic timeline row, the completion card, the retroactive confirm sheet,
+    // the navigation. None of it may release the double-submit guard, because a released
+    // guard means a second tap writes a SECOND dose for the same pill — the exact
+    // clinical artifact this guard exists to prevent, and one that would reach the vet
+    // report as a real double-dose. A failed card is cosmetic and self-corrects (History
+    // and the dose detail read ground truth); it must never cost a duplicate record.
+    try {
+      // Optimistic timeline insert (B-117 PR 8) — only when the dose's pet is the one on
+      // screen. In the rare combo queue-then-switch edge (writePetId is the meal's pet and
+      // the active pet has since changed) the dose is still written + synced correctly for
+      // the meal's pet; skipping the prepend just avoids briefly showing it under the wrong
+      // pet — it appears when that pet's timeline next loads. A later adherence edit on the
+      // completion card / detail screen re-reads ground truth on focus.
+      if (writePetId === (usePetStore.getState().activePet?.id ?? null)) {
+        prependEvent({
+          id: result.eventId,
+          pet_id: writePetId,
+          event_type: 'medication',
+          occurred_at: result.occurredAtIso,
+          occurred_at_confidence: 'witnessed',
+          severity: null,
+          notes: null,
+          source: 'manual',
+          deleted_at: null,
+          created_at: result.now,
+          updated_at: result.now,
+          medication_item_id: med.id,
+          adherence, // mirrors the dose write — null for a not-finished-vehicle combo (B-156 PR B3)
+          // paired_event_id / paired_vehicle_intake / paired_food_name are deliberately
+          // omitted here: the in-doubt tag + note render only on the DB-backed read
+          // surfaces (History EventRow via getTimeline, dose detail via getEventById),
+          // never the Today zone, which reads this optimistic store row. If a Today-zone
+          // in-doubt tag is ever added, thread the paired fields through here.
+          drug_generic_name: med.generic_name,
+          drug_brand_name: med.brand_name,
         });
-      } else {
-        // Finished / unrated vehicle → the dose is cleanly 'given'; just return to the treat.
-        router.back();
       }
-      return;
-    }
+      // B-325 — RETROACTIVE combo (added from the treat's detail screen). No completion card
+      // here (that card is the moment-of-logging warmth for a FRESH log on Home; a retroactive
+      // add is a reflective edit). Instead we return to the treat detail screen, whose
+      // focus-refetch renders the paired-dose cross-link — the pairing lives there, persistent
+      // and editable-later on the dose's own screen (the G2 model; PM steer). When the vehicle
+      // was NOT finished, first present the deliberate confirm sheet (the discoverable home for
+      // PR B3's "still get it?" prompt): the dose is already written UNCONFIRMED, so the sheet
+      // only RESOLVES it — a dismiss leaves it unconfirmed (never a false 'given'), resurfaced
+      // calmly by History + the dose detail. Gate on the vehicle actually being not-finished
+      // (isVehicleNotFinished), NOT on adherence===null: a vehicle-read FAILURE also yields a
+      // null adherence, but there we have no evidence the food went unfinished, so we must not
+      // claim it did — skip the sheet and let the calm resurface handle it.
+      if (isRetroactiveCombo) {
+        if (isVehicleNotFinished(vehicleIntake)) {
+          // Keep /log mounted so the sheet renders over the picker; the sheet's handlers own
+          // the router.back() to the treat once the owner answers or dismisses.
+          const comboPetName =
+            (pairedPetId ? pets.find((p) => p.id === pairedPetId)?.name : null)
+            ?? usePetStore.getState().activePet?.name
+            ?? 'your pet';
+          setComboConfirm({
+            doseEventId: result.eventId,
+            petName: comboPetName,
+            foodName: pairedFoodName?.trim() || null,
+          });
+        } else {
+          // Finished / unrated vehicle → the dose is cleanly 'given'; just return to the treat.
+          router.back();
+        }
+        return true;
+      }
 
-    // Dismiss the picker, then play the dose completion card at the root layer (delayMs
-    // clears the dismissing modal so the card isn't briefly occluded on iOS). A combo
-    // dose frames the card as "Logged together · {drug} · with {food}" (the link made
-    // legible) and pre-selects the inferred vehicle; a standalone dose is the normal
-    // "Logged · {drug}". A standalone/finished-vehicle combo pre-lights 'given' (§5.1);
-    // a NOT-finished-vehicle combo lands UNCONFIRMED (adherence null) and the card
-    // sharpens its prompt to "Did {pet} still get it?" (B-156 PR B3) — vehicleIntake
-    // lets the card derive that in-doubt state and never pre-light a false 'given'.
-    router.back();
-    showMedicationMoment(
-      {
-        eventId: result.eventId,
-        occurredAt: result.occurredAtIso,
-        drugName: med.generic_name,
-        adherence, // standalone/finished: 'given'; not-finished combo: null (B-156 PR B3)
-        howGiven, // combo: inferred vehicle (pre-set); standalone: null (chips can set it)
-        // combo: names the food on the card; else null. Reuse the SAME empty-name
-        // fallback as the log-screen banner (comboFoodLabel below) so a vehicle food
-        // with no brand AND no product name still yields a non-empty label ("meal"/
-        // "treat"). This keeps the card's `isCombo = !!pairedFoodName` check reliable
-        // — an empty string would read as a STANDALONE dose and (a) drop the "Logged
-        // together" framing and (b) surface the standalone-only "Change time" button
-        // on a genuine combo dose.
-        pairedFoodName: isComboMode
-          ? (pairedFoodName?.trim() || (pairedFoodType === 'treat' ? 'treat' : 'meal'))
-          : null,
-        vehicleIntake, // combo: the linked vehicle's intake → drives the in-doubt prompt; else null
-      },
-      { delayMs: 450 },
-    );
+      // Dismiss the picker, then play the dose completion card at the root layer (delayMs
+      // clears the dismissing modal so the card isn't briefly occluded on iOS). A combo
+      // dose frames the card as "Logged together · {drug} · with {food}" (the link made
+      // legible) and pre-selects the inferred vehicle; a standalone dose is the normal
+      // "Logged · {drug}". A standalone/finished-vehicle combo pre-lights 'given' (§5.1);
+      // a NOT-finished-vehicle combo lands UNCONFIRMED (adherence null) and the card
+      // sharpens its prompt to "Did {pet} still get it?" (B-156 PR B3) — vehicleIntake
+      // lets the card derive that in-doubt state and never pre-light a false 'given'.
+      router.back();
+      showMedicationMoment(
+        {
+          eventId: result.eventId,
+          occurredAt: result.occurredAtIso,
+          drugName: med.generic_name,
+          adherence, // standalone/finished: 'given'; not-finished combo: null (B-156 PR B3)
+          howGiven, // combo: inferred vehicle (pre-set); standalone: null (chips can set it)
+          // combo: names the food on the card; else null. Reuse the SAME empty-name
+          // fallback as the log-screen banner (comboFoodLabel below) so a vehicle food
+          // with no brand AND no product name still yields a non-empty label ("meal"/
+          // "treat"). This keeps the card's `isCombo = !!pairedFoodName` check reliable
+          // — an empty string would read as a STANDALONE dose and (a) drop the "Logged
+          // together" framing and (b) surface the standalone-only "Change time" button
+          // on a genuine combo dose.
+          pairedFoodName: isComboMode
+            ? (pairedFoodName?.trim() || (pairedFoodType === 'treat' ? 'treat' : 'meal'))
+            : null,
+          vehicleIntake, // combo: the linked vehicle's intake → drives the in-doubt prompt; else null
+        },
+        { delayMs: 450 },
+      );
+    } catch (e) {
+      console.error('[log] dose saved, but its post-write presentation failed:', e);
+    }
+    return true;
   }
 
   // B-325 — resolve a retroactive in-doubt combo dose from the confirm sheet, then return
@@ -986,7 +1024,9 @@ export default function LogModal() {
           <FoodPicker
             petId={activePet.id}
             petName={activePet.name}
-            onPickFood={handlePickFood}
+            // Guarded (B-336): the first tap latches, so a rapid double-tap on a
+            // tile can't write two meals.
+            onPickFood={(food) => { void guardSubmit(() => handlePickFood(food)); }}
             // Photo-first food capture (Step 5). On confirm, food-capture
             // logs the meal itself and routes back home — log.tsx is bypassed.
             onAddNew={() => router.push('/food-capture?fromLog=1')}
@@ -1038,7 +1078,10 @@ export default function LogModal() {
         {pickerPetId && (
           <MedicationPicker
             petId={pickerPetId}
-            onPickMedication={handlePickMedication}
+            // Guarded (B-336): the first tap latches, so a rapid double-tap on a
+            // tile can't write two doses — and on the retroactive combo path can't
+            // overwrite the first dose's pending confirm sheet.
+            onPickMedication={(med) => { void guardSubmit(() => handlePickMedication(med)); }}
             onAddNew={() => router.push('/medication-capture?fromLog=1')}
             // Long-press a tile opens the editable detail screen (B-117 PR 6).
             // One-tap dose-log stays on regular tap.

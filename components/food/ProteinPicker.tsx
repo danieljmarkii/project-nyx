@@ -24,7 +24,7 @@
 // normalizeExtractedProtein — but on blur/submit, never per keystroke, and never
 // silently: the matching chip becomes selected (the change is visible IN the
 // control) and a quiet persistent note names what was typed and what was saved.
-import { useState } from 'react';
+import { forwardRef, useImperativeHandle, useState } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ChipGroup, ChipGroupOption } from '../ui/ChipGroup';
@@ -75,7 +75,38 @@ interface Props {
   accessibilityLabel?: string;
 }
 
-export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
+/**
+ * WHY the commit is reachable imperatively and not only through blur.
+ *
+ * The typed escape resolves on blur/submit. On a phone neither necessarily
+ * happens: both host screens wrap the form in a ScrollView with
+ * `keyboardShouldPersistTaps="handled"`, and under that setting a tap on a
+ * touchable — a chip, or the Save button itself — does NOT dismiss the keyboard,
+ * so the field never blurs. The owner types "Buffalo", taps Save, and the commit
+ * that would have run never runs. Two things were lost, not one:
+ *
+ *   • the D9 normalization ("Buffalo" saved as `buffalo`, not `bison`) — and
+ *     because the stored value is then not owner-typed, the no-warrant rule
+ *     correctly refuses to re-key it on any later visit, so it is permanent;
+ *   • the auto-demote. `handleMainChange` only moves the outgoing main on a
+ *     'commit'/'select', so a main replaced by an uncommitted draft is dropped —
+ *     silent loss of a captured exposure, which is the exact failure the demote
+ *     exists to prevent.
+ *
+ * So the host asks for the commit at the save boundary rather than hoping a blur
+ * arrives first. The `otherDirty` warrant still gates it, so this cannot re-key a
+ * value the owner never typed (D3a).
+ */
+export interface ProteinPickerHandle {
+  /** Resolve an open "Other" draft as blur would, returning the committed value.
+   *  Null when there is nothing pending — no draft, or nothing usable in it. */
+  commitPending: () => { value: string | null } | null;
+}
+
+export const ProteinPicker = forwardRef<ProteinPickerHandle, Props>(function ProteinPicker(
+  { value, onChange, accessibilityLabel },
+  ref,
+) {
   // Does the current value map to one of the offered chips?
   const canon = canonicalizeProtein(value);
   const matchedCommon =
@@ -137,37 +168,48 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
     }
   }
 
-  // D9 — resolve the typed escape on COMMIT (blur / submit), never per
-  // keystroke: normalizing mid-word would thrash the field while someone is
-  // still typing "bison".
-  function handleOtherCommit() {
+  // D9 — resolve the typed escape on COMMIT (blur / submit / an imperative ask
+  // from the host's save handler), never per keystroke: normalizing mid-word
+  // would thrash the field while someone is still typing "bison".
+  //
+  // Returns the resolved value rather than only emitting it, so the save path can
+  // use it in the same tick. Going through onChange alone would leave the host
+  // reading its pre-commit state — a setState is not visible to the handler that
+  // scheduled it.
+  function resolveCommit(): { value: string | null } | null {
     // Only a value the owner typed in this session may be normalized — see the
     // otherDirty note above.
-    if (!otherDirty) return;
+    if (!otherDirty) return null;
     setOtherDirty(false);
     const typed = (value ?? '').trim();
     // Backspaced to empty. That is the owner clearing the value, so it commits
     // like any other clear rather than evaporating — which is what lets the host
     // treat it exactly like a chip clear and keep the old protein (§11).
-    if (!typed) {
-      onChange(null, 'commit');
-      return;
-    }
+    if (!typed) return { value: null };
     const normalized = normalizeExtractedProtein(typed);
     // Nothing usable ("fresh", "meal") — leave the owner's text exactly as typed
     // rather than wiping it. Storing a vaguer key is the safe direction; silently
     // emptying a field someone just filled is not, and it is not what D9 asked
     // for (its scope is aliased/stripped terms).
-    if (normalized == null) return;
+    if (normalized == null) return null;
     setRewrite(proteinNoteFor(typed, normalized));
+    return { value: normalized };
+  }
+
+  function handleOtherCommit() {
+    const resolved = resolveCommit();
     // Emitted even when the value is byte-identical to what is already held. The
     // KIND is the payload here: 'commit' is what tells the host the draft is over
     // and the protein it replaced can now be demoted. Suppressing a no-op change
     // swallowed that signal, so retyping a custom main over another custom main
     // ("kangaroo" → "emu") dropped kangaroo — the value never moved because the
     // host was never told the edit had landed.
-    onChange(normalized, 'commit');
+    if (resolved) onChange(resolved.value, 'commit');
   }
+
+  // No dep array: the handle closes over this render's `value` / `otherDirty`, so
+  // it must be rebuilt every render or a save would commit a stale draft.
+  useImperativeHandle(ref, () => ({ commitPending: resolveCommit }));
 
   return (
     <View style={styles.group}>
@@ -206,7 +248,7 @@ export function ProteinPicker({ value, onChange, accessibilityLabel }: Props) {
       {activeRewrite && <NormalizedProteinNote rewrite={activeRewrite} />}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   group: {
