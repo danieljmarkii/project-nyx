@@ -1704,7 +1704,13 @@ function medicationOverlapLine(t: NonNullable<ReportSnapshot['trial']>): string 
   // be scolding an owner for following their vet. What they ARE is the reason a derm
   // trial is unreadable without them — a steroid course and a successful elimination
   // produce the identical improving curve.
-  return `${rows.join(' ')} <span class="qual">Listed as context for reading the symptom trend, not as a problem with the trial &mdash; these are routinely prescribed alongside one.</span>`
+  // SAY WHICH KIND OF PROBLEM IT IS NOT. "Not a problem with the trial" was doing two
+  // jobs and only one of them was true: these are not a COMPLIANCE problem — routinely
+  // prescribed alongside a trial, and flagging them would scold an owner for following
+  // their vet — but they are very much a problem for READING the result, which is what
+  // §7.2 says two lines below. The cold read caught the downplaying clause sitting as
+  // the weaker of two adjacent statements, and the assertive one should be the caveat.
+  return `${rows.join(' ')} <span class="qual">Routinely prescribed alongside a trial, so this is not a compliance problem &mdash; but it does bear on reading the symptom trend; see &ldquo;Interpreting this record&rdquo; below.</span>`
 }
 
 function indicationLabel(indication: 'skin' | 'gi' | 'other'): string {
@@ -2521,10 +2527,14 @@ function dietMeds(snap: ReportSnapshot): string {
     // fact about the OWNER'S ALLOWED LIST — which is a fact about the vet's own
     // prescribing, and the more actionable of the two findings.
     for (const c of breach.permittedExtras) {
+      // ITS OWN POINTER. The shared trailing "Full protein sets in appendix B" was
+      // written for a MEAL-FED food, and appendix B's protein table holds only those —
+      // so a vet following it to see what else the chew carries lands on a table the
+      // chew is not in. An allowed-list treat's set is in appendix C, with its rung.
       contamBits.push(
         `${h(c.food.label)}, on the allowed list, also lists ${h(
           proteinList(c.extraProteins.map(capProtein)),
-        )}.`,
+        )} (its full set is in appendix&nbsp;C).`,
       )
     }
     const freeFedOff = breach.freeFed

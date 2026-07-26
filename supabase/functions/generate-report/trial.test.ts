@@ -379,7 +379,8 @@ Deno.test('§12 — an overlapping anti-pruritic renders inside the trial block,
   // Without this a derm trial is unreadable — a steroid course and a successful
   // elimination produce the identical improving curve — but flagging it as a
   // compliance violation would scold an owner for following their vet.
-  assert.ok(/not as a problem with the trial/.test(block))
+  assert.ok(/this is not a compliance problem/.test(block), 'not a compliance problem — that half is true')
+  assert.ok(/it does bear on reading the symptom trend/.test(block), '…and the interpretive half is not downplayed')
 })
 
 Deno.test('§7 — an antibacterial course is named on a GI trial specifically', () => {
@@ -1085,4 +1086,37 @@ Deno.test('the trial-scoped logging claim states its scope, so it cannot contrad
   assert.equal(snap.trial?.rangeEndDate, '2026-06-20', 'the trial range stops at the trial')
   const text = plain(renderReport(snap))
   assert.ok(/This covers the trial\u2019s 20 days; the charts below span 32 days, 12 of them after the trial/.test(text))
+})
+
+Deno.test('an ad-hoc course with NO regimen still reaches "Reading the trend" (round 3)', () => {
+  // The cold read caught the two sources disagreeing on its own artifact: §7.2 named
+  // "Apoquel, afoxolaner (NexGard) overlapped the trial" while "Reading the trend" —
+  // eight lines below, attached to the chart the vet is actually looking at — asserted
+  // "One change overlaps this window". NexGard had no regimen row, so it never reached
+  // `buildConcurrentChanges` at all. The general case inverts into a false clean read on
+  // confounding: a patient whose ONLY overlapping intervention is an ad-hoc course gets
+  // a trend block saying no change overlaps.
+  const input = wellLoggedTrialInput({
+    medicationItems: [
+      { id: 'mi-nex', genericName: 'afoxolaner', brandName: 'NexGard', strength: null, route: 'oral', isPrescription: true, form: 'chewable' },
+    ],
+    doses: [
+      { eventId: 'dose-1', occurredAt: at('2026-06-14', '09:00:00'), medicationId: null, medicationItemId: 'mi-nex', adherence: 'given', doseAmount: null, pairedEventId: null },
+    ],
+  })
+  input.events.push(symptom('2026-06-20'))
+  input.events.push({ id: 'dose-1', type: 'medication', occurredAt: at('2026-06-14', '09:00:00'), occurredAtConfidence: 'witnessed', occurredAtEarliest: null, occurredAtLatest: null, severity: null, notes: null, loggedAt: at('2026-06-14', '09:00:00'), meal: null })
+
+  const snap = assembleReport(input)
+  // `buildUnlinkedMedications` names an orphan group generic-then-brand, so the label
+  // is what the med row and appendix D already print — one name, three surfaces.
+  const change = snap.concurrentChanges.find((c) => c.label.includes('NexGard'))
+  assert.ok(change, 'the ad-hoc course is a concurrent change')
+  assert.equal(change?.kind, 'medication')
+  assert.ok(change?.bucketIndex !== null, 'and a MID-WINDOW start gets a chart marker')
+
+  const text = plain(renderReport(snap))
+  // The two sources now agree about what overlapped.
+  assert.ok(/NexGard/.test(text.slice(text.indexOf('Reading the trend'), text.indexOf('Reading the trend') + 500)))
+  assert.ok(!/One change overlaps this window/.test(text), 'two changes overlap, and both are named')
 })

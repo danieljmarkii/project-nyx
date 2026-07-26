@@ -2507,7 +2507,13 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   }
 
   // ── Concurrent interventions (GP-0 note, §3.5/§3.8) ──────────────────────────
-  const concurrentChanges = buildConcurrentChanges(input, scope, startDayNum, bucketIndexOfDay)
+  const concurrentChanges = buildConcurrentChanges(
+    input,
+    scope,
+    startDayNum,
+    bucketIndexOfDay,
+    unlinkedMedications,
+  )
 
   // ── Safety flags (§3.1 order; §5.3 empty when none) ──────────────────────────
   const safetyFlags: SafetyFlag[] = []
@@ -3272,6 +3278,26 @@ function buildConcurrentChanges(
   scope: ReportScope,
   startDayNum: number,
   bucketIndexOfDay: (dn: number) => number,
+  /**
+   * §3.8's orphan doses — a drug the owner logged with no configured regimen. Added at
+   * B-417 PR 7 round 3, because the `vet-report-cold-read` caught the two sources
+   * disagreeing on its own artifact: §7.2 named *"Apoquel, afoxolaner (NexGard)
+   * overlapped the trial"* while "Reading the trend", eight lines below and attached to
+   * the chart the vet is actually looking at, asserted **"One change overlaps this
+   * window"**. NexGard had no regimen row, so it never reached this function at all.
+   *
+   * The general case inverts into a FALSE CLEAN READ on confounding: a patient whose
+   * ONLY overlapping intervention is an ad-hoc course gets a trend block saying no
+   * change overlaps — in the block a vet trusts precisely because it counts. And the
+   * omitted class is not marginal: it is exactly where a mid-trial isoxazoline lands,
+   * which for a pruritus endpoint is arguably a larger confound than the antipruritic
+   * (flea-allergy dermatitis and sarcoptic mange are the leading differentials, so
+   * starting one can resolve itching entirely independent of diet).
+   *
+   * Its span is first dose → last dose, which is all the record supports and is the same
+   * span the trial block uses — so the two now share one notion of "what overlapped".
+   */
+  unlinkedMedications: readonly UnlinkedMedicationGroup[] = [],
 ): ConcurrentChange[] {
   const out: ConcurrentChange[] = []
   // An intervention is a concurrent confounder if its ACTIVE SPAN overlaps the window at
@@ -3316,6 +3342,12 @@ function buildConcurrentChanges(
   }
   for (const m of input.medications) {
     consider(m.isPrescription === false ? 'supplement' : 'medication', m.drugName, m.startedAt, m.endedAt)
+  }
+  for (const u of unlinkedMedications) {
+    // `lastDate` is the last dose IN WINDOW, so an ongoing ad-hoc course reads as
+    // ending at its last logged dose rather than running open-ended. That is the
+    // honest direction for a dose-derived span: the record ends where the logging does.
+    consider(u.isSupplement ? 'supplement' : 'medication', u.drugName, u.firstDate, u.lastDate)
   }
   for (const a of input.feedingArrangements) {
     // A free-fed arrangement's `activeFrom` is WHEN THE OWNER FIRST LOGGED THE FOOD in the app,
