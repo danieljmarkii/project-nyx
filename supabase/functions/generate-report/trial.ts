@@ -44,11 +44,15 @@ import {
   classifyFeeding,
   computeTrialFacts,
   dayIndexOf,
+  feedingWasFinished,
   interpretabilityStatement,
   isWithinChallengeWindow,
   mayClaimAllMatched,
   trialFoodKey,
   CHALLENGE_WINDOW_DAYS,
+  REFUSAL_MIN_DAYS,
+  REFUSAL_MIN_RATED,
+  REFUSAL_SHARE,
   type AllowedFood,
   type AntigenTallyEntry,
   type ContaminationFact,
@@ -65,6 +69,19 @@ export type { ContaminationFact } from '../../../lib/dietTrial.ts'
 import { localDayIndexOf } from '../../../lib/utils.ts'
 
 const MS_PER_DAY = 86_400_000
+
+/**
+ * #7's floor: how many classifiable in-range feedings make "the primary diet permitted
+ * none of them" evidence of a cold cache rather than of a genuinely all-off-diet trial.
+ *
+ * Deliberately low and deliberately NOT clinical. It is an arithmetic statement about
+ * the plausibility of a JOIN, not about a pet: an owner who logged ten feedings inside
+ * a trial fed the prescribed diet at least once. Below it the honest answer is that we
+ * cannot tell, and the block withholds the claim either way — so the number only decides
+ * whether the report SAYS "no allowed-food list is recorded" or stays quiet, never
+ * whether an exposure is counted.
+ */
+const UNHYDRATED_SET_FLOOR = 10
 
 // ── Narrow input shapes (structurally satisfied by report.ts's rows) ─────────
 
@@ -218,6 +235,19 @@ export interface TrialExposure {
    * re-derived by whichever surface draws them next.
    */
   symptomInChallengeWindow: boolean
+  /**
+   * #6 — rung 3 fires for TWO different reasons and the copy asserted only one.
+   * `off_diet_unrecognised` means "not on the list", and that is reached both when no
+   * ingredient panel was ever captured AND when the panel WAS read and carried nothing
+   * unsanctioned. The adversarial pass produced the contradiction from §5.4's own
+   * premise: an owner re-photographs the bag, extraction mints a duplicate row, and
+   * Appendix C rendered `Not on the trial's list; ingredients not read | Soy | ×23` —
+   * the cell saying the ingredients were not read, beside the protein that was read,
+   * for 23 feedings of the prescribed diet. That is this PR's own new AC ("every
+   * caption is checked against the code beneath it") failing inside the PR that added
+   * it, and it hides the duplicate the vet most needs to spot.
+   */
+  panelWasRead: boolean
 }
 
 export interface TrialBlock {
@@ -304,6 +334,27 @@ export interface TrialBlock {
   arrangementExposures: Array<{ label: string | null }>
   contamination: ContaminationFact[]
   trialDietRefusal: TrialDietRefusal | null
+  /**
+   * THE SAME FACT, OVER THE WHOLE RANGE — because a report is a history and PR 5's
+   * `trialDietRefusal` is a now-fact.
+   *
+   * `REFUSAL_WINDOW_DAYS = 14` is a recency bound, and it is right for the CARD: it
+   * exists so a wobble during the transition week cannot latch the card into a
+   * viability state for the remaining fifty days. Consumed by a REPORT it silently
+   * changes meaning. The adversarial pass produced it: a cat that refused every bowl
+   * for days 1–21 of a 42-day trial and then ate normally rendered `84 feedings in
+   * total — 64 matched, 20 did not` plus *"supports interpreting it"*, with the word
+   * "refused" appearing nowhere in the trial block — and `weightDuringTrial`, which
+   * only renders inside the refusal branch, vanished with it.
+   *
+   * That directly violates this PR's own rule: an adherence figure of ANY shape reads
+   * a diet that went uneaten as one that was followed. The rule was being enforced
+   * for 14 days out of a 56-day document.
+   *
+   * Same floors, same `feedingWasFinished` predicate — only the window differs, so
+   * there is one definition of "not being eaten" and two windows over it, each named.
+   */
+  rangeRefusal: TrialDietRefusal | null
   /** PR 3's token. `refused` is load-bearing: §4.3 routes it to the intake-decline
    *  HEALTH lane and forbids rendering it as a compliance outcome. */
   stoppedReason: string | null
@@ -343,7 +394,7 @@ export function selectReportTrial<T extends TrialSource>(
   endedGraceDays = 14,
 ): T | null {
   let best: T | null = null
-  let bestKey: [number, number] = [-1, -Infinity]
+  let bestKey: [number, number, string] = [-1, -Infinity, '']
   for (const t of trials) {
     const startDn = dayIndexOfValue(t.startedAt, timeZone)
     if (startDn === null) continue
@@ -358,8 +409,15 @@ export function selectReportTrial<T extends TrialSource>(
     // monitoring: the trial describes three of the report's thirteen weeks. The
     // report belongs to a trial that is running, or one that has only just stopped.
     if (t.status !== 'active' && (endDn === null || window.endDayNum - endDn > endedGraceDays)) continue
-    const key: [number, number] = [t.status === 'active' ? 1 : 0, startDn]
-    if (key[0] > bestKey[0] || (key[0] === bestKey[0] && key[1] > bestKey[1])) {
+    // Ties break on `id`, matching `resolveScope` rung 2 — the query has no ORDER BY,
+    // so two ended trials with the same start otherwise resolve by array order and the
+    // report flips on a re-order (the B-188 shape, and the pair must not disagree).
+    const key: [number, number, string] = [t.status === 'active' ? 1 : 0, startDn, t.id]
+    if (
+      key[0] > bestKey[0] ||
+      (key[0] === bestKey[0] && key[1] > bestKey[1]) ||
+      (key[0] === bestKey[0] && key[1] === bestKey[1] && key[2] > bestKey[2])
+    ) {
       best = t
       bestKey = key
     }
@@ -388,9 +446,9 @@ export interface BuildTrialBlockArgs {
   medicationItems: readonly TrialMedItemSource[]
   medications: readonly TrialMedicationSource[]
   arrangements: readonly TrialArrangementSource[]
-  /** Local-day indices of every logged event in the window (any type) — the C5
-   *  density denominator's numerator. */
-  loggedDayIndices: readonly number[]
+  /** Local-day indices of days carrying a NON-MEAL event — the C5 density
+   *  numerator. Deliberately not "any event": see `loggingDensity`. */
+  discretionaryLoggedDayIndices: readonly number[]
   /** Local-day indices of every in-window symptom event. */
   symptomDayIndices: readonly number[]
   scope: { startDate: string; endDate: string; endDayNum: number }
@@ -421,6 +479,25 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   const doses = mapDoses(args.doses, args.medicationItems, args.eventsById)
   const arrangements = args.arrangements
     .filter((a) => a.method === 'free_choice')
+    // OVERLAP THE TRIAL, not merely exist. `arrangementExposures` never reads
+    // `endedAt`, so a bowl removed eight days BEFORE the trial started — or set down
+    // after it ended — rendered "available alongside the trial — continuously" and
+    // drove §7.2's "exclusive feeding cannot be established at any coverage". Worse,
+    // `report.ts` date-filters these same rows for `DietSummary.freeFed`, so one
+    // document said zero free-fed arrangements in the Diet section and a continuous
+    // off-list bowl in the trial block. Filtered HERE rather than in the shared
+    // predicate: the trial's window is the report's business, not the predicate's.
+    .filter((a) => {
+      const from = dayIndexOfValue(a.activeFrom, timeZone)
+      const until = dayIndexOfValue(a.activeUntil, timeZone)
+      // A null `activeFrom` is a standing bowl of unrecorded origin (B-233) — treat
+      // it as present from before the trial, which is the whole point of that null.
+      const spanStart = from ?? -Infinity
+      const spanEnd = until ?? Infinity
+      const trialStart = ctx.startDayIndex as number
+      const trialEnd = ctx.endDayIndex ?? localDayIndexOf(new Date(args.nowMs).toISOString(), tz) ?? trialStart
+      return spanStart <= trialEnd && spanEnd >= trialStart
+    })
     .map((a) => ({
       foodItemId: a.foodItemId,
       // Arrangements carry no brand/product on this input, so identity is the id
@@ -465,7 +542,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
   // A `primary_diet` row is required, not merely a row: the sanctioned protein set
   // (rung 2's comparator) is built from those alone, and a trial whose only rows
   // are permitted extras has nothing to define the diet with.
-  const allowedSetUnavailable = !allowedFoods.some((f) => f.role === 'primary_diet')
+  const hasPrimary = allowedFoods.some((f) => f.role === 'primary_diet')
 
   const { startDayIndex, endDayIndex } = facts.range
   const inRange = (dn: number | null): dn is number =>
@@ -502,9 +579,34 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       // midnight on the report's clock — never a UTC epoch-day, which is the
       // two-day disagreement B-421 exists to kill.
       symptomInChallengeWindow: symptomDays.some((sd) => isWithinChallengeWindow(dn, sd, species)),
+      // A non-empty captured array IS the panel having been read — the same signal
+      // rung 2 keys on. Empty means nothing to say; non-empty and still rung 3 means
+      // "read, and nothing in it is outside the trial diet", which is a different
+      // sentence and a much more interesting one.
+      panelWasRead: (e.meal.proteins ?? []).length > 0,
     })
   }
   exposures.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.eventId.localeCompare(b.eventId))
+
+  // #7 — THE RECONCILIATION GUARD the `allowedSetUnavailable` comment already
+  // promised and did not implement. It tested only "is there a `primary_diet` row",
+  // while claiming to cover the "empty OR half-hydrated set" case where 40 feedings of
+  // the PRESCRIBED diet render as "0 matched, 40 did not". With a thin food join —
+  // the exact state `mapAllowedFoods` documents with `foodKey: null` — the adversarial
+  // pass got `154 / 154 Feedings not matched to the trial diet` and §7.2 "supports
+  // interpreting it".
+  //
+  // The cheapest possible guard is the one `permittedFoods` had already computed and
+  // thrown away: if a `primary_diet` row exists and permitted NONE of a substantial
+  // number of feedings, the set did not hydrate — because an owner who logged dozens
+  // of feedings on a trial fed the trial diet at least once. It cannot mistake a real
+  // finding for a cold cache: a real all-off-diet trial still has its feedings in
+  // Appendix C, and what is withheld is the CLAIM, never the record.
+  const primaryPermitted = allowedFoods
+    .filter((f) => f.role === 'primary_diet')
+    .reduce((n, f) => n + (permittedCounts.get(allowedRowKey(f)) ?? 0), 0)
+  const allowedSetUnavailable =
+    !hasPrimary || (primaryPermitted === 0 && facts.exposures.totalFeedings >= UNHYDRATED_SET_FLOOR)
 
   const permittedFoods: TrialPermittedFood[] = allowedFoods
     .map((f) => ({
@@ -521,6 +623,35 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       (a, b) =>
         roleOrder(a.role) - roleOrder(b.role) || b.feedings - a.feedings || a.label.localeCompare(b.label),
     )
+
+  // #2's computation. Reuses PR 5's exported floors and its `feedingWasFinished`
+  // predicate so the two windows cannot disagree about what "not eaten" means; the
+  // 12h episode guard is deliberately dropped here, because over a whole trial the
+  // midnight-straddle artefact it protects against is not the failure mode — a
+  // multi-week refusal is.
+  let rangeRated = 0
+  let rangeNotFinished = 0
+  const rangeRefusedDays = new Set<number>()
+  for (const e of args.meals) {
+    if (!e.meal) continue
+    const dn = dayIndexOf(ctx, e.occurredAt)
+    if (!inRange(dn)) continue
+    const cls = classifyFeeding(ctx, toTrialFeeding(e))
+    if (cls.role !== 'primary_diet') continue
+    const finished = feedingWasFinished(e.meal.intakeRating)
+    if (finished === null) continue
+    rangeRated += 1
+    if (!finished) {
+      rangeNotFinished += 1
+      rangeRefusedDays.add(dn)
+    }
+  }
+  const rangeRefusal: TrialDietRefusal | null =
+    rangeRated >= REFUSAL_MIN_RATED &&
+    rangeRefusedDays.size >= REFUSAL_MIN_DAYS &&
+    rangeNotFinished / rangeRated >= REFUSAL_SHARE
+      ? { refusedFeedings: rangeNotFinished, ratedFeedings: rangeRated, days: rangeRefusedDays.size }
+      : null
 
   const dayCounter = Math.max(1, endDayIndex - ctx.startDayIndex + 1)
   const target = trial.targetDurationDays > 0 ? trial.targetDurationDays : 0
@@ -565,12 +696,30 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
     mayStateRecordClean:
       mayClaimAllMatched(facts) &&
       !allowedSetUnavailable &&
-      !facts.belowCoverageFloor &&
-      trial.stoppedReason !== 'refused',
+      // INTERPRETABILITY, NOT JUST THE FLOOR. `belowCoverageFloor` is
+      // `interpretability === 'does_not_support'` and nothing else, so `not_yet` —
+      // the state PR 5's own docstring calls "two-sided: Culprit may neither claim a
+      // clean trial NOR raise an absence-based alarm" — sailed straight through all
+      // three renderers. The adversarial pass proved it on THIS PR's own fixture:
+      // day 3 of 56 rendered "all 3 matched the trial diet or a permitted food" while
+      // the interpretability callout stayed deliberately silent, and the test asserted
+      // the silence by checking only that the callout was absent — the page spoke two
+      // rows above where the test looked.
+      //
+      // The clipped-range case is why this matters beyond a young trial: a week-6
+      // recheck two days before the report clips the range to 3 of 46 days, so the
+      // page read "day 46 of 56" beside "All matched" while four real exposures
+      // (table chicken ×2, a rival kibble) appeared NOWHERE on the document. The
+      // recheck is exactly when this report gets sent.
+      (facts.interpretability === 'supports' || facts.interpretability === 'partially_supports') &&
+      trial.stoppedReason !== 'refused' &&
+      // #2 — the report is a HISTORY, and PR 5's refusal fact is a now-fact.
+      rangeRefusal === null,
     oralRoute: facts.oralRoute,
     arrangementExposures: facts.arrangementExposures.map((a) => ({ label: a.label })),
     contamination: facts.contamination,
     trialDietRefusal: facts.trialDietRefusal,
+    rangeRefusal,
     stoppedReason: trial.stoppedReason ?? null,
     outcome: trial.outcome ?? null,
     outcomeNotes: trial.outcomeNotes ?? null,
@@ -581,7 +730,7 @@ export function buildTrialBlock(args: BuildTrialBlockArgs): TrialBlock | null {
       args.scope.endDayNum,
       timeZone,
     ),
-    loggingDensity: loggingDensity(args.loggedDayIndices, startDayIndex, endDayIndex),
+    loggingDensity: loggingDensity(args.discretionaryLoggedDayIndices, startDayIndex, endDayIndex),
     challengeWindowDays: CHALLENGE_WINDOW_DAYS[species],
   }
 }
@@ -799,6 +948,23 @@ export function looksAntibacterial(drugName: string): boolean {
 
 /** C5's disclosure. Split at the range midpoint, the same first-half/last-half
  *  shape the symptom delta uses, so the two are read against each other. */
+/**
+ * C5's disclosure, and the denominator is the whole design.
+ *
+ * IT COUNTS DISCRETIONARY LOGGING, NOT ANY LOG. Denominating on every event was the
+ * adversarial pass's fourth break, and it inverted the mechanism into its opposite:
+ * on a diet trial, meal logging is habitual and app-prompted, so it saturates the
+ * denominator — a 42-day trial with meals logged twice daily and an itch count
+ * collapsing 12 → 1 rendered "Logging held up across the trial, so a change in
+ * symptom counts is not explained by a change in how often anything was logged."
+ * That is the report affirmatively certifying the exact artefact C5 exists to
+ * disclose, on the modal tiring owner, in the direction that ends a trial early.
+ *
+ * So the caller passes days carrying a NON-MEAL event — the logging an owner has to
+ * choose to do. When the only discretionary logging IS the symptom stream the
+ * measure becomes partly circular, and that is accepted deliberately: the circular
+ * direction is toward CAVEATING a fall, never toward certifying one.
+ */
 function loggingDensity(
   loggedDayIndices: readonly number[],
   startDayIndex: number,

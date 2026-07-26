@@ -105,6 +105,7 @@ export function trialBlockFixture(
     arrangementExposures: [],
     contamination: [],
     trialDietRefusal: null,
+    rangeRefusal: null,
     stoppedReason: null,
     outcome: null,
     outcomeNotes: null,

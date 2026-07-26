@@ -623,7 +623,15 @@ export function resolveScope(input: ReportInput): ReportScope {
   //      needs. The trial's own facts are unaffected: §5.1's overlap range opens at
   //      `max(scope start, trial start)`, so nothing before day 1 is ever counted
   //      as trial coverage or as an exposure.
-  let trialStart: string | null = null
+  // RANK EXACTLY AS `selectReportTrial` DOES. The two used different orders — this
+  // one max-start-only, that one active-first-then-max-start — and the adversarial
+  // pass produced the divergence from a real input: an abandoned trial that ran
+  // 20–28 Jun alongside an ACTIVE trial started 29 Jun but back-dated to 1 Jun (the
+  // car-park case PR 3 supports) anchored the window on the abandoned one while the
+  // block described the active one, so the abandoned trial's feedings were scored
+  // against the active trial's allowed list. Ties break on `id`, because the query
+  // carries no ORDER BY and array order is not a decision (the B-188 shape).
+  let best: { startedAt: string; rank: number; startNum: number; id: string } | null = null
   for (const t of input.dietTrials) {
     const tNum = dayNumber(t.startedAt)
     if (tNum === null) continue
@@ -634,8 +642,17 @@ export function resolveScope(input: ReportInput): ReportScope {
       // than anchor on a trial that may have finished a year ago.
       if (endNum === null || todayNum - endNum > TRIAL_ANCHOR_GRACE_DAYS) continue
     }
-    if (trialStart === null || tNum > (dayNumber(trialStart) ?? -Infinity)) trialStart = t.startedAt
+    const cand = { startedAt: t.startedAt, rank: t.status === 'active' ? 1 : 0, startNum: tNum, id: t.id }
+    if (
+      best === null ||
+      cand.rank > best.rank ||
+      (cand.rank === best.rank && cand.startNum > best.startNum) ||
+      (cand.rank === best.rank && cand.startNum === best.startNum && cand.id > best.id)
+    ) {
+      best = cand
+    }
   }
+  const trialStart: string | null = best?.startedAt ?? null
   if (trialStart !== null) {
     const anchored = Math.min(dayNumber(trialStart) as number, todayNum)
     const startNum = Math.min(anchored, todayNum - (MIN_TRIAL_SCOPE_DAYS - 1))
@@ -1348,6 +1365,9 @@ export interface ConfounderExposure {
   /** A symptom was logged inside the species' forward challenge window after this
    *  feeding. TIMING ONLY — never a cause, never an attribution (see `TrialExposure`). */
   symptomInChallengeWindow?: boolean
+  /** The food's ingredient panel WAS captured, so a rung-3 verdict means "read, and
+   *  nothing in it is outside the trial diet" rather than "we never looked". */
+  panelWasRead?: boolean
 }
 
 /**
@@ -2461,7 +2481,20 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
           })),
         ],
         arrangements: input.feedingArrangements,
-        loggedDayIndices: [...loggedDayNums],
+        // NON-MEAL days only (§C5, and the adversarial pass's fourth break). Meal
+        // logging on a diet trial is habitual and app-prompted, so it saturates the
+        // denominator and turns the attention-decay disclosure into its opposite —
+        // the report certifying that a 12→1 symptom collapse is not a logging
+        // artefact, on the modal tiring owner. What C5 is measuring is the logging an
+        // owner CHOOSES to do.
+        discretionaryLoggedDayIndices: [
+          ...new Set(
+            windowEvents
+              .filter((e) => e.type !== 'meal')
+              .map((e) => eventDayNumber(e.occurredAt, tz))
+              .filter((dn): dn is number => dn !== null),
+          ),
+        ],
         symptomDayIndices: windowEvents
           .filter((e) => REPORT_SYMPTOM_SET.has(e.type))
           .map((e) => eventDayNumber(e.occurredAt, tz))
@@ -2701,6 +2734,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       rung: x ? (x.classification.rung === 'derived_protein' ? 'derived_protein' : 'unrecognised') : null,
       antigens: x?.classification.antigens ?? [],
       symptomInChallengeWindow: x?.symptomInChallengeWindow ?? false,
+      panelWasRead: x?.panelWasRead ?? false,
     }
   })
   // Tally by the CANONICAL key (B-052): "chicken", "Chicken" and "Chicken By-Product Meal"

@@ -821,7 +821,7 @@ Deno.test('the challenge window is 7 days for a cat, 14 for a dog (Olivry & Muel
     medicationItems: [],
     medications: [],
     arrangements: [],
-    loggedDayIndices: [],
+    discretionaryLoggedDayIndices: [],
     symptomDayIndices: [],
     scope: { startDate: '2026-06-01', endDate: '2026-07-02', endDayNum: 20637 },
     nowMs: Date.parse(NOW),
@@ -1072,7 +1072,10 @@ Deno.test('a refused trial COMPOSES the refusal with the weight change, as % of 
   ]
   const text = plain(renderReport(assembleReport(input)))
   assert.ok(/Weight fell 4.4 → 4.1 kg/.test(text))
-  assert.ok(/6.8% of body weight/.test(text))
+  // "about 7%", not "6.8%". One 0.1 kg tick is a single scale increment, so a decimal
+  // percent claims a resolution an owner's home scale does not have (#10b).
+  assert.ok(/about 7% of body weight/.test(text))
+  assert.ok(!/6\.8% of body weight/.test(text))
   assert.ok(/Refusal of food is a clinical finding in its own right/.test(text))
   // Still not an escalation: no safety flag is fabricated here.
   assert.ok(!/flags for review/i.test(text.slice(0, text.indexOf('Diet trial'))))
@@ -1130,4 +1133,214 @@ Deno.test('an ad-hoc course with NO regimen still reaches "Reading the trend" (r
   // The two sources now agree about what overlapped.
   assert.ok(/NexGard/.test(text.slice(text.indexOf('Reading the trend'), text.indexOf('Reading the trend') + 500)))
   assert.ok(!/One change overlaps this window/.test(text), 'two changes overlap, and both are named')
+})
+
+// ── The adversarial pass's ten breaks, each with the input that produced it ───
+
+Deno.test('#1 — the `not_yet` state may not affirm a clean record (the PR\u2019s own fixture)', () => {
+  // `belowCoverageFloor` is `interpretability === 'does_not_support'` and nothing else,
+  // so `not_yet` sailed through all three renderers: day 3 of 56 rendered "all 3
+  // matched the trial diet or a permitted food" while the interpretability callout
+  // stayed deliberately silent — and the test that asserted that silence checked only
+  // for the callout, while the page spoke two rows above where it looked.
+  const input = baseInput({
+    events: days('2026-06-30', '2026-07-02').map((d) => meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] })),
+    dietTrials: [
+      { id: 't', foodItemId: 'f-hp', startedAt: '2026-06-30', targetDurationDays: 56, status: 'active', completedAt: null, endedAt: null, vetName: null, foodLabel: 'HP', allowedFoods: [{ ...TRIAL_FOOD, allowedFrom: '2026-06-30' }] },
+    ],
+  })
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.interpretability, 'not_yet')
+  assert.equal(snap.trial?.mayStateRecordClean, false, 'the one gate all three renderers ask')
+  const text = plain(renderReport(snap))
+  assert.ok(!/all 3 matched/.test(text))
+  assert.ok(!/All matched the trial diet or a permitted food/.test(text))
+})
+
+Deno.test('#1b — a recheck-clipped range cannot read as a clean elimination', () => {
+  // The clipped case is why this matters beyond a young trial: a week-6 recheck two
+  // days before the report clips the range to 3 of 46 days, so the page read "day 46
+  // of 56" beside "All matched" while the trial's real exposures sat outside the
+  // clipped range and appeared NOWHERE on the document. The recheck is exactly when
+  // this report gets sent.
+  const input = wellLoggedTrialInput({
+    vetVisits: [{ visitedAt: '2026-06-30', clinicName: 'C', vetName: 'Dr. Chen', reason: 'week-6 recheck' }],
+  })
+  input.events.push(meal({ date: '2026-06-14', time: '19:00:00', brand: 'Home', product: 'Roast chicken', foodItemId: 'f-hf', foodType: 'other', proteins: ['chicken'] }))
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.interpretability, 'not_yet', '3 days of range is under MIN_INTERPRETABLE_DAYS')
+  const text = plain(renderReport(snap))
+  assert.ok(!/All matched/.test(text))
+  assert.ok(!/all 9 matched/.test(text))
+})
+
+Deno.test('#2 — a refusal that ended before the recency bound still suppresses adherence', () => {
+  // PR 5's `REFUSAL_WINDOW_DAYS = 14` is a how-is-the-pet-NOW bound and is right for
+  // the card. Consumed by a REPORT it silently changed meaning: a cat that refused
+  // every bowl for days 1–21 of a 42-day trial and then ate normally rendered "64
+  // matched, 20 did not" + "supports interpreting it", with the word "refused" nowhere
+  // in the block. The rule was being enforced for 14 days out of a 56-day document.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].targetDurationDays = 42
+  for (const d of days('2026-06-01', '2026-06-21')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+    input.events.push(meal({ date: d, time: '18:00:00', brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  for (const d of days('2026-06-22', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'all' }))
+  }
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.trialDietRefusal, null, 'PR 5\u2019s now-fact is correctly quiet')
+  assert.ok(snap.trial?.rangeRefusal, 'the report\u2019s history-fact is not')
+  assert.equal(snap.trial?.mayStateRecordClean, false)
+  const text = plain(renderReport(snap))
+  assert.ok(/logged as refused/.test(text))
+  assert.ok(/A diet that was not eaten cannot be read as one that was followed/.test(text))
+  assert.ok(!/matched, \d+ did not/.test(text), 'an adherence figure of ANY shape is suppressed')
+})
+
+Deno.test('#3 — habitual meal logs must not saturate the C5 density denominator', () => {
+  // Denominating on ANY event inverted the mechanism: meals logged twice daily every
+  // day of a 42-day trial with an itch count collapsing 12 → 1 rendered "Logging held
+  // up across the trial, so a change in symptom counts is not explained by a change in
+  // how often anything was logged" — the report certifying the artefact C5 exists to
+  // disclose, in the direction that ends a trial early.
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-01', '2026-07-02')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+    input.events.push(meal({ date: d, time: '18:00:00', brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  for (const d of days('2026-06-01', '2026-06-12')) input.events.push(symptom(d))
+  input.events.push(symptom('2026-06-30'))
+  const snap = assembleReport(input)
+  const d = snap.trial!.loggingDensity!
+  assert.ok(d.firstHalf.daysLogged > d.lastHalf.daysLogged, 'discretionary logging fell')
+  assert.equal(d.loggingFell, true)
+  const text = plain(renderReport(snap))
+  assert.ok(!/is not explained by a change in how often anything was logged/.test(text))
+  assert.ok(/cannot be separated from the fall in logging/.test(text))
+})
+
+Deno.test('#4 — a window-scoped human-food count never sits under the trial\u2019s definition', () => {
+  // A 91-day window whose four table-chicken feedings all PREDATE the trial rendered
+  // "Human food on 4 days — the #1 diet-trial confounder" under a heading that had
+  // just declared the trial's allowed list to be the definition, beside a tile reading
+  // "All matched", pointing at an empty Appendix C. It fabricated four contaminations
+  // and blamed the owner for them (§6.9).
+  const input = wellLoggedTrialInput({
+    vetVisits: [{ visitedAt: '2026-05-01', clinicName: 'C', vetName: null, reason: 'consult' }],
+  })
+  for (const d of ['2026-05-10', '2026-05-12', '2026-05-14', '2026-05-16']) {
+    input.events.push(meal({ date: d, time: '19:00:00', brand: 'Home', product: 'Roast chicken', foodItemId: 'f-hf', foodType: 'other', proteins: ['chicken'] }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Defined by this trial\u2019s allowed list/.test(text))
+  assert.ok(!/the #1 diet-trial confounder/.test(text))
+  assert.ok(!/Human food on 4 days/.test(text))
+})
+
+Deno.test('#5 — a free-fed bowl outside the trial is not "available alongside" it', () => {
+  // `arrangementExposures` never read `endedAt`, so a bowl removed eight days BEFORE
+  // the trial rendered "available alongside the trial — continuously" and drove §7.2's
+  // "exclusive feeding cannot be established at any coverage" — while `report.ts`
+  // date-filtered the same rows for `DietSummary.freeFed`, so one document said zero
+  // free-fed arrangements in the Diet section and a continuous off-list bowl above it.
+  const input = wellLoggedTrialInput({
+    feedingArrangements: [
+      { id: 'a', foodItemId: 'f-old', method: 'free_choice', activeFrom: '2026-04-01', activeUntil: '2026-05-24', isShared: false, primaryProtein: 'chicken', proteins: ['chicken'], foodLabel: 'Purina ONE' },
+    ],
+  })
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.arrangementExposures.length, 0)
+  const text = plain(renderReport(snap))
+  assert.ok(!/A free-fed bowl of Purina ONE/.test(text))
+  assert.ok(!/exclusive feeding cannot be established/.test(text))
+})
+
+Deno.test('#6 — rung 3 distinguishes "never read" from "read, nothing unsanctioned"', () => {
+  // §5.4's own premise: the owner re-photographs the bag, extraction mints a duplicate
+  // row, and Appendix C rendered "Not on the trial's list; ingredients not read | Soy"
+  // — the cell saying the ingredients were not read, beside the protein that was read,
+  // for feedings of the PRESCRIBED diet. This PR's own new AC, failing inside it.
+  const input = wellLoggedTrialInput()
+  for (const d of days('2026-06-20', '2026-06-27')) {
+    input.events.push(meal({ date: d, time: '19:00:00', brand: 'Royal Canin', product: 'Hydrolyzed Protein HP 2kg', foodItemId: 'f-hp-dup', proteins: ['soy'], ingredientsNotes: 'Hydrolysed soy protein isolate, rice' }))
+  }
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/its label carries nothing the trial diet does not/.test(text))
+  assert.ok(!/ingredients not read/.test(text))
+})
+
+Deno.test('#7 — a primary diet that permitted NOTHING reads as an un-hydrated set', () => {
+  // `allowedSetUnavailable` tested only "is there a primary_diet row" while its comment
+  // claimed to cover the half-hydrated case where 40 feedings of the PRESCRIBED diet
+  // render "0 matched, 40 did not". With a thin join the pass got "154 / 154 Feedings
+  // not matched to the trial diet" and §7.2 "supports interpreting it".
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    { ...TRIAL_FOOD, foodItemId: 'f-stale', brand: null, productName: null, proteins: null, primaryProtein: null },
+  ]
+  const snap = assembleReport(input)
+  assert.equal(snap.trial?.allowedSetUnavailable, true)
+  const text = plain(renderReport(snap))
+  assert.ok(/No allowed-food list is recorded for this trial/.test(text))
+  assert.ok(!/0 matched/.test(text))
+  // the adherence sentence in any shape — not the bare words, which the symptom
+  // empty state and the appendix-D provenance note both use legitimately
+  assert.ok(!/matched, \d+ did not/.test(text))
+  assert.ok(!/not matched to the trial diet/.test(text))
+})
+
+Deno.test('#8 — the floored window says so instead of claiming the trial start', () => {
+  // "Scoped to since diet-trial start (Jun 5 – Jul 2)" for a trial that started Jun 30.
+  // MIN_TRIAL_SCOPE_DAYS was undisclosed and the label false on every trial under 28 days.
+  const input = baseInput({
+    dietTrials: [
+      { id: 't', foodItemId: 'f-hp', startedAt: '2026-06-30', targetDurationDays: 56, status: 'active', completedAt: null, endedAt: null, vetName: null, foodLabel: 'HP', allowedFoods: [{ ...TRIAL_FOOD, allowedFrom: '2026-06-30' }] },
+    ],
+  })
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Diet trial, extended back for pre-trial baseline/.test(text))
+  assert.ok(!/Since diet-trial start/.test(text))
+})
+
+Deno.test('#9 — window and block agree on WHICH trial, deterministically', () => {
+  // The two ranked differently — rung 2 max-start-only, `selectReportTrial`
+  // active-first — so an abandoned 20–28 Jun trial anchored the window while the block
+  // described an ACTIVE trial back-dated to 1 Jun, and the abandoned trial's feedings
+  // were scored against the active trial's allowed list.
+  const input = wellLoggedTrialInput()
+  input.dietTrials = [
+    { id: 'ended', foodItemId: null, startedAt: '2026-06-20', targetDurationDays: 28, status: 'abandoned', completedAt: null, endedAt: '2026-06-28', vetName: null, foodLabel: 'Old' },
+    { ...input.dietTrials[0], id: 'active', startedAt: '2026-06-01' },
+  ]
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.trialStartDate, '2026-06-01', 'the window anchors on the ACTIVE trial')
+  assert.equal(snap.trial?.id, 'active', 'and the block describes the same one')
+  // Deterministic tie-break: same start, resolved on id rather than array order.
+  const tie = { startDayNum: 20500, endDayNum: 20637 }
+  const a = [{ id: 'aaa', startedAt: '2026-06-01', targetDurationDays: 28, status: 'completed', completedAt: '2026-06-28', endedAt: '2026-06-28', vetName: null },
+             { id: 'zzz', startedAt: '2026-06-01', targetDurationDays: 28, status: 'completed', completedAt: '2026-06-28', endedAt: '2026-06-28', vetName: null }]
+  assert.equal(selectReportTrial(a, tie, TZ, 999)?.id, selectReportTrial([...a].reverse(), tie, TZ, 999)?.id)
+})
+
+Deno.test('#10a — the weight sentence is dropped when its span is not inside the trial', () => {
+  // "Weight fell 4.6 → 4.1 kg over May 21 – Jun 19 — 10.9% of body weight" rendered as
+  // the refusal's companion fact on a trial that ran 10–19 Jun, with 20 of the 29 days
+  // of loss predating it entirely.
+  const input = wellLoggedTrialInput({ events: [] })
+  input.dietTrials[0].status = 'abandoned'
+  input.dietTrials[0].endedAt = '2026-06-19'
+  input.dietTrials[0].completedAt = null
+  for (const d of days('2026-06-10', '2026-06-19')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+    input.events.push(meal({ date: d, time: '18:00:00', brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  input.weightChecks = [
+    { eventId: 'w1', weightKg: 4.6, occurredAt: at('2026-05-21', '15:00:00') },
+    { eventId: 'w2', weightKg: 4.1, occurredAt: at('2026-06-19', '15:00:00') },
+  ]
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/logged as refused/.test(text), 'the refusal still leads')
+  assert.ok(!/of body weight/.test(text), 'but a pre-trial loss is not offered as trial evidence')
 })

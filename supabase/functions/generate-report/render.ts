@@ -864,7 +864,15 @@ function scopeBasisLabel(scope: ScopeInfo): string {
     case 'since_visit':
       return 'Since last vet visit'
     case 'diet_trial':
-      return 'Since diet-trial start'
+      // #8 — TELL THE TRUTH WHEN THE FLOOR MOVED IT. `MIN_TRIAL_SCOPE_DAYS` extends
+      // the window backwards so a trial started today does not collapse the report to
+      // one day (B-423), which means the label is false on every trial younger than
+      // 28 days: the adversarial pass got "Scoped to since diet-trial start (Jun 5 –
+      // Jul 2)" for a trial that started Jun 30. The floor was also undisclosed, so a
+      // vet had no way to know why the window predated the intervention.
+      return scope.trialStartDate && scope.startDate < scope.trialStartDate
+        ? 'Diet trial, extended back for pre-trial baseline'
+        : 'Since diet-trial start'
     case 'fallback_90d':
       return 'Last 90 days'
     case 'custom':
@@ -1453,7 +1461,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
       'A record this sparse cannot distinguish a clean elimination from an untracked one, in either direction.',
     )
   }
-  if (t.trialDietRefusal || t.stoppedReason === 'refused') {
+  if (t.rangeRefusal || t.trialDietRefusal || t.stoppedReason === 'refused') {
     caveats.push(
       `The trial diet was largely not eaten, so this record documents a refusal rather than an elimination &mdash; the coverage figure describes how completely it was tracked, not whether the diet was fed exclusively.`,
     )
@@ -1534,24 +1542,40 @@ function dietTrialSection(snap: ReportSnapshot): string {
  * printed more precisely than the instrument justifies is its own defect.
  */
 function weightDuringTrial(snap: ReportSnapshot): string | null {
+  const t = snap.trial
   const tr = snap.weight.trend
-  if (!tr || tr.deltaKg === null || tr.readingCount < 2) return null
+  if (!t || !tr || tr.deltaKg === null || tr.readingCount < 2) return null
+  // #10a — THE SERIES IS WINDOW-SCOPED AND THIS SENTENCE IS TRIAL-SCOPED. The
+  // adversarial pass rendered "Weight fell 4.6 → 4.1 kg over May 21 – Jun 19 — 10.9%
+  // of body weight" as the refusal's companion fact on a trial that ran 10–19 Jun,
+  // with 20 of the 29 days of loss predating it entirely. A number offered as evidence
+  // about the trial has to be measured over the trial. If the span is not inside the
+  // trial's range, say nothing here — the weight tile and its trend still render the
+  // window-scoped figure, correctly labelled.
+  if (
+    !tr.earliestDate ||
+    !tr.latestDate ||
+    tr.earliestDate < t.rangeStartDate ||
+    tr.latestDate > t.rangeEndDate
+  ) {
+    return null
+  }
   const first = tr.seriesKg[0]
   if (!first || first <= 0) return null
-  const pct = Math.abs(tr.deltaKg / first) * 100
-  const dir = tr.deltaKg < 0 ? 'down' : tr.deltaKg > 0 ? 'up' : 'flat'
+  const dir = tr.deltaKg < 0 ? 'fell' : tr.deltaKg > 0 ? 'rose' : 'flat'
   if (dir === 'flat') return null
-  const from = `${first.toFixed(1)}`
-  const to = `${(first + tr.deltaKg).toFixed(1)}`
-  const span =
-    tr.earliestDate && tr.latestDate
-      ? ` over ${h(fmtRange(tr.earliestDate, tr.latestDate))}`
-      : ''
-  return `Weight ${dir === 'down' ? 'fell' : 'rose'} ${num(from)}&nbsp;&rarr;&nbsp;${num(
-    to,
-  )}&nbsp;kg${span} &mdash; <b>${num(pct.toFixed(1))}% of body weight</b> (owner home-scale readings; ${num(
-    tr.readingCount,
-  )} weigh-ins).`
+  // #10b — PRECISION THE INSTRUMENT SUPPORTS. One 0.1 kg tick on a 2.0 kg cat is a
+  // single scale increment, and rendering it bolded as "5.0% of body weight" claims a
+  // resolution the reading does not have — against this function's own docstring. A
+  // delta of one tick is dropped; the rest round to a whole percent.
+  if (Math.abs(tr.deltaKg) < 0.15) return null
+  const pct = Math.round(Math.abs(tr.deltaKg / first) * 100)
+  if (pct < 1) return null
+  return `Weight ${dir} ${num(first.toFixed(1))}&nbsp;&rarr;&nbsp;${num(
+    (first + tr.deltaKg).toFixed(1),
+  )}&nbsp;kg over ${h(fmtRange(tr.earliestDate, tr.latestDate))} &mdash; <b>about ${num(
+    pct,
+  )}% of body weight</b> (owner home-scale readings; ${num(tr.readingCount)} weigh-ins).`
 }
 
 function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string {
@@ -1594,7 +1618,10 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>, weight: stri
   //    routes a refusal to the intake-decline HEALTH lane and forbids rendering it
   //    as a compliance outcome. The exposures themselves are not suppressed; they
   //    are still itemised in appendix C, where they are a record rather than a score.
-  const refused = t.trialDietRefusal
+  // `rangeRefusal` is the whole-range fact; `trialDietRefusal` is PR 5's now-fact.
+  // The report wants the former — see the field's own note. The latter is still read,
+  // because when both are set the recent one is the sharper clinical statement.
+  const refused = t.rangeRefusal ?? t.trialDietRefusal
   if (refused || t.stoppedReason === 'refused') {
     const bits: string[] = []
     if (refused) {
@@ -2632,7 +2659,17 @@ function dietMeds(snap: ReportSnapshot): string {
       `Defined by this trial&rsquo;s allowed list &mdash; see the diet-trial block above; dates in appendix&nbsp;C.`,
     )
   }
-  if (d.humanFood.count > 0) {
+  // NOT UNDER A TRIAL-DERIVED HEADING. This count is WINDOW-scoped, and on a
+  // trial-derived report the line two above it has just declared the trial's allowed
+  // list to be the definition of off-diet. The adversarial pass produced the
+  // contradiction: a 91-day window whose four table-chicken feedings all predate the
+  // trial rendered "Human food on 4 days (4 feedings) — the #1 diet-trial confounder"
+  // beside a tile reading "All matched the trial diet or a permitted food", pointing
+  // at an Appendix C that was empty. It fabricates four contaminations, blames the
+  // owner for them (§6.9), and dangles its own cross-reference. Human food inside the
+  // trial is already in the trial's exposure count and in Appendix C; human food
+  // outside it is not this heading's business.
+  if (d.humanFood.count > 0 && !(snap.trial && !snap.trial.allowedSetUnavailable)) {
     const items = distinctLabels(d.humanFood.items, 6)
     // Trial-aware framing (adversarial finding A4): "the #1 diet-trial confounder" is the
     // B-102 wedge phrasing, but it asserts a trial. On a no-trial monitoring report it reads
@@ -2648,13 +2685,14 @@ function dietMeds(snap: ReportSnapshot): string {
     // Under a trial this is COMPOSITION, not the off-diet total — a permitted treat
     // is a treat, and counting it here as an exposure is exactly what the re-base
     // deleted. The wording says which it is.
-    offBits.push(
-      snap.trial
-        ? `${num(d.treats.count)} of the window&rsquo;s feedings were treats (${num(
-            d.treats.distinctItems,
-          )} distinct), permitted and not.`
-        : `${num(d.treats.count)} treat${d.treats.count === 1 ? '' : 's'} (${num(d.treats.distinctItems)} distinct). Dates in appendix&nbsp;C.`,
-    )
+    // Same scope mismatch as the human-food line: the count is window-wide while the
+    // heading's definition is the trial's. Dropped under a trial-derived report — the
+    // trial block carries the feeding total that the exposure count denominates on.
+    if (!(snap.trial && !snap.trial.allowedSetUnavailable)) {
+      offBits.push(
+        `${num(d.treats.count)} treat${d.treats.count === 1 ? '' : 's'} (${num(d.treats.distinctItems)} distinct). Dates in appendix&nbsp;C.`,
+      )
+    }
   }
   // The no-trial branch is retained VERBATIM (§7). On a monitoring report "none
   // logged" is a statement about a window with no elimination to invalidate; under
@@ -3278,6 +3316,9 @@ interface ConfounderRow {
   /** Any member of this row was followed by a symptom inside the species' forward
    *  challenge window. TIMING ONLY — see the footnote it renders. */
   symptomInChallengeWindow: boolean
+  /** The food's ingredient panel WAS captured. Rung 3 then means "read, and nothing
+   *  in it is outside the trial diet" — not "we never looked" (#6). */
+  panelWasRead: boolean
 }
 
 function confCategory(c: ConfounderExposure): 'human' | 'treat' | 'other' {
@@ -3309,6 +3350,7 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         lastDay: day,
         rung: c.rung ?? null,
         symptomInChallengeWindow: c.symptomInChallengeWindow ?? false,
+        panelWasRead: c.panelWasRead ?? false,
       })
       continue
     }
@@ -3331,6 +3373,7 @@ function groupConfounders(conf: ConfounderExposure[]): ConfounderRow[] {
         firstDay: day,
         lastDay: day,
         rung: c.rung ?? null,
+        panelWasRead: c.panelWasRead ?? false,
         // ANY member is enough to mark the row: the marker means "at least one of
         // these feedings was followed by a symptom in the window", and a grouped row
         // that hid that would drop the only reason a vet reads a grouped row twice.
@@ -3367,7 +3410,13 @@ function confounderRowHtml(r: ConfounderRow, markOffTrial: boolean, trialDerived
   // library) means only "not on the list, and nobody has read its ingredients" and must
   // never be read as a contaminant assertion.
   const why = trialDerived
-    ? `<td>${r.rung === 'derived_protein' ? 'Protein not in the trial diet' : 'Not on the trial&rsquo;s list; ingredients not read'}</td>`
+    ? `<td>${
+        r.rung === 'derived_protein'
+          ? 'Protein not in the trial diet'
+          : r.panelWasRead
+            ? 'Not on the trial&rsquo;s list; its label carries nothing the trial diet does not'
+            : 'Not on the trial&rsquo;s list; ingredients not read'
+      }</td>`
     : ''
   // The Protein column carries the whole captured set, not the primary alone (§9) — the
   // hidden secondary in a treat is exactly the exposure a vet is scanning this table for.
