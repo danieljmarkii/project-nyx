@@ -1,6 +1,7 @@
 import { Text, View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Check } from 'lucide-react-native';
 import { theme } from '../../constants/theme';
+import { FORMAT_LABEL } from '../../lib/food';
 
 interface Props {
   brand: string;
@@ -34,22 +35,6 @@ interface Props {
   // food" — a lie in a surface where a tap adds a food to a list and logs nothing.
   selected?: boolean;
 }
-
-// Exported so the standalone Foods-tab row (components/foods/FoodRow) renders
-// the format chip from the SAME map — one source, so a future enum addition
-// can't drift one surface's labels from the other (the B-103 class of bug).
-export const FORMAT_LABEL: Record<string, string> = {
-  dry_kibble: 'Dry',
-  wet_canned: 'Wet',
-  raw: 'Raw',
-  freeze_dried: 'Freeze-dried',
-  jerky: 'Jerky', // B-103: B-024 added jerky to the enum + pickers but missed this map (renders "… · JERKY")
-  fresh_cooked: 'Fresh',
-  human_food: 'Human food', // renders as "… · HUMAN FOOD" (B-102)
-  topper: 'Topper',
-  treat: 'Treat',
-  // 'other' intentionally maps to '' — no chip when the format is unspecified.
-};
 
 // Text-only food tile. Product name is the primary line — for a single-brand
 // household ("a wall of Fancy Feast"), the flavor in product_name is what
