@@ -484,25 +484,44 @@ export function vehicleLabel(value: string | null | undefined): string | null {
   return MEDICATION_VEHICLE_OPTIONS.find((o) => o.value === value)?.label ?? null;
 }
 
-// B-161 — the owner-facing drug label for a dose row ("generic · brand" when the
-// brand adds info, generic alone, else the brand). One source so the History row
-// (EventRow) and the Home "Today" strip (TodayZone) can't drift on how a dose names
-// its drug — the multi-med pet's two "Medication" rows are distinguished by this.
-// Returns null when neither name is known, so a nameless dose renders no subline
-// rather than an empty one (the same "no value → nothing" rule the label twins use).
+// B-171 — THE drug-naming rule for every owner-facing surface: the word the owner
+// actually uses. Brand when we have one ("Zyrtec"), generic otherwise ("gabapentin").
+// PM ruling (option b, 2026-07-26): a confirmation card's job is reassurance-by-
+// recognition, so naming a drug by a word the owner doesn't use ("cetirizine" for the
+// tile Sam picked as Zyrtec) weakens it on the worst morning. The generic remains the
+// CLINICAL primary — the vet report builds its own names server-side (generate-report)
+// and is deliberately not on this path.
+// Returns null when neither name is known, so a nameless dose renders no label rather
+// than an empty one (the "no value → nothing" rule the label twins use).
+export function drugDisplayName(
+  genericName: string | null | undefined,
+  brandName: string | null | undefined,
+): string | null {
+  // Coalesce empty/whitespace to null so a blank name never wins over a real one
+  // (`??` alone would let a '' brand through and render an empty label).
+  return (brandName?.trim() || null) ?? (genericName?.trim() || null);
+}
+
+// B-161 — the owner-facing drug label for a dose ROW (History via EventRow, the Home
+// "Today" strip via TodayZone, the day sheet via dayEvents). One source so those
+// surfaces can't drift on how a dose names its drug — the multi-med pet's two
+// "Medication" rows are distinguished by this.
+//
+// B-171 reordered this to lead with drugDisplayName so the FIRST WORD is identical to
+// the one the completion card just showed; the generic follows because a row surface is
+// also where an owner looks to answer a vet's "what's she on?". Row = "Zyrtec ·
+// cetirizine", card = "Zyrtec". Building it on drugDisplayName is what makes that
+// leading token un-driftable by construction.
 export function formatDrugLabel(
   genericName: string | null | undefined,
   brandName: string | null | undefined,
 ): string | null {
-  // Coalesce empty/whitespace to null so a blank name never produces a label
-  // (`??` alone would let a '' brand through). Identical to the prior inline
-  // EventRow logic on every real value; only the all-blank case now reads null.
+  const display = drugDisplayName(genericName, brandName);
+  if (!display) return null;
   const generic = genericName?.trim() || null;
-  const brand = brandName?.trim() || null;
-  if (generic) {
-    return brand ? `${generic} · ${brand}` : generic;
-  }
-  return brand;
+  // Skip the suffix when the generic IS the displayed name — either there's no brand,
+  // or the two names are the same string ("Zyrtec · Zyrtec" was reachable before).
+  return generic && generic !== display ? `${display} · ${generic}` : display;
 }
 
 // B-156 Slice C (the combo) — infer the dose vehicle from the co-logged food's type
@@ -602,15 +621,48 @@ export function isComboDoseInDoubt(params: {
   );
 }
 
-// The completion-card adherence prompt for a dose. When a combo dose's vehicle was not
-// finished the prompt SHARPENS to "still get it?" — acknowledging the food didn't go
-// down — and the chips start unselected (initialComboDoseAdherence → null); otherwise
-// it's the plain "take it?". nyx-voice: pet by name, specific, no exclamation; never
-// softens the refusal to "fussy"/"picky".
-export function comboAdherencePrompt(params: { petName: string; inDoubt: boolean }): string {
-  return params.inDoubt
-    ? `Did ${params.petName} still get it?`
-    : `Did ${params.petName} take it?`;
+// The adherence-row line on a dose completion card (and the retroactive confirm sheet).
+//
+// THE RULE (B-172): we ASSERT only what the owner asserted, and ASK whenever the record
+// is genuinely open. A logged dose already carries a state — the owner's affirmative tap
+// pre-lights `given` — so a question underneath it ("Did Pixel take it?") makes the card
+// ask something its own chips have already answered. The `pm-feature-review` catch: the
+// header says "Logged together", the vehicle chip is lit, and then the card asks if it
+// happened, so the owner taps nothing and the DOWNGRADE affordance — the whole safety
+// point of the row — is easy to miss. Restating the state and naming the affordance
+// ("tap to change") makes the correction path the readable thing on the card.
+//
+// The two branches that still ASK are the two where nothing has been asserted:
+//   • inDoubt — a combo dose whose vehicle was refused/picked. Chips start unselected
+//     (initialComboDoseAdherence → null) and the prompt sharpens to "still get it?",
+//     acknowledging the food didn't go down. Never softened, never reassuring
+//     (clinical-guardrails Pattern 2: no path to a reassuring verdict by construction).
+//   • adherence null without that evidence — nothing to restate, so ask plainly.
+//
+// Restating is safe precisely because it is an ECHO of the owner's own tap, never an
+// app-generated wellness claim: this line asserts nothing the lit chip beneath it does
+// not already assert, and it changes no default. It is also adherence-DRIVEN rather than
+// pinned to `given`, so during the 1500ms confirm hold after a downgrade the line follows
+// the chips instead of contradicting them ("Pixel took it" over a lit `Missed`).
+//
+// nyx-voice: pet by name, specific over generic, no exclamation. `missed` is the one
+// state that does NOT name the pet — AdherenceChipRow deliberately splits the pet-driven
+// states (`refused`, `partial`) from the owner-driven `missed`, so blaming the pet for a
+// dose the household forgot would be both wrong and unkind.
+export function doseAdherencePrompt(params: {
+  petName: string;
+  inDoubt: boolean;
+  adherence?: DoseAdherence | null;
+}): string {
+  if (params.inDoubt) return `Did ${params.petName} still get it?`;
+  switch (params.adherence) {
+    case 'given':   return `${params.petName} took it — tap to change.`;
+    case 'partial': return `${params.petName} took part of it — tap to change.`;
+    case 'missed':  return `This dose was missed — tap to change.`;
+    case 'refused': return `${params.petName} refused it — tap to change.`;
+    // No state to restate (adherence null, no not-finished evidence) → ask plainly.
+    default:        return `Did ${params.petName} take it?`;
+  }
 }
 
 // The faint reason sub-line under the sharpened card prompt, so the owner doesn't have

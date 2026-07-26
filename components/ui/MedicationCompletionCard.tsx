@@ -12,7 +12,7 @@ import { updateDoseAdherence, updateDoseHowGiven, updateEvent } from '../../lib/
 import { syncPendingMedicationAdministrations, syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import {
-  isComboDoseInDoubt, comboAdherencePrompt, comboInDoubtReason, type DoseVehicle,
+  isComboDoseInDoubt, doseAdherencePrompt, comboInDoubtReason, type DoseVehicle,
 } from '../../lib/medications';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
 import { VehicleChipRow } from '../log/VehicleChipRow';
@@ -243,7 +243,13 @@ export function MedicationCompletionCard() {
           )}
         </View>
         <View style={styles.adherenceWrap}>
-          <Text style={styles.adherenceLabel}>{comboAdherencePrompt({ petName, inDoubt })}</Text>
+          {/* B-172 — confirm-to-correct. A pre-lit state is RESTATED with the correction
+              named ("Pixel took it — tap to change."), not re-asked; only an in-doubt or
+              genuinely unset dose asks. Passing the live adherence keeps this line in step
+              with the chips through the 1500ms post-tap confirm hold. */}
+          <Text style={styles.adherenceLabel}>
+            {doseAdherencePrompt({ petName, inDoubt, adherence: payload.adherence })}
+          </Text>
           {/* In-doubt only: the faint reason, so the owner doesn't have to recall they
               marked the food refused on the now-dismissed meal card. Factual, never
               "fussy", never reassuring. */}

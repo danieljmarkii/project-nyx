@@ -52,7 +52,8 @@ describe('describeDayEvent (B-284 N5b drill-in labels)', () => {
     const given = describeDayEvent(
       row({ event_type: 'medication', drug_generic_name: 'Amoxicillin', drug_brand_name: 'Amoxil', adherence: 'given' }),
     );
-    expect(given.title).toBe('Amoxicillin · Amoxil');
+    // B-171 — the owner-facing name leads, the generic follows (formatDrugLabel).
+    expect(given.title).toBe('Amoxil · Amoxicillin');
     expect(given.detail).toBe('given');
 
     // The safety invariant: an unrecorded adherence shows no qualifier — it is never

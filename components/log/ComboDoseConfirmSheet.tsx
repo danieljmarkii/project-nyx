@@ -1,7 +1,7 @@
 import { Modal, View, Text, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 import { theme, shadows } from '../../constants/theme';
 import { AdherenceChipRow, DoseAdherence } from './AdherenceChipRow';
-import { comboConfirmHeadsUp, comboAdherencePrompt } from '../../lib/medications';
+import { comboConfirmHeadsUp, doseAdherencePrompt } from '../../lib/medications';
 
 // B-325 — the retroactive combo-confirm sheet. Shown when an owner adds a med to an
 // ALREADY-logged meal/treat the pet DID NOT FINISH (vehicle refused/picked). This is the
@@ -46,7 +46,10 @@ export function ComboDoseConfirmSheet({ visible, petName, foodName, onAnswer, on
         {/* Heads-up: the fact, naming the specific not-finished food. Never softens the
             refusal, never reassures (clinical-guardrails). */}
         <Text style={styles.headsUp}>{comboConfirmHeadsUp({ petName, foodName })}</Text>
-        <Text style={styles.question}>{comboAdherencePrompt({ petName, inDoubt: true })}</Text>
+        {/* Always the in-doubt ASK — this sheet only ever opens on a not-finished vehicle,
+            and its chips start unselected, so there is no owner assertion to restate
+            (B-172's confirm-to-correct framing applies to a pre-lit state, not to this). */}
+        <Text style={styles.question}>{doseAdherencePrompt({ petName, inDoubt: true })}</Text>
         {/* The real dose-adherence chips (given / partial / missed / refused) — the same
             scale the dose detail screen uses. None pre-lit: a logged combo dose in doubt
             has no assumed state. One tap answers and closes. */}

@@ -41,7 +41,8 @@ import {
   isVehicleNotFinished,
   initialComboDoseAdherence,
   isComboDoseInDoubt,
-  comboAdherencePrompt,
+  doseAdherencePrompt,
+  drugDisplayName,
   comboInDoubtReason,
   comboConfirmHeadsUp,
   doseInDoubtNote,
@@ -1186,8 +1187,13 @@ describe('combo safety copy — never reassures, never softens to fussy, no excl
   const SOFTEN = /\b(fussy|picky|stubborn|naughty|just being)\b/i;
 
   const prompts = [
-    comboAdherencePrompt({ petName: 'Pixel', inDoubt: true }),
-    comboAdherencePrompt({ petName: 'Pixel', inDoubt: false }),
+    doseAdherencePrompt({ petName: 'Pixel', inDoubt: true }),
+    doseAdherencePrompt({ petName: 'Pixel', inDoubt: false }),
+    // B-172 — every confirm-to-correct restatement is in the same scan.
+    doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'given' }),
+    doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'partial' }),
+    doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'missed' }),
+    doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'refused' }),
     comboInDoubtReason({ petName: 'Pixel' }),
     // B-325 — the retroactive confirm sheet's heads-up line.
     comboConfirmHeadsUp({ petName: 'Pixel', foodName: 'Churu' }),
@@ -1200,9 +1206,55 @@ describe('combo safety copy — never reassures, never softens to fussy, no excl
     doseInDoubtNote({ petName: 'Pixel', foodName: '' }),
   ];
 
-  it('the in-doubt prompt sharpens to "still get it?" and the plain one stays "take it?"', () => {
-    expect(comboAdherencePrompt({ petName: 'Pixel', inDoubt: true })).toBe('Did Pixel still get it?');
-    expect(comboAdherencePrompt({ petName: 'Pixel', inDoubt: false })).toBe('Did Pixel take it?');
+  it('the in-doubt prompt sharpens to "still get it?" and an unset dose stays "take it?"', () => {
+    expect(doseAdherencePrompt({ petName: 'Pixel', inDoubt: true })).toBe('Did Pixel still get it?');
+    expect(doseAdherencePrompt({ petName: 'Pixel', inDoubt: false })).toBe('Did Pixel take it?');
+    expect(doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: null }))
+      .toBe('Did Pixel take it?');
+  });
+
+  // ── B-172 — confirm-to-correct ────────────────────────────────────────────────
+  it('restates a pre-lit state and names the correction instead of asking again', () => {
+    expect(doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'given' }))
+      .toBe('Pixel took it — tap to change.');
+    expect(doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'partial' }))
+      .toBe('Pixel took part of it — tap to change.');
+    expect(doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'refused' }))
+      .toBe('Pixel refused it — tap to change.');
+  });
+
+  it('never blames the pet for the owner-driven "missed" state', () => {
+    // AdherenceChipRow splits pet-driven (refused/partial) from owner-driven (missed);
+    // the copy has to honour that split or it blames a cat for a forgotten dose.
+    const missed = doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'missed' });
+    expect(missed).toBe('This dose was missed — tap to change.');
+    expect(missed).not.toContain('Pixel');
+  });
+
+  it('every restatement names the correction affordance (the B-172 catch)', () => {
+    // The downgrade being easy to miss is the defect; the line must always say so.
+    for (const a of ['given', 'partial', 'missed', 'refused'] as const) {
+      expect(doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: a }))
+        .toContain('tap to change');
+    }
+  });
+
+  it('in-doubt ASKS regardless of a stale adherence — the safety branch always wins', () => {
+    // isComboDoseInDoubt already requires adherence==null, so this is belt-and-braces:
+    // no argument combination may turn the in-doubt prompt into an assertion.
+    for (const a of ['given', 'partial', 'missed', 'refused', null] as const) {
+      expect(doseAdherencePrompt({ petName: 'Pixel', inDoubt: true, adherence: a }))
+        .toBe('Did Pixel still get it?');
+    }
+  });
+
+  it('follows the chips through a downgrade rather than contradicting them', () => {
+    // The 1500ms confirm hold keeps the card open after a chip tap; a line pinned to
+    // "Pixel took it" would sit over a lit "Missed" chip for that whole beat.
+    const given = doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'given' });
+    const missed = doseAdherencePrompt({ petName: 'Pixel', inDoubt: false, adherence: 'missed' });
+    expect(given).not.toBe(missed);
+    expect(missed).not.toContain('took it');
   });
 
   it('the card reason states the fact plainly and names the pet', () => {
@@ -1333,14 +1385,44 @@ describe('administrationRowToRemote — an unconfirmed combo dose stays null on 
   });
 });
 
+// ── B-171 — the owner-facing drug NAME (the completion card's one-glance word) ──────
+// PM ruling (option b): brand when present, generic otherwise. The card confirms with
+// the word the owner uses, not the one the catalog stores.
+describe('drugDisplayName — the owner-facing drug name (B-171)', () => {
+  it('prefers the brand when both names are present', () => {
+    expect(drugDisplayName('cetirizine', 'Zyrtec')).toBe('Zyrtec');
+  });
+
+  it('falls back to the generic when there is no brand', () => {
+    expect(drugDisplayName('gabapentin', null)).toBe('gabapentin');
+    expect(drugDisplayName('gabapentin', undefined)).toBe('gabapentin');
+    expect(drugDisplayName('gabapentin', '')).toBe('gabapentin');
+    // Whitespace-only is not a name — it must not beat a real generic.
+    expect(drugDisplayName('gabapentin', '   ')).toBe('gabapentin');
+  });
+
+  it('uses the brand when the generic is missing', () => {
+    expect(drugDisplayName(null, 'Apoquel')).toBe('Apoquel');
+    expect(drugDisplayName('', 'Apoquel')).toBe('Apoquel');
+  });
+
+  it('returns null when neither name is known (renders nothing)', () => {
+    expect(drugDisplayName(null, null)).toBeNull();
+    expect(drugDisplayName(undefined, undefined)).toBeNull();
+    expect(drugDisplayName('', '')).toBeNull();
+    expect(drugDisplayName('  ', '  ')).toBeNull();
+  });
+});
+
 // ── B-161 — the shared owner-facing drug label (History row + Home "Today" strip) ──
 // One source so the two surfaces can't drift on how a dose names its drug; the whole
-// point is distinguishing two "Medication" rows for a multi-med pet. The brand is
-// appended ONLY when a generic exists (generic is the clinical primary); with neither
-// name we return null so a nameless dose renders no subline rather than an empty one.
-describe('formatDrugLabel — dose drug name (B-161)', () => {
-  it('joins generic · brand when both are present', () => {
-    expect(formatDrugLabel('cetirizine', 'Zyrtec')).toBe('cetirizine · Zyrtec');
+// point is distinguishing two "Medication" rows for a multi-med pet. B-171 reordered it
+// to lead with drugDisplayName (brand-first) so the row's FIRST WORD matches the card's;
+// the generic follows because a row is also where an owner answers a vet's "what's she
+// on?". With neither name we return null so a nameless dose renders no subline.
+describe('formatDrugLabel — dose drug name (B-161, reordered by B-171)', () => {
+  it('leads with the owner-facing name and appends the generic (B-171)', () => {
+    expect(formatDrugLabel('cetirizine', 'Zyrtec')).toBe('Zyrtec · cetirizine');
   });
 
   it('returns the generic alone when there is no brand', () => {
@@ -1354,10 +1436,27 @@ describe('formatDrugLabel — dose drug name (B-161)', () => {
     expect(formatDrugLabel('', 'Apoquel')).toBe('Apoquel');
   });
 
+  it('never doubles a name when brand and generic are the same string', () => {
+    expect(formatDrugLabel('Zyrtec', 'Zyrtec')).toBe('Zyrtec');
+    expect(formatDrugLabel(' Zyrtec ', 'Zyrtec')).toBe('Zyrtec');
+  });
+
   it('returns null when neither name is known (renders no subline)', () => {
     expect(formatDrugLabel(null, null)).toBeNull();
     expect(formatDrugLabel(undefined, undefined)).toBeNull();
     expect(formatDrugLabel('', '')).toBeNull();
+  });
+
+  it('always leads with exactly the name the completion card shows (no drift)', () => {
+    // The load-bearing B-171 invariant: row and card can never disagree on the first
+    // word, because the row label is BUILT from drugDisplayName.
+    const cases: [string | null, string | null][] = [
+      ['cetirizine', 'Zyrtec'], ['gabapentin', null], [null, 'Apoquel'], ['Zyrtec', 'Zyrtec'],
+    ];
+    for (const [generic, brand] of cases) {
+      const card = drugDisplayName(generic, brand)!;
+      expect(formatDrugLabel(generic, brand)!.startsWith(card)).toBe(true);
+    }
   });
 });
 
