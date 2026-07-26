@@ -446,6 +446,25 @@ function parseConfidence(text: string | null): unknown {
   }
 }
 
+// How many `primary_diet` foods this trial has, read from the LOCAL mirror (PR 2)
+// rather than the network — the guard above has to hold offline too. A read
+// failure returns -1 rather than 0 so the caller treats it as "unknown" (silence,
+// uncached) instead of a settled multi-food answer.
+async function countPrimaryDietFoods(trialId: string): Promise<number> {
+  try {
+    const db = getDb();
+    const row = await db.getFirstAsync<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM diet_trial_foods
+        WHERE diet_trial_id = ? AND role = 'primary_diet' AND deleted_at IS NULL`,
+      [trialId],
+    );
+    return Number(row?.n ?? -1);
+  } catch (e) {
+    console.warn('[trialContaminant] allowed-set count failed:', e);
+    return -1;
+  }
+}
+
 export async function loadTrialProteinContext(
   petId: string,
   opts?: { force?: boolean },
@@ -475,6 +494,34 @@ export async function loadTrialProteinContext(
 
   if (!trial) {
     contextCache.set(petId, { atMs: Date.now(), ctx: null });
+    return null;
+  }
+
+  // ── B-417 PR 3 — the multi-food guard ────────────────────────────────────
+  //
+  // Everything below derives the trial diet from the SINGLE `diet_trials.
+  // food_item_id` column, which was the only representation available when this
+  // shipped (B-351 slice 4). §4.1 has since ruled that column DISPLAY-ONLY LEGACY:
+  // the trial diet is N `diet_trial_foods` rows at `role='primary_diet'`, and the
+  // sanctioned set is the union of every protein of every one of them.
+  //
+  // So on a two-food trial — a wet and a dry of the same diet, the normal case —
+  // this module would compute the sanctioned set from ONE food and flag the
+  // legitimately-allowed second trial food as a contaminant. That is the
+  // alarm-fatigue failure C2 exists to prevent, aimed at the one food the owner
+  // cannot stop feeding.
+  //
+  // PR 5 re-bases this onto `diet_trial_foods` (§0.2 forward-conflict 2) and
+  // deletes this guard. Until then PR 3 pays for the condition it creates: when
+  // the count is anything other than exactly 1 we return NULL — silence, no claim,
+  // never an all-clear (B-351 D10). Both non-1 cases are covered deliberately:
+  //   • >1 — a real multi-food trial. A settled fact, so it is cached.
+  //   • 0  — `diet_trials` hydrated but `diet_trial_foods` has not yet (they are
+  //     separate pulls). Transient, so it is NOT cached — same rule the
+  //     trial-food-resolution check below applies, for the same reason.
+  const primaryCount = await countPrimaryDietFoods(trial.id);
+  if (primaryCount !== 1) {
+    if (primaryCount > 1) contextCache.set(petId, { atMs: Date.now(), ctx: null });
     return null;
   }
 

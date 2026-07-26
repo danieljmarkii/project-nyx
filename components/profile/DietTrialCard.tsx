@@ -17,7 +17,7 @@
 // ── NO SECOND DOOR ───────────────────────────────────────────────────────────
 // §4.2: "The card carries no 'Log a meal' action. Logging is the FAB. A second
 // door to the same room is not a feature."
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from 'react-native';
 import { theme } from '../../constants/theme';
 import { Card } from '../ui/Card';
 import { PrimaryButton } from '../ui/PrimaryButton';
@@ -32,15 +32,38 @@ interface Props {
    *  nowhere is worse than no button — so the omission is structural rather than
    *  a comment someone has to remember to act on. */
   actions?: Partial<Record<TrialCardActionId, () => void>>;
+  /** Opens the start/change sheet from the card's header. Separate from
+   *  `actions` on purpose: it is not a state-driven affordance the resolver
+   *  declares, it is the always-available way back into `StartTrialModal` that
+   *  B-417 PR 3 shipped. One active trial per pet is a DATABASE constraint
+   *  (migration 040's UNIQUE partial index), so on a running trial this opens the
+   *  ordered "end the running one first" sheet, never a second concurrent trial. */
+  onManage?: () => void;
   style?: ViewStyle;
 }
 
-export function DietTrialCard({ model, actions, style }: Props) {
+export function DietTrialCard({ model, actions, onManage, style }: Props) {
   const onAction = model.action ? actions?.[model.action.id] : undefined;
+  const manageLabel = model.state === 'no_trial' ? '+ Start' : 'Change';
 
   return (
     <Card style={style}>
-      <Text style={styles.kicker}>{model.kicker}</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.kicker}>{model.kicker}</Text>
+        {onManage && (
+          <TouchableOpacity
+            onPress={onManage}
+            hitSlop={8}
+            style={styles.manageTouch}
+            accessibilityRole="button"
+            accessibilityLabel={
+              model.state === 'no_trial' ? 'Start a diet trial' : 'Change this diet trial'
+            }
+          >
+            <Text style={styles.manageText}>{manageLabel}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
 
       {model.foodLabel !== null && (
         <Text style={styles.food}>{model.foodLabel}</Text>
@@ -110,6 +133,7 @@ export function DietTrialCard({ model, actions, style }: Props) {
         model.state === 'no_trial' ? (
           <PrimaryButton
             label={model.action.label}
+            variant="secondary"
             onPress={onAction}
             style={styles.primaryAction}
           />
@@ -130,6 +154,21 @@ export function DietTrialCard({ model, actions, style }: Props) {
 }
 
 const styles = StyleSheet.create({
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  manageTouch: {
+    // Padding plus hitSlop={8} clears the 44pt tap-target floor.
+    paddingVertical: theme.space1,
+    paddingLeft: theme.space2,
+  },
+  manageText: {
+    fontSize: theme.textSM,
+    fontWeight: theme.weightMedium,
+    color: theme.colorAccent,
+  },
   kicker: {
     fontSize: theme.textXS,
     fontWeight: theme.weightMedium,

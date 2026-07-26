@@ -28,13 +28,15 @@ import { getDietTrialProgress, getIntakeDecline, type IntakeDeclineFlag } from '
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
 import { loadTrialProteinContext, trialDietNote } from './trialContaminant';
-import { toLocalDayKey } from './utils';
+import { petPronouns, toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
 
 export interface DietTrialFactsPet {
   id: string;
   name: string;
   species: 'dog' | 'cat' | 'other';
+  /** Drives state 0's forward line via `petPronouns`. */
+  sex?: 'male' | 'female' | 'unknown';
 }
 
 interface TrialRow {
@@ -93,6 +95,7 @@ export async function loadDietTrialFacts(args: {
     nowMs,
     petName: pet.name,
     species: pet.species,
+    petObjectPronoun: petPronouns(pet.sex ?? 'unknown').object,
     otherPetNames: args.otherPetNames ?? [],
   };
 

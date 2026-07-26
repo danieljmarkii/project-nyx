@@ -190,11 +190,22 @@ describe('state 0 — no trial', () => {
     expect(textOf(model, 'lead')).toEqual(['No trial running.']);
   });
 
+  // Verbatim from the design-locked mock, and byte-identical to the string
+  // B-417 PR 3 shipped — this card's action is what opens PR 3's modal, so the
+  // two may not drift.
   it('names the payoff rather than the feature', () => {
     expect(textOf(model, 'forward')).toEqual([
-      'If your vet has put Biscuit on an elimination diet, tell Culprit — it keeps ' +
-      'the dated record they’ll ask for at the recheck.',
+      'If Biscuit’s vet has put them on an elimination diet, tell Culprit — it ' +
+      'keeps the dated record your vet will ask for at the recheck.',
     ]);
+  });
+
+  it('uses the pet’s recorded pronoun when the app knows it', () => {
+    const male = resolveTrialCard({ ...activeInput(), trial: null, petObjectPronoun: 'him' });
+    expect(textOf(male, 'forward')[0]).toContain('has put him on an elimination diet');
+    // Unknown sex falls back to the same value `petPronouns` returns.
+    const unknown = resolveTrialCard({ ...activeInput(), trial: null });
+    expect(textOf(unknown, 'forward')[0]).toContain('has put them on an elimination diet');
   });
 
   it('is the only entry point to PR 3', () => {

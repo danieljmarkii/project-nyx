@@ -12,7 +12,7 @@ jest.mock('../../lib/feedingArrangements', () => ({
   getActiveArrangementsForPet: jest.fn().mockResolvedValue([]),
 }));
 
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { DietTrialCard } from './DietTrialCard';
 import { resolveTrialCard, type TrialCardInput } from '../../lib/dietTrialCard';
@@ -149,6 +149,55 @@ describe('what the card renders', () => {
     }))} />);
     expect(tree.queryByText(/%/)).toBeNull();
     expect(tree.queryByText(/compliance/i)).toBeNull();
+  });
+});
+
+// The seam B-417 PR 3 and PR 4 meet at. PR 3 shipped the modal and its own
+// state-0 markup; PR 4 folded that markup into this one card. §4.1 D5 makes this
+// the ONLY way into starting a trial — no menu item, no second path — so if the
+// card stops offering it, the feature has no entry point at all.
+describe('the entry point to PR 3’s start-a-trial modal', () => {
+  it('renders the empty state with the design-locked copy', () => {
+    const tree = render(
+      <DietTrialCard
+        model={resolveTrialCard({ ...input(), trial: null, petObjectPronoun: 'him' })}
+        actions={{ start_trial: jest.fn() }}
+      />,
+    );
+    expect(tree.getByText('No trial running.')).toBeTruthy();
+    expect(tree.getByText(
+      'If Biscuit’s vet has put him on an elimination diet, tell Culprit — it keeps ' +
+      'the dated record your vet will ask for at the recheck.',
+    )).toBeTruthy();
+  });
+
+  it('offers "+ Start" on the empty card and "Change" on a running one', () => {
+    const empty = render(
+      <DietTrialCard model={resolveTrialCard({ ...input(), trial: null })} onManage={jest.fn()} />,
+    );
+    expect(empty.getByText('+ Start')).toBeTruthy();
+
+    const running = render(
+      <DietTrialCard model={resolveTrialCard(input())} onManage={jest.fn()} />,
+    );
+    expect(running.getByText('Change')).toBeTruthy();
+    expect(running.queryByText('+ Start')).toBeNull();
+  });
+
+  it('opens the modal from both doors', () => {
+    const onManage = jest.fn();
+    const onStart = jest.fn();
+    const tree = render(
+      <DietTrialCard
+        model={resolveTrialCard({ ...input(), trial: null })}
+        actions={{ start_trial: onStart }}
+        onManage={onManage}
+      />,
+    );
+    fireEvent.press(tree.getByText('Start a diet trial'));
+    expect(onStart).toHaveBeenCalledTimes(1);
+    fireEvent.press(tree.getByText('+ Start'));
+    expect(onManage).toHaveBeenCalledTimes(1);
   });
 });
 

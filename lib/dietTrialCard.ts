@@ -99,6 +99,11 @@ export interface TrialCardInput {
   freeFed?: { loggedFeedings: number } | null;
   /** §5.6 — other non-archived pets in the household. Gates the CLAIM only. */
   otherPetNames?: string[];
+  /** Object pronoun for state 0's forward line ("put HIM on an elimination
+   *  diet"), from the shipped `lib/utils.petPronouns` — the app records a pet's
+   *  sex, so this is a known fact rather than a guess. Defaults to 'them', which
+   *  is also what `petPronouns` returns for an unknown sex. */
+  petObjectPronoun?: string;
   /** §5.2 — set by PR 5, which owns the floor's number. Never computed here. */
   belowCoverageFloor?: boolean;
   /** C2 standing fact, re-sited from slice 4's `TrialContaminantNote`. */
@@ -257,7 +262,7 @@ function floorSuffix(offDiet: number): string {
 export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
   const { trial, petName } = input;
 
-  if (!trial) return noTrialCard(petName);
+  if (!trial) return noTrialCard(petName, input.petObjectPronoun ?? 'them');
 
   const startIndex = localDayIndexOf(trial.startedAt);
   const progress = getDietTrialProgress(
@@ -295,7 +300,7 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
 
 // ── State 0 ──────────────────────────────────────────────────────────────────
 
-function noTrialCard(petName: string): TrialCardModel {
+function noTrialCard(petName: string, objectPronoun: string): TrialCardModel {
   return {
     state: 'no_trial',
     kicker: 'Diet trial',
@@ -308,10 +313,12 @@ function noTrialCard(petName: string): TrialCardModel {
       {
         role: 'forward',
         // Names the PAYOFF, not the feature (Principle 5 — empty states are
-        // features). No gendered pronoun: the app is never told a pet's gender.
+        // features). Verbatim from the design-locked mock, and from the string
+        // B-417 PR 3 shipped — the two must not drift, because PR 3's modal is
+        // what this card's action opens.
         text:
-          `If your vet has put ${petName} on an elimination diet, tell Culprit — ` +
-          'it keeps the dated record they’ll ask for at the recheck.',
+          `If ${petName}’s vet has put ${objectPronoun} on an elimination diet, ` +
+          'tell Culprit — it keeps the dated record your vet will ask for at the recheck.',
       },
     ],
     action: { id: 'start_trial', label: 'Start a diet trial' },

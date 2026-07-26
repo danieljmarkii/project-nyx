@@ -23,6 +23,7 @@ import { EditPetModal } from '../../components/profile/EditPetModal';
 import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
+import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DietTrialCard } from '../../components/profile/DietTrialCard';
 import { useDietTrial } from '../../hooks/useDietTrial';
@@ -136,8 +137,13 @@ export default function ProfileScreen() {
   const [editingRegimen, setEditingRegimen] = useState<Regimen | undefined>(undefined);
 
   // B-417 PR 4 — the trial card reads through one shared loader with the Home
-  // strip, so the two surfaces cannot disagree about the same trial.
+  // strip, so the two surfaces cannot disagree about the same trial. It reads the
+  // LOCAL MIRROR, which is what makes PR 3's existence-oracle worry structural
+  // rather than a guard: an offline trial, or one started offline and not yet
+  // flushed, is still a row the card can see, so "No trial running." cannot be a
+  // lie told by a failed network read.
   const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
+  const [startTrialVisible, setStartTrialVisible] = useState(false);
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -710,7 +716,7 @@ export default function ProfileScreen() {
           )}
         </Card>
 
-        {/* ── Diet trial card v2 (B-417 PR 4, §4.2) ──
+        {/* ── Diet trial card v2 (B-417 PR 4, §4.2 — PR 3's modal behind it) ──
             Every string comes from `resolveTrialCard`; this screen only decides
             where the card sits and which actions it can service. What used to be
             here rendered a "% compliance" that counted a meal of ANY food (so an
@@ -718,13 +724,19 @@ export default function ProfileScreen() {
             bound the progress bar's WIDTH to that same number — day 2 of 56 drew
             a nearly-full bar. Both are gone; the bar now encodes day progress.
 
-            State 0's designed empty state is deliberately NOT rendered yet: it
-            exists to be the one entry point to PR 3's start-a-trial modal, and
-            until that modal ships an always-present card with no way to act on it
-            is worse than today's behaviour. PR 3 renders it by passing a
-            `start_trial` handler — the card is already built for it. */}
-        {!trialLoading && trialCard && trialCard.state !== 'no_trial' && (
-          <DietTrialCard model={trialCard} style={styles.sectionGap} />
+            The card ALWAYS renders, mirroring the medications card, because it is
+            the ONLY entry point to starting a trial (§4.1 D5: no menu item, no
+            second path). PR 3 landed that entry and its own state-0 markup; this
+            keeps the entry and folds the markup into the one card, so the eleven
+            states stay a switch over one layout rather than three Card blocks
+            that can drift. `onManage` is PR 3's header affordance, unchanged. */}
+        {!trialLoading && trialCard && (
+          <DietTrialCard
+            model={trialCard}
+            style={styles.sectionGap}
+            actions={{ start_trial: () => setStartTrialVisible(true) }}
+            onManage={() => setStartTrialVisible(true)}
+          />
         )}
 
         {/* ── Vet report (Step 9) ── */}
@@ -800,6 +812,22 @@ export default function ProfileScreen() {
             prev.map((m) => (m.id === reg.id ? buildRegimenDisplay(reg, m.tally) : m)),
           )
         }
+      />
+
+      {/* B-417 PR 3. Kept MOUNTED across dismissals on purpose: "Snap a new food"
+          routes out to `/food-capture` (the trial food is usually a bag the owner
+          was handed ten minutes ago, so it is rarely in the library yet), and the
+          half-filled form has to still be there when they come back. The form is
+          reset on Cancel and after a successful start — never by a dismissal. */}
+      <StartTrialModal
+        visible={startTrialVisible}
+        petId={activePet.id}
+        petName={activePet.name}
+        species={activePet.species}
+        onClose={() => setStartTrialVisible(false)}
+        onStarted={reloadTrial}
+        onAddFood={() => { setStartTrialVisible(false); router.push('/food-capture'); }}
+        onLogFirstMeal={() => { setStartTrialVisible(false); router.push('/log?type=meal'); }}
       />
     </SafeAreaView>
   );

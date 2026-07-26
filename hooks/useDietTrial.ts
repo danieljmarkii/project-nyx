@@ -29,6 +29,7 @@ export function useDietTrial(): {
   const petId = activePet?.id;
   const petName = activePet?.name;
   const species = activePet?.species;
+  const sex = activePet?.sex;
   // §5.6 gates the CLAIM on household pet count alone: `feeding_arrangements
   // .is_shared` ships INERT, so a shared bowl is not knowable and no copy may
   // imply it is. `pets` holds only NON-archived pets (the store's invariant).
@@ -45,7 +46,7 @@ export function useDietTrial(): {
     setIsLoading(true);
 
     loadDietTrialFacts({
-      pet: { id: petId, name: petName, species },
+      pet: { id: petId, name: petName, species, sex },
       otherPetNames: otherKey === '' ? [] : otherKey.split('|'),
     })
       .then((next) => { if (!cancelled) setInput(next); })
@@ -57,7 +58,7 @@ export function useDietTrial(): {
       .finally(() => { if (!cancelled) setIsLoading(false); });
 
     return () => { cancelled = true; };
-  }, [petId, petName, species, otherKey, hydrationTick, tick]);
+  }, [petId, petName, species, sex, otherKey, hydrationTick, tick]);
 
   return { input, isLoading, reload };
 }
