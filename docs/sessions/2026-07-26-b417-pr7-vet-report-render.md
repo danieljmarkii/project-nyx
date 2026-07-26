@@ -96,7 +96,7 @@ The affirmative *"all N matched"* sentence has three renderers — the At-a-glan
 ## Filed, not fixed
 
 - **B-478** — the block has no Designer/Dr. Chen pass **as shipped**. The C4 mock round rendered only the two variants the PM chose between; the antigen line, the "Also during the trial" group, the four §7.2 caveats and the medication framing have no mock, and the block is now the longest thing on page 1.
-- **B-482** — eight duplicate backlog IDs (`B-432/441/442/443/463/464/465/477`). Found because the guard test cited "B-442" and there are two unrelated B-442 rows.
+- **B-482** — seven duplicate backlog IDs (`B-432/441/442/443/463/464/465`). Found because the guard test cited "B-442" and there are two unrelated B-442 rows.
 - **B-463 stays open and §12's tappable-reason criterion stays unmet** — `explainVerdict` still has zero callers; its destination is B-458, the exposures list screen deferred out of PR 4.
 
 ## One deliberate deviation from the spec
@@ -132,4 +132,4 @@ PR 5 (#459) **merged mid-session**, and it merged **narrower** than the branch t
 
 The merge also produced **five ID collisions of this session's own making** — main had already published B-472–B-476 — so these rows renumbered to **B-477–B-481** (main's IDs are published; ours were not, the same rule the B-459 collision followed).
 
-Then it happened **again**, on the same session, on the collision report's own ID. A second `main` merge before the final push brought in #470, which had published a *different* **B-477**, so the report renumbered to **B-482** and now names eight collisions rather than seven. Two collisions in one session, the second one on the row documenting collisions, is the argument the row was making: this is an **allocator** problem and no naming convention fixes it, because every parallel session reads the file before any of them writes. That is now written into B-482 itself as its third data point.
+Then it happened **again**, on the same session, on the collision report's own ID. A second `main` merge before the final push brought in #470, which had published a *different* **B-477**, so the report renumbered to **B-482**. Both of this session's collisions were caught before merge and resolved by renumbering the unpublished side, so neither is in the seven the row reports — the seven are the ones nobody caught in time, and the only reason these two are not in that list is that someone happened to re-`grep`. Two collisions in one session, the second one on the row documenting collisions, is the argument the row was making: this is an **allocator** problem and no naming convention fixes it, because every parallel session reads the file before any of them writes. That is now written into B-482 itself as its third data point.
