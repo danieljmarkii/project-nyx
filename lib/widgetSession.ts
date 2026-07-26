@@ -24,8 +24,9 @@
 // never a truncated blob.
 
 // The tier contract comes from secureStoreTiers (NOT secureStore): Metro
-// bundles whole modules, and secureStore drags authDebug/AsyncStorage — app
-// diagnostic scaffolding that must not ship in the extension bundle.
+// bundles whole modules, and secureStore carries the app-side adapter — chunked
+// writes, generation bookkeeping, and a react-native Platform import — none of
+// which belongs in the extension bundle.
 import * as SecureStore from 'expo-secure-store';
 import { parsePointer, SHARED_TIER } from './secureStoreTiers';
 
