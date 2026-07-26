@@ -188,7 +188,7 @@ Spec `docs/nyx-stool-analysis-requirements.md` (§8 = 10-PR plan). Second child 
 
 **So the card wiring was REMOVED from this PR and filed as B-474 (Now).** `lib/dietTrialFacts.ts` / `lib/dietTrialCard.ts` are back to PR 4's shipped state, `exposures` stays null, and the card keeps its honest silence. §11 scopes PR 5 to the predicate anyway. The module keeps every fix that held — the WSAVA not-finished predicate (a cat rated `picked` on every bowl for 14 days was invisible to the lane built for it, and `picked` ratings *raised the denominator*), `given|partial|null` on board at rung 4 matching `detection.ts:458`, a 14-day recency bound + span guard, and the head-clip anchored on non-treat feedings.
 
-**Three residuals filed:** **B-471** — §12's *"every flag is tappable to its reason"* is **UNMET** (`explainVerdict` has zero callers; the list screen is B-458). **B-472** (rung 1's fuzzy key is a false PERMIT on a brand+product collision) and **B-473** (a re-logged duplicate double-counts) are Later. **B-454 is NOT dissolved.**
+**Three residuals filed:** **B-475** — §12's *"every flag is tappable to its reason"* is **UNMET** (`explainVerdict` has zero callers; the list screen is B-458). **B-476** (rung 1's fuzzy key is a false PERMIT on a brand+product collision) and **B-473** (a re-logged duplicate double-counts) are Later. **B-454 is NOT dissolved.**
 
 **Backlog hygiene, noted not fixed:** `docs/backlog.md` carries four pre-existing duplicate IDs (B-432, B-441, B-442, B-443) from earlier sessions, and this session hit two ID collisions of its own because parallel sessions allocate against a stale `main`. Worth a grooming pass.
 
