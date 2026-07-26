@@ -26,12 +26,15 @@ export function FilterChip({ label, active, onPress, variant = 'default', access
       onPress={onPress}
       activeOpacity={0.7}
       accessibilityRole={accessibilityRole}
+      // The active state is announced for EVERY chip, not just the ones a group
+      // gives a role to (B-168). It used to be gated on `accessibilityRole`, so a
+      // standalone FilterChip — the Rx/OTC pair on the medication detail screen,
+      // the food Type rows — rendered its selection visually and announced nothing,
+      // leaving a screen-reader user unable to tell which one was chosen.
       // A checkbox announces `checked`, not `selected` — TalkBack reads a
       // checkbox with no checked state as "not checked" regardless of selection.
       accessibilityState={
-        accessibilityRole === 'checkbox' ? { checked: active }
-        : accessibilityRole ? { selected: active }
-        : undefined
+        accessibilityRole === 'checkbox' ? { checked: active } : { selected: active }
       }
       // Chips are ~32pt tall; expand the tap zone vertically to the 44pt floor
       // (Designer anti-pattern: sub-44pt targets need hitSlop). Vertical-only so
@@ -89,7 +92,7 @@ const filledVariant = StyleSheet.create({
     color: theme.colorTextSecondary,
   },
   activeLabel: {
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
 });
 
@@ -110,10 +113,14 @@ const onDarkVariant = StyleSheet.create({
   },
   label: {
     ...baseLabel,
+    // Deliberately a translucent white rather than a token: the inactive label sits
+    // on a transparent chip over an unknown dark card colour, so it has to blend
+    // with whatever shows through. The ACTIVE label sits on a solid accent fill and
+    // is the token (B-168).
     color: 'rgba(255,255,255,0.85)',
   },
   activeLabel: {
-    color: '#fff',
+    color: theme.colorTextOnDark,
   },
 });
 
