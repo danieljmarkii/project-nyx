@@ -22,6 +22,7 @@ import { clearWidgetTimeline } from './widgetBridge';
 import { readRecoveryRequest, recordRecoveryRequest } from './recoveryMarker';
 import { hasFlaggedFoodInTrial, recordFlaggedFoodInTrial } from './trialContaminant';
 import { armRecoveryGate, useAuthStore } from '../store/authStore';
+import { persistAppConfig, loadCachedAppConfig, APP_CONFIG_DEFAULTS } from './appConfig';
 
 const GATE_KEY = 'nyx.recoveryInProgress';
 const t0 = 1_700_000_000_000;
@@ -51,6 +52,20 @@ describe('wipeLocalSession — the shipped SIGNED_OUT teardown', () => {
     expect(await hasFlaggedFoodInTrial('t1', 'chicken-treat')).toBe(true);
     await wipeLocalSession();
     expect(await hasFlaggedFoodInTrial('t1', 'chicken-treat')).toBe(false);
+  });
+
+  // B-402. The app_config bundle is cached in AsyncStorage, outside the SQLite
+  // clearLocalData wipes. The values are global product config, but the same blob
+  // holds the experimental allowlist — other users' UUIDs — so it must not outlive
+  // the session on a shared device.
+  it('clears the cached app_config bundle, allowlist UUIDs included', async () => {
+    await persistAppConfig({
+      values: APP_CONFIG_DEFAULTS,
+      allowlist: { ask_enabled: ['11111111-2222-3333-4444-555555555555'], ask_general_enabled: false },
+    });
+    expect(await loadCachedAppConfig()).not.toBeNull();
+    await wipeLocalSession();
+    expect(await loadCachedAppConfig()).toBeNull();
   });
 
   it('never throws when a wipe step fails — teardown always completes', async () => {
