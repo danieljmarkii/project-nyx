@@ -30,6 +30,22 @@ CLAUDE.md (the stable operating manual) and `STATUS.md` (the volatile state) are
 
 4. **Reconcile the backlog rows for every B-ID this session touched.** For each `B-NNN` referenced in this session's PR/commits, open its row in `docs/backlog.md` and bring its **Status** current **in the same commit as the STATUS.md update** — never leave the truth in STATUS.md while the backlog row still reads `Open` / `draft` / `in progress`. This is the loop that keeps drifting: work ships, STATUS.md records it, the backlog row doesn't catch up (caught reactively — B-022/B-045 on 2026-05-31, B-040/B-051/B-075 on 2026-06-11). **Rewrite the Status *head*, don't append to the tail** — the first token must read true at a glance per the structured-Status-head contract in `docs/backlog.md` (`Open` / `In progress` / `Partial` / `Blocked` / `Done` + date + PR). If the item fully shipped, close it `Done — <date> (PR #N)` and keep the row; if it partially shipped, mark `Partial` and name the remaining slices; if it's now stuck, mark `Blocked` with the reason. Never close without a resolving PR/session reference. (This is the same reconciliation the `backlog-groomer` skill runs on demand — Step 4 makes it happen every session, at the moment the truth is freshest, instead of waiting for a grooming pass.)
 
+   **Then check for duplicate B-IDs — this is the one check that has to fail loudly, because the bug is silent by construction.** ID allocation is *read the max, add one* against a working copy, so any two sessions open at once mint the same ID; the result is a perfectly well-formed row, nothing conflicts, and every cross-reference to that ID quietly becomes ambiguous. Run:
+
+   ```bash
+   grep -ohE '^\| B-[0-9]+ ' docs/backlog.md | sort | uniq -d
+   ```
+
+   **Any output at all is a stop-and-fix before you commit.** Do not push a wrap with a colliding ID and do not downgrade it to "noted for a grooming pass" — four collisions sat on `main` for a day under exactly that note, and a fifth landed on top of them. Resolve with this rule so no session has to re-litigate it: **the row that landed on `main` first keeps the ID; the later arrival is renumbered** to the next free ID (`grep -ohE '^\| B-[0-9]+ ' docs/backlog.md | grep -oE '[0-9]+' | sort -n | tail -1`, then +1). First-lands-keeps is what protects the IDs that code comments, tests, and merged PR bodies already point at — check with `git log -S'<distinctive row phrase>' -- docs/backlog.md` if the order isn't obvious.
+
+   Then fix the renumbered row's cross-references **by attribution, not by blind replace** — a bare `B-NNN` may belong to either row, so read every hit and update only the ones that mean the row you moved:
+
+   ```bash
+   grep -rn 'B-NNN' --include='*.md' --include='*.ts' --include='*.tsx' . | grep -v node_modules
+   ```
+
+   Give the renumbered row an inline provenance note in the row's _why_ cell — *"filed as B-441; **renumbered to B-482** — B-441 was taken on `main` by \<the other row\>"* — the shape the B-432 signup row already uses — so a `grep` from an older session record still lands somewhere true. `docs/sessions/` is append-only and is **not** rewritten to match (3a); the provenance note is what carries the old ID forward instead. _(Instituted 2026-07-26 — B-435 option (a), after the race hit three times in one day and left five live collisions in `main`.)_
+
 5. **Emit the full Session Summary** in the exact format from CLAUDE.md (§ "Session End — Automatic Summary"): Build Phase, What Was Built, Decisions Made, Persona Flags Raised, Open Questions Surfaced, Known Issues / Tech Debt, PM Action Items, Recommended Next Steps, Next Session Kickoff, Documentation Updates. Name the persona lenses from `docs/personas.md` that applied.
 
 6. **Emit the Dev Handoff** if anything was pushed this session — pull the exact runtime commands from `docs/dev-handoff-runbook.md` (default to Runtime B for now; see STATUS.md → Runtime in Use) and include the numbered **Manual QA Script** tied to acceptance criteria.
