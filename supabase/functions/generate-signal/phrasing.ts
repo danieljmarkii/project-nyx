@@ -81,7 +81,19 @@ export function templateCorrelation(f: CorrelationFinding, petName: string): str
       f.tier === 'established'
         ? `${petName}'s ${symptom} has tended to follow meals with ${f.protein}, across ${f.matchedPairs} matched days of logs`
         : `${petName}'s ${symptom} has tended to follow meals with ${f.protein} within about ${window} hours`
-    return `${lead} — they're always fed together, so feeding one without the other is what would tell them apart.`
+    // The ACTION is chosen by the engine, never here (f.jointGuidance). On an active diet
+    // trial the app must not tell the owner to vary a vet-directed elimination diet — it
+    // routes them to the person who can actually change it. `ask_vet` is also the honest
+    // default for an unset/unknown guidance, so a finding cached before this field existed
+    // degrades to the safe branch rather than the trial-breaking one.
+    if (f.jointGuidance === 'feed_apart') {
+      // Deliberately "start to separate them", not "tell them apart": separation only
+      // registers on a day the matcher selects as a case or control window, so the owner
+      // may feed them apart once and see nothing change. Promising a result we cannot
+      // guarantee on the next regeneration would be a promise the engine can silently break.
+      return `${lead} — they're always fed together, so feeding one without the other is what would start to separate them.`
+    }
+    return `${lead} — they're always fed together, so which one it is isn't clear yet. Worth raising with your vet before changing anything.`
   }
   if (f.tier === 'established') {
     return `${petName}'s ${symptom} has tended to follow meals with ${f.protein}, across ${f.matchedPairs} matched days of logs.`

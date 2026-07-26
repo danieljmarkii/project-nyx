@@ -558,6 +558,172 @@ Deno.test('B-351 — a row with no captured set behaves EXACTLY as it did before
   )
 })
 
+// ── Slice 6 adversarial-review regressions ───────────────────────────────────
+// Every test below reproduces a defect the adversarial pass found by running the real
+// module against new fixtures. They are the record of what was broken, so a future
+// simplification has to break them out loud.
+
+Deno.test('B-351 — declaring secondaries on UNRELATED foods must not promote a finding Early→Established', () => {
+  // Reproduced defect ①(a), the MERGE path — and this fixture is load-bearing in a way an
+  // earlier draft of it was not: chicken is fed DAILY while salmon is fed on a subset, so
+  // primary-only their exposure vectors DIFFER and they are two candidates. The moment each
+  // food declares the other as a secondary, salmon saturates to all-ones like chicken, the
+  // two merge, and the Bonferroni family drops 4 → 3 under a completely unrelated finding.
+  //
+  // Verified by mutation: with the family floor removed, `turkey` — every statistic
+  // byte-identical, p = 0.01563 — goes early (alpha 0.0125) → ESTABLISHED (alpha 0.01667).
+  // Established is the tier §8.5 uses to decide what a vet sees, so an owner photographing
+  // two unrelated bags would have strengthened a claim about a third protein.
+  const days = Array.from({ length: 14 }, (_, i) => i + 1)
+  const symptomEvents = [2, 4, 6, 8, 10, 12].map((d) => symptom('vomit', at(d, 15)))
+  const build = (sets: boolean) =>
+    input({
+      mealEvents: [
+        ...[2, 4, 6, 8, 10, 12].map((d) => setMeal(d, ['turkey'], 9)),
+        ...days.map((d) => setMeal(d, sets ? ['chicken', 'salmon'] : ['chicken'], 7)),
+        ...[2, 4, 6].map((d) => setMeal(d, sets ? ['salmon', 'chicken'] : ['salmon'], 10)),
+        ...[1, 5, 9].map((d) => setMeal(d, ['beef'], 11)),
+      ],
+      symptomEvents,
+    })
+  const primaryOnly = detectCorrelations(build(false))
+  const withSets = detectCorrelations(build(true))
+  const t1 = primaryOnly.find((f) => f.protein === 'turkey')
+  const t2 = withSets.find((f) => f.protein === 'turkey')
+  assert.ok(t1 && t2, 'turkey fires in both runs')
+  assert.equal(t1!.pValue, t2!.pValue, 'the statistics really are identical — only the family moved')
+  assert.equal(
+    t2!.correctedAlpha,
+    t1!.correctedAlpha,
+    'the family floor holds: capture about other foods can never loosen the bar',
+  )
+  assert.equal(t2!.tier, 'early', 'and so the tier that gates the vet report does not flip')
+})
+
+Deno.test('B-351 — a free-fed bowl declaring a SECOND protein must not promote a finding in ANOTHER symptom lane', () => {
+  // Reproduced defect ①(b) — the sharper of the two, because the mitigation that would
+  // otherwise cover it does not travel. A standing bowl used to remove ONE protein from
+  // candidacy and now removes every protein it declares. The Bonferroni family is shared
+  // across symptom lanes, but the `standingConfounder` tier cap is scoped to the lane the
+  // bowl actually overlaps — so a bowl that is down only during the VOMIT window can loosen
+  // the bar under a DIARRHEA finding it never touched.
+  //
+  // Verified by mutation: with the family floor removed, adding `salmon` to the bowl moves
+  // the diarrhea/turkey finding's alpha 0.00714 → 0.00833 against a fixed p = 0.00781, i.e.
+  // early → ESTABLISHED, which is the tier §8.5 uses to decide what reaches a vet.
+  const symptomEvents = [
+    ...[2, 4, 6, 8, 10, 12, 14].map((d) => symptom('diarrhea', at(d, 15))),
+    ...[22, 24, 26].map((d) => symptom('vomit', at(d, 15))),
+  ]
+  const build = (bowl: string[]) =>
+    input({
+      mealEvents: [
+        ...[2, 4, 6, 8, 10, 12, 14].map((d) => setMeal(d, ['turkey'], 9)),
+        ...Array.from({ length: 28 }, (_, i) => setMeal(i + 1, ['chicken'], 7)),
+        ...[2, 4, 6, 22, 24].map((d) => setMeal(d, ['salmon'], 10)),
+        ...[1, 5, 9, 21, 25].map((d) => setMeal(d, ['beef'], 11)),
+      ],
+      symptomEvents,
+      // Down only over the VOMIT window — so it confounds that lane and not the other.
+      feedingArrangements: [
+        { id: nextId(), primaryProtein: 'chicken', proteins: bowl, activeFrom: at(20, 0), activeUntil: null },
+      ],
+    })
+  const narrow = detectCorrelations(build(['chicken']))
+  const wide = detectCorrelations(build(['chicken', 'salmon']))
+  const pick = (fs: CorrelationFinding[]) =>
+    fs.find((f) => f.symptomType === 'diarrhea' && f.protein === 'turkey')
+  const d1 = pick(narrow)
+  const d2 = pick(wide)
+  assert.ok(d1 && d2, 'the diarrhea finding fires in both runs')
+  assert.equal(d1!.pValue, d2!.pValue, 'untouched by the bowl — only the family moved')
+  assert.equal(
+    d2!.correctedAlpha,
+    d1!.correctedAlpha,
+    "a bowl's extra declared protein must not loosen an unrelated lane's bar",
+  )
+  assert.equal(d2!.tier, 'early')
+})
+
+Deno.test('B-351 — the family floor does NOT re-introduce the bloat §7 #2 rules out', () => {
+  // The floor is a FLOOR: a 4-protein bag must still cost one comparison, and the bar
+  // against a real single-protein correlate must not tighten just because the owner
+  // photographed a multi-protein panel. (This is the AC the adversarial pass verified
+  // passing before the floor existed; it must still pass with it.)
+  const symptomEvents = [2, 4, 6, 8, 10, 12].map((d) => symptom('vomit', at(d, 15)))
+  const build = (bagSet: string[]) =>
+    input({
+      mealEvents: [
+        ...[2, 4, 6, 8, 10, 12].map((d) => setMeal(d, ['turkey'], 9)),
+        ...Array.from({ length: 14 }, (_, i) => setMeal(i + 1, bagSet, 7)),
+      ],
+      symptomEvents,
+    })
+  const single = detectCorrelations(build(['beef']))
+  const multi = detectCorrelations(build(['beef', 'pork', 'lamb', 'salmon']))
+  const a = single.find((f) => f.protein === 'turkey')
+  const b = multi.find((f) => f.protein === 'turkey')
+  assert.ok(a && b)
+  assert.equal(b!.correctedAlpha, a!.correctedAlpha, 'a 4-protein bag costs exactly one comparison')
+  assert.equal(b!.tier, a!.tier)
+})
+
+Deno.test('B-351 — a joint candidate is CAPPED AT EARLY, so it never reaches the vet report (§7 #4)', () => {
+  // Reproduced defect ④: a perfectly collinear cluster with clean attribution and enough
+  // matched pairs reached `established` and printed "chicken and duck reached the established
+  // association threshold" on the report. Established is the tier §8.5 uses to decide what a
+  // vet sees at all; certifying an association we cannot attribute to a specific antigen is
+  // exactly the claim that tier withholds.
+  const mealEvents = [
+    ...[1, 3, 5, 7, 9, 11, 13, 15].map((d) => setMeal(d, ['salmon'], 9)),
+    ...[2, 4, 6, 8, 10, 12, 14].map((d) => setMeal(d, ['duck', 'chicken'], 9)),
+  ]
+  const symptomEvents = [2, 4, 6, 8, 10, 12, 14].map((d) => symptom('vomit', at(d, 15)))
+  const findings = detectCorrelations(input({ mealEvents, symptomEvents }))
+  const joint = findings.find((f) => f.jointCandidate)
+  assert.ok(joint, 'the joint candidate still fires — it is capped, not suppressed')
+  assert.equal(joint!.tier, 'early', 'collinearity is itself an uncontrolled variable')
+})
+
+Deno.test('B-351 — an ACTIVE DIET TRIAL switches the joint action to the vet, and never suppresses the finding', () => {
+  // Reproduced defect ②, the highest-severity one. `priorityBand` promotes a correlation to
+  // the LEAD slot for trial pets, so "feed one without the other" would lead Home for the
+  // owner running a vet-directed elimination diet — the population §7 #6 says joint
+  // candidates are MOST likely for.
+  const mealEvents = [
+    ...[1, 3, 5, 7, 9, 11].map((d) => setMeal(d, ['salmon'], 9)),
+    ...[2, 4, 6, 8].map((d) => setMeal(d, ['duck', 'chicken'], 9)),
+  ]
+  const symptomEvents = [2, 4, 6, 8].map((d) => symptom('vomit', at(d, 15)))
+  const onTrial = detectCorrelations(
+    input({ pet: { ...dog, dietTrialActive: true }, mealEvents, symptomEvents }),
+  )
+  const offTrial = detectCorrelations(input({ mealEvents, symptomEvents }))
+  assert.equal(onTrial.length, offTrial.length, 'the finding is NOT suppressed on a trial pet')
+  assert.equal(onTrial.find((f) => f.jointCandidate)!.jointGuidance, 'ask_vet')
+  assert.equal(offTrial.find((f) => f.jointCandidate)!.jointGuidance, 'feed_apart')
+})
+
+Deno.test('B-351 — a cluster member that is only "low" in a CONTROL window still lowers the floor', () => {
+  // The narrow gap the adversarial pass found in the floor loop: it ran inside `if (inCase)`,
+  // so an exposure attributable only through a shared bowl on control days left the floor at
+  // 'high'. A discordant pair is built from BOTH windows, so an unattributable control
+  // exposure undermines the comparison just as much as a case one.
+  const clean = [
+    ...[1, 3, 5, 7, 9, 11, 13].map((d) => setMeal(d, ['salmon'], 9, 'high')),
+    ...[2, 4, 6, 8, 10, 12].map((d) => setMeal(d, ['beef'], 9, 'high')),
+  ]
+  // Add a low-confidence beef exposure on a CONTROL day only.
+  const withLowControl = [...clean, setMeal(3, ['beef'], 10, 'low')]
+  const a = detectCorrelations(input({ mealEvents: clean, symptomEvents: [2, 4, 6, 8, 10, 12].map((d) => symptom('vomit', at(d, 15))) }))
+  const b = detectCorrelations(input({ mealEvents: withLowControl, symptomEvents: [2, 4, 6, 8, 10, 12].map((d) => symptom('vomit', at(d, 15))) }))
+  const beefA = a.find((f) => f.proteins.includes('beef'))
+  const beefB = b.find((f) => f.proteins.includes('beef'))
+  assert.ok(beefA && beefB)
+  assert.equal(beefA!.attributionFloor, 'high')
+  assert.equal(beefB!.attributionFloor, 'low', 'the control arm counts toward the floor too')
+})
+
 Deno.test('jointProteinLabel — names every member, and reads as English at 1, 2 and 3+', () => {
   assert.equal(jointProteinLabel(['chicken']), 'chicken')
   assert.equal(jointProteinLabel(['chicken', 'duck']), 'chicken and duck')
@@ -2330,6 +2496,7 @@ Deno.test('detectPostprandialTiming — within band 2, a correlation leads ⑤ (
     protein: 'beef',
     proteins: ['beef'],
     jointCandidate: false,
+    jointGuidance: null,
     matchedPairs: 4,
     caseExposed: 4,
     controlExposed: 1,
@@ -3173,6 +3340,7 @@ Deno.test('rankFindings — a reflection ranks below safety AND below a correlat
     protein: 'beef',
     proteins: ['beef'],
     jointCandidate: false,
+    jointGuidance: null,
     matchedPairs: 4,
     caseExposed: 3,
     controlExposed: 0,
@@ -3215,6 +3383,7 @@ Deno.test('rankFindings — safety always leads, then Established before Early',
     protein: 'chicken',
     proteins: ['chicken'],
     jointCandidate: false,
+    jointGuidance: null,
     matchedPairs: 4,
     caseExposed: 3,
     controlExposed: 0,
@@ -3473,8 +3642,34 @@ Deno.test('detectCoverage — B-351: a staple hiding as a SECONDARY protein is f
   ]
   const sw = findDiag(detectCoverage(input({ pet: dog, mealEvents, symptomEvents })), 'staple_washout')
   assert.ok(sw, 'a secondary-borne staple is still a staple')
-  assert.equal(sw!.protein, 'chicken', 'ties resolve on the ascending key, deterministically')
+  // BOTH are named. Naming only the alphabetical winner would make the copy ("chicken is in
+  // most of what Nyx eats, so it can't be isolated") true of chicken while implying duck
+  // WAS assessed and cleared — reassurance-by-omission on the surface built to say the
+  // opposite. (Adversarial review, slice 6; on a beef/chicken tie the alphabet would have
+  // picked the clinically uninteresting one.)
+  assert.equal(sw!.protein, 'chicken and duck')
   assert.equal(sw!.stapleSource, 'meals')
+})
+
+Deno.test('detectCoverage — B-351: a NON-tied dominant protein is still named alone', () => {
+  // Regression fence for the change above: the joint label is for proteins that BOTH clear
+  // the dominance floor, not for every secondary a staple happens to travel with.
+  const mealEvents = [
+    ...Array.from({ length: 10 }, (_, i) =>
+      meal({ occurredAt: at(10 + i, 9), primaryProtein: 'chicken', proteins: ['chicken'] }),
+    ),
+    // duck rides along in only 2 of 12 feedings — nowhere near the 0.8 floor.
+    ...Array.from({ length: 2 }, (_, i) =>
+      meal({ occurredAt: at(20 + i, 9), primaryProtein: 'chicken', proteins: ['chicken', 'duck'] }),
+    ),
+  ]
+  const symptomEvents = [
+    symptom('vomit', at(13, 8)),
+    symptom('vomit', at(17, 8)),
+    symptom('vomit', at(21, 8)),
+  ]
+  const sw = findDiag(detectCoverage(input({ pet: dog, mealEvents, symptomEvents })), 'staple_washout')
+  assert.equal(sw!.protein, 'chicken')
 })
 
 Deno.test('detectCoverage — B-070: a dominant staple WITH protein contrast still washes out and is explained', () => {

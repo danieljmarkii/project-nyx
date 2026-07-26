@@ -198,14 +198,25 @@ export interface CachedSummary {
 // ── Descriptive intake aggregates (server-side mirror of the PR-1 cards) ───────────────
 // Computed over the in-window meals the detection engine already loaded — NOT a second DB
 // read. These mirror lib/analytics.ts (same floors, same free-fed exclusions, same
-// canonicalization) so the summary's numbers match the cards it sits above — with ONE
-// deliberate exception called out below: the protein CLAUSE stays meals-only.
+// canonicalization) so the summary's numbers match the cards it sits above — with TWO
+// exceptions, one deliberate and one outstanding: the protein CLAUSE stays meals-only (by
+// design, below), and since B-351 slice 6 it also still keys on `primary_protein` while the
+// card keys on the whole captured SET (B-463 — a real divergence, not a design choice).
 
 /** Most-logged MEAL protein this month, canonicalized. Treats excluded ON PURPOSE here —
  *  the summary makes the narrower "most-logged MEAL protein" claim ("what protein does Nyx
  *  eat"), so a treat's filler protein must not dominate the sentence. This DELIBERATELY
  *  DIVERGES from computeTopProteins, which (post-B-111, 2026-06-18) ranks protein EXPOSURE
- *  incl. treats (flagged) on the card. Do NOT "align" this by dropping the treat filter — it
+ *  incl. treats (flagged) on the card.
+ *
+ *  ⚠ B-463 — a SECOND divergence, and this one is NOT deliberate: since B-351 slice 6 the
+ *  card and the correlation engine count the whole captured protein SET, and this still
+ *  reads `primary_protein`, so a protein present only as a secondary never wins the clause.
+ *  Widening it is the right fix, but it changes a clinically-reviewed AI-summary claim, so
+ *  it needs an explicit nod rather than a mechanical edit — which is exactly what the next
+ *  sentence has always said about the treat filter.
+ *
+ *  Do NOT "align" this by dropping the treat filter — it
  *  would change a clinically-reviewed AI-summary claim. The card↔summary grounding nuance
  *  (card #1 may be a treat-sourced protein the clause omits) is a flagged Open Question for
  *  the PM, not a silent fix. Below MIN_MEALS_FOR_RANKING identified meals → null. */

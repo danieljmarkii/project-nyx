@@ -76,6 +76,9 @@ export interface CorrelationFinding {
   proteins?: string[];
   /** `proteins.length > 1` — statistically inseparable in this pet's logged diet. */
   jointCandidate?: boolean;
+  /** Which resolving action the engine authorised for a joint candidate. Mirrors
+   *  detection.ts; absent on a pre-slice-6 cached row (which is never joint anyway). */
+  jointGuidance?: 'feed_apart' | 'ask_vet' | null;
   matchedPairs: number;
   symptomEventCount: number;
   correlationWindowHours: number;

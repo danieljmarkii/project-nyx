@@ -589,6 +589,27 @@ export interface CorrelationFinding extends FindingBase {
    * exactly (identical exposure vectors ⇒ identical test statistic).
    */
   jointCandidate: boolean
+  /**
+   * For a JOINT candidate: which resolving action the copy is allowed to offer. Resolved
+   * HERE, in the deterministic engine, exactly as `WorseningTier` and `StapleSource` are —
+   * copy renders the decision, it never makes it. `null` when the candidate is not joint.
+   *
+   * `'feed_apart'` — the normal case. Separating the proteins is the one manipulation that
+   * can break the collinearity, so the card says so.
+   *
+   * `'ask_vet'` — the pet is on an ACTIVE diet trial. "Feed one without the other" is then
+   * an instruction to break a vet-directed elimination diet, on a card that
+   * `priorityBand` deliberately promotes to the LEAD slot for trial pets — so the most
+   * dangerous version of this copy would reach precisely the owner it can hurt most, and
+   * §7 #6 predicts joint candidates are MOST likely for a strict single-food trial dog.
+   * `detectStapleWashout` already refuses to fire on trial pets for the weaker version of
+   * this harm ("implies the owner should vary it — sabotaging the trial and inverting
+   * Pets > $"); the joint card does not imply it, it instructs it. The finding is NOT
+   * suppressed — a correlation is the wedge insight for a trial pet, and dropping it would
+   * hide a real signal — only its action clause is replaced by routing to the vet, who is
+   * the one person who can change a prescribed diet.
+   */
+  jointGuidance: 'feed_apart' | 'ask_vet' | null
   /** Matched case/control pairs analysed (a symptom episode + its time-matched control window). */
   matchedPairs: number
   /** Of the matched pairs, how many had this protein in the CASE (pre-symptom) window. */
@@ -614,7 +635,8 @@ export interface CorrelationFinding extends FindingBase {
   /** The symptom-class-specific window actually applied (vomit ~12h, diarrhea ~24h, derm ~72h). */
   correlationWindowHours: number
   /**
-   * Weakest attribution among this protein's case-window exposures. 'low' means a
+   * Weakest attribution among this candidate's exposures, across BOTH arms and (for a
+   * joint candidate) across every cluster member. 'low' means a
    * shared / unattributed bowl was implicated → the finding is CAPPED at Early, never
    * Established (we can't be sure this pet ate it). Single-cat / hand-fed = 'high'.
    */
@@ -1741,6 +1763,12 @@ interface StandingExposure {
    * the tier) but names no protein to exclude, exactly as the old `null` did.
    */
   proteins: string[]
+  /**
+   * The bowl's canonicalized PRIMARY protein alone, or null. Used ONLY by the Bonferroni
+   * family floor (see `familyFloorPadding`) to reconstruct which proteins a primary-only
+   * engine would have excluded. Never used for candidacy — that reads the whole set.
+   */
+  primary: string | null
   /** Active-window start in ms (-Infinity = unbounded past — active since before lookback). */
   fromMs: number
   /** Active-window end in ms, end-of-day-INCLUSIVE (+Infinity = still active / bowl still down). */
@@ -1776,6 +1804,7 @@ function classifyArrangements(arrangements: FeedingArrangement[]): StandingExpos
     if (untilMs <= fromMs) continue // an empty / inverted window exposes nothing
     out.push({
       proteins: readProteinSet(a.proteins, a.primaryProtein),
+      primary: canonicalizeProtein(a.primaryProtein),
       fromMs,
       untilMs,
       attribution: (a.attributionConfidence ?? 'high') as AttributionConfidence,
@@ -1854,10 +1883,19 @@ interface ExposurePair {
  * (§9). So the near-collinear case degrades into the engine's existing conservatism
  * rather than into a false exoneration.
  *
- * It also self-resolves, with nothing to re-tune: the first time the owner feeds one
- * without the other, ONE window differs, the vectors diverge, and the cluster splits
- * into separately-attributable candidates. That is precisely the resolving action the
- * joint card asks for.
+ * It resolves as the diet varies, with nothing to re-tune — but the honest statement of
+ * that is narrower than it first looks, and the adversarial pass falsified the loose one.
+ * The vector is defined over the MATCHED SET, and matching is 1:1 nearest-eligible-control,
+ * so most days never enter the analysis at all. Feeding the two apart on a day that is
+ * never selected as a case or control window changes NOTHING — reproduced: the same
+ * separation on day 0 left the cluster intact and on day 1 split it. So the true claim is
+ * "the first time they differ inside a window the matcher selects", the owner-facing copy
+ * says "would START to separate them" rather than promising a result, and B-465 records the
+ * coverage limitation (whose real fix is B-049's 1:M matching, not anything here).
+ *
+ * Note this does NOT weaken the case for exact identity above — that rests on the test
+ * statistic being a pure function of the vector, which is true regardless of how many days
+ * reach the matched set. It only removes a convenience argument that was doing no work.
  *
  * WHY IT IS PER-SYMPTOM. The vector is defined over a symptom type's matched set, and
  * those sets differ (each symptom carries its own window length and its own control
@@ -1948,6 +1986,14 @@ export function detectCorrelations(
   // Sorted so candidate emission order — and therefore the pre-rank order of equal-strength
   // findings — is a function of the data, not of Map/insertion order.
   const proteins = Array.from(new Set(meals.flatMap((m) => m.proteins))).sort()
+  // The protein set a PRIMARY-ONLY engine would have seen — the pre-slice-6 candidate pool.
+  // Its only consumer is the Bonferroni family floor below; nothing about candidacy,
+  // exposure or attribution reads it.
+  const primaryOnlyProteins = new Set(
+    input.mealEvents
+      .map((m) => canonicalizeProtein(m.primaryProtein))
+      .filter((p): p is string => p !== null),
+  )
   // Need contrast: a single constant diet can't be correlated against anything. This
   // sole-protein case is one end of what the B-053 staple-washout diagnostic explains
   // (B-070 widened it to ≥80% DOMINANCE — a dominant staple that has contrast still
@@ -1999,6 +2045,7 @@ export function detectCorrelations(
     const windowStart = anchorMs - windowMs
     let standingInWindow = false
     const standingProteins = new Set<string>()
+    const standingPrimaries = new Set<string>()
     for (const s of standing) {
       // Interval overlap of the standing active span [fromMs, untilMs) with the
       // exposure window [windowStart, anchorMs].
@@ -2008,6 +2055,7 @@ export function detectCorrelations(
         // the one on the front of the pack (B-351 slice 6). An unidentified food
         // contributes an empty set — a generic confounder that names nothing.
         for (const protein of s.proteins) standingProteins.add(protein)
+        if (s.primary !== null) standingPrimaries.add(s.primary)
       }
     }
     // Was ANY medication on board in this window (B-117 PR 9)? Inclusive interval overlap of
@@ -2021,12 +2069,14 @@ export function detectCorrelations(
         break
       }
     }
-    return { exposures, mealCount, standingInWindow, standingProteins, medActive }
+    return { exposures, mealCount, standingInWindow, standingProteins, standingPrimaries, medActive }
   }
 
   interface Candidate {
     /** The collinearity cluster this candidate represents — ascending, length ≥1. */
     proteins: string[]
+    /** `proteins.length > 1`. Read by the tier gate: collinearity caps at Early (§7 #4). */
+    jointCandidate: boolean
     symptomType: SymptomType
     windowHours: number
     matchedPairs: number
@@ -2056,6 +2106,35 @@ export function detectCorrelations(
     symptomEventCount: number
   }
   const candidates: Candidate[] = []
+  // ── The Bonferroni family FLOOR (adversarial review, slice 6) ──────────────────────
+  //
+  // `correctedAlpha` divides by the family size, so anything that SHRINKS the family
+  // LOOSENS the bar — and the adversarial pass reproduced two ways slice 6 shrinks it,
+  // each promoting an UNRELATED finding Early → Established with byte-identical statistics:
+  //
+  //   (a) a MERGE — two previously-separate proteins become collinear once secondaries are
+  //       declared, so 4 clusters become 3;
+  //   (b) a WIDER FREE-FED EXCLUSION — a standing bowl used to remove ONE protein from
+  //       candidacy and now removes every protein it declares (up to MAX_CAPTURED_PROTEINS).
+  //       This one is the sharper of the two, because a bowl overlapping only ONE symptom
+  //       lane still shrinks the family shared by ALL lanes, while the `standingConfounder`
+  //       tier cap does NOT travel across lanes.
+  //
+  // In both, the NEW number is arguably the more honest count of comparisons actually
+  // made — but the consequence is that a finding's tier becomes a function of capture
+  // events about *other foods*, moving toward MORE confidence, and `established` is the
+  // tier §8.5 uses to decide what reaches a vet at all. That is the exact class of defect
+  // `suppressedFamilyCount` was added to prevent ("suppression can never promote an
+  // unrelated finding's tier"), so the same stance applies: the family may never be
+  // smaller than a primary-only engine would have made it.
+  //
+  // PROVISIONAL (flagged for PM / Data ratification, spec §7 #2): this deliberately
+  // forgoes a real loosening that better capture arguably earns, in exchange for the
+  // guarantee that photographing one bag can never strengthen a claim about a different
+  // protein. It does NOT re-introduce the "4–5 proteins bloat the family" objection §7 #2
+  // rules out — the floor is a floor, so a 4-protein bag still costs ONE comparison, and
+  // the bar against a real single-protein correlate is unchanged.
+  let familyFloorPadding = 0
   // Would-be candidates withdrawn by the medication confounder pass (B-117 PR 9). These
   // were FULLY tested (a real matched set was built, the pseudo-exposure test ran) and then
   // withdrawn for a confound — so they still consumed a comparison and must still count
@@ -2103,6 +2182,12 @@ export function detectCorrelations(
     // Scoped to actual overlap: an ENDED arrangement whose span touches none of these
     // windows leaves its protein evaluable on the discrete data it WAS controlled for.
     const freeFedProteins = new Set<string>()
+    // The primary-only subset of the above, for the family floor. A bowl declaring a SECOND
+    // protein excludes that protein from candidacy — correct, but it also removes a
+    // comparison from the family, which is a tier-LOOSENING move driven by a capture event
+    // about a different food. This set records what a primary-only engine would have
+    // excluded, so the floor can hold the family where it was.
+    const freeFedPrimaries = new Set<string>()
     for (const onset of onsets) {
       const caseWin = windowExposures(onset, windowMs)
       // Case window must be logging-eligible too — only compare windows where we know
@@ -2115,6 +2200,7 @@ export function detectCorrelations(
         exposures: Map<string, AttributionConfidence>
         standingInWindow: boolean
         standingProteins: Set<string>
+        standingPrimaries: Set<string>
         medActive: boolean
       } | null = null
       let bestDist = Infinity
@@ -2135,6 +2221,8 @@ export function detectCorrelations(
       if (!bestCtrl) continue // no eligible control → this case can't be matched
       for (const p of caseWin.standingProteins) freeFedProteins.add(p)
       for (const p of bestCtrl.standingProteins) freeFedProteins.add(p)
+      for (const p of caseWin.standingPrimaries) freeFedPrimaries.add(p)
+      for (const p of bestCtrl.standingPrimaries) freeFedPrimaries.add(p)
       pairs.push({
         caseExp: caseWin.exposures,
         ctrlExp: bestCtrl.exposures,
@@ -2157,6 +2245,14 @@ export function detectCorrelations(
       proteins.filter((p) => !freeFedProteins.has(p)),
       pairs,
     )
+
+    // How many comparisons a primary-only engine would have made for this symptom. See
+    // `familyFloorPadding`. Uses `freeFedPrimaries`, not `freeFedProteins`, precisely so a
+    // bowl's newly-declared secondaries cannot shrink the floor along with the family.
+    const primaryOnlyFamilyFloor = Array.from(primaryOnlyProteins).filter(
+      (p) => !freeFedPrimaries.has(p),
+    ).length
+    familyFloorPadding += Math.max(0, primaryOnlyFamilyFloor - clusters.length)
 
     // If a free-fed standing exposure sat in-window for ANY matched pair, the whole
     // matched set for this symptom is confounded → cap every candidate at Early
@@ -2212,7 +2308,7 @@ export function detectCorrelations(
       // family (they exactly match the cluster loop below — one comparison per CLUSTER,
       // not per raw protein, or a suppressed symptom would over-count the family).
       // Keeps correctedAlpha STABLE so suppression can never promote an unrelated finding's tier.
-      suppressedFamilyCount += clusters.length
+      suppressedFamilyCount += Math.max(clusters.length, primaryOnlyFamilyFloor)
       continue
     }
 
@@ -2242,12 +2338,24 @@ export function detectCorrelations(
             if (p.caseExp.get(member) === 'low') attributionFloor = 'low'
           }
         }
-        if (inCtrl) controlExposed++
+        if (inCtrl) {
+          controlExposed++
+          // The CONTROL arm counts toward the floor too. The pre-slice-6 code scanned only
+          // the case window, so a member attributable only through a shared bowl on control
+          // days left the floor at 'high' and the finding could be certified Established —
+          // while the docstring said "weakest attribution among this protein's exposures".
+          // A discordant pair is built from BOTH windows, so an unattributable control
+          // exposure undermines the comparison just as much as a case one.
+          for (const member of cluster) {
+            if (p.ctrlExp.get(member) === 'low') attributionFloor = 'low'
+          }
+        }
         if (inCase && !inCtrl) b++
         else if (!inCase && inCtrl) c++
       }
       candidates.push({
         proteins: cluster,
+        jointCandidate: cluster.length > 1,
         symptomType,
         windowHours,
         matchedPairs: pairs.length,
@@ -2270,7 +2378,8 @@ export function detectCorrelations(
   // `suppressedFamilyCount` keeps medication-withdrawn candidates in the family (B-117 PR 9):
   // they were tested then withheld for a confound, so they still consumed a comparison —
   // otherwise suppression would silently inflate an unrelated finding's tier.
-  const correctedAlpha = cfg.familywiseAlpha / (candidates.length + suppressedFamilyCount)
+  const correctedAlpha =
+    cfg.familywiseAlpha / (candidates.length + suppressedFamilyCount + familyFloorPadding)
 
   const findings: CorrelationFinding[] = []
   for (const cand of candidates) {
@@ -2299,7 +2408,19 @@ export function detectCorrelations(
     // medication on board (B-117 PR 9, §8 "caveated") each cap the finding at Early — an
     // uncontrolled variable means we cannot certify a clean Established association. (A
     // CASE-ENRICHED medication never reaches here; it suppressed the symptom type above.)
+    // A JOINT candidate is capped at Early, unconditionally (§7 #4: "a cluster with only
+    // collinear/low-confidence exposures caps at Early"). The build originally capped on
+    // attribution confidence alone, which is a DIFFERENT guarantee — a perfectly collinear
+    // {chicken, duck} cluster with clean attribution and 6 matched pairs reached
+    // Established and printed "chicken and duck reached the established association
+    // threshold" on the vet report. Established is the tier §8.5 uses to decide what a vet
+    // sees at all, and certifying an association we cannot even attribute to a specific
+    // antigen is precisely the claim that tier is supposed to withhold. Collinearity is
+    // itself an uncontrolled variable, so it caps exactly as a standing confounder or an
+    // on-board medication does. (Caught by the adversarial pass; the spec had said this and
+    // the build had not.)
     const tier: EvidenceTier =
+      !cand.jointCandidate &&
       attributionFloor === 'high' &&
       !standingConfounder &&
       !medicationPresent &&
@@ -2317,7 +2438,13 @@ export function detectCorrelations(
       // candidate must never be narrowed to a representative on any surface.
       protein: jointProteinLabel(cand.proteins),
       proteins: cand.proteins,
-      jointCandidate: cand.proteins.length > 1,
+      jointCandidate: cand.jointCandidate,
+      // Resolved in the engine, never in the copy layer — see CorrelationFinding.jointGuidance.
+      jointGuidance: cand.jointCandidate
+        ? input.pet.dietTrialActive
+          ? 'ask_vet'
+          : 'feed_apart'
+        : null,
       matchedPairs,
       caseExposed,
       controlExposed,
@@ -3520,15 +3647,16 @@ function detectRateMeals(
  */
 function resolveStapleSource(
   meals: ClassifiedMeal[],
-  protein: string,
+  // Every protein that cleared the dominance floor, not just one — see detectStapleWashout.
+  dominant: readonly string[],
   config: DetectionConfig,
 ): StapleSource {
   let mealCount = 0
   let treatCount = 0
   for (const m of meals) {
-    // Set membership (B-351 slice 6): a feeding counts for the staple if the staple is
-    // ANYWHERE in its protein set — the same rule the dominance count above uses.
-    if (!m.proteins.includes(protein)) continue
+    // Set membership (B-351 slice 6): a feeding counts for the staple if ANY dominant
+    // protein is ANYWHERE in its protein set — the same rule the dominance count uses.
+    if (!m.proteins.some((p) => dominant.includes(p))) continue
     if (m.foodType === 'meal') mealCount++
     else if (m.foodType === 'treat') treatCount++
   }
@@ -3576,15 +3704,26 @@ function detectStapleWashout(
   for (const m of meals) {
     for (const protein of m.proteins) counts.set(protein, (counts.get(protein) ?? 0) + 1)
   }
-  let topProtein = ''
   let topCount = 0
-  for (const [p, c] of counts) {
-    if (c > topCount || (c === topCount && topProtein !== '' && p < topProtein)) {
-      topProtein = p
-      topCount = c
-    }
-  }
+  for (const c of counts.values()) if (c > topCount) topCount = c
   if (topCount / meals.length < config.coverage.stapleDominanceFraction) return null
+
+  // NAME EVERY DOMINANT PROTEIN, not just the top one (adversarial review, slice 6).
+  // Under set membership several proteins can clear the dominance floor at once — the
+  // reviewer's fixture had two at 100% — and this diagnostic's whole job is to explain
+  // why the engine CANNOT assess something. Naming one of them makes both strings
+  // ("antelope is in most of what Nyx eats, so it can't be isolated" on the report;
+  // "…there's nothing to compare it against" on Home) literally true of the named protein
+  // while inviting the inference that the unnamed one WAS assessed and came back clean.
+  // That is reassurance-by-omission on the surface built to say the opposite, and on a
+  // beef/chicken tie the alphabet would pick the clinically uninteresting one. The joint
+  // label is the same discipline detector ① uses for a cluster, applied to the diagnostic
+  // that explains ①'s silence.
+  const dominant = Array.from(counts.entries())
+    .filter(([, c]) => c / meals.length >= config.coverage.stapleDominanceFraction)
+    .map(([p]) => p)
+    .sort((a, b) => a.localeCompare(b))
+  const topProtein = jointProteinLabel(dominant)
 
   // "...linked to the symptoms you're tracking" must be TRUE — there must be symptoms to
   // explain, or the copy falsely implies symptoms (reassurance-by-implication). The floor
@@ -3596,7 +3735,7 @@ function detectStapleWashout(
   // Resolve the copy register from the staple's meal/treat split so the copy never claims
   // "nearly every meal" when it is treat-borne (B-070). Decided here in the deterministic,
   // adversarially-reviewed engine (like WorseningTier); copy only renders the result.
-  const stapleSource = resolveStapleSource(meals, topProtein, config)
+  const stapleSource = resolveStapleSource(meals, dominant, config)
 
   return { type: 'staple_washout', actionability: 'explanation', protein: topProtein, symptomEpisodes, stapleSource }
 }

@@ -63,6 +63,7 @@ const correlation = (over: Partial<CorrelationFinding> = {}): CorrelationFinding
   protein: 'chicken',
   proteins: ['chicken'],
   jointCandidate: false,
+  jointGuidance: null,
   matchedPairs: 4,
   caseExposed: 4,
   controlExposed: 1,
@@ -216,6 +217,7 @@ const joint = (over: Partial<CorrelationFinding> = {}) =>
     protein: 'chicken and duck',
     proteins: ['chicken', 'duck'],
     jointCandidate: true,
+    jointGuidance: 'feed_apart',
     ...over,
   })
 
@@ -236,12 +238,37 @@ Deno.test('templateCorrelation — a joint candidate names EVERY member of the c
 
 Deno.test('templateCorrelation — the joint sentence ends on the ACTION, not the ambiguity (D5)', () => {
   // "We can't separate them" is a dead end for an owner; "feed one without the other" is
-  // the one move that resolves it — and it resolves it in the engine too, since a single
-  // divergent window splits the cluster.
+  // the one move that can break the collinearity.
   const t = templateCorrelation(joint(), 'Mochi')
   assert.ok(/always fed together/i.test(t), 'says why they cannot be separated')
   assert.ok(/feeding one without the other/i.test(t), 'gives the resolving action')
-  assert.ok(t.trimEnd().endsWith('apart.'), 'the action is the last thing the owner reads')
+  assert.ok(t.trimEnd().endsWith('separate them.'), 'the action is the last thing the owner reads')
+  // Deliberately "start to separate them", NOT "tell them apart": separation only registers
+  // on a day the matcher picks as a case or control window, so an owner can feed them apart
+  // once and see the card unchanged (adversarial review reproduced exactly that). The copy
+  // must not promise a result the next regeneration may not deliver.
+  assert.equal(/would tell them apart/i.test(t), false, 'no promise of an immediate result')
+})
+
+Deno.test('templateCorrelation — on an ACTIVE DIET TRIAL the joint card never says to feed them apart', () => {
+  // The sharpest finding of the slice-6 adversarial pass. "Feed one without the other" is
+  // an instruction to break a vet-directed elimination diet — and priorityBand PROMOTES a
+  // correlation to the LEAD slot for trial pets, so the most dangerous version of this copy
+  // reaches exactly the owner it can hurt most. detectStapleWashout already refuses to fire
+  // on trial pets for the weaker version of this harm.
+  const t = templateCorrelation(joint({ jointGuidance: 'ask_vet' }), 'Mochi')
+  assert.equal(/feeding one without the other/i.test(t), false, 'never instructs a diet change')
+  assert.equal(/apart/i.test(t), false, 'and not by a synonym either')
+  assert.ok(/vet/i.test(t), 'routes to the person who can change a prescribed diet')
+  assert.ok(t.includes('chicken') && t.includes('duck'), 'the finding itself is NOT suppressed')
+})
+
+Deno.test('templateCorrelation — an UNSET jointGuidance degrades to the safe branch, not the trial-breaking one', () => {
+  // A finding cached before jointGuidance existed, or any future path that forgets to set
+  // it, must not fall through to "feed them apart" for a pet that might be on a trial.
+  const t = templateCorrelation(joint({ jointGuidance: null }), 'Mochi')
+  assert.equal(/feeding one without the other/i.test(t), false)
+  assert.ok(/vet/i.test(t))
 })
 
 Deno.test('templateCorrelation — the joint sentence is non-causal, non-reassuring, and self-validating', () => {

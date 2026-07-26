@@ -364,8 +364,20 @@ export function evidenceText(finding: SignalFinding, petName: string): string {
     // one: WHY the app can't say which protein it is. The card sentence already carries
     // the resolving action, so the tap-through explains the evidence rather than
     // repeating the ask. `finding.protein` already names every member of the cluster.
+    // NOT "…it's both of them or either one" (an earlier draft) — that forecloses
+    // "neither", which is a stronger claim than an associational finding can support: the
+    // pattern could be driven by something not on this list at all.
+    //
+    // The follow-on differs by the ENGINE's resolved guidance, never by a client decision.
+    // On an active diet trial the app must not suggest varying a vet-directed elimination
+    // diet, so it routes to the vet instead. Anything other than an explicit 'feed_apart'
+    // takes the safe branch, so a row cached before that field existed — or any future path
+    // that forgets to set it — can never surface the trial-breaking wording.
     const cantSeparate = isJointCandidate(finding)
-      ? ` Those proteins always turn up together in what you've logged, so this pattern can't tell them apart yet — it's both of them or either one.`
+      ? ` Those proteins always turn up together in what you've logged, so this pattern can't tell them apart yet.` +
+        (finding.jointGuidance === 'feed_apart'
+          ? ` Feeding one without the other would start to separate them.`
+          : ` Your vet is the right person to weigh that up before you change anything.`)
       : '';
     return (
       `Across ${count(finding.matchedPairs, 'matched day', 'matched days')} of logs, ${petName}'s ${symptom} ` +

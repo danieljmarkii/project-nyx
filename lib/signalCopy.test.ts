@@ -300,6 +300,7 @@ describe('B-351 slice 6 — the joint candidate (D5)', () => {
       protein: 'chicken and duck',
       proteins: ['chicken', 'duck'],
       jointCandidate: true,
+      jointGuidance: 'feed_apart',
       ...over,
     });
 
@@ -326,6 +327,29 @@ describe('B-351 slice 6 — the joint candidate (D5)', () => {
     expect(s).toContain('vet');
     expect(s.includes('!')).toBe(false);
     expect(CAUSAL_RE.test(s)).toBe(false);
+  });
+
+  it('never forecloses "neither" — the pattern could be driven by something not on the list', () => {
+    // An earlier draft said "it's both of them or either one", which is a stronger claim
+    // than an associational finding supports.
+    expect(evidenceText(joint(), 'Pixel')).not.toContain('either one');
+  });
+
+  it('on an ACTIVE DIET TRIAL the tap-through never suggests feeding them apart', () => {
+    // The client half of the slice-6 adversarial pass's highest-severity finding: the app
+    // must not suggest varying a vet-directed elimination diet, on any surface.
+    const s = evidenceText(joint({ jointGuidance: 'ask_vet' }), 'Pixel');
+    expect(s).not.toMatch(/feeding one without the other/i);
+    expect(s).not.toMatch(/separate them/i);
+    expect(s).toContain('vet');
+    expect(s).toContain('chicken');
+    expect(s).toContain('duck');
+  });
+
+  it('an ABSENT jointGuidance degrades to the safe branch, not the trial-breaking one', () => {
+    const s = evidenceText(joint({ jointGuidance: undefined }), 'Pixel');
+    expect(s).not.toMatch(/feeding one without the other/i);
+    expect(s).toContain('vet');
   });
 
   it('evidenceText never reassures about a member it did not single out', () => {
