@@ -149,4 +149,4 @@ allowlist UUID and asserts the cache reads `null` after the wipe.
 - **Any new local table must declare its DDL in a schema constant**, not a bare
   inline `execAsync` — test 3 fails on the latter by design.
 
-Shipped via #467.
+Shipped via #469.
