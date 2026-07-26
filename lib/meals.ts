@@ -53,28 +53,42 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
   const eventId = uuid();
   const mealId = uuid();
 
-  // Event row. Meals are inherently witnessed — you see yourself put the bowl
-  // down, so the B-010 "found" path never applies. confidence is therefore
-  // always 'witnessed' with no window bounds. Previously only app/log.tsx set
-  // this; the FAB + photo paths left occurred_at_confidence NULL — owning it
-  // here makes every meal entry point write the same honest confidence.
-  await db.runAsync(
-    `INSERT INTO events
-       (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
-        occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
-        created_at, updated_at, synced)
-     VALUES (?, ?, 'meal', ?, NULL, NULL, 'manual', ?, 'witnessed', NULL, NULL, ?, ?, 0)`,
-    [eventId, petId, occurredAtIso, occurredAtSource, now, now],
-  );
+  // Both rows in ONE transaction so the meal is atomic (B-126): a meal is an
+  // event + its 1:1 child, and a half-write (event lands, child INSERT throws)
+  // would sync an orphaned event_type='meal' row to Supabase with no food, no
+  // quantity and no intake rating — a meal the record asserts happened but can
+  // say nothing about, which is worse for a diet trial than no row at all.
+  // withTransactionAsync rolls both back on any throw. Closes the gap
+  // insertMedicationDose and insertWeightCheck already document and close.
+  await db.withTransactionAsync(async () => {
+    // Event row. Meals are inherently witnessed — you see yourself put the bowl
+    // down, so the B-010 "found" path never applies. confidence is therefore
+    // always 'witnessed' with no window bounds. Previously only app/log.tsx set
+    // this; the FAB + photo paths left occurred_at_confidence NULL — owning it
+    // here makes every meal entry point write the same honest confidence.
+    await db.runAsync(
+      `INSERT INTO events
+         (id, pet_id, event_type, occurred_at, severity, notes, source, occurred_at_source,
+          occurred_at_confidence, occurred_at_earliest, occurred_at_latest,
+          created_at, updated_at, synced)
+       VALUES (?, ?, 'meal', ?, NULL, NULL, 'manual', ?, 'witnessed', NULL, NULL, ?, ?, 0)`,
+      [eventId, petId, occurredAtIso, occurredAtSource, now, now],
+    );
 
-  // Meal row. updated_at is stamped ISO (not SQLite's local-time datetime())
-  // so cross-device last-write-wins compares correctly (B-055).
-  await db.runAsync(
-    `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, updated_at, synced)
-     VALUES (?, ?, ?, ?, 'unknown', ?, ?, 0)`,
-    [mealId, eventId, petId, foodId, now, now],
-  );
+    // Meal row. updated_at is stamped ISO (not SQLite's local-time datetime())
+    // so cross-device last-write-wins compares correctly (B-055).
+    await db.runAsync(
+      `INSERT INTO meals (id, event_id, pet_id, food_item_id, quantity, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, 'unknown', ?, ?, 0)`,
+      [mealId, eventId, petId, foodId, now, now],
+    );
+  });
 
+  // Deliberately OUTSIDE the transaction: last_used_at is a local-only recency
+  // stamp for the picker's ordering, with no server column and no bearing on the
+  // health record. Rolling back a correctly-written meal because the cosmetic
+  // touch failed would trade a real loss for a cosmetic one — and it is the
+  // recency ordering, so a failure self-heals on the next log of that food.
   await db.runAsync(
     `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
     [now, foodId],
