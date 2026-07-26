@@ -176,5 +176,14 @@ jobs:
       # `--cached-only` forbids network here, so this step can only fail on the
       # code. Note this is also the ONLY type check covering supabase/functions —
       # tsconfig.json excludes that path, and `deno test` type-checks by default.
+      #
+      # `--allow-read` is scoped to the tree under test, and grants filesystem
+      # READ only — it cannot re-open the network `--cached-only` closes above, so
+      # the "this step can only fail on the code" property is unchanged. It is
+      # needed by the static half of detectionSoftDelete.test.ts (B-071), which
+      # reads generate-signal/index.ts to assert every query feeding the detection
+      # engine still carries its `.is('deleted_at', null)` filter. That contract
+      # is upheld by the query text and by nothing else — detection.ts has no
+      # notion of deletion by design — so source is the only place to check it.
       - name: Deno test
-        run: deno test --lock=deno.lock --cached-only supabase/functions/
+        run: deno test --lock=deno.lock --cached-only --allow-read=supabase/functions supabase/functions/
