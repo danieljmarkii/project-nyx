@@ -1890,7 +1890,7 @@ interface ExposurePair {
  * never selected as a case or control window changes NOTHING — reproduced: the same
  * separation on day 0 left the cluster intact and on day 1 split it. So the true claim is
  * "the first time they differ inside a window the matcher selects", the owner-facing copy
- * says "would START to separate them" rather than promising a result, and B-465 records the
+ * says "would START to separate them" rather than promising a result, and B-469 records the
  * coverage limitation (whose real fix is B-049's 1:M matching, not anything here).
  *
  * Note this does NOT weaken the case for exact identity above — that rests on the test

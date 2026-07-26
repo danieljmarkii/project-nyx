@@ -1043,7 +1043,7 @@ export interface TopProteinsResult {
  * `primary_protein` alone, so a protein reaching the pet as a hidden SECONDARY is invisible
  * here. It under-counts — a sensitivity gap, never a false claim — but the surface it feeds
  * is the LLM one, so a duck-trial owner asking Ask "has she had any chicken?" gets an
- * answer built from a narrower record than the Signal card beside it. Tracked as B-463;
+ * answer built from a narrower record than the Signal card beside it. Tracked as B-467;
  * left out of slice 6 to keep the adversarial pass on the statistics rather than on three
  * copy-bearing rankings. Fix by mirroring computeTopProteins, INCLUDING its shares-no-
  * longer-sum-to-1 semantics, and widen the food join in ask/index.ts to select `proteins`.

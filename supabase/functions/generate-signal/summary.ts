@@ -201,7 +201,7 @@ export interface CachedSummary {
 // canonicalization) so the summary's numbers match the cards it sits above — with TWO
 // exceptions, one deliberate and one outstanding: the protein CLAUSE stays meals-only (by
 // design, below), and since B-351 slice 6 it also still keys on `primary_protein` while the
-// card keys on the whole captured SET (B-463 — a real divergence, not a design choice).
+// card keys on the whole captured SET (B-467 — a real divergence, not a design choice).
 
 /** Most-logged MEAL protein this month, canonicalized. Treats excluded ON PURPOSE here —
  *  the summary makes the narrower "most-logged MEAL protein" claim ("what protein does Nyx
@@ -209,7 +209,7 @@ export interface CachedSummary {
  *  DIVERGES from computeTopProteins, which (post-B-111, 2026-06-18) ranks protein EXPOSURE
  *  incl. treats (flagged) on the card.
  *
- *  ⚠ B-463 — a SECOND divergence, and this one is NOT deliberate: since B-351 slice 6 the
+ *  ⚠ B-467 — a SECOND divergence, and this one is NOT deliberate: since B-351 slice 6 the
  *  card and the correlation engine count the whole captured protein SET, and this still
  *  reads `primary_protein`, so a protein present only as a secondary never wins the clause.
  *  Widening it is the right fix, but it changes a clinically-reviewed AI-summary claim, so
