@@ -54,6 +54,12 @@ It also named a consequence of UPDATE-without-DELETE that is now written into th
 
 Two dependencies the reviewer flagged as unverifiable-from-repo were checked directly against the live DB rather than assumed: **`storage.foldername`'s actual definition** (it splits on `/` and returns all but the final segment — which is what makes the no-slash case fail closed) and the **hostile-key truth table**, evaluated with a real `pets.id`. Both are now recorded in the migration header.
 
+## Base drift, and a numbering collision worth knowing about
+
+`main` moved twice while this was open (#458, then #464 + #461), and the PR went `dirty`. Merged the base in and resolved: the only conflict was in `docs/backlog.md`, and it was a genuine one rather than a formatting collision — **a parallel session had filed its own `B-471` on `main` (#464, the Supabase-PAT-for-Edge-deploys row) while this session was filing a different `B-471`.** Both rows are real and unrelated, so theirs keeps `B-471` (it landed first) and this session's residual renumbered to **B-472**, with every reference updated across `docs/backlog.md`, `STATUS.md`, this record, and the PR body.
+
+The general lesson, since sequential IDs are allocated by reading the file: **the max B-ID is only valid at the moment you read it.** This session read `max = 470` and took 471 — correct when read, stale by the time it was pushed. Nothing prevents this structurally today; the cheap mitigation is to re-check the max against a freshly-fetched `main` immediately before pushing, which is now part of what the base merge is for. Worth noting the first attempt at *this* PR also guessed its own number (`#461`) before GitHub assigned `#466` — same class of error, and the reason `/wrap`'s "write `shipped via #N` only after the PR exists" rule exists.
+
 ## Note for the next session
 
 The one thing not proven here is the on-device upload — nothing reads these objects from Storage today (the app renders vet attachments from the local file) and the bucket holds 0 objects, so there is no regression surface, but a vet-visit photo capture is the cheapest confirmation that the new INSERT policy accepts a legitimate write. Worth pairing with B-431's pet-photo check, since both exercise the same upsert-needs-SELECT question.
