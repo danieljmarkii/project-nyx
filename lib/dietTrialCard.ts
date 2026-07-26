@@ -40,7 +40,9 @@
 // not run, `exposures` is null and the adherence sentence simply does not
 // render — silence, never an all-clear (the same asymmetry as B-351 D10).
 import { getDietTrialProgress } from './analytics';
+import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { localDayIndexOf } from './utils';
+import type { TrialIndication } from './dietTrialSetup';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -48,9 +50,15 @@ const MS_PER_DAY = 86_400_000;
 
 export type TrialStatus = 'active' | 'completed' | 'abandoned';
 
-export type TrialOutcome = 'improved' | 'no_change' | 'worse' | 'unsure';
+/** Owned by `dietTrialCompletion.ts` (which the milestone imports from), re-exported
+ *  here because every existing consumer reads it off the card's model. */
+export type { TrialOutcome };
 
 export interface TrialCardTrial {
+  /** The row's id. The RESOLVER never reads it — it is carried on the input so the
+   *  hosting screen has something to write against when the milestone's actions
+   *  fire (PR 6), without a second query for a row it already loaded. */
+  id?: string;
   status: TrialStatus;
   /** 'YYYY-MM-DD' (the DATE column) or ISO. */
   startedAt: string;
@@ -72,6 +80,15 @@ export interface TrialCardTrial {
    *  cannot be lost to a caller that forgot the flag. */
   stoppedForRefusal?: boolean;
   outcome?: TrialOutcome | null;
+  /** What the trial is FOR (§4.1). Read by the MILESTONE only, and only for two
+   *  things §4.3 keys on it: the GI continuation sentence and the named extension
+   *  default. PR 4 deliberately did not select this column — it is diagnosis-grade
+   *  ('skin' names a suspected condition) and the card had no use for it. PR 6 is
+   *  the use. The constraint it was carried from still stands where it was written:
+   *  `indication` stays OUT of the App Group / widget projection, which crosses a
+   *  process boundary and renders a day counter. This card renders on the pet's own
+   *  profile, next to the pet's own trial diet, in the app. */
+  indication?: TrialIndication | null;
 }
 
 /** §5.1 coverage: distinct local days with ≥1 logged NON-TREAT feeding, over the
@@ -154,14 +171,34 @@ export interface TrialCardLine {
 }
 
 /** Actions are declared by the model but rendered ONLY when the surface passes a
- *  handler for the id (see `DietTrialCard`). PR 4 ships the card before PR 3's
- *  start modal and PR 6's completion sheet exist, and a button that goes nowhere
+ *  handler for the id (see `DietTrialCard`). PR 4 shipped the card before PR 3's
+ *  start modal and PR 6's completion sheet existed, and a button that goes nowhere
  *  is worse than no button. */
 export type TrialCardActionId =
-  | 'start_trial'      // PR 3
-  | 'milestone'        // PR 6
-  | 'open_report'      // shipped (/report)
-  | 'view_exposures';  // PR 5's list screen
+  | 'start_trial'          // PR 3
+  | 'milestone'            // PR 6 — the overrun card's single way into the decision
+  | 'trial_extend'         // PR 6 — "Keep going — 4 more weeks"
+  | 'trial_complete'       // PR 6 — "This trial is done" → the outcome sheet
+  | 'trial_stopped_early'  // PR 6 — "Stopped early" → the reason sheet
+  | 'open_report'          // shipped (/report)
+  | 'view_exposures';      // PR 5's list screen
+
+/** `primary` draws a filled button, `secondary` a ghost one, `link` the quiet
+ *  inline "Label ›".
+ *
+ *  This field exists because §4.3 makes relative weight an ACCEPTANCE CRITERION
+ *  (`Keep going` is never weaker than `This trial is done`), and a criterion
+ *  asserted on a StyleSheet is a criterion asserted on nothing. Declaring weight
+ *  on the model makes it assertable in the resolver's own test, next to the copy
+ *  it governs — the same reasoning that put `progressFraction` on the model
+ *  rather than leaving the bar's width to the view. */
+export type TrialCardActionEmphasis = 'primary' | 'secondary' | 'link';
+
+export interface TrialCardAction {
+  id: TrialCardActionId;
+  label: string;
+  emphasis: TrialCardActionEmphasis;
+}
 
 export interface TrialCardModel {
   state: TrialCardState;
@@ -170,13 +207,30 @@ export interface TrialCardModel {
   foodLabel: string | null;
   /** "Day 23 of 56" | "Day 61 — 5 days past the window you set" | a date range. */
   dayLine: string | null;
+  /**
+   * How the day line reads: quiet metadata on every ordinary day, a HEADLINE at
+   * the milestone.
+   *
+   * On the model rather than inferred from `state` in the view, for the same
+   * reason `TrialCardAction.emphasis` is: the design lock draws the milestone's
+   * day line as a 21px serif headline (`.milestone-h`) and every other day's as
+   * caption-scale secondary text, and PR 6's first cut routed both through the
+   * same `styles.dayLine` — so the sentence that has to stop an owner on the one
+   * day it matters rendered exactly like "Day 23 of 56" on an ordinary Tuesday,
+   * and the largest text on the milestone card was the food label. A view that
+   * decides that from `state` puts a §4.3 requirement somewhere no test reaches.
+   */
+  dayLineRole: 'meta' | 'headline';
   /** "Ends 27 August" | "Window ended 27 August". */
   windowLine: string | null;
   /** DAY progress in [0,1], or null when a bar would carry no information.
    *  R2: this is `getDietTrialProgress().fraction` and NOTHING else. */
   progressFraction: number | null;
   lines: TrialCardLine[];
-  action: { id: TrialCardActionId; label: string } | null;
+  /** In reading order, and reading order is itself weight (§4.3). Empty when the
+   *  state offers nothing to do. Most states declare one; the milestone declares
+   *  the three-way decision row. */
+  actions: TrialCardAction[];
   /** C2's trial-level standing fact — never a per-feeding verdict. */
   standingNote: { title: string; body: string } | null;
   /** B-351's target-protein disclosure line. Quiet metadata. */
@@ -198,6 +252,15 @@ export const BLIND_SPOT_QUALIFIER =
  *  matter") — the cross-contact threshold is explicitly unknown. */
 export const RECORD_AND_CONTINUE =
   'Keep going with the trial diet. Your vet will want to see this at the recheck.';
+
+/** The decision's ids are owned by `dietTrialCompletion` (the sheet reads them
+ *  too); the card's action ids are its own namespace. One map, so the milestone's
+ *  buttons and the sheet's choices can never drift into two vocabularies. */
+const DECISION_ACTION_ID: Record<'extend' | 'complete' | 'stopped_early', TrialCardActionId> = {
+  extend: 'trial_extend',
+  complete: 'trial_complete',
+  stopped_early: 'trial_stopped_early',
+};
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -291,10 +354,11 @@ export function resolveTrialCard(input: TrialCardInput): TrialCardModel {
           : 'Diet trial',
       foodLabel: trial.foodLabel ?? null,
       dayLine: null,
+      dayLineRole: 'meta',
       windowLine: null,
       progressFraction: null,
       lines: [],
-      action: null,
+      actions: [],
       standingNote: input.standingNote ?? null,
       standingMeta: input.standingMeta ?? null,
     };
@@ -314,6 +378,7 @@ function noTrialCard(petName: string, objectPronoun: string): TrialCardModel {
     kicker: 'Diet trial',
     foodLabel: null,
     dayLine: null,
+    dayLineRole: 'meta',
     windowLine: null,
     progressFraction: null,
     lines: [
@@ -329,7 +394,7 @@ function noTrialCard(petName: string, objectPronoun: string): TrialCardModel {
           'tell Culprit — it keeps the dated record your vet will ask for at the recheck.',
       },
     ],
-    action: { id: 'start_trial', label: 'Start a diet trial' },
+    actions: [{ id: 'start_trial', label: 'Start a diet trial', emphasis: 'secondary' }],
     standingNote: null,
     standingMeta: null,
   };
@@ -371,25 +436,81 @@ function activeCard(
       ...base,
       state: 'intake_decline',
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      action: null,
+      // THE DECLINE REPLACES THE RECORD LINES, NOT THE WAY OUT OF THE TRIAL.
+      //
+      // This branch returned `actions: []` unconditionally, which meant that while
+      // a decline flag was live a trial that had reached its window had NO
+      // affordance at all: §4.3's "never expires and re-surfaces until acted on"
+      // silently failed, the trial stayed `active`, and §7 then rendered a stopped
+      // intervention as one still under way — on the sickest patient the feature
+      // has. Found by `adversarial-reviewer`; `pm-feature-review` reached the same
+      // place from the owner's side.
+      //
+      // What §5.2 actually says is that the flag replaces the ADHERENCE LINE, and
+      // the record lines above are duly gone. The decision is a different thing,
+      // and it stays reachable — quietly, as one link rather than the three-button
+      // row, because a card about a pet that has stopped eating is not a decision
+      // surface. Only once the window is actually up; mid-trial there is nothing
+      // to decide.
+      // Same rule the milestone applies one branch down: at or past the target the
+      // bar is pinned at 100%, and a saturated bar is completion vocabulary drawn
+      // in pixels. It was doubly wrong here — drawn over a pet that has stopped
+      // eating, on the card whose entire job is to say the animal outranks the
+      // trial. Mid-trial the bar still carries real day progress, so it stays.
+      progressFraction: overrunDays >= 0 ? null : progress.fraction,
+      actions:
+        overrunDays >= 0
+          ? [{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }]
+          : [],
     };
   }
 
-  // ── State 5 — the milestone. Day counter has REACHED the target exactly.
-  // Action-first; the verdict is asked only after the owner decides what happens
-  // next (§4.3). It must never read as permission to stop: on the GI default,
-  // ACVIM 2026 says continue ≥12 weeks, so a day-28 "trial complete" would tell
-  // an owner to stop a diet their vet wanted continued for three months.
+  // ── State 5 — the milestone (PR 6, §4.3). Day counter has REACHED the target
+  // exactly. Persistent STATE, not a push, so Principle 4 is untouched — and it
+  // never expires: the owner who ignores it lands in state 6, which carries the
+  // same decision behind one quieter action.
+  //
+  // ACTION FIRST; the verdict is asked only after the owner has decided what
+  // happens next. A milestone that asks "how did it go?" first turns an unanswered
+  // card into a stalled trial, and a stalled trial is the one the vet report
+  // renders as still ongoing.
+  //
+  // IT MUST NEVER READ AS PERMISSION TO STOP. No completion vocabulary reaches
+  // this state (the greppable guard in the test file is the enforcement): the day
+  // line states a fact about a window the OWNER set, and the note hands the
+  // clinical decision straight to the vet. On the GI indication that note gains
+  // the ACVIM ≥12-week continuation sentence, because a day-28 or day-42 "trial
+  // complete" would otherwise tell an owner to stop a diet their vet wanted
+  // continued for three months — §4.3 names this as the live clinical harm, and
+  // it is why the milestone copy cannot be one string.
+  //
+  // Deliberately NO fact lines. The record statement is not what this moment is
+  // for, and putting coverage next to a stop button invites reading the coverage
+  // as the trial's result.
   if (progress.targetDays > 0 && overrunDays === 0) {
     return {
       ...base,
       state: 'milestone',
       dayLine: `Day ${progress.dayCounter} of ${progress.targetDays} — the window you set is done.`,
+      dayLineRole: 'headline',
       windowLine: null,
-      lines: [{ role: 'note', text: 'Your vet decides when the diet changes.' }],
-      action: { id: 'milestone', label: 'Tell Culprit what’s next' },
+      // NO BAR HERE, and it is the same argument `completedCard` already makes one
+      // state along ("a full bar would be decoration, and decoration on this card
+      // is what R2 exists to stop") — only stronger. At the milestone the bar is
+      // pinned at 100% directly above copy working hard to avoid saying the trial
+      // is complete: R2 governs what the bar MEASURES, but a saturated bar is
+      // completion vocabulary drawn in pixels, which is the one thing §4.3 forbids
+      // this state from saying. The design lock draws the milestone with no bar.
+      progressFraction: null,
+      lines: [{ role: 'note', text: milestoneNote(trial.indication) }],
+      actions: trialDecisionChoices(trial.indication).map((c) => ({
+        id: DECISION_ACTION_ID[c.id],
+        label: c.label,
+        emphasis: c.emphasis,
+      })),
     };
   }
 
@@ -417,9 +538,10 @@ function activeCard(
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      action: null,
+      actions: [],
     };
   }
 
@@ -453,9 +575,10 @@ function activeCard(
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      action: null,
+      actions: [],
     };
   }
 
@@ -483,9 +606,10 @@ function activeCard(
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      action: null,
+      actions: [],
     };
   }
 
@@ -509,9 +633,10 @@ function activeCard(
       ...base,
       state,
       dayLine: dayLineFor(progress, overrunDays),
+      dayLineRole: 'meta',
       windowLine: windowLineFor(endIndex, overrunDays),
       lines,
-      action: { id: 'milestone', label: 'Tell Culprit what’s next' },
+      actions: [{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }],
     };
   }
 
@@ -536,12 +661,13 @@ function activeCard(
     ...base,
     state,
     dayLine: dayLineFor(progress, overrunDays),
+    dayLineRole: 'meta',
     windowLine: windowLineFor(endIndex, overrunDays),
     lines,
-    action:
+    actions:
       state === 'exposures' && (input.exposures?.offDiet ?? 0) > 0
-        ? { id: 'view_exposures', label: 'Outside the trial diet' }
-        : null,
+        ? [{ id: 'view_exposures', label: 'Outside the trial diet', emphasis: 'link' }]
+        : [],
   };
 }
 
@@ -688,6 +814,16 @@ function completedCard(
   } else {
     pushRecordFacts(lines, input);
   }
+  // §4.3 IS A PROPERTY OF THE FLOW, AND THIS IS THE SCREEN AN OWNER LIVES WITH
+  // AFTER ENDING IT. The fix commit carried the continuation sentence onto the
+  // outcome SHEET and stopped there, so a GI owner read it once while deciding and
+  // then saw a card headed "Diet trial · finished" with nothing about continuing —
+  // on the indication ACVIM says continue >=12 weeks. Found by the second
+  // `adversarial-reviewer` pass, which correctly called it this project's own
+  // B-494 rule one surface over: a flow that teaches the owner it will tell them
+  // about continuation may not then go silent.
+  pushContinuation(lines, trial);
+
   if (trial.outcome) {
     lines.push({
       role: 'note',
@@ -704,26 +840,63 @@ function completedCard(
     kicker: 'Diet trial · finished',
     foodLabel: trial.foodLabel ?? null,
     dayLine: terminalRange(trial, startIndex),
+    dayLineRole: 'meta',
     windowLine: null,
     // A finished window has no progress left to encode; a full bar here would be
     // decoration, and decoration on this card is what R2 exists to stop.
     progressFraction: null,
     lines,
-    action: { id: 'open_report', label: 'Open vet report' },
+    actions: [{ id: 'open_report', label: 'Open vet report', emphasis: 'link' }],
     standingNote: input.standingNote ?? null,
     standingMeta: input.standingMeta ?? null,
   };
 }
 
-/** PR 3's stored tokens → the owner-facing phrase. The fallback renders an
- *  unrecognised value verbatim so a future reason is never a silent blank. */
+/** The stored tokens → the owner-facing phrase.
+ *
+ *  ALL SIX OF §4.3's REASONS ARE MAPPED, and the three PR 6 added are the reason
+ *  this comment is longer than the function. The fallback renders an unrecognised
+ *  value verbatim so a future reason is never a silent blank — which is a good
+ *  failure mode for a token nobody has got to yet, and a terrible one for a token
+ *  this very PR introduced. PR 6 added `cost` / `too_hard` / `symptoms_resolved`
+ *  to `trialStopReasons` and, in its first cut, mapped none of them: the owner who
+ *  tapped "Too expensive" read **"Stopped because cost."** and the one who tapped
+ *  "Too hard to keep him off everything else" read **"Stopped because too_hard."**
+ *  The sibling map in `generate-report/render.ts` had the same hole, so the vet
+ *  read "Stopped: too_hard." on a clinical page. Adding a reason means touching
+ *  BOTH maps; the fallback is not a substitute for either. */
 function stoppedBecauseLine(petName: string, trial: TrialCardTrial): string {
   switch (trial.stoppedReason) {
     case 'refused': return `Stopped because ${petName} wouldn’t eat it.`;
     case 'vet_advised': return 'Stopped because the vet said to change diets.';
+    case 'cost': return 'Stopped because of the cost.';
+    // Names the difficulty without naming the owner as its cause (§6.9 — Culprit
+    // never scores the owner). "Stopped because you couldn't keep him off other
+    // food" is the same fact written as a failing.
+    case 'too_hard': return 'Stopped because keeping other food away was too hard.';
+    case 'symptoms_resolved': return 'Stopped because the symptoms cleared up.';
     case 'other': return 'Stopped early.';
     default: return `Stopped because ${trial.stoppedReason}.`;
   }
+}
+
+/**
+ * The indication-keyed continuation sentence, on a terminal card.
+ *
+ * SKIPPED ON `vet_advised` ALONE, and that carve-out is the whole judgement here:
+ * everywhere else the sentence answers a question the owner has just left open,
+ * but when the vet is the one who said stop, "Your vet decides when the diet
+ * changes" is Culprit restating a decision that has already been made — which
+ * reads as second-guessing the clinician rather than deferring to them.
+ *
+ * The case it most exists for is `symptoms_resolved` on a GI trial: an owner who
+ * stopped BECAUSE things improved has stopped a diet that may be working, short
+ * of the ACVIM window, and without this the card renders their own stated reason
+ * back at them unanswered.
+ */
+function pushContinuation(lines: TrialCardLine[], trial: TrialCardTrial): void {
+  if (trial.stoppedReason === 'vet_advised') return;
+  lines.push({ role: 'note', text: milestoneNote(trial.indication) });
 }
 
 /** Refusal is derived from the stored token unless the caller asserts it —
@@ -753,10 +926,11 @@ function abandonedCard(
       kicker: 'Diet trial · stopped early',
       foodLabel: trial.foodLabel ?? null,
       dayLine: range,
+      dayLineRole: 'meta',
       windowLine: null,
       progressFraction: null,
       lines,
-      action: null,
+      actions: [],
       standingNote: input.standingNote ?? null,
       standingMeta: input.standingMeta ?? null,
     };
@@ -795,6 +969,8 @@ function abandonedCard(
     pushRecordFacts(lines, input);
   }
 
+  pushContinuation(lines, trial);
+
   return {
     state: 'abandoned',
     // §6.6 — an abandoned trial is a legitimate clinical fact, never a failure
@@ -802,10 +978,11 @@ function abandonedCard(
     kicker: 'Diet trial · stopped early',
     foodLabel: trial.foodLabel ?? null,
     dayLine: range,
+    dayLineRole: 'meta',
     windowLine: null,
     progressFraction: null,
     lines,
-    action: { id: 'start_trial', label: 'Start a new trial' },
+    actions: [{ id: 'start_trial', label: 'Start a new trial', emphasis: 'link' }],
     standingNote: input.standingNote ?? null,
     standingMeta: input.standingMeta ?? null,
   };

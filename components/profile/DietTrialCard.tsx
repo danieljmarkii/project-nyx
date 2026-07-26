@@ -39,12 +39,22 @@ interface Props {
    *  (migration 040's UNIQUE partial index), so on a running trial this opens the
    *  ordered "end the running one first" sheet, never a second concurrent trial. */
   onManage?: () => void;
+  /** The action currently mid-write, drawn in `PrimaryButton`'s loading state and
+   *  press-blocked. `Keep going` is a one-tap write with no confirm (deliberately
+   *  — the named default is the whole affordance), so the pending state is what
+   *  stops a slow write earning a second tap and a double extension. */
+  busyAction?: TrialCardActionId | null;
   style?: ViewStyle;
 }
 
-export function DietTrialCard({ model, actions, onManage, style }: Props) {
-  const onAction = model.action ? actions?.[model.action.id] : undefined;
+export function DietTrialCard({ model, actions, onManage, busyAction, style }: Props) {
   const manageLabel = model.state === 'no_trial' ? '+ Start' : 'Change';
+  // NORMALISED, because the prop is optional and `undefined !== null`. The first
+  // cut compared `busyAction !== null` directly, so on every surface that does not
+  // pass the prop at all — which is every state but the milestone — the guard read
+  // true and DISABLED every button on the card, including "Start a diet trial" on
+  // the empty state. Caught by the existing entry-point test.
+  const busyId = busyAction ?? null;
 
   return (
     <Card style={style}>
@@ -69,7 +79,18 @@ export function DietTrialCard({ model, actions, onManage, style }: Props) {
         <Text style={styles.food}>{model.foodLabel}</Text>
       )}
 
-      {model.dayLine !== null && <Text style={styles.dayLine}>{model.dayLine}</Text>}
+      {/* The day line is caption-scale metadata on every ordinary day and a
+          HEADLINE at the milestone — the role comes off the model, not from
+          `state`, so §4.3's "never reads as permission to stop" doesn't depend on
+          a view remembering which day is the important one. */}
+      {model.dayLine !== null && (
+        <Text
+          testID="trial-day-line"
+          style={model.dayLineRole === 'headline' ? styles.dayHeadline : styles.dayLine}
+        >
+          {model.dayLine}
+        </Text>
+      )}
       {model.windowLine !== null && (
         <Text style={styles.windowLine}>{model.windowLine}</Text>
       )}
@@ -129,26 +150,43 @@ export function DietTrialCard({ model, actions, onManage, style }: Props) {
         </View>
       )}
 
-      {model.action && onAction && (
-        model.state === 'no_trial' ? (
+      {/* The action ROW. Emphasis comes off the model rather than being inferred
+          here, because §4.3 makes relative weight an acceptance criterion on the
+          milestone: `Keep going` is never weaker than `This trial is done`. A view
+          that decided weight from `state` or from array position would put that
+          criterion somewhere no test can reach it. */}
+      {model.actions.map((action) => {
+        const onPress = actions?.[action.id];
+        if (!onPress) return null;
+        if (action.emphasis === 'link') {
+          return (
+            <Pressable
+              key={action.id}
+              onPress={onPress}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              testID={`trial-action-${action.id}`}
+              style={styles.secondaryAction}
+            >
+              <Text style={styles.secondaryActionText}>{action.label} ›</Text>
+            </Pressable>
+          );
+        }
+        const busy = busyId === action.id;
+        return (
           <PrimaryButton
-            label={model.action.label}
-            variant="secondary"
-            onPress={onAction}
+            key={action.id}
+            testID={`trial-action-${action.id}`}
+            label={action.label}
+            variant={action.emphasis === 'primary' ? 'primary' : 'secondary'}
+            onPress={onPress}
+            loading={busy}
+            disabled={busyId !== null && !busy}
             style={styles.primaryAction}
           />
-        ) : (
-          <Pressable
-            onPress={onAction}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={model.action.label}
-            style={styles.secondaryAction}
-          >
-            <Text style={styles.secondaryActionText}>{model.action.label} ›</Text>
-          </Pressable>
-        )
-      )}
+        );
+      })}
     </Card>
   );
 }
@@ -186,6 +224,19 @@ const styles = StyleSheet.create({
     fontSize: theme.textSM,
     color: theme.colorTextSecondary,
     marginTop: 2,
+  },
+  // The milestone's day line, drawn as the design lock draws it (`.milestone-h` —
+  // serif, 21px, tight leading). `fontDisplay` is the same Newsreader the AI
+  // Signal headline uses; this is the second sentence in the app that earns it,
+  // and it earns it for the same reason: it is the one line on the screen that
+  // has to be read rather than scanned.
+  dayHeadline: {
+    fontFamily: theme.fontDisplay,
+    fontSize: theme.textXL,
+    lineHeight: theme.textXL * 1.3,
+    letterSpacing: -0.2,
+    color: theme.colorNeutralDark,
+    marginTop: theme.space1,
   },
   windowLine: {
     fontSize: theme.textSM,

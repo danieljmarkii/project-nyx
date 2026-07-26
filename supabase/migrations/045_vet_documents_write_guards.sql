@@ -54,7 +54,7 @@
 -- 023 and 041 share this shape. Both of their checks are `NOT EXISTS → RAISE`, i.e.
 -- the fails-closed polarity, so neither is exposed the way (b) was — but both are
 -- equally RLS-blind and both would flip if their predicate were ever inverted.
--- Filed as B-509 rather than changed here: they are different tables with live rows,
+-- Filed as B-520 rather than changed here: they are different tables with live rows,
 -- and a boundary hotfix should not carry an unrelated table's regression risk.
 --
 -- ------------------------------------------------------------
@@ -206,7 +206,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION enforce_vet_document_pet_scope() IS
-  'B-478 VF-1 (hardened by migration 045): defense-at-rest guard over the references RLS cannot constrain — vet_visit_id (a bare FK; FK checks bypass RLS) and document_group_id (no FK at all) — plus storage_path immutability. SECURITY DEFINER because 044''s SECURITY INVOKER version could not see another account''s conflicting row, so the group check failed OPEN (demonstrated: a cross-account document_group_id collision); an advisory lock closes the same check''s TOCTOU race between concurrent transactions; and storage_path is pinned because one RLS-legal UPDATE would otherwise orphan the stored object from every deletion purge. A trigger rather than policy predicates because service-role callers bypass RLS entirely; mirrors enforce_diet_trial_food_same_pet() (041) and enforce_dose_paired_event_same_pet() (023), both of which are RLS-blind in the same way but fail CLOSED by polarity (B-509).';
+  'B-478 VF-1 (hardened by migration 045): defense-at-rest guard over the references RLS cannot constrain — vet_visit_id (a bare FK; FK checks bypass RLS) and document_group_id (no FK at all) — plus storage_path immutability. SECURITY DEFINER because 044''s SECURITY INVOKER version could not see another account''s conflicting row, so the group check failed OPEN (demonstrated: a cross-account document_group_id collision); an advisory lock closes the same check''s TOCTOU race between concurrent transactions; and storage_path is pinned because one RLS-legal UPDATE would otherwise orphan the stored object from every deletion purge. A trigger rather than policy predicates because service-role callers bypass RLS entirely; mirrors enforce_diet_trial_food_same_pet() (041) and enforce_dose_paired_event_same_pet() (023), both of which are RLS-blind in the same way but fail CLOSED by polarity (B-520).';
 
 -- ============================================================
 -- ROLLBACK (for reference — do not run inline).

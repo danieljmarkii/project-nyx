@@ -55,7 +55,7 @@ import { getDietTrialProgress, getIntakeDecline, type IntakeDeclineFlag } from '
 import { getDb } from './db';
 import { getActiveArrangementsForPet } from './feedingArrangements';
 import { loadTrialProteinContext, trialDietNote } from './trialContaminant';
-import { petPronouns, toLocalDayKey } from './utils';
+import { localDayIndexOf, petPronouns, toLocalDayKey } from './utils';
 import type { TrialCardInput, TrialCardTrial } from './dietTrialCard';
 
 export interface DietTrialFactsPet {
@@ -74,6 +74,7 @@ interface TrialRow {
   ended_at: string | null;
   stopped_reason: string | null;
   outcome: string | null;
+  indication: string | null;
   food_label: string | null;
 }
 
@@ -88,23 +89,49 @@ interface TrialRow {
  *  the `food_label` COALESCE (so archiving the trial food cannot blank the
  *  trial's identity, §3.1) and the `synced DESC` tie-break.
  *
- *  `indication` is NOT selected. It is diagnosis-grade — 'skin' names a suspected
- *  condition — and the card has no use for it. The constraint PR 2 carries for
- *  the App Group projection is worth honouring by default anywhere it isn't
- *  needed. */
-const ACTIVE_TRIAL_FOR_CARD_SQL = `
+ *  `indication` IS selected as of PR 6, and the earlier note here said it should
+ *  not be. That note was right about the principle and is now wrong about the
+ *  need: §4.3's milestone keys the GI continuation sentence AND the named
+ *  extension default on it, so the card has a use for it. The constraint it came
+ *  from still binds where it was written — `indication` stays out of the App Group
+ *  projection, which crosses a process boundary, persists on disk between sessions
+ *  and renders nothing but a day counter. */
+const TRIAL_FOR_CARD_SQL = `
   SELECT t.id, t.started_at, t.target_duration_days, t.status,
-         t.ended_at, t.stopped_reason, t.outcome,
+         t.ended_at, t.stopped_reason, t.outcome, t.indication,
          COALESCE(
            NULLIF(TRIM(COALESCE(f.brand, '') || ' ' || COALESCE(f.product_name, '')), ''),
            t.food_label
          ) AS food_label
     FROM diet_trials t
     LEFT JOIN food_items_cache f ON f.id = t.food_item_id
-   WHERE t.pet_id = ? AND t.status = 'active'
-   ORDER BY t.synced DESC, t.started_at DESC, t.id
+   WHERE t.pet_id = ?
+     AND (t.status = 'active'
+          OR (t.status IN ('completed', 'abandoned') AND t.ended_at IS NOT NULL
+              AND t.ended_at >= ?))
+   ORDER BY (t.status = 'active') DESC, t.synced DESC, t.started_at DESC, t.id
    LIMIT 1
 `;
+
+/**
+ * How long an ENDED trial keeps its slot on the Pet tab — the product rule PR 4
+ * deferred to PR 6 (it could not write an ended trial, so it could not answer).
+ *
+ * FOURTEEN DAYS, and the number is borrowed rather than invented: it is
+ * `selectReportTrial`'s `endedGraceDays` in `generate-report/trial.ts`, so the
+ * card and the report agree about whether a trial is recent enough to still be
+ * the subject. A card that forgot the trial while the report still led with it —
+ * or the reverse — would have the owner and their vet reading two different
+ * answers to "are we still doing this?".
+ *
+ * Zero days was the tempting default and it is the wrong one: the completed card
+ * (7a) exists precisely to carry "Open vet report" at the moment the report is
+ * most valuable, and dropping straight to state 0 would take that action away in
+ * the same tap that created the thing worth reporting. An active trial always
+ * outranks an ended one in the ORDER BY, so starting a new trial replaces the
+ * ghost immediately.
+ */
+const ENDED_TRIAL_GRACE_DAYS = 14;
 
 /** Reads the pet's active trial and everything the card needs to describe it.
  *  Every read is best-effort: a failure degrades one line of the card, never the
@@ -126,15 +153,12 @@ export async function loadDietTrialFacts(args: {
     otherPetNames: args.otherPetNames ?? [],
   };
 
-  // PR 4 reads the ACTIVE trial only, which is what today's card does. States 7a
-  // and 7b are resolver-complete and test-covered but not yet reachable: nothing
-  // in the app can write `completed`/`abandoned` until PR 6 ships the completion
-  // sheet, and the question that comes with them — how long an ended trial keeps
-  // its slot on the Pet tab before the card returns to state 0 — is a product
-  // rule PR 6 owns rather than one to invent here.
+  // The active trial, else one that ended inside the grace window (states 7a/7b,
+  // reachable for the first time now that PR 6 can write them).
+  const graceFrom = toLocalDayKey(new Date(nowMs - ENDED_TRIAL_GRACE_DAYS * 86_400_000));
   let row: TrialRow | null;
   try {
-    row = await getDb().getFirstAsync<TrialRow>(ACTIVE_TRIAL_FOR_CARD_SQL, [pet.id]);
+    row = await getDb().getFirstAsync<TrialRow>(TRIAL_FOR_CARD_SQL, [pet.id, graceFrom]);
   } catch (e) {
     console.error('[DietTrial] load trial failed:', e);
     return base;
@@ -142,6 +166,7 @@ export async function loadDietTrialFacts(args: {
   if (!row) return base;
 
   const trial: TrialCardTrial = {
+    id: row.id,
     // Narrowed from the local TEXT column. Anything unrecognised reads as the
     // active shape rather than throwing — the card's job is to keep rendering.
     status: row.status === 'completed' || row.status === 'abandoned' ? row.status : 'active',
@@ -151,6 +176,15 @@ export async function loadDietTrialFacts(args: {
     foodLabel: row.food_label,
     stoppedReason: row.stopped_reason,
     outcome: (row.outcome as TrialCardTrial['outcome']) ?? null,
+    // Narrowed from the local TEXT column against the ENUM migration 040 defines.
+    // Anything unrecognised reads as null, which the milestone treats exactly as
+    // it treats 'other' — the base note and the 28-day extension. A garbled value
+    // must never resolve to 'gi' by accident, and must never resolve to the SHORT
+    // extension by accident either.
+    indication:
+      row.indication === 'skin' || row.indication === 'gi' || row.indication === 'other'
+        ? row.indication
+        : null,
   };
 
   const progress = getDietTrialProgress(
@@ -158,10 +192,21 @@ export async function loadDietTrialFacts(args: {
     nowMs,
   );
 
+  // AN ENDED TRIAL'S WINDOW CLOSED WHEN IT ENDED, and both halves of the coverage
+  // ratio have to close with it. `getDietTrialProgress` measures to TODAY, so on a
+  // trial abandoned at day 19 a fortnight ago it returns 33 — and a "meals logged
+  // on 18 of 33 days" line would score an owner for not logging meals during a
+  // trial that was over. The numerator is clipped by the same key, so a meal fed
+  // after the trial ended cannot count toward how it was run either.
+  const endKey = trial.status === 'active' ? null : row.ended_at;
+  const daysElapsed = endKey
+    ? spanDays(row.started_at, endKey)
+    : progress?.dayCounter ?? 1;
+
   const [coverage, decline, freeFed, standingNote] = await Promise.all([
-    readCoverage(pet.id, row.started_at, progress?.dayCounter ?? 1),
+    readCoverage(pet.id, row.started_at, daysElapsed, endKey),
     readIntakeDecline(pet, nowMs),
-    readFreeFed(pet.id, row.started_at),
+    readFreeFed(pet.id, row.started_at, endKey),
     readStandingNote(pet.id, pet.name),
   ]);
 
@@ -176,6 +221,24 @@ export async function loadDietTrialFacts(args: {
     freeFed,
     standingNote,
   };
+}
+
+/** Day key shifted by N local days, via the UTC-anchored index. The inverse of
+ *  `localDayIndexOf` must be a UTC read — see `dietTrialOutcomeFacts.dayKeyFromIndex`
+ *  for what happens when it isn't. */
+function shiftDayKey(dayKey: string, deltaDays: number): string {
+  const index = localDayIndexOf(dayKey);
+  if (index === null) return dayKey;
+  return new Date((index + deltaDays) * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Inclusive local-day span between two day keys, ≥1. Day 1 IS the start day, the
+ *  same inclusive convention `getDietTrialProgress` and `trialEndDayIndex` use. */
+function spanDays(startedAt: string, endKey: string): number {
+  const start = localDayIndexOf(startedAt);
+  const end = localDayIndexOf(endKey);
+  if (start === null || end === null) return 1;
+  return Math.max(1, end - start + 1);
 }
 
 /** §5.1 coverage — distinct LOCAL days in-window carrying at least one logged
@@ -199,6 +262,8 @@ async function readCoverage(
   petId: string,
   startedAt: string,
   daysElapsed: number,
+  /** Local day key the window closes on, inclusive. Null while the trial runs. */
+  endKey: string | null,
 ): Promise<{ daysLogged: number; daysElapsed: number } | null> {
   try {
     const db = getDb();
@@ -208,7 +273,15 @@ async function readCoverage(
     // Read from one local day BEFORE the trial's first day so a timezone offset
     // can never clip the boundary day out of the window; the local-day-key
     // filter below is what actually decides membership.
-    const fromISO = new Date(`${startKey}T00:00:00Z`).toISOString();
+    //
+    // AND IT NOW ACTUALLY DOES THAT. The comment promised a day's padding and the
+    // code sent `${startKey}T00:00:00Z` — UTC midnight, which at a POSITIVE offset
+    // is LATER than local midnight of that date, so the first hours of day 1 were
+    // dropped (12 in Auckland, 5.5 in Kolkata) and coverage under-counted its own
+    // first day. Same defect the outcome read had; found there by
+    // `adversarial-reviewer`, which noted it as a shared pattern worth fixing
+    // rather than shipping a third time.
+    const fromISO = new Date(`${shiftDayKey(startKey, -1)}T00:00:00Z`).toISOString();
 
     const rows = await db.getAllAsync<{ occurred_at: string; food_type: string | null }>(
       `SELECT e.occurred_at, f.food_type
@@ -226,7 +299,7 @@ async function readCoverage(
         // under-report a record the owner actually kept.
         .filter((r) => r.food_type !== 'treat')
         .map((r) => toLocalDayKey(new Date(r.occurred_at)))
-        .filter((k) => k >= startKey),
+        .filter((k) => k >= startKey && (endKey === null || k <= endKey)),
     );
 
     return { daysLogged: days.size, daysElapsed };
@@ -276,6 +349,7 @@ export function declineHeadline(flag: IntakeDeclineFlag, petName: string): strin
 async function readFreeFed(
   petId: string,
   startedAt: string,
+  endKey: string | null,
 ): Promise<{ loggedFeedings: number } | null> {
   try {
     const arrangements = await getActiveArrangementsForPet(petId);
@@ -293,9 +367,10 @@ async function readFreeFed(
     );
     // FEEDINGS in-window, not days — this replaces the coverage RATIO, so the
     // number it renders has to be a count with no denominator to mislead about.
-    const inWindow = rows.filter(
-      (r) => toLocalDayKey(new Date(r.occurred_at)) >= startKey,
-    ).length;
+    const inWindow = rows.filter((r) => {
+      const k = toLocalDayKey(new Date(r.occurred_at));
+      return k >= startKey && (endKey === null || k <= endKey);
+    }).length;
     return { loggedFeedings: inWindow };
   } catch (e) {
     console.error('[DietTrial] free-fed read failed:', e);
