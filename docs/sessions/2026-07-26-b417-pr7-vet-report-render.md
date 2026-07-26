@@ -145,11 +145,29 @@ Two of those fixes are worth naming for how they were done. The dated-membership
 
 ## Gates
 
-`vet-report-cold-read` (mandatory) run on rendered artifacts, **five rounds** — rounds 1 and 2 returned NOT READY (and round 2 caught a *regression introduced by round 1's fix*, which is the reason the rounds kept going), round 3 CLINIC-READY, round 4 re-run cold after the ten adversarial fixes landed. `adversarial-reviewer` FAIL → all ten fixed in-PR with 11 named regression tests. `tsc --noEmit` clean · **jest 132 suites / 2336 tests** · **`deno test` 959 cases** over `supabase/functions/` · `deno check` clean on the sample-render script (now a CI step).
+`vet-report-cold-read` (mandatory) run on rendered artifacts, **six rounds** — rounds 1 and 2 returned NOT READY (and round 2 caught a *regression introduced by round 1's fix*, which is the reason the rounds kept going), round 3 CLINIC-READY, round 4 re-run cold after the ten adversarial fixes landed. `adversarial-reviewer` FAIL → all ten fixed in-PR with 11 named regression tests. `tsc --noEmit` clean · **jest 132 suites / 2339 tests** · **`deno test` 967 cases** over `supabase/functions/` · `deno check` clean on the sample-render script (now a CI step).
 
-## Deploy gate — satisfied, and therefore a redeploy is owed
+## Rounds 5 and 6, and the ruling that closed the session
 
-§11 (the B-182 lesson) says not to deploy `generate-report` until the PR 4 client renderer has landed. **It has** — #454 is on `main` (`5a64f99`), which was checked rather than assumed at wrap. So this is not a ship-dark change: until `generate-report` is redeployed, a report an owner generates still carries the pre-PR-7 off-diet definition. Bundle via `scripts/deploy-edge.sh generate-report` → Supabase MCP `deploy_edge_function`, preserving `verify_jwt=true`. No migration, no new secret.
+Round 5 came back **NOT READY** too, and its headline finding was that the round-4 C5 fix was *still* wrong — for a reason I had not checked. The `"any other event"` series was never that: **treats are meal-typed, and doses and weigh-ins are not in the event table at all**, so on both artifacts the series was *exactly* the symptom count while 65 treat feedings, 3 weigh-ins and 2 doses went uncounted. Round 4 had *named* the circularity in the copy; round 5 was right that naming a defect does not repair it. The second series is now **deleted** rather than caveated, leaving only the meal series — the one that answers C5's question without circling back on the count it would be checking.
+
+That is three attempts at one row, and the through-line is worth keeping: **every version tried to say something the available data cannot support.** The data supports rendering the density; it never supported adjudicating with it.
+
+Six more round-5 findings, all in this PR's code, all fixed: the medication overlap was anchored at the first *logged* day rather than the trial start (coverage is a statement about the record and is rightly clipped; a drug course is a statement about the world and does not pause on unlogged days) · page 1 attributed every exposure to the two rungs, so *"Of those 4: 4 carried a protein…"* sat over an appendix showing three protein rows and one dated-membership row · the dagger footnote understated its own base rate by taking the per-type maximum where the marker fires on any symptom · a **treatment recommendation** in a report that disclaims making any (and the named drug has no unflavoured oral form, so it was unactionable as well as out of register) · an **unresolvable** pointer to *"the feedings in appendix C"*, which is the off-diet table and can never hold a trial-diet feeding · and *"×38"* beside a diet the same page documents as refused 38 of 38.
+
+**Three more filed:** **B-488** (page 1 is ~1,400 words — Principle 6's *decoration* half passes cleanly and its *scannable* half does not, because individually-correct caveats repeat until they displace ranking) · **B-489** (the coverage tile reads 100% under a heading naming a different denominator) · **B-490** (a refused trial never states that intake has been unlogged for 13 days).
+
+### The scope ruling
+
+By round 5 the pattern was unambiguous: **this PR's trial block was converging; the report-wide machinery around it was not.** Of round 5's seven blockers, one was fully mine and fixed, one partly, and five were pre-existing defects in surfaces every non-trial report shares. The PM ruled **merge #467, hold the deploy**, and delegated the B-479 release-bar call to the product team.
+
+**The team ruled B-479 blocking for the DEPLOY, not for the merge.** Dr. Chen carries that lens and two of three independent cold reads called it blocking, with a mechanism the counter-lenses do not rebut: the report *teaches* the reader to scan the flag zone, and the legend then states affirmatively that no reduced-intake flag fired — so an empty band reads as a **negative result** rather than as silence. That is reassurance-on-absence at the report layer, which `clinical-guardrails` forbids outright, and *intake is not preference* routes refusal toward a health flag by invariant. The usual counter — alarm fatigue, don't cry wolf — does not apply: 38-of-38 refusals with ~7% body-weight loss in an 8-year-old cat with active chronic vomiting is not a marginal detector firing, it is the canonical case.
+
+The consequence is taken knowingly and is worth stating plainly: **the trial block is on `main` and the report an owner can generate keeps the pre-PR-7 off-diet definition** — the heuristic that reports ~530 exposures across 645 feedings — until B-479 ships. Shipping a correct trial block inside an artifact whose flag zone is empty on the sicker of two patients is the worse trade.
+
+## Deploy — held, and the hold is the decision
+
+§11's gate (the B-182 lesson — don't deploy `generate-report` until the PR 4 client renderer lands) is **satisfied**: #454 is on `main` (`5a64f99`), checked rather than assumed. **A second gate now sits in front of it: B-479**, per the ruling above. So the deploy is held deliberately, and the report an owner generates keeps the pre-PR-7 off-diet definition until the trial-refusal safety lane ships. When the gate clears: bundle via `scripts/deploy-edge.sh generate-report` → Supabase MCP `deploy_edge_function`, preserving `verify_jwt=true`. No migration, no new secret. The bundle was built and verified on this branch, so the deploy step is known-good rather than assumed.
 
 ## Base drift, resolved in-branch rather than assumed
 
