@@ -28,7 +28,7 @@ import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministratio
 import { insertMeal } from '../lib/meals';
 import { insertMedicationDose } from '../lib/medicationDose';
 import { insertWeightCheck, getLatestWeightKg, parseWeightLbsToKg, kgToLbs } from '../lib/weight';
-import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFinished, type DoseAdherence } from '../lib/medications';
+import { inferDoseVehicleFromFoodType, initialComboDoseAdherence, isVehicleNotFinished, drugDisplayName, type DoseAdherence } from '../lib/medications';
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../lib/analysis';
 import { triggerSignalRegenDebounced } from '../lib/signal';
@@ -529,7 +529,10 @@ export default function LogModal() {
         {
           eventId: result.eventId,
           occurredAt: result.occurredAtIso,
-          drugName: med.generic_name,
+          // B-171 — name the drug the way the owner does (brand when present), so the
+          // card confirms with the word on the tile they just tapped. generic_name is
+          // NOT NULL on the catalog, so the fallback is belt-and-braces for a blank one.
+          drugName: drugDisplayName(med.generic_name, med.brand_name) ?? med.generic_name,
           adherence, // standalone/finished: 'given'; not-finished combo: null (B-156 PR B3)
           howGiven, // combo: inferred vehicle (pre-set); standalone: null (chips can set it)
           // combo: names the food on the card; else null. Reuse the SAME empty-name
