@@ -14,7 +14,7 @@ The panels were already stored verbatim (spec §12), so nothing needed re-photog
 
 ## Result
 
-**62 rows scanned · 35 changed · multi-protein rows 1 → 31.**
+**62 rows scanned · 37 changed · multi-protein rows 1 → 34.** (Applied in two increments — the first pass, then the lexicon widening described in the addendum below. The final numbers are stated here; the addendum gives the split.)
 
 | Food | before | after |
 |---|---|---|
@@ -48,9 +48,9 @@ The general lesson: when a ruling is scoped to one class of change, the instrume
 
 The obvious alternative was to re-invoke the extractor's model over the stored panel text. Rejected on one ground: **a backfill over clinical data has to be reviewable row by row before it is applied**, and 43 model outputs nobody checked is not that. A lexicon scan is a pure function — unit-tested, stable across runs, diff fits on a screen, and it cannot hallucinate a protein into a novel-protein trial food.
 
-The cost is real and named (**B-452**): it finds only animals it knows. That is an *under*-capture, and under-capture is the safe direction here — these foods captured nothing at all before.
+The cost is real and named (**B-452**): it finds only animals it knows. I originally called that under-capture "the safe direction", which the PM corrected the same day — see the addendum. It is only safe relative to capturing *nothing*; against the vet report's job it is the dangerous direction, and the lexicon was widened hard in response.
 
-The exclusion list turned out to be the load-bearing part, not tidiness. `chicken fat` appears in Hill's **duck** entrée; without excluding fats, oils, flavours and hydrolysates the pass would have appended `chicken` to a novel-protein trial food and fired a **false contaminant flag on a trial diet** — the most expensive false positive this feature can produce. Same mechanism correctly rejects `Natural Tuna Shrimp & Salmon Flavor` on a Temptations treat.
+The exclusion list turned out to be the load-bearing part, not tidiness. `chicken fat` appears in Hill's **duck** entrée; without excluding fats, oils and flavours the pass would have appended `chicken` to a novel-protein trial food and fired a **false contaminant flag on a trial diet** — the most expensive false positive this feature can produce. Same mechanism correctly rejects `Natural Tuna Shrimp & Salmon Flavor` on a Temptations treat. (Hydrolysates were on this list too, and should not have been — the addendum explains why that was a defect rather than a bound.)
 
 ## The two guards, enforced structurally
 
@@ -71,7 +71,7 @@ It would also have been a lie. A keyword scan finds only what its lexicon contai
 - **0** rows carrying a protein twice · **0** `ocean whitefish` remaining · **0** stored keys lost
 - The applied database state **hashes identical** to the independently computed expected state
 - Re-planning over the live post-state produces **zero** further changes
-- 33 new tests, **mutation-verified** — deliberately broke the fat exclusion, the primary hoist, and the atomic write; each mutation was caught. The hoist test was strengthened mid-session after a mutation slipped past it: the original fixture stored `['duck']`, which made the assertion pass with or without the hoist.
+- 41 new tests (33 before the widening), **mutation-verified** — deliberately broke the fat exclusion, the primary hoist, and the atomic write; each mutation was caught. The hoist test was strengthened mid-session after a mutation slipped past it: the original fixture stored `['duck']`, which made the assertion pass with or without the hoist.
 
 One process note: the row dump was **checksummed row-by-row against the database before use**, which caught a genuine transcription error in one panel's tail. Worth keeping as a habit any time data crosses out of the database by hand.
 
