@@ -84,15 +84,23 @@ export async function insertMeal(params: InsertMealParams): Promise<InsertMealRe
     );
   });
 
-  // Deliberately OUTSIDE the transaction: last_used_at is a local-only recency
-  // stamp for the picker's ordering, with no server column and no bearing on the
-  // health record. Rolling back a correctly-written meal because the cosmetic
-  // touch failed would trade a real loss for a cosmetic one — and it is the
-  // recency ordering, so a failure self-heals on the next log of that food.
-  await db.runAsync(
-    `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
-    [now, foodId],
-  );
+  // Deliberately OUTSIDE the transaction, AND swallowed: last_used_at is a
+  // local-only recency stamp for the picker's ordering, with no server column and
+  // no bearing on the health record. Excluding it from the transaction stops a
+  // cosmetic failure from rolling back a real meal — but that is only half the
+  // job, because everything below this line is the meal's follow-through. Left
+  // unguarded, a failed stamp would throw past the sync push and the Signal regen
+  // for a meal that IS durably committed, and surface to the caller's catch as a
+  // failed log the owner would reasonably re-enter. Log and carry on: the
+  // ordering self-heals on the next log of that food.
+  try {
+    await db.runAsync(
+      `UPDATE food_items_cache SET last_used_at = ? WHERE id = ?`,
+      [now, foodId],
+    );
+  } catch (e) {
+    console.warn('[insertMeal] last_used_at touch failed (ordering only):', e);
+  }
 
   // Push immediately (events before meals — meals FK → events.id) so the meal
   // reaches Supabase without waiting for the next foreground/reconnect.

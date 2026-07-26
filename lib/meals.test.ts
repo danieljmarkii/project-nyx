@@ -124,6 +124,27 @@ describe('insertMeal', () => {
     expect(inTxn.some((s) => /food_items_cache/.test(s))).toBe(false);
   });
 
+  it('survives a failed recency touch: the committed meal still pushes and regens', async () => {
+    // Event + meal INSERTs succeed (the transaction commits), then the cosmetic
+    // cache touch throws. The meal exists durably, so the follow-through must
+    // still run — and the caller must not see a failure for a meal that landed.
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockRunAsync
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('cache table missing'));
+
+    const res = await insertMeal(PARAMS);
+    await flush();
+
+    expect(res.mealId).toBe('id-2');
+    expect(mockSyncPendingEvents).toHaveBeenCalledTimes(1);
+    expect(mockSyncPendingMeals).toHaveBeenCalledTimes(1);
+    expect(mockTriggerSignalRegenDebounced).toHaveBeenCalledWith('pet-1');
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it('propagates a failed child INSERT and pushes nothing (rolled-back meal)', async () => {
     // Event INSERT succeeds, meal INSERT throws — the exact half-write shape.
     mockRunAsync.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('disk full'));
