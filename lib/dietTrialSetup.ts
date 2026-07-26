@@ -305,16 +305,14 @@ export function canStartTrial(input: {
  * 1. `diet_trials.food_item_id` IS DISPLAY-ONLY LEGACY (§4.1). It gets the
  *    FIRST-picked primary food purely so the seven shipped readers keep rendering
  *    a name. NO COMPUTATION MAY READ IT — every membership and protein decision
- *    reads `diet_trial_foods`. `lib/trialContaminant.ts` currently derives the
- *    trial diet from this column (`:508`, `:547`), which is correct for a
- *    one-food trial and WRONG the moment a second row exists: it would compute the
- *    sanctioned set from one food and flag a legitimately-allowed second trial
- *    food as a contaminant. PR 5 re-bases it onto `diet_trial_foods` as part of
- *    absorbing it (§0.2 forward-conflict 2). Until then, PR 3 pays for the
- *    condition it creates: `loadTrialProteinContext` now goes SILENT on any trial
- *    whose `primary_diet` row count is not exactly 1 — never an all-clear, just no
- *    claim (B-351 D10's ratified posture). That guard deletes itself when PR 5
- *    lands.
+ *    reads `diet_trial_foods`. `lib/trialContaminant.ts` used to derive the trial
+ *    diet from this column, which was correct for a one-food trial and WRONG the
+ *    moment a second row existed: it computed the sanctioned set from one food and
+ *    flagged a legitimately-allowed second trial food as a contaminant. PR 3 paid
+ *    for the condition it created with a stopgap (go silent unless the
+ *    `primary_diet` count is exactly 1); PR 5 re-based the module onto
+ *    `diet_trial_foods` (§0.2 forward-conflict 2) and deleted the stopgap, so a
+ *    multi-food trial is now handled rather than muted (B-453).
  *
  * 2. `transition_started_at` IS LEFT NULL IN V1 — a decision, not an omission.
  *    The mock flags it open ("PR 3 should say whether it is written from this
@@ -555,9 +553,9 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
   // ONE TRANSACTION. The parent and its allowed set are a single fact, and a throw
   // partway through the loop would otherwise leave an ACTIVE trial with a partial
   // (or empty) `primary_diet` set — which is the worst of the available states: it
-  // is a real trial, the modal's pre-flight will refuse to start another, and
-  // `loadTrialProteinContext`'s multi-food guard reads a count that no longer
-  // describes anything, so the standing protein note goes permanently quiet on it.
+  // is a real trial, the modal's pre-flight will refuse to start another, and the
+  // shared predicate would compute the sanctioned set from a partial diet — which
+  // classifies the MISSING trial food's every meal as an off-diet exposure.
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO diet_trials

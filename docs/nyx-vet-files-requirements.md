@@ -1,8 +1,8 @@
-# Nyx Vet Files — Central Vet Records Library — Requirements (B-467)
+# Nyx Vet Files — Central Vet Records Library — Requirements (B-477)
 
-**Version:** 0.2 | **Date:** 2026-07-26 | **Status:** **PM ruled G1–G3 same day (2026-07-26); G4 (priority) deliberately left open — B-467 stays `Later` until promoted.** G1 was delegated to the team → the D3/D4 recommendation stands ratified (new `vet_documents` table + new `nyx-vet-documents` bucket). G2 = **yes, PDFs in v1** (store-and-view; VF-5 folds into VF-3/4). G3 = **pet-profile section.** **VF-0 and VF-1 are build-ready; VF-2–VF-4 await the mock round.**
+**Version:** 0.2 | **Date:** 2026-07-26 | **Status:** **PM ruled G1–G3 same day (2026-07-26); G4 (priority) deliberately left open — B-477 stays `Later` until promoted.** G1 was delegated to the team → the D3/D4 recommendation stands ratified (new `vet_documents` table + new `nyx-vet-documents` bucket). G2 = **yes, PDFs in v1** (store-and-view; VF-5 folds into VF-3/4). G3 = **pet-profile section.** **VF-0 and VF-1 are build-ready; VF-2–VF-4 await the mock round.**
 
-**Read with:** `docs/nyx-vet-report-requirements.md` (§8.3 scope cascade, §8/§12 attachment-handling pattern), `docs/nyx-ask-requirements.md` §6 (the D2 LLM-boundary template Phase 2 must mirror), `docs/monetization-and-throttling-requirements.md` §3 (the free-forever table), backlog rows B-467 / B-248 / B-466 / B-145 / B-041 / B-464.
+**Read with:** `docs/nyx-vet-report-requirements.md` (§8.3 scope cascade, §8/§12 attachment-handling pattern), `docs/nyx-ask-requirements.md` §6 (the D2 LLM-boundary template Phase 2 must mirror), `docs/monetization-and-throttling-requirements.md` §3 (the free-forever table), backlog rows B-477 / B-248 / B-466 / B-145 / B-041 / B-464.
 
 ---
 
@@ -23,12 +23,19 @@ Proposed decisions (team recommendation attached; PM ratifies or overrides). Ope
 | D9 | **Monetization** | The library is **free forever** — `docs/monetization-and-throttling-requirements.md` §3 row 1 ("core logging… photos, attachments — the record is never gated") plus the export-as-data-right row settle this; changing a §3 row is a PM decision this spec does not propose. The only legitimately gateable layer is Phase 2 **extraction/enrichment**, under the D-M2 class rule (decided once, for the class, data-informed). |
 | D10 | **Provenance over polish** | Every document carries `source` (camera / photo library / files) and honest metadata. The original artifact is primary forever; any future AI read is an annotation linked back to it, never a replacement — the same owner-editable-analysis pattern as B-028. |
 
+### Mock-round rulings (PM, 2026-07-26, after round 2 + the Jordan/Sam persona reviews)
+
+- **D11 — Kind chips at the saved moment: OUT of v1.** PM ruled with Jordan: capture stays zero-decision with nothing added post-save; the recovery for the untitled-library problem is the **one-tap Name / Add-type affordance on the library row** (round-2 L-real), which ships in VF-2. Sam's chips proposal is recorded, not adopted; revisit only if real usage shows the list-side recovery isn't used.
+- **D12 — Search: OUT of v1.** §4.1 stands as specced (kind filter only). Deferred to backlog (B-478); the trigger to revisit is real libraries crossing ~20 documents.
+- **D13 — Multi-pet documents: SUPPORTED, via duplicate-on-add.** PM ruled multi-pet support is required. Mechanism (Engineer rec under that ruling): an **"Also add to {other pet}'s Vet Files"** action on the saved moment (and detail ⋯ menu) that creates a full independent copy — new row, new storage object — under the other pet. A shared-document model was considered and rejected for v1: one object serving two pets breaks the pet-prefixed `storage_path` CHECK, the per-pet bucket policies, and the delete-account cascade (removing one pet would orphan or destroy the other's reference). Copies may diverge after creation; that is accepted (they are separate filings, like forwarding an email twice). **Schema impact: none — `pet_id` stays NOT NULL**, VF-1 unblocked as drafted. The affordance renders only in multi-pet accounts.
+- **PM call 4 (the report paperclip) — still open**, pending a PM walkthrough of what it means; see §12.
+
 ### Gates — rulings (PM, 2026-07-26, same day as the draft)
 
 - **G1 — CLOSED (delegated to the team → recommendation ratified).** New `vet_documents` table + new `nyx-vet-documents` bucket per D3/D4. VF-1 unblocked.
 - **G2 — CLOSED: YES, PDFs in v1** (store-and-view only, per D5's bounds — no thumbnails, no extraction, no server-side processing). VF-5 dissolves into VF-3/VF-4.
 - **G3 — CLOSED: pet-profile section** per D6. VF-2/VF-4 unblocked pending the mock round.
-- **G4 — DELIBERATELY OPEN.** PM is "open minded on priority": B-467 **stays `Later`** until actively promoted; the §10 conflict stands recorded, not resolved. The hard sequencing in §6.1 holds either way (VF-0 = B-248/B-466 is already `Now` on its own merits). Revisit when a build slot opens or the PM promotes it.
+- **G4 — DELIBERATELY OPEN.** PM is "open minded on priority": B-477 **stays `Later`** until actively promoted; the §10 conflict stands recorded, not resolved. The hard sequencing in §6.1 holds either way (VF-0 = B-248/B-466 is already `Now` on its own merits). Revisit when a build slot opens or the PM promotes it.
 
 ---
 
@@ -63,7 +70,8 @@ Full brief with sources: session record for 2026-07-26 (vet-files discovery). Th
 
 ### 4.1 The library (list)
 
-- Per-pet, reached from the pet profile (G3). Renders as a **reverse-chron list with a kind filter** — type × date × source, no folders, ever (evidence: §2). The kind filter follows the house lens rule (`docs/nyx-filter-ux-requirements.md`): the kind set is long and growable → `ScopeMenu`, visible tint when non-default.
+- Per-pet, reached from the pet profile (G3). Renders as a **reverse-chron list with a kind filter** — type × date × source, no folders, ever (evidence: §2). The kind filter follows the house lens rule (`docs/nyx-filter-ux-requirements.md`): the kind set is long and growable → `ScopeMenu`, visible tint when non-default. **No search in v1 (D12; deferred to B-468).** The header carries the pet's name (round-2 review: the only filing cue a multi-pet household gets).
+- **Untitled rows are the expected steady state, and the list is designed for them** (round-2 L-real): a defaulted row renders its "Document — {date}" title in a quieter weight, a dashed "Add type" chip, and a **one-tap Name affordance in place of the chevron**. This is the sanctioned recovery for the zero-decision capture default (D11) — the capture flow itself never asks.
 - Each row: kind icon + title (defaulted, editable) + document date + source glyph. Thumbnails for images; a document glyph for PDFs (no PDF thumbnailing in v1, D5).
 - **The empty state is the feature's primary screen** (most users, most of the time — Principle 5). It must be warm, forward-looking, and name the moment: what Vet Files is *for* (the ER, the new vet, boarding), not "No documents yet." Copy goes through `nyx-voice` at build.
 
@@ -73,7 +81,9 @@ Principle 1 governs the *upload* moment — often a clinic parking lot:
 
 - One tap from the library: **camera / photo library / files** (files = G2). Multi-select from the photo library (an email thread is N screenshots — see §4.4).
 - On confirm, the document saves **immediately** with everything defaulted: `document_date` = EXIF date or today, `kind = other`, title = kind + date. **Metadata is editable afterward, never demanded at capture.** The failure mode to avoid is named in the backlog: B-155 flagged the med-capture path as "correct… not a 10-second path."
-- Visit linkage is **optional, deferrable, and set from the detail screen** — never a capture-time question (D7 forbids the reverse direction entirely).
+- Visit linkage is **optional, deferrable, and set from the detail screen** — never a capture-time question (D7 forbids the reverse direction entirely). **The visit-link row renders only when ≥1 vet visit exists on record** (round-2 ruling — visits have no browse surface today, so an empty picker reads as broken).
+- **Multi-pet accounts** get an "Also add to {other pet}'s Vet Files" action on the saved moment and the detail ⋯ menu (D13, duplicate-on-add). Single-pet accounts never see it.
+- The saved moment names the pet ("Saved to Pixel's Vet Files") and carries the offline line ("On this phone now — backs up when you're online"). Its secondary action is "Name it" — no kind chips, no metadata prompts (D11).
 
 ### 4.3 Document detail
 
@@ -193,7 +203,7 @@ Phase 2 gets its own spec + PR plan after the D8 ruling.
 - **Jordan / Sam:** the parking-lot test (§4.2) and the ER moment (§4.3 share) are the two moments that matter; multi-screenshot email threads must not become list clutter (§4.4).
 - **Trust & Safety:** deletion + export story before first upload (§5.2/§6.2); new-data-class disclosures (B-229/B-268); Phase-2 consent must be explicit and granular (Apple per-record model, §2); dissent registered on any future silent-ingestion design — consent is per-corpus at minimum, ideally per-document.
 - **QA:** AC list §8; flags that AC 2's report-window check and AC 8's zero-residue check are the two easiest to hand-wave and therefore the two that get explicit verification steps.
-- **Product Owner:** B-145 is absorbed as Phase 2's ingestion lane (its row updates when the D8 ruling happens, not before); B-467 row carries this spec; no new backlog scope invented here.
+- **Product Owner:** B-145 is absorbed as Phase 2's ingestion lane (its row updates when the D8 ruling happens, not before); B-477 row carries this spec; no new backlog scope invented here.
 
 **Recorded conflict (not resolved — informs G4):**
 > **Dr. Chen:** labs-in-one-place is real continuity-of-care value; every month at `Later` is another ER visit where the bloodwork stays in an inbox.
@@ -211,7 +221,7 @@ Phase 2 gets its own spec + PR plan after the D8 ruling.
 
 ## 12. Follow-ups & flagged doc edits (Tier 2 — PM confirmation before writing)
 
-- `docs/backlog.md` B-467 row: status head updated to reference this spec (done in the same PR, Tier-1-adjacent working state).
+- `docs/backlog.md` B-477 row: status head updated to reference this spec (done in the same PR, Tier-1-adjacent working state).
 - B-145 row: annotate "absorbed as Vet Files Phase-2 ingestion lane per `docs/nyx-vet-files-requirements.md` §7" — **proposed, awaiting PM.**
 - B-041 row: add `vet_documents` + `nyx-vet-documents` to its scope line **when VF-1 merges** — proposed.
 - B-229 / B-268 rows: add the vet-document data class — proposed.
