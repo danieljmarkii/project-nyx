@@ -178,3 +178,14 @@ jobs:
       # tsconfig.json excludes that path, and `deno test` type-checks by default.
       - name: Deno test
         run: deno test --lock=deno.lock --cached-only supabase/functions/
+
+      # Deno entry points that live OUTSIDE supabase/functions and import its
+      # modules. `tsconfig.json` excludes `scripts/*.deno.ts` (they use the `Deno`
+      # global, which is not in the app's type environment), and the step above
+      # only walks `supabase/functions`, so without this they are checked by
+      # nothing at all. The one that exists renders the vet report to HTML for the
+      # `vet-report-cold-read` pass — the artifact that gate reads — so a silently
+      # rotted script means the next report change ships without a cold read.
+      # Same module graph as the suites, so `--cached-only` is already satisfied.
+      - name: Deno check (scripts)
+        run: deno check --lock=deno.lock --cached-only scripts/*.deno.ts

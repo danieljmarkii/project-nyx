@@ -322,6 +322,26 @@ export function unsanctionedProteins(
   return canonicalProteins(proteins).filter((key) => !sanctioned.has(key));
 }
 
+/**
+ * The §5.4 identity key: case-folded brand + product, separated by US (U+001F).
+ *
+ * THIS IS THE SAME FORMULA AS `lib/food.foodIntakeKey`, RESTATED — not a second
+ * definition by choice. `lib/food.ts` is unreachable from a Deno Edge Function:
+ * it carries `import type { … } from './db'`, which is both extensionless (Deno
+ * will not resolve it) and pulls the expo-sqlite stack into the type graph. So
+ * `generate-report` cannot call the client's copy, and the alternative — letting
+ * the Edge Function inline the formula itself — is exactly how the repo ended up
+ * with three off-diet predicates in the first place.
+ *
+ * Restating it HERE, in the one module both sides already import, keeps the
+ * duplication down to one line in one place with a test that pins it:
+ * `lib/dietTrialFoodKey.test.ts` asserts `trialFoodKey === foodIntakeKey` over a
+ * cross-product of casings and blanks, so a change to either one fails jest.
+ */
+export function trialFoodKey(brand: string | null, productName: string | null): string {
+  return `${(brand ?? '').toLowerCase()}\u001F${(productName ?? '').toLowerCase()}`;
+}
+
 /** A brand+product key is only an identity if it actually names something.
  *  `foodIntakeKey('','')` is the bare separator, and brand/product are NOT NULL
  *  but not NON-EMPTY — so two blank-named rows would otherwise collide and the
