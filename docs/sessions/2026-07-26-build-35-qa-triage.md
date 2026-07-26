@@ -79,6 +79,19 @@ never going to appear from a client build. It needs the deploy, not a new binary
 consumed by `generate-report` — nothing in `generate-signal` calls them, so its
 deploy is unnecessary rather than merely deferred.
 
+**The deploys did not happen, and the reason is worth recording.** `deploy_edge_function`
+takes the bundle as an inline tool parameter, so the agent has to reproduce the whole
+artifact byte-for-byte. `generate-report` minifies to **188 KB on a single
+87,048-character line**. Reproducing that reliably is not something to bet a live
+vet-report function on — a corrupted deploy takes the report down until it is
+rebuilt, and the sha256 read-back catches it only *after* the overwrite. The bundles
+are built and verified (`node --check` clean); it is purely the transfer that is
+unsafe at this size, and `generate-report` only grows. Filed as **B-455**: provision
+a Supabase access token as a cloud-env secret so `npx supabase functions deploy`
+uploads from disk and the agent never handles the bytes — the runbook's own §Security
+already names this as the escape hatch. Until then, large functions deploy via the
+dashboard paste.
+
 **Environment finding:** `esm.sh` is blocked by this session's network policy
 (gateway 403 on CONNECT), so `deno test` and `deno cache` cannot run in-container.
 `scripts/deploy-edge.sh` still bundles fine — esbuild marks `https://*` external — but
