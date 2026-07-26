@@ -9,6 +9,7 @@
 import {
   BackfillRow,
   deriveProteinsFromPanel,
+  deriveProteinsWithSources,
   planRow,
 } from './proteinBackfill';
 
@@ -85,6 +86,41 @@ describe('deriveProteinsFromPanel — live panels', () => {
     // `poultry` is never folded into `chicken` — the alias table refuses that merge
     // because the bird is genuinely unknown.
     expect(deriveProteinsFromPanel(panel)).toEqual(['chicken', 'poultry']);
+  });
+});
+
+// ── Provenance: which term a key came from, and whether it is an odd carrier ──
+
+describe('deriveProteinsWithSources — provenance', () => {
+  it('reports the panel term each key was read from', () => {
+    const found = deriveProteinsWithSources('Rabbit, duck, chicken broth, chicken liver');
+    expect(found.map((d) => [d.key, d.term])).toEqual([
+      ['rabbit', 'rabbit'],
+      ['duck', 'duck'],
+      ['chicken', 'chicken broth'],
+    ]);
+  });
+
+  it('treats an animal named with an ordinary preparation or cut as unremarkable', () => {
+    const panel =
+      'Chicken, chicken broth, turkey by-product meal, dried egg product, lamb lung, ' +
+      'crab meal, poultry by-products, deboned salmon';
+    for (const d of deriveProteinsWithSources(panel)) {
+      expect(`${d.key} ← ${d.term}: ${d.unusual ? 'FLAGGED' : 'ordinary'}`).toBe(
+        `${d.key} ← ${d.term}: ordinary`,
+      );
+    }
+  });
+
+  it('flags an animal riding on a term that is not primarily that animal', () => {
+    // The one live case: Temptations Birthday gains `beef` from this term, while its
+    // "Natural Beef Flavor" is excluded outright. Flagged, never dropped.
+    const found = deriveProteinsWithSources('Dried Beef Cheese, Salt');
+    expect(found).toEqual([{ key: 'beef', term: 'dried beef cheese', unusual: true }]);
+  });
+
+  it('flagging is not filtering — an unusual term still yields its key', () => {
+    expect(deriveProteinsFromPanel('Dried Beef Cheese, Salt')).toEqual(['beef']);
   });
 });
 

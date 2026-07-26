@@ -153,8 +153,57 @@ const NON_EXPOSURE_TERM = /\b(fats?|tallow|oils?|flavou?r(s|ed|ing)?|hydroly[sz]
 // rather than hiding it behind a nested group.
 const TERM_SEPARATOR = /[,;.()[\]\n\r]+/;
 
+// Words that legitimately sit beside a species in a protein ingredient. They are
+// how a derivation is judged ORDINARY rather than unusual (see `isUnusualTerm`):
+// after the species token and these are removed, an ordinary term has nothing
+// left. "chicken broth", "turkey by-product meal", "dried egg product" and "lamb
+// lung" all reduce to nothing; "dried beef cheese" leaves `cheese`, which is the
+// signal that the animal name is riding on something that is not primarily that
+// animal.
+//
+// This is a REPORTING aid, not a filter — an unusual term is still captured. The
+// derivation is unchanged by anything in this block; under-capturing a real
+// exposure to keep the report tidy would be the wrong trade entirely.
+const ORDINARY_COMPANION = new Set<string>([
+  // preparation / cut
+  'broth', 'stock', 'meal', 'by-product', 'by-products', 'byproduct', 'byproducts',
+  'digest', 'product', 'products', 'protein', 'plasma',
+  // tissue
+  'liver', 'livers', 'heart', 'hearts', 'gizzard', 'gizzards', 'giblets', 'tripe',
+  'kidney', 'kidneys', 'cartilage', 'bone', 'bones', 'lung', 'lungs', 'breast',
+  'breasts', 'thigh', 'thighs', 'white', 'whites', 'yolk', 'yolks',
+  // state / sourcing descriptors
+  'fresh', 'frozen', 'dried', 'dehydrated', 'deboned', 'boneless', 'whole', 'raw',
+  'real', 'ground', 'natural', 'premium', 'cooked', 'roasted', 'minced', 'chopped',
+  'cage-free', 'free-range', 'grass-fed', 'wild-caught', 'farm-raised', 'ocean',
+  'and', 'with', 'of', 'the', 'water', 'sufficient', 'for', 'processing',
+]);
+
+/** One protein key, with the ingredient term it was read from. */
+export interface DerivedProtein {
+  key: string;
+  /** The panel term, verbatim-ish (whitespace-collapsed, lowercased). */
+  term: string;
+  /**
+   * True when the animal name appeared inside a term that is not straightforwardly
+   * that animal — `beef` read from "dried beef cheese" rather than from "beef" or
+   * "beef broth". These are the derivations most worth a human eye, and the ones
+   * that would make the best owner-facing "did you know this had beef in it?"
+   * moment if the provenance ever reaches a surface (B-453).
+   */
+  unusual: boolean;
+}
+
+function isUnusualTerm(term: string, matched: string): boolean {
+  const leftover = term
+    .split(' ')
+    .filter((w) => w && !matched.split(' ').includes(w) && !ORDINARY_COMPANION.has(w));
+  return leftover.length > 0;
+}
+
 /**
- * Derive the ordered protein keys visible in a stored ingredient panel.
+ * Derive the ordered protein keys visible in a stored ingredient panel, each with
+ * the ingredient term it came from.
  *
  * Panel (prominence) order is preserved: a key takes the position of its FIRST
  * occurrence, which is what makes the returned array meaningful as the
@@ -163,10 +212,10 @@ const TERM_SEPARATOR = /[,;.()[\]\n\r]+/;
  * Every key leaves through `normalizeExtractedProtein` (guard 2). Returns [] for
  * an absent, empty, or protein-free panel — never a junk key.
  */
-export function deriveProteinsFromPanel(panel: string | null | undefined): string[] {
+export function deriveProteinsWithSources(panel: string | null | undefined): DerivedProtein[] {
   if (typeof panel !== 'string') return [];
 
-  const out: string[] = [];
+  const out: DerivedProtein[] = [];
   const seen = new Set<string>();
 
   for (const rawTerm of panel.split(TERM_SEPARATOR)) {
@@ -182,11 +231,16 @@ export function deriveProteinsFromPanel(panel: string | null | undefined): strin
       const key = normalizeExtractedProtein(match[1]);
       if (key == null || seen.has(key)) continue;
       seen.add(key);
-      out.push(key);
+      out.push({ key, term, unusual: isUnusualTerm(term, match[1]) });
     }
   }
 
   return out;
+}
+
+/** Keys only — the derivation the backfill actually writes. */
+export function deriveProteinsFromPanel(panel: string | null | undefined): string[] {
+  return deriveProteinsWithSources(panel).map((d) => d.key);
 }
 
 /** One `food_items` row, in the shape the backfill needs to read. */
@@ -208,6 +262,10 @@ export interface BackfillPlan {
   proteins: string[];
   /** Keys this pass adds. Empty ⇒ nothing to write for this row. */
   added: string[];
+  /** Where each added key was read from — the panel term, and whether that term
+   *  was an unusual carrier for the animal. Reporting only; never affects what is
+   *  written. */
+  provenance: DerivedProtein[];
   /** True when `primary_protein` is written differently from how it was stored,
    *  under EITHER warrant. Most of these are Class A. */
   rekeyedPrimary: boolean;
@@ -326,8 +384,12 @@ export function planRow(row: BackfillRow, options: BackfillOptions): BackfillPla
   for (const value of stored) pushKey(canonicalizeProtein(value));
 
   const before = new Set(proteins);
-  for (const derived of deriveProteinsFromPanel(row.ingredients_notes)) pushKey(derived);
+  const derived = deriveProteinsWithSources(row.ingredients_notes);
+  for (const d of derived) pushKey(d.key);
   const added = proteins.filter((p) => !before.has(p));
+  const provenance = added
+    .map((key) => derived.find((d) => d.key === key))
+    .filter((d): d is DerivedProtein => d != null);
 
   // A no-op row is one where neither column moves. Comparing the arrays elementwise
   // (not just the added count) is what catches the Class-B re-key of a stored
@@ -340,6 +402,7 @@ export function planRow(row: BackfillRow, options: BackfillOptions): BackfillPla
     primaryProtein,
     proteins,
     added,
+    provenance,
     rekeyedPrimary,
     classBRekey,
     changed: proteinsChanged || rekeyedPrimary,

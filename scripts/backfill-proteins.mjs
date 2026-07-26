@@ -109,6 +109,8 @@ function main() {
   // Reported separately on purpose — see BackfillPlan.classBRekey. Collapsing the
   // two into one "re-keyed" number overstates what the PM actually ratified.
   const classB = changed.filter(({ plan }) => plan.classBRekey);
+  const unusual = changed.flatMap(({ row, plan }) =>
+    plan.provenance.filter((d) => d.unusual).map((d) => ({ row, d })));
 
   mkdirSync(args.out, { recursive: true });
 
@@ -151,8 +153,9 @@ function main() {
     `- Rows changed: **${changed.length}**`,
     `- Primaries rewritten: **${rekeyed.length}** — of which **${classB.length}** Class B (semantic, PM-ratified) and **${rekeyed.length - classB.length}** Class A (casing / processing qualifier, permitted always)`,
     `- Class-B primary re-key: **${args.rekey ? 'ON' : 'OFF'}**`,
+    `- Derivations flagged for a human eye (⚠): **${unusual.length}**`,
     '',
-    '| Food | primary_protein | proteins before | proteins after | added |',
+    '| Food | primary_protein | proteins before | proteins after | added (← panel term) |',
     '|---|---|---|---|---|',
     ...changed.map(({ row, plan }) => {
       const name = `${row.brand ?? ''} ${row.product_name ?? ''}`.trim();
@@ -160,9 +163,31 @@ function main() {
         ? `\`${row.primary_protein}\` → **\`${plan.primaryProtein}\`** ${plan.classBRekey ? '(B)' : '(A)'}`
         : `\`${row.primary_protein ?? 'NULL'}\``;
       const fmt = (list) => (list.length ? list.map((p) => `\`${p}\``).join(', ') : '—');
-      return `| ${name} | ${primary} | ${fmt(row.proteins ?? [])} | ${fmt(plan.proteins)} | ${fmt(plan.added)} |`;
+      // Provenance is shown for every added key so a reviewer can check the
+      // derivation against the label without opening the panel text; ⚠ marks the
+      // ones where the animal name rode on an unusual carrier.
+      const added = plan.provenance.length
+        ? plan.provenance
+            .map((d) => `\`${d.key}\` ← _${d.term}_${d.unusual ? ' ⚠' : ''}`)
+            .join('<br>')
+        : '—';
+      return `| ${name} | ${primary} | ${fmt(row.proteins ?? [])} | ${fmt(plan.proteins)} | ${added} |`;
     }),
     '',
+    ...(unusual.length
+      ? [
+          '## ⚠ Derivations worth a human eye',
+          '',
+          'The animal name appeared inside an ingredient term that is not straightforwardly',
+          'that animal. Each is still CAPTURED — flagging is not filtering, and dropping a',
+          'real exposure to keep this list short would be the wrong trade. They are listed',
+          'because they are the ones a reviewer might disagree with.',
+          '',
+          ...unusual.map(({ row, d }) =>
+            `- **${row.brand} ${row.product_name}** — \`${d.key}\` read from "${d.term}"`),
+          '',
+        ]
+      : []),
   ].join('\n');
   writeFileSync(join(args.out, 'backfill-proteins-report.md'), report);
 
@@ -177,6 +202,7 @@ function main() {
 
   console.log(`scanned ${rows.length} · changed ${changed.length}`);
   console.log(`primaries rewritten ${rekeyed.length} — Class B ${classB.length} (ratified) · Class A ${rekeyed.length - classB.length}`);
+  console.log(`flagged derivations (unusual carrier): ${unusual.length}`);
   console.log(`idempotence re-run: ${drift.length === 0 ? 'clean' : `DRIFT on ${drift.length} row(s)`}`);
   console.log(`wrote ${join(args.out, 'backfill-proteins.sql')}`);
   if (drift.length > 0) process.exitCode = 1;
