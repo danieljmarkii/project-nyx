@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-26
 
-Single-item copy fix that turned out to be a class. Shipped via **#473**. No schema, no Edge Function, no `lib/` logic — screen and component copy only.
+Single-item copy fix that turned out to be a class. Shipped via **#470**. No schema, no Edge Function, no `lib/` logic — screen and component copy only.
 
 ## The filed bug
 
