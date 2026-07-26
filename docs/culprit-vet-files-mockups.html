@@ -1,4 +1,4 @@
-<title>Culprit — Vet Files mock round 1</title>
+<title>Culprit — Vet Files mock round 2</title>
 <style>
   /* ============================================================
      PAGE (studio presentation layer) — theme-aware tokens.
@@ -57,13 +57,12 @@
   h1.title { font-size: clamp(30px, 5.4vw, 50px); line-height: 1.05; letter-spacing: -.02em; font-weight: 500; margin: 0 0 20px; text-wrap: balance; max-width: 20ch; }
   .lede { font-size: clamp(16px, 2vw, 18.5px); color: var(--ink-soft); max-width: 66ch; margin: 0; }
 
-  .rec-note {
-    margin-top: 26px; padding: 15px 18px; border: 1px solid var(--line);
-    border-left: 3px solid var(--accent); border-radius: 12px; background: var(--panel);
-    box-shadow: var(--shadow); font-size: 14.5px; color: var(--ink-soft); max-width: 74ch;
-  }
-  .rec-note b { color: var(--ink); font-weight: 600; }
-  .rec-note.amber { border-left-color: var(--amber); }
+  .ledger { margin-top: 28px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+  .ledger-h { padding: 12px 18px; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); border-bottom: 1px solid var(--line-soft); }
+  .ledger-row { display: flex; gap: 14px; padding: 11px 18px; font-size: 13.5px; color: var(--ink-soft); border-bottom: 1px solid var(--line-soft); align-items: baseline; }
+  .ledger-row:last-child { border-bottom: 0; }
+  .ledger-who { flex: none; width: 52px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .ledger-row b { color: var(--ink); font-weight: 600; }
 
   section { margin-top: clamp(52px, 8vw, 88px); }
   .sec-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 10px; }
@@ -72,7 +71,6 @@
 
   .rail { display: grid; gap: clamp(22px, 4vw, 40px); margin-top: 30px; }
   .rail-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
-  .rail-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); align-items: start; }
   .opt { display: flex; flex-direction: column; align-items: center; gap: 16px; }
   .opt-cap { text-align: center; max-width: 36ch; }
   .opt-cap .k { font-weight: 600; font-size: 15px; color: var(--ink); display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
@@ -98,7 +96,6 @@
     --a-border:#EAEAEA; --a-border-strong:#D4D4D4;
     --a-accent:#00C2A8; --a-accent-soft:#86D9CC; --a-accent-light:#E0FBF7; --a-accent-ink:#0B7B6C;
     --a-symptom:#F43F5E; --a-symptom-light:#FFE4E6;
-    --a-med:#5B7A9E; --a-med-light:#EAF0F7;
     --a-scrim: rgba(10,10,10,.35);
     --a-shadow: 0 1px 3px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.04);
     width: 300px; max-width: 100%; background: var(--a-bg);
@@ -113,14 +110,28 @@
   .ph-title { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
   .ph-add { width: 30px; height: 30px; border-radius: 999px; background: var(--a-accent); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 500; line-height: 1; }
   .ph-add.ghost { background: transparent; color: transparent; }
+  .ph-more { width: 30px; text-align: right; color: var(--a-text3); }
 
   .ph-pagetitle { font-size: 24px; font-weight: 600; letter-spacing: -.3px; margin: 2px 0 0; }
   .ph-sub { font-size: 12.5px; color: var(--a-text3); margin-top: 2px; }
 
-  .scope-pill { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; border: 1px solid var(--a-border-strong); border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 500; color: var(--a-text2); background: var(--a-surface); }
-  .scope-pill.active { border-color: var(--a-accent); color: var(--a-accent-ink); background: var(--a-accent-light); }
+  /* real-profile card anatomy (matches shipped app/(tabs)/profile.tsx) */
+  .pet-hero { display: flex; align-items: center; gap: 12px; }
+  .pet-avatar { width: 52px; height: 52px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #E8E4F5, #A79ACB); border: 1px solid var(--a-border); }
+  .pet-name { font-size: 22px; font-weight: 600; letter-spacing: -.3px; }
+  .pet-sub { font-size: 12px; color: var(--a-text3); margin-top: 1px; }
+  .big-card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 14px; }
+  .big-card h4 { margin: 0; font-size: 14.5px; font-weight: 600; letter-spacing: -.15px; }
+  .big-card .blurb { font-size: 12px; color: var(--a-text2); line-height: 1.5; margin-top: 4px; }
+  .big-card .cardbtn { margin-top: 11px; border-radius: 10px; padding: 10px; text-align: center; font-size: 13px; font-weight: 600; background: var(--a-accent); color: #fff; }
+  .big-card .cardbtn.ghost { background: var(--a-surface); border: 1px solid var(--a-border-strong); color: var(--a-text); font-weight: 500; }
+  .doc-strip { display: flex; gap: 8px; margin-top: 11px; }
+  .strip-thumb { width: 34px; height: 44px; border-radius: 6px; border: 1px solid var(--a-border); background: repeating-linear-gradient(180deg, #ECECEC 0 2px, transparent 2px 8px) 5px 7px/24px 30px no-repeat #fff; position: relative; }
+  .strip-more { width: 34px; height: 44px; border-radius: 6px; border: 1px dashed var(--a-border-strong); display: flex; align-items: center; justify-content: center; font-size: 10.5px; color: var(--a-text3); }
+  .dim { opacity: .45; }
+
+  .scope-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--a-border-strong); border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 500; color: var(--a-text2); background: var(--a-surface); }
   .scope-pill .car { font-size: 9px; color: var(--a-text3); }
-  .scope-pill.active .car { color: var(--a-accent-ink); }
 
   .doc-row { display: flex; gap: 11px; align-items: center; background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; padding: 10px 12px; box-shadow: var(--a-shadow); }
   .doc-thumb { width: 44px; height: 56px; border-radius: 8px; flex: none; position: relative; overflow: hidden; border: 1px solid var(--a-border); background:
@@ -132,32 +143,20 @@
   .doc-thumb.shot::after { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(0,194,168,.10), transparent 55%); }
   .doc-main { flex: 1; min-width: 0; }
   .doc-title { font-size: 13.5px; font-weight: 500; letter-spacing: -.1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-title.untitled { color: var(--a-text2); font-weight: 400; }
   .doc-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
   .kind { font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--a-text2); background: var(--a-subtle); border-radius: 4px; padding: 2px 5px; }
+  .kind.other { color: var(--a-text3); background: transparent; border: 1px dashed var(--a-border-strong); }
   .doc-date { font-size: 11px; color: var(--a-text3); }
   .doc-extra { font-size: 11px; color: var(--a-text3); }
   .doc-link { font-size: 11px; color: var(--a-accent-ink); }
   .doc-chev { color: var(--a-text-dis); font-size: 16px; flex: none; }
+  .name-btn { font-size: 11.5px; font-weight: 600; color: var(--a-accent-ink); background: var(--a-accent-light); border-radius: 999px; padding: 5px 11px; flex: none; }
 
-  .month-h { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin: 4px 2px -4px; }
+  .search-box { display: flex; align-items: center; gap: 8px; background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 9px 12px; font-size: 13px; color: var(--a-text-dis); }
+  .search-box svg { flex: none; }
 
-  /* profile screen bits */
-  .pet-hero { display: flex; align-items: center; gap: 12px; }
-  .pet-avatar { width: 52px; height: 52px; border-radius: 999px; background: radial-gradient(circle at 35% 30%, #FFE9C9, #E8B87E); border: 1px solid var(--a-border); }
-  .pet-name { font-size: 22px; font-weight: 600; letter-spacing: -.3px; }
-  .pet-sub { font-size: 12px; color: var(--a-text3); margin-top: 1px; }
-  .sect-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--a-text3); margin: 6px 2px -4px; }
-  .prof-card { background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); overflow: hidden; }
-  .prof-row { display: flex; align-items: center; gap: 11px; padding: 13px 14px; }
-  .prof-row + .prof-row { border-top: 1px solid var(--a-border); }
-  .prof-ico { width: 30px; height: 30px; border-radius: 8px; background: var(--a-subtle); display: flex; align-items: center; justify-content: center; flex: none; }
-  .prof-ico svg { display: block; }
-  .prof-t { flex: 1; font-size: 13.5px; font-weight: 500; }
-  .prof-t small { display: block; font-weight: 400; font-size: 11px; color: var(--a-text3); margin-top: 1px; }
-  .prof-count { font-size: 12px; color: var(--a-text3); }
-  .dim { opacity: .45; }
-
-  /* empty states */
+  /* empty state */
   .empty-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px; padding: 8px 6px 20px; }
   .empty-art { display: flex; align-items: flex-end; gap: 6px; margin-bottom: 4px; }
   .art-doc { width: 34px; height: 44px; border-radius: 6px; border: 1.5px solid var(--a-border-strong); background: var(--a-surface); position: relative; }
@@ -165,13 +164,10 @@
   .art-doc.teal { border-color: var(--a-accent-soft); transform: rotate(4deg); }
   .art-doc.teal::before { background: var(--a-accent-soft); box-shadow: 0 6px 0 var(--a-accent-light), 0 12px 0 var(--a-accent-light); }
   .art-doc.back { transform: rotate(-6deg) translateY(3px); }
-  .empty-h { font-size: 18px; font-weight: 600; letter-spacing: -.2px; max-width: 15ch; line-height: 1.25; }
-  .empty-p { font-size: 12.5px; color: var(--a-text2); line-height: 1.55; max-width: 26ch; }
-  .empty-moments { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-  .moment { display: flex; align-items: center; gap: 10px; background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 10px 12px; text-align: left; }
-  .moment b { font-size: 12.5px; font-weight: 600; display: block; }
-  .moment span { font-size: 11px; color: var(--a-text3); line-height: 1.4; display: block; margin-top: 1px; }
-  .moment .m-ico { width: 28px; height: 28px; border-radius: 8px; background: var(--a-accent-light); color: var(--a-accent-ink); display: flex; align-items: center; justify-content: center; flex: none; }
+  .empty-h { font-size: 18px; font-weight: 600; letter-spacing: -.2px; max-width: 16ch; line-height: 1.25; }
+  .empty-p { font-size: 12.5px; color: var(--a-text2); line-height: 1.55; max-width: 27ch; }
+  .empty-eg { font-size: 12px; color: var(--a-text2); background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 12px; padding: 9px 13px; line-height: 1.5; max-width: 100%; }
+  .empty-eg b { font-weight: 600; }
   .btn { border-radius: 12px; padding: 13px 16px; font-size: 14px; font-weight: 600; text-align: center; }
   .btn.primary { background: var(--a-accent); color: #fff; }
   .btn.ghost { background: var(--a-surface); border: 1px solid var(--a-border-strong); color: var(--a-text); font-weight: 500; }
@@ -179,7 +175,7 @@
   .empty-foot { font-size: 11px; color: var(--a-text3); }
 
   /* add sheet */
-  .sheet-scrim { position: absolute; inset: 0; background: var(--a-scrim); border-radius: 0; display: flex; align-items: flex-end; }
+  .sheet-scrim { position: absolute; inset: 0; background: var(--a-scrim); display: flex; align-items: flex-end; }
   .sheet { background: var(--a-surface); border-radius: 24px 24px 0 0; width: 100%; padding: 10px 16px 22px; }
   .sheet-grab { width: 36px; height: 4px; border-radius: 999px; background: var(--a-border-strong); margin: 4px auto 12px; }
   .sheet-h { font-size: 16px; font-weight: 600; letter-spacing: -.2px; margin-bottom: 2px; }
@@ -193,24 +189,30 @@
   .sheet-cancel { text-align: center; color: var(--a-text2); font-size: 14px; font-weight: 500; padding-top: 14px; margin-top: 4px; border-top: 1px solid var(--a-border); }
 
   /* saved moment */
-  .saved-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; }
+  .saved-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
   .saved-check { width: 56px; height: 56px; border-radius: 999px; background: var(--a-accent-light); display: flex; align-items: center; justify-content: center; }
   .saved-h { font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
+  .saved-offline { font-size: 11.5px; color: var(--a-text3); margin-top: -8px; }
   .saved-card { width: 100%; background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 16px; box-shadow: var(--a-shadow); padding: 12px 14px; display: flex; gap: 11px; align-items: center; text-align: left; }
   .saved-meta { flex: 1; min-width: 0; }
   .saved-title { font-size: 13.5px; font-weight: 500; }
   .saved-sub { font-size: 11.5px; color: var(--a-text3); margin-top: 3px; }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; justify-content: center; }
+  .chip { font-size: 11.5px; font-weight: 500; color: var(--a-text2); background: var(--a-surface); border: 1px solid var(--a-border-strong); border-radius: 999px; padding: 6px 12px; }
+  .chip.on { background: var(--a-accent-light); border-color: var(--a-accent); color: var(--a-accent-ink); font-weight: 600; }
+  .chip-label { font-size: 11px; color: var(--a-text3); width: 100%; text-align: center; margin-bottom: -2px; }
   .saved-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 
   /* detail */
-  .det-hero { border-radius: 16px; border: 1px solid var(--a-border); background: #fff; height: 200px; position: relative; overflow: hidden; box-shadow: var(--a-shadow); }
+  .det-hero { border-radius: 16px; border: 1px solid var(--a-border); background: #fff; height: 190px; position: relative; overflow: hidden; box-shadow: var(--a-shadow); }
   .det-hero .paper { position: absolute; inset: 14px 18px; background: repeating-linear-gradient(180deg, #EDEDED 0 2.5px, transparent 2.5px 11px); }
   .det-hero .paper::before { content: ""; position: absolute; top: -2px; left: 0; width: 46%; height: 8px; background: var(--a-accent-soft); opacity: .55; border-radius: 2px; }
   .det-hero.pdfhero { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
-  .pdf-big { width: 58px; height: 72px; border-radius: 8px; border: 1.5px solid var(--a-border-strong); position: relative; background: repeating-linear-gradient(180deg, #ECECEC 0 2px, transparent 2px 8px) 10px 12px/38px 34px no-repeat #fff; }
-  .pdf-big::after { content: "PDF"; position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; letter-spacing: .05em; color: var(--a-text2); background: var(--a-subtle); border: 1px solid var(--a-border); border-radius: 4px; padding: 1px 5px; }
-  .pdf-open { font-size: 12.5px; font-weight: 600; color: var(--a-accent-ink); background: var(--a-accent-light); border-radius: 999px; padding: 6px 14px; }
-  .pagedots { position: absolute; bottom: 8px; left: 0; right: 0; display: flex; justify-content: center; gap: 5px; }
+  .pdf-big { width: 54px; height: 68px; border-radius: 8px; border: 1.5px solid var(--a-border-strong); position: relative; background: repeating-linear-gradient(180deg, #ECECEC 0 2px, transparent 2px 8px) 10px 12px/34px 30px no-repeat #fff; }
+  .pdf-big::after { content: "PDF"; position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; letter-spacing: .05em; color: var(--a-text2); background: var(--a-subtle); border: 1px solid var(--a-border); border-radius: 4px; padding: 1px 5px; }
+  .open-pill { font-size: 12.5px; font-weight: 600; color: var(--a-accent-ink); background: var(--a-accent-light); border-radius: 999px; padding: 6px 14px; }
+  .open-pill.overlay { position: absolute; right: 10px; bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+  .pagedots { position: absolute; bottom: 10px; left: 14px; display: flex; gap: 5px; }
   .pagedots i { width: 5px; height: 5px; border-radius: 999px; background: var(--a-border-strong); }
   .pagedots i.on { background: var(--a-accent); }
   .det-title { font-size: 18px; font-weight: 600; letter-spacing: -.25px; }
@@ -219,11 +221,14 @@
   .det-row + .det-row { border-top: 1px solid var(--a-border); }
   .det-k { color: var(--a-text3); font-size: 12px; width: 78px; flex: none; }
   .det-v { flex: 1; font-weight: 500; }
-  .det-v .kind { margin-right: 0; }
   .det-v.placeholder { color: var(--a-text-dis); font-weight: 400; }
   .det-v.link { color: var(--a-accent-ink); font-weight: 500; }
   .det-actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
-  .det-del { text-align: center; font-size: 13px; color: #DC2626; font-weight: 500; padding: 4px; }
+  .menu-pop { position: absolute; top: 44px; right: 14px; background: var(--a-surface); border: 1px solid var(--a-border); border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.14); overflow: hidden; width: 168px; z-index: 2; }
+  .menu-item { padding: 12px 15px; font-size: 13.5px; font-weight: 500; }
+  .menu-item + .menu-item { border-top: 1px solid var(--a-border); }
+  .menu-item.destructive { color: #DC2626; }
+  .menu-item small { display: block; font-weight: 400; font-size: 10.5px; color: var(--a-text3); margin-top: 1px; }
 
   .foot { margin-top: clamp(56px, 8vw, 90px); border-top: 1px solid var(--line); padding-top: 26px; font-size: 13.5px; color: var(--ink-faint); max-width: 74ch; }
   .foot b { color: var(--ink-soft); }
@@ -231,16 +236,25 @@
 
 <div class="wrap">
   <p class="eyebrow">Culprit · design review · B-467 Vet Files</p>
-  <h1 class="title serif">Vet Files — mock round 1</h1>
-  <p class="lede">The v1 surfaces for the central vet records library: the profile entry point (as ruled in G3), the empty state, the library list, the add flow, and the document detail. Each mock has a code — react by code (“E1 but with…”), and we’ll iterate in place.</p>
+  <h1 class="title serif">Vet Files — mock round 2</h1>
+  <p class="lede">Round 1 feedback from the Jordan and Sam persona reviews, incorporated. The demo pet is now Sam’s cat Pixel (with Juniper in the household) — the multi-pet gaps round 1 hid are visible by construction. Four decisions remain deliberately open and are tagged amber.</p>
 
-  <div class="rec-note"><b>Where this sits.</b> G1–G3 are ruled: new <b>vet_documents</b> table + bucket, PDFs ship in v1 (store-and-view), entry from the pet profile. This round decides the remaining <b>shape</b> questions — empty-state framing (E1 vs E2), list anatomy (L1 vs L2), and the detail-screen layout — so VF-2–VF-4 can lock. Spec: <b>docs/nyx-vet-files-requirements.md</b> §4.</div>
+  <div class="ledger">
+    <div class="ledger-h">What changed since round 1 — and who asked</div>
+    <div class="ledger-row"><span class="ledger-who">Both</span><div><b>E1 ruled, amended.</b> E2 dropped. Pet name on the screen, completeness claim removed from the headline (“every record” was a total; copy now claims only a floor), one concrete moment line, and a visible “add several at once” nod.</div></div>
+    <div class="ledger-row"><span class="ledger-who">Both</span><div><b>L1 ruled; the honest library is now the mocked one.</b> L-real shows exactly what the instant-save defaults produce — untitled rows, kind unset — plus the recovery affordances instead of a fantasy curated list.</div></div>
+    <div class="ledger-row"><span class="ledger-who">Both</span><div><b>“Link a visit” hidden until a visit exists.</b> The row appears only when ≥1 vet visit is on record (E-pdf shows the exists case). No empty picker, no dead end.</div></div>
+    <div class="ledger-row"><span class="ledger-who">Sam</span><div><b>Delete moved into the ⋯ menu</b> (the round-1 open call, answered) with soft-delete reassurance in the confirm; Rename joins it. Share keeps the floor to itself.</div></div>
+    <div class="ledger-row"><span class="ledger-who">Sam</span><div><b>A1 re-mocked against the profile that ships</b> — full cards with blurbs, not compact rows — and the zero-document state is now mocked.</div></div>
+    <div class="ledger-row"><span class="ledger-who">Jordan</span><div><b>D2 says where it saved and that offline is safe</b> (“On this phone now — backs up when you’re online”), and “Add details” became “Name it.”</div></div>
+    <div class="ledger-row"><span class="ledger-who">Sam</span><div><b>Camera row now covers multi-page</b> (“Snap each page — they stay together”), matching the Photos row’s promise.</div></div>
+  </div>
 
   <!-- ═══════════════ A · ENTRY POINT ═══════════════ -->
   <section>
-    <p class="sec-eyebrow">A · Entry point — ruled (G3)</p>
-    <h2 class="serif">A “Vet Files” row on the pet profile</h2>
-    <p class="sec-lede">Vet Files joins the existing Vet report row under a shared “Records” label. Home stays untouched — a file shelf is not an intelligence surface (Principle 3).</p>
+    <p class="sec-eyebrow">A · Entry point — re-mocked against the shipped profile</p>
+    <h2 class="serif">Real card anatomy, both states</h2>
+    <p class="sec-lede">The shipped profile is a stack of full cards with blurbs, not compact rows — round 2 mocks that reality. The Vet report card keeps its place; Vet Files joins as a sibling card. The zero state answers “is this row dead on day one?”</p>
 
     <div class="rail rail-2">
       <div class="opt">
@@ -248,21 +262,49 @@
           <div class="ph-nav"><span class="ph-back">‹ Pets</span><span class="ph-title"></span><span style="width:30px"></span></div>
           <div class="pet-hero">
             <div class="pet-avatar"></div>
-            <div><div class="pet-name">Mochi</div><div class="pet-sub">Domestic shorthair · 4 yrs · 5.1 kg</div></div>
+            <div><div class="pet-name">Pixel</div><div class="pet-sub">Domestic shorthair · 6 yrs · 4.2 kg</div></div>
           </div>
-          <div class="prof-card dim">
-            <div class="prof-row"><div class="prof-ico"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="#737373" stroke-width="1.6" stroke-linecap="round"/></svg></div><div class="prof-t">Conditions<small>Suspected food sensitivity</small></div><span class="doc-chev">›</span></div>
-            <div class="prof-row"><div class="prof-ico"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.4" stroke="#737373" stroke-width="1.5"/><path d="M7 4.4V7l1.8 1.4" stroke="#737373" stroke-width="1.5" stroke-linecap="round"/></svg></div><div class="prof-t">Diet trial<small>Duck — day 24 of 56</small></div><span class="doc-chev">›</span></div>
+          <div class="big-card dim">
+            <h4>Vet report</h4>
+            <div class="blurb">A clinical summary of Pixel’s record, ready to hand to any vet.</div>
+            <div class="cardbtn">Send to vet</div>
           </div>
-          <div class="sect-label">Records</div>
-          <div class="prof-card">
-            <div class="prof-row"><div class="prof-ico"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2.2" y="1.6" width="9.6" height="10.8" rx="1.6" stroke="#0B7B6C" stroke-width="1.5"/><path d="M4.8 5h4.4M4.8 7.4h4.4M4.8 9.8h2.6" stroke="#0B7B6C" stroke-width="1.3" stroke-linecap="round"/></svg></div><div class="prof-t">Vet report<small>Build a shareable summary</small></div><span class="doc-chev">›</span></div>
-            <div class="prof-row"><div class="prof-ico"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.8 4.2c0-.9.7-1.6 1.6-1.6h2.4l1.3 1.5h3.5c.9 0 1.6.7 1.6 1.6v5.1c0 .9-.7 1.6-1.6 1.6H3.4c-.9 0-1.6-.7-1.6-1.6V4.2Z" stroke="#0B7B6C" stroke-width="1.5"/></svg></div><div class="prof-t">Vet Files<small>Records, results &amp; clinic emails</small></div><span class="prof-count">6</span><span class="doc-chev">›</span></div>
+          <div class="big-card">
+            <h4>Vet Files</h4>
+            <div class="blurb">Records, results &amp; clinic emails you’ve saved. Not included in the vet report — shared one at a time.</div>
+            <div class="doc-strip">
+              <div class="strip-thumb"></div><div class="strip-thumb"></div><div class="strip-thumb"></div><div class="strip-more">+3</div>
+            </div>
+            <div class="cardbtn ghost">Open Vet Files</div>
           </div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">A1 · Records section <span class="tag rec">as ruled</span></span>
-          <p>The existing profile gains a “Records” label grouping Vet report + Vet Files. The count is the only state shown — no badges, no red dots, nothing demanding attention. Rows above are existing profile content, dimmed here for focus.</p>
+          <span class="k">A1-r2 · Populated <span class="tag open">coherence line — PM call</span></span>
+          <p>Recent thumbnails give the card a pulse the bare “6” lacked. The blurb carries the honesty line both reviewers asked for — “not included in the vet report” — worded as fact, not apology. Whether that line lives here, on the report screen, or both is yours to call.</p>
+        </div>
+      </div>
+
+      <div class="opt">
+        <div class="phone"><div class="ph-screen">
+          <div class="ph-nav"><span class="ph-back">‹ Pets</span><span class="ph-title"></span><span style="width:30px"></span></div>
+          <div class="pet-hero">
+            <div class="pet-avatar"></div>
+            <div><div class="pet-name">Pixel</div><div class="pet-sub">Domestic shorthair · 6 yrs · 4.2 kg</div></div>
+          </div>
+          <div class="big-card dim">
+            <h4>Vet report</h4>
+            <div class="blurb">A clinical summary of Pixel’s record, ready to hand to any vet.</div>
+            <div class="cardbtn">Send to vet</div>
+          </div>
+          <div class="big-card">
+            <h4>Vet Files</h4>
+            <div class="blurb">One place for Pixel’s records, results &amp; clinic emails — starting with whatever’s in your camera roll.</div>
+            <div class="cardbtn ghost">Add the first one</div>
+          </div>
+        </div></div>
+        <div class="opt-cap">
+          <span class="k">A1z · Zero documents</span>
+          <p>Not a dead “0” row — a one-line invitation that names the camera roll (where the documents already live). Tapping either the card or the button lands on the empty state below.</p>
         </div>
       </div>
     </div>
@@ -270,99 +312,76 @@
 
   <!-- ═══════════════ B · EMPTY STATE ═══════════════ -->
   <section>
-    <p class="sec-eyebrow">B · Empty state — pick one</p>
-    <h2 class="serif">Most owners will meet this screen first</h2>
-    <p class="sec-lede">Principle 5: the empty state is the feature. It has to explain what Vet Files is for and make adding the first document feel like a two-tap errand, not homework.</p>
+    <p class="sec-eyebrow">B · Empty state — E1 as ruled, amended</p>
+    <h2 class="serif">Pixel’s name on it, a floor instead of a total</h2>
+    <p class="sec-lede">Three amendments from review: the pet’s name (the only filing cue a two-cat household gets), a headline that doesn’t claim completeness, and Jordan’s concrete moment folded in as a single example line.</p>
 
     <div class="rail rail-2">
-      <!-- E1 -->
       <div class="opt">
         <div class="phone"><div class="ph-screen">
-          <div class="ph-nav"><span class="ph-back">‹ Mochi</span><span class="ph-title">Vet Files</span><span class="ph-add ghost">+</span></div>
+          <div class="ph-nav"><span class="ph-back">‹ Pixel</span><span class="ph-title">Vet Files</span><span class="ph-add ghost">+</span></div>
           <div class="empty-wrap">
             <div class="empty-art"><div class="art-doc back"></div><div class="art-doc"></div><div class="art-doc teal"></div></div>
-            <div class="empty-h">Every record, ready when a vet asks</div>
-            <p class="empty-p">Lab results, vaccine certificates, discharge notes, the email thread with your clinic — keep them here and they’re two taps away.</p>
-            <div style="width:100%"><div class="btn primary block">Add a document</div></div>
-            <div class="empty-foot">Photos, screenshots and PDFs all work</div>
+            <div class="empty-h">A home for Pixel’s paperwork</div>
+            <p class="empty-p">Lab results, vaccine certificates, discharge notes, the email thread with your clinic — whatever you save here is ready when a vet asks for it.</p>
+            <div class="empty-eg"><b>A good first one:</b> the rabies certificate. Boarding and groomers ask for it more than anyone.</div>
+            <div style="width:100%"><div class="btn primary block">Add documents</div></div>
+            <div class="empty-foot">Photos, screenshots and PDFs — several at once is fine</div>
           </div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">E1 · What it holds <span class="tag rec">designer rec</span></span>
-          <p>Leads with the contents — the four record types owners already have scattered across camera roll and inbox. One primary action, one reassuring footnote. Calm, minimal, fastest to first document.</p>
-        </div>
-      </div>
-
-      <!-- E2 -->
-      <div class="opt">
-        <div class="phone"><div class="ph-screen">
-          <div class="ph-nav"><span class="ph-back">‹ Mochi</span><span class="ph-title">Vet Files</span><span class="ph-add ghost">+</span></div>
-          <div class="empty-wrap" style="justify-content:flex-start; padding-top:22px;">
-            <div class="empty-h" style="max-width:18ch;">For the moments someone asks for the paperwork</div>
-            <div class="empty-moments">
-              <div class="moment"><div class="m-ico"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1.5v10M1.5 6.5h10" stroke="#0B7B6C" stroke-width="1.8" stroke-linecap="round"/></svg></div><div><b>The ER visit</b><span>The last bloodwork, without the inbox dig</span></div></div>
-              <div class="moment"><div class="m-ico"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="1.8" y="1.8" width="9.4" height="9.4" rx="2" stroke="#0B7B6C" stroke-width="1.5"/><path d="M4.4 6.7l1.5 1.5 2.8-3" stroke="#0B7B6C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><b>A new clinic</b><span>Mochi’s history arrives with Mochi</span></div></div>
-              <div class="moment"><div class="m-ico"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 10.5V5.2L6.5 2l4.5 3.2v5.3" stroke="#0B7B6C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><div><b>Boarding &amp; grooming</b><span>The rabies certificate, found in seconds</span></div></div>
-            </div>
-            <div style="width:100%; margin-top:6px;"><div class="btn primary block">Add a document</div></div>
-            <div class="empty-foot">Photos, screenshots and PDFs all work</div>
-          </div>
-        </div></div>
-        <div class="opt-cap">
-          <span class="k">E2 · The three moments</span>
-          <p>Leads with the payoff moments from discovery (ER, new clinic, boarding). More persuasive, more to read. If the value needs selling, this earns its length; if it’s obvious, E1’s restraint wins.</p>
+          <span class="k">E1-r2 · The ruled empty state</span>
+          <p>“Whatever you save here” claims exactly what the library holds — a floor, never a total (the G2 copy rule, applied to this surface). The CTA is plural now, and the footnote carries the batch nod. The example line is one card, not E2’s three.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ═══════════════ C · LIBRARY LIST ═══════════════ -->
+  <!-- ═══════════════ C · LIBRARY ═══════════════ -->
   <section>
-    <p class="sec-eyebrow">C · Library — pick one</p>
-    <h2 class="serif">Type × date × source. Never folders.</h2>
-    <p class="sec-lede">Both variants share the anatomy: thumbnail, title, kind tag, document date, and quiet marks for pages / PDF / linked visit. The type filter is a ScopeMenu pill (the History pattern) — it tints when active.</p>
+    <p class="sec-eyebrow">C · Library — the honest state, and the way out of it</p>
+    <h2 class="serif">L-real: what the defaults actually produce</h2>
+    <p class="sec-lede">Round 1 mocked a curated library nobody typed. This is the real week-one state — untitled rows, kind unset — with the two recovery affordances the reviews proposed: one-tap Name on the row (Jordan) and the kind confirmed at save (Sam, section D). They compose; neither touches capture.</p>
 
     <div class="rail rail-2">
-      <!-- L1 flat -->
       <div class="opt">
         <div class="phone"><div class="ph-screen">
-          <div class="ph-nav"><span class="ph-back">‹ Mochi</span><span class="ph-title"></span><span class="ph-add">+</span></div>
+          <div class="ph-nav"><span class="ph-back">‹ Pixel</span><span class="ph-title"></span><span class="ph-add">+</span></div>
           <div>
             <div class="ph-pagetitle">Vet Files</div>
-            <div class="ph-sub">6 documents</div>
+            <div class="ph-sub">Pixel · 5 documents</div>
           </div>
-          <div class="scope-pill">All types <span class="car">▼</span></div>
-          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Senior panel — CBC &amp; chemistry</div><div class="doc-meta"><span class="kind">Lab result</span><span class="doc-date">Jul 14</span><span class="doc-extra">2 pages</span></div></div><span class="doc-chev">›</span></div>
-          <div class="doc-row"><div class="doc-thumb shot"></div><div class="doc-main"><div class="doc-title">Email — diet trial check-in</div><div class="doc-meta"><span class="kind">Email</span><span class="doc-date">Jul 14</span><span class="doc-extra">3 pages</span></div></div><span class="doc-chev">›</span></div>
-          <div class="doc-row"><div class="doc-thumb"></div><div class="doc-main"><div class="doc-title">Discharge summary — GI upset</div><div class="doc-meta"><span class="kind">Visit summary</span><span class="doc-date">Jun 2</span><span class="doc-link">Linked visit</span></div></div><span class="doc-chev">›</span></div>
+          <div class="search-box"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="5.6" cy="5.6" r="4.1" stroke="#A3A3A3" stroke-width="1.5"/><path d="M8.8 8.8l2.6 2.6" stroke="#A3A3A3" stroke-width="1.5" stroke-linecap="round"/></svg>Search Pixel’s files</div>
+          <div class="doc-row"><div class="doc-thumb shot"></div><div class="doc-main"><div class="doc-title untitled">Document — Jul 26</div><div class="doc-meta"><span class="kind other">Add type</span><span class="doc-date">Jul 26</span><span class="doc-extra">3 pages</span></div></div><span class="name-btn">Name</span></div>
+          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Senior panel — CBC &amp; chemistry</div><div class="doc-meta"><span class="kind">Lab result</span><span class="doc-date">Jul 14</span></div></div><span class="doc-chev">›</span></div>
+          <div class="doc-row"><div class="doc-thumb shot"></div><div class="doc-main"><div class="doc-title untitled">Document — Jul 14</div><div class="doc-meta"><span class="kind">Email</span><span class="doc-date">Jul 14</span><span class="doc-extra">4 pages</span></div></div><span class="name-btn">Name</span></div>
           <div class="doc-row"><div class="doc-thumb"></div><div class="doc-main"><div class="doc-title">Rabies certificate</div><div class="doc-meta"><span class="kind">Vaccination</span><span class="doc-date">Jan 8</span></div></div><span class="doc-chev">›</span></div>
-          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Estimate — dental cleaning</div><div class="doc-meta"><span class="kind">Estimate</span><span class="doc-date">Dec 19, 2025</span></div></div><span class="doc-chev">›</span></div>
+          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title untitled">Document — Dec 19</div><div class="doc-meta"><span class="kind other">Add type</span><span class="doc-date">Dec 19, 2025</span></div></div><span class="name-btn">Name</span></div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">L1 · Flat list <span class="tag rec">designer rec</span></span>
-          <p>Reverse-chron, no grouping. Most libraries will hold 5–20 documents for years — headers would outnumber content. The kind tag on every row already answers “what is this,” so grouping adds structure without information.</p>
+          <span class="k">L-real · Week-one truth <span class="tag rec">replaces L1’s fantasy</span></span>
+          <p>Untitled rows say “Document — date” in a quieter weight, carry a dashed <b>Add type</b> chip, and swap the chevron for a one-tap <b>Name</b>. The mix is realistic: two rows were named via the save-moment chips, one by hand, two never. The header carries the pet’s name.</p>
         </div>
       </div>
 
-      <!-- L2 grouped -->
       <div class="opt">
         <div class="phone"><div class="ph-screen">
-          <div class="ph-nav"><span class="ph-back">‹ Mochi</span><span class="ph-title"></span><span class="ph-add">+</span></div>
+          <div class="ph-nav"><span class="ph-back">‹ Pixel</span><span class="ph-title"></span><span class="ph-add">+</span></div>
           <div>
             <div class="ph-pagetitle">Vet Files</div>
-            <div class="ph-sub">6 documents</div>
+            <div class="ph-sub">Pixel · 5 documents</div>
           </div>
-          <div class="scope-pill active">Lab results <span class="car">▼</span></div>
-          <div class="month-h">July 2026</div>
-          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Senior panel — CBC &amp; chemistry</div><div class="doc-meta"><span class="kind">Lab result</span><span class="doc-date">Jul 14</span><span class="doc-extra">2 pages</span></div></div><span class="doc-chev">›</span></div>
-          <div class="month-h">March 2026</div>
-          <div class="doc-row"><div class="doc-thumb"></div><div class="doc-main"><div class="doc-title">Urinalysis — recheck</div><div class="doc-meta"><span class="kind">Lab result</span><span class="doc-date">Mar 3</span><span class="doc-link">Linked visit</span></div></div><span class="doc-chev">›</span></div>
-          <div class="month-h">December 2025</div>
-          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Pre-dental bloodwork</div><div class="doc-meta"><span class="kind">Lab result</span><span class="doc-date">Dec 12, 2025</span></div></div><span class="doc-chev">›</span></div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <div class="scope-pill">All types <span class="car">▼</span></div>
+          </div>
+          <div class="doc-row"><div class="doc-thumb shot"></div><div class="doc-main"><div class="doc-title untitled">Document — Jul 26</div><div class="doc-meta"><span class="kind other">Add type</span><span class="doc-date">Jul 26</span><span class="doc-extra">3 pages</span></div></div><span class="name-btn">Name</span></div>
+          <div class="doc-row"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Senior panel — CBC &amp; chemistry</div><div class="doc-meta"><span class="kind">Lab result</span><span class="doc-date">Jul 14</span></div></div><span class="doc-chev">›</span></div>
+          <div class="doc-row"><div class="doc-thumb shot"></div><div class="doc-main"><div class="doc-title untitled">Document — Jul 14</div><div class="doc-meta"><span class="kind">Email</span><span class="doc-date">Jul 14</span><span class="doc-extra">4 pages</span></div></div><span class="name-btn">Name</span></div>
+          <div class="doc-row"><div class="doc-thumb"></div><div class="doc-main"><div class="doc-title">Rabies certificate</div><div class="doc-meta"><span class="kind">Vaccination</span><span class="doc-date">Jan 8</span></div></div><span class="doc-chev">›</span></div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">L2 · Month-grouped, filter active</span>
-          <p>Same rows under month headers — shown here with the “Lab results” filter on (note the tinted pill, the ScopeMenu active rule). Scales better past ~30 documents; noisier below that. Could ship later as a threshold behavior rather than a v1 choice.</p>
+          <span class="k">L-real-b · Same screen, no search <span class="tag open">search in v1 — PM call</span></span>
+          <p>Both reviewers called search missing (owners recall <i>when</i> and <i>who</i>, not type) — but §4.1 scoped v1 to the type filter, so adding it is a scope ruling, not a design tweak. Left: with search. Right: filter-only, as specced. Pick one.</p>
         </div>
       </div>
     </div>
@@ -370,59 +389,64 @@
 
   <!-- ═══════════════ D · ADD FLOW ═══════════════ -->
   <section>
-    <p class="sec-eyebrow">D · Add flow — one shape, review the two beats</p>
-    <h2 class="serif">Saved first. Details optional, afterward, forever.</h2>
-    <p class="sec-lede">Principle 1 governs the parking-lot moment: three sources, then the document is saved immediately with everything defaulted. Nothing between the picker and “saved” asks a question.</p>
+    <p class="sec-eyebrow">D · Add flow — contract untouched, tail fixed</p>
+    <h2 class="serif">Still saved first. Now it says so, and says where.</h2>
+    <p class="sec-lede">The instant-save promise both reviewers called the strongest thing in round 1 is unchanged. The saved moment gains the pet’s name, the offline line, and — as an open variant — Sam’s skippable kind chips against Jordan’s leave-it-for-the-list position.</p>
 
     <div class="rail rail-2">
-      <!-- D1 sheet -->
       <div class="opt">
         <div class="phone"><div class="ph-screen">
-          <div class="ph-nav"><span class="ph-back">‹ Mochi</span><span class="ph-title"></span><span class="ph-add">+</span></div>
+          <div class="ph-nav"><span class="ph-back">‹ Pixel</span><span class="ph-title"></span><span class="ph-add">+</span></div>
           <div>
             <div class="ph-pagetitle">Vet Files</div>
-            <div class="ph-sub">6 documents</div>
+            <div class="ph-sub">Pixel · 5 documents</div>
           </div>
           <div class="doc-row dim"><div class="doc-thumb pdf"><span class="pdf-chip">PDF</span></div><div class="doc-main"><div class="doc-title">Senior panel — CBC &amp; chemistry</div><div class="doc-meta"><span class="kind">Lab result</span><span class="doc-date">Jul 14</span></div></div><span class="doc-chev">›</span></div>
           <div class="sheet-scrim"><div class="sheet">
             <div class="sheet-grab"></div>
-            <div class="sheet-h">Add to Vet Files</div>
-            <div class="sheet-sub">Saved to Mochi’s library right away — you can add details later.</div>
-            <div class="sheet-row"><div class="sheet-ico"><svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1.8 5c0-.9.7-1.6 1.6-1.6h1l1-1.4h4.2l1 1.4h1c.9 0 1.6.7 1.6 1.6v5.4c0 .9-.7 1.6-1.6 1.6H3.4c-.9 0-1.6-.7-1.6-1.6V5Z" stroke="#0B7B6C" stroke-width="1.4"/><circle cx="7.5" cy="7.4" r="2.2" stroke="#0B7B6C" stroke-width="1.4"/></svg></div><div class="sheet-t"><b>Take a photo</b><span>Paper records, right off the counter</span></div></div>
+            <div class="sheet-h">Add to Pixel’s Vet Files</div>
+            <div class="sheet-sub">Saved right away — you can name things later.</div>
+            <div class="sheet-row"><div class="sheet-ico"><svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1.8 5c0-.9.7-1.6 1.6-1.6h1l1-1.4h4.2l1 1.4h1c.9 0 1.6.7 1.6 1.6v5.4c0 .9-.7 1.6-1.6 1.6H3.4c-.9 0-1.6-.7-1.6-1.6V5Z" stroke="#0B7B6C" stroke-width="1.4"/><circle cx="7.5" cy="7.4" r="2.2" stroke="#0B7B6C" stroke-width="1.4"/></svg></div><div class="sheet-t"><b>Take photos</b><span>Snap each page — they stay together as one document</span></div></div>
             <div class="sheet-row"><div class="sheet-ico"><svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="2" y="2" width="11" height="11" rx="2" stroke="#0B7B6C" stroke-width="1.4"/><circle cx="5.4" cy="5.6" r="1.1" fill="#0B7B6C"/><path d="M3.4 11.2l3-3.2 2 2 1.6-1.6 2 2.2" stroke="#0B7B6C" stroke-width="1.4" stroke-linejoin="round"/></svg></div><div class="sheet-t"><b>Choose from Photos</b><span>Pick several — pages stay together as one document</span></div></div>
             <div class="sheet-row"><div class="sheet-ico"><svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3.6 1.8h5l2.8 2.8v8c0 .5-.4.9-.9.9H3.6c-.5 0-.9-.4-.9-.9V2.7c0-.5.4-.9.9-.9Z" stroke="#0B7B6C" stroke-width="1.4"/><path d="M8.4 1.9v2.9h2.9" stroke="#0B7B6C" stroke-width="1.4"/></svg></div><div class="sheet-t"><b>Browse Files</b><span>PDFs from email or a clinic portal</span></div></div>
             <div class="sheet-cancel">Cancel</div>
           </div></div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">D1 · The add sheet</span>
-          <p>Three sources, each with a one-line hint doing quiet education (multi-select keeps pages together; Files is where the PDFs live). The subtitle sets the contract up front: saving is instant, details are optional.</p>
+          <span class="k">D1-r2 · The add sheet</span>
+          <p>Camera row is now “Take photos,” plural, with the page-grouping promise the Photos row already made — the three-page discharge sheet at the front desk is its core case. Sheet title names the pet.</p>
         </div>
       </div>
 
-      <!-- D2 saved -->
       <div class="opt">
         <div class="phone"><div class="ph-screen">
           <div class="ph-nav"><span></span><span class="ph-title"></span><span></span></div>
           <div class="saved-wrap">
             <div class="saved-check"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="#0B7B6C" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-            <div class="saved-h">Saved to Vet Files</div>
+            <div>
+              <div class="saved-h">Saved to Pixel’s Vet Files</div>
+              <div class="saved-offline" style="margin-top:4px;">On this phone now — backs up when you’re online</div>
+            </div>
             <div class="saved-card">
               <div class="doc-thumb shot"></div>
               <div class="saved-meta">
                 <div class="saved-title">Document — Jul 26</div>
-                <div class="saved-sub">3 pages · from Photos</div>
+                <div class="saved-sub">3 pages</div>
               </div>
             </div>
+            <div class="chip-row">
+              <span class="chip-label">What is it? One tap — or skip</span>
+              <span class="chip">Lab result</span><span class="chip">Vaccination</span><span class="chip on">Email</span><span class="chip">Other</span>
+            </div>
             <div class="saved-actions">
-              <div class="btn ghost block">Add details</div>
+              <div class="btn ghost block">Name it</div>
               <div class="btn primary block">Done</div>
             </div>
           </div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">D2 · The saved moment <span class="tag guard">already saved</span></span>
-          <p>The document is in the library before this screen appears — “Add details” opens the detail screen’s edit fields; “Done” returns to the list. Backing out, killing the app, losing signal: the document is safe in every case.</p>
+          <span class="k">D2-r2 · Saved, with kind chips <span class="tag open">chips in or out — PM call</span></span>
+          <p>Sam’s case: one skippable tap after the save is confirmation, not entry, and it’s what makes the type filter work. Jordan’s case: nothing at capture, fix it in the list. The chips row deletes cleanly if you rule with Jordan — everything else on this screen stays. “Name it” replaces “Add details.”</p>
         </div>
       </div>
     </div>
@@ -430,39 +454,39 @@
 
   <!-- ═══════════════ E · DETAIL ═══════════════ -->
   <section>
-    <p class="sec-eyebrow">E · Document detail — two states of one screen</p>
-    <h2 class="serif">View, name, link, share</h2>
-    <p class="sec-lede">Share is the primary action — the whole feature exists for the moment someone else needs the document. Every metadata row is editable; none is required.</p>
+    <p class="sec-eyebrow">E · Document detail — dead end removed, Delete relocated</p>
+    <h2 class="serif">The visit row earns its place or doesn’t appear</h2>
+    <p class="sec-lede">“Link a visit” now renders only when at least one vet visit exists on record — no empty picker. Delete moved into the ⋯ menu with the soft-delete story stated; the image hero gets the visible Open the PDF already had.</p>
 
     <div class="rail rail-2">
-      <!-- E-img -->
       <div class="opt">
         <div class="phone"><div class="ph-screen">
-          <div class="ph-nav"><span class="ph-back">‹ Vet Files</span><span class="ph-title"></span><span style="width:30px; text-align:right; color:var(--a-text3);">⋯</span></div>
-          <div class="det-hero"><div class="paper"></div><div class="pagedots"><i class="on"></i><i></i><i></i></div></div>
+          <div class="ph-nav"><span class="ph-back">‹ Vet Files</span><span class="ph-title"></span><span class="ph-more">⋯</span></div>
+          <div class="menu-pop">
+            <div class="menu-item">Rename</div>
+            <div class="menu-item destructive">Delete<small>Kept for 30 days — undo from the library</small></div>
+          </div>
+          <div class="det-hero"><div class="paper"></div><div class="pagedots"><i class="on"></i><i></i><i></i></div><span class="open-pill overlay">Open</span></div>
           <div class="det-title">Email — diet trial check-in</div>
           <div class="det-card">
             <div class="det-row"><span class="det-k">Type</span><span class="det-v"><span class="kind">Email</span></span><span class="doc-chev">›</span></div>
             <div class="det-row"><span class="det-k">Doc date</span><span class="det-v">Jul 14, 2026</span><span class="doc-chev">›</span></div>
-            <div class="det-row"><span class="det-k">Vet visit</span><span class="det-v placeholder">Link a visit — optional</span><span class="doc-chev">›</span></div>
             <div class="det-row"><span class="det-k">Notes</span><span class="det-v placeholder">Add a note</span><span class="doc-chev">›</span></div>
           </div>
           <div class="det-actions">
             <div class="btn primary block">Share</div>
-            <div class="det-del">Delete document</div>
           </div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">E-img · Screenshot document</span>
-          <p>Page dots on the hero (3 screenshots, one document — swipe between). Tapping the hero opens the full-screen viewer. Delete is soft — the row keeps its <b>deleted_at</b>, per the house rule.</p>
+          <span class="k">E-img-r2 · No visits on record <span class="tag guard">no dead ends</span></span>
+          <p>The visit row is simply absent — this owner has never logged a visit, so nothing points at an empty picker. ⋯ shown open: Rename + Delete, with the 30-day soft-delete story right on the action. Share owns the floor alone.</p>
         </div>
       </div>
 
-      <!-- E-pdf -->
       <div class="opt">
         <div class="phone"><div class="ph-screen">
-          <div class="ph-nav"><span class="ph-back">‹ Vet Files</span><span class="ph-title"></span><span style="width:30px; text-align:right; color:var(--a-text3);">⋯</span></div>
-          <div class="det-hero pdfhero"><div class="pdf-big"></div><div class="pdf-open">Open</div></div>
+          <div class="ph-nav"><span class="ph-back">‹ Vet Files</span><span class="ph-title"></span><span class="ph-more">⋯</span></div>
+          <div class="det-hero pdfhero"><div class="pdf-big"></div><div class="open-pill">Open</div></div>
           <div class="det-title">Senior panel — CBC &amp; chemistry</div>
           <div class="det-card">
             <div class="det-row"><span class="det-k">Type</span><span class="det-v"><span class="kind">Lab result</span></span><span class="doc-chev">›</span></div>
@@ -472,26 +496,26 @@
           </div>
           <div class="det-actions">
             <div class="btn primary block">Share</div>
-            <div class="det-del">Delete document</div>
           </div>
         </div></div>
         <div class="opt-cap">
-          <span class="k">E-pdf · PDF document, visit linked</span>
-          <p>No fake thumbnail — an honest PDF mark and an Open action into the native viewer (the G2 store-and-view bound). The linked visit renders as a plain reference row.</p>
+          <span class="k">E-pdf-r2 · A visit exists, so the row does</span>
+          <p>With a visit on record the link row appears and works as before. D7 unchanged: linking edits only this document’s reference — it can never create or re-date a visit, so the report window never moves.</p>
         </div>
       </div>
     </div>
 
     <div class="note-grid">
-      <div class="note rose"><b>Guardrail — D7, the report window</b>Linking or unlinking a visit here edits only this document’s reference. It never creates, dates, or re-dates a vet visit — and so can never move the vet report’s “since last visit” window.</div>
-      <div class="note rose"><b>Guardrail — what the app never does</b>No AI reads, no auto-filled diagnosis, no “this lab looks normal.” In v1 the app stores, shows, and shares. Understanding stays with the vet (Phase 2 is separately gated).</div>
-      <div class="note teal"><b>Privacy plumbing (invisible here, real in build)</b>EXIF/GPS stripped on upload; signed URLs are short-lived and request-time; the new bucket ships owner-scoped with size + MIME limits on day one; delete-account purges the corpus.</div>
-      <div class="note amber"><b>Open call — the ⋯ menu</b>Overflow currently holds only “Delete.” If reactions want rename/re-type up there instead of inline rows, say so — the detail card slims down accordingly.</div>
+      <div class="note amber"><b>PM call 1 — kind chips on the saved moment (D2-r2)</b>Sam: one skippable tap post-save makes the filter useful. Jordan: nothing at capture at all. The chips are mocked; ruling either way is a one-element change.</div>
+      <div class="note amber"><b>PM call 2 — search in v1 (L-real vs L-real-b)</b>Both reviewers called the type filter alone unfindable past ~20 documents. Adding search widens §4.1’s scope — your call, cheap now.</div>
+      <div class="note amber"><b>PM call 3 — multi-pet documents (schema-affecting, decide before VF-1)</b>An invoice or email covering Pixel <i>and</i> Juniper has no home in a per-pet model. Options: duplicate-on-add (“Also add to Juniper’s files” on the saved moment), a shared scope, or per-pet-only with the limitation stated. The VF-1 schema is cheap to shape now and expensive after.</div>
+      <div class="note amber"><b>PM call 4 — the report paperclip, separated from D8</b>Attaching an existing PDF to a vet-report send is not an AI read. A1-r2’s blurb states the current truth (“not included”); whether v1.x adds attach-on-send is a scope ruling distinct from the Phase-2 gate.</div>
+      <div class="note rose"><b>Guardrails carried forward</b>D7: a document never mints or re-dates a visit. No AI reads, no lab interpretation, no reassurance anywhere in v1 — Sam looked for a green checkmark and was glad not to find one. No paperwork nudges: the expiry idea stays parked until it can be quiet (Jordan wants it, Sam warns against it — recorded, unresolved).</div>
+      <div class="note teal"><b>Offline read — surfaced for AC, not mocked</b>Sam’s ER scenario: concrete walls, no signal, document uploaded from another device. Proposed AC addition: a document opened once is readable offline thereafter; never-opened remote documents show an honest “needs a connection” state, not a spinner. Needs an Engineer feasibility pass alongside the ruling.</div>
     </div>
   </section>
 
-  <!-- ═══════════════ FOOT ═══════════════ -->
   <div class="foot">
-    <b>How to react.</b> Reference mocks by code — A1, E1/E2, L1/L2, D1/D2, E-img/E-pdf. “E1 but keep E2’s three moments as a one-line footer” is a perfectly good ruling. Copy shown is draft and goes through the nyx-voice pass at build (VF-6); layout and anatomy are what this round locks. Static mocks — the pm-feature-review and on-device passes still happen against the built screens.
+    <b>How to react.</b> Codes this round: A1-r2 / A1z, E1-r2, L-real / L-real-b, D1-r2 / D2-r2, E-img-r2 / E-pdf-r2, and PM calls 1–4 in the amber notes. Rulings on the four calls plus any per-mock notes lock VF-2–VF-4. Copy still goes through the nyx-voice pass at build; the pm-feature-review and on-device passes happen against built screens.
   </div>
 </div>
