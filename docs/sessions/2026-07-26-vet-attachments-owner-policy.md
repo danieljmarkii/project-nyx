@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-26
 
-Shipped via **#461** — migration `043_vet_attachments_access_hardening.sql`, applied to production via the Supabase MCP. One PR, both rows, as B-466 asked ("Fold into B-248 … one PR, not two").
+Shipped via **#466** — migration `043_vet_attachments_access_hardening.sql`, applied to production via the Supabase MCP. One PR, both rows, as B-466 asked ("Fold into B-248 … one PR, not two").
 
 This closes **the last live cross-tenant health-data read in the project** (2026-07-20 hardening audit §A1, the item that got B-248 elevated `Later` → `Now` as a pre-multi-user blocker) and the **fifth and last** member of the `storage_path` confused-deputy class.
 
