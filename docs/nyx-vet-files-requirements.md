@@ -1,6 +1,6 @@
 # Nyx Vet Files — Central Vet Records Library — Requirements (B-477)
 
-**Version:** 0.2 | **Date:** 2026-07-26 | **Status:** **PM ruled G1–G3 same day (2026-07-26); G4 (priority) deliberately left open — B-477 stays `Later` until promoted.** G1 was delegated to the team → the D3/D4 recommendation stands ratified (new `vet_documents` table + new `nyx-vet-documents` bucket). G2 = **yes, PDFs in v1** (store-and-view; VF-5 folds into VF-3/4). G3 = **pet-profile section.** **VF-0 and VF-1 are build-ready; VF-2–VF-4 await the mock round.**
+**Version:** 1.0 — **BUILD-READY** | **Date:** 2026-07-26 | **Status:** **Every requirements decision is closed.** G1–G3 PM-ruled (new `vet_documents` table + `nyx-vet-documents` bucket; PDFs in v1 store-and-view; pet-profile entry); the mock round ran twice with Jordan/Sam persona reviews between rounds (`docs/culprit-vet-files-mockups.html`, round-2.1 is **design-locked**); D11–D14 PM-ruled (chips out; search out → B-478; multi-pet via duplicate-on-add; report paperclip out → B-479, explicitly not D8-gated). **The only open item is G4 (priority): B-477 stays `Later` until the PM promotes it — this spec is ready whenever that happens.** VF-0 can ship any time on its own `Now` mandate.
 
 **Read with:** `docs/nyx-vet-report-requirements.md` (§8.3 scope cascade, §8/§12 attachment-handling pattern), `docs/nyx-ask-requirements.md` §6 (the D2 LLM-boundary template Phase 2 must mirror), `docs/monetization-and-throttling-requirements.md` §3 (the free-forever table), backlog rows B-477 / B-248 / B-466 / B-145 / B-041 / B-464.
 
@@ -28,7 +28,7 @@ Proposed decisions (team recommendation attached; PM ratifies or overrides). Ope
 - **D11 — Kind chips at the saved moment: OUT of v1.** PM ruled with Jordan: capture stays zero-decision with nothing added post-save; the recovery for the untitled-library problem is the **one-tap Name / Add-type affordance on the library row** (round-2 L-real), which ships in VF-2. Sam's chips proposal is recorded, not adopted; revisit only if real usage shows the list-side recovery isn't used.
 - **D12 — Search: OUT of v1.** §4.1 stands as specced (kind filter only). Deferred to backlog (B-478); the trigger to revisit is real libraries crossing ~20 documents.
 - **D13 — Multi-pet documents: SUPPORTED, via duplicate-on-add.** PM ruled multi-pet support is required. Mechanism (Engineer rec under that ruling): an **"Also add to {other pet}'s Vet Files"** action on the saved moment (and detail ⋯ menu) that creates a full independent copy — new row, new storage object — under the other pet. A shared-document model was considered and rejected for v1: one object serving two pets breaks the pet-prefixed `storage_path` CHECK, the per-pet bucket policies, and the delete-account cascade (removing one pet would orphan or destroy the other's reference). Copies may diverge after creation; that is accepted (they are separate filings, like forwarding an email twice). **Schema impact: none — `pet_id` stays NOT NULL**, VF-1 unblocked as drafted. The affordance renders only in multi-pet accounts.
-- **PM call 4 (the report paperclip) — still open**, pending a PM walkthrough of what it means; see §12.
+- **D14 — The report paperclip: OUT of v1 (PM, 2026-07-26).** Attach-a-stored-document-on-report-send does not ship in v1; deferred to **B-479**. Two facts bind the future: **(a)** it is *not* gated by D8 — attaching an existing file involves no AI read, so when B-479 is picked up it needs only a scope ruling, never the D2-class boundary process; **(b)** until it ships, every surface states the current truth plainly (the A1-r2 blurb: "Not included in the vet report — shared one at a time") — the two Records cards sit adjacent, and silence would imply inclusion (both persona reviews assumed it).
 
 ### Gates — rulings (PM, 2026-07-26, same day as the draft)
 
@@ -173,24 +173,34 @@ Deliberately thin here; a Phase-2 spec session happens after v1 ships and after 
 2. A document exists and renders with **no visit linked**; linking/unlinking a visit from the detail screen never alters any `vet_visits` row (D7 — QA verifies the report window is byte-identical before/after an upload).
 3. Library lists documents newest-first with kind filter; empty state passes the Principle-5 "excited, not deflated" test.
 4. Multi-select of N screenshots produces one grouped document, swipeable in detail.
-5. Detail: view full-screen, edit metadata, share via native share sheet, soft-delete (row keeps `deleted_at`, object retained pending the B-249-class retention decision — named, not silent).
+5. Detail: view full-screen, edit metadata, share via native share sheet, soft-delete into a **"Recently deleted" surface (30 days, undo restores)** — the delete action's copy names the window, and the object's final purge follows the B-249-class retention decision (named, not silent).
 6. Second device: hydrated library renders every document via signed URLs (no `local_uri` dependence).
 7. Cross-tenant probe (second test account) gets uniform not-found on rows AND storage objects; `rls-privacy-reviewer` reports the attack it tried on both VF-0 and VF-1.
 8. `delete-account` leaves zero `vet_documents` rows and zero `nyx-vet-documents` objects (verified count, not assumed).
 9. Offline: add → airplane mode → relaunch → reconnect → document present locally throughout and synced after.
 10. No `ActivityIndicator` (WhorlSpinner tiers), theme tokens only, `ChipGroup`/`ScopeMenu` per the filter rules.
+11. Multi-pet account: "Also add to {other pet}" on the saved moment files an independent copy (own row, own storage object) under the other pet; single-pet accounts never render the affordance (D13).
+12. Offline read (Sam's ER case): a document opened at least once on this device renders with no network; a never-opened remote document shows an honest "needs a connection" state, never a spinner. _Engineer feasibility pass in VF-2 decides the cache mechanism; the honest-failure half is unconditional._
 
 ## 9. PR plan
 
-| PR | Scope | Gate |
+All gates closed; every PR below is build-ready in order. One PR per session (house rule); each ships with its DoD, and VF-0/VF-1 each get an `rls-privacy-reviewer` pass. Design authority for VF-2–VF-4 is the **round-2.1 design-locked mock** (`docs/culprit-vet-files-mockups.html`).
+
+| PR | Scope | Depends on |
 |---|---|---|
-| **VF-0** | B-248 + B-466: legacy bucket owner-scoping + `vet_visit_attachments` CHECK. Schema/RLS only, own PR, Migration Safety Pre-flight. | none — already `Now`; **build-ready** |
-| **VF-1** | `vet_documents` migration + `nyx-vet-documents` bucket (dashboard, PM action) + RLS + delete-account coverage + local mirror + sync/hydration. Schema-isolated. | ~~G1~~ closed — **build-ready** |
-| **VF-2** | Library list + empty state + kind filter (read path incl. signed URLs). | ~~G3~~ closed — mock round |
-| **VF-3** | Add-document flow (camera/library/files incl. PDF pick, multi-select grouping, instant save). | ~~G2~~ closed — mock round |
-| **VF-4** | Detail screen: viewer (image + PDF), metadata edit, visit link, share sheet, soft delete. | mock round |
+| **VF-0** | **The security gate: B-248 + B-466 in one PR.** Owner-scope the `nyx-vet-attachments` bucket policies (migration 025 is the template: `(storage.foldername(name))[1] IN (SELECT id::text FROM pets WHERE user_id = auth.uid())` for SELECT/INSERT/DELETE) + the `storage_path` prefix CHECK on `vet_visit_attachments`. Schema/RLS only. Migration Safety Pre-flight; `rls-privacy-reviewer` reports the cross-tenant attack it tried. | nothing — `Now` on its own mandate |
+| **VF-1** | **The substrate.** Migration: `vet_documents` per §5.1 (incl. the path-prefix CHECK, `deleted_at`, `document_group_id`). Bucket `nyx-vet-documents` created via dashboard (**PM action**: private, owner-scoped policies, `file_size_limit` 15 MB, `allowed_mime_types` jpeg/png/heic/pdf). `delete-account` purge coverage for table + bucket. Local SQLite mirror + push sync + hydration (`lib/hydration.ts` ordering). Schema-isolated — no UI. `get_advisors` after apply. | VF-0 merged |
+| **VF-2** | **The library.** Profile "Records" cards (A1-r2 populated + A1z zero state, incl. the "not included in the vet report" line), empty state E1-r2, list L-real (untitled-row anatomy, one-tap Name, dashed Add-type chip, kind `ScopeMenu`, pet name in header), signed-URL read path (`getSignedUrls`, short-lived). 44pt hit target on the add button. | VF-1 |
+| **VF-3** | **Capture.** Add sheet D1-r2 (camera multi-shot, Photos multi-select → one grouped document, Files PDF pick), instant save with defaults, saved moment D2-r2 (pet name, offline line, "Name it", D13 "Also add to {other pet}" in multi-pet accounts only). EXIF/GPS strip on every image path — verify no original-fallback (§5.2). | VF-2 |
+| **VF-4** | **Detail.** Viewer (image full-screen + page swipe with dots; PDF native view via Open), metadata edit rows, conditional visit-link row (renders only when ≥1 visit exists; D7 invariant test — report window byte-identical before/after linking), Share via native sheet, ⋯ menu (Rename / Delete), soft delete + the 30-day "Recently deleted" surface the round-2 mock promises (adopted from Sam's review — the delete copy names it, so it must exist). | VF-3 |
 | **VF-5** | ~~PDF store-and-view~~ **dissolved into VF-3/VF-4 by the G2 ruling.** | — |
-| **VF-6** | Copy/voice pass + `pm-feature-review` + on-device QA script. | — |
+| **VF-6** | **The finish pass.** `nyx-voice` over every string (incl. the Share vs "Send to vet" label reconciliation), `pm-feature-review` re-run against built screens, full §8 AC verification, on-device QA script for the PM. | VF-4 |
+
+**Per-session kickoff prompts:**
+- *VF-0:* "Build VF-0 from `docs/nyx-vet-files-requirements.md` §9 — the B-248+B-466 hardening migration. Read §6.1 and migration 025 first. Schema/RLS only; `rls-privacy-reviewer` mandatory."
+- *VF-1:* "Build VF-1 from `docs/nyx-vet-files-requirements.md` §5 — the `vet_documents` migration + sync/hydration + delete-account coverage. The `nyx-vet-documents` bucket must exist first (PM dashboard action, §9). Schema-isolated; no UI."
+- *VF-2 → VF-4:* "Build VF-{n} from `docs/nyx-vet-files-requirements.md` §4/§9 against the design-locked round-2.1 mock (`docs/culprit-vet-files-mockups.html`). Check §0 D11–D14 before deviating from any mock detail."
+- *VF-6:* "Run VF-6 from `docs/nyx-vet-files-requirements.md` §9 — voice pass, `pm-feature-review`, §8 AC verification, and the Manual QA script."
 
 Phase 2 gets its own spec + PR plan after the D8 ruling.
 
