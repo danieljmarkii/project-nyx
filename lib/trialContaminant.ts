@@ -9,16 +9,29 @@
 // elimination trial silently fails), caught the moment the data exists.
 //
 // ── WHERE THIS SITS RELATIVE TO B-417 ────────────────────────────────────────
-// B-417's chair recommendation (§4 C1, option c) is that its PR 5 will own ONE
-// shared off-diet predicate in `lib/dietTrial.ts`, imported by the client,
-// `generate-report` and `ask`, with B-351's flag becoming a CONSUMER of it. That
-// module does not exist yet (B-417 PR 1 is the gate the whole track queues
-// behind), and slice 4 is not blocked on it — B-417's own Dir. of Eng. note says
-// so explicitly. So this module is deliberately NOT named `dietTrial.ts`: it is
-// the PROTEIN arm only (does this food's captured set contain a protein the trial
-// diet does not), which is a different question from B-417's FOOD arm (is this
-// food on the trial diet at all). When PR 5 lands, this file is the arm it
-// imports — not a fourth definition to reconcile. Tracked as B-438.
+// ✅ RE-BASED BY B-417 PR 5 (closes B-438 and B-453). `lib/dietTrial.ts` now owns
+// the predicate — four rungs over the explicit allowed set, the derived protein
+// arm, the unrecognised fallback and the oral route — and THIS module is a
+// CONSUMER of it, exactly as §0.2 option (c) ruled. What is left here is the half
+// `dietTrial.ts` deliberately cannot hold: the I/O (reading the trial and its
+// allowed set off the local mirror), the AsyncStorage heads-up ledger, and the
+// log-time COPY.
+//
+// Two things changed at the re-base, and both were live defects:
+//
+//   • THE TRIAL DIET IS N FOODS, NOT ONE. Slice 4 derived it from the single
+//     `diet_trials.food_item_id` column, which §4.1 has since ruled DISPLAY-ONLY
+//     LEGACY. On the normal two-food trial (a wet and a dry of the same diet)
+//     that computed the sanctioned set from ONE food and flagged the
+//     legitimately-allowed second trial food as a contaminant — C2's
+//     alarm-fatigue failure aimed at the one food the owner cannot stop feeding.
+//     PR 3 shipped a stopgap (go silent unless the `primary_diet` count is
+//     exactly 1); B-453 said to delete it at this re-base, and it is deleted.
+//
+//   • THE ALLOWED SET IS NOW THE PERMIT PATH. Slice 4 knew only about the trial
+//     diet, so a vet-PERMITTED treat carrying a second protein produced a
+//     heads-up on every feeding — scoring the owner for following instructions
+//     (§6.9). Rung 1 stops it now.
 //
 // ── THE FOUR RULES THAT KEEP IT HONEST ───────────────────────────────────────
 //
@@ -70,14 +83,26 @@
 // food's own designated protein. `nyx-voice` + `clinical-guardrails` govern every
 // string this module builds.
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from './supabase';
 import { getDb } from './db';
 import { foodIntakeKey } from './food';
+import { localDayIndex } from './utils';
 import {
   proteinSetCompleteness,
   proteinsFromCacheText,
   type ProteinSetCompleteness,
 } from './protein';
+import {
+  buildTrialContext,
+  classifyFeeding,
+  contaminationNote,
+  proteinPhrase,
+  sanctionedProteinsOn,
+  trialContamination,
+  type AllowedFood,
+  type TrialContext,
+  type TrialFoodRole,
+  type TrialSpec,
+} from './dietTrial';
 // The pure off-trial predicates moved to `./trialProtein` (B-351 slice 5) so the
 // vet-report Edge Function can import the SAME implementation — this module's
 // AsyncStorage/supabase/db imports make it unreachable from Deno. Re-exported
@@ -88,9 +113,14 @@ export { offTrialProteins, resolveTargetProtein, proteinList } from './trialProt
 
 // ── The pure predicate layer ─────────────────────────────────────────────────
 
-/** Everything slice 4 needs to know about the pet's active trial. Assembled by
- *  loadTrialProteinContext below; every consumer takes it as an argument so the
- *  decision logic stays pure and testable. */
+/** Everything this module needs to know about the pet's active trial. Assembled
+ *  by loadTrialProteinContext below; every consumer takes it as an argument so
+ *  the decision logic stays pure and testable.
+ *
+ *  Post-re-base this is the TRIAL plus its ALLOWED SET — the two inputs
+ *  `lib/dietTrial.ts` takes — and nothing derived. Everything that used to be
+ *  precomputed here (the target protein, the trial food's key, its captured
+ *  array) was a single-food projection, and the projection was the bug. */
 export interface TrialProteinContext {
   trialId: string;
   petId: string;
@@ -99,31 +129,43 @@ export interface TrialProteinContext {
    *  a UTC instant — a UTC-midnight reading silently excludes the start-day
    *  breakfast of anyone east of Greenwich. */
   startedAtMs: number;
-  /** The trial's food_item_id, or null if the trial was created without one
-   *  (the column is nullable, and ON DELETE SET NULL can empty it later). */
-  trialFoodId: string | null;
-  /** Display name of the trial food, for copy. Null when unresolvable. */
+  /** The trial itself, in the shape `lib/dietTrial.ts` takes. */
+  spec: TrialSpec;
+  /** Every `diet_trial_foods` row for this trial, joined to the food cache. */
+  allowedFoods: AllowedFood[];
+  /** Display name of the trial diet, for copy — the `primary_diet` rows, named.
+   *  Null when nothing resolved. */
   trialFoodLabel: string | null;
-  /** Case-folded brand+product of the trial food — the library's own dedup key
-   *  (`lib/food.foodIntakeKey`). Carried so rule 2's exclusion survives a
-   *  DUPLICATE CAPTURE of the trial diet: `food-capture` mints a fresh uuid every
-   *  time, so re-photographing the same bag (e.g. to finally capture the
-   *  ingredient panel) creates a row whose id ≠ `trialFoodId` — and an id-only
-   *  exclusion would then turn the trial diet's own contamination into exactly
-   *  the per-feeding verdict B-417 C2 forbids. Null when unresolvable. */
-  trialFoodKey: string | null;
-  /** The canonical protein the trial diet is built on. NULL = unknown, which
-   *  disables every check in this module (rule 1: silence, never an all-clear). */
-  targetProtein: string | null;
-  /** Did the trial food's row actually load? Distinguishes "the owner designated
-   *  no main protein" from "we never saw the food" — two states that must not
-   *  share a sentence (see trialDietNote). */
-  trialFoodResolved: boolean;
-  /** The trial food's own captured set, for shape ①. */
-  trialFoodProteins: string[];
-  /** D10 gate over the TRIAL FOOD's set — drives whether the trial card may say
-   *  anything about what else is (or is not) in the trial diet. */
+  /** How many `primary_diet` rows the allowed set holds. ZERO disables every
+   *  check (silence, never an all-clear) and is a real state: `diet_trials` can
+   *  hydrate before `diet_trial_foods` does. */
+  primaryCount: number;
+  /** How many of those resolved out of `food_items_cache`. Distinguishes "the
+   *  owner designated no main protein" from "we never saw the food" — two states
+   *  that must not share a sentence (see trialDietNote). */
+  primaryResolved: number;
+  /** D10 gate over the trial diet's sets. `complete` ONLY when EVERY
+   *  `primary_diet` food's ingredient panel was read — one unread food in a
+   *  two-food trial means "anything else in it is still unknown" is true of the
+   *  trial as a whole. */
   trialFoodCompleteness: ProteinSetCompleteness;
+}
+
+/** The `lib/dietTrial.ts` context, built from this module's context. Cheap and
+ *  derived on demand rather than stored, so the two can never disagree. */
+export function trialContextOf(ctx: TrialProteinContext): TrialContext {
+  return buildTrialContext(ctx.spec, ctx.allowedFoods);
+}
+
+/** Rung 2's comparator for this trial, as of today. Exported because the copy
+ *  layer names it ("Rex's duck trial") and the food-detail screen renders it. */
+export function sanctionedProteinsForTrial(ctx: TrialProteinContext): string[] {
+  const trial = trialContextOf(ctx);
+  // B-421: the local-day index, from the one implementation. Never a millisecond
+  // division — that is a UTC epoch-day and it disagrees with the owner's calendar
+  // by up to a day at either end.
+  const today = localDayIndex(Date.now());
+  return [...sanctionedProteinsOn(trial, Math.max(today, trial.startDayIndex ?? today))];
 }
 
 /** A food's captured protein evidence, as every surface here consumes it. */
@@ -136,23 +178,35 @@ export interface FoodProteinRecord {
 }
 
 /**
- * Shape ① — is the trial food ITSELF carrying off-trial proteins?
+ * Shape ① — is a food on the ALLOWED LIST itself carrying off-trial proteins?
  *
- * Returns the off-trial keys in the trial diet, or [] when there are none OR the
- * question cannot be answered. Callers must not distinguish those two cases in
- * copy: `trialFoodCompleteness` on the context is what says whether "nothing else
- * in it" may be claimed at all.
+ * Returns the extra protein keys across the whole allowed set, or [] when there
+ * are none OR the question cannot be answered. Callers must not distinguish those
+ * two cases in copy: `trialFoodCompleteness` on the context is what says whether
+ * "nothing else in it" may be claimed at all.
+ *
+ * D-A widened this from the trial diet to the whole allowed list: the
+ * vet-approved rabbit jerky that also lists chicken fat is exactly as
+ * trial-invalidating as a contaminated primary diet, and less likely to be
+ * noticed. The comparator is each food's OWN designated primary — see the
+ * "two protein sets" note in `lib/dietTrial.ts`.
  */
 export function trialFoodContaminants(ctx: TrialProteinContext): string[] {
-  return offTrialProteins(ctx.trialFoodProteins, ctx.targetProtein);
+  const seen = new Set<string>();
+  for (const fact of trialContamination(trialContextOf(ctx))) {
+    for (const key of fact.extraProteins) seen.add(key);
+  }
+  return [...seen];
 }
 
 /** The heads-up a surface renders. Absence of one is never an all-clear. */
 export interface TrialContaminantFlag {
   /** Off-trial canonical protein keys found in this food, prominence-ordered. */
   proteins: string[];
-  /** The trial's target protein, for the "…trial should skip X" clause. */
-  targetProtein: string;
+  /** What the trial diet is built on, for the "…trial should skip X" clause. A
+   *  SET, not one protein: a wet+dry trial can sanction two, and naming only one
+   *  of them told the owner the other was a contaminant. */
+  trialProteins: string[];
   /** The trial and food this heads-up is about — carried so the surface that
    *  DISPLAYS it can spend rule 3's budget (noteTrialFlagShown) without having to
    *  re-derive which trial was live at evaluation time. */
@@ -161,43 +215,56 @@ export interface TrialContaminantFlag {
 }
 
 /**
- * Shape ② — does a food that is NOT the trial diet carry off-trial proteins?
+ * Shape ② — does a food that is NOT on the allowed list carry off-trial proteins?
  *
- * The pure half of the log-time decision; the caller supplies the two facts this
- * cannot know (whether the meal falls inside the trial window, and whether this
- * is the first time the food has been fed inside it). Returns null for silence.
+ * The pure half of the log-time decision, and now a thin CONSUMER of
+ * `classifyFeeding`: this module no longer holds an opinion about what off-diet
+ * means. Returns null for silence.
+ *
+ * IT FIRES ON RUNG 2 ONLY, and the two exclusions that implies are rules rather
+ * than omissions:
+ *
+ *   • A PERMITTED food never produces a heads-up, even when it carries an
+ *     unsanctioned protein. D-B records that antigen for the vet report; flagging
+ *     it at log time would score the OWNER for following the vet's instructions
+ *     (§6.9). Rung 1 is also how C2 holds for the trial diet itself, and how a
+ *     re-photographed bag of the trial diet stays silent (§5.4's key match) —
+ *     both used to need their own special case here, and neither does now.
+ *   • A RUNG-3 food produces no heads-up either: rule 1 is presence-only, and
+ *     "nobody has read this food's ingredients" is not a thing to interrupt a log
+ *     with. It is still RECORDED as an exposure by `computeTrialFacts` — the card
+ *     and the vet report are where the closed-world count lands.
  */
-/** A brand+product key is only an identity if it actually names something. */
-function isUsableFoodKey(key: string | null | undefined): key is string {
-  return typeof key === 'string' && key.replace(/\u001F/g, '').trim().length > 0;
-}
-
 export function foodContaminantFlag(
   ctx: TrialProteinContext | null,
   foodId: string,
   foodProteins: readonly string[],
   /** Case-folded brand+product of THIS food, when the caller has it. Closes the
-   *  duplicate-capture hole in rule 2 — see TrialProteinContext.trialFoodKey.
-   *  Omitting it degrades to the id-only exclusion, which is the pre-existing
-   *  behaviour, not a new hazard. */
+   *  duplicate-capture hole in rung 1 (§5.4). Omitting it degrades to the id-only
+   *  match, which is the pre-existing behaviour, not a new hazard. */
   foodKey?: string | null,
+  /** When this food was (or would be) fed. Defaults to now — the add-to-library
+   *  path is asking "if I fed this today", and membership is DATED. */
+  occurredAt?: string,
 ): TrialContaminantFlag | null {
-  if (!ctx || !ctx.targetProtein) return null;
-  // Rule 2 — the trial diet's own contamination is a trial-level standing fact.
-  // Matched on the id OR the library's dedup key, so a re-photographed bag of the
-  // trial diet is still the trial diet.
-  if (ctx.trialFoodId != null && foodId === ctx.trialFoodId) return null;
-  // Both keys must be NON-EMPTY. foodIntakeKey('','') is the bare separator
-  // '\u001F', and brand/product are NOT NULL but not non-empty — the confirm
-  // step's "Looks right" has no non-empty guard — so two blank-named rows would
-  // otherwise collide, and the second would be silently treated as the trial diet
-  // and never flagged. That is the dangerous direction.
-  if (isUsableFoodKey(ctx.trialFoodKey) && isUsableFoodKey(foodKey) && foodKey === ctx.trialFoodKey) {
-    return null;
-  }
-  const proteins = offTrialProteins(foodProteins, ctx.targetProtein);
-  if (proteins.length === 0) return null;
-  return { proteins, targetProtein: ctx.targetProtein, trialId: ctx.trialId, foodId };
+  if (!ctx) return null;
+  const trialProteins = sanctionedProteinsForTrial(ctx);
+  // An unknown trial diet disables every check — silence, never an all-clear
+  // (rule 1 / B-351 D10). Reachable two ways that must not be confused in copy:
+  // no `primary_diet` row has hydrated yet, and a hydrolysed diet with no animal
+  // protein designated at all. `trialDietNote` is what says so out loud.
+  if (trialProteins.length === 0) return null;
+  const classification = classifyFeeding(trialContextOf(ctx), {
+    eventId: 'evaluation',
+    occurredAt: occurredAt ?? new Date().toISOString(),
+    foodItemId: foodId,
+    foodKey: foodKey ?? null,
+    label: null,
+    foodType: null,
+    proteins: foodProteins,
+  });
+  if (classification.verdict !== 'off_diet_protein') return null;
+  return { proteins: classification.antigens, trialProteins, trialId: ctx.trialId, foodId };
 }
 
 // ── Copy (nyx-voice + clinical-guardrails) ───────────────────────────────────
@@ -230,8 +297,9 @@ export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
   return {
     headline: `This one has ${proteinList(flag.proteins)}.`,
     detail:
-      `${petName}'s ${flag.targetProtein} trial should skip ${proteinList(flag.proteins)}. ` +
-      `The meal's saved — just worth knowing, and maybe a note for your vet.`,
+      `${petName}’s ${proteinPhrase(flag.trialProteins)} trial should skip ` +
+      `${proteinList(flag.proteins)}. The meal’s saved — just worth knowing, and ` +
+      'maybe a note for your vet.',
   };
 }
 
@@ -239,9 +307,9 @@ export function mealFlagCopy(flag: TrialContaminantFlag, petName: string): {
  * The add-to-library soft confirm (mock §2, top).
  *
  * ONE DELIBERATE DEVIATION FROM THE MOCK. The mock reads "Nyx's elimination trial
- * is on duck"; this says "trial diet". `diet_trials` carries no indication column
- * (D6 deferred the schema change), so the app cannot know a trial is an
- * elimination trial rather than a GI or hydrolysed one — and asserting a trial
+ * is on duck"; this says "trial diet". `diet_trials` carries an `indication`
+ * (skin / gi / other) but not a diet CLASS, so the app still cannot know a trial
+ * is an elimination trial rather than a hydrolysed one — and asserting a trial
  * TYPE we have not been told is a fabricated clinical claim on a surface a vet
  * may be shown. The rest of the mock's copy is verbatim.
  */
@@ -253,8 +321,9 @@ export function addFlagCopy(flag: TrialContaminantFlag, petName: string): {
   return {
     title: `Heads up — this food lists ${list}`,
     body:
-      `${petName}'s trial diet is ${flag.targetProtein}. The ${list} in here could keep ` +
-      `the trial from giving a clean answer. Worth a word with your vet before you feed it.`,
+      `${petName}’s trial diet is ${proteinPhrase(flag.trialProteins)}. The ${list} in ` +
+      'here could keep the trial from giving a clean answer. Worth a word with your ' +
+      'vet before you feed it.',
   };
 }
 
@@ -270,76 +339,73 @@ export function standingFlagCopy(flag: TrialContaminantFlag, petName: string): {
 } {
   const list = proteinList(flag.proteins);
   return {
-    title: `Off ${petName}'s trial diet`,
+    title: `Off ${petName}’s trial diet`,
     body:
-      `This food lists ${list}, and the trial diet is ${flag.targetProtein}. ` +
-      `Worth a note for your vet.`,
+      `This food lists ${list}, and the trial diet is ` +
+      `${proteinPhrase(flag.trialProteins)}. Worth a note for your vet.`,
   };
 }
 
 /**
- * The diet-trial card's standing note about the TRIAL DIET ITSELF (shape ①,
- * B-417 C2's "computed once per trial, surfaced on the card").
+ * The diet-trial card's standing note about the ALLOWED LIST ITSELF (shape ①,
+ * B-417 C2's "computed once per trial, surfaced on the card"; widened to
+ * permitted extras by D-A).
  *
- * Two states, and the second is the one D10 exists for: when the trial food's
- * ingredient panel was never read, the card says so rather than leaving the
- * owner to read the absence of a flag as an all-clear on the single food their
- * pet eats every day for eight weeks. Returns null only when there is genuinely
- * something to say AND nothing worth saying — i.e. the panel WAS read and it is
- * single-protein.
+ * Three states, and the last two are the ones D10 exists for: when nothing has
+ * read the trial diet's ingredient panel, the card says so rather than leaving
+ * the owner to read the absence of a flag as an all-clear on the food their pet
+ * eats every day for eight weeks. Returns null only when there is genuinely
+ * something to say AND nothing worth saying — i.e. every panel WAS read and none
+ * of them carries an extra protein.
  */
-export function trialDietNote(ctx: TrialProteinContext): { title: string; body: string } | null {
+export function trialDietNote(
+  ctx: TrialProteinContext,
+  petName?: string | null,
+): { title: string; body: string } | null {
   // B9 — the MOST unknown state must not get the LEAST disclosure. An unknown
-  // target silently disables every check in this module, and an earlier cut
+  // trial diet silently disables every check in this module, and an earlier cut
   // returned null here: the trial card said nothing, no flag ever fired, and
   // nothing anywhere told the owner the check was off. That is worse than the
   // panel-unread case below, which does get a note — the owner was being given
-  // strictly less information the less we knew. It is reachable two ways: a
-  // hydrolysed trial diet with no animal protein designated, and slice 3's
-  // "clear the main protein", which is precisely the case rule 4 exists for.
-  if (!ctx.targetProtein) {
+  // strictly less information the less we knew. It is reachable three ways now: a
+  // hydrolysed trial diet with no animal protein designated, slice 3's "clear the
+  // main protein", and an allowed set that has not hydrated.
+  if (sanctionedProteinsForTrial(ctx).length === 0) {
     // TWO DIFFERENT STATES, TWO DIFFERENT SENTENCES. An earlier cut collapsed them
     // and asserted "the trial food has no main protein set" about a food it had
-    // never read — reachable whenever the trial row fetched but `food_items_cache`
-    // had not hydrated, and again when `food_item_id` is NULL (the column is
-    // nullable; ON DELETE SET NULL empties it). The owner who followed the
-    // instruction opened the food and found a main protein sitting there, i.e. the
-    // app contradicting itself. Not reassurance, but an unproven assertion about
-    // the record on a clinical surface — the class B9 was written to correct.
-    if (!ctx.trialFoodResolved) {
+    // never read — reachable whenever `diet_trials` hydrated but the allowed set
+    // or `food_items_cache` had not (they are separate pulls). The owner who
+    // followed the instruction opened the food and found a main protein sitting
+    // there, i.e. the app contradicting itself. Not reassurance, but an unproven
+    // assertion about the record on a clinical surface — the class B9 corrects.
+    if (ctx.primaryCount === 0 || ctx.primaryResolved < ctx.primaryCount) {
       return {
-        title: 'Nyx can\'t check other foods against this trial yet',
-        body: ctx.trialFoodId
-          ? 'The trial food hasn\'t loaded on this device yet, so there\'s nothing to '
-            + 'compare against. This usually settles once everything syncs.'
-          : 'This trial has no food attached, so there\'s nothing to compare other '
-            + 'foods against.',
+        title: 'Culprit can’t check other foods against this trial yet',
+        body: ctx.primaryCount === 0
+          ? 'This trial has no food attached yet, so there’s nothing to compare other '
+            + 'foods against.'
+          : 'The trial food hasn’t loaded on this device yet, so there’s nothing to '
+            + 'compare against. This usually settles once everything syncs.',
       };
     }
     return {
-      title: 'Nyx can\'t tell what this trial is built on',
+      title: 'Culprit can’t tell what this trial is built on',
       body:
-        'The trial food has no main protein set, so other foods can\'t be checked ' +
+        'The trial food has no main protein set, so other foods can’t be checked ' +
         'against it. Setting one on the food would turn the checks back on.',
     };
   }
-  const contaminants = trialFoodContaminants(ctx);
-  if (contaminants.length > 0) {
-    const list = proteinList(contaminants);
-    return {
-      title: `The trial food also lists ${list}`,
-      body:
-        `A ${ctx.targetProtein} food that also lists ${list} can keep the trial from ` +
-        `giving a clean answer. Worth raising with your vet.`,
-    };
-  }
+  // D-A's standing fact, computed by the shared module over `primary_diet` rows
+  // AND permitted extras. Never a per-feeding verdict (C2).
+  const note = contaminationNote(trialContamination(trialContextOf(ctx)), petName);
+  if (note) return note;
   if (!ctx.trialFoodCompleteness.complete) {
     return {
-      title: 'The trial food\'s ingredients haven\'t been read',
+      title: 'The trial food’s ingredients haven’t been read',
       body:
-        `${display(ctx.targetProtein)} is what it's sold as, but nothing has read the ` +
-        `ingredient panel — so anything else in it is still unknown. A photo of the ` +
-        `panel would settle it.`,
+        `${display(proteinPhrase(sanctionedProteinsForTrial(ctx)))} is what it’s sold as, ` +
+        'but nothing has read the ingredient panel — so anything else in it is still ' +
+        'unknown. A photo of the panel would settle it.',
     };
   }
   return null;
@@ -348,11 +414,11 @@ export function trialDietNote(ctx: TrialProteinContext): { title: string; body: 
 /**
  * The quiet "what this trial is built on" line for the diet-trial card.
  *
- * B8 mitigation. The target protein is read from the trial food's
- * `primary_protein`, which on an AI-extracted food is a model output with no
- * completeness gate over it — a front-of-pack read of "Salmon & Duck" can
- * designate the wrong one, and every heads-up then states the inverse of the real
- * prescription with full confidence. We deliberately do NOT gate the target on
+ * B8 mitigation. The trial's proteins are read from each `primary_diet` food's
+ * `primary_protein` + captured array, and on an AI-extracted food that is a model
+ * output with no completeness gate over it — a front-of-pack read of "Salmon &
+ * Duck" can designate the wrong one, and every heads-up then states the inverse of
+ * the real prescription with full confidence. We deliberately do NOT gate on
  * `ai_extraction_confidence.primary_protein`: most trial foods are entered
  * manually, where that field is null, so gating would disable the feature for the
  * majority in order to bound a minority error. The fix is disclosure — render the
@@ -369,31 +435,34 @@ export function trialDietNote(ctx: TrialProteinContext): { title: string; body: 
  * and claims no coverage at all.
  */
 export function trialTargetLine(ctx: TrialProteinContext): string | null {
-  if (!ctx.targetProtein) return null;
-  return `Trial protein · ${display(ctx.targetProtein)}`;
+  const proteins = sanctionedProteinsForTrial(ctx);
+  if (proteins.length === 0) return null;
+  const label = proteins.length === 1 ? 'Trial protein' : 'Trial proteins';
+  return `${label} · ${display(proteinPhrase(proteins))}`;
 }
 
 // ── The I/O layer ────────────────────────────────────────────────────────────
 
 /**
- * Best-effort load of the pet's active-trial protein context.
+ * Best-effort load of the pet's active-trial context: the trial row plus its
+ * whole ALLOWED SET, both from the LOCAL MIRROR (B-417 PR 2, #453).
  *
- * `diet_trials` has NO local mirror — it is Supabase-only, the same posture as
- * `hooks/useTrend`, the profile card and `lib/widgetSnapshot`. So offline this
- * returns null and every surface goes quiet, which is the correct degradation
- * under rule 1: a missing trial context can only ever SUPPRESS a heads-up, never
- * fabricate an all-clear. (A local mirror is B-417 PR 2's job; when it lands,
- * this function's body is the thing that changes, not its contract.)
+ * The network read this used to do is gone. `diet_trials` was Supabase-only when
+ * slice 4 shipped, so every surface here went blank in airplane mode; PR 2 gave
+ * the table (and `diet_trial_foods`) a local mirror precisely so the wedge
+ * surface survives offline, and reading Supabase here would have re-created the
+ * dependency PR 2 removed from the widget on the same day.
  *
- * TTL-cached per pet. The trial row changes about once a month, and this is
- * called on a hot path (after every meal log) plus on two screen mounts — so a
- * network round-trip per call would be pure waste. A FAILED fetch is never
- * cached, so offline → online recovers on the next call. Mirrors
- * lib/widgetSnapshot's fetchActiveTrials, deliberately: same data, same posture.
+ * The degradation posture is unchanged and is what rule 1 requires: a missing or
+ * partial context can only ever SUPPRESS a heads-up, never fabricate an
+ * all-clear.
+ *
+ * TTL-cached per pet — this is called on a hot path (after every meal log) plus
+ * on three screen mounts. A FAILED read is never cached, so a transient state
+ * recovers on the next call.
  */
 export const TRIAL_CONTEXT_TTL_MS = 5 * 60 * 1000;
 
-interface TrialRow { id: string; started_at: string; food_item_id: string | null }
 interface CacheEntry { atMs: number; ctx: TrialProteinContext | null }
 const contextCache = new Map<string, CacheEntry>();
 
@@ -446,23 +515,66 @@ function parseConfidence(text: string | null): unknown {
   }
 }
 
-// How many `primary_diet` foods this trial has, read from the LOCAL mirror (PR 2)
-// rather than the network — the guard above has to hold offline too. A read
-// failure returns -1 rather than 0 so the caller treats it as "unknown" (silence,
-// uncached) instead of a settled multi-food answer.
-async function countPrimaryDietFoods(trialId: string): Promise<number> {
-  try {
-    const db = getDb();
-    const row = await db.getFirstAsync<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM diet_trial_foods
-        WHERE diet_trial_id = ? AND role = 'primary_diet' AND deleted_at IS NULL`,
-      [trialId],
-    );
-    return Number(row?.n ?? -1);
-  } catch (e) {
-    console.warn('[trialContaminant] allowed-set count failed:', e);
-    return -1;
-  }
+/** The active trial, from the mirror. `ORDER BY synced DESC` is the conflict
+ *  rule, not a flourish — the local active index is deliberately non-unique, so
+ *  a device can briefly hold its own losing offline row alongside the server's
+ *  winner, and the row the SERVER accepted is the one every surface must agree
+ *  on. Identical ordering to `ACTIVE_DIET_TRIAL_QUERY` and the card's own read. */
+const ACTIVE_TRIAL_SQL = `
+  SELECT id, started_at, ended_at
+    FROM diet_trials
+   WHERE pet_id = ? AND status = 'active'
+   ORDER BY synced DESC, started_at DESC, id
+   LIMIT 1
+`;
+
+/** The allowed set, joined to the food cache for each row's protein evidence.
+ *
+ *  `deleted_at IS NULL` only — `allowed_until` is NOT filtered here, and that is
+ *  the point of dated membership: the predicate resolves membership ON THE
+ *  FEEDING'S DATE, so a food removed on day 30 must still be visible in order to
+ *  permit the twenty-nine days it was allowed for. Filtering it out in SQL would
+ *  retroactively re-score that history as off-diet — the exact inverse of the
+ *  hazard migration 040's header describes, and just as invisible. */
+const ALLOWED_SET_SQL = `
+  SELECT tf.food_item_id, tf.role, tf.food_label, tf.allowed_from, tf.allowed_until,
+         f.brand, f.product_name, f.primary_protein, f.proteins,
+         f.ingredients_notes, f.ai_extraction_confidence
+    FROM diet_trial_foods tf
+    LEFT JOIN food_items_cache f ON f.id = tf.food_item_id
+   WHERE tf.diet_trial_id = ? AND tf.deleted_at IS NULL
+   ORDER BY tf.allowed_from, tf.id
+`;
+
+interface TrialRow { id: string; started_at: string; ended_at: string | null }
+
+interface AllowedRow {
+  food_item_id: string;
+  role: string;
+  food_label: string;
+  allowed_from: string;
+  allowed_until: string | null;
+  brand: string | null;
+  product_name: string | null;
+  primary_protein: string | null;
+  proteins: string | null;
+  ingredients_notes: string | null;
+  ai_extraction_confidence: string | null;
+}
+
+const ROLES: readonly TrialFoodRole[] = [
+  'primary_diet',
+  'permitted_treat',
+  'permitted_other',
+  'supplement',
+];
+
+/** An unrecognised role reads as `primary_diet` — the value the server column
+ *  defaults to — rather than being dropped. Dropping the row would silently
+ *  remove a food from the PERMIT set, which is the direction that flags a
+ *  compliant owner. */
+function narrowRole(raw: string): TrialFoodRole {
+  return (ROLES as readonly string[]).includes(raw) ? (raw as TrialFoodRole) : 'primary_diet';
 }
 
 export async function loadTrialProteinContext(
@@ -473,22 +585,16 @@ export async function loadTrialProteinContext(
   if (!opts?.force && hit && Date.now() - hit.atMs < TRIAL_CONTEXT_TTL_MS) return hit.ctx;
 
   let trial: TrialRow | null = null;
+  let rows: AllowedRow[] = [];
   try {
-    const { data, error } = await supabase
-      .from('diet_trials')
-      .select('id, started_at, food_item_id')
-      .eq('pet_id', petId)
-      .eq('status', 'active')
-      .limit(1);
-    if (error) throw error;
-    // One active trial per pet is the product model; if the data ever holds two,
-    // first wins (deterministic — PostgREST returns a stable order per query).
-    trial = ((data ?? []) as unknown as TrialRow[])[0] ?? null;
+    const db = getDb();
+    trial = await db.getFirstAsync<TrialRow>(ACTIVE_TRIAL_SQL, [petId]);
+    if (trial) rows = await db.getAllAsync<AllowedRow>(ALLOWED_SET_SQL, [trial.id]);
   } catch (e) {
-    // Offline or transient. NOT cached — silence now, correct answer on the next
-    // call. Never fabricates a "no trial" that would let a surface go quiet
-    // permanently.
-    console.warn('[trialContaminant] trial fetch failed (offline?):', e);
+    // A local read failure is transient (the db may not be open yet on a cold
+    // start). NOT cached — silence now, correct answer on the next call. Never
+    // fabricates a "no trial" that would let a surface go quiet permanently.
+    console.warn('[trialContaminant] trial read failed:', e);
     return null;
   }
 
@@ -497,102 +603,68 @@ export async function loadTrialProteinContext(
     return null;
   }
 
-  // ── B-417 PR 3 — the multi-food guard ────────────────────────────────────
-  //
-  // Everything below derives the trial diet from the SINGLE `diet_trials.
-  // food_item_id` column, which was the only representation available when this
-  // shipped (B-351 slice 4). §4.1 has since ruled that column DISPLAY-ONLY LEGACY:
-  // the trial diet is N `diet_trial_foods` rows at `role='primary_diet'`, and the
-  // sanctioned set is the union of every protein of every one of them.
-  //
-  // So on a two-food trial — a wet and a dry of the same diet, the normal case —
-  // this module would compute the sanctioned set from ONE food and flag the
-  // legitimately-allowed second trial food as a contaminant. That is the
-  // alarm-fatigue failure C2 exists to prevent, aimed at the one food the owner
-  // cannot stop feeding.
-  //
-  // PR 5 re-bases this onto `diet_trial_foods` (§0.2 forward-conflict 2) and
-  // deletes this guard. Until then PR 3 pays for the condition it creates: when
-  // the count is anything other than exactly 1 we return NULL — silence, no claim,
-  // never an all-clear (B-351 D10). Both non-1 cases are covered deliberately:
-  //   • >1 — a real multi-food trial. A settled fact, so it is cached.
-  //   • 0  — `diet_trials` hydrated but `diet_trial_foods` has not yet (they are
-  //     separate pulls). Transient, so it is NOT cached — same rule the
-  //     trial-food-resolution check below applies, for the same reason.
-  const primaryCount = await countPrimaryDietFoods(trial.id);
-  if (primaryCount !== 1) {
-    if (primaryCount > 1) contextCache.set(petId, { atMs: Date.now(), ctx: null });
-    return null;
-  }
+  const allowedFoods: AllowedFood[] = rows.map((r) => ({
+    foodItemId: r.food_item_id,
+    // Null when the food row has not hydrated — the predicate then falls back to
+    // the id, which is the only identity available in that state.
+    foodKey:
+      r.brand !== null || r.product_name !== null
+        ? foodIntakeKey(r.brand ?? '', r.product_name ?? '')
+        : null,
+    label: r.food_label,
+    role: narrowRole(r.role),
+    allowedFrom: r.allowed_from,
+    allowedUntil: r.allowed_until,
+    primaryProtein: r.primary_protein,
+    proteins: proteinsFromCacheText(r.proteins),
+  }));
 
-  let ctx: TrialProteinContext = {
+  const primaryRows = rows.filter((r) => narrowRole(r.role) === 'primary_diet');
+  const resolvedPrimary = primaryRows.filter((r) => r.brand !== null || r.product_name !== null);
+
+  const ctx: TrialProteinContext = {
     trialId: trial.id,
     petId,
     startedAtMs: localMidnightMs(trial.started_at),
-    trialFoodId: trial.food_item_id,
-    trialFoodLabel: null,
-    trialFoodKey: null,
-    targetProtein: null,
-    trialFoodResolved: false,
-    trialFoodProteins: [],
-    trialFoodCompleteness: { complete: false, provenance: 'no_panel_text' },
+    spec: { id: trial.id, startedAt: trial.started_at, endedAt: trial.ended_at },
+    allowedFoods,
+    trialFoodLabel:
+      primaryRows.map((r) => r.food_label).filter(Boolean).join(' + ') || null,
+    primaryCount: primaryRows.length,
+    primaryResolved: resolvedPrimary.length,
+    // THE GATE IS OVER EVERY PRIMARY FOOD, AND `every` IS LOAD-BEARING. On a
+    // wet+dry trial, one read panel and one unread one means "anything else in it
+    // is still unknown" is TRUE of the trial — claiming completeness off the read
+    // half is the all-clear-on-an-unread-record D10 forbids. An empty primary set
+    // is likewise incomplete, never complete-by-vacuity.
+    trialFoodCompleteness: worstCompleteness(resolvedPrimary),
   };
 
-  // Whether the trial food actually RESOLVED. Drives the memoization decision
-  // below — see the note there; this is not the same question as "is there a
-  // trial".
-  let trialFoodResolved = false;
-
-  if (trial.food_item_id) {
-    try {
-      const db = getDb();
-      const food = await db.getFirstAsync<{
-        brand: string;
-        product_name: string;
-        primary_protein: string | null;
-        proteins: string | null;
-        ingredients_notes: string | null;
-        ai_extraction_confidence: string | null;
-      }>(
-        `SELECT brand, product_name, primary_protein, proteins, ingredients_notes,
-                ai_extraction_confidence
-           FROM food_items_cache WHERE id = ?`,
-        [trial.food_item_id],
-      );
-      if (food) {
-        trialFoodResolved = true;
-        ctx = {
-          ...ctx,
-          trialFoodResolved: true,
-          trialFoodLabel: `${food.brand} ${food.product_name}`.trim() || null,
-          trialFoodKey: foodIntakeKey(food.brand, food.product_name),
-          targetProtein: resolveTargetProtein(food.primary_protein),
-          trialFoodProteins: proteinsFromCacheText(food.proteins),
-          trialFoodCompleteness: proteinSetCompleteness(
-            food.ingredients_notes,
-            parseConfidence(food.ai_extraction_confidence),
-          ),
-        };
-      }
-    } catch (e) {
-      // A cache miss leaves targetProtein null, which disables every check.
-      console.warn('[trialContaminant] trial food read failed:', e);
-    }
-  }
-
-  // MEMOIZE ONLY A SETTLED ANSWER. A trial whose food row did not resolve is a
-  // TRANSIENT state, not a fact: on a fresh install or a re-login the
-  // `diet_trials` fetch can succeed while `food_items_cache` has not hydrated
-  // yet, and caching that for five minutes would silently disable every check
-  // for the whole window — with, under the earlier meal-count gate, each meal
-  // logged in it permanently burning that food's heads-up. Treated like a failed
-  // fetch: answer now, re-ask next time. (`ctx: null` — genuinely no active
-  // trial — IS a settled answer and stays cached.)
-  if (trial.food_item_id && !trialFoodResolved) return ctx;
+  // MEMOIZE ONLY A SETTLED ANSWER. A trial whose allowed set or food rows have
+  // not hydrated is a TRANSIENT state, not a fact: on a fresh install or a
+  // re-login the `diet_trials` pull can land before `diet_trial_foods` or
+  // `food_items_cache` do, and caching that for five minutes would silently
+  // disable every check for the whole window. Treated like a failed read: answer
+  // now, re-ask next time. (`ctx: null` — genuinely no active trial — IS a
+  // settled answer and stays cached.)
+  if (primaryRows.length === 0 || resolvedPrimary.length < primaryRows.length) return ctx;
 
   contextCache.set(petId, { atMs: Date.now(), ctx });
   return ctx;
 }
+
+/** The LEAST complete provenance across the trial's primary foods. */
+function worstCompleteness(rows: readonly AllowedRow[]): ProteinSetCompleteness {
+  if (rows.length === 0) return { complete: false, provenance: 'no_panel_text' };
+  let worst: ProteinSetCompleteness = { complete: true, provenance: 'panel_read' };
+  for (const r of rows) {
+    const c = proteinSetCompleteness(r.ingredients_notes, parseConfidence(r.ai_extraction_confidence));
+    if (!c.complete) return c;
+    worst = c;
+  }
+  return worst;
+}
+
 
 // ── Rule 3's ledger: which foods we have already told the owner about ────────
 //
@@ -698,9 +770,13 @@ export function resetHeadsUpLedgerCache(): void {
  * is local except the cached trial row, so the cost is sub-millisecond in the
  * warm case.
  *
- * Returns null — silence — for every uncertainty: no trial, no target protein,
- * offline, an unread panel, a meal backdated before the trial started, the trial
+ * Returns null — silence — for every uncertainty: no trial, no known trial diet,
+ * an unread panel, a meal outside the trial window, a permitted food, the trial
  * diet itself, or a repeat feeding. Never throws into the log path.
+ *
+ * The window check now lives INSIDE the predicate (`classifyFeeding` returns
+ * `out_of_window`), so this no longer carries its own date arithmetic — one
+ * definition of "inside the trial", the same one the card and the report use.
  */
 export async function evaluateMealTrialFlag(args: {
   petId: string;
@@ -709,14 +785,18 @@ export async function evaluateMealTrialFlag(args: {
 }): Promise<TrialContaminantFlag | null> {
   try {
     const ctx = await loadTrialProteinContext(args.petId);
-    if (!ctx || !ctx.targetProtein || Number.isNaN(ctx.startedAtMs)) return null;
-    // A meal backdated to before the trial began is not a trial contaminant.
-    if (new Date(args.occurredAt).getTime() < ctx.startedAtMs) return null;
+    if (!ctx) return null;
 
     const record = await readFoodProteinRecord(args.foodId);
     if (!record) return null;
 
-    const flag = foodContaminantFlag(ctx, args.foodId, record.proteins, record.foodKey);
+    const flag = foodContaminantFlag(
+      ctx,
+      args.foodId,
+      record.proteins,
+      record.foodKey,
+      args.occurredAt,
+    );
     if (!flag) return null;
 
     // Rule 3's READ half only. The WRITE is noteTrialFlagShown, called by the
