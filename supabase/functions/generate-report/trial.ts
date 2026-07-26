@@ -61,6 +61,7 @@ import {
   type TrialFoodRole,
   type TrialSpecies,
 } from '../../../lib/dietTrial.ts'
+export type { ContaminationFact } from '../../../lib/dietTrial.ts'
 import { localDayIndexOf } from '../../../lib/utils.ts'
 
 const MS_PER_DAY = 86_400_000

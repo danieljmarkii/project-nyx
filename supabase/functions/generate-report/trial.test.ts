@@ -30,6 +30,7 @@ function plain(html: string): string {
     .replace(/&rdquo;/g, '\u201d')
     .replace(/&middot;/g, '·')
     .replace(/&times;/g, '×')
+    .replace(/&rarr;/g, '→')
     .replace(/&dagger;/g, '†')
     .replace(/&ge;/g, '≥')
     .replace(/&nbsp;/g, ' ')
@@ -1002,4 +1003,86 @@ Deno.test('the legend never certifies the absence of a safety flag or an intake 
   assert.ok(!/none was raised in this window/.test(text))
   assert.ok(/it means no detector fired, which is not the same as nothing being wrong/.test(text))
   assert.ok(/its absence means no flag fired, not that intake was normal/.test(text))
+})
+
+// ── Round 2 of the cold read ─────────────────────────────────────────────────
+
+Deno.test('a PERMITTED extra\u2019s contamination never renders in the TRIAL FOOD\u2019s voice', () => {
+  // THE REGRESSION THE COLD READ RANKED ABOVE EVERY FINDING IT REPLACED. The first fix
+  // unioned permitted extras into the trial food's breach set, so page 1 said "The trial
+  // food's own label also lists Chicken" about a clean hydrolysed diet while appendix B
+  // said "Soy · nothing else on the label" on the same document. That misdirects a
+  // CONFIDENT action — discard the prescription diet, blame the manufacturer — where the
+  // record says drop the dental chew and continue the diet.
+  const input = wellLoggedTrialInput()
+  input.dietTrials[0].allowedFoods = [
+    TRIAL_FOOD,
+    { ...PERMITTED_TREAT, foodItemId: 'f-ds', foodLabel: 'Pedigree Dentastix', brand: 'Pedigree', productName: 'Dentastix', primaryProtein: 'cereal', proteins: ['cereal', 'chicken'], ingredientsNotes: 'Cereals, chicken by-product meal, minerals' },
+  ]
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(!/The trial food\u2019s own label also lists Chicken/.test(text), 'the trial diet is clean and must not be accused')
+  assert.ok(/Pedigree Dentastix, on the allowed list, also lists Chicken/.test(text), 'the finding names its own product, in its own voice')
+  // The headline names the PROTEIN and the PET, never the food, so promoting it there
+  // cannot mis-attribute the source.
+  assert.ok(/The record shows Chicken in Cooper\u2019s diet during the trial/.test(text))
+})
+
+Deno.test('§7.2 carries the medication confound, not only the exposure caveat', () => {
+  // §7: "a steroid course and a successful elimination produce the identical improving
+  // curve." The overlap renders un-judged above, which is right — but §7.2 is the line a
+  // reader lifts, and a drug suppressing the trial's only endpoint belongs in it.
+  const input = wellLoggedTrialInput({
+    medications: [
+      { id: 'm', medicationItemId: null, drugName: 'Apoquel', doseAmount: '16 mg', route: 'oral', dosesPerDay: 1, scheduleNotes: null, indication: 'pruritus', prescribedBy: null, startedAt: '2026-04-30', targetDurationDays: null, status: 'active', endedAt: null, isPrescription: true },
+    ],
+  })
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Apoquel overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone/.test(text))
+  // …and it defeats the affirmative clause, like every other caveat.
+  assert.ok(!/supports interpreting it/.test(text))
+})
+
+Deno.test('a refused trial COMPOSES the refusal with the weight change, as % of body weight', () => {
+  // The cold read's remaining blocker: the page held 34-of-38 refused, 4.4 → 4.1 kg, the
+  // appendix-E ratings and a free-fed bowl — every fact needed, across four sections,
+  // never put together, with a legend entry on the last page carrying a page-1 clinical
+  // fact. -0.3 kg renders identically for a 32 kg dog and a 4.4 kg cat; on the cat it is
+  // ~7% of body mass. This is a restatement of adjacent facts, not a new escalation lane
+  // (that is B-474).
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-01', '2026-06-19')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+    input.events.push(meal({ date: d, time: '18:00:00', brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'], intakeRating: 'refused' }))
+  }
+  input.weightChecks = [
+    { eventId: 'w1', weightKg: 4.4, occurredAt: at('2026-06-01', '15:00:00') },
+    { eventId: 'w2', weightKg: 4.1, occurredAt: at('2026-06-19', '15:00:00') },
+  ]
+  const text = plain(renderReport(assembleReport(input)))
+  assert.ok(/Weight fell 4.4 → 4.1 kg/.test(text))
+  assert.ok(/6.8% of body weight/.test(text))
+  assert.ok(/Refusal of food is a clinical finding in its own right/.test(text))
+  // Still not an escalation: no safety flag is fabricated here.
+  assert.ok(!/flags for review/i.test(text.slice(0, text.indexOf('Diet trial'))))
+})
+
+Deno.test('the trial-scoped logging claim states its scope, so it cannot contradict the chart caveats', () => {
+  // "Logging held up across the trial" is true of the TRIAL's range; the charts span the
+  // REPORT's window, which on an ended trial can extend past it by weeks. The cold read
+  // found the assertive form eight lines from "a fall here may be less logging", with
+  // neither naming its scope.
+  // Ended inside the anchor grace, so it still describes the report — the case §7's
+  // day-after-completion AC exists for, and the case where the window over-runs the trial.
+  const input = wellLoggedTrialInput({ events: [] })
+  for (const d of days('2026-06-01', '2026-06-20')) {
+    input.events.push(meal({ date: d, brand: 'Royal Canin', product: 'Hydrolyzed HP', foodItemId: 'f-hp', proteins: ['soy'] }))
+  }
+  input.dietTrials[0].status = 'completed'
+  input.dietTrials[0].completedAt = '2026-06-20'
+  input.dietTrials[0].endedAt = '2026-06-20'
+  const snap = assembleReport(input)
+  assert.equal(snap.scope.basis, 'diet_trial')
+  assert.equal(snap.trial?.rangeEndDate, '2026-06-20', 'the trial range stops at the trial')
+  const text = plain(renderReport(snap))
+  assert.ok(/This covers the trial\u2019s 20 days; the charts below span 32 days, 12 of them after the trial/.test(text))
 })

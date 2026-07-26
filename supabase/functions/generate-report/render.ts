@@ -69,6 +69,10 @@ import type {
   SymptomLogPhenotype,
   ProteinSetView,
 } from './report.ts'
+// §5.5's standing contamination fact, shared with the trial block. Imported from the
+// adapter rather than re-declared: the render must not hold its own idea of what a
+// contamination finding is.
+import type { ContaminationFact } from './trial.ts'
 // Same list formatter the owner-facing contaminant copy uses — one spelling of
 // "chicken, salmon and beef" across the product (B-351 slice 5).
 import { proteinList } from '../../../lib/trialProtein.ts'
@@ -573,6 +577,11 @@ function proteinSetPhrase(v: ProteinSetView, markOffTrial: boolean): string {
  */
 function trialProteinBreaches(snap: ReportSnapshot): {
   inTrialFood: string[]
+  /** §5.5 D-A — a food on the ALLOWED LIST (not the trial diet) whose label carries a
+   *  protein beyond its own front-of-pack claim. Its own set and its own sentence: the
+   *  finding is about the owner's list and the vet's own prescribing, not about the
+   *  trial food's manufacturer. */
+  permittedExtras: ContaminationFact[]
   freeFed: string[]
   /** True when the off-trial check could NOT be run at all — an active trial whose food
    *  carries more than one protein but no designated main, so there is nothing to compare
@@ -582,7 +591,7 @@ function trialProteinBreaches(snap: ReportSnapshot): {
   /** Any breach came from a bowl shared with another pet ⇒ availability, not intake. */
   fromSharedBowl: boolean
 } {
-  const empty = { inTrialFood: [], freeFed: [], targetUnknown: false, fromSharedBowl: false }
+  const empty = { inTrialFood: [], permittedExtras: [], freeFed: [], targetUnknown: false, fromSharedBowl: false }
   if (!snap.diet.trial) return empty
   if (snap.diet.trialTargetProtein == null) {
     // The THIRD meaning of page-1 silence, found by the adversarial re-check. The fix
@@ -595,28 +604,28 @@ function trialProteinBreaches(snap: ReportSnapshot): {
     return { ...empty, targetUnknown: snap.diet.trial.proteinSet.proteins.length > 1 }
   }
   const freeFedBreaches = snap.diet.freeFed.filter((f) => f.proteinSet.offTrial.length > 0)
-  // D-A, ADDED AT B-417 PR 7 AND FOUND BY THE COLD READ. `inTrialFood` only ever read
-  // the PRIMARY diet's own set, so a permitted EXTRA carrying a second protein — the
-  // vet-approved dental chew that lists chicken by-product meal — never reached the
-  // headline. The artifact: a dog got chicken on 25 occasions through the allowed list
-  // on a hydrolysed-soy skin trial, and page 1's two most prominent numbers (43/43
-  // coverage, 4/154 exposures) both read clean while the invalidating fact sat in grey
-  // prose three lines down. A 60-second read concluded "continue to day 56, partial
-  // response" where the record says the trial is void.
+  // D-A, ADDED AT B-417 PR 7. `inTrialFood` only ever read the PRIMARY diet's own set,
+  // so a permitted EXTRA carrying a second protein — the vet-approved dental chew that
+  // lists chicken by-product meal — never reached the headline. The artifact: a dog got
+  // chicken on 25 occasions through the allowed list on a hydrolysed-soy skin trial, and
+  // page 1's two most prominent numbers (43/43 coverage, 4/154 exposures) both read clean
+  // while the invalidating fact sat in grey prose three lines down. A 60-second read
+  // concluded "continue to day 56, partial response" where the record says the trial is
+  // void. §5.5 D-A: "the vet-approved rabbit jerky that also lists chicken fat is exactly
+  // as trial-invalidating as a contaminated primary diet, and less likely to be noticed."
   //
-  // §5.5 D-A is explicit that this is not a lesser finding: "the vet-approved rabbit
-  // jerky that also lists chicken fat is exactly as trial-invalidating as a contaminated
-  // primary diet, and less likely to be noticed." So it belongs in the same set as
-  // shape ①, on the same line.
-  const permittedExtras = [
-    ...new Set(
-      (snap.trial?.contamination ?? [])
-        .filter((c) => c.food.role !== 'primary_diet')
-        .flatMap((c) => c.extraProteins),
-    ),
-  ]
+  // IT IS A THIRD SET, NOT AN ADDITION TO THE FIRST — and the first draft of this fix
+  // got that wrong, which the cold read ranked above every finding it replaced. Unioning
+  // permitted extras into `inTrialFood` made them print in the TRIAL FOOD's voice: page 1
+  // said "The trial food's own label also lists Chicken" about a clean hydrolysed diet,
+  // while appendix B said "Soy · nothing else on the label" on the same document. That
+  // does not under-report a problem, it MISDIRECTS a confident action — discard the
+  // prescription diet and blame the manufacturer, where the record says drop the dental
+  // chew and continue the diet. Confident wrong action beats timid wrong action for harm.
+  // Each breach path owns its own sentence, exactly as `freeFed` already did.
   return {
-    inTrialFood: [...new Set([...snap.diet.trial.proteinSet.offTrial, ...permittedExtras])],
+    inTrialFood: snap.diet.trial.proteinSet.offTrial,
+    permittedExtras: (snap.trial?.contamination ?? []).filter((c) => c.food.role !== 'primary_diet'),
     freeFed: [...new Set(freeFedBreaches.flatMap((f) => f.proteinSet.offTrial))],
     targetUnknown: false,
     fromSharedBowl: freeFedBreaches.some((f) => f.isShared),
@@ -1122,7 +1131,18 @@ function headline(snap: ReportSnapshot): string {
     // what the record shows and stops — no verdict on whether the trial "failed", which is
     // the clinician's call and not derivable from an exposure set.
     const breach = trialProteinBreaches(snap)
-    const breachNames = [...new Set([...breach.inTrialFood, ...breach.freeFed])]
+    // All three breach paths belong here, and that is safe where it was NOT safe in the
+    // diet section: this sentence names the PROTEIN and the PET, never the food, so it
+    // cannot mis-attribute the source. "The record shows Chicken in Cooper's diet during
+    // the trial" is true of a contaminated trial diet, a contaminated permitted treat and
+    // an ad-lib bowl alike, and points at the diet section for which.
+    const breachNames = [
+      ...new Set([
+        ...breach.inTrialFood,
+        ...breach.permittedExtras.flatMap((c) => c.extraProteins),
+        ...breach.freeFed,
+      ]),
+    ]
     // "reaching {pet}" asserted CONSUMPTION, and a free-fed bowl is exactly the exposure
     // we cannot say that about — more so a bowl shared with another pet, whose
     // "intake not directly observed" caveat sits a block below, on the line a scanner
@@ -1237,7 +1257,7 @@ function dietTrialSection(snap: ReportSnapshot): string {
       } of the trial predate any logging and are reported as untracked, not as missed.`,
     )
   }
-  recordBits.push(...exposureSentences(t))
+  recordBits.push(...exposureSentences(t, weightDuringTrial(snap)))
   // The blind-spot qualifier is INLINE and permanent on the claim itself, never a
   // page-level legend (§5.2). It names flavoured NON-chewables specifically because
   // C3 ruled the chewable lane INTO v1 — rung 4 detects those, and the pre-C3
@@ -1362,9 +1382,25 @@ function dietTrialSection(snap: ReportSnapshot): string {
     // from a tiring owner. The remedy is to DISCLOSE the bias, not to correct it
     // with an owner-scored severity instrument the app has refused on every event
     // type. Rendering the two series together makes it visible at a glance.
+    // SCOPE THE CLAIM ON ITS OWN TEXT. Both halves of this sentence are true of the
+    // TRIAL's range, and the symptom charts below span the REPORT's window — which can
+    // extend past the trial by weeks on an ended one. The cold read found the positive
+    // form sitting eight lines from the trend block's new "a fall here may be less
+    // logging" caveat, saying the opposite about whether an improvement is real, with
+    // neither stating its scope. A clinical artifact may not carry both sides of that
+    // question, and the assertive form is the wrong one to win by default.
+    const window = snap.atAGlance.windowDays
+    const trialDays = d.firstHalf.days + d.lastHalf.days
+    const beyond = window - trialDays
+    const scope =
+      beyond > 0
+        ? ` This covers the trial&rsquo;s ${num(trialDays)} days; the charts below span ${num(
+            window,
+          )} days, ${num(beyond)} of them after the trial &mdash; read the note under each chart for those.`
+        : ''
     const bias = d.loggingFell
-      ? ` <b>Logging fell over the trial</b>, so a fall in symptom counts over the same stretch cannot be separated from the fall in logging.`
-      : ` Logging held up across the trial, so a change in symptom counts is not explained by a change in how often anything was logged.`
+      ? ` <b>Logging fell over the trial</b>, so a fall in symptom counts over the same stretch cannot be separated from the fall in logging.${scope}`
+      : ` Logging held up across the trial, so a change in symptom counts over it is not explained by a change in how often anything was logged.${scope}`
     rows.push(
       kv(
         'Symptoms vs logging',
@@ -1439,6 +1475,19 @@ function dietTrialSection(snap: ReportSnapshot): string {
       'A food fed during the trial lists a protein the trial diet does not (above), so this record cannot establish that the elimination was clean.',
     )
   }
+  // §7, verbatim: "without it a derm trial is unreadable — a steroid course and a
+  // successful elimination produce the identical improving curve." The overlap is
+  // rendered above and explicitly not judged, which is right — but §7.2 is the sentence
+  // about whether the RECORD can be read, and a drug that suppresses the trial's only
+  // endpoint belongs in it. The cold read's residual: §7.2 named the exposure caveat and
+  // left the continuous oclacitinib out of the one line a reader lifts.
+  const drugs = t.medicationOverlap.filter((m) => !m.isSupplement)
+  if (drugs.length > 0) {
+    const names = drugs.map((m) => h(m.drugName)).join(', ')
+    caveats.push(
+      `${names} overlapped the trial, so a change in the signs the trial is measuring cannot be attributed to the diet alone.`,
+    )
+  }
   // DO NOT OPEN WITH A SENTENCE THE PARAGRAPH THEN DISMANTLES. The affirmative variant
   // ("…and supports interpreting it") is the clause a busy reader lifts, and the cold
   // read lifted it — off a trial the cat refused, and off a trial invalidated through
@@ -1471,6 +1520,40 @@ function dietTrialSection(snap: ReportSnapshot): string {
  * unclamped `daysElapsed`, which is how "Day 104 of 28" reached a card and how
  * "day N of M where N > M" got its own acceptance criterion here.
  */
+/**
+ * The in-window weight change, as a sentence, for composition with the refusal line.
+ *
+ * PERCENT OF BODY WEIGHT, not only the absolute — which is the point. `-0.3 kg` renders
+ * identically for a 32 kg Labrador and a 4.4 kg cat, where it is ~7% of body mass; on a
+ * refusing animal that is the most action-forcing number on the page and it was sitting
+ * greyed in the fourth tile labelled "descriptive" (B-475's finding, cleared HERE for the
+ * refusal case only, because that is the case where nothing else composes it).
+ *
+ * Descriptive, never a verdict, and never rounded finer than an owner's home scale can
+ * support: the reading's provenance is stated on the tile it comes from, and a percentage
+ * printed more precisely than the instrument justifies is its own defect.
+ */
+function weightDuringTrial(snap: ReportSnapshot): string | null {
+  const tr = snap.weight.trend
+  if (!tr || tr.deltaKg === null || tr.readingCount < 2) return null
+  const first = tr.seriesKg[0]
+  if (!first || first <= 0) return null
+  const pct = Math.abs(tr.deltaKg / first) * 100
+  const dir = tr.deltaKg < 0 ? 'down' : tr.deltaKg > 0 ? 'up' : 'flat'
+  if (dir === 'flat') return null
+  const from = `${first.toFixed(1)}`
+  const to = `${(first + tr.deltaKg).toFixed(1)}`
+  const span =
+    tr.earliestDate && tr.latestDate
+      ? ` over ${h(fmtRange(tr.earliestDate, tr.latestDate))}`
+      : ''
+  return `Weight ${dir === 'down' ? 'fell' : 'rose'} ${num(from)}&nbsp;&rarr;&nbsp;${num(
+    to,
+  )}&nbsp;kg${span} &mdash; <b>${num(pct.toFixed(1))}% of body weight</b> (owner home-scale readings; ${num(
+    tr.readingCount,
+  )} weigh-ins).`
+}
+
 function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string {
   if (!t) return `${num(targetDays)}-day window`
   if (t.status !== 'active') {
@@ -1497,7 +1580,7 @@ function trialDayPhrase(t: ReportSnapshot['trial'], targetDays: number): string 
  *     was refused) — a diet that was not eaten cannot be read as one that was
  *     followed, and this is a RULE, not a copy preference.
  */
-function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
+function exposureSentences(t: NonNullable<ReportSnapshot['trial']>, weight: string | null): string[] {
   // 1. Nothing was checked against anything.
   if (t.allowedSetUnavailable) {
     return [
@@ -1523,8 +1606,20 @@ function exposureSentences(t: NonNullable<ReportSnapshot['trial']>): string[] {
         }.`,
       )
     }
+    // COMPOSE, on page 1. The cold read's remaining blocker on the refused artifact: the
+    // page held 34-of-38 refused (trial block), 4.4 → 4.1 kg (a greyed fourth tile),
+    // "Typical intake: Refused" (appendix E) and a free-fed bowl (feeding line) — every
+    // fact needed, distributed across four sections and NEVER PUT TOGETHER. Composition
+    // is the whole job at minute zero, and a legend entry on the last page was carrying
+    // a page-1 clinical fact.
+    //
+    // Deliberately NOT a safety flag and NOT a threshold: this is a restatement of two
+    // adjacent facts already on the page, in the register the report uses everywhere
+    // else. The escalation lane — which needs its own adversarial pass and Dr. Chen — is
+    // B-474, and this does not pre-empt or substitute for it.
+    if (weight) bits.push(weight)
     bits.push(
-      `A diet that was not eaten cannot be read as one that was followed, so no adherence figure is reported for this trial. Refusal of a prescribed diet is a clinical finding in its own right; the feedings are in appendix&nbsp;C.`,
+      `A diet that was not eaten cannot be read as one that was followed, so no adherence figure is reported for this trial. <b>Refusal of food is a clinical finding in its own right</b> &mdash; the ratings behind it are in appendix&nbsp;E and the feedings in appendix&nbsp;C.`,
     )
     return bits
   }
@@ -2422,6 +2517,16 @@ function dietMeds(snap: ReportSnapshot): string {
     // page 1, when the real answer was that an ad-lib chicken bowl meant the elimination diet
     // was never run at all. That fact was on page 3. An ad-lib competing antigen outranks the
     // discrete exposures below it, so it belongs on the line the trial is described on.
+    // The permitted extra, in its own voice and naming its own product. It reads as a
+    // fact about the OWNER'S ALLOWED LIST — which is a fact about the vet's own
+    // prescribing, and the more actionable of the two findings.
+    for (const c of breach.permittedExtras) {
+      contamBits.push(
+        `${h(c.food.label)}, on the allowed list, also lists ${h(
+          proteinList(c.extraProteins.map(capProtein)),
+        )}.`,
+      )
+    }
     const freeFedOff = breach.freeFed
     if (freeFedOff.length) {
       contamBits.push(
