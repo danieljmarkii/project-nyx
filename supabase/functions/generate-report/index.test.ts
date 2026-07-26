@@ -263,8 +263,8 @@ Deno.test('mapMedicationRows: null item join → null strength/is_prescription, 
 
 Deno.test('mapMedicationItemRows: renames catalog columns, preserving nulls', () => {
   const rows = mapMedicationItemRows([
-    { id: 'mi1', generic_name: 'Cetirizine HCl', brand_name: 'Zyrtec', strength: '5 mg', default_route: 'oral', is_prescription: false },
-    { id: 'mi2', generic_name: null, brand_name: null, strength: null, default_route: null, is_prescription: null },
+    { id: 'mi1', generic_name: 'Cetirizine HCl', brand_name: 'Zyrtec', strength: '5 mg', default_route: 'oral', is_prescription: false, form: 'tablet' },
+    { id: 'mi2', generic_name: null, brand_name: null, strength: null, default_route: null, is_prescription: null, form: null },
   ])
   assert.equal(rows[0].genericName, 'Cetirizine HCl')
   assert.equal(rows[0].brandName, 'Zyrtec')
@@ -279,11 +279,44 @@ Deno.test('mapMedicationItemRows: renames catalog columns, preserving nulls', ()
 Deno.test('mapDietTrialRows: builds "Brand Product" label from food join', () => {
   const rows = mapDietTrialRows([{
     id: 't1', food_item_id: 'f1', started_at: '2026-05-01', target_duration_days: 56,
-    status: 'active', completed_at: null, vet_name: 'Dr Chen',
+    status: 'active', completed_at: null, ended_at: null, indication: 'skin',
+    outcome: null, outcome_notes: null, stopped_reason: null, food_label: 'Royal Canin Hydrolyzed',
+    vet_name: 'Dr Chen',
     food_items: { food_type: 'meal', format: 'kibble', primary_protein: 'duck', proteins: ['duck'], ingredients_notes: null, ai_extraction_confidence: null, brand: 'Royal Canin', product_name: 'Hydrolyzed' },
+    diet_trial_foods: [{
+      food_item_id: 'f1', food_label: 'Royal Canin Hydrolyzed', role: 'primary_diet',
+      allowed_from: '2026-05-01', allowed_until: null,
+      food_items: { primary_protein: 'duck', proteins: ['duck', 'chicken'], ingredients_notes: 'Duck, chicken fat', ai_extraction_confidence: null, brand: 'Royal Canin', product_name: 'Hydrolyzed' },
+    }],
   }])
   assert.equal(rows[0].foodLabel, 'Royal Canin Hydrolyzed')
   assert.equal(rows[0].primaryProtein, 'duck')
+  assert.equal(rows[0].indication, 'skin')
+  // B-455's reader half: `ended_at` reaches the pure layer at all.
+  assert.equal(rows[0].endedAt, null)
+  // The allowed set (§3.2) — rung 1 has nothing to permit against without it.
+  assert.equal(rows[0].allowedFoods?.length, 1)
+  assert.equal(rows[0].allowedFoods?.[0].role, 'primary_diet')
+  assert.deepEqual(rows[0].allowedFoods?.[0].proteins, ['duck', 'chicken'])
+  assert.equal(rows[0].allowedFoods?.[0].brand, 'Royal Canin')
+})
+
+Deno.test('mapDietTrialRows: an ABANDONED trial carries ended_at, and food_label survives an archived food (B-455)', () => {
+  // `completed_at` is NULL on an abandoned trial — the whole of B-455. And
+  // `food_item_id` is ON DELETE SET NULL, so the join is empty once the owner
+  // archives the trial food; §3.1's denormalized `food_label` is what stops the
+  // trial losing its identity on the vet report at the same moment.
+  const rows = mapDietTrialRows([{
+    id: 't2', food_item_id: null, started_at: '2026-05-01', target_duration_days: 28,
+    status: 'abandoned', completed_at: null, ended_at: '2026-05-19', indication: 'gi',
+    outcome: null, outcome_notes: null, stopped_reason: 'refused',
+    food_label: 'Purina HA', vet_name: null, food_items: null, diet_trial_foods: null,
+  }])
+  assert.equal(rows[0].endedAt, '2026-05-19')
+  assert.equal(rows[0].completedAt, null)
+  assert.equal(rows[0].foodLabel, 'Purina HA')
+  assert.equal(rows[0].stoppedReason, 'refused')
+  assert.deepEqual(rows[0].allowedFoods, [])
 })
 
 Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared carried', () => {

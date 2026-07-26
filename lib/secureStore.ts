@@ -1,12 +1,12 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import { logAuth } from './authDebug';
 import { parsePointer, LOCAL_TIER, SHARED_TIER, type StorageTier } from './secureStoreTiers';
 
 // The tier CONTRACT (key derivation, options, pointer format) lives in
 // lib/secureStoreTiers.ts since W4, so the extension-side session reader
-// (lib/widgetSession.ts) can share it without this module's authDebug/
-// AsyncStorage imports riding into the widget bundle. Re-exported here so
+// (lib/widgetSession.ts) can share it without this module's adapter logic —
+// chunking, generations, retention, and the Platform/react-native import that
+// drives tier selection — riding into the widget bundle. Re-exported here so
 // existing consumers keep one import site.
 export { parsePointer, LOCAL_TIER, SHARED_TIER, type StorageTier } from './secureStoreTiers';
 
@@ -77,20 +77,6 @@ function readTiers(): StorageTier[] {
   return Platform.OS === 'ios' ? [SHARED_TIER, LOCAL_TIER] : [LOCAL_TIER];
 }
 
-// Which logical key an adapter call targets, for the diagnostic trail. auth-js
-// drives THREE sibling keys off the one storageKey — the session itself, a PKCE
-// `-code-verifier`, and (when userStorage is on) a `-user`. Only a 'session'
-// removal is a real sign-out; the '-code-verifier' removal fires on EVERY
-// _saveSession as benign PKCE cleanup, which is exactly the `sec.remove` that
-// dominated the trail and read as an alarming logout-shaped event. Labelling the
-// kind makes a genuine session removal — the actual logout fingerprint — instantly
-// distinguishable from that per-save noise.
-export function keyKind(key: string): 'session' | 'code-verifier' | 'user' {
-  if (key.endsWith('-code-verifier')) return 'code-verifier';
-  if (key.endsWith('-user')) return 'user';
-  return 'session';
-}
-
 // Split a value into ≤MAX_CHUNK_CHARS slices WITHOUT ever splitting a UTF-16
 // surrogate PAIR across a boundary: each chunk is UTF-8-encoded independently by
 // native SecureStore, and a lone surrogate half is ill-formed there and gets
@@ -148,26 +134,18 @@ async function getItem(key: string): Promise<string | null> {
         // A missing chunk means a torn cleanup (a delete pass that didn't finish).
         // Treat the whole value as absent so Supabase re-authenticates cleanly
         // rather than parsing a truncated JSON blob.
-        if (part == null) {
-          logAuth('sec.get', { ptr: `${ptr.gen}:${ptr.count}`, tier: tier.label, path: 'torn', tornAt: i });
-          return null;
-        }
+        if (part == null) return null;
         parts.push(part);
       }
-      const value = parts.join('');
-      logAuth('sec.get', { ptr: `${ptr.gen}:${ptr.count}`, tier: tier.label, path: 'ok', chars: value.length });
-      return value;
+      return parts.join('');
     }
 
     // No chunked value in any tier — fall back to a legacy single-key value
     // persisted by the pre-chunking adapter, so an install upgrading to this
     // build keeps its existing session instead of being logged out. The next
     // setItem re-persists it in chunked form and drops this legacy copy.
-    const legacy = await SecureStore.getItemAsync(key);
-    logAuth('sec.get', { ptr: null, path: 'legacy', legacyFound: legacy != null });
-    return legacy;
+    return await SecureStore.getItemAsync(key);
   } catch (e) {
-    logAuth('sec.get', { path: 'error', msg: String(e) });
     console.warn('[secureStore] read failed:', e);
     return null;
   }
@@ -188,48 +166,20 @@ async function writeToTier(key: string, value: string, tier: StorageTier): Promi
   // generation a concurrent reader is following — no in-place overwrite, ever.
   const gen = prev ? prev.gen + 1 : 0;
   const chunks = splitIntoChunks(value);
-  // `chars` is the full session size — the number the #306 fix assumed exceeded
-  // SecureStore's 2048-byte cap. Capturing it lets us confirm (or refute) that
-  // premise against a real device instead of a mock.
-  logAuth('sec.set', {
-    path: 'begin',
-    kind: keyKind(key),
-    tier: tier.label,
-    prevPtr: prev ? `${prev.gen}:${prev.count}` : null,
-    gen,
-    chunks: chunks.length,
-    chars: value.length,
-  });
 
-  // Highest chunk index that got written before a throw, so a partial-write
-  // failure is visible in the breadcrumb trail rather than a bare "it failed".
-  let wroteUpTo = -1;
-  try {
-    for (let i = 0; i < chunks.length; i++) {
-      await SecureStore.setItemAsync(tier.chunkKey(key, gen, i), chunks[i], tier.options);
-      wroteUpTo = i;
-    }
-    // THE COMMIT: one atomic write flips the live generation to the set we just
-    // finished writing. A crash before this line leaves the previous generation
-    // (still named by the old pointer) fully intact; a crash after it leaves the
-    // new generation fully intact. There is no window where a reader sees a mix.
-    await SecureStore.setItemAsync(
-      tier.pointerKey(key),
-      `${gen}:${chunks.length}`,
-      tier.options,
-    );
-    logAuth('sec.set', { path: 'ok', tier: tier.label, gen, chunks: chunks.length });
-  } catch (e) {
-    logAuth('sec.set', {
-      path: 'fail',
-      tier: tier.label,
-      gen,
-      wroteUpTo,
-      chunks: chunks.length,
-      msg: String(e),
-    });
-    throw e;
+  for (let i = 0; i < chunks.length; i++) {
+    await SecureStore.setItemAsync(tier.chunkKey(key, gen, i), chunks[i], tier.options);
   }
+  // THE COMMIT: one atomic write flips the live generation to the set we just
+  // finished writing. A crash before this line leaves the previous generation
+  // (still named by the old pointer) fully intact; a crash after it leaves the
+  // new generation fully intact. There is no window where a reader sees a mix.
+  // A throw from either loop or commit propagates to setItem's tier fallback.
+  await SecureStore.setItemAsync(
+    tier.pointerKey(key),
+    `${gen}:${chunks.length}`,
+    tier.options,
+  );
 
   // Post-commit generation bookkeeping — best-effort and non-fatal: the write
   // already succeeded, so a failure here must not be logged as a write failure
@@ -257,7 +207,6 @@ async function writeToTier(key: string, value: string, tier: StorageTier): Promi
       await SecureStore.deleteItemAsync(tier.retainedKey(key), tier.options);
     }
   } catch (e) {
-    logAuth('sec.set', { path: 'cleanupfail', tier: tier.label, msg: String(e) });
     console.warn('[secureStore] post-write cleanup failed (non-fatal):', e);
   }
 }
@@ -302,7 +251,6 @@ async function setItem(key: string, value: string): Promise<void> {
   if (!committed) {
     // Every tier failed — the session did NOT get saved. This is the one case
     // that reintroduces the frequent-signin symptom, so log it as such.
-    logAuth('sec.set', { path: 'allfail', kind: keyKind(key) });
     console.warn('[secureStore] write failed on every tier');
     return;
   }
@@ -323,31 +271,22 @@ async function setItem(key: string, value: string): Promise<void> {
     // the tiered values (their derived names differ).
     await SecureStore.deleteItemAsync(key);
   } catch (e) {
-    logAuth('sec.set', { path: 'cleanupfail', tier: 'lower', msg: String(e) });
     console.warn('[secureStore] lower-tier cleanup failed (non-fatal):', e);
   }
 }
 
 async function removeItem(key: string): Promise<void> {
   try {
-    // `kind:'session'` here is THE logout fingerprint — auth-js calls this only from
-    // _removeSession (a genuine sign-out). `kind:'code-verifier'` is the benign
-    // per-_saveSession PKCE clear (the misleading `hadPtr:false` noise).
-    let hadPtr = false;
     for (const tier of readTiers()) {
-      const ptr = await readPointer(key, tier).catch(() => null);
-      hadPtr = hadPtr || ptr != null;
       // Clear every tier unconditionally — sign-out must leave nothing behind in
       // ANY access group (the shared copy is exactly what the extension reads).
       await clearTier(key, tier).catch((e) =>
         console.warn(`[secureStore] ${tier.label}-tier clear failed:`, e),
       );
     }
-    logAuth('sec.remove', { kind: keyKind(key), hadPtr });
     // Also clear any legacy single-key copy so sign-out leaves nothing behind.
     await SecureStore.deleteItemAsync(key);
   } catch (e) {
-    logAuth('sec.remove', { path: 'error', msg: String(e) });
     console.warn('[secureStore] delete failed:', e);
   }
 }
