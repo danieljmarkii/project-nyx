@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-26
 
-Built VF-2 of B-478 against `docs/nyx-vet-files-requirements.md` §4.1/§9 and the design-locked round-2.1 mock (`docs/culprit-vet-files-mockups.html`). Shipped via the `claude/vf2-library-profile-records-xhm16p` PR.
+Built VF-2 of B-478 against `docs/nyx-vet-files-requirements.md` §4.1/§9 and the design-locked round-2.1 mock (`docs/culprit-vet-files-mockups.html`). Shipped via #489.
 
 ## The gate, first
 
