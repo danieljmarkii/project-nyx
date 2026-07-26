@@ -363,7 +363,7 @@ export async function clearLocalData(): Promise<void> {
     // and once the row is gone nothing will ever find them again. That is the exact
     // shape B-424 eliminated for the row half (hydration.test.ts derives the wipe set
     // from a real sqlite_master, so a new table breaks the build); the FILE half has
-    // no equivalent guard yet — filed as B-492.
+    // no equivalent guard yet — filed as B-508.
     //
     // vet_documents was added here in the same PR that created it (B-478 VF-1), found
     // by that PR's rls-privacy-reviewer. It shares persistCapture's

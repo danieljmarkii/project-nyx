@@ -467,7 +467,7 @@ CREATE TRIGGER trg_vet_documents_pet_scope
 --
 -- The durable fix, if this is ever revisited, is to tighten the CHECK below to a
 -- full-shape regex: a CHECK binds the SERVICE ROLE too, whereas the scope function
--- guards one caller. Filed rather than done here (see B-494) — 044 is applied, and
+-- guards one caller. Filed rather than done here (see B-510) — 044 is applied, and
 -- tightening a CHECK is a different risk profile from adding one.
 --
 -- ORDERING — the B-358 trap does not bite here. 036 could not owner-scope

@@ -84,6 +84,49 @@ async function loadLocalRowMeta(
   return map;
 }
 
+// The tables whose push queue is drained by a `synced = 1` sweep. A union rather
+// than a bare `string` on purpose: the table name is an SQL IDENTIFIER, which
+// cannot be bound to a `?` placeholder, so it is interpolated — and the union is
+// what keeps that interpolation provably a compile-time literal rather than
+// anything a caller could route data into. (`diet_trials`/`diet_trial_foods` are
+// deliberately absent: pushDietTrialRows marks rows synced with its own
+// already-bound UPDATE that also clears `sync_error`.)
+type SyncedTable =
+  | 'meals'
+  | 'weight_checks'
+  | 'events'
+  | 'vet_visits'
+  | 'feeding_arrangements'
+  | 'medications'
+  | 'medication_administrations';
+
+// SQLite's compiled variable limit is 999 on older builds; 400 keeps a chunk well
+// clear of it and matches loadLocalRowMeta's chunking above. Every writer below
+// caps its queue read at 100, so today this loops exactly once — the chunking is
+// here so a future writer that raises its LIMIT can't quietly hit the ceiling.
+const MARK_SYNCED_CHUNK = 400;
+
+// Flip `synced = 1` for the rows that were just pushed (B-125).
+//
+// Every writer used to build this UPDATE by string-interpolating its own id list
+// (`WHERE id IN ('a','b',…)`). There was no live injection surface — the ids are
+// device-minted UUIDs, which cannot carry a quote — but "the data happens not to
+// be hostile" is a property of today's id generator, not of the query, and the
+// same shape copied into a writer over any other key would be a real hole. Bound
+// `?` placeholders make the query correct by construction instead of by luck, and
+// lifting it here means the next writer inherits that for free rather than
+// copying the seventh instance of the interpolated form.
+export async function markSynced(db: Db, table: SyncedTable, ids: string[]): Promise<void> {
+  for (let i = 0; i < ids.length; i += MARK_SYNCED_CHUNK) {
+    const chunk = ids.slice(i, i + MARK_SYNCED_CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    await db.runAsync(
+      `UPDATE ${table} SET synced = 1 WHERE id IN (${placeholders})`,
+      chunk,
+    );
+  }
+}
+
 // Pull rows of a table from Supabase, paginating past the server's default
 // 1,000-row cap. Without this, an account with a long history would hydrate an
 // arbitrary, nondeterministic slice — partially restoring a new phone and
@@ -240,8 +283,7 @@ export async function syncPendingMeals(): Promise<void> {
     return;
   }
 
-  const ids = unsyncedMeals.map((m) => `'${m.id}'`).join(',');
-  await db.execAsync(`UPDATE meals SET synced = 1 WHERE id IN (${ids})`);
+  await markSynced(db, 'meals', unsyncedMeals.map((m) => m.id));
 }
 
 // Flush unsynced weight-check children to Supabase (B-186). Mirrors syncPendingMeals
@@ -302,8 +344,7 @@ export async function syncPendingWeightChecks(): Promise<void> {
     return;
   }
 
-  const ids = unsynced.map((w) => `'${w.id}'`).join(',');
-  await db.execAsync(`UPDATE weight_checks SET synced = 1 WHERE id IN (${ids})`);
+  await markSynced(db, 'weight_checks', unsynced.map((w) => w.id));
 }
 
 // Flush unsynced local events to Supabase.
@@ -364,8 +405,7 @@ export async function syncPendingEvents(): Promise<void> {
     return;
   }
 
-  const ids = unsyncedEvents.map((e) => `'${e.id}'`).join(',');
-  await db.execAsync(`UPDATE events SET synced = 1 WHERE id IN (${ids})`);
+  await markSynced(db, 'events', unsyncedEvents.map((e) => e.id));
 }
 
 export async function syncPendingVetVisits(): Promise<void> {
@@ -389,8 +429,7 @@ export async function syncPendingVetVisits(): Promise<void> {
       { onConflict: 'id' }
     );
     if (!error) {
-      const ids = unsyncedVisits.map((v) => `'${v.id}'`).join(',');
-      await db.execAsync(`UPDATE vet_visits SET synced = 1 WHERE id IN (${ids})`);
+      await markSynced(db, 'vet_visits', unsyncedVisits.map((v) => v.id));
     } else {
       console.error('[sync] vet_visits upsert failed:', error.message);
     }
@@ -824,8 +863,7 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
     return;
   }
 
-  const ids = unsynced.map((a) => `'${a.id}'`).join(',');
-  await db.execAsync(`UPDATE feeding_arrangements SET synced = 1 WHERE id IN (${ids})`);
+  await markSynced(db, 'feeding_arrangements', unsynced.map((a) => a.id));
 }
 
 // Pattern 6 — ensure every referenced medication_items row exists server-side
@@ -884,8 +922,7 @@ export async function syncPendingMedications(): Promise<void> {
     return;
   }
 
-  const ids = unsynced.map((m) => `'${m.id}'`).join(',');
-  await db.execAsync(`UPDATE medications SET synced = 1 WHERE id IN (${ids})`);
+  await markSynced(db, 'medications', unsynced.map((m) => m.id));
 }
 
 // Flush unsynced medication dose-event children (B-117). Mirrors syncPendingMeals
@@ -923,8 +960,7 @@ export async function syncPendingMedicationAdministrations(): Promise<void> {
     return;
   }
 
-  const ids = unsynced.map((a) => `'${a.id}'`).join(',');
-  await db.execAsync(`UPDATE medication_administrations SET synced = 1 WHERE id IN (${ids})`);
+  await markSynced(db, 'medication_administrations', unsynced.map((a) => a.id));
 }
 
 // ── Diet-trial mirror push (B-417 PR 2) ──────────────────────────────────────

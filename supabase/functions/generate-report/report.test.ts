@@ -1823,9 +1823,9 @@ Deno.test('B-351 §8 shape ① — the trial food carrying an off-trial protein 
     }),
   )
   assert.equal(snap.diet.trialTargetProtein, 'duck')
-  assert.deepEqual(snap.diet.activeTrial!.proteinSet.proteins, ['duck', 'chicken'])
+  assert.deepEqual(snap.diet.trial!.proteinSet.proteins, ['duck', 'chicken'])
   assert.deepEqual(
-    snap.diet.activeTrial!.proteinSet.offTrial,
+    snap.diet.trial!.proteinSet.offTrial,
     ['chicken'],
     'the duck trial diet lists chicken — the finding this whole spec exists for',
   )
@@ -1862,7 +1862,7 @@ Deno.test('B-351 §8 shape ② — an off-diet food fed during the trial carries
     }),
   )
   assert.deepEqual(snap.provenance.confounders[0].proteinSet.offTrial, ['chicken', 'salmon'])
-  assert.deepEqual(snap.diet.activeTrial!.proteinSet.offTrial, [], 'the trial diet itself is clean here')
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, [], 'the trial diet itself is clean here')
 })
 
 Deno.test('B-351 — no active trial means NO off-trial marking anywhere (silence, never an all-clear)', () => {
@@ -1903,7 +1903,7 @@ Deno.test('B-351 — a trial food whose main protein was CLEARED disables the ch
     }),
   )
   assert.equal(snap.diet.trialTargetProtein, null, 'no designated target — the check is disabled')
-  assert.deepEqual(snap.diet.activeTrial!.proteinSet.offTrial, [])
+  assert.deepEqual(snap.diet.trial!.proteinSet.offTrial, [])
   assert.deepEqual(snap.provenance.confounders[0].proteinSet.offTrial, [], 'the real trial protein is NOT blamed')
 })
 
@@ -1993,13 +1993,13 @@ Deno.test('B-351 — a Class-B-mappable protein does NOT report itself as its ow
       }),
     )
     assert.deepEqual(
-      snap.diet.activeTrial!.proteinSet.offTrial,
+      snap.diet.trial!.proteinSet.offTrial,
       [],
       `"${stored}" must not be off-trial against itself`,
     )
     // And the set must key IDENTICALLY to the target, so the two can be compared at all.
     assert.deepEqual(
-      snap.diet.activeTrial!.proteinSet.proteins,
+      snap.diet.trial!.proteinSet.proteins,
       [snap.diet.trialTargetProtein],
       `"${stored}" keys the same on both sides of the off-trial comparison`,
     )
@@ -2077,7 +2077,7 @@ Deno.test('B-351 — PROPERTY: a trial food is never off-trial against itself, o
             ],
           }),
         )
-        const view = snap.diet.activeTrial!.proteinSet
+        const view = snap.diet.trial!.proteinSet
         assert.equal(snap.diet.trialTargetProtein, target, `target keys from the stored primary (${primary})`)
         assert.ok(view.proteins.includes(target), `the target is IN its own set (${primary} / ${JSON.stringify(arr)})`)
         assert.ok(

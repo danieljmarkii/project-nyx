@@ -196,6 +196,8 @@ interface MedicationItemRow {
   strength: string | null
   default_route: string | null
   is_prescription: boolean | null
+  /** §5.3 rung 4 (C3) — 'chewable' is the oral-route trial-exposure trigger. */
+  form: string | null
 }
 interface MedicationRow {
   id: string
@@ -214,6 +216,22 @@ interface MedicationRow {
   medication_items: MedItemJoin | MedItemJoin[] | null
 }
 
+/** `diet_trial_foods` (migration 040 §3.2) embedded under its parent trial — the
+ *  ALLOWED SET, rung 1 of §5.3. Soft-deleted rows are excluded by the select. */
+type DietTrialFoodRow = {
+  food_item_id: string
+  food_label: string
+  role: string
+  allowed_from: string
+  allowed_until: string | null
+  // Narrower than `FoodItemJoin` on purpose: the allowed set needs protein evidence
+  // and the §5.4 brand+product identity, and nothing else. `food_type`/`format` are
+  // properties of a FEEDING's classification, not of membership — a treat is on the
+  // list or it is not, and how the app buckets it changes neither answer.
+  food_items: TrialFoodJoin | TrialFoodJoin[] | null
+}
+type TrialFoodJoin = FoodProteinCols & { brand: string; product_name: string }
+
 interface DietTrialRow {
   id: string
   food_item_id: string | null
@@ -221,8 +239,19 @@ interface DietTrialRow {
   target_duration_days: number
   status: string
   completed_at: string | null
+  // B-455: `ended_at` is written on BOTH completed and abandoned (§3.1) and was
+  // never selected, so an abandoned trial reached the report with no end date and
+  // rendered as still under way.
+  ended_at: string | null
+  indication: string | null
+  outcome: string | null
+  outcome_notes: string | null
+  stopped_reason: string | null
+  /** §3.1's denormalized display fallback — survives archiving the trial food. */
+  food_label: string | null
   vet_name: string | null
   food_items: FoodItemJoin | FoodItemJoin[] | null
+  diet_trial_foods: DietTrialFoodRow[] | null
 }
 
 interface VetVisitRow {
@@ -441,6 +470,7 @@ export function mapMedicationItemRows(rows: MedicationItemRow[]): ReportMedicati
     strength: r.strength ?? null,
     route: r.default_route ?? null,
     isPrescription: r.is_prescription ?? null,
+    form: r.form ?? null,
   }))
 }
 
@@ -477,10 +507,35 @@ export function mapDietTrialRows(rows: DietTrialRow[]): ReportDietTrialInput[] {
       targetDurationDays: r.target_duration_days,
       status: r.status,
       completedAt: r.completed_at ?? null,
+      // B-455. `completed_at` alone is null on an ABANDONED trial, which the
+      // downstream span logic reads as open-ended.
+      endedAt: r.ended_at ?? null,
+      indication: (r.indication ?? null) as ReportDietTrialInput['indication'],
+      outcome: (r.outcome ?? null) as ReportDietTrialInput['outcome'],
+      outcomeNotes: r.outcome_notes ?? null,
+      stoppedReason: r.stopped_reason ?? null,
       vetName: r.vet_name ?? null,
-      foodLabel: foodLabel(fi),
+      // `diet_trials.food_label` is the §3.1 denormalized fallback, and it is what
+      // survives archiving the trial food (`food_item_id` is ON DELETE SET NULL).
+      // The live join wins when it is there; the stored label is not a second-class
+      // value, it is the one that outlives the row.
+      foodLabel: foodLabel(fi) ?? r.food_label ?? null,
       primaryProtein: fi?.primary_protein ?? null,
       ...mapFoodProteins(fi),
+      allowedFoods: (r.diet_trial_foods ?? []).map((f) => {
+        const ffi = first(f.food_items)
+        return {
+          foodItemId: f.food_item_id,
+          foodLabel: f.food_label,
+          role: f.role,
+          allowedFrom: f.allowed_from,
+          allowedUntil: f.allowed_until ?? null,
+          primaryProtein: ffi?.primary_protein ?? null,
+          brand: ffi?.brand ?? null,
+          productName: ffi?.product_name ?? null,
+          ...mapFoodProteins(ffi),
+        }
+      }),
     }
   })
 }
@@ -683,9 +738,17 @@ export async function generateReportForPet(
     supabase
       .from('diet_trials')
       .select(
-        'id, food_item_id, started_at, target_duration_days, status, completed_at, vet_name, ' +
-          `food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name)`,
+        'id, food_item_id, started_at, target_duration_days, status, completed_at, ended_at, ' +
+          'indication, outcome, outcome_notes, stopped_reason, food_label, vet_name, ' +
+          `food_items(food_type, format, ${FOOD_PROTEIN_COLS}, brand, product_name), ` +
+          // The allowed set (§3.2) — rung 1 of §5.3, and the only reason the report
+          // can tell a vet-permitted treat from a contaminant. Soft-deleted rows are
+          // filtered in the embed: a food the owner REMOVED from the list must stop
+          // permitting feedings, and `allowed_until` is not written on a delete.
+          'diet_trial_foods(food_item_id, food_label, role, allowed_from, allowed_until, ' +
+          `food_items(${FOOD_PROTEIN_COLS}, brand, product_name))`,
       )
+      .is('diet_trial_foods.deleted_at', null)
       .eq('pet_id', petId),
   ])
 
@@ -835,7 +898,7 @@ export async function generateReportForPet(
   if (doseItemIds.length > 0) {
     const medItemsRes = await supabase
       .from('medication_items')
-      .select('id, generic_name, brand_name, strength, default_route, is_prescription')
+      .select('id, generic_name, brand_name, strength, default_route, is_prescription, form')
       .in('id', doseItemIds)
     medicationItems = mapMedicationItemRows(rowsOrThrow<MedicationItemRow>(medItemsRes, 'medication_items'))
   }

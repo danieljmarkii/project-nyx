@@ -8,8 +8,12 @@
 // over must be `mock`-prefixed (jest's escape hatch for the no-out-of-scope rule).
 
 const mockRunAsync = jest.fn().mockResolvedValue(undefined);
+// withTransactionAsync runs its callback immediately (the real one wraps it in
+// BEGIN/COMMIT); the tests assert both that the callback's writes land and WHICH
+// writes are inside it (B-126).
+const mockWithTransactionAsync = jest.fn(async (cb: () => Promise<void>) => { await cb(); });
 jest.mock('./db', () => ({
-  getDb: () => ({ runAsync: mockRunAsync }),
+  getDb: () => ({ runAsync: mockRunAsync, withTransactionAsync: mockWithTransactionAsync }),
 }));
 
 const mockSyncPendingEvents = jest.fn().mockResolvedValue(undefined);
@@ -46,7 +50,11 @@ const PARAMS = {
 };
 
 beforeEach(() => {
-  mockRunAsync.mockClear();
+  // mockReset (not mockClear) so a `…Once` queued by one test cannot leak into
+  // the next; the base resolved value is re-established right after.
+  mockRunAsync.mockReset();
+  mockRunAsync.mockResolvedValue(undefined);
+  mockWithTransactionAsync.mockClear();
   mockSyncPendingEvents.mockClear();
   mockSyncPendingMeals.mockClear();
   mockTriggerSignalRegenDebounced.mockClear();
@@ -90,6 +98,66 @@ describe('insertMeal', () => {
     expect(res.mealId).toBe('id-2');
     expect(res.occurredAtIso).toBe('2026-06-07T08:00:00.000Z');
     expect(typeof res.now).toBe('string');
+  });
+
+  // B-126. A meal is an event + its 1:1 child; a half-write would sync an
+  // orphaned event_type='meal' row with no food, quantity or intake rating — a
+  // meal the record asserts happened but can say nothing about. These two tests
+  // pin the atomicity: what is inside the transaction, and that a failure is not
+  // swallowed into a fire-and-forget push of a meal that does not exist.
+  it('writes the event + meal rows inside ONE transaction, cache touch outside', async () => {
+    const inTxn: string[] = [];
+    mockWithTransactionAsync.mockImplementationOnce(async (cb: () => Promise<void>) => {
+      const before = mockRunAsync.mock.calls.length;
+      await cb();
+      inTxn.push(...mockRunAsync.mock.calls.slice(before).map((c) => c[0] as string));
+    });
+
+    await insertMeal(PARAMS);
+
+    expect(mockWithTransactionAsync).toHaveBeenCalledTimes(1);
+    expect(inTxn.some((s) => /INSERT INTO events/.test(s))).toBe(true);
+    expect(inTxn.some((s) => /INSERT INTO meals/.test(s))).toBe(true);
+    // The local-only recency stamp stays OUT: rolling back a correctly-written
+    // meal because a cosmetic picker-ordering touch failed trades a real loss
+    // for a cosmetic one.
+    expect(inTxn.some((s) => /food_items_cache/.test(s))).toBe(false);
+  });
+
+  it('survives a failed recency touch: the committed meal still pushes and regens', async () => {
+    // Event + meal INSERTs succeed (the transaction commits), then the cosmetic
+    // cache touch throws. The meal exists durably, so the follow-through must
+    // still run — and the caller must not see a failure for a meal that landed.
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockRunAsync
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('cache table missing'));
+
+    const res = await insertMeal(PARAMS);
+    await flush();
+
+    expect(res.mealId).toBe('id-2');
+    expect(mockSyncPendingEvents).toHaveBeenCalledTimes(1);
+    expect(mockSyncPendingMeals).toHaveBeenCalledTimes(1);
+    expect(mockTriggerSignalRegenDebounced).toHaveBeenCalledWith('pet-1');
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('propagates a failed child INSERT and pushes nothing (rolled-back meal)', async () => {
+    // Event INSERT succeeds, meal INSERT throws — the exact half-write shape.
+    mockRunAsync.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(insertMeal(PARAMS)).rejects.toThrow('disk full');
+    await flush();
+
+    // The real withTransactionAsync rolls the event back on the throw; what this
+    // helper must not do is fire the sync push or the Signal regen for a meal
+    // that no longer exists locally.
+    expect(mockSyncPendingEvents).not.toHaveBeenCalled();
+    expect(mockSyncPendingMeals).not.toHaveBeenCalled();
+    expect(mockTriggerSignalRegenDebounced).not.toHaveBeenCalled();
   });
 
   it('meal INSERT placeholder count matches its param count (B-057 drift guard)', async () => {
