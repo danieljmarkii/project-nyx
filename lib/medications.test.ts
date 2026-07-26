@@ -43,6 +43,7 @@ import {
   isComboDoseInDoubt,
   doseAdherencePrompt,
   drugDisplayName,
+  isGivenAssumed,
   comboInDoubtReason,
   comboConfirmHeadsUp,
   doseInDoubtNote,
@@ -1239,6 +1240,42 @@ describe('combo safety copy — never reassures, never softens to fussy, no excl
     }
   });
 
+  // ── The adversarial-review catch: an ASSUMED given is not an owner assertion ──────
+  it('a combo whose vehicle is not yet rated still ASKS — the given is an app default', () => {
+    // The canonical Sam flow: the intake chips and "+ Add a med given with this" sit on
+    // the same meal card, so a pill-in-food combo is logged at SERVING time, before the
+    // bowl is touched. initialComboDoseAdherence(null) returns 'given' (correctly — there
+    // is no evidence the vehicle FAILED either), but "nothing to go on" is not "the owner
+    // said so", and administration != consumption in a combo. So it must not restate.
+    expect(isGivenAssumed({ isCombo: true, vehicleIntake: null, adherence: 'given' })).toBe(true);
+    expect(doseAdherencePrompt({
+      petName: 'Pixel', inDoubt: false, adherence: 'given', givenIsAssumed: true,
+    })).toBe('Did Pixel take it?');
+  });
+
+  it('a standalone dose is never "assumed" — its given IS the owner\'s one-tap log', () => {
+    expect(isGivenAssumed({ isCombo: false, vehicleIntake: null, adherence: 'given' })).toBe(false);
+  });
+
+  it('a rated vehicle licenses the restatement, including after an in-doubt answer', () => {
+    // Finished vehicle → the owner said the food went down.
+    for (const v of ['some', 'most', 'all']) {
+      expect(isGivenAssumed({ isCombo: true, vehicleIntake: v, adherence: 'given' })).toBe(false);
+    }
+    // Refused/picked with an EXPLICIT given → the owner answered the sharpened in-doubt
+    // prompt, the strongest assertion on this surface. Re-asking here would resurrect the
+    // exact "asks twice" defect B-172 exists to fix.
+    for (const v of ['refused', 'picked']) {
+      expect(isGivenAssumed({ isCombo: true, vehicleIntake: v, adherence: 'given' })).toBe(false);
+    }
+  });
+
+  it('only `given` can be assumed — a downgrade is always the owner\'s own tap', () => {
+    for (const a of ['partial', 'missed', 'refused', null] as const) {
+      expect(isGivenAssumed({ isCombo: true, vehicleIntake: null, adherence: a })).toBe(false);
+    }
+  });
+
   it('in-doubt ASKS regardless of a stale adherence — the safety branch always wins', () => {
     // isComboDoseInDoubt already requires adherence==null, so this is belt-and-braces:
     // no argument combination may turn the in-doubt prompt into an assertion.
@@ -1416,13 +1453,14 @@ describe('drugDisplayName — the owner-facing drug name (B-171)', () => {
 
 // ── B-161 — the shared owner-facing drug label (History row + Home "Today" strip) ──
 // One source so the two surfaces can't drift on how a dose names its drug; the whole
-// point is distinguishing two "Medication" rows for a multi-med pet. B-171 reordered it
-// to lead with drugDisplayName (brand-first) so the row's FIRST WORD matches the card's;
-// the generic follows because a row is also where an owner answers a vet's "what's she
-// on?". With neither name we return null so a nameless dose renders no subline.
-describe('formatDrugLabel — dose drug name (B-161, reordered by B-171)', () => {
-  it('leads with the owner-facing name and appends the generic (B-171)', () => {
-    expect(formatDrugLabel('cetirizine', 'Zyrtec')).toBe('Zyrtec · cetirizine');
+// point is distinguishing two "Medication" rows for a multi-med pet. Deliberately still
+// GENERIC-FIRST after B-171 took the card brand-first — reordering the row was tried and
+// reverted (it drifts at call sites this rule doesn't reach, and the shared leading
+// generic is the only cue that two library items are the same active ingredient, which
+// getDoubleDoseFlag can't catch). That reorder is B-522, a clinical call.
+describe('formatDrugLabel — dose drug name (B-161)', () => {
+  it('joins generic · brand when both are present', () => {
+    expect(formatDrugLabel('cetirizine', 'Zyrtec')).toBe('cetirizine · Zyrtec');
   });
 
   it('returns the generic alone when there is no brand', () => {
@@ -1447,16 +1485,14 @@ describe('formatDrugLabel — dose drug name (B-161, reordered by B-171)', () =>
     expect(formatDrugLabel('', '')).toBeNull();
   });
 
-  it('always leads with exactly the name the completion card shows (no drift)', () => {
-    // The load-bearing B-171 invariant: row and card can never disagree on the first
-    // word, because the row label is BUILT from drugDisplayName.
-    const cases: [string | null, string | null][] = [
-      ['cetirizine', 'Zyrtec'], ['gabapentin', null], [null, 'Apoquel'], ['Zyrtec', 'Zyrtec'],
-    ];
-    for (const [generic, brand] of cases) {
-      const card = drugDisplayName(generic, brand)!;
-      expect(formatDrugLabel(generic, brand)!.startsWith(card)).toBe(true);
-    }
+  it('keeps the generic as the leading token — the B-522 guard', () => {
+    // Load-bearing, not cosmetic: two library items for the same active ingredient (one
+    // captured brand-forward, one entered generic) are invisible to getDoubleDoseFlag,
+    // which keys on medication_item_id. The shared leading generic is the only thing that
+    // puts them next to each other in a History scan, and every consumer truncates at
+    // numberOfLines={1}. Flipping this is a clinical call (B-522), so it fails loudly here.
+    expect(formatDrugLabel('cetirizine', 'Zyrtec')!.startsWith('cetirizine')).toBe(true);
+    expect(formatDrugLabel('cetirizine', null)!.startsWith('cetirizine')).toBe(true);
   });
 });
 

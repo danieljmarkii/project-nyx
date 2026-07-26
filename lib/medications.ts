@@ -507,21 +507,30 @@ export function drugDisplayName(
 // surfaces can't drift on how a dose names its drug — the multi-med pet's two
 // "Medication" rows are distinguished by this.
 //
-// B-171 reordered this to lead with drugDisplayName so the FIRST WORD is identical to
-// the one the completion card just showed; the generic follows because a row surface is
-// also where an owner looks to answer a vet's "what's she on?". Row = "Zyrtec ·
-// cetirizine", card = "Zyrtec". Building it on drugDisplayName is what makes that
-// leading token un-driftable by construction.
+// DELIBERATELY STILL GENERIC-FIRST (B-171, 2026-07-26). The obvious move when the card
+// went brand-first was to reorder this so the row's first word matched. It was tried and
+// REVERTED: adversarial review found the reorder drifts at two call sites this rule does
+// not reach (the regimen card's `medications.drug_name`, and the paired-dose cross-link's
+// `pdmi.generic_name`), and — the real cost — the shared leading generic is the only
+// visual cue that two library items are the same active ingredient, which `getDoubleDoseFlag`
+// cannot catch because it keys on `medication_item_id`. Every consumer truncates at
+// numberOfLines={1}, so brand-first is exactly what drops the generic. Reordering is a
+// clinical call, not a copy one → B-522. Do not "fix" the mismatch here without it.
 export function formatDrugLabel(
   genericName: string | null | undefined,
   brandName: string | null | undefined,
 ): string | null {
-  const display = drugDisplayName(genericName, brandName);
-  if (!display) return null;
+  // Coalesce empty/whitespace to null so a blank name never produces a label
+  // (`??` alone would let a '' brand through).
   const generic = genericName?.trim() || null;
-  // Skip the suffix when the generic IS the displayed name — either there's no brand,
-  // or the two names are the same string ("Zyrtec · Zyrtec" was reachable before).
-  return generic && generic !== display ? `${display} · ${generic}` : display;
+  const brand = brandName?.trim() || null;
+  if (generic) {
+    // Skip the suffix when brand and generic are the same string — the extractor is
+    // told to copy a brand into generic_name when no generic is visible, so this
+    // collision is common by design and used to render "Zyrtec · Zyrtec".
+    return brand && brand !== generic ? `${generic} · ${brand}` : generic;
+  }
+  return brand;
 }
 
 // B-156 Slice C (the combo) — infer the dose vehicle from the co-logged food's type
@@ -649,12 +658,41 @@ export function isComboDoseInDoubt(params: {
 // state that does NOT name the pet — AdherenceChipRow deliberately splits the pet-driven
 // states (`refused`, `partial`) from the owner-driven `missed`, so blaming the pet for a
 // dose the household forgot would be both wrong and unkind.
+// Is this dose's `given` an APP DEFAULT set under uncertainty, rather than the owner's
+// own statement? True only for a COMBO dose whose vehicle has NO intake rating yet.
+//
+// This is the gap adversarial review broke the first cut of B-172 on, and it is the
+// CANONICAL flow, not an edge case: the intake chips and "+ Add a med given with this"
+// sit on the same meal card, so an owner who hid the pill in the food taps combo at
+// SERVING time — before the bowl has been touched and before intake can be rated
+// honestly. `initialComboDoseAdherence(null)` then returns 'given' because there is no
+// positive evidence the vehicle FAILED (correctly — it must not fabricate an in-doubt
+// state either). But "the app had nothing to go on" is not "the owner said so", and in a
+// combo, administration does not imply consumption — that asymmetry is the entire premise
+// of PR B3. So this dose keeps the QUESTION.
+//
+// A refused/picked vehicle is deliberately NOT assumed: that dose reaches 'given' only
+// by the owner explicitly answering the sharpened in-doubt prompt, which is the strongest
+// assertion on this surface — re-asking there would resurrect the very "asks twice" defect
+// B-172 exists to fix.
+export function isGivenAssumed(params: {
+  isCombo: boolean;
+  vehicleIntake: string | null | undefined;
+  adherence: string | null;
+}): boolean {
+  return params.isCombo && params.adherence === 'given' && params.vehicleIntake == null;
+}
+
 export function doseAdherencePrompt(params: {
   petName: string;
   inDoubt: boolean;
   adherence?: DoseAdherence | null;
+  // From isGivenAssumed — the 'given' is the app's default under uncertainty, so there is
+  // no owner assertion to restate and the honest form is still a question.
+  givenIsAssumed?: boolean;
 }): string {
   if (params.inDoubt) return `Did ${params.petName} still get it?`;
+  if (params.givenIsAssumed) return `Did ${params.petName} take it?`;
   switch (params.adherence) {
     case 'given':   return `${params.petName} took it — tap to change.`;
     case 'partial': return `${params.petName} took part of it — tap to change.`;

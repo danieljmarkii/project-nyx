@@ -106,8 +106,7 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
   const rowLabel = isMeal && event.food_type === 'treat' ? 'Treat' : config.label;
 
   // B-161 — the drug name as a subline, so a pet on two meds doesn't show two
-  // identical "Medication" rows. Leads with the owner-facing name (B-171), so a
-  // truncated subline keeps the word the owner recognises. The dose twin of the meal's food-name subline,
+  // identical "Medication" rows. The dose twin of the meal's food-name subline,
   // and shares EventRow's formatDrugLabel so the two surfaces never drift. NULL
   // (no drug name hydrated yet) → no subline, exactly like an unnamed meal.
   const drugLabel = isMedication

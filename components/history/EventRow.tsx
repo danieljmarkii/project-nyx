@@ -78,8 +78,8 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
     ? `${event.food_brand} · ${event.food_product_name}`
     : event.food_product_name ?? event.food_brand ?? null;
 
-  // Medication dose (B-117 PR 8): the drug name (the owner's word first, generic
-  // appended when it adds info — B-171) + the read-only adherence chip — the dose twin of foodLabel + the
+  // Medication dose (B-117 PR 8): the drug name (generic, brand appended when it
+  // adds info) + the read-only adherence chip — the dose twin of foodLabel + the
   // intake badge. AdherenceChipRow renders nothing for a NULL rating, so an unrated
   // dose stays as quiet as an unrated meal. Shared with TodayZone via formatDrugLabel
   // (B-161) so the two row surfaces agree on how a dose names its drug.
