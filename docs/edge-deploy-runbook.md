@@ -17,7 +17,7 @@ the cloud session, not the PM's device. Codifies B-082.
 
 | Task | Path |
 |---|---|
-| Deploy an Edge Function | `scripts/deploy-edge.sh <name>` → agent calls MCP `deploy_edge_function` with the bundle → verify |
+| Deploy an Edge Function | **`scripts/deploy-edge.sh <name> --deploy`** (one command: test → bundle → verify → upload). Needs `SUPABASE_ACCESS_TOKEN`. Without a token: build only, then the MCP fallback — but see the size ceiling below |
 | Apply a schema migration | agent calls MCP `apply_migration` with the migration SQL → `get_advisors` → verify |
 | Check what's live | MCP `list_edge_functions` / `list_migrations` / `list_tables` |
 | Debug a deploy | MCP `get_logs` + `get_advisors` before changing anything |
@@ -25,6 +25,38 @@ the cloud session, not the PM's device. Codifies B-082.
 **The dashboard SQL-Editor-paste and dashboard-function-paste workflows are
 superseded by the MCP path.** They remain a manual fallback only if the MCP is
 ever unavailable in a session.
+
+### The one command (preferred since 2026-07-26)
+
+```bash
+export SUPABASE_ACCESS_TOKEN=sbp_...        # once per Codespace; see below
+bash scripts/deploy-edge.sh generate-report --deploy
+```
+
+That runs the function's `deno test` suite, bundles to one self-contained file,
+syntax-gates it offline, prints the sha256, and uploads **that exact artifact**.
+
+Why it stages the bundle into a throwaway project rather than letting the CLI
+deploy from `supabase/functions/`: a plain `supabase functions deploy` re-bundles
+from source, which puts us back at the mercy of how the CLI walks imports that
+escape the function directory (`../../../lib/protein.ts`,
+`../generate-signal/detection.ts`). Handing it a single self-contained file means
+there is no module graph for it to get wrong. `--use-api` bundles server-side, so
+no Docker daemon is needed.
+
+**`verify_jwt` is the one thing to get right.** The CLI defaults it ON, which is
+correct for every function here except **`view-report`** — deploy that one with
+`--no-verify-jwt` or it will start rejecting the unauthenticated share-link reads
+it exists to serve.
+
+### Why the MCP path is now the fallback, not the default
+
+`deploy_edge_function` takes the bundle as an **inline tool parameter**, so an
+agent must reproduce the whole artifact byte-for-byte. `generate-report` is 240 KB
+(188 KB minified, on a single 87,000-character line). Above roughly a few tens of
+KB that stops being a safe way to move a file, and the failure mode is a corrupted
+live function — the sha256 read-back catches it only *after* the overwrite. Small
+functions are still fine via MCP; large ones want the token. (B-455.)
 
 ---
 

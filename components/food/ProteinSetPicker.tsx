@@ -27,13 +27,17 @@
 // never-null-clobber property: it emits only on a tap or a keystroke, so both
 // host screens can treat "onChange fired" as the owner having touched the field
 // and leave an AI-hydrated set alone otherwise.
-import { useRef, useState } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import { SectionLabel } from '../ui/SectionLabel';
 import { ChipGroupOption } from '../ui/ChipGroup';
 import { MultiChipGroup } from '../ui/MultiChipGroup';
-import { ProteinPicker, type ProteinChangeKind } from './ProteinPicker';
+import {
+  ProteinPicker,
+  type ProteinChangeKind,
+  type ProteinPickerHandle,
+} from './ProteinPicker';
 import { NormalizedProteinNote, proteinNoteFor, type ProteinRewrite } from './proteinNote';
 import {
   COMMON_PROTEINS,
@@ -53,8 +57,20 @@ interface Props extends PickerProteins {
   onChange: (next: PickerProteins) => void;
 }
 
-export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
+/** See ProteinPickerHandle for why the commit is reachable imperatively. This is
+ *  the same contract one level up: it returns BOTH lines, because resolving a
+ *  main-line draft is also a demote and the host must not see one without the
+ *  other. */
+export interface ProteinSetPickerHandle {
+  /** Resolve any open typed draft (either line) as blur would, returning the
+   *  full resulting set. Null when nothing was pending. */
+  commitPending: () => PickerProteins | null;
+}
+
+export const ProteinSetPicker = forwardRef<ProteinSetPickerHandle, Props>(
+  function ProteinSetPicker({ main, alsoContains, onChange }, ref) {
   const mainKey = canonicalizeProtein(main);
+  const mainPickerRef = useRef<ProteinPickerHandle>(null);
 
   // The last main the owner actually DESIGNATED — seeded, chip-tapped, or
   // committed — as opposed to whatever partial string the Other field holds
@@ -97,9 +113,30 @@ export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
     { value: OTHER, label: 'Other' },
   ];
 
-  function handleMainChange(next: string | null, kind: ProteinChangeKind) {
+  // The designation half of a main-line change: demote the outgoing main, keep
+  // the incoming one out of the tail. Shared by the event path (handleMainChange)
+  // and the save-boundary path (commitPending) so the two cannot drift — the
+  // slice-5 lesson, where one rule with two implementations disagreed with
+  // itself.
+  function applyDesignation(next: string | null, base: string[]): PickerProteins {
     const nextKey = canonicalizeProtein(next);
+    const outgoing = drafting.current ? committedMain.current : mainKey;
+    drafting.current = false;
+    committedMain.current = nextKey;
 
+    let rest = base;
+    // Auto-demote: the outgoing main keeps its exposure, at the FRONT of the
+    // tail because it was the most prominent protein and the array is
+    // prominence-ordered.
+    if (outgoing != null && outgoing !== nextKey) {
+      rest = [outgoing, ...rest.filter((p) => p !== outgoing)];
+    }
+    // Never in both: promoting a secondary to main takes it out of the tail.
+    if (nextKey != null) rest = rest.filter((p) => p !== nextKey);
+    return { main: next, alsoContains: rest };
+  }
+
+  function handleMainChange(next: string | null, kind: ProteinChangeKind) {
     // A keystroke is a draft, not a designation — replace the main in place and
     // move nothing. The demote waits for the commit that follows, which is what
     // stops every prefix of "bison" (b, bi, bis, biso) being filed as a
@@ -113,20 +150,7 @@ export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
     // 'select' (a chip tap, including the clear) or 'commit' (the D9-normalized
     // value, including a backspace-to-empty). Both are real designations, so the
     // protein being replaced is demoted rather than dropped.
-    const outgoing = drafting.current ? committedMain.current : mainKey;
-    drafting.current = false;
-    committedMain.current = nextKey;
-
-    let rest = alsoContains;
-    // Auto-demote: the outgoing main keeps its exposure, at the FRONT of the
-    // tail because it was the most prominent protein and the array is
-    // prominence-ordered.
-    if (outgoing != null && outgoing !== nextKey) {
-      rest = [outgoing, ...rest.filter((p) => p !== outgoing)];
-    }
-    // Never in both: promoting a secondary to main takes it out of the tail.
-    if (nextKey != null) rest = rest.filter((p) => p !== nextKey);
-    onChange({ main: next, alsoContains: rest });
+    onChange(applyDesignation(next, alsoContains));
   }
 
   function toggleSecondary(value: string) {
@@ -144,33 +168,53 @@ export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
 
   // D9 — the secondaries' typed escape resolves on commit (blur/submit), through
   // the same write-path normalizer the main line uses, with the same disclosure.
-  function commitDraft() {
+  //
+  // Takes the base set rather than reading the props, so it can compose on top of
+  // a main-line commit resolved microseconds earlier in the same save.
+  function resolveDraft(base: PickerProteins): PickerProteins | null {
     const typed = draft.trim();
-    if (!typed) return;
+    if (!typed) return null;
     // Fall back to the Class-A key when the normalizer finds nothing to fold —
     // capturing a vaguer protein beats dropping the exposure (spec §2, Job 1).
     const key = normalizeExtractedProtein(typed) ?? canonicalizeProtein(typed);
     if (key == null) {
       // Not a protein at all ("meal", "fresh"). Keep the text so the owner can
       // see and fix it rather than watching it vanish on blur.
-      return;
+      return null;
     }
     setDraft('');
     setOtherOpen(false);
     // Already the main, or already listed — nothing to add, and adding it would
     // put one protein on both lines.
-    if (key === mainKey || alsoContains.includes(key)) {
+    if (key === canonicalizeProtein(base.main) || base.alsoContains.includes(key)) {
       setRewrite(null);
-      return;
+      return null;
     }
     setRewrite(proteinNoteFor(typed, key));
-    onChange({ main, alsoContains: [...alsoContains, key] });
+    return { main: base.main, alsoContains: [...base.alsoContains, key] };
   }
+
+  function commitDraft() {
+    const next = resolveDraft({ main, alsoContains });
+    if (next) onChange(next);
+  }
+
+  // No dep array — see ProteinPicker's handle. Both lines are resolved, main
+  // first, so a set with a pending draft on each lands as one update.
+  useImperativeHandle(ref, () => ({
+    commitPending: () => {
+      const pendingMain = mainPickerRef.current?.commitPending() ?? null;
+      const afterMain = pendingMain ? applyDesignation(pendingMain.value, alsoContains) : null;
+      const afterSecondary = resolveDraft(afterMain ?? { main, alsoContains });
+      return afterSecondary ?? afterMain;
+    },
+  }));
 
   return (
     <View style={styles.root}>
       <SectionLabel label="Main protein" />
       <ProteinPicker
+        ref={mainPickerRef}
         value={main}
         onChange={handleMainChange}
         accessibilityLabel="Main protein"
@@ -205,7 +249,7 @@ export function ProteinSetPicker({ main, alsoContains, onChange }: Props) {
       {activeRewrite && <NormalizedProteinNote rewrite={activeRewrite} />}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   root: {

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
-import { ProteinSetPicker } from './ProteinSetPicker';
+import { Text, TouchableOpacity } from 'react-native';
+import { ProteinSetPicker, type ProteinSetPickerHandle } from './ProteinSetPicker';
 import {
   COMMON_PROTEINS,
   canonicalizeProtein,
@@ -394,5 +395,104 @@ describe('ProteinSetPicker (B-351 D8 two-line picker)', () => {
       expect(pickerProteinsToSet(reseeded.main, reseeded.alsoContains)).toEqual(set);
       expect(pickerPrimaryProtein(reseeded.main)).toEqual(primary);
     }
+  });
+});
+
+// A host shaped like the REAL ones: the form sits in a ScrollView with
+// keyboardShouldPersistTaps="handled", so tapping Save does not blur the Other
+// field — the save handler must ask the picker to resolve the draft itself.
+// The whole class of bug below is invisible to any test that calls blur first,
+// which is why every pre-existing test in this file passed while a real phone
+// saved `buffalo` and dropped the protein it replaced.
+function SaveHost({
+  initial,
+  onSave,
+}: {
+  initial: PickerProteins;
+  onSave: (saved: PickerProteins) => void;
+}) {
+  const [set, setSet] = useState<PickerProteins>(initial);
+  const ref = useRef<ProteinSetPickerHandle>(null);
+  return (
+    <>
+      <ProteinSetPicker
+        ref={ref}
+        main={set.main}
+        alsoContains={set.alsoContains}
+        onChange={setSet}
+      />
+      <TouchableOpacity
+        accessibilityRole="button"
+        onPress={() => {
+          const pending = ref.current?.commitPending() ?? null;
+          if (pending) setSet(pending);
+          onSave(pending ?? set);
+        }}
+      >
+        <Text>Save</Text>
+      </TouchableOpacity>
+    </>
+  );
+}
+
+describe('ProteinSetPicker — saving without a blur (the keyboardShouldPersistTaps trap)', () => {
+  it('normalizes a typed MAIN protein on Save even though the field never blurred', () => {
+    const onSave = jest.fn();
+    const { getByRole, getByPlaceholderText } = render(
+      <SaveHost initial={{ main: null, alsoContains: [] }} onSave={onSave} />,
+    );
+    fireEvent.press(getByRole('radio', { name: 'Other' }));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'buffalo');
+    // No blur — straight to Save, exactly as a thumb does it.
+    fireEvent.press(getByRole('button', { name: 'Save' }));
+    expect(onSave).toHaveBeenCalledWith({ main: 'bison', alsoContains: [] });
+  });
+
+  it('demotes the outgoing main on Save rather than dropping it', () => {
+    // The worse half of the same bug: 'typing' replaces the main in place and
+    // defers the demote to the commit. No commit, no demote — chicken was gone.
+    const onSave = jest.fn();
+    const { getByRole, getByPlaceholderText } = render(
+      <SaveHost initial={{ main: 'chicken', alsoContains: ['duck'] }} onSave={onSave} />,
+    );
+    fireEvent.press(getByRole('radio', { name: 'Other' }));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'buffalo');
+    fireEvent.press(getByRole('button', { name: 'Save' }));
+    expect(onSave).toHaveBeenCalledWith({ main: 'bison', alsoContains: ['chicken', 'duck'] });
+  });
+
+  it('resolves a pending SECONDARY draft on Save', () => {
+    const onSave = jest.fn();
+    const { getByRole, getByPlaceholderText } = render(
+      <SaveHost initial={{ main: 'duck', alsoContains: [] }} onSave={onSave} />,
+    );
+    // The secondaries' own "Other" is the checkbox one; the main line's is a radio.
+    fireEvent.press(getByRole('checkbox', { name: 'Other' }));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'deer');
+    fireEvent.press(getByRole('button', { name: 'Save' }));
+    expect(onSave).toHaveBeenCalledWith({ main: 'duck', alsoContains: ['venison'] });
+  });
+
+  it('Save does NOT re-key a seeded custom main the owner never typed (D3a)', () => {
+    // The imperative path must inherit the no-warrant rule, not bypass it: this
+    // is the retroactive Class-B merge the whole split exists to forbid.
+    const onSave = jest.fn();
+    const { getByRole } = render(
+      <SaveHost initial={{ main: 'ocean whitefish', alsoContains: ['chicken'] }} onSave={onSave} />,
+    );
+    fireEvent.press(getByRole('button', { name: 'Save' }));
+    expect(onSave).toHaveBeenCalledWith({ main: 'ocean whitefish', alsoContains: ['chicken'] });
+  });
+
+  it('Save leaves an unusable typed value alone rather than wiping it', () => {
+    const onSave = jest.fn();
+    const { getByRole, getByPlaceholderText } = render(
+      <SaveHost initial={{ main: null, alsoContains: [] }} onSave={onSave} />,
+    );
+    fireEvent.press(getByRole('radio', { name: 'Other' }));
+    fireEvent.changeText(getByPlaceholderText('Name the protein'), 'fresh');
+    fireEvent.press(getByRole('button', { name: 'Save' }));
+    // Nothing to commit, so the raw text is what saves — never an empty field.
+    expect(onSave).toHaveBeenCalledWith({ main: 'fresh', alsoContains: [] });
   });
 });
