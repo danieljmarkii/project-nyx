@@ -30,6 +30,8 @@ UPDATE food_items SET primary_protein = 'turkey', proteins = ARRAY['turkey']::te
 UPDATE food_items SET primary_protein = 'Chicken By-Product Meal', proteins = ARRAY['chicken']::text[] WHERE id = '3e0e5cdc-2ad0-4e65-8769-0d007ee13bf3';
 UPDATE food_items SET primary_protein = 'Chicken By-Product Meal', proteins = ARRAY['chicken']::text[] WHERE id = '97608e03-e947-44f4-bfa3-da9d4d87cb2d';
 UPDATE food_items SET primary_protein = 'Chicken By-Product Meal', proteins = ARRAY['chicken']::text[] WHERE id = '861ab2e1-13d6-4189-87cc-ac4a3d89a191';
+UPDATE food_items SET primary_protein = 'chicken', proteins = ARRAY['chicken']::text[] WHERE id = '14953455-dd4e-403f-ab5c-940fe92e44fa';
+UPDATE food_items SET primary_protein = 'chicken', proteins = ARRAY['chicken']::text[] WHERE id = '17e8b37a-043c-491c-903a-3e79c7c0d779';
 UPDATE food_items SET primary_protein = 'rabbit', proteins = ARRAY['rabbit']::text[] WHERE id = 'ff2e30b1-3b82-4b5e-97fc-0c598f564221';
 UPDATE food_items SET primary_protein = 'chicken', proteins = ARRAY['chicken']::text[] WHERE id = '90fea001-850c-4943-b47b-0f19860029f5';
 UPDATE food_items SET primary_protein = 'chicken', proteins = ARRAY['chicken']::text[] WHERE id = '1cb64256-3a36-4c45-ad9a-91ae4ce4703e';

@@ -83,3 +83,46 @@ One process note: the row dump was **checksummed row-by-row against the database
 
 - **B-451** — the 3 Class-B re-keys changed an owner-visible value without D9's inline disclosure (2 of 3 are `source='user'`). Do *not* fix by reverting the re-key; that reopens the widening split.
 - **B-452** — the lexicon finds only known animals; plant proteins and hydrolysates are deliberately out of scope. Re-extraction, not a longer word list, is the complete fix — a bigger lexicon buys coverage without ever buying the attestation.
+
+---
+
+## Addendum — the lexicon was widened, on a PM steer that corrected the original call
+
+**"I think we need to err on surfacing a protein for the vet. We need to make this robust."**
+
+That reversed a judgement in the first pass. I had written "under-capture is the safe direction", reasoning that these foods captured nothing before so finding *some* proteins is strictly better. True as far as it goes, and it misses the asymmetry that matters:
+
+- **Miss a protein** → the vet report tells a vet a contaminated food is clean. They conclude the elimination trial ran clean when it didn't. That is precisely the failure B-351 exists to prevent.
+- **Over-capture** → the report names something arguable. Visible, checkable against the bag, correctable through the picker.
+
+Those are not symmetric, and the first one is the one this feature was built to stop.
+
+### What changed
+
+**The lexicon went deep on the categories a trial actually controls** — novel mammals (kangaroo, goat, horse, elk, reindeer…), birds (goose, quail, emu, guinea fowl…), the full fish and shellfish range (~35 terms), insect protein, and **dairy**. Dairy is a first-rank food allergen, routinely excluded from elimination diets, and it was sitting unread on live panels as "dried cultured skim milk" and "dried cheese".
+
+**Hydrolysates went from dropped to captured whole**, which was a real defect under the new steer. Skipping them meant a **hydrolysed prescription diet rendered with no protein at all** to a vet — the worst possible miss, on the food a GI or dermatology patient eats every single day. Folding it the other way (`hydrolyzed chicken` → `chicken`) would claim an exposure the pet never had, which is the whole premise of the diet. `lib/protein.ts` already preserves `hydrolyzed` through its normalizer, so the fix was to normalize the *whole term* rather than the species token inside it: `hydrolyzed chicken liver` → `hydrolyzed chicken`, honest and distinct.
+
+### Two false positives the widening introduced, both caught by test before touching data
+
+- **`sole`** — a real fish, but `\bsole\b` matches *"sole source of vitamin K"*, which is real panel boilerplate. Dropped; missing Dover sole costs nothing next to that.
+- **`milk`** inside **"milk thistle"** — a liver-support botanical, not dairy. Now excluded outright.
+
+Both were predicted while writing the list and then confirmed by a failing test. Worth noting the second one only failed because I wrote the test *before* checking whether my own edit had landed — the `sole` removal had silently applied a comment without removing the entry.
+
+### Delta
+
+**+7 rows · multi-protein 31 → 34 · ZERO new contaminant alarms.** That last number is the one that made this safe to apply unilaterally: every one of the 7 rows already carried `chicken`, so each was already flagging on any non-chicken trial. The owner-facing copy just names one more protein; no food starts flagging that wasn't already.
+
+End state re-verified from scratch: applying the two increments lands on a hash **identical** to one clean pass from the original data.
+
+### What I did NOT widen, and why that is the PM's call (B-454)
+
+`food_items.proteins` feeds the **shipped owner-facing contaminant flag** as well as the vet report, and every key in it becomes owner copy — *"This one has X. {Pet}'s duck trial should skip X."* So two categories are not a data decision:
+
+- **Fats and oils.** The exclusion is what stops `chicken fat` in Hill's **duck** entrée from firing a contaminant flag on a novel-protein trial diet. But the mainstream veterinary position — rendered chicken fat is acceptable in an elimination diet — is the *vet's* call, and D1's governing steer is "let the vet piece it together". A vet wants it disclosed; an owner told their duck trial food contains chicken fat would reasonably panic about something clinically fine.
+- **Plant proteins.** Real exposures the extractor already emits, but nearly every dry treat in the library carries corn or wheat, so including them makes almost *every* treat flag off-trial — a volume change to a safety prompt, which is an alarm-fatigue question (Principle 4), not a completeness one.
+
+Persona conflict recorded rather than resolved: **Dr. Chen** — disclose both, withholding an ingredient is my judgement to make. **Designer / Jordan** — every extra key spends the safety prompt's credibility, and *"should skip chicken fat"* is advice a vet would contradict.
+
+The likely resolution is not a wider lexicon but a **second channel**: a vet-report disclosure line that is not a `proteins` key and therefore never reaches the contaminant check. That needs a design round → **B-454**. Dairy is the precedent worth reading when it's taken up: it was included, and it cost zero new alarms.

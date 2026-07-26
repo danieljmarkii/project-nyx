@@ -113,14 +113,21 @@ describe('deriveProteinsWithSources — provenance', () => {
   });
 
   it('flags an animal riding on a term that is not primarily that animal', () => {
-    // The one live case: Temptations Birthday gains `beef` from this term, while its
-    // "Natural Beef Flavor" is excluded outright. Flagged, never dropped.
+    const found = deriveProteinsWithSources('Chicken Pizza Topping, Salt');
+    expect(found).toEqual([{ key: 'chicken', term: 'chicken pizza topping', unusual: true }]);
+  });
+
+  it('does not flag a term that is fully understood as two proteins', () => {
+    // "dried beef cheese" was the single flagged derivation before dairy entered the
+    // lexicon. It is no longer an odd carrier — it reads completely, as beef AND
+    // cheese. A leftover word that is itself a known protein is not a mystery.
     const found = deriveProteinsWithSources('Dried Beef Cheese, Salt');
-    expect(found).toEqual([{ key: 'beef', term: 'dried beef cheese', unusual: true }]);
+    expect(found.map((d) => d.key)).toEqual(['beef', 'cheese']);
+    expect(found.every((d) => !d.unusual)).toBe(true);
   });
 
   it('flagging is not filtering — an unusual term still yields its key', () => {
-    expect(deriveProteinsFromPanel('Dried Beef Cheese, Salt')).toEqual(['beef']);
+    expect(deriveProteinsFromPanel('Chicken Pizza Topping, Salt')).toEqual(['chicken']);
   });
 });
 
@@ -140,11 +147,40 @@ describe('deriveProteinsFromPanel — false positives', () => {
     expect(deriveProteinsFromPanel(panel)).toEqual([]);
   });
 
-  it('does not fold a hydrolysed protein into its intact animal', () => {
-    // The premise of a hydrolysed prescription diet is that it is NOT the same
-    // exposure. Telling a vet the pet ate chicken would be worse than saying nothing.
-    expect(deriveProteinsFromPanel('Hydrolyzed Chicken Liver, Rice Starch')).toEqual([]);
-    expect(deriveProteinsFromPanel('Hydrolysed Soy Protein, Corn Starch')).toEqual([]);
+  it('does not fold a hydrolysed protein into its intact animal — but never drops it', () => {
+    // Two wrong answers here, and the first shipped before the PM's "err on
+    // surfacing for the vet" steer: dropping it entirely made a hydrolysed
+    // prescription diet render with NO protein at all, on the food a GI or derm
+    // patient eats every day. Folding it to `chicken` is the other error — a
+    // hydrolysed protein is clinically a different exposure, which is the whole
+    // premise of the diet. So it is captured WHOLE and stays distinct.
+    expect(deriveProteinsFromPanel('Hydrolyzed Chicken Liver, Rice Starch'))
+      .toEqual(['hydrolyzed chicken']);
+    expect(deriveProteinsFromPanel('Hydrolysed Soy Protein, Corn Starch'))
+      .toEqual(['hydrolysed soy protein']);
+    // Still a flavouring, not an exposure — the fat/oil/flavour rejection runs first.
+    expect(deriveProteinsFromPanel('Hydrolyzed Chicken Liver Flavor, Salt')).toEqual([]);
+  });
+
+  it('never keys a water buffalo as bison', () => {
+    // `\bbuffalo\b` matches INSIDE "water buffalo", and the alias table would then
+    // map it to `bison` — a fabricated species on a vet report. The lexicon lists
+    // the longer phrase so longest-first has something to prefer.
+    expect(deriveProteinsFromPanel('Water Buffalo, Water, Salt')).toEqual(['water buffalo']);
+    expect(deriveProteinsFromPanel('Buffalo, Water, Salt')).toEqual(['bison']);
+  });
+
+  it('captures the newly-covered protein classes a trial actually controls', () => {
+    expect(deriveProteinsFromPanel('Dried Cultured Skim Milk, Salt')).toEqual(['milk']);
+    expect(deriveProteinsFromPanel('Kangaroo, Peas')).toEqual(['kangaroo']);
+    expect(deriveProteinsFromPanel('Cricket Meal, Oats')).toEqual(['cricket']);
+    expect(deriveProteinsFromPanel('Deboned Goose, Whey')).toEqual(['goose', 'whey']);
+  });
+
+  it('does not read dairy off a botanical, or a fish off ordinary label prose', () => {
+    // "milk thistle" is liver-support, not dairy; "sole source of" is boilerplate.
+    expect(deriveProteinsFromPanel('Milk Thistle Extract, Rice')).toEqual([]);
+    expect(deriveProteinsFromPanel('Menadione (sole source of vitamin K), Salt')).toEqual([]);
   });
 
   it('is not fooled by words that merely contain a protein name', () => {

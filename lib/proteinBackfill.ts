@@ -73,13 +73,18 @@ import {
 
 // Animal-protein label phrases to scan an ingredient term for.
 //
-// SCOPE IS DELIBERATELY ANIMAL-ONLY (plus egg). The extractor's prompt also emits
-// plant proteins when the label presents them as such ("hydrolyzed soy protein",
-// "pea protein"), and that stays correct for the write path. It is deliberately
-// NOT reproduced here: the wedge is the elimination / novel-protein trial, and
-// adding `pea`/`soy`/`potato protein` to 43 rows at once would rewrite every
-// food's rendered set and the vet report's exposure tally on a judgement no spec
-// asked for. Under-capturing costs a secondary that was already missing.
+// SCOPE: animal proteins, egg, and dairy. Widened 2026-07-26 on the PM's steer —
+// *"err on surfacing a protein for the vet"* — because the first pass optimised the
+// wrong direction. A MISSED protein tells a vet a contaminated food is clean, which
+// is the failure B-351 exists to prevent; an over-eager one is visible and
+// checkable against the bag. So the list now runs deep on the categories a trial
+// actually controls: novel mammals, birds, the full fish/shellfish range, insect
+// protein, and dairy (a first-rank allergen, routinely excluded from elimination
+// diets, and present on live panels as "dried cultured skim milk" / "dried cheese").
+//
+// STILL EXCLUDED, and NOT a silent call — see the note at the bottom of this file:
+// plant proteins, and fats/oils. Both would change SHIPPED owner-facing contaminant
+// copy at volume, so they are the PM's to rule rather than mine to widen.
 //
 // Additions are governed by `EXTRACTION_PROTEIN_ALIASES`' rule (1): a phrase must
 // name an animal, or be a label term for one. `poultry` and `fish` earn their
@@ -97,12 +102,37 @@ const PROTEIN_LEXICON: readonly string[] = [
   'ocean fish',
   'buffalo',
   'deer',
-  // Other species that appear on real pet-food panels.
-  'bison', 'goat', 'kangaroo', 'quail', 'pheasant', 'ostrich', 'elk', 'boar',
-  'veal', 'mutton', 'guinea fowl',
+  // `water buffalo` MUST be listed, and must out-length `buffalo`. The alias table
+  // maps `buffalo`→`bison` under an EXACT-match rule precisely so it cannot rewrite
+  // "water buffalo", which is a genuinely different animal — but this scan pulls a
+  // TOKEN out of a longer term, and `\bbuffalo\b` matches inside "water buffalo".
+  // Without this entry the longest-first sort has nothing longer to prefer and a
+  // water-buffalo food would be keyed `bison`: a fabricated species on a vet report,
+  // and exactly the Class-B error D3a exists to prevent.
+  'water buffalo',
+  // Mammals seen on real pet-food and novel-protein panels.
+  'bison', 'goat', 'kangaroo', 'boar', 'veal', 'mutton', 'horse', 'yak', 'camel',
+  'llama', 'alpaca', 'reindeer', 'caribou', 'antelope', 'moose', 'elk', 'hare',
+  'wild boar', 'goat meat',
+  // Birds.
+  'quail', 'pheasant', 'ostrich', 'emu', 'goose', 'guinea fowl', 'squab', 'partridge',
+  // Fish and shellfish. Elimination diets lean hard on novel fish, so a miss here
+  // costs exactly the exposure a trial is built to control.
   'cod', 'herring', 'mackerel', 'sardine', 'sardines', 'pollock', 'trout',
-  'tilapia', 'catfish', 'haddock', 'salmon', 'anchovy', 'krill', 'menhaden',
-  'shrimp', 'crab', 'lobster', 'clam', 'mussel', 'oyster', 'scallop',
+  'tilapia', 'catfish', 'haddock', 'salmon', 'anchovy', 'anchovies', 'krill',
+  'menhaden', 'whiting', 'hake', 'halibut', 'flounder', 'snapper', 'bass',
+  'perch', 'carp', 'eel', 'smelt', 'capelin', 'barramundi', 'basa', 'swai',
+  // NOT 'sole': a real fish, but "sole source of vitamin K" is real panel text and
+  // far more common than Dover sole in a pet food. Missing it costs almost nothing.
+  'mahi mahi', 'monkfish', 'arctic char', 'char', 'tilefish', 'roe', 'caviar',
+  'shrimp', 'prawn', 'crab', 'lobster', 'clam', 'mussel', 'oyster', 'scallop',
+  'squid', 'octopus', 'crawfish', 'crayfish',
+  // Insect protein — the newest novel-protein category, and one a trial may target.
+  'cricket', 'black soldier fly',
+  // DAIRY. A first-rank food allergen, routinely excluded from elimination diets,
+  // and present on live panels ("dried cultured skim milk", "dried cheese"). Keyed
+  // as the dairy term itself, never folded into a species.
+  'milk', 'cheese', 'whey', 'casein', 'yogurt', 'buttermilk',
   // Vague-but-real label terms (see the note above).
   'poultry',
   'fish',
@@ -137,16 +167,30 @@ const LEXICON_PATTERN = new RegExp(
 //   • flavor / flavored — "liver flavor", "bacon flavor", "dried chicken flavored
 //     gravy", "chicken liver flavor". A flavouring is not a protein source, and
 //     "bacon flavor" is typically not pork at all.
-//   • hydrolyzed — a hydrolyzed protein is clinically a DIFFERENT exposure from
-//     the intact protein; that is the entire premise of a hydrolysed prescription
-//     diet. lib/protein.ts keeps `hydrolyzed` out of its descriptor strip for this
-//     reason. Skipping the term under-captures; mapping it would tell a vet the
-//     pet ate chicken when it ate hydrolyzed chicken.
-//
 // NOT excluded, deliberately: `broth`, `stock`, `digest`, `meal`, `by-product`.
 // Those all carry real protein from the named animal — "chicken broth" in the Tiki
 // Cat rabbit panel is precisely the hidden exposure B-351 exists to surface.
-const NON_EXPOSURE_TERM = /\b(fats?|tallow|oils?|flavou?r(s|ed|ing)?|hydroly[sz]ed)\b/;
+//   • thistle — "milk thistle" is a liver-support botanical on real panels, and
+//     `\bmilk\b` matches inside it. Without this the pass would record a DAIRY
+//     exposure for a plant extract.
+const NON_EXPOSURE_TERM = /\b(fats?|tallow|oils?|flavou?r(s|ed|ing)?|thistle)\b/;
+
+// Hydrolysed terms are CAPTURED WHOLE, not skipped and not folded.
+//
+// This started as an exclusion, which was wrong in the one direction that matters:
+// a hydrolysed prescription diet would have surfaced to a vet as having NO protein
+// at all — the worst possible miss, on the food a GI or dermatology patient eats
+// every day. Folding it the other way (`hydrolyzed chicken` → `chicken`) is equally
+// wrong: a hydrolysed protein is clinically a DIFFERENT exposure from the intact
+// one — that is the entire premise of the diet — and it would tell a vet the pet
+// ate chicken when it did not.
+//
+// So the term is normalized WHOLE. `lib/protein.ts` deliberately keeps `hydrolyzed`
+// out of its descriptor strip, so `normalizeExtractedProtein` preserves it as its
+// own key: "hydrolyzed chicken liver" → `hydrolyzed chicken`, which is both honest
+// and distinct from `chicken`. Checked AFTER the fat/oil/flavour rejection above so
+// "hydrolyzed chicken liver flavor" is still a flavouring, not an exposure.
+const HYDROLYZED_TERM = /\bhydroly[sz]ed\b/;
 
 // Ingredient-term separators. Parentheses split too, so "Fish Oil (Preserved With
 // Mixed Tocopherols)" yields a term that still carries its `oil` disqualifier
@@ -194,11 +238,17 @@ export interface DerivedProtein {
   unusual: boolean;
 }
 
+// A word that is itself a known protein does not make its neighbour suspicious:
+// "dried beef cheese" reads as beef AND cheese once dairy is in the lexicon, and
+// that is a complete, ordinary read of the term rather than an odd carrier. The
+// flag is for leftovers we do NOT understand.
+const LEXICON_WORDS = new Set(PROTEIN_LEXICON.flatMap((p) => p.split(' ')));
+
 function isUnusualTerm(term: string, matched: string): boolean {
-  const leftover = term
+  const matchedWords = new Set(matched.split(' '));
+  return term
     .split(' ')
-    .filter((w) => w && !matched.split(' ').includes(w) && !ORDINARY_COMPANION.has(w));
-  return leftover.length > 0;
+    .some((w) => w && !matchedWords.has(w) && !ORDINARY_COMPANION.has(w) && !LEXICON_WORDS.has(w));
 }
 
 /**
@@ -223,6 +273,17 @@ export function deriveProteinsWithSources(panel: string | null | undefined): Der
     // multi-word lexicon entries.
     const term = rawTerm.trim().toLowerCase().replace(/\s+/g, ' ');
     if (!term || NON_EXPOSURE_TERM.test(term)) continue;
+
+    // Hydrolysed: normalize the WHOLE term rather than the species token inside it,
+    // so the "hydrolyzed" survives into the key (see HYDROLYZED_TERM above).
+    if (HYDROLYZED_TERM.test(term)) {
+      const whole = normalizeExtractedProtein(term);
+      if (whole != null && !seen.has(whole)) {
+        seen.add(whole);
+        out.push({ key: whole, term, unusual: false });
+      }
+      continue;
+    }
 
     // `lastIndex` is per-regex state on a `g` pattern shared across calls, so the
     // matcher is re-anchored for each term rather than resumed mid-panel.
@@ -430,3 +491,35 @@ export function planRow(row: BackfillRow, options: BackfillOptions): BackfillPla
 // under-claiming, which D10 names as the safe direction (B-437). The real fix is a
 // provenance/coverage field written by an extractor that actually read the panel —
 // B-437 — not a value invented by a backfill.
+//
+// ── TWO EXCLUSIONS THAT ARE THE PM'S CALL, NOT THIS MODULE'S (B-454) ──────────
+//
+// The 2026-07-26 steer was *"err on surfacing a protein for the vet"*, and the
+// lexicon above was widened hard on it. Two categories were deliberately left out,
+// because widening them is not a data decision — `proteins` feeds the SHIPPED
+// owner-facing contaminant flag as well as the vet report, and every key in it
+// becomes owner copy: *"This one has X. {Pet}'s duck trial should skip X."*
+//
+//   • PLANT PROTEINS (`soy`, `pea protein`, `wheat gluten`, `corn protein meal`).
+//     Real elimination-trial exposures, and the extractor already emits them when
+//     a label presents them as a protein. But nearly every dry treat on the live
+//     library carries corn or wheat, so including them would make almost every
+//     treat flag off-trial — a volume change to a safety prompt, which is an
+//     alarm-fatigue question (Principle 4) rather than a completeness one.
+//
+//   • FATS AND OILS (`chicken fat`, `salmon oil`). The exclusion above is what
+//     stops `chicken fat` in Hill's DUCK entrée from firing a contaminant flag on
+//     a novel-protein trial diet. But the mainstream veterinary position — that
+//     rendered chicken fat is acceptable in an elimination diet — is the VET's
+//     call to make, and D1's governing steer is "let the vet piece it together".
+//     A vet would want it disclosed; an owner told "your duck trial food contains
+//     chicken fat" would reasonably panic about something clinically fine.
+//
+// PERSONA CONFLICT, recorded rather than resolved here:
+//   Dr. Chen: disclose both — withholding an ingredient from the report is my
+//     judgement to make, not the app's.
+//   Designer / Jordan: every extra key spends the safety prompt's credibility, and
+//     "should skip chicken fat" is advice a vet would contradict.
+// The resolution is probably NOT a wider lexicon but a SECOND channel — a
+// vet-report disclosure line that is not a `proteins` key and therefore never
+// reaches the contaminant check. That needs a design pass, so it is B-454.
