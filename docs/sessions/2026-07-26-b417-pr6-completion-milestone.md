@@ -125,6 +125,49 @@ Neither denominator `TrialLoggingDensity` rejected was reintroduced, and no verd
 smuggled back in. The 14-day grace does not let a stale ended trial shadow a new one, and
 `sheetTrial` is null unless the trial is active, so neither sheet can touch a ghost.
 
+## The re-run, and the two it caught
+
+The DoD's adversarial line was not satisfiable on the strength of my own fixes — the reviewer
+had failed this PR once, and the fixes were themselves new clinically-load-bearing logic. The
+re-run cleared all seven (52,608 instants × 9 zones on the day-key round trip, 0 failures; the
+previous headline case now counts today at every offset; `nextTargetDays` held against 13
+adversarial inputs) and failed the PR on two new ones.
+
+**F1 — the SQL lower bound was never padded, under a comment saying it was.** Only the end was.
+`${key}T00:00:00Z` is UTC midnight, so at a *positive* offset local midnight of that date is
+**earlier** in UTC — 12 hours in Auckland, 5.5 in Kolkata — and the query dropped the front of
+the before-stretch's first local day. A single 06:00 pre-trial log vanished and the sheet
+rendered *"Nothing was logged in the 4 weeks before the trial started"*: false, and the exact
+fabricated negative claim §5.2's S3 rule forbids, landing on the thin-record population
+`beforeLoggedDays` exists to protect. The same defect sat in `readCoverage` with the same
+misleading comment — fixed as a pattern rather than shipped a third time.
+
+The tests could not have caught it: a mock that returns the whole fixture regardless of the
+bounds exercises the query window at zero offsets. Three tests now assert on the bounds
+themselves.
+
+**F2 — the continuation statement reached the sheet and stopped there.** The fix commit's own
+rationale was that the screens read *while* and *after* ending a GI trial are the ones that most
+need it; only the first was true. The terminal card said nothing about continuing, and the
+abandoned card rendered `symptoms_resolved` — an owner stopping *because* things improved —
+back at them unanswered. It now lands on both, skipping `vet_advised` alone, because restating
+"your vet decides when the diet changes" to an owner whose vet has already decided reads as
+second-guessing the clinician; it renders on every other reason so its presence is never a tell.
+
+Three should-fixes from the same pass: the decision step was the one screen offering the
+*primary* action without the decline lead (F3); `render.ts` named the owner as the cause of a
+stop, as an inability, on a page shown to the owner in-app (F5); and the decline replacement
+drew a 100% bar over a pet that has stopped eating (F6). Residuals filed: **B-516** (the sparse
+threshold leaks just above its trigger), **B-517** (the day-math guard's `CONSUMERS` list still
+doesn't cover this file, so nothing stops a fifth path), **B-518** (two similar-sounding day
+ratios with different numerators).
+
+Both PM-routed items came back **not merge-blocking**, with the cadence one quantified for
+Dr. Chen: five stop-button exposures on GI before ACVIM's 12 weeks against skin's two, a number
+that appears nowhere in the spec. The reviewer would **close** the refusal-routing item rather
+than leave it open — §6.5 explicitly authorises the two-path split, it is built accordingly and
+documented honestly, and `render.ts` does read the token.
+
 ## Named, not fixed
 
 `adversarial-reviewer` could not construct a fair test of whether the outcome sheet's counts are
