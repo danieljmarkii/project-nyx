@@ -23,15 +23,23 @@
 #   4. Syntax-checks the bundle offline (`node --check`).
 #   5. Prints the bundle path, sha256, and exact deploy instructions.
 #
-# It does NOT deploy. Deploy is the Supabase MCP `deploy_edge_function` call
-# (agent), or — if a SUPABASE_ACCESS_TOKEN is ever configured as an env secret —
-# `npx supabase functions deploy` (which bundles from source itself; this script's
-# artifact is then unused). MCP is the recommended path: no standing token.
+# By default it does NOT deploy — it builds and prints instructions. Pass
+# `--deploy` (with SUPABASE_ACCESS_TOKEN set) to upload the bundle itself, which
+# is the path to prefer: it ships the exact bytes just verified here.
+#
+# The MCP `deploy_edge_function` call remains the no-token fallback, but it has a
+# size ceiling (B-455): it takes the bundle as an inline tool parameter, so an
+# agent has to reproduce the artifact byte-for-byte, and generate-report is 240 KB.
+# Above roughly a few tens of KB that is not a safe way to move a file.
 #
 # USAGE
 #   scripts/deploy-edge.sh <function-name> [--no-test] [--minify] [--out PATH]
 #
 #   <function-name>   directory under supabase/functions/ (e.g. generate-signal)
+#   --deploy          ALSO deploy the bundle (needs SUPABASE_ACCESS_TOKEN); without
+#                     this the script only builds and prints instructions
+#   --no-verify-jwt   deploy with JWT verification off (view-report ONLY)
+#   --project-ref REF override the project (default aigchluqluzuhtbfllgh)
 #   --no-test         skip the deno test verification step
 #   --minify          minify the bundle (default: OFF — readable + clean read-back)
 #   --out PATH        override output path (default .edge-build/<name>/index.ts)
@@ -44,6 +52,9 @@ FUNCTION=""
 RUN_TESTS=1
 MINIFY=0
 OUT=""
+DEPLOY=0
+NO_VERIFY_JWT=0
+PROJECT_REF="${SUPABASE_PROJECT_REF:-aigchluqluzuhtbfllgh}"
 
 usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
@@ -52,6 +63,9 @@ while [ $# -gt 0 ]; do
     --no-test) RUN_TESTS=0; shift ;;
     --minify)  MINIFY=1; shift ;;
     --out)     OUT="${2:?--out needs a path}"; shift 2 ;;
+    --deploy)  DEPLOY=1; shift ;;
+    --no-verify-jwt) NO_VERIFY_JWT=1; shift ;;
+    --project-ref)   PROJECT_REF="${2:?--project-ref needs a ref}"; shift 2 ;;
     -h|--help) usage 0 ;;
     -*) echo "Unknown flag: $1" >&2; usage 1 ;;
     *)  if [ -z "$FUNCTION" ]; then FUNCTION="$1"; shift; else echo "Unexpected arg: $1" >&2; usage 1; fi ;;
@@ -178,8 +192,53 @@ fi
 log "Syntax-checking the bundle (node --check)"
 node --check "$OUT" && ok "valid JS syntax"
 
-# ----- 5. report + deploy instructions --------------------------------------
+# ----- 5. deploy (opt-in, needs SUPABASE_ACCESS_TOKEN) -----------------------
+#
+# WHY THIS STAGES THE BUNDLE INSTEAD OF DEPLOYING FROM supabase/functions/.
+# `supabase functions deploy` would re-bundle from source, which puts us back at
+# the mercy of how the CLI walks imports that escape the function directory
+# (`../../../lib/protein.ts`, `../generate-signal/detection.ts`). The artifact
+# this script already produced is self-contained by construction, so we hand the
+# CLI a throwaway project containing exactly that one file. The CLI then has no
+# module graph to get wrong, and what ships is byte-identical to what `node
+# --check` just validated and whose sha256 is printed below.
+#
+# --use-api bundles server-side, so no Docker daemon is needed (Codespaces).
 SHA="$(sha256sum "$OUT" | cut -d' ' -f1)"
+
+if [ "$DEPLOY" = 1 ]; then
+  log "Deploying $FUNCTION to project $PROJECT_REF"
+  if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+    echo "error: --deploy needs SUPABASE_ACCESS_TOKEN in the environment." >&2
+    echo "       Mint one at https://supabase.com/dashboard/account/tokens and export it." >&2
+    echo "       Never commit it; in Codespaces add it as a Codespace secret." >&2
+    exit 1
+  fi
+
+  STAGE="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$STAGE'" EXIT
+  mkdir -p "$STAGE/supabase/functions/$FUNCTION"
+  cp "$OUT" "$STAGE/supabase/functions/$FUNCTION/index.ts"
+  printf 'project_id = "%s"\n' "$PROJECT_REF" > "$STAGE/supabase/config.toml"
+
+  deploy_args=(functions deploy "$FUNCTION" --project-ref "$PROJECT_REF" --use-api --workdir "$STAGE")
+  # The CLI defaults verify_jwt ON. Every function in this project is `true`
+  # EXCEPT view-report — deploying that one without this flag would silently
+  # start rejecting the unauthenticated share-link reads it exists to serve.
+  if [ "$NO_VERIFY_JWT" = 1 ]; then
+    deploy_args+=(--no-verify-jwt)
+    warn "deploying with verify_jwt DISABLED — correct only for view-report"
+  fi
+
+  npx --yes supabase@latest "${deploy_args[@]}"
+  ok "deployed — confirm the version bumped and status is ACTIVE:"
+  echo "     https://supabase.com/dashboard/project/$PROJECT_REF/functions/$FUNCTION/details"
+  echo "     Then smoke-test: a JWT'd call with a bogus id should return a clean 4xx, not WORKER_ERROR."
+  exit 0
+fi
+
+# ----- 6. report + deploy instructions --------------------------------------
 cat <<EOF
 
 $(printf '\033[1m✅ Deploy-ready bundle\033[0m')
