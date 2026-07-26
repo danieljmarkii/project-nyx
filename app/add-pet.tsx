@@ -26,7 +26,11 @@ export default function AddPetScreen() {
         .single();
 
       if (error || !data) {
-        Alert.alert('Something went wrong', error?.message ?? 'Please try again.');
+        // Log the provider's string; never show it. A raw Postgres/RLS message
+        // names a system state instead of telling the owner what to do next
+        // (the lib/authErrors rationale, applied to the pets insert).
+        console.error('[AddPet] insert failed:', error);
+        Alert.alert("Couldn't add the pet", 'Please try again.');
         return;
       }
 

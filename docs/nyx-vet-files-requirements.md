@@ -1,8 +1,8 @@
-# Nyx Vet Files — Central Vet Records Library — Requirements (B-477)
+# Nyx Vet Files — Central Vet Records Library — Requirements (B-478)
 
-**Version:** 1.0 — **BUILD-READY** | **Date:** 2026-07-26 | **Status:** **Every requirements decision is closed.** G1–G3 PM-ruled (new `vet_documents` table + `nyx-vet-documents` bucket; PDFs in v1 store-and-view; pet-profile entry); the mock round ran twice with Jordan/Sam persona reviews between rounds (`docs/culprit-vet-files-mockups.html`, round-2.1 is **design-locked**); D11–D14 PM-ruled (chips out; search out → B-478; multi-pet via duplicate-on-add; report paperclip out → B-479, explicitly not D8-gated). **The only open item is G4 (priority): B-477 stays `Later` until the PM promotes it — this spec is ready whenever that happens.** VF-0 can ship any time on its own `Now` mandate.
+**Version:** 1.0 — **BUILD-READY** | **Date:** 2026-07-26 | **Status:** **Every requirements decision is closed.** G1–G3 PM-ruled (new `vet_documents` table + `nyx-vet-documents` bucket; PDFs in v1 store-and-view; pet-profile entry); the mock round ran twice with Jordan/Sam persona reviews between rounds (`docs/culprit-vet-files-mockups.html`, round-2.1 is **design-locked**); D11–D14 PM-ruled (chips out; search out → B-479; multi-pet via duplicate-on-add; report paperclip out → B-480, explicitly not D8-gated). **The only open item is G4 (priority): B-478 stays `Later` until the PM promotes it — this spec is ready whenever that happens.** VF-0 can ship any time on its own `Now` mandate.
 
-**Read with:** `docs/nyx-vet-report-requirements.md` (§8.3 scope cascade, §8/§12 attachment-handling pattern), `docs/nyx-ask-requirements.md` §6 (the D2 LLM-boundary template Phase 2 must mirror), `docs/monetization-and-throttling-requirements.md` §3 (the free-forever table), backlog rows B-477 / B-248 / B-466 / B-145 / B-041 / B-464.
+**Read with:** `docs/nyx-vet-report-requirements.md` (§8.3 scope cascade, §8/§12 attachment-handling pattern), `docs/nyx-ask-requirements.md` §6 (the D2 LLM-boundary template Phase 2 must mirror), `docs/monetization-and-throttling-requirements.md` §3 (the free-forever table), backlog rows B-478 / B-248 / B-466 / B-145 / B-041 / B-464.
 
 ---
 
@@ -26,16 +26,16 @@ Proposed decisions (team recommendation attached; PM ratifies or overrides). Ope
 ### Mock-round rulings (PM, 2026-07-26, after round 2 + the Jordan/Sam persona reviews)
 
 - **D11 — Kind chips at the saved moment: OUT of v1.** PM ruled with Jordan: capture stays zero-decision with nothing added post-save; the recovery for the untitled-library problem is the **one-tap Name / Add-type affordance on the library row** (round-2 L-real), which ships in VF-2. Sam's chips proposal is recorded, not adopted; revisit only if real usage shows the list-side recovery isn't used.
-- **D12 — Search: OUT of v1.** §4.1 stands as specced (kind filter only). Deferred to backlog (B-478); the trigger to revisit is real libraries crossing ~20 documents.
+- **D12 — Search: OUT of v1.** §4.1 stands as specced (kind filter only). Deferred to backlog (B-479); the trigger to revisit is real libraries crossing ~20 documents.
 - **D13 — Multi-pet documents: SUPPORTED, via duplicate-on-add.** PM ruled multi-pet support is required. Mechanism (Engineer rec under that ruling): an **"Also add to {other pet}'s Vet Files"** action on the saved moment (and detail ⋯ menu) that creates a full independent copy — new row, new storage object — under the other pet. A shared-document model was considered and rejected for v1: one object serving two pets breaks the pet-prefixed `storage_path` CHECK, the per-pet bucket policies, and the delete-account cascade (removing one pet would orphan or destroy the other's reference). Copies may diverge after creation; that is accepted (they are separate filings, like forwarding an email twice). **Schema impact: none — `pet_id` stays NOT NULL**, VF-1 unblocked as drafted. The affordance renders only in multi-pet accounts.
-- **D14 — The report paperclip: OUT of v1 (PM, 2026-07-26).** Attach-a-stored-document-on-report-send does not ship in v1; deferred to **B-479**. Two facts bind the future: **(a)** it is *not* gated by D8 — attaching an existing file involves no AI read, so when B-479 is picked up it needs only a scope ruling, never the D2-class boundary process; **(b)** until it ships, every surface states the current truth plainly (the A1-r2 blurb: "Not included in the vet report — shared one at a time") — the two Records cards sit adjacent, and silence would imply inclusion (both persona reviews assumed it).
+- **D14 — The report paperclip: OUT of v1 (PM, 2026-07-26).** Attach-a-stored-document-on-report-send does not ship in v1; deferred to **B-480**. Two facts bind the future: **(a)** it is *not* gated by D8 — attaching an existing file involves no AI read, so when B-480 is picked up it needs only a scope ruling, never the D2-class boundary process; **(b)** until it ships, every surface states the current truth plainly (the A1-r2 blurb: "Not included in the vet report — shared one at a time") — the two Records cards sit adjacent, and silence would imply inclusion (both persona reviews assumed it).
 
 ### Gates — rulings (PM, 2026-07-26, same day as the draft)
 
 - **G1 — CLOSED (delegated to the team → recommendation ratified).** New `vet_documents` table + new `nyx-vet-documents` bucket per D3/D4. VF-1 unblocked.
 - **G2 — CLOSED: YES, PDFs in v1** (store-and-view only, per D5's bounds — no thumbnails, no extraction, no server-side processing). VF-5 dissolves into VF-3/VF-4.
 - **G3 — CLOSED: pet-profile section** per D6. VF-2/VF-4 unblocked pending the mock round.
-- **G4 — DELIBERATELY OPEN.** PM is "open minded on priority": B-477 **stays `Later`** until actively promoted; the §10 conflict stands recorded, not resolved. The hard sequencing in §6.1 holds either way (VF-0 = B-248/B-466 is already `Now` on its own merits). Revisit when a build slot opens or the PM promotes it.
+- **G4 — DELIBERATELY OPEN.** PM is "open minded on priority": B-478 **stays `Later`** until actively promoted; the §10 conflict stands recorded, not resolved. The hard sequencing in §6.1 holds either way (VF-0 = B-248/B-466 is already `Now` on its own merits). Revisit when a build slot opens or the PM promotes it.
 
 ---
 
@@ -213,7 +213,7 @@ Phase 2 gets its own spec + PR plan after the D8 ruling.
 - **Jordan / Sam:** the parking-lot test (§4.2) and the ER moment (§4.3 share) are the two moments that matter; multi-screenshot email threads must not become list clutter (§4.4).
 - **Trust & Safety:** deletion + export story before first upload (§5.2/§6.2); new-data-class disclosures (B-229/B-268); Phase-2 consent must be explicit and granular (Apple per-record model, §2); dissent registered on any future silent-ingestion design — consent is per-corpus at minimum, ideally per-document.
 - **QA:** AC list §8; flags that AC 2's report-window check and AC 8's zero-residue check are the two easiest to hand-wave and therefore the two that get explicit verification steps.
-- **Product Owner:** B-145 is absorbed as Phase 2's ingestion lane (its row updates when the D8 ruling happens, not before); B-477 row carries this spec; no new backlog scope invented here.
+- **Product Owner:** B-145 is absorbed as Phase 2's ingestion lane (its row updates when the D8 ruling happens, not before); B-478 row carries this spec; no new backlog scope invented here.
 
 **Recorded conflict (not resolved — informs G4):**
 > **Dr. Chen:** labs-in-one-place is real continuity-of-care value; every month at `Later` is another ER visit where the bloodwork stays in an inbox.
@@ -231,7 +231,7 @@ Phase 2 gets its own spec + PR plan after the D8 ruling.
 
 ## 12. Follow-ups & flagged doc edits (Tier 2 — PM confirmation before writing)
 
-- `docs/backlog.md` B-477 row: status head updated to reference this spec (done in the same PR, Tier-1-adjacent working state).
+- `docs/backlog.md` B-478 row: status head updated to reference this spec (done in the same PR, Tier-1-adjacent working state).
 - B-145 row: annotate "absorbed as Vet Files Phase-2 ingestion lane per `docs/nyx-vet-files-requirements.md` §7" — **proposed, awaiting PM.**
 - B-041 row: add `vet_documents` + `nyx-vet-documents` to its scope line **when VF-1 merges** — proposed.
 - B-229 / B-268 rows: add the vet-document data class — proposed.

@@ -92,8 +92,8 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
       await reload();
     } catch (err) {
       setOnByPet((cur) => ({ ...cur, [pet.id]: !next })); // revert — the write didn't land
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert("Couldn't update", msg);
+      console.error('[AlwaysAvailableCard] arrangement toggle failed:', err);
+      Alert.alert("Couldn't update", 'Try again in a moment.');
     } finally {
       setSavingPetId(null);
     }
@@ -128,8 +128,8 @@ export function AlwaysAvailableCard({ foodItemId }: Props) {
       await reload();
     } catch (err) {
       setOnByPet((cur) => ({ ...cur, [pet.id]: true })); // revert — the write didn't land
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert("Couldn't update", msg);
+      console.error('[AlwaysAvailableCard] stop-arrangement failed:', err);
+      Alert.alert("Couldn't update", 'Try again in a moment.');
     }
   }
 
