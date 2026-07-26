@@ -46,4 +46,22 @@ describe('LandingScreen', () => {
     fireEvent.press(getByTestId('landing-how-it-works'));
     expect(mockedPush).toHaveBeenCalledWith('/(auth)/how-it-works');
   });
+
+  it('renders the mark static — no ping rings on the Landing (PM 2026-07-26)', () => {
+    // The ring-train ping is retired from this surface (Option B,
+    // docs/culprit-landing-hero-mockups.html): CulpritMark gets no `live`, so its
+    // pulse layers (the only stroked circles the hero would ever draw — the moon,
+    // dot, and stars are all fills) must not render. A stroked circle appearing
+    // here means someone re-added the pulse.
+    const tree = render(<LandingScreen />).toJSON();
+    const strokedCircles: any[] = [];
+    const visit = (n: any) => {
+      if (!n) return;
+      if (Array.isArray(n)) return n.forEach(visit);
+      if (n.type === 'RNSVGCircle' && n.props?.stroke != null) strokedCircles.push(n);
+      (n.children ?? []).forEach(visit);
+    };
+    visit(tree);
+    expect(strokedCircles).toHaveLength(0);
+  });
 });

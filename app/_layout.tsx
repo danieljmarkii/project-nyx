@@ -9,9 +9,8 @@ import { useAuthStore } from '../store/authStore';
 import { usePetStore } from '../store/petStore';
 import { initDb } from '../lib/db';
 import { wipeLocalSession } from '../lib/session';
-import { logAuth } from '../lib/authDebug';
 import { coldStartDecision } from '../lib/authRouting';
-import { APP_BUILD, PLATFORM } from '../lib/appInfo';
+import { purgeRetiredStorage } from '../lib/retiredStorage';
 import { useSync } from '../hooks/useSync';
 import { useSyncTimezone } from '../hooks/useSyncTimezone';
 import { useWidgetSnapshots } from '../hooks/useWidgetSnapshots';
@@ -62,10 +61,9 @@ export default function RootLayout() {
   }, [appActive]);
 
   useEffect(() => {
-    // Diagnostic breadcrumb marking the start of this launch, so the on-device
-    // log is grouped per process lifetime (build + platform for cross-device
-    // correlation). See lib/authDebug.ts — temporary auth-persistence probe.
-    logAuth('launch', { build: APP_BUILD, platform: PLATFORM });
+    // B-301: drop the retired auth-probe log left on devices that ran builds
+    // 33/34. Fire-and-forget — never gates startup.
+    purgeRetiredStorage();
 
     initDb().catch(console.error);
 
@@ -78,15 +76,6 @@ export default function RootLayout() {
       // bug: a returning owner with a perfectly good refresh token still sitting in
       // encrypted storage got kicked to the login wall over a network blip.
       const decision = coldStartDecision(session, error);
-      logAuth('coldstart.getSession', {
-        hasSession: !!session,
-        hadError: !!error,
-        decision,
-        expiresInSec:
-          session?.expires_at != null
-            ? session.expires_at - Math.floor(Date.now() / 1000)
-            : null,
-      });
       if (decision === 'proceed') {
         setSession(session);
       } else if (decision === 'to-auth') {
@@ -116,17 +105,6 @@ export default function RootLayout() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // Diagnostic breadcrumb: every auth transition (INITIAL_SESSION, SIGNED_IN,
-      // TOKEN_REFRESHED, SIGNED_OUT). A SIGNED_OUT that is NOT the user's own tap
-      // is the fingerprint of the bug — the app deciding the session is gone.
-      logAuth('authchange', {
-        event,
-        hasSession: !!session,
-        expiresInSec:
-          session?.expires_at != null
-            ? session.expires_at - Math.floor(Date.now() / 1000)
-            : null,
-      });
       // FR-9 (B-054 Trust & Safety gate): a real sign-out is signalled ONLY by
       // SIGNED_OUT — auth-js emits it from _removeSession on every genuine removal
       // (explicit signOut, or a NON-retryable refresh failure), and never for a
@@ -208,7 +186,6 @@ export default function RootLayout() {
         <Stack.Screen name="settings" />
         <Stack.Screen name="settings/notifications" />
         <Stack.Screen name="settings/feedback" />
-        <Stack.Screen name="settings/diagnostics" />
       </Stack>
       <MealCompletionCard />
       <MedicationCompletionCard />
