@@ -38,4 +38,4 @@ So the purge runs at **startup**, unconditionally, not on sign-out — new `lib/
 - **Adversarial review:** N/A — no clinical or statistical logic touched. The auth path is load-bearing but the change is a pure instrumentation strip; the `writeToTier` control-flow simplification is covered by the existing `secureStore.test.ts` suite (torn reads, tier fallback, commit atomicity, sign-out clearing), which passes unchanged.
 - **Future-self review:** `lib/retiredStorage.ts` is the one new pattern. Worth keeping in 12 months — retiring a storage key is a recurring need and the alternative (an inline `removeItem` in the launch effect) is untestable and has no obvious home for the next one. The named risk is the list growing unboundedly; each entry costs one key in a single `multiRemove`, so the honest prune trigger is "the writing code is far enough in the past that no live install can still hold the key," not a size limit.
 
-## Shipped via #476
+## Shipped via #477
