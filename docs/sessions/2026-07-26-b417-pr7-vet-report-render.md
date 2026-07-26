@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-26
 
-Shipped via **#466** (draft). Stacked on **#459** (PR 5, still open) — PR 7 cannot exist without the predicate, so the branch carries both and the PR body says so.
+Shipped via **#467** (draft). Stacked on **#459** (PR 5, still open) — PR 7 cannot exist without the predicate, so the branch carries both and the PR body says so.
 
 ---
 
@@ -45,7 +45,7 @@ The `refused` `stopped_reason` also reaches something for the first time: it ren
 
 ## What the cold read caught, and why it mattered
 
-`vet-report-cold-read` was run against two **rendered** artifacts (`scripts/render-trial-report-sample.ts` emits them): a dog at day 46 of 56 of a hydrolysed skin trial with a mid-trial allowed-list change, and a cat who refused the diet and was stopped at day 19 with a free-fed bowl still down.
+`vet-report-cold-read` was run against two **rendered** artifacts (`scripts/render-trial-report-sample.deno.ts` emits them; the `.deno.ts` suffix keeps it out of the app's `tsc` run and CI type-checks it, so the script the cold-read gate depends on cannot rot silently): a dog at day 46 of 56 of a hydrolysed skin trial with a mid-trial allowed-list change, and a cat who refused the diet and was stopped at day 19 with a free-fed bowl still down.
 
 Its best finding was not a bug in the sense of a wrong number. **A cat whose owner dutifully put the bowl down twice a day for nineteen days and logged every refusal scores 19-of-19 coverage** — so the coverage-only §7.2 sentence read *"This record covers 19 of 19 days of the trial window and supports interpreting it"* over a trial in which **no elimination ever happened**. A vet skimming that concludes the diet was adequately documented and the result can be read.
 
