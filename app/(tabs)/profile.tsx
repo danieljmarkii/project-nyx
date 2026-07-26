@@ -25,6 +25,9 @@ import { WeightTrendCard } from '../../components/profile/WeightTrendCard';
 import { AddConditionModal, Condition } from '../../components/profile/AddConditionModal';
 import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicationModal';
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
+import {
+  describeActiveTrial, getActiveTrialForPet, type ActiveTrialSummary,
+} from '../../lib/dietTrialSetup';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { TrialContaminantNote } from '../../components/food/TrialContaminantNote';
 import {
@@ -186,10 +189,36 @@ export default function ProfileScreen() {
   // context renders nothing at all rather than an all-clear.
   const [trialCtx, setTrialCtx] = useState<TrialProteinContext | null>(null);
 
+  // B-417 PR 3 — THE EXISTENCE ORACLE IS THE LOCAL MIRROR, NOT THE NETWORK.
+  //
+  // The card's active render below reads Supabase (PR 4 rebuilds it). That was
+  // harmless while a trial-less pet rendered NO card at all — but PR 3 added the
+  // always-rendering empty state, which turns every failed or empty network read
+  // into the sentence "No trial running." Three ways that becomes a lie, all of
+  // them on this feature's own target user:
+  //   • airplane mode with a live 8-week trial — the catch at :233 leaves
+  //     `dietTrial` null, so the Pet tab asserts no trial while the mirror-backed
+  //     widget is still counting "Day 34 of 56";
+  //   • a trial STARTED OFFLINE — the row exists only locally until the flush, so
+  //     the success sheet says day 1 and the card behind it says no trial;
+  //   • any transient PostgREST failure.
+  // So the mirror decides whether a trial EXISTS, and the empty state is gated on
+  // that. An absence-claim is exactly the shape §5.2 forbids, and PR 3 is what
+  // made this one speak.
+  const [localTrial, setLocalTrial] = useState<ActiveTrialSummary | null>(null);
+
   const loadDietTrial = useCallback(async () => {
     if (!activePet) return;
     setTrialLoading(true);
     try {
+      // First, and never inside the try/catch that guards the network read: this
+      // is the answer that has to survive the network read failing.
+      try {
+        setLocalTrial(await getActiveTrialForPet(activePet.id));
+      } catch (e) {
+        console.warn('[Profile] local trial read failed:', e);
+      }
+
       const { data: trial, error: trialError } = await supabase
         .from('diet_trials')
         .select('id, started_at, target_duration_days, vet_name, food_items(brand, product_name)')
@@ -795,7 +824,36 @@ export default function ProfileScreen() {
             that is where the "% compliance" string AND the compliance-bound
             progress bar are deleted (§1.3: the bar is the more misleading of the
             two, and deleting only the string would ship it). */}
-        {!trialLoading && !dietTrial && (
+        {/* The mirror knows a trial the network read didn't return — offline, or a
+            trial started offline and not yet flushed. Render the facts the mirror
+            actually holds (name + day counter via the one shared day-math helper)
+            rather than either lying or going blank. Deliberately NO adherence line
+            and NO progress bar: PR 4 owns the card's fact lines, and the bar it
+            owns is the one it has to DELETE (§1.3). */}
+        {!trialLoading && !dietTrial && localTrial && (
+          <Card style={styles.sectionGap}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.trialLabel}>Diet trial</Text>
+              <TouchableOpacity
+                style={styles.cardActionTouch}
+                onPress={() => setStartTrialVisible(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Change this diet trial"
+              >
+                <Text style={styles.sectionAction}>Change</Text>
+              </TouchableOpacity>
+            </View>
+            {localTrial.foodLabel ? (
+              <Text style={styles.trialFood}>{localTrial.foodLabel}</Text>
+            ) : null}
+            <Text style={styles.trialDays}>
+              {describeActiveTrial(localTrial).dayLine ?? 'Running'}
+            </Text>
+          </Card>
+        )}
+
+        {!trialLoading && !dietTrial && !localTrial && (
           <Card style={styles.sectionGap}>
             <View style={styles.sectionHeader}>
               <Text style={styles.trialLabel}>Diet trial</Text>

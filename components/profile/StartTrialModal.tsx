@@ -96,7 +96,10 @@ export function StartTrialModal({
 
   const [existing, setExisting] = useState<ActiveTrialSummary | null>(null);
   const [stopReason, setStopReason] = useState<string | null>(null);
-  const [ending, setEnding] = useState(false);
+  // The end the owner has AGREED to but that has not been committed — see
+  // handleEndAndContinue. Cleared by reset(), so cancelling out of the sheet
+  // discards it and the running trial is untouched.
+  const [pendingEnd, setPendingEnd] = useState<{ trialId: string; reason: string } | null>(null);
 
   const [startedSummary, setStartedSummary] = useState<{ food: string; endDate: string | null } | null>(null);
 
@@ -111,6 +114,7 @@ export function StartTrialModal({
     setVetName('');
     setMoreOpen(false);
     setStopReason(null);
+    setPendingEnd(null);
     setStartedSummary(null);
   }, []);
 
@@ -177,26 +181,32 @@ export function StartTrialModal({
     setStep('picker');
   }
 
-  async function handleEndAndContinue() {
+  // NOTHING IS COMMITTED HERE. The end of the running trial is held until the new
+  // one is actually being started (handleStart), because ending is destructive and
+  // this app has no un-end path: committing on this button and then letting the
+  // owner hit Cancel — or take a phone call, or have the app killed — would leave
+  // an eight-week trial `abandoned` with a `stopped_reason`, unrecoverable, in
+  // exchange for a decision they did not finish making. It also silently re-anchors
+  // the vet report (scope-cascade rung 2 stops keying on the trial window and the
+  // leading question flips off `diet_trial_working`).
+  function handleEndAndContinue() {
     if (!existing || !stopReason) return;
-    setEnding(true);
-    try {
-      await endActiveTrial({ trialId: existing.id, reason: stopReason });
-      setExisting(null);
-      setStopReason(null);
-      setStep('form');
-    } catch (e) {
-      console.error('[StartTrialModal] end trial failed:', e);
-      Alert.alert('Could not end that trial', 'Something went wrong. Try again.');
-    } finally {
-      setEnding(false);
-    }
+    setPendingEnd({ trialId: existing.id, reason: stopReason });
+    setStep('form');
   }
 
   async function handleStart() {
     if (!canStart || !indication) return;
     setSaving(true);
     try {
+      // ORDERED, and now atomic from the owner's point of view: the old trial ends
+      // only on the same action that creates the new one. The wire ordering is a
+      // separate problem, owned by syncPendingDietTrials' gated two-pass push.
+      if (pendingEnd) {
+        await endActiveTrial(pendingEnd);
+        setPendingEnd(null);
+        setExisting(null);
+      }
       await startDietTrial({
         petId,
         primaryFoods,
@@ -214,6 +224,8 @@ export function StartTrialModal({
       onStarted();
     } catch (e) {
       console.error('[StartTrialModal] start trial failed:', e);
+      // Covers the end too: if endActiveTrial threw, startDietTrial was never
+      // reached and the running trial is still running. Nothing partial lands.
       Alert.alert('Could not start the trial', 'Something went wrong. Try again.');
     } finally {
       setSaving(false);
@@ -314,8 +326,7 @@ export function StartTrialModal({
             <PrimaryButton
               label="End this one and start the new one"
               onPress={handleEndAndContinue}
-              disabled={!stopReason || ending}
-              loading={ending}
+              disabled={!stopReason}
               style={styles.primaryAction}
             />
             <TouchableOpacity onPress={handleCancel} style={styles.quietAction} hitSlop={8}>

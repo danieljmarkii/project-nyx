@@ -17,8 +17,16 @@
 
 const mockRunAsync = jest.fn().mockResolvedValue({ changes: 1, lastInsertRowId: 0 });
 const mockGetFirstAsync = jest.fn().mockResolvedValue(null);
+// The real withTransactionAsync wraps the callback in BEGIN/COMMIT; running it
+// inline keeps the assertions about WHAT is written while still proving the writes
+// go through the transactional path (asserted directly below).
+const mockWithTransactionAsync = jest.fn(async (cb: () => Promise<void>) => { await cb(); });
 jest.mock('./db', () => ({
-  getDb: () => ({ runAsync: mockRunAsync, getFirstAsync: mockGetFirstAsync }),
+  getDb: () => ({
+    runAsync: mockRunAsync,
+    getFirstAsync: mockGetFirstAsync,
+    withTransactionAsync: mockWithTransactionAsync,
+  }),
 }));
 
 const mockSyncTrials = jest.fn().mockResolvedValue(undefined);
@@ -65,6 +73,7 @@ function input(overrides: Partial<StartTrialInput> = {}): StartTrialInput {
 beforeEach(() => {
   mockIdSeq = 0;
   mockRunAsync.mockClear();
+  mockWithTransactionAsync.mockClear();
   mockGetFirstAsync.mockClear().mockResolvedValue(null);
   mockSyncTrials.mockClear();
   mockSyncTrialFoods.mockClear();
@@ -225,6 +234,14 @@ describe('startDietTrial', () => {
     for (let i = 1; i < 4; i++) {
       expect(mockRunAsync.mock.calls[i][0]).toContain('INSERT INTO diet_trial_foods');
     }
+  });
+
+  it('writes the parent and its allowed set in ONE transaction', async () => {
+    // A throw partway through would otherwise leave an ACTIVE trial with a partial
+    // primary_diet set: a real trial that blocks starting another, whose protein
+    // count no longer describes anything, so the standing note goes quiet on it.
+    await startDietTrial(input({ permittedFoods: [JERKY] }));
+    expect(mockWithTransactionAsync).toHaveBeenCalledTimes(1);
   });
 
   it('binds one parameter per placeholder on both statements', async () => {

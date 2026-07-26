@@ -487,11 +487,15 @@ export async function getActiveTrialForPet(petId: string): Promise<ActiveTrialSu
 /**
  * End the running trial so a new one can start (mock screen D's primary action).
  *
- * `ended_at` is written on BOTH outcomes and that is not optional (§3.1): with
- * `completed_at` alone an abandoned trial has no end date, so `report.ts:2813`
- * reads the null as "open-ended → active through the window end" and renders a
- * finished intervention as still ongoing, while `getDietTrialProgress` renders
- * "Day 104 of 28".
+ * `ended_at` is written on BOTH outcomes (§3.1) — but be precise about what that
+ * currently buys, because the spec overstates it and so did this comment.
+ * §3.1 says writing `ended_at` is what stops an abandoned trial rendering as an
+ * intervention still under way. IT DOES NOT, YET: `generate-report` never selects
+ * the column (`index.ts` fetch) and `ReportDietTrialInput` has no field for it
+ * (`report.ts`), so the report still keys off `completed_at` — which is NULL on
+ * an abandoned trial. A cat that refused the diet and was ended at day 19 still
+ * reads to the vet as "ongoing since <start>". Writing the column is necessary
+ * and is the client's half; the reader is **B-455**, against PR 7.
  *
  * A trial ENDS via `status`/`ended_at` — never a DELETE (soft-delete house rule),
  * so the record a vet reads survives the owner changing course.
@@ -548,32 +552,40 @@ export async function startDietTrial(input: StartTrialInput): Promise<string> {
   const now = new Date().toISOString();
   const rows = buildTrialRows(input, now);
 
-  await db.runAsync(
-    `INSERT INTO diet_trials
-       (id, pet_id, food_item_id, started_at, target_duration_days, status,
-        food_label, indication, phase, vet_name, transition_started_at,
-        created_at, updated_at, synced, sync_error)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
-    [
-      rows.trial.id, rows.trial.pet_id, rows.trial.food_item_id, rows.trial.started_at,
-      rows.trial.target_duration_days, rows.trial.status, rows.trial.food_label,
-      rows.trial.indication, rows.trial.phase, rows.trial.vet_name,
-      rows.trial.transition_started_at, rows.trial.created_at, rows.trial.updated_at,
-    ],
-  );
-
-  for (const f of rows.foods) {
+  // ONE TRANSACTION. The parent and its allowed set are a single fact, and a throw
+  // partway through the loop would otherwise leave an ACTIVE trial with a partial
+  // (or empty) `primary_diet` set — which is the worst of the available states: it
+  // is a real trial, the modal's pre-flight will refuse to start another, and
+  // `loadTrialProteinContext`'s multi-food guard reads a count that no longer
+  // describes anything, so the standing protein note goes permanently quiet on it.
+  await db.withTransactionAsync(async () => {
     await db.runAsync(
-      `INSERT INTO diet_trial_foods
-         (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from,
+      `INSERT INTO diet_trials
+         (id, pet_id, food_item_id, started_at, target_duration_days, status,
+          food_label, indication, phase, vet_name, transition_started_at,
           created_at, updated_at, synced, sync_error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
       [
-        f.id, f.diet_trial_id, f.pet_id, f.food_item_id, f.role, f.food_label,
-        f.allowed_from, f.created_at, f.updated_at,
+        rows.trial.id, rows.trial.pet_id, rows.trial.food_item_id, rows.trial.started_at,
+        rows.trial.target_duration_days, rows.trial.status, rows.trial.food_label,
+        rows.trial.indication, rows.trial.phase, rows.trial.vet_name,
+        rows.trial.transition_started_at, rows.trial.created_at, rows.trial.updated_at,
       ],
     );
-  }
+
+    for (const f of rows.foods) {
+      await db.runAsync(
+        `INSERT INTO diet_trial_foods
+           (id, diet_trial_id, pet_id, food_item_id, role, food_label, allowed_from,
+            created_at, updated_at, synced, sync_error)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+        [
+          f.id, f.diet_trial_id, f.pet_id, f.food_item_id, f.role, f.food_label,
+          f.allowed_from, f.created_at, f.updated_at,
+        ],
+      );
+    }
+  });
 
   // Parent before children on the wire too — a child whose parent has not landed
   // FK-fails with a 23503, which PR 2 classifies NON-terminal, so it would simply
