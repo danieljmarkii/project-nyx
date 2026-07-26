@@ -64,8 +64,59 @@ const CORS_HEADERS = {
 // `vet_documents` (B-478) is pet-scoped too, and is nonetheless re-scoped via a third
 // key, `ownedPetIds`. Not because the ROW source is untrusted, but because
 // `storage_path`'s `starts_with` CHECK is a PREFIX test that admits
-// `{ownPetId}/../{victimPetId}/x.pdf` — see scopeVetDocumentPaths for why that residual
-// is closed here rather than left to depend on Storage treating keys as opaque.
+// `{ownPetId}/../{victimPetId}/x.pdf` — its first FOLDER segment is a pet the caller
+// owns. scopeVetDocumentPaths closes that by requiring the whole
+// `{pet_id}/{document_id}.{ext}` shape (exactly two segments), rather than leaving the
+// boundary to depend on Storage treating keys as opaque. Note it is the SHAPE test,
+// not a first-segment test, that does the work — a first-segment filter keeps the
+// traversal key, which is what an earlier revision of this got wrong.
+// Read EVERY `storage_path` a pet-scoped table holds for these pets, paging past
+// PostgREST's row cap.
+//
+// ⚠ This paginates on purpose, and the un-paginated version was a real erasure hole
+// (found by the VF-1 rls-privacy-reviewer). PostgREST applies a `Max rows` cap to
+// every request; a plain `.select().in(...)` silently returns only the first page,
+// and the surplus objects then survive the purge while the function still returns
+// `ok: true` with a `removed` count that reads like success. Silent under-deletion is
+// the one failure mode an erasure path must not have. The app's own hydration
+// (`lib/sync.ts` fetchAllRows) has paged for exactly this reason since B-054; this
+// function had not, which was an inconsistency rather than a decision.
+//
+// B-478 is what made it worth fixing now rather than filing: §4.4 makes
+// `vet_documents` the first table where ONE document is N ROWS (one per page of a
+// multi-page discharge sheet or an N-screenshot email thread), so a real library
+// reaches the cap far sooner than events or attachments ever did — and AC 8 asks for
+// "zero objects, verified count, not assumed."
+//
+// Ordered by `id` (stable and unique) so pages neither skip nor duplicate — the same
+// argument fetchAllRows makes. A page shorter than the request size ends the walk;
+// note that if the server cap is BELOW `PATH_PAGE` every page comes back short, so
+// the request size is deliberately kept small enough to sit under any plausible cap.
+const PATH_PAGE = 500
+async function readAllOwnedPaths(
+  adminClient: SupabaseClient,
+  table: string,
+  petIds: string[],
+): Promise<{ data: { storage_path: string }[] | null; error: { message: string } | null }> {
+  const out: { storage_path: string }[] = []
+  for (let from = 0; ; from += PATH_PAGE) {
+    const { data, error } = await adminClient
+      .from(table)
+      .select('storage_path')
+      .in('pet_id', petIds)
+      .order('id', { ascending: true })
+      .range(from, from + PATH_PAGE - 1)
+    // Surface the error rather than returning a partial list: every caller below
+    // decides for itself whether a read failure is fatal, and a silently truncated
+    // list would look exactly like a complete one.
+    if (error) return { data: null, error }
+    const page = (data ?? []) as { storage_path: string }[]
+    out.push(...page)
+    if (page.length < PATH_PAGE) break
+  }
+  return { data: out, error: null }
+}
+
 async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): Promise<OwnedStoragePaths> {
   // Three independent top-level reads, in parallel: the user's pets (their own photos
   // PLUS the ownership scope for the child tables below), and the medication_items and
@@ -127,11 +178,11 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
   }
 
   const [eventAttRes, vetAttRes, vetDocRes, vetReportRes] = await Promise.all([
-    adminClient.from('event_attachments').select('storage_path').in('pet_id', petIds),
-    adminClient.from('vet_visit_attachments').select('storage_path').in('pet_id', petIds),
+    readAllOwnedPaths(adminClient, 'event_attachments', petIds),
+    readAllOwnedPaths(adminClient, 'vet_visit_attachments', petIds),
     // B-478 VF-1 — the Vet Files library. Pet-scoped exactly like the two above.
-    adminClient.from('vet_documents').select('storage_path').in('pet_id', petIds),
-    adminClient.from('vet_reports').select('storage_path').in('pet_id', petIds),
+    readAllOwnedPaths(adminClient, 'vet_documents', petIds),
+    readAllOwnedPaths(adminClient, 'vet_reports', petIds),
   ])
   if (eventAttRes.error) throw new Error(`Failed to read event_attachments: ${eventAttRes.error.message}`)
   if (vetAttRes.error) throw new Error(`Failed to read vet_visit_attachments: ${vetAttRes.error.message}`)
@@ -168,8 +219,10 @@ async function collectOwnedPaths(adminClient: SupabaseClient, userId: string): P
     foodPhotoPaths,
     ownedFoodItemIds,
     // The same pet ids that scoped the reads above, passed through so
-    // scopeVetDocumentPaths can re-check each vet-document key's first segment
-    // against them — a path and the ids that permit it always travel together.
+    // scopeVetDocumentPaths can re-check each vet-document key against them — a path
+    // and the ids that permit it always travel together. It validates the whole
+    // `{pet_id}/{document_id}.{ext}` shape, not just the leading segment; a
+    // first-segment-only test keeps the `..` traversal key (see plan.ts).
     ownedPetIds: petIds,
     ownerUserId: userId,
   }

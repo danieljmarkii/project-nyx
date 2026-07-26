@@ -182,29 +182,32 @@ Deno.test('scopeVetDocumentPaths — drops a path naming a pet the user does not
   )
 })
 
-Deno.test('scopeVetDocumentPaths — drops the `..` traversal key that starts_with admits', () => {
-  // THE case this function exists for. `{ownPetId}/../{victimPetId}/x.pdf` satisfies
-  // the table's starts_with CHECK and the Storage INSERT policy (its first FOLDER
-  // segment is a pet the caller owns), and cleanPaths never normalises a path — so
-  // without this guard it reaches the service-role remove() verbatim. Exact
-  // whole-segment membership drops it: the first segment is `pet-mine` only under a
-  // PREFIX reading, and `p.slice(0, slash)` is `pet-mine`… which IS owned.
+Deno.test('scopeVetDocumentPaths — drops EVERY `..` traversal variant the CHECK admits', () => {
+  // THE case this function exists for, and the case an earlier revision got wrong.
+  // `{ownPetId}/../{victimPetId}/x.pdf` satisfies the table's starts_with CHECK and
+  // the Storage INSERT policy (its first FOLDER segment is a pet the caller owns),
+  // and cleanPaths never normalises a path — so without this guard it reaches the
+  // service-role remove() verbatim.
   //
-  // So note precisely what happens: the FIRST segment genuinely is owned, and the
-  // key survives. That is correct and is the honest port of the Storage policy — the
-  // policy would admit it too. What makes it harmless is that it names an object key
-  // no object has. Pin the behaviour rather than claim a rejection the function does
-  // not perform, so a future reader does not mistake this for the whole defence.
-  assertEquals(
-    scopeVetDocumentPaths(['pet-mine/../pet-victim/x.pdf'], ['pet-mine']),
-    ['pet-mine/../pet-victim/x.pdf'],
-  )
-  // The variant that does NOT start with an owned segment is rejected outright,
-  // which is the half a prefix test would have let through.
+  // A first-segment-only filter (the scopeFoodPaths shape) KEEPS all of these: the
+  // first segment genuinely is `pet-mine`, and the `..` is the SECOND segment. The
+  // rls-privacy-reviewer executed that and it is why this checks the whole shape —
+  // exactly two segments, per buildVetDocumentPath's `{pet_id}/{document_id}.{ext}`.
+  assertEquals(scopeVetDocumentPaths([
+    'pet-mine/../pet-victim/x.pdf',
+    'pet-mine/../../pet-victim/x.pdf',
+    'pet-mine//pet-victim/x.pdf',
+    'pet-mine/sub/dir/x.pdf',
+  ], ['pet-mine']), [])
+
+  // And the variants that do not even start with an owned segment.
   assertEquals(
     scopeVetDocumentPaths(['../pet-victim/x.pdf', 'pet-victim/../pet-mine/x.pdf'], ['pet-mine']),
     [],
   )
+
+  // The legitimate key still survives — a guard that drops everything is not a guard.
+  assertEquals(scopeVetDocumentPaths(['pet-mine/doc-1.pdf'], ['pet-mine']), ['pet-mine/doc-1.pdf'])
 })
 
 Deno.test('scopeVetDocumentPaths — a pet id that is a string PREFIX of another is not a match', () => {
@@ -216,6 +219,21 @@ Deno.test('scopeVetDocumentPaths — a slashless key is dropped (no folder segme
   // storage.foldername on a key with no '/' returns an empty array, so [1] is NULL and
   // the policy drops it. A bare key named for a pet id is not a real document.
   assertEquals(scopeVetDocumentPaths(['pet-1', 'pet-1.pdf'], ['pet-1']), [])
+})
+
+Deno.test('scopeVetDocumentPaths — the two-segment rule is NOT lifted to the 3-segment buckets', () => {
+  // Guards the generalisation hazard the fix introduces. nyx-vet-attachments keys are
+  // `{pet_id}/{visit_id}/{attachment_id}.jpg`, so applying THIS predicate there would
+  // drop every legitimate key and silently turn account deletion into a no-op for
+  // that bucket. Pin that vet-ATTACHMENT paths still flow through untouched.
+  const purges = collectStoragePaths(owned({
+    vetAttachmentPaths: ['pet-1/visit-2/att-3.jpg'],
+    vetDocumentPaths: ['pet-1/doc-4.pdf'],
+    ownedPetIds: ['pet-1'],
+  }))
+  const byBucket = Object.fromEntries(purges.map((p) => [p.bucket, p.paths]))
+  assertEquals(byBucket[STORAGE_BUCKETS.vetAttachments], ['pet-1/visit-2/att-3.jpg'])
+  assertEquals(byBucket[STORAGE_BUCKETS.vetDocuments], ['pet-1/doc-4.pdf'])
 })
 
 Deno.test('scopeVetDocumentPaths — an empty owned-pet set fails CLOSED', () => {

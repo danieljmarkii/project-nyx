@@ -34,9 +34,9 @@ import {
   VET_DOCUMENTS_BUCKET,
   prepareVetDocumentUpload,
   needsObjectUpload,
+  isStorableVetDocumentMime,
   vetDocumentRowToRemote,
   type LocalVetDocument,
-  type VetDocumentStoredMimeType,
 } from './vetDocuments';
 
 type Db = ReturnType<typeof getDb>;
@@ -463,14 +463,30 @@ export async function syncPendingVetDocuments(): Promise<void> {
   for (const doc of unsynced) {
     try {
       if (needsObjectUpload(doc.local_uri)) {
+        // Validate rather than cast. `vet_documents.mime_type` accepts four values
+        // server-side (the CHECK mirrors the bucket's allowed_mime_types), but only
+        // two of them can describe an object this app actually wrote — every image
+        // goes through compressForUpload and lands as JPEG. A blind
+        // `as VetDocumentStoredMimeType` on a row carrying image/png or image/heic
+        // would throw inside prepareVetDocumentUpload on EVERY cycle forever, and
+        // because this queue is `ORDER BY created_at LIMIT 20` such a row is among
+        // the OLDEST — so it permanently occupies one of the 20 slots. Twenty of them
+        // wedge the push queue entirely, and a document that never syncs lives only
+        // on this device. Skip it loudly instead: the row is left alone (still
+        // synced = 0, still recoverable once its mime is corrected) but it cannot
+        // starve the rows behind it. Unreachable through the sanctioned write path,
+        // which calls resolveVetDocumentMime — this is the defensive half.
+        if (!isStorableVetDocumentMime(doc.mime_type)) {
+          console.warn(
+            `[sync] vet_document ${doc.id} has un-uploadable mime_type ${doc.mime_type}; skipping (expected image/jpeg or application/pdf)`,
+          );
+          continue;
+        }
         // Throws rather than falling back to the original on a failed re-encode
         // (§6.2: no original-fallback on any image path). The catch below leaves
         // the row synced = 0, so the retry costs a cycle — the document is on the
         // device throughout and the alternative is uploading GPS coordinates.
-        const prep = await prepareVetDocumentUpload(
-          doc.local_uri,
-          doc.mime_type as VetDocumentStoredMimeType,
-        );
+        const prep = await prepareVetDocumentUpload(doc.local_uri, doc.mime_type);
         await uploadPhoto(VET_DOCUMENTS_BUCKET, doc.storage_path, prep.uri, prep.mimeType);
       }
 

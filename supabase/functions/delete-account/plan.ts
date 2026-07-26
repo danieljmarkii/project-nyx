@@ -236,17 +236,31 @@ export function scopeFoodPaths(
 // 043 reasoned, correctly, that such a key deletes nothing: `storage.objects.name`
 // is an OPAQUE literal and neither storage-api nor S3 resolves `..`, so it simply
 // matches no object. But that is a boundary holding on a third-party implementation
-// detail we do not own and do not test, and 043's own rls-privacy-reviewer said the
-// follow-up should mirror scopeFoodPaths' EXACT first-segment set membership rather
-// than repeat a prefix test. This bucket is new, has zero objects, and its guard
-// costs ~10 lines — so it is built right here rather than filed.
+// detail we do not own and do not test. This bucket is new and has zero objects, so
+// the guard is built right here rather than filed.
 //
-// Keep only paths whose FIRST segment is the id of a pet THIS user owns. Exact whole-
-// segment membership, never `startsWith`, so one pet id can never be a string prefix
-// of another; the `..` key is dropped because its first segment is `{ownPetId}` only
-// under a prefix reading, and `p.slice(0, slash)` compares the whole segment. An
-// empty owned-pet set fails CLOSED (drops everything) — a user with no pets has no
-// documents, and a path can never legitimately name a pet that is not theirs.
+// ⚠ THE FIRST-SEGMENT TEST IS NOT ENOUGH, and this comment used to claim it was.
+// Caught by the VF-1 rls-privacy-reviewer, which executed it: in
+// `{ownPetId}/../{victimPetId}/x.pdf` the first segment IS `{ownPetId}` — the `..`
+// is the SECOND segment — so a `scopeFoodPaths`-shaped filter keeps the path and
+// changes nothing about the residual. Copying the food-photo guard verbatim was the
+// mistake; food paths and vet-document paths merely LOOK alike.
+//
+// So this checks the WHOLE SHAPE, which is also a truer port of the convention:
+// `buildVetDocumentPath` emits exactly `{pet_id}/{document_id}.{ext}` — one
+// separator, two segments, no more. Requiring exactly two segments drops every
+// traversal variant the reviewer tried (`/../`, `/../../`, `//`) by construction
+// rather than by trusting Storage to treat the key as opaque, and it still enforces
+// the first-segment ownership the Storage policy expresses. An empty owned-pet set
+// fails CLOSED (drops everything) — a user with no pets has no documents, and a path
+// can never legitimately name a pet that is not theirs.
+//
+// Scoped to vet-document paths ONLY: do NOT lift the two-segment rule into
+// scopeFoodPaths or the pet/event/vet-attachment lists. `nyx-vet-attachments` keys
+// are `{pet_id}/{visit_id}/{attachment_id}.jpg` — THREE segments — so this exact
+// predicate would silently drop every legitimate key there and turn account deletion
+// into a no-op for that bucket. The shape is per-bucket; only the ownership half
+// generalises.
 export function scopeVetDocumentPaths(
   paths: ReadonlyArray<string | null | undefined>,
   ownedPetIds: ReadonlyArray<string>,
@@ -257,13 +271,14 @@ export function scopeVetDocumentPaths(
   if (owned.size === 0) return []
   return paths.filter((p): p is string => {
     if (typeof p !== 'string') return false
-    // Faithful port of the Storage policy's `(storage.foldername(name))[1] IN (…)`:
-    // storage.foldername returns the FOLDER segments (everything before the final
-    // '/'), so a key with NO '/' has an empty folder list and `[1]` is NULL — the
-    // policy drops it. Require the separator here too.
-    const slash = p.indexOf('/')
-    if (slash < 0) return false
-    return owned.has(p.slice(0, slash))
+    const segments = p.split('/')
+    // Exactly `{pet_id}/{document_id}.{ext}`. A slashless key has 1 segment (the
+    // Storage policy drops it too — `storage.foldername` returns an empty array, so
+    // `[1]` is NULL); anything with a second separator is not a key this app can
+    // mint, whatever it claims to be. Set membership on the first segment, never
+    // `startsWith`, so one pet id can never be a string prefix of another.
+    if (segments.length !== 2) return false
+    return owned.has(segments[0])
   })
 }
 

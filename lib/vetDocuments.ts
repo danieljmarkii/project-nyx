@@ -55,6 +55,16 @@ export type VetDocumentSource = (typeof VET_DOCUMENT_SOURCES)[number];
 export const VET_DOCUMENT_STORED_MIME_TYPES = ['image/jpeg', 'application/pdf'] as const;
 export type VetDocumentStoredMimeType = (typeof VET_DOCUMENT_STORED_MIME_TYPES)[number];
 
+// Narrowing type guard for a value that arrives as plain TEXT from SQLite. The sync
+// push uses this instead of an `as VetDocumentStoredMimeType` cast: the server CHECK
+// permits four mime types and only these two can describe an object this app wrote,
+// so the cast would be a lie that surfaces as a per-cycle throw on a queue slot
+// rather than as a type error. See the call site in lib/sync.ts for why a wedged
+// slot matters.
+export function isStorableVetDocumentMime(mime: string): mime is VetDocumentStoredMimeType {
+  return (VET_DOCUMENT_STORED_MIME_TYPES as readonly string[]).includes(mime);
+}
+
 const EXTENSION_BY_MIME: Record<VetDocumentStoredMimeType, string> = {
   'image/jpeg': 'jpg',
   'application/pdf': 'pdf',

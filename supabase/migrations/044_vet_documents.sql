@@ -301,6 +301,14 @@ CREATE POLICY "vet_documents_owner_update" ON vet_documents
 -- ============================================================
 -- 3. Same-pet integrity guard (the 023 / 041 mechanism)
 -- ============================================================
+-- ⚠ SUPERSEDED BY MIGRATION 045. The body below is what was applied by THIS
+-- migration and is left verbatim so the record stays honest (and so 045's rollback
+-- has something to restore). 045 replaces it because the VF-1 rls-privacy-reviewer
+-- executed three holes in it against a real Postgres replay: check (b) was
+-- SECURITY INVOKER and therefore RLS-blind across accounts, which — unlike check
+-- (a) — made it fail OPEN; the same check raced under concurrent transactions; and
+-- `storage_path` was mutable, so one RLS-legal UPDATE orphaned the stored object
+-- from every deletion purge. Read 045 before changing anything here.
 -- TWO references on this table are constrained by neither USING nor WITH CHECK,
 -- for the same reason 040 left `diet_trial_id` open: an RLS policy gates which
 -- ROW you may write, never the CONTENTS of a column, and FOREIGN KEY CHECKS
@@ -439,11 +447,28 @@ CREATE TRIGGER trg_vet_documents_pet_scope
 -- test. 043 recorded this residual for nyx-vet-attachments and reasoned it deletes
 -- nothing because storage.objects.name is an OPAQUE literal that neither
 -- storage-api nor S3 resolves — true, but a boundary that holds on a third-party
--- implementation detail we do not own and do not test. This table does NOT rely on
--- that: delete-account re-scopes vet-document paths by EXACT first-segment set
--- membership against the owner's pet ids (scopeVetDocumentPaths, plan.ts) — the
--- shape 043's reviewer asked for — so the crafted string is dropped before it ever
--- reaches the service-role remove(). Belt (opaque keys) and braces (the scope fn).
+-- implementation detail we do not own and do not test.
+--
+-- So this row of the table is a REAL residual at the SQL layer, and it is not
+-- closed by anything in this file. What closes it is `scopeVetDocumentPaths`
+-- (delete-account/plan.ts), which drops the string before the service-role remove()
+-- ever sees it.
+--
+-- ⚠ AND THE MECHANISM THERE IS THE WHOLE-SHAPE TEST, NOT A FIRST-SEGMENT TEST.
+-- An earlier revision of this header claimed exact first-segment set membership
+-- closed it, copying scopeFoodPaths. That was wrong, and the VF-1
+-- rls-privacy-reviewer executed it to prove so: in `{ownPetId}/../{victim}/x.pdf`
+-- the FIRST segment genuinely IS `{ownPetId}` — the `..` is the SECOND segment — so
+-- a first-segment filter keeps the path and changes nothing. The guard therefore
+-- requires the full `{pet_id}/{document_id}.{ext}` shape (exactly two segments),
+-- which drops every traversal variant by construction. Recorded here rather than
+-- quietly corrected, because a migration header is the permanent record the next
+-- reviewer in this family will trust — and this one was briefly wrong.
+--
+-- The durable fix, if this is ever revisited, is to tighten the CHECK below to a
+-- full-shape regex: a CHECK binds the SERVICE ROLE too, whereas the scope function
+-- guards one caller. Filed rather than done here (see B-494) — 044 is applied, and
+-- tightening a CHECK is a different risk profile from adding one.
 --
 -- ORDERING — the B-358 trap does not bite here. 036 could not owner-scope
 -- nyx-food-photos' INSERT until the client was reordered, because the photo was

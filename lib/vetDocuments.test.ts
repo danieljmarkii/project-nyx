@@ -1,4 +1,5 @@
 import {
+  isStorableVetDocumentMime,
   VET_DOCUMENT_KINDS,
   VET_DOCUMENT_SOURCES,
   VET_DOCUMENT_STORED_MIME_TYPES,
@@ -141,6 +142,25 @@ describe('prepareVetDocumentUpload — the no-original-fallback rule (§6.2)', (
       prepareVetDocumentUpload('file:///docs/x.heic', 'image/heic' as never),
     ).rejects.toThrow(/unsupported stored mime/);
     expect(compressForUpload).not.toHaveBeenCalled();
+  });
+});
+
+describe('isStorableVetDocumentMime', () => {
+  it('accepts only the two mimes this app can actually write', () => {
+    expect(isStorableVetDocumentMime('image/jpeg')).toBe(true);
+    expect(isStorableVetDocumentMime('application/pdf')).toBe(true);
+  });
+
+  it('rejects the two the server CHECK permits but the client never produces', () => {
+    // The gap this guard exists for. `vet_documents_mime_type_check` mirrors the
+    // bucket's allowed_mime_types (four values); only two can describe an object
+    // compressForUpload actually wrote. The sync push validates instead of casting,
+    // so such a row is skipped loudly rather than throwing on every cycle and
+    // permanently occupying one of the queue's 20 ORDER BY created_at slots.
+    expect(isStorableVetDocumentMime('image/png')).toBe(false);
+    expect(isStorableVetDocumentMime('image/heic')).toBe(false);
+    expect(isStorableVetDocumentMime('video/mp4')).toBe(false);
+    expect(isStorableVetDocumentMime('')).toBe(false);
   });
 });
 
