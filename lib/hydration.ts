@@ -254,6 +254,23 @@ export const LOCAL_WIPE_TABLES = [
   // medication_administrations above). Account-scoped pet-health data that must
   // not leak to the next account on a shared device.
   'weight_checks',
+  // B-417 diet-trial mirror (children-first). Neither table declares a local
+  // SQLite FK, so the DELETEs cannot trip a constraint in any order — but
+  // diet_trial_foods still leads diet_trials, because the wipe order is the
+  // file's stated contract ("children before their parents") and a future local
+  // FK would silently make a parent-first order fail.
+  //
+  // BOTH ENTRIES ARE A TRUST & SAFETY REQUIREMENT, not bookkeeping. Without them
+  // a shared or borrowed device retains the prior account's trial across a
+  // sign-out: the trial diet, the vet's name, and `indication` — and
+  // `indication = 'skin'` is a closed clinical enum naming a suspected condition.
+  // Together that is a de facto diagnosis disclosure surviving sign-out, on a
+  // device now in someone else's hands. (See also B-424: this list fails OPEN —
+  // a table absent from it is silently never wiped, with no test that would
+  // notice. The exact-set assertion in hydration.test.ts is the only thing
+  // standing in for that, which is why it must be extended with every mirror.)
+  'diet_trial_foods',
+  'diet_trials',
   'events',
   'vet_visits',
   // feeding_arrangements (B-040 R1) — a pet-child standing-fact table mirrored

@@ -261,8 +261,10 @@ export function buildSlotRows(
   }));
 }
 
-// The active diet trial, as the publisher fetches it (Supabase-only — there is
-// no local diet_trials mirror; see resolveTrialContext).
+// The active diet trial, as the publisher reads it from the LOCAL MIRROR
+// (B-417 PR 2 — lib/dietTrialMirror.ts ACTIVE_DIET_TRIAL_QUERY). Present
+// offline, which is what lets the widget keep its "Day N of M" header in
+// airplane mode; see resolveTrialContext.
 export interface ActiveTrialInfo {
   /** 'YYYY-MM-DD' (DATE) or ISO — the trial's start. */
   startedAt: string;

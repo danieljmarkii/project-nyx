@@ -11,6 +11,7 @@ import {
   type DoseVehicle,
 } from './medications';
 import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicationsQuery, PAIRED_DOSE_REVERSE_JOIN } from './medicationQueries';
+import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { uuid } from './utils';
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -272,6 +273,23 @@ export async function initDb(): Promise<void> {
   // `events(id)` FK target already exists; PRAGMA foreign_keys persists on the
   // connection (getDb returns one shared handle).
   await database.execAsync(MEDICATION_SCHEMA_SQL);
+
+  // B-417 PR 2 diet-trial local mirror (migrations 040 + 041). Same extraction
+  // rationale as MEDICATION_SCHEMA_SQL above: the DDL lives in
+  // lib/dietTrialMirror.ts as a string so dietTrialMirror.test.ts can exercise
+  // THIS EXACT SQL against an in-memory node:sqlite — the dated-membership UNIQUE
+  // constraint and the soft-delete round trip are otherwise unverified until
+  // on-device. Order is FREE: neither table declares a SQLite FK (deliberately —
+  // a child may hydrate before its parent), so this needs no positioning
+  // relative to the events block. It runs here, immediately after the medication
+  // mirror, purely so the two mirrors read as one section.
+  //
+  // NO `ALTER TABLE … ADD COLUMN` upgrade path accompanies this, and that is not
+  // an omission (§3.4 item 4): both tables are NET-NEW to local SQLite in this
+  // build, so `CREATE TABLE IF NOT EXISTS` covers every existing install by
+  // construction. Any column added AFTER this ships needs its own ALTER here —
+  // CREATE TABLE IF NOT EXISTS will not add one to a device that already ran this.
+  await database.execAsync(DIET_TRIAL_SCHEMA_SQL);
 
   // Add photo_path to food_items_cache if upgrading from earlier schema
   try {
