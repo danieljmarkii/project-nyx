@@ -76,6 +76,9 @@ function meal(p: Partial<AnalyticsMeal> & { ms: number }): AnalyticsMeal {
     // (the "unclassified" composition case) rather than coalescing to 'meal'.
     foodType: p.foodType === undefined ? 'meal' : p.foodType,
     primaryProtein: p.primaryProtein ?? null,
+    // B-351: absent stays ABSENT (not `?? []`), so the default fixture exercises the
+    // legacy shape the live library is still mostly in — the set is opt-in per test.
+    proteins: p.proteins,
     intakeRating: p.intakeRating ?? null,
   };
 }
@@ -514,6 +517,50 @@ describe('computeTopProteins', () => {
     expect(chicken.count).toBe(6); // exposure includes the 2 treats
     expect(chicken.ratedMeals).toBe(4); // ONLY the 4 meals are rated for the rate
     expect(chicken.finishedRate).toBeCloseTo(0.75, 5); // 3/4 meals — the treats' ceiling is excluded
+  });
+
+  it('B-351 — counts the WHOLE protein set, so a hidden secondary is a real exposure', () => {
+    // The dashboard has to see the same exposure the correlation engine does, or an owner
+    // reads "Chicken · 25% of servings" on Patterns while the Signal is built on chicken
+    // being in nearly everything. Here every "duck" bowl also declares chicken.
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'duck', proteins: ['duck', 'chicken'] }),
+      meal({ ms: at(1), primaryProtein: 'duck', proteins: ['duck', 'chicken'] }),
+      meal({ ms: at(2), primaryProtein: 'duck', proteins: ['duck', 'chicken'] }),
+      meal({ ms: at(3), primaryProtein: 'salmon', proteins: ['salmon'] }),
+    ];
+    const out = computeTopProteins(rows) as RankedProtein[];
+    expect(out.map((p) => p.protein)).toEqual(['chicken', 'duck', 'salmon']);
+    // Shares deliberately exceed 1 in total: each bar is "the share of servings that
+    // contained this protein", not a slice of a pie (see RankedProtein.shareOfDiet).
+    expect(out.find((p) => p.protein === 'chicken')!.count).toBe(3);
+    expect(out.find((p) => p.protein === 'chicken')!.shareOfDiet).toBeCloseTo(0.75, 5);
+    // The denominator is still FEEDINGS, so no serving is counted twice.
+    expect(out.every((p) => p.shareOfDiet <= 1)).toBe(true);
+  });
+
+  it('B-351 — a row with no captured set behaves exactly as it did before (pure widening)', () => {
+    const legacy: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'chicken' }),
+      meal({ ms: at(1), primaryProtein: 'chicken' }),
+      meal({ ms: at(2), primaryProtein: 'salmon' }),
+      meal({ ms: at(3), primaryProtein: 'salmon' }),
+    ];
+    const explicit = legacy.map((m) => ({ ...m, proteins: [m.primaryProtein as string] }));
+    expect(computeTopProteins(legacy)).toEqual(computeTopProteins(explicit));
+  });
+
+  it('B-351 — a protein appearing twice in one food\'s set counts that feeding ONCE', () => {
+    // readProteinSet dedupes on the canonical key, so a panel listing "Chicken" and
+    // "Chicken By-Product Meal" cannot inflate a single serving into two exposures.
+    const rows: AnalyticsMeal[] = [
+      meal({ ms: at(0), primaryProtein: 'Chicken', proteins: ['Chicken', 'chicken by-product meal'] }),
+      meal({ ms: at(1), primaryProtein: 'chicken', proteins: ['chicken'] }),
+      meal({ ms: at(2), primaryProtein: 'salmon', proteins: ['salmon'] }),
+      meal({ ms: at(3), primaryProtein: 'salmon', proteins: ['salmon'] }),
+    ];
+    const out = computeTopProteins(rows) as RankedProtein[];
+    expect(out.find((p) => p.protein === 'chicken')!.count).toBe(2);
   });
 
   it('excludes free-fed meals from a protein finish-rate (§11 #6 still holds post-B-111)', () => {

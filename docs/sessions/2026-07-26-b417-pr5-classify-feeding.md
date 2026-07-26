@@ -42,9 +42,9 @@ All of it is now behind one exported rule, `mayClaimAllMatched`, which is one-di
 
 ## Known limits, all filed
 
-- **B-459** — §12's *"every flag is tappable to its reason"* is **unmet**. `explainVerdict` is complete and has zero callers, because the "Outside the trial diet" list screen was deferred out of PR 4 as **B-458**. The criterion is not met until B-458 lands, and PR 5 must not be recorded as having met it.
-- **B-460** — rung 1 permits on a fuzzy key and stops the chain, so a brand+product collision is a false **permit**. §5.4 optimised the key against false accusation and inherited the opposite tail.
-- **B-461** — a re-logged duplicate of one slip counts twice in the floor and twice in Appendix C. Over-counting is the honest direction for a floor, but the itemisation makes the duplication visible without explaining it.
+- **B-463** — §12's *"every flag is tappable to its reason"* is **unmet**. `explainVerdict` is complete and has zero callers, because the "Outside the trial diet" list screen was deferred out of PR 4 as **B-458**. The criterion is not met until B-458 lands, and PR 5 must not be recorded as having met it.
+- **B-464** — rung 1 permits on a fuzzy key and stops the chain, so a brand+product collision is a false **permit**. §5.4 optimised the key against false accusation and inherited the opposite tail.
+- **B-465** — a re-logged duplicate of one slip counts twice in the floor and twice in Appendix C. Over-counting is the honest direction for a floor, but the itemisation makes the duplication visible without explaining it.
 - **B-454 is not dissolved by this PR**, as its own row predicted: a half-hydrated allowed set still yields a too-narrow sanctioned set. The fix is wrapping `hydrateDietTrialFoods`'s per-row loop in a transaction — shipped sync semantics, its own diff. What PR 5 *did* add is the `primaryResolved` gate, which stops the worst downstream consequence (the exposure claim) even when the set is partial.
 - `isWithinChallengeWindow`, `interpretabilityStatement` and `antigenTally` have no consumers yet. That is PR 7's wiring, and the reviewer's note stands: when PR 7 routes through the challenge window, its day indices must come from `dayIndexOf(ctx, …)` — a UTC epoch-day would silently shift the window by up to a day at each end.
 

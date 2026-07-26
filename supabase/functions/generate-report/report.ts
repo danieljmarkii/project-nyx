@@ -1078,7 +1078,14 @@ export interface MedicationAdherence {
 
 export interface EstablishedCorrelation {
   symptomType: SymptomType
+  /** Owner/vet-facing LABEL — one protein, or a joint cluster named together
+   *  ("chicken and duck"). Never a representative member (B-351 slice 6). */
   protein: string
+  /** The candidate's protein cluster, ascending. Length ≥2 ⟺ the engine could not
+   *  separate the members; the report must say so rather than let a vet read a joint
+   *  candidate as two independently-implicated antigens. Optional so a signal row
+   *  cached before slice 6 still renders. */
+  proteins?: string[]
   matchedPairs: number
   caseExposed: number
   controlExposed: number
@@ -1752,6 +1759,7 @@ function runDetection(detInput: DetectionInput): DetectionExtract {
         established.push({
           symptomType: f.symptomType,
           protein: f.protein,
+          proteins: f.proteins,
           matchedPairs: f.matchedPairs,
           caseExposed: f.caseExposed,
           controlExposed: f.controlExposed,
