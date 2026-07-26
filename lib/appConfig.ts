@@ -208,6 +208,22 @@ export async function loadCachedAppConfig(): Promise<AppConfigBundle | null> {
   }
 }
 
+// B-402 — drop the cached bundle on sign-out. The values themselves are global
+// product config, not health data, but the cache also carries the experimental
+// ALLOWLIST: a list of other people's user UUIDs, persisted on a device that may
+// now be in someone else's hands. Losing the cache costs only the offline
+// cold-start optimization — the next launch falls back one level to the shipped
+// per-key defaults (AI keys fail open, `paywall_enabled` fails closed), which is
+// the same state a fresh install starts in. Best-effort: never throws.
+export async function clearCachedAppConfig(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(CACHE_KEY);
+  } catch {
+    // Nothing to recover: the values are render-only and the server re-checks
+    // every gate authoritatively, so a stuck cache can't widen access.
+  }
+}
+
 export async function persistAppConfig(bundle: AppConfigBundle): Promise<void> {
   try {
     await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(bundle));

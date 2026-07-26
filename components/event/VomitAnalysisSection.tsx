@@ -144,7 +144,10 @@ export function VomitAnalysisSection(
     const { error } = await triggerVomitAnalysis(eventId);
     setRetrying(false);
     if (error) {
-      Alert.alert('Could not start analysis', error);
+      // `error` is the raw functions.invoke message (lib/analysis.ts) — a
+      // transport string, not owner copy. Log it, show the calm retry line.
+      console.warn('[vomit-analysis] retry failed:', error);
+      Alert.alert('Could not start analysis', 'Try again in a moment.');
       return;
     }
     setWorking(true);

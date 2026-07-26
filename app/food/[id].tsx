@@ -145,7 +145,10 @@ export default function FoodDetailScreen() {
         .maybeSingle();
       if (cancelled) return;
       if (error || !data) {
-        setLoadError(error?.message ?? 'Food not found');
+        // Two different owner-facing truths here: a failed read is retryable, a
+        // missing row is not. Neither is served by the raw Postgres string.
+        if (error) console.warn('[food-detail] load failed:', error.message);
+        setLoadError(error ? "Couldn't load this food. Check your connection and try again." : 'Food not found');
         return;
       }
       applyRow(data as FoodRow);
@@ -287,7 +290,8 @@ export default function FoodDetailScreen() {
     setSaving(false);
 
     if (error) {
-      Alert.alert('Could not save', error.message);
+      console.error('[food-detail] save failed:', error);
+      Alert.alert('Could not save', 'Something went wrong. Try again in a moment.');
       return;
     }
 
@@ -426,8 +430,8 @@ export default function FoodDetailScreen() {
       if (error) throw error;
       setRow({ ...row, photo_paths: nextPaths });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('Could not add photo', msg);
+      console.error('[food-detail] add photo failed:', err);
+      Alert.alert('Could not add photo', 'Try again in a moment.');
     } finally {
       setAddingPhoto(false);
     }
@@ -456,7 +460,8 @@ export default function FoodDetailScreen() {
     });
     setRetrying(false);
     if (error) {
-      Alert.alert('Extraction failed to start', error.message);
+      console.warn('[food-detail] extraction retry failed:', error.message);
+      Alert.alert("Couldn't start reading the label", 'Try again in a moment.');
     }
   }
 
@@ -488,8 +493,8 @@ export default function FoodDetailScreen() {
       armUndo(result, foodName);
       router.back();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('Could not remove food', msg);
+      console.error('[food-detail] remove food failed:', err);
+      Alert.alert('Could not remove food', 'Something went wrong. Try again in a moment.');
       setRemoving(false);
     }
   }
