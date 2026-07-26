@@ -25,7 +25,8 @@ So the purge runs at **startup**, unconditionally, not on sign-out — new `lib/
 ## Verification
 
 - `tsc --noEmit` — clean.
-- `npx jest --ci` — **133 suites / 2327 tests, all passing.**
+- `npx jest --ci` — **133 suites / 2327 tests** on the branch alone; **135 / 2482** after merging `main` at wrap (three sibling PRs landed mid-session), all passing.
+- CI green on both jobs (`App (typecheck + jest)`, `Edge Functions (deno test)`) on the merged head.
 - No `authDebug` / `logAuth` / `keyKind` / `settings/diagnostics` / `__culprit_auth_debug_v1` references remain outside `lib/retiredStorage.ts`, which names the key on purpose.
 
 ## DoD
