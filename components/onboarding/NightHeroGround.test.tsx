@@ -2,11 +2,13 @@ import { render } from '@testing-library/react-native';
 import { NightHeroGround } from './NightHeroGround';
 import { theme } from '../../constants/theme';
 
-// The starfield + aurora ground (B-284 PR N2b, spec §4). These pin the two things
-// the direction is specific about: exactly 12 stars full-bleed (the PM-locked
-// count within the 10–14 band) over the colorBrandNight field with the three
-// aurora radials, and that the ground is non-interactive so the hero's CTAs
-// beneath it stay tappable.
+// The starfield + aurora + whorl ground (B-284 PR N2b, spec §4; whorl ground
+// PM-ratified 2026-07-26 — Option B of docs/culprit-landing-hero-mockups.html).
+// These pin the things the direction is specific about: exactly 12 stars
+// full-bleed (the PM-locked count within the 10–14 band) over the colorBrandNight
+// field with the two aurora radials, the four whorl ridges in indigo (NEVER teal
+// — §1.3), and that the ground is non-interactive so the hero's CTAs beneath it
+// stay tappable.
 //
 // react-native-svg resolves to native RNSVG* host components and packs colour
 // props into an opaque {type, payload} ARGB int — argbPayload() reproduces that
@@ -47,6 +49,18 @@ describe('NightHeroGround', () => {
     const rects = findByType(tree, 'RNSVGRect');
     expect(rects).toHaveLength(1);
     expect(rects[0].props.fill?.payload).toBe(argbPayload(theme.colorBrandNight));
+  });
+
+  it('renders the four whorl ridges in night-elevated indigo, never teal (§1.3)', () => {
+    const tree = render(<NightHeroGround />).toJSON();
+    const paths = findByType(tree, 'RNSVGPath');
+    expect(paths).toHaveLength(4);
+    const elevated = argbPayload(theme.colorBrandNightElevated);
+    const teal = argbPayload(theme.colorAccent);
+    for (const p of paths) {
+      expect(p.props.stroke?.payload).toBe(elevated);
+      expect(p.props.stroke?.payload).not.toBe(teal);
+    }
   });
 
   it('is non-interactive so the hero CTAs beneath stay tappable', () => {
