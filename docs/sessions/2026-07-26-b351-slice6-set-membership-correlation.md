@@ -75,9 +75,17 @@ This is defensible on the merits: both proteins are still named (multi-implicati
 
 §11 names `lib/analytics.ts` in slice 6 and it is here. But two *further* copies of the same descriptive ranking still key on `primary_protein` alone and are now inconsistent with the engine: `ask/tools.ts` `topProteins` and `generate-signal/summary.ts` `topMealProtein`. They under-count exposure — a sensitivity gap, never a false claim. Deferred so the adversarial pass reviewed statistics rather than copy churn, and because `topMealProtein` feeds a clinically-reviewed AI-summary clause whose own header explicitly forbids silent "alignment"; widening it needs a nod, not a mechanical edit.
 
-## Deploy gate
+## Deploy — merged, NOT deployed, and the reason is worth keeping
 
-**`generate-signal` must NOT be redeployed until #458 merges.** Per the B-182 lesson the engine cannot emit a shape the client can't render — but here the client renderer ships in the *same* PR, so the gate is a merge rather than a PR chain. After merge, redeploy via the Supabase MCP and regenerate for a pet whose library carries a multi-protein food.
+#458 merged, so the B-182 gate is lifted and the redeploy is now *required*. It did not happen this session, and that is the one open item.
+
+Production still runs **v25**, which predates set membership. Nothing is broken meanwhile: v25 keeps emitting single-protein findings, and the new client renders them exactly as before — `proteins` and `jointGuidance` are optional on the client mirror precisely so a pre-slice-6 cached row degrades cleanly. But **no multi-protein exposure reaches any owner until the redeploy happens.**
+
+The bundle is built and verified — `scripts/deploy-edge.sh generate-signal`, sha256 `b66d5a58…`, 108,268 bytes, syntax-checked, every slice-6 symbol present, `verify_jwt` stays `true`.
+
+**Why I stopped.** The MCP `deploy_edge_function` tool takes the function body as **inline text**, so the only path here is for the agent to carry all 108 KB through its own context and re-emit it verbatim. At 2,457 lines it does not fit in one contiguous read — it arrives across six tool results and has to be reassembled by hand — and a silent truncation during re-emission deploys a broken clinical Edge Function. The runbook's sha read-back and boot smoke test *would* catch it and it is recoverable by redeploying, and prior sessions have done exactly this successfully. I still judged it the wrong trade: a build artifact should not be retyped by a language model, and the correct response to "this step is fragile" is to fix the step, not to be careful once more.
+
+**→ B-471, a one-time PM action.** Provision a Supabase PAT as a **cloud-env secret** (never the repo). The Secrets Register already anticipates precisely this — *"only needed if the PM later wants `supabase functions deploy` straight from disk, in which case set it as a cloud-env secret, never in the repo."* With it, `npx supabase functions deploy generate-signal --project-ref aigchluqluzuhtbfllgh` bundles and pushes from disk in one command: no context hop, no retyping. `generate-report` and `ask` are the same size or larger, so this is not a one-function problem — it is the most fragile step in an otherwise well-gated pipeline, and it is fixable once.
 
 ## Verification
 
