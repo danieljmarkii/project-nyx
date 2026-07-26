@@ -188,4 +188,14 @@ jobs:
       # rotted script means the next report change ships without a cold read.
       # Same module graph as the suites, so `--cached-only` is already satisfied.
       - name: Deno check (scripts)
-        run: deno check --lock=deno.lock --cached-only scripts/*.deno.ts
+        # NO NETWORK FLAG, and the reason is a property rather than an omission:
+        # this script's module graph is ENTIRELY LOCAL (it imports only
+        # `generate-report/{report,render}.ts` and what those reach under `lib/` and
+        # `generate-signal/`), verified by type-checking it against a cold DENO_DIR
+        # with zero downloads. So it cannot fetch, and there is nothing for a
+        # cached-only guard to guard.
+        #
+        # `--cached-only` was the first attempt and is NOT a valid `deno check`
+        # flag — it belongs to `deno cache`/`deno test`. It failed the first CI run
+        # this step ever had, after the 948 tests had already passed.
+        run: deno check --lock=deno.lock scripts/*.deno.ts
