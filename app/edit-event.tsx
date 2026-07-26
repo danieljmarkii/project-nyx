@@ -86,6 +86,9 @@ export default function EditEventModal() {
   // Photo attachment
   const [existingAttachmentUri, setExistingAttachmentUri] = useState<string | null>(null);
   const [newAttachmentUri, setNewAttachmentUri] = useState<string | null>(null);
+  // Source pixel dimensions from the picker asset, kept only so the pre-upload
+  // resize can cap the photo's true longest edge (B-352).
+  const [newAttachmentDims, setNewAttachmentDims] = useState<{ width: number; height: number } | null>(null);
 
   // Meal food state
   const [currentFoodId, setCurrentFoodId] = useState<string | null>(null);
@@ -264,7 +267,9 @@ export default function EditEventModal() {
       ? await ImagePicker.launchCameraAsync(opts)
       : await ImagePicker.launchImageLibraryAsync(opts);
     if (!result.canceled && result.assets[0]) {
-      setNewAttachmentUri(result.assets[0].uri);
+      const asset = result.assets[0];
+      setNewAttachmentUri(asset.uri);
+      setNewAttachmentDims({ width: asset.width, height: asset.height });
     }
   }
 
@@ -418,7 +423,7 @@ export default function EditEventModal() {
           // Compress + EXIF/GPS-strip before upload — parity with log.tsx / event/[id].tsx.
           // The local_uri persisted above keeps the original for the durable hero; only the
           // uploaded object is re-encoded, so a camera-roll photo's GPS metadata never reaches storage.
-          compressForUpload(newAttachmentUri)
+          compressForUpload(newAttachmentUri, newAttachmentDims?.width, newAttachmentDims?.height)
             .then((uploadUri) => uploadPhoto('nyx-event-attachments', storagePath, uploadUri))
             .then(async () => {
               const { error } = await supabase.from('event_attachments').upsert(

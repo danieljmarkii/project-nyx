@@ -13,17 +13,31 @@ export async function compressForUpload(
   sourceWidth?: number,
   sourceHeight?: number,
 ): Promise<string> {
+  const saveOptions = { compress: 0.75, format: SaveFormat.JPEG };
+
   // Resize so the longest edge is ≤MAX_EDGE_PX. expo-image-manipulator's
-  // `resize` preserves aspect when one dimension is omitted; we pick the
-  // larger edge so portrait photos don't end up taller than 1600px.
-  const isPortrait = sourceWidth && sourceHeight && sourceHeight > sourceWidth;
-  const resize = isPortrait ? { height: MAX_EDGE_PX } : { width: MAX_EDGE_PX };
-  const result = await manipulateAsync(
-    localUri,
-    [{ resize }],
-    { compress: 0.75, format: SaveFormat.JPEG },
-  );
-  return result.uri;
+  // `resize` preserves aspect when one dimension is omitted, so the constrained
+  // edge has to be the LONGER one — pinning width on a portrait photo leaves its
+  // height (the true longest edge) uncapped at ~2133px for a 3:4.
+  if (sourceWidth && sourceHeight) {
+    const resize = sourceHeight > sourceWidth ? { height: MAX_EDGE_PX } : { width: MAX_EDGE_PX };
+    const result = await manipulateAsync(localUri, [{ resize }], saveOptions);
+    return result.uri;
+  }
+
+  // B-206 — the re-upload paths (lib/sync.ts, lib/vetDocuments.ts, the pet
+  // photo) have no width/height column to source dimensions from, so orientation
+  // is unknown up front. Constrain width first, then read the result's OWN
+  // dimensions — manipulateAsync reports them post-EXIF-orientation-normalisation,
+  // which is the number the contract is about. If the source was portrait the
+  // height is still over the cap, so redo the resize on the height edge from the
+  // ORIGINAL: re-resizing the already-downscaled copy would stack a second lossy
+  // JPEG encode on top of the first. Landscape and square sources (the common
+  // case) never reach the second pass, so this costs nothing on that path.
+  const widthPass = await manipulateAsync(localUri, [{ resize: { width: MAX_EDGE_PX } }], saveOptions);
+  if (widthPass.height <= MAX_EDGE_PX) return widthPass.uri;
+  const heightPass = await manipulateAsync(localUri, [{ resize: { height: MAX_EDGE_PX } }], saveOptions);
+  return heightPass.uri;
 }
 
 
