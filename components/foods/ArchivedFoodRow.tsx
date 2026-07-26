@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { theme } from '../../constants/theme';
 import { WhorlSpinner } from '../brand/WhorlSpinner';
-import { FORMAT_LABEL } from '../log/FoodTile';
+import { FORMAT_LABEL } from '../../lib/food';
 
 interface Props {
   brand: string;
