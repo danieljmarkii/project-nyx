@@ -78,4 +78,6 @@ One thing was **dropped from PR 3** deliberately: its `localTrial` existence-ora
 
 ## Verification
 
-`tsc --noEmit` clean. **124 suites / 2103 jest cases green** (including PR 2's 66). No schema, no secret, no Edge Function deploy.
+`tsc --noEmit` clean. **126 suites / 2154 jest cases green** (the count rises across the two merges as PR 2's and PR 3's suites join). Both CI checks green. No schema, no secret, no Edge Function deploy.
+
+**Not verified: anything on a device.** Production held zero `diet_trials` rows until PR 3 landed mid-session, so no card state in this PR has ever rendered against real data. The PR carries the manual QA script, and it grew two checks over the session — the widget header string changed, and state 0 became reachable.
