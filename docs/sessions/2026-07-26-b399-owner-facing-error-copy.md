@@ -63,4 +63,6 @@ Its other rule shaped the wording too: *an inaccurate-but-confident error messag
 
 `tsc --noEmit` clean. Full jest suite green: **131 suites / 2331 tests**, no test asserted on any of the replaced strings. Re-grepped `app/` + `components/` afterwards: the only remaining `Alert.alert(copy.title, copy.message)` calls are the five curated `authErrorCopy` ones, and no UI string names a bucket, RLS, a policy, or the service role.
 
-No PR check-in armed — no sibling PRs are mid-landing on `main` that this branch needs to track, and CLAUDE.md bars arming one at wrap.
+CI green on both jobs (`App (typecheck + jest)`, `Edge Functions (deno test)`) at `6fbc96b`. No review comments.
+
+One PR check-in armed at ~95 minutes, at the PM's explicit request on this PR — not the wrap-time default, which CLAUDE.md bars. Bounded per that rule: a single wake, above the ~90-minute floor, and it stops rather than re-arms if it finds nothing.
