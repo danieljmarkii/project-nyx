@@ -280,72 +280,77 @@ export default function FoodDetailScreen() {
     }
 
     setSaving(true);
-    // If the user overrode AI-extracted values, flip source to 'user' so
-    // future analytics can tell ground truth from model output. Manual rows
-    // stay 'user' either way; 'curated' is never auto-downgraded.
-    const nextSource = row.source === 'ai_extracted' ? 'user' : row.source;
-    const update: Record<string, unknown> = {
-      brand: brand.trim(),
-      product_name: productName.trim(),
-      format,
-      food_type: foodType,
-      ingredients_notes: trimmedIngredients,
-      upc_barcode: trimmedBarcode,
-      source: nextSource,
-    };
-    // Omit the protein columns entirely when the picker was never touched — the
-    // same never-clobber rule the capture screen applies. Saving an edit to the
-    // brand must not re-key a stored protein the owner never authored.
-    if (proteinTouched.current) {
-      update.primary_protein = pickerPrimaryProtein(mainToSave);
-      update.proteins = proteinSet;
-    }
-    const { error } = await supabase
-      .from('food_items')
-      .update(update)
-      .eq('id', row.id);
-    setSaving(false);
-
-    if (error) {
-      console.error('[food-detail] save failed:', error);
-      Alert.alert('Could not save', 'Something went wrong. Try again in a moment.');
-      return;
-    }
-
-    // Keep the local picker cache in sync so the tile reflects the edit
-    // without waiting for a fresh sync.
     try {
-      const db = getDb();
-      await db.runAsync(
-        // ingredients_notes rides along so the cached row matches the server row
-        // this save just wrote — the cache now backs the Tier-1 disclosure, and a
-        // stale panel there would be read by a gate that cares about it.
-        // NOTE it does NOT flip the row to "read": D10 is a CONJUNCTION, and this
-        // screen has no honest value to write for the other arm
-        // (ai_extraction_confidence attests an EXTRACTION, and none ran here). An
-        // owner-typed panel therefore still reads as not-captured — the
-        // deliberate under-claim documented on proteinSetCompleteness, and B-437
-        // is the provenance-column fix. Do not "close" this by inventing a
-        // confidence value; that trades a harmless qualifier for a false
-        // completeness claim on the vet report.
-        `UPDATE food_items_cache
-           SET brand = ?, product_name = ?, format = ?, food_type = ?, ingredients_notes = ?
-         WHERE id = ?`,
-        [brand.trim(), productName.trim(), format, foodType, trimmedIngredients, row.id],
-      );
-      // Mirrors the server write above: protein columns move together, and only
-      // when the owner touched the picker.
+      // If the user overrode AI-extracted values, flip source to 'user' so
+      // future analytics can tell ground truth from model output. Manual rows
+      // stay 'user' either way; 'curated' is never auto-downgraded.
+      const nextSource = row.source === 'ai_extracted' ? 'user' : row.source;
+      const update: Record<string, unknown> = {
+        brand: brand.trim(),
+        product_name: productName.trim(),
+        format,
+        food_type: foodType,
+        ingredients_notes: trimmedIngredients,
+        upc_barcode: trimmedBarcode,
+        source: nextSource,
+      };
+      // Omit the protein columns entirely when the picker was never touched — the
+      // same never-clobber rule the capture screen applies. Saving an edit to the
+      // brand must not re-key a stored protein the owner never authored.
       if (proteinTouched.current) {
-        await db.runAsync(
-          `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
-          [pickerPrimaryProtein(mainToSave), proteinsToCacheText(proteinSet), row.id],
-        );
+        update.primary_protein = pickerPrimaryProtein(mainToSave);
+        update.proteins = proteinSet;
       }
-    } catch (err) {
-      console.warn('[food-detail] cache update failed:', err);
-    }
+      const { error } = await supabase
+        .from('food_items')
+        .update(update)
+        .eq('id', row.id);
 
-    router.back();
+      if (error) {
+        console.error('[food-detail] save failed:', error);
+        Alert.alert('Could not save', 'Something went wrong. Try again in a moment.');
+        return;
+      }
+
+      // Keep the local picker cache in sync so the tile reflects the edit
+      // without waiting for a fresh sync.
+      try {
+        const db = getDb();
+        await db.runAsync(
+          // ingredients_notes rides along so the cached row matches the server row
+          // this save just wrote — the cache now backs the Tier-1 disclosure, and a
+          // stale panel there would be read by a gate that cares about it.
+          // NOTE it does NOT flip the row to "read": D10 is a CONJUNCTION, and this
+          // screen has no honest value to write for the other arm
+          // (ai_extraction_confidence attests an EXTRACTION, and none ran here). An
+          // owner-typed panel therefore still reads as not-captured — the
+          // deliberate under-claim documented on proteinSetCompleteness, and B-437
+          // is the provenance-column fix. Do not "close" this by inventing a
+          // confidence value; that trades a harmless qualifier for a false
+          // completeness claim on the vet report.
+          `UPDATE food_items_cache
+             SET brand = ?, product_name = ?, format = ?, food_type = ?, ingredients_notes = ?
+           WHERE id = ?`,
+          [brand.trim(), productName.trim(), format, foodType, trimmedIngredients, row.id],
+        );
+        // Mirrors the server write above: protein columns move together, and only
+        // when the owner touched the picker.
+        if (proteinTouched.current) {
+          await db.runAsync(
+            `UPDATE food_items_cache SET primary_protein = ?, proteins = ? WHERE id = ?`,
+            [pickerPrimaryProtein(mainToSave), proteinsToCacheText(proteinSet), row.id],
+          );
+        }
+      } catch (err) {
+        console.warn('[food-detail] cache update failed:', err);
+      }
+
+      router.back();
+    } finally {
+      // Never strand the Save button disabled — even if supabase-js throws rather
+      // than resolving { error } (B-134; the medication twin already does this).
+      setSaving(false);
+    }
   }
 
   // ── Add photo ─────────────────────────────────────────────────────────────

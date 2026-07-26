@@ -187,3 +187,24 @@ jobs:
       # notion of deletion by design — so source is the only place to check it.
       - name: Deno test
         run: deno test --lock=deno.lock --cached-only --allow-read=supabase/functions supabase/functions/
+
+      # Deno entry points that live OUTSIDE supabase/functions and import its
+      # modules. `tsconfig.json` excludes `scripts/*.deno.ts` (they use the `Deno`
+      # global, which is not in the app's type environment), and the step above
+      # only walks `supabase/functions`, so without this they are checked by
+      # nothing at all. The one that exists renders the vet report to HTML for the
+      # `vet-report-cold-read` pass — the artifact that gate reads — so a silently
+      # rotted script means the next report change ships without a cold read.
+      # Same module graph as the suites, so `--cached-only` is already satisfied.
+      - name: Deno check (scripts)
+        # NO NETWORK FLAG, and the reason is a property rather than an omission:
+        # this script's module graph is ENTIRELY LOCAL (it imports only
+        # `generate-report/{report,render}.ts` and what those reach under `lib/` and
+        # `generate-signal/`), verified by type-checking it against a cold DENO_DIR
+        # with zero downloads. So it cannot fetch, and there is nothing for a
+        # cached-only guard to guard.
+        #
+        # `--cached-only` was the first attempt and is NOT a valid `deno check`
+        # flag — it belongs to `deno cache`/`deno test`. It failed the first CI run
+        # this step ever had, after the 948 tests had already passed.
+        run: deno check --lock=deno.lock scripts/*.deno.ts

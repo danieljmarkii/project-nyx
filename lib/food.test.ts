@@ -4,7 +4,7 @@
 // and the standalone Foods tab inherits the same contract.
 import {
   groupFoodsByType, toFoodRows, canonicalizeBrand, groupFoodsByBrand,
-  splitBrandGroupsForPicker, filterFoodsByScope, FOOD_SCOPE_OPTIONS,
+  splitBrandGroupsForPicker, filterFoodsByScope, FOOD_SCOPE_OPTIONS, FORMAT_LABEL,
   type FoodScope,
   foodIntakeKey, indexIntakeStats, relativeDayLabel, foodIntakeNote,
   selectReliableFavorites, foodFavoriteNote, shouldSuppressFavorites,
@@ -74,6 +74,55 @@ describe('groupFoodsByType', () => {
     const snapshot = [...input];
     groupFoodsByType(input);
     expect(input).toEqual(snapshot);
+  });
+});
+
+describe('FORMAT_LABEL (B-106 — one map for three surfaces)', () => {
+  // Every value of the `food_format` Postgres enum, in migration order: 001 laid
+  // down the base set, 014 added 'jerky' after 'freeze_dried', 019 added
+  // 'human_food' after 'fresh_cooked'. This list is the drift guard's fixture —
+  // when a migration adds a value, add it here and the label test below fails
+  // until the map learns it. That is precisely the B-103 miss: 'jerky' reached
+  // the enum and both pickers but not this map, so a jerky tile rendered its
+  // brand with no format chip and nobody noticed.
+  const FOOD_FORMAT_ENUM = [
+    'dry_kibble', 'wet_canned', 'raw', 'freeze_dried', 'jerky',
+    'fresh_cooked', 'human_food', 'topper', 'treat', 'other',
+  ];
+
+  it('labels every food_format enum value except the deliberately-blank "other"', () => {
+    for (const value of FOOD_FORMAT_ENUM) {
+      if (value === 'other') continue;
+      expect(FORMAT_LABEL[value]).toBeTruthy();
+    }
+  });
+
+  it('maps "other" to nothing, so an unspecified format renders no chip', () => {
+    // Callers read through `?? ''` — an absent label is the no-chip signal, not
+    // a bug. An unspecified format has nothing honest to say about the food.
+    expect(FORMAT_LABEL.other).toBeUndefined();
+  });
+
+  it('carries no label the enum does not have', () => {
+    // The reverse direction: a stale key here would render a chip for a format
+    // no food can hold, and would survive an enum removal silently.
+    expect(Object.keys(FORMAT_LABEL).sort()).toEqual(
+      FOOD_FORMAT_ENUM.filter((v) => v !== 'other').sort(),
+    );
+  });
+
+  it('renders the two values that previously drifted (B-103 / B-102)', () => {
+    expect(FORMAT_LABEL.jerky).toBe('Jerky');
+    expect(FORMAT_LABEL.human_food).toBe('Human food');
+  });
+
+  it('labels are display strings, never the raw enum token', () => {
+    // The tile and both rows upper-case the label into the eyebrow, so a leaked
+    // token would read as "… · DRY_KIBBLE" on screen.
+    for (const label of Object.values(FORMAT_LABEL)) {
+      expect(label).not.toContain('_');
+      expect(label.trim()).toBe(label);
+    }
   });
 });
 
