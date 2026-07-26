@@ -45,7 +45,7 @@ jest.mock('./utils', () => {
 import {
   buildTrialRows, canStartTrial, defaultDurationDays, describeActiveTrial,
   durationHelperLine, endActiveTrial, foodLabel, formatTrialEndDate,
-  getActiveTrialForPet, permittedRoleForFood, secondTrialIntro, startDietTrial,
+  extendTrial, getActiveTrialForPet, permittedRoleForFood, secondTrialIntro, startDietTrial,
   stopReasonOptions, trialEndDayKey, trialSetupLines, TRIAL_RECORD_DISCLOSURE,
   type StartTrialInput,
 } from './dietTrialSetup';
@@ -304,6 +304,90 @@ describe('endActiveTrial', () => {
     await endActiveTrial({ trialId: 't-1', reason: 'other' });
     expect((mockRunAsync.mock.calls[0][0] as string).toUpperCase()).not.toContain('DELETE');
   });
+
+  // ── PR 6: the owner's read, and the one place it may not go ────────────────
+
+  it('records the owner-reported outcome on a completed trial', async () => {
+    await endActiveTrial({
+      trialId: 't-1', reason: 'completed', outcome: 'improved',
+      outcomeNotes: '  The scratching stopped in week three.  ',
+    });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[0]).toBe('completed');
+    expect(params[4]).toBe('improved');
+    expect(params[5]).toBe('The scratching stopped in week three.');
+  });
+
+  it('stores an empty note as NULL, not as an empty string', async () => {
+    await endActiveTrial({ trialId: 't-1', reason: 'completed', outcome: 'unsure', outcomeNotes: '   ' });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[5]).toBeNull();
+  });
+
+  it('CANNOT attach an outcome to a trial that ended early (§4.3)', async () => {
+    // The refusal rule made unbypassable rather than remembered: "a refusal
+    // stopped_reason routes to the intake-decline HEALTH lane and is never
+    // rendered as a compliance outcome". The stopped-early sheet asks what got in
+    // the way, never how it went — so today nothing passes these arguments. The
+    // guard exists because the next surface to call this will not have read §4.3,
+    // and a vet reading "stopped — wouldn't eat it · owner reported: improved"
+    // would be reading a compliance verdict on a diet that was never eaten.
+    await endActiveTrial({
+      trialId: 't-1', reason: 'refused',
+      outcome: 'improved', outcomeNotes: 'seemed better anyway',
+    });
+    const [, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(params[0]).toBe('abandoned');
+    expect(params[3]).toBe('refused');
+    expect(params[4]).toBeNull(); // outcome
+    expect(params[5]).toBeNull(); // outcome_notes
+  });
+
+  it('kicks a flush so the ending row lands before any next trial starts', async () => {
+    await endActiveTrial({ trialId: 't-1', reason: 'completed' });
+    await flush();
+    // syncPendingDietTrials pushes ENDING trials in its first pass, so freeing
+    // the server's UNIQUE active index early is what keeps a subsequent start
+    // from earning a terminal 23505.
+    expect(mockSyncTrials).toHaveBeenCalled();
+  });
+});
+
+describe('extendTrial — `Keep going`', () => {
+  it('writes the new target and re-arms the push', async () => {
+    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
+    const [sql, params] = mockRunAsync.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('target_duration_days = ?');
+    expect(params[0]).toBe(84);
+    expect(sql).toContain('synced = 0');
+    expect(sql).toContain('sync_error = NULL');
+  });
+
+  it('extends the SAME row — never a second trial', async () => {
+    // One continuous window. A second row would split one clinical episode into
+    // two, neither of which is the span the vet asked about, and §7 would render
+    // the back half of an 84-day elimination as a 28-day trial.
+    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
+    const [sql] = mockRunAsync.mock.calls[0] as [string];
+    expect(sql).toContain('UPDATE diet_trials');
+    expect(sql.toUpperCase()).not.toContain('INSERT');
+    expect(sql).toContain('WHERE id = ?');
+  });
+
+  it('never touches status, started_at or the allowed set', async () => {
+    await extendTrial({ trialId: 't-1', targetDurationDays: 84 });
+    const [sql] = mockRunAsync.mock.calls[0] as [string];
+    expect(sql).not.toContain('status =');
+    expect(sql).not.toContain('started_at =');
+    expect(sql).not.toContain('ended_at =');
+  });
+
+  it('refuses a nonsense target rather than writing it', async () => {
+    for (const bad of [0, -5, Number.NaN]) {
+      await expect(extendTrial({ trialId: 't-1', targetDurationDays: bad })).rejects.toThrow();
+    }
+    expect(mockRunAsync).not.toHaveBeenCalled();
+  });
 });
 
 describe('getActiveTrialForPet', () => {
@@ -340,7 +424,13 @@ describe('stopReasonOptions', () => {
     // Offering it would write `completed` over an abandoned trial and destroy the
     // stopped_reason a vet prescribes differently from.
     expect(values).not.toContain('completed');
-    expect(values).toEqual(['vet_advised', 'refused', 'other']);
+    // PR 6 widened this to §4.3's six, and the widening is the point: two lists
+    // would be two vocabularies in one TEXT column a clinician reads verbatim.
+    // All three tokens PR 3 shipped are still in it, so nothing already stored is
+    // orphaned.
+    expect(values).toEqual([
+      'refused', 'cost', 'too_hard', 'vet_advised', 'symptoms_resolved', 'other',
+    ]);
   });
 
   it('offers it once the trial has reached its target', () => {

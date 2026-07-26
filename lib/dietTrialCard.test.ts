@@ -27,6 +27,7 @@ import {
   BLIND_SPOT_QUALIFIER,
   type TrialCardInput,
   type TrialCardModel,
+  type TrialCardTrial,
   type TrialCardLineRole,
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
@@ -49,7 +50,7 @@ function allStrings(model: TrialCardModel): string[] {
     model.foodLabel ?? '',
     model.dayLine ?? '',
     model.windowLine ?? '',
-    model.action?.label ?? '',
+    ...model.actions.map((a) => a.label),
     ...model.lines.map((l) => l.text),
   ];
 }
@@ -209,7 +210,9 @@ describe('state 0 — no trial', () => {
   });
 
   it('is the only entry point to PR 3', () => {
-    expect(model.action).toEqual({ id: 'start_trial', label: 'Start a diet trial' });
+    expect(model.actions).toEqual([
+      { id: 'start_trial', label: 'Start a diet trial', emphasis: 'secondary' },
+    ]);
   });
 });
 
@@ -278,7 +281,7 @@ describe('state 2 — mid-trial, clean', () => {
 
   it('has a forward line and no "Log a meal" action', () => {
     expect(textOf(model, 'forward')).toEqual(['5 weeks to go.']);
-    expect(model.action).toBeNull();
+    expect(model.actions).toEqual([]);
     expect(allStrings(model).join(' ')).not.toMatch(/log a meal/i);
   });
 });
@@ -371,7 +374,7 @@ describe('state 4 — below the coverage floor', () => {
   });
 });
 
-describe('state 5 — the milestone', () => {
+describe('state 5 — the milestone (PR 6, §4.3)', () => {
   const model = resolveTrialCard(activeInput({ nowMs: localNoon(2026, 8, 27) }));
 
   it('is action-first and never reads as permission to stop', () => {
@@ -381,6 +384,182 @@ describe('state 5 — the milestone', () => {
     // ACVIM 2026: continue the diet ≥12 weeks before transitioning away. A
     // day-28 "trial complete" would tell a GI owner to stop at a quarter of that.
     expect(allStrings(model).join(' ')).not.toMatch(/complete|finished|you can stop|all done/i);
+  });
+
+  it('renders the day line as a HEADLINE and drops the bar', () => {
+    // The design lock draws this as `.milestone-h` (serif, 21px) with NO progress
+    // bar. PR 6's first cut routed it through the ordinary `dayLine` style and
+    // kept a 100%-full accent bar — so the sentence that has to stop an owner
+    // rendered exactly like "Day 23 of 56" on a Tuesday, under a saturated bar
+    // that is completion vocabulary drawn in pixels. Caught by `pm-feature-review`.
+    expect(model.dayLineRole).toBe('headline');
+    expect(model.progressFraction).toBeNull();
+    // Every other state keeps the quiet treatment.
+    expect(resolveTrialCard(activeInput()).dayLineRole).toBe('meta');
+    expect(resolveTrialCard(activeInput({ nowMs: localNoon(2026, 9, 1) })).dayLineRole).toBe('meta');
+  });
+
+  it('offers the three-way decision, action before verdict', () => {
+    expect(model.actions.map((a) => a.id)).toEqual([
+      'trial_extend', 'trial_complete', 'trial_stopped_early',
+    ]);
+    // Nothing on this card asks how it went. §4.3: a milestone that asks the
+    // verdict first turns an unanswered card into a stalled trial, and a stalled
+    // trial is the one the vet report renders as still ongoing.
+    expect(allStrings(model).join(' ')).not.toMatch(/how did it go|better|worse/i);
+  });
+
+  it('`Keep going` names its default and is never the weaker option', () => {
+    const [keep, done] = model.actions;
+    expect(keep.label).toBe('Keep going — 4 more weeks');
+    expect(done.label).toBe('This trial is done');
+    // §4.3's weight rule, asserted where it can actually be asserted. The design
+    // lock draws filled-plus-ghost (equal-OR-greater); the criterion is that
+    // keep-going is never weaker, so this is the assertion that survives either
+    // PM ruling on the mock's flagged question.
+    const rank = { primary: 2, secondary: 1, link: 0 } as const;
+    expect(rank[keep.emphasis]).toBeGreaterThanOrEqual(rank[done.emphasis]);
+  });
+
+  it('carries the ACVIM continuation sentence on a GI trial, and only there', () => {
+    const gi = resolveTrialCard(
+      activeInput({
+        nowMs: localNoon(2026, 8, 27),
+        trial: {
+          status: 'active', startedAt: '2026-07-03', targetDurationDays: 56,
+          foodLabel: FOOD, indication: 'gi',
+        },
+      }),
+    );
+    // The live clinical harm §4.3 names: a milestone at the ASSESSMENT window
+    // reading as an ending, on a diet the vet wanted continued for three months.
+    expect(textOf(gi, 'note')).toEqual([
+      'Your vet decides when the diet changes. For gut problems, diets are often ' +
+      'continued for around three months even when things look better early.',
+    ]);
+    expect(gi.actions[0].label).toBe('Keep going — 2 more weeks');
+
+    // Skin and an unset indication both take the base note and the 28-day default.
+    expect(textOf(model, 'note')[0]).not.toMatch(/three months/);
+  });
+});
+
+describe('the continuation statement survives onto the TERMINAL cards', () => {
+  // The second `adversarial-reviewer` pass's F2: the fix commit carried the
+  // sentence onto the outcome SHEET and stopped there, so a GI owner read it once
+  // while deciding and then lived with a card headed "Diet trial · finished" that
+  // said nothing about continuing — on the indication ACVIM says continue >=12
+  // weeks. This project's own B-494 rule one surface over: a flow that teaches the
+  // owner it will tell them about continuation may not then go silent.
+  function terminal(over: Partial<TrialCardTrial>) {
+    return resolveTrialCard(
+      activeInput({
+        trial: {
+          status: 'completed', startedAt: '2026-07-03', endedAt: '2026-07-30',
+          targetDurationDays: 28, foodLabel: FOOD, indication: 'gi', ...over,
+        },
+      }),
+    );
+  }
+
+  it('carries the ACVIM sentence onto a completed GI card', () => {
+    expect(textOf(terminal({ outcome: 'improved' }), 'note').join(' ')).toMatch(
+      /around three months/,
+    );
+  });
+
+  it('answers `symptoms_resolved` instead of leaving it hanging', () => {
+    // The case it most exists for: an owner who stopped BECAUSE things improved
+    // has stopped a diet that may be working, short of the ACVIM window. Without
+    // this the card renders their own stated reason back at them, unanswered.
+    const m = terminal({ status: 'abandoned', stoppedReason: 'symptoms_resolved' });
+    expect(textOf(m, 'lead')).toContain('Stopped because the symptoms cleared up.');
+    expect(textOf(m, 'note').join(' ')).toMatch(/around three months/);
+  });
+
+  it('stays quiet when the VET was the one who said stop', () => {
+    // Restating "your vet decides when the diet changes" to an owner whose vet has
+    // already decided reads as second-guessing the clinician.
+    const m = terminal({ status: 'abandoned', stoppedReason: 'vet_advised' });
+    expect(textOf(m, 'note').join(' ')).not.toMatch(/Your vet decides/);
+  });
+
+  it('renders on every OTHER reason, so its presence is not a tell', () => {
+    for (const reason of ['refused', 'cost', 'too_hard', 'symptoms_resolved', 'other']) {
+      const m = terminal({ status: 'abandoned', stoppedReason: reason });
+      expect(textOf(m, 'note').join(' ')).toMatch(/Your vet decides when the diet changes\./);
+    }
+  });
+});
+
+describe('the intake-decline replacement draws no saturated bar', () => {
+  // F6: the decline branch inherited `progressFraction` from the base, so at day
+  // 56 of 56 it drew a 100% accent bar over a pet that has stopped eating — on the
+  // one card whose entire job is to say the animal outranks the trial. The
+  // milestone drops its bar for exactly this reason one branch away.
+  it('is null at the target and past it', () => {
+    for (const now of [localNoon(2026, 8, 27), localNoon(2026, 9, 1)]) {
+      const m = resolveTrialCard(
+        activeInput({ nowMs: now, intakeDeclineHeadline: 'Mochi has eaten less than usual today.' }),
+      );
+      expect(m.state).toBe('intake_decline');
+      expect(m.progressFraction).toBeNull();
+    }
+  });
+
+  it('still carries real day progress mid-trial', () => {
+    const m = resolveTrialCard(
+      activeInput({ intakeDeclineHeadline: 'Mochi has eaten less than usual today.' }),
+    );
+    expect(m.progressFraction).toBeGreaterThan(0);
+    expect(m.progressFraction).toBeLessThan(1);
+  });
+});
+
+describe('the stopped-early reasons render as sentences, not tokens', () => {
+  // PR 6 added `cost` / `too_hard` / `symptoms_resolved` to the reason set and, in
+  // its first cut, to neither renderer — so the card read "Stopped because cost."
+  // and "Stopped because too_hard.", and the vet report read "Stopped: too_hard."
+  // The verbatim fallback is a good failure mode for a token nobody has got to
+  // yet and a terrible one for a token the same PR introduced.
+  it.each([
+    ['refused', 'Stopped because Biscuit wouldn’t eat it.'],
+    ['vet_advised', 'Stopped because the vet said to change diets.'],
+    ['cost', 'Stopped because of the cost.'],
+    ['too_hard', 'Stopped because keeping other food away was too hard.'],
+    ['symptoms_resolved', 'Stopped because the symptoms cleared up.'],
+    ['other', 'Stopped early.'],
+  ])('%s renders as a sentence', (reason, expected) => {
+    const model = resolveTrialCard(
+      activeInput({
+        trial: {
+          status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+          targetDurationDays: 56, foodLabel: FOOD, stoppedReason: reason,
+        },
+      }),
+    );
+    expect(textOf(model, 'lead')).toContain(expected);
+    // No raw token reaches the owner, on any reason.
+    for (const s of allStrings(model)) expect(s).not.toMatch(/_/);
+  });
+
+  it('never blames the owner for the reason (§6.9)', () => {
+    const all = ['cost', 'too_hard', 'symptoms_resolved'].map((reason) =>
+      allStrings(
+        resolveTrialCard(
+          activeInput({
+            trial: {
+              status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+              targetDurationDays: 56, foodLabel: FOOD, stoppedReason: reason,
+            },
+          }),
+        ),
+      ).join(' '),
+    ).join(' ');
+    // "Stopped because YOU couldn't keep him off other food" is the same fact
+    // written as a failing.
+    expect(all).not.toMatch(/\byou (?:couldn’t|didn’t|failed)/i);
+    expect(all).not.toMatch(/fail|gave up|too expensive for you/i);
   });
 });
 
@@ -437,18 +616,26 @@ describe('state 7a — completed', () => {
   });
 
   it('renders the owner-reported outcome as the OWNER’s judgement', () => {
-    expect(textOf(model, 'note')).toEqual([
+    expect(textOf(model, 'note')).toContain(
       'You said Biscuit was better at the end of it. That goes on the vet report in ' +
       'your name, so your vet reads it as your judgement rather than as something ' +
       'Culprit worked out.',
-    ]);
+    );
+    // §4.3 is a property of the FLOW: the continuation sentence reaches the
+    // screen the owner LIVES WITH after ending the trial, not only the one that
+    // offered to end it. It renders on every terminal path except `vet_advised`,
+    // where the vet has already decided and restating it reads as second-guessing
+    // them — so its presence is never a tell about which reason was picked.
+    expect(textOf(model, 'note')).toContain('Your vet decides when the diet changes.');
     // §7: the words confirmed / diagnosis / food allergy may not appear near it.
     const joined = allStrings(model).join(' ');
     expect(joined).not.toMatch(/confirmed|diagnosis|food allergy/i);
   });
 
   it('offers the report, not another trial action', () => {
-    expect(model.action).toEqual({ id: 'open_report', label: 'Open vet report' });
+    expect(model.actions).toEqual([
+      { id: 'open_report', label: 'Open vet report', emphasis: 'link' },
+    ]);
   });
 });
 
@@ -472,10 +659,14 @@ describe('state 7b — abandoned', () => {
 
   it('routes the refusal toward the vet, not toward a compliance verdict', () => {
     expect(textOf(refused, 'lead')).toEqual(['Stopped because Biscuit wouldn’t eat it.']);
-    expect(textOf(refused, 'note')).toEqual([
+    expect(textOf(refused, 'note')).toContain(
       'That’s a useful thing for your vet to know — it usually means a different ' +
       'diet, not a different plan.',
-    ]);
+    );
+    // The continuation sentence lands here too — see state 7a. Withholding it on
+    // the refusal path specifically would make its presence a tell about which
+    // reason the owner picked.
+    expect(textOf(refused, 'note')).toContain('Your vet decides when the diet changes.');
   });
 
   // The round-1b defect, and it was a RULE change: round 1 rendered "All 54

@@ -1860,14 +1860,40 @@ function roleLabel(role: string): string {
   }
 }
 
-/** PR 3's stored tokens. An unrecognised value renders verbatim rather than
- *  vanishing — a future reason must never become a silent blank on a clinical page. */
+/** The stored tokens. An unrecognised value renders verbatim rather than
+ *  vanishing — a future reason must never become a silent blank on a clinical page.
+ *
+ *  ALL SIX of §4.3's reasons are mapped. The three PR 6 added (`cost`, `too_hard`,
+ *  `symptoms_resolved`) initially reached this page through the fallback, so a vet
+ *  read "Stopped: too_hard." — the fallback doing its job on tokens that were not
+ *  unknown at all. This map and the owner-facing one in `lib/dietTrialCard.ts` are
+ *  siblings: a new reason means touching both.
+ *
+ *  Each line is written for a clinician deciding what to prescribe next, which is
+ *  the entire justification for capturing the reason — "stopped at day 19, would
+ *  not eat it" and "stopped, cost" lead to different prescriptions. */
 function stoppedReasonLine(petName: string, reason: string): string {
   switch (reason) {
     case 'refused':
       return `Stopped because ${petName} would not eat it.`
     case 'vet_advised':
       return 'Stopped on veterinary advice to change diets.'
+    case 'cost':
+      return 'Stopped on cost grounds.'
+    case 'too_hard':
+      // AGENTLESS, deliberately. "the owner could not maintain exclusive feeding"
+      // names the owner as the cause and states it as an inability — and this page
+      // is shown to the OWNER in-app under the HTML-first ruling, so §6.9 (Culprit
+      // never scores the owner) binds here exactly as it does on the card. The vet
+      // needs the fact; the agent is optional. The card's sibling line already got
+      // this right, which is how the divergence was spotted.
+      return 'Stopped — exclusive feeding could not be maintained in the household.'
+    // Clinically load-bearing, and the one reason a vet may want to act on
+    // directly: an owner who stopped BECAUSE things improved has stopped a diet
+    // that may be working, and on a GI indication that is short of the ACVIM
+    // continuation window. Stated as the owner's reason, never as a finding.
+    case 'symptoms_resolved':
+      return 'Stopped because the owner reported the symptoms had resolved.'
     case 'completed':
       return 'Ran its course.'
     case 'other':

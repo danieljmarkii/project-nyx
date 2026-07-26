@@ -26,8 +26,15 @@ import { AddMedicationModal, Regimen } from '../../components/profile/AddMedicat
 import { StartTrialModal } from '../../components/profile/StartTrialModal';
 import { ArchivePetSheet } from '../../components/profile/ArchivePetSheet';
 import { DietTrialCard } from '../../components/profile/DietTrialCard';
+import {
+  TrialCompletionSheet, type TrialCompletionEntry,
+} from '../../components/profile/TrialCompletionSheet';
 import { useDietTrial } from '../../hooks/useDietTrial';
 import { resolveTrialCard } from '../../lib/dietTrialCard';
+import { extensionDays, nextTargetDays } from '../../lib/dietTrialCompletion';
+import { extendTrial } from '../../lib/dietTrialSetup';
+import { getDietTrialProgress } from '../../lib/analytics';
+import { petPronouns } from '../../lib/utils';
 import { Pet } from '../../store/petStore';
 import {
   MEDICATION_ROUTE_OPTIONS, computeRegimenCompliance, regimenComplianceLine,
@@ -144,6 +151,57 @@ export default function ProfileScreen() {
   // lie told by a failed network read.
   const { input: trialInput, isLoading: trialLoading, reload: reloadTrial } = useDietTrial();
   const [startTrialVisible, setStartTrialVisible] = useState(false);
+  // B-417 PR 6 — which completion screen is open, if any. `null` is closed.
+  const [completionEntry, setCompletionEntry] = useState<TrialCompletionEntry | null>(null);
+  // The extension is a one-tap write with no confirm (see `handleExtendTrial`),
+  // which makes a pending state non-optional rather than polish: without one the
+  // owner taps the biggest button on the card, nothing visibly happens until the
+  // write and reload land, and a slow write earns a second tap — two extensions
+  // from one decision.
+  const [extendingTrial, setExtendingTrial] = useState(false);
+
+  /**
+   * `Keep going` — B-417 PR 6 (§4.3). One implementation, called by BOTH the
+   * milestone card's inline button and the overrun sheet's row, because the two
+   * must never disagree about which day the extension counts from.
+   *
+   * ONE TAP, NO CONFIRM, DELIBERATELY. The named default is the whole point of
+   * the affordance — Jordan's review said what stops her tapping "done" on day 56
+   * is that keep-going "already has the four weeks filled in" — and putting a
+   * dialog in front of the option that keeps a diet going would make the safe path
+   * the slower one. The change is legible without a dialog: the card immediately
+   * re-reads "Day 56 of 84" with a new end date, and the owner can extend again.
+   */
+  const handleExtendTrial = useCallback(async () => {
+    const trial = trialInput?.trial;
+    if (!trial?.id || extendingTrial) return;
+    const progress = getDietTrialProgress(
+      { startedAt: trial.startedAt, targetDurationDays: trial.targetDurationDays },
+      Date.now(),
+    );
+    if (!progress) return;
+    setCompletionEntry(null);
+    setExtendingTrial(true);
+    try {
+      await extendTrial({
+        trialId: trial.id,
+        targetDurationDays: nextTargetDays({
+          currentTargetDays: trial.targetDurationDays,
+          dayCounter: progress.dayCounter,
+          extraDays: extensionDays(trial.indication),
+        }),
+      });
+      reloadTrial();
+    } catch (e) {
+      console.error('[DietTrial] extend failed:', e);
+      Alert.alert(
+        'That didn’t save',
+        'The trial is still running on its current window. Have another go in a moment.',
+      );
+    } finally {
+      setExtendingTrial(false);
+    }
+  }, [trialInput, reloadTrial, extendingTrial]);
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -520,6 +578,30 @@ export default function ProfileScreen() {
   // said it would cut, and it is correct content — C2's standing fact).
   const trialCard = trialInput ? resolveTrialCard(trialInput) : null;
 
+  // What PR 6's sheets write against. The id rides on the card's INPUT (the
+  // resolver never reads it) so the completion flow does not re-query a row this
+  // screen already loaded — and so the sheet cannot end a different trial than the
+  // one the card is showing.
+  const sheetTrial =
+    trialInput?.trial?.id && trialInput.trial.status === 'active'
+      ? {
+          id: trialInput.trial.id,
+          petId: activePet.id,
+          startedAt: trialInput.trial.startedAt,
+          targetDurationDays: trialInput.trial.targetDurationDays,
+          indication: trialInput.trial.indication,
+        }
+      : null;
+  const sheetDayCounter = trialInput?.trial
+    ? getDietTrialProgress(
+        {
+          startedAt: trialInput.trial.startedAt,
+          targetDurationDays: trialInput.trial.targetDurationDays,
+        },
+        trialInput.nowMs,
+      )?.dayCounter ?? 1
+    : 1;
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -737,7 +819,22 @@ export default function ProfileScreen() {
           <DietTrialCard
             model={trialCard}
             style={styles.sectionGap}
-            actions={{ start_trial: () => setStartTrialVisible(true) }}
+            busyAction={extendingTrial ? 'trial_extend' : null}
+            actions={{
+              start_trial: () => setStartTrialVisible(true),
+              // B-417 PR 6. The milestone's three buttons and the overrun card's
+              // single one land on the same decision; `Keep going` is a write
+              // rather than a screen, so it has no sheet.
+              trial_extend: handleExtendTrial,
+              trial_complete: () => setCompletionEntry('complete'),
+              trial_stopped_early: () => setCompletionEntry('stopped_early'),
+              milestone: () => setCompletionEntry('decision'),
+              // State 7a's action, reachable for the first time now that a trial
+              // can be completed — and the reason the completed card keeps its
+              // slot for a fortnight (`ENDED_TRIAL_GRACE_DAYS`): the report is
+              // most valuable in exactly the days after the trial ends.
+              open_report: () => router.push('/report'),
+            }}
             onManage={() => setStartTrialVisible(true)}
           />
         )}
@@ -831,6 +928,23 @@ export default function ProfileScreen() {
         onStarted={reloadTrial}
         onAddFood={() => { setStartTrialVisible(false); router.push('/food-capture'); }}
         onLogFirstMeal={() => { setStartTrialVisible(false); router.push('/log?type=meal'); }}
+      />
+
+      {/* B-417 PR 6 — the completion milestone's sheets (§4.3). Not mounted while
+          closed: unlike StartTrialModal it has no half-filled form to preserve
+          across a dismissal, and every answer on it is deliberately discarded on
+          Cancel rather than pre-filled from a previous attempt. */}
+      <TrialCompletionSheet
+        entry={completionEntry}
+        trial={sheetTrial}
+        petName={activePet.name}
+        species={activePet.species}
+        pronouns={petPronouns(activePet.sex ?? 'unknown')}
+        dayCounter={sheetDayCounter}
+        intakeDeclineHeadline={trialInput?.intakeDeclineHeadline ?? null}
+        onClose={() => setCompletionEntry(null)}
+        onExtend={handleExtendTrial}
+        onChanged={reloadTrial}
       />
     </SafeAreaView>
   );
