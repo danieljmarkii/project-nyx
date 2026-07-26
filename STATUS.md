@@ -260,7 +260,6 @@ Nearest live PM gates, none of which block code already in flight:
 - [ ] **Set the `main` ruleset's Allowed merge methods to Squash only.** It currently permits Merge/Squash/Rebase while the Git Workflow rule is squash-only, so the written convention is enforceable but not enforced. Ruleset `main` → *Require a pull request before merging* → Allowed merge methods. (Makes `Require linear history` redundant — don't tick both.) Not urgent; the B-390 gate itself is live and binding.
 
 **Email confirmation (guide step 9 — B-152 part 2; part 1 ✅ 2026-07-25)**
-- [x] **Confirm-click loop — DONE 2026-07-26 (build 35 QA).** It lands on a `localhost` page and confirmation succeeds. Site URL is still the default; fixing it is the B-483 item above.
 - [ ] **The second RLS dashboard check:** "Confirm email" ✅ (verified live by the send), but confirm **email-enumeration protection** is enabled and the auth email rate limits are sane. #436's `invalid_credentials` copy deliberately won't reveal whether an address has an account — that's only half the protection if the server setting is off.
 - [ ] **Auth email templates still say "Nyx"** (hardening audit §B7) — Authentication → Emails → Templates. Visible in the email received 2026-07-25; a reviewer creating an account would see it too.
 - [ ] **In-app device pass** — needs a dev-client build (`eas build --profile development --platform ios`); Expo Go stopped working once the widget native targets landed. Script in #436.
