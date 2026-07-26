@@ -105,6 +105,11 @@ export default function LogModal() {
   // Photo attachment
   const [attachmentUri, setAttachmentUri] = useState<string | null>(null);
   const [attachmentTakenAt, setAttachmentTakenAt] = useState<string | null>(null);
+  // Source pixel dimensions from the picker asset, kept only so the pre-upload
+  // resize can cap the photo's true longest edge (B-352). Null on the FAB
+  // pending-attachment path, which carries no dimensions — compressForUpload
+  // falls back to measuring the image itself there.
+  const [attachmentDims, setAttachmentDims] = useState<{ width: number; height: number } | null>(null);
 
   // Food state (set by the picker; used by handleConfirm)
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
@@ -250,6 +255,7 @@ export default function LogModal() {
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
     setAttachmentUri(asset.uri);
+    setAttachmentDims({ width: asset.width, height: asset.height });
 
     const exifRaw = (asset.exif as Record<string, unknown> | undefined);
     const dateRaw = exifRaw?.DateTimeOriginal ?? exifRaw?.DateTime;
@@ -777,7 +783,9 @@ export default function LogModal() {
       // async block so it doesn't delay the completion animation below.
       (async () => {
         try {
-          const uploadUri = await compressForUpload(attachmentUri);
+          const uploadUri = await compressForUpload(
+            attachmentUri, attachmentDims?.width, attachmentDims?.height,
+          );
           await uploadPhoto('nyx-event-attachments', storagePath, uploadUri);
           const { error: attErr } = await supabase.from('event_attachments').upsert({
             id: attId, event_id: eventId, pet_id: pet.id,
