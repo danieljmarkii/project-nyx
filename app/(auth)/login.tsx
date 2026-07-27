@@ -20,6 +20,7 @@ import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { AuthBrandMark } from '../../components/onboarding/AuthBrandMark';
 import { emailError } from '../../lib/authValidation';
 import { authErrorCopy, isEmailNotConfirmed } from '../../lib/authErrors';
+import { confirmRedirectUrl } from '../../lib/emailConfirm';
 
 // Returning-owner sign-in (B-251). Rebuilt on the same design system as the
 // Landing (index) and account (signup) screens so the unauthenticated entry reads
@@ -106,7 +107,14 @@ export default function LoginScreen() {
   }
 
   async function resendConfirmation(target: string) {
-    const { error } = await supabase.auth.resend({ type: 'signup', email: target });
+    // Carries the same deep link as signup's own send (B-432). This is the resend
+    // an owner reaches when they've already been bounced once, so it is the last
+    // place that should hand back a link that dead-ends on a web page.
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: target,
+      options: { emailRedirectTo: confirmRedirectUrl() },
+    });
     if (error) {
       // Most likely the per-user send interval if they've just tried from the
       // signup screen — mapped to a wait, not a security lecture.

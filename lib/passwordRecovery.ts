@@ -15,15 +15,21 @@
 // Conflating them is what made a failed exchange unreachable in the v1 design.
 
 import { AuthErrorLike, isOffline } from './authErrors';
+import {
+  APP_SCHEME,
+  AuthDeepLink,
+  authDeepLinkUrl,
+  parseAuthDeepLink,
+} from './authDeepLink';
 
 // ── The redirect target (D1b) ────────────────────────────────────────────────────
 
-// The app's custom URL scheme. Deliberately a named constant rather than an
-// inlined string: it is the RETIRED brand name (`app.json` → `scheme`), and
-// B-278 will flip it to `culprit`. When that happens this constant, the
-// Supabase redirect allowlist (§9.2) and the widget's deep links must move
-// together — so the code half has exactly one place to change.
-export const APP_SCHEME = 'nyx';
+// The app's custom URL scheme, re-exported from the shared module so this file's
+// consumers keep their import unchanged. The declaration moved to
+// `lib/authDeepLink.ts` when signup confirmation (B-432) became a second consumer
+// of the same scheme — B-278's "exactly one place to change" only holds if there
+// is genuinely one declaration.
+export { APP_SCHEME };
 
 // The route the recovery link lands on. Matches the expo-router file path
 // `app/(auth)/reset-password.tsx` — the deep link works because that file
@@ -41,94 +47,17 @@ export const RECOVERY_PATH = 'reset-password';
  * in. The allowlist entry (§9.2) and this string must match exactly.
  */
 export function recoveryRedirectUrl(): string {
-  return `${APP_SCHEME}:///${RECOVERY_PATH}`;
+  return authDeepLinkUrl(RECOVERY_PATH);
 }
 
 // ── (a) FR-4: the URL-shape classification ──────────────────────────────────────
 
-export type RecoveryLink =
-  // Not a recovery link at all — a widget deep link (`nyx:///history?pet=…`), a
-  // future OAuth return, anything else. The handler must ignore it, NOT treat it
-  // as a broken recovery attempt.
-  | { kind: 'unrelated' }
-  // The PKCE success shape: an opaque single-use code in a QUERY parameter.
-  | { kind: 'valid'; code: string }
-  // Supabase's error shape, e.g. `?error=access_denied&error_code=otp_expired`.
-  // Also arrives in the URL FRAGMENT on some GoTrue paths, so both are parsed.
-  | { kind: 'error'; errorCode: string | null }
-  // The recovery route, but carrying neither a usable code nor a nameable error:
-  // a truncated/mangled query (§10 row 11), or an implicit-flow token shape we
-  // deliberately refuse (below). Renders §5.5 — never a crash.
-  | { kind: 'malformed' };
-
-// Split a URL into its path segments and its parameter map, tolerating anything.
-// Hand-rolled rather than `new URL()` because RN's URL polyfill has historically
-// shipped without working `searchParams`, and a parser that behaves differently
-// on device than in jest is worse than no parser at all.
-function dissect(url: string): { segments: string[]; params: Map<string, string> } {
-  const params = new Map<string, string>();
-  // Everything before the first `?` or `#` is the path portion.
-  const cut = url.search(/[?#]/);
-  const pathPart = cut === -1 ? url : url.slice(0, cut);
-
-  // Split the remainder on the FIRST `?` and the FIRST `#` only — never on every
-  // occurrence. A delimiter inside a parameter VALUE belongs to that value, and
-  // treating it as a new boundary lets a nested URL smuggle a top-level param past
-  // this parser: `?redirect_to=nyx:///reset-password?code=evil` would surface
-  // `code=evil` as though the outer link carried it. Real GoTrue links percent-
-  // encode their values so they never produce this, and FR-14's provenance check
-  // plus the exchange itself still gate whether any code is honoured — but this is
-  // the parser that decides what a hostile deep link (§10 row 23) even looks like,
-  // so it must not be the weak link. Per RFC 3986 the fragment is last, so
-  // everything after the first `#` is fragment even if it contains a `?`.
-  const qIdx = url.indexOf('?');
-  const hIdx = url.indexOf('#');
-  let query = '';
-  let fragment = '';
-  if (hIdx === -1) {
-    query = qIdx === -1 ? '' : url.slice(qIdx + 1);
-  } else {
-    fragment = url.slice(hIdx + 1);
-    if (qIdx !== -1 && qIdx < hIdx) query = url.slice(qIdx + 1, hIdx);
-  }
-
-  // Strip the scheme (`nyx:`, `exp:`, `https:`) so the remainder is host/path.
-  // The host-vs-path distinction is genuinely ambiguous for a custom scheme
-  // (`nyx://reset-password` — is that a host or a path?), so we don't try to
-  // draw it: only the LAST non-empty segment is used for route matching.
-  const segments = pathPart
-    .replace(/^[a-z][a-z0-9+.-]*:/i, '')
-    .split('/')
-    .filter((s) => s.length > 0);
-
-  // Parse the query AND the fragment into one map. GoTrue puts recovery errors in
-  // the query on the PKCE path but in the fragment on others, and a spec that only
-  // read one would render "that link no longer works" as a blank screen instead.
-  for (const chunk of [query, fragment]) {
-    for (const pair of chunk.split('&')) {
-      if (!pair) continue;
-      const eq = pair.indexOf('=');
-      const rawKey = eq === -1 ? pair : pair.slice(0, eq);
-      const rawValue = eq === -1 ? '' : pair.slice(eq + 1);
-      const key = safeDecode(rawKey);
-      // First value wins, so a query param is never overwritten by a fragment
-      // one carrying the same name.
-      if (key && !params.has(key)) params.set(key, safeDecode(rawValue));
-    }
-  }
-  return { segments, params };
-}
-
-// `decodeURIComponent` throws on a lone `%` — which a truncated link absolutely
-// can contain. Never let a mangled URL become a crash (§10 row 11).
-function safeDecode(value: string): string {
-  const plussed = value.replace(/\+/g, ' ');
-  try {
-    return decodeURIComponent(plussed);
-  } catch {
-    return plussed;
-  }
-}
+// The four shapes a recovery link can arrive in. Structurally identical to every
+// other auth link (a confirmation link differs only in its route), so the union
+// and the parser both live in `lib/authDeepLink.ts` and this is the recovery
+// flow's name for them. Members are unchanged: `unrelated` | `valid` | `error` |
+// `malformed`.
+export type RecoveryLink = AuthDeepLink;
 
 /**
  * Classify an incoming deep link WITHOUT touching auth state (§6.4 step 1).
@@ -139,32 +68,7 @@ function safeDecode(value: string): string {
  * surface only from the exchange, which is why FR-4 has a second half.
  */
 export function parseRecoveryLink(url: string | null | undefined): RecoveryLink {
-  if (!url || typeof url !== 'string') return { kind: 'unrelated' };
-
-  const { segments, params } = dissect(url);
-  // Case-insensitive on the ROUTE only (never on the code, which is opaque and
-  // case-significant). Our own links are always lowercase, but a mail client that
-  // uppercased a segment on tap-through would otherwise make a real link vanish
-  // into `unrelated` — silently showing nothing, rather than degrading to a
-  // designed state with a forward action.
-  const last = segments[segments.length - 1]?.toLowerCase();
-  if (last !== RECOVERY_PATH) return { kind: 'unrelated' };
-
-  // Error BEFORE code, so a URL carrying both is never exchanged. Fail-closed is
-  // free here and the alternative silently burns a code on a known-bad link.
-  const errorCode = params.get('error_code') ?? params.get('error') ?? null;
-  const hasErrorShape =
-    errorCode !== null || params.has('error_description');
-  if (hasErrorShape) return { kind: 'error', errorCode: errorCode || null };
-
-  const code = params.get('code');
-  if (code) return { kind: 'valid', code };
-
-  // An implicit-flow shape (`#access_token=…&refresh_token=…`) is refused rather
-  // than adopted. Accepting it would re-introduce exactly what D1a bought by
-  // choosing PKCE — long-lived tokens transiting a URL — and would do it on the
-  // one flow whose entire job is re-establishing trust.
-  return { kind: 'malformed' };
+  return parseAuthDeepLink(url, RECOVERY_PATH);
 }
 
 // ── (b) FR-4: the exchange-result classification ────────────────────────────────
