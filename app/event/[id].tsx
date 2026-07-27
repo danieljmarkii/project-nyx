@@ -461,7 +461,8 @@ export default function EventDetailScreen() {
       : await ImagePicker.launchImageLibraryAsync(opts);
     if (result.canceled || !result.assets[0]) return;
 
-    const captureUri = result.assets[0].uri;
+    const asset = result.assets[0];
+    const captureUri = asset.uri;
     const attId = uuid();
     const storagePath = `${event.pet_id}/${event.id}/${attId}.jpg`;
     const now = new Date().toISOString();
@@ -482,8 +483,9 @@ export default function EventDetailScreen() {
       setAttachment({ id: attId, local_uri: localUri, storage_path: storagePath });
       // Compress before upload (≤1600px, q75) so the file stays under Claude's
       // 5 MB cap — also the recovery path for a historic event whose original
-      // full-size photo is too large to analyze.
-      const uploadUri = await compressForUpload(captureUri);
+      // full-size photo is too large to analyze. The picker's dimensions are
+      // passed so the cap lands on the photo's true longest edge (B-352).
+      const uploadUri = await compressForUpload(captureUri, asset.width, asset.height);
       // Fire-and-forget upload; sync retries on reconnect if it fails
       uploadPhoto('nyx-event-attachments', storagePath, uploadUri)
         .then(async () => {
