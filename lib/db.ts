@@ -14,6 +14,7 @@ import { ACTIVE_REGIMEN_FOR_DRUG_QUERY, LIBRARY_MEDICATIONS_QUERY, recentMedicat
 import { DIET_TRIAL_SCHEMA_SQL } from './dietTrialMirror';
 import { BASE_SCHEMA_SQL } from './localSchema';
 import { uuid } from './utils';
+import { clearTransientFiles } from './transientFiles';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -394,6 +395,13 @@ export async function clearLocalData(): Promise<void> {
   } catch (e) {
     console.warn('[wipe] attachment file cleanup skipped:', e);
   }
+
+  // The row-driven pass above cannot see a file that no row names, and two writers
+  // produce exactly that: stageForShare's named copy ("Pixel-lab-result-2026-07-14.pdf",
+  // handed to the share sheet) and persistRemoteObject's download temp. Both live in
+  // one transient directory so this call can clear them wholesale. Before it existed
+  // they survived sign-out AND account deletion (B-478 VF-6, rls-privacy-reviewer).
+  clearTransientFiles();
 
   // Clear the synced tables. FK-safe order (children first) so the deletes
   // never trip a foreign-key constraint regardless of cascade settings.

@@ -41,9 +41,16 @@ import { resolveMaxZoomScale } from '../../lib/photoZoom';
 
 interface Props {
   visible: boolean;
-  // Resolved image URIs. `null` entries render a "Photo unavailable" slot
-  // (e.g. a signed URL that failed to resolve), matching the carousel.
+  // Resolved image URIs. `null` entries render an unavailable slot (e.g. a signed
+  // URL that failed to resolve), matching the carousel.
   uris: (string | null)[];
+  // Copy for those `null` slots. Defaults to the photo wording every existing
+  // caller wants; Vet Files overrides it because the artifact is a clinical
+  // document, not a photo, and because AC 12 requires the honest-failure sentence
+  // to name the CAUSE ("needs a connection") rather than the symptom. This was the
+  // one surface in that feature still saying "unavailable" — reachable by swiping
+  // to an un-cached page 2 (B-478 VF-6, found by pm-feature-review).
+  unavailableLabel?: string;
   // Which photo to open on first show; clamped to range.
   initialIndex?: number;
   onClose: () => void;
@@ -69,6 +76,7 @@ interface Box {
 
 export function PhotoViewer({
   visible, uris, initialIndex = 0, onClose, onReplace, onRemove, onPageChange,
+  unavailableLabel = 'Photo unavailable',
 }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(initialIndex);
@@ -111,7 +119,7 @@ export function PhotoViewer({
     if (!uri) {
       return (
         <View key={key} style={[styles.unavailable, { width: b.w, height: b.h }]}>
-          <Text style={styles.unavailableText}>Photo unavailable</Text>
+          <Text style={styles.unavailableText}>{unavailableLabel}</Text>
         </View>
       );
     }

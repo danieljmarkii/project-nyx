@@ -33,6 +33,8 @@ import {
   daysLeftToRestore,
   restoreCountdownLabel,
   restoreWindowStart,
+  isSignatureStale,
+  VET_DOCUMENT_SIGNED_URL_TTL_SEC,
   type VetDocumentGroupRow,
 } from './vetDocumentLibrary';
 import { VET_DOCUMENT_KINDS } from './vetDocuments';
@@ -481,5 +483,48 @@ describe('RECENTLY_DELETED_VET_DOCUMENTS_QUERY', () => {
       { id: 'theirs', pet_id: 'pet-2', group: 'theirs', deleted_at: '2026-07-25T00:00:00Z' },
     ]);
     expect(rows).toEqual([]);
+  });
+});
+
+// VF-6 — the signed-URL expiry rule (found by rls-privacy-reviewer).
+//
+// Both screens cache signed URLs in a ref for the life of a mount. They used to skip
+// any path already in that ref and never evict, so the comment promising "re-signed
+// on every focus" — which is the entire stated mitigation for the deliberately short
+// 15-minute TTL — was false the moment a screen stayed mounted. It failed CLOSED
+// (dead tokens, tiles rest on their glyph), so this is availability rather than
+// exposure; the rule is unit-tested here so it cannot drift back into a comment.
+describe('isSignatureStale', () => {
+  const T0 = Date.parse('2026-07-27T12:00:00Z');
+  const urls = new Map([['pet-1/doc-1.jpg', 'https://signed/one']]);
+  const at = new Map([['pet-1/doc-1.jpg', T0]]);
+
+  it('signs a path it has never seen', () => {
+    expect(isSignatureStale(new Map(), new Map(), 'pet-1/doc-1.jpg', T0)).toBe(true);
+  });
+
+  it('keeps a fresh signature rather than re-signing on every focus', () => {
+    expect(isSignatureStale(urls, at, 'pet-1/doc-1.jpg', T0 + 60_000)).toBe(false);
+  });
+
+  it('re-signs a minute BEFORE expiry, not after', () => {
+    const ttlMs = VET_DOCUMENT_SIGNED_URL_TTL_SEC * 1000;
+    // 13m30s in: still comfortably inside the window.
+    expect(isSignatureStale(urls, at, 'pet-1/doc-1.jpg', T0 + ttlMs - 90_000)).toBe(false);
+    // 14m30s in: inside the refresh margin, so re-sign now — a signature must not
+    // be able to die between this check and the render.
+    expect(isSignatureStale(urls, at, 'pet-1/doc-1.jpg', T0 + ttlMs - 30_000)).toBe(true);
+    expect(isSignatureStale(urls, at, 'pet-1/doc-1.jpg', T0 + ttlMs)).toBe(true);
+  });
+
+  it('re-signs the long-mounted screen that used to strand on dead tokens', () => {
+    // The exact regression: 20 minutes blurred on a 15-minute TTL.
+    expect(isSignatureStale(urls, at, 'pet-1/doc-1.jpg', T0 + 20 * 60_000)).toBe(true);
+  });
+
+  it('treats a URL it cannot date as stale', () => {
+    // Safe direction is a redundant re-sign, never a render against a token whose
+    // age we cannot vouch for.
+    expect(isSignatureStale(urls, new Map(), 'pet-1/doc-1.jpg', T0)).toBe(true);
   });
 });

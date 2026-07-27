@@ -230,6 +230,35 @@ export const VET_FILES_STRIP_LIMIT = 3;
 // URL to disk.
 export const VET_DOCUMENT_SIGNED_URL_TTL_SEC = 60 * 15;
 
+// Re-sign this long before a URL actually expires, so a signature can't die between
+// the check and the render (or mid-scroll on a slow list).
+const SIGNED_URL_REFRESH_MARGIN_MS = 60 * 1000;
+
+// Should this path be (re-)signed?
+//
+// The screens cache signed URLs in a ref for the life of a mount and skip any path
+// already in it. That was written as "re-signed on every focus" — but nothing ever
+// evicted the ref, so a screen left mounted and blurred past the TTL came back with
+// dead tokens and rested every tile on its glyph until remount. It fails CLOSED, so
+// this is availability rather than exposure; the reason it matters is that the short
+// TTL's entire mitigation, as written in the comment above, is that focus re-signs.
+//
+// Pure and exported so the expiry rule is unit-testable, rather than living twice as
+// an inline predicate in two screens (B-478 VF-6, found by rls-privacy-reviewer).
+export function isSignatureStale(
+  urls: Map<string, string>,
+  mintedAt: Map<string, number>,
+  path: string,
+  now: number = Date.now(),
+): boolean {
+  if (!urls.has(path)) return true;
+  const at = mintedAt.get(path);
+  // A URL we hold but cannot date is treated as stale — the safe direction is a
+  // redundant re-sign, never a render against a token we can't vouch for.
+  if (at == null) return true;
+  return now - at >= VET_DOCUMENT_SIGNED_URL_TTL_SEC * 1000 - SIGNED_URL_REFRESH_MARGIN_MS;
+}
+
 export function buildVetFilesCardModel(
   petName: string,
   rows: VetLibraryRow[],

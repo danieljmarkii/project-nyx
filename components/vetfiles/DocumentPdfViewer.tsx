@@ -99,8 +99,23 @@ export function DocumentPdfViewer({ visible, uri, title, onClose }: Props) {
             <WebView
               style={styles.web}
               source={{ uri: openUri }}
-              originWhitelist={['*']}
+              // Pinned to the ONE document being opened, not '*'. This is a
+              // third-party clinical file from an unknown clinic's PIMS, and a
+              // PDF can carry links: with a permissive whitelist and no
+              // navigation handler, tapping one navigated in-WebView and WKWebView
+              // sent `Referer: <the current document URL>` — which, for a
+              // not-yet-cached document, is the SIGNED URL, i.e. a bearer token
+              // for a lab result handed to whatever host the link named. The
+              // 15-minute TTL bounded the damage; it was not a control (VF-6,
+              // found by rls-privacy-reviewer).
+              originWhitelist={[]}
+              onShouldStartLoadWithRequest={(req) => req.url === openUri}
               javaScriptEnabled={false}
+              // No disk cache and no back-forward list: the bytes and the signed
+              // URL would otherwise land in WebKit's own cache, which is outside
+              // every wipe path this app controls (§6.2 "never persisted").
+              cacheEnabled={false}
+              incognito
               allowFileAccess={isLocal && Platform.OS === 'android'}
               allowingReadAccessToURL={readAccessUrl}
               onLoadEnd={() => setLoading(false)}

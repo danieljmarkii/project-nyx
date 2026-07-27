@@ -490,3 +490,41 @@ describe('cacheVetDocumentPage', () => {
     raw.close();
   });
 });
+
+// VF-6 — the fourth filename component (found by rls-privacy-reviewer).
+//
+// `documentDate` was the one of four parts vetDocumentShareFilename did not slug,
+// which made its docstring's "sanitised" claim narrower than it read. Unreachable
+// today — the only writers are the date picker and hydration from a Postgres DATE —
+// but the staged share copy is written to disk under this name, so a separator here
+// walks the file out of its directory.
+describe('vetDocumentShareFilename — every component is sanitised', () => {
+  const base = {
+    kind: 'lab_result' as const,
+    isPdf: true,
+    title: 'Senior panel',
+    untitled: false,
+  };
+
+  it('slugs a separator out of the document date', () => {
+    const name = vetDocumentShareFilename('Pixel', { ...base, documentDate: '2026-07-14/../../x' });
+    expect(name).not.toContain('/');
+    expect(name).not.toContain('..');
+  });
+
+  it('leaves an ordinary ISO date readable', () => {
+    // The slug must not damage the normal case — the vet files this by eye.
+    expect(vetDocumentShareFilename('Pixel', { ...base, documentDate: '2026-07-14' }))
+      .toBe('Pixel-Senior-panel-2026-07-14.pdf');
+  });
+
+  it('never emits a path separator from any component', () => {
+    const name = vetDocumentShareFilename('Mr. O’Malley /2', {
+      ...base,
+      title: '../../etc/passwd',
+      documentDate: '../..',
+    });
+    expect(name).not.toMatch(/[/\\]/);
+    expect(name.startsWith('.')).toBe(false);
+  });
+});

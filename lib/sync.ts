@@ -546,9 +546,15 @@ export async function syncPendingVetDocuments(): Promise<void> {
         await uploadPhoto(VET_DOCUMENTS_BUCKET, doc.storage_path, prep.uri, prep.mimeType);
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('vet_documents')
-        .upsert(vetDocumentRowToRemote(doc), { onConflict: 'id' });
+        .upsert(vetDocumentRowToRemote(doc), { onConflict: 'id' })
+        // `.select('id')` so a SUCCESS-WITH-ZERO-ROWS write is distinguishable from
+        // a real write. PostgREST returns `{ error: null }` when a policy silently
+        // filters the statement, and without the returned id this loop would flag a
+        // row synced that never landed — the house pattern (pushRows) already treats
+        // an id-less row as "left queued".
+        .select('id');
       // Only mark synced when the row actually landed — supabase-js returns
       // errors rather than throwing, so an ignored error here would flag the row
       // synced while it is absent server-side (the trap already fixed for event
@@ -557,7 +563,31 @@ export async function syncPendingVetDocuments(): Promise<void> {
         console.warn('[sync] vet_document upsert failed:', error.message);
         continue;
       }
-      await db.runAsync('UPDATE vet_documents SET synced = 1 WHERE id = ?', [doc.id]);
+      if (!((data ?? []) as { id: string }[]).some((r) => r.id === doc.id)) {
+        console.warn(`[sync] vet_document ${doc.id} returned no id (RLS-blocked?) — left queued`);
+        continue;
+      }
+      // ⚠ CONDITIONAL ON `updated_at`, and that guard is load-bearing.
+      //
+      // `doc` was read at the top of this loop, and the upload above can take tens
+      // of seconds (a 15 MB PDF on cellular). An owner who soft-deletes or renames
+      // the document inside that window writes `deleted_at`/`title` + a fresh
+      // `updated_at` + `synced = 0` to the local row — and an unconditional
+      // `SET synced = 1 WHERE id = ?` would then flag that NEWER row as pushed while
+      // what actually reached the server is the STALE snapshot. The delete is then
+      // lost permanently: nothing re-pushes it (the row reads synced), and hydration
+      // will not correct it (the local `updated_at` is newer, so last-write-wins
+      // keeps the local state), and softDeleteVetDocument is guarded on
+      // `deleted_at IS NULL` so it cannot even be re-issued. A deletion that reports
+      // success and does not delete is the one failure mode this path must not have.
+      //
+      // Matching on the `updated_at` we actually pushed makes the mark a no-op in
+      // exactly that case, so the row stays queued and the next cycle pushes the
+      // real state. (B-478 VF-6, found by rls-privacy-reviewer, executed.)
+      await db.runAsync(
+        'UPDATE vet_documents SET synced = 1 WHERE id = ? AND updated_at = ?',
+        [doc.id, doc.updated_at],
+      );
     } catch (e) {
       console.warn('[sync] vet_document upload failed:', e);
     }

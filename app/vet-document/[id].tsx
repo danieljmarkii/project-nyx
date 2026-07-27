@@ -19,7 +19,7 @@ import {
   DocumentVisitSheet,
 } from '../../components/vetfiles/VetDocumentMetaSheets';
 import { usePetStore } from '../../store/petStore';
-import { getSignedUrls, stageForShare } from '../../lib/storage';
+import { compressForUpload, getSignedUrls, stageForShare } from '../../lib/storage';
 import { syncPendingVetDocuments } from '../../lib/sync';
 import { VET_DOCUMENTS_BUCKET, type VetDocumentKind } from '../../lib/vetDocuments';
 import {
@@ -30,6 +30,7 @@ import {
   linkVetDocumentVisit,
   softDeleteVetDocument,
   VET_DOCUMENT_SIGNED_URL_TTL_SEC,
+  isSignatureStale,
 } from '../../lib/vetDocumentLibrary';
 import {
   readVetDocumentDetail,
@@ -84,6 +85,9 @@ export default function VetDocumentDetailScreen() {
   const [signed, setSigned] = useState<Map<string, string>>(new Map());
   const [signing, setSigning] = useState(false);
   const signedRef = useRef<Map<string, string>>(new Map());
+  // path → epoch ms the URL was minted, so signatures expire instead of being held
+  // for the life of the mount (VF-6).
+  const signedAtRef = useRef<Map<string, number>>(new Map());
 
   const [page, setPage] = useState(0);
   // The index the viewer OPENS on, captured at open and held still while it is up.
@@ -112,7 +116,10 @@ export default function VetDocumentDetailScreen() {
   const resolveSignedUrls = useCallback(async (doc: VetDocumentDetail) => {
     const missing = Array.from(
       new Set(doc.pages.filter((p) => !p.localUri).map((p) => p.storagePath)),
-    ).filter((p) => !signedRef.current.has(p));
+    // Age-based, not presence-based — see isSignatureStale. This screen can sit
+    // open on a document for a long time (that is what it is for), so it was the
+    // more exposed of the two callers to the never-evicted ref.
+    ).filter((p) => isSignatureStale(signedRef.current, signedAtRef.current, p));
     if (missing.length === 0) return;
     setSigning(true);
     try {
@@ -124,8 +131,11 @@ export default function VetDocumentDetailScreen() {
       // Merge onto the ref re-read after the await, so a concurrent resolve's
       // writes aren't clobbered.
       const next = new Map(signedRef.current);
-      resolved.forEach((url, path) => next.set(path, url));
+      const nextAt = new Map(signedAtRef.current);
+      const mintedAt = Date.now();
+      resolved.forEach((url, path) => { next.set(path, url); nextAt.set(path, mintedAt); });
       signedRef.current = next;
+      signedAtRef.current = nextAt;
       setSigned(next);
     } finally {
       setSigning(false);
@@ -277,12 +287,35 @@ export default function VetDocumentDetailScreen() {
         uri = cached;
         await load();
       }
+      // STRIP BEFORE IT LEAVES THE APP. `local_uri` on a device-captured document is
+      // the picker's ORIGINAL asset — the EXIF/GPS strip lives inside
+      // prepareVetDocumentUpload, which is on the path to Storage and nowhere else.
+      // So until this, the one action that hands a photo to a third party was the
+      // one path that skipped the strip, and a photo of a discharge sheet taken in
+      // the owner's kitchen carried their home coordinates to the vet. The screen's
+      // sibling comment claimed "GPS never travels"; it was true of the bucket and
+      // false of the share sheet (B-478 VF-6, found by rls-privacy-reviewer).
+      //
+      // Best-effort by the same rule as the staging copy below: on a re-encode
+      // failure we fall back to the raw file rather than blocking the ER moment this
+      // screen exists for. That is the opposite of the upload path's rule (which
+      // THROWS rather than send an original) and the asymmetry is deliberate — a
+      // silent permanent copy in a bucket is a different risk from one file the owner
+      // is deliberately handing to a clinician in front of them.
+      let sendUri = uri;
+      if (!detail.isPdf) {
+        try {
+          sendUri = await compressForUpload(uri);
+        } catch (e) {
+          console.warn('[vet-files] share re-encode failed, sending the original:', e);
+        }
+      }
       // The share sheet hands over the file AT ITS PATH, and our paths are UUIDs —
       // so the copy is what decides whether the vet receives "Pixel-Senior-panel-
       // 2026-07-14.pdf" or "a3f9c1e2-….pdf". Best-effort: a failed copy shares the
       // raw file rather than blocking the moment this screen exists for.
       const shareUri = stageForShare(
-        uri,
+        sendUri,
         vetDocumentShareFilename(petName, detail, page, detail.pages.length),
       );
       await Sharing.shareAsync(shareUri, {
@@ -305,8 +338,15 @@ export default function VetDocumentDetailScreen() {
   // but a deep link or a pet switch mid-session would otherwise put the wrong name
   // on the file the vet receives — and a mis-attributed clinical record is exactly
   // the failure the D13 copy rule exists to prevent elsewhere.
-  const petName =
-    pets.find((p) => p.id === detail?.petId)?.name ?? activePet?.name ?? 'your pet';
+  // NO `activePet` RUNG — deliberately. `usePetStore.pets` holds only non-archived
+  // pets, so archiving pet A while its document is on the stack (or deep-linking to
+  // it afterwards) makes this `find` miss. An `?? activePet?.name` fallback then
+  // names whichever pet is CURRENTLY active, and the vet receives
+  // "Juniper-lab-result-2026-07-14.pdf" containing Pixel's bloodwork. That is the
+  // exact mis-attribution this lookup exists to prevent, so the miss falls straight
+  // through to the anonymous fallback: an unnamed file is recoverable, a confidently
+  // wrong name is not. (VF-6, found by rls-privacy-reviewer.)
+  const petName = pets.find((p) => p.id === detail?.petId)?.name ?? 'your pet';
 
   const linkedVisit = detail?.vetVisitId
     ? visits.find((v) => v.id === detail.vetVisitId) ?? null
@@ -422,9 +462,38 @@ export default function VetDocumentDetailScreen() {
             <DocumentMetaCard rows={metaRows} />
           </ScrollView>
 
-          {/* Share owns the floor alone (mock E-img-r2). */}
+          {/* Share owns the floor alone (mock E-img-r2). The label names the
+              OBJECT rather than the recipient, and on a multi-page document it
+              names the page — because that is what actually leaves the app.
+              Two problems, one string (VF-6):
+
+              • The silent-page bug. handleShare sends detail.pages[page] only,
+                and a bare "Share" over a 3-page discharge sheet let an owner
+                believe they had handed the vet the document when they had handed
+                over its cover. They found out from the "-p1" in the filename,
+                after the vet had the file. Aggregate share is parked (§11), so
+                the honest move is to say which page is going.
+              • The label reconciliation §9 asks for. The vet report says "Send
+                to vet" because it has exactly one audience by construction. A
+                stored document does not — this feature's own empty state names
+                boarding and groomers, and §2 ranks vaccination certificates as
+                the highest-frequency need — so naming the vet would misdescribe
+                the most common use. Naming the object keeps both surfaces on one
+                verb without inventing a recipient the app cannot know.
+
+              Deviates from the mock's bare "Share"; flagged for a Designer word. */}
           <View style={styles.actions}>
-            <PrimaryButton label="Share" onPress={handleShare} loading={saving} />
+            <PrimaryButton
+              label={
+                detail.pages.length > 1
+                  // "of N" is the load-bearing half — "Send page 1" still lets an
+                  // owner assume page 1 is all there is.
+                  ? `Send page ${page + 1} of ${detail.pages.length}`
+                  : 'Send this document'
+              }
+              onPress={handleShare}
+              loading={saving}
+            />
           </View>
         </>
       )}
@@ -435,6 +504,10 @@ export default function VetDocumentDetailScreen() {
             visible={imageViewer}
             uris={detail.pages.map((p) => uriFor(p))}
             initialIndex={viewerStart}
+            // Matches the hero's sentence rather than the shared default's "Photo
+            // unavailable": this is a clinical document, and AC 12 wants the cause
+            // named, not the symptom.
+            unavailableLabel="Needs a connection to show this page"
             // A swipe inside the viewer is what the hero's dots, the Share action
             // and the AC-12 cache all follow — a page the owner never looked at is
             // not a page worth downloading in full.
