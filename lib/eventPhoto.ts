@@ -25,6 +25,45 @@ export interface EventPhotoDisplay {
   showEmptyHero: boolean;
 }
 
+// The copy the add-photo empty hero renders: the tap-target's action label, plus
+// an optional line teaching what a photo is FOR on this kind of event.
+export interface AddPhotoHeroCopy {
+  action: string;
+  hint: string | null;
+}
+
+const ADD_PHOTO_ACTION = 'Add photo';
+
+// B-371 — for the two event types that have a shipped photo read, the generic
+// "Add photo" hero was the ONLY remaining signal on a photoless symptom once
+// B-363 suppressed the dead AI-read frame, and it never taught that for these
+// events the photo IS the clinical artifact. Principle 5: an empty state names
+// what a photo gets you.
+//
+// Scoped deliberately to vomit + stool — the types `analyze-vomit` /
+// `analyze-stool` actually read. The other SYMPTOM_TYPES (lethargy, itch) get
+// the bare action label: no skin/behaviour read is shipped, so promising one
+// would be a lie the product can't honour. Widen this map when a sibling
+// analyzer ships, not before.
+//
+// Voice + clinical bar (nyx-voice P2/P3/P5, clinical-guardrails P1): the hint
+// names the specific observations the read produces, in plain language (no
+// "Bristol type", no "haematochezia"), and describes only what CAN be looked
+// at. It never promises a verdict and never implies a photo — or the absence of
+// one — says the pet is well. Asserted by test, not by comment.
+const ADD_PHOTO_HINTS: Record<string, string> = {
+  vomit: "With a photo, I can read the colour, consistency, and whether there's blood.",
+  diarrhea: "With a photo, I can read the colour, consistency, and whether there's blood or mucus.",
+  stool_normal: "With a photo, I can read the colour, consistency, and whether there's blood or mucus.",
+};
+
+export function addPhotoHeroCopy(eventType: string | null | undefined): AddPhotoHeroCopy {
+  return {
+    action: ADD_PHOTO_ACTION,
+    hint: (eventType && ADD_PHOTO_HINTS[eventType]) ?? null,
+  };
+}
+
 export function resolveEventPhotoDisplay(input: EventPhotoInput): EventPhotoDisplay {
   const { localUri, remoteUrl, remoteUrlFull, transformFailed, isMeal, hasAttachment } = input;
   // Prefer the transform; fall back to the raw URL if it failed to load or hasn't

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -16,6 +15,7 @@ import { theme } from '../../constants/theme';
 import { Header, PrimaryButton, SectionLabel } from '../../components/ui';
 import { ChipGroup, ChipGroupOption } from '../../components/ui/ChipGroup';
 import { buildFeedbackSubject, buildSupportMailto } from '../../lib/support';
+import { showNoMailFallback } from '../../lib/supportFallback';
 import { APP_VERSION, APP_BUILD, PLATFORM } from '../../lib/appInfo';
 import { SUPPORT_EMAIL } from '../../constants/links';
 
@@ -64,11 +64,6 @@ export default function FeedbackScreen() {
     else router.replace('/settings');
   }
 
-  function noMailFallback() {
-    // §4.5 — never fail silently: show the address so the owner can still reach us.
-    Alert.alert('No mail app found', `You can reach us at ${SUPPORT_EMAIL}.`, [{ text: 'OK' }]);
-  }
-
   async function handleSend() {
     const trimmed = note.trim();
     if (!trimmed) return; // Guarded even though the button is disabled while empty.
@@ -85,7 +80,7 @@ export default function FeedbackScreen() {
     try {
       const canOpen = await Linking.canOpenURL(url);
       if (!canOpen) {
-        noMailFallback();
+        showNoMailFallback(SUPPORT_EMAIL);
         return;
       }
       await Linking.openURL(url);
@@ -98,7 +93,7 @@ export default function FeedbackScreen() {
       handleBack();
     } catch (e) {
       console.warn('[Feedback] open feedback mailto failed:', e);
-      noMailFallback();
+      showNoMailFallback(SUPPORT_EMAIL);
     }
   }
 
