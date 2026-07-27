@@ -105,7 +105,7 @@ action. Three findings.
 
 ## Deliberately not fixed here
 
-**B-529** — a terminally-rejected upload retries forever with no owner-visible
+**B-545** — a terminally-rejected upload retries forever with no owner-visible
 state, and because the queue is `ORDER BY created_at LIMIT 20` such a row sits
 among the oldest and permanently occupies a slot; twenty wedge it entirely.
 That is the exact wedge the hand-written mime-skip guards against, left open for
@@ -113,8 +113,13 @@ every other terminal cause. The fix needs a `sync_error` column, so it is a
 schema PR and cannot ride a finish pass. Meanwhile the owner is told "On this
 phone now — backs up when you're online" and nothing contradicts it.
 
-Ten more rows (**B-530 → B-539**) carry the rest of `pm-feature-review`'s
+Ten more rows (**B-546 → B-555**) carry the rest of `pm-feature-review`'s
 findings, four of them PM decisions.
+
+_These eleven were filed as **B-529 → B-539** and renumbered at wrap. The
+B-417 pre-ship review (#491) filed **B-529–B-544** from a parallel session and
+landed on `main` first, so under the first-lands-keeps rule this session's
+block moved to B-545–B-555. Each renumbered row carries the old ID inline._
 
 ## What generalises past this feature
 

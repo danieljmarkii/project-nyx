@@ -8,6 +8,7 @@
   Diet trial lifecycle — mock round 1.  B-417 · PRs 3, 4, 6, 7.
   Spec: docs/nyx-diet-trial-requirements.md v0.97 (§4.1, §4.2, §4.3, §5.2, §5.3, §7)
   Rulings record: docs/diet-trial-requirements-review-2026-07.md §0 (all ten closed 2026-07-25)
+  Round 5 (2026-07-27): the pre-ship review round — rulings R1–R8 in docs/diet-trial-preship-review-2026-07.md
 
   App-surface tokens are lifted verbatim from constants/theme.ts and are FIXED — the
   screens are the subject under review, so they don't re-theme. Page chrome does.
@@ -629,7 +630,13 @@
               <span class="chip">Stomach &amp; gut</span>
               <span class="chip">Something else</span>
             </div>
-            <div class="fhelp">Most skin trials run 8 weeks. Starting today, that ends <strong>18 September</strong>.</div>
+            <div class="fhelp">Most skin trials run 8 weeks — with day 1 below, that ends <strong>18 September</strong>.</div>
+          </div>
+
+          <div class="field">
+            <div class="flabel">First day on the trial diet only</div>
+            <div class="input"><span>Today</span><span class="chev">›</span></div>
+            <div class="fhelp">Still mixing the old food in? Set the day the switch finishes — transition days aren’t day 1.</div>
           </div>
 
           <div class="disclosure">More options <span>⌄</span></div>
@@ -637,7 +644,7 @@
           <div class="consent">While the trial runs, Culprit records which feedings matched the trial diet and which didn’t, with dates. That’s the part your vet needs.</div>
           <div class="btn">Start trial</div>
         </div>
-        <div class="caption"><b>A — primary screen. ROUND 2: the trial diet takes more than one food.</b> Round 1 drew a single picker, which doesn’t fit a real trial — the PM’s own is “multiple types of rabbit”. The schema always allowed it (<code>diet_trial_foods</code> holds N rows at <code>role='primary_diet'</code>); §4.1’s prose said “a food picker (required)”, singular, and the mock inherited the singular. Still two fields. The duration default is <b>set and shown</b> by the indication chip without becoming a third field: picking <em>Skin</em> writes 56 days and renders the resulting <b>end date</b>, not a day count. The <b>C6 disclosure</b> sits attached to the confirm action — before the commit, not on the card afterwards.</div>
+        <div class="caption"><b>A — primary screen. ROUND 2: the trial diet takes more than one food.</b> Round 1 drew a single picker, which doesn’t fit a real trial — the PM’s own is “multiple types of rabbit”. The schema always allowed it (<code>diet_trial_foods</code> holds N rows at <code>role='primary_diet'</code>); §4.1’s prose said “a food picker (required)”, singular, and the mock inherited the singular. Still two fields. The duration default is <b>set and shown</b> by the indication chip without becoming a third field: picking <em>Skin</em> writes 56 days and renders the resulting <b>end date</b>, not a day count. The <b>C6 disclosure</b> sits attached to the confirm action — before the commit, not on the card afterwards. <b>ROUND 5 (R3, ruled 2026-07-27): the date field is promoted from “More options”.</b> The definition of day 1 — the first day on the trial diet <em>only</em> — must be visible on the default path, or the car-park owner starts the countdown at the start of the transition week and ~14 vet-instructed feedings enter the record as slips. Prefilled Today, so it stays read cost rather than a required decision; Jordan’s car-park constraint holds.</div>
       </div>
 
       <!-- B: more options -->
@@ -663,12 +670,6 @@
           </div>
 
           <div class="field">
-            <div class="flabel">First day on the trial diet only</div>
-            <div class="input"><span>3 July 2026</span><span class="chev">›</span></div>
-            <div class="fhelp">Day 1 is the first day Biscuit eats <strong>only</strong> the trial diet. If you mixed the old food in for a week to switch him over, that week isn’t day 1.</div>
-          </div>
-
-          <div class="field">
             <div class="flabel">Vet <span class="muted" style="font-weight:400">(optional)</span></div>
             <div class="input empty">Who prescribed it</div>
           </div>
@@ -676,7 +677,7 @@
           <div class="consent">While the trial runs, Culprit records which feedings matched the trial diet and which didn’t, with dates. That’s the part your vet needs.</div>
           <div class="btn">Start trial</div>
         </div>
-        <div class="caption"><b>B — “More options” expanded.</b> Four fields, none of them required. <b>“Also allowed”</b> is copy-locked to <b>provenance</b> — <em>“anything your vet said is OK”</em>, never <em>“treats you’ll still give”</em>, or the field becomes a self-granted loophole that silently zeroes the exposure count.</div>
+        <div class="caption"><b>B — “More options” expanded.</b> Three fields, none of them required — the start date moved to the primary screen in round 5 (R3). <b>“Also allowed”</b> is copy-locked to <b>provenance</b> — <em>“anything your vet said is OK”</em>, never <em>“treats you’ll still give”</em>, or the field becomes a self-granted loophole that silently zeroes the exposure count.</div>
       </div>
 
       <!-- C: post-create -->
@@ -720,7 +721,7 @@
       <div class="anno new"><b>Trust &amp; Safety — why C6 renders here and not later</b>This is the first record Culprit keeps that is a judgement about a <em>person</em> rather than a fact about a pet, on an artifact that already names both owner and vet. “They consented by tapping Start” is not consent to a disclosure never shown to them. It renders above the button on both screens, in the same warm register as the rest of the sheet — no legal voice, no checkbox.</div>
       <div class="anno"><b>Designer — the indication chips</b><code>ChipGroup</code>, wrapping and accessible, three short always-visible options on a hot path (the filter-UX pattern language, ≤5 → visible chips). Labels are plain: <strong>“Stomach &amp; gut”</strong>, not “GI”. The stored enum stays <code>skin</code> / <code>gi</code> / <code>other</code> — an owner-facing label and a clinical enum are different objects, and the enum is what reaches a clinician verbatim on §7.</div>
       <div class="anno"><b>Jordan</b>“I can do screen A in the car park. What I could not do is answer four questions about transition weeks while the receptionist is waiting for my card — so the fact that the start date lives behind ‘More options’ and defaults to today is the whole reason I finish this at all.”</div>
-      <div class="anno flag"><b>Open — the start-date semantic</b>The default <em>value</em> is today; the <em>semantic</em> is “first day of exclusive feeding.” Screen B’s helper carries it in plain language. What is not drawn: an owner mid-transition who should back-date is not prompted to, and <code>transition_started_at</code> has no capture affordance anywhere in this mock. It is in the schema; PR 3 should say whether it is written from this screen or left null in v1.</div>
+      <div class="anno new"><b>RESOLVED round 5 — the start-date semantic (R3, 2026-07-27)</b>The PM ruled the definition onto the default path: “the day the trial starts should be the first day the animal has had ONLY the trial-approved foods.” Screen A now carries the field, prefilled Today, with the transition helper inline. <code>transition_started_at</code> stays null in v1 — the helper routes a mid-transition owner to set day 1 forward rather than capturing the transition itself.</div>
     </div>
   </section>
 
@@ -868,7 +869,7 @@
             <div class="btn tint sm">Open vet report</div>
           </div>
         </div>
-        <div class="caption"><b>State 7a — completed.</b> The card keeps rendering after completion, and so must the report — every report surface currently gates on <code>status='active'</code>, so the day after Complete the trial section, tiles, coverage and off-diet list all vanish. <b>This is why PR 6 must not ship before PR 7.</b></div>
+        <div class="caption"><b>State 7a — completed.</b> The card keeps rendering after completion, and so must the report — every report surface currently gates on <code>status='active'</code>, so the day after Complete the trial section, tiles, coverage and off-diet list all vanish. <b>This is why PR 6 must not ship before PR 7.</b> <b>ROUND 5 (R4):</b> the “You said Biscuit was better…” line renders only when the owner chose to answer — an unanswered outcome renders nothing, never a placeholder.</div>
       </div>
 
       <!-- 7b -->
@@ -916,11 +917,51 @@
             <div class="cends">Ends 11 August</div>
             <div class="track"><div class="fill" style="width:38%"></div></div>
             <div class="fact">Mochi grazes from a bowl that’s topped up, so there’s no day-by-day count of what she ate.</div>
-            <div class="fact">22 bowl top-ups and wet meals logged; all 22 were the trial diet.</div>
+            <div class="fact">22 bowl top-ups and wet meals logged so far.</div>
             <div class="qual">Culprit only sees what’s logged — flavoured liquids and tablets, other households and foraging aren’t visible here.</div>
+            <div class="forward">Four weeks to go. <span class="tap">See what Mochi is allowed ›</span></div>
           </div>
         </div>
-        <div class="caption"><b>Conditional state — free-fed.</b> A <code>free_choice</code> arrangement emits no meal events, so the coverage <b>ratio has no denominator</b> and is replaced by the <code>intakeNotDirectlyObserved</code> marker (mirroring <code>lib/analytics.ts</code> invariant #6). Without this, the most tightly controlled feline trial in the app scores near-zero coverage and Culprit spends eight weeks telling a compliant owner she is failing.</div>
+        <div class="caption"><b>Conditional state — free-fed.</b> A <code>free_choice</code> arrangement emits no meal events, so the coverage <b>ratio has no denominator</b> and is replaced by the <code>intakeNotDirectlyObserved</code> marker (mirroring <code>lib/analytics.ts</code> invariant #6). Without this, the most tightly controlled feline trial in the app scores near-zero coverage and Culprit spends eight weeks telling a compliant owner she is failing. <b>ROUND 5 — the drawn all-claim is deleted.</b> “all 22 were the trial diet” was the exact sentence <code>mayClaimAllMatched</code> refuses under <code>intakeNotDirectlyObserved</code> — the adversarial pass caught the mock carrying it, and a green test (<code>dietTrialCard.test.ts:843</code>) locking the forbidden string; B-533 flips that test with the wiring. The count stays; the claim goes. The forward line is restored so Sam’s card is not a count and a caveat for six weeks, and the code’s singular form (“1 bowl top-ups”) is fixed in the same pass.</div>
+      </div>
+
+      <!-- conditional: trial-diet refusal (ROUND 5) -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Royal Canin Hydrolyzed Protein HP</div>
+            <div class="cday">Day 12 of 42</div>
+            <div class="cends">Ends 11 August</div>
+            <div class="track"><div class="fill" style="width:29%"></div></div>
+            <div class="flagline" style="background:#FFF1F2">
+              <span class="hd" style="color:#9F1239">Mochi has refused 19 of the 22 bowls you’ve rated over the last 11 days.</span>
+              A diet she won’t eat can’t tell your vet anything — and a cat eating this little is worth a call soon, whatever the trial is doing. Culprit isn’t showing the trial numbers while this is going on.
+            </div>
+            <div class="btnrow">
+              <div class="btn tint sm">What to tell your vet</div>
+              <div class="btn ghost sm">Change or end the trial</div>
+            </div>
+          </div>
+        </div>
+        <div class="caption"><b>NEW conditional — the trial diet itself is being refused (ROUND 5, R1).</b> Distinct from the intake-decline state above: that detector needs a baseline to decline <em>from</em>, so a diet refused from day 1 never fires it — PR 5 built <code>trialDietRefusal</code> for exactly this patient and nothing consumed it (the pre-ship review’s worst client-side finding). Fires <b>only on logged evidence</b> — ≥3 rated feedings, ≥2 refused days, ≥50% refused share — so an owner who isn’t rating intake can never be told her cat isn’t eating (R1a: absence never alarms, G2’s two-sidedness). Replaces the adherence line structurally, like every §5.2 composition. Species-aware register: the cat copy says “worth a call soon”; a dog softens to “worth mentioning to your vet”. Depends on <b>B-530</b> — the detector must survive a re-photographed bag, or this state silently never fires.</div>
+      </div>
+
+      <!-- conditional: meals logged, intake unrated (ROUND 5) -->
+      <div class="stack">
+        <div class="device">
+          <div class="acard">
+            <div class="clabel">Diet trial</div>
+            <div class="cfood">Royal Canin Hydrolyzed Protein HP</div>
+            <div class="cday">Day 8 of 42</div>
+            <div class="cends">Ends 11 August</div>
+            <div class="track"><div class="fill" style="width:19%"></div></div>
+            <div class="fact">Meals logged on 7 of 8 days.</div>
+            <div class="standing"><b>One tap makes these readable.</b> Most of Mochi’s meals don’t yet say how much she finished. On a diet trial, whether it was eaten is the part your vet reads — a quick tap on how much was finished covers it.</div>
+            <div class="forward">Five weeks to go. <span class="tap">See what Mochi is allowed ›</span></div>
+          </div>
+        </div>
+        <div class="caption"><b>NEW conditional — meals logged, intake unrated (ROUND 5, R1b — PM-initiated).</b> The refusal register above can only fire on <em>rated</em> feedings, so this line is what makes it reachable: the card teaches the intake tap <b>before</b> anything is wrong, in the warm register, about the record and never the person. Renders when the rated share is low (threshold set in the wiring PR, B-533); a card line, not a push — Principle 4 untouched (the push variant is B-543). Nothing in this state implies anything is wrong with Mochi.</div>
       </div>
     </div>
 
@@ -1109,7 +1150,7 @@
           <div class="tiny" style="margin-top:8px">You logged about as often in both stretches, so the drop isn’t just less logging.</div>
           <div class="divider"></div>
           <div class="sheettitle" style="font-size:17px">Does that match what you’ve seen?</div>
-          <div class="sheetsub">Culprit reports what happened; your vet decides what it means. Your read goes on the report next to these counts.</div>
+          <div class="sheetsub">Culprit reports what happened; your vet decides what it means. If you answer, your read goes on the report next to these counts — and it’s fine to skip: the logged record is what your vet reads.</div>
           <div class="checkrow"><span class="rad"></span><span>Better</span></div>
           <div class="checkrow"><span class="rad"></span><span>No change</span></div>
           <div class="checkrow"><span class="rad"></span><span>Worse</span></div>
@@ -1119,7 +1160,7 @@
           </div>
           <div class="btn">Save</div>
         </div>
-        <div class="caption"><b>ROUND 3 — the data leads, then the owner’s read.</b> The PM’s challenge was fair: <em>“shouldn’t the data tell us this?”</em> It largely can, and round 2 asked for a verdict without showing any of it. Now the sheet <b>opens with the counts</b> — symptom events before vs during, plus C5’s logging-density check so a drop caused by a tiring owner is visible rather than flattering. <b>This does not breach §6.1</b> (“Culprit never scores the trial”): counts are facts, and no line says the trial worked. The owner’s read is still captured because it is <b>the one thing the counts cannot supply</b> — how the animal actually seems — and it renders on the report attributed to them. The words <b>confirmed</b>, <b>diagnosis</b> and <b>food allergy</b> stay barred near it.</div>
+        <div class="caption"><b>ROUND 3 — the data leads, then the owner’s read.</b> The PM’s challenge was fair: <em>“shouldn’t the data tell us this?”</em> It largely can, and round 2 asked for a verdict without showing any of it. Now the sheet <b>opens with the counts</b> — symptom events before vs during, plus C5’s logging-density check so a drop caused by a tiring owner is visible rather than flattering. <b>This does not breach §6.1</b> (“Culprit never scores the trial”): counts are facts, and no line says the trial worked. The owner’s read is still captured because it is <b>the one thing the counts cannot supply</b> — how the animal actually seems — and it renders on the report attributed to them. The words <b>confirmed</b>, <b>diagnosis</b> and <b>food allergy</b> stay barred near it. <b>ROUND 5 (R4, ruled 2026-07-27): the qualitative approach is paused — the data leads.</b> The question stays but is explicitly optional and skippable: Save is never gated on a selection, the skip is legitimised in copy, the report omits the owner line when unanswered, and screen D’s second-trial door stays outcome-free as built. Unchanged either way: Culprit never <em>computes</em> a verdict (§6.1) — “the data shows us” happens on the vet’s side of the table. Dr. Chen’s advisory dissent (vets value the owner’s overall impression) is recorded; optional-never-forced satisfies both. This makes the sheet’s counts verdict-bearing, which is why <b>B-536</b>’s meal-day guard fix gates the build.</div>
       </div>
 
       <div class="stack">
@@ -1315,6 +1356,9 @@
   </section>
 
   <section>
+    <h2>Round 5 — what changed (the pre-ship review round)</h2>
+    <p class="changelog">Driven by the 2026-07-27 five-chair pre-ship review and the PM rulings R1–R8 (<code>docs/diet-trial-preship-review-2026-07.md</code>). ① <strong>The refusal state drawn at last</strong> — <code>trialDietRefusal</code> was computed and consumed by nothing; the card gains a viability register, gated on logged evidence only (≥3 rated / ≥2 refused days / ≥50% share), species-aware, structurally replacing the adherence line (R1). ② <strong>The intake-rating teach line</strong> (PM-initiated) — rating is what makes the refusal register reachable, so the card teaches the tap before anything is wrong; a card line, not a push. ③ <strong>The free-fed all-claim deleted</strong> — the exact sentence <code>mayClaimAllMatched</code> forbids under <code>intakeNotDirectlyObserved</code>, and a green test locks it (<code>dietTrialCard.test.ts:843</code>; B-533 flips it); the forward line restored. ④ <strong>The start date promoted to the default path</strong> (R3) — day 1 = the first day on the trial diet <em>only</em>, prefilled Today; screen B drops its copy. ⑤ <strong>The outcome question is optional by design</strong> (R4) — the data leads; skip legitimised; screen D stays outcome-free; 7a’s verdict line renders only when answered. ⑥ <strong>Grace windows re-ruled</strong> (R5): report anchor 90d, card 30d — the recheck-slip case. ⑦ <strong>To the vet sitting (R8), deliberately not drawn:</strong> the GI extension arithmetic (“around three months” beside “+2 more weeks”, B-510) and B-456 back-dating (team rec: allow, cap at trial start, disclose the edit on the report). ⑧ <strong>Wiring:</strong> the card states land via B-533 (+B-474 pairing); the report-side gates are B-529–B-532.</p>
+
     <h2>Round 4 — what changed</h2>
     <p class="changelog">① <strong>All of B-351 ships</strong> (PM), so the manual-picker dependency is gone and PR 5’s protein arm has no external blocker. ② <strong>The FAB scenario traced step by step</strong> — an unsanctioned rabbit food with hidden chicken is caught at <em>rung 1</em>, because the allowed set is the only permit path; the protein arm changes what the <em>vet</em> is told (a poultry antigen in the tally) rather than whether it flags. ③ <strong>The residual B-351 cannot close, named:</strong> an <em>undeclared</em> protein is not on the label and so cannot be in the array — 33–83% mislabeling in exactly these products — which is what §5.5’s standing fact discloses rather than detects. ④ <strong>Two new decisions, D-A and D-B</strong> — the permitted extra with a hidden protein is currently permitted-and-silent, because rung 1 stops and §5.5 reads <code>primary_diet</code> rows only.</p>
 
