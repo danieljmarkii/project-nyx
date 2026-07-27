@@ -11,6 +11,7 @@ import { OwnerNameRow } from '../components/profile/OwnerNameRow';
 import { DeleteAccountSheet } from '../components/profile/DeleteAccountSheet';
 import { supabase } from '../lib/supabase';
 import { buildSupportMailto, formatAppVersion } from '../lib/support';
+import { showNoMailFallback } from '../lib/supportFallback';
 import { APP_VERSION, APP_BUILD, PLATFORM } from '../lib/appInfo';
 import {
   SUPPORT_EMAIL,
@@ -52,11 +53,6 @@ export default function SettingsScreen() {
     else router.replace('/(tabs)');
   }
 
-  function noMailFallback() {
-    // §4.5 — never fail silently: show the address so the owner can still reach us.
-    Alert.alert('No mail app found', `You can reach us at ${SUPPORT_EMAIL}.`, [{ text: 'OK' }]);
-  }
-
   async function handleContactSupport() {
     const url = buildSupportMailto(SUPPORT_EMAIL, {
       version: APP_VERSION,
@@ -66,13 +62,13 @@ export default function SettingsScreen() {
     try {
       const canOpen = await Linking.canOpenURL(url);
       if (!canOpen) {
-        noMailFallback();
+        showNoMailFallback(SUPPORT_EMAIL);
         return;
       }
       await Linking.openURL(url);
     } catch (e) {
       console.warn('[Settings] open support mailto failed:', e);
-      noMailFallback();
+      showNoMailFallback(SUPPORT_EMAIL);
     }
   }
 

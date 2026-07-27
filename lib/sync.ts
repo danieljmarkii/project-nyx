@@ -168,6 +168,64 @@ async function fetchAllRows<T>(
   return out;
 }
 
+// Pattern 6 for foods, in the shape presyncMedicationItems has for drugs: ensure
+// every referenced food_items row exists server-side before a meals /
+// feeding_arrangements / diet_trials / diet_trial_foods upsert references it, or
+// the FK rejects the row and the queue retries forever. A meal can be logged — or
+// a trial started — offline against a food captured offline, so the FK target may
+// live only in the local cache. ignoreDuplicates so it never clobbers a richer
+// server row (photo_paths / ai_extraction_*). Best-effort: a failure is logged,
+// not thrown — the dependent upsert still tries and, if the food truly isn't
+// there, fails its own FK check (23503, explicitly NON-terminal) and stays queued
+// for the next cycle (Pattern 1).
+//
+// B-451: the four callers each used to inline this block. That drift risk was not
+// hypothetical — B-351 had to add `proteins` carriage to every copy separately,
+// and a copy that missed it would silently flatten an offline-captured food's
+// protein set to the server's '{}' default. One definition now, so the next
+// column added to food_items can only be added once.
+async function presyncFoodItems(
+  db: Db,
+  userId: string,
+  foodIds: string[],
+  // Names the calling writer in the warn line — the only thing that differed
+  // between the folded copies, and the bit that makes a log actionable.
+  label: string,
+): Promise<void> {
+  if (foodIds.length === 0) return;
+  const placeholders = foodIds.map(() => '?').join(',');
+  const localFoods = await db.getAllAsync<{
+    id: string; brand: string; product_name: string; format: string;
+    food_type: string | null; primary_protein: string | null; proteins: string | null;
+    is_novel_protein: number; is_grain_free: number; is_prescription: number;
+  }>(
+    `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
+            is_novel_protein, is_grain_free, is_prescription
+     FROM food_items_cache WHERE id IN (${placeholders})`,
+    foodIds,
+  );
+  if (localFoods.length === 0) return;
+  const { error } = await supabase.from('food_items').upsert(
+    localFoods.map((f) => ({
+      id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
+      food_type: f.food_type, primary_protein: f.primary_protein,
+      // B-351: carry the protein set up too, or a food captured offline would
+      // land server-side with the '{}' default and silently drop the set until
+      // some later write repaired it. NULL cache (unhydrated legacy) decodes to
+      // [] — matching the server column's own default.
+      proteins: proteinsFromCacheText(f.proteins),
+      is_novel_protein: Boolean(f.is_novel_protein),
+      is_grain_free: Boolean(f.is_grain_free),
+      is_prescription: Boolean(f.is_prescription),
+      created_by_user_id: userId,
+    })),
+    { onConflict: 'id', ignoreDuplicates: true },
+  );
+  if (error) {
+    console.warn(`[sync] food_items pre-sync (${label}) failed:`, error.message);
+  }
+}
+
 export async function syncPendingMeals(): Promise<void> {
   // Ensure the JWT is fresh before writing. getSession() triggers a refresh
   // if the access token has expired, and returns null if the session is gone.
@@ -208,48 +266,7 @@ export async function syncPendingMeals(): Promise<void> {
   // The local best-effort insert at food-creation time may have failed — this
   // guarantees the FK constraint won't reject the meal upsert.
   const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
-  if (foodIds.length > 0) {
-    const userId = session.user.id;
-
-    const placeholders = foodIds.map(() => '?').join(',');
-    const localFoods = await db.getAllAsync<{
-      id: string; brand: string; product_name: string; format: string;
-      food_type: string | null;
-      primary_protein: string | null; proteins: string | null;
-      is_novel_protein: number;
-      is_grain_free: number; is_prescription: number;
-    }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-              is_novel_protein, is_grain_free, is_prescription
-       FROM food_items_cache WHERE id IN (${placeholders})`,
-      foodIds
-    );
-    if (localFoods.length > 0) {
-      const { error: foodError } = await supabase.from('food_items').upsert(
-        localFoods.map((f) => ({
-          id: f.id,
-          brand: f.brand,
-          product_name: f.product_name,
-          format: f.format,
-          food_type: f.food_type,
-          primary_protein: f.primary_protein,
-          // B-351: carry the protein set up too, or a food captured offline
-          // would land server-side with the '{}' default and silently drop the
-          // set until some later write repaired it. NULL cache (unhydrated
-          // legacy) decodes to [] — matching the server column's own default.
-          proteins: proteinsFromCacheText(f.proteins),
-          is_novel_protein: Boolean(f.is_novel_protein),
-          is_grain_free: Boolean(f.is_grain_free),
-          is_prescription: Boolean(f.is_prescription),
-          created_by_user_id: userId,
-        })),
-        { onConflict: 'id', ignoreDuplicates: true }
-      );
-      if (foodError) {
-        console.warn('[sync] food_items pre-sync failed:', foodError.message);
-      }
-    }
-  }
+  await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
   const { error } = await supabase.from('meals').upsert(
     unsyncedMeals.map((m) => ({
@@ -812,41 +829,9 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
 
   // Pattern 6 — ensure every referenced food exists server-side before the
   // arrangement upsert, or the FK constraint rejects it and the queue retries
-  // forever. Same shape as the meals pre-sync.
+  // forever.
   const foodIds = [...new Set(unsynced.map((a) => a.food_item_id))];
-  if (foodIds.length > 0) {
-    const placeholders = foodIds.map(() => '?').join(',');
-    const localFoods = await db.getAllAsync<{
-      id: string; brand: string; product_name: string; format: string;
-      food_type: string | null; primary_protein: string | null;
-      proteins: string | null;
-      is_novel_protein: number; is_grain_free: number; is_prescription: number;
-    }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-              is_novel_protein, is_grain_free, is_prescription
-       FROM food_items_cache WHERE id IN (${placeholders})`,
-      foodIds,
-    );
-    if (localFoods.length > 0) {
-      const { error: foodError } = await supabase.from('food_items').upsert(
-        localFoods.map((f) => ({
-          id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
-          food_type: f.food_type, primary_protein: f.primary_protein,
-          // B-351: same carriage as the meals pre-sync — never let an offline-
-          // captured food's protein set flatten to the server default.
-          proteins: proteinsFromCacheText(f.proteins),
-          is_novel_protein: Boolean(f.is_novel_protein),
-          is_grain_free: Boolean(f.is_grain_free),
-          is_prescription: Boolean(f.is_prescription),
-          created_by_user_id: session.user.id,
-        })),
-        { onConflict: 'id', ignoreDuplicates: true },
-      );
-      if (foodError) {
-        console.warn('[sync] food_items pre-sync (arrangements) failed:', foodError.message);
-      }
-    }
-  }
+  await presyncFoodItems(db, session.user.id, foodIds, 'arrangements');
 
   const { error } = await supabase.from('feeding_arrangements').upsert(
     unsynced.map((a) => ({
@@ -965,52 +950,6 @@ export async function syncPendingMedicationAdministrations(): Promise<void> {
 
 // ── Diet-trial mirror push (B-417 PR 2) ──────────────────────────────────────
 
-// Pattern 6 for foods, in the shape presyncMedicationItems has for drugs: ensure
-// every referenced food_items row exists server-side before a diet_trials /
-// diet_trial_foods upsert references it. A trial can be started offline against a
-// food captured offline, so the FK target may live only in the local cache.
-// ignoreDuplicates so it never clobbers a richer server row (photo_paths /
-// ai_extraction_*). Best-effort: a failure is logged, not thrown — the dependent
-// upsert still tries and, if the food truly isn't there, fails its own FK check
-// (23503, explicitly NON-terminal) and stays queued for the next cycle.
-//
-// (syncPendingMeals and syncPendingFeedingArrangements each inline this same
-// block. Left alone deliberately — folding all three onto one helper is a
-// worthwhile tidy but it is a refactor of two shipped, load-bearing writers, and
-// this PR is not the place to carry that risk. Logged as B-451.)
-async function presyncFoodItems(db: Db, userId: string, foodIds: string[]): Promise<void> {
-  if (foodIds.length === 0) return;
-  const placeholders = foodIds.map(() => '?').join(',');
-  const localFoods = await db.getAllAsync<{
-    id: string; brand: string; product_name: string; format: string;
-    food_type: string | null; primary_protein: string | null; proteins: string | null;
-    is_novel_protein: number; is_grain_free: number; is_prescription: number;
-  }>(
-    `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-            is_novel_protein, is_grain_free, is_prescription
-     FROM food_items_cache WHERE id IN (${placeholders})`,
-    foodIds,
-  );
-  if (localFoods.length === 0) return;
-  const { error } = await supabase.from('food_items').upsert(
-    localFoods.map((f) => ({
-      id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
-      food_type: f.food_type, primary_protein: f.primary_protein,
-      // B-351: never let an offline-captured food's protein set flatten to the
-      // server default (the same carriage the meals pre-sync does).
-      proteins: proteinsFromCacheText(f.proteins),
-      is_novel_protein: Boolean(f.is_novel_protein),
-      is_grain_free: Boolean(f.is_grain_free),
-      is_prescription: Boolean(f.is_prescription),
-      created_by_user_id: userId,
-    })),
-    { onConflict: 'id', ignoreDuplicates: true },
-  );
-  if (error) {
-    console.warn('[sync] food_items pre-sync (diet trial) failed:', error.message);
-  }
-}
-
 // Push a batch of mirror rows, then flip `synced` for the rows that ACTUALLY
 // LANDED — and isolate the batch if it was rejected for a permanent reason.
 //
@@ -1128,7 +1067,7 @@ export async function syncPendingDietTrials(): Promise<void> {
   if (unsynced.length === 0) return;
 
   const foodIds = [...new Set(unsynced.map((t) => t.food_item_id).filter(Boolean))] as string[];
-  await presyncFoodItems(db, session.user.id, foodIds);
+  await presyncFoodItems(db, session.user.id, foodIds, 'diet trial');
 
   // TWO PASSES, ENDING TRIALS FIRST — the wire half of PR 3's "complete-then-start
   // must be ORDERED" (§3.3). Migration 040 made the active-trial index UNIQUE, so
@@ -1185,7 +1124,7 @@ export async function syncPendingDietTrialFoods(): Promise<void> {
   if (unsynced.length === 0) return;
 
   const foodIds = [...new Set(unsynced.map((f) => f.food_item_id))];
-  await presyncFoodItems(db, session.user.id, foodIds);
+  await presyncFoodItems(db, session.user.id, foodIds, 'diet trial foods');
 
   await pushDietTrialRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote);
 }
