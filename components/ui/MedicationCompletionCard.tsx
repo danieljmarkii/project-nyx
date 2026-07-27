@@ -105,16 +105,16 @@ export function MedicationCompletionCard() {
       // provenance from 'now' to 'manual' so the vet report + correlation engine
       // can tell witnessed-now from owner-backfilled later. Doses are always
       // witnessed point-in-time (you administer the dose yourself — the B-010
-      // found/window path never applies to a med, exactly as edit-event.tsx forces
-      // for medication), and updateEvent writes confidence on every UPDATE, so
-      // re-assert 'witnessed' with null window bounds rather than let it silently
-      // wipe to NULL. Mirrors the meal card's savePicker.
+      // found/window path never applies to a med, exactly as edit-event.tsx does
+      // for medication), and this card only ever edits a dose insertMedicationDose
+      // just wrote as witnessed — so re-asserting it is a no-op that keeps the
+      // claim explicit. Mirrors the meal card's savePicker.
       await updateEvent(payload.eventId, {
         occurred_at: iso,
         severity: null,
         notes: null,
         occurred_at_source: 'manual',
-        occurred_at_confidence: 'witnessed',
+        confidence: { value: 'witnessed', earliest: null, latest: null },
       });
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);

@@ -618,6 +618,16 @@ export async function softDeleteEvent(eventId: string): Promise<void> {
   );
 }
 
+// B-010 confidence + its window bounds, written as one unit. They are a single
+// claim about how well the time is known, and the schema's CHECK constraint ties
+// them together (bounds are legal only on 'window'), so they can only be set
+// together — never one without the others.
+export interface EventConfidenceUpdate {
+  value: 'witnessed' | 'estimated' | 'window';
+  earliest: string | null;
+  latest: string | null;
+}
+
 export async function updateEvent(
   eventId: string,
   fields: {
@@ -625,30 +635,40 @@ export async function updateEvent(
     severity: number | null;
     notes: string | null;
     occurred_at_source?: 'manual' | 'exif' | 'now';
-    // B-010 — re-classifying confidence on edit. Window bounds are only
-    // non-null for confidence 'window'; the caller derives occurred_at from
-    // them (latest edge) so existing readers keep working.
-    occurred_at_confidence?: 'witnessed' | 'estimated' | 'window' | null;
-    occurred_at_earliest?: string | null;
-    occurred_at_latest?: string | null;
+    // B-010 — re-classifying confidence on edit. OMIT this key to leave the
+    // three confidence columns exactly as stored (B-448).
+    //
+    // It is optional-by-omission rather than a nullable column value because an
+    // edit that isn't ABOUT the time must not restate the time's confidence.
+    // The previous signature took the three columns flat and always wrote them,
+    // `?? null` — so a caller that cared only about notes silently rewrote the
+    // row's confidence, in both directions: it wiped a stored 'estimated' to
+    // NULL if it passed nothing, and (app/edit-event.tsx) promoted a stored
+    // NULL to 'witnessed' if it passed its form default. Migration 012 is
+    // explicit that NULL is "NOT a claim either way", and the vet report
+    // renders it 'unspecified' precisely so it is not read as more certain than
+    // it is — so inventing 'witnessed' for it moved a row in the falsely
+    // reassuring direction, one edit at a time.
+    confidence?: EventConfidenceUpdate;
   },
+  // Injected for tests (the cacheFlush.test.ts pattern); production passes nothing.
+  database: Pick<SQLite.SQLiteDatabase, 'runAsync'> = getDb(),
 ): Promise<void> {
-  const db = getDb();
   const now = new Date().toISOString();
-  await db.runAsync(
-    `UPDATE events SET occurred_at = ?, severity = ?, notes = ?, occurred_at_source = ?,
-            occurred_at_confidence = ?, occurred_at_earliest = ?, occurred_at_latest = ?,
-            updated_at = ?, synced = 0
-     WHERE id = ?`,
-    [
-      fields.occurred_at, fields.severity ?? null, fields.notes,
-      fields.occurred_at_source ?? 'manual',
-      fields.occurred_at_confidence ?? null,
-      fields.occurred_at_earliest ?? null,
-      fields.occurred_at_latest ?? null,
-      now, eventId,
-    ],
-  );
+  const sets = [
+    'occurred_at = ?', 'severity = ?', 'notes = ?', 'occurred_at_source = ?',
+  ];
+  const params: (string | number | null)[] = [
+    fields.occurred_at, fields.severity ?? null, fields.notes,
+    fields.occurred_at_source ?? 'manual',
+  ];
+  if (fields.confidence) {
+    sets.push('occurred_at_confidence = ?', 'occurred_at_earliest = ?', 'occurred_at_latest = ?');
+    params.push(fields.confidence.value, fields.confidence.earliest, fields.confidence.latest);
+  }
+  sets.push('updated_at = ?', 'synced = 0');
+  params.push(now, eventId);
+  await database.runAsync(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`, params);
 }
 
 export async function getEventSource(eventId: string): Promise<'manual' | 'exif' | 'now'> {

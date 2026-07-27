@@ -2,6 +2,17 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { TextField } from './TextField';
 import { theme } from '../../constants/theme';
+import { useAppActive } from '../../hooks/useAppActive';
+
+// Foreground state is what re-masks a revealed password, so drive it explicitly
+// rather than through a real AppState event.
+jest.mock('../../hooks/useAppActive', () => ({ useAppActive: jest.fn(() => true) }));
+
+const mockedAppActive = useAppActive as jest.Mock;
+
+beforeEach(() => {
+  mockedAppActive.mockReturnValue(true);
+});
 
 // Styles are applied as arrays with an inline override on the field container;
 // flatten so we compare the resolved value regardless of the style-array shape.
@@ -131,6 +142,53 @@ describe('TextField', () => {
       fireEvent.press(getByTestId('pw-reveal'));
       expect(getByTestId('pw').props.secureTextEntry).toBe(true);
       expect(getByLabelText('Show password')).toBeTruthy();
+    });
+
+    // The toggle is the whole point of B-428, so its target is asserted on the
+    // button's own resolved box — not on hitSlop arithmetic that a later trim
+    // could quietly drop below the floor.
+    it('gives the reveal toggle its own >=44pt target', () => {
+      const { getByTestId } = render(
+        <TextField label="Password" value="hunter2" onChangeText={() => {}} secureTextEntry testID="pw" />,
+      );
+      const box = flatStyle(getByTestId('pw-reveal'));
+      expect(box.width as number).toBeGreaterThanOrEqual(44);
+      expect(box.height as number).toBeGreaterThanOrEqual(44);
+    });
+
+    // Reveal is a glance, not a mode. Leaving the app must not leave plaintext on
+    // screen for the owner's return trip (or for the app-switcher snapshot).
+    it('re-masks when the app leaves the foreground', () => {
+      const { getByTestId, getByLabelText, rerender } = render(
+        <TextField label="Password" value="hunter2" onChangeText={() => {}} secureTextEntry testID="pw" />,
+      );
+      fireEvent.press(getByTestId('pw-reveal'));
+      expect(getByTestId('pw').props.secureTextEntry).toBe(false);
+
+      mockedAppActive.mockReturnValue(false);
+      rerender(
+        <TextField label="Password" value="hunter2" onChangeText={() => {}} secureTextEntry testID="pw" />,
+      );
+      expect(getByTestId('pw').props.secureTextEntry).toBe(true);
+      expect(getByLabelText('Show password')).toBeTruthy();
+    });
+
+    // Coming back to the field must not silently re-reveal what backgrounding hid.
+    it('stays masked after the app returns to the foreground', () => {
+      // A fresh element each time on purpose: React bails out of re-rendering a
+      // referentially identical one, which would hide the mocked state change.
+      const field = () => (
+        <TextField label="Password" value="hunter2" onChangeText={() => {}} secureTextEntry testID="pw" />
+      );
+      const { getByTestId, rerender } = render(field());
+      fireEvent.press(getByTestId('pw-reveal'));
+
+      mockedAppActive.mockReturnValue(false);
+      rerender(field());
+      mockedAppActive.mockReturnValue(true);
+      rerender(field());
+
+      expect(getByTestId('pw').props.secureTextEntry).toBe(true);
     });
 
     // The realistic signup case: a password field showing a validation error.
