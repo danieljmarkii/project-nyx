@@ -36,6 +36,14 @@ The third new test (`stays masked after the app returns to the foreground`) fail
 
 The one thing no unit test can catch here is the z-order overlap — a test can assert the button's box is 44×44, but not that it stopped stealing taps from the input. That check is first in the PR's manual QA script for exactly that reason.
 
+## Base drift, and what it cost
+
+`main` moved **five commits across three repairs** while this one-primitive PR sat open: #484 (portrait compression), then #487/#489/#490 (support-email fallback + Vet Files VF-2/VF-3), then #486 (symptom photo hero). Each was merged in, re-verified, and pushed — the ruleset requires branches up-to-date, so a green PR goes stale on its own.
+
+Every merge was **conflict-free, including `docs/backlog.md`**, which four of those commits also touched. That is the one-row-per-line format earning its keep: four sessions edited the same file and git merged all of it on line boundaries. The duplicate-B-ID check was run *after* the final merge, per the wrap rule, and came back empty (highest live ID 523).
+
+One thing worth noting for anyone sizing a small PR: the Vet Files commits added dependencies, so `npm ci` was needed before the post-merge verification meant anything. Testing against a stale `node_modules` would have produced a green run that CI wouldn't reproduce.
+
 ## Note for whoever builds B-280 PR 2 / PR 3
 
 The reset-password and change-password screens get the reveal toggle **for free** by using `TextField` with `secureTextEntry`, including the background re-mask. Don't hand-roll a masked input, and don't add a confirm field without revisiting B-428's reasoning about the per-screen tap cost.
