@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import {
-  KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet } from 'react-native';
 import { theme } from '../../constants/theme';
 import { ChipGroup, type ChipGroupOption } from '../ui/ChipGroup';
 import { PrimaryButton } from '../ui/PrimaryButton';
 import { TextField } from '../ui/TextField';
+import { SheetShell } from './SheetShell';
 import { VET_DOCUMENT_KINDS, type VetDocumentKind } from '../../lib/vetDocuments';
 import { VET_DOCUMENT_KIND_LABELS } from '../../lib/vetDocumentLibrary';
 
@@ -14,36 +12,9 @@ import { VET_DOCUMENT_KIND_LABELS } from '../../lib/vetDocumentLibrary';
 // capture. Both are sheets rather than screens on purpose: the mock calls the Name
 // affordance "one-tap", and pushing a screen to set one field would make naming
 // cost more than the capture it is recovering from.
-
-interface ShellProps {
-  visible: boolean;
-  onClose: () => void;
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}
-
-// Sheet chrome shared with ScopeMenu / PetSwitcherSheet so every bottom sheet in
-// the app dims, grabs and rounds identically.
-function SheetShell({ visible, onClose, title, subtitle, children }: ShellProps) {
-  const insets = useSafeAreaInsets();
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Pressable style={styles.scrim} onPress={onClose} accessibilityLabel="Close" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + theme.space2 }]}>
-          <View style={styles.grabber} />
-          <Text style={styles.title}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-          {children}
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
+//
+// The shared chrome moved to ./SheetShell in VF-3, when the add sheet became its
+// third caller.
 
 interface NameProps {
   visible: boolean;
@@ -128,42 +99,6 @@ export function DocumentKindSheet({ visible, current, onCancel, onSelect }: Kind
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  scrim: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: theme.colorScrim,
-  },
-  sheet: {
-    backgroundColor: theme.colorSurface,
-    borderTopLeftRadius: theme.radiusLarge,
-    borderTopRightRadius: theme.radiusLarge,
-    paddingTop: 10,
-    paddingHorizontal: theme.space3,
-    maxHeight: '80%',
-  },
-  grabber: {
-    width: 36,
-    height: 4,
-    borderRadius: theme.radiusFull,
-    backgroundColor: theme.colorBorderStrong,
-    alignSelf: 'center',
-    marginBottom: 14,
-  },
-  title: {
-    fontSize: theme.textLG,
-    fontWeight: theme.weightSemibold,
-    color: theme.colorTextPrimary,
-    letterSpacing: theme.trackingTight,
-  },
-  subtitle: {
-    fontSize: theme.textSM,
-    lineHeight: theme.lineHeightSM,
-    color: theme.colorTextTertiary,
-    marginTop: 4,
-  },
   field: {
     marginTop: theme.space2,
     marginBottom: theme.space2,
