@@ -32,6 +32,7 @@ import {
   reconcileKindFilter,
   filterByKind,
   VET_DOCUMENT_SIGNED_URL_TTL_SEC,
+  isSignatureStale,
   type DeletedVetDocumentRow,
   type VetLibraryRow,
 } from '../lib/vetDocumentLibrary';
@@ -62,8 +63,10 @@ import {
 // that "Done" simply leaves. A pushed capture route would put a navigation
 // transition between the owner and a document that is already on disk.
 //
-// The one forward link still unbuilt is the document detail (VF-4), wired through
-// the named `pendingScreen` no-op below so the call site stays greppable.
+// Every forward link is built as of VF-4: a row opens /vet-document/{groupId}, which
+// views, edits, shares and soft-deletes. (This note previously described a
+// `pendingScreen` no-op standing in for the unbuilt detail screen; that helper is
+// gone — corrected in VF-6.)
 export default function VetFilesScreen() {
   const activePet = usePetStore((s) => s.activePet);
   const pets = usePetStore((s) => s.pets);
@@ -75,11 +78,21 @@ export default function VetFilesScreen() {
   const [kindFilter, setKindFilter] = useState<string | null>(null);
 
   // path → signed URL. Held for the life of this mount only and never persisted
-  // (§6.2). Re-signed on every focus, which is also what keeps the 15-minute TTL
-  // from stranding a long-open screen on dead tokens.
+  // (§6.2).
+  //
+  // Re-signed on focus, but ONLY once a URL is near the end of the 15-minute TTL.
+  // This note used to claim a plain re-sign on every focus, and that was not what
+  // the code did: `resolveThumbnails` skips every path already in `signedRef` and
+  // nothing ever evicted it, so a screen left mounted and blurred for 20 minutes
+  // came back with dead tokens and rested every tile on its glyph until remount.
+  // It failed CLOSED (no privacy consequence) but the comment was load-bearing —
+  // the short TTL's whole mitigation is that focus re-signs (VF-6, found by
+  // rls-privacy-reviewer).
   const [thumbUrls, setThumbUrls] = useState<Map<string, string>>(new Map());
   const [thumbsLoading, setThumbsLoading] = useState(false);
   const signedRef = useRef<Map<string, string>>(new Map());
+  // path → epoch ms the URL was minted, so the eviction above can be age-based.
+  const signedAtRef = useRef<Map<string, number>>(new Map());
 
   // The Name sheet addresses a GROUP, and it is opened from two places — a library
   // row and the saved moment — so it holds the three fields both can supply rather
@@ -129,7 +142,7 @@ export default function VetFilesScreen() {
   const resolveThumbnails = useCallback(async (libraryRows: VetLibraryRow[]) => {
     const missing = Array.from(
       new Set(libraryRows.filter((r) => !r.localUri).map((r) => r.storagePath)),
-    ).filter((p) => !signedRef.current.has(p));
+    ).filter((p) => isSignatureStale(signedRef.current, signedAtRef.current, p));
     if (missing.length === 0) return;
     setThumbsLoading(true);
     try {
@@ -141,8 +154,11 @@ export default function VetFilesScreen() {
       // Merge onto the latest ref (re-read after the await) so a concurrent
       // resolve's writes aren't clobbered.
       const next = new Map(signedRef.current);
-      resolved.forEach((url, path) => next.set(path, url));
+      const nextAt = new Map(signedAtRef.current);
+      const mintedAt = Date.now();
+      resolved.forEach((url, path) => { next.set(path, url); nextAt.set(path, mintedAt); });
       signedRef.current = next;
+      signedAtRef.current = nextAt;
       setThumbUrls(next);
     } finally {
       setThumbsLoading(false);
@@ -415,19 +431,35 @@ export default function VetFilesScreen() {
       await load();
     } catch (e) {
       console.warn('[vet-files] rename failed:', e);
+      // The sheet stays OPEN on failure (setNaming(null) is inside the try), so
+      // the owner's typed title is still there to re-submit — but without this
+      // alert the only signal was the spinner stopping, which reads as "it
+      // saved". D11 rests entirely on this affordance: capture asks nothing, so
+      // the library row's one-tap Name IS the recovery, and a recovery that can
+      // fail silently is worse than no recovery (VF-6).
+      Alert.alert('That didn’t save', 'Something went wrong saving that name. Give it another try.');
     } finally {
       setSaving(false);
     }
   }
 
   async function handleKind(kind: VetDocumentKind) {
-    if (!typing) return;
+    // `saving` doubles as the re-entrancy guard: ChipGroup carries no disabled
+    // state (and adding one to a shared primitive is wider than this pass), so a
+    // second tap while the first write is in flight would otherwise queue a
+    // second write and a second `load()`. Making the chips visibly busy is a
+    // ChipGroup change — filed rather than bolted on here.
+    if (!typing || saving) return;
+    setSaving(true);
     try {
       await setVetDocumentKind(typing.groupId, kind);
       setTyping(null);
       await load();
     } catch (e) {
       console.warn('[vet-files] set type failed:', e);
+      Alert.alert('That didn’t save', 'Something went wrong saving that type. Give it another try.');
+    } finally {
+      setSaving(false);
     }
   }
 

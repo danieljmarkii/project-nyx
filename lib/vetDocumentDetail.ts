@@ -227,7 +227,14 @@ export function vetDocumentShareFilename(
   // An owner-typed title names the document better than its taxonomy ever will; the
   // kind is the fallback for the untitled steady state (D11), not the default.
   const what = detail.untitled ? slug(detail.kind, 'document') : slug(detail.title, 'document');
-  const when = detail.documentDate ? `-${detail.documentDate}` : '';
+  // Slugged like every other component. `documentDate` is written only by the date
+  // picker and by hydration from a Postgres DATE, so it cannot currently hold a
+  // separator — but it was the one of four parts this function skipped, which made
+  // the docstring's "sanitised" claim narrower than it read, and a value of
+  // "2026-07-14/../../x" would have walked the staged copy out of its directory
+  // (VF-6, found by rls-privacy-reviewer). Sanitising all four is cheaper than
+  // maintaining the argument for why one is safe.
+  const when = detail.documentDate ? `-${slug(detail.documentDate, 'dated')}` : '';
   // Multi-page documents share one page at a time (aggregate export is parked, §11),
   // so the page has to be in the name or the vet gets three files called the same
   // thing and no way to order them.

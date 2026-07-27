@@ -5,7 +5,7 @@ import { theme, shadows } from '../../constants/theme';
 
 export interface MetaRow {
   key: string;
-  /** The left-hand label: "Type", "Doc date", "Vet visit", "Notes". */
+  /** The left-hand label: "Type", "Date", "Vet visit", "Notes". */
   label: string;
   /** The current value, or null when nothing is set yet. */
   value: string | null;
