@@ -1,6 +1,6 @@
 # 2026-07-27 — Vet Files VF-6, the finish pass (B-478)
 
-**Shipped via #<n>.** Closes the Vet Files track: VF-0 → VF-6 are all merged.
+**Shipped via #496.** Closes the Vet Files track: VF-0 → VF-6 are all merged.
 
 VF-6's scope was `nyx-voice` over every string, `pm-feature-review` against the
 built screens, full §8 AC verification, and the on-device QA script — plus the
