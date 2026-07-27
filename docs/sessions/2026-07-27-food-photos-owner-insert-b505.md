@@ -140,4 +140,4 @@ predating #392 is still installed, food *capture* on it will 42501 on upload. Th
 graceful, not a crash: the throw is caught, `setExtractionFailed(true)` fires, and the flow routes
 to manual entry. Re-running that build against a fresh capture is the only way to rule it out.
 
-Shipped via #487.
+Shipped via #495.
