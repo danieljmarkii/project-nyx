@@ -85,7 +85,25 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** Every confidence literal this file asserts on a write path. */
+/**
+ * Every confidence LITERAL this file asserts on a write path.
+ *
+ * Literals only, and that limit is load-bearing to state honestly: B-448's own
+ * bug was `occurred_at_confidence: tf.confidence` — a *variable* — so this scan
+ * would not have caught it. The `adversarial-reviewer` proved that by
+ * reinstating the pre-fix line byte for byte and watching this suite stay
+ * green, under a header that claimed it kept B-448's answer honest.
+ *
+ * Widening it to match variables was tried and reverted: a regex cannot
+ * distinguish an assertion from a read-through (`row.occurred_at_confidence`
+ * mapped into a store object), a sync pass-through, or a type declaration, so
+ * the widened version flagged `history.tsx`, `sync.ts` and `db.ts`'s own
+ * interfaces. Allowlisting those to quiet it would have meant allowlisting
+ * `edit-event.tsx` too — i.e. exempting the one file the guard exists for.
+ *
+ * So this covers exactly one question — "who hardcodes a confidence?" — and the
+ * variable-shaped case is covered structurally in the block below instead.
+ */
 function assertedConfidences(src: string): Set<string> {
   const found = new Set<string>();
   // `occurred_at_confidence: 'witnessed'` — object literals (store rows, REST payloads).
@@ -161,5 +179,62 @@ describe('occurred_at_confidence write paths (B-448)', () => {
     // confidenceUpdateForEdit, gated on the owner touching a confidence control —
     // so it must never reappear as a hardcoded write path.
     expect(hits.has('app/edit-event.tsx')).toBe(false);
+  });
+});
+
+// The structural half — what the literal scan above provably cannot see.
+//
+// These assert the SHAPE of the one file the bug lived in, the way
+// detectionSoftDelete.test.ts asserts every detection query still carries its
+// `.is('deleted_at', null)`. They are deliberately coupled to the source: that
+// coupling is the mechanism. The `adversarial-reviewer` reinstated the B-448
+// write in two different shapes and every other suite stayed green; these are
+// the assertions that go red.
+describe('app/edit-event.tsx — the save may only write an ASSERTED confidence (B-448)', () => {
+  const src = readFileSync(join(ROOT, 'app/edit-event.tsx'), 'utf8');
+  // The single updateEvent call, from the identifier to the closing `});`.
+  const updateCall = /await updateEvent\([\s\S]*?\n {6}\}\);/.exec(src)?.[0] ?? '';
+
+  it('has exactly one updateEvent call, and this suite found it', () => {
+    // If the file grows a second write, the assertions below stop covering it —
+    // fail here rather than pass vacuously against the first one.
+    expect(src.match(/await updateEvent\(/g)).toHaveLength(1);
+    expect(updateCall).not.toBe('');
+  });
+
+  it('passes confidence only through the gated spread, never as a bare key', () => {
+    // Kills the reviewer's M1 (`confidence: { value: tf.confidence, … }`) and
+    // M-orig (the byte-for-byte pre-fix `occurred_at_confidence: tf.confidence,
+    // occurred_at_earliest: …, occurred_at_latest: …`). Both reintroduce a key
+    // the save always writes; the whole fix is that the key is CONDITIONAL.
+    expect(updateCall).toContain('...(confidence ? { confidence } : {})');
+    expect(updateCall).not.toMatch(/^\s*confidence\s*:/m);
+    expect(updateCall).not.toMatch(/occurred_at_confidence\s*:/);
+    expect(updateCall).not.toMatch(/occurred_at_(earliest|latest)\s*:/);
+  });
+
+  it('derives that confidence from confidenceUpdateForEdit and the touched gate', () => {
+    // The value passed must come from the pure, tested resolver — not be
+    // rebuilt inline, which is how it would drift back.
+    expect(src).toMatch(/const confidence = confidenceUpdateForEdit\(\{/);
+    expect(src).toMatch(/ownerAsserted:\s*confidenceTouched\.current/);
+  });
+
+  it('still arms the touched gate from the confidence-bearing controls', () => {
+    // Kills M2 (deleting the assignment from a handler). Five controls make a
+    // claim about how well the time is known: the Saw-it/Found-it toggle, the
+    // found sub-mode, the estimated point, and each window edge. The point-in-
+    // time picker is deliberately NOT among them — correcting when something
+    // happened is not a claim about how well the time is known.
+    expect(src.match(/confidenceTouched\.current = true/g)).toHaveLength(5);
+  });
+
+  it('routes both mode changes through the tested no-op rule', () => {
+    // The adversarial counterexamples: a re-tap of the already-selected segment
+    // used to seed, reset and assert. lib/eventTimeEdit owns that rule now, and
+    // an early return on `noOp` is what makes it bite.
+    expect(src).toMatch(/resolveTimeModeChange\(timeMode, m,/);
+    expect(src).toMatch(/resolveFoundModeChange\(foundMode, m,/);
+    expect(src.match(/if \(t\.noOp\) return;/g)).toHaveLength(2);
   });
 });

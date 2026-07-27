@@ -14,8 +14,8 @@
 // editing a note restated the confidence with whatever its form state happened
 // to hold. app/edit-event.tsx's form state starts at 'saw', so opening a legacy
 // row to fix a note promoted NULL → 'witnessed', silently, on a time nobody ever
-// claimed to have seen. 220 production rows carry a NULL confidence today (31 of
-// them symptoms), so this was reachable, not theoretical.
+// claimed to have seen. **149 live production rows** carry a NULL confidence
+// today (220 including soft-deleted), so this was reachable, not theoretical.
 //
 // node:sqlite (Node >= 22) gives a real engine; a thin adapter wraps it in the
 // async surface updateEvent declares, and the events DDL comes from the real

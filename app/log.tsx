@@ -13,6 +13,7 @@ import { FoodPicker } from '../components/log/FoodPicker';
 import { MedicationPicker } from '../components/log/MedicationPicker';
 import { ComboDoseConfirmSheet } from '../components/log/ComboDoseConfirmSheet';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
+import { resolveTimeModeChange, resolveFoundModeChange, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { EventIcon } from '../components/event/EventIcon';
 import { EVENT_TYPES, EventTypeKey, SYMPTOM_TYPES } from '../constants/eventTypes';
 import { usePetStore } from '../store/petStore';
@@ -887,25 +888,29 @@ export default function LogModal() {
     setOccurredAt(date);
   }
 
+  // Shared with app/edit-event.tsx via lib/eventTimeEdit — same control, same
+  // transitions, and the same no-op-re-tap bug lived in both copies (B-448).
+  // Here it cost less than on the edit screen (no stored classification to
+  // destroy) but it was still real: re-tapping the already-selected "Found it"
+  // mid-entry reset the sub-mode to 'before' and the latest edge to now,
+  // discarding a "between" window the owner had just dialled in.
   function handleTimeModeChange(m: TimeMode) {
-    if (m === 'found') {
-      setFoundMode('before');
-      // A photo of discovered evidence is EXIF-stamped at discovery — the
-      // window's latest edge — so seed from it; otherwise default to now.
-      setFoundLatest(occurredAtSource === 'exif' ? occurredAt : new Date());
-    }
+    const t = resolveTimeModeChange(timeMode, m, occurredAtSource === 'exif');
+    if (t.noOp) return;
+    if (t.seedFoundMode) setFoundMode(t.seedFoundMode);
+    // A photo of discovered evidence is EXIF-stamped at discovery — the
+    // window's latest edge — so seed from it; otherwise default to now.
+    if (t.seedLatestFrom) setFoundLatest(t.seedLatestFrom === 'point' ? occurredAt : new Date());
     setTimeMode(m);
   }
 
   function handleFoundModeChange(m: FoundMode) {
+    const t = resolveFoundModeChange(foundMode, m, earliest != null);
+    if (t.noOp) return;
     // Seed the estimate from when they found it, as a starting point to adjust.
-    if (m === 'around' && foundMode !== 'around') {
-      setEstimatedAt(foundLatest);
-    }
+    if (t.seedEstimatedFromLatest) setEstimatedAt(foundLatest);
     // Seed a sane lower bound the first time the owner opens a window.
-    if (m === 'between' && !earliest) {
-      setEarliest(new Date(foundLatest.getTime() - 2 * 60 * 60 * 1000));
-    }
+    if (t.seedEarliest) setEarliest(new Date(foundLatest.getTime() - DEFAULT_WINDOW_SPAN_MS));
     setFoundMode(m);
   }
 

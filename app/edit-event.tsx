@@ -25,6 +25,7 @@ import { AdherenceChipRow, DoseAdherence } from '../components/log/AdherenceChip
 import { VehicleChipRow } from '../components/log/VehicleChipRow';
 import { asDoseVehicle, type DoseVehicle } from '../lib/medications';
 import { TimeConfidenceField, TimeMode, FoundMode } from '../components/log/TimeConfidenceField';
+import { resolveTimeModeChange, resolveFoundModeChange, DEFAULT_WINDOW_SPAN_MS } from '../lib/eventTimeEdit';
 import { PhotoViewer } from '../components/ui';
 
 interface CachedFood {
@@ -304,23 +305,27 @@ export default function EditEventModal() {
   // around/before/between sub-mode are claims in themselves; the window's edges
   // are the claim's content, and moving one on a row stored as NULL is the owner
   // saying "it happened in here" — which the save must record.
+  //
+  // The two mode handlers route through lib/eventTimeEdit so the no-op rule —
+  // re-tapping the segment that is already selected asserts nothing and seeds
+  // nothing — is pinned by a test rather than by this screen and log.tsx
+  // remembering to agree. Read that module's header: a no-op re-tap used to
+  // destroy a stored estimate and re-date occurred_at to the edit time.
   function handleTimeModeChange(m: TimeMode) {
-    confidenceTouched.current = true;
-    if (m === 'found') {
-      setFoundMode('before');
-      setFoundLatest(occurredAtSource === 'exif' ? occurredAt : new Date());
-    }
+    const t = resolveTimeModeChange(timeMode, m, occurredAtSource === 'exif');
+    if (t.noOp) return;
+    if (t.asserted) confidenceTouched.current = true;
+    if (t.seedFoundMode) setFoundMode(t.seedFoundMode);
+    if (t.seedLatestFrom) setFoundLatest(t.seedLatestFrom === 'point' ? occurredAt : new Date());
     setTimeMode(m);
   }
 
   function handleFoundModeChange(m: FoundMode) {
-    confidenceTouched.current = true;
-    if (m === 'around' && foundMode !== 'around') {
-      setEstimatedAt(foundLatest);
-    }
-    if (m === 'between' && !earliest) {
-      setEarliest(new Date(foundLatest.getTime() - 2 * 60 * 60 * 1000));
-    }
+    const t = resolveFoundModeChange(foundMode, m, earliest != null);
+    if (t.noOp) return;
+    if (t.asserted) confidenceTouched.current = true;
+    if (t.seedEstimatedFromLatest) setEstimatedAt(foundLatest);
+    if (t.seedEarliest) setEarliest(new Date(foundLatest.getTime() - DEFAULT_WINDOW_SPAN_MS));
     setFoundMode(m);
   }
 
