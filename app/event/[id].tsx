@@ -27,7 +27,7 @@ import {
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
-import { resolveEventPhotoDisplay } from '../../lib/eventPhoto';
+import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
@@ -555,6 +555,8 @@ export default function EventDetailScreen() {
   // Which photo the hero + viewer render, and whether to show the add-photo empty
   // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
   // flashes an add-photo target over an existing photo mid-fallback). B-207.
+  // B-371 — the empty hero's copy. Pure + unit-tested in lib/eventPhoto.ts.
+  const addPhotoCopy = addPhotoHeroCopy(event.event_type);
   const { photoUri, showEmptyHero } = resolveEventPhotoDisplay({
     localUri,
     remoteUrl,
@@ -612,7 +614,12 @@ export default function EventDetailScreen() {
                 {/* B-062 — Lucide Camera (was a 📷 emoji) for a consistent vector
                     glyph set across the photo-affordance empty states. */}
                 <Camera size={32} color={theme.colorTextTertiary} strokeWidth={1.5} />
-                <Text style={styles.heroEmptyText}>Add photo</Text>
+                <Text style={styles.heroEmptyText}>{addPhotoCopy.action}</Text>
+                {/* B-371 — on an event whose photo feeds a read, teach what the
+                    photo is for. Null (bare action label) on every other type. */}
+                {addPhotoCopy.hint ? (
+                  <Text style={styles.heroEmptyHint}>{addPhotoCopy.hint}</Text>
+                ) : null}
               </>
             )}
           </TouchableOpacity>
@@ -859,6 +866,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: theme.colorTextSecondary,
     fontWeight: theme.fontWeightMedium,
+  },
+  heroEmptyHint: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextTertiary,
+    textAlign: 'center',
+    paddingHorizontal: theme.space4,
   },
   body: {
     paddingHorizontal: theme.space3,
