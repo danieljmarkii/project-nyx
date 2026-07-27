@@ -1,6 +1,6 @@
 # B-371 — symptom-aware "Add photo" empty-hero copy
 
-**Date:** 2026-07-26
+**Date:** 2026-07-27
 
 Small, self-contained copy fix on the event detail screen (`app/event/[id].tsx`), the last of the two fast-follows B-363 spun out.
 
