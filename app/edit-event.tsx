@@ -17,7 +17,7 @@ import { syncPendingEvents, syncPendingMeals, syncPendingWeightChecks, syncPendi
 import { uploadPhoto, compressForUpload, persistCapture } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import { useEventStore } from '../store/eventStore';
-import { uuid, formatExifAttribution, formatTime, deriveOccurredAt } from '../lib/utils';
+import { uuid, formatExifAttribution, formatTime, deriveOccurredAt, confidenceUpdateForEdit } from '../lib/utils';
 import { getWeightKgForEvent, updateWeightCheck, parseWeightLbsToKg, kgToLbs, MAX_WEIGHT_LBS } from '../lib/weight';
 import { usePetStore } from '../store/petStore';
 import { IntakeChipRow, IntakeRating } from '../components/log/IntakeChipRow';
@@ -82,6 +82,23 @@ export default function EditEventModal() {
   const [estimatedAt, setEstimatedAt] = useState<Date>(() =>
     occurredAtParam ? new Date(occurredAtParam) : new Date(),
   );
+  // B-448 — did the owner actually touch a CONFIDENCE-bearing affordance in this
+  // edit? Only then does the save restate the row's confidence.
+  //
+  // Everything above is form state seeded with defaults, and `timeMode` starts at
+  // 'saw'. Without this flag every save asserted that default: opening a legacy
+  // row (occurred_at_confidence NULL — 149 live rows in production at the time of
+  // writing) to fix a note wrote 'witnessed', turning the vet report's honest
+  // 'unspecified' into 'seen' on a time nobody ever claimed to have witnessed. It
+  // also lost real information whenever the async reconstruct below hadn't
+  // resolved before a fast save — a stored 'estimated'/'window' row would be
+  // flattened to 'witnessed'. Both directions move toward false precision.
+  //
+  // The point-in-time picker deliberately does NOT set this: correcting WHEN
+  // something happened is not a claim about how well the time is known. Same rule
+  // the adherence/how_given writes below already follow — write the field the
+  // owner changed, never the ones they didn't.
+  const confidenceTouched = useRef(false);
 
   // Photo attachment
   const [existingAttachmentUri, setExistingAttachmentUri] = useState<string | null>(null);
@@ -282,7 +299,13 @@ export default function EditEventModal() {
     setOccurredAt(date);
   }
 
+  // Every handler below drives a confidence-bearing control, so each one marks
+  // the confidence as owner-asserted (B-448). The Saw-it/Found-it toggle and the
+  // around/before/between sub-mode are claims in themselves; the window's edges
+  // are the claim's content, and moving one on a row stored as NULL is the owner
+  // saying "it happened in here" — which the save must record.
   function handleTimeModeChange(m: TimeMode) {
+    confidenceTouched.current = true;
     if (m === 'found') {
       setFoundMode('before');
       setFoundLatest(occurredAtSource === 'exif' ? occurredAt : new Date());
@@ -291,6 +314,7 @@ export default function EditEventModal() {
   }
 
   function handleFoundModeChange(m: FoundMode) {
+    confidenceTouched.current = true;
     if (m === 'around' && foundMode !== 'around') {
       setEstimatedAt(foundLatest);
     }
@@ -300,9 +324,20 @@ export default function EditEventModal() {
     setFoundMode(m);
   }
 
+  function handleEstimatedChange(d: Date) {
+    confidenceTouched.current = true;
+    setEstimatedAt(d);
+  }
+
+  function handleEarliestChange(d: Date | null) {
+    confidenceTouched.current = true;
+    setEarliest(d);
+  }
+
   // Clamp earliest <= latest so a windowed event never violates the
   // chk_occurred_window_order DB constraint (B-010 migration 012).
   function handleLatestChange(d: Date) {
+    confidenceTouched.current = true;
     setFoundLatest(d);
     if (earliest && earliest.getTime() > d.getTime()) setEarliest(d);
   }
@@ -344,23 +379,40 @@ export default function EditEventModal() {
 
     setSaving(true);
     try {
-      // Meals are always witnessed (you see yourself put the bowl down); the
-      // confidence control isn't shown for them, so force witnessed here.
+      // Meals/weight/doses don't show the confidence control — the event type
+      // itself carries the claim (you see yourself put the bowl down, read the
+      // scale, give the pill), so there is no affordance to touch and nothing
+      // for this edit to restate. Their branch's 'witnessed' is inert: with no
+      // control there is nothing to mark confidenceTouched, so the save below
+      // never reaches this value. What the row already holds is what it keeps —
+      // including a legacy NULL, which stays the PM's backfill to make (012),
+      // not something an unrelated edit does one row at a time.
       const tf = showConfidenceControl
         ? buildTimeFields()
         : { confidence: 'witnessed' as const, occurredAt, earliest: null as Date | null, latest: null as Date | null, source: occurredAtSource };
       const occurredAtIso = tf.occurredAt.toISOString();
-      const earliestIso = tf.earliest ? tf.earliest.toISOString() : null;
-      const latestIso = tf.latest ? tf.latest.toISOString() : null;
+
+      // B-448 — restate the confidence ONLY when the owner touched a
+      // confidence-bearing control this session. Otherwise the row keeps exactly
+      // what it had, read back here rather than from the mount-time state so a
+      // save that beats the async reconstruct can't flatten it either.
+      const stored = await getEventTimeFields(id);
+      const confidence = confidenceUpdateForEdit({
+        ownerAsserted: confidenceTouched.current,
+        form: { confidence: tf.confidence, earliest: tf.earliest, latest: tf.latest },
+      });
+      // What the row will hold once this save lands — the patch below must mirror
+      // it, or Today renders a confidence the DB doesn't have.
+      const savedConfidence = confidence
+        ? { value: confidence.value, earliest: confidence.earliest, latest: confidence.latest }
+        : { value: stored.confidence, earliest: stored.earliest, latest: stored.latest };
 
       await updateEvent(id, {
         occurred_at: occurredAtIso,
         severity: null,
         notes: notes.trim() || null,
         occurred_at_source: tf.source,
-        occurred_at_confidence: tf.confidence,
-        occurred_at_earliest: earliestIso,
-        occurred_at_latest: latestIso,
+        ...(confidence ? { confidence } : {}),
       });
 
       if (config.hasFood && currentFoodId) {
@@ -443,9 +495,9 @@ export default function EditEventModal() {
 
       patchInToday(id, {
         occurred_at: occurredAtIso,
-        occurred_at_confidence: tf.confidence,
-        occurred_at_earliest: earliestIso,
-        occurred_at_latest: latestIso,
+        occurred_at_confidence: savedConfidence.value,
+        occurred_at_earliest: savedConfidence.earliest,
+        occurred_at_latest: savedConfidence.latest,
         severity: null,
         notes: notes.trim() || null,
         food_item_id: currentFoodId,
@@ -516,10 +568,10 @@ export default function EditEventModal() {
               foundMode={foundMode}
               onFoundModeChange={handleFoundModeChange}
               estimatedAt={estimatedAt}
-              onEstimatedChange={setEstimatedAt}
+              onEstimatedChange={handleEstimatedChange}
               earliest={earliest}
               latest={foundLatest}
-              onEarliestChange={setEarliest}
+              onEarliestChange={handleEarliestChange}
               onLatestChange={handleLatestChange}
             />
           ) : (
