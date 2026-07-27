@@ -3,7 +3,6 @@ import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
 import { Plus } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { Header, ScopeMenu } from '../components/ui';
@@ -211,7 +210,28 @@ export default function VetFilesScreen() {
     return pickedFilesFromImageAssets(result.assets ?? []);
   }
 
+  // `expo-document-picker` is required LAZILY, and that is not a style choice.
+  //
+  // Its entry point calls `requireNativeModule('ExpoDocumentPicker')` at IMPORT
+  // time, which THROWS on any binary built before this dependency landed — and
+  // Expo Go is retired for SDK 57, so the PM's current dev client and the installed
+  // TestFlight build are both exactly that binary. A static import would therefore
+  // take down the whole Vet Files ROUTE on the app people are testing with, not just
+  // this one row. Requiring it here contains the blast radius to the Files path: the
+  // camera and Photos rows keep working (expo-image-picker is already in every
+  // binary), and this one says so plainly until a fresh build exists.
   async function pickPdfs(): Promise<PickedVetFile[]> {
+    let DocumentPicker: typeof import('expo-document-picker');
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      DocumentPicker = require('expo-document-picker');
+    } catch {
+      Alert.alert(
+        'PDFs need an app update',
+        'Picking a PDF from Files needs a newer version of the app. Photos and the camera work now.',
+      );
+      return [];
+    }
     const result = await DocumentPicker.getDocumentAsync({
       // PDFs only, which is exactly what the row promises ("PDFs from email or a
       // clinic portal"). Images from Files would land as one document per file and

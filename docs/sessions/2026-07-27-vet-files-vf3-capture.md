@@ -14,7 +14,7 @@ VF-1 gave the feature its write *contract* and VF-2 its read model; this PR is t
 
 **`components/vetfiles/AddDocumentSheet.tsx`** (D1-r2) and **`DocumentSavedMoment.tsx`** (D2-r2), with the sheet chrome extracted to **`SheetShell.tsx`** on its third caller — a third hand-rolled copy is where the scrim opacity and the grabber width start drifting apart between sheets of the same feature.
 
-43 new tests; jest **2747** green, `tsc --noEmit` clean.
+43 new tests; jest **2752** green after merging `main` (2747 on the branch alone), `tsc --noEmit` clean.
 
 ## The VF-1 rules this had to honour, and where they live
 
@@ -49,5 +49,5 @@ The saved moment carries **"Add another page"** for a camera capture. D1-r2's ca
 
 - **Tapping a library row still does nothing** — the document detail is VF-4, and the entry gate flipped in this PR, so the dead tap is now reachable. It is one named `pendingScreen('detail')` no-op, it is in the QA script, and it is the narrowest version of this gap the flag could have been flipped over (an owner can add, see, name and type a document; only viewing one full-screen is unbuilt).
 - **`rls-privacy-reviewer` has run on neither VF-2's read path nor VF-3's write path** — §7 makes it mandatory for both, and this session was instructed not to dispatch subagents. VF-3's write path adds the shape most worth attacking: D13 mints an object key under a *second* pet's prefix.
-- **A new native module (`expo-document-picker`) means Runtime A needs a rebuild, not an `eas update`.** No config plugin is required (its iOS plugin only fires on `ios.usesIcloudStorage`, which stays off — a user-selected file needs no iCloud entitlement). Expo Go carries the whole SDK, so Runtime B works today.
+- **A new native module (`expo-document-picker`) — and it is required LAZILY for a reason.** It is the only way to pick a PDF, and no config plugin is needed (its iOS plugin only fires on `ios.usesIcloudStorage`, which stays off; a user-selected file needs no iCloud entitlement). What matters is where the import sits: its entry point calls `requireNativeModule('ExpoDocumentPicker')` at **import** time and throws when the binary lacks it — and **no current binary has it**, since TestFlight build 35 predates it and Expo Go, which carries the whole SDK, is retired for SDK 57. A static import would therefore have taken down the entire Vet Files **route** on the very dev client the PM tests with. Requiring it inside `pickPdfs` contains the failure to one row: camera and Photos work on today's builds, and Files says *"PDFs need an app update"* until a fresh `eas build`. I had this wrong in the PR body first (I'd assumed Expo Go), and caught it reading STATUS.md's Runtime section at wrap.
 - **PDFs are store-only in this PR**, per D5 — no thumbnail (the tile rests on its glyph and never spins) and no text extraction. Viewing one is VF-4's "Open".
