@@ -13,7 +13,14 @@ import { PrimaryButton } from '../../components/ui/PrimaryButton';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
 import { supabase } from '../../lib/supabase';
-import { uploadPhoto, compressForUpload, getPublicUrl } from '../../lib/storage';
+import { uploadPhoto, compressForUpload, getPublicUrl, getSignedUrls } from '../../lib/storage';
+import { VetFilesCard } from '../../components/vetfiles/VetFilesCard';
+import { VET_FILES_ENTRY_ENABLED } from '../../lib/vetFilesEntry';
+import { VET_DOCUMENTS_BUCKET } from '../../lib/vetDocuments';
+import {
+  readVetLibrary, buildVetFilesCardModel, VET_DOCUMENT_SIGNED_URL_TTL_SEC,
+  VET_FILES_STRIP_LIMIT, type VetLibraryRow,
+} from '../../lib/vetDocumentLibrary';
 import { archiveBlockedCopy } from '../../lib/utils';
 import { formatAge } from '../../lib/age';
 import { usePetStore } from '../../store/petStore';
@@ -205,6 +212,41 @@ export default function ProfileScreen() {
 
   const [photoUploading, setPhotoUploading] = useState(false);
 
+  // Vet Files card (B-478 VF-2, mock A1-r2 / A1z). Local-first like the library
+  // itself — the read is SQLite, so the card is correct offline and costs no
+  // round-trip. Only the three strip thumbnails touch the network, and only for
+  // documents this device has no local copy of.
+  const [vetDocuments, setVetDocuments] = useState<VetLibraryRow[]>([]);
+  const [vetThumbs, setVetThumbs] = useState<Map<string, string>>(new Map());
+  const [vetThumbsLoading, setVetThumbsLoading] = useState(false);
+
+  const loadVetFiles = useCallback(async () => {
+    if (!VET_FILES_ENTRY_ENABLED || !activePet) return;
+    try {
+      const rows = await readVetLibrary(activePet.id);
+      setVetDocuments(rows);
+      // Sign only the strip's own paths, and only those without a local file.
+      const stripPaths = rows
+        .slice(0, VET_FILES_STRIP_LIMIT)
+        .filter((r) => !r.localUri)
+        .map((r) => r.storagePath);
+      if (stripPaths.length === 0) { setVetThumbs(new Map()); return; }
+      setVetThumbsLoading(true);
+      try {
+        setVetThumbs(
+          await getSignedUrls(VET_DOCUMENTS_BUCKET, stripPaths, VET_DOCUMENT_SIGNED_URL_TTL_SEC),
+        );
+      } finally {
+        setVetThumbsLoading(false);
+      }
+    } catch (e) {
+      // The card degrades to its zero state rather than blanking the tab — a
+      // failed read here must never cost the owner the profile.
+      console.warn('[Profile] load vet files failed:', e);
+      setVetDocuments([]);
+    }
+  }, [activePet?.id]);
+
   const loadConditions = useCallback(async () => {
     if (!activePet) return;
     setConditionsLoading(true);
@@ -345,7 +387,10 @@ export default function ProfileScreen() {
       // to this tab after logging a meal, and the coverage line is denominated in
       // days that only move forward.
       reloadTrial();
-    }, [loadMedications, reloadTrial]),
+      // And the Vet Files card, so returning from the library reflects a document
+      // just added or renamed there.
+      loadVetFiles();
+    }, [loadMedications, reloadTrial, loadVetFiles]),
   );
 
   async function handlePickPhoto() {
@@ -852,6 +897,21 @@ export default function ProfileScreen() {
             style={styles.reportButton}
           />
         </Card>
+
+        {/* ── Vet Files (B-478 VF-2, mock A1-r2 / A1z) ──
+            A sibling of the Vet report card, deliberately adjacent: they are the
+            two vet-facing surfaces, and the card's own blurb carries the D14 line
+            saying a saved document does NOT ride along with the report. Gated
+            until VF-3 lands capture — see lib/vetFilesEntry.ts. */}
+        {VET_FILES_ENTRY_ENABLED && (
+          <VetFilesCard
+            model={buildVetFilesCardModel(activePet.name, vetDocuments)}
+            thumbUris={vetThumbs}
+            thumbsLoading={vetThumbsLoading}
+            onPress={() => router.push('/vet-files')}
+            style={styles.sectionGap}
+          />
+        )}
 
         {/* Account actions (owner name / Sign out / Delete account) moved to the
             "You" screen (B-283, §4.3) — the Pet tab stays entirely pet-scoped. */}
