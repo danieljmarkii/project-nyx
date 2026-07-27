@@ -273,6 +273,19 @@ export const LOCAL_WIPE_TABLES = [
   'diet_trial_foods',
   'diet_trials',
   'events',
+  // B-478 vet_documents — the Vet Files library. No local FK is declared on
+  // vet_visit_id (see localSchema.ts for why), so nothing would throw on a
+  // parent-first order; it leads vet_visits because the file's stated contract is
+  // children-before-parents and a future local FK must not silently turn a
+  // reordering into a half-failed wipe.
+  //
+  // A TRUST & SAFETY REQUIREMENT, not bookkeeping, and the strongest case in this
+  // list: these rows name lab results, vaccination certificates, discharge
+  // summaries and clinic correspondence, with the clinic's identity, the owner's
+  // own title/notes and — through storage_path — the key to the object itself.
+  // Surviving a sign-out would leave the prior account's medical paperwork indexed
+  // on a device now in someone else's hands.
+  'vet_documents',
   'vet_visits',
   // feeding_arrangements (B-040 R1) — a pet-child standing-fact table mirrored
   // from Supabase, so it's account-scoped data that must not leak to the next

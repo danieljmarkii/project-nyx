@@ -31,10 +31,17 @@
 // today"). The same tolerance covers `nyx-medication-photos` before its dashboard
 // creation / first PR-5 upload — until then there are no `photo_paths`, so the
 // bucket is never even reached.
+//   • `vetDocuments` (B-478 VF-1): the Vet Files library — lab PDFs, vaccination
+//     certificates, discharge summaries, screenshots of clinic email. Pet-scoped like
+//     the first four. It joins this list in the SAME PR that creates the table, before
+//     any capture surface exists to produce a single object, which is the T&S
+//     launch-gate posture §5.2 asks for and the B-039 precedent: deletion coverage is
+//     not something a corpus grows into later.
 export const STORAGE_BUCKETS = {
   petPhotos: 'nyx-pet-photos',
   eventAttachments: 'nyx-event-attachments',
   vetAttachments: 'nyx-vet-attachments',
+  vetDocuments: 'nyx-vet-documents',
   vetReports: 'nyx-vet-reports',
   medicationPhotos: 'nyx-medication-photos',
   foodPhotos: 'nyx-food-photos',
@@ -66,6 +73,11 @@ export interface OwnedStoragePaths {
   petPhotoPaths: ReadonlyArray<string | null | undefined>
   eventAttachmentPaths: ReadonlyArray<string | null | undefined>
   vetAttachmentPaths: ReadonlyArray<string | null | undefined>
+  // Vet Files documents (B-478 VF-1). Pet-scoped like the three above, and read from
+  // `vet_documents.storage_path` for the user's own pets. Unlike them it is ALSO
+  // re-scoped before the purge — see scopeVetDocumentPaths for the residual that
+  // motivates it.
+  vetDocumentPaths: ReadonlyArray<string | null | undefined>
   vetReportPaths: ReadonlyArray<string | null | undefined>
   // Drug-label photos. `medication_items.photo_paths` is a `TEXT[]` (one array per
   // drug row), so index.ts FLATTENS every owned row's array into this one flat list
@@ -85,6 +97,11 @@ export interface OwnedStoragePaths {
   // crafted owned row could reference another account's `{victimFoodId}/…` path, and the
   // service-role purge bypasses the food-photo SELECT RLS (033) that would reject a read.
   ownedFoodItemIds: ReadonlyArray<string>
+  // The ids of the `pets` this user owns (index.ts already read them — they are the
+  // `.in('pet_id', petIds)` scope for every pet-child read). They are the owned-id set
+  // scopeVetDocumentPaths keeps `vetDocumentPaths` to, mirroring the nyx-vet-documents
+  // Storage SELECT policy's `(storage.foldername(name))[1] IN (owned pet ids)` by hand.
+  ownedPetIds: ReadonlyArray<string>
   // The deleting user's OWN auth uid (the verified-JWT userId index.ts scoped every
   // read by). It is the prefix-scope key for `medicationPhotoPaths` (see
   // scopeMedicationPaths / B-128): unlike the pet-scoped buckets, `medication_items`
@@ -202,18 +219,88 @@ export function scopeFoodPaths(
   })
 }
 
+// B-478 VF-1 — first-segment scope guard for Vet Files documents.
+//
+// The pet-scoped buckets above deliberately carry NO such guard, and that is still
+// correct for them: their paths come from pet-scoped rows. So why this one?
+//
+// Because migration 043 recorded a precise residual on its sibling bucket and asked
+// that the next path built for this family close it properly. `vet_documents` binds
+// `storage_path` to the owning pet with a `starts_with(storage_path, pet_id || '/')`
+// CHECK — but `starts_with` is a PREFIX test, so
+// `{ownPetId}/../{victimPetId}/x.pdf` satisfies it AND satisfies the Storage INSERT
+// policy (its first FOLDER segment is a pet the caller legitimately owns). That
+// string then reaches the service-role `remove()` verbatim, because `cleanPaths`
+// only dedupes and drops blanks — it never normalises a path.
+//
+// 043 reasoned, correctly, that such a key deletes nothing: `storage.objects.name`
+// is an OPAQUE literal and neither storage-api nor S3 resolves `..`, so it simply
+// matches no object. But that is a boundary holding on a third-party implementation
+// detail we do not own and do not test. This bucket is new and has zero objects, so
+// the guard is built right here rather than filed.
+//
+// ⚠ THE FIRST-SEGMENT TEST IS NOT ENOUGH, and this comment used to claim it was.
+// Caught by the VF-1 rls-privacy-reviewer, which executed it: in
+// `{ownPetId}/../{victimPetId}/x.pdf` the first segment IS `{ownPetId}` — the `..`
+// is the SECOND segment — so a `scopeFoodPaths`-shaped filter keeps the path and
+// changes nothing about the residual. Copying the food-photo guard verbatim was the
+// mistake; food paths and vet-document paths merely LOOK alike.
+//
+// So this checks the WHOLE SHAPE, which is also a truer port of the convention:
+// `buildVetDocumentPath` emits exactly `{pet_id}/{document_id}.{ext}` — one
+// separator, two segments, no more. Requiring exactly two segments drops every
+// traversal variant the reviewer tried (`/../`, `/../../`, `//`) by construction
+// rather than by trusting Storage to treat the key as opaque, and it still enforces
+// the first-segment ownership the Storage policy expresses. An empty owned-pet set
+// fails CLOSED (drops everything) — a user with no pets has no documents, and a path
+// can never legitimately name a pet that is not theirs.
+//
+// Scoped to vet-document paths ONLY: do NOT lift the two-segment rule into
+// scopeFoodPaths or the pet/event/vet-attachment lists. `nyx-vet-attachments` keys
+// are `{pet_id}/{visit_id}/{attachment_id}.jpg` — THREE segments — so this exact
+// predicate would silently drop every legitimate key there and turn account deletion
+// into a no-op for that bucket. The shape is per-bucket; only the ownership half
+// generalises.
+export function scopeVetDocumentPaths(
+  paths: ReadonlyArray<string | null | undefined>,
+  ownedPetIds: ReadonlyArray<string>,
+): Array<string | null | undefined> {
+  const owned = new Set(
+    ownedPetIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+  )
+  if (owned.size === 0) return []
+  return paths.filter((p): p is string => {
+    if (typeof p !== 'string') return false
+    const segments = p.split('/')
+    // Exactly `{pet_id}/{document_id}.{ext}`. A slashless key has 1 segment (the
+    // Storage policy drops it too — `storage.foldername` returns an empty array, so
+    // `[1]` is NULL); anything with a second separator is not a key this app can
+    // mint, whatever it claims to be. Set membership on the first segment, never
+    // `startsWith`, so one pet id can never be a string prefix of another.
+    if (segments.length !== 2) return false
+    return owned.has(segments[0])
+  })
+}
+
 // Map each owned path-list to its bucket, dropping any bucket with nothing to
-// remove. The output can ONLY ever contain the six STORAGE_BUCKETS above, and
+// remove. The output can ONLY ever contain the seven STORAGE_BUCKETS above, and
 // PRESERVED_BUCKETS is now empty — every bucket a user's objects can live in is
-// purgeable. The two catalog-sourced buckets (medication + food) are the ones whose
-// path VALUES are attacker-influenceable, so each is re-scoped BEFORE cleaning —
-// medication to the owner's `{uid}/` prefix, food to the owned-food-id SET — so a
-// crafted cross-tenant path never reaches the service-role purge.
+// purgeable. Three lists are re-scoped BEFORE cleaning, each against the key its own
+// Storage policy uses — medication to the owner's `{uid}/` prefix, food to the
+// owned-food-id SET, vet documents to the owned-pet-id SET — so a crafted
+// cross-tenant path never reaches the service-role purge.
 export function collectStoragePaths(input: OwnedStoragePaths): BucketPurge[] {
   const candidates: BucketPurge[] = [
     { bucket: STORAGE_BUCKETS.petPhotos, paths: cleanPaths(input.petPhotoPaths) },
     { bucket: STORAGE_BUCKETS.eventAttachments, paths: cleanPaths(input.eventAttachmentPaths) },
     { bucket: STORAGE_BUCKETS.vetAttachments, paths: cleanPaths(input.vetAttachmentPaths) },
+    // vetDocuments is pet-scoped like the three above, but its paths are ALSO
+    // re-scoped to the owned-pet-id SET first — closing the `..` prefix residual 043
+    // recorded rather than depending on opaque-key behaviour we do not test (B-478).
+    {
+      bucket: STORAGE_BUCKETS.vetDocuments,
+      paths: cleanPaths(scopeVetDocumentPaths(input.vetDocumentPaths, input.ownedPetIds)),
+    },
     { bucket: STORAGE_BUCKETS.vetReports, paths: cleanPaths(input.vetReportPaths) },
     // medicationPhotos is sourced from a globally-writable catalog, so its paths are
     // prefix-scoped to the deleting user's own `{uid}/` before cleaning (B-128).

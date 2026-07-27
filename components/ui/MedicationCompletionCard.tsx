@@ -12,7 +12,7 @@ import { updateDoseAdherence, updateDoseHowGiven, updateEvent } from '../../lib/
 import { syncPendingMedicationAdministrations, syncPendingEvents } from '../../lib/sync';
 import { formatTime } from '../../lib/utils';
 import {
-  isComboDoseInDoubt, comboAdherencePrompt, comboInDoubtReason, type DoseVehicle,
+  isComboDoseInDoubt, isGivenAssumed, doseAdherencePrompt, comboInDoubtReason, type DoseVehicle,
 } from '../../lib/medications';
 import { AdherenceChipRow, DoseAdherence } from '../log/AdherenceChipRow';
 import { VehicleChipRow } from '../log/VehicleChipRow';
@@ -105,16 +105,16 @@ export function MedicationCompletionCard() {
       // provenance from 'now' to 'manual' so the vet report + correlation engine
       // can tell witnessed-now from owner-backfilled later. Doses are always
       // witnessed point-in-time (you administer the dose yourself — the B-010
-      // found/window path never applies to a med, exactly as edit-event.tsx forces
-      // for medication), and updateEvent writes confidence on every UPDATE, so
-      // re-assert 'witnessed' with null window bounds rather than let it silently
-      // wipe to NULL. Mirrors the meal card's savePicker.
+      // found/window path never applies to a med, exactly as edit-event.tsx does
+      // for medication), and this card only ever edits a dose insertMedicationDose
+      // just wrote as witnessed — so re-asserting it is a no-op that keeps the
+      // claim explicit. Mirrors the meal card's savePicker.
       await updateEvent(payload.eventId, {
         occurred_at: iso,
         severity: null,
         notes: null,
         occurred_at_source: 'manual',
-        occurred_at_confidence: 'witnessed',
+        confidence: { value: 'witnessed', earliest: null, latest: null },
       });
       patchInToday(payload.eventId, { occurred_at: iso });
       patchOccurredAt(iso);
@@ -243,7 +243,24 @@ export function MedicationCompletionCard() {
           )}
         </View>
         <View style={styles.adherenceWrap}>
-          <Text style={styles.adherenceLabel}>{comboAdherencePrompt({ petName, inDoubt })}</Text>
+          {/* B-172 — confirm-to-correct. A pre-lit state the OWNER asserted is RESTATED with
+              the correction named ("Pixel took it — tap to change."), not re-asked. It still
+              ASKS wherever nothing was asserted: an in-doubt dose, an unset one, and a combo
+              whose vehicle is not yet rated (isGivenAssumed — that 'given' is the app's
+              default under uncertainty, not the owner's word). Passing the live adherence
+              keeps this line in step with the chips through the 1500ms post-tap confirm hold. */}
+          <Text style={styles.adherenceLabel}>
+            {doseAdherencePrompt({
+              petName,
+              inDoubt,
+              adherence: payload.adherence,
+              givenIsAssumed: isGivenAssumed({
+                isCombo,
+                vehicleIntake: payload.vehicleIntake ?? null,
+                adherence: payload.adherence,
+              }),
+            })}
+          </Text>
           {/* In-doubt only: the faint reason, so the owner doesn't have to recall they
               marked the food refused on the now-dismissed meal card. Factual, never
               "fussy", never reassuring. */}

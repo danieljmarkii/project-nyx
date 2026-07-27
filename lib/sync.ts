@@ -30,6 +30,14 @@ import {
   type RemoteDietTrialFoodUpsert,
 } from './dietTrialMirror';
 import { proteinsToCacheText, proteinsFromCacheText } from './protein';
+import {
+  VET_DOCUMENTS_BUCKET,
+  prepareVetDocumentUpload,
+  needsObjectUpload,
+  isStorableVetDocumentMime,
+  vetDocumentRowToRemote,
+  type LocalVetDocument,
+} from './vetDocuments';
 
 type Db = ReturnType<typeof getDb>;
 
@@ -160,6 +168,64 @@ async function fetchAllRows<T>(
   return out;
 }
 
+// Pattern 6 for foods, in the shape presyncMedicationItems has for drugs: ensure
+// every referenced food_items row exists server-side before a meals /
+// feeding_arrangements / diet_trials / diet_trial_foods upsert references it, or
+// the FK rejects the row and the queue retries forever. A meal can be logged — or
+// a trial started — offline against a food captured offline, so the FK target may
+// live only in the local cache. ignoreDuplicates so it never clobbers a richer
+// server row (photo_paths / ai_extraction_*). Best-effort: a failure is logged,
+// not thrown — the dependent upsert still tries and, if the food truly isn't
+// there, fails its own FK check (23503, explicitly NON-terminal) and stays queued
+// for the next cycle (Pattern 1).
+//
+// B-451: the four callers each used to inline this block. That drift risk was not
+// hypothetical — B-351 had to add `proteins` carriage to every copy separately,
+// and a copy that missed it would silently flatten an offline-captured food's
+// protein set to the server's '{}' default. One definition now, so the next
+// column added to food_items can only be added once.
+async function presyncFoodItems(
+  db: Db,
+  userId: string,
+  foodIds: string[],
+  // Names the calling writer in the warn line — the only thing that differed
+  // between the folded copies, and the bit that makes a log actionable.
+  label: string,
+): Promise<void> {
+  if (foodIds.length === 0) return;
+  const placeholders = foodIds.map(() => '?').join(',');
+  const localFoods = await db.getAllAsync<{
+    id: string; brand: string; product_name: string; format: string;
+    food_type: string | null; primary_protein: string | null; proteins: string | null;
+    is_novel_protein: number; is_grain_free: number; is_prescription: number;
+  }>(
+    `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
+            is_novel_protein, is_grain_free, is_prescription
+     FROM food_items_cache WHERE id IN (${placeholders})`,
+    foodIds,
+  );
+  if (localFoods.length === 0) return;
+  const { error } = await supabase.from('food_items').upsert(
+    localFoods.map((f) => ({
+      id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
+      food_type: f.food_type, primary_protein: f.primary_protein,
+      // B-351: carry the protein set up too, or a food captured offline would
+      // land server-side with the '{}' default and silently drop the set until
+      // some later write repaired it. NULL cache (unhydrated legacy) decodes to
+      // [] — matching the server column's own default.
+      proteins: proteinsFromCacheText(f.proteins),
+      is_novel_protein: Boolean(f.is_novel_protein),
+      is_grain_free: Boolean(f.is_grain_free),
+      is_prescription: Boolean(f.is_prescription),
+      created_by_user_id: userId,
+    })),
+    { onConflict: 'id', ignoreDuplicates: true },
+  );
+  if (error) {
+    console.warn(`[sync] food_items pre-sync (${label}) failed:`, error.message);
+  }
+}
+
 export async function syncPendingMeals(): Promise<void> {
   // Ensure the JWT is fresh before writing. getSession() triggers a refresh
   // if the access token has expired, and returns null if the session is gone.
@@ -200,48 +266,7 @@ export async function syncPendingMeals(): Promise<void> {
   // The local best-effort insert at food-creation time may have failed — this
   // guarantees the FK constraint won't reject the meal upsert.
   const foodIds = [...new Set(unsyncedMeals.map((m) => m.food_item_id).filter(Boolean))] as string[];
-  if (foodIds.length > 0) {
-    const userId = session.user.id;
-
-    const placeholders = foodIds.map(() => '?').join(',');
-    const localFoods = await db.getAllAsync<{
-      id: string; brand: string; product_name: string; format: string;
-      food_type: string | null;
-      primary_protein: string | null; proteins: string | null;
-      is_novel_protein: number;
-      is_grain_free: number; is_prescription: number;
-    }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-              is_novel_protein, is_grain_free, is_prescription
-       FROM food_items_cache WHERE id IN (${placeholders})`,
-      foodIds
-    );
-    if (localFoods.length > 0) {
-      const { error: foodError } = await supabase.from('food_items').upsert(
-        localFoods.map((f) => ({
-          id: f.id,
-          brand: f.brand,
-          product_name: f.product_name,
-          format: f.format,
-          food_type: f.food_type,
-          primary_protein: f.primary_protein,
-          // B-351: carry the protein set up too, or a food captured offline
-          // would land server-side with the '{}' default and silently drop the
-          // set until some later write repaired it. NULL cache (unhydrated
-          // legacy) decodes to [] — matching the server column's own default.
-          proteins: proteinsFromCacheText(f.proteins),
-          is_novel_protein: Boolean(f.is_novel_protein),
-          is_grain_free: Boolean(f.is_grain_free),
-          is_prescription: Boolean(f.is_prescription),
-          created_by_user_id: userId,
-        })),
-        { onConflict: 'id', ignoreDuplicates: true }
-      );
-      if (foodError) {
-        console.warn('[sync] food_items pre-sync failed:', foodError.message);
-      }
-    }
-  }
+  await presyncFoodItems(db, session.user.id, foodIds, 'meals');
 
   const { error } = await supabase.from('meals').upsert(
     unsyncedMeals.map((m) => ({
@@ -456,6 +481,85 @@ export async function syncPendingVetVisits(): Promise<void> {
       await db.runAsync('UPDATE vet_visit_attachments SET synced = 1 WHERE id = ?', [att.id]);
     } catch (e) {
       console.warn('[sync] vet_visit_attachment upload failed:', e);
+    }
+  }
+}
+
+// B-478 VF-1 — push the Vet Files library up.
+//
+// Shaped like syncPendingVetVisits' attachment loop (object first, row second,
+// mark synced only when BOTH landed) but reconciled as LWW rather than
+// insert-only, because vet_documents carries updated_at and deleted_at: a rename
+// or a soft delete has to be able to travel between devices.
+//
+// TWO ROW SHAPES ARRIVE HERE AND THEY NEED DIFFERENT WORK:
+//   • a document captured on THIS device — local_uri is a durable file:// path
+//     from persistCapture, and the object has never reached Storage;
+//   • a HYDRATED document the owner has since renamed or soft-deleted here —
+//     local_uri is '' (the event_attachments sentinel), the object is already
+//     server-side, and only the row needs pushing.
+// Both are legitimately synced = 0. needsObjectUpload is what tells them apart;
+// treating them alike would either skip a real upload or try to read bytes from ''.
+//
+// Ordering within one row is load-bearing: the OBJECT goes first. If the row
+// landed first and the upload then failed, the server would hold a document row
+// pointing at a key that does not exist — and VF-2's signed-URL read would render
+// a broken document with no way to tell it apart from a real one. Object-then-row
+// fails the other way: an orphaned object with no row, which is invisible to the
+// owner and swept by B-121. Re-uploading the same key on a retry is idempotent
+// (upsert:true, and migration 044 grants the owner-scoped UPDATE that makes the
+// overwrite legal — the latent bug 043 had to retrofit).
+export async function syncPendingVetDocuments(): Promise<void> {
+  const db = getDb();
+
+  const unsynced = await db.getAllAsync<LocalVetDocument>(
+    'SELECT * FROM vet_documents WHERE synced = 0 ORDER BY created_at LIMIT 20',
+  );
+
+  for (const doc of unsynced) {
+    try {
+      if (needsObjectUpload(doc.local_uri)) {
+        // Validate rather than cast. `vet_documents.mime_type` accepts four values
+        // server-side (the CHECK mirrors the bucket's allowed_mime_types), but only
+        // two of them can describe an object this app actually wrote — every image
+        // goes through compressForUpload and lands as JPEG. A blind
+        // `as VetDocumentStoredMimeType` on a row carrying image/png or image/heic
+        // would throw inside prepareVetDocumentUpload on EVERY cycle forever, and
+        // because this queue is `ORDER BY created_at LIMIT 20` such a row is among
+        // the OLDEST — so it permanently occupies one of the 20 slots. Twenty of them
+        // wedge the push queue entirely, and a document that never syncs lives only
+        // on this device. Skip it loudly instead: the row is left alone (still
+        // synced = 0, still recoverable once its mime is corrected) but it cannot
+        // starve the rows behind it. Unreachable through the sanctioned write path,
+        // which calls resolveVetDocumentMime — this is the defensive half.
+        if (!isStorableVetDocumentMime(doc.mime_type)) {
+          console.warn(
+            `[sync] vet_document ${doc.id} has un-uploadable mime_type ${doc.mime_type}; skipping (expected image/jpeg or application/pdf)`,
+          );
+          continue;
+        }
+        // Throws rather than falling back to the original on a failed re-encode
+        // (§6.2: no original-fallback on any image path). The catch below leaves
+        // the row synced = 0, so the retry costs a cycle — the document is on the
+        // device throughout and the alternative is uploading GPS coordinates.
+        const prep = await prepareVetDocumentUpload(doc.local_uri, doc.mime_type);
+        await uploadPhoto(VET_DOCUMENTS_BUCKET, doc.storage_path, prep.uri, prep.mimeType);
+      }
+
+      const { error } = await supabase
+        .from('vet_documents')
+        .upsert(vetDocumentRowToRemote(doc), { onConflict: 'id' });
+      // Only mark synced when the row actually landed — supabase-js returns
+      // errors rather than throwing, so an ignored error here would flag the row
+      // synced while it is absent server-side (the trap already fixed for event
+      // and vet-visit attachments). Leave synced = 0 so the queue retries.
+      if (error) {
+        console.warn('[sync] vet_document upsert failed:', error.message);
+        continue;
+      }
+      await db.runAsync('UPDATE vet_documents SET synced = 1 WHERE id = ?', [doc.id]);
+    } catch (e) {
+      console.warn('[sync] vet_document upload failed:', e);
     }
   }
 }
@@ -725,41 +829,9 @@ export async function syncPendingFeedingArrangements(): Promise<void> {
 
   // Pattern 6 — ensure every referenced food exists server-side before the
   // arrangement upsert, or the FK constraint rejects it and the queue retries
-  // forever. Same shape as the meals pre-sync.
+  // forever.
   const foodIds = [...new Set(unsynced.map((a) => a.food_item_id))];
-  if (foodIds.length > 0) {
-    const placeholders = foodIds.map(() => '?').join(',');
-    const localFoods = await db.getAllAsync<{
-      id: string; brand: string; product_name: string; format: string;
-      food_type: string | null; primary_protein: string | null;
-      proteins: string | null;
-      is_novel_protein: number; is_grain_free: number; is_prescription: number;
-    }>(
-      `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-              is_novel_protein, is_grain_free, is_prescription
-       FROM food_items_cache WHERE id IN (${placeholders})`,
-      foodIds,
-    );
-    if (localFoods.length > 0) {
-      const { error: foodError } = await supabase.from('food_items').upsert(
-        localFoods.map((f) => ({
-          id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
-          food_type: f.food_type, primary_protein: f.primary_protein,
-          // B-351: same carriage as the meals pre-sync — never let an offline-
-          // captured food's protein set flatten to the server default.
-          proteins: proteinsFromCacheText(f.proteins),
-          is_novel_protein: Boolean(f.is_novel_protein),
-          is_grain_free: Boolean(f.is_grain_free),
-          is_prescription: Boolean(f.is_prescription),
-          created_by_user_id: session.user.id,
-        })),
-        { onConflict: 'id', ignoreDuplicates: true },
-      );
-      if (foodError) {
-        console.warn('[sync] food_items pre-sync (arrangements) failed:', foodError.message);
-      }
-    }
-  }
+  await presyncFoodItems(db, session.user.id, foodIds, 'arrangements');
 
   const { error } = await supabase.from('feeding_arrangements').upsert(
     unsynced.map((a) => ({
@@ -878,52 +950,6 @@ export async function syncPendingMedicationAdministrations(): Promise<void> {
 
 // ── Diet-trial mirror push (B-417 PR 2) ──────────────────────────────────────
 
-// Pattern 6 for foods, in the shape presyncMedicationItems has for drugs: ensure
-// every referenced food_items row exists server-side before a diet_trials /
-// diet_trial_foods upsert references it. A trial can be started offline against a
-// food captured offline, so the FK target may live only in the local cache.
-// ignoreDuplicates so it never clobbers a richer server row (photo_paths /
-// ai_extraction_*). Best-effort: a failure is logged, not thrown — the dependent
-// upsert still tries and, if the food truly isn't there, fails its own FK check
-// (23503, explicitly NON-terminal) and stays queued for the next cycle.
-//
-// (syncPendingMeals and syncPendingFeedingArrangements each inline this same
-// block. Left alone deliberately — folding all three onto one helper is a
-// worthwhile tidy but it is a refactor of two shipped, load-bearing writers, and
-// this PR is not the place to carry that risk. Logged as B-451.)
-async function presyncFoodItems(db: Db, userId: string, foodIds: string[]): Promise<void> {
-  if (foodIds.length === 0) return;
-  const placeholders = foodIds.map(() => '?').join(',');
-  const localFoods = await db.getAllAsync<{
-    id: string; brand: string; product_name: string; format: string;
-    food_type: string | null; primary_protein: string | null; proteins: string | null;
-    is_novel_protein: number; is_grain_free: number; is_prescription: number;
-  }>(
-    `SELECT id, brand, product_name, format, food_type, primary_protein, proteins,
-            is_novel_protein, is_grain_free, is_prescription
-     FROM food_items_cache WHERE id IN (${placeholders})`,
-    foodIds,
-  );
-  if (localFoods.length === 0) return;
-  const { error } = await supabase.from('food_items').upsert(
-    localFoods.map((f) => ({
-      id: f.id, brand: f.brand, product_name: f.product_name, format: f.format,
-      food_type: f.food_type, primary_protein: f.primary_protein,
-      // B-351: never let an offline-captured food's protein set flatten to the
-      // server default (the same carriage the meals pre-sync does).
-      proteins: proteinsFromCacheText(f.proteins),
-      is_novel_protein: Boolean(f.is_novel_protein),
-      is_grain_free: Boolean(f.is_grain_free),
-      is_prescription: Boolean(f.is_prescription),
-      created_by_user_id: userId,
-    })),
-    { onConflict: 'id', ignoreDuplicates: true },
-  );
-  if (error) {
-    console.warn('[sync] food_items pre-sync (diet trial) failed:', error.message);
-  }
-}
-
 // Push a batch of mirror rows, then flip `synced` for the rows that ACTUALLY
 // LANDED — and isolate the batch if it was rejected for a permanent reason.
 //
@@ -1041,7 +1067,7 @@ export async function syncPendingDietTrials(): Promise<void> {
   if (unsynced.length === 0) return;
 
   const foodIds = [...new Set(unsynced.map((t) => t.food_item_id).filter(Boolean))] as string[];
-  await presyncFoodItems(db, session.user.id, foodIds);
+  await presyncFoodItems(db, session.user.id, foodIds, 'diet trial');
 
   // TWO PASSES, ENDING TRIALS FIRST — the wire half of PR 3's "complete-then-start
   // must be ORDERED" (§3.3). Migration 040 made the active-trial index UNIQUE, so
@@ -1098,7 +1124,7 @@ export async function syncPendingDietTrialFoods(): Promise<void> {
   if (unsynced.length === 0) return;
 
   const foodIds = [...new Set(unsynced.map((f) => f.food_item_id))];
-  await presyncFoodItems(db, session.user.id, foodIds);
+  await presyncFoodItems(db, session.user.id, foodIds, 'diet trial foods');
 
   await pushDietTrialRows(db, 'diet_trial_foods', unsynced, dietTrialFoodRowToRemote);
 }
@@ -1168,6 +1194,12 @@ interface RemoteVetVisit {
 interface RemoteVetVisitAttachment {
   id: string; vet_visit_id: string; pet_id: string; storage_path: string;
   mime_type: string | null; taken_at: string | null; sort_order: number | null; created_at: string;
+}
+interface RemoteVetDocument {
+  id: string; pet_id: string; vet_visit_id: string | null; document_group_id: string;
+  kind: string; title: string | null; document_date: string | null; notes: string | null;
+  source: string; storage_path: string; mime_type: string; file_size_bytes: number | null;
+  page_index: number | null; deleted_at: string | null; created_at: string; updated_at: string;
 }
 interface RemoteFeedingArrangement {
   id: string; pet_id: string; food_item_id: string; method: string | null;
@@ -1457,6 +1489,73 @@ async function hydrateVetVisitAttachments(db: Db, stale: () => boolean): Promise
   const wm = advanceWatermark(rows.map((r) => r.created_at), since);
   if (stale()) return;
   if (wm) await setWatermark('vet_visit_attachments', wm);
+}
+
+async function hydrateVetDocuments(db: Db, stale: () => boolean): Promise<void> {
+  // B-478 VF-1. An LWW table (updated_at + deleted_at), reconciled exactly like
+  // vet_visits — NOT insert-if-absent like the two attachment tables. That
+  // distinction is the whole reason the schema carries updated_at: under
+  // insert-if-absent a hydrate never overwrites an existing local row, so a rename
+  // or a soft delete made on another device could never reach this one, and the two
+  // phones would disagree about what is in the library with no way to tell which is
+  // right.
+  //
+  // FR-3: incremental on updated_at, with the commit-skew overlap.
+  const since = await getWatermark('vet_documents');
+  const floor = watermarkQueryFloor(since);
+  const rows = await fetchAllRows<RemoteVetDocument>(
+    'vet_documents',
+    'id, pet_id, vet_visit_id, document_group_id, kind, title, document_date, notes, source, ' +
+      'storage_path, mime_type, file_size_bytes, page_index, deleted_at, created_at, updated_at',
+    floor ? { column: 'updated_at', value: floor } : null,
+  );
+  if (!rows || rows.length === 0) return;
+
+  const localById = await loadLocalRowMeta(db, 'vet_documents', rows.map((r) => r.id), 'updated_at');
+  const { toWrite } = reconcileBatch(rows, localById, 'lww');
+  if (stale()) return; // FR-9: signed out during the fetch — don't write to a wiped store.
+  for (const d of toWrite) {
+    // ⚠ local_uri is ABSENT from both the SELECT and the DO UPDATE SET, and that is
+    // the load-bearing asymmetry of this whole function. It is device state — this
+    // phone's copy of the bytes — and the server has no column for it and no opinion
+    // about it. Including it in the SET would blank a locally-captured document's
+    // on-device file path the moment its own push came back around, turning a
+    // document that renders offline into one that needs a signed URL and a network
+    // (breaking AC 12, Sam's ER case, on the device that took the photo). The INSERT
+    // branch supplies '' because a row arriving from the server genuinely has no
+    // local file yet — the same empty sentinel event_attachments uses.
+    //
+    // storage_path is likewise omitted from the SET: it is immutable for a given id
+    // (migration 044 makes it UNIQUE and derives it from that id), so re-writing it
+    // could only ever corrupt the row. created_at is omitted for the same reason,
+    // appearing in the column list for the INSERT branch only — that asymmetry is
+    // deliberate, not B-057 drift (it mirrors hydrateMeals / hydrateWeightChecks).
+    //
+    // The `WHERE vet_documents.synced = 1` backstop guarantees a hydrate write can
+    // never clobber a row holding an unpushed local edit, even if the pure
+    // reconcile filter above were ever bypassed.
+    await db.runAsync(
+      `INSERT INTO vet_documents
+        (id, pet_id, vet_visit_id, document_group_id, kind, title, document_date, notes,
+         source, local_uri, storage_path, mime_type, file_size_bytes, page_index,
+         deleted_at, created_at, updated_at, synced)
+       VALUES (?,?,?,?,?,?,?,?,?,'',?,?,?,?,?,?,?,1)
+       ON CONFLICT(id) DO UPDATE SET
+         pet_id=excluded.pet_id, vet_visit_id=excluded.vet_visit_id,
+         document_group_id=excluded.document_group_id, kind=excluded.kind,
+         title=excluded.title, document_date=excluded.document_date, notes=excluded.notes,
+         source=excluded.source, mime_type=excluded.mime_type,
+         file_size_bytes=excluded.file_size_bytes, page_index=excluded.page_index,
+         deleted_at=excluded.deleted_at, updated_at=excluded.updated_at, synced=1
+       WHERE vet_documents.synced = 1`,
+      [d.id, d.pet_id, d.vet_visit_id ?? null, d.document_group_id, d.kind, d.title ?? null,
+       d.document_date ?? null, d.notes ?? null, d.source, d.storage_path, d.mime_type,
+       d.file_size_bytes ?? null, d.page_index ?? 0, d.deleted_at ?? null, d.created_at, d.updated_at],
+    );
+  }
+  const wm = advanceWatermark(rows.map((r) => r.updated_at), since);
+  if (stale()) return;
+  if (wm) await setWatermark('vet_documents', wm);
 }
 
 async function hydrateFeedingArrangements(db: Db, stale: () => boolean): Promise<void> {
@@ -1818,6 +1917,13 @@ export async function hydrateFromCloud(): Promise<void> {
   if (stale()) return;
   await runHydrationStep('vet_visit_attachments', () => hydrateVetVisitAttachments(db, stale));
   if (stale()) return;
+  // B-478: vet_documents declares no local FK (its vet_visit_id link is optional
+  // and may name a visit this device has not pulled yet), so nothing would throw on
+  // a different order — but it runs AFTER vet_visits so the common case has its
+  // linked visit already present, keeping the vet family contiguous and the
+  // parents-before-children reading of this list true.
+  await runHydrationStep('vet_documents', () => hydrateVetDocuments(db, stale));
+  if (stale()) return;
   await runHydrationStep('feeding_arrangements', () => hydrateFeedingArrangements(db, stale));
   if (stale()) return;
   // B-117: medications has no local FK; medication_administrations.event_id →
@@ -1856,6 +1962,12 @@ export async function syncNow(): Promise<void> {
     await syncPendingWeightChecks();
     await syncPendingAttachments();
     await syncPendingVetVisits();
+    // B-478: no server-side FK to vet_visits is required for a document to land
+    // (vet_visit_id is nullable), but pushing visits first means a document
+    // captured in the same session as its linked visit finds its target already
+    // committed — otherwise the same-pet trigger's lookup finds no visit and the
+    // row is rejected until the next cycle.
+    await syncPendingVetDocuments();
     await syncPendingFeedingArrangements();
     await syncPendingMedications();
     await syncPendingMedicationAdministrations();

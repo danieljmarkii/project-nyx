@@ -358,10 +358,27 @@ export async function clearLocalData(): Promise<void> {
 
   // Delete the captured local image files referenced by attachment rows.
   try {
+    // ⚠ THIS UNION IS A HARDCODED LIST AND IT FAILS OPEN — a table missing from it
+    // has its ROWS wiped by LOCAL_WIPE_TABLES while its captured FILES stay on disk,
+    // and once the row is gone nothing will ever find them again. That is the exact
+    // shape B-424 eliminated for the row half (hydration.test.ts derives the wipe set
+    // from a real sqlite_master, so a new table breaks the build); the FILE half has
+    // no equivalent guard yet — filed as B-519.
+    //
+    // vet_documents was added here in the same PR that created it (B-478 VF-1), found
+    // by that PR's rls-privacy-reviewer. It shares persistCapture's
+    // `Paths.document/attachments/` directory with the two attachment tables, and its
+    // rows are lab results, vaccination certificates and clinic correspondence — the
+    // thing LOCAL_WIPE_TABLES exists to keep off a shared device. Wiping the row and
+    // leaving the image would have made that promise true only on paper. Not yet
+    // reachable (local_uri is '' until VF-3 writes one), which is precisely why it is
+    // cheap to close now.
     const files = await database.getAllAsync<{ local_uri: string | null }>(
       `SELECT local_uri FROM event_attachments
        UNION ALL
-       SELECT local_uri FROM vet_visit_attachments`,
+       SELECT local_uri FROM vet_visit_attachments
+       UNION ALL
+       SELECT local_uri FROM vet_documents`,
     );
     for (const f of files) {
       if (!f.local_uri) continue; // hydrated rows carry '' — no local file to remove
@@ -601,6 +618,16 @@ export async function softDeleteEvent(eventId: string): Promise<void> {
   );
 }
 
+// B-010 confidence + its window bounds, written as one unit. They are a single
+// claim about how well the time is known, and the schema's CHECK constraint ties
+// them together (bounds are legal only on 'window'), so they can only be set
+// together — never one without the others.
+export interface EventConfidenceUpdate {
+  value: 'witnessed' | 'estimated' | 'window';
+  earliest: string | null;
+  latest: string | null;
+}
+
 export async function updateEvent(
   eventId: string,
   fields: {
@@ -608,30 +635,40 @@ export async function updateEvent(
     severity: number | null;
     notes: string | null;
     occurred_at_source?: 'manual' | 'exif' | 'now';
-    // B-010 — re-classifying confidence on edit. Window bounds are only
-    // non-null for confidence 'window'; the caller derives occurred_at from
-    // them (latest edge) so existing readers keep working.
-    occurred_at_confidence?: 'witnessed' | 'estimated' | 'window' | null;
-    occurred_at_earliest?: string | null;
-    occurred_at_latest?: string | null;
+    // B-010 — re-classifying confidence on edit. OMIT this key to leave the
+    // three confidence columns exactly as stored (B-448).
+    //
+    // It is optional-by-omission rather than a nullable column value because an
+    // edit that isn't ABOUT the time must not restate the time's confidence.
+    // The previous signature took the three columns flat and always wrote them,
+    // `?? null` — so a caller that cared only about notes silently rewrote the
+    // row's confidence, in both directions: it wiped a stored 'estimated' to
+    // NULL if it passed nothing, and (app/edit-event.tsx) promoted a stored
+    // NULL to 'witnessed' if it passed its form default. Migration 012 is
+    // explicit that NULL is "NOT a claim either way", and the vet report
+    // renders it 'unspecified' precisely so it is not read as more certain than
+    // it is — so inventing 'witnessed' for it moved a row in the falsely
+    // reassuring direction, one edit at a time.
+    confidence?: EventConfidenceUpdate;
   },
+  // Injected for tests (the cacheFlush.test.ts pattern); production passes nothing.
+  database: Pick<SQLite.SQLiteDatabase, 'runAsync'> = getDb(),
 ): Promise<void> {
-  const db = getDb();
   const now = new Date().toISOString();
-  await db.runAsync(
-    `UPDATE events SET occurred_at = ?, severity = ?, notes = ?, occurred_at_source = ?,
-            occurred_at_confidence = ?, occurred_at_earliest = ?, occurred_at_latest = ?,
-            updated_at = ?, synced = 0
-     WHERE id = ?`,
-    [
-      fields.occurred_at, fields.severity ?? null, fields.notes,
-      fields.occurred_at_source ?? 'manual',
-      fields.occurred_at_confidence ?? null,
-      fields.occurred_at_earliest ?? null,
-      fields.occurred_at_latest ?? null,
-      now, eventId,
-    ],
-  );
+  const sets = [
+    'occurred_at = ?', 'severity = ?', 'notes = ?', 'occurred_at_source = ?',
+  ];
+  const params: (string | number | null)[] = [
+    fields.occurred_at, fields.severity ?? null, fields.notes,
+    fields.occurred_at_source ?? 'manual',
+  ];
+  if (fields.confidence) {
+    sets.push('occurred_at_confidence = ?', 'occurred_at_earliest = ?', 'occurred_at_latest = ?');
+    params.push(fields.confidence.value, fields.confidence.earliest, fields.confidence.latest);
+  }
+  sets.push('updated_at = ?', 'synced = 0');
+  params.push(now, eventId);
+  await database.runAsync(`UPDATE events SET ${sets.join(', ')} WHERE id = ?`, params);
 }
 
 export async function getEventSource(eventId: string): Promise<'manual' | 'exif' | 'now'> {

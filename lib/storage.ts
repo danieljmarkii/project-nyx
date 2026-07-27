@@ -13,17 +13,31 @@ export async function compressForUpload(
   sourceWidth?: number,
   sourceHeight?: number,
 ): Promise<string> {
+  const saveOptions = { compress: 0.75, format: SaveFormat.JPEG };
+
   // Resize so the longest edge is ≤MAX_EDGE_PX. expo-image-manipulator's
-  // `resize` preserves aspect when one dimension is omitted; we pick the
-  // larger edge so portrait photos don't end up taller than 1600px.
-  const isPortrait = sourceWidth && sourceHeight && sourceHeight > sourceWidth;
-  const resize = isPortrait ? { height: MAX_EDGE_PX } : { width: MAX_EDGE_PX };
-  const result = await manipulateAsync(
-    localUri,
-    [{ resize }],
-    { compress: 0.75, format: SaveFormat.JPEG },
-  );
-  return result.uri;
+  // `resize` preserves aspect when one dimension is omitted, so the constrained
+  // edge has to be the LONGER one — pinning width on a portrait photo leaves its
+  // height (the true longest edge) uncapped at ~2133px for a 3:4.
+  if (sourceWidth && sourceHeight) {
+    const resize = sourceHeight > sourceWidth ? { height: MAX_EDGE_PX } : { width: MAX_EDGE_PX };
+    const result = await manipulateAsync(localUri, [{ resize }], saveOptions);
+    return result.uri;
+  }
+
+  // B-206 — the re-upload paths (lib/sync.ts, lib/vetDocuments.ts, the pet
+  // photo) have no width/height column to source dimensions from, so orientation
+  // is unknown up front. Constrain width first, then read the result's OWN
+  // dimensions — manipulateAsync reports them post-EXIF-orientation-normalisation,
+  // which is the number the contract is about. If the source was portrait the
+  // height is still over the cap, so redo the resize on the height edge from the
+  // ORIGINAL: re-resizing the already-downscaled copy would stack a second lossy
+  // JPEG encode on top of the first. Landscape and square sources (the common
+  // case) never reach the second pass, so this costs nothing on that path.
+  const widthPass = await manipulateAsync(localUri, [{ resize: { width: MAX_EDGE_PX } }], saveOptions);
+  if (widthPass.height <= MAX_EDGE_PX) return widthPass.uri;
+  const heightPass = await manipulateAsync(localUri, [{ resize: { height: MAX_EDGE_PX } }], saveOptions);
+  return heightPass.uri;
 }
 
 
@@ -114,6 +128,77 @@ export function persistCapture(sourceUri: string, fileName: string): string {
   }
 }
 
+
+// Bring a REMOTE object onto this device durably — §8 AC 12's other half.
+//
+// persistCapture above copies a file the device just produced; this one fetches a
+// file the device has only ever seen through a signed URL, and then hands it to
+// persistCapture so exactly one function writes into the attachments directory.
+// That matters beyond tidiness: sign-out's file wipe (clearLocalData) walks the
+// local_uri columns of the tables that live in that directory, so anything cached
+// here is already covered by it rather than needing a second wipe path.
+//
+// Two rules, both learned upstream:
+//   • the download lands in the OS CACHE first, and only a completed, non-empty
+//     file is promoted. A torn download promoted straight into the document
+//     directory would be a permanently broken "cached" record that nothing
+//     re-fetches, which is worse than not caching at all.
+//   • it NEVER throws and never rethrows. Caching is a side effect of viewing a
+//     document; a failure here must cost the owner nothing, so it returns null and
+//     the caller keeps rendering from the signed URL it already has.
+export async function persistRemoteObject(url: string, fileName: string): Promise<string | null> {
+  let tmp: File | null = null;
+  try {
+    tmp = new File(Paths.cache, `remote-${fileName}`);
+    if (tmp.exists) tmp.delete();
+    // idempotent: the API rejects with DestinationAlreadyExists otherwise, and the
+    // delete above can lose a race with a concurrent open of the same page.
+    const downloaded = await File.downloadFileAsync(url, tmp, { idempotent: true });
+    // A 0-byte result is the RN-fetch failure mode this codebase has already been
+    // bitten by (see uploadPhoto). Treat it as no download at all.
+    if (!downloaded.exists || !downloaded.size) return null;
+    const durable = persistCapture(downloaded.uri, fileName);
+    // persistCapture returns its SOURCE unchanged when the copy fails. A cache
+    // path is by definition not durable, so that outcome is "not cached".
+    if (durable === downloaded.uri) return null;
+    return durable;
+  } catch (e) {
+    console.warn('[storage] persistRemoteObject failed:', e);
+    return null;
+  } finally {
+    // The cache copy has served its purpose either way; the OS would reclaim it
+    // eventually, but leaving a second copy of a clinical record on disk for no
+    // reason is not a thing to shrug at.
+    try {
+      if (tmp?.exists) tmp.delete();
+    } catch {
+      // Already gone / not deletable — nothing to clean up.
+    }
+  }
+}
+
+// Give a file a human name for the share sheet.
+//
+// `Sharing.shareAsync` shares the file AT ITS PATH, so the recipient sees whatever
+// the basename is — and this app's storage keys are UUIDs, so a vet who is handed a
+// lab result receives "a3f9c1e2-….jpg" and files it under nothing. Copying to a
+// cache file with a real name is the same trick shareReportPdf already plays for
+// the vet report, extracted here on its second caller.
+//
+// Best-effort by the same rule as persistCapture: on any failure it returns the
+// original URI, so a copy problem can slow the vet down but can never block the
+// share itself.
+export function stageForShare(localUri: string, fileName: string): string {
+  try {
+    const dest = new File(Paths.cache, fileName);
+    if (dest.exists) dest.delete();
+    new File(localUri).copy(dest);
+    return dest.uri;
+  } catch (e) {
+    console.warn('[storage] stageForShare failed, sharing the raw file:', e);
+    return localUri;
+  }
+}
 
 // Upload a local file URI (file:// or content://) to Supabase Storage.
 //

@@ -27,7 +27,7 @@ import {
   TimelineRow,
 } from '../../lib/db';
 import { uploadPhoto, getSignedUrl, compressForUpload, persistCapture, MAX_EDGE_PX } from '../../lib/storage';
-import { resolveEventPhotoDisplay } from '../../lib/eventPhoto';
+import { resolveEventPhotoDisplay, addPhotoHeroCopy } from '../../lib/eventPhoto';
 import { supabase } from '../../lib/supabase';
 import { syncPendingEvents, syncPendingMeals, syncPendingMedicationAdministrations } from '../../lib/sync';
 import { triggerVomitAnalysis, triggerStoolAnalysis } from '../../lib/analysis';
@@ -461,7 +461,8 @@ export default function EventDetailScreen() {
       : await ImagePicker.launchImageLibraryAsync(opts);
     if (result.canceled || !result.assets[0]) return;
 
-    const captureUri = result.assets[0].uri;
+    const asset = result.assets[0];
+    const captureUri = asset.uri;
     const attId = uuid();
     const storagePath = `${event.pet_id}/${event.id}/${attId}.jpg`;
     const now = new Date().toISOString();
@@ -482,8 +483,9 @@ export default function EventDetailScreen() {
       setAttachment({ id: attId, local_uri: localUri, storage_path: storagePath });
       // Compress before upload (≤1600px, q75) so the file stays under Claude's
       // 5 MB cap — also the recovery path for a historic event whose original
-      // full-size photo is too large to analyze.
-      const uploadUri = await compressForUpload(captureUri);
+      // full-size photo is too large to analyze. The picker's dimensions are
+      // passed so the cap lands on the photo's true longest edge (B-352).
+      const uploadUri = await compressForUpload(captureUri, asset.width, asset.height);
       // Fire-and-forget upload; sync retries on reconnect if it fails
       uploadPhoto('nyx-event-attachments', storagePath, uploadUri)
         .then(async () => {
@@ -553,6 +555,8 @@ export default function EventDetailScreen() {
   // Which photo the hero + viewer render, and whether to show the add-photo empty
   // state. Pure + unit-tested in lib/eventPhoto.ts (transform→raw fallback; never
   // flashes an add-photo target over an existing photo mid-fallback). B-207.
+  // B-371 — the empty hero's copy. Pure + unit-tested in lib/eventPhoto.ts.
+  const addPhotoCopy = addPhotoHeroCopy(event.event_type);
   const { photoUri, showEmptyHero } = resolveEventPhotoDisplay({
     localUri,
     remoteUrl,
@@ -610,7 +614,12 @@ export default function EventDetailScreen() {
                 {/* B-062 — Lucide Camera (was a 📷 emoji) for a consistent vector
                     glyph set across the photo-affordance empty states. */}
                 <Camera size={32} color={theme.colorTextTertiary} strokeWidth={1.5} />
-                <Text style={styles.heroEmptyText}>Add photo</Text>
+                <Text style={styles.heroEmptyText}>{addPhotoCopy.action}</Text>
+                {/* B-371 — on an event whose photo feeds a read, teach what the
+                    photo is for. Null (bare action label) on every other type. */}
+                {addPhotoCopy.hint ? (
+                  <Text style={styles.heroEmptyHint}>{addPhotoCopy.hint}</Text>
+                ) : null}
               </>
             )}
           </TouchableOpacity>
@@ -857,6 +866,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: theme.colorTextSecondary,
     fontWeight: theme.fontWeightMedium,
+  },
+  heroEmptyHint: {
+    fontSize: theme.textSM,
+    lineHeight: theme.lineHeightSM,
+    color: theme.colorTextTertiary,
+    textAlign: 'center',
+    paddingHorizontal: theme.space4,
   },
   body: {
     paddingHorizontal: theme.space3,

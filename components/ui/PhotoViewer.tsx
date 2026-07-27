@@ -52,6 +52,14 @@ interface Props {
   // can omit both.
   onReplace?: () => void;
   onRemove?: () => void;
+  // Fired when the owner swipes to a different photo (B-478 VF-4, where the
+  // caller's hero, its page dots and its Share action all have to follow the
+  // page actually on screen).
+  //
+  // ⚠ A caller that feeds this back into `initialIndex` will fight its own user:
+  // the open effect below re-runs on an initialIndex change and scrolls back. Hold
+  // the opening index separately from the live one — see app/vet-document/[id].tsx.
+  onPageChange?: (index: number) => void;
 }
 
 interface Box {
@@ -59,7 +67,9 @@ interface Box {
   h: number;
 }
 
-export function PhotoViewer({ visible, uris, initialIndex = 0, onClose, onReplace, onRemove }: Props) {
+export function PhotoViewer({
+  visible, uris, initialIndex = 0, onClose, onReplace, onRemove, onPageChange,
+}: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const [page, setPage] = useState(initialIndex);
   // The measured media area. null until the first layout pass — the gallery
@@ -91,7 +101,10 @@ export function PhotoViewer({ visible, uris, initialIndex = 0, onClose, onReplac
   function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     if (!box) return;
     const next = Math.round(e.nativeEvent.contentOffset.x / box.w);
-    if (next !== page) setPage(next);
+    if (next !== page) {
+      setPage(next);
+      onPageChange?.(next);
+    }
   }
 
   function renderSlide(uri: string | null, key: string, b: Box) {
