@@ -1,5 +1,5 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check } from 'lucide-react-native';
 import { theme, shadows } from '../../constants/theme';
 import { PrimaryButton } from '../ui/PrimaryButton';
@@ -30,7 +30,7 @@ interface Props {
 
 // D2-r2 — the saved moment.
 //
-// It is a full screen and it does NOT auto-dismiss, which is the difference
+// It fills the screen and it does NOT auto-dismiss, which is the difference
 // between this and the log-time completion beat: a log beat confirms something the
 // owner just did deliberately, while this one carries two optional actions (Name
 // it, and D13's copy-to-another-pet) that a 900ms beat would snatch away.
@@ -39,12 +39,18 @@ interface Props {
 // ruled out (D11) — the document is already saved, complete and findable, and the
 // recovery for an untitled row lives on the row itself. So every action on this
 // screen is additive, and "Done" is always the shortest path off it.
+//
+// Renders as the screen's BODY rather than its own SafeAreaView or Modal, so the
+// library's sheets stay mounted around it (see the note at the call site —
+// unmounting a visible Modal on iOS can strand its presented view controller). It
+// takes the bottom inset itself because the host SafeAreaView deliberately does not.
 export function DocumentSavedMoment({
   copy, thumbUri, isPdf, alsoAdd = [], onAlsoAdd, onAddPage, busy, onName, onDone,
 }: Props) {
+  const insets = useSafeAreaInsets();
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom', 'left', 'right']}>
-      <View style={styles.body}>
+    <View style={styles.container}>
+      <View style={[styles.body, { paddingBottom: insets.bottom + theme.space2 }]}>
         <View style={styles.check}>
           <Check size={24} color={theme.colorAccentInk} strokeWidth={2.4} />
         </View>
@@ -105,7 +111,7 @@ export function DocumentSavedMoment({
           <PrimaryButton label="Done" onPress={onDone} />
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

@@ -236,8 +236,15 @@ export default function VetFilesScreen() {
   // question, and the insert is a local SQLite write, so the document is safe on
   // the phone before the saved moment renders (which is what lets that screen
   // promise it).
+  //
+  // The add sheet stays OPEN across the picker, and closes only once something was
+  // actually saved. Two reasons, one of them iOS mechanics: expo-image-picker
+  // presents from `currentViewController()`, i.e. the topmost presented view
+  // controller — which is stable while the sheet's Modal is up and AMBIGUOUS while
+  // it is mid-dismiss, so closing first can drop the presentation on the floor and
+  // leave a tap that does nothing. The product reason is the better one anyway:
+  // cancelling the camera returns the owner to the source list, not to the library.
   async function handlePick(source: VetDocumentSource) {
-    setAddOpen(false);
     if (capturing) return;
     // Write-time pet identity (multi-pet spec §6): read the store at the moment of
     // write, not the render-time closure, so a pet switch mid-picker cannot file
@@ -271,6 +278,7 @@ export default function VetFilesScreen() {
       );
       await insertVetDocumentRows(built);
 
+      setAddOpen(false);
       setSaved(built);
       setAlsoAdded(new Set());
       await load();
@@ -386,49 +394,61 @@ export default function VetFilesScreen() {
   // A state of this screen rather than a pushed route: the document is already
   // written, so there is nothing to navigate to and nothing to come back from —
   // "Done" just clears this. The list underneath already carries the new row.
-  if (saved && saved.length > 0) {
-    const cover = saved[0];
-    const groupCount = new Set(saved.map((r) => r.document_group_id)).size;
-    // D13 renders per OTHER pet, so a single-pet account gets nothing at all.
-    const alsoAddTargets: AlsoAddTarget[] = pets
-      .filter((p) => p.id !== cover.pet_id)
-      .map((p) => ({
-        petId: p.id,
-        label: alsoAdded.has(p.id) ? alsoAddedLabel(p.name) : alsoAddLabel(p.name),
-        done: alsoAdded.has(p.id),
-      }));
-    return (
-      <DocumentSavedMoment
-        copy={savedMomentCopy(petName, saved)}
-        // The cover's own durable file — a just-captured document never needs a
-        // signed URL to show itself.
-        thumbUri={cover.local_uri || null}
-        isPdf={cover.mime_type === 'application/pdf'}
-        alsoAdd={alsoAddTargets}
-        onAlsoAdd={handleAlsoAdd}
-        // Offered only for a single camera-captured document: a Photos batch and a
-        // PDF pick already had their own multi-select, and appending a camera page
-        // to one of several PDFs would have no defensible target.
-        onAddPage={cover.source === 'camera' && groupCount === 1 ? handleAddPage : undefined}
-        busy={capturing}
-        onName={() => {
-          // Hand off to the same Name sheet the library row uses — one naming
-          // surface, and the owner lands on the list with their new row visible
-          // behind it rather than naming into a screen they then have to leave.
-          setSaved(null);
-          setNaming({
-            groupId: cover.document_group_id,
-            title: savedMomentCopy(petName, saved).cardTitle,
-            untitled: true,
-          });
-        }}
-        onDone={() => setSaved(null)}
-      />
-    );
-  }
+  //
+  // It swaps the screen's BODY and is not itself a Modal, and the three sheets stay
+  // mounted around it. That shape is deliberate: replacing the whole tree would
+  // unmount the add sheet's `Modal` while it was still visible, which on iOS can
+  // strand its presented view controller and leave the screen unresponsive. Here the
+  // sheet gets an ordinary animated dismissal while the body changes underneath it.
+  const savedCover = saved && saved.length > 0 ? saved[0] : null;
+  const savedCopy = saved && savedCover ? savedMomentCopy(petName, saved) : null;
+  // D13 renders per OTHER pet, so a single-pet account gets nothing at all.
+  const alsoAddTargets: AlsoAddTarget[] = savedCover
+    ? pets
+        .filter((p) => p.id !== savedCover.pet_id)
+        .map((p) => ({
+          petId: p.id,
+          label: alsoAdded.has(p.id) ? alsoAddedLabel(p.name) : alsoAddLabel(p.name),
+          done: alsoAdded.has(p.id),
+        }))
+    : [];
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      {saved && savedCover && savedCopy ? (
+        <DocumentSavedMoment
+          copy={savedCopy}
+          // The cover's own durable file — a just-captured document never needs a
+          // signed URL to show itself.
+          thumbUri={savedCover.local_uri || null}
+          isPdf={savedCover.mime_type === 'application/pdf'}
+          alsoAdd={alsoAddTargets}
+          onAlsoAdd={handleAlsoAdd}
+          // Offered only for a single camera-captured document: a Photos batch and a
+          // PDF pick already had their own multi-select, and appending a camera page
+          // to one of several PDFs would have no defensible target.
+          onAddPage={
+            savedCover.source === 'camera' &&
+            new Set(saved.map((r) => r.document_group_id)).size === 1
+              ? handleAddPage
+              : undefined
+          }
+          busy={capturing}
+          onName={() => {
+            // Hand off to the same Name sheet the library row uses — one naming
+            // surface, and the owner lands on the list with their new row visible
+            // behind it rather than naming into a screen they then have to leave.
+            setSaved(null);
+            setNaming({
+              groupId: savedCover.document_group_id,
+              title: savedCopy.cardTitle,
+              untitled: true,
+            });
+          }}
+          onDone={() => setSaved(null)}
+        />
+      ) : (
+      <>
       <Header
         leading="back"
         // canGoBack-guarded: this route is reachable by direct link (that is how
@@ -504,6 +524,8 @@ export default function VetFilesScreen() {
             ))}
           </View>
         </ScrollView>
+      )}
+      </>
       )}
 
       <AddDocumentSheet
