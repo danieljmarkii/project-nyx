@@ -28,6 +28,11 @@ import {
   formatVetDocumentDate,
   defaultVetDocumentTitle,
   VET_DOCUMENT_KIND_LABELS,
+  RECENTLY_DELETED_VET_DOCUMENTS_QUERY,
+  buildDeletedVetDocumentRow,
+  daysLeftToRestore,
+  restoreCountdownLabel,
+  restoreWindowStart,
   type VetDocumentGroupRow,
 } from './vetDocumentLibrary';
 import { VET_DOCUMENT_KINDS } from './vetDocuments';
@@ -347,5 +352,134 @@ describe('buildVetFilesCardModel', () => {
 
   it('says “document” in the singular', () => {
     expect(buildVetFilesCardModel('Pixel', rowsOfKinds(['other'])).countLabel).toBe('1 document');
+  });
+});
+
+// ── 3. Soft delete and the 30-day recovery window (VF-4, §8 AC 5) ────────────
+//
+// The ⋯ menu's Delete says "Kept for 30 days — undo from the library". These are
+// the tests that keep that sentence true: a stated recovery window with no working
+// recovery behind it is a worse product than an honest permanent delete, because
+// the owner only finds out at the moment they need the document back.
+
+describe('daysLeftToRestore', () => {
+  const now = new Date('2026-07-26T12:00:00Z');
+
+  it('reads 30 on the day of deletion, matching what the ⋯ menu promised', () => {
+    // Counted in calendar days, not elapsed hours: an hours-based floor would say
+    // 29 an hour after the delete and read as an off-by-one to anyone who had just
+    // seen "Kept for 30 days".
+    expect(daysLeftToRestore('2026-07-26T11:00:00Z', now)).toBe(30);
+  });
+
+  it('counts down one per calendar day', () => {
+    expect(daysLeftToRestore('2026-07-24T12:00:00Z', now)).toBe(28);
+    expect(daysLeftToRestore('2026-06-27T23:00:00Z', now)).toBe(1);
+  });
+
+  it('never goes negative, and treats an unparseable stamp as expired', () => {
+    expect(daysLeftToRestore('2026-01-01T00:00:00Z', now)).toBe(0);
+    expect(daysLeftToRestore('not a date', now)).toBe(0);
+  });
+});
+
+describe('restoreCountdownLabel', () => {
+  const now = new Date('2026-07-26T12:00:00Z');
+
+  it('says “1 day left” in the singular', () => {
+    expect(restoreCountdownLabel('2026-06-27T23:00:00Z', now)).toBe('1 day left');
+  });
+
+  it('never renders “0 days left” next to a working Restore button', () => {
+    // The query, not this label, decides whether the row is restorable — so a
+    // countdown reading zero beside a live button is a contradiction the owner
+    // would have to interpret.
+    expect(restoreCountdownLabel('2026-06-26T12:00:00Z', now)).toBe('Last day to restore');
+  });
+});
+
+describe('buildDeletedVetDocumentRow', () => {
+  const now = new Date('2026-07-26T12:00:00Z');
+
+  it('states the window where the undo is', () => {
+    const row = buildDeletedVetDocumentRow(
+      { ...cover({ title: 'Senior panel' }), deleted_at: '2026-07-24T12:00:00Z' },
+      now,
+    );
+    expect(row.title).toBe('Senior panel');
+    expect(row.deletedLabel).toBe('Deleted Jul 24 · 28 days left');
+  });
+
+  it('carries the countdown for a document near the end of its window', () => {
+    const row = buildDeletedVetDocumentRow(
+      { ...cover(), deleted_at: '2026-06-27T11:00:00Z' },
+      now,
+    );
+    expect(row.deletedLabel).toBe('Deleted Jun 27 · 1 day left');
+  });
+});
+
+describe('RECENTLY_DELETED_VET_DOCUMENTS_QUERY', () => {
+  const now = new Date('2026-07-26T12:00:00Z');
+
+  function runDeletedQuery(docs: Doc[], petId = 'pet-1') {
+    const db = new DatabaseSync(':memory:');
+    db.exec(BASE_SCHEMA_SQL);
+    const insert = db.prepare(
+      `INSERT INTO vet_documents
+         (id, pet_id, document_group_id, kind, title, document_date, source,
+          local_uri, storage_path, mime_type, page_index, deleted_at, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, 'photo_library', ?, ?, ?, ?, ?, ?, ?, 1)`,
+    );
+    for (const d of docs) {
+      insert.run(
+        d.id, d.pet_id ?? petId, d.group ?? d.id, d.kind ?? 'other', d.title ?? null,
+        d.document_date ?? null, d.local_uri ?? '', `${d.pet_id ?? petId}/${d.id}.jpg`,
+        d.mime ?? 'image/jpeg', d.page_index ?? 0, d.deleted_at ?? null,
+        d.created_at ?? '2026-07-01T00:00:00Z', d.created_at ?? '2026-07-01T00:00:00Z',
+      );
+    }
+    const out = db.prepare(RECENTLY_DELETED_VET_DOCUMENTS_QUERY)
+      .all(petId, restoreWindowStart(now)) as unknown as (VetDocumentGroupRow & { deleted_at: string })[];
+    db.close();
+    return out;
+  }
+
+  it('keeps exactly what the library hides, most recently deleted first', () => {
+    const rows = runDeletedQuery([
+      { id: 'live', group: 'live' },
+      { id: 'old', group: 'old', deleted_at: '2026-07-10T00:00:00Z' },
+      { id: 'fresh', group: 'fresh', deleted_at: '2026-07-25T00:00:00Z' },
+    ]);
+    expect(rows.map((r) => r.group_id)).toEqual(['fresh', 'old']);
+  });
+
+  it('drops a document past the window IN SQL, not in the caller', () => {
+    // A list that renders a document and then fails to restore it is the cruellest
+    // possible version of this surface.
+    const rows = runDeletedQuery([
+      { id: 'aged', group: 'aged', deleted_at: '2026-06-01T00:00:00Z' },
+    ]);
+    expect(rows).toEqual([]);
+  });
+
+  it('collapses a deleted multi-page group into one restorable row', () => {
+    // A restored 4-page thread must come back looking like itself — MIN(page_index)
+    // pins every bare column to the cover, exactly as the library query does.
+    const rows = runDeletedQuery([
+      { id: 'p3', group: 'g1', page_index: 2, deleted_at: '2026-07-25T00:00:00Z' },
+      { id: 'p1', group: 'g1', page_index: 0, title: 'Discharge sheet', deleted_at: '2026-07-25T00:00:00Z' },
+      { id: 'p2', group: 'g1', page_index: 1, deleted_at: '2026-07-25T00:00:00Z' },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].page_count).toBe(3);
+    expect(rows[0].title).toBe('Discharge sheet');
+  });
+
+  it('never surfaces another pet’s deleted documents', () => {
+    const rows = runDeletedQuery([
+      { id: 'theirs', pet_id: 'pet-2', group: 'theirs', deleted_at: '2026-07-25T00:00:00Z' },
+    ]);
+    expect(rows).toEqual([]);
   });
 });

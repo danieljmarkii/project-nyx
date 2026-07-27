@@ -12,6 +12,7 @@ import { VetFilesEmptyState } from '../components/vetfiles/VetFilesEmptyState';
 import { NameDocumentSheet, DocumentKindSheet } from '../components/vetfiles/VetDocumentMetaSheets';
 import { AddDocumentSheet } from '../components/vetfiles/AddDocumentSheet';
 import { DocumentSavedMoment, type AlsoAddTarget } from '../components/vetfiles/DocumentSavedMoment';
+import { RecentlyDeletedSheet } from '../components/vetfiles/RecentlyDeletedSheet';
 import { usePetStore } from '../store/petStore';
 import { getSignedUrls } from '../lib/storage';
 import { syncPendingVetDocuments } from '../lib/sync';
@@ -23,12 +24,15 @@ import {
 } from '../lib/vetDocuments';
 import {
   readVetLibrary,
+  readRecentlyDeletedVetDocuments,
   renameVetDocument,
+  restoreVetDocument,
   setVetDocumentKind,
   buildKindFilterOptions,
   reconcileKindFilter,
   filterByKind,
   VET_DOCUMENT_SIGNED_URL_TTL_SEC,
+  type DeletedVetDocumentRow,
   type VetLibraryRow,
 } from '../lib/vetDocumentLibrary';
 import {
@@ -84,6 +88,17 @@ export default function VetFilesScreen() {
   const [typing, setTyping] = useState<VetLibraryRow | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // ── Recently deleted (VF-4, §8 AC 5) ────────────────────────────────────────
+  //
+  // The detail screen's ⋯ menu promises "Kept for 30 days — undo from the library",
+  // and this is the library half of that promise. Read alongside the library rather
+  // than lazily on tap, because its COUNT decides whether the entry point renders
+  // at all: the steady state is empty, and a permanent trash-can row on a screen
+  // whose whole job is one calm list is a surface nobody asked to see.
+  const [deleted, setDeleted] = useState<DeletedVetDocumentRow[]>([]);
+  const [deletedOpen, setDeletedOpen] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
+
   // ── Capture (VF-3) ──────────────────────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
   // The rows a just-finished capture wrote, and the screen's own "saved moment"
@@ -135,10 +150,11 @@ export default function VetFilesScreen() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!petId) { setRows([]); setLoading(false); return; }
+    if (!petId) { setRows([]); setDeleted([]); setLoading(false); return; }
     try {
       const library = await readVetLibrary(petId);
       setRows(library);
+      setDeleted(await readRecentlyDeletedVetDocuments(petId));
       // Drop a filter whose kind no longer exists (the owner deleted the last one),
       // so a stale selection can never present an empty list.
       setKindFilter((prev) => reconcileKindFilter(prev, buildKindFilterOptions(library)));
@@ -150,21 +166,31 @@ export default function VetFilesScreen() {
       // so a read failure here is a device problem, not a network one.
       console.warn('[vet-files] library read failed:', e);
       setRows([]);
+      setDeleted([]);
     } finally {
       setLoading(false);
     }
   }, [petId, resolveThumbnails]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  async function handleRestore(groupId: string) {
+    if (restoring) return;
+    setRestoring(groupId);
+    try {
+      await restoreVetDocument(groupId);
+      // Restoring the last one empties the sheet; close it rather than leaving the
+      // owner looking at an empty list they now have to dismiss themselves.
+      if (deleted.length <= 1) setDeletedOpen(false);
+      await load();
+      syncPendingVetDocuments().catch((e) => console.warn('[vet-files] document push failed:', e));
+    } catch (e) {
+      console.warn('[vet-files] restore failed:', e);
+      Alert.alert('That didn’t restore', 'Something went wrong putting the document back. Give it another try.');
+    } finally {
+      setRestoring(null);
+    }
+  }
 
-  // TODO(VF-4): route to the document detail (viewer, metadata edit, share, soft
-  // delete). Kept as one named no-op so the call site is greppable when that PR
-  // lands, and so an unbuilt route can't silently swallow a tap in a QA build.
-  // Until then a named row's chevron leads nowhere — called out in VF-3's QA script
-  // rather than hidden, since the profile entry point unlocks with this PR.
-  const pendingScreen = useCallback((what: 'detail') => {
-    console.warn(`[vet-files] ${what} lands in VF-4`);
-  }, []);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   // ── Pickers ─────────────────────────────────────────────────────────────────
   // Returns [] for every "nothing happened" outcome — cancelled, denied — so the
@@ -537,13 +563,36 @@ export default function VetFilesScreen() {
                 row={row}
                 thumbUri={thumbUriFor(row)}
                 thumbLoading={thumbsLoading}
-                onPress={() => pendingScreen('detail')}
+                // VF-4: the detail route is keyed on the DOCUMENT GROUP, not the
+                // cover row's id — a 3-page thread is one document, and its pages
+                // are what the detail screen swipes through.
+                onPress={() => router.push(`/vet-document/${row.groupId}`)}
                 onName={() => setNaming({ groupId: row.groupId, title: row.title, untitled: row.untitled })}
                 onAddType={() => setTyping(row)}
               />
             ))}
           </View>
         </ScrollView>
+      )}
+
+      {/* Renders only when there IS something recoverable — see the state
+          declaration. Deliberately OUTSIDE the empty/populated branch: deleting
+          your only document lands you on the empty state, and that is precisely
+          the moment the ⋯ menu's "undo from the library" has to still be true.
+          Quiet and at the bottom either way — a safety net, not a destination. */}
+      {!loading && deleted.length > 0 && (
+        <TouchableOpacity
+          style={styles.deletedLink}
+          onPress={() => setDeletedOpen(true)}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Recently deleted, ${deleted.length} ${deleted.length === 1 ? 'document' : 'documents'}`}
+        >
+          <Text style={styles.deletedLinkText}>
+            Recently deleted ({deleted.length})
+          </Text>
+        </TouchableOpacity>
       )}
       </>
       )}
@@ -569,6 +618,14 @@ export default function VetFilesScreen() {
         current={typing?.kind ?? 'other'}
         onCancel={() => setTyping(null)}
         onSelect={handleKind}
+      />
+
+      <RecentlyDeletedSheet
+        visible={deletedOpen}
+        rows={deleted}
+        restoringGroupId={restoring}
+        onClose={() => setDeletedOpen(false)}
+        onRestore={handleRestore}
       />
     </SafeAreaView>
   );
@@ -609,6 +666,16 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: theme.space1,
+  },
+  deletedLink: {
+    alignSelf: 'center',
+    paddingVertical: theme.space1,
+    paddingHorizontal: theme.space2,
+    paddingBottom: theme.space2,
+  },
+  deletedLinkText: {
+    fontSize: theme.textSM,
+    color: theme.colorTextTertiary,
   },
   addBtn: {
     width: 30,
