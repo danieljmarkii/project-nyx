@@ -258,7 +258,9 @@ export default function VetDocumentDetailScreen() {
     setSaving(true);
     try {
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert('Sharing isn’t available', 'This device has no share sheet to send the document with.');
+        // Word-for-word the vet report's alert (app/report.tsx) — see the note
+        // there; one device limitation, one sentence (VF-6 voice pass).
+        Alert.alert('Sharing isn’t available', 'This device can’t open a share sheet.');
         return;
       }
       let uri = p.localUri;
@@ -322,7 +324,15 @@ export default function VetDocumentDetailScreen() {
         },
         {
           key: 'date',
-          label: 'Doc date',
+          // The mock says "Doc date"; this ships as "Date" (VF-6 voice pass,
+          // flagged for a Designer word). "Doc" reads as *doctor* in a vet app —
+          // and the row directly below it is "Vet visit", so the two adjacent
+          // labels can both scan as "when was the appointment", which is precisely
+          // the distinction this row exists to hold. The editor sheet already
+          // carries the disambiguation ("Not when you saved it — the date printed
+          // on the paper"), so the shorter label loses nothing and it fits the
+          // card's fixed 78pt label column, which "Document date" would not.
+          label: 'Date',
           value: detail.dateLabel || null,
           placeholder: 'Add the date',
           onPress: () => setSheet('date'),

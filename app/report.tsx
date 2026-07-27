@@ -152,7 +152,11 @@ export default function ReportScreen() {
     try {
       const shared = await shareReportPdf(report);
       if (!shared) {
-        Alert.alert('Sharing unavailable', "This device can't open a share sheet.");
+        // Word-for-word the Vet Files alert (app/vet-document/[id].tsx). These are
+        // the app's only two share surfaces and they sit as adjacent cards on the
+        // pet profile — one device limitation described two ways reads as two
+        // different failures (VF-6 voice pass).
+        Alert.alert('Sharing isn’t available', 'This device can’t open a share sheet.');
       }
     } catch (e) {
       console.error('[Report] PDF share failed:', e);
