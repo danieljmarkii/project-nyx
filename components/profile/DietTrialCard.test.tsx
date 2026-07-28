@@ -232,24 +232,24 @@ describe('actions are drawn only when the surface can service them', () => {
   });
 });
 
-// ── B-533 — the two BLOCK roles ─────────────────────────────────────────────
+// ── B-533 — the safety register renders as one block, not as body text ──────
 //
-// Everything else on this card is body text in reading order. `flag` and `teach`
-// are containers, and the distinction between them is the design: one is the
-// safety register (something about the animal outranks the trial), the other
-// fires when NOTHING is wrong and may not borrow its colour.
+// The `flag` role is a BLOCK: a headline and its body inside one tinted
+// container. Drawing each line in its own container would make one safety
+// statement look like two. The shipped intake-decline state was rendering in
+// ordinary body weight, so the one composition §5.2 makes structural was the
+// quietest thing on the card.
 describe('the safety register renders as one block, not as body text', () => {
-  const refusal = { refusedFeedings: 19, ratedFeedings: 22, days: 11 };
-
-  it('draws the refusal headline and its body inside ONE tinted container', () => {
+  it('draws the decline headline and its body inside ONE tinted container', () => {
     const tree = render(
       <DietTrialCard
         model={resolveTrialCard(input({
-          species: 'cat', petName: 'Mochi', trialDietRefusal: refusal,
+          species: 'cat',
+          petName: 'Mochi',
+          intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
         }))}
       />,
     );
-    // ONE block. Two containers would make one safety statement look like two.
     expect(tree.getAllByTestId('trial-flag')).toHaveLength(1);
     expect(tree.getAllByTestId('trial-line-flag')).toHaveLength(2);
     const tint = StyleSheet.flatten(tree.getByTestId('trial-flag').props.style) as {
@@ -264,57 +264,12 @@ describe('the safety register renders as one block, not as body text', () => {
     const tree = render(
       <DietTrialCard
         model={resolveTrialCard(input({
-          species: 'cat', petName: 'Mochi', trialDietRefusal: refusal,
-        }))}
-      />,
-    );
-    expect(tree.getByText(/19 feedings of the 22 trial-diet feedings/)).toBeTruthy();
-  });
-
-  it('gives the decline register the same treatment as the refusal one', () => {
-    const tree = render(
-      <DietTrialCard
-        model={resolveTrialCard(input({
           species: 'cat',
           petName: 'Mochi',
           intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
         }))}
       />,
     );
-    // The shipped decline state was drawing in ordinary body weight, so the more
-    // urgent of the two sibling registers looked the quieter.
-    expect(tree.getAllByTestId('trial-flag')).toHaveLength(1);
-    const tint = StyleSheet.flatten(tree.getByTestId('trial-flag').props.style) as {
-      backgroundColor?: string;
-    };
-    expect(tint.backgroundColor).toBe(theme.colorEventSymptomLight);
-  });
-
-  it('draws the teach line quietly, never in the safety colour', () => {
-    const tree = render(
-      <DietTrialCard
-        model={resolveTrialCard(input({ intakeRating: { rated: 1, feedings: 12, primaryRated: 1, primaryFeedings: 12 } }))}
-      />,
-    );
-    expect(tree.queryByTestId('trial-flag')).toBeNull();
-    const quiet = StyleSheet.flatten(tree.getByTestId('trial-teach').props.style) as {
-      backgroundColor?: string;
-    };
-    expect(quiet.backgroundColor).toBe(theme.colorSurfaceSubtle);
-    expect(quiet.backgroundColor).not.toBe(theme.colorEventSymptomLight);
-  });
-
-  it('draws the refusal state’s way out once a handler exists', () => {
-    const onManage = jest.fn();
-    const tree = render(
-      <DietTrialCard
-        model={resolveTrialCard(input({
-          species: 'cat', petName: 'Mochi', trialDietRefusal: refusal,
-        }))}
-        actions={{ trial_manage: onManage }}
-      />,
-    );
-    fireEvent.press(tree.getByTestId('trial-action-trial_manage'));
-    expect(onManage).toHaveBeenCalledTimes(1);
+    expect(tree.getByText(/left most of her food for 3 days/)).toBeTruthy();
   });
 });

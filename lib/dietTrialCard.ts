@@ -41,23 +41,30 @@
 // not run, `exposures` is null and the adherence sentence simply does not
 // render — silence, never an all-clear (the same asymmetry as B-351 D10).
 //
-// ── B-533 (round 5): THE VIABILITY REGISTER ──────────────────────────────────
-// Five disclosure channels were computed by PR 5 and one reached a surface. The
-// three this file gained are `trialDietRefusal` (the diet itself going
-// unfinished — state `trial_refusal`, R1), `intakeRating` (what makes that state
-// REACHABLE, R1b, since the refusal lane can only see rated feedings), and
-// `mayStateRecordClean` (the gate on the one affirmative sentence this file says).
+// ── B-533 PR A: THE WIRING AND THE CLAIM GATE ────────────────────────────────
+// PR 5 computed five disclosure channels and one reached a surface. This half
+// connects the ones that make the EXISTING states honest: `exposures` and
+// `belowCoverageFloor` (previously hard-nulled, so states 3/4 were unreachable),
+// `exposures.mayStateRecordClean` (the composite gate the vet report has always
+// asked and the card never did), `allowedSetUnavailable`, and the §10 S3
+// untracked head.
 //
-// The ordering rule across all of them, stated once: the CLINICAL lane
-// (`intakeDeclineHeadline`) outranks the VIABILITY lane (`trialDietRefusal`),
-// which outranks the record. Never two safety headlines stacked — that makes
-// neither of them the headline.
+// THE TWO NEW OWNER-FACING REGISTERS — the R1 refusal state and the R1b
+// intake-rating teach line — are deliberately NOT here. Five adversarial rounds
+// put essentially every one of their 39 findings in those two surfaces while the
+// wiring below held from round 1, so they ship separately after a Dr. Chen pass
+// on the stand-down semantics and a mock round for the disclosure lines those
+// rounds forced into existence.
+//
+// The rule they share, and the one this file now enforces in a single place
+// (`pushExposureFloor`) with a property test over every state:
+//
+//   WITHHOLD THE READING when the record cannot support it.
+//   NEVER WITHHOLD THE FLOOR — the off-diet count is owed in every state.
+//
 import { getDietTrialProgress } from './analytics';
 import {
-  trialViabilityHeadline,
-  trialViabilityNote,
   type TrialDietRefusal,
-  type TrialIntakeRating,
 } from './dietTrial';
 import { milestoneNote, trialDecisionChoices, type TrialOutcome } from './dietTrialCompletion';
 import { localDayIndexOf } from './utils';
@@ -168,25 +175,6 @@ export interface TrialCardInput {
   exposures?: TrialExposureFacts | null;
   /** §5.2 — a live intake-decline flag REPLACES the adherence line entirely. */
   intakeDeclineHeadline?: string | null;
-  /** §6.5's second, NON-clinical path (R1): the trial diet itself is going
-   *  unfinished. Distinct from `intakeDeclineHeadline`, which is the clinical
-   *  lane and outranks it on every surface that renders both — a relative-decline
-   *  detector cannot see a diet refused from day 1, which is the patient this
-   *  exists for. Presence-only: null is not evidence the pet is eating. */
-  trialDietRefusal?: TrialDietRefusal | null;
-  /**
-   * §5.6 — a free-choice bowl OVERLAPPED the window but is not in force now.
-   *
-   * A bowl emits no meal events by construction, so the days it was down have no
-   * meal-by-meal record and never can have. `freeFed` (present tense) correctly
-   * stops describing an owner's logged meals as bowl top-ups once the bowl is
-   * gone — but the coverage RATIO stays unfair for those days forever, and
-   * splitting the two predicates without this flag routed the owner who
-   * RECORDED the removal straight into "There isn't enough logged yet for your
-   * vet to read much into this", with nothing on the card mentioning the bowl.
-   * Recording the truth is not a thing this app may punish.
-   */
-  freeFedOverlap?: boolean;
   /**
    * The WHOLE-RANGE refusal (`lib/dietTrial.TrialFacts.rangeRefusal`) — a
    * history, where `trialDietRefusal` is a now-fact.
@@ -205,32 +193,15 @@ export interface TrialCardInput {
    * ("needs a call today"), and a six-week-old refusal is not news today.
    */
   rangeRefusal?: TrialDietRefusal | null;
-  /** `lib/dietTrial.TrialFacts.recentFinishedFeedings` — trial-diet feedings
-   *  inside the recency window that were FINISHED. Zero means no evidence the
-   *  diet is being eaten, which is not evidence of recovery; see `liveRefusal`. */
-  recentFinishedFeedings?: number;
-  /** `lib/dietTrial.TrialFacts.rangeRefusalSpansEpisodes` — gates the live
-   *  register on the range fact, which carries no episode guard of its own. */
-  rangeRefusalSpansEpisodes?: boolean;
-  /** R1b — the rated share of the meal record, which is what makes the refusal
-   *  register above reachable at all. */
-  intakeRating?: TrialIntakeRating | null;
   /**
    * `lib/dietTrial.TrialFacts.allowedSetUnavailable` — the trial has nothing
-   * usable to define the diet with, so "off-diet" is not a measurement.
+   * usable to define the diet with, so "off-diet" stops being a measurement.
    *
-   * IT IS ITS OWN INPUT AND NOT A CASE OF `mayStateRecordClean`, because the
-   * first cut wired it only into that gate and the gate is UNREACHABLE in this
-   * state: with an empty permit set every feeding falls to rung 3, so `offDiet`
-   * equals the total, the `offDiet <= 0` branch never runs, and the card told a
-   * fully compliant owner "0 matched, 40 did not" — with a drill-in listing her
-   * own prescription — while the report withheld the same reading.
-   *
-   * THE DISTINCTION FROM §5.2's FLOOR RULE, which otherwise forbids withholding a
-   * count: an off-diet tally here is not an under-estimate of a real finding, it
-   * is an ARTEFACT of a missing comparator. The deleted-food-row case (twelve
-   * genuine exposures beside one unclassifiable feeding) is a floor and stays;
-   * "40 did not match" against an empty allowed list measures nothing at all.
+   * IT IS ITS OWN INPUT AND NOT A CASE OF `mayStateRecordClean`: that gate lives
+   * on the `offDiet <= 0` branch, which an unusable permit set can never reach
+   * (every feeding falls to rung 3, so `offDiet` equals the total). Wiring it
+   * only into the gate left it unreachable in the one state it was added for, and
+   * the card went on telling a fully compliant owner "0 matched, 40 did not".
    */
   allowedSetUnavailable?: boolean;
   /** §10 S3 — days between the trial's start and the first logged feeding. The
@@ -270,8 +241,7 @@ export type TrialCardState =
   | 'completed'       // 7a
   | 'abandoned'       // 7b
   | 'intake_decline'  // 8  — replacement
-  | 'free_fed'        // 9  — replacement
-  | 'trial_refusal';  // 10 — replacement (R1, mock round 5)
+  | 'free_fed';       // 9  — replacement
 
 /** Line roles, so a test can assert a literal string AT its role rather than by
  *  index, and so the view never has to infer emphasis from position.
@@ -647,77 +617,6 @@ function activeCard(
     };
   }
 
-  // ── Replacement (10) — the trial diet itself is going unfinished (R1, mock
-  // round 5). Checked immediately after the clinical decline it defers to, and
-  // for the same structural reason: while it is live this function is INCAPABLE
-  // of returning an adherence line, because it returns here.
-  //
-  // THIS IS THE PATIENT `detectIntakeDecline` CANNOT SEE. That detector needs a
-  // baseline to decline FROM, so a diet refused from day 1 is uniformly low
-  // rather than declining and never fires it — and the chronic case decays INTO
-  // the clean case, so the card upgrades from safety to "all matched" exactly as
-  // the anorexia becomes chronic. `trialDietRefusal` was built for this in PR 5
-  // and, until now, nothing consumed it: the pre-ship review's worst client-side
-  // finding.
-  //
-  // FIRES ON LOGGED EVIDENCE ONLY (R1a) — the floors live in `lib/dietTrial.ts`
-  // (≥3 rated feedings, ≥2 refused days, ≥50% share) and mean an owner who is not
-  // rating intake can never be told her cat isn't eating. Absence never alarms;
-  // that is G2's two-sidedness, and it is why `pushTeachLine` exists.
-  if (liveRefusal(input)) {
-    const lines: TrialCardLine[] = [];
-    pushRefusalLines(lines, input);
-    // THE OFF-DIET COUNT SURVIVES THE REGISTER. The first cut of this branch
-    // emitted the two flag lines and nothing else, which quietly deleted a real
-    // finding: an owner with twelve logged off-diet exposures who entered the
-    // refusal state lost that floor from the surface entirely. §5.2 rules the
-    // exposure count a floor and the floor may only ever move in the
-    // disclose-more direction — withholding it is precisely the instrument this
-    // file's own header calls the wrong one.
-    //
-    // What is replaced is the ADHERENCE reading (coverage, and any statement
-    // about what matched), because a diet that isn't being eaten cannot be read
-    // as one that was followed. A count of what went in besides it is a different
-    // fact, and the vet wants it. The terminal branch (`pushRefusalWithheld`) has
-    // always kept its counts for the same reason; the live branch now matches.
-    pushExposureFloor(lines, input, { lead: 'separately' });
-    // §5.6 gates the CLAIM, and an off-diet count in a multi-pet household is
-    // exactly the claim it gates — it was attached to three states and missing
-    // from both safety registers.
-    pushScopeCaveat(lines, input);
-    return {
-      ...base,
-      state: 'trial_refusal',
-      dayLine: dayLineFor(progress, overrunDays),
-      dayLineRole: 'meta',
-      windowLine: windowLineFor(endIndex, overrunDays),
-      lines,
-      // Same argument as the decline branch one below: at or past the window a
-      // bar pinned at 100% is completion vocabulary drawn in pixels, and drawing
-      // it over a diet that isn't being eaten is the worst place in the app for
-      // it. Mid-trial it still carries real day progress, so it stays.
-      progressFraction: overrunDays >= 0 ? null : progress.fraction,
-      // THE WAY OUT IS THE AFFORDANCE. Unlike the decline state — where the
-      // answer is a phone call and the trial is beside the point — the action
-      // this state actually implies is changing or ending the trial, which is a
-      // decision the owner takes with their vet and then records here. The
-      // milestone stays reachable at the window for the same reason it does one
-      // branch down: a trial with no ending reads to the vet as one still going.
-      actions: [
-        { id: 'trial_manage', label: 'Change or end the trial', emphasis: 'secondary' },
-        // The drill-in survives alongside the count, for the same reason the
-        // count does — a flag the owner cannot interrogate is an unfalsifiable
-        // accusation (§6.3).
-        ...((input.exposures?.offDiet ?? 0) > 0
-          ? ([{ id: 'view_exposures', label: 'Outside the trial diet', emphasis: 'link' }] as const)
-          : []),
-        ...(overrunDays >= 0
-          ? ([{ id: 'milestone', label: 'Tell Culprit what’s next', emphasis: 'link' }] as const)
-          : []),
-      ],
-    };
-  }
-
   // ── State 5 — the milestone (PR 6, §4.3). Day counter has REACHED the target
   // exactly. Persistent STATE, not a push, so Principle 4 is untouched — and it
   // never expires: the owner who ignores it lands in state 6, which carries the
@@ -877,13 +776,11 @@ function activeCard(
     // bowl and 30 genuinely missing days got a `clean` card while the vet report
     // printed `does_not_support` on the same record. The state stays; the bowl is
     // named beneath it, so the lead is true and the reason is visible.
-    pushPastBowlCaveat(lines, input);
     pushUntrackedHead(lines, input);
     pushScopeCaveat(lines, input);
     // The sub-floor card is the one that gets MORE, not less (Jordan's
     // constraint), and an owner whose record is too thin to read is the owner the
     // rating tap helps most.
-    pushTeachLine(lines, input);
     return {
       ...base,
       state,
@@ -905,7 +802,6 @@ function activeCard(
   // decides whether they finish six weeks); a teaching aside underneath it
   // competes for the same slot and dilutes the one message that state exists for.
   // Every other state in this body has that slot free.
-  if (state !== 'exposures') pushTeachLine(lines, input);
 
   if (state === 'overrun') {
     // §4.2 state 6: "Day 61 — 5 days past", NEVER "Day 61 of 56" (a PR 7
@@ -984,67 +880,6 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
 }
 
 /**
- * WHICH REFUSAL FACT THE LIVE CARD FIRES ON — and why it is not simply the
- * now-fact.
- *
- * `trialDietRefusal` is recency-bounded, so an owner who documented 42 refusals
- * and then stopped tapping intake empties that window and the register VANISHES:
- * the card returns to a clean two-fact state, and the Home strip to a tidy
- * coverage line, over a cat still being offered the diet and still refusing it.
- * That is exactly the "chronic case decays into the clean case" failure state 10
- * exists to prevent, reached through the rating door rather than the baseline
- * one — and on the feline-anorexia patient B-494 was ruled blocking for.
- *
- * R1a's rule is that absence of ratings must never ALARM. It does not license
- * absence of ratings CANCELLING an alarm already earned by logged evidence,
- * which is reassurance-on-absence and forbidden outright.
- *
- * So the register also fires on the RANGE fact when the recency window holds no
- * rated feedings at all — no new evidence, so nothing has been shown to have
- * changed. It deliberately does NOT fire when that window holds ratings that
- * were finished: that is real evidence the diet is now being eaten, the
- * historical refusal is genuinely history, and the terminal cards are where it
- * belongs.
- */
-function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
-  if (input.trialDietRefusal) return input.trialDietRefusal;
-  // FINISHED feedings stand it down, not merely rated ones — two more logged
-  // refusals must never cancel a register that fired on refusals. And the range
-  // fact carries no episode guard, so one midnight-straddling bout may not fire a
-  // present-tense "needs a call today" for the rest of the trial.
-  if (
-    input.rangeRefusal &&
-    (input.recentFinishedFeedings ?? 0) === 0 &&
-    input.rangeRefusalSpansEpisodes === true
-  ) {
-    return input.rangeRefusal;
-  }
-  return null;
-}
-
-/**
- * §6.5's second path, R1's card state: the trial diet itself is going unfinished.
- *
- * Ordered BELOW `pushDeclineLines` everywhere both can fire, and that order is a
- * rule rather than a preference: `detectIntakeDecline` owns the clinical lane and
- * this one is explicitly non-clinical (§6.5 — "without softening the first"). Two
- * safety headlines stacked would also make neither the headline.
- *
- * Like the decline, it REPLACES the record lines — a diet that wasn't eaten
- * cannot be read as one that was followed, which is the same rule state 7b has
- * enforced since round 1b, applied to the live case.
- */
-function pushRefusalLines(lines: TrialCardLine[], input: TrialCardInput): void {
-  const refusal = liveRefusal(input);
-  if (!refusal) return;
-  lines.push({ role: 'flag', text: trialViabilityHeadline(refusal) });
-  lines.push({
-    role: 'flag',
-    text: trialViabilityNote(input.petName, input.species ?? 'other'),
-  });
-}
-
-/**
  * ── THE ONE PLACE THE FLOOR RULE IS ENFORCED ─────────────────────────────────
  *
  * Four rounds of adversarial review found the same defect in four different
@@ -1090,51 +925,6 @@ function pushExposureFloor(
     text: stem + (input.allowedSetUnavailable ? '' : floorSuffix(ex.offDiet)),
   });
   pushUnmatchedCaveat(lines, input);
-}
-
-/**
- * The unmatched-everything caveat — DISCLOSURE, not suppression.
- *
- * ── WHY THE PREVIOUS ANSWER WAS WRONG IN PRINCIPLE ───────────────────────────
- *
- * When nothing matches the recorded food list, the first fix REPLACED the
- * exposure reading with "No allowed-food list is recorded for this trial yet".
- * Three things were wrong with that, all found by executing it:
- *
- *   • IT DELETED A REAL FINDING, which is the one instrument §5.2 forbids and
- *     the one this file's own header calls the wrong tool. An owner genuinely
- *     feeding the old kibble twice a day produces exactly the same input as a
- *     cold cache — so the suppression removed a true count as readily as a false
- *     one.
- *   • IT WAS DISCONTINUOUS. The reconciliation floor fires at ten feedings, so
- *     the same record showed an accusation at nine and silence at ten: MORE
- *     evidence of non-adherence bought LESS disclosure.
- *   • IT WAS FALSE in the disjunct that usually triggers it. A stale
- *     `food_item_id` or a re-photographed bag means a list IS recorded — and the
- *     sentence rendered two lines under the card's own `foodLabel`, naming the
- *     very food it claimed was not on file.
- *
- * So the count stays, the drill-in stays, and what is added is the one thing the
- * app actually knows: that nothing matched, and therefore which DIRECTION the
- * number is wrong in if the list is stale. Naming the direction is what turns a
- * tally into a disclosure — and it is honest under both readings, because it
- * does not guess which one is true.
- */
-function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
-  // Only when the bowl is GONE — while it is down, the free-fed state owns the
-  // whole card and says this in its own lead.
-  if (!input.freeFedOverlap || input.freeFed) return;
-  lines.push({
-    role: 'qualifier',
-    // IT MAY NOT EXCULPATE WHAT IT CANNOT BOUND. The first draft closed with
-    // "and aren't a gap in what you logged", which read as a blanket excuse for
-    // the whole shortfall — on the executed fixture three bowl days were being
-    // offered as the explanation for thirty missing ones. This names what the
-    // bowl accounts for and claims nothing about the rest.
-    text:
-      `For part of this trial ${input.petName} had a bowl that was topped up, and those ` +
-      'days can’t have a meal-by-meal count.',
-  });
 }
 
 function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
@@ -1212,60 +1002,6 @@ function pushUntrackedHead(lines: TrialCardLine[], input: TrialCardInput): void 
   });
 }
 
-/**
- * R1b — the line that teaches the intake tap, and the reason the register above
- * is reachable at all.
- *
- * IT FIRES WHEN NOTHING IS WRONG, which is the entire design: the refusal lane
- * can only see RATED feedings (R1a — an owner who isn't rating must never be told
- * her cat isn't eating), so an owner who never learns the tap exists has a trial
- * whose viability the app is structurally blind to. Teaching at that moment costs
- * one warm sentence; teaching after the fact costs the finding.
- *
- * Every word is about the RECORD, never the person (§6.9) and never the animal —
- * `pm-feature-review` would rightly fail a line that made an owner on a perfectly
- * fine day wonder what was wrong with her cat.
- */
-function pushTeachLine(lines: TrialCardLine[], input: TrialCardInput): void {
-  const rating = input.intakeRating;
-  if (!rating) return;
-  // ASK THE NARROW QUESTION WHEN THERE IS A NARROW POPULATION TO ASK IT OF.
-  //
-  // The refusal lane reads `primary_diet` feedings only, so that is the
-  // population whose rated share decides whether the lane can see anything. An
-  // earlier cut asked only the wide question and the adversarial pass broke it in
-  // one step: an owner logging two unrated bowls of the prescribed diet and three
-  // rated permitted toppers a day has a 60% rated share overall and 0% where it
-  // counts — so the teach line went silent on exactly the record whose viability
-  // was unknowable, which is the opposite of its job.
-  //
-  // The wide population is the FALLBACK, for when identity has missed and there
-  // are no primary-diet feedings to measure (an un-hydrated allowed set, a
-  // re-photographed bag). Silence there would be just as wrong, and the copy is
-  // honest under either reading because it speaks about the meal record.
-  const narrow = rating.primaryFeedings >= INTAKE_RATING_TEACH_MIN_FEEDINGS;
-  const [rated, feedings] = narrow
-    ? [rating.primaryRated, rating.primaryFeedings]
-    : [rating.rated, rating.feedings];
-  if (feedings < INTAKE_RATING_TEACH_MIN_FEEDINGS) return;
-  if (rated / feedings >= INTAKE_RATING_TEACH_SHARE) return;
-  // THE SENTENCE HAS TO NAME THE POPULATION IT FIRED ON. One string denominated
-  // on the whole meal record, triggered by the narrow one, is false in exactly
-  // the case the narrow trigger exists for: the owner logging unrated bowls of
-  // the prescribed diet beside rated toppers has 96% of her logged meals rated,
-  // and "most of Mochi's logged meals don't yet say how much was eaten" reads
-  // back at her as a wrong statement about her own logging (§6.9).
-  lines.push({
-    role: 'teach',
-    text: narrow
-      ? `One tap makes these readable. Most of ${input.petName}’s logged meals of the ` +
-        'trial diet don’t yet say how much was eaten, and on a diet trial that’s the ' +
-        'part your vet reads.'
-      : `One tap makes these readable. Most of ${input.petName}’s logged meals don’t ` +
-        'yet say how much was eaten, and on a diet trial that’s the part your vet reads.',
-  });
-}
-
 function dayLineFor(
   progress: NonNullable<ReturnType<typeof getDietTrialProgress>>,
   overrunDays: number,
@@ -1300,7 +1036,6 @@ function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
         (ex.offDiet > 0 && !input.allowedSetUnavailable ? floorSuffix(ex.offDiet) : ''),
     });
     pushUnmatchedCaveat(lines, input);
-    pushPastBowlCaveat(lines, input);
     pushUntrackedHead(lines, input);
     pushScopeCaveat(lines, input);
     return;
@@ -1409,7 +1144,7 @@ function completedCard(
   // the owner CALLED a refusal and not the one the record shows was one.
   if (input.intakeDeclineHeadline) {
     pushDeclineLines(lines, input);
-  } else if (input.rangeRefusal ?? input.trialDietRefusal) {
+  } else if (input.rangeRefusal) {
     // `rangeRefusal ?? trialDietRefusal` — the same precedence
     // `generate-report/render.ts` uses. A finished trial is a HISTORY, so the
     // recency-windowed fact is the wrong one to branch on here.
@@ -1603,7 +1338,7 @@ function abandonedCard(
         'diet, not a different plan.',
     });
     pushRefusalWithheld(lines, input, dayCount);
-  } else if (input.rangeRefusal ?? input.trialDietRefusal) {
+  } else if (input.rangeRefusal) {
     // R1 — the same withholding, reached from the RECORD rather than from the
     // stored reason, and off the RANGE fact for the same reason `completedCard`
     // uses it: this card is a history. An owner who stopped early for cost or difficulty over a
@@ -1676,7 +1411,7 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // one thing it could do wrong here, which is render a tidy coverage line as if
   // the trial were proceeding normally. Silence on Home, the register one tap
   // away; never a reassuring summary of a trial the record says isn't running.
-  if (input.intakeDeclineHeadline || liveRefusal(input)) {
+  if (input.intakeDeclineHeadline) {
     return { header, line: null, progressFraction: progress.fraction };
   }
 
