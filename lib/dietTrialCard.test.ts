@@ -2104,7 +2104,7 @@ describe('the composition layer (B-559)', () => {
     (_name, base) => {
       const input: TrialCardInput = { ...base, otherPetNames: ['Rex'], exposures: FORCED };
       const model = resolveTrialCard(input);
-      const { state, disclosures } = planTrialCard(input);
+      const { state, register, disclosures } = planTrialCard(input);
       const terminal = state === 'completed' || state === 'abandoned';
       // `active_only` is the one preserved asymmetry: the live decline card gates
       // its floor line with the household caveat and the two terminal decline
@@ -2112,9 +2112,15 @@ describe('the composition layer (B-559)', () => {
       // decision someone can overturn, which is the only thing wrong with it.
       const allowed = disclosures.scope === 'always'
         || (disclosures.scope === 'active_only' && !terminal);
-      // It gates a CLAIM: with nothing above it there is nothing to gate.
-      const hasFact = model.lines.some((l) => l.role === 'fact');
-      expect(model.lines.some((l) => l.role === 'caveat')).toBe(allowed && hasFact);
+      // It gates a CLAIM: with nothing above it there is nothing to gate. That
+      // second condition is PINNED rather than read off the model under test —
+      // `hasFact = model.lines.some(...)` was an oracle derived from its own
+      // subject, so a defect deleting the fact lines AND the caveat together
+      // degenerated to `false === false` (`adversarial-reviewer`). With the
+      // exposures forced above, every register except `none` owes at least one
+      // fact line, so that is the assertion.
+      expect(model.lines.some((l) => l.role === 'fact')).toBe(register !== 'none');
+      expect(model.lines.some((l) => l.role === 'caveat')).toBe(allowed && register !== 'none');
     });
 
   // ── The two cells a wrong value would make a clinical defect ──────────────
