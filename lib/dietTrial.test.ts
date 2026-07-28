@@ -1869,14 +1869,14 @@ describe('B-530 — the copy never names a diet the app could not identify', () 
   });
 });
 
-// ── B-576 — the two residuals this fallback does NOT close ───────────────────
+// ── B-579 — the two residuals this fallback does NOT close ───────────────────
 //
 // Pinned as tests rather than left as prose, because the failure mode of a
 // documented limit is that a later reader assumes coverage. Both are UNDER-fire and
 // neither is a regression (the shipped behaviour in both is silence), and both have
 // one root cause — food identity — which is B-529's PR. When that lands, these two
 // assertions are expected to FLIP, and the flip is the signal that they were fixed.
-describe('B-576 — known limits of the wide population (expected to flip with B-529)', () => {
+describe('B-579 — known limits of the wide population (expected to flip with B-529)', () => {
   const CAT = { ...TRIAL, species: 'cat' as const };
 
   it('KNOWN LIMIT — a PARTIAL identity miss keeps the narrow population, which cannot see it', () => {
