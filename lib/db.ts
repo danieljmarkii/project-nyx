@@ -471,6 +471,12 @@ export interface TimelineRow {
   food_brand: string | null;
   food_product_name: string | null;
   food_type: string | null;
+  // The food's physical form (B-568) — 'wet_canned' | 'dry_kibble' | … Carried on
+  // every meal row because brand + product alone do NOT identify a food: one
+  // prescription line stocked in both wet and dry shares a brand AND a product name,
+  // so without this the two render identically on every event surface. NOT NULL on
+  // food_items_cache, so it is null here only for a non-meal row or an unresolved join.
+  food_format: string | null;
   intake_rating: string | null;
   // Weight reading in kg (B-186 PR 4) — populated only for event_type='weight_check'
   // rows via the weight_checks LEFT JOIN, NULL otherwise. The value IS the event;
@@ -556,6 +562,7 @@ export async function getTimeline(
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            f.format AS food_format,
             wc.weight_kg AS weight_kg,
             ma.medication_item_id, ma.adherence, ma.how_given,
             ma.paired_event_id,
@@ -592,6 +599,7 @@ export async function getEventById(eventId: string): Promise<TimelineRow | null>
             e.source, e.deleted_at, e.created_at, e.updated_at,
             m.food_item_id, m.quantity, m.intake_rating,
             f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            f.format AS food_format,
             wc.weight_kg AS weight_kg,
             ma.medication_item_id, ma.adherence, ma.how_given,
             ma.paired_event_id,
@@ -952,6 +960,7 @@ export async function getMealForEvent(eventId: string): Promise<{
   food_brand: string | null;
   food_product_name: string | null;
   food_type: string | null;
+  food_format: string | null;
   intake_rating: string | null;
 } | null> {
   const db = getDb();
@@ -960,10 +969,12 @@ export async function getMealForEvent(eventId: string): Promise<{
     food_brand: string | null;
     food_product_name: string | null;
     food_type: string | null;
+    food_format: string | null;
     intake_rating: string | null;
   }>(
     `SELECT m.food_item_id, m.intake_rating,
-            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type
+            f.brand AS food_brand, f.product_name AS food_product_name, f.food_type,
+            f.format AS food_format
      FROM meals m
      LEFT JOIN food_items_cache f ON f.id = m.food_item_id
      WHERE m.event_id = ?`,

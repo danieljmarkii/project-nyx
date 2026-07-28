@@ -56,6 +56,9 @@ import {
   type IncidentPhoto,
 } from './report.ts'
 import { renderReport } from './render.ts'
+// B-568 — the same format-label map the app and report.ts render from (one copy,
+// two runtimes; a duplicate map here is the B-103 drift class).
+import { foodFormatWord } from '../../../lib/foodFormat.ts'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -230,7 +233,7 @@ type DietTrialFoodRow = {
   // list or it is not, and how the app buckets it changes neither answer.
   food_items: TrialFoodJoin | TrialFoodJoin[] | null
 }
-type TrialFoodJoin = FoodProteinCols & { brand: string; product_name: string }
+type TrialFoodJoin = FoodProteinCols & { brand: string; product_name: string; format: string | null }
 
 interface DietTrialRow {
   id: string
@@ -261,7 +264,7 @@ interface VetVisitRow {
   reason: string | null
 }
 
-type ArrangementFoodJoin = FoodProteinCols & { brand: string; product_name: string }
+type ArrangementFoodJoin = FoodProteinCols & { brand: string; product_name: string; format: string | null }
 interface ArrangementRow {
   id: string
   food_item_id: string
@@ -301,10 +304,23 @@ function num(v: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function foodLabel(fi: { brand: string; product_name: string } | null): string | null {
+/**
+ * "Brand Product (Form)" for a joined food row, or null when there is nothing to name.
+ *
+ * B-568 — the form belongs to the NAME. This labels the diet trial's own food and the
+ * standing feeding arrangements, and a prescription line stocked in both wet and dry
+ * shares brand AND product name — so without the form the report cannot say WHICH
+ * variant the trial is actually on, which is the first question §7 answers. Mirrors
+ * report.ts's mealFoodLabel so the two naming paths cannot drift apart.
+ */
+function foodLabel(
+  fi: { brand: string; product_name: string; format?: string | null } | null,
+): string | null {
   if (!fi) return null
-  const label = `${fi.brand} ${fi.product_name}`.trim()
-  return label.length > 0 ? label : null
+  const name = `${fi.brand} ${fi.product_name}`.trim()
+  const form = foodFormatWord(fi.format ?? null)
+  if (!name) return form ? form : null
+  return form ? `${name} (${form})` : name
 }
 
 /**
@@ -746,7 +762,7 @@ export async function generateReportForPet(
           // filtered in the embed: a food the owner REMOVED from the list must stop
           // permitting feedings, and `allowed_until` is not written on a delete.
           'diet_trial_foods(food_item_id, food_label, role, allowed_from, allowed_until, ' +
-          `food_items(${FOOD_PROTEIN_COLS}, brand, product_name))`,
+          `food_items(${FOOD_PROTEIN_COLS}, brand, product_name, format))`,
       )
       .is('diet_trial_foods.deleted_at', null)
       .eq('pet_id', petId),
@@ -869,7 +885,7 @@ export async function generateReportForPet(
     supabase
       .from('feeding_arrangements')
       .select(
-        `id, food_item_id, method, active_from, active_until, is_shared, food_items(${FOOD_PROTEIN_COLS}, brand, product_name)`,
+        `id, food_item_id, method, active_from, active_until, is_shared, food_items(${FOOD_PROTEIN_COLS}, brand, product_name, format)`,
       )
       .eq('pet_id', petId)
       .is('deleted_at', null),
