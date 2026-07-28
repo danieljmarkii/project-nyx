@@ -471,7 +471,7 @@ export interface TimelineRow {
   food_brand: string | null;
   food_product_name: string | null;
   food_type: string | null;
-  // The food's physical form (B-556) — 'wet_canned' | 'dry_kibble' | … Carried on
+  // The food's physical form (B-568) — 'wet_canned' | 'dry_kibble' | … Carried on
   // every meal row because brand + product alone do NOT identify a food: one
   // prescription line stocked in both wet and dry shares a brand AND a product name,
   // so without this the two render identically on every event surface. NOT NULL on

@@ -1,12 +1,12 @@
 import { FORMAT_LABEL, foodFormatTag, foodFormatWord } from './foodFormat';
 
-// B-556. The defect this module closes: "Royal Canin · Selected Protein PR" is ONE
+// B-568. The defect this module closes: "Royal Canin · Selected Protein PR" is ONE
 // brand and ONE product name stocked in BOTH wet and dry, so every event surface
 // rendered two genuinely different foods as the same string. These tests pin the
 // naming rule the five surfaces share.
 
 describe('foodFormatTag', () => {
-  it('names the two variants of one product distinguishably — the B-556 case', () => {
+  it('names the two variants of one product distinguishably — the B-568 case', () => {
     // The whole point: same brand, same product, different tag.
     expect(foodFormatTag('dry_kibble')).toBe('DRY');
     expect(foodFormatTag('wet_canned')).toBe('WET');

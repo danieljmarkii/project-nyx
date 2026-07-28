@@ -327,7 +327,7 @@ Deno.test('mapFeedingArrangementRows: label + protein from join, method + shared
   }])
   assert.equal(rows[0].method, 'free_choice')
   assert.equal(rows[0].isShared, false)
-  // B-556 — the standing arrangement names its FORM. A bowl of the dry and a bowl of
+  // B-568 — the standing arrangement names its FORM. A bowl of the dry and a bowl of
   // the wet of one product are different standing exposures; before this they were
   // one indistinguishable "RC Weight" line on the report.
   assert.equal(rows[0].foodLabel, 'RC Weight (Dry)')

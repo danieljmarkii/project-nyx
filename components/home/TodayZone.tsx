@@ -114,7 +114,7 @@ function EventStripRow({ event, showBorder }: { event: NyxEvent; showBorder: boo
     ? formatDrugLabel(event.drug_generic_name, event.drug_brand_name)
     : null;
 
-  // B-556 — the wet/dry variant. Today is the tightest of the three timeline surfaces:
+  // B-568 — the wet/dry variant. Today is the tightest of the three timeline surfaces:
   // it shows the product name ALONE (no brand), so two formats of one prescription line
   // were not merely hard to tell apart here, they rendered as the same string. Same
   // sibling-element treatment as EventRow — the name truncates, the tag holds.
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.weightMedium,
     color: theme.colorTextPrimary,
   },
-  // Row that pairs the food name with its B-556 variant tag. The name is flexShrink
+  // Row that pairs the food name with its B-568 variant tag. The name is flexShrink
   // (not flex:1) so the pair stays hugged together under the type label rather than
   // pushing the tag out to the strip edge, where it would read as a second column.
   eventSubLine: {

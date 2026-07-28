@@ -50,7 +50,7 @@ export interface DayEventDisplay {
   category: EventTintCategory;
   /** Primary line — the food/drug name where there is one, else the type label. */
   title: string;
-  /** B-556 — the meal's physical-form tag (DRY / WET / …), already uppercased, or null
+  /** B-568 — the meal's physical-form tag (DRY / WET / …), already uppercased, or null
    *  when there is nothing honest to add. Kept SEPARATE from `title` on purpose: the
    *  title truncates and the tag must not, so the renderer places it as a sibling. */
   formatTag: string | null;
@@ -96,7 +96,7 @@ export function describeDayEvent(row: TimelineRow): DayEventDisplay {
     // A treat-typed meal reads "Treat" (mirrors EventRow) when there's no food name.
     const mealLabel = row.food_type === 'treat' ? 'Treat' : 'Meal';
     title = food ?? mealLabel;
-    // B-556 — the wet/dry variant, so the drill-in can tell apart two rows of one
+    // B-568 — the wet/dry variant, so the drill-in can tell apart two rows of one
     // prescription line stocked in both. Suppressed against the same label EventRow
     // suppresses against, so the three timeline surfaces agree on when it is shown.
     formatTag = foodFormatTag(row.food_format, mealLabel);

@@ -671,7 +671,7 @@ export default function EventDetailScreen() {
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>FOOD</Text>
               {foodLabel.product ? <Text style={styles.foodProduct}>{foodLabel.product}</Text> : null}
-              {/* B-556 — BRAND · FORMAT, the same meta shape the Foods tab and the
+              {/* B-568 — BRAND · FORMAT, the same meta shape the Foods tab and the
                   picker tile use, so the detail screen names a food the way the library
                   does. Without the format this section could not distinguish two rows
                   of one prescription line stocked in both wet and dry. */}

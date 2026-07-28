@@ -87,7 +87,7 @@ import {
 // failure B-417 §5.3 documents — three contradictory off-diet predicates, one of
 // them already shipped in this file. One implementation, imported.
 import { offTrialProteins, resolveTargetProtein } from '../../../lib/trialProtein.ts'
-// B-556 — the SAME format-label map the app renders from (lib/foodFormat.ts is
+// B-568 — the SAME format-label map the app renders from (lib/foodFormat.ts is
 // dependency-free precisely so both runtimes share one copy; a second map here is the
 // B-103 drift class, where a new enum value reaches one surface and not the other).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
@@ -1619,7 +1619,7 @@ function kgToLbsNum(kg: number): number {
 /**
  * "Brand Product (Form)" for a food, or null when nothing is set — one home for the label rule.
  *
- * B-556 — the form is part of the NAME here, not decoration. Brand + product do not
+ * B-568 — the form is part of the NAME here, not decoration. Brand + product do not
  * identify a food: one prescription line stocked in both wet and dry shares both fields,
  * so without the form two genuinely different foods render as one string throughout the
  * report — the meal appendix, the off-diet exposure list, and the free-fed grouping. Under

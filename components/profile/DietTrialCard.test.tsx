@@ -17,6 +17,7 @@ import { StyleSheet } from 'react-native';
 import { DietTrialCard } from './DietTrialCard';
 import { resolveTrialCard, type TrialCardInput } from '../../lib/dietTrialCard';
 import { getDietTrialProgress } from '../../lib/analytics';
+import { theme } from '../../constants/theme';
 
 const FOOD = 'Zignature Kangaroo Formula';
 
@@ -36,7 +37,7 @@ function input(over: Partial<TrialCardInput> = {}): TrialCardInput {
     petName: 'Biscuit',
     species: 'dog',
     coverage: { daysLogged: 22, daysElapsed: 23 },
-    exposures: { totalFeedings: 68, offDiet: 0 },
+    exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 0 },
     ...over,
   };
 }
@@ -69,7 +70,7 @@ describe('the progress bar encodes DAY progress and nothing else', () => {
     const tree = render(<DietTrialCard model={resolveTrialCard(input({
       nowMs: localNoon(2026, 7, 4),
       coverage: { daysLogged: 2, daysElapsed: 2 },
-      exposures: { totalFeedings: 4, offDiet: 0 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 4, offDiet: 0 },
     }))} />);
     expect(fillWidth(tree)).toBeCloseTo((2 / 56) * 100, 6);
     expect(fillWidth(tree)).toBeLessThan(5);
@@ -80,11 +81,11 @@ describe('the progress bar encodes DAY progress and nothing else', () => {
   it('is unchanged when coverage and exposures change', () => {
     const perfect = render(<DietTrialCard model={resolveTrialCard(input({
       coverage: { daysLogged: 23, daysElapsed: 23 },
-      exposures: { totalFeedings: 68, offDiet: 0 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 0 },
     }))} />);
     const poor = render(<DietTrialCard model={resolveTrialCard(input({
       coverage: { daysLogged: 3, daysElapsed: 23 },
-      exposures: { totalFeedings: 9, offDiet: 7 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 9, offDiet: 7 },
     }))} />);
     expect(fillWidth(perfect)).toBeCloseTo(fillWidth(poor), 10);
   });
@@ -145,7 +146,7 @@ describe('what the card renders', () => {
 
   it('renders no percentage anywhere on screen', () => {
     const tree = render(<DietTrialCard model={resolveTrialCard(input({
-      exposures: { totalFeedings: 68, offDiet: 3 },
+      exposures: { mayStateRecordClean: true, totalFeedings: 68, offDiet: 3 },
     }))} />);
     expect(tree.queryByText(/%/)).toBeNull();
     expect(tree.queryByText(/compliance/i)).toBeNull();
@@ -228,5 +229,47 @@ describe('actions are drawn only when the surface can service them', () => {
     );
     // State 5 declares `milestone`; only a `milestone` handler may draw it.
     expect(tree.queryByText(/Tell Culprit what’s next/)).toBeNull();
+  });
+});
+
+// ── B-533 — the safety register renders as one block, not as body text ──────
+//
+// The `flag` role is a BLOCK: a headline and its body inside one tinted
+// container. Drawing each line in its own container would make one safety
+// statement look like two. The shipped intake-decline state was rendering in
+// ordinary body weight, so the one composition §5.2 makes structural was the
+// quietest thing on the card.
+describe('the safety register renders as one block, not as body text', () => {
+  it('draws the decline headline and its body inside ONE tinted container', () => {
+    const tree = render(
+      <DietTrialCard
+        model={resolveTrialCard(input({
+          species: 'cat',
+          petName: 'Mochi',
+          intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+        }))}
+      />,
+    );
+    expect(tree.getAllByTestId('trial-flag')).toHaveLength(1);
+    expect(tree.getAllByTestId('trial-line-flag')).toHaveLength(2);
+    const tint = StyleSheet.flatten(tree.getByTestId('trial-flag').props.style) as {
+      backgroundColor?: string;
+    };
+    expect(tint.backgroundColor).toBe(theme.colorEventSymptomLight);
+  });
+
+  // NO COLOUR-ONLY MEANING: the headline carries the fact in words, so the block
+  // survives greyscale and reaches a screen reader in the same order.
+  it('says the fact in words rather than in the tint', () => {
+    const tree = render(
+      <DietTrialCard
+        model={resolveTrialCard(input({
+          species: 'cat',
+          petName: 'Mochi',
+          intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+        }))}
+      />,
+    );
+    expect(tree.getByText(/left most of her food for 3 days/)).toBeTruthy();
   });
 });

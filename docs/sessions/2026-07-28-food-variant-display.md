@@ -1,4 +1,4 @@
-# Food variant display — naming a food's wet/dry form on every event surface (B-556)
+# Food variant display — naming a food's wet/dry form on every event surface (B-568)
 
 **Date:** 2026-07-28
 
@@ -108,7 +108,7 @@ collapsed naming (`Instinct Chicken` → `Instinct Chicken (Wet)`, `Instinct Tur
 New tests pin the rule rather than the rendering: full `FORMAT_LABEL` coverage so a
 future enum value cannot silently render blank, the unspecified/unknown degradation
 (no empty parenthetical), echo suppression, and — in both `dayEvents` and
-`generate-report` — the actual B-556 case of two forms of one product staying
+`generate-report` — the actual B-568 case of two forms of one product staying
 distinguishable.
 
 ## Not done

@@ -56,7 +56,7 @@ import {
   type IncidentPhoto,
 } from './report.ts'
 import { renderReport } from './render.ts'
-// B-556 — the same format-label map the app and report.ts render from (one copy,
+// B-568 — the same format-label map the app and report.ts render from (one copy,
 // two runtimes; a duplicate map here is the B-103 drift class).
 import { foodFormatWord } from '../../../lib/foodFormat.ts'
 
@@ -307,7 +307,7 @@ function num(v: number | string | null | undefined): number | null {
 /**
  * "Brand Product (Form)" for a joined food row, or null when there is nothing to name.
  *
- * B-556 — the form belongs to the NAME. This labels the diet trial's own food and the
+ * B-568 — the form belongs to the NAME. This labels the diet trial's own food and the
  * standing feeding arrangements, and a prescription line stocked in both wet and dry
  * shares brand AND product name — so without the form the report cannot say WHICH
  * variant the trial is actually on, which is the first question §7 answers. Mirrors

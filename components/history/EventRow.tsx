@@ -79,7 +79,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
     ? `${event.food_brand} · ${event.food_product_name}`
     : event.food_product_name ?? event.food_brand ?? null;
 
-  // B-556 — the wet/dry variant. Deliberately NOT appended to foodLabel: that string
+  // B-568 — the wet/dry variant. Deliberately NOT appended to foodLabel: that string
   // is flex:1 + numberOfLines={1}, so a suffix is the first thing clipped, and the
   // names long enough to clip are exactly the ones (a full prescription product line)
   // where the variant is the only thing telling two rows apart. As a sibling element
@@ -161,7 +161,7 @@ export function EventRow({ event, isExpanded, onToggle, onOpen, onEdit, onDelete
         {foodLabel ? (
           <View style={styles.foodLine}>
             <Text style={styles.foodName} numberOfLines={1}>{foodLabel}</Text>
-            {/* B-556 — the variant tag, between the truncating name and the intake
+            {/* B-568 — the variant tag, between the truncating name and the intake
                 badge. Quiet tertiary caps: it names a FACT about the food, so it must
                 not compete with the intake badge, which carries the safety read. */}
             {formatTag ? (
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     fontSize: theme.textXS,
     color: theme.colorTextTertiary,
   },
-  // The B-556 variant tag. Tracked uppercase tertiary — the same register the Foods
+  // The B-568 variant tag. Tracked uppercase tertiary — the same register the Foods
   // tab / picker already use for the format meta, so a food is named the same way
   // wherever it appears. flexShrink:0 is load-bearing: it makes the tag hold its
   // width so the flex:1 food name absorbs the truncation instead of the variant.

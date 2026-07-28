@@ -116,7 +116,7 @@ export default function LogModal() {
   const [selectedFoodId, setSelectedFoodId] = useState<string | null>(null);
   const [selectedFoodBrand, setSelectedFoodBrand] = useState<string | null>(null);
   const [selectedFoodProduct, setSelectedFoodProduct] = useState<string | null>(null);
-  // B-556 — the picked food's physical form, carried alongside brand/product so the
+  // B-568 — the picked food's physical form, carried alongside brand/product so the
   // optimistic row can name its variant before the next timeline read hydrates it.
   const [selectedFoodFormat, setSelectedFoodFormat] = useState<string | null>(null);
 

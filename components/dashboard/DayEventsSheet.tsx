@@ -119,7 +119,7 @@ export function DayEventsSheet({
                           {it.title}
                           {it.detail ? <Text style={styles.rowDetail}> · {it.detail}</Text> : null}
                         </Text>
-                        {/* B-556 — the wet/dry variant, as a sibling of the truncating
+                        {/* B-568 — the wet/dry variant, as a sibling of the truncating
                             title so it survives a long prescription product name. */}
                         {it.formatTag ? (
                           <Text style={styles.rowFormatTag} numberOfLines={1}>{it.formatTag}</Text>

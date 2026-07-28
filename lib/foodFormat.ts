@@ -24,7 +24,7 @@ export const FORMAT_LABEL: Record<string, string> = {
   // 'other' intentionally maps to '' — no chip when the format is unspecified.
 };
 
-// ── Event-surface format tag (B-556) ──────────────────────────────────────────
+// ── Event-surface format tag (B-568) ──────────────────────────────────────────
 // The library surfaces (FoodTile / FoodRow / ArchivedFoodRow) have always rendered
 // `BRAND · FORMAT`; the EVENT surfaces (Today, History, the calendar drill-in, the
 // completion card, the vet report) rendered brand + product only. That dropped the

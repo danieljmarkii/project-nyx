@@ -28,7 +28,7 @@ function row(over: Partial<TimelineRow>): TimelineRow {
 }
 
 describe('describeDayEvent (B-284 N5b drill-in labels)', () => {
-  // B-556 — the drill-in must be able to tell apart two rows of one product stocked in
+  // B-568 — the drill-in must be able to tell apart two rows of one product stocked in
   // both forms. Before this, "Royal Canin · Selected Protein PR" wet and dry rendered
   // as the same string on the same day.
   it('carries the wet/dry variant as a separate tag, not inside the truncating title', () => {

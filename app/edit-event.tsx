@@ -113,7 +113,7 @@ export default function EditEventModal() {
   const [currentFoodId, setCurrentFoodId] = useState<string | null>(null);
   const [currentFoodBrand, setCurrentFoodBrand] = useState<string | null>(null);
   const [currentFoodProduct, setCurrentFoodProduct] = useState<string | null>(null);
-  // B-556 — the selected food's form. This screen is where getting it wrong costs most:
+  // B-568 — the selected food's form. This screen is where getting it wrong costs most:
   // it shows what the meal is currently set to, right beside a "Change" affordance, and
   // brand + product alone cannot say whether that is the wet or the dry of one product.
   const [currentFoodFormat, setCurrentFoodFormat] = useState<string | null>(null);
