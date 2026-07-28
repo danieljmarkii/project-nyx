@@ -361,6 +361,15 @@ export async function loadDietTrialFacts(args: {
     intakeDeclineHeadline: decline,
     // The history, for the terminal cards — see the field's docstring.
     rangeRefusal: facts?.rangeRefusal ?? null,
+    // R1 — the now-fact and the two inputs the live register's stand-down reads.
+    // All three come off the module rather than being re-derived here: the whole
+    // reason `lib/dietTrial.ts` exists is that the client, `generate-report` and
+    // `ask` cannot be allowed to answer "is this diet being eaten" differently.
+    trialDietRefusal: facts?.trialDietRefusal ?? null,
+    recentFinishedFeedings: facts?.recentFinishedFeedings ?? 0,
+    rangeRefusalSpansEpisodes: facts?.rangeRefusalSpansEpisodes ?? false,
+    // R1b — the rated share, which is what makes the register above reachable.
+    intakeRating: facts?.intakeRating ?? null,
     // §5.6 free-fed. BOTH halves now come off the module: the trigger is its
     // `intakeNotDirectlyObserved` (the same flag `mayClaimAllMatched` keys on, so
     // the state and the withheld claim can never disagree), and the count is its
