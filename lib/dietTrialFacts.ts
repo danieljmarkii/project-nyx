@@ -333,8 +333,10 @@ export async function loadDietTrialFacts(args: {
     trialDietRefusal: facts?.trialDietRefusal ?? null,
     // The history, for the terminal cards — see the field's docstring.
     rangeRefusal: facts?.rangeRefusal ?? null,
-    // Zero means no NEW evidence — never evidence of recovery. See `liveRefusal`.
-    recentRatedFeedings: facts?.recentRatedFeedings ?? 0,
+    // Zero means no evidence the diet is being eaten — never evidence of
+    // recovery. See `liveRefusal`.
+    recentFinishedFeedings: facts?.recentFinishedFeedings ?? 0,
+    rangeRefusalSpansEpisodes: facts?.rangeRefusalSpansEpisodes ?? false,
     // R1b — what makes the register above reachable.
     intakeRating: facts?.intakeRating ?? null,
     // §10 S3 — disclosed, not dropped. The clip is right; the silence was not.

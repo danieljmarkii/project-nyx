@@ -205,10 +205,13 @@ export interface TrialCardInput {
    * ("needs a call today"), and a six-week-old refusal is not news today.
    */
   rangeRefusal?: TrialDietRefusal | null;
-  /** `lib/dietTrial.TrialFacts.recentRatedFeedings` — rated trial-diet feedings
-   *  inside the recency window. Zero means NO NEW EVIDENCE, which is not the same
-   *  as evidence of recovery; see `liveRefusal`. */
-  recentRatedFeedings?: number;
+  /** `lib/dietTrial.TrialFacts.recentFinishedFeedings` — trial-diet feedings
+   *  inside the recency window that were FINISHED. Zero means no evidence the
+   *  diet is being eaten, which is not evidence of recovery; see `liveRefusal`. */
+  recentFinishedFeedings?: number;
+  /** `lib/dietTrial.TrialFacts.rangeRefusalSpansEpisodes` — gates the live
+   *  register on the range fact, which carries no episode guard of its own. */
+  rangeRefusalSpansEpisodes?: boolean;
   /** R1b — the rated share of the meal record, which is what makes the refusal
    *  register above reachable at all. */
   intakeRating?: TrialIntakeRating | null;
@@ -479,6 +482,12 @@ function exposureLine(ex: TrialExposureFacts): string {
  * sentence renders, so they need no Dr. Chen ratification the way the coverage
  * floor and the refusal floors do.
  */
+/** Below this many wholly-unmatched feedings, "nothing matched" is not yet a
+ *  pattern — a trial can genuinely open with a couple of off-list meals. It is
+ *  deliberately far lower than `UNHYDRATED_SET_FLOOR`, because this only decides
+ *  whether a CAVEAT renders, never whether a count does. */
+export const UNMATCHED_CAVEAT_MIN_FEEDINGS = 3;
+
 export const INTAKE_RATING_TEACH_SHARE = 0.5;
 export const INTAKE_RATING_TEACH_MIN_FEEDINGS = 4;
 
@@ -595,6 +604,13 @@ function activeCard(
     // "today". The dog line is firm without borrowing a feline urgency.
     const lines: TrialCardLine[] = [];
     pushDeclineLines(lines, input);
+    // THE FLOOR SURVIVES THE SICKEST CARD TOO. This branch withheld the reading
+    // AND the count — on the one patient a vet is most likely to be reading about
+    // — while the sibling refusal register one branch up kept its floor. "A count
+    // the owner and the vet are entitled to in every state" was false in exactly
+    // the state where it matters most.
+    pushExposureFloor(lines, input, { lead: 'separately' });
+    pushScopeCaveat(lines, input);
     return {
       ...base,
       state: 'intake_decline',
@@ -665,6 +681,10 @@ function activeCard(
     // fact, and the vet wants it. The terminal branch (`pushRefusalWithheld`) has
     // always kept its counts for the same reason; the live branch now matches.
     pushExposureFloor(lines, input, { lead: 'separately' });
+    // §5.6 gates the CLAIM, and an off-diet count in a multi-pet household is
+    // exactly the claim it gates — it was attached to three states and missing
+    // from both safety registers.
+    pushScopeCaveat(lines, input);
     return {
       ...base,
       state: 'trial_refusal',
@@ -988,7 +1008,17 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
  */
 function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
   if (input.trialDietRefusal) return input.trialDietRefusal;
-  if (input.rangeRefusal && (input.recentRatedFeedings ?? 0) === 0) return input.rangeRefusal;
+  // FINISHED feedings stand it down, not merely rated ones — two more logged
+  // refusals must never cancel a register that fired on refusals. And the range
+  // fact carries no episode guard, so one midnight-straddling bout may not fire a
+  // present-tense "needs a call today" for the rest of the trial.
+  if (
+    input.rangeRefusal &&
+    (input.recentFinishedFeedings ?? 0) === 0 &&
+    input.rangeRefusalSpansEpisodes === true
+  ) {
+    return input.rangeRefusal;
+  }
   return null;
 }
 
@@ -1108,7 +1138,18 @@ function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void
 }
 
 function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
-  if (!input.allowedSetUnavailable) return;
+  const ex = input.exposures;
+  if (!ex || ex.totalFeedings <= 0) return;
+  // ONLY WHEN NOTHING MATCHED. "None of these matched" rendered one line under
+  // "60 feedings in total — 40 matched, 20 did not", because the caveat keyed on
+  // the flag and never on the count it was qualifying. A permitted topper is
+  // enough to produce that pair.
+  if (ex.offDiet !== ex.totalFeedings) return;
+  // AND WHENEVER NOTHING MATCHED, not only above the reconciliation floor. Below
+  // it the card was strictly MORE accusatory — the floor suffix asserting the
+  // true number is higher, with no caveat at all — which inverted the very
+  // discontinuity the floor was meant to smooth.
+  if (!input.allowedSetUnavailable && ex.offDiet < UNMATCHED_CAVEAT_MIN_FEEDINGS) return;
   lines.push({
     role: 'qualifier',
     // TWO-SIDED, and that is the correction. The first draft named only the
@@ -1119,10 +1160,19 @@ function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): voi
     // other IS guessing which is true. It also no longer says "worth a look
     // before your vet reads it": there is no route from this card to the food
     // list, and pointing at one that does not exist is worse than staying quiet.
+    // THE SECOND DISJUNCT IS ABOUT ADHERENCE, NOT INTAKE. "the trial diet hasn't
+    // been going in" is an INTAKE claim, and this is an adherence classifier with
+    // no intake input — on the fixture that found it, every one of those feedings
+    // was rated `all`, so the app held direct logged evidence the food WAS eaten
+    // and said the opposite. What the classifier can actually say is that the
+    // food being fed is not the food on the list.
+    //
+    // The route is the food list, which is the disjunct the owner can fix; the
+    // vet cannot repair a stale `food_item_id`.
     text:
       'None of these matched the food list recorded for this trial — either that list ' +
-      'is out of date, or the trial diet hasn’t been going in. Worth sorting out which ' +
-      'with your vet.',
+      'needs updating, or what’s being fed isn’t the trial diet. Worth checking the ' +
+      'list before your vet reads this.',
   });
 }
 

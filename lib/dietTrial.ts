@@ -875,6 +875,20 @@ export interface TrialFacts {
    */
   rangeRefusal: TrialDietRefusal | null;
   /**
+   * True when `rangeRefusal`'s refusals span more than one EPISODE.
+   *
+   * `trialDietRefusal` carries `REFUSAL_MIN_SPAN_MS` because "two distinct local
+   * days" is a calendar-boundary test, not an episode test — three refusals at
+   * 20:00, 22:00 and 00:00 are one four-hour bout that reads as two days.
+   * `rangeRefusal` drops that guard deliberately, which is right for a HISTORY
+   * and wrong the moment a live present-tense register reads it: one bout fired
+   * "needs a call today" for the next 36 days over a cat that ate throughout.
+   *
+   * So the span travels with the fact, and the live register requires it while
+   * the report (a history) continues to ignore it.
+   */
+  rangeRefusalSpansEpisodes: boolean;
+  /**
    * True when the trial has nothing usable to define the diet WITH, so every
    * rung-1 lookup necessarily misses and "off-diet" stops being a measurement.
    *
@@ -918,8 +932,16 @@ export interface TrialFacts {
    */
   intakeNotDirectlyObservedNow: boolean;
   /**
-   * Rated `primary_diet` feedings inside the RECENCY window — the denominator
-   * `trialDietRefusal` would have used had its floors cleared.
+   * `primary_diet` feedings inside the RECENCY window that were actually
+   * FINISHED — direct evidence the diet is being eaten now.
+   *
+   * FINISHED, NOT MERELY RATED, and the distinction is the whole point. The first
+   * cut counted every rating, so two MORE logged refusals inside the window stood
+   * the safety register down — more evidence of refusal bought less disclosure,
+   * and the register was present at 0 recent ratings, absent at 1–2, present
+   * again at 3+. A dead zone occupied by the refusing cat. The docstring claimed
+   * "ratings that were finished" while the code counted any; this is the code
+   * catching up to the rule.
    *
    * IT EXISTS TO STOP SILENCE CANCELLING AN ALARM. `trialDietRefusal` is
    * recency-bounded, so an owner who documents 42 refusals and then stops tapping
@@ -933,7 +955,7 @@ export interface TrialFacts {
    * is what lets a surface tell those two apart: no recent ratings means no new
    * evidence, not evidence of recovery.
    */
-  recentRatedFeedings: number;
+  recentFinishedFeedings: number;
   /** R1b — the rated share of the meal record. Null when there is nothing in
    *  range to have rated, which is not the same as "nothing is rated". */
   intakeRating: TrialIntakeRating | null;
@@ -1125,7 +1147,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     arrangementExposures: arrangementHits,
     trialDietRefusal: null,
     rangeRefusal: null,
-    recentRatedFeedings: 0,
+    recentFinishedFeedings: 0,
+    rangeRefusalSpansEpisodes: false,
     // Computed on the CONTEXT, so it is correct even on the early-return paths
     // below (an unparseable start date, a range that closed before it opened).
     // Those are exactly the degraded states where a surface must not assume the
@@ -1214,6 +1237,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   let ratedFeedings = 0;
   // R1b's counters, over the WIDER non-treat population — see `TrialIntakeRating`
   // for why they are not the refusal lane's own denominator.
+  let recentFinishedFeedings = 0;
+  const rangeRefusalStamps: number[] = [];
   let ratedMealFeedings = 0;
   let ratableFeedings = 0;
   let primaryRated = 0;
@@ -1286,6 +1311,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
         }
       }
 
+      if (finished === false) rangeRefusalStamps.push(Date.parse(feeding.occurredAt));
+      // Direct evidence the diet IS being eaten, inside the recency window.
+      if (day >= refusalWindowStart && finished === true) recentFinishedFeedings += 1;
+
       // The NOW-fact, bounded to the recency window.
       if (day >= refusalWindowStart && finished !== null) {
         ratedFeedings += 1;
@@ -1347,6 +1376,10 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
       ? { refusedFeedings, ratedFeedings, days: refusedDays.size }
       : null;
 
+  const rangeSpanMs =
+    rangeRefusalStamps.length > 1
+      ? Math.max(...rangeRefusalStamps) - Math.min(...rangeRefusalStamps)
+      : 0;
   // Same floors, no span guard — see `TrialFacts.rangeRefusal`.
   const rangeRefusal: TrialDietRefusal | null =
     rangeRated >= REFUSAL_MIN_RATED &&
@@ -1371,7 +1404,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     oralRoute,
     trialDietRefusal,
     rangeRefusal,
-    recentRatedFeedings: ratedFeedings,
+    recentFinishedFeedings,
+    rangeRefusalSpansEpisodes: rangeSpanMs >= REFUSAL_MIN_SPAN_MS,
     // Null, not `{ rated: 0, feedings: 0 }` — "nothing in range to have rated" and
     // "nothing rated" are different facts, and only the second one is worth
     // teaching about. A surface that saw a zeroed object would divide by zero and
