@@ -107,6 +107,7 @@ export function trialBlockFixture(
     contamination: [],
     trialDietRefusal: null,
     rangeRefusal: null,
+    rangeRefusalSpansEpisodes: false,
     stoppedReason: null,
     outcome: null,
     outcomeNotes: null,
@@ -1451,7 +1452,11 @@ Deno.test('appendix B — caption reconciles treats + human food; unknown-protei
     }),
   )
   const flat = html.replace(/\s+/g, ' ')
-  assert.ok(/3<\/span> off-diet exposures \(/.test(flat), 'caption carries a breakdown parenthetical')
+  // B-531/R2 — on a report with NO trial the caption names what the table lists (the
+  // treat/human-food heuristic) rather than asserting an "off-diet exposure" count, which
+  // is a verdict against a comparison that was never made: there is no diet to be off.
+  assert.ok(/3<\/span> treat or table-food feedings \(/.test(flat), 'caption carries a breakdown parenthetical')
+  assert.ok(!/off-diet exposures? \(/i.test(flat), 'the caption does not claim off-diet exposures with no trial')
   assert.ok(/2<\/span> treats/.test(flat) && /1<\/span> human-food feeding/.test(flat), 'treats + human food reconcile to the total')
   assert.ok(/with no recorded protein\)/.test(flat), 'unknown-protein feedings are disclosed in the tally')
   assert.ok(flat.includes('diet, exposures &amp; meds'), 'footer ampersand escaped exactly once')
@@ -1500,12 +1505,15 @@ function monitoringSnap(over: Partial<ReportSnapshot> = {}): ReportSnapshot {
   })
 }
 
-Deno.test('R2-2 — no-trial At-a-glance: since-onset + trajectory + off-diet tiles; the old score tiles are gone', () => {
+Deno.test('R2-2 — no-trial At-a-glance: since-onset + trajectory + treats tiles; the old score tiles are gone', () => {
   const html = renderReport(monitoringSnap())
   assert.ok(/since onset/i.test(html), 'episodes-since-onset tile')
   assert.ok(/46&nbsp;d/.test(html), 'onset-scoped denominator (not the 91-day window)')
   assert.ok(/first &rarr; last half/i.test(html), 'trajectory tile')
-  assert.ok(/Off-diet load/.test(html) && html.includes('>340</span>') && /treats/.test(html) && /distinct/.test(html) && /human food/.test(html), 'off-diet load tile leads with the treat load')
+  // B-531/R2 — the label names what the tile counts. It led "Off-diet load" on a report
+  // with no trial, importing a verdict from a comparison that was never made.
+  assert.ok(/Treats &amp; table food/.test(html) && html.includes('>340</span>') && /treats/.test(html) && /distinct/.test(html) && /table food/.test(html), 'the treats tile leads with the treat load')
+  assert.ok(!/Off-diet load/.test(html), 'no off-diet verdict on a no-trial report')
   // The misleading pre-round-2 tiles do not appear on the no-trial shape.
   assert.ok(!/Meals fully eaten \(rated meals only\)/.test(html), 'no "meals fully eaten" score on the no-trial shape')
 })

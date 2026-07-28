@@ -92,12 +92,12 @@ function activeInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
 // all before B-559 — which is why round 9's defect (the fact reaching three of
 // eleven active states, with four more never seeing it) was invisible to a list
 // whose name promises otherwise.
-const REFUSING_RANGE = { days: 19, ratedFeedings: 38, refusedFeedings: 38 };
+const REFUSING_RANGE = { days: 19, ratedFeedings: 38, refusedFeedings: 38, population: 'trial_diet' as const };
 
 /** R1's now-fact, at the canonical patient: a cat eleven days into refusing its
  *  hydrolysate. Distinct numbers from `REFUSING_RANGE` so a test asserting on the
  *  rendered string cannot pass off the wrong fact. */
-const REFUSING_NOW = { days: 11, ratedFeedings: 22, refusedFeedings: 19 };
+const REFUSING_NOW = { days: 11, ratedFeedings: 22, refusedFeedings: 19, population: 'trial_diet' as const };
 
 const everyState: Array<[string, TrialCardInput]> = [
   ['0 no trial', { ...activeInput(), trial: null }],
@@ -1727,7 +1727,7 @@ describe('B-533 PR A — round 8 regressions', () => {
     const qualified: Array<[string, Partial<TrialCardInput>]> = [
       ['a refusing cat', {
         exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 0 },
-        rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 },
+        rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38, population: 'trial_diet' as const },
       }],
       ['a live decline flag', {
         species: 'cat',
@@ -1767,7 +1767,7 @@ describe('B-533 PR A — round 8 regressions', () => {
       species: 'cat',
       petName: 'Mochi',
       exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 9 },
-      rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 },
+      rangeRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38, population: 'trial_diet' as const },
     });
 
     it('makes no clinical assertion off a claim-gate predicate', () => {
@@ -2354,7 +2354,7 @@ describe('state 10 — the trial-diet refusal register', () => {
   // needs a statement.
   it('states the total-refusal case as a statement, not as arithmetic', () => {
     expect(textOf(resolveTrialCard(refusing({
-      trialDietRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38 },
+      trialDietRefusal: { days: 19, ratedFeedings: 38, refusedFeedings: 38, population: 'trial_diet' as const },
     })), 'flag')[0]).toBe(
       'Every one of the 38 trial-diet feedings you’ve rated was left unfinished, ' +
       'across 19 days.',
@@ -2741,5 +2741,66 @@ describe('the terminal residual R1 leaves (B-570)', () => {
   // now-fact is its own withholding reason, keyed on the raw input.
   it('but Home is already silent about it', () => {
     expect(withholdingReasons(finishedButRefusing(false))).toContain('trial_diet_refusal');
+  });
+});
+
+// ── B-530 — the live register survives a food-identity miss ──────────────────
+//
+// The card is where R1's refusal register lives, so the re-photographed-bag
+// counterexample silences it here too: with no `primary_diet` match there is no
+// narrow population, the fact goes null, and the card falls back to a record state
+// that withholds its claim without ever saying WHY. `computeTrialFacts` now measures
+// the same floors over the meal record in that state, and the population travels with
+// the fact so both sentences widen together.
+describe('B-530 — the register speaks when the trial diet cannot be identified', () => {
+  const WIDE_REFUSAL = {
+    days: 21,
+    ratedFeedings: 42,
+    refusedFeedings: 42,
+    population: 'meal_record' as const,
+  };
+
+  it('renders the live refusal state, not a quiet record state', () => {
+    const model = resolveTrialCard(
+      activeInput({
+        species: 'cat',
+        petName: 'Miso',
+        allowedSetUnavailable: true,
+        trialDietRefusal: WIDE_REFUSAL,
+      }),
+    );
+    expect(model.state).toBe('trial_refusal');
+  });
+
+  it('never names the trial diet it could not identify', () => {
+    const text = resolveTrialCard(
+      activeInput({
+        species: 'cat',
+        petName: 'Miso',
+        allowedSetUnavailable: true,
+        trialDietRefusal: WIDE_REFUSAL,
+      }),
+    )
+      .lines.map((l) => l.text)
+      .join(' ');
+    expect(text).toMatch(/42 meals you’ve rated/);
+    expect(text).not.toMatch(/trial-diet feedings/);
+    // The gap is disclosed rather than papered over — and the escalation is unchanged,
+    // because "this animal is not finishing what is put down" does not depend on
+    // knowing which bag it came out of.
+    expect(text).toMatch(/can’t match these meals to the foods on this trial’s list/);
+    expect(text).toMatch(/needs a call today/);
+    // And it still never softens toward preference.
+    expect(text).not.toMatch(/picky|fussy|doesn’t like|to taste/i);
+  });
+
+  it('leaves the narrow, named finding alone when identity resolves', () => {
+    const text = resolveTrialCard(
+      activeInput({ species: 'cat', petName: 'Miso', trialDietRefusal: REFUSING_NOW }),
+    )
+      .lines.map((l) => l.text)
+      .join(' ');
+    expect(text).toMatch(/trial-diet feedings/);
+    expect(text).not.toMatch(/can’t match these meals/);
   });
 });
