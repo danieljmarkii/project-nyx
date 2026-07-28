@@ -202,7 +202,7 @@
 --     creates nor widens it — the purge is service-role and bypasses every policy
 --     in this file. Every legitimate food key is exactly two segments
 --     (`{foodId}/{n}-{slot}.jpg`), so the fix is the same whole-shape guard
---     `scopeVetDocumentPaths` already uses. Filed as B-579, alongside B-578.
+--     `scopeVetDocumentPaths` already uses. Filed as B-582, alongside B-578.
 --     Row-count checks the PM can run BEFORE applying — all measured live at
 --     authoring time (2026-07-28), none of them gating:
 --       select count(*) from storage.objects where bucket_id = 'nyx-food-photos';   -- 160
