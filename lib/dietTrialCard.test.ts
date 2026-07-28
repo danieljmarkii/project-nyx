@@ -22,13 +22,18 @@ jest.mock('./feedingArrangements', () => ({
 import {
   resolveTrialCard,
   resolveTrialStrip,
+  planTrialCard,
+  withholdingReasons,
   formatTrialDate,
   trialEndDayIndex,
   BLIND_SPOT_QUALIFIER,
+  TRIAL_CARD_DISCLOSURES,
   type TrialCardInput,
   type TrialCardModel,
   type TrialCardTrial,
   type TrialCardLineRole,
+  type TrialCardRegister,
+  type TrialCardState,
 } from './dietTrialCard';
 import { getDietTrialProgress } from './analytics';
 
@@ -76,77 +81,122 @@ function activeInput(over: Partial<TrialCardInput> = {}): TrialCardInput {
   };
 }
 
-// ── The two rules, asserted across every state at once ───────────────────────
+// ── Every state the card can reach, built at its triggering input ────────────
+//
+// AT MODULE SCOPE since B-559, because it is no longer only the two rules'
+// fixture list: the composition layer's own property tests walk it too, and the
+// point of that layer is that ONE list is walked by EVERY cross-state rule. A
+// second list would re-create the defect shape the layer exists to remove.
+//
+// `rangeRefusal` is the whole-range refusal history. It had NO fixture here at
+// all before B-559 — which is why round 9's defect (the fact reaching three of
+// eleven active states, with four more never seeing it) was invisible to a list
+// whose name promises otherwise.
+const REFUSING_RANGE = { days: 19, ratedFeedings: 38, refusedFeedings: 38 };
+
+const everyState: Array<[string, TrialCardInput]> = [
+  ['0 no trial', { ...activeInput(), trial: null }],
+  ['1 day one', activeInput({
+    nowMs: localNoon(2026, 7, 3),
+    coverage: { daysLogged: 0, daysElapsed: 1 },
+    exposures: null,
+  })],
+  ['2 clean', activeInput()],
+  ['3 exposures', activeInput({
+    exposures: { mayStateRecordClean: true,
+      totalFeedings: 68,
+      offDiet: 3,
+      mostRecent: { label: 'Zuke’s Mini Naturals (chicken)', when: 'Yesterday, 6:40 pm' },
+    },
+  })],
+  ['4 below floor', activeInput({
+    belowCoverageFloor: true,
+    coverage: { daysLogged: 6, daysElapsed: 23 },
+    exposures: { mayStateRecordClean: true, totalFeedings: 9, offDiet: 0 },
+  })],
+  ['5 milestone', activeInput({ nowMs: localNoon(2026, 8, 27) })],
+  ['6 overrun', activeInput({ nowMs: localNoon(2026, 9, 1) })],
+  ['7a completed', activeInput({
+    trial: {
+      status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+      targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
+    },
+    coverage: { daysLogged: 54, daysElapsed: 56 },
+    exposures: { mayStateRecordClean: true, totalFeedings: 182, offDiet: 6 },
+  })],
+  ['7b abandoned (refusal)', activeInput({
+    trial: {
+      status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+      targetDurationDays: 56, foodLabel: FOOD,
+      stoppedReason: 'Biscuit wouldn’t eat it', stoppedForRefusal: true,
+    },
+    coverage: { daysLogged: 18, daysElapsed: 19 },
+    exposures: { mayStateRecordClean: true, totalFeedings: 54, offDiet: 0 },
+  })],
+  ['8 intake decline', activeInput({
+    species: 'cat',
+    petName: 'Mochi',
+    intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+  })],
+  ['9 free-fed', activeInput({ freeFed: { loggedFeedings: 22 } })],
+  ['10 multi-pet caveat', activeInput({ otherPetNames: ['Mochi'] })],
+  // The two TERMINAL decline branches. Every other decline entry here is an
+  // ACTIVE trial, which is exactly why the property test could not see them
+  // withholding the floor.
+  ['7a completed + decline', activeInput({
+    species: 'cat', petName: 'Mochi',
+    trial: {
+      status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+      targetDurationDays: 56, foodLabel: FOOD,
+    },
+    intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+  })],
+  ['7b abandoned + decline', activeInput({
+    species: 'cat', petName: 'Mochi',
+    trial: {
+      status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+      targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'cost',
+    },
+    intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+  })],
+
+  // ── The registers this list could not see before B-559 ────────────────────
+  //
+  // A `rangeRefusal` record reaches FIVE places — three active states through
+  // one shared body, and both terminal cards through the register that replaces
+  // it — and not one entry above carried the fact. The three below close that,
+  // and the fourth walks `coverage_only`, the pre-classifier register that had
+  // its own describe block and no seat at any cross-state rule.
+  ['3 exposures, refusal in the RECORD', activeInput({
+    species: 'cat', petName: 'Mochi',
+    exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 9 },
+    rangeRefusal: REFUSING_RANGE,
+  })],
+  ['7a completed, refusal in the RECORD', activeInput({
+    trial: {
+      status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+      targetDurationDays: 56, foodLabel: FOOD,
+    },
+    coverage: { daysLogged: 54, daysElapsed: 56 },
+    exposures: { mayStateRecordClean: false, totalFeedings: 182, offDiet: 6 },
+    rangeRefusal: REFUSING_RANGE,
+  })],
+  // The owner named COST; the record shows the diet went uneaten. Reaches the
+  // refusal register from the record rather than from the stored reason, which
+  // is the half R1 added and the half the stored-token fixture cannot exercise.
+  ['7b abandoned for cost, refusal in the RECORD', activeInput({
+    trial: {
+      status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
+      targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'cost',
+    },
+    coverage: { daysLogged: 18, daysElapsed: 19 },
+    exposures: { mayStateRecordClean: false, totalFeedings: 54, offDiet: 2 },
+    rangeRefusal: REFUSING_RANGE,
+  })],
+  ['2 clean, before the classifier', activeInput({ exposures: null })],
+];
 
 describe('the two rules (they govern every state)', () => {
-  // Each entry is a state the card can reach, built at its triggering input.
-  const everyState: Array<[string, TrialCardInput]> = [
-    ['0 no trial', { ...activeInput(), trial: null }],
-    ['1 day one', activeInput({
-      nowMs: localNoon(2026, 7, 3),
-      coverage: { daysLogged: 0, daysElapsed: 1 },
-      exposures: null,
-    })],
-    ['2 clean', activeInput()],
-    ['3 exposures', activeInput({
-      exposures: { mayStateRecordClean: true,
-        totalFeedings: 68,
-        offDiet: 3,
-        mostRecent: { label: 'Zuke’s Mini Naturals (chicken)', when: 'Yesterday, 6:40 pm' },
-      },
-    })],
-    ['4 below floor', activeInput({
-      belowCoverageFloor: true,
-      coverage: { daysLogged: 6, daysElapsed: 23 },
-      exposures: { mayStateRecordClean: true, totalFeedings: 9, offDiet: 0 },
-    })],
-    ['5 milestone', activeInput({ nowMs: localNoon(2026, 8, 27) })],
-    ['6 overrun', activeInput({ nowMs: localNoon(2026, 9, 1) })],
-    ['7a completed', activeInput({
-      trial: {
-        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
-        targetDurationDays: 56, foodLabel: FOOD, outcome: 'improved',
-      },
-      coverage: { daysLogged: 54, daysElapsed: 56 },
-      exposures: { mayStateRecordClean: true, totalFeedings: 182, offDiet: 6 },
-    })],
-    ['7b abandoned (refusal)', activeInput({
-      trial: {
-        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
-        targetDurationDays: 56, foodLabel: FOOD,
-        stoppedReason: 'Biscuit wouldn’t eat it', stoppedForRefusal: true,
-      },
-      coverage: { daysLogged: 18, daysElapsed: 19 },
-      exposures: { mayStateRecordClean: true, totalFeedings: 54, offDiet: 0 },
-    })],
-    ['8 intake decline', activeInput({
-      species: 'cat',
-      petName: 'Mochi',
-      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
-    })],
-    ['9 free-fed', activeInput({ freeFed: { loggedFeedings: 22 } })],
-    ['10 multi-pet caveat', activeInput({ otherPetNames: ['Mochi'] })],
-    // The two TERMINAL decline branches. Every other decline entry here is an
-    // ACTIVE trial, which is exactly why the property test could not see them
-    // withholding the floor.
-    ['7a completed + decline', activeInput({
-      species: 'cat', petName: 'Mochi',
-      trial: {
-        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
-        targetDurationDays: 56, foodLabel: FOOD,
-      },
-      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
-    })],
-    ['7b abandoned + decline', activeInput({
-      species: 'cat', petName: 'Mochi',
-      trial: {
-        status: 'abandoned', startedAt: '2026-07-03', endedAt: '2026-07-21',
-        targetDurationDays: 56, foodLabel: FOOD, stoppedReason: 'cost',
-      },
-      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
-    })],
-  ];
-
   // R1 — the negative claim is deleted from the product. Four independent proofs
   // in §5.2 show no coverage level rescues it, which is why G2 came back as a
   // rule rather than a threshold. This is the greppable guard.
@@ -1683,8 +1733,10 @@ describe('B-533 PR A — round 8 regressions', () => {
   // Round 9 routed the ACTIVE card through `pushRefusalWithheld` under
   // `rangeRefusal`, to stop it leading with a coverage ratio over a refused diet.
   // Two independent reviews broke it and the routing was reverted — so what is
-  // pinned here is the RULING, not the patch. See `pushRecordFacts` for the full
-  // reasoning; the short version is that `rangeRefusal`'s floors were derived for
+  // pinned here is the RULING, not the patch. It now lives in `registerFor`'s
+  // `completed`/`abandoned` case, which is the one place that decides whether the
+  // refusal register speaks at all; the short version is that its floors were
+  // derived for
   // a claim gate ("silence is cheap") and fire on day 2 of 56 for a dog rated
   // some / all / some, and the sentence's closing "…is the refusal" has no
   // antecedent on a live card until #499 ships the register.
@@ -1708,8 +1760,8 @@ describe('B-533 PR A — round 8 regressions', () => {
       const fact = textOf(resolveTrialCard(refusing), 'fact').join(' ');
       expect(fact).not.toMatch(/all \d+ matched/);
       // Disclosed inline on this state — `exposureLine`'s two-sided form, not
-      // `pushExposureFloor`'s separate sentence, which belongs to the branches
-      // that withhold the reading.
+      // the separate floor sentence, which the table gives only to the registers
+      // that withhold the reading (`record`'s row has `floor: null`).
       expect(fact).toContain('68 feedings in total — 59 matched, 9 did not.');
     });
 
@@ -1855,5 +1907,361 @@ describe('B-533 PR A — round 9 regressions', () => {
       exposures: { mayStateRecordClean: false, totalFeedings: 0, offDiet: 0 },
     }));
     expect(allStrings(m).join(' ')).not.toContain('isn’t saying how many matched');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B-559 — THE COMPOSITION LAYER, ASSERTED AS A LAYER
+//
+// `pushExposureFloor` plus its cross-state property test (#498) answered the
+// DISCLOSE half: one rule, one place, asserted over every state. Everything
+// below is the other half — the withhold-the-reading side, plus the placement
+// question the floor rule never had to ask.
+//
+// The shape these replace: nine rounds, one defect each time — "the branch I
+// didn't visit inherited the opposite rule." Round 9's was invisible to
+// `everyState` because that list carried no `rangeRefusal` fixture at all.
+//
+// Every assertion here is MUTATION-CHECKED: each one was broken in the resolver,
+// observed to fail, and restored. Green is not evidence; a failed mutation is.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('the composition layer (B-559)', () => {
+  const ALL_REGISTERS = Object.keys(TRIAL_CARD_DISCLOSURES) as TrialCardRegister[];
+
+  // EXHAUSTIVENESS IS THE WHOLE POINT. A register nobody walks is a register
+  // whose rules nobody checks, which is precisely how `rangeRefusal` reached
+  // five places under a list whose name promises every state. Adding a state or
+  // a register now fails HERE — before it can inherit a rule by accident.
+  it('everyState walks every register', () => {
+    const walked = new Set(everyState.map(([, input]) => planTrialCard(input).register));
+    expect(ALL_REGISTERS.filter((r) => !walked.has(r))).toEqual([]);
+  });
+
+  // AND EVERY STATE, WHICH IS NOT THE SAME TEST. Eleven states map onto eight
+  // registers, many-to-one, so a twelfth state routed to `record` leaves the
+  // register check green and is walked by nothing. `assertNever` closes the
+  // compile-time half — a new state must NAME a register; this closes the other
+  // half — somebody must WALK it. Gap named by `adversarial-reviewer`.
+  const ALL_STATES: TrialCardState[] = [
+    'no_trial', 'day_one', 'clean', 'exposures', 'below_floor', 'milestone',
+    'overrun', 'completed', 'abandoned', 'intake_decline', 'free_fed',
+  ];
+
+  it('everyState walks every state', () => {
+    const walked = new Set(everyState.map(([, input]) => planTrialCard(input).state));
+    expect(ALL_STATES.filter((s) => !walked.has(s))).toEqual([]);
+  });
+
+  // `planTrialCard` and `resolveTrialCard` are two entry points onto one set of
+  // pure functions (`trialContext` → `stateFor` → `registerFor`), which is the
+  // only reason the plan is a trustworthy oracle for the rendered card. They
+  // share those functions rather than each deriving a state, but "they share
+  // them" is a fact about today's code, and every assertion in this block reads
+  // the plan and asserts on the card. So it is pinned rather than assumed.
+  it.each(everyState)('the plan describes the card that renders — %s', (_name, input) => {
+    expect(planTrialCard(input).state).toBe(resolveTrialCard(input).state);
+  });
+
+  // The table pinned, so a policy flip is a visible two-file diff with a failing
+  // test naming the register — not a silent edit. Round 9's reverted fix is the
+  // precedent: a ruling has to be pinned, not merely written down.
+  it('is the table the resolver actually reads', () => {
+    expect(TRIAL_CARD_DISCLOSURES).toEqual({
+      none: {
+        floor: null, unmatched: false, pastBowl: false, untrackedHead: false, scope: 'never',
+      },
+      decline: {
+        floor: 'separately', unmatched: true, pastBowl: false, untrackedHead: false,
+        scope: 'active_only',
+      },
+      refusal_withheld: {
+        floor: 'plain', unmatched: true, pastBowl: false, untrackedHead: false, scope: 'never',
+      },
+      free_fed: {
+        floor: null, unmatched: true, pastBowl: false, untrackedHead: false, scope: 'always',
+      },
+      so_far: {
+        floor: null, unmatched: true, pastBowl: true, untrackedHead: true, scope: 'always',
+      },
+      floor_only: {
+        floor: 'plain', unmatched: false, pastBowl: false, untrackedHead: false, scope: 'never',
+      },
+      coverage_only: {
+        floor: null, unmatched: false, pastBowl: false, untrackedHead: true, scope: 'never',
+      },
+      record: {
+        floor: null, unmatched: true, pastBowl: true, untrackedHead: true, scope: 'always',
+      },
+    });
+  });
+
+  // ── (a) WHICH REGISTER OWNS THE CARD ──────────────────────────────────────
+  //
+  // The bare coverage sentence is the mechanical proxy for "the reading": it is
+  // the one string that reads as a verdict standing alone, and it is what round
+  // 9 found leading a card over a cat refusing 38 of 38 rated feedings. The
+  // refusal register deliberately restates coverage INSIDE its own reframing
+  // ("meals OFFERED on …"), which is why this asserts on the sentence and not on
+  // the digits.
+  const OWNS_THE_RATIO: TrialCardRegister[] = ['record', 'coverage_only'];
+
+  it.each(everyState)('the bare coverage ratio renders only where the register owns it — %s',
+    (_name, input) => {
+      const { register } = planTrialCard(input);
+      const rendersRatio = allStrings(resolveTrialCard(input))
+        .some((s) => /^Meals logged on \d+ of \d+ days\.$/.test(s));
+      expect(rendersRatio).toBe(OWNS_THE_RATIO.includes(register) && Boolean(input.coverage));
+    });
+
+  // The affirmative claim is `mayStateRecordClean`'s to give, in EVERY state
+  // that has a sentence for it. It shipped gated in `exposureLine` and ungated
+  // in `soFarLine` — one rule enforced in one place and broken in another, which
+  // is the file's oldest defect and the reason this is asserted over all of them.
+  it.each(everyState)('withholds the affirmative claim wherever the module does — %s',
+    (_name, base) => {
+      const withheld = resolveTrialCard({
+        ...base,
+        exposures: { mayStateRecordClean: false, totalFeedings: 68, offDiet: 0 },
+      });
+      expect(allStrings(withheld).join(' '))
+        .not.toMatch(/all \d+ matched|matched the trial diet or a permitted food/i);
+    });
+
+  // ── (b) WHICH DISCLOSURES APPLY ───────────────────────────────────────────
+  //
+  // Force each disclosure's own predicate on, RE-DERIVE the plan from the forced
+  // input (so a state change cannot silently move the goalposts), and assert the
+  // line renders exactly where the register's row allows it. This is what makes
+  // the table load-bearing rather than documentation: a branch that reaches for
+  // a disclosure its row does not carry — or drops one it does — fails here, on
+  // every state at once. `adversarial-reviewer` confirmed that directly: a body
+  // calling `pushUntrackedHead` itself fails 1 case, deleting the sequencer's
+  // `policy.untrackedHead` gate fails 14, and `policy.pastBowl` fails 10.
+  //
+  // WHAT THEY CANNOT DO, said here rather than discovered later: they cannot
+  // falsify a table VALUE. The assertion compares the render to the very cell
+  // under review, so flipping a cell moves both sides and stays green. The guard
+  // against that is `is the table the resolver actually reads` below — a literal
+  // pin — plus, for the cells where a wrong value would be a clinical defect
+  // rather than a cosmetic one, a hardcoded behavioural test that names no cell.
+  // Six cells stood on the pin alone in the first cut; the two that matter most
+  // now have their own tests.
+  const FORCED = { mayStateRecordClean: false, totalFeedings: 124, offDiet: 12 };
+
+  it.each(everyState)('the floor sentence renders exactly where the row says — %s',
+    (_name, base) => {
+      const input: TrialCardInput = { ...base, exposures: FORCED };
+      const { register, disclosures } = planTrialCard(input);
+      const texts = resolveTrialCard(input).lines.map((l) => l.text);
+      expect(texts.some((t) => t.startsWith('Separately, 12 logged feedings were outside')))
+        .toBe(disclosures.floor === 'separately');
+      expect(texts.some((t) => t.startsWith('12 logged feedings were outside')))
+        .toBe(disclosures.floor === 'plain');
+      // …and a register carrying NO floor sentence still owes the count inline.
+      // That is #498's rule, and this is where the two halves compose: withhold
+      // the reading, never the floor — in one form or the other, always.
+      if (disclosures.floor === null && register !== 'none') {
+        expect(texts.join(' ')).toMatch(/\b12\b/);
+      }
+    });
+
+  it.each(everyState)('the can’t-match caveat renders exactly where the row says — %s',
+    (_name, base) => {
+      // An unusable comparator puts every feeding on rung 3, so `offDiet` equals
+      // the total by construction — the predicate every register with
+      // `unmatched: true` is exercised against here, in both directions.
+      const input: TrialCardInput = {
+        ...base,
+        allowedSetUnavailable: true,
+        exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 40 },
+      };
+      const rendered = allStrings(resolveTrialCard(input))
+        .some((s) => s.includes('Culprit can’t match these against the food list'));
+      expect(rendered).toBe(planTrialCard(input).disclosures.unmatched);
+    });
+
+  it.each(everyState)('the past-bowl caveat renders exactly where the row says — %s',
+    (_name, base) => {
+      // `freeFed: null` is the predicate's own precondition — a bowl in force NOW
+      // is the free-fed card's lead, not a caveat under it — so the `free_fed`
+      // row is structurally unforceable and is exempt by construction rather
+      // than by omission.
+      const input: TrialCardInput = { ...base, freeFedOverlap: true, freeFed: null };
+      const rendered = allStrings(resolveTrialCard(input))
+        .some((s) => s.includes('had a bowl that was topped up'));
+      expect(rendered).toBe(planTrialCard(input).disclosures.pastBowl);
+    });
+
+  it.each(everyState)('the untracked head renders exactly where the row says — %s',
+    (_name, base) => {
+      const input: TrialCardInput = { ...base, untrackedDaysBeforeFirstLog: 12 };
+      const rendered = allStrings(resolveTrialCard(input))
+        .some((s) => s.includes('The first 12 days of the trial aren’t counted here'));
+      expect(rendered).toBe(planTrialCard(input).disclosures.untrackedHead);
+    });
+
+  it.each(everyState)('the multi-pet caveat renders exactly where the row says — %s',
+    (_name, base) => {
+      const input: TrialCardInput = { ...base, otherPetNames: ['Rex'], exposures: FORCED };
+      const model = resolveTrialCard(input);
+      const { state, register, disclosures } = planTrialCard(input);
+      const terminal = state === 'completed' || state === 'abandoned';
+      // `active_only` is the one preserved asymmetry: the live decline card gates
+      // its floor line with the household caveat and the two terminal decline
+      // branches never have. Written as a value in the table so it reads as a
+      // decision someone can overturn, which is the only thing wrong with it.
+      const allowed = disclosures.scope === 'always'
+        || (disclosures.scope === 'active_only' && !terminal);
+      // It gates a CLAIM: with nothing above it there is nothing to gate. That
+      // second condition is PINNED rather than read off the model under test —
+      // `hasFact = model.lines.some(...)` was an oracle derived from its own
+      // subject, so a defect deleting the fact lines AND the caveat together
+      // degenerated to `false === false` (`adversarial-reviewer`). With the
+      // exposures forced above, every register except `none` owes at least one
+      // fact line, so that is the assertion.
+      expect(model.lines.some((l) => l.role === 'fact')).toBe(register !== 'none');
+      expect(model.lines.some((l) => l.role === 'caveat')).toBe(allowed && register !== 'none');
+    });
+
+  // ── The two cells a wrong value would make a clinical defect ──────────────
+  //
+  // Named no cell, so they survive the table being edited. `floor_only.unmatched`
+  // first: flipping it to `true` puts the can't-match caveat back on day 1 and
+  // the milestone, which is the defect `caveat: false` was added to prevent —
+  // and the #498 test that looks like it guards this asserts on copy that no
+  // longer exists ("Worth checking the list"), so it is vacuous today.
+  it('day 1 and the milestone take the off-diet count and no caveat with it', () => {
+    for (const [label, nowMs] of [['day 1', localNoon(2026, 7, 3)], ['milestone', localNoon(2026, 8, 27)]] as const) {
+      const m = resolveTrialCard(activeInput({
+        nowMs,
+        allowedSetUnavailable: true,
+        coverage: { daysLogged: 0, daysElapsed: 1 },
+        exposures: { mayStateRecordClean: false, totalFeedings: 4, offDiet: 4 },
+      }));
+      const joined = allStrings(m).join(' ');
+      expect(`${label}: ${joined}`).toContain('4 logged feedings were outside the trial diet');
+      expect(`${label}: ${joined}`).not.toContain('can’t match these against the food list');
+    }
+  });
+
+  // …and `decline.scope`, whose value decides whether the sickest card in the
+  // app gates its off-diet count with the household caveat. The asymmetry it
+  // encodes is inherited rather than argued, so pin the behaviour on both sides
+  // — that is what makes it safe to change later on purpose.
+  it('the live decline card gates its count for a household; the terminal ones do not', () => {
+    const decline = {
+      species: 'cat' as const,
+      petName: 'Mochi',
+      otherPetNames: ['Rex'],
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+      exposures: { mayStateRecordClean: false, totalFeedings: 60, offDiet: 12 },
+    };
+    expect(textOf(resolveTrialCard(activeInput(decline)), 'caveat').join(' '))
+      .toContain('shares a home with Rex');
+    expect(textOf(resolveTrialCard(activeInput({
+      ...decline,
+      trial: {
+        status: 'completed', startedAt: '2026-07-03', endedAt: '2026-08-27',
+        targetDurationDays: 56, foodLabel: FOOD,
+      },
+    })), 'caveat')).toEqual([]);
+  });
+
+  // ── ORDER IS PART OF THE COMPOSITION, AND NOTHING WAS PINNING IT ──────────
+  //
+  // Found by the B-559 purity harness, not by this file: swapping two disclosure
+  // calls in `recordRegion` — the untracked head above the past bowl — passed
+  // all 400 cases here. Both lines carry the `qualifier` role, and every
+  // assertion in this file either joins the qualifiers before matching or checks
+  // a substring, so role checks and text checks are BOTH blind to their order.
+  // A reader is not: these four stack in one column and the sequence is the
+  // argument (what the app knows, then what it cannot match, then the two
+  // reasons the denominator is unfair).
+  //
+  // This is also B-563's worst realistic case, rendered — the five-hedge stack
+  // on the state §4.2 hands the owner closest to quitting.
+  it('composes the disclosures in one fixed order', () => {
+    const model = resolveTrialCard(activeInput({
+      petName: 'Mochi',
+      otherPetNames: ['Rex'],
+      freeFedOverlap: true,
+      freeFed: null,
+      untrackedDaysBeforeFirstLog: 12,
+      allowedSetUnavailable: true,
+      coverage: { daysLogged: 9, daysElapsed: 23 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 40, offDiet: 40 },
+    }));
+    expect(model.lines.map((l) => l.role)).toEqual([
+      'fact', 'fact', 'qualifier', 'qualifier', 'qualifier', 'qualifier', 'caveat', 'note',
+    ]);
+    expect(textOf(model, 'qualifier').map((t) => (
+      t.includes('only sees what') ? 'blind-spot'
+        : t.includes('can’t match these') ? 'cant-match'
+          : t.includes('bowl that was topped up') ? 'past-bowl'
+            : t.includes('aren’t counted here') ? 'untracked-head'
+              : `UNNAMED QUALIFIER: ${t}`
+    ))).toEqual(['blind-spot', 'cant-match', 'past-bowl', 'untracked-head']);
+  });
+
+  // ── The strip's rule ──────────────────────────────────────────────────────
+  //
+  // Home has one line and nowhere to put the caveat, the head, or the "offered,
+  // not eaten" reframing that make a ratio honest on the card, so it states the
+  // ratio only when the record carries none of the six withholding reasons.
+  //
+  // ASSERTED AGAINST A SEPARATELY-WRITTEN PREDICATE, NOT AGAINST
+  // `withholdingReasons`. The first cut of this test compared the strip's output
+  // to `withholdingReasons(input).length === 0` — which is what the strip itself
+  // computes, so it could only catch the strip ceasing to consult the list, and
+  // NOT the list being wrong. `adversarial-reviewer` proved it: deleting the
+  // `below_floor` push from `withholdingReasons` left this test GREEN (only
+  // #498's hand-written per-reason tests caught it), and dropping a reason is
+  // precisely the failure mode rounds 8/9 produced. The duplication below is the
+  // point — an oracle that shares an implementation with its subject is a
+  // change-detector, not a test.
+  const REASONS_RESTATED = (input: TrialCardInput): boolean => (
+    !input.intakeDeclineHeadline
+    && !input.rangeRefusal
+    && !input.freeFed
+    && !input.allowedSetUnavailable
+    && !input.belowCoverageFloor
+    && (input.untrackedDaysBeforeFirstLog ?? 0) === 0
+  );
+
+  it.each(everyState)('Home states the ratio only with an empty withholding list — %s',
+    (_name, input) => {
+      const strip = resolveTrialStrip(input);
+      if (!strip) return;
+      expect(/meals logged on \d+ of \d+ days/.test(strip.line ?? ''))
+        .toBe(REASONS_RESTATED(input) && Boolean(input.coverage));
+    });
+
+  // …and the list is asserted directly, so a reason cannot be dropped from it
+  // silently even on an input no fixture above happens to carry.
+  it('names every withholding reason the record carries', () => {
+    expect(withholdingReasons(activeInput())).toEqual([]);
+    expect(withholdingReasons(activeInput({
+      intakeDeclineHeadline: 'Mochi has left most of her food for 3 days.',
+      rangeRefusal: REFUSING_RANGE,
+      freeFed: { loggedFeedings: 4 },
+      allowedSetUnavailable: true,
+      untrackedDaysBeforeFirstLog: 12,
+      belowCoverageFloor: true,
+    }))).toEqual([
+      'intake_decline', 'range_refusal', 'free_fed',
+      'allowed_set_unavailable', 'untracked_head', 'below_floor',
+    ]);
+    // THE HEAD IS "NOT ZERO", NOT "POSITIVE". A negative or NaN head is not a
+    // plain record either, and rewriting the strip's original `=== 0` as `> 0`
+    // narrowed the withholding in the REASSURING direction — Home stating a
+    // ratio the pre-refactor strip suppressed. Unreachable through the loader,
+    // undefended by any test, and found only by feeding an out-of-contract value
+    // to a field every fixture generates in contract.
+    for (const head of [-1, -7, Number.NaN]) {
+      expect(withholdingReasons(activeInput({ untrackedDaysBeforeFirstLog: head })))
+        .toEqual(['untracked_head']);
+      expect(resolveTrialStrip(activeInput({ untrackedDaysBeforeFirstLog: head }))?.line ?? '')
+        .not.toMatch(/meals logged on/);
+    }
   });
 });
