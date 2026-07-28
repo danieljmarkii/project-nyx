@@ -917,6 +917,23 @@ export interface TrialFacts {
    * meals as bowl top-ups and deleting her coverage ratio.
    */
   intakeNotDirectlyObservedNow: boolean;
+  /**
+   * Rated `primary_diet` feedings inside the RECENCY window — the denominator
+   * `trialDietRefusal` would have used had its floors cleared.
+   *
+   * IT EXISTS TO STOP SILENCE CANCELLING AN ALARM. `trialDietRefusal` is
+   * recency-bounded, so an owner who documents 42 refusals and then stops tapping
+   * intake empties that window and the live safety register vanishes — the card
+   * returning to a clean two-fact state over a cat that is still refusing. That
+   * is verbatim the "chronic case decays into the clean case" defect state 10 was
+   * built to prevent, reached through the rating door instead of the baseline one.
+   *
+   * R1a says absence of ratings must never ALARM. It does not license absence of
+   * ratings CANCELLING an alarm that already fired on logged evidence. Zero here
+   * is what lets a surface tell those two apart: no recent ratings means no new
+   * evidence, not evidence of recovery.
+   */
+  recentRatedFeedings: number;
   /** R1b — the rated share of the meal record. Null when there is nothing in
    *  range to have rated, which is not the same as "nothing is rated". */
   intakeRating: TrialIntakeRating | null;
@@ -1108,6 +1125,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     arrangementExposures: arrangementHits,
     trialDietRefusal: null,
     rangeRefusal: null,
+    recentRatedFeedings: 0,
     // Computed on the CONTEXT, so it is correct even on the early-return paths
     // below (an unparseable start date, a range that closed before it opened).
     // Those are exactly the degraded states where a surface must not assume the
@@ -1353,6 +1371,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     oralRoute,
     trialDietRefusal,
     rangeRefusal,
+    recentRatedFeedings: ratedFeedings,
     // Null, not `{ rated: 0, feedings: 0 }` — "nothing in range to have rated" and
     // "nothing rated" are different facts, and only the second one is worth
     // teaching about. A surface that saw a zeroed object would divide by zero and

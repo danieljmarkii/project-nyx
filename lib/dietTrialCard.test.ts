@@ -198,6 +198,32 @@ describe('the two rules (they govern every state)', () => {
   // trial is not a reason to reclassify it as taste. Asserted across every state
   // rather than only on the refusal one, because the states that would be most
   // tempted to soften are the terminal ones.
+  // ── THE FLOOR RULE, ENFORCED ACROSS EVERY STATE ────────────────────────────
+  //
+  // Four rounds of adversarial review found the SAME defect in four different
+  // branches: a branch that withheld an adherence reading also withheld the
+  // off-diet count. Round 4 named why — each fix applied one of {withhold the
+  // reading, withhold the count, disclose} to one register, and the branch it did
+  // not visit inherited the opposite defect.
+  //
+  // Two independent rules, both of which hold everywhere: WITHHOLD THE READING
+  // when the record cannot support it, and NEVER WITHHOLD THE FLOOR. This is the
+  // second one, asserted over every state at once rather than trusted to each new
+  // branch — because "a rule that is only checked on the states someone
+  // remembered to check is not a rule" (this file's own opening).
+  it.each(everyState)('§5.2 — %s never withholds the off-diet count', (_name, base) => {
+    const input: TrialCardInput = {
+      ...base,
+      exposures: { mayStateRecordClean: false, totalFeedings: 124, offDiet: 12 },
+    };
+    const model = resolveTrialCard(input);
+    // States with no record substrate at all (no trial, day 1) legitimately show
+    // nothing; every state that renders ANY feeding count must render this one.
+    const joined = allStrings(model).join(' ');
+    if (!/\bfeeding|\bfeedings|top-ups/.test(joined)) return;
+    expect(joined).toMatch(/\b12\b/);
+  });
+
   it.each(everyState)('never softens intake toward preference — %s', (_name, input) => {
     for (const s of allStrings(resolveTrialCard(input))) {
       expect(s).not.toMatch(/\b(picky|fussy|prefers?|doesn’t like|dislikes?|taste)\b/i);
@@ -1506,11 +1532,23 @@ describe('B-533 adversarial regressions — round 2', () => {
       expect(m.actions.map((a) => a.id)).toContain('view_exposures');
     });
 
-    it('names the direction the count is wrong in', () => {
-      expect(textOf(cold(), 'qualifier').join(' ')).toContain(
-        'None of these matched the food list recorded for this trial. If that list is ' +
-        'out of date or still syncing, this count is too high',
-      );
+    // TWO-SIDED. Naming only the exculpatory reading hands a pre-written excuse
+    // to the most non-adherent record the app can produce — the owner feeding the
+    // old kibble twice a day trips this flag with a perfectly correct list.
+    it('names BOTH readings and excuses neither', () => {
+      const q = textOf(cold(), 'qualifier').join(' ');
+      expect(q).toContain('either that list is out of date, or the trial diet hasn’t been going in');
+      expect(q).not.toContain('this count is too high');
+      // No instruction the card offers no route to.
+      expect(q).not.toContain('worth a look before your vet reads it');
+    });
+
+    // "not a total" says the true number is ≥ N; the caveat says it may be lower.
+    // With an unusable list `offDiet > 0` holds by construction, so the two
+    // ALWAYS co-rendered — two opposite arrows on one card.
+    it('does not render the floor suffix beside the caveat', () => {
+      const q = textOf(cold(), 'qualifier').join(' ');
+      expect(q).not.toContain('what’s been logged, not a total');
     });
 
     // THE DISCONTINUITY. The reconciliation floor fires at ten feedings, so the
@@ -1696,12 +1734,38 @@ describe('B-533 adversarial regressions — round 3', () => {
     expect(textOf(m, 'fact').join(' ')).toContain('Culprit isn’t showing how clean');
   });
 
-  // The LIVE card deliberately does NOT use the range fact — that register is
-  // present-tense, and a six-week-old refusal is not news today.
-  it('the live card does not fire the register off a stale range fact', () => {
+  // ROUND-4 #1, the worst finding of the four rounds. `trialDietRefusal` is
+  // recency-bounded, so an owner who documented 42 refusals and then stopped
+  // tapping intake emptied that window — and the register VANISHED, returning a
+  // clean two-fact card and a tidy Home strip over a cat still refusing. R1a
+  // says absence must never alarm; it does not license absence CANCELLING an
+  // alarm already earned by logged evidence.
+  it('silence does not cancel a register that already fired', () => {
+    const stale = activeInput({
+      species: 'cat',
+      petName: 'Mochi',
+      trialDietRefusal: null,
+      rangeRefusal: { refusedFeedings: 42, ratedFeedings: 42, days: 21 },
+      recentRatedFeedings: 0,
+      coverage: { daysLogged: 44, daysElapsed: 44 },
+      exposures: { mayStateRecordClean: false, totalFeedings: 88, offDiet: 0 },
+    });
+    const m = resolveTrialCard(stale);
+    expect(m.state).toBe('trial_refusal');
+    expect(textOf(m, 'flag')[0]).toContain('42 trial-diet feedings you’ve rated');
+    expect(allStrings(m).join(' ')).not.toMatch(/Meals logged on 44 of 44 days/);
+    // The Home strip must not contradict the Pet tab either.
+    expect(resolveTrialStrip(stale)?.line).toBeNull();
+  });
+
+  // …but real evidence of recovery DOES stand it down. A window holding rated,
+  // finished feedings is not silence — the historical refusal is genuinely
+  // history, and the terminal cards are where it belongs.
+  it('recent ratings that were finished DO stand the register down', () => {
     const m = resolveTrialCard(activeInput({
       trialDietRefusal: null,
       rangeRefusal: RANGE,
+      recentRatedFeedings: 20,
     }));
     expect(m.state).not.toBe('trial_refusal');
     expect(textOf(m, 'flag')).toEqual([]);
@@ -1724,19 +1788,28 @@ describe('B-533 adversarial regressions — round 3', () => {
         ...over,
       }));
 
-    it('does not route a compliant owner into the sub-floor scolding', () => {
+    // ROUND-4 #4/#5 SUPERSEDE ROUND 3 HERE. Round 3 fixed the scolding by
+    // DELETING the sub-floor state — the instrument its own commit called
+    // forbidden — which duly hid a real finding: an owner with a 3-day bowl and
+    // 30 genuinely missing days got a `clean` card while the vet report printed
+    // `does_not_support` on the same record. The state stays and the bowl is
+    // named beneath it.
+    it('keeps the honest lead and names the bowl beneath it', () => {
       const m = removed();
-      expect(m.state).not.toBe('below_floor');
-      expect(allStrings(m).join(' ')).not.toContain(
+      expect(m.state).toBe('below_floor');
+      expect(textOf(m, 'lead')).toEqual([
         'There isn’t enough logged yet for your vet to read much into this.',
+      ]);
+      expect(textOf(m, 'qualifier').join(' ')).toContain(
+        'For part of this trial Mochi had a bowl that was topped up, and those days ' +
+        'can’t have a meal-by-meal count.',
       );
     });
 
-    it('says why those days have no count, instead of scoring them', () => {
-      expect(textOf(removed(), 'qualifier').join(' ')).toContain(
-        'For part of this trial Mochi had a bowl that was topped up, so those days have ' +
-        'no meal-by-meal count and aren’t a gap in what you logged.',
-      );
+    // It may not exculpate what it cannot bound: three bowl days were being
+    // offered as the explanation for thirty missing ones.
+    it('claims nothing about the days the bowl does not account for', () => {
+      expect(allStrings(removed()).join(' ')).not.toContain('aren’t a gap in what you logged');
     });
 
     // Present tense stays gone — that was round 2's fix and must survive.

@@ -205,6 +205,10 @@ export interface TrialCardInput {
    * ("needs a call today"), and a six-week-old refusal is not news today.
    */
   rangeRefusal?: TrialDietRefusal | null;
+  /** `lib/dietTrial.TrialFacts.recentRatedFeedings` — rated trial-diet feedings
+   *  inside the recency window. Zero means NO NEW EVIDENCE, which is not the same
+   *  as evidence of recovery; see `liveRefusal`. */
+  recentRatedFeedings?: number;
   /** R1b — the rated share of the meal record, which is what makes the refusal
    *  register above reachable at all. */
   intakeRating?: TrialIntakeRating | null;
@@ -644,7 +648,7 @@ function activeCard(
   // (≥3 rated feedings, ≥2 refused days, ≥50% share) and mean an owner who is not
   // rating intake can never be told her cat isn't eating. Absence never alarms;
   // that is G2's two-sidedness, and it is why `pushTeachLine` exists.
-  if (input.trialDietRefusal) {
+  if (liveRefusal(input)) {
     const lines: TrialCardLine[] = [];
     pushRefusalLines(lines, input);
     // THE OFF-DIET COUNT SURVIVES THE REGISTER. The first cut of this branch
@@ -660,7 +664,7 @@ function activeCard(
     // as one that was followed. A count of what went in besides it is a different
     // fact, and the vet wants it. The terminal branch (`pushRefusalWithheld`) has
     // always kept its counts for the same reason; the live branch now matches.
-    pushRefusalExposures(lines, input);
+    pushExposureFloor(lines, input, { lead: 'separately' });
     return {
       ...base,
       state: 'trial_refusal',
@@ -744,10 +748,7 @@ function activeCard(
   const state: TrialCardState =
     overrunDays > 0 ? 'overrun'
       : input.freeFed ? 'free_fed'
-        // A ratio whose denominator includes days the app CANNOT observe is not
-        // a floor the owner failed to clear — so a past bowl suppresses the
-        // sub-floor state and is disclosed instead (`pushPastBowlCaveat`).
-        : input.belowCoverageFloor && !input.freeFedOverlap ? 'below_floor'
+        : input.belowCoverageFloor ? 'below_floor'
           : progress.dayCounter === 1 ? 'day_one'
             : (input.exposures?.offDiet ?? 0) > 0 ? 'exposures'
               : 'clean';
@@ -849,6 +850,13 @@ function activeCard(
     lines.push({ role: 'fact', text: soFarLine(input) });
     lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
     pushUnmatchedCaveat(lines, input);
+    // DISCLOSED, NOT SUPPRESSED. Round 3 fixed the "recording the bowl's removal
+    // routes you into a scolding" defect by deleting the whole sub-floor state —
+    // the identical instrument its own commit message called forbidden two
+    // paragraphs earlier — and it duly hid a real finding: an owner with a 3-day
+    // bowl and 30 genuinely missing days got a `clean` card while the vet report
+    // printed `does_not_support` on the same record. The state stays; the bowl is
+    // named beneath it, so the lead is true and the reason is visible.
     pushPastBowlCaveat(lines, input);
     pushUntrackedHead(lines, input);
     pushScopeCaveat(lines, input);
@@ -956,6 +964,35 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
 }
 
 /**
+ * WHICH REFUSAL FACT THE LIVE CARD FIRES ON — and why it is not simply the
+ * now-fact.
+ *
+ * `trialDietRefusal` is recency-bounded, so an owner who documented 42 refusals
+ * and then stopped tapping intake empties that window and the register VANISHES:
+ * the card returns to a clean two-fact state, and the Home strip to a tidy
+ * coverage line, over a cat still being offered the diet and still refusing it.
+ * That is exactly the "chronic case decays into the clean case" failure state 10
+ * exists to prevent, reached through the rating door rather than the baseline
+ * one — and on the feline-anorexia patient B-494 was ruled blocking for.
+ *
+ * R1a's rule is that absence of ratings must never ALARM. It does not license
+ * absence of ratings CANCELLING an alarm already earned by logged evidence,
+ * which is reassurance-on-absence and forbidden outright.
+ *
+ * So the register also fires on the RANGE fact when the recency window holds no
+ * rated feedings at all — no new evidence, so nothing has been shown to have
+ * changed. It deliberately does NOT fire when that window holds ratings that
+ * were finished: that is real evidence the diet is now being eaten, the
+ * historical refusal is genuinely history, and the terminal cards are where it
+ * belongs.
+ */
+function liveRefusal(input: TrialCardInput): TrialDietRefusal | null {
+  if (input.trialDietRefusal) return input.trialDietRefusal;
+  if (input.rangeRefusal && (input.recentRatedFeedings ?? 0) === 0) return input.rangeRefusal;
+  return null;
+}
+
+/**
  * §6.5's second path, R1's card state: the trial diet itself is going unfinished.
  *
  * Ordered BELOW `pushDeclineLines` everywhere both can fire, and that order is a
@@ -968,7 +1005,7 @@ function pushDeclineLines(lines: TrialCardLine[], input: TrialCardInput): void {
  * enforced since round 1b, applied to the live case.
  */
 function pushRefusalLines(lines: TrialCardLine[], input: TrialCardInput): void {
-  const refusal = input.trialDietRefusal;
+  const refusal = liveRefusal(input);
   if (!refusal) return;
   lines.push({ role: 'flag', text: trialViabilityHeadline(refusal) });
   lines.push({
@@ -978,22 +1015,49 @@ function pushRefusalLines(lines: TrialCardLine[], input: TrialCardInput): void {
 }
 
 /**
- * The off-diet floor, kept alongside the refusal register.
+ * ── THE ONE PLACE THE FLOOR RULE IS ENFORCED ─────────────────────────────────
  *
- * Deliberately NOT `pushRecordFacts`: coverage does not belong here (a record of
- * meals OFFERED says nothing useful beside a diet going uneaten, and reads as an
- * adherence score), and neither does any statement about what MATCHED. What
- * survives is the one number §5.2 forbids withholding — how many logged feedings
- * were off the list — with its floor qualifier attached.
+ * Four rounds of adversarial review found the same defect in four different
+ * branches, and round 4 named why: every fix picked ONE of {withhold the
+ * reading, withhold the count, disclose} and applied it to ONE register, so the
+ * branch it did not visit inherited the opposite defect. The two rules are
+ * independent and both hold everywhere:
+ *
+ *   WITHHOLD THE READING — no coverage ratio, no "clean run", no "all N matched"
+ *   when the record cannot support it.
+ *
+ *   NEVER WITHHOLD THE FLOOR — how many logged feedings were off the list is a
+ *   count the owner and the vet are entitled to in every state. §5.2 rules it a
+ *   floor, and a floor only moves in the disclose-more direction.
+ *
+ * So every branch that withholds a reading calls THIS, and a property test walks
+ * all fourteen states asserting that `offDiet > 0` implies the number renders.
+ * Enforcement in one place plus a test over every state, rather than a rule each
+ * new branch is trusted to remember.
+ *
+ * `lead` is the sentence it attaches to: the live refusal card says "Separately"
+ * because a flag block precedes it; a terminal card is already mid-record.
  */
-function pushRefusalExposures(lines: TrialCardLine[], input: TrialCardInput): void {
+function pushExposureFloor(
+  lines: TrialCardLine[],
+  input: TrialCardInput,
+  opts: { lead: 'separately' | 'plain' },
+): void {
   const ex = input.exposures;
   if (!ex || ex.offDiet <= 0) return;
   const noun = ex.offDiet === 1 ? 'feeding' : 'feedings';
+  const stem =
+    opts.lead === 'separately'
+      ? `Separately, ${ex.offDiet} logged ${noun} were outside the trial diet.`
+      : `${ex.offDiet} logged ${noun} were outside the trial diet.`;
+  // THE FLOOR SUFFIX IS SUPPRESSED WHEN NOTHING COULD HAVE MATCHED. "not a total"
+  // asserts the true number is >= N; the unmatched caveat says the comparator may
+  // be missing, i.e. it could be lower. Rendering both put two opposite arrows on
+  // one card, ALWAYS — with an unusable list every feeding falls to rung 3, so
+  // `offDiet > 0` holds by construction and the two could never not co-render.
   lines.push({
     role: 'fact',
-    text: `Separately, ${ex.offDiet} logged ${noun} were outside the trial diet.` +
-      floorSuffix(ex.offDiet),
+    text: stem + (input.allowedSetUnavailable ? '' : floorSuffix(ex.offDiet)),
   });
   pushUnmatchedCaveat(lines, input);
 }
@@ -1032,9 +1096,14 @@ function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void
   if (!input.freeFedOverlap || input.freeFed) return;
   lines.push({
     role: 'qualifier',
+    // IT MAY NOT EXCULPATE WHAT IT CANNOT BOUND. The first draft closed with
+    // "and aren't a gap in what you logged", which read as a blanket excuse for
+    // the whole shortfall — on the executed fixture three bowl days were being
+    // offered as the explanation for thirty missing ones. This names what the
+    // bowl accounts for and claims nothing about the rest.
     text:
-      `For part of this trial ${input.petName} had a bowl that was topped up, so those ` +
-      'days have no meal-by-meal count and aren’t a gap in what you logged.',
+      `For part of this trial ${input.petName} had a bowl that was topped up, and those ` +
+      'days can’t have a meal-by-meal count.',
   });
 }
 
@@ -1042,10 +1111,18 @@ function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): voi
   if (!input.allowedSetUnavailable) return;
   lines.push({
     role: 'qualifier',
+    // TWO-SIDED, and that is the correction. The first draft named only the
+    // exculpatory reading ("the list is out of date, so this count is too high"),
+    // which handed a pre-written excuse to the single most non-adherent record
+    // the app can produce — an owner feeding the old kibble twice a day trips the
+    // same flag with a perfectly correct list. Naming one reading and not the
+    // other IS guessing which is true. It also no longer says "worth a look
+    // before your vet reads it": there is no route from this card to the food
+    // list, and pointing at one that does not exist is worse than staying quiet.
     text:
-      'None of these matched the food list recorded for this trial. If that list is ' +
-      'out of date or still syncing, this count is too high — worth a look before your ' +
-      'vet reads it.',
+      'None of these matched the food list recorded for this trial — either that list ' +
+      'is out of date, or the trial diet hasn’t been going in. Worth sorting out which ' +
+      'with your vet.',
   });
 }
 
@@ -1166,7 +1243,11 @@ function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
     lines.push({ role: 'fact', text: exposureLine(ex) });
     lines.push({
       role: 'qualifier',
-      text: BLIND_SPOT_QUALIFIER + (ex.offDiet > 0 ? floorSuffix(ex.offDiet) : ''),
+      // The floor suffix is suppressed when nothing could have matched — see
+      // `pushExposureFloor` for why the two claims cannot share a card.
+      text:
+        BLIND_SPOT_QUALIFIER +
+        (ex.offDiet > 0 && !input.allowedSetUnavailable ? floorSuffix(ex.offDiet) : ''),
     });
     pushUnmatchedCaveat(lines, input);
     pushPastBowlCaveat(lines, input);
@@ -1414,6 +1495,12 @@ function pushRefusalWithheld(
           ', and what your vet needs from it is the refusal.'
         : ', and what your vet needs from it is the refusal.'),
   });
+  // THE FLOOR SURVIVES THE TERMINAL BRANCH TOO. This helper rendered coverage and
+  // the feeding total but never the off-diet count — so widening its reach to
+  // every record where the RANGE fact fires meant an owner who rated three of 124
+  // meals lost twelve genuine exposures from the card. Three taps, twelve
+  // findings deleted.
+  pushExposureFloor(lines, input, { lead: 'plain' });
 }
 
 function abandonedCard(
@@ -1539,7 +1626,7 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // one thing it could do wrong here, which is render a tidy coverage line as if
   // the trial were proceeding normally. Silence on Home, the register one tap
   // away; never a reassuring summary of a trial the record says isn't running.
-  if (input.intakeDeclineHeadline || input.trialDietRefusal) {
+  if (input.intakeDeclineHeadline || liveRefusal(input)) {
     return { header, line: null, progressFraction: progress.fraction };
   }
 
