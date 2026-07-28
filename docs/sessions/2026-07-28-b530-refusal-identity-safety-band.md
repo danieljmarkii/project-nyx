@@ -65,7 +65,7 @@ The task brief said this PR was "best run after Bucket-A PR 1 so the relation ex
 
 The report escalated on `rangeRefusal` with **no episode guard** (a single 3.5-hour bout across local midnight fired the band on a record the card is deliberately silent about — and the report *couldn't* add the guard, because `rangeRefusalSpansEpisodes` was not on `TrialBlock`); the stopped-reason-only flag rendered with **no date anchor** while its payload already held the dates; and the wide-population row **disclaimed the attribution and then re-asserted it** two clauses later. All four fixed and pinned as regressions.
 
-Two more findings were filed rather than patched, as **B-577**: the `REFUSAL_*` floors were ratified as a *claim gate* whose own justification reads "silence is cheap", and B-494 makes them drive an above-the-fold clinical escalation. Neither number was re-derived for that job — the lane fires on 3 rated feedings drawn from an arbitrarily large unrated population, and `UNHYDRATED_SET_FLOOR = 10` keeps a once-a-day refusing cat silent for nine days, well past the window the flag's own copy cites.
+Two more findings were filed rather than patched, as **B-580** (filed as B-577, renumbered on merge — see the note at the end): the `REFUSAL_*` floors were ratified as a *claim gate* whose own justification reads "silence is cheap", and B-494 makes them drive an above-the-fold clinical escalation. Neither number was re-derived for that job — the lane fires on 3 rated feedings drawn from an arbitrarily large unrated population, and `UNHYDRATED_SET_FLOOR = 10` keeps a once-a-day refusing cat silent for nine days, well past the window the flag's own copy cites.
 
 The reviewer's sharpest general point stands on its own: **a PR that discloses only the survivable direction of its own trade has not disclosed the trade.** The `TrialRefusalPopulation` docstring named the over-fire and not the under-fire; it now names both, worst-first.
 
@@ -80,7 +80,7 @@ Not asserted — run against the real predicate, and one of them broke.
 
 ## The two residuals, named rather than assumed away
 
-Filed as **B-576**, pinned as `KNOWN LIMIT` tests that are *expected to flip* when B-529 lands. Both are under-fire, and neither is a regression — the shipped behaviour in both is silence, so the fallback is still strictly more disclosure than before.
+Filed as **B-579** (filed as B-576, renumbered on merge — see the note at the end), pinned as `KNOWN LIMIT` tests that are *expected to flip* when B-529 lands. Both are under-fire, and neither is a regression — the shipped behaviour in both is silence, so the fallback is still strictly more disclosure than before.
 
 1. **The *concurrent* partial miss.** The per-window rule fixed the sequential case. It cannot fix this one: a trial is often a wet *and* a dry of the same diet (§4.1), so re-photographing only the dry keeps the narrow population non-empty in every window, and a cat eating the wet while refusing the dry reads as eating. Emptiness cannot see that, and a share test would fire on every legitimate mixed record.
 2. **Dilution.** The wide population is a *share* over every non-treat feeding, so an owner who substitutes when the prescription is refused pushes it back under `REFUSAL_SHARE`. That is the canonical diet-trial failure mode. The repair is a **duration** criterion rather than a share — which is a clinical number, and already Dr. Chen's open call in **B-575**. Inventing it inside a wiring PR is exactly the move this repo has a rule against.
@@ -96,3 +96,29 @@ Pinning them as tests rather than leaving them as prose is deliberate: the failu
 ## What this does NOT do
 
 **It does not lift the `generate-report` redeploy hold.** Bucket A still owes **B-529** (protein derived-from relation + primary↔set consistency + the antigen silence rule) and **B-532** (render honesty), and then a fresh `vet-report-cold-read` on re-rendered artifacts. B-494's ruling set the bar for this lane; it did not waive the gates.
+
+## Backlog renumber on merge (2026-07-28)
+
+This branch filed its two residuals as **B-576** and **B-577**. Merging `main` collided
+on both: a sibling session had taken **B-576** for the `signOut()` PKCE-verifier row
+that blocks B-280 PR 2, and **B-577**/**B-578** for the `nyx-food-photos` rows. Per the
+repo's convention (B-530, B-531, B-546), `main`'s IDs win and the branch renumbers — so
+these two are now **B-579** (the identity-shaped blind spots) and **B-580** (the two
+refusal-floor mismatches). A third row filed after that merge — the band mirroring
+only the span half of the card's stand-down — took the next free ID, **B-581**.
+
+Every in-repo reference moved with them: the `TrialRefusalPopulation` docblock and the
+duration-criterion note in `lib/dietTrial.ts`, the `KNOWN LIMIT` describe block in
+`lib/dietTrial.test.ts`, and the two references above. The rows carry the **full chain**
+rather than only the last hop, per the lesson recorded in
+`2026-07-27-food-photos-owner-insert-b505.md`: a provenance note that records one hop
+sends the next reader to the wrong row — and that session's own rows moved twice for
+exactly this reason.
+
+Worth naming, since it has now happened three times in two days: the collision is
+structural, not careless. Parallel sessions each pick "max ID + 1" against the `main`
+they started from, so any two that file on the same day claim the same number by
+construction — the same shape as the `STATUS.md` collision the 2026-07-25 retro fixed by
+deleting the shared single-line rewrite points. The renumber is cheap; the silent
+mis-reference it leaves behind is not, which is why the fix is a grep across the whole
+repo rather than an edit to the row.

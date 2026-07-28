@@ -842,7 +842,7 @@ export interface TrialDietRefusal {
  *     different over a mixed population. It is not a regression — the shipped
  *     behaviour there is also silence — but it is the canonical diet-trial failure
  *     mode, and the honest repair is a DURATION criterion rather than a share,
- *     which is Dr. Chen's open call in B-575. Tracked as B-576.
+ *     which is Dr. Chen's open call in B-575. Tracked as B-579.
  *
  *   • OVER-FIRE (alarming, the survivable direction). The wider population cannot
  *     name the food, so a cat refusing a rival kibble while eating its hydrolysate
@@ -864,7 +864,7 @@ export interface TrialDietRefusal {
  * both are UNDER-fire, and neither is a regression — the shipped behaviour in both
  * is silence, so the fallback is still strictly more disclosure than before. They
  * are named here so the gap reads as a known limit rather than as coverage. Both
- * have one root cause, food identity, which is B-529's PR; the residual is B-576.
+ * have one root cause, food identity, which is B-529's PR; the residual is B-579.
  *
  *   1. THE PARTIAL MISS, IN BOTH ITS FORMS. Sequential — the owner logged some
  *      feedings before re-photographing the bag, so `narrow.feedings > 0` and the
@@ -1596,7 +1596,7 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   // `primary_diet` row, or one that matched nothing across ten-plus feedings. That
   // is conservative, its failure mode is SILENCE (the status quo, never a
   // regression), and it carries no over-fire. Everything it misses is filed as
-  // B-576 and gated on B-529.
+  // B-579 and gated on B-529.
   //
   // ONE population for both facts is load-bearing on its own: `rangeRefusal` and
   // `trialDietRefusal` are read together by `lib/dietTrialCard.ts` and by

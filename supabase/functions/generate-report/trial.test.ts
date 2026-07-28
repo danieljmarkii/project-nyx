@@ -1955,7 +1955,7 @@ Deno.test('B-531/R2 — a no-trial report drops off-diet vocabulary for what it 
 // `adversarial-reviewer` returned FAIL on the first cut of this PR. Each test below
 // is one of its executed counterexamples, pinned so the repair cannot silently rot.
 
-Deno.test('ADV① KNOWN LIMIT — a PARTIAL identity miss still silences the band (B-576)', () => {
+Deno.test('ADV① KNOWN LIMIT — a PARTIAL identity miss still silences the band (B-579)', () => {
   // ⚠️ THIS TEST PINS A GAP, NOT A FIX, and it is the most important thing in this file
   // to read before widening the fallback. `adversarial-reviewer` round 1 found this
   // record: the seven days the cat ate before the bag was re-shot keep
@@ -1971,7 +1971,7 @@ Deno.test('ADV① KNOWN LIMIT — a PARTIAL identity miss still silences the ban
   // The two directions are not reconcilable without knowing which food was the trial
   // diet: 2 matched feedings beside 24 unmatched refused ones WANTS the fallback, and 64
   // matched unrated ones beside 3 unmatched refused ones does not. That is B-529.
-  // Tracked as B-576; this test is expected to FLIP when it lands.
+  // Tracked as B-579; this test is expected to FLIP when it lands.
   const input = wellLoggedTrialInput({ events: [] })
   input.pet.name = 'Miso'
   input.pet.species = 'cat'

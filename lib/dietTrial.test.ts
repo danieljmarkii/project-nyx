@@ -1869,14 +1869,14 @@ describe('B-530 — the copy never names a diet the app could not identify', () 
   });
 });
 
-// ── B-576 — the two residuals this fallback does NOT close ───────────────────
+// ── B-579 — the two residuals this fallback does NOT close ───────────────────
 //
 // Pinned as tests rather than left as prose, because the failure mode of a
 // documented limit is that a later reader assumes coverage. Both are UNDER-fire and
 // neither is a regression (the shipped behaviour in both is silence), and both have
 // one root cause — food identity — which is B-529's PR. When that lands, these two
 // assertions are expected to FLIP, and the flip is the signal that they were fixed.
-describe('B-576 — known limits of the wide population (expected to flip with B-529)', () => {
+describe('B-579 — known limits of the wide population (expected to flip with B-529)', () => {
   const CAT = { ...TRIAL, species: 'cat' as const };
 
   it('KNOWN LIMIT — a PARTIAL identity miss keeps the narrow population, which cannot see it', () => {
@@ -2001,7 +2001,7 @@ describe('B-530 — the gate is deliberately narrow, and both directions are pin
     });
   }
 
-  it('KNOWN LIMIT — a partial miss keeps the gate shut (round 1, → B-576/B-529)', () => {
+  it('KNOWN LIMIT — a partial miss keeps the gate shut (round 1, → B-579/B-529)', () => {
     // The under-fire half. Seven matched feedings keep `allowedSetUnavailable` false, so
     // a cat refusing 42 consecutive bowls raises nothing. Expected to FLIP with B-529.
     const facts = ateThenRefusedBehindANewBag();

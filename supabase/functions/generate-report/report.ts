@@ -2689,7 +2689,7 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // `recentRatedFeedings`) is not on `TrialBlock`. So a pet that refused for a fortnight
   // and has since eaten well still fires the band while the card has stood down —
   // over-fire, the survivable direction, and a history is a defensible thing for a report
-  // to escalate on where it is not for a live card. Filed as B-578.
+  // to escalate on where it is not for a live card. Filed as B-581.
   if (trialBlock) {
     const spannedRange = trialBlock.rangeRefusal && trialBlock.rangeRefusalSpansEpisodes
       ? trialBlock.rangeRefusal
