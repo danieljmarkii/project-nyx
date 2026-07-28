@@ -4,7 +4,7 @@
 
 Refactored `lib/dietTrialCard.ts` so the resolver answers *who speaks* and *what
 may be disclosed* before it chooses a string. Pure refactor, no behaviour change;
-shipped via #500.
+shipped via #501.
 
 ## The problem, stated precisely
 
@@ -58,11 +58,12 @@ aspirational.
 The 2,997-test suite passes with **zero edits to any existing assertion**. That
 is necessary and not sufficient, so the purity claim rests on a throwaway
 differential harness instead: HEAD's resolver copied to a second module, and
-**20,000 randomized records** rendered through both, requiring byte-identical
+**50,000 randomized records** rendered through both, requiring byte-identical
 `TrialCardModel` and `TrialStripModel` JSON. Every optional field independently
 null / absent / populated — `exposures: null` beside `freeFedOverlap`, `coverage:
 null` beside live exposures, unparseable start *and* end dates,
-`targetDurationDays` ∈ {56, 28, 1, 0, −3}, unmapped `stopped_reason` tokens. Zero
+`targetDurationDays` ∈ {56, 28, 1, 0, −3, 0.4}, unmapped `stopped_reason` tokens, and
+out-of-contract values (negative and `NaN` heads, `offDiet > totalFeedings`). Zero
 mismatches. Deleted before commit (it needs a frozen copy of the old file, which
 would rot on the next change); reproduce with `git show <base>:lib/dietTrialCard.ts
 > lib/__baseline__.ts` and a seeded PRNG.
