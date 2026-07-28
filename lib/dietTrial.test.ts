@@ -802,7 +802,7 @@ describe('adversarial regressions — the module half', () => {
       // Says WHAT it withheld, not just that it went quiet. "the trial numbers"
       // was an absolute claim rendered one line above a trial number, once this
       // state stopped deleting the off-diet count.
-      expect(line).toContain('isn’t showing how closely the diet was followed');
+      expect(line).toContain('isn’t reading these days as a clean run');
     }
   });
 

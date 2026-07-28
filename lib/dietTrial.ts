@@ -1773,13 +1773,18 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
  * withheld the adherence line, and a surface that goes quiet without saying it
  * went quiet reads as a record with nothing in it.
  *
- * AND IT SAYS WHAT IT ACTUALLY WITHHELD. The first draft closed with "Culprit
- * isn't showing the trial numbers while this is going on" — an absolute claim,
- * rendered one line above a trial number, because the same fix that stopped this
- * state deleting the off-diet count made that sentence false. It is the identical
- * defect this PR fixed at the sub-floor card ("there isn't enough logged" over
- * "all 10 matched"), so it gets the identical treatment: name the thing withheld
- * — how closely the diet was followed — rather than gesturing at "the numbers".
+ * AND THE CLOSING SENTENCE HAS BEEN WRONG TWICE, so it is worth stating what it
+ * may claim. Draft 1: "Culprit isn't showing the trial numbers" — falsified the
+ * moment the state stopped deleting the off-diet count, which renders one line
+ * below. Draft 2: "isn't showing how closely the diet was followed" — falsified
+ * by the same line, because an off-diet tally IS a statement about how closely
+ * the diet was followed.
+ *
+ * What this state actually withholds is the READING: no coverage ratio, no
+ * clean-run statement, no adherence verdict. It still discloses counts. So the
+ * sentence claims exactly that and nothing wider — the same shape
+ * `pushRefusalWithheld` uses on the terminal card ("isn't showing how clean
+ * these 18 days were"), which has been correct all along.
  */
 export function trialViabilityNote(petName: string, species: TrialSpecies): string {
   const call =
@@ -1789,6 +1794,6 @@ export function trialViabilityNote(petName: string, species: TrialSpecies): stri
   return (
     `A diet ${petName} isn’t eating can’t answer the question the trial was ` +
     `started for — and ${call}, whatever the trial is doing. Culprit isn’t ` +
-    'showing how closely the diet was followed while this is going on.'
+    'reading these days as a clean run while this is going on.'
   );
 }

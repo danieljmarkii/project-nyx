@@ -174,6 +174,37 @@ export interface TrialCardInput {
    *  detector cannot see a diet refused from day 1, which is the patient this
    *  exists for. Presence-only: null is not evidence the pet is eating. */
   trialDietRefusal?: TrialDietRefusal | null;
+  /**
+   * §5.6 — a free-choice bowl OVERLAPPED the window but is not in force now.
+   *
+   * A bowl emits no meal events by construction, so the days it was down have no
+   * meal-by-meal record and never can have. `freeFed` (present tense) correctly
+   * stops describing an owner's logged meals as bowl top-ups once the bowl is
+   * gone — but the coverage RATIO stays unfair for those days forever, and
+   * splitting the two predicates without this flag routed the owner who
+   * RECORDED the removal straight into "There isn't enough logged yet for your
+   * vet to read much into this", with nothing on the card mentioning the bowl.
+   * Recording the truth is not a thing this app may punish.
+   */
+  freeFedOverlap?: boolean;
+  /**
+   * The WHOLE-RANGE refusal (`lib/dietTrial.TrialFacts.rangeRefusal`) — a
+   * history, where `trialDietRefusal` is a now-fact.
+   *
+   * THE TERMINAL CARDS READ THIS ONE, mirroring `generate-report/render.ts`'s
+   * `rangeRefusal ?? trialDietRefusal`. Without it a completed trial whose diet
+   * went unfinished for six weeks and was eaten for the last two rendered
+   * "Meals logged on 56 of 56 days" over "112 feedings in total" — a maximally
+   * clean-LOOKING terminal card. The affirmative claim was correctly withheld
+   * (the gate has read the range fact since B-533 round 1), but withholding a
+   * claim is not the same as disclosing the finding, and the report was
+   * rendering the refusal on the same record. Same record, two surfaces, two
+   * answers, which is the whole thing the shared module exists to stop.
+   *
+   * The LIVE card deliberately does not use it: that register is present-tense
+   * ("needs a call today"), and a six-week-old refusal is not news today.
+   */
+  rangeRefusal?: TrialDietRefusal | null;
   /** R1b — the rated share of the meal record, which is what makes the refusal
    *  register above reachable at all. */
   intakeRating?: TrialIntakeRating | null;
@@ -653,7 +684,7 @@ function activeCard(
         // The drill-in survives alongside the count, for the same reason the
         // count does — a flag the owner cannot interrogate is an unfalsifiable
         // accusation (§6.3).
-        ...(!input.allowedSetUnavailable && (input.exposures?.offDiet ?? 0) > 0
+        ...((input.exposures?.offDiet ?? 0) > 0
           ? ([{ id: 'view_exposures', label: 'Outside the trial diet', emphasis: 'link' }] as const)
           : []),
         ...(overrunDays >= 0
@@ -713,16 +744,12 @@ function activeCard(
   const state: TrialCardState =
     overrunDays > 0 ? 'overrun'
       : input.freeFed ? 'free_fed'
-        : input.belowCoverageFloor ? 'below_floor'
+        // A ratio whose denominator includes days the app CANNOT observe is not
+        // a floor the owner failed to clear — so a past bowl suppresses the
+        // sub-floor state and is disclosed instead (`pushPastBowlCaveat`).
+        : input.belowCoverageFloor && !input.freeFedOverlap ? 'below_floor'
           : progress.dayCounter === 1 ? 'day_one'
-            // `allowedSetUnavailable` FORCES `clean`, and "clean" here names the
-            // LAYOUT rather than a verdict — it is the state with no exposure
-            // note and no drill-in. Without this the same empty-permit-set record
-            // that makes `offDiet` equal the total would route to state 3 and
-            // hand the owner a record-and-continue note plus an "Outside the
-            // trial diet" list of her own prescription.
-            : !input.allowedSetUnavailable && (input.exposures?.offDiet ?? 0) > 0
-              ? 'exposures'
+            : (input.exposures?.offDiet ?? 0) > 0 ? 'exposures'
               : 'clean';
 
   // ── State 1 — day 1. No claim in EITHER direction, because there is nothing
@@ -761,7 +788,7 @@ function activeCard(
         'count of what was eaten.',
     });
     const n = input.freeFed.loggedFeedings;
-    const ex = input.allowedSetUnavailable ? null : input.exposures;
+    const ex = input.exposures;
     // THE COUNT STAYS, THE CLAIM GOES (round 5 ①). "all N were the trial diet" is
     // the exact sentence `mayStateRecordClean` refuses under
     // `intakeNotDirectlyObserved`, and this branch was asserting it anyway — over
@@ -782,6 +809,7 @@ function activeCard(
           : `${n} ${noun} logged so far.`,
     });
     lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
+    pushUnmatchedCaveat(lines, input);
     pushScopeCaveat(lines, input);
     // Round 5: the forward line is restored, so Sam's card is not a count and a
     // caveat for six weeks. The card's job is keeping her IN the trial (§4.2),
@@ -820,6 +848,8 @@ function activeCard(
     });
     lines.push({ role: 'fact', text: soFarLine(input) });
     lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
+    pushUnmatchedCaveat(lines, input);
+    pushPastBowlCaveat(lines, input);
     pushUntrackedHead(lines, input);
     pushScopeCaveat(lines, input);
     // The sub-floor card is the one that gets MORE, not less (Jordan's
@@ -957,8 +987,6 @@ function pushRefusalLines(lines: TrialCardLine[], input: TrialCardInput): void {
  * were off the list — with its floor qualifier attached.
  */
 function pushRefusalExposures(lines: TrialCardLine[], input: TrialCardInput): void {
-  // With no usable allowed list the tally is an artefact, not a floor.
-  if (input.allowedSetUnavailable) return;
   const ex = input.exposures;
   if (!ex || ex.offDiet <= 0) return;
   const noun = ex.offDiet === 1 ? 'feeding' : 'feedings';
@@ -966,6 +994,58 @@ function pushRefusalExposures(lines: TrialCardLine[], input: TrialCardInput): vo
     role: 'fact',
     text: `Separately, ${ex.offDiet} logged ${noun} were outside the trial diet.` +
       floorSuffix(ex.offDiet),
+  });
+  pushUnmatchedCaveat(lines, input);
+}
+
+/**
+ * The unmatched-everything caveat — DISCLOSURE, not suppression.
+ *
+ * ── WHY THE PREVIOUS ANSWER WAS WRONG IN PRINCIPLE ───────────────────────────
+ *
+ * When nothing matches the recorded food list, the first fix REPLACED the
+ * exposure reading with "No allowed-food list is recorded for this trial yet".
+ * Three things were wrong with that, all found by executing it:
+ *
+ *   • IT DELETED A REAL FINDING, which is the one instrument §5.2 forbids and
+ *     the one this file's own header calls the wrong tool. An owner genuinely
+ *     feeding the old kibble twice a day produces exactly the same input as a
+ *     cold cache — so the suppression removed a true count as readily as a false
+ *     one.
+ *   • IT WAS DISCONTINUOUS. The reconciliation floor fires at ten feedings, so
+ *     the same record showed an accusation at nine and silence at ten: MORE
+ *     evidence of non-adherence bought LESS disclosure.
+ *   • IT WAS FALSE in the disjunct that usually triggers it. A stale
+ *     `food_item_id` or a re-photographed bag means a list IS recorded — and the
+ *     sentence rendered two lines under the card's own `foodLabel`, naming the
+ *     very food it claimed was not on file.
+ *
+ * So the count stays, the drill-in stays, and what is added is the one thing the
+ * app actually knows: that nothing matched, and therefore which DIRECTION the
+ * number is wrong in if the list is stale. Naming the direction is what turns a
+ * tally into a disclosure — and it is honest under both readings, because it
+ * does not guess which one is true.
+ */
+function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
+  // Only when the bowl is GONE — while it is down, the free-fed state owns the
+  // whole card and says this in its own lead.
+  if (!input.freeFedOverlap || input.freeFed) return;
+  lines.push({
+    role: 'qualifier',
+    text:
+      `For part of this trial ${input.petName} had a bowl that was topped up, so those ` +
+      'days have no meal-by-meal count and aren’t a gap in what you logged.',
+  });
+}
+
+function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
+  if (!input.allowedSetUnavailable) return;
+  lines.push({
+    role: 'qualifier',
+    text:
+      'None of these matched the food list recorded for this trial. If that list is ' +
+      'out of date or still syncing, this count is too high — worth a look before your ' +
+      'vet reads it.',
   });
 }
 
@@ -1081,25 +1161,6 @@ function windowLineFor(endIndex: number, overrunDays: number): string {
 function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
   if (input.coverage) lines.push({ role: 'fact', text: coverageLine(input.coverage) });
 
-  // NO USABLE ALLOWED LIST → NO EXPOSURE READING, in either direction. Coverage
-  // still renders above: how completely the record was kept is independent of
-  // what the trial permits, and it is the one fact still worth stating.
-  //
-  // The sentence mirrors what `generate-report` renders on the same record, so an
-  // owner who has just been told the list is missing does not then read a
-  // contradicting adherence figure on the vet's page.
-  if (input.allowedSetUnavailable) {
-    lines.push({
-      role: 'fact',
-      text:
-        'No allowed-food list is recorded for this trial yet, so nothing here has been ' +
-        'checked against it.',
-    });
-    lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
-    pushUntrackedHead(lines, input);
-    return;
-  }
-
   const ex = input.exposures;
   if (ex) {
     lines.push({ role: 'fact', text: exposureLine(ex) });
@@ -1107,6 +1168,8 @@ function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
       role: 'qualifier',
       text: BLIND_SPOT_QUALIFIER + (ex.offDiet > 0 ? floorSuffix(ex.offDiet) : ''),
     });
+    pushUnmatchedCaveat(lines, input);
+    pushPastBowlCaveat(lines, input);
     pushUntrackedHead(lines, input);
     pushScopeCaveat(lines, input);
     return;
@@ -1130,9 +1193,7 @@ function soFarLine(input: TrialCardInput): string {
   if (input.coverage) {
     parts.push(`meals on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`);
   }
-  // Same rule as `pushRecordFacts`: with no usable allowed list there is no
-  // exposure reading to fold into this sentence, in either direction.
-  const ex = input.allowedSetUnavailable ? null : input.exposures;
+  const ex = input.exposures;
   if (ex) {
     const noun = ex.totalFeedings === 1 ? 'feeding' : 'feedings';
     parts.push(`${ex.totalFeedings} ${noun} in total`);
@@ -1217,7 +1278,10 @@ function completedCard(
   // the owner CALLED a refusal and not the one the record shows was one.
   if (input.intakeDeclineHeadline) {
     pushDeclineLines(lines, input);
-  } else if (input.trialDietRefusal) {
+  } else if (input.rangeRefusal ?? input.trialDietRefusal) {
+    // `rangeRefusal ?? trialDietRefusal` — the same precedence
+    // `generate-report/render.ts` uses. A finished trial is a HISTORY, so the
+    // recency-windowed fact is the wrong one to branch on here.
     pushRefusalWithheld(lines, input, terminalDayCount(trial, startIndex));
   } else {
     pushRecordFacts(lines, input);
@@ -1402,9 +1466,10 @@ function abandonedCard(
         'diet, not a different plan.',
     });
     pushRefusalWithheld(lines, input, dayCount);
-  } else if (input.trialDietRefusal) {
+  } else if (input.rangeRefusal ?? input.trialDietRefusal) {
     // R1 — the same withholding, reached from the RECORD rather than from the
-    // stored reason. An owner who stopped early for cost or difficulty over a
+    // stored reason, and off the RANGE fact for the same reason `completedCard`
+    // uses it: this card is a history. An owner who stopped early for cost or difficulty over a
     // diet the log shows was going uneaten gets the same treatment as one who
     // named the refusal: the clean statement is not sayable either way. No
     // "different diet, not a different plan" note here — that sentence answers a

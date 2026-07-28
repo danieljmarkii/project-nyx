@@ -331,6 +331,8 @@ export async function loadDietTrialFacts(args: {
     // R1 — the register PR 5 built and nothing consumed. Presence-only: null is
     // not evidence the pet is eating.
     trialDietRefusal: facts?.trialDietRefusal ?? null,
+    // The history, for the terminal cards — see the field's docstring.
+    rangeRefusal: facts?.rangeRefusal ?? null,
     // R1b — what makes the register above reachable.
     intakeRating: facts?.intakeRating ?? null,
     // §10 S3 — disclosed, not dropped. The clip is right; the silence was not.
@@ -347,6 +349,8 @@ export async function loadDietTrialFacts(args: {
     // widening the arrangement read to overlap without splitting the predicate
     // latched this state for 38 days after a bowl was removed on day 3, calling
     // 82 logged meals "bowl top-ups" and deleting the coverage ratio.
+    // The overlap flag, for the days a past bowl made unobservable.
+    freeFedOverlap: facts?.intakeNotDirectlyObserved ?? false,
     freeFed: facts?.intakeNotDirectlyObservedNow
       ? { loggedFeedings: facts.exposures.totalFeedings }
       : null,
