@@ -1061,18 +1061,25 @@ function safetyFlagRow(f: SafetyFlag, snap: ReportSnapshot): string {
             r.ratedFeedings === 1 ? '' : 's'
           }${of} left unfinished</b> across ${num(r.days)} day${r.days === 1 ? '' : 's'}.`,
         )
-      } else {
-        // THE OWNER-DECLARED PATH GETS ITS OWN DATE, and it needs one more than the counted
-        // path does. The date range used to live inside the counted branch, so a
-        // stopped-reason-only flag rendered with NO time anchor at all — presenting a
-        // present-tense feline lipidosis window over an event up to `TRIAL_ANCHOR_GRACE_DAYS`
-        // stale, on a page whose own Feeding line could read "14 of 14 rated meals fully
-        // eaten". The dates were already on the payload; only the branch was wrong.
-        bits.push('The trial ran to this window with no intake ratings logged against it.')
       }
-      // ONE DATE ANCHOR, ON EVERY PATH. A safety flag a vet cannot place in time spends band
-      // credibility in the one zone that cannot afford it.
-      bits.push(`Trial window: ${h(fmtRange(f.rangeStartDate, f.rangeEndDate))}.`)
+      // ⚠️ NO SENTENCE HERE ABOUT WHAT THE RECORD DOES NOT CONTAIN. A repair pass added
+      // "The trial ran to this window with no intake ratings logged against it" to this
+      // branch and `adversarial-reviewer` executed it: `refusal` is null whenever the
+      // FLOORS are unmet, not only when ratings are absent, so a trial with 20 rated
+      // feedings (5 refused — a 25% share, under `REFUSAL_SHARE`) whose owner marked it
+      // `stopped_reason='refused'` printed that line on the safety band beside its own
+      // page-1 "15 of 20 rated meals fully eaten". A flatly false claim, self-contradicted
+      // one section away, in the zone that can least afford it. The flag payload cannot
+      // tell the two causes apart, so the honest move is to say nothing: the
+      // owner-declared sentence below already states what this flag rests on.
+      //
+      // ONE DATE ANCHOR, ON EVERY PATH, and it is labelled for what the value IS. The
+      // range is the documented OVERLAP (`max(scope start, trial start, first log) …
+      // min(today, ended_at, scope end)`), so calling it the "trial window" asserted
+      // something the value does not support — executed on a trial started Apr 1 whose
+      // logs begin Jun 15, where the band read "Trial window: Jun 15 – Jul 2" in the same
+      // paragraph as "day 93 of 120".
+      bits.push(`Dates covered: ${h(fmtRange(f.rangeStartDate, f.rangeEndDate))}.`)
       if (wide) {
         // THE ATTRIBUTION GAP IS DISCLOSED, NOT PAPERED OVER (B-530). Under this population the
         // app could not resolve which logged food was the prescribed diet, so naming the diet

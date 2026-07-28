@@ -1955,13 +1955,23 @@ Deno.test('B-531/R2 — a no-trial report drops off-diet vocabulary for what it 
 // `adversarial-reviewer` returned FAIL on the first cut of this PR. Each test below
 // is one of its executed counterexamples, pinned so the repair cannot silently rot.
 
-Deno.test('ADV① — the re-photographed bag in its REALISTIC order reaches the band', () => {
-  // The break: the fallback was gated on `allowedSetUnavailable`, whose second disjunct
-  // needs zero matched feedings across the WHOLE range — so the seven days the cat ate
-  // before the bag was re-shot permanently disabled it, and the report rendered "7
-  // matched, 42 did not" with an EMPTY safety band over ~7% body-weight loss. That is
-  // verbatim the artifact the B-494 ruling was written about, reached through the repair
-  // meant to prevent it. The population choice is now made per window.
+Deno.test('ADV① KNOWN LIMIT — a PARTIAL identity miss still silences the band (B-576)', () => {
+  // ⚠️ THIS TEST PINS A GAP, NOT A FIX, and it is the most important thing in this file
+  // to read before widening the fallback. `adversarial-reviewer` round 1 found this
+  // record: the seven days the cat ate before the bag was re-shot keep
+  // `allowedSetUnavailable` FALSE, so the fallback never engages and the band is empty
+  // over ~7% body-weight loss. Round 2 then broke the obvious repair (choosing the
+  // population per window, on `narrow.recentRated > 0`) three separate ways — it moved
+  // the veto into the 14-day window where a newly-refusing cat actually lives, it turned
+  // the selector into a RATING-PRESENCE test that routed the feline lipidosis escalation
+  // onto a rival food for an owner who logs the prescription unrated, and it let the two
+  // refusal facts come from different populations, which the report then rendered ~9x
+  // quieter than the owner's own card.
+  //
+  // The two directions are not reconcilable without knowing which food was the trial
+  // diet: 2 matched feedings beside 24 unmatched refused ones WANTS the fallback, and 64
+  // matched unrated ones beside 3 unmatched refused ones does not. That is B-529.
+  // Tracked as B-576; this test is expected to FLIP when it lands.
   const input = wellLoggedTrialInput({ events: [] })
   input.pet.name = 'Miso'
   input.pet.species = 'cat'
@@ -1984,16 +1994,19 @@ Deno.test('ADV① — the re-photographed bag in its REALISTIC order reaches the
     { eventId: 'w2', weightKg: 4.1, occurredAt: at('2026-06-28', '15:00:00') },
   ]
   const snap = assembleReport(input)
-  assert.equal(snap.trial?.allowedSetUnavailable, false, 'seven feedings DID match — the old gate stayed shut here')
-  assert.ok(snap.trial?.trialDietRefusal, 'the recency window has no rated trial-diet feeding, so it falls back')
-  assert.equal(snap.trial?.trialDietRefusal?.population, 'meal_record')
-  assert.ok(snap.safetyFlags.some((f) => f.kind === 'trial_diet_refusal'), 'the band is not empty on this patient')
+  assert.equal(snap.trial?.allowedSetUnavailable, false, 'seven feedings DID match, so the gate stays shut')
+  assert.equal(snap.trial?.trialDietRefusal, null, 'KNOWN LIMIT — flip me when B-529 lands')
+  assert.equal(snap.trial?.rangeRefusal, null, 'KNOWN LIMIT — flip me when B-529 lands')
+  assert.equal(
+    snap.safetyFlags.filter((f) => f.kind === 'trial_diet_refusal').length,
+    0,
+    'KNOWN LIMIT — the band is empty on this patient, which is what B-529 has to fix',
+  )
+  // What DOES still reach the page, and why this is a gap rather than a regression: the
+  // weight fact renders on its own now (it used to ride the refusal branch and vanish
+  // with it), so the most action-forcing number is at least present.
   const text = plain(renderReport(snap))
-  const aboveTrialBlock = text.slice(0, text.indexOf('Diet trial'))
-  assert.ok(/Diet not eaten/.test(aboveTrialBlock))
-  assert.ok(/about 7% of body weight/.test(aboveTrialBlock), 'composed with the weight')
-  // And the refused bowls are no longer scored as an owner adherence failure.
-  assert.ok(!/7 matched, 42 did not/.test(text))
+  assert.ok(/about 7% of body weight/.test(text))
 })
 
 Deno.test('ADV④ — a single midnight-straddling bout does NOT fire the band', () => {
@@ -2043,8 +2056,15 @@ Deno.test('ADV⑤ — a stopped-reason-only flag carries a date anchor', () => {
   assert.ok(flag)
   assert.equal(flag?.kind === 'trial_diet_refusal' ? flag.refusal : undefined, null, 'no counts invented')
   const text = plain(renderReport(snap))
-  assert.ok(/Trial window: Jun 1 – Jun 20, 2026/.test(text), 'the flag can be placed in time')
-  assert.ok(/no intake ratings logged against it/.test(text), 'and says what it is NOT measuring')
+  // Labelled for what the value IS — the overlap range, not the trial window. Round 2
+  // executed a trial started Apr 1 with logs from Jun 15 where "Trial window: Jun 15 –
+  // Jul 2" sat in the same paragraph as "day 93 of 120".
+  assert.ok(/Dates covered: Jun 1 – Jun 20, 2026/.test(text), 'the flag can be placed in time')
+  // AND IT CLAIMS NOTHING ABOUT WHY THE COUNTS ARE ABSENT. A repair pass added "no intake
+  // ratings logged against it" here; `refusal` is null whenever the FLOORS are unmet, not
+  // only when ratings are missing, so that sentence rendered on records with twenty of
+  // them beside page 1's "15 of 20 rated meals fully eaten".
+  assert.ok(!/no intake ratings logged against it/.test(text))
 })
 
 Deno.test('ADV⑥ — the wide row does not re-assert the attribution it just disclaimed', () => {

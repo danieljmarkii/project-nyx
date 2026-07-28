@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-28 · shipped via **#503**
 
-Bucket A of the `generate-report` redeploy gate (`docs/diet-trial-preship-review-2026-07.md` §2), second PR of the train: **B-530** + **B-531**, carrying **B-494**'s lane. B-529 (protein identity) is still unbuilt, and this PR is deliberately written to be *identity-agnostic* rather than to wait on it.
+Bucket A of the `generate-report` redeploy gate (`docs/diet-trial-preship-review-2026-07.md` §2), second PR of the train: **B-530** + **B-531**, carrying **B-494**'s lane. B-529 (protein identity) is still unbuilt. This PR set out to be *identity-agnostic* and — after two adversarial rounds — ships a **narrower** claim than it started with; see the review section, which is the part worth reading.
 
 ## The mechanism, which turned out to be one thing wearing three ticket numbers
 
@@ -16,7 +16,7 @@ So: one animal, one photograph, and two independent safety surfaces went quiet.
 
 ## What was built
 
-**The lane no longer depends on the match.** The repair is explicitly *not* a better matcher — a matcher can always miss, and B-529 owns making it miss less. `computeTrialFacts` now accumulates a second, **wide** population (every in-range non-treat feeding) in the same pass as the narrow one, through a shared `tallyRefusal` helper so the two can never drift into different definitions of "not eaten". When the module has already concluded it cannot identify the diet (`allowedSetUnavailable`, both disjuncts), the same ratified floors are measured over the meal record and the fact is tagged `population: 'meal_record'`.
+**The lane speaks where the app knows it is blind.** The repair is explicitly *not* a better matcher — a matcher can always miss, and B-529 owns making it miss less. `computeTrialFacts` now accumulates a second, **wide** population (every in-range non-treat feeding) in the same pass as the narrow one, through a shared `tallyRefusal` helper so the two can never drift into different definitions of "not eaten". When the module has already concluded it cannot identify the diet (`allowedSetUnavailable`, both disjuncts), the same ratified floors are measured over the meal record and the fact is tagged `population: 'meal_record'`.
 
 Two properties hold by construction, and both are asserted:
 
@@ -29,21 +29,41 @@ Two properties hold by construction, and both are asserted:
 
 **`weightDuringTrial` is decoupled** (`render.ts:1706`). It was pushed from *inside* the refusal branch, so every identity miss silenced the weight line too, and the two failures compounded into the quietest possible page over the sickest patient. It renders on every branch now, and yields to the safety band when that carried it — composed once, never twice.
 
-**B-494's flag** is a new `trial_diet_refusal` `SafetyFlag`, built from the trial block's `rangeRefusal ?? trialDietRefusal` (the *range* fact — a report is a history, and the 14-day recency bound would drop the flag on a cat whose ratings went quiet) or from an owner-declared `stopped_reason='refused'` with no counts invented. It composes the trial-scoped weight delta **on the flag itself**, because the cold read's finding was never that a fact was missing: refusal, weight delta, typical intake and the free-fed bowl were all on the page, distributed across four sections and never put together. The legend now names the lane, so the zone the report teaches the reader to scan matches what actually watches it.
+**B-494's flag** is a new `trial_diet_refusal` `SafetyFlag`, built from the trial block's range fact when it spans more than one episode, else the now-fact (the *range* fact — a report is a history, and the 14-day recency bound would drop the flag on a cat whose ratings went quiet) or from an owner-declared `stopped_reason='refused'` with no counts invented. It composes the trial-scoped weight delta **on the flag itself**, because the cold read's finding was never that a fact was missing: refusal, weight delta, typical intake and the free-fed bowl were all on the page, distributed across four sections and never put together. The legend now names the lane, so the zone the report teaches the reader to scan matches what actually watches it.
 
 **B-531** — with a trial in-window and a dark permit set, all three count branches suppress themselves and the page fell through to the banned negative claim three ways. The code's own unreachability comment omitted that sub-state; **the comment was the defect, not the guard**. The page-1 row, appendix C's empty row and its caption now branch on *whether there is a trial*, not on whether its permit set hydrated. R2's rename landed with it: a no-trial report drops "off-diet" vocabulary for what it actually lists, including the At-a-glance tile still labelled *"Off-diet load"*.
 
 One thing fixed in passing: the report said *"logged as refused"* over a not-finished predicate (`refused`/`picked`/`some`), reporting a rating the record does not contain about every `some` bowl. The card's headline had been corrected for exactly this in #502; the report had the same defect and nobody had looked.
 
-## The adversarial pass failed the first cut, on the scenario the PR is named for
+## The adversarial pass ran twice, failed both times, and changed what this PR claims
+
+This is the most important section of the record, because the outcome is a **narrowed scope**, not a clean fix.
+
+### Round 1 — the gate was too narrow
 
 `adversarial-reviewer` returned **FAIL** with four executed breaks. The most important one is worth recording in full, because the shape of the mistake is more instructive than the fix.
 
 The fallback was gated on `allowedSetUnavailable`, whose second disjunct requires `narrow.feedings === 0` **over the whole range**. So a *single historical match* permanently disabled it — and the realistic ordering of a re-photographed bag has matches before the re-shoot and none after. The reviewer ran it: a cat that ate `z/d` for seven days, then had her bag re-shot and refused 42 of 42 bowls against the new row over three weeks, returned **both refusal facts null and an empty safety band**, with the 42 refused bowls rendering as owner-blamed exposures. That is verbatim the artifact the B-494 ruling was written about, reached *through the repair meant to prevent it*. The PR's own test built the version where nothing ever matched — which is the tidier scenario, not the likely one.
 
-The defect was a **scope mismatch, not a missing threshold**: `narrow.feedings` is counted over the range while the fact that *speaks* is bounded to the last 14 days, so a match three weeks ago vetoed a fallback for a window it contributes nothing to. The repair chooses the population **per window**, on emptiness of the narrow population in that window — no threshold, and it cannot mistake a dirty trial for a broken join the way a share test would.
+The defect looked like a **scope mismatch, not a missing threshold**: `narrow.feedings` is counted over the range while the fact that *speaks* is bounded to the last 14 days. So the repair chose the population **per window**, on emptiness of the narrow population in that window.
 
-The other three: the report escalated on `rangeRefusal` with **no episode guard** (a single 3.5-hour bout across local midnight fired the band on a record the card is deliberately silent about — and the report *couldn't* add the guard, because `rangeRefusalSpansEpisodes` was not on `TrialBlock`); the stopped-reason-only flag rendered with **no date anchor** while its payload already held the dates; and the wide-population row **disclaimed the attribution and then re-asserted it** two clauses later. All four fixed and pinned as regressions.
+### Round 2 — the repair broke three ways, and the gate went back
+
+Round 2 attacked the repair and falsified it:
+
+- **It moved the veto rather than removing it.** A re-photograph inside the last 14 days is still silent — and that interval is exactly where a newly-refusing cat lives. Swept across re-shoot dates: silent on 26 consecutive refused bowls whenever the re-shoot fell inside the window.
+- **It turned the selector into a rating-presence test.** An owner who logs 64 bowls of the prescription *unrated* and rates the three notable events — a rival kibble refused — routed the feline lipidosis escalation onto the rival food. A new over-fire the original gate did not have, and it makes attention-biased rating *more* likely to raise a false alarm, not less.
+- **It let the two refusal facts come from different populations.** The card reads the now-fact first and the report reads the range fact first, so on 911 of 1,459 mixed-population records the vet's safety band printed a number ~9× smaller and weeks staler than the owner's card — and named the diet the card correctly refuses to name.
+
+So the gate went back to where round 1 put it. **The two failing directions are not reconcilable here**, and the executed pair shows why: 2 matched feedings beside 24 unmatched refused ones *wants* the fallback, while 64 matched unrated ones beside 3 unmatched refused ones does *not* — and the only thing separating them is knowing which food was the trial diet. A share test is the obvious next idea and is precisely the one that cannot tell a broken join from a genuinely dirty trial.
+
+**What this PR therefore claims, narrowly and truly:** the fallback speaks where the app has *already concluded* it cannot identify the diet at all. That covers the un-hydrated allowed set and the bag that never matched once. It does **not** cover a partial miss, which includes the ordinary case where the owner logged some feedings before re-photographing. The original claim — "the lane must not depend on the match" — was false, and the docstring, the tests and the backlog row now say so. B-530 is filed **Partial**, not Done.
+
+The task brief said this PR was "best run after Bucket-A PR 1 so the relation exists." That turned out to be load-bearing rather than advisory for exactly this piece: B-531 and B-494's structure stand on their own, but the fallback's engagement rule is the part that needs B-529.
+
+### Round 1's other three breaks (all fixed)
+
+The report escalated on `rangeRefusal` with **no episode guard** (a single 3.5-hour bout across local midnight fired the band on a record the card is deliberately silent about — and the report *couldn't* add the guard, because `rangeRefusalSpansEpisodes` was not on `TrialBlock`); the stopped-reason-only flag rendered with **no date anchor** while its payload already held the dates; and the wide-population row **disclaimed the attribution and then re-asserted it** two clauses later. All four fixed and pinned as regressions.
 
 Two more findings were filed rather than patched, as **B-577**: the `REFUSAL_*` floors were ratified as a *claim gate* whose own justification reads "silence is cheap", and B-494 makes them drive an above-the-fold clinical escalation. Neither number was re-derived for that job — the lane fires on 3 rated feedings drawn from an arbitrarily large unrated population, and `UNHYDRATED_SET_FLOOR = 10` keeps a once-a-day refusing cat silent for nine days, well past the window the flag's own copy cites.
 

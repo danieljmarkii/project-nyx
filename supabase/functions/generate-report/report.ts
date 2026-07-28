@@ -2682,6 +2682,14 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
   // register speak from an unspanned range fact, and a band that fires where the owner's
   // own card is silent gives one record two answers with the VET's copy taking the louder
   // one. The now-fact carries the span guard internally, so it needs no test here.
+  //
+  // THIS IS THE SPAN HALF OF `liveRefusal`'S GUARD, NOT THE WHOLE OF IT, and the gap is
+  // named rather than papered over: the card ALSO requires `!isEatingNow`, which this
+  // cannot mirror because the stand-down pair (`recentFinishedFeedings` /
+  // `recentRatedFeedings`) is not on `TrialBlock`. So a pet that refused for a fortnight
+  // and has since eaten well still fires the band while the card has stood down —
+  // over-fire, the survivable direction, and a history is a defensible thing for a report
+  // to escalate on where it is not for a live card. Filed as B-578.
   if (trialBlock) {
     const spannedRange = trialBlock.rangeRefusal && trialBlock.rangeRefusalSpansEpisodes
       ? trialBlock.rangeRefusal

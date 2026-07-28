@@ -810,12 +810,21 @@ export interface TrialDietRefusal {
  * re-rendered as owner-blamed off-diet exposures. The sickest patient in the app
  * fell out of the one lane built to catch her, because a photo was retaken.
  *
- * The repair is not a better matcher — a matcher can always miss, and B-529 owns
- * making it miss less. The repair is that the lane MUST NOT DEPEND ON THE MATCH.
- * So when the app has already concluded it cannot identify the trial diet
- * (`allowedSetUnavailable` — no usable `primary_diet` row, or one that matched
- * nothing across ten-plus feedings), the same floors are measured over the MEAL
- * RECORD instead: every in-range non-treat feeding, identity or no identity.
+ * WHAT THIS FIXES, STATED NARROWLY, because two `adversarial-reviewer` rounds
+ * falsified the wider claim it originally carried. When the app has ALREADY
+ * concluded it cannot identify the trial diet at all (`allowedSetUnavailable` — no
+ * usable `primary_diet` row, or one that matched nothing across ten-plus feedings),
+ * the same floors are measured over the MEAL RECORD instead: every in-range
+ * non-treat feeding, identity or no identity. That covers the un-hydrated allowed
+ * set and the bag that never matched once.
+ *
+ * IT IS NOT "THE LANE NO LONGER DEPENDS ON THE MATCH", which is what an earlier
+ * draft of this docstring claimed. A partial match — including the ordinary case
+ * where the owner logged some feedings before re-photographing the bag — keeps the
+ * narrow population non-empty, and the lane still misses. Two attempts to widen the
+ * gate were executed against and both broke (see the selection site below for the
+ * counterexamples). The honest scope is: this fallback speaks where the app KNOWS
+ * it is blind, and B-529 is what makes it blind less often.
  *
  * WHAT THAT COSTS, IN BOTH DIRECTIONS — and the second one is the dangerous half,
  * so it is stated first. An earlier draft of this docstring named only the
@@ -837,9 +846,9 @@ export interface TrialDietRefusal {
  *
  *   • OVER-FIRE (alarming, the survivable direction). The wider population cannot
  *     name the food, so a cat refusing a rival kibble while eating its hydrolysate
- *     reads the same as one refusing the hydrolysate. Reachable only where the
- *     narrow population is empty in the window being measured, which is a state
- *     every surface already treats as degraded.
+ *     reads the same as one refusing the hydrolysate. Reachable only under
+ *     `allowedSetUnavailable` — a state every surface already treats as degraded,
+ *     and where `mayClaimAllMatched` has already returned false.
  *
  * The alternative to both is the measured one: silence over an animal that is not
  * eating.
@@ -857,13 +866,12 @@ export interface TrialDietRefusal {
  * are named here so the gap reads as a known limit rather than as coverage. Both
  * have one root cause, food identity, which is B-529's PR; the residual is B-576.
  *
- *   1. THE PARTIAL MISS, WITHIN A WINDOW. The per-window rule below fixes the
- *      SEQUENTIAL case (matches before the re-photograph, none after) because the
- *      recency window empties. It does not fix the CONCURRENT one: a trial is often
- *      a wet AND a dry of the same diet (§4.1), so if only the dry bag is re-shot
- *      the wet keeps the narrow population non-empty in every window, and a cat
- *      eating the wet while refusing the dry reads as eating. Emptiness cannot see
- *      that, and a share test would fire on every legitimate mixed record.
+ *   1. THE PARTIAL MISS, IN BOTH ITS FORMS. Sequential — the owner logged some
+ *      feedings before re-photographing the bag, so `narrow.feedings > 0` and the
+ *      gate stays shut over a cat refusing everything since. Concurrent — a trial
+ *      is often a wet AND a dry of the same diet (§4.1), so re-shooting only the
+ *      dry leaves the wet matching and a cat eating the wet while refusing the dry
+ *      reads as eating. Both need to know which food was the trial diet.
  *
  *   2. DILUTION — the under-fire named above. Restated here because it is the one
  *      residual the per-window rule does NOT touch: it is a property of the wide
@@ -1550,65 +1558,78 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const allowedSetUnavailable =
     base.allowedSetUnavailable || (narrow.feedings === 0 && totalFeedings >= UNHYDRATED_SET_FLOOR);
 
-  // ── B-530: WHICH POPULATION SPEAKS, PER WINDOW ─────────────────────────────
+  // ── B-530: WHICH POPULATION SPEAKS ─────────────────────────────────────────
   //
-  // ⚠️ THE FIRST CUT KEYED THIS ON `allowedSetUnavailable` AND `adversarial-reviewer`
-  // BROKE IT ON THE SCENARIO IT WAS NAMED FOR. That flag's second disjunct requires
-  // `narrow.feedings === 0` over the WHOLE RANGE, so a SINGLE historical match
-  // permanently disabled the fallback — and the realistic ordering of a
-  // re-photographed bag has matches before it and none after. Executed: a cat that
-  // ate `z/d` for seven days, then had its bag re-shot and refused 42 of 42 bowls
-  // against the new row over the next three weeks, returned BOTH refusal facts null
-  // and an EMPTY safety band, with the 42 refused bowls of the prescribed diet
-  // rendered as owner-blamed exposures. That is verbatim the artifact the B-494
-  // ruling was written about, reached through the repair meant to prevent it.
+  // ONE POPULATION, FOR BOTH WINDOWS, CHOSEN ON `allowedSetUnavailable` — and the
+  // narrowness of that gate is a deliberate retreat, taken after TWO
+  // `adversarial-reviewer` rounds broke two successive attempts to widen it. The
+  // history is recorded here because the next person to look at this will have the
+  // same idea, and it is the wrong one without B-529.
   //
-  // The defect was a scope mismatch, not a missing threshold: `narrow.feedings` is
-  // counted over the range while the fact that SPEAKS is bounded to the last
-  // `REFUSAL_WINDOW_DAYS`, so a match three weeks ago vetoed a fallback for a window
-  // it contributes nothing to. So the choice is made PER WINDOW, on the same rows
-  // each fact is measured over: use the narrow population when it has any rated
-  // feeding IN THAT WINDOW, and fall back only where it is empty.
+  //   ROUND 1 broke the gate for being too narrow. `allowedSetUnavailable`'s second
+  //   disjunct needs `narrow.feedings === 0` over the WHOLE range, so a single
+  //   historical match disables the fallback permanently — and the realistic
+  //   ordering of a re-photographed bag has matches before the re-shoot and none
+  //   after. Executed: ate for seven days, bag re-shot, refused 42 of 42 bowls over
+  //   three weeks → both facts null, empty safety band.
   //
-  // EMPTINESS, NOT A SHARE, AND THAT IS DELIBERATE. A "the allowed set only accounts
-  // for x% of the record" test would invent a threshold, and worse, a low narrow
-  // share is exactly what a real trial with real off-diet exposures looks like —
-  // widening the fallback on it would hand the meal-record fact to records whose
-  // allowed set is working fine. Emptiness needs no number and cannot mistake a
-  // dirty trial for a broken join.
+  //   ROUND 2 broke the repair. Choosing PER WINDOW on `narrow.recentRated > 0`
+  //   moved the veto rather than removing it (a re-shoot inside the last 14 days is
+  //   still silent on 26 consecutive refused bowls — and that interval is exactly
+  //   where a newly-refusing cat lives); it made the selector a RATING-PRESENCE
+  //   test, so an owner who logs 64 bowls of the prescription unrated and rates
+  //   three refused rival meals routed the feline lipidosis escalation onto the
+  //   rival food; and it let the two facts come from DIFFERENT populations, which
+  //   the report's `rangeRefusal`-first precedence then rendered ~9× quieter than
+  //   the owner's card on 62% of mixed records.
   //
-  // WITHIN a window the fact, its stand-down pair and its episode span all read the
-  // SAME counters. That coupling is not tidiness: `recentFinished / recentRated` is
-  // the ratio the card stands the register down on, and a numerator and denominator
-  // drawn from different populations is a silent lie in the reassuring direction.
-  const nowPop = narrow.recentRated > 0 ? narrow : wide;
-  const rangePop = narrow.rangeRated > 0 ? narrow : wide;
-  const popOf = (c: RefusalCounters): TrialRefusalPopulation =>
-    c === narrow ? 'trial_diet' : 'meal_record';
+  // The two failing directions are not reconcilable here, and the executed pair
+  // shows why: 2 matched feedings beside 24 unmatched refused ones WANTS the
+  // fallback, while 64 matched unrated ones beside 3 unmatched refused ones does
+  // NOT — and the only thing separating them is knowing which food was the trial
+  // diet. That is B-529's job, not a threshold to be guessed at inside this PR. A
+  // share test is the obvious next idea and is the one that cannot distinguish a
+  // broken join from a genuinely dirty trial.
+  //
+  // So the gate stays where round 1 put it: the fallback speaks only where the
+  // module has ALREADY concluded it cannot identify the diet at all — no usable
+  // `primary_diet` row, or one that matched nothing across ten-plus feedings. That
+  // is conservative, its failure mode is SILENCE (the status quo, never a
+  // regression), and it carries no over-fire. Everything it misses is filed as
+  // B-576 and gated on B-529.
+  //
+  // ONE population for both facts is load-bearing on its own: `rangeRefusal` and
+  // `trialDietRefusal` are read together by `lib/dietTrialCard.ts` and by
+  // `generate-report`, with opposite precedence, so two facts measured over
+  // different rows put a smaller, staler number on the vet's safety band than the
+  // one on the owner's card. The same coupling covers the stand-down pair
+  // (`recentFinished / recentRated`) and the episode span.
+  const population: TrialRefusalPopulation = allowedSetUnavailable ? 'meal_record' : 'trial_diet';
+  const pop = allowedSetUnavailable ? wide : narrow;
 
   const trialDietRefusal: TrialDietRefusal | null =
-    nowPop.recentRated >= REFUSAL_MIN_RATED &&
-    nowPop.recentDays.size >= REFUSAL_MIN_DAYS &&
-    spanMsOf(nowPop.recentStamps) >= REFUSAL_MIN_SPAN_MS &&
-    nowPop.recentNotFinished / nowPop.recentRated >= REFUSAL_SHARE
+    pop.recentRated >= REFUSAL_MIN_RATED &&
+    pop.recentDays.size >= REFUSAL_MIN_DAYS &&
+    spanMsOf(pop.recentStamps) >= REFUSAL_MIN_SPAN_MS &&
+    pop.recentNotFinished / pop.recentRated >= REFUSAL_SHARE
       ? {
-          refusedFeedings: nowPop.recentNotFinished,
-          ratedFeedings: nowPop.recentRated,
-          days: nowPop.recentDays.size,
-          population: popOf(nowPop),
+          refusedFeedings: pop.recentNotFinished,
+          ratedFeedings: pop.recentRated,
+          days: pop.recentDays.size,
+          population,
         }
       : null;
 
   // Same floors, no span guard — see `TrialFacts.rangeRefusal`.
   const rangeRefusal: TrialDietRefusal | null =
-    rangePop.rangeRated >= REFUSAL_MIN_RATED &&
-    rangePop.rangeDays.size >= REFUSAL_MIN_DAYS &&
-    rangePop.rangeNotFinished / rangePop.rangeRated >= REFUSAL_SHARE
+    pop.rangeRated >= REFUSAL_MIN_RATED &&
+    pop.rangeDays.size >= REFUSAL_MIN_DAYS &&
+    pop.rangeNotFinished / pop.rangeRated >= REFUSAL_SHARE
       ? {
-          refusedFeedings: rangePop.rangeNotFinished,
-          ratedFeedings: rangePop.rangeRated,
-          days: rangePop.rangeDays.size,
-          population: popOf(rangePop),
+          refusedFeedings: pop.rangeNotFinished,
+          ratedFeedings: pop.rangeRated,
+          days: pop.rangeDays.size,
+          population,
         }
       : null;
 
@@ -1631,11 +1652,11 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // Measured on the RANGE fact's own stamps, not the recency window's — the live
     // register reads `rangeRefusal` on the stand-down path, so the span guard has
     // to be about the same refusals it would speak from.
-    rangeRefusalSpansEpisodes: spanMsOf(rangePop.rangeStamps) >= REFUSAL_MIN_SPAN_MS,
-    recentFinishedFeedings: nowPop.recentFinished,
+    rangeRefusalSpansEpisodes: spanMsOf(pop.rangeStamps) >= REFUSAL_MIN_SPAN_MS,
+    recentFinishedFeedings: pop.recentFinished,
     // The same window and the same rows as `recentFinishedFeedings` — they are a
     // ratio, so a denominator drawn from anywhere else would be a silent lie.
-    recentRatedFeedings: nowPop.recentRated,
+    recentRatedFeedings: pop.recentRated,
     // Null, not `{ rated: 0, feedings: 0 }` — see the field on `TrialFacts`.
     // R1b always reports the WIDE record and the NARROW trial-diet slice, whichever
     // population the refusal lane spoke from: the teach line is a fact about the

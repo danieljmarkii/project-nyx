@@ -1961,26 +1961,23 @@ describe('B-576 — known limits of the wide population (expected to flip with B
   });
 });
 
-// ── B-530 round 2 — the per-window fallback ──────────────────────────────────
+// ── B-530 round 2 — why the fallback gate stayed narrow ─────────────────────
 //
-// `adversarial-reviewer` broke the first cut on the scenario it was named for. The
-// fallback was gated on `allowedSetUnavailable`, whose second disjunct requires
-// `narrow.feedings === 0` over the WHOLE RANGE — so ONE historical match disabled it
-// permanently, and the realistic ordering of a re-photographed bag has matches before
-// the re-shoot and none after. The scope mismatch is the defect: `narrow.feedings` is
-// counted over the range while the fact that speaks is bounded to the recency window,
-// so a match three weeks ago vetoed a fallback for a window it contributes nothing to.
-describe('B-530 — the fallback is chosen per window, not once per trial', () => {
+// `adversarial-reviewer` ran twice. Round 1 broke the `allowedSetUnavailable` gate for
+// being too narrow; round 2 broke the obvious repair — choosing the population per
+// window on `narrow.recentRated > 0` — three separate ways. These tests pin the two
+// halves of the trade so the next attempt starts from the executed evidence rather than
+// from the same idea.
+describe('B-530 — the gate is deliberately narrow, and both directions are pinned', () => {
   const CAT = { ...TRIAL, species: 'cat' as const };
 
-  /** The reviewer's counterexample: the cat ate for a week, then the bag was
+  /** Round 1's counterexample: the cat ate for a week, then the bag was
    *  re-photographed and she refused everything against the new row. */
   function ateThenRefusedBehindANewBag() {
     return computeTrialFacts({
       trial: CAT,
       allowedFoods: [DRY_DUCK],
       feedings: [
-        // Days 1–7, matched, and she ate.
         ...Array.from({ length: 7 }, (_, i) =>
           feeding({
             eventId: `ok${i}`,
@@ -1990,7 +1987,6 @@ describe('B-530 — the fallback is chosen per window, not once per trial', () =
             intakeRating: 'all',
           }),
         ),
-        // Days 8–28, the new library row, and she refuses every bowl.
         ...Array.from({ length: 42 }, (_, i) =>
           feeding({
             eventId: `no${i}`,
@@ -2005,57 +2001,74 @@ describe('B-530 — the fallback is chosen per window, not once per trial', () =
     });
   }
 
-  it('fires on the realistic ordering, where one historical match used to veto it', () => {
+  it('KNOWN LIMIT — a partial miss keeps the gate shut (round 1, → B-576/B-529)', () => {
+    // The under-fire half. Seven matched feedings keep `allowedSetUnavailable` false, so
+    // a cat refusing 42 consecutive bowls raises nothing. Expected to FLIP with B-529.
     const facts = ateThenRefusedBehindANewBag();
-    // The whole-trial flag stays FALSE — seven feedings did match — which is exactly
-    // why keying the fallback on it silenced this record.
     expect(facts.allowedSetUnavailable).toBe(false);
-    // The recency window holds no rated trial-diet feeding, so the now-fact falls back
-    // and speaks. This is the patient the B-494 ruling was written about.
-    expect(facts.trialDietRefusal).toMatchObject({ population: 'meal_record' });
-    expect(facts.trialDietRefusal!.refusedFeedings).toBe(facts.trialDietRefusal!.ratedFeedings);
-    expect(facts.recentFinishedFeedings).toBe(0);
-  });
-
-  it('keeps the range fact on the narrow population, which still has evidence there', () => {
-    // The two windows are answered independently and by design: the range still holds
-    // seven rated trial-diet feedings, so the history question is asked of them.
-    const facts = ateThenRefusedBehindANewBag();
+    expect(facts.trialDietRefusal).toBeNull();
     expect(facts.rangeRefusal).toBeNull();
   });
 
-  it('does not hand the wide population a window the narrow one can answer', () => {
-    // The guard against over-reach: any rated trial-diet feeding in the window keeps
-    // the narrow population, so a working allowed set is never displaced.
+  it('the repair that would fix it must not fire on an unrated-but-eaten diet (round 2)', () => {
+    // The over-fire half, and the reason the per-window repair was reverted. This owner
+    // logs the prescription twice a day and does not rate it — the modal record — and
+    // rates only the three notable events, a rival kibble refused. Selecting on "no rated
+    // trial-diet feeding in the window" routed the feline lipidosis escalation onto the
+    // rival food for a cat eating 64 bowls of its prescription.
     const facts = computeTrialFacts({
       trial: CAT,
       allowedFoods: [DRY_DUCK],
       feedings: [
-        ...Array.from({ length: 20 }, (_, i) =>
+        ...Array.from({ length: 64 }, (_, i) =>
           feeding({
-            eventId: `t${i}`,
-            occurredAt: at(`2026-07-${String(10 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 ? 20 : 8),
+            eventId: `unrated${i}`,
+            occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 ? 20 : 8),
             foodItemId: DRY_DUCK.foodItemId,
             foodKey: DRY_DUCK.foodKey,
-            intakeRating: 'all',
           }),
         ),
-        // Off-list meals the cat refuses. Real, counted as exposures — but they do not
-        // get to speak for the trial diet while the trial diet has its own evidence.
-        ...Array.from({ length: 6 }, (_, i) =>
+        ...['24', '27', '30'].map((d, i) =>
           feeding({
-            eventId: `x${i}`,
-            occurredAt: at(`2026-07-${String(10 + i).padStart(2, '0')}`, 14),
+            eventId: `rival${i}`,
+            occurredAt: at(`2026-07-${d}`, 14),
             foodItemId: 'rival',
             foodKey: 'acmerival kibble',
             intakeRating: 'refused',
           }),
         ),
       ],
-      nowMs: new Date(2026, 6, 22, 12).getTime(),
+      nowMs: new Date(2026, 6, 31, 12).getTime(),
     });
+    expect(facts.allowedSetUnavailable).toBe(false);
     expect(facts.trialDietRefusal).toBeNull();
     expect(facts.rangeRefusal).toBeNull();
-    expect(facts.exposures.offDiet).toBeGreaterThan(0);
+  });
+
+  it('never returns two refusal facts from different populations', () => {
+    // Round 2's worst finding: the card reads the now-fact first and the report reads the
+    // range fact first, so two facts measured over different rows put a smaller, staler
+    // number on the vet's safety band than on the owner's card. One population for both
+    // is what makes that unrepresentable.
+    const facts = ateThenRefusedBehindANewBag();
+    if (facts.trialDietRefusal && facts.rangeRefusal) {
+      expect(facts.trialDietRefusal.population).toBe(facts.rangeRefusal.population);
+    }
+    const broken = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK],
+      feedings: Array.from({ length: 42 }, (_, i) =>
+        feeding({
+          eventId: `m${i}`,
+          occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 ? 20 : 8),
+          foodItemId: 'dry-duck-rephotographed',
+          foodKey: 'royal caninduck dry kibble',
+          intakeRating: 'refused',
+        }),
+      ),
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+    expect(broken.trialDietRefusal?.population).toBe('meal_record');
+    expect(broken.rangeRefusal?.population).toBe('meal_record');
   });
 });
