@@ -428,6 +428,14 @@ function coverageLine(coverage: TrialCoverageFacts): string {
 function exposureLine(ex: TrialExposureFacts): string {
   const total = ex.totalFeedings;
   const noun = total === 1 ? 'feeding' : 'feedings';
+  // NOTHING TO WITHHOLD ABOUT AN EMPTY RECORD. With no feedings logged, the
+  // withholding variant below rendered "0 feedings in total. Culprit isn't saying
+  // how many matched the trial diet on this record." — the app declining to
+  // answer a question nobody asked, which reads as hiding something about a
+  // record that is simply empty. The count alone is the honest line here: it
+  // makes no claim in either direction, which is the same reason the
+  // pre-classifier path renders it bare.
+  if (total <= 0) return 'Nothing logged against the trial yet.';
   if (ex.offDiet <= 0) {
     // THE COUNT STAYS, THE CLAIM GOES (round 5 ①) — AND THE WITHHOLDING IS NAMED.
     //
@@ -961,11 +969,18 @@ function pushExposureFloor(
   // be missing, i.e. it could be lower. Rendering both put two opposite arrows on
   // one card, ALWAYS — with an unusable list every feeding falls to rung 3, so
   // `offDiet > 0` holds by construction and the two could never not co-render.
+  // SUPPRESSED EXACTLY WHEN THE CAVEAT RENDERS — one predicate, both consumers.
+  // Keying the suffix on the FLAG and the caveat on the COUNT broke the invariant
+  // in both directions at once: five wholly-unmatched feedings (below the
+  // 10-feeding reconciliation floor, so the flag is off) rendered "The 5 are
+  // what's been logged, not a total." immediately above "Culprit can't match
+  // these against the food list" — at-least-5 and maybe-fewer, adjacent.
+  const caveat = opts.caveat !== false && unmatchedCaveatApplies(input);
   lines.push({
     role: 'fact',
-    text: stem + (input.allowedSetUnavailable ? '' : floorSuffix(ex.offDiet)),
+    text: stem + (caveat ? '' : floorSuffix(ex.offDiet)),
   });
-  if (opts.caveat !== false) pushUnmatchedCaveat(lines, input);
+  if (caveat) pushUnmatchedCaveat(lines, input);
 }
 
 /** Names what a past bowl accounts for, and claims nothing about the rest — an
@@ -981,19 +996,28 @@ function pushPastBowlCaveat(lines: TrialCardLine[], input: TrialCardInput): void
   });
 }
 
-function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
+/** Whether `pushUnmatchedCaveat` would render. Extracted so `pushExposureFloor`
+ *  can suppress the floor suffix on the CAVEAT's answer rather than on a proxy
+ *  for it — see the call site for the two records where the proxy disagreed. */
+function unmatchedCaveatApplies(input: TrialCardInput): boolean {
   const ex = input.exposures;
-  if (!ex || ex.totalFeedings <= 0) return;
+  if (!ex || ex.totalFeedings <= 0) return false;
   // ONLY WHEN NOTHING MATCHED. "None of these matched" rendered one line under
   // "60 feedings in total — 40 matched, 20 did not", because the caveat keyed on
   // the flag and never on the count it was qualifying. A permitted topper is
   // enough to produce that pair.
-  if (ex.offDiet !== ex.totalFeedings) return;
+  if (ex.offDiet !== ex.totalFeedings) return false;
   // AND WHENEVER NOTHING MATCHED, not only above the reconciliation floor. Below
   // it the card was strictly MORE accusatory — the floor suffix asserting the
   // true number is higher, with no caveat at all — which inverted the very
   // discontinuity the floor was meant to smooth.
-  if (!input.allowedSetUnavailable && ex.offDiet < UNMATCHED_CAVEAT_MIN_FEEDINGS) return;
+  if (!input.allowedSetUnavailable && ex.offDiet < UNMATCHED_CAVEAT_MIN_FEEDINGS) return false;
+  return true;
+}
+
+function pushUnmatchedCaveat(lines: TrialCardLine[], input: TrialCardInput): void {
+  const ex = input.exposures;
+  if (!unmatchedCaveatApplies(input) || !ex) return;
   lines.push({
     role: 'qualifier',
     // TWO-SIDED, and that is the correction. The first draft named only the
@@ -1071,8 +1095,8 @@ function pushUntrackedHead(lines: TrialCardLine[], input: TrialCardInput): void 
         // It also no longer says "the days count above": on the sub-floor card
         // the coverage is a clause inside one paragraph, not a discrete line, so
         // the referent was wrong there.
-        ? 'The first day of the trial isn’t counted here — nothing was logged against it yet.'
-        : `The first ${days} days of the trial aren’t counted here — nothing was logged ` +
+        ? 'The first day of the trial isn’t counted here — no meals were logged against it yet.'
+        : `The first ${days} days of the trial aren’t counted here — no meals were logged ` +
           'against them yet.',
   });
 }
@@ -1097,30 +1121,40 @@ function windowLineFor(endIndex: number, overrunDays: number): string {
 /** The two record facts plus their inline qualifier, in §5.1 order. Coverage
  *  first (days), exposures second (feedings), never welded. */
 function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
-  // ROUND 4'S RULE IN THE LAST BRANCH THAT NEVER GOT IT — the ACTIVE card.
+  // NO `rangeRefusal` BRANCH HERE, AND THAT IS A RULING, NOT AN OMISSION.
   //
-  // `rangeRefusal` was consumed on both terminal cards (round 1b) and in the
-  // shared claim gate, so "all 68 matched" was correctly withheld here. What was
-  // not withheld is the line ABOVE it: a cat refusing 38 of 38 rated feedings
-  // across 19 days rendered `state: 'clean'` whose lead was "Meals logged on 22
-  // of 23 days." — the ratio an owner reads as a near-perfect trial, over a diet
-  // the record shows was going uneaten.
+  // Round 9 routed the active card through `pushRefusalWithheld` to stop it
+  // leading with a coverage ratio over a refused diet. Two independent reviews
+  // then broke it on the same ground, and they were right:
   //
-  // Found by round 8's own Home-strip regression test: the strip fix made Home
-  // DROP a ratio the card kept, inverting the card/Home divergence this PR
-  // exists to remove. The active card is the one that was wrong.
+  //   THE FLOORS WERE DERIVED FOR A CLAIM GATE, NOT FOR A VOICE. `rangeRefusal`
+  //   is 3 rated / 2 not-finished days / 50% share with NO span guard, and
+  //   `some` scores as not-finished — floors whose own justification reads
+  //   "what firing does is withhold an affirmative claim, and silence is cheap"
+  //   (`lib/dietTrial.ts`). Verified against the real predicate: a dog rated
+  //   some / all / some fires it on DAY 2 of 56. Giving that predicate a
+  //   paragraph — "a diet that wasn't eaten can't be read as one that was
+  //   followed" — hands a wedge owner a clinical assertion about a dog that ate,
+  //   and the likely response is that she stops rating intake honestly, which is
+  //   the one signal the trial needs from her.
   //
-  // No new register and no new copy — `pushRefusalWithheld` is the same helper
-  // the two terminal branches already call on the same fact. The owner-facing
-  // R1 refusal block (off the recency-windowed `trialDietRefusal`) is still #499's.
-  if (input.rangeRefusal) {
-    pushRefusalWithheld(lines, input, 'these days');
-    lines.push({ role: 'qualifier', text: BLIND_SPOT_QUALIFIER });
-    pushPastBowlCaveat(lines, input);
-    pushUntrackedHead(lines, input);
-    pushScopeCaveat(lines, input);
-    return;
-  }
+  //   AND THE SENTENCE HAS NO ANTECEDENT HERE. It ends "what your vet needs from
+  //   it is the refusal". On the terminal cards that lands three lines under
+  //   "Stopped because Biscuit wouldn't eat it" — the owner's own words. On a
+  //   live card nothing states the finding, because the R1 register that states
+  //   it is #499's. A definite noun phrase pointing at nothing reads as the app
+  //   malfunctioning, not as a cat in trouble.
+  //
+  // Hoisting the check above the state switch — the other candidate fix, since
+  // `below_floor` / `free_fed` / `milestone` / `day_one` never see it either —
+  // makes both faults WORSE, not better: it gives the day-2 misfire four more
+  // states to speak on. The fix is one register, on one predicate whose floors
+  // were chosen for it, shipped with the copy that makes it legible. That is
+  // #499. The claim gate still withholds "all N matched" here in the meantime.
+  //
+  // What remains true and unfixed: this card states a bare coverage ratio over a
+  // record with a whole-range refusal. Filed as B-566 against #499 with the
+  // evidence, rather than patched here off the wrong predicate.
 
   if (input.coverage) lines.push({ role: 'fact', text: coverageLine(input.coverage) });
 
@@ -1131,9 +1165,12 @@ function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
       role: 'qualifier',
       // The floor suffix is suppressed when nothing could have matched — see
       // `pushExposureFloor` for why the two claims cannot share a card.
+      // SAME PREDICATE AS `pushExposureFloor`. The floor suffix has two render
+      // sites and the suppression was fixed at one of them, so the state an
+      // ordinary owner actually lands on kept both arrows.
       text:
         BLIND_SPOT_QUALIFIER +
-        (ex.offDiet > 0 && !input.allowedSetUnavailable ? floorSuffix(ex.offDiet) : ''),
+        (ex.offDiet > 0 && !unmatchedCaveatApplies(input) ? floorSuffix(ex.offDiet) : ''),
     });
     pushUnmatchedCaveat(lines, input);
     pushPastBowlCaveat(lines, input);
@@ -1156,6 +1193,17 @@ function pushRecordFacts(lines: TrialCardLine[], input: TrialCardInput): void {
  *  sub-floor card leads with the record's limits and then discloses what IS on
  *  it, rather than opening with a ratio that reads as a score. */
 function soFarLine(input: TrialCardInput): string {
+  // NOTHING LOGGED IS NOT A RECORD OF ZEROES. `parts.length === 0` was the only
+  // route to the designed empty state below, and B-474's un-nulling closed it:
+  // `coverage` and `exposures` now arrive as zeroed OBJECTS rather than nulls, so
+  // an owner twelve days in with nothing logged read
+  // "Of what's on the record so far: meals on 0 of 12 days, 0 feedings in total."
+  // — a Principle-5 empty state, written and shipped, on the one state that most
+  // needs it, unreachable. The emptiness test is the CONTENT, not the shape.
+  const nothingLogged =
+    (input.coverage?.daysLogged ?? 0) === 0 && (input.exposures?.totalFeedings ?? 0) === 0;
+  if (nothingLogged) return 'Nothing is on the record for this trial yet.';
+
   const parts: string[] = [];
   if (input.coverage) {
     parts.push(`meals on ${input.coverage.daysLogged} of ${input.coverage.daysElapsed} days`);
@@ -1539,24 +1587,39 @@ export function resolveTrialStrip(input: TrialCardInput): TrialStripModel | null
   // record for the whole trial, in the reassuring direction, on the Principle-3
   // intelligence surface. The strip already drops this clause entirely under a
   // safety flag; it drops it here for the same reason.
-  // THE STRIP FOLLOWS THE CARD'S COMPOSITION, ONE CONDITION AT A TIME NO LONGER.
+  // THE STRIP IS STRICTER THAN THE CARD, DELIBERATELY.
   //
-  // This clause has been patched three times — once for the decline flag, once
-  // for the untracked head — and each time the NEXT reason the card withholds
-  // coverage was left rendering here. A cat refusing 88 of 88 rated feedings for
-  // 44 days still read "meals logged on 44 of 44 days" on Home, with
-  // `rangeRefusal` sitting unread on the same input and the comment above this
-  // function asserting the guarantee. Under free-fed the card said "there's no
-  // day-by-day count of what was eaten" and Home said "20 of 23 days" in the
-  // same second.
+  // An earlier cut of this said "the strip states coverage only when the card
+  // would state it plainly", which stopped being true the moment round 9's
+  // active-card routing was reverted — and a comment asserting a guarantee the
+  // code does not provide is this file's most-repeated defect. So the rule is
+  // stated as what it is: Home has ONE line and no room for the caveat, the
+  // untracked head, or the "offered, not eaten" reframing that make a ratio
+  // honest on the card, so it drops the ratio wherever anything on the record
+  // argues against reading it — whether or not the card can afford to keep it.
   //
-  // So the condition is now the general one: the strip states coverage only when
-  // the card would state it plainly. One predicate, and a new withholding reason
-  // reaches both surfaces or neither.
+  // `allowedSetUnavailable` is here because of what it does to the OTHER half.
+  // The clause below suppresses the off-diet count under that flag (the count is
+  // an artefact of a comparator the app has just called unusable), which left the
+  // most non-adherent record the app can produce — a dog fed the old kibble twice
+  // a day for 23 days, correct permit list — rendering
+  // "meals logged on 23 of 23 days" and nothing else. Indistinguishable from a
+  // perfect trial, on Home, in the reassuring direction: the flattering number
+  // kept and the one that reports a finding dropped, which is the exact asymmetry
+  // the clause below exists to prevent. It fails the invariant its own fix is
+  // named after. Under this flag the strip now says nothing about adherence at
+  // all — the decline lane's precedent, where silence looks like silence rather
+  // than like normality.
+  //
+  // `belowCoverageFloor` is here for the same reason: the card states that ratio
+  // INSIDE a paragraph explicitly framed as not-yet-readable, and the strip can
+  // carry the number but not the frame.
   const coverageIsPlain =
     !input.intakeDeclineHeadline &&
     !input.rangeRefusal &&
     !input.freeFed &&
+    !input.allowedSetUnavailable &&
+    !input.belowCoverageFloor &&
     (input.untrackedDaysBeforeFirstLog ?? 0) === 0;
   if (input.coverage && coverageIsPlain) {
     parts.push(

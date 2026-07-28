@@ -694,6 +694,24 @@ async function readDoses(
  *  null-combination cases over two columns, and the last review pass read it,
  *  could not fault it, and explicitly declined to sign it off because it was the
  *  one predicate query with no executable test. Reading SQL is not running it. */
+/** The four bind values `ARRANGEMENTS_IN_WINDOW_SQL` expects, in order.
+ *
+ *  EXTRACTED SO THE ORDER ITSELF IS TESTABLE. It was not: the real-engine cases
+ *  supplied their own params and the behavioural harness stubs `getDb`, so
+ *  swapping the second and third arguments here passed the entire suite. On a
+ *  running trial `endKey` is null, so the swap makes `active_from <= NULL` drop
+ *  every dated row — the free-choice bowl disappears, `intakeNotDirectlyObserved`
+ *  goes false, and the affirmative "all N matched" claim comes back. A false
+ *  negative here is the reassuring failure, which is the one direction this
+ *  wiring may not move. */
+export function arrangementParams(
+  petId: string,
+  startedAt: string,
+  endKey: string | null,
+): [string, string, string | null, string | null] {
+  return [petId, startKeyOf(startedAt), endKey, endKey];
+}
+
 export const ARRANGEMENTS_IN_WINDOW_SQL = `
   SELECT fa.food_item_id, fa.active_from, fa.active_until, f.brand, f.product_name
     FROM feeding_arrangements fa
@@ -726,7 +744,7 @@ async function readArrangements(
       active_until: string | null;
       brand: string | null;
       product_name: string | null;
-    }>(ARRANGEMENTS_IN_WINDOW_SQL, [petId, startKeyOf(startedAt), endKey, endKey]);
+    }>(ARRANGEMENTS_IN_WINDOW_SQL, arrangementParams(petId, startedAt, endKey));
     return rows.map((a) => ({
       foodItemId: a.food_item_id,
       foodKey:

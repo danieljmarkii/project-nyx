@@ -26,6 +26,7 @@ const { DatabaseSync } = require('node:sqlite');
 import {
   ALLOWED_SET_SQL,
   ARRANGEMENTS_IN_WINDOW_SQL,
+  arrangementParams,
   dosesQuery,
   feedingsQuery,
 } from './dietTrialFacts';
@@ -398,6 +399,7 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
   function stubDb(
     meals: Array<{ id: string; at: string; food: string | null }>,
     trialOver: Partial<typeof TRIAL_ROW> = {},
+    arrangements: Array<Record<string, unknown>> = [],
   ) {
     return {
       getFirstAsync: jest.fn().mockResolvedValue({ ...TRIAL_ROW, ...trialOver }),
@@ -419,7 +421,7 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
           })));
         }
         if (sql.includes('medication_administrations')) return Promise.resolve([]);
-        if (sql.includes('feeding_arrangements')) return Promise.resolve([]);
+        if (sql.includes('feeding_arrangements')) return Promise.resolve(arrangements);
         return Promise.resolve([]);
       }),
     };
@@ -429,9 +431,10 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     meals: Parameters<typeof stubDb>[0],
     nowMs: number,
     trialOver: Partial<typeof TRIAL_ROW> = {},
+    arrangements: Array<Record<string, unknown>> = [],
   ) {
     jest.resetModules();
-    const db = stubDb(meals, trialOver);
+    const db = stubDb(meals, trialOver, arrangements);
     jest.doMock('./db', () => ({ getDb: () => db }));
     jest.doMock('./analytics', () => ({
       getIntakeDecline: jest.fn().mockResolvedValue({ status: 'none', flags: [] }),
@@ -484,6 +487,44 @@ describe('loadDietTrialFacts → TrialCardInput (behavioural)', () => {
     expect(input.freeFedOverlap).toBe(false);
     expect(input.allowedSetUnavailable).toBe(false);
     expect(input.exposures).not.toBeNull();
+  });
+
+  // Drives `readArrangements`' MAPPING end to end — the bowl reaches the
+  // predicate and withholds the claim. It does NOT constrain the bind order:
+  // this harness stubs `getDb`, so the params are never executed. That gap is
+  // closed by `arrangementParams` in the real-engine block below.
+  // (kept for the mapping)
+  //
+  // The nine real-engine cases above run the SQL with hand-written params, and
+  // the behavioural stub returned `[]` for arrangements — so no test drove the
+  // query through `readArrangements`, and swapping params 2 and 3 there passed
+  // the entire suite. On a running trial `endKey` is null, so the swap makes
+  // `active_until >= NULL` and `active_from <= NULL` drop every row: the
+  // free-choice bowl vanishes, `intakeNotDirectlyObserved` goes false, and the
+  // affirmative "all N matched" claim comes back. Precisely the reassuring
+  // failure the SQL suite says it exists to make loud.
+  it('binds the window params in the order the query expects', async () => {
+    const bowl = {
+      food_item_id: 'f-bowl', active_from: '2026-06-01', active_until: null,
+      brand: 'Purina', product_name: 'Kibble',
+    };
+    const input = await load(
+      [{ id: 'e1', at: new Date(2026, 6, 5, 8).toISOString(), food: 'f1' }],
+      new Date(2026, 6, 6, 20).getTime(),
+      {},
+      [bowl],
+    );
+    // The bowl reached the predicate, so the claim is withheld…
+    expect(input.freeFedOverlap).toBe(true);
+    expect(input.exposures?.mayStateRecordClean).toBe(false);
+  });
+
+  it('withholds nothing on that account when there is no bowl', async () => {
+    const input = await load(
+      [{ id: 'e1', at: new Date(2026, 6, 5, 8).toISOString(), food: 'f1' }],
+      new Date(2026, 6, 6, 20).getTime(),
+    );
+    expect(input.freeFedOverlap).toBe(false);
   });
 
   // A NULL RANGE IS NOT A ZERO RECORD.
@@ -645,6 +686,30 @@ describe('ARRANGEMENTS_IN_WINDOW_SQL', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].brand).toBeNull();
     expect(rows[0].product_name).toBeNull();
+    db.close();
+  });
+});
+
+// The bind order itself, against the real engine — the one thing neither the
+// hand-parameterised SQL cases nor the stubbed behavioural harness could see.
+describe('arrangementParams', () => {
+  it('binds in the order the query reads them', () => {
+    const db = freshDb() as unknown as Db;
+    addFood(db, 'f-bowl', 'Purina', 'Kibble');
+    // A bowl in force since before the trial, never removed — the shape that
+    // MUST survive, and the one a swapped bind order silently drops.
+    addArrangement(db, 'a1', 'f-bowl', '2026-06-01', null);
+
+    const rows = db
+      .prepare(ARRANGEMENTS_IN_WINDOW_SQL)
+      .all(...arrangementParams(PET, '2026-07-03', null)) as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(1);
+
+    // …and once the trial has ended, with a real upper bound on both sides.
+    const ended = db
+      .prepare(ARRANGEMENTS_IN_WINDOW_SQL)
+      .all(...arrangementParams(PET, '2026-07-03', '2026-08-27')) as Array<Record<string, unknown>>;
+    expect(ended).toHaveLength(1);
     db.close();
   });
 });
