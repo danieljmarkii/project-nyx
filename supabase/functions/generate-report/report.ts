@@ -95,6 +95,9 @@ import { foodFormatWord } from '../../../lib/foodFormat.ts'
 // — the one shared predicate — and imports NOTHING from this file, so the two are a
 // tree rather than a cycle.
 import { buildTrialBlock, selectReportTrial, trialEndValue, type TrialBlock } from './trial.ts'
+// B-494's flag carries the refusal fact verbatim rather than flattening it, so the
+// band and the trial block on the same page cannot state different numbers.
+import type { TrialDietRefusal, TrialSpecies } from '../../../lib/dietTrial.ts'
 export type {
   TrialBlock,
   TrialExposure,
@@ -920,6 +923,44 @@ export type SafetyFlag =
        * window-relative arithmetic. Never negative (clamped).
        */
       hoursSinceLastFullMeal: number | null
+    }
+  | {
+      /**
+       * B-494 — THE REFUSED PRESCRIBED DIET, AS A SAFETY FLAG.
+       *
+       * The cold read that produced this: an 8-year-old cat, 38 of 38 rated feedings of the
+       * prescribed diet logged as refused across 19 days, ~7% of body weight lost, active
+       * chronic vomiting — and an EMPTY safety band. `detectIntakeDecline` is a RELATIVE-decline
+       * detector, so a diet refused from day 1 is uniformly low rather than falling and returns
+       * `{status:'none'}`; the trial's own `trialDietRefusal` existed for exactly that patient and
+       * was not a `SafetyFlag`, so it never reached the band.
+       *
+       * The ruling (2026-07-26): the report TEACHES the reader to scan the flag zone, and the
+       * legend then states affirmatively that no reduced-intake flag fired — so an empty band on
+       * this patient reads as a NEGATIVE RESULT rather than as silence. That is
+       * reassurance-on-absence at the report layer, which `clinical-guardrails` forbids, and
+       * *intake is not preference* routes refusal toward a health flag by invariant.
+       *
+       * PRESENCE-ONLY, like every other flag here: it fires on logged evidence (the ratified
+       * `REFUSAL_*` floors, or the owner's own "wouldn't eat it" at completion) and its absence is
+       * never an all-clear. It does NOT replace `intake_decline` — both can fire, and they answer
+       * different questions (a fall from baseline vs. a diet that was never eaten).
+       */
+      kind: 'trial_diet_refusal'
+      /**
+       * The counts, or null when the ONLY evidence is the owner's stopped-reason. Null is not
+       * "no refusal": it is a refusal the owner reported and the intake log cannot corroborate,
+       * which is a real and common shape (the owner who stops rating once she gives up).
+       */
+      refusal: TrialDietRefusal | null
+      /** The trial was ENDED because the pet would not eat the diet (`stopped_reason`). */
+      stoppedForRefusal: boolean
+      species: TrialSpecies
+      /** Every `primary_diet` label in force — the food to name. Never rendered under a
+       *  `meal_record` population, where the app has admitted it cannot identify the diet. */
+      trialDietLabels: string[]
+      rangeStartDate: string
+      rangeEndDate: string
     }
   | {
       kind: 'chronicity'
@@ -2620,6 +2661,32 @@ export function assembleReport(input: ReportInput): ReportSnapshot {
       lastFullMealIso: f.lastFullMealIso,
       hoursSinceLastFullMeal,
     })
+  }
+  // B-494 — THE REFUSED PRESCRIBED DIET REACHES THE BAND. Ordered immediately after
+  // `intake_decline` because it is the same clinical family (is this animal eating?) and
+  // deliberately NOT suppressed when that flag also fired: the two are different findings over
+  // different populations, and the pre-ship ruling turned on the report never leaving the flag
+  // zone silent on a patient the record already knows is in trouble.
+  //
+  // THE RANGE FACT, NOT THE NOW-FACT. A report is a history: `trialDietRefusal` is bounded to
+  // the last 14 days, so a cat that refused 42 bowls in weeks 1–3 and then had its ratings go
+  // quiet would empty the recency window and take the flag with it. `rangeRefusal` is the same
+  // predicate over the whole range; the now-fact is the fallback for the (rarer) case where the
+  // range share is diluted by an eaten stretch but the recent record is not.
+  if (trialBlock) {
+    const refusal = trialBlock.rangeRefusal ?? trialBlock.trialDietRefusal
+    const stoppedForRefusal = trialBlock.stoppedReason === 'refused'
+    if (refusal || stoppedForRefusal) {
+      safetyFlags.push({
+        kind: 'trial_diet_refusal',
+        refusal,
+        stoppedForRefusal,
+        species: trialBlock.species,
+        trialDietLabels: trialBlock.trialDietLabels,
+        rangeStartDate: trialBlock.rangeStartDate,
+        rangeEndDate: trialBlock.rangeEndDate,
+      })
+    }
   }
   if (detection.chronicity) {
     const f = detection.chronicity

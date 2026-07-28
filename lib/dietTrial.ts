@@ -785,13 +785,87 @@ export type Interpretability =
  * and its only job on the card is to make the affirmative claim unsayable.
  */
 export interface TrialDietRefusal {
-  /** In-window feedings of a `primary_diet` food rated `refused`. */
+  /** In-window feedings of the measured population left unfinished. */
   refusedFeedings: number;
-  /** In-window feedings of a `primary_diet` food carrying ANY rating. */
+  /** In-window feedings of the measured population carrying ANY rating. */
   ratedFeedings: number;
   /** Distinct local days those refusals fall on. */
   days: number;
+  /** WHICH POPULATION THE COUNTS ARE OVER — see `TrialRefusalPopulation`. Every
+   *  surface that renders this fact must branch on it: the counts mean different
+   *  things, and copy that names "the trial diet" over a `meal_record` fact
+   *  asserts an identity the app has just admitted it could not resolve. */
+  population: TrialRefusalPopulation;
 }
+
+/**
+ * B-530 — WHICH FEEDINGS THE REFUSAL LANE COUNTED, AND WHY THERE ARE TWO ANSWERS.
+ *
+ * The lane's natural population is `primary_diet` feedings: the prescribed diet
+ * going untouched is the finding. That population is produced by rung 1, so it
+ * exists only when FOOD IDENTITY RESOLVES — and when identity misses, it does not
+ * degrade, it EMPTIES. The pre-ship review executed it: a 21-day all-refused cat
+ * behind a re-photographed bag (new UUID, "z/d" → "z/d Feline Food") produced
+ * `trialDietRefusal === null`, and the 42 refused bowls of the PRESCRIBED diet
+ * re-rendered as owner-blamed off-diet exposures. The sickest patient in the app
+ * fell out of the one lane built to catch her, because a photo was retaken.
+ *
+ * The repair is not a better matcher — a matcher can always miss, and B-529 owns
+ * making it miss less. The repair is that the lane MUST NOT DEPEND ON THE MATCH.
+ * So when the app has already concluded it cannot identify the trial diet
+ * (`allowedSetUnavailable` — no usable `primary_diet` row, or one that matched
+ * nothing across ten-plus feedings), the same floors are measured over the MEAL
+ * RECORD instead: every in-range non-treat feeding, identity or no identity.
+ *
+ * WHAT THAT COSTS, STATED. The wider population cannot name the food, so a cat
+ * refusing a rival kibble while eating its hydrolysate reads the same as one
+ * refusing the hydrolysate. That is an over-fire on a lane whose declared safe
+ * direction is toward firing — and it is only reachable in a state where every
+ * surface has ALREADY withheld its reading (`mayClaimAllMatched` returns false on
+ * `allowedSetUnavailable` before this fact is consulted). The alternative is the
+ * measured one: silence over an animal that is not eating.
+ *
+ * WHAT IT DOES NOT COST. R1a is untouched — both populations count RATED feedings
+ * only, so an owner who never taps intake is still never told her cat isn't
+ * eating. Absence of data does not alarm in either population. And the fallback can
+ * only ever ADD disclosure: it is reachable exclusively from the state where the
+ * narrow population is EMPTY, so there is no record that fired before and is quiet
+ * now.
+ *
+ * ⚠️ TWO THINGS IT DELIBERATELY DOES NOT FIX. Both were executed against this code,
+ * both are UNDER-fire, and neither is a regression — the shipped behaviour in both
+ * is silence, so the fallback is still strictly more disclosure than before. They
+ * are named here so the gap reads as a known limit rather than as coverage. Both
+ * have one root cause, food identity, which is B-529's PR; the residual is B-576.
+ *
+ *   1. THE PARTIAL MISS. A real trial is often a wet AND a dry of the same diet
+ *      (§4.1's multi-food ruling). If only the dry bag is re-photographed, the wet
+ *      still matches, so `narrow.feedings > 0`, `allowedSetUnavailable` stays FALSE,
+ *      and the narrow population speaks — seeing only the wet. A cat eating the wet
+ *      and refusing the dry reads as eating. Widening the "unavailable" test to
+ *      catch it (e.g. "any `primary_diet` row matched zero feedings") would fire on
+ *      every legitimate trial whose owner feeds only one of the two.
+ *
+ *   2. DILUTION. The wide population is a SHARE over every non-treat feeding, so an
+ *      owner who substitutes when the prescription is refused pushes the share back
+ *      under `REFUSAL_SHARE`. Executed: 21 refused hydrolysate bowls plus 42 eaten
+ *      chicken meals across the same 21 days returns null, where the identical
+ *      record with intact identity fires 21/21. That is the canonical diet-trial
+ *      failure mode, and the reason it cannot be repaired here is that the repair
+ *      is a DURATION criterion rather than a share — which is a clinical number and
+ *      is already Dr. Chen's open call in B-575, not something to invent inside a
+ *      wiring PR.
+ *
+ * Same shape as `TrialIntakeRating`'s narrow/wide pair, and for the same reason:
+ * ask the narrow question when there is a narrow population to ask it of, and fall
+ * back to the wide one when there is not.
+ */
+export type TrialRefusalPopulation =
+  /** `primary_diet` feedings — the prescribed diet itself. */
+  | 'trial_diet'
+  /** Every non-treat feeding in range, because the trial diet could not be
+   *  identified. A fact about the MEAL RECORD, which is all it may claim. */
+  | 'meal_record';
 
 /**
  * How much of the meal record carries an intake rating (R1b).
@@ -1166,6 +1240,88 @@ export interface TrialFactsInput {
  * live covered days are treat-only, which is why the welded v0.97 sentence was
  * false in a common case.
  */
+/**
+ * One population's refusal arithmetic (B-530). Both the narrow (`primary_diet`)
+ * and wide (whole meal record) populations are accumulated through this same
+ * shape, so the two can never drift into different definitions of "not eaten" —
+ * which is the failure this module exists to prevent, one level down.
+ */
+interface RefusalCounters {
+  /** Population size, rated or not — R1b's denominator. */
+  feedings: number;
+  /** Population members carrying any rating — R1b's numerator. */
+  rated: number;
+  /** RECENCY window (`REFUSAL_WINDOW_DAYS`) — the now-fact. */
+  recentRated: number;
+  recentNotFinished: number;
+  /** Direct evidence the diet IS being eaten now; the stand-down numerator. */
+  recentFinished: number;
+  recentDays: Set<number>;
+  recentStamps: number[];
+  /** The WHOLE RANGE — the history. No recency bound. */
+  rangeRated: number;
+  rangeNotFinished: number;
+  rangeDays: Set<number>;
+  rangeStamps: number[];
+}
+
+function emptyRefusalCounters(): RefusalCounters {
+  return {
+    feedings: 0,
+    rated: 0,
+    recentRated: 0,
+    recentNotFinished: 0,
+    recentFinished: 0,
+    recentDays: new Set<number>(),
+    recentStamps: [],
+    rangeRated: 0,
+    rangeNotFinished: 0,
+    rangeDays: new Set<number>(),
+    rangeStamps: [],
+  };
+}
+
+/**
+ * Fold one feeding into one population's counters.
+ *
+ * THE PREDICATE IS "NOT FINISHED", NOT "REFUSED". `refused` alone misses the cat
+ * that picks at every bowl for two weeks — and, because every non-refused rating
+ * still counted toward the denominator, `picked` ratings actively SUPPRESSED the
+ * fact. Not-finished (`refused` / `picked` / `some`) is the same bar
+ * `lib/analytics` already uses for "did this pet finish a meal", so the two
+ * surfaces cannot disagree about whether a diet is being eaten.
+ */
+function tallyRefusal(
+  c: RefusalCounters,
+  feeding: TrialFeeding,
+  day: number,
+  recencyStart: number,
+): void {
+  const finished = feedingWasFinished(feeding.intakeRating);
+  c.feedings += 1;
+  if (finished === null) return;
+  c.rated += 1;
+  c.rangeRated += 1;
+  if (!finished) {
+    c.rangeNotFinished += 1;
+    c.rangeDays.add(day);
+    c.rangeStamps.push(Date.parse(feeding.occurredAt));
+  }
+  if (day < recencyStart) return;
+  c.recentRated += 1;
+  if (finished) {
+    c.recentFinished += 1;
+    return;
+  }
+  c.recentNotFinished += 1;
+  c.recentDays.add(day);
+  c.recentStamps.push(Date.parse(feeding.occurredAt));
+}
+
+function spanMsOf(stamps: readonly number[]): number {
+  return stamps.length > 1 ? Math.max(...stamps) - Math.min(...stamps) : 0;
+}
+
 export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   const ctx = buildTrialContext(input.trial, input.allowedFoods, { timeZone: input.timeZone });
   const empty: TrialExposureSummary = {
@@ -1276,35 +1432,12 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
   let offDiet = 0;
   let unclassifiable = 0;
   const byRung = { derived_protein: 0, unrecognised: 0 };
-  // The trial-viability counters (§6.5's second path). Counted over feedings of
-  // the TRIAL DIET only — a refused chicken chew says nothing about whether the
-  // prescribed food is being eaten.
-  let refusedFeedings = 0;
-  let ratedFeedings = 0;
-  // R1b's counters, over the WIDER non-treat population — see `TrialIntakeRating`
-  // for why they are not the refusal lane's own denominator.
-  // Needed by `allowedSetUnavailable`'s second disjunct: a `primary_diet` row
-  // that matches NOTHING is the same fact as no row at all, and commoner — and,
-  // since R1b, it is also the teach line's NARROW denominator.
-  let primaryFeedings = 0;
-  let primaryRated = 0;
-  // R1b's WIDE population — see `TrialIntakeRating` for why the teach line cannot
-  // measure off the refusal lane's own denominator alone.
-  let ratableFeedings = 0;
-  let ratedMealFeedings = 0;
-  // Direct evidence the diet IS being eaten now, and the only thing permitted to
-  // stand the live register down (see `TrialFacts.recentFinishedFeedings`).
-  let recentFinishedFeedings = 0;
-  // The RANGE counters — the same fact with no recency window and no episode
-  // guard. See `TrialFacts.rangeRefusal` for why both windows exist.
-  let rangeRated = 0;
-  let rangeNotFinished = 0;
-  const rangeRefusedDays = new Set<number>();
-  // Every unfinished primary-diet stamp in the RANGE, so the episode span can be
-  // measured on the same fact the live register reads.
-  const rangeRefusalStamps: number[] = [];
-  const refusedDays = new Set<number>();
-  const refusalStamps: number[] = [];
+  // THE TWO REFUSAL POPULATIONS (B-530), accumulated in one pass and chosen from
+  // once at the bottom. See `TrialRefusalPopulation` for why both exist: the
+  // narrow one is the finding, the wide one is what stops the finding vanishing
+  // when food identity misses.
+  const narrow = emptyRefusalCounters();
+  const wide = emptyRefusalCounters();
   // The viability fact is about the pet NOW, not about the whole trial.
   const refusalWindowStart = Math.max(startDayIndex, endDayIndex - REFUSAL_WINDOW_DAYS + 1);
 
@@ -1331,9 +1464,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // than `exposureStart`, so days the owner could not have logged cannot drag
     // the rated share down and fire a teach line about a record that did not
     // exist yet.
+    //
+    // AND IT IS THE WIDE REFUSAL POPULATION (B-530). One walk, one membership
+    // test: the record R1b teaches about and the record the refusal lane falls
+    // back to when identity misses are THE SAME SET, deliberately, so a surface
+    // can never teach the tap off one denominator and speak from another.
     if (feeding.foodType !== 'treat' && day >= startDayIndex) {
-      ratableFeedings += 1;
-      if (feedingWasFinished(feeding.intakeRating) !== null) ratedMealFeedings += 1;
+      tallyRefusal(wide, feeding, day, refusalWindowStart);
     }
 
     const classification = classifyFeeding(ctx, feeding);
@@ -1343,42 +1480,13 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     }
     if (!classification.countsAsFeeding) continue;
 
-    // THE PREDICATE IS "NOT FINISHED", NOT "REFUSED". `refused` alone misses the
-    // cat that picks at every bowl for two weeks — and, because every non-refused
-    // rating still counted toward the denominator, `picked` ratings actively
-    // SUPPRESSED the fact. Not-finished (`refused` / `picked` / `some`) is the
-    // same bar `lib/analytics` already uses for "did this pet finish a meal", so
-    // the two surfaces cannot disagree about whether a diet is being eaten.
+    // The NARROW population — feedings of the TRIAL DIET only. A refused chicken
+    // chew says nothing about whether the prescribed food is being eaten. Also
+    // R1b's narrow denominator, and `allowedSetUnavailable`'s second disjunct: a
+    // `primary_diet` row that matches NOTHING is the same fact as no row at all,
+    // and commoner.
     if (classification.role === 'primary_diet' && day >= startDayIndex) {
-      const finished = feedingWasFinished(feeding.intakeRating);
-      // R1b's NARROW population — the one the refusal lane actually reads.
-      primaryFeedings += 1;
-      if (finished !== null) primaryRated += 1;
-
-      // The RANGE fact: every rated primary-diet feeding in the clipped range,
-      // matching the window `generate-report`'s own `inRange` uses so the two
-      // surfaces cannot answer differently.
-      if (finished !== null) {
-        rangeRated += 1;
-        if (!finished) {
-          rangeNotFinished += 1;
-          rangeRefusedDays.add(day);
-        }
-      }
-      if (finished === false) rangeRefusalStamps.push(Date.parse(feeding.occurredAt));
-
-      // Direct evidence the diet IS being eaten, inside the recency window.
-      if (day >= refusalWindowStart && finished === true) recentFinishedFeedings += 1;
-
-      // The NOW-fact, bounded to the recency window.
-      if (day >= refusalWindowStart && finished !== null) {
-        ratedFeedings += 1;
-        if (!finished) {
-          refusedFeedings += 1;
-          refusedDays.add(day);
-          refusalStamps.push(Date.parse(feeding.occurredAt));
-        }
-      }
+      tallyRefusal(narrow, feeding, day, refusalWindowStart);
     }
 
     totalFeedings += 1;
@@ -1421,31 +1529,45 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     if (hit) oralRoute.push(hit);
   }
 
-  const refusalSpanMs =
-    refusalStamps.length > 1 ? Math.max(...refusalStamps) - Math.min(...refusalStamps) : 0;
+  // ── B-530: WHICH POPULATION SPEAKS ─────────────────────────────────────────
+  //
+  // Resolved ONCE, here, from the FINAL `allowedSetUnavailable` — including its
+  // second disjunct, which is only knowable after the loop. Every refusal-shaped
+  // return below then reads the same `pop`, so the fired fact, its stand-down
+  // pair and its episode span can never be measured over different rows. That
+  // coupling is not tidiness: `recentFinished / recentRated` is the ratio the card
+  // stands the register down on, and a numerator and denominator drawn from
+  // different populations is a silent lie in the reassuring direction.
+  const allowedSetUnavailable =
+    base.allowedSetUnavailable || (narrow.feedings === 0 && totalFeedings >= UNHYDRATED_SET_FLOOR);
+  const population: TrialRefusalPopulation = allowedSetUnavailable ? 'meal_record' : 'trial_diet';
+  const pop = allowedSetUnavailable ? wide : narrow;
+
   const trialDietRefusal: TrialDietRefusal | null =
-    ratedFeedings >= REFUSAL_MIN_RATED &&
-    refusedDays.size >= REFUSAL_MIN_DAYS &&
-    refusalSpanMs >= REFUSAL_MIN_SPAN_MS &&
-    refusedFeedings / ratedFeedings >= REFUSAL_SHARE
-      ? { refusedFeedings, ratedFeedings, days: refusedDays.size }
+    pop.recentRated >= REFUSAL_MIN_RATED &&
+    pop.recentDays.size >= REFUSAL_MIN_DAYS &&
+    spanMsOf(pop.recentStamps) >= REFUSAL_MIN_SPAN_MS &&
+    pop.recentNotFinished / pop.recentRated >= REFUSAL_SHARE
+      ? {
+          refusedFeedings: pop.recentNotFinished,
+          ratedFeedings: pop.recentRated,
+          days: pop.recentDays.size,
+          population,
+        }
       : null;
 
   // Same floors, no span guard — see `TrialFacts.rangeRefusal`.
   const rangeRefusal: TrialDietRefusal | null =
-    rangeRated >= REFUSAL_MIN_RATED &&
-    rangeRefusedDays.size >= REFUSAL_MIN_DAYS &&
-    rangeNotFinished / rangeRated >= REFUSAL_SHARE
-      ? { refusedFeedings: rangeNotFinished, ratedFeedings: rangeRated, days: rangeRefusedDays.size }
+    pop.rangeRated >= REFUSAL_MIN_RATED &&
+    pop.rangeDays.size >= REFUSAL_MIN_DAYS &&
+    pop.rangeNotFinished / pop.rangeRated >= REFUSAL_SHARE
+      ? {
+          refusedFeedings: pop.rangeNotFinished,
+          ratedFeedings: pop.rangeRated,
+          days: pop.rangeDays.size,
+          population,
+        }
       : null;
-
-  // Measured on the RANGE fact's own stamps, not the recency window's — the live
-  // register reads `rangeRefusal` on the stand-down path, so the span guard has to
-  // be about the same refusals it would speak from.
-  const rangeSpanMs =
-    rangeRefusalStamps.length > 1
-      ? Math.max(...rangeRefusalStamps) - Math.min(...rangeRefusalStamps)
-      : 0;
 
   return {
     ...base,
@@ -1463,14 +1585,25 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     oralRoute,
     trialDietRefusal,
     rangeRefusal,
-    rangeRefusalSpansEpisodes: rangeSpanMs >= REFUSAL_MIN_SPAN_MS,
-    recentFinishedFeedings,
+    // Measured on the RANGE fact's own stamps, not the recency window's — the live
+    // register reads `rangeRefusal` on the stand-down path, so the span guard has
+    // to be about the same refusals it would speak from.
+    rangeRefusalSpansEpisodes: spanMsOf(pop.rangeStamps) >= REFUSAL_MIN_SPAN_MS,
+    recentFinishedFeedings: pop.recentFinished,
     // The same window and the same rows as `recentFinishedFeedings` — they are a
     // ratio, so a denominator drawn from anywhere else would be a silent lie.
-    recentRatedFeedings: ratedFeedings,
+    recentRatedFeedings: pop.recentRated,
     // Null, not `{ rated: 0, feedings: 0 }` — see the field on `TrialFacts`.
-    intakeRating: ratableFeedings > 0
-      ? { rated: ratedMealFeedings, feedings: ratableFeedings, primaryRated, primaryFeedings }
+    // R1b always reports the WIDE record and the NARROW trial-diet slice, whichever
+    // population the refusal lane spoke from: the teach line is a fact about the
+    // meal record, and it must read the same whether or not identity resolved.
+    intakeRating: wide.feedings > 0
+      ? {
+          rated: wide.rated,
+          feedings: wide.feedings,
+          primaryRated: narrow.rated,
+          primaryFeedings: narrow.feedings,
+        }
       : null,
     untrackedDaysBeforeFirstLog,
     interpretability,
@@ -1481,9 +1614,8 @@ export function computeTrialFacts(input: TrialFactsInput): TrialFacts {
     // the diet yet — an owner who logged ten feedings inside a trial fed the
     // prescribed diet at least once, so zero primary-diet matches across ten-plus
     // feedings is evidence of a cold cache rather than of adherence.
-    allowedSetUnavailable:
-      base.allowedSetUnavailable ||
-      (primaryFeedings === 0 && totalFeedings >= UNHYDRATED_SET_FLOOR),
+    // Resolved above, because B-530's population choice reads it.
+    allowedSetUnavailable,
     // In force AT THE END of the range — the present-tense question.
     intakeNotDirectlyObservedNow: (input.arrangements ?? []).some((a) => {
       const end = a.endedAt ? localDayIndexOf(a.endedAt, input.timeZone) : null;
@@ -1827,7 +1959,15 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
   // discipline §5.1 applies to every other count on the card, where a number
   // without its denominator is the defect, not the shorthand.
   const n = refusal.refusedFeedings;
-  const meals = n === 1 ? '1 feeding' : `${n} feedings`;
+  // THE NOUN FOLLOWS THE POPULATION (B-530). Over `meal_record` the app has just
+  // concluded it cannot tell which food was the trial diet, so calling these
+  // "trial-diet feedings" would assert the very identity the fallback exists
+  // because it could not establish. "Meals" is what the record supports, and it is
+  // the same word the owner sees on the log.
+  const wide = refusal.population === 'meal_record';
+  const unit = wide ? 'meal' : 'feeding';
+  const qualified = wide ? 'meals' : 'trial-diet feedings';
+  const meals = n === 1 ? `1 ${unit}` : `${n} ${unit}s`;
   // `days` is DISTINCT DAYS carrying an unfinished feeding, not a span — so the
   // phrasing has to be "across N days", never "over the last N days", which would
   // assert a window the number is not measuring.
@@ -1838,14 +1978,11 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
   // you've rated" is arithmetic where the reader needs a statement.
   if (n === refusal.ratedFeedings) {
     return refusal.ratedFeedings === 1
-      ? 'The one trial-diet feeding you’ve rated was left unfinished.'
-      : `Every one of the ${refusal.ratedFeedings} trial-diet feedings you’ve rated was ` +
+      ? `The one ${wide ? 'meal' : 'trial-diet feeding'} you’ve rated was left unfinished.`
+      : `Every one of the ${refusal.ratedFeedings} ${qualified} you’ve rated was ` +
         `left unfinished, ${when}.`;
   }
-  return (
-    `${meals} of the ${refusal.ratedFeedings} trial-diet feedings you’ve rated were ` +
-    `left unfinished, ${when}.`
-  );
+  return `${meals} of the ${refusal.ratedFeedings} ${qualified} you’ve rated were left unfinished, ${when}.`;
 }
 
 /**
@@ -1893,11 +2030,33 @@ export function trialViabilityHeadline(refusal: TrialDietRefusal): string {
  * `refusalWithheldLine` uses on the terminal card ("isn't showing how clean
  * these 18 days were"), which has been correct all along.
  */
-export function trialViabilityNote(petName: string, species: TrialSpecies): string {
+export function trialViabilityNote(
+  petName: string,
+  species: TrialSpecies,
+  /** B-530. `meal_record` means the app could not identify the trial diet, so this
+   *  note may not claim the trial diet is the food going untouched. Defaults to the
+   *  narrow population — the fact this string was written for. */
+  population: TrialRefusalPopulation = 'trial_diet',
+): string {
   const call =
     species === 'cat'
       ? `a cat that isn’t eating what’s put down needs a call today`
       : `it’s worth a call to your vet`;
+  // THE WIDE POPULATION MAY NOT NAME THE DIET, AND MUST SAY WHY IT CAN'T. The
+  // escalation is identical — the pet is not eating what is put down, which is the
+  // clinical fact and is fully on the record either way — but the ATTRIBUTION is
+  // not available, and a note that quietly borrows the narrow sentence would
+  // assert an identity the app just admitted it could not resolve. Disclosing the
+  // gap also tells the owner something actionable: re-adding the diet to the
+  // trial's food list is what restores the named finding.
+  if (population === 'meal_record') {
+    return (
+      `Culprit can’t match these meals to the foods on this trial’s list, so it can’t ` +
+      `name which one went untouched — but what ${petName} is being offered isn’t ` +
+      `being eaten, and ${call}, whatever the trial is doing. Culprit isn’t reading ` +
+      'these days as a clean run while this is going on.'
+    );
+  }
   return (
     `A diet ${petName} isn’t eating can’t answer the question the trial was ` +
     `started for — and ${call}, whatever the trial is doing. Culprit isn’t ` +

@@ -754,7 +754,7 @@ describe('adversarial regressions — the module half', () => {
       ),
       nowMs: new Date(2026, 6, 14, 22).getTime(),
     });
-    expect(facts.trialDietRefusal).toEqual({ refusedFeedings: 28, ratedFeedings: 28, days: 14 });
+    expect(facts.trialDietRefusal).toEqual({ refusedFeedings: 28, ratedFeedings: 28, days: 14 , population: 'trial_diet' as const });
     // …and the affirmative sentence becomes unsayable, which is the whole job.
     expect(mayClaimAllMatched(facts)).toBe(false);
     // Coverage is UNCHANGED — the owner kept a perfect record and is not scored
@@ -763,7 +763,7 @@ describe('adversarial regressions — the module half', () => {
   });
 
   it('the viability line names the record, with its own denominator', () => {
-    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 40, days: 14 });
+    const line = trialViabilityHeadline({ refusedFeedings: 28, ratedFeedings: 40, days: 14 , population: 'trial_diet' as const });
     expect(line).toMatch(/were left unfinished/);
     // Never asserts a refusal over a `some`/`picked` record.
     expect(line).not.toMatch(/logged as refused/);
@@ -1240,7 +1240,7 @@ describe('B-533 adversarial regressions — the module half', () => {
     // The now-fact is correctly quiet — the last fortnight WAS eaten.
     expect(facts.trialDietRefusal).toBeNull();
     // The range fact is not, and it is what gates the claim.
-    expect(facts.rangeRefusal).toEqual({ refusedFeedings: 84, ratedFeedings: 112, days: 42 });
+    expect(facts.rangeRefusal).toEqual({ refusedFeedings: 84, ratedFeedings: 112, days: 42 , population: 'trial_diet' as const });
     expect(mayClaimAllMatched(facts)).toBe(false);
     expect(mayStateRecordClean(facts)).toBe(false);
   });
@@ -1731,5 +1731,232 @@ describe('B-533 PR B — the facts behind the live refusal register', () => {
         rated: 4, feedings: 4, primaryRated: 4, primaryFeedings: 4,
       });
     });
+  });
+});
+
+// ── B-530 — the refusal lane survives a food-identity miss ───────────────────
+//
+// The pre-ship adversarial chair executed the counterexample: a 21-day all-refused
+// cat behind a RE-PHOTOGRAPHED BAG. Re-shooting the bag mints a new `food_items` row
+// with a slightly different product name; the trial's allowed set still points at the
+// old one, so rung 1 misses on every feeding. Both refusal gates keyed on
+// `role === 'primary_diet'`, which only exists when rung 1 matched — so the population
+// did not degrade, it EMPTIED, and the fact went null over an animal that had not
+// eaten for three weeks. An app action the product actively encourages silenced the
+// one lane built for the sickest patient in it.
+describe('B-530 — the refusal population falls back when identity misses', () => {
+  /** Every feeding names a food the allowed set does not carry (the new bag). */
+  function refusedBehindABrokenBag(rating: string | null, count = 42) {
+    return computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: [DRY_DUCK],
+      feedings: Array.from({ length: count }, (_, i) =>
+        feeding({
+          eventId: `m${i}`,
+          // Two a day across `count / 2` days, so the day and span floors clear.
+          occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 === 0 ? 8 : 20),
+          foodItemId: 'dry-duck-rephotographed',
+          foodKey: 'royal caninduck dry kibble',
+          intakeRating: rating,
+        }),
+      ),
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+  }
+
+  it('fires over the MEAL RECORD when the allowed set cannot identify the diet', () => {
+    const facts = refusedBehindABrokenBag('refused');
+    expect(facts.allowedSetUnavailable).toBe(true);
+    expect(facts.rangeRefusal).not.toBeNull();
+    expect(facts.rangeRefusal).toMatchObject({
+      refusedFeedings: 42,
+      ratedFeedings: 42,
+      population: 'meal_record',
+    });
+    // And the affirmative claim was already withheld — the fallback adds disclosure,
+    // it never turns a claim on.
+    expect(mayClaimAllMatched(facts)).toBe(false);
+  });
+
+  it('keeps the NARROW population — and the named finding — when identity resolves', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: [DRY_DUCK],
+      feedings: Array.from({ length: 42 }, (_, i) =>
+        feeding({
+          eventId: `m${i}`,
+          occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 === 0 ? 8 : 20),
+          foodItemId: DRY_DUCK.foodItemId,
+          foodKey: DRY_DUCK.foodKey,
+          intakeRating: 'refused',
+        }),
+      ),
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(false);
+    expect(facts.rangeRefusal?.population).toBe('trial_diet');
+  });
+
+  // R1a, in both populations. The fallback widens WHICH ROWS are counted; it never
+  // lowers the bar to logged evidence, so an owner who does not rate intake still
+  // cannot be told her cat is not eating.
+  it('never fires on an unrated record, however broken the identity', () => {
+    const facts = refusedBehindABrokenBag(null);
+    expect(facts.rangeRefusal).toBeNull();
+    expect(facts.trialDietRefusal).toBeNull();
+    // The teach line still measures the same wide record, so the surface that would
+    // ask for the tap is not silenced by the same miss.
+    expect(facts.intakeRating).toMatchObject({ rated: 0, feedings: 42, primaryFeedings: 0 });
+  });
+
+  it('never fires on a record the pet ATE, however broken the identity', () => {
+    expect(refusedBehindABrokenBag('all').rangeRefusal).toBeNull();
+  });
+
+  // The wide population is the MEAL record — the same set the coverage numerator and
+  // R1b walk. A refused chicken chew says nothing about whether meals are being eaten,
+  // and letting treats in would let a fussy-about-treats record fire the safety lane.
+  it('excludes treats from the wide population', () => {
+    const facts = computeTrialFacts({
+      trial: { ...TRIAL, species: 'cat' },
+      allowedFoods: [DRY_DUCK],
+      feedings: Array.from({ length: 42 }, (_, i) =>
+        feeding({
+          eventId: `t${i}`,
+          occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 === 0 ? 8 : 20),
+          foodItemId: 'some-treat',
+          foodKey: 'acmechicken chew',
+          foodType: 'treat',
+          intakeRating: 'refused',
+        }),
+      ),
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+    expect(facts.rangeRefusal).toBeNull();
+  });
+
+  // The stand-down pair must be measured over the SAME rows as the fact it stands
+  // down. A numerator and denominator drawn from different populations is a silent lie
+  // in the reassuring direction — and the reassuring direction is the one that matters.
+  it('measures the stand-down pair over the population that spoke', () => {
+    const facts = refusedBehindABrokenBag('refused');
+    expect(facts.recentRatedFeedings).toBeGreaterThan(0);
+    expect(facts.recentFinishedFeedings).toBe(0);
+  });
+});
+
+describe('B-530 — the copy never names a diet the app could not identify', () => {
+  it('widens the headline noun to the meal record', () => {
+    const line = trialViabilityHeadline({
+      refusedFeedings: 42,
+      ratedFeedings: 42,
+      days: 21,
+      population: 'meal_record',
+    });
+    expect(line).toMatch(/42 meals you’ve rated/);
+    expect(line).not.toMatch(/trial-diet/);
+    // Still never softens toward preference.
+    expect(line).not.toMatch(/pick|fussy|prefer|doesn’t like|taste/i);
+  });
+
+  it('discloses the attribution gap in the note, and still escalates', () => {
+    const note = trialViabilityNote('Miso', 'cat', 'meal_record');
+    expect(note).toMatch(/can’t match these meals to the foods on this trial’s list/);
+    expect(note).toMatch(/needs a call today/);
+    expect(note).not.toMatch(/A diet Miso isn’t eating/);
+    // The narrow form is unchanged, and is still the default.
+    expect(trialViabilityNote('Miso', 'cat')).toMatch(/A diet Miso isn’t eating/);
+  });
+});
+
+// ── B-576 — the two residuals this fallback does NOT close ───────────────────
+//
+// Pinned as tests rather than left as prose, because the failure mode of a
+// documented limit is that a later reader assumes coverage. Both are UNDER-fire and
+// neither is a regression (the shipped behaviour in both is silence), and both have
+// one root cause — food identity — which is B-529's PR. When that lands, these two
+// assertions are expected to FLIP, and the flip is the signal that they were fixed.
+describe('B-576 — known limits of the wide population (expected to flip with B-529)', () => {
+  const CAT = { ...TRIAL, species: 'cat' as const };
+
+  it('KNOWN LIMIT — a PARTIAL identity miss keeps the narrow population, which cannot see it', () => {
+    // Wet + dry of the same diet (§4.1). Only the dry bag was re-photographed. The cat
+    // eats the wet and refuses the dry — and the narrow population, which is all that
+    // survives, sees only the wet and reads as eating.
+    const facts = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK, WET_DUCK],
+      feedings: [
+        ...Array.from({ length: 21 }, (_, i) =>
+          feeding({
+            eventId: `dry${i}`,
+            occurredAt: at(`2026-07-${String(1 + i).padStart(2, '0')}`, 8),
+            foodItemId: 'dry-duck-rephotographed',
+            foodKey: 'royal caninduck dry kibble',
+            intakeRating: 'refused',
+          }),
+        ),
+        ...Array.from({ length: 21 }, (_, i) =>
+          feeding({
+            eventId: `wet${i}`,
+            occurredAt: at(`2026-07-${String(1 + i).padStart(2, '0')}`, 20),
+            foodItemId: WET_DUCK.foodItemId,
+            foodKey: WET_DUCK.foodKey,
+            intakeRating: 'all',
+          }),
+        ),
+      ],
+      nowMs: new Date(2026, 6, 22, 12).getTime(),
+    });
+    expect(facts.allowedSetUnavailable).toBe(false);
+    expect(facts.rangeRefusal).toBeNull();
+  });
+
+  it('KNOWN LIMIT — substitution DILUTES the wide share below the floor', () => {
+    // The canonical diet-trial failure mode: the prescription is refused and the owner
+    // tops the cat up with chicken. 21 refused + 42 eaten over the same 21 days is a
+    // 33% not-finished share, under `REFUSAL_SHARE`. The identical record with intact
+    // identity fires 21 of 21 (asserted below), which is what makes this a limit of the
+    // wide population rather than of the floors.
+    const substituted = Array.from({ length: 42 }, (_, i) =>
+      feeding({
+        eventId: `sub${i}`,
+        occurredAt: at(`2026-07-${String(1 + Math.floor(i / 2)).padStart(2, '0')}`, i % 2 ? 20 : 14),
+        foodItemId: 'rotisserie',
+        foodKey: 'homerotisserie chicken',
+        proteins: ['chicken'],
+        intakeRating: 'all',
+      }),
+    );
+    const refusedDry = (foodItemId: string, foodKey: string) =>
+      Array.from({ length: 21 }, (_, i) =>
+        feeding({
+          eventId: `${foodItemId}${i}`,
+          occurredAt: at(`2026-07-${String(1 + i).padStart(2, '0')}`, 8),
+          foodItemId,
+          foodKey,
+          intakeRating: 'refused',
+        }),
+      );
+    const nowMs = new Date(2026, 6, 22, 12).getTime();
+
+    const broken = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK],
+      feedings: [...refusedDry('dry-duck-rephotographed', 'royal caninduck dry kibble'), ...substituted],
+      nowMs,
+    });
+    expect(broken.allowedSetUnavailable).toBe(true);
+    expect(broken.rangeRefusal).toBeNull();
+    // The exposures are still counted and still loud — what is lost is the intake fact.
+    expect(broken.exposures.offDiet).toBeGreaterThan(0);
+
+    const intact = computeTrialFacts({
+      trial: CAT,
+      allowedFoods: [DRY_DUCK],
+      feedings: [...refusedDry(DRY_DUCK.foodItemId, DRY_DUCK.foodKey as string), ...substituted],
+      nowMs,
+    });
+    expect(intact.rangeRefusal).toMatchObject({ refusedFeedings: 21, ratedFeedings: 21, population: 'trial_diet' });
   });
 });
